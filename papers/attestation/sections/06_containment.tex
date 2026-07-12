@@ -1,0 +1,200 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+%========================================================================================
+% FILENAME: 06_containment.tex (v1.0.0)
+%
+% §6 Containment.  §6.1 the bounds (proof of SP5 = bootstrap capacity; the dynamic
+% time-locked standing bound and its pre-deposit value; the no-fixed-ceiling negative
+% result; pre-maturity deposit capacity; seigniorage suppression; monotone weakening).
+% §6.2 net live share (replaces the
+% deleted participation-viability-floor material — δ_min/"genesis actors" are counts,
+% relocated to the importing system).
+%
+% Proof budget: TWO body proofs (the SP5 capacity proof; the no-fixed-ceiling
+% counterexample).  Silences applied; cycle only.  No δ_min, no θ, no count columns.
+%
+% Change history lives in version control (see the versioning policy in main.tex).
+%========================================================================================
+
+\section{Containment}
+\label{sec:attestation:containment}
+
+The time-locked class bounds commitment capacity during the pre-market interval
+(\zcref{intuit:costliness:design-problem}): a burn-capacity bound, a dynamic floor bound, and
+seigniorage suppression --- each a consequence of the time-locked-class supply floor, and
+each weakening monotonically as external deposits arrive. Together they make the interface's
+capacity property (\zcref{prop:interface:bootstrap-capacity}) a theorem and bound the
+cost-of-attestation that is the reciprocal of the net live share
+(\zcref{def:interface:net-live-share}).
+
+Every bound below carries its own scope in its own statement. The distinction that governs
+the section is between quantities established \emph{before external deposits} and those
+holding at every \emph{pre-maturity} state; they are different claims and are never
+merged.
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{The Containment Bounds}
+\label{sec:containment:bounds}
+% ═══════════════════════════════════════════════════════════════════════
+
+\begin{proof}[Proof of \zcref{prop:interface:bootstrap-capacity}]
+    \interfaceref{prop:interface:bootstrap-capacity}%
+    Before external deposits, the only burnable supply is the genesis live-class allocation
+    $\livesplit\genesisreserve$. Each burned unit raises the floor
+    (\zcref{prop:invariants:burn-increases-floor}); burning all of it in infinitesimal
+    increments at the continuously appreciating floor yields the supremum aggregate
+    attestation
+    \begin{equation}
+        \KEY{\;
+        \attestcap
+        = \int_0^{\livesplit\genesisreserve} \frac{\genesisreserve}{\genesisreserve - x}\,dx
+        = \genesisreserve \ln\!\bigl(1/(1-\livesplit)\bigr).
+        \;}
+        \label{eq:containment:max-attestation}
+    \end{equation}
+    Hence $\sum_{a} \attest{a} \leq \attestcap$. At $\livesplit = 0.50$,
+    $\genesisreserve = 1000$: $\attestcap \approx 693.1$ reserve units.
+\end{proof}
+
+\begin{proposition}[Time-Locked Standing Bound]
+    \label{prop:containment:time-locked-standing-bound}
+    \proofsketch{$\totsupply{} \geq \tlocksupply{}$, so
+    $\reservepool{}/\totsupply{} \leq \reservepool{}/\tlocksupply{}$.}%
+    While $\tlocksupply{} > 0$, the time-locked class forms a supply floor and the
+    redemption-rate floor obeys the \emph{dynamic} standing bound
+    \begin{equation}
+        \ratefloor{} \;\leq\; \frac{\reservepool{}}{\tlocksupply{}}.
+        \label{eq:containment:time-locked-standing-bound}
+    \end{equation}
+    Both sides move with the state: deposits raise $\reservepool{}$ and $\tlocksupply{}$
+    together, while live burns and redemptions lower $\totsupply{}$ and leave
+    $\tlocksupply{}$ untouched. This is the only floor bound that holds at every
+    pre-maturity state. Post-maturity $\tlocksupply{} = 0$ and $\ratefloor{}$ is unbounded
+    above.
+\end{proposition}
+
+\begin{corollary}[Pre-Deposit Floor Factor]
+    \label{cor:containment:pre-deposit-floor-factor}
+    \proofsketch{At genesis $\reservepool{} = \genesisreserve$ and
+    $\tlocksupply{} = (1-\livesplit)\genesisreserve$; no external deposit changes either.}%
+    \emph{Before any external deposit}, the standing bound
+    \zcref{eq:containment:time-locked-standing-bound} takes the constant value
+    \begin{equation}
+        \genesisfloorfactor = \frac{1}{1 - \livesplit},
+        \label{eq:containment:pre-deposit-floor-factor}
+    \end{equation}
+    attained by burning all available live-class units. At $\livesplit = 0.50$,
+    $\genesisfloorfactor = 2.000$. The scope is the whole content of this corollary:
+    $\genesisfloorfactor$ is a \emph{factor at genesis}, not a ceiling on the bootstrapping
+    phase (\zcref{prop:containment:no-fixed-bootstrap-floor-ceiling}).
+\end{corollary}
+
+\begin{proposition}[No Fixed Bootstrapping Floor Ceiling]
+    \label{prop:containment:no-fixed-bootstrap-floor-ceiling}
+    No constant depending only on $\livesplit$ bounds $\ratefloor{}$ across the
+    bootstrapping phase. In particular $\ratefloor{} \leq \genesisfloorfactor$ is false once
+    external deposits are admitted.
+\end{proposition}
+\begin{proof}
+    A counterexample at $\livesplit = 1/2$, $\genesisreserve = 1000$, entirely within
+    \zcref{alg:operations:cycle-processing}. Class totals depend on $\livesplit$ alone, so
+    $\feerate$ only selects who holds the minted units.
+    \begin{center}
+    \begin{tabular}{@{}l c c c c@{}}
+        \toprule
+        \textbf{Step} & $\reservepool{}$ & $\livesupply{}$ & $\tlocksupply{}$ & $\ratefloor{}$ \\
+        \midrule
+        genesis            & $1000$ & $500$ & $500$ & $1$ \\
+        burn $500$ live    & $1000$ & $0$   & $500$ & $2 = \genesisfloorfactor$ \\
+        deposit $1000$     & $2000$ & $250$ & $750$ & $2$ \\
+        burn $250$ live    & $2000$ & $0$   & $750$ & $8/3$ \\
+        \bottomrule
+    \end{tabular}
+    \end{center}
+    The final state is pre-maturity and $8/3 > 2 = \genesisfloorfactor$. Writing
+    $r = \Delta\reservepool{}/\reservepool{}$, one burn-deposit-burn round multiplies the
+    floor by $(1+r)/(1+(1-\livesplit)r)$, which tends to $\genesisfloorfactor$ as
+    $r \to \infty$; iterating drives $\ratefloor{}$ above any fixed constant. The factor
+    $\genesisfloorfactor$ therefore bounds a per-round \emph{ratio}, not the level.
+\end{proof}
+
+\begin{theorem}[Pre-Maturity Deposit Capacity]
+    \label{thm:containment:pre-maturity-deposit-capacity}
+    \proofsketch{$\Psi = \reservepool{}\ln(\totsupply{}/\tlocksupply{})$ falls by at least
+    each burn's credit, never rises on redemption, and rises by at most
+    $\delta\ln(1/(1-\livesplit))$ per deposit $\delta$.}%
+    Let $D$ be cumulative gross reserve deposits and $A$ aggregate accepted attestation
+    credit. At every pre-maturity state,
+    \begin{equation}
+        \KEY{\;
+        A + \reservepool{}\ln\!\left(\frac{\totsupply{}}{\tlocksupply{}}\right)
+        \;\leq\; (\genesisreserve + D)\ln\!\bigl(1/(1-\livesplit)\bigr),
+        \;}
+        \label{eq:containment:pre-maturity-deposit-capacity}
+    \end{equation}
+    and in particular
+    $A \leq (\genesisreserve + D)\ln(1/(1-\livesplit))$. The bound is tight as a supremum:
+    deposit the whole of $D$ at genesis, then burn the entire live class through
+    arbitrarily fine settlements. \zcref{prop:interface:bootstrap-capacity} is the $D = 0$
+    case.
+\end{theorem}
+
+\begin{proposition}[Seigniorage Suppression]
+    \label{prop:containment:seigniorage-suppression}
+    \proofsketch{operator receives $\feerate\livesplit\Delta\totsupply{}$ fee units per
+    minting; burned at the minting floor, attestation
+    $= \feerate\livesplit\Delta\reservepool{}$; sum over cycles.}%
+    Operator cumulative attestation from immediate burning of bootstrapping-phase fee units
+    satisfies $\attest{\opidx} = \feerate\,\livesplit\,D$, suppressed by factor
+    $\livesplit$ relative to the normal-phase baseline $\feerate\,D$ (developed as
+    \zcref{thm:seigniorage:bootstrapping-bound}).
+\end{proposition}
+
+\begin{proposition}[Monotone Weakening Under External Deposits]
+    \label{prop:containment:monotone-weakening}
+    \proofsketch{each bound is a decreasing function of $\totsupply{}$, which is
+    non-decreasing in $D$.}%
+    All three bounds --- burn capacity, the standing floor bound, seigniorage suppression
+    --- weaken as external deposit volume $D$ grows: new deposits mint additional supply,
+    lifting the capacity bound to
+    \zcref{eq:containment:pre-maturity-deposit-capacity}, raising the standing bound
+    $\reservepool{}/\tlocksupply{}$, and diluting the genesis cohort's supply fraction.
+\end{proposition}
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Net Live Share}
+\label{sec:containment:net-live-share}
+% ═══════════════════════════════════════════════════════════════════════
+
+\stackmarginnote{Note:}{Consequences of bounded bootstrap capacity for any importing system
+are that layer's to state.}%
+A depositor of $\delta$ reserve units retains
+$\netliveshare\,\delta = (1-\feerate)\livesplit\,\delta$ immediately-redeemable \liveclass{}
+units during the bootstrapping phase (\zcref{def:interface:net-live-share}). At
+$\feerate = 0.5$, $\livesplit = 0.5$: $\netliveshare = 0.25$. This is the count-free
+allocation ratio the layer exports; its reciprocal $\attestunitcost$ is the reader's cost
+projection, and an importing system derives any entry cost from it on its side.
+
+\begin{table}[h!]
+    \centering
+    \caption{Containment frontier at $\feerate = 0.5$, $\genesisreserve = 1000$
+    (illustrative). Every column is a \emph{before external deposits} quantity.}
+    \label{tab:containment:frontier}
+    \begin{tabular}{@{}c c c c@{}}
+        \toprule
+        $\livesplit$ & $\netliveshare$ & Burn cap $\livesplit\genesisreserve$
+            & $\genesisfloorfactor$ \\
+        \midrule
+        $0.50$ & $0.25$   & $500$ & $2.00$ \\
+        $0.10$ & $0.05$   & $100$ & $1.111$ \\
+        $0.05$ & $0.025$  & $50$  & $1.053$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+%========================================================================================
+% END OF FILE: 06_containment.tex (v1.0.0)
+%========================================================================================
+
+\end{document}

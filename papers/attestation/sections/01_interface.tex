@@ -1,0 +1,282 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+%========================================================================================
+% FILENAME: 01_interface.tex (v1.0.0)
+%
+% §1 The Interface — the only chapter an importing system must read.  States the
+% computational export I0 (the attestation map A + six specified properties + the
+% net live share), the monetary surface (the second relation), the consumption
+% discipline, and the cycle clock.  Everything after this chapter proves the properties
+% hold.
+%
+% NB: NO \interfaceref in this file.  The §1 statements are the TARGETS of the §5/§6
+% discharge margins, not sources.  Silences: no consumer noun (every gesture at the layer
+% above is role-described — "a reader" / "an importing system"); no realization reference.
+% Surface handle \confprice (never a bare kappa).  Locality discipline: base-layer-only
+% value facts carry \atthislayer{}.
+%
+% Change history lives in version control (see the versioning policy in main.tex).
+%========================================================================================
+
+\section{The Interface}
+\label{sec:attestation:interface}
+
+This chapter states what the layer exports --- one computational map and six specified
+properties on it, together with a monetary surface any economic agent may read. Everything
+after this chapter is \emph{why} the properties hold.
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{The Computational Interface \texorpdfstring{$\Izero$}{I0}}
+\label{sec:interface:computational}
+% ═══════════════════════════════════════════════════════════════════════
+
+\begin{definition}[Address Space]
+    \label{def:interface:address-space}
+    The \emph{address space} $\addrspace$ is an opaque set. A burn names an address
+    $a \in \addrspace$, and an attestation accrues to that address. This layer makes no
+    claim that an address is a person, a holder, or an identity: aggregation, the binding
+    of an address to any identity, and any splitting interpretation belong to the importing
+    layer. Throughout, the index $a$ of $\attest{a}$ is such an opaque address.
+\end{definition}
+
+\begin{definition}[Attestation]
+    \label{def:interface:attestation}
+    The \emph{attestation} $\attest{} : \addrspace \to \R_{\geq 0}$ is the cumulative,
+    reserve-denominated record accrued to each address. It \attestrecords{a magnitude} ---
+    the reserve-value destroyed --- and confers no claim \atthislayer{}: it is
+    non-transferable and non-redeemable here. It is produced exclusively by the burn
+    operation (\zcref{def:operations:burn}).
+\end{definition}
+
+The map $\attest{}$ carries six specified properties. The first three are stated here in
+full; the remaining three are stated here and proved in
+\zcref{sec:attestation:costliness,sec:attestation:containment}.
+
+\begin{postulate}[Non-Negativity]
+    \label{postc:interface:non-negativity}
+    $\attest{a} \geq 0$ for every address $a \in \addrspace$.
+\end{postulate}
+
+\begin{postulate}[Monotonicity]
+    \label{postc:interface:monotonicity}
+    \stackmarginnote{Note:}{Properties 2 and 6 are one conservatism read from two sides:
+    2 says the valuation never rises spuriously between settlements; 6
+    (\zcref{prop:interface:conservative-valuation}) says it never exceeds truth.}%
+    $\attest{a}$ is non-decreasing in the burn record within a fixed canonical
+    chronology. Its reserve-denominated \emph{valuation} is specified over one
+    consistent chronology --- a fixed canonical context and its \emph{settlement-event}
+    sequence, a realization-designated, publicly auditable subsequence of the
+    floor-committing state transitions, of which cycle boundaries are the canonical
+    instance (\zcref{rem:interface:clocks}). A realization may designate a sparser or
+    denser event family; conservatism is guaranteed by
+    \zcref{prop:interface:conservative-valuation} regardless of the designation. Within one
+    chronology, extending the record adds only nonnegative terms, so a valuation derived
+    between two settlements is conservative (\zcref{prop:interface:conservative-valuation})
+    and cannot fall as the record grows. A reorganization is a \emph{change of
+    chronology}: the truth layer selects a different canonical context and reassigns each
+    record to the settlement preceding it there, so the same irrevocable raw record
+    $(a, x)$ may be revalued \emph{either upward or downward} in the replacement context.
+    No monotone order is asserted between valuations drawn from different chronologies. The
+    raw record $(a, x)$ is irrevocable; its valuation is chronology-relative and
+    settlement-pinned. \emph{A reader that samples $\attest{}$ at a boundary settled deeper
+    than any settlement-ordering uncertainty observes a non-decreasing $\attest{}$ within
+    its retained chronology; that corollary is established by the reader, against its own
+    sampling depth, not asserted here.}
+\end{postulate}
+
+\begin{postulate}[Public Auditability]
+    \label{postc:interface:auditability}
+    $\attest{}$ is recomputable from the public record by
+    \emph{recompute-and-verify-provenance}: every unit of the attestation is
+    provenance-anchored to a genuine, irrecoverable destruction of receipt, and is capped,
+    per recording event, by the destruction it rides on. A recording not backed by
+    destruction contributes \emph{zero}. Auditability is therefore
+    recompute-and-verify-provenance, never scan-and-total.
+\end{postulate}
+
+\begin{theorem}[Instantaneous Costliness]
+    \label{thm:interface:instantaneous-costliness}
+    \proofsketch{Burning destroys live-class units redeemable at the settlement floor; no
+    operation maps the attestation back. Full proof:
+    \zcref{sec:costliness:instantaneous}.}%
+    Reaching $\attest{a} = M$ required destroying receipt whose burn-instant redeemable
+    value was \emph{at least} $M$ reserve units. Equality holds exactly when the burn
+    settles at the burn-instant floor; a settlement floor that lags the burn-instant floor
+    (\zcref{prop:invariants:burn-order-residual}) makes the destroyed value strictly
+    greater, never less (\zcref{prop:interface:conservative-valuation}).
+\end{theorem}
+
+\begin{proposition}[Bootstrap Capacity]
+    \label{prop:interface:bootstrap-capacity}
+    During the bootstrapping phase (\zcref{def:model:bootstrapping-phase}), aggregate
+    $\attest{}$ before external deposits is bounded:
+    \[
+        \sum_{a \in \addrspace} \attest{a}
+        \;\leq\;
+        \attestcap = \genesisreserve \ln\!\bigl(1/(1-\livesplit)\bigr).
+    \]
+    Proved in \zcref{sec:attestation:containment}.
+\end{proposition}
+
+\begin{proposition}[Conservative Valuation]
+    \label{prop:interface:conservative-valuation}
+    Each attestation increment is at most the true redeemable value of the destroyed
+    receipt at the burn instant. The property is an \emph{upper bound}, so a lagged or
+    last-settled valuation is valid, never a contradiction. This is the bound that keeps
+    every chronology-relative valuation of \zcref{postc:interface:monotonicity} conservative.
+\end{proposition}
+
+\begin{definition}[Net Live Share]
+    \label{def:interface:net-live-share}
+    The \emph{net live share} is $\netliveshare$: per reserve unit deposited \emph{during
+    the bootstrapping phase} (\zcref{def:model:bootstrapping-phase}), the post-fee,
+    immediately-redeemable \liveclass{} value retained. It is a purpose-neutral allocation
+    ratio; this layer asserts no depositor intent. A deposit splits, net of the fee
+    $\feerate$, into the live share $\netliveshare$ and the time-locked share
+    $(1-\feerate)(1-\livesplit)$ --- the latter non-redeemable, carrying no floor, and
+    trading at $\confprice{}$ until maturity (\zcref{def:model:classes}). Two reciprocal
+    projections follow, neither asserted here: a reader producing attestation reads the
+    reserve cost of one attestation unit as $\attestunitcost$; a reader holding the position
+    reads $\netliveshare$ as its liquid retention. An importing system derives whichever
+    projection its own specification needs.
+\end{definition}
+
+\begin{table}[h!]
+    \centering
+    \caption{The exported specified properties and where each is established. The table is
+    the importing system's index into the proofs; the proofs themselves are
+    \zcref{sec:attestation:costliness,sec:attestation:containment} and the floor invariants of
+    \zcref{sec:attestation:invariants}.}
+    \label{tab:interface:properties}
+    \begin{tabularx}{\textwidth}{@{}l X l l@{}}
+        \toprule
+        \textbf{\#} & \textbf{Property} & \textbf{Label} & \textbf{Established at} \\
+        \midrule
+        SP1 & Non-negativity
+            & \zcref{postc:interface:non-negativity}
+            & \zcref{def:interface:attestation} \\
+        SP2 & Settlement-pinned monotonicity
+            & \zcref{postc:interface:monotonicity}
+            & \zcref{lem:costliness:attestation-append-only} \\
+        SP3 & Public auditability (authenticated destruction)
+            & \zcref{postc:interface:auditability}
+            & \zcref{sec:interface:computational} \\
+        SP4 & Instantaneous costliness
+            & \zcref{thm:interface:instantaneous-costliness}
+            & \zcref{sec:costliness:instantaneous} \\
+        SP5 & Bootstrap capacity bound
+            & \zcref{prop:interface:bootstrap-capacity}
+            & \zcref{sec:containment:bounds} \\
+        SP6 & Conservative valuation
+            & \zcref{prop:interface:conservative-valuation}
+            & \zcref{sec:interface:computational} \\
+        \addlinespace
+        --- & Net live share $\netliveshare$
+            & \zcref{def:interface:net-live-share}
+            & \zcref{sec:containment:net-live-share} \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{The Monetary Surface}
+\label{sec:interface:monetary-surface}
+% ═══════════════════════════════════════════════════════════════════════
+
+The interface $\Izero$ is not the only relation to this layer. A second, wider relation
+--- the \emph{monetary surface} --- carries the \emph{operations} any economic agent may
+perform and the \emph{public audit quantities} anyone may read:
+
+\begin{itemize}[nosep]
+    \item \textbf{Operations:} deposit (\zcref{def:operations:deposit}), burn
+        (\zcref{def:operations:burn}), redemption (\zcref{def:operations:redemption}), and
+        class-internal transfer (\zcref{def:operations:transfer}).
+    \item \textbf{Audit quantities:} the redemption-rate floor $\ratefloor{}$
+        (\zcref{def:model:ratefloor}), the supplies $\totsupply{}$, $\livesupply{}$,
+        $\tlocksupply{}$, phase and maturity status, the constants $\livesplit$ and
+        $\feerate$, the maturity leads $\matlead$ and $\matleadcap$, the pre-deposit floor
+        factor $\genesisfloorfactor$ (\zcref{cor:containment:pre-deposit-floor-factor}), and
+        the time-locked-class secondary-market confidence price \confprice{}.
+\end{itemize}
+
+These are readable and usable by any economic agent at any layer. The non-leak statement
+is precise: an importing system's \emph{published computation} touches this layer only
+through $\Izero$; its \emph{agents} use money freely.
+
+\begin{insight}
+    \label{intuit:interface:two-relations}
+    One primitive, read in strata. \emph{This layer:} destroy a \liveclass{} unit, record
+    an attestation on an address; the funder is unconstrained and no consent is needed,
+    because the operation only ever increases the named address's total, and the
+    attestation confers no claim \atthislayer{}. \emph{A reader binding addresses to
+    identities:} obtains a destination-addressed attestation, on which it --- not this
+    layer --- confers whatever meaning and value it prices. \emph{An institutional reader,
+    exploiting funder-freedom:} may fund burns in favor of third-party addresses with no
+    change to this layer. Each reader adds one stratum of meaning to the same operation;
+    the value is conferred in the reader's layer, not here.
+\end{insight}
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Consumption Discipline}
+\label{sec:interface:consumption}
+% ═══════════════════════════════════════════════════════════════════════
+
+\begin{remark}
+    \label{rem:interface:consumption-rule}
+    The interface is read-only in the strict sense: \textbf{no quantity of this layer is a
+    function of any reader's state.} Conversely, a conforming reader's published quantities
+    depend on this layer only through $\attest{}$ and the constants exported above. This is
+    a statement of functional dependence, not of strategic independence: a party occupying
+    roles at several layers may still \emph{coordinate} its choices across them; the
+    formula path is closed here, and the strategy path is priced wherever multi-role
+    occupancy is priced --- not in this layer.
+\end{remark}
+
+\begin{table}[h!]
+    \centering
+    \caption{The four export strata and who may use each. The \emph{surface} row carries
+    the operations and audit quantities of \zcref{sec:interface:monetary-surface}
+    (including \confprice{}); the \emph{interface} row is $\Izero$ --- the only stratum a
+    reader's published formula may touch.}
+    \label{tab:interface:strata}
+    \begin{tabularx}{\textwidth}{@{}l c c c c@{}}
+        \toprule
+        \textbf{Stratum}
+            & \textbf{This layer}
+            & \textbf{Reader's formula}
+            & \textbf{Reader's prose}
+            & \textbf{Downstream reader} \\
+        \midrule
+        {[found]}      & \okmark & \okmark    & \okmark    & \okmark \\
+        {[interface]}  & \okmark & \okmark    & \okmark    & \okmark \\
+        {[surface]}    & \okmark & ---        & cited      & \okmark \\
+        {[core]}       & \okmark & ---        & ---        & ---     \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Clocks}
+\label{sec:interface:clocks}
+% ═══════════════════════════════════════════════════════════════════════
+
+\begin{remark}
+    \label{rem:interface:clocks}
+    This layer's period is the \emph{cycle}: deposit settlement, issuance, the
+    maturity-conversion cycle $\matcycle$, and the maturity leads $\matlead$ and
+    $\matleadcap$ (\zcref{postc:maturity:announcement},
+    \zcref{def:maturity:conversion}) are all cycle-denominated. The attestation $\attest{}$
+    flows continuously; a reader samples it at its own boundary. Settlement events need
+    not coincide with cycle boundaries; the designation is the realization's, published
+    and auditable. The two clocks are
+    decoupled and share no period word. The interaction between a reader's
+    boundary-sampling and within-cycle burn timing is a cross-layer open problem
+    (\zcref{open:attestation:leverage-timing}).
+\end{remark}
+
+%========================================================================================
+% END OF FILE: 01_interface.tex (v1.0.0)
+%========================================================================================
+
+\end{document}

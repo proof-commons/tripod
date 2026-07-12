@@ -1,0 +1,178 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+%========================================================================================
+% FILENAME: 03_operations.tex (v1.0.0)
+%
+% §3 Operations — the five agent operations and the cycle-processing model event.
+% §3.1 Agent Operations: deposit, burn, redemption, class-internal transfer.
+% §3.2 Cycle Processing: cycle burn fraction, cycle receipt processing.
+%
+% Silences: no consumer noun (operator = the specification's admin role, in the algorithm fee step);
+% no realization reference.  Two clocks: cycle only.  \interfaceref on burn (sole producer
+% of A).  First-use index qualifier carried in def:operations:burn.
+%
+% Change history lives in version control (see the versioning policy in main.tex).
+%========================================================================================
+
+\section{Operations}
+\label{sec:attestation:operations}
+
+Agent operations --- deposit, burn, redemption, and class-internal transfer --- mutate the
+receipt state; issuance (the cycle-processing event, \zcref{alg:operations:cycle-processing})
+and maturity conversion (\zcref{sec:attestation:maturity}) are model events executed at cycle boundaries.
+Deposits queue to the cycle boundary; all other agent operations are immediate. The only
+intra-cycle order-sensitive quantity is the attestation boundary state isolated in
+\zcref{prop:invariants:burn-order-residual}.
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Agent Operations}
+\label{sec:operations:agent}
+% ═══════════════════════════════════════════════════════════════════════
+
+\begin{definition}[Deposit]
+    \label{def:operations:deposit}
+    A funder deposits $\delta > 0$ reserve units at time $t$ in favor of holder address
+    $a \in \addrspace$ (\zcref{def:interface:address-space}):
+    $\escrow{} \gets \escrow{} + \delta$, with no other state change. The corresponding
+    receipt is minted at the next cycle boundary (\zcref{alg:operations:cycle-processing}).
+\end{definition}
+
+\begin{definition}[Burn]
+    \label{def:operations:burn}
+    \interfaceref{def:interface:attestation}%
+    The burn operation is $\burnop{x}{a}$: any funder destroys $x > 0$ \liveclass{} units
+    at time $t$ in favor of address $a \in \addrspace$, producing a burn \emph{record}
+    $(a, x)$ and an attestation increment $\delta_A = x\,\ratefloor{t}$, where
+    $\ratefloor{t}$ is the floor at which the burn settles
+    (\zcref{prop:invariants:burn-order-residual}):
+    \begin{align}
+        \attest{a}    &\gets \attest{a} + x\,\ratefloor{t},
+            \label{eq:operations:burn-attestation} \\
+        \livesupply{} &\gets \livesupply{} - x, \qquad
+        \totsupply{}   \gets \totsupply{} - x,
+            \label{eq:operations:burn-supply}
+    \end{align}
+    and $\reservepool{}$ is unchanged. The index $a$ is an opaque address
+    (\zcref{def:interface:address-space}); the binding of addresses to any identity is the
+    importing system's import-time interpretation. The funder need not hold any prior
+    relationship to $a$, and consent is not required, because the operation is monotone in
+    the address's favor --- it only increases $\attest{a}$, which confers no claim
+    \atthislayer{}. The operation is irreversible, and the time-locked class cannot be
+    burned (\zcref{def:model:classes}).
+\end{definition}
+
+\begin{definition}[Redemption]
+    \label{def:operations:redemption}
+    A holder returns $x > 0$ \liveclass{} units at time $t$, receiving $x\,\ratefloor{t}$
+    reserve units:
+    \[
+        \reservepool{} \gets \reservepool{} - x\,\ratefloor{t}, \qquad
+        \livesupply{} \gets \livesupply{} - x, \qquad
+        \totsupply{} \gets \totsupply{} - x.
+    \]
+    The time-locked class cannot be redeemed (\zcref{def:model:classes}).
+\end{definition}
+
+\begin{definition}[Settlement-Pinned Valuation]
+    \label{def:operations:settlement-pinned-valuation}
+    A burn record of amount $x$ is credited at the floor committed by the most recent
+    \emph{preceding} settlement event: $\delta_A = x\,\ratefloor{c}$, where $c$ is that
+    event. Every record assigned to one settlement interval uses the same committed floor,
+    so a burn does not appreciate internally while being valued, and credit within an
+    interval is order-free (\zcref{prop:invariants:burn-order-residual}).
+
+    Because the floor never decreases (\zcref{thm:invariants:floor-non-decrease}), the
+    committed floor never exceeds the floor prevailing when the burn settles; the valuation
+    is therefore conservative in the sense of
+    \zcref{prop:interface:conservative-valuation}. A continuous integral over a burn is an
+    upper envelope obtained from arbitrarily fine settlement interleaving --- it is the
+    supremum used in \zcref{prop:interface:bootstrap-capacity}, not the valuation of any
+    single burn.
+\end{definition}
+
+\begin{definition}[Transfer]
+    \label{def:operations:transfer}
+    A \emph{transfer} moves receipt between holders within a single class: both the live
+    class and the time-locked class are transferable. A transfer changes no
+    $\reservepool{}$, no $\totsupply{}$, no $\ratefloor{}$, and no $\attest{a}$.
+\end{definition}
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Cycle Processing}
+\label{sec:operations:cycle}
+% ═══════════════════════════════════════════════════════════════════════
+
+\begin{definition}[Cycle Burn Fraction]
+    \label{def:operations:cycle-burn-fraction}
+    For cycle $k$, $\cycleburnfrac{k} = X_{\mathrm{burn}}^{(k)}/\totsupply{}^{(k)}$, where
+    $X_{\mathrm{burn}}^{(k)}$ is the total live-class supply burned during cycle $k$. It is
+    auditable from the public record.
+\end{definition}
+
+\begin{algorithm}
+    \caption{Cycle Receipt Processing.}
+    \label{alg:operations:cycle-processing}
+    \begin{algorithmic}[1]
+        \State \textbf{Trigger:} cycle-$(k\!+\!1)$ boundary reached.
+        \Statex
+        \State \textit{A.0 --- Record pre-issuance floor}
+        \State \quad $\ratefloor{}^{-} \gets \reservepool{}/\totsupply{}$
+        \Statex
+        \State \textit{A.1 --- Process escrow}
+        \State \quad $\Delta\reservepool{} \gets \escrow{}$;\quad
+               $\escrow{} \gets 0$
+        \Statex
+        \State \textit{A.2 --- Mint and distribute}
+        \State \quad $\Delta\totsupply{} \gets \Delta\reservepool{}/\ratefloor{}^{-}$
+        \If{$k + 1 < \matcycle$}
+            \Comment{Bootstrapping: split by $\livesplit$}
+            \State for each depositor with deposit $\delta_a$ in favor of address $a$:
+            \State \quad $\mathrm{L}_a \mathrel{+}=
+                   (1-\feerate)\,(\delta_a/\Delta\reservepool{})\,
+                   \livesplit\,\Delta\totsupply{}$
+            \State \quad $\mathrm{T}_a \mathrel{+}=
+                   (1-\feerate)\,(\delta_a/\Delta\reservepool{})\,
+                   (1-\livesplit)\,\Delta\totsupply{}$
+            \State operator $\mathrm{L}_{\opidx} \mathrel{+}=
+                   \feerate\,\livesplit\,\Delta\totsupply{}$
+            \State operator $\mathrm{T}_{\opidx} \mathrel{+}=
+                   \feerate\,(1-\livesplit)\,\Delta\totsupply{}$
+        \Else
+            \Comment{Normal phase: all live-class}
+            \State for each depositor with deposit $\delta_a$ in favor of address $a$:
+                   $\mathrm{L}_a \mathrel{+}=
+                   (1-\feerate)\,(\delta_a/\Delta\reservepool{})\,\Delta\totsupply{}$
+            \State operator $\mathrm{L}_{\opidx} \mathrel{+}=
+                   \feerate\,\Delta\totsupply{}$
+        \EndIf
+        \Statex
+        \State \textit{A.3 --- Update state}
+        \State \quad $\reservepool{} \gets \reservepool{} + \Delta\reservepool{}$
+        \If{$k + 1 < \matcycle$}
+            \State \quad $\livesupply{} \gets \livesupply{}
+                   + \livesplit\,\Delta\totsupply{}$;\quad
+                   $\tlocksupply{} \gets \tlocksupply{}
+                   + (1-\livesplit)\,\Delta\totsupply{}$
+        \Else
+            \State \quad $\livesupply{} \gets \livesupply{} + \Delta\totsupply{}$
+        \EndIf
+        \Statex
+        \State \textit{A.3\textonehalf\ --- Maturity conversion (once, at $k\!+\!1 = \matcycle$)}
+        \If{$k + 1 = \matcycle$}
+            \Comment{\zcref{def:maturity:conversion}}
+            \State \quad $\livesupply{} \gets \livesupply{} + \tlocksupply{}$;\quad
+                   $\tlocksupply{} \gets 0$
+        \EndIf
+        \Statex
+        \State \textit{A.4 --- Publish}
+        \State \quad $(\reservepool{},\ \livesupply{},\ \tlocksupply{},\
+               \ratefloor{},\ \Delta\reservepool{})$
+    \end{algorithmic}
+\end{algorithm}
+
+%========================================================================================
+% END OF FILE: 03_operations.tex (v1.0.0)
+%========================================================================================
+
+\end{document}

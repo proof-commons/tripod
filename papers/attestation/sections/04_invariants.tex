@@ -1,0 +1,101 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+%========================================================================================
+% FILENAME: 04_invariants.tex (v1.0.0)
+%
+% §4 Floor Invariants — burn strictly raises phi; redemption, issuance, maturity
+% conversion preserve it; the floor is globally non-decreasing.  The single
+% order-sensitive cycle input is isolated in prop:invariants:burn-order-residual.
+%
+% Proof budget: one body proof (floor-non-decrease, an assembly); the four supporting
+% props carry \proofsketch margins only.  Silences applied; cycle only.  First-use index
+% qualifier carried in burn-order-residual.
+%
+% Change history lives in version control (see the versioning policy in main.tex).
+%========================================================================================
+
+\section{Floor Invariants}
+\label{sec:attestation:invariants}
+
+Burns strictly raise the floor; redemption, issuance, and maturity conversion preserve it
+exactly; the floor is therefore globally non-decreasing
+(\zcref{thm:invariants:floor-non-decrease}). Among all cycle inputs, only the attestation
+boundary state is order-sensitive within a cycle, and that dependence is resolved in
+\zcref{prop:invariants:burn-order-residual}.
+
+\begin{proposition}[Burn Increases Floor]
+    \label{prop:invariants:burn-increases-floor}
+    \proofsketch{$\reservepool{}$ unchanged; the denominator decreases.}%
+    After a burn of $x > 0$ \liveclass{} units (\zcref{def:operations:burn}),
+    $\ratefloor{}^{+} = \reservepool{}/(\totsupply{} - x) > \ratefloor{}$.
+\end{proposition}
+
+\begin{proposition}[Burn-Order Residual]
+    \label{prop:invariants:burn-order-residual}
+    Among all cycle inputs, only $\set{\attest{a}}$ depends on the intra-cycle sequence of
+    operations, via the strictly increasing floor
+    (\zcref{prop:invariants:burn-increases-floor}). The index $a$ is an opaque address
+    (\zcref{def:interface:address-space}); the binding of addresses to any identity is the
+    importing system's import-time interpretation. Two reductions remove the dependence:
+    \begin{enumerate}[nosep]
+        \item \textbf{Boundary-state provision (mechanism-agnostic).} The operator commits
+            $\set{\attest{a}^{(k)}}$ as part of the cycle-$k$ settlement, auditable against
+            floor non-decrease (\zcref{thm:invariants:floor-non-decrease}) and the supply
+            identity (\zcref{def:model:supply}); the intra-cycle sequencing is out of this
+            layer's scope. Continuous immediacy is retained.
+        \item \textbf{Settlement-pinned clearing (order-free).} Every burn settles at the
+            floor committed by the most recent settlement event
+            (\zcref{postc:interface:monotonicity}), making $\attest{a}$ a commutative
+            counter between events. With settlement events at cycle boundaries this is
+            per-cycle batch clearing at a single frozen $\ratefloor{}^{(k)}$, and the
+            within-cycle timing bound $1/(1-\cycleburnfrac{k})$
+            (\zcref{sec:verification:timing}) becomes exact per batch; a sparser event
+            family widens the lag and is conservative under
+            \zcref{prop:interface:conservative-valuation}.
+    \end{enumerate}
+    Under either reduction every cycle quantity is a deterministic function of the boundary
+    state.
+\end{proposition}
+
+\begin{proposition}[Redemption Preserves Floor]
+    \label{prop:invariants:redemption-preserves-floor}
+    \proofsketch{$(\reservepool{}-x\ratefloor{})/(\totsupply{}-x)=\ratefloor{}$.}%
+    After redemption of $x > 0$ \liveclass{} units (\zcref{def:operations:redemption}),
+    $\ratefloor{}^{+} = \ratefloor{}$.
+\end{proposition}
+
+\begin{proposition}[Issuance Preserves Floor]
+    \label{prop:invariants:issuance-preserves-floor}
+    \proofsketch{$\Delta\totsupply{} = \Delta\reservepool{}/\ratefloor{}^{-}$, so the ratio
+    is unchanged; the split is internal to $\Delta\totsupply{}$ and does not enter it.}%
+    After cycle minting with escrow $\Delta\reservepool{}$
+    (\zcref{alg:operations:cycle-processing}),
+    $\ratefloor{}^{+} = \ratefloor{}^{-}$.
+\end{proposition}
+
+\begin{proposition}[Maturity Conversion Preserves Floor]
+    \label{prop:invariants:maturity-preserves-floor}
+    \proofsketch{Maturity conversion relabels within $\totsupply{}$ and leaves
+    $\reservepool{}$ untouched (\zcref{def:maturity:conversion}).}%
+    After maturity conversion, $\ratefloor{}^{+} = \ratefloor{}$.
+\end{proposition}
+
+\begin{theorem}[Floor Non-Decrease]
+    \label{thm:invariants:floor-non-decrease}
+    $\ratefloor{}^{(0)} \leq \ratefloor{}^{(1)} \leq \cdots$, and within each cycle
+    $\ratefloor{t} \geq \ratefloor{}^{(k)}$ for all $t$ in cycle $k$.
+\end{theorem}
+\begin{proof}
+    Within a cycle no minting occurs: burns strictly increase $\ratefloor{}$
+    (\zcref{prop:invariants:burn-increases-floor}) and redemptions preserve it
+    (\zcref{prop:invariants:redemption-preserves-floor}). Across boundaries, issuance
+    preserves it (\zcref{prop:invariants:issuance-preserves-floor}) and maturity conversion
+    preserves it (\zcref{prop:invariants:maturity-preserves-floor}).
+\end{proof}
+
+%========================================================================================
+% END OF FILE: 04_invariants.tex (v1.0.0)
+%========================================================================================
+
+\end{document}

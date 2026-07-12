@@ -1,0 +1,337 @@
+\listfiles
+\documentclass{article}
+
+%========================================================================================
+% FILENAME: main.tex (v1.0.0)
+%
+% ATTESTATION — Master Document
+%
+% The specification of the attestation contract: a full-reserve, two-class, conserved,
+% burnable RECEIPT, exporting one computational interface I0 (the attestation map
+% A : 𝔸 → ℝ≥0 plus six specified properties and the attestation cost) and a monetary
+% surface.  This document cites nothing outside itself: it forward-references no
+% document, names no consumer concept, and names no realization mechanism.  What others
+% may build on the exported record is their act, named nowhere here.
+%
+% VERSIONING:
+%   v1.0.0 is a released specification.  Editions are immutable once published: a defect
+%   fix or clarification bumps the version, and the anchor discipline holds — a
+%   withdrawn claim removes its anchor rather than redefining it, so a consumer citing
+%   it breaks instead of silently importing a changed meaning.  Change history lives in
+%   version control, not in this file.
+%
+% FILE SET (10 section files + 2 appendices + 1 macro + 1 bib):
+%
+%   macros_attestation.tex ........ Root macros (v1.0.0); four export strata
+%                                   [found]/[interface]/[surface]/[core]; the ONLY
+%                                   macro input (this document loads no sibling).
+%   references.bib ................ Bibliography (minimal: douceur2002sybil).
+%
+%   sections/00_title.tex ......... Title, abstract, motto (owns \setversion{v1.0.0}).
+%   sections/01_interface.tex ..... §1  The Interface — I0, the monetary surface,
+%                                        consumption discipline, clocks.
+%   sections/02_model.tex ......... §2  Model — reserve asset/pool, the conserved
+%                                        receipt in two classes, floor, constants,
+%                                        phases, genesis, state.
+%   sections/03_operations.tex .... §3  Operations — deposit, burn, redemption,
+%                                        transfer; cycle processing.
+%   sections/04_invariants.tex .... §4  Floor Invariants — burn raises phi; issuance,
+%                                        redemption, maturity conversion preserve it;
+%                                        global non-decrease; burn-order residual.
+%   sections/05_costliness.tex .... §5  Costliness — conservation identity,
+%                                        instantaneous costliness (proof of SP4),
+%                                        cost decomposition, addresses and splitting.
+%   sections/06_containment.tex ... §6  Containment — bootstrap capacity (proof of
+%                                        SP5), time-locked standing bound, pre-maturity
+%                                        deposit capacity, seigniorage suppression,
+%                                        attestation cost.
+%   sections/07_discipline.tex .... §7  Market Discipline — three feedback forces,
+%                                        fee-channel anti-correlation.
+%   sections/08_seigniorage.tex ... §8  Seigniorage — bootstrapping bound; no finite
+%                                        lifetime envelope.
+%   sections/09_maturity.tex ...... §9  Maturity Conversion — announcement, conversion,
+%                                        confidence signal, burn distribution.
+%   sections/10_limitations.tex ... §10 Limitations and Open Problems.
+%   sections/A1_verification.tex .. App A  Verification Suite.
+%   sections/B1_symbols.tex ....... App B  Symbol Index.
+%
+%========================================================================================
+
+% ──────────────────────────────────────────────────────────────────────
+% PREAMBLE: PACKAGES
+% ──────────────────────────────────────────────────────────────────────
+
+% --- Fonts and Math ---
+\usepackage{fontspec}
+\usepackage{mathtools}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{stmaryrd}
+\usepackage{unicode-math}
+\usepackage{upgreek}
+
+% --- Layout ---
+\usepackage{geometry}
+\usepackage{microtype}
+\usepackage{parskip}
+\usepackage{titlesec}
+\usepackage{marginnote}
+\usepackage{marginfix}
+
+% --- Tables and Figures ---
+\usepackage{graphicx}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{siunitx}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{array}
+
+% --- Document Structure ---
+\usepackage{subfiles}
+\usepackage{shellesc}
+
+% --- Annotations (development) ---
+\usepackage{todonotes}
+\usepackage{xcolor}
+
+% --- Algorithms (the cycle-processing algorithm needs these) ---
+\usepackage{algorithm}
+\usepackage{algorithmicx}
+\usepackage{algpseudocode}
+
+\usepackage[english]{babel}
+
+% --- Bibliography ---
+\usepackage{csquotes}
+\usepackage[style=verbose, backend=biber]{biblatex}
+\addbibresource{references.bib}
+
+% --- Hyperlinks (must be loaded late) ---
+\usepackage{hyperref}
+% zref-clever is the ONE reference system: it installs a kernel `label' hook, so
+% every plain \label is mirrored into the zref store (counter/type into the .aux;
+% zref-titleref additionally records each label's display title, e.g.
+% "Attestation").  Internal references use \zcref; an importing layer imports the
+% store through zref-xr so A- cross-references resolve to "Definition 3.2 (Burn)"
+% rather than a bare number.  This document stages NO xref bridge: it cites nothing
+% outside itself and imports no sibling .aux.
+\usepackage{zref-clever}
+\usepackage{zref-titleref}
+\usepackage{hyperxmp}
+
+% ──────────────────────────────────────────────────────────────────────
+% PREAMBLE: HYPERREF CONFIGURATION
+% ──────────────────────────────────────────────────────────────────────
+
+% Git-derived provenance (ADR-014): the build system generates
+% stamps.tex in the build directory from committed Git state, defining
+% \AttestationDate, \AttestationTimestamp, \AttestationDocumentUUID, and
+% \AttestationInstanceUUID. Loading it here pins the visible date and all
+% XMP dates/identities to the source revision, not the wall clock, so
+% identical inputs render byte-identical PDFs.
+\input{stamps.tex}
+
+% Editorial version authority for XMP metadata (pdfversionid). This is a
+% human-set marker, distinct from the Git-derived document/instance ids.
+\newcommand{\pdfmetaversion}{1.0.0}
+
+\hypersetup{
+    bookmarksnumbered=true,
+    bookmarksopen=true,
+    bookmarksopenlevel=1,
+    breaklinks=true,
+    citecolor=blue,
+    colorlinks=true,
+    filecolor=magenta,
+    linkcolor=red,
+    linktoc=all,
+    urlcolor=cyan,
+    pdfborder={0 0 0},
+    pdftitle={Attestation},
+    pdfauthor={Proof Commons},
+    pdfsubject={The attestation contract: a full-reserve, two-class, conserved,
+                burnable receipt whose sole export is the attestation map.},
+    pdfkeywords={Full Reserve, Two-Class Receipt,
+                  Conservation Identity, Attestation, Time-Locked Class, Maturity
+                  Conversion, Seigniorage, Floor Invariants, Containment, Tripod,
+                  Market Discipline},
+    pdfdate={\AttestationDate},
+    % Git-derived provenance pins (see stamps.tex): the visible date and
+    % all XMP dates come from committed history, and the two XMP
+    % identities are digest/tree derivations, so identical inputs render
+    % byte-identical PDFs and a source change moves the ids deterministically.
+    % DocumentUUID covers the exact publication inputs; InstanceUUID is
+    % the paper-subtree Git tree prefix.
+    pdfcreationdate={\AttestationTimestamp},
+    pdfmoddate={\AttestationTimestamp},
+    pdfmetadate={\AttestationTimestamp},
+    pdfdocumentid={uuid:\AttestationDocumentUUID},
+    pdfinstanceid={uuid:\AttestationInstanceUUID},
+    % License: the rights field below carries a public-domain dedication,
+    % LICENSE-DOCS at the repository root holds its full legal code, and the
+    % license-URL field names the canonical deed so indexers can identify the
+    % terms without parsing prose.
+    pdfsource=\jobname.tex,
+    pdfcontacturl={https://github.com/proof-commons},
+    pdfcopyright={Dedicated to the public domain by Proof Commons under CC0 1.0 Universal. No rights reserved.},
+    pdflicenseurl={https://creativecommons.org/publicdomain/zero/1.0/},
+    pdfmetalang={en-US},
+    pdfpubstatus={VoR},
+    pdfpubtype={whitepaper},
+    pdfrendition={default},
+    pdfversionid={\pdfmetaversion},
+    pdfcreator={LaTeX with hyperref and xetex},
+    pdfdisplaydoctitle=true,
+    pdffitwindow=true,
+    pdfpagemode=UseOutlines,
+    pdfproducer={XeLaTeX},
+    pdfstartpage=1,
+    pdfstartview=FitH,
+    unicode=true,
+}
+
+% ──────────────────────────────────────────────────────────────────────
+% PREAMBLE: FONTS AND GEOMETRY
+% ──────────────────────────────────────────────────────────────────────
+
+\setmainfont{TeX Gyre Termes}
+\setsansfont{TeX Gyre Heros}
+\setmonofont{TeX Gyre Cursor}
+\setmathfont{STIX Two Math}
+\geometry{
+    a4paper,
+    top=1in,
+    bottom=1in,
+    inner=0.55in,
+    outer=2.2in,
+    marginparwidth=1.5in,
+    marginparsep=20pt,
+}
+\setlength{\marginparpush}{12pt}
+
+% ──────────────────────────────────────────────────────────────────────
+% PREAMBLE: LABEL SCHEMA  (compact; the full schema lives in the macro header)
+%
+%   SCHEMA:  <type> : <section> : <name>
+%
+%   Type prefixes:  sec subsec def thm cor lem prop rem ins post alg tbl eq
+%                   app open invest ver
+%                   (two-segment by construction: sec:<section>, app:<name>,
+%                   and the front-matter singletons abst:attestation:abstract, motto:attestation:motto)
+%   Section identifiers (the twelve, exactly — plus walkthrough, the birth
+%   home of the ver:* register; matching the macro file):
+%       interface model operations invariants costliness containment
+%       discipline seigniorage maturity limitations verification symbols
+%       walkthrough
+%
+%   CANONICAL HANDLES: authoritative list lives in macros_attestation.tex (§LABEL SCHEMA).
+%   Do not duplicate here — the compiled .aux is the machine-readable source of truth.
+% ──────────────────────────────────────────────────────────────────────
+
+% ──────────────────────────────────────────────────────────────────────
+% PREAMBLE: MACROS
+%
+% macros_attestation.tex is pure expl3 source and contains no \ExplSyntaxOn/Off of its own;
+% main.tex owns the toggle and wraps the single macro input.  Non-expl3 config
+% (\zcLanguageSetup) stays OUTSIDE the wrap, in normal catcodes.  No xref bridge: this
+% document is the root and imports no sibling .aux.
+% ────────────────────────────────────────────────
+
+\ExplSyntaxOn
+  \input{macros_attestation.tex}     % the ONLY macro input (macros v1.0.0)
+\ExplSyntaxOff
+
+% zref-clever type names (key-val; OUTSIDE the expl3 wrap).  The paper's house
+% style capitalises reference names in every position, so both case forms carry
+% the same word.  The theorem-family types are forced per environment in
+% macros_attestation.tex (§A.4); the counter-born types resolve by counter name.
+\zcLanguageSetup{english}{ type = theorem ,        Name-sg = Theorem ,       name-sg = Theorem ,       Name-pl = Theorems ,       name-pl = Theorems }
+\zcLanguageSetup{english}{ type = corollary ,      Name-sg = Corollary ,     name-sg = Corollary ,     Name-pl = Corollaries ,    name-pl = Corollaries }
+\zcLanguageSetup{english}{ type = lemma ,          Name-sg = Lemma ,         name-sg = Lemma ,         Name-pl = Lemmas ,         name-pl = Lemmas }
+\zcLanguageSetup{english}{ type = proposition ,    Name-sg = Proposition ,   name-sg = Proposition ,   Name-pl = Propositions ,   name-pl = Propositions }
+\zcLanguageSetup{english}{ type = conjecture ,     Name-sg = Conjecture ,    name-sg = Conjecture ,    Name-pl = Conjectures ,    name-pl = Conjectures }
+\zcLanguageSetup{english}{ type = definition ,     Name-sg = Definition ,    name-sg = Definition ,    Name-pl = Definitions ,    name-pl = Definitions }
+\zcLanguageSetup{english}{ type = axiom ,          Name-sg = Axiom ,         name-sg = Axiom ,         Name-pl = Axioms ,         name-pl = Axioms }
+\zcLanguageSetup{english}{ type = postulate ,      Name-sg = Postulate ,     name-sg = Postulate ,     Name-pl = Postulates ,     name-pl = Postulates }
+\zcLanguageSetup{english}{ type = protocol ,       Name-sg = Protocol ,      name-sg = Protocol ,      Name-pl = Protocols ,      name-pl = Protocols }
+\zcLanguageSetup{english}{ type = insight ,        Name-sg = Insight ,       name-sg = Insight ,       Name-pl = Insights ,       name-pl = Insights }
+\zcLanguageSetup{english}{ type = remark ,         Name-sg = Remark ,        name-sg = Remark ,        Name-pl = Remarks ,        name-pl = Remarks }
+\zcLanguageSetup{english}{ type = property ,       Name-sg = Property ,      name-sg = Property ,      Name-pl = Properties ,     name-pl = Properties }
+\zcLanguageSetup{english}{ type = section ,        Name-sg = Section ,       name-sg = Section ,       Name-pl = Sections ,       name-pl = Sections }
+\zcLanguageSetup{english}{ type = subsection ,     Name-sg = Subsection ,    name-sg = Subsection ,    Name-pl = Subsections ,    name-pl = Subsections }
+\zcLanguageSetup{english}{ type = subsubsection ,  Name-sg = Subsubsection , name-sg = Subsubsection , Name-pl = Subsubsections , name-pl = Subsubsections }
+\zcLanguageSetup{english}{ type = paragraph ,      Name-sg = Paragraph ,     name-sg = Paragraph ,     Name-pl = Paragraphs ,     name-pl = Paragraphs }
+\zcLanguageSetup{english}{ type = equation ,       Name-sg = Equation ,      name-sg = Equation ,      Name-pl = Equations ,      name-pl = Equations }
+\zcLanguageSetup{english}{ type = table ,          Name-sg = Table ,         name-sg = Table ,         Name-pl = Tables ,         name-pl = Tables }
+\zcLanguageSetup{english}{ type = figure ,         Name-sg = Figure ,        name-sg = Figure ,        Name-pl = Figures ,        name-pl = Figures }
+\zcLanguageSetup{english}{ type = algorithm ,      Name-sg = Algorithm ,     name-sg = Algorithm ,     Name-pl = Algorithms ,     name-pl = Algorithms }
+\zcLanguageSetup{english}{ type = appendix ,       Name-sg = Appendix ,      name-sg = Appendix ,      Name-pl = Appendices ,     name-pl = Appendices }
+\zcLanguageSetup{english}{ type = openproblem ,    Name-sg = Open Problem ,  name-sg = Open Problem ,  Name-pl = Open Problems ,  name-pl = Open Problems }
+\zcLanguageSetup{english}{ type = opensubproblem , Name-sg = Open Sub-problem , name-sg = Open Sub-problem , Name-pl = Open Sub-problems , name-pl = Open Sub-problems }
+\zcLanguageSetup{english}{ type = investigation ,  Name-sg = Proposed Investigation , name-sg = Proposed Investigation , Name-pl = Proposed Investigations , name-pl = Proposed Investigations }
+
+% NO \externaldocument / attest_xref staging: this document cites upward never and references
+% nothing downward.  An importing document loads THIS document's .aux under prefix A-.
+
+% ══════════════════════════════════════════════════════════════════════
+% DOCUMENT BODY
+% ══════════════════════════════════════════════════════════════════════
+
+\begin{document}
+
+% ──────────────────────────────────────────────────────────────────────
+% FRONT MATTER  (00_title.tex owns \setversion{v1.0.0}; \docversion is live below)
+% ──────────────────────────────────────────────────────────────────────
+\subfile{sections/00_title.tex}
+
+\clearpage
+\hypersetup{linkcolor=black}
+\tableofcontents
+\hypersetup{linkcolor=red}
+
+% ──────────────────────────────────────────────────────────────────────
+% MAIN SECTIONS (1–10)
+% ──────────────────────────────────────────────────────────────────────
+\clearpage
+\subfile{sections/01_interface.tex}
+\clearpage
+\subfile{sections/02_model.tex}
+\clearpage
+\subfile{sections/03_operations.tex}
+\clearpage
+\subfile{sections/04_invariants.tex}
+\clearpage
+\subfile{sections/05_costliness.tex}
+\clearpage
+\subfile{sections/06_containment.tex}
+\clearpage
+\subfile{sections/07_discipline.tex}
+\clearpage
+\subfile{sections/08_seigniorage.tex}
+\clearpage
+\subfile{sections/09_maturity.tex}
+\clearpage
+\subfile{sections/10_limitations.tex}
+
+% ──────────────────────────────────────────────────────────────────────
+% APPENDICES
+% ──────────────────────────────────────────────────────────────────────
+\clearpage
+\appendix
+\subfile{sections/A1_verification.tex}
+\clearpage
+\subfile{sections/B1_symbols.tex}
+
+% ──────────────────────────────────────────────────────────────────────
+% BACK MATTER
+% ──────────────────────────────────────────────────────────────────────
+\clearpage
+\printbibliography
+
+%========================================================================================
+% END OF FILE: main.tex (v1.0.0)
+%========================================================================================
+
+\end{document}

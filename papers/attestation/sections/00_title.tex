@@ -1,0 +1,67 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+%========================================================================================
+% FILENAME: 00_title.tex (v1.0.0)
+%
+% Front matter for the Attestation specification: title, abstract, motto.
+% Owns \setversion{v1.0.0}; \docversion is live from here onward (author block + ToC).
+% Change history lives in version control (see the versioning policy in main.tex).
+%========================================================================================
+
+\setversion{v1.0.0}
+
+\title{Attestation}
+\author{Proof Commons \\ \docversion}
+\date{\AttestationDate}
+
+\maketitle
+
+\begin{abstract}
+    \label{abst:attestation:abstract}
+
+    The attestation contract is a monetary machine built around a single conserved
+    \emph{reserve receipt} --- a redeemable claim on a full reserve pool, held in two
+    redemption classes, \liveclass{} and \tlockclass{}. A \liveclass{} unit is redeemable
+    at the redemption-rate floor $\ratefloor{} = \reservepool{}/\totsupply{}$, a floor that
+    only ever rises (\zcref{thm:invariants:floor-non-decrease}); a \tlockclass{} unit is
+    transferable but structurally non-burnable and non-redeemable until a one-time,
+    irrevocably announced maturity conversion. Burning a \liveclass{} unit destroys
+    redeemable value irrecoverably and leaves a public \emph{attestation} that
+    \attestrecords{the destroyed reserve-value at the settlement floor} --- an immutable
+    past record, non-transferable and non-redeemable, never undone. Its reserve valuation
+    is pinned to the settlement preceding it in the selected canonical chronology and is
+    not raised by later settlements; a chain reorganization is a change of chronology that
+    may reproject that valuation upward or downward. The layer exports exactly one
+    computational object --- the attestation map
+    $\attest{} : \addrspace \to \R_{\geq 0}$ --- together with six \emph{specified
+    properties} (non-negativity; settlement-pinned monotonicity; public auditability as
+    authenticated destruction; instantaneous costliness; bootstrap capacity bound
+    $\attestcap = \genesisreserve \ln(1/(1-\livesplit))$; conservative valuation) and one
+    constant, the net live share $\netliveshare$. The index of $\attest{}$ is an
+    \emph{opaque address}: this layer binds no address to any identity. Everything else ---
+    the floor invariants, the conservation identity and its $\livesplit$-independence,
+    containment, market discipline, and bounded operator seigniorage --- is internal
+    structure that makes the specified properties hold.
+
+    Two boundaries are stated rather than blurred. The attestation confers no claim
+    \atthislayer{}: the destruction is real and irrecoverable here, while any usefulness is
+    conferred elsewhere; this layer \emph{declines to price} the attestation rather than
+    pricing it favorably, and whether a reader confers value on it is that reader's act,
+    priced in that reader's layer. The specification is likewise count-free by
+    construction --- no quantity here denominates per-action, and the binding of addresses
+    to identities, like every action-side ratio, belongs to a reader. Separately, and at
+    the boundary below rather than above, how --- or whether --- these specified properties
+    are discharged in any particular deployment lies outside this layer's scope.
+\end{abstract}
+
+\begin{motto}
+    \label{motto:attestation:motto}
+    Destroy the receipt, keep the record --- one floor, two classes, no counts.
+\end{motto}
+
+%========================================================================================
+% END OF FILE: 00_title.tex (v1.0.0)
+%========================================================================================
+
+\end{document}

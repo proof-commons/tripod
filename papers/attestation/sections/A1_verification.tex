@@ -1,0 +1,242 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+%========================================================================================
+% FILENAME: A1_verification.tex (v1.0.0)
+%
+% App A Verification Suite.  Constants; §A.1 walkthrough (cycle 1, cycle-2 boundary,
+% cycle 2 events, invariant checks); §A.2 timing; §A.3 recycling; §A.4 interface
+% conformance (one row per specified property, NO realization column); bounds summary.
+%
+% Proof budget: ZERO.  Numbers verbatim from the original walkthrough, re-vocabularied.
+% First-use index qualifier at first \attest{\mathrm{Bob}}.  Silences applied; cycle only.
+%
+% Change history lives in version control (see the versioning policy in main.tex).
+%========================================================================================
+
+\section{Verification Suite}
+\label{app:attestation:verification}
+
+The suite exercises every mechanism on one fully specified pool, deriving all quantities
+from \zcref{sec:attestation:model,sec:attestation:operations,sec:attestation:invariants,sec:attestation:costliness,sec:attestation:containment,sec:attestation:seigniorage,sec:attestation:maturity}.
+All monetary quantities are in reserve units; the constants are illustrative, not locked.
+\zcref{sec:verification:interface-conformance} maps the walkthrough onto the six exported
+specified properties.
+
+\begin{table}[h!]
+    \centering
+    \caption{Published constants (illustrative; derived constants recomputed from the
+    primaries).}
+    \label{tab:verification:constants}
+    \begin{tabular}{@{}l l l@{}}
+        \toprule
+        \textbf{Constant} & \textbf{Value} & \textbf{Source} \\
+        \midrule
+        $\genesisreserve$ & $1000$ reserve units & \zcref{postc:model:genesis} \\
+        $\livesplit$      & $0.50$               & \zcref{def:model:fee-and-split} \\
+        $\feerate$        & $0.50$               & \zcref{def:model:fee-and-split} \\
+        $\matlead$        & $10$ cycles          & \zcref{postc:maturity:announcement} \\
+        $\matleadcap$     & $1000$ cycles        & \zcref{postc:maturity:announcement} \\
+        $\genesisfloorfactor$ & $2.000$ (derived) & \zcref{cor:containment:pre-deposit-floor-factor} \\
+        $\attestcap$      & $\approx 693.1$ (derived) & \zcref{prop:interface:bootstrap-capacity} \\
+        $\netliveshare$  & $0.25$ (derived)    & \zcref{def:interface:net-live-share} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Walkthrough}
+\label{sec:verification:walkthrough}
+% ═══════════════════════════════════════════════════════════════════════
+
+Genesis: $\reservepool{0} = 1000$, $\livesupply{0} = \livesplit\genesisreserve = 500$,
+$\tlocksupply{0} = 500$, $\totsupply{0} = 1000$, $\ratefloor{0} = 1.000$. Holder addresses
+Alice, Bob, Carol, and the operator. Two active cycles exercise deposit, burn, redemption,
+split minting, and maturity announcement. At cycle~2 the operator announces $\matcycle=12$,
+so $\Delta k=10$; no monetary operation occurs before the cycle-$12$ boundary, where
+maturity conversion executes.
+
+\paragraph{Cycle 1 events (audit sequence).}
+\phantomsection\label{verif:walkthrough:cycle-one}
+\begin{center}
+\begin{tabular}{@{}l l c c c c@{}}
+    \toprule
+    \textbf{Event} & \textbf{Address}
+        & $\reservepool{}$ & $\livesupply{}$ & $\totsupply{}$ & $\ratefloor{}$ \\
+    \midrule
+    Deposit 200 & Alice & 1000   & 500 & 1000 & 1.000 \\
+    Burn 50     & Bob   & 1000   & 450 & 950  & 1.0526 \\
+    Redeem 30   & Carol & 968.42 & 420 & 920  & 1.0526 \\
+    \bottomrule
+\end{tabular}
+\end{center}
+Alice's deposit queues to escrow ($\escrow{} = 200$). Bob's burn at $\ratefloor{} = 1.000$
+sets $\attest{\mathrm{Bob}} = 50.00$ --- the index is an opaque address
+(\zcref{def:interface:address-space}), the binding to any identity being the importing
+layer's import-time interpretation --- and raises $\ratefloor{}$ to $1000/950 = 1.0526$.
+Carol redeems 30 at $1.0526$, receiving $31.58$ reserve units, leaving $\reservepool{} =
+968.42$ and $\ratefloor{} = 968.42/920 = 1.0526$ (preserved). An attempted time-locked-class
+burn is rejected: the time-locked class is structurally non-burnable
+(\zcref{def:model:classes}).
+
+\paragraph{Cycle 2 boundary.}
+\phantomsection\label{verif:walkthrough:boundary}
+$\ratefloor{}^{-} = 968.42/920 = 1.0526$. Process escrow $\Delta\reservepool{} = 200$. Mint
+$\Delta\totsupply{} = 200/1.0526 = 190.00$; split $\Delta\livesupply{} = 95.00$,
+$\Delta\tlocksupply{} = 95.00$. Alice (depositor, $1-\feerate = 0.5$) receives $47.50$
+live-class and $47.50$ time-locked-class; the operator ($\feerate$) receives $47.50$ and
+$47.50$. Post: $\reservepool{} = 1168.42$, $\livesupply{} = 515.00$, $\tlocksupply{} =
+595.00$, $\totsupply{} = 1110.00$, $\ratefloor{} = 1.0526$ (preserved,
+\zcref{alg:operations:cycle-processing}).
+
+\paragraph{Cycle 2 events.}
+The operator burns $47.50$ live-class at $1.0526$: $\attest{\opidx} = 50.00$,
+$\livesupply{} = 467.50$, $\totsupply{} = 1062.50$, $\ratefloor{} = 1.0997$. Alice burns $20$
+at $1.0997$: $\attest{\mathrm{Alice}} = 21.99$, $\livesupply{} = 447.50$, $\totsupply{} =
+1042.50$, $\ratefloor{} = 1.1208$. At cycle~2 the operator announces
+$\matcycle=12=2+10$. The lead satisfies $\matlead \leq 10 \leq \matleadcap$
+(\zcref{postc:maturity:announcement}). With no intervening monetary operation, the
+cycle-$12$ boundary executes maturity conversion (\zcref{def:maturity:conversion}):
+$\livesupply{} \gets 447.50 + 595.00 = 1042.50$, $\tlocksupply{} \gets 0$,
+$\totsupply{}$ unchanged, and $\ratefloor{} = 1.1208$ (preserved).
+
+\paragraph{Invariant checks.}
+\phantomsection\label{verif:walkthrough:invariant-checks}
+\begin{center}
+\begin{tabular}{@{}l c l@{}}
+    \toprule
+    \textbf{Invariant} & \textbf{Observed} & \textbf{Status} \\
+    \midrule
+    $\ratefloor{}$ non-decreasing & $1.000 \leq 1.0526 \leq 1.0997 \leq 1.1208$ & \okmark \\
+    $\ratefloor{} \leq \reservepool{}/\tlocksupply{}$ (pre-maturity) & $1.1208 \leq 1168.42/595.00$ & \okmark \\
+    $\ratefloor{}$ preserved at mint & $1.0526 = 1.0526$ & \okmark \\
+    $\ratefloor{}$ preserved at redeem & $1.0526 = 1.0526$ & \okmark \\
+    time-locked-class burn rejected & structurally non-burnable & \okmark \\
+    minimum/maximum maturity lead & $10 \leq 10 \leq 1000$ & \okmark \\
+    maturity conversion preserves $\ratefloor{}$ & $1.1208 = 1.1208$ & \okmark \\
+    $\attest{\mathrm{Bob}} = 50.00$ irrevocable & non-decreasing & \okmark \\
+    seigniorage $\attest{\opidx} = \feerate\livesplit D$ & $0.5\cdot0.5\cdot200 = 50.00$ & \okmark \\
+    \bottomrule
+\end{tabular}
+\end{center}
+Costliness check: Bob destroyed 50 live-class units redeemable for $50.00$ reserve units at
+the instant of destruction; $\attest{\mathrm{Bob}} = 50.00$
+(\zcref{thm:interface:instantaneous-costliness}).
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Timing}
+\label{sec:verification:timing}
+% ═══════════════════════════════════════════════════════════════════════
+
+A holder burning early in a cycle receives a lower $\ratefloor{}$ than one burning late;
+the maximum within-cycle appreciation is $1/(1-\cycleburnfrac{k})$
+(\zcref{prop:invariants:burn-order-residual}); before maturity the standing bound
+(\zcref{prop:containment:time-locked-standing-bound}) also binds.
+
+\begin{center}
+\begin{tabular}{@{}c c c@{}}
+    \toprule
+    $\cycleburnfrac{}$ & $1/(1-\cycleburnfrac{})$ & Timing gap \\
+    \midrule
+    $0.001$ & $1.001$ & $0.1\%$ \\
+    $0.01$  & $1.010$ & $1.0\%$ \\
+    $0.05$  & $1.053$ & $5.3\%$ \\
+    $0.10$  & $1.111$ & $11.1\%$ \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+In the walkthrough, cycle 1 burned 50 of 1000, $\cycleburnfrac{} = 0.05$, gap $5.3\%$.
+Deposit timing confers no advantage: all cycle-$k$ deposits process at
+$\ratefloor{}^{(k+1)-}$.
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Recycling}
+\label{sec:verification:recycling}
+% ═══════════════════════════════════════════════════════════════════════
+
+This verifies \zcref{prop:costliness:no-recycling-advantage}: fee-derived live-class units
+worth $W$ reserve units at the minting floor yield operator attestation exactly $W$ whether
+burned directly or recycled through $\set{\text{redeem}, \text{deposit}, \text{burn}}$.
+
+\begin{center}
+\begin{tabular}{@{}c c c c@{}}
+    \toprule
+    \textbf{Cycle} & \textbf{Reserve in} & \textbf{Fee burned} & \textbf{Cumulative attestation} \\
+    \midrule
+    1        & $50.00$  & $25.00$ & $25.00$ \\
+    2        & $25.00$  & $12.50$ & $37.50$ \\
+    3        & $12.50$  & $6.250$ & $43.75$ \\
+    $\vdots$ &          &         & $\vdots$ \\
+    $\infty$ & $0$      & $0$     & $50.00$ \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+The geometric series $\sum_{i=1}^{\infty} \feerate(1-\feerate)^{i-1}W = W$ recovers the
+direct-burn result ($W = 50$). During bootstrapping the time-locked class is non-burnable,
+so no recycling channel through it exists.
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Interface Conformance}
+\label{sec:verification:interface-conformance}
+% ═══════════════════════════════════════════════════════════════════════
+
+The walkthrough satisfies every exported specified property; one row each.
+
+\begin{table}[h!]
+    \centering
+    \caption{Each specified property instantiated on the
+    \zcref{sec:verification:walkthrough} walkthrough; the \emph{establishing} proofs are
+    \zcref{sec:attestation:invariants,sec:attestation:costliness,sec:attestation:containment}.}
+    \label{tab:verification:property-checks}
+    \begin{tabularx}{\textwidth}{@{}l l X c@{}}
+        \toprule
+        \textbf{Property} & \textbf{Label} & \textbf{Walkthrough evidence} & \\
+        \midrule
+        SP1 & \zcref{postc:interface:non-negativity}
+            & every $\attest{}$ increment $\geq 0$ & \okmark \\
+        SP2 & \zcref{postc:interface:monotonicity}
+            & $\attest{\mathrm{Bob}} = 50.00$ never decremented; valuation settlement-pinned & \okmark \\
+        SP3 & \zcref{postc:interface:auditability}
+            & every state public, each increment provenance-anchored to a destruction & \okmark \\
+        SP4 & \zcref{thm:interface:instantaneous-costliness}
+            & 50 live-class units redeemable for $50.00$ at destruction & \okmark \\
+        SP5 & \zcref{prop:interface:bootstrap-capacity}
+            & $50.00 < \attestcap \approx 693.1$ & \okmark \\
+        SP6 & \zcref{prop:interface:conservative-valuation}
+            & increment $=$ face at settlement floor $\leq$ instantaneous value & \okmark \\
+        \addlinespace
+        share & \zcref{def:interface:net-live-share}
+             & deposit $1 \to \netliveshare = 0.25$ retained live; reciprocal
+               $\attestunitcost \approx 4.0$ is the cost projection & \okmark \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\begin{table}[h!]
+    \centering
+    \caption{Bounds summary.}
+    \label{tab:verification:bounds-summary}
+    \begin{tabular}{@{}l l c c@{}}
+        \toprule
+        \textbf{Bound} & \textbf{Source} & \textbf{Obs.} & \textbf{Limit} \\
+        \midrule
+        standing bound $\ratefloor{} \leq \reservepool{}/\tlocksupply{}$
+            & \zcref{prop:containment:time-locked-standing-bound}
+            & $1.1208$ & $1.9637$ \\
+        burn capacity $\leq \attestcap$ & \zcref{prop:interface:bootstrap-capacity}
+            & $50.00$ & $693.1$ \\
+        seigniorage suppression $= \feerate\livesplit D$ & \zcref{prop:containment:seigniorage-suppression}
+            & $50.00$ & $50.00$ \\
+        maturity conversion preserves $\ratefloor{}$ & \zcref{prop:invariants:maturity-preserves-floor}
+            & $1.1208$ & $1.1208$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+%========================================================================================
+% END OF FILE: A1_verification.tex (v1.0.0)
+%========================================================================================
+
+\end{document}

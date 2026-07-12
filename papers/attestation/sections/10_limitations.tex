@@ -1,0 +1,98 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+%========================================================================================
+% FILENAME: 10_limitations.tex (v1.0.0)
+%
+% §10 Limitations and Open Problems.  §10.1 six limitations (tight enumerate, no proofs);
+% §10.2 two open problems via \OpenProblem (both inside the subsection so numbering reads
+% 10.2.1 / 10.2.2).
+%
+% Silences applied; cycle only; "ABT" gone; "address" avoided in operator-disambiguation
+% (it is the bound-administrator concept, not 𝔸).  limitation 6 uses \confprice (applied).
+% open:attestation:leverage-timing states only the specification half (count-free, the only ratio is 1/(1-χ)).
+%
+% Change history lives in version control (see the versioning policy in main.tex).
+%========================================================================================
+
+\section{Limitations and Open Problems}
+\label{sec:attestation:limitations}
+
+The contract's guarantees are bounded by properties of a closed reserve pool and by what lies
+outside the receipt mechanism. Six limitations and two open problems follow.
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Limitations}
+\label{sec:limitations:limitations}
+% ═══════════════════════════════════════════════════════════════════════
+
+\begin{enumerate}[nosep]
+    \item \textbf{Net economic cost is zero at $\supplyfrac{} = 1$} for all $\livesplit$ ---
+        a property of closed reserve pools, not a protocol-addressable deficiency
+        (\zcref{thm:costliness:conservation-identity,thm:costliness:zeta-independence}).
+
+    \item \textbf{Maximum irrecoverable exposure during bootstrapping is
+        $(1-\livesplit)\genesisreserve$} --- the time-locked-class portion whose realizable
+        value depends on maturity conversion (\zcref{def:maturity:conversion}).
+
+    \item \textbf{Portfolio-level net cost is zero.} The binding constraint is attestation
+        non-transferability across addresses
+        (\zcref{prop:costliness:portfolio-net-cost,lem:costliness:attestation-append-only}).
+
+    \item \textbf{Cross-cohort deflationary asymmetry.} $\ratefloor{}$ non-decreasing
+        implies late entrants pay more per unit of attestation than early entrants --- a
+        reserve-model property, not addressed by the time-locked class
+        (\zcref{thm:invariants:floor-non-decrease}).
+
+    \item \textbf{External deposit incentives are exogenous.} Genuine cost discipline
+        requires a competitive market (\zcref{sec:attestation:discipline}). What incentivizes external
+        deposits --- agents who value the systems built on the receipt --- is outside the
+        scope of the receipt mechanism.
+
+    \item \textbf{Maturity timing is operator-discretionary.} The safeguard is the
+        time-locked-class secondary-market confidence price $\confprice{k}$, which
+        continuously aggregates adversarial information about the operator's intent to
+        convert. Indefinite deferral suppresses $\confprice{k}$, which suppresses deposit
+        inflow, which suppresses the fee revenue that motivates deferral --- a self-defeating
+        strategy
+        (\zcref{rem:maturity:confidence-signal,prop:discipline:anti-correlation}).
+        Once announced, the maturity lead is confined to $[\matlead, \matleadcap]$
+        (\zcref{postc:maturity:announcement}). Before announcement, no schedule has been
+        irrevocably fixed and a valid future announcement remains possible; after
+        announcement, the schedule is irrevocable. The maximum lead therefore bounds the
+        post-announcement distance to scheduled conversion in cycles, while market
+        discipline governs whether announcement occurs. Neither lead bound compels an
+        announcement or, at this layer, guarantees wall-clock cycle progress.
+\end{enumerate}
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Open Problems}
+\label{sec:limitations:open-problems}
+% ═══════════════════════════════════════════════════════════════════════
+
+\OpenProblem{Operator Deposit Disambiguation}{operator-disambiguation}
+The seigniorage results
+(\zcref{thm:seigniorage:bootstrapping-bound,thm:seigniorage:no-finite-lifetime-envelope})
+are stated in cumulative \emph{non-operator} deposits $D$. Distinguishing operator from non-operator
+deposits requires the operator to publicly mark their own deposits. Whether this is
+enforceable under this layer's public-auditability guarantee
+(\zcref{postc:interface:auditability}) alone, or requires a governance mechanism whose
+discharge is outside this layer's scope, is open. An alternative formulation uses total
+deposits $D_{\mathrm{all}} \geq D$:
+$\attest{\opidx} = \feerate\livesplit D_{\mathrm{all}}$, a looser but universally auditable
+bound that attributes all deposits to non-operators.
+
+\OpenProblem{Cross-System Burn-Timing}{leverage-timing}
+% importing systems cite this as A-open:attestation:leverage-timing; the shared name is deliberate
+% despite "leverage" being importing-side vocabulary (registered in the macro collision register).
+Within-cycle burn timing confers an advantage bounded by $1/(1-\cycleburnfrac{})$ but not
+eliminated (\zcref{def:operations:cycle-burn-fraction}). An importing system that samples
+$\attest{}$ at its own boundary (\zcref{rem:interface:clocks}) and freezes a conversion
+factor across its period inherits, and may amplify, this advantage; that half --- the frozen
+factor itself --- is owned by the importing system's own specification.
+
+%========================================================================================
+% END OF FILE: 10_limitations.tex (v1.0.0)
+%========================================================================================
+
+\end{document}

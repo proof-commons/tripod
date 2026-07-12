@@ -1,0 +1,171 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+%========================================================================================
+% FILENAME: B1_symbols.tex (v1.0.0)
+%
+% App B Symbol Index — one longtable partitioned by export stratum
+% ([found]/[interface]/[surface]/[core]/local), then a self-contained collision register
+% (internal + cross-layer seam).  Proof budget: ZERO.
+%
+% Two-clocks trap: the seam register describes the importing-side period word WITHOUT the
+% literal token, to keep the `epoch' lint green.
+%
+% Change history lives in version control (see the versioning policy in main.tex).
+%========================================================================================
+
+\section{Symbol Index}
+\label{app:attestation:symbols}
+
+The index is organized by export stratum --- \textbf{[found]}, \textbf{[interface]},
+\textbf{[surface]}, \textbf{[core]} --- matching the consumption discipline of
+\zcref{sec:interface:consumption}; a closing register lists symbol collisions, so the
+document is self-contained for a reviewer who never opens the macro file.
+
+\begin{longtable}{@{}p{0.20\linewidth} p{0.76\linewidth}@{}}
+\caption{Symbol Index. \textbf{[found]} shared maths, everywhere; \textbf{[interface]}
+$= \Izero$, the only stratum an importing system's published formula may touch;
+\textbf{[surface]} operations and public audit quantities, readable by any agent
+(importing-layer formulas cite, never inline); \textbf{[core]} layer-internal.}
+\label{tab:symbols:index} \\
+\toprule
+\textbf{Symbol} & \textbf{Description} \\
+\midrule
+\endfirsthead
+\caption[]{Symbol Index (continued)} \\
+\toprule
+\textbf{Symbol} & \textbf{Description} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+
+\multicolumn{2}{@{}l}{\textbf{[found]}} \\
+\midrule
+$\Nat,\NatZero,\IntPos,\R$ & number sets $\symbb{N}$, $\symbb{N}_0$, $\symbb{Z}_+$, $\symbb{R}$ \\
+$\set{\cdot},\abs{\cdot},\norm{\cdot}$ & paired delimiters \\
+$\void,\okmark$ & $\varnothing$, $\checkmark$ \\
+$\Izero$ & the interface glyph $I_0$ \\
+
+\midrule
+\multicolumn{2}{@{}l}{\textbf{[interface]} $= \Izero$} \\
+\midrule
+$\addrspace$ ($\symbb{A}$) & opaque address space; index of $\attest{}$; the binding to identity is the importing system's (\zcref{def:interface:address-space}) \\
+$\attest{}$ (A), $\attest{a}$ (A$_a$) & cumulative reserve-denominated attestation per address; records destroyed value, confers no claim at this layer (\zcref{def:interface:attestation}) \\
+$\netliveshare$ ($(1-f)\zeta$) & net live share; purpose-neutral allocation ratio --- the post-fee, immediately-redeemable live-class value retained per reserve unit deposited during bootstrapping (\zcref{def:interface:net-live-share}) \\
+$\attestunitcost$ ($1/((1-f)\zeta)$) & reserve cost of one attestation unit; the reciprocal cost projection of $\netliveshare$ (\zcref{def:interface:net-live-share}) \\
+$\attestcap$ (A$_{\max}$) & attestation-capacity bound $\genesisreserve\ln(1/(1-\livesplit))$ \emph{before external deposits}; the deposit-parameterized bound is \zcref{thm:containment:pre-maturity-deposit-capacity} (\zcref{prop:interface:bootstrap-capacity}) \\
+
+\midrule
+\multicolumn{2}{@{}l}{\textbf{[surface]}} \\
+\midrule
+$\reservepool{}$ ($\Omega$) & reserve pool, full reserve (\zcref{def:model:reserve-pool}) \\
+$\genesisreserve$ (E$_0$) & genesis reserve (\zcref{postc:model:genesis}) \\
+$\totsupply{}$ (Y) & total receipt supply; supply, never glossed ``yield'' (\zcref{def:model:supply}) \\
+$\livesupply{}$ (Y$_{\mathrm{L}}$) & live-class supply (\zcref{def:model:classes}) \\
+$\tlocksupply{}$ (Y$_{\mathrm{T}}$) & time-locked-class supply (\zcref{def:model:classes}) \\
+$\ratefloor{}$ ($\varphi$) & redemption-rate floor $\Omega/Y$; ratchets up only, not a return. The pre-maturity bound is the dynamic $\varphi \leq \Omega/Y_{\mathrm{T}}$ (\zcref{def:model:ratefloor,prop:containment:time-locked-standing-bound}) \\
+$\genesisfloorfactor$ ($\varphi_{\mathrm{gen}}$) & pre-deposit floor factor $1/(1-\zeta)$ --- the value of the standing bound \emph{before external deposits}, not a bootstrapping ceiling (\zcref{cor:containment:pre-deposit-floor-factor,prop:containment:no-fixed-bootstrap-floor-ceiling}) \\
+$\livesplit$ ($\zeta$) & live-share split constant (\zcref{def:model:fee-and-split}) \\
+$\feerate$ (f) & formula-fixed mint fee constant (\zcref{def:model:fee-and-split}) \\
+$\cycleburnfrac{k}$ ($\chi^{(k)}$) & cycle burn fraction (\zcref{def:operations:cycle-burn-fraction}) \\
+$\matcycle$ (k$_{\mathrm{m}}$) & maturity-conversion cycle (\zcref{postc:maturity:announcement}) \\
+$\matlead$ ($\Delta$k$_{\min}$) & minimum maturity lead (\zcref{postc:maturity:announcement}) \\
+$\matleadcap$ ($\Delta$k$_{\max}$) & maximum maturity lead; bounds post-announcement cycle distance to scheduled conversion (\zcref{postc:maturity:announcement}) \\
+$\feeflow$ (f$\zeta\Delta$Y) & per-cycle operator fee flow, bootstrap form (\zcref{thm:seigniorage:bootstrapping-bound}) \\
+$\confprice{k}$ ($\kappa(k)$) & time-locked-class secondary-market confidence price; bare $\kappa$ names the handle, applied $\kappa(k)$ evaluates it (\zcref{rem:maturity:confidence-signal,prop:discipline:anti-correlation}) \\
+$\depositop{\delta}{a}$, $\burnop{x}{a}$, $\redeemop{x}$ & deposit / burn / redeem operations, shown with representative operands (\zcref{def:operations:deposit,def:operations:burn,def:operations:redemption}) \\
+$\liveclass$, $\tlockclass$ & live / time-locked class names (\zcref{def:model:classes}) \\
+
+\midrule
+\multicolumn{2}{@{}l}{\textbf{[core]}} \\
+\midrule
+$\escrow{}$ (Q) & deposit escrow (\zcref{def:model:escrow}) \\
+$\holdings{}$ (h$_i$) & holder receipt holdings (\zcref{thm:costliness:conservation-identity}) \\
+$\supplyfrac{}$ (s$_i$) & supply fraction $h/Y$ (\zcref{cor:costliness:supply-fraction-form}) \\
+$\netcost$ ($\Delta_{\mathrm{net}}$) & net economic cost (\zcref{thm:costliness:conservation-identity}) \\
+$\redeemratio$ ($\delta_{\mathrm{liq}}$) & redeemable cost ratio (\zcref{def:costliness:redeemable-cost-ratio}) \\
+
+\midrule
+\multicolumn{2}{@{}l}{\textbf{Local notation} (non-exported, chapter-scoped)} \\
+\midrule
+$\mathrm{L}_a$, $\mathrm{T}_a$ & per-address live / time-locked allocation in the cycle mint (\zcref{alg:operations:cycle-processing}) \\
+$\delta_A$ & attestation increment $x\ratefloor{}$ (\zcref{def:operations:burn}) \\
+$d = D/\genesisreserve$ & deposit ratio (\zcref{prop:discipline:anti-correlation}) \\
+$D$, $D_{\mathrm{all}}$ & cumulative non-operator / total deposits (\zcref{thm:seigniorage:bootstrapping-bound,open:attestation:operator-disambiguation}) \\
+$g$, $g_P$ & time-locked-class holdings; secondary-address time-locked holdings (\zcref{thm:costliness:zeta-independence,prop:costliness:address-splitting-cost}) \\
+$x$ & burn amount (\zcref{def:operations:burn}) \\
+$M$ & attestation target in SP4 (\zcref{thm:interface:instantaneous-costliness}) \\
+$W$ & fee-unit reserve value (\zcref{prop:costliness:no-recycling-advantage}) \\
+
+\end{longtable}
+
+The time-locked-class price is the surface handle $\confprice{}$, evaluated as
+$\confprice{k}$ or $\confprice{d}$, not a local symbol.
+
+\paragraph{What this index excludes.}
+Every Part-B semantic macro appears exactly once above, with three deliberate exclusions:
+the phase helpers $\bootrange$ and $\normrange$ (presentation shorthands over
+$\matcycle$) and the operator subscript token $\opidx$. They render existing symbols and
+introduce no quantity of their own. There are no alias macros: a second name for an
+exported quantity would be indistinguishable from a second quantity in this index and in
+the surface-purity rule, so none is retained.
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Collision Register}
+\label{sec:symbols:collisions}
+% ═══════════════════════════════════════════════════════════════════════
+
+Reproduced from the macro header so the document is self-contained.
+
+\paragraph{Internal collisions.}
+\begin{center}
+\begin{tabular}{@{}l l@{}}
+    \toprule
+    \textbf{Pair} & \textbf{Disambiguation} \\
+    \midrule
+    $\attest{}$ A$_a$ vs.\ $\attestcap$ A$_{\max}$ & subscript-address vs.\ ``max'' \\
+    $\totsupply{}$ Y / $\livesupply{}$ Y$_{\mathrm{L}}$ / $\tlocksupply{}$ Y$_{\mathrm{T}}$ & one receipt, two classes \\
+    $\redeemratio$ $\delta_{\mathrm{liq}}$ vs.\ $\netcost$ $\Delta_{\mathrm{net}}$ & case $+$ subscript \\
+    $\delta_A$ increment vs.\ $\redeemratio$ $\delta_{\mathrm{liq}}$ & subscript: ``A'' vs.\ ``liq'' \\
+    $\matcycle$ k$_{\mathrm{m}}$ vs.\ bare k & bare k is the local cycle index \\
+    $\ratefloor{}$ $\varphi$ vs.\ golden ratio / Euler totient & neither constant appears anywhere in this stack \\
+    $\confprice{}$ $\kappa$ vs.\ curvature & no curvature is defined in this specification \\
+    $\addrspace$ $\symbb{A}$ (set) vs.\ algebraic numbers $\symbb{A}$ & declared once as an opaque set, not a number field \\
+    $\addrspace$ $\symbb{A}$ vs.\ the \texttt{openproblem} type & glyph vs.\ type name \\
+    $\genesisreserve$ E$_0$ vs.\ $\holdings{}$ h & distinct letters; both internal/surface only \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Cross-layer seam.}
+Registered importing-side readings; not used in this document. Rows say ``importing side''
+/ ``downstream'', never a named consumer.
+
+\begin{center}
+\begin{tabular}{@{}l l@{}}
+    \toprule
+    \textbf{This layer} & \textbf{Collides with (importing side)} \\
+    \midrule
+    $\ratefloor{}$ $\varphi$ & a reward R$_C$ / a per-holder earnings R$_i$ --- the floor is applied $\varphi(t)$, distinct glyph \\
+    $\feerate$ f & an importing self-map f$_i$ --- subscript/argument \\
+    $\escrow{}$ Q & a diversity quantity q --- case \\
+    $\livesplit$ $\zeta$ & a Riemann/downstream-floor symbol --- never the same \\
+    $\matlead$ $\Delta$k$_{\min}$ / $\matleadcap$ $\Delta$k$_{\max}$ & a downstream buffer $\delta$ --- letters/subscript/hat \\
+    $\attest{}$ A & a downstream proof-matrix/area A --- italic Latin A vs.\ calligraphic $\symcal{A}$ \\
+    $\addrspace$ $\symbb{A}$ & a downstream calligraphic $\symcal{A}$ --- blackboard vs.\ calligraphic \\
+    $\confprice{}$ $\kappa$ & no known cross-layer price collision; registered per discipline \\
+    index $a$ & opaque address here; bound to a holder on the importing side --- qualify at first use \\
+    cycle k (here) & a distinct importing-layer period word --- two clocks, never one word \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+The seam rows are this layer's side of the register; the importing system mirrors them in
+its own symbol index.
+
+%========================================================================================
+% END OF FILE: B1_symbols.tex (v1.0.0)
+%========================================================================================
+
+\end{document}

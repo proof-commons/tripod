@@ -1,0 +1,93 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+%========================================================================================
+% FILENAME: 08_seigniorage.tex (v1.0.0)
+%
+% §8 Seigniorage — the bootstrapping bound under immediate burning, and the negative
+% lifetime result.
+%
+% Proof budget: two body proofs (bootstrapping-bound; no-finite-lifetime-envelope).
+% No \interfaceref.  Silences applied; cycle only; "non-operator agents".  First fee-flow
+% mention uses \feeflow.
+%
+% Change history lives in version control (see the versioning policy in main.tex).
+%========================================================================================
+
+\section{Seigniorage}
+\label{sec:attestation:seigniorage}
+
+The operator's only inflow is the minting fee, a per-cycle flow of $\feeflow$ during the
+bootstrapping phase. This chapter bounds the cumulative attestation the operator can extract
+from it during bootstrapping under immediate burning, and shows that no such bound exists
+over the receipt's lifetime.
+
+\begin{theorem}[Seigniorage Bound --- Bootstrapping Phase]
+    \label{thm:seigniorage:bootstrapping-bound}
+    Let $D$ denote cumulative reserve units deposited by non-operator agents during the
+    bootstrapping phase, and suppose every fee-derived \liveclass{} unit is burned
+    \emph{immediately, at the floor prevailing when it was minted}. Then operator cumulative
+    attestation is
+    \[
+        \attest{\opidx} = \feerate\,\livesplit\,D.
+    \]
+    The immediacy hypothesis is not decorative: it is exactly what fixes the valuation
+    floor. Without it no finite envelope of this form exists
+    (\zcref{thm:seigniorage:no-finite-lifetime-envelope}).
+\end{theorem}
+\begin{proof}
+    Fee units per minting batch $\Delta\reservepool{}$ are
+    $\feerate\livesplit\Delta\reservepool{}/\ratefloor{}^{-}$
+    (\zcref{alg:operations:cycle-processing}); burned at the minting floor, the attestation
+    is $\feerate\livesplit\Delta\reservepool{}$. Summing over cycles gives
+    $\feerate\livesplit D$.
+\end{proof}
+
+\begin{theorem}[No Finite Lifetime Envelope]
+    \label{thm:seigniorage:no-finite-lifetime-envelope}
+    There is no finite bound on $\attest{\opidx}$ over the receipt lifetime depending only
+    on $\feerate$, $\livesplit$, and $D$.
+\end{theorem}
+\begin{proof}
+    Maturity conversion sets $\tlocksupply{} = 0$
+    (\zcref{def:maturity:conversion}), after which $\ratefloor{}$ is unbounded above
+    (\zcref{prop:containment:time-locked-standing-bound}). An operator that defers burning
+    until other holders have burned first therefore settles at an arbitrarily high floor.
+
+    Concretely at $\livesplit = \feerate = 1/2$, $\genesisreserve = 1000$, $D = 1000$: after
+    conversion $\reservepool{} = 2000$ and $\totsupply{} = 2000$, of which the operator holds
+    $500$ fee-derived units. Other holders burning their $1500$ leaves
+    $\ratefloor{} = 4$; the operator burning $250$ of its holding already credits $1000$,
+    and burning a further $249$ at $\ratefloor{} = 8$ credits $1992$ more. More generally,
+    burning supply from $\totsupply{}\sp{-}$ down to $\varepsilon$ credits
+    $\reservepool{}\ln(\totsupply{}\sp{-}/\varepsilon)$, which diverges as
+    $\varepsilon \to 0\sp{+}$.
+\end{proof}
+
+\begin{remark}[What Replaces the Envelope]
+    \label{rem:seigniorage:withdrawn-envelope}
+    Earlier revisions of this document carried a finite lifetime envelope
+    $\attest{\opidx} \leq \feerate D/(1-\livesplit)$. It was false: its derivation valued
+    post-maturity burns at the pre-deposit floor factor
+    (\zcref{cor:containment:pre-deposit-floor-factor}) while the same document states that
+    $\ratefloor{}$ is unbounded above post-maturity. Its label is withdrawn rather than
+    reused, since a stable anchor must not change meaning
+    \atthislayer{}. What survives is
+    \zcref{thm:seigniorage:bootstrapping-bound} under its immediacy hypothesis, the
+    pre-maturity capacity bound
+    (\zcref{thm:containment:pre-maturity-deposit-capacity}), and the negative result above.
+\end{remark}
+
+\stackmarginnote{Note:}{Fee-channel: self-resolving by
+\zcref{prop:discipline:anti-correlation}.}%
+No-recycling-advantage (\zcref{prop:costliness:no-recycling-advantage}) extends to the
+time-locked class post-maturity: once converted, a time-locked-derived \liveclass{} unit
+behaves identically to any other \liveclass{} unit, including the $W$-conserving recycling
+bound. During bootstrapping the time-locked class cannot be burned, so no recycling through
+it is possible.
+
+%========================================================================================
+% END OF FILE: 08_seigniorage.tex (v1.0.0)
+%========================================================================================
+
+\end{document}

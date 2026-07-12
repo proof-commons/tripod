@@ -1,0 +1,205 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+%========================================================================================
+% FILENAME: 02_model.tex (v1.0.0)
+%
+% §2 Model — the objects the interface is built from: reserve asset and pool, the one
+% conserved RECEIPT in two classes, the redemption-rate floor, the published constants and
+% escrow, the two phases, genesis, and the state tuple.  No specified property proved here.
+%
+% Silences: no consumer noun (operator = the specification's admin role, introduced here); no
+% realization reference.  Two clocks: cycle only.
+%
+% Change history lives in version control (see the versioning policy in main.tex).
+%========================================================================================
+
+\section{Model}
+\label{sec:attestation:model}
+
+This chapter fixes the objects the interface is built from: a reserve pool, one conserved
+receipt in two classes, the redemption-rate floor that converts between them, the published
+constants, and the two phases. No specified property is proved here; this chapter fixes the
+state on which the rest of the document operates.
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Reserve Asset and Reserve Pool}
+\label{sec:model:reserve}
+% ═══════════════════════════════════════════════════════════════════════
+
+\begin{definition}[Reserve Asset]
+    \label{def:model:reserve-asset}
+    A \emph{reserve asset} is a unit of value whose worth is independent of any system
+    built on the receipt. All monetary quantities in this document are denominated in
+    \emph{reserve units}.
+\end{definition}
+
+\begin{remark}[Instantiations]
+    \label{rem:model:instantiations}
+    The reserve asset is abstract; a deployment instantiates it (for example, L-BTC, or an
+    external value token, EVT). The choice is a deployment matter, and nothing in this
+    document depends on which instantiation is used.
+\end{remark}
+
+\begin{definition}[Reserve Pool]
+    \label{def:model:reserve-pool}
+    The \emph{reserve pool} $\reservepool{t} \in \R_{>0}$ is a publicly auditable, full
+    reserve of the reserve asset held against the receipt. It rises on deposit and falls on
+    redemption.
+\end{definition}
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{The Conserved Receipt}
+\label{sec:model:claim}
+% ═══════════════════════════════════════════════════════════════════════
+
+\begin{definition}[Classes]
+    \label{def:model:classes}
+    The instrument issued under \emph{Attestation} is a single conserved
+    \emph{reserve receipt} --- a redeemable claim
+    on the reserve pool $\reservepool{}$ (\zcref{def:model:reserve-pool}), redeemable at the
+    redemption-rate floor $\ratefloor{} = \reservepool{}/\totsupply{}$
+    (\zcref{def:model:ratefloor}). The receipt is held in two \emph{redemption classes} ---
+    classes, not assets:
+    \begin{description}[nosep]
+        \item[\textbf{Live class.}] Outstanding supply $\livesupply{}$. A \liveclass{} unit
+            admits exactly three fates: \emph{traded} (transferred), \emph{burned}
+            (\zcref{def:operations:burn}), or \emph{redeemed}
+            (\zcref{def:operations:redemption}) for a floor of $\ratefloor{}$ reserve units
+            per unit.
+        \item[\textbf{Time-locked class.}] Outstanding supply $\tlocksupply{}$. A
+            \tlockclass{} unit is transferable, but neither the burn predicate nor the
+            redemption predicate is defined on it --- there is no operation consuming a
+            \tlockclass{} unit into a burn record or a reserve payout --- so it is
+            structurally non-burnable and non-redeemable, and carries no redemption floor.
+            It exists only during the bootstrapping phase
+            (\zcref{def:model:bootstrapping-phase}) and converts once into the live class at
+            maturity (\zcref{postc:maturity:announcement,def:maturity:conversion}).
+    \end{description}
+    The single floor over the combined supply is the algebraic form of the two classes
+    being one receipt: a distinct asset would carry its own floor
+    (\zcref{def:model:ratefloor}).
+\end{definition}
+
+\begin{definition}[Supply]
+    \label{def:model:supply}
+    \[
+        \totsupply{t} = \livesupply{t} + \tlocksupply{t}.
+    \]
+    The sum is conserved across the class boundary, so maturity conversion
+    (\zcref{def:maturity:conversion}) leaves $\totsupply{}$ unchanged. Both terms count
+    units of the one receipt.
+\end{definition}
+
+\begin{definition}[Redemption-Rate Floor]
+    \label{def:model:ratefloor}
+    \[
+        \ratefloor{t} = \frac{\reservepool{t}}{\totsupply{t}},
+    \]
+    well-defined whenever $\totsupply{t} > 0$. There is one floor over the combined supply:
+    \liveclass{} units are redeemed, and \tlockclass{} units valued, against the same pool
+    $\reservepool{}$ at this single floor. The two classes therefore cannot be independent
+    assets --- a distinct asset would carry its own floor; the shared $\ratefloor{}$ is the
+    algebraic form of their being one receipt (\zcref{def:model:classes}). The floor only
+    ever rises (\zcref{thm:invariants:floor-non-decrease}); it is a redemption floor, not a
+    return.
+\end{definition}
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Constants and Escrow}
+\label{sec:model:constants}
+% ═══════════════════════════════════════════════════════════════════════
+
+\begin{definition}[Fee Rate and Split]
+    \label{def:model:fee-and-split}
+    The fee rate $\feerate \in (0,1)$ and the split parameter $\livesplit \in (0,1)$ are
+    published constants of this layer, fixed at genesis. When units are minted, fraction
+    $\livesplit$ enters the live class and $(1-\livesplit)$ the time-locked class during
+    the bootstrapping phase (\zcref{def:model:bootstrapping-phase}); all into the live class
+    during the normal phase (\zcref{def:model:normal-phase}). The \emph{operator} here is
+    the specification-internal administrator role --- fee recipient and maturity announcer --- an internal
+    concept of this layer.
+    % operator privilege has a cross-system character priced downstream; not stated in this layer.
+\end{definition}
+
+\begin{remark}[Calibration Status]
+    \label{rem:model:calibration}
+    The numeric values carried for $\livesplit$ and $\feerate$ throughout this
+    document ($\livesplit = \feerate = 0.5$) are \emph{placeholders}, not specified
+    values. This layer fixes the two constants' roles and admissible ranges
+    ($\livesplit, \feerate \in (0,1)$), not their magnitudes; the magnitudes are a
+    calibration output, to be chosen \emph{jointly} by standard sensitivity-analysis
+    methods. Jointly, because the exported quantities couple them: the net live share
+    $\netliveshare$ (\zcref{def:interface:net-live-share}), the pre-deposit floor factor
+    $\genesisfloorfactor = 1/(1-\livesplit)$
+    (\zcref{cor:containment:pre-deposit-floor-factor}), the pre-deposit capacity
+    $\attestcap = \genesisreserve\ln(1/(1-\livesplit))$
+    (\zcref{prop:interface:bootstrap-capacity}), and the pre-maturity capacity bound
+    $(\genesisreserve + D)\ln(1/(1-\livesplit))$
+    (\zcref{thm:containment:pre-maturity-deposit-capacity}) are each functions of
+    $\livesplit$ and $\feerate$ \emph{together}, so neither can be calibrated in
+    isolation. ``Fixed at genesis'' (\zcref{def:model:fee-and-split})
+    governs immutability \emph{after} the choice, not the choice itself; every numeric
+    appearance below is illustrative (cf.\ \zcref{tab:verification:constants}).
+\end{remark}
+
+\begin{definition}[Deposit Escrow]
+    \label{def:model:escrow}
+    % [core] — specification-internal; never exported.
+    $\escrow{t} \in \R_{\geq 0}$: reserve units in deposit escrow, awaiting the next cycle
+    boundary (\zcref{rem:interface:clocks}).
+\end{definition}
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Phases, Genesis, and State}
+\label{sec:model:genesis}
+% ═══════════════════════════════════════════════════════════════════════
+
+\begin{definition}[Bootstrapping Phase]
+    \label{def:model:bootstrapping-phase}
+    Cycles $[0, \matcycle)$. Every deposit mints live-class and time-locked-class units in
+    ratio $\livesplit : (1-\livesplit)$. The time-locked-class supply inflates the
+    denominator $\totsupply{}$, bounding burn capacity and floor volatility.
+\end{definition}
+
+\begin{definition}[Normal Phase]
+    \label{def:model:normal-phase}
+    Cycles $[\matcycle, \infty)$. Every time-locked-class unit has converted into the live
+    class (\zcref{def:maturity:conversion}); no time-locked-class unit is minted; the
+    economy reduces to a single circulating class.
+\end{definition}
+
+\begin{postulate}[Genesis]
+    \label{postc:model:genesis}
+    \stackmarginnote{Note:}{The genesis split is what makes
+    \zcref{prop:interface:bootstrap-capacity} a theorem: only $\livesplit\genesisreserve$
+    live-class units exist to burn before external deposits.}%
+    At initialization:
+    \[
+        \reservepool{0} = \genesisreserve > 0, \quad
+        \livesupply{0} = \livesplit\genesisreserve, \quad
+        \tlocksupply{0} = (1-\livesplit)\genesisreserve, \quad
+        \totsupply{0} = \genesisreserve, \quad
+        \ratefloor{0} = 1.
+    \]
+    The invariant $\totsupply{} > 0$ holds for all operational $t$.
+\end{postulate}
+
+\begin{remark}[State Tuple]
+    \label{rem:model:state}
+    The receipt state at cycle-time $t$ is
+    \[
+        \bigl(\reservepool{t},\ \livesupply{t},\ \tlocksupply{t},\
+              \set{\attest{a}(t)}_{a \in \addrspace},\ \escrow{t}\bigr).
+    \]
+    The index $a$ is an opaque address (\zcref{def:interface:address-space}); the binding of
+    addresses to any identity is the importing system's import-time interpretation. The
+    attestation family is indexed by $\addrspace$ --- the burn record, not a stored
+    attribute of any holder.
+\end{remark}
+
+%========================================================================================
+% END OF FILE: 02_model.tex (v1.0.0)
+%========================================================================================
+
+\end{document}

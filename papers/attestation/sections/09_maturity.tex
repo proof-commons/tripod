@@ -1,0 +1,131 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+%========================================================================================
+% FILENAME: 09_maturity.tex (v1.0.0)   [renamed from 09_vesting.tex]
+%
+% §9 Maturity Conversion.  §9.1 announcement and conversion; §9.2 confidence signal and
+% timing; §9.3 post-maturity burn distribution.
+%
+% Proof budget: ZERO body proofs (maturity-preserves-floor is proved in §4; conversion is
+% a definition).  No \interfaceref.  Silences applied; cycle only.  Surface handle
+% \confprice, APPLIED (\confprice{k}; never bare kappa).  Confidence-signal forward-refs
+% §10 by section, not number.
+%
+% Change history lives in version control (see the versioning policy in main.tex).
+%========================================================================================
+
+\section{Maturity Conversion}
+\label{sec:attestation:maturity}
+
+Maturity conversion is the one-time, value-neutral event that ends the bootstrapping phase
+--- announced once by the operator, executed once, relabeling every \tlockclass{} unit into
+the live class. It moves no value and preserves the floor
+(\zcref{prop:invariants:maturity-preserves-floor}); the operator governs only the
+announcement.
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Announcement and Conversion}
+\label{sec:maturity:announcement-conversion}
+% ═══════════════════════════════════════════════════════════════════════
+
+\begin{postulate}[Maturity Announcement]
+    \label{postc:maturity:announcement}
+    \stackmarginnote{Note:}{$\matlead$ bounds too-short warning; $\matleadcap$ bounds the
+    post-announcement distance to scheduled conversion under an \emph{irrevocable}
+    announcement. Neither bound compels announcement or, at this layer, asserts
+    wall-clock cycle progress.}%
+    The maturity cycle $\matcycle$ is not a genesis constant. At a cycle of their choosing,
+    the operator announces
+    \[
+        \matcycle = k_{\mathrm{announce}} + \Delta k,
+        \qquad
+        \matlead \leq \Delta k \leq \matleadcap,
+    \]
+    as an immutable append-only record. Once announced, $\matcycle$ is irrevocable. The
+    minimum and maximum maturity leads $\matlead, \matleadcap \in \IntPos$, with
+    $\matlead \leq \matleadcap$, are published constants fixed at genesis.
+\end{postulate}
+
+The two lead bounds have distinct calibration roles. Increasing $\matlead$ enlarges the
+mandatory warning and price-discovery window; decreasing $\matleadcap$ tightens protection
+against an erroneous far-future irrevocable announcement, while also excluding legitimate
+longer schedules. Their magnitudes are calibration outputs for an instantiation of this
+layer; ``fixed at genesis'' governs immutability after that choice, not the choice itself.
+
+\begin{definition}[Maturity Conversion]
+    \label{def:maturity:conversion}
+    Maturity conversion is the one-time, irreversible promotion of every \tlockclass{} unit
+    to the live class, executed once at $\matcycle$: $\livesupply{} \mathrel{+}=
+    \tlocksupply{}$, $\tlocksupply{} \gets 0$. It relabels existing units and creates,
+    destroys, and moves no value: $\totsupply{}$, $\reservepool{}$, and $\ratefloor{}$ are
+    unchanged by construction (\zcref{def:model:supply},
+    \zcref{prop:invariants:maturity-preserves-floor}). Maturity conversion is acyclic --- no
+    inverse returns a unit to the time-locked class --- so it executes at most once and
+    cannot be replayed.
+\end{definition}
+
+\begin{remark}[Operator Discretion]
+    \label{rem:maturity:operator-discretion}
+    Any on-record maturity trigger defined over $\totsupply{}$-ratios is manipulable; the
+    safeguard is transparency and market discipline, not mechanism constraint.
+\end{remark}
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Confidence Signal and Timing}
+\label{sec:maturity:signal-timing}
+% ═══════════════════════════════════════════════════════════════════════
+
+\begin{remark}[Time-Locked Class as Confidence Signal]
+    \label{rem:maturity:confidence-signal}
+    The time-locked class's secondary-market confidence price $\confprice{k}$ is a
+    continuous, adversarial signal of market confidence in the operator's intent to convert.
+    The absence of a guaranteed conversion floor is what makes the signal informative: a
+    buyer prices the probability that the receipt reaches $\matcycle$. Signal quality is
+    phase-dependent --- thin during early participation, informative as the market matures.
+    See the maturity-timing limitation (\zcref{sec:attestation:limitations}).
+\end{remark}
+
+\begin{remark}[Atomic Conversion Sufficiency]
+    \label{rem:maturity:atomic-conversion}
+    Atomic conversion suffices: $\livesupply{}$, $\tlocksupply{}$, and $\reservepool{}$ are
+    publicly auditable at all times; $\matcycle$ is announced $\geq \matlead$ cycles in
+    advance as an immutable record; the time-locked class trades toward live-class parity as
+    conversion approaches; and $\totsupply{}$, $\reservepool{}$, $\ratefloor{}$ are unchanged
+    by maturity conversion (\zcref{prop:invariants:maturity-preserves-floor}).
+\end{remark}
+
+\begin{remark}[Signal Structure and Announcement Timing]
+    \label{rem:maturity:announcement-timing}
+    The operator faces continuous pressure through $\confprice{k}$; a credible announcement
+    reduces the discount, raising the value of the operator's own fee \tlockclass{}
+    holdings. The operator is incentivized to convert when the market feedback of
+    \zcref{sec:attestation:discipline} is strong enough to regulate commitment without capacity caps ---
+    precisely when $\confprice{k}$ trades near parity.
+\end{remark}
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Post-Maturity Burn Distribution}
+\label{sec:maturity:burn-distribution}
+% ═══════════════════════════════════════════════════════════════════════
+
+\begin{proposition}[Post-Maturity Burn Distribution]
+    \label{prop:maturity:burn-distribution}
+    \stackmarginnote{Note:}{Smoothed by secondary-market arbitrage during the $\matlead$
+    lead time.}%
+    The $\matlead$ lead time creates a price-discovery window during which time-locked-class
+    holders with burn intent trade into live-class positions. The mechanical per-cycle
+    timing bound $1/(1-\cycleburnfrac{})$ (\zcref{def:operations:cycle-burn-fraction},
+    \zcref{sec:verification:timing}) applies, but the scenario producing large
+    $\cycleburnfrac{}$ requires holders to have declined near-parity conversion during the
+    entire $\matlead$ window.
+\end{proposition}
+
+An importing system that absorbs the post-maturity attestation step does so under its own
+dynamics; that statement is owned by that layer.
+
+%========================================================================================
+% END OF FILE: 09_maturity.tex (v1.0.0)
+%========================================================================================
+
+\end{document}

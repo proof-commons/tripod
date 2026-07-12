@@ -1,0 +1,653 @@
+% ========================================================================================
+% FILENAME: macros_attestation.tex  (Attestation)  (v1.0.0)
+%
+% Root macro system for the Attestation specification, published for any document that
+% chooses to import it.  The specification is cited and does not cite: this file
+% forward-references no consumer and names no realization.
+%
+% Downstream files EXTEND, never redefine.  Every name, environment, counter, reference type,
+% and presentation primitive defined here is OWNED here.
+%
+% ════════════════════════════════════════════════════════════════════════════════
+% VOCABULARY STANDARD (v0.3.0) — ONE TEST, STATED PLAINLY
+%
+%   Every notation choice in PART B obeys a single falsifiability test: prefer the name
+%   that makes a claim MORE checkable; reject any name that makes a contested fact harder
+%   to see — including when the harder-to-see version flatters us.  The test cuts both
+%   ways, and the rows below keep the cases where it forced a BLUNT name and rejected a
+%   PLEASANT one.  That two-sidedness is the point.
+%
+%   SYMMETRY ROWS (the renames that prove this is precision):
+%     R -> phi        RENAMED.  R overclaims ("return"); the object is Omega/Y, monotone
+%                     non-decreasing — a FLOOR.  phi underclaims and is therefore truer.
+%     B -> A  (map)   RENAMED.  B reads "burn/balance"; the exported object is a
+%                     non-financial ATTESTATION record.  A is mnemonic of the precise noun.
+%     pi -> kappa     RENAMED.  pi collides with the constant and reads "market price";
+%                     mandated APPLIED kappa(d) keeps it visibly a price-of-something.
+%     Y               KEPT.  Y is accurate as supply.  We forbid GLOSSING it "yield";
+%                     we do not rename it — renaming an accurate symbol would be optics.
+%     burn            KEPT (operation).  Bluntest, most checkable name for "destroy own
+%                     units irrecoverably".  Its connotations point TOWARD scrutiny, not
+%                     away; the operation is never renamed after its output.
+%     deposit         KEPT (operation).  The warehouse-deposit reading is the accurate
+%                     one under the receipt model; we do not flee it to "contribute".
+%     G -> SP         RENAMED on TWO sufficient grounds, each stated: (1) precision — the
+%                     family labels PROVEN PROPERTIES of a constructed object, not
+%                     assurances to a counterparty; "specified property" is the exact
+%                     reading.  (2) collision-safety — two-letter no-hyphen SP is mutually
+%                     unambiguous against P- (pins), D (residuals), T (rules), I (invariant).
+%                     Either ground alone suffices.  Neither ground is a category avoided.
+%     TITLE = ATTESTATION   NAMED FOR THE EXPORT.  "Token" (the original working title)
+%                     named the SCAFFOLDING (the burnable receipt, the consumed input);
+%                     the specification exports exactly
+%                     ONE object, the attestation map A, and "everything else is internal
+%                     structure that makes the specified properties hold."  The title now
+%                     agrees with the export A, not with the container Y that A outlives.
+%                     This finishes the B->A rename at the document level.  The INSTRUMENT
+%                     keeps its noun of record ("reserve receipt"): the system is named for
+%                     what it PRODUCES, not for what it DESTROYS.
+%     PREFIX = A-   NAMED on the same ground: the prefix names the DOCUMENT, and it
+%                     follows the document's name.
+%
+%   The CLASS NOUN of record is the "reserve receipt" (a claim on an external reserve,
+%   redeemable, transferable).  The two redemption states are the LIVE class (presently
+%   redeemable) and the TIME-LOCKED class (not yet).  The proper name is "Attestation";
+%   the A- cross-reference namespace names the DOCUMENT, not the instrument (the instrument
+%   remains the "reserve receipt").
+%
+%   LOCALITY DISCIPLINE: facts true only at this layer ("non-redeemable", "never revalued
+%   upward") must travel with the tag "at this layer".  This layer declines to price the
+%   attestation and says so, rather than pricing it favorably.  See \atthislayer.
+%
+% ════════════════════════════════════════════════════════════════════════════════
+% MAIN.TEX CONTRACT  (READ FIRST — this file does NOT toggle expl3)
+%
+%   The file is, in its entirety, expl3 source and contains NO \ExplSyntaxOn/Off.  Each
+%   consumer's main.tex owns the toggle and wraps ALL macro inputs in one block, AFTER
+%   amsthm + mathtools + hyperref + zref-clever + zref-titleref:
+%
+%       \ExplSyntaxOn
+%         \input{macros_attestation.tex}  % FIRST, before any sibling macro input
+%       \ExplSyntaxOff
+%       \zcLanguageSetup{english}{ type = openproblem , ... }   % non-expl3 config OUTSIDE
+%
+%   The Attestation document loads ONLY this file and stages NO xref bridge (it cites nothing outside itself).
+%
+%   expl3 catcodes obeyed throughout:  space/tab IGNORED -> use "~".  "_" is a LETTER ->
+%   use \sb{...}, never "x_0".  ":" is a LETTER -> fine in label keys.  Multi-word
+%   display text needs "~".
+%
+% ════════════════════════════════════════════════════════════════════════════════
+% EXPORT STRATA — who may use what (one shared file; GREP/REVIEW-enforced)
+%
+%   [found]      shared maths, document skeleton, presentation.  Everywhere.
+%   [interface]  the computational interface I0.  Everywhere.  The ONLY stratum a
+%                consumer's PUBLISHED-QUANTITY formula may touch:
+%                  \attest, \addrspace, \netliveshare, \attestcap.
+%                (\attestunitcost is a DERIVED convenience over \netliveshare — the cost
+%                projection 1/((1−f)ζ) — NOT a fifth interface object; the export count
+%                stays four.)
+%   [surface]    monetary surface: operations any economic agent may perform and the audit
+%                quantities anyone may read.  This document, the realization, and
+%                CONSUMER PROSE — may be named and cited (via \attestationref) wherever a
+%                consumer discusses it, but never used in the consumer's MACHINERY: not in
+%                a published-quantity formula, not in a computation.
+%   [core]       specification-internal mechanism quantities.  This document (and the realization) only.
+%
+%   CONSUMPTION MATRIX        spec doc  realization  consumer formula  consumer prose
+%     [found]                   y          y               y                y
+%     [interface]               y          y               y                y
+%     [surface]                 y          y               -            cited
+%     [core]                    y          y               -                -
+%
+%   GREP LINT (consumer sources; review-blocking):
+%     surface+core purity — a surface/core name in a consumer formula is a violation; a
+%       surface name may appear in consumer PROSE only as a \attestationref citation:
+%       grep -nE '\\(reservepool|escrow|holdings|supplyfrac|netcost|redeemratio|totsupply|livesupply|tlocksupply|ratefloor|genesisfloorfactor|livesplit|feerate|genesisreserve|cycleburnfrac|matcycle|matlead|matleadcap|feeflow|confprice|bootrange|normrange|burnop|depositop|redeemop|liveclass|tlockclass)\b'
+%     core closure — core never appears in any consumer source:
+%       grep -nE '\\(escrow|holdings|supplyfrac|netcost|redeemratio)\b'   -> nothing.
+%     no-count rule — specification sources never mention the consumer count vocabulary:
+%       grep -nE '\\(partthresh|actioncount|commitrate|remcap|leverage|effais|reffais|floorburn|excessburn)\b'  in attestation/sections/*.tex -> nothing.
+%     two-clocks rule — attestation/sections/*.tex:  grep -niE 'epoch' -> nothing.
+%     no-downward-reference — attestation/sections/*.tex carries no realization vocabulary
+%       (covenant, on-chain, script, smart contract) and no realization pin/section name.
+%       Scope: normative prose only (sections/*.tex); build-infrastructure comments in
+%       this macro file may name tooling packages, including the anchor-set-hash
+%       implementation.
+%     upward silence — attestation/sections/*.tex carries no consumer noun
+%       (actor, account, user, consumer, network, guild).  "operator" is allowed: the
+%       specification's administrator role (fee recipient, maturity announcer).
+%
+% ════════════════════════════════════════════════════════════════════════════════
+% DESIGN PRINCIPLES
+%   1. One macro = one semantic concept; none overloaded.
+%   2. Empty braces -> bare symbol; non-empty -> applied/indexed:
+%        \attest{} -> A      \attest{a} -> A_a
+%   3. Modern expl3 internals (\cs_new_protected:Npn) + \NewDocumentCommand wrappers;
+%      LaTeX2e interfaces (\newtheorem, \newcounter, ...) called as-is.
+%   4. THE NO-COUNT RULE: no symbol here denominates per-action.  Two unit families —
+%      reserve units and receipt units — with ONE conversion rate, the floor phi.  It is
+%      consumed at THREE semantic sites: burn valuation and redemption payout in the
+%      receipt->reserve direction, and cycle issuance (dY = dOmega/phi) in the
+%      reserve->receipt direction.  The reserve->action conversion is the CONSUMER's and
+%      is absent here.
+%   5. ADDRESSES, NOT ACTORS: the index of \attest is an opaque address a in 𝔸; the
+%      binding "address = actor key" is the consumer's import-time reading.  The glyph A
+%      is unchanged across the boundary by design.
+%   6. ROOT OF THE CHAIN: this file compiles standalone, references no sibling, and its
+%      PART A apparatus is the FIRST \newtheorem/\newcounter any importing document sees.
+%
+% ════════════════════════════════════════════════════════════════════════════════
+% LABEL SCHEMA (this document; consumers cite with prefix A-)
+%
+%   <type> : <section> : <name>     — type vocabulary shared with importing documents:
+%     sec subsec def thm prop cor lem rem ins post alg tbl eq app open invest ver
+%     (every label is three-part; the document's own top-level divisions take the
+%     area attestation: sec:attestation:<section>, app:attestation:<name>, open:attestation:<name>, and
+%     the front-matter singletons abst:attestation:abstract and motto:attestation:motto)
+%   Section identifiers (the twelve, exactly — plus walkthrough, the birth
+%   home of the ver:* register):
+%     interface model operations invariants costliness containment discipline
+%     seigniorage maturity limitations verification symbols walkthrough
+%
+%   CANONICAL HANDLES (stable keys + display titles; the consumer API — title the
+%   environments EXACTLY, since \ztitleref reads the optional bracket):
+%     def:interface:address-space             (Address Space)
+%     def:interface:attestation               (Attestation)
+%     postc:interface:non-negativity           (Non-Negativity)
+%     postc:interface:monotonicity             (Monotonicity)
+%     postc:interface:auditability             (Public Auditability)
+%     thm:interface:instantaneous-costliness  (Instantaneous Costliness)
+%     prop:interface:bootstrap-capacity       (Bootstrap Capacity)
+%     prop:interface:conservative-valuation   (Conservative Valuation)
+%     def:interface:net-live-share            (Net Live Share)
+%     def:operations:burn                     (Burn)
+%     def:operations:deposit                  (Deposit)
+%     def:operations:redemption               (Redemption)
+%     def:model:ratefloor                     (Redemption-Rate Floor)
+%     def:model:classes                       (Classes)
+%     thm:invariants:floor-non-decrease       (Floor Non-Decrease)
+%     postc:maturity:announcement              (Maturity Announcement)
+%
+%   ANCHOR STABILITY (two tiers):
+%     Canonical handles — key AND display title stable; consumers may \ztitleref.
+%     Plain anchors     — key-stable only; titles may change. Existence is
+%       guaranteed while the key is pinned by any released consumer's
+%       anchor_set_hash: sha256( join("\n", sorted(distinct anchor names)) ),
+%       names cited without the A- prefix (recipe implemented and tested in
+%       packages/architecture (package tripod-architecture),
+%       canonical::anchor_set_hash).
+%     Pre-1.0 this file keeps rename freedom for UNPINNED labels; once a label
+%     enters a released consumer's anchor set, renaming it is a breaking change
+%     by definition — the hash says so. \OpenProblem labels are minted
+%     (open:attestation:<name>) by macro construction and participate in the same
+%     contract.
+%
+% ════════════════════════════════════════════════════════════════════════════════
+% SYMBOL COLLISION REGISTER
+%
+%   Internal:
+%   \attest A_a        vs \attestcap A_max          subscript address vs "max".
+%   \totsupply Y / \livesupply Y_L / \tlocksupply Y_T   one receipt, two classes.
+%   \redeemratio d_liq vs \netcost D_net            case + subscript.
+%   \matcycle k_m      vs bare k                     bare k is the local cycle index.
+%   \addrspace 𝔸       vs the openproblem TYPE       the set is a glyph; the type is a name.
+%   \addrspace 𝔸       vs algebraic numbers 𝔸        declared ONCE as an opaque set.
+%   \genesisreserve E_0 vs \holdings h               distinct letters; both core/surface.
+%   \ratefloor phi     vs golden-ratio / totient     glyph family; neither constant appears
+%                                                    anywhere in this stack.
+%   \confprice kappa   vs curvature                  glyph family; no curvature is defined here.
+%
+%   Cross-layer seam (the index reading flips downstream):
+%   \ratefloor phi  vs a reward R_C / earnings R_i    subscript distinguishes.
+%   \feerate f      vs an importing self-map f_i      subscript/argument.
+%   \escrow Q       vs a diversity quantity q         case.
+%   \supplyfrac s   vs a subsidy s (downstream sans)  family.
+%   \livesplit zeta vs zeta(p) Riemann / a floor      NEVER the same.
+%   \matlead Δk_min / \matleadcap Δk_max vs a downstream buffer δ
+%                                                   letters/subscript/hat.
+%   \attest A       vs a downstream proof-matrix A    italic Latin A vs calligraphic 𝓐.
+%   \addrspace 𝔸    vs a downstream calligraphic 𝓐    blackboard vs calligraphic.
+%   index a         Here: opaque address ∈ 𝔸.  Downstream: a bound actor.  Qualify at first use.
+%   cycle k (here)  vs a distinct downstream period word   TWO CLOCKS; never one word.
+%
+% ════════════════════════════════════════════════════════════════════════════════
+% CHANGELOG
+%   v0.6.0  Citation layer migrated to zref-clever; cleveref retired.  §A.4 becomes the
+%           reference-type section: shared-counter theorem environments force their
+%           reference type via per-environment countertype hooks (\AddToHook +
+%           \zcsetup), so definition/lemma/etc. labels type correctly while body
+%           equations keep the equation type.  Display names live in main.tex as a
+%           key-val zcLanguageSetup table outside the expl3 wrap.  No macro added,
+%           removed, or renamed (citation-layer only).
+%   v0.5.0  \ratefloorcap -> \genesisfloorfactor (phi_gen).  The old name asserted a
+%           bootstrapping ceiling that does not exist; the value is the pre-deposit
+%           factor and the always-valid pre-maturity bound is the dynamic Omega/Y_T.
+%           \feespigot REMOVED: an unused surface alias that the purity grep did not
+%           name, so it could carry a forbidden quantity past a review-blocking lint.
+%           "ALWAYS applied" corrected to bare-or-applied for \ratefloor and \confprice,
+%           which design principle 2 already permitted and prose already used.  The floor
+%           conversion is documented at its three consumption sites, not two.  Attestation
+%           glyph corrected in the collision register from blackboard to italic Latin.
+%   v0.4.0  Added \matleadcap (Δk_max), the maximum maturity lead.  Announced k_m is now
+%           bounded within [Δk_min, Δk_max].  Rationale: set-once irrevocability makes an
+%           over-far announcement unrevisable; Δk_max bounds its post-announcement cycle
+%           distance.
+%   v0.3.0  Vocabulary standard applied (precision + collision grounds only; no row is
+%           justified by a category avoided).
+%   v0.2.0  \ptbprice; \opidx; \bootrange/\normrange.  (Superseded names above.)
+%   v0.1.0  Reserve vocabulary; surface operation set; \genesisreserve, \holdings, \Izero.
+%   v0.1.0  expl3-pure + presentation promotion.
+%   v0.1.0  Skeleton promotion.
+%   v0.1.0  Initial extraction.
+% ========================================================================================
+
+
+% ========================================================================================
+% PART A — SHARED DOCUMENT APPARATUS + PRESENTATION                   EXPORT: [found]
+%   (Vocabulary-neutral; unchanged across the v0.3.0 rename except where noted.)
+% ========================================================================================
+
+% ────────────────────────────────────────────────────────────────────────────────
+% §A.1  Version management
+% ────────────────────────────────────────────────────────────────────────────────
+\tl_new:N \g_tripod_version_tl
+\NewDocumentCommand{\setversion}{m}{ \tl_gset:Nn \g_tripod_version_tl {#1} }
+\NewDocumentCommand{\docversion}{}{ \tl_use:N \g_tripod_version_tl }
+
+% ────────────────────────────────────────────────────────────────────────────────
+% §A.2  Theorem skeleton (one section-scoped counter) + equation numbering
+% ────────────────────────────────────────────────────────────────────────────────
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{conjecture}[theorem]{Conjecture}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{axiom}[theorem]{Axiom}
+\newtheorem{postulate}[theorem]{Postulate}
+\newtheorem{protocol}[theorem]{Protocol}
+
+\theoremstyle{remark}
+\newtheorem{insight}[theorem]{Insight}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{property}[theorem]{Property}
+
+\numberwithin{equation}{section}
+
+% ────────────────────────────────────────────────────────────────────────────────
+% §A.3  Open-problem counter family + environments
+% ────────────────────────────────────────────────────────────────────────────────
+\newcounter{openproblem}[subsection]
+\newcounter{opensubproblem}[openproblem]
+\newcounter{investigation}[subsection]
+
+\cs_set:Npn \theopenproblem      { \thesubsection.\arabic{openproblem} }
+\cs_set:Npn \theopensubproblem   { \theopenproblem.\arabic{opensubproblem} }
+\cs_set:Npn \theinvestigation    { \thesubsection.\arabic{investigation} }
+\cs_set:Npn \theHopenproblem
+  { openproblem.\arabic{section}.\arabic{subsection}.\arabic{openproblem} }
+\cs_set:Npn \theHopensubproblem
+  { opensubproblem.\arabic{section}.\arabic{subsection}.\arabic{openproblem}.\arabic{opensubproblem} }
+\cs_set:Npn \theHinvestigation
+  { investigation.\arabic{section}.\arabic{subsection}.\arabic{investigation} }
+
+\NewDocumentCommand{\OpenProblem}{m m}
+  {
+    \refstepcounter{openproblem}
+    \paragraph{\theopenproblem\quad#1.}
+    \label{open:attestation:#2}
+  }
+\NewDocumentCommand{\OpenSubProblem}{O{} m}
+  {
+    \refstepcounter{opensubproblem}
+    \emph{\theopensubproblem\quad#2.}
+    \tl_if_blank:nF {#1} { \label{open:attestation:#1} }
+  }
+\NewDocumentCommand{\ProposedInvestigation}{m m}
+  {
+    \refstepcounter{investigation}
+    \paragraph{\theinvestigation\quad#1.}
+    \label{invest:attestation:#2}
+  }
+
+% ────────────────────────────────────────────────────────────────────────────────
+% §A.4  Reference types for the theorem family
+% ────────────────────────────────────────────────────────────────────────────────
+% zref-clever derives a label's reference type from its COUNTER, and the whole
+% scholarly family shares the `theorem' counter — so each environment forces its
+% own counter-to-type mapping, scoped to the environment group, so its head
+% label types by the environment while equation labels inside the body keep
+% their own counter type. Display names are key-val configuration and live in
+% main.tex, OUTSIDE the expl3 wrap.
+\AddToHook{env/theorem/begin}{\zcsetup{countertype={theorem=theorem}}}
+\AddToHook{env/corollary/begin}{\zcsetup{countertype={theorem=corollary}}}
+\AddToHook{env/lemma/begin}{\zcsetup{countertype={theorem=lemma}}}
+\AddToHook{env/proposition/begin}{\zcsetup{countertype={theorem=proposition}}}
+\AddToHook{env/conjecture/begin}{\zcsetup{countertype={theorem=conjecture}}}
+\AddToHook{env/definition/begin}{\zcsetup{countertype={theorem=definition}}}
+\AddToHook{env/axiom/begin}{\zcsetup{countertype={theorem=axiom}}}
+\AddToHook{env/postulate/begin}{\zcsetup{countertype={theorem=postulate}}}
+\AddToHook{env/protocol/begin}{\zcsetup{countertype={theorem=protocol}}}
+\AddToHook{env/insight/begin}{\zcsetup{countertype={theorem=insight}}}
+\AddToHook{env/remark/begin}{\zcsetup{countertype={theorem=remark}}}
+\AddToHook{env/property/begin}{\zcsetup{countertype={theorem=property}}}
+
+% ────────────────────────────────────────────────────────────────────────────────
+% §A.5  Shared scholarly environments
+% ────────────────────────────────────────────────────────────────────────────────
+\newenvironment{motto}{\begin{center}\itshape}{\end{center}}
+\newenvironment{derivation}{\begin{proof}[Derivation]}{\end{proof}}
+
+% ────────────────────────────────────────────────────────────────────────────────
+% §A.6  Formatting utilities
+% ────────────────────────────────────────────────────────────────────────────────
+\cs_new_protected:Npn \tripod_add_usc: { \addfontfeatures{Letters=SmallCaps} }
+\NewDocumentCommand{\addUsc}{}{ \tripod_add_usc: }
+
+\cs_new_protected:Npn \tripod_insight_par:n #1 { \paragraph{Insight:}\emph{#1} }
+\NewDocumentCommand{\insightpar}{m}{ \tripod_insight_par:n {#1} }
+
+% ────────────────────────────────────────────────────────────────────────────────
+% §A.7  Shared presentation toolkit
+% ────────────────────────────────────────────────────────────────────────────────
+\NewDocumentCommand{\KEY}{m}{ \boxed{#1} }
+
+\NewDocumentCommand{\Izero}{}{ \ensuremath{I\sb{0}} }
+
+\NewDocumentCommand{\stackmarginnote}{m m}
+  {
+    \marginpar
+      {
+        \footnotesize \linespread{0.85} \selectfont
+        \textit{#1}~#2
+      }
+  }
+
+\NewDocumentCommand{\proofsketch}{m}{ \stackmarginnote{Sketch:}{#1} }
+
+\NewDocumentCommand{\interfaceref}{m}
+  { \stackmarginnote{Interface~\Izero{:}}{\zcref{#1}} }
+\NewDocumentCommand{\surfaceref}{m}
+  { \stackmarginnote{Surface:}{\zcref{#1}} }
+
+% Locality tag (v0.3.0).  The presentation form of the locality discipline: a fact true
+% only at this layer prints "at this layer", so the firewall reads as a fact, not a
+% disclaimer.  Use INLINE in prose ("non-redeemable \atthislayer{}").
+\NewDocumentCommand{\atthislayer}{}{ at~this~layer }
+
+% "records, never bears" (v0.3.0).  The attestation RECORDS a magnitude; it never BEARS a
+% value.  This primitive is the verb-level firewall: it renders "records" in the one place
+% a careless "is worth"/"bears" would rebuild a balance.  #1 = the magnitude phrase.
+\NewDocumentCommand{\attestrecords}{m}{ records~#1 }
+
+% Cross-document references INTO this paper (consumer side, prefix A-).  The prefix
+% A- names the DOCUMENT, not the instrument, so the receipt rename does not touch the noun.
+\bool_new:N \g_tripod_xref_bool
+\NewDocumentCommand{\attestxreftrue} {}{ \bool_gset_true:N  \g_tripod_xref_bool }
+\NewDocumentCommand{\attestxreffalse}{}{ \bool_gset_false:N \g_tripod_xref_bool }
+
+\NewDocumentCommand{\attestationref}{m}
+  {
+    \stackmarginnote{Attestation:}
+      {
+        \bool_if:NTF \g_tripod_xref_bool
+          { \zcref[cap]{A-#1}~(\ztitleref{A-#1}) }
+          { \texttt{#1} }
+      }
+  }
+\NewDocumentCommand{\attestationcref}{s m}
+  {
+    Attestation~
+    \bool_if:NTF \g_tripod_xref_bool
+      { \zcref[cap]{A-#2}\IfBooleanT{#1}{~(\ztitleref{A-#2})} }
+      { \texttt{#2} }
+  }
+
+
+% ========================================================================================
+% PART B — NOTATION
+% ========================================================================================
+
+% ────────────────────────────────────────────────────────────────────────────────
+% §F0  FOUNDATIONS                                                    EXPORT: [found]
+% ────────────────────────────────────────────────────────────────────────────────
+
+\NewDocumentCommand{\Nat}    {}{ \ensuremath{\symbb{N}}            }
+\NewDocumentCommand{\NatZero}{}{ \ensuremath{\symbb{N}\sb{0}}     }
+\NewDocumentCommand{\IntPos} {}{ \ensuremath{\symbb{Z}\sb{+}}     }
+\NewDocumentCommand{\R}      {}{ \ensuremath{\symbb{R}}            }
+
+\DeclarePairedDelimiter{\set} {\lbrace}{\rbrace}
+\DeclarePairedDelimiter{\abs} {\lvert} {\rvert}
+\DeclarePairedDelimiter{\norm}{\lVert} {\rVert}
+
+\NewDocumentCommand{\void}  {}{ \ensuremath{\varnothing} }
+\NewDocumentCommand{\okmark}{}{ \ensuremath{\checkmark}  }
+
+% Operator subscript token (the specification's administrator role).  Use \attest{\opidx} for the
+% operator attestation; keeps the subscript uniform across §8 / §A / §10.  Presentation
+% only — "op" is not a consumer noun.
+\NewDocumentCommand{\opidx}{}{ \ensuremath{\mathrm{op}} }
+
+% ────────────────────────────────────────────────────────────────────────────────
+% §I0  THE COMPUTATIONAL INTERFACE I0                             EXPORT: [interface]
+%
+% The COMPLETE set of objects a consumer's published-quantity formula may reference.
+% Four macros (\attest, \addrspace, \netliveshare, \attestcap).  \attestunitcost is a
+% derived convenience over \netliveshare (the reciprocal cost projection), not a fifth
+% object.  Everything else in PART B is surface or core.
+% ────────────────────────────────────────────────────────────────────────────────
+
+% Opaque address space 𝔸.  A burn names an address a ∈ 𝔸; attestation accrues to the
+% address, bounded by destruction.  No claim that an address is a person/holder/identity.
+% COLLIDES: algebraic numbers 𝔸 (declared once here as an opaque set, not a number field);
+%           a downstream calligraphic 𝓐 (blackboard vs calligraphic).
+\NewDocumentCommand{\addrspace}{}{ \ensuremath{\symbb{A}} }
+
+% Cumulative reserve-denominated ATTESTATION, per address.
+%   \attest{}  -> A   (the map A : 𝔸 -> ℝ≥0)        \attest{a}  -> A_a
+% THE export.  A RECORDS the reserve-value destroyed (it never BEARS value: non-transferable,
+% non-redeemable AT THIS LAYER).  Six specified properties: 1 non-negative · 2 settlement-
+% pinned monotone · 3 auditable as authenticated destruction · 4 instantaneously costly ·
+% 5 bootstrap-capacity-bounded (\attestcap) · 6 conservatively valued (records ≤ redeemable
+% value at the burn instant).  Index: OPAQUE ADDRESS here; a bound actor downstream (the
+% consumer's import-time reading); glyph unchanged by design.
+% COLLIDES: \attestcap A_max; a downstream proof-matrix 𝓐.  Subscript/blackboard.
+\cs_new_protected:Npn \tripod_attest:n #1
+  { \tl_if_blank:nTF {#1} { A } { A\sb{#1} } }
+\NewDocumentCommand{\attest}{m}{ \ensuremath{ \tripod_attest:n {#1} } }
+
+% Net live share: the post-fee, immediately-redeemable share of a bootstrapping-phase mint,
+% per reserve unit deposited = (1−f)·ζ.  A PURPOSE-NEUTRAL allocation ratio: it asserts no
+% depositor intent.  A reader producing attestation reads its RECIPROCAL as the reserve cost
+% of one attestation; a reader holding the position reads it as liquid retention.  This layer
+% asserts neither projection (cf. the locality discipline: as the layer declines to PRICE the
+% attestation, it declines to NAME the depositor's purpose).  FULL-FORM by design (renders the
+% product, no new glyph) so the value cannot be misstated.  Phase scope is part of the export.
+% First use in a consumer document must cite def:interface:net-live-share.
+\NewDocumentCommand{\netliveshare}{}{ \ensuremath{ (1-\feerate)\,\livesplit } }
+
+% [interface], derived companion for the cost projection (full-form, no new glyph).  The
+% reserve cost of one attestation unit = 1/((1−f)ζ).  Provided so the cost PROJECTION renders
+% honestly (direction-correct) wherever a consumer wants it, without re-deriving.  NOT a fifth
+% interface object — a convenience over \netliveshare; the export count stays four.
+\NewDocumentCommand{\attestunitcost}{}{ \ensuremath{ 1/\bigl((1-\feerate)\,\livesplit\bigr) } }
+
+% Maximum aggregate attestation before external deposits:
+%   A_max = E_0 ln(1/(1−ζ))   — property SP5's bound (E_0 = \genesisreserve).
+% COLLIDES: \attest A_a — "max" vs address.
+\NewDocumentCommand{\attestcap}{}{ \ensuremath{A\sb{\max}} }
+
+% ────────────────────────────────────────────────────────────────────────────────
+% §S0  MONETARY SURFACE — OPERATIONS                                EXPORT: [surface]
+%   Operations any economic agent may perform: deposit, transfer, burn, redeem.
+%   Transfer needs no macro (class-internal; plain prose).  Maturity conversion is a model
+%   event, not an agent operation (§S1 \matcycle).
+% ────────────────────────────────────────────────────────────────────────────────
+
+% Destination-addressed burn: burn(x; a) — destroy x live-class units; record on address a
+% an attestation of x·φ at the prevailing floor.  Funder unconstrained; consent-free (the
+% record is monotone in the address's favor).  x is the ITALIC burn amount.
+% KEPT "burn": the bluntest, most checkable name for irrecoverable destruction of one's own
+% units; the operation is never renamed after its output.
+\cs_new_protected:Npn \tripod_burnop:nn #1#2 { \operatorname{burn}(#1;#2) }
+\NewDocumentCommand{\burnop}{m m}{ \ensuremath{ \tripod_burnop:nn {#1}{#2} } }
+
+% Deposit: deposit(δ; a) — δ reserve units in; receipt minted at the next cycle boundary to
+% holder address a, split ζ : (1−ζ) into LIVE : TIME-LOCKED during bootstrapping (all LIVE
+% in the normal phase), less the mint fee f.
+% KEPT "deposit": the warehouse-deposit reading is the accurate one under the receipt model.
+\cs_new_protected:Npn \tripod_depositop:nn #1#2 { \operatorname{deposit}(#1;#2) }
+\NewDocumentCommand{\depositop}{m m}{ \ensuremath{ \tripod_depositop:nn {#1}{#2} } }
+
+% Redemption: redeem(x) — return x live-class units; receive x·φ reserve units.
+% The time-locked class is not redeemable until maturity conversion relabels it.
+\cs_new_protected:Npn \tripod_redeemop:n #1 { \operatorname{redeem}(#1) }
+\NewDocumentCommand{\redeemop}{m}{ \ensuremath{ \tripod_redeemop:n {#1} } }
+
+% ────────────────────────────────────────────────────────────────────────────────
+% §S1  MONETARY SURFACE — AUDIT QUANTITIES                          EXPORT: [surface]
+% ────────────────────────────────────────────────────────────────────────────────
+
+% Reserve pool Ω.  \reservepool{t} -> Ω(t).  Held 1:1 against the receipt; the reserve
+% asset is abstract (L-BTC, an external value token are named instantiations).
+\cs_new_protected:Npn \tripod_reservepool:n #1
+  { \tl_if_blank:nTF {#1} { \Omega } { \Omega(#1) } }
+\NewDocumentCommand{\reservepool}{m}{ \ensuremath{ \tripod_reservepool:n {#1} } }
+
+% Genesis reserve E_0 — the reserve deposited at genesis (Ω(0) = Y(0) = E_0, φ(0)=1).
+% COLLIDES: \holdings h (different letters; both core/surface only).
+\NewDocumentCommand{\genesisreserve}{}{ \ensuremath{E\sb{0}} }
+
+% Total receipt supply Y = Y_L + Y_T.  ONE conserved receipt; LIVE/TIME-LOCKED are its two
+% redemption CLASSES, not assets.  Y is SUPPLY — never glossed "yield".
+\cs_new_protected:Npn \tripod_totsupply:n #1
+  { \tl_if_blank:nTF {#1} { Y } { Y(#1) } }
+\NewDocumentCommand{\totsupply}{m}{ \ensuremath{ \tripod_totsupply:n {#1} } }
+
+% Live-class supply component Y_L (always redeemable).
+\cs_new_protected:Npn \tripod_livesupply:n #1
+  { \tl_if_blank:nTF {#1} { Y\sb{\mathrm{L}} } { Y\sb{\mathrm{L}}(#1) } }
+\NewDocumentCommand{\livesupply}{m}{ \ensuremath{ \tripod_livesupply:n {#1} } }
+
+% Time-locked-class supply component Y_T (transferable; neither burnable nor redeemable; no
+% redemption floor; converts into the live class in one relabel at k_m).
+\cs_new_protected:Npn \tripod_tlocksupply:n #1
+  { \tl_if_blank:nTF {#1} { Y\sb{\mathrm{T}} } { Y\sb{\mathrm{T}}(#1) } }
+\NewDocumentCommand{\tlocksupply}{m}{ \ensuremath{ \tripod_tlocksupply:n {#1} } }
+
+% Redemption-rate floor φ = Ω/Y — reserve per receipt unit; the redemption price and THE
+% unit conversion of the specification.  RATCHETS UP ONLY (monotone non-decreasing) — a floor, not a
+% return; this is why the glyph is phi, not R.  One floor over the COMBINED supply.
+% Property SP6 is an upper bound, so a lagged/last-settled valuation is valid, not a
+% contradiction.
+% BARE-OR-APPLIED (design principle 2): \ratefloor{} -> phi is the current or abstract
+% floor; \ratefloor{t} -> phi(t) is the explicitly evaluated one.  Both are correct; the
+% bare form is the common case in prose.
+% COLLIDES: golden-ratio / totient (neither constant appears in this stack; the
+%           disambiguation is the glyph family, not an application convention);
+%           a downstream reward R_C / earnings R_i.
+\cs_new_protected:Npn \tripod_ratefloor:n #1
+  { \tl_if_blank:nTF {#1} { \varphi } { \varphi(#1) } }
+\NewDocumentCommand{\ratefloor}{m}{ \ensuremath{ \tripod_ratefloor:n {#1} } }
+
+% Genesis floor factor φ_gen = 1/(1−ζ): the value of the standing bound Ω/Y_T BEFORE ANY
+% EXTERNAL DEPOSIT.  It is NOT a ceiling.  The always-valid pre-maturity bound is the
+% dynamic φ ≤ Ω/Y_T (prop:containment:time-locked-standing-bound); deposits raise it, and
+% no deposit-independent bootstrapping ceiling exists at all
+% (prop:containment:no-fixed-bootstrap-floor-ceiling).  Carry the scope wherever the glyph
+% appears: "before external deposits", never "during bootstrapping".
+\NewDocumentCommand{\genesisfloorfactor}{}{ \ensuremath{\varphi\sb{\mathrm{gen}}} }
+
+% LIVE/TIME-LOCKED split ζ ∈ (0,1): the live share at mint.  Published constant, fixed at
+% genesis.
+% COLLIDES: ζ(p) Riemann / a downstream floor — NEVER the same.
+% magnitude is a calibration output, not a layer constant — see rem:model:calibration
+\NewDocumentCommand{\livesplit}{}{ \ensuremath{\zeta} }
+
+% Formula-fixed mint fee rate f ∈ (0,1).  Published constant, a deterministic function of
+% public state.  ("formula-fixed", never "maintenance" — purpose words are not properties.)
+% COLLIDES: a downstream self-map f_i.
+% magnitude is a calibration output, not a layer constant — see rem:model:calibration
+\NewDocumentCommand{\feerate}{}{ \ensuremath{f} }
+
+% Cycle burn fraction χ^{(k)}.  "Cycle", not "epoch" — the specification's periods are CYCLES; A flows
+% continuously and a consumer samples it at ITS own boundary.
+\cs_new_protected:Npn \tripod_cycleburnfrac:n #1
+  { \tl_if_blank:nTF {#1} { \chi } { \chi\sp{(#1)} } }
+\NewDocumentCommand{\cycleburnfrac}{m}{ \ensuremath{ \tripod_cycleburnfrac:n {#1} } }
+
+% Maturity-conversion cycle k_m (one-time value-neutral TIME-LOCKED -> LIVE relabel in Y).
+% COLLIDES: bare k (the local cycle index).
+\NewDocumentCommand{\matcycle}{}{ \ensuremath{k\sb{\mathrm{m}}} }
+
+% Minimum maturity lead Δk_min (cycles). Published constant.
+% COLLIDES: a downstream buffer δ (letters/hat).
+\NewDocumentCommand{\matlead}{}{ \ensuremath{\Delta k\sb{\min}} }
+
+% Maximum maturity lead Δk_max (cycles). Published constant; Δk_min ≤ Δk_max.
+% Bounds the post-announcement cycle distance to scheduled maturity under an irrevocable
+% announcement. It neither compels announcement nor asserts wall-clock cycle liveness.
+\NewDocumentCommand{\matleadcap}{}{ \ensuremath{\Delta k\sb{\max}} }
+
+% Operator mint-fee flow per cycle during bootstrapping (immediately-destroyable live-class
+% part): f·ζ·ΔY.  Renders the BOOTSTRAP form (the one the seigniorage bounds cite); the
+% post-conversion form is f·ΔY.
+\NewDocumentCommand{\feeflow}{}
+  { \ensuremath{ \feerate\,\livesplit\,\Delta\totsupply{} } }
+
+% Time-locked-class secondary-market CONFIDENCE PRICE κ.  The signal an inheriting layer
+% reads.  BARE-OR-APPLIED (design principle 2): \confprice{d} -> κ(d) is the evaluated
+% price; bare \confprice{} -> κ names the handle itself.  Prefer the applied form where a
+% specific cycle or deposit ratio is meant, so it reads as a price-of-something.
+% COLLIDES: curvature κ — no curvature is defined in this stack; the glyph is unambiguous here.
+\cs_new_protected:Npn \tripod_confprice:n #1
+  { \tl_if_blank:nTF {#1} { \kappa } { \kappa(#1) } }
+\NewDocumentCommand{\confprice}{m}{ \ensuremath{ \tripod_confprice:n {#1} } }
+
+% Phase intervals (cycles), presentation helpers over \matcycle.  Use for "bootstrapping
+% \bootrange" / "normal \normrange"; never bare "two-phase".
+\NewDocumentCommand{\bootrange}{}{ \ensuremath{[0,\matcycle)}        }
+\NewDocumentCommand{\normrange}{}{ \ensuremath{[\matcycle,\infty)}  }
+
+% Standardized class names — keep the class/asset distinction grep-able in prose.
+\NewDocumentCommand{\liveclass} {}{ \textnormal{live~class} }
+\NewDocumentCommand{\tlockclass}{}{ \textnormal{time\nobreakdash-locked~class} }
+
+% ────────────────────────────────────────────────────────────────────────────────
+% §C0  CORE — ATTESTATION INTERNAL                                     EXPORT: [core]
+%   Used by this document's theorems (and the realization) ONLY.  A consumer-side appearance of any
+%   name here is a review-blocking layering violation (grep lint).
+% ────────────────────────────────────────────────────────────────────────────────
+
+% Deposit escrow Q — reserve received within a cycle, awaiting the boundary mint.
+% COLLIDES: a downstream diversity quantity q (case).
+\cs_new_protected:Npn \tripod_escrow:n #1
+  { \tl_if_blank:nTF {#1} { Q } { Q(#1) } }
+\NewDocumentCommand{\escrow}{m}{ \ensuremath{ \tripod_escrow:n {#1} } }
+
+% Holder receipt holdings h_i — receipt units held by holder address i; the numerator of
+% the supply fraction.
+\cs_new_protected:Npn \tripod_holdings:n #1
+  { \tl_if_blank:nTF {#1} { h } { h\sb{#1} } }
+\NewDocumentCommand{\holdings}{m}{ \ensuremath{ \tripod_holdings:n {#1} } }
+
+% Supply fraction s_i = h_i/Y — the pivot of the conservation identity and ζ-independence.
+\cs_new_protected:Npn \tripod_supplyfrac:n #1
+  { \tl_if_blank:nTF {#1} { s } { s\sb{#1} } }
+\NewDocumentCommand{\supplyfrac}{m}{ \ensuremath{ \tripod_supplyfrac:n {#1} } }
+
+% Net economic cost Δ_net = Ω·x·(1−s)/(Y−x).
+\NewDocumentCommand{\netcost}{}{ \ensuremath{\Delta\sb{\mathrm{net}}} }
+
+% Redeemable cost ratio δ_liq (immediately-redeemable value-loss fraction).
+\NewDocumentCommand{\redeemratio}{}{ \ensuremath{\delta\sb{\mathrm{liq}}} }
+
+
+% ========================================================================================
+% END OF FILE: macros_attestation.tex (Attestation)  (v1.0.0)
+% ========================================================================================

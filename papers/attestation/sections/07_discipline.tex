@@ -1,0 +1,105 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+%========================================================================================
+% FILENAME: 07_discipline.tex (v1.0.0)
+%
+% §7 Market Discipline.  §7.1 three feedback forces + cost-convergence table; §7.2
+% fee-channel anti-correlation (uses the surface handle \confprice, always applied).
+%
+% Proof budget: one \proofsketch margin (anti-correlation).  No \interfaceref.  Silences
+% applied; cycle only; "actor" -> "agent".
+%
+% Change history lives in version control (see the versioning policy in main.tex).
+%========================================================================================
+
+\section{Market Discipline}
+\label{sec:attestation:discipline}
+
+Once external holders exist, three forces create negative feedback around burning; none
+exists in the single-holder regime. This is the market property that activates the
+\emph{net} costliness the protocol alone cannot supply
+(\zcref{intuit:costliness:design-problem}).
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Three Feedback Forces}
+\label{sec:discipline:forces}
+% ═══════════════════════════════════════════════════════════════════════
+
+\textbf{Redemption drainage.} Burns raise $\ratefloor{}$; other holders redeem at the new
+floor, extracting reserve units from $\reservepool{}$ and reducing future burn
+productivity. \textbf{Acquisition cost.} Any agent who wants to burn must deposit reserve
+units or acquire \liveclass{} units on a secondary market at the market price.
+\textbf{Speculative holding.} Holders expecting future burns to raise $\ratefloor{}$ delay
+redemption, tightening liquid supply and raising acquisition cost.
+
+\begin{equation*}
+    \text{Burn}
+    \xrightarrow{\text{raises } \ratefloor{}}
+    \text{Redemption}
+    \xrightarrow{\text{drains } \reservepool{}}
+    \text{Reduced burn productivity}
+\end{equation*}
+\begin{equation*}
+    \text{Burn}
+    \xrightarrow{\text{raises } \ratefloor{}}
+    \text{Speculative holding}
+    \xrightarrow{\text{tightens supply}}
+    \text{Higher acquisition cost}
+\end{equation*}
+
+Both loops are negative: burning triggers responses that make further burning less
+productive or more expensive. Neither exists in the single-holder regime.
+
+\begin{table}[h!]
+    \centering
+    \caption{Cost convergence under external deposit dilution. Independent of $\livesplit$
+    (\zcref{thm:costliness:zeta-independence}).}
+    \label{tab:discipline:cost-convergence}
+    \begin{tabular}{@{}c c c l@{}}
+        \toprule
+        $D/\genesisreserve$ & $\supplyfrac{}$ & Net cost / unit & \textbf{Regime} \\
+        \midrule
+        $0$         & $1.00$    & $0$    & Monopoly \\
+        $1.0$       & $0.50$    & $0.50$ & Transitional \\
+        $10.0$      & $0.09$    & $0.91$ & Market discipline \\
+        $\to\infty$ & $\to 0$   & $\to 1$ & Full costliness \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Fee-Channel Anti-Correlation}
+\label{sec:discipline:anti-correlation}
+% ═══════════════════════════════════════════════════════════════════════
+
+\begin{proposition}[Fee--Time-Locked-Class Channel Anti-Correlation]
+    \label{prop:discipline:anti-correlation}
+    \proofsketch{$\confprice{d}$ rises and $\supplyfrac{}(d)$ falls in $d$; the product is
+    bounded.}%
+    The operator receives $\feerate(1-\livesplit)\Delta\totsupply{}$ fee \tlockclass{} units
+    per cycle, which are transferable. Selling them for \liveclass{} units and burning the
+    acquired units would circumvent the $\livesplit$-suppression of
+    \zcref{prop:containment:seigniorage-suppression}. The channel is self-resolving: with
+    $d = D/\genesisreserve$, the time-locked-class secondary-market confidence price
+    $\confprice{d}$ approaches live-class parity as $d \to \infty$, while the genesis supply
+    dominance $\supplyfrac{}(d) = 1/(1+d) \to 0$. Since $\confprice{d}$ is monotone
+    increasing and $\supplyfrac{}(d)$ monotone decreasing in $d$: when the channel is
+    operative ($\confprice{d}$ near parity, $d$ large), $\supplyfrac{} \approx 0$ and burns
+    are genuinely costly; when the genesis advantage exists ($\supplyfrac{} \approx 1$, $d$
+    small), $\confprice{d}$ is deeply discounted and the channel yields negligible
+    \liveclass{} units per \tlockclass{} unit sold.
+\end{proposition}
+
+\begin{remark}[Transient Decorrelation]
+    \label{rem:discipline:transient-decorrelation}
+    The anti-correlation is a steady-state relationship; during transient liquidity events
+    it may temporarily break. The containment bounds (\zcref{sec:attestation:containment}) bind from
+    genesis regardless of secondary-market conditions.
+\end{remark}
+
+%========================================================================================
+% END OF FILE: 07_discipline.tex (v1.0.0)
+%========================================================================================
+
+\end{document}

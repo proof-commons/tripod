@@ -1,0 +1,268 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+%========================================================================================
+% FILENAME: 05_costliness.tex (v1.0.0)
+%
+% §5 Costliness.  §5.1 the costliness problem (conservation identity, zeta-independence
+% setup); §5.2 instantaneous costliness (proof of SP4) + attestation-append-only (the
+% abstract half of SP2); §5.3 cost decomposition; §5.4 addresses and splitting.
+%
+% Proof budget: TWO body proofs — conservation-identity and the §5.2 proof of
+% thm:interface:instantaneous-costliness.  All other proofs are \proofsketch margins.
+% First-use index qualifier carried once, in the §5.2 proof.  Silences applied; cycle
+% only; Douceur cite rephrased (no "Sybil"); "puppet" -> "secondary address".
+%
+% Change history lives in version control (see the versioning policy in main.tex).
+%========================================================================================
+
+\section{Costliness}
+\label{sec:attestation:costliness}
+
+Every claim built on $\attest{}$ requires the burn to have been costly. This chapter proves
+when and how the cost arises: instantaneously and per-unit from the first cycle
+(\zcref{sec:costliness:instantaneous}), but in \emph{net economic} terms only once a
+market exists (\zcref{sec:costliness:problem}). Following the resource-constraint
+formulation of identity multiplication\footcite{douceur2002sybil}, the burn ties standing
+to a scarce redeemable asset.
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{The Costliness Problem}
+\label{sec:costliness:problem}
+% ═══════════════════════════════════════════════════════════════════════
+
+\begin{theorem}[Conservation Identity]
+    \label{thm:costliness:conservation-identity}
+    Let $\reservepool{} > 0$, $\totsupply{} > 0$, and
+    $\ratefloor{} = \reservepool{}/\totsupply{}$. A holder with holdings $\holdings{}$ burns
+    $x \leq \holdings{}$, removing those units from supply while leaving $\reservepool{}$
+    unchanged. The decrease in the holder's redeemable position value is
+    \begin{equation}
+        \netcost
+        = \frac{\holdings{}\reservepool{}}{\totsupply{}}
+        - \frac{(\holdings{} - x)\reservepool{}}{\totsupply{} - x}
+        = \frac{\reservepool{}\,x\,(\totsupply{} - \holdings{})}
+               {\totsupply{}(\totsupply{} - x)}.
+        \label{eq:costliness:conservation-identity}
+    \end{equation}
+\end{theorem}
+\begin{proof}
+    Pre-burn value at floor $\ratefloor{}$ is $\holdings{}\reservepool{}/\totsupply{}$;
+    post-burn the supply is $\totsupply{} - x$, the pool is unchanged, and the holdings are
+    $\holdings{} - x$, giving value $(\holdings{}-x)\reservepool{}/(\totsupply{}-x)$.
+    Subtracting and collecting yields the right-hand side.
+\end{proof}
+
+\begin{corollary}[Supply-Fraction Form]
+    \label{cor:costliness:supply-fraction-form}
+    With $\supplyfrac{} = \holdings{}/\totsupply{}$,
+    \begin{equation}
+        \KEY{\;
+        \netcost
+        = \frac{\reservepool{}\,x\,(1 - \supplyfrac{})}{\totsupply{} - x}
+        \;}
+        \label{eq:costliness:supply-fraction-form}
+    \end{equation}
+    At $\supplyfrac{} = 0$: $\netcost \approx x\ratefloor{}$ for small $x$. At
+    $\supplyfrac{} = 1$: $\netcost = 0$.
+\end{corollary}
+
+\begin{theorem}[Structural Impossibility of Internal Costliness]
+    \label{thm:costliness:structural-impossibility}
+    \proofsketch{$a+b = \holdings{}$ regardless of how $a,b$ are defined; $\supplyfrac{}$
+    depends only on $\holdings{}/\totsupply{}$.}%
+    No internal partition of a holder's holdings into sub-classes produces positive net
+    economic cost at $\supplyfrac{} = 1$: the factor $(1 - \supplyfrac{})$ in
+    \zcref{eq:costliness:supply-fraction-form} is independent of any such partition.
+\end{theorem}
+
+\begin{remark}[Two Regimes]
+    \label{rem:costliness:two-regimes}
+    Genuine net cost requires $(1 - \supplyfrac{}) > 0$ --- other holders with independent
+    redemption incentives. This is a market condition, not a protocol condition; at genesis
+    no competitive market exists.
+\end{remark}
+
+\begin{insight}
+    \label{intuit:costliness:design-problem}
+    The receipt economy is complete: instantaneous costliness, irrevocability, floor
+    non-decrease, and no-recycling-advantage are protocol guarantees from the first cycle.
+    Net economic costliness is a market property. The containment mechanism
+    (\zcref{sec:attestation:containment}) bounds commitment capacity during the pre-market interval,
+    creating the conditions under which external deposits develop the market whose feedback
+    (\zcref{sec:attestation:discipline}) supplies the net-cost discipline the protocol cannot.
+\end{insight}
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Instantaneous Costliness}
+\label{sec:costliness:instantaneous}
+% ═══════════════════════════════════════════════════════════════════════
+
+\begin{proof}[Proof of \zcref{thm:interface:instantaneous-costliness}]
+    \interfaceref{thm:interface:instantaneous-costliness}%
+    Each increment to $\attest{a}$ is backed by \liveclass{} units redeemable at the
+    settlement floor. The index $a$ is an opaque address
+    (\zcref{def:interface:address-space}); the binding of addresses to any identity is the
+    importing system's import-time interpretation. Burning $x$ \liveclass{} units
+    (\zcref{def:operations:burn}) records on $a$ an attestation of $x\ratefloor{c}$, where
+    $\ratefloor{c}$ is the floor committed by the settlement event the burn clears against;
+    that floor is well-defined, and the increment order-free, under either reduction of
+    \zcref{prop:invariants:burn-order-residual}.
+
+    Credited value and destroyed value are distinct quantities. The destroyed \liveclass{}
+    units were redeemable at the burn-instant floor $\ratefloor{b}$, so their value at the
+    instant of destruction is $x\ratefloor{b}$. The floor is globally non-decreasing
+    (\zcref{thm:invariants:floor-non-decrease}) and the settlement event precedes the burn,
+    hence $\ratefloor{c} \leq \ratefloor{b}$ and
+    \[
+        \Delta\attest{a} \;=\; x\ratefloor{c} \;\leq\; x\ratefloor{b} \;=\; V_{\text{destroyed}}.
+    \]
+    Summing over the increments reaching $\attest{a} = M$ gives destroyed receipt of
+    burn-instant redeemable value at least $M$ reserve units, with equality exactly when
+    every burn settles at its own burn-instant floor. Strict inequality arises when an
+    earlier uncleared burn has already raised the true floor above the last committed one:
+    a burn of $100$ units credited at a settled floor of $1$ destroys receipt redeemable
+    for $110$ when the burn-instant floor has reached $1.1$. The shortfall accrues to the
+    remaining holders as floor, never to the burner as attestation, which is the
+    conservative direction of \zcref{prop:interface:conservative-valuation}.
+
+    No operation maps an attestation increment back to either class or to reserve units
+    (\zcref{lem:costliness:attestation-append-only}).
+\end{proof}
+
+\begin{lemma}[Attestation Append-Only]
+    \label{lem:costliness:attestation-append-only}
+    \interfaceref{postc:interface:monotonicity}%
+    \proofsketch{only \zcref{def:operations:burn} modifies $\attest{a}$, and only by adding
+    $x\ratefloor{t} > 0$.}%
+    $\attest{a}$ is monotone non-decreasing for every address $a$: no operation of
+    \zcref{sec:attestation:operations} decrements it, and no operation maps the attestation back to
+    either class or to reserve units. This is the abstract-layer half of
+    \zcref{postc:interface:monotonicity}; the granularity corollary is established by a reader
+    against its own sampling depth, not here.
+\end{lemma}
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Cost Decomposition}
+\label{sec:costliness:decomposition}
+% ═══════════════════════════════════════════════════════════════════════
+
+\begin{theorem}[$\livesplit$-Independence of Net Economic Cost]
+    \label{thm:costliness:zeta-independence}
+    \proofsketch{at genesis $\holdings{}+g = \livesplit\genesisreserve +
+    (1-\livesplit)\genesisreserve = \genesisreserve = \totsupply{}$; $\livesplit$
+    cancels.}%
+    For a holder with $\holdings{}$ \liveclass{} and $g$ \tlockclass{} units, write
+    $\supplyfrac{} = (\holdings{}+g)/\totsupply{}$. The conservation identity gives
+    $\netcost = \reservepool{}\,x\,(1-\supplyfrac{})/(\totsupply{}-x)$; since
+    $\holdings{}+g$ is independent of $\livesplit$, net economic cost is
+    $\livesplit$-independent. The per-unit cost of commitment is determined entirely by
+    supply dilution from external deposits.
+\end{theorem}
+
+\begin{definition}[Position Decomposition]
+    \label{def:costliness:position-decomposition}
+    After burning $x$ at floor $\ratefloor{}$, a holder's position separates into three
+    components: the attestation obtained ($x\ratefloor{}$, non-realizable); remaining
+    \liveclass{} ($(\holdings{}-x)\ratefloor{}^{+}$, immediately redeemable); and
+    \tlockclass{} ($g\ratefloor{}^{+}$, model value, not realizable until maturity).
+\end{definition}
+
+\begin{definition}[Redeemable Cost Ratio]
+    \label{def:costliness:redeemable-cost-ratio}
+    The fraction of the burn's face value representing immediately redeemable value loss is
+    \begin{equation}
+        \redeemratio = \frac{\totsupply{} - \holdings{}}{\totsupply{} - x}.
+        \label{eq:costliness:redeemable-cost-ratio}
+    \end{equation}
+    With the time-locked class, $\holdings{} = \livesplit\genesisreserve$ at genesis, so
+    $\redeemratio \approx 1 - \livesplit$ for small $x$.
+\end{definition}
+
+\begin{table}[h!]
+    \centering
+    \caption{Redeemable cost at representative $\livesplit$. A genesis holder burns all
+    $\livesplit\genesisreserve$ \liveclass{} units in infinitesimal increments.}
+    \label{tab:costliness:redeemable-cost}
+    \begin{tabular}{@{}c c c c c@{}}
+        \toprule
+        $\livesplit$ & Marginal $\redeemratio$ & $\genesisfloorfactor$
+            & Net cost (certain maturity) & $\attestcap/\genesisreserve$ \\
+        \midrule
+        $1.00$ & $0\%$  & $\infty$ & $0\%$ & $\infty$ \\
+        $0.50$ & $50\%$ & $2.00$   & $0\%$ & $0.693$ \\
+        $0.10$ & $90\%$ & $1.11$   & $0\%$ & $0.105$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{remark}[Net Cost for Supply-Dominant Holders]
+    \label{rem:costliness:dominant-holder-cost}
+    At $\supplyfrac{} = 1$, net cost is zero at every $\livesplit$ --- a property of closed
+    reserve pools, not a deficiency. The split governs \emph{capacity}, not \emph{per-unit
+    cost}.
+\end{remark}
+
+\begin{proposition}[No Recycling Advantage]
+    \label{prop:costliness:no-recycling-advantage}
+    \proofsketch{direct burn: $W$; infinite recycle
+    $\sum_{i=1}^{\infty}\feerate(1-\feerate)^{i-1}W = W$; any mix by linearity.}%
+    For fee-derived \liveclass{} units worth $W$ reserve units at the minting floor, every
+    sequence of $\set{\text{burn}, \text{redeem}, \text{deposit}}$ operations produces
+    operator attestation exactly $W$.
+\end{proposition}
+
+\begin{remark}[What the Time-Locked Class Does and Does Not Do]
+    \label{rem:costliness:tlock-class-summary}
+    \begin{enumerate}[nosep]
+        \item It bounds commitment \emph{capacity} during the pre-market interval
+            (\zcref{sec:attestation:containment}).
+        \item Per-unit costliness holds every cycle, with or without it
+            (\zcref{thm:interface:instantaneous-costliness}).
+        \item Net costliness activates as external deposits dilute the genesis holder's
+            supply fraction (\zcref{sec:attestation:discipline}).
+    \end{enumerate}
+\end{remark}
+
+% ═══════════════════════════════════════════════════════════════════════
+\subsection{Addresses and Splitting}
+\label{sec:costliness:splitting}
+% ═══════════════════════════════════════════════════════════════════════
+
+The address-level analysis below is the receipt-economy form of the resource-constraint
+argument: the attestation is non-transferable across addresses
+(\zcref{lem:costliness:attestation-append-only}).
+
+\begin{proposition}[Address-Splitting Cost]
+    \label{prop:costliness:address-splitting-cost}
+    \proofsketch{the secondary address's supply fraction $\holdings{}_P/\totsupply{}$ is
+    below the funder's, so it faces higher per-unit cost.}%
+    A secondary address funded by the same holder, holding $\holdings{}_P$ \liveclass{} and
+    $g_P = 0$ \tlockclass{} units, burns $x \leq \holdings{}_P$:
+    $\redeemratio = (\totsupply{} - \holdings{}_P)/(\totsupply{} - x)$. The attestation
+    accrues to that address's $\attest{}$, not the funder's --- the attestation is
+    non-transferable across addresses (\zcref{def:interface:address-space}).
+\end{proposition}
+
+\begin{proposition}[Portfolio-Level Net Cost]
+    \label{prop:costliness:portfolio-net-cost}
+    At $\supplyfrac{} = 1$ --- one holder controls all supply across all addresses ---
+    $\netcost = 0$ regardless of the number of addresses or the distribution across them.
+    The binding constraint is attestation non-transferability: $\attest{}$ on one address
+    cannot be aggregated with another's.
+\end{proposition}
+
+\begin{proposition}[Splitting Invariance]
+    \label{prop:costliness:splitting-invariance}
+    \proofsketch{telescoping: $\totsupply{}_k - \holdings{}_k = \totsupply{} - \holdings{}$
+    is invariant across sub-burns, so each sub-burn's $\netcost$ sums to the single-burn
+    $\netcost$.}%
+    Splitting a burn of $x$ into $n$ sub-burns preserves total redeemable cost; the total
+    converges to the single-burn result as $n \to \infty$.
+\end{proposition}
+
+%========================================================================================
+% END OF FILE: 05_costliness.tex (v1.0.0)
+%========================================================================================
+
+\end{document}
