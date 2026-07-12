@@ -1,0 +1,33 @@
+# Build and compilation artifacts
+/build/
+/builddir/
+/target/
+**/target/
+Cargo.lock
+/archive/rendered/
+/archive/flattened/
+**/.wraplock
+
+# LaTeX auxiliary files
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.run.xml
+*.synctex.gz
+*.toc
+*.xdv
+
+# Rendered output
+*.pdf
+
+# Editor and temporary files
+*.report
+*.bak
+*.swp
+*.swo
+*~
