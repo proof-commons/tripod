@@ -12,6 +12,15 @@ A compiler is proved by what it compiles. This tree therefore carries, beside th
   - `human.md` - plain-language companion report.
 - `adr/` - Architecture decision records for the repository tooling.
 
+## Command-line output contract
+
+Every executable in this workspace follows
+[ADR-010](adr/010-command-line-output-contract.md): stdout carries only JSON
+result data (single object or NDJSON) and refuses a terminal; assets are
+written to paths given by arguments such as `--output`; everything else —
+help, usage, diagnostics, panics — is JSON on stderr; exit codes are
+0 (success), 1 (failure), 2 (usage).
+
 ## Licensing
 
 Code is licensed under `LICENSE-CODE`; the papers and documents under
