@@ -10,6 +10,7 @@ A compiler is proved by what it compiles. This tree therefore carries, beside th
 - `docs/attestation/` - the documents the specification is realized by.
   - `realization.md` - the Elements/Liquid realization document.
   - `human.md` - plain-language companion report.
+- `adr/` - Architecture decision records for the repository tooling.
 
 ## Licensing
 
