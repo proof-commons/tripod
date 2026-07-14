@@ -7,6 +7,8 @@ A compiler is proved by what it compiles. This tree therefore carries, beside th
 ## Layout
 
 - `papers/attestation/` - LaTeX source of the *Attestation* specification.
+- `docs/attestation/` - the documents the specification is realized by.
+  - `realization.md` - the Elements/Liquid realization document.
 
 ## Licensing
 
