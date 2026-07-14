@@ -1,0 +1,21 @@
+[package]
+name = "cli-common"
+description = "Shared CLI scaffolding for ADR-010 command-line tools"
+
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+url = { workspace = true }
+
+[lints]
+workspace = true

@@ -10,6 +10,7 @@ A compiler is proved by what it compiles. This tree therefore carries, beside th
 - `docs/attestation/` - the documents the specification is realized by.
   - `realization.md` - the Elements/Liquid realization document.
   - `human.md` - plain-language companion report.
+- `packages/cli-common/` - Shared Rust CLI scaffolding (implements ADR-010).
 - `adr/` - Architecture decision records for the repository tooling.
 
 ## Command-line output contract
@@ -20,6 +21,10 @@ result data (single object or NDJSON) and refuses a terminal; assets are
 written to paths given by arguments such as `--output`; everything else —
 help, usage, diagnostics, panics — is JSON on stderr; exit codes are
 0 (success), 1 (failure), 2 (usage).
+
+## Requirements
+
+- a Rust toolchain (cargo, edition 2024)
 
 ## Licensing
 
