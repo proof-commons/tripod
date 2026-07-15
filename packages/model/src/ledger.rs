@@ -639,6 +639,65 @@ impl ReferenceIndexer {
         })
     }
 
+    /// Synthetic constructor for deterministic unit tests.
+    ///
+    /// Production code should use `from_history`.
+    #[cfg(test)]
+    pub(crate) fn empty_for_test(context: AttestationContext) -> Self {
+        Self {
+            context,
+            burns: BTreeMap::new(),
+            clears: BTreeMap::new(),
+            events: Vec::new(),
+        }
+    }
+
+    /// Test-only insertion that maintains the canonical event order
+    /// and re-validates the index. Genesis clearing is recognized from
+    /// the clear-id variant.
+    #[cfg(test)]
+    pub(crate) fn insert_clear_for_test(&mut self, clear: ClearEntry) -> Result<(), Guard> {
+        let id = match clear.clear_id {
+            ClearId::Genesis(_) => AttestationEventId::GenesisClear(clear.clear_id),
+            ClearId::Transaction(_) => AttestationEventId::Clear(clear.clear_id),
+        };
+
+        if self.clears.insert(clear.clear_id, clear).is_some() {
+            return Err(Guard::DuplicateEvent);
+        }
+
+        self.insert_event_for_test(OrderedAttestationEvent {
+            order: clear.order,
+            id,
+        })
+    }
+
+    /// Test-only insertion that maintains the canonical event order
+    /// and re-validates the index.
+    #[cfg(test)]
+    pub(crate) fn insert_burn_for_test(&mut self, burn: BurnTransaction) -> Result<(), Guard> {
+        let order = burn.order;
+        let txid = burn.txid;
+
+        if self.burns.insert(txid, burn).is_some() {
+            return Err(Guard::DuplicateEvent);
+        }
+
+        self.insert_event_for_test(OrderedAttestationEvent {
+            order,
+            id: AttestationEventId::Burn(txid),
+        })
+    }
+
+    #[cfg(test)]
+    fn insert_event_for_test(&mut self, event: OrderedAttestationEvent) -> Result<(), Guard> {
+        self.events.push(event);
+
+        self.events.sort_by_key(|event| event.order);
+
+        validate_event_index(&self.burns, &self.clears, &self.events)
+    }
+
     /// The history may contain transitions after the checkpoint. They
     /// are validated for strict order and txid uniqueness but are not
     /// indexed: the `ReferenceIndexer` is bound to one prefix.
@@ -1258,6 +1317,15 @@ fn encode_query_unchecked(query: &AttestationQueryResult) -> Result<Vec<u8>, Enc
     }
 
     Ok(output)
+}
+
+/// Test-only structural encoder for constructing semantically invalid
+/// bytes in decoder-malformation tests. Not exported from the crate.
+#[cfg(test)]
+pub(crate) fn serialize_query_unchecked_for_test(
+    query: &AttestationQueryResult,
+) -> Result<Vec<u8>, EncodeError> {
+    encode_query_unchecked(query)
 }
 
 /// The canonical serializer cannot emit bytes that the shared semantic
