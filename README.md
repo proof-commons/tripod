@@ -10,6 +10,7 @@ A compiler is proved by what it compiles. This tree therefore carries, beside th
 - `docs/attestation/` - the documents the specification is realized by.
   - `realization.md` - the Elements/Liquid realization document.
   - `human.md` - plain-language companion report.
+- `packages/execwrap/` - Rust stdout/stderr routing wrapper used by the paper build.
 - `packages/cli-common/` - Shared Rust CLI scaffolding (implements ADR-010).
 - `adr/` - Architecture decision records for the repository tooling.
 

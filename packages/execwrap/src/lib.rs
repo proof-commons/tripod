@@ -1,0 +1,599 @@
+//! Core library powering the `execwrap` command-line wrapper.
+//!
+//! Spawns a child process, captures its stdout and stderr through pipes,
+//! and routes the bytes to one or more on-disk log files (with optional
+//! prefix/wrap formatting). A stream with no file subscriber is relayed
+//! verbatim to the parent's corresponding stream — pipe, file, or
+//! terminal alike; the wrapper never silently discards child output.
+//! Diagnostics are emitted through `tracing` so callers can configure
+//! JSON-on-stderr per ADR-010.
+
+use std::ffi::OsString;
+use std::fs::{File, create_dir_all};
+use std::io::{self, Read, Write};
+use std::os::unix::process::ExitStatusExt as _;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::mpsc::{Sender, channel};
+use std::thread;
+
+use thiserror::Error;
+
+pub mod writer;
+
+#[cfg(test)]
+mod tests;
+
+pub use writer::{StreamProps, Writer};
+
+/// One of the two captured streams.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Stream {
+    /// Standard output of the wrapped child process.
+    Stdout,
+    /// Standard error of the wrapped child process.
+    Stderr,
+}
+
+impl Stream {
+    /// Uppercase label, e.g. `"STDOUT"`.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Stdout => "STDOUT",
+            Self::Stderr => "STDERR",
+        }
+    }
+}
+
+/// Errors returned from [`run`].
+#[derive(Debug, Error)]
+pub enum ExecError {
+    /// An I/O error happened while preparing pipes, writers, or files.
+    #[error("io error: {0}")]
+    Io(#[from] io::Error),
+
+    /// The child process could not be spawned.
+    #[error("failed to spawn child {program:?}: {source}")]
+    Spawn {
+        /// Program name that failed to start.
+        program: OsString,
+        /// Underlying I/O error.
+        #[source]
+        source: io::Error,
+    },
+
+    /// The command vector was empty (no program to run).
+    #[error("empty command")]
+    EmptyCommand,
+
+    /// The user requested ambiguous routing for the same file.
+    #[error("ambiguous redirection for {path}: configured for multiple routing kinds")]
+    AmbiguousRedirection {
+        /// Conflicting output path.
+        path: PathBuf,
+    },
+}
+
+/// User-provided routing configuration.
+#[derive(Debug, Default, Clone)]
+pub struct RoutingConfig {
+    /// `--redirect` target: capture stdout and stderr merged in raw form.
+    pub redirect: Option<PathBuf>,
+    /// `--redirect-output` target: capture stdout only.
+    pub redirect_output: Option<PathBuf>,
+    /// `--redirect-error` target: capture stderr only.
+    pub redirect_error: Option<PathBuf>,
+    /// `--redirect-prefixed` target: capture both streams with prefixes.
+    pub redirect_prefixed: Option<PathBuf>,
+    /// Emit notifications when log files are written.
+    pub notify_on_write: bool,
+    /// Enable debug-level diagnostic logging.
+    pub debug: bool,
+    /// Suppress info-level diagnostic logging.
+    pub quiet: bool,
+}
+
+impl RoutingConfig {
+    /// True when the stream is being written to a log file.
+    #[must_use]
+    pub const fn is_stream_redirected(&self, stream: Stream) -> bool {
+        if self.redirect.is_some() || self.redirect_prefixed.is_some() {
+            return true;
+        }
+        match stream {
+            Stream::Stdout => self.redirect_output.is_some(),
+            Stream::Stderr => self.redirect_error.is_some(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RouteKind {
+    CombinedRaw,
+    CombinedPrefixed,
+    StdoutOnly,
+    StderrOnly,
+}
+
+#[derive(Debug)]
+struct FileSpec {
+    path: PathBuf,
+    kind: RouteKind,
+    identity: FileIdentity,
+}
+
+/// Filesystem identity of a redirection target.
+///
+/// Used to detect aliased paths naming the same file — `a.log` vs
+/// `./a.log`, symlinks (dangling ones included), hard links,
+/// symlinked parent directories — before anything is truncated.
+/// Lexical path equality alone would let two routes truncate and
+/// interleave writes into one file with no I/O call ever failing.
+///
+/// This is a preflight guard against configuration mistakes, not a
+/// security boundary: a window remains between the identity check
+/// and the later open (time-of-check/time-of-use).
+#[derive(Debug, PartialEq, Eq)]
+enum FileIdentity {
+    /// The target exists: device and inode numbers (symlinks
+    /// followed, hard links share the pair).
+    Existing(u64, u64),
+    /// The target does not exist yet: resolved parent directory plus
+    /// final file name.
+    Pending(PathBuf, OsString),
+}
+
+/// Bound on manual resolution of dangling symlink chains, matching
+/// the kernel's nested-link limit behind `ELOOP`.
+const SYMLINK_FOLLOW_LIMIT: usize = 40;
+
+fn file_identity(path: &Path) -> io::Result<FileIdentity> {
+    use std::os::unix::fs::MetadataExt as _;
+
+    let mut current = path.to_path_buf();
+    let mut hops = 0_usize;
+    loop {
+        match std::fs::metadata(&current) {
+            Ok(metadata) => return Ok(FileIdentity::Existing(metadata.dev(), metadata.ino())),
+
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                // NotFound covers a dangling final symlink, and
+                // `File::create` on that link would follow it: the
+                // identity must be that of the link's ultimate
+                // target, never the link's own name.
+                let is_dangling_link = std::fs::symlink_metadata(&current)
+                    .is_ok_and(|link| link.file_type().is_symlink());
+                if !is_dangling_link {
+                    return pending_identity(&current);
+                }
+                if hops == SYMLINK_FOLLOW_LIMIT {
+                    // `ErrorKind::FilesystemLoop` is not stable yet.
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "too many levels of symbolic links in redirection target",
+                    ));
+                }
+                hops += 1;
+
+                let target = std::fs::read_link(&current)?;
+                current = if target.is_absolute() {
+                    target
+                } else {
+                    // A relative link target resolves against the
+                    // link's own directory, not the process cwd.
+                    match current.parent() {
+                        Some(parent) if !parent.as_os_str().is_empty() => parent.join(target),
+                        _ => target,
+                    }
+                };
+            }
+
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+/// Identity of a target that does not exist and is not a symlink.
+fn pending_identity(path: &Path) -> io::Result<FileIdentity> {
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "redirection path has no file name",
+            )
+        })?
+        .to_os_string();
+
+    let parent = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    };
+
+    // Canonicalize the parent when it exists (resolving
+    // symlinked directories); a parent that safe_open will
+    // create later falls back to lexical normalization.
+    let parent = parent
+        .canonicalize()
+        .or_else(|_| normalize_lexically(parent))?;
+
+    Ok(FileIdentity::Pending(parent, file_name))
+}
+
+/// Absolute, lexically normalized form of a path that does not exist
+/// yet: `.` components dropped, `..` resolved against the accumulated
+/// prefix.
+fn normalize_lexically(path: &Path) -> io::Result<PathBuf> {
+    use std::path::Component;
+
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+
+    let mut normalized = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other),
+        }
+    }
+
+    Ok(normalized)
+}
+
+fn collect_file_specs(cfg: &RoutingConfig) -> Result<Vec<FileSpec>, ExecError> {
+    let candidates = [
+        (cfg.redirect.as_ref(), RouteKind::CombinedRaw),
+        (cfg.redirect_prefixed.as_ref(), RouteKind::CombinedPrefixed),
+        (cfg.redirect_output.as_ref(), RouteKind::StdoutOnly),
+        (cfg.redirect_error.as_ref(), RouteKind::StderrOnly),
+    ];
+
+    let mut specs: Vec<FileSpec> = Vec::new();
+    for (maybe_path, kind) in candidates {
+        let Some(path) = maybe_path else { continue };
+        let identity = file_identity(path)?;
+        if let Some(existing) = specs.iter().find(|s| s.identity == identity) {
+            if existing.kind != kind {
+                return Err(ExecError::AmbiguousRedirection { path: path.clone() });
+            }
+        } else {
+            specs.push(FileSpec {
+                path: path.clone(),
+                kind,
+                identity,
+            });
+        }
+    }
+    Ok(specs)
+}
+
+/// Validate a routing configuration before any side effect.
+///
+/// Targets are only stat'ed — nothing is opened, created, or
+/// truncated — so the binary can report an invalid argument
+/// combination as a usage failure before touching any file.
+///
+/// # Errors
+///
+/// Returns [`ExecError::AmbiguousRedirection`] when one file — by
+/// filesystem identity, not merely lexical path equality — is
+/// configured for multiple routing kinds.
+pub fn preflight_routing(cfg: &RoutingConfig) -> Result<(), ExecError> {
+    collect_file_specs(cfg).map(|_specs| ())
+}
+
+/// Open `path` for writing in binary mode, creating parent directories as needed.
+///
+/// # Errors
+///
+/// Returns the underlying I/O error from directory creation or file open.
+pub fn safe_open(path: &Path) -> io::Result<File> {
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+        && !parent.exists()
+    {
+        create_dir_all(parent)?;
+    }
+    File::create(path)
+}
+
+/// Notification emitted by the wrapper while running.
+#[derive(Debug, Clone)]
+pub enum Notification {
+    /// `--notify-on-write` informational record: writing to a log file.
+    WritingToLog { path: PathBuf, stream: Stream },
+    /// `--notify-on-write` deferred record: wrote to a log file by end of run.
+    WroteToLog { path: PathBuf },
+}
+
+/// Outcome of running the wrapped command.
+#[derive(Debug, Clone)]
+pub struct ExecOutcome {
+    /// Numeric exit code. Signal terminations are reported as `128 + signal`.
+    pub exit_code: i32,
+    /// True when captured output may be incomplete: a log-file write,
+    /// a child-stream read, or a writer finalization failed. Callers
+    /// must treat a run with data loss as failed even when the child
+    /// exited 0 — silently succeeding after losing logs is data loss,
+    /// not success.
+    pub data_loss: bool,
+}
+
+/// Run the wrapped command using the provided routing configuration.
+///
+/// `notify` is called for each notification record (only when `notify_on_write`
+/// is enabled).
+///
+/// # Errors
+///
+/// Returns [`ExecError`] for setup failures (pipes, writers, spawn). A non-zero
+/// exit code from the child is *not* an error: it is returned through
+/// [`ExecOutcome::exit_code`].
+///
+/// # Panics
+///
+/// Panics if the child's stdout/stderr pipes cannot be taken after being
+/// configured as piped, which should never happen.
+#[allow(
+    clippy::cognitive_complexity,
+    clippy::too_many_lines,
+    clippy::option_if_let_else
+)]
+pub fn run(
+    command: &[OsString],
+    cfg: &RoutingConfig,
+    mut notify: impl FnMut(&Notification),
+) -> Result<ExecOutcome, ExecError> {
+    let program = command.first().ok_or(ExecError::EmptyCommand)?;
+    let args = &command[1..];
+
+    let specs = collect_file_specs(cfg)?;
+
+    // Build writers per file path, then index them per stream.
+    let mut file_writers: Vec<FileWriter> = Vec::new();
+    let mut stdout_subscribers: Vec<usize> = Vec::new();
+    let mut stderr_subscribers: Vec<usize> = Vec::new();
+
+    for spec in &specs {
+        let file = safe_open(&spec.path).map_err(ExecError::Io)?;
+        let is_prefixed = matches!(spec.kind, RouteKind::CombinedPrefixed);
+        let props = if is_prefixed {
+            StreamProps {
+                line1_prefix_stdout: ">>> ".to_string(),
+                wrap_prefix_stdout: "    ".to_string(),
+                line1_prefix_stderr: "*** ".to_string(),
+                wrap_prefix_stderr: "    ".to_string(),
+            }
+        } else {
+            StreamProps::default()
+        };
+        let writer = Writer::new(file, is_prefixed, 80, props, cfg.debug);
+        let idx = file_writers.len();
+        file_writers.push(FileWriter {
+            path: spec.path.clone(),
+            writer,
+        });
+
+        match spec.kind {
+            RouteKind::StdoutOnly => stdout_subscribers.push(idx),
+            RouteKind::StderrOnly => stderr_subscribers.push(idx),
+            RouteKind::CombinedRaw | RouteKind::CombinedPrefixed => {
+                stdout_subscribers.push(idx);
+                stderr_subscribers.push(idx);
+            }
+        }
+    }
+
+    // A stream with no file subscriber passes through to the parent's
+    // corresponding stream unconditionally — pipe, file, or terminal.
+    // Silently discarding a child stream is data loss, never a default.
+    let stdout_passthrough = stdout_subscribers.is_empty();
+    let stderr_passthrough = stderr_subscribers.is_empty();
+
+    // Track first-write notifications.
+    let mut first_write_stdout = !stdout_subscribers.is_empty();
+    let mut first_write_stderr = !stderr_subscribers.is_empty();
+
+    // Defer-or-immediate notification decision.
+    let defer_notifications = cfg.notify_on_write
+        && cfg.redirect_output.is_some()
+        && cfg.redirect_error.is_none()
+        && cfg.redirect.is_none()
+        && cfg.redirect_prefixed.is_none()
+        && !cfg.is_stream_redirected(Stream::Stderr);
+
+    let mut child = Command::new(program)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|source| ExecError::Spawn {
+            program: program.clone(),
+            source,
+        })?;
+
+    // ADR-010 redaction: argv is never logged, even under --debug —
+    // command lines routinely carry tokens, passwords, and credential
+    // URLs, and no field-aware sanitizer guards this call site. Only
+    // safe metadata is recorded.
+    tracing::info!(
+        program = %program.to_string_lossy(),
+        argument_count = args.len(),
+        pid = child.id(),
+        "executing command",
+    );
+
+    let stdout = child.stdout.take().expect("stdout pipe configured above");
+    let stderr = child.stderr.take().expect("stderr pipe configured above");
+
+    let (tx, rx) = channel::<ChannelMessage>();
+
+    let stdout_handle = spawn_reader(Stream::Stdout, stdout, tx.clone());
+    let stderr_handle = spawn_reader(Stream::Stderr, stderr, tx);
+
+    // Buffered passthrough to the parent's standard streams when no subscriber.
+    let mut parent_stdout = io::stdout();
+    let mut parent_stderr = io::stderr();
+
+    let mut pending_paths: Vec<PathBuf> = Vec::new();
+    let mut data_loss = false;
+
+    for message in rx {
+        match message {
+            ChannelMessage::Data { stream, data } => {
+                let subscribers = match stream {
+                    Stream::Stdout => &stdout_subscribers,
+                    Stream::Stderr => &stderr_subscribers,
+                };
+                if subscribers.is_empty() {
+                    let relay = match stream {
+                        Stream::Stdout if stdout_passthrough => parent_stdout.write_all(&data),
+                        Stream::Stderr if stderr_passthrough => parent_stderr.write_all(&data),
+                        // Unreachable: passthrough is exactly
+                        // "no subscriber" per stream.
+                        _ => Ok(()),
+                    };
+                    if let Err(error) = relay {
+                        data_loss = true;
+                        tracing::error!(
+                            error = %error,
+                            stream = stream.label(),
+                            "parent passthrough write failed",
+                        );
+                    }
+                } else {
+                    let first = match stream {
+                        Stream::Stdout => {
+                            let f = first_write_stdout;
+                            first_write_stdout = false;
+                            f
+                        }
+                        Stream::Stderr => {
+                            let f = first_write_stderr;
+                            first_write_stderr = false;
+                            f
+                        }
+                    };
+                    for &idx in subscribers {
+                        let entry = &mut file_writers[idx];
+                        if first && cfg.notify_on_write {
+                            if defer_notifications {
+                                if !pending_paths.contains(&entry.path) {
+                                    pending_paths.push(entry.path.clone());
+                                }
+                            } else {
+                                notify(&Notification::WritingToLog {
+                                    path: entry.path.clone(),
+                                    stream,
+                                });
+                            }
+                        }
+                        if let Err(error) = entry.writer.write(stream, &data) {
+                            data_loss = true;
+                            tracing::error!(error = %error, path = ?entry.path, "writer error");
+                        }
+                    }
+                }
+            }
+            ChannelMessage::Eof { stream } => {
+                tracing::debug!(stream = stream.label(), "child stream closed");
+            }
+            ChannelMessage::Error { stream, error } => {
+                data_loss = true;
+                tracing::error!(error = %error, stream = stream.label(), "read error on child stream");
+            }
+        }
+    }
+
+    // A panicked reader thread may have dropped bytes on the floor.
+    for (handle, label) in [(stdout_handle, "stdout"), (stderr_handle, "stderr")] {
+        if handle.join().is_err() {
+            data_loss = true;
+            tracing::error!(stream = label, "child stream reader thread panicked");
+        }
+    }
+
+    for (parent, label) in [
+        (&mut parent_stdout as &mut dyn Write, "stdout"),
+        (&mut parent_stderr as &mut dyn Write, "stderr"),
+    ] {
+        if let Err(error) = parent.flush() {
+            data_loss = true;
+            tracing::error!(error = %error, stream = label, "parent stream flush failed");
+        }
+    }
+
+    for entry in &mut file_writers {
+        if let Err(error) = entry.writer.finalize() {
+            data_loss = true;
+            tracing::error!(error = %error, path = ?entry.path, "writer finalize error");
+        }
+    }
+
+    for path in pending_paths {
+        notify(&Notification::WroteToLog { path });
+    }
+
+    let status = child.wait().map_err(ExecError::Io)?;
+
+    let exit_code = if let Some(code) = status.code() {
+        code
+    } else if let Some(signal) = status.signal() {
+        128 + signal
+    } else {
+        1
+    };
+
+    tracing::debug!(exit_code, data_loss, "child exited");
+    Ok(ExecOutcome {
+        exit_code,
+        data_loss,
+    })
+}
+
+struct FileWriter {
+    path: PathBuf,
+    writer: Writer,
+}
+
+enum ChannelMessage {
+    Data { stream: Stream, data: Vec<u8> },
+    Eof { stream: Stream },
+    Error { stream: Stream, error: io::Error },
+}
+
+fn spawn_reader<R: Read + Send + 'static>(
+    stream: Stream,
+    mut source: R,
+    tx: Sender<ChannelMessage>,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        let mut buffer = [0_u8; 8192];
+        loop {
+            match source.read(&mut buffer) {
+                Ok(0) => {
+                    let _ignored = tx.send(ChannelMessage::Eof { stream });
+                    break;
+                }
+                Ok(read) => {
+                    let data = buffer[..read].to_vec();
+                    if tx.send(ChannelMessage::Data { stream, data }).is_err() {
+                        break;
+                    }
+                }
+                Err(ref error) if error.kind() == io::ErrorKind::Interrupted => {}
+                Err(error) => {
+                    let _ignored = tx.send(ChannelMessage::Error { stream, error });
+                    break;
+                }
+            }
+        }
+    })
+}

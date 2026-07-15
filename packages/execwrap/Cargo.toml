@@ -1,0 +1,26 @@
+[package]
+name = "execwrap"
+description = "Process wrapper that routes stdout/stderr to log files"
+
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+cli-common = { workspace = true }
+
+clap = { workspace = true }
+nix = { workspace = true }
+textwrap = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true
