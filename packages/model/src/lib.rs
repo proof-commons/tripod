@@ -161,6 +161,7 @@ pub mod object;
 pub mod ops;
 pub mod policy;
 pub mod pool;
+pub mod property;
 pub mod queries;
 pub mod quiescence;
 pub mod recognition;
@@ -225,6 +226,12 @@ pub use policy::{
     BranchPolicy, RootUse, ValueFlowClass, branch_policy, expected_value_flow_classes,
 };
 pub use pool::PoolState;
+pub use property::{
+    PROPERTY_ADDRESS_A, PROPERTY_ADDRESS_B, PROPERTY_OWNER_A, PROPERTY_OWNER_B, PROPERTY_OWNER_C,
+    PROPERTY_SPONSOR, PropertyAction, PropertyActionSeed, PropertyStepResult,
+    apply_property_action, drive_property_seed_trace, drive_property_trace, fund_property_world,
+    materialize_action, property_action_name,
+};
 pub use queries::{cycle_issuance_query, floor_terms, redemption_payout};
 pub use quiescence::{
     ProtocolObservable, QuantityId, QuiescenceEligibility, QuiescenceReport, QuiescenceResidual,

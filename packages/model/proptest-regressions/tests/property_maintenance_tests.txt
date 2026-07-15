@@ -1,0 +1,13 @@
+# Seeds proptest replays before it generates novel cases.
+#
+# The counterexamples this search has found are not kept here. A seed
+# replays a case only by asking the same generator for it again, and it
+# states nothing a reader can read: another value of the same shape
+# would serve, and no check would notice the substitution. Each one is
+# written down instead as a named test with its inputs stated, and this
+# file's counterexample is `the_shrunken_busy_trace_reaches_a_typed_outcome`.
+#
+# The seed below is therefore not a recorded failure. It is derived, so
+# that the one value this file carries is one a reader can recompute
+# rather than trust: the SHA-256 of `tripod/model/property-maintenance/regression-seed/v1`.
+cc cc616229ab4041297b737915c245e4590d0ed7117db300a7914f986375c4ede5
