@@ -81,7 +81,7 @@ derivation of another (the realization binding):
 | Version | Where | Meaning |
 |---|---|---|
 | Specification `v1.0.0` | `papers/attestation/main.tex` (owned by `sections/00_title.tex`) | The released abstract economic specification. Pinned by the manifest's specification binding and anchor-set hash. |
-| Realization version `0.1.0-dev` | `docs/attestation/realization.md` masthead, manifest envelope | The tracked binding to the compiler line: `major.minor` copied from the workspace version, patch always zero, prerelease carried verbatim. Patch-blind and content-blind — the behavioural hash alone witnesses denotation stability, and the versioning gates enforce both halves. |
+| Realization version `0.6.0-dev` | `docs/attestation/realization.md` masthead, manifest envelope | The tracked binding to the compiler line: `major.minor` copied from the workspace version, patch always zero, prerelease carried verbatim. Patch-blind and content-blind — the behavioural hash alone witnesses denotation stability, and the versioning gates enforce both halves. |
 | Architecture schema `17` | manifest envelope | Shape of the exported manifest DTO. Envelope metadata, never a hash input. |
 | Attestation wire schema | `rem:manifest:discriminants` | Canonical attestation query encoding. |
 | Deployment-profile schema `2` | `packages/architecture/src/deployment.rs` | Shape and census rules of the deployment-evidence profile. |

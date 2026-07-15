@@ -77,7 +77,7 @@ The prototype must test:
 - target resources.
 
 Result handoff:
-[STATE constructor research](../research/state-object-constructor.md).
+[STATE constructor research](../research/state-constructor.md).
 
 ### Wide arithmetic prototype
 

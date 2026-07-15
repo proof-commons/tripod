@@ -196,7 +196,7 @@ before that decision lands.
 Object constructors are metadata-parameterized target recipes.
 
 STATE and other continuity-sensitive constructors remain gated by
-[STATE constructor research](../research/state-object-constructor.md).
+[STATE constructor research](../research/state-constructor.md).
 
 A production pattern must authenticate:
 

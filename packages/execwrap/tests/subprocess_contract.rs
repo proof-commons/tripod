@@ -119,7 +119,7 @@ fn ambiguous_same_path_routing_is_a_usage_failure() {
 
     let output = run(&["--redirect", path, "--redirect-output", path, "--", "true"]);
     assert_eq!(output.status.code(), Some(2));
-    assert_eq!(output.stdout, [] as [u8; 0]);
+    assert!(output.stdout.is_empty());
     assert!(!log.exists(), "usage failure must not open log files");
 }
 
@@ -216,7 +216,7 @@ fn redirect_error_only_still_forwards_stdout() {
 fn bare_separator_invocation_succeeds() {
     let output = run(&["--", "true"]);
     assert_eq!(output.status.code(), Some(0));
-    assert_eq!(output.stdout, [] as [u8; 0]);
+    assert!(output.stdout.is_empty());
 }
 
 /// An unsubscribed child stream is relayed to the parent's stream even

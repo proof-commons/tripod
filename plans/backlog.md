@@ -332,7 +332,7 @@ Create:
 ```text
 plans/research/
 ├── README.md
-├── state-object-constructor.md
+├── state-constructor.md
 ├── wide-arithmetic.md
 ├── public-declassification.md
 └── settlement-layout.md
@@ -1756,7 +1756,7 @@ does not accidentally absorb target-specific questions.
 
 | ID | Status | Research note | Blocks |
 |---|---|---|---|
-| `Q-STATE` | **PROTOTYPE REQUIRED** | `research/state-object-constructor.md` | STATE backend ABI and Phase 6 |
+| `Q-STATE` | **PROTOTYPE REQUIRED** | `research/state-constructor.md` | STATE backend ABI and Phase 6 |
 | `Q-ARITH` | **PROTOTYPE REQUIRED** | `research/wide-arithmetic.md` | redemption, admission, settlement, cycle |
 | `Q-DECLASS` | **OPEN / PROTOTYPE REQUIRED** | `research/public-declassification.md` | confidential-to-public backend paths |
 | `Q-SETTLE` | **OPEN / PROTOTYPE REQUIRED** | `research/settlement-layout.md` | settlement ABI and calibrated batch size |

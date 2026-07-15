@@ -281,7 +281,7 @@ Phase 1 is not blocked by target research.
 
 Later operation declarations must import accepted results from:
 
-- [STATE constructor](../research/state-object-constructor.md);
+- [STATE constructor](../research/state-constructor.md);
 - [wide arithmetic](../research/wide-arithmetic.md);
 - [public declassification](../research/public-declassification.md);
 - [settlement layout](../research/settlement-layout.md).

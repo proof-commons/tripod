@@ -1485,7 +1485,7 @@ Reference resolution may use:
    the predecessor, and reused for successor construction.
 
 The exact STATE constructor remains prototype-dependent. It is tracked in
-[`research/state-object-constructor.md`](research/state-object-constructor.md).
+[`research/state-constructor.md`](research/state-constructor.md).
 
 The package interfaces must not freeze a constructor strategy until that
 prototype satisfies its acceptance, rejection, and resource criteria.

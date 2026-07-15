@@ -9,7 +9,7 @@ Research notes do not define production policy.
 
 | Question | Status | Blocks |
 |---|---|---|
-| [state-object-constructor.md](state-object-constructor.md) | Prototype required | STATE-spending backend operations. |
+| [state-constructor.md](state-constructor.md) | Prototype required | STATE-spending backend operations. |
 | [wide-arithmetic.md](wide-arithmetic.md) | Prototype and measurement required | Redemption, settlement, and cycle arithmetic. |
 | [public-declassification.md](public-declassification.md) | Open; prototype required | Confidential-to-public lifecycle paths. |
 | [settlement-layout.md](settlement-layout.md) | Open; prototype required | Settlement ABI and calibrated batch size. |
