@@ -21,6 +21,13 @@
 //! - [`guard`] — guard and invariant errors `´def:verification:guard´`,
 //!   `´def:verification:invariant-error´`.
 //! - [`signer`] — signer abstraction `´def:verification:signer-set´`.
+//! - [`history`] — transition kinds, root edges, canonical deltas,
+//!   transition certificates, derived projections, and canonical chain
+//!   history `´def:verification:branch-kind´` through `´def:verification:history´`.
+//! - [`world`] — root cursors, wallets, adversarial environment, and the
+//!   complete pure `World` `´def:verification:root-cursor´`,
+//!   `´def:verification:wallets´`, `´def:verification:external-budget´`,
+//!   `´def:verification:world´`.
 //! - `kernel` (crate-private) — output staging, exact canonical-flow and issuance
 //!   declarations, the transaction builder, conservation validators,
 //!   exact witness partition, atomic commit, and root-cursor update
@@ -106,14 +113,21 @@
 pub mod asset;
 pub mod constants;
 pub mod guard;
+pub mod history;
 pub mod object;
 pub mod pool;
 pub mod scalar;
 pub mod signer;
+pub mod world;
 
 pub use asset::{Asset, Maturity, ReceiptClass};
 pub use constants::Constants;
 pub use guard::{Guard, InvariantError};
+pub use history::{
+    BranchKind, BurnProjection, BurnRecord, CanonicalDelta, ClearProjection, DeltaKind,
+    DistributionResidueProjection, GenesisProjection, History, OpenFlowKind, OpenFlowProjection,
+    RootEdge, TransitionCertificate,
+};
 pub use object::{DataOutput, Meta, Tag, Utxo};
 pub use pool::PoolState;
 pub use scalar::{
@@ -122,3 +136,4 @@ pub use scalar::{
     checked_add_to_map, checked_sum_sats, floor_mul_div, floor_ratio,
 };
 pub use signer::{SignerSet, require_signer};
+pub use world::{ExternalBudget, RootCursor, Wallets, World};
