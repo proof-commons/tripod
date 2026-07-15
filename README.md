@@ -13,6 +13,7 @@ A compiler is proved by what it compiles. This tree therefore carries, beside th
 - `packages/execwrap/` - Rust stdout/stderr routing wrapper used by the paper build.
 - `packages/flatten-latex-main/` - Rust utility for flattening the paper entrypoint.
 - `packages/cli-common/` - Shared Rust CLI scaffolding (implements ADR-010).
+- `packages/model/` - Executable state-machine model of the attestation contract.
 - `packages/architecture/` - Typed normative architecture manifest of the realization.
 - `adr/` - Architecture decision records for the repository tooling.
 

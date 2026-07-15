@@ -1,0 +1,29 @@
+[package]
+name = "tripod-model"
+description = "Executable state-machine model of the attestation contract"
+
+# Package metadata is inherited from the Blueprint workspace.
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+# Imported as `model` everywhere; the package name above is the
+# published identity (`-p tripod-model`).
+[lib]
+name = "model"
+
+[dependencies]
+architecture = { workspace = true }
+num-bigint = { workspace = true }
+num-integer = { workspace = true }
+num-traits = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[lints]
+workspace = true

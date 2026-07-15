@@ -5,6 +5,7 @@ members = [
     "packages/cli-common",
     "packages/execwrap",
     "packages/flatten-latex-main",
+    "packages/model",
 ]
 
 [workspace.package]
@@ -20,6 +21,7 @@ architecture = { package = "tripod-architecture", path = "packages/architecture"
 cli-common = { path = "packages/cli-common" }
 execwrap = { path = "packages/execwrap" }
 flatten-latex-main = { path = "packages/flatten-latex-main" }
+model = { package = "tripod-model", path = "packages/model" }
 
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
