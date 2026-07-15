@@ -64,6 +64,14 @@ Rust checks:
 meson test -C build
 ```
 
+## CI
+
+The runner-agnostic CI entry point is [scripts/ci.sh](scripts/ci.sh):
+fmt, clippy (`-D warnings`), debug and release tests, the non-writing
+generated-artifact gate, `cargo audit` (when installed), and a
+clean-tree check — all Cargo invocations `--locked`. Toolchain and
+dependency policy is [ADR-011](adr/011-toolchain-and-dependency-policy.md).
+
 ## Version registry
 
 The repository carries several intentionally distinct version numbers.
