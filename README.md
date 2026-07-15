@@ -15,6 +15,7 @@ A compiler is proved by what it compiles. This tree therefore carries, beside th
 - `packages/cli-common/` - Shared Rust CLI scaffolding (implements ADR-010).
 - `packages/model/` - Executable state-machine model of the attestation contract.
 - `packages/architecture/` - Typed normative architecture manifest of the realization.
+- `packages/artifacts/` - Generator/checker for the generated derivative artifacts.
 - `adr/` - Architecture decision records for the repository tooling.
 
 ## Command-line output contract
@@ -25,6 +26,15 @@ result data (single object or NDJSON) and refuses a terminal; assets are
 written to paths given by arguments such as `--output`; everything else —
 help, usage, diagnostics, panics — is JSON on stderr; exit codes are
 0 (success), 1 (failure), 2 (usage).
+
+## Generated artifacts
+
+`packages/model/generated/` is owned by the `tripod-artifacts`
+crate. Regenerate with:
+
+```sh
+cargo run -p tripod-artifacts --bin generate-all
+```
 
 ## Requirements
 

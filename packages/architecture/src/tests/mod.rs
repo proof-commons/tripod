@@ -4,6 +4,8 @@
 //!
 //! - [`validation_tests`] — draft/release validation and structural
 //!   declarations (roots, objects, decisions, complete id coverage).
+//! - [`export_hash_tests`] — canonical export, semantic-hash
+//!   stability, and generated-artifact verification.
 //! - [`conformance_tests`] — cross-declaration coverage: destruction
 //!   lifecycle, issuance/delta/data-output correspondence, input
 //!   authorization, object lifecycle paths, root cardinality, quantity
@@ -22,6 +24,7 @@
 mod conformance_tests;
 mod deployment_tests;
 mod doc_conformance_tests;
+mod export_hash_tests;
 mod mutation_tests;
 mod validation_tests;
 mod versioning_gate_tests;

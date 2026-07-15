@@ -1,0 +1,2478 @@
+publication_status = "final"
+architecture_schema_version = 17
+realization_version = "0.0.0-dev"
+semantic_hash_algorithm = "sha256-canonical-json-v2"
+semantic_hash = "3974e4d7860d2cddad97c6ab63f5c358e303505a2529bf757d47db462285aa68"
+behavioural_hash_algorithm = "sha256-canonical-json-behavioural-v3"
+behavioural_hash = "756ea65ce3dc370e76ec70dc001231693facd58e53ebca315d549967f03cf206"
+
+[architecture]
+target_network = "liquid"
+
+[architecture.specification]
+version = "1.0.0"
+anchor_set_hash = "b0cafaa48ac2ed388984f6a2d757a011a9c8654acf224f5f64516f26a3f7ee35"
+
+[[architecture.assets]]
+code = 1
+id = "L-BTC"
+class = "open"
+role = "reserve-asset"
+reissuable = false
+destruction_operations = []
+
+[[architecture.assets]]
+code = 2
+id = "U"
+class = "closed"
+role = "monetary-receipt"
+reissuable = true
+authority = "PACE"
+issue_operation = "cycle"
+destruction_operations = [
+    "clear",
+    "redeem",
+    "settle-distribution",
+]
+
+[[architecture.assets]]
+code = 3
+id = "ENT"
+class = "closed"
+role = "deposit-entitlement"
+reissuable = true
+authority = "ENT_AUTH"
+issue_operation = "admit-deposits"
+destruction_operations = ["settle-distribution"]
+
+[[architecture.assets]]
+code = 4
+id = "DIST_CTL"
+class = "closed"
+role = "distribution-control"
+reissuable = true
+authority = "DIST_AUTH"
+issue_operation = "cycle"
+destruction_operations = ["settle-distribution"]
+
+[[architecture.assets]]
+code = 5
+id = "PID"
+class = "closed"
+role = "identity"
+fixed_amount = 1
+reissuable = false
+destruction_operations = []
+
+[[architecture.assets]]
+code = 6
+id = "PACE"
+class = "closed"
+role = "issuance-authority"
+fixed_amount = 1
+reissuable = false
+destruction_operations = []
+
+[[architecture.assets]]
+code = 7
+id = "ENT_AUTH"
+class = "closed"
+role = "issuance-authority"
+fixed_amount = 1
+reissuable = false
+destruction_operations = []
+
+[[architecture.assets]]
+code = 8
+id = "DIST_AUTH"
+class = "closed"
+role = "issuance-authority"
+fixed_amount = 1
+reissuable = false
+destruction_operations = []
+
+[[architecture.roots]]
+code = 1
+id = "STATE"
+asset = "PID"
+role = "state-identity"
+fixed_amount = 1
+
+[[architecture.roots]]
+code = 2
+id = "RESV"
+asset = "L-BTC"
+role = "active-reserve"
+
+[[architecture.roots]]
+code = 3
+id = "PACE"
+asset = "PACE"
+role = "cadence-and-issuance"
+fixed_amount = 1
+
+[[architecture.roots]]
+code = 4
+id = "ENT_AUTH"
+asset = "ENT_AUTH"
+role = "entitlement-authority"
+fixed_amount = 1
+
+[[architecture.roots]]
+code = 5
+id = "DIST_AUTH"
+asset = "DIST_AUTH"
+role = "distribution-authority"
+fixed_amount = 1
+
+[[architecture.objects]]
+code = 1
+id = "STATE"
+asset = "PID"
+lifecycle = "constant-root"
+accounting_domain = "none"
+mutators = [
+    "admit-deposits",
+    "announce-maturity",
+    "clear",
+    "cycle",
+    "receipt-relabel",
+    "redeem",
+]
+witnesses = ["state-succession"]
+consensus_value_authoritative = true
+
+[[architecture.objects.allocators]]
+kind = "genesis"
+
+[[architecture.objects.deallocators]]
+kind = "none"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "admit-deposits"
+authorization = "covenant-companion"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "announce-maturity"
+authorization = "covenant-companion"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "clear"
+authorization = "covenant-companion"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "cycle"
+authorization = "covenant-companion"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "receipt-relabel"
+authorization = "covenant-companion"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "redeem"
+authorization = "covenant-companion"
+
+[[architecture.objects]]
+code = 2
+id = "RESV"
+asset = "L-BTC"
+lifecycle = "constant-root"
+accounting_domain = "backing"
+mutators = [
+    "admit-deposits",
+    "cycle",
+    "redeem",
+]
+witnesses = ["resv-succession"]
+consensus_value_authoritative = true
+
+[[architecture.objects.allocators]]
+kind = "genesis"
+
+[[architecture.objects.deallocators]]
+kind = "operation"
+operation = "redeem"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "admit-deposits"
+authorization = "covenant-companion"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "cycle"
+authorization = "covenant-companion"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "redeem"
+authorization = "covenant-companion"
+
+[[architecture.objects]]
+code = 3
+id = "PACE"
+asset = "PACE"
+lifecycle = "constant-root"
+accounting_domain = "none"
+mutators = ["cycle"]
+witnesses = [
+    "canonical-delta",
+    "native-fee-auction",
+]
+consensus_value_authoritative = true
+
+[[architecture.objects.allocators]]
+kind = "genesis"
+
+[[architecture.objects.deallocators]]
+kind = "none"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "cycle"
+authorization = "covenant-companion"
+
+[[architecture.objects]]
+code = 4
+id = "ENTITLEMENT_AUTHORITY"
+asset = "ENT_AUTH"
+lifecycle = "constant-root"
+accounting_domain = "none"
+mutators = ["admit-deposits"]
+witnesses = ["canonical-delta"]
+consensus_value_authoritative = true
+
+[[architecture.objects.allocators]]
+kind = "genesis"
+
+[[architecture.objects.deallocators]]
+kind = "none"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "admit-deposits"
+authorization = "covenant-companion"
+
+[[architecture.objects]]
+code = 5
+id = "DISTRIBUTION_AUTHORITY"
+asset = "DIST_AUTH"
+lifecycle = "constant-root"
+accounting_domain = "none"
+mutators = ["cycle"]
+witnesses = ["canonical-delta"]
+consensus_value_authoritative = true
+
+[[architecture.objects.allocators]]
+kind = "genesis"
+
+[[architecture.objects.deallocators]]
+kind = "none"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "cycle"
+authorization = "covenant-companion"
+
+[[architecture.objects]]
+code = 6
+id = "RECEIPT_L"
+asset = "U"
+lifecycle = "user-position"
+accounting_domain = "receipt"
+mutators = [
+    "burn",
+    "redeem",
+    "transfer-live-receipts",
+]
+witnesses = [
+    "canonical-delta",
+    "receipt-class-closure",
+    "receipt-owner-routing",
+]
+consensus_value_authoritative = true
+
+[[architecture.objects.allocators]]
+kind = "genesis"
+
+[[architecture.objects.allocators]]
+kind = "operation"
+operation = "cycle"
+
+[[architecture.objects.allocators]]
+kind = "operation"
+operation = "receipt-relabel"
+
+[[architecture.objects.allocators]]
+kind = "operation"
+operation = "settle-distribution"
+
+[[architecture.objects.allocators]]
+kind = "operation"
+operation = "transfer-live-receipts"
+
+[[architecture.objects.deallocators]]
+kind = "operation"
+operation = "burn"
+
+[[architecture.objects.deallocators]]
+kind = "operation"
+operation = "redeem"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "burn"
+authorization = "input-owner"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "redeem"
+authorization = "input-owner"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "transfer-live-receipts"
+authorization = "input-owner"
+
+[[architecture.objects]]
+code = 7
+id = "RECEIPT_T"
+asset = "U"
+lifecycle = "user-position"
+accounting_domain = "receipt"
+mutators = [
+    "receipt-relabel",
+    "transfer-time-locked-receipts",
+]
+witnesses = [
+    "canonical-delta",
+    "receipt-class-closure",
+    "receipt-owner-routing",
+]
+consensus_value_authoritative = true
+
+[[architecture.objects.allocators]]
+kind = "genesis"
+
+[[architecture.objects.allocators]]
+kind = "operation"
+operation = "cycle"
+
+[[architecture.objects.allocators]]
+kind = "operation"
+operation = "settle-distribution"
+
+[[architecture.objects.allocators]]
+kind = "operation"
+operation = "transfer-time-locked-receipts"
+
+[[architecture.objects.deallocators]]
+kind = "operation"
+operation = "receipt-relabel"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "receipt-relabel"
+authorization = "permissionless"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "transfer-time-locked-receipts"
+authorization = "input-owner"
+
+[[architecture.objects]]
+code = 8
+id = "DEPOSIT_REQUEST"
+asset = "L-BTC"
+lifecycle = "open-offer"
+accounting_domain = "none"
+mutators = []
+witnesses = [
+    "request-closure",
+    "value-flow-closure",
+]
+consensus_value_authoritative = true
+
+[[architecture.objects.allocators]]
+kind = "external"
+
+[[architecture.objects.allocators]]
+kind = "operation"
+operation = "create-request"
+
+[[architecture.objects.deallocators]]
+kind = "operation"
+operation = "admit-deposits"
+
+[[architecture.objects.deallocators]]
+kind = "operation"
+operation = "cancel-request"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "admit-deposits"
+authorization = "permissionless"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "cancel-request"
+authorization = "refund-key"
+
+[[architecture.objects]]
+code = 9
+id = "DEPOSIT_ENTITLEMENT"
+asset = "ENT"
+lifecycle = "cycle-queue"
+accounting_domain = "entitlement"
+mutators = []
+witnesses = [
+    "distribution-closure",
+    "entitlement-closure",
+]
+consensus_value_authoritative = true
+
+[[architecture.objects.allocators]]
+kind = "operation"
+operation = "admit-deposits"
+
+[[architecture.objects.deallocators]]
+kind = "operation"
+operation = "settle-distribution"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "settle-distribution"
+authorization = "permissionless"
+
+[[architecture.objects]]
+code = 10
+id = "DISTRIBUTION_CONTROL"
+asset = "DIST_CTL"
+lifecycle = "cycle-queue"
+accounting_domain = "entitlement"
+mutators = ["settle-distribution"]
+witnesses = [
+    "distribution-closure",
+    "utxo-lifecycle",
+]
+consensus_value_authoritative = true
+
+[[architecture.objects.allocators]]
+kind = "operation"
+operation = "cycle"
+
+[[architecture.objects.deallocators]]
+kind = "operation"
+operation = "settle-distribution"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "settle-distribution"
+authorization = "permissionless"
+
+[[architecture.objects]]
+code = 11
+id = "DISTRIBUTION_VAULT"
+asset = "U"
+lifecycle = "cycle-queue"
+accounting_domain = "receipt"
+mutators = ["settle-distribution"]
+witnesses = [
+    "canonical-delta",
+    "distribution-closure",
+]
+consensus_value_authoritative = true
+
+[[architecture.objects.allocators]]
+kind = "operation"
+operation = "cycle"
+
+[[architecture.objects.deallocators]]
+kind = "operation"
+operation = "settle-distribution"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "settle-distribution"
+authorization = "permissionless"
+
+[[architecture.objects]]
+code = 12
+id = "ASH"
+asset = "U"
+lifecycle = "backlog"
+accounting_domain = "receipt"
+mutators = [
+    "clear",
+    "compact-ash",
+]
+witnesses = [
+    "ash-lineage",
+    "canonical-delta",
+    "utxo-lifecycle",
+]
+consensus_value_authoritative = true
+
+[[architecture.objects.allocators]]
+kind = "operation"
+operation = "burn"
+
+[[architecture.objects.allocators]]
+kind = "operation"
+operation = "clear"
+
+[[architecture.objects.allocators]]
+kind = "operation"
+operation = "compact-ash"
+
+[[architecture.objects.deallocators]]
+kind = "operation"
+operation = "clear"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "clear"
+authorization = "permissionless"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "compact-ash"
+authorization = "permissionless"
+
+[[architecture.objects]]
+code = 13
+id = "PLAIN_LBTC"
+asset = "L-BTC"
+lifecycle = "external-wallet"
+accounting_domain = "fee"
+mutators = []
+witnesses = ["value-flow-closure"]
+consensus_value_authoritative = true
+
+[[architecture.objects.allocators]]
+kind = "external"
+
+[[architecture.objects.deallocators]]
+kind = "external-spend"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "announce-maturity"
+authorization = "sponsor-owner"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "burn"
+authorization = "sponsor-owner"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "cancel-request"
+authorization = "sponsor-owner"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "clear"
+authorization = "sponsor-owner"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "compact-ash"
+authorization = "sponsor-owner"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "create-request"
+authorization = "input-owner"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "cycle"
+authorization = "sponsor-owner"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "receipt-relabel"
+authorization = "sponsor-owner"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "redeem"
+authorization = "sponsor-owner"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "settle-distribution"
+authorization = "sponsor-owner"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "transfer-live-receipts"
+authorization = "sponsor-owner"
+
+[[architecture.objects.authorization_paths]]
+kind = "operation"
+operation = "transfer-time-locked-receipts"
+authorization = "sponsor-owner"
+
+[[architecture.objects.authorization_paths]]
+kind = "external-spend"
+authorization = "input-owner"
+
+[[architecture.objects]]
+code = 14
+id = "CPFP_ANCHOR"
+asset = "L-BTC"
+lifecycle = "bounded-retained"
+accounting_domain = "none"
+mutators = []
+witnesses = ["native-fee-auction"]
+consensus_value_authoritative = true
+
+[[architecture.objects.allocators]]
+kind = "operation"
+operation = "cycle"
+
+[[architecture.objects.deallocators]]
+kind = "external-spend"
+
+[[architecture.objects.authorization_paths]]
+kind = "external-spend"
+authorization = "permissionless"
+
+[[architecture.operations]]
+code = 1
+id = "create-request"
+kind = "client-protocol"
+authorization = "client-authorized"
+open_flows = ["request-creation"]
+reads = []
+writes = []
+witnesses = [
+    "request-closure",
+    "value-flow-closure",
+]
+value_flows = [
+    "immutable-destination",
+    "owner-consented",
+]
+bounds = ["FEE_SPONSOR_INPUT_MAX"]
+roots = []
+issuances = []
+canonical_deltas = []
+data_outputs = []
+
+[[architecture.operations.inputs]]
+object = "PLAIN_LBTC"
+minimum = 1
+authorization = "input-owner"
+
+[architecture.operations.inputs.maximum]
+kind = "bound"
+bound = "FEE_SPONSOR_INPUT_MAX"
+
+[[architecture.operations.outputs]]
+object = "DEPOSIT_REQUEST"
+minimum = 1
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.projections]]
+projection = "transition-certificate"
+rule = "required"
+
+[[architecture.operations]]
+code = 2
+id = "cancel-request"
+kind = "covenant-branch"
+authorization = "refund-key"
+open_flows = [
+    "fee-sponsor",
+    "request-refund",
+]
+reads = []
+writes = []
+witnesses = [
+    "request-closure",
+    "value-flow-closure",
+]
+value_flows = [
+    "immutable-destination",
+    "owner-consented",
+    "sponsor-envelope",
+]
+bounds = ["FEE_SPONSOR_INPUT_MAX"]
+roots = []
+issuances = []
+canonical_deltas = []
+data_outputs = []
+
+[[architecture.operations.inputs]]
+object = "DEPOSIT_REQUEST"
+minimum = 1
+authorization = "refund-key"
+
+[architecture.operations.inputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.inputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+authorization = "sponsor-owner"
+
+[architecture.operations.inputs.maximum]
+kind = "bound"
+bound = "FEE_SPONSOR_INPUT_MAX"
+
+[[architecture.operations.outputs]]
+object = "PLAIN_LBTC"
+minimum = 1
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 2
+
+[[architecture.operations.projections]]
+projection = "transition-certificate"
+rule = "required"
+
+[[architecture.operations]]
+code = 3
+id = "admit-deposits"
+kind = "covenant-branch"
+authorization = "permissionless"
+open_flows = ["deposit-admission"]
+reads = []
+writes = []
+witnesses = [
+    "canonical-delta",
+    "entitlement-closure",
+    "resv-succession",
+    "state-succession",
+    "value-flow-closure",
+]
+value_flows = [
+    "immutable-destination",
+    "preauthorized-service-budget",
+]
+bounds = ["ADMISSION_BATCH_MAX"]
+data_outputs = []
+
+[[architecture.operations.roots]]
+root = "ENT_AUTH"
+use_kind = "succession"
+
+[[architecture.operations.roots]]
+root = "RESV"
+use_kind = "succession"
+
+[[architecture.operations.roots]]
+root = "STATE"
+use_kind = "succession"
+
+[[architecture.operations.issuances]]
+asset = "ENT"
+authority = "ENT_AUTH"
+condition = "positive-admitted-principal"
+
+[[architecture.operations.inputs]]
+object = "DEPOSIT_REQUEST"
+minimum = 1
+authorization = "permissionless"
+
+[architecture.operations.inputs.maximum]
+kind = "bound"
+bound = "ADMISSION_BATCH_MAX"
+
+[[architecture.operations.inputs]]
+object = "ENTITLEMENT_AUTHORITY"
+minimum = 1
+authorization = "covenant-companion"
+
+[architecture.operations.inputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.inputs]]
+object = "RESV"
+minimum = 1
+authorization = "covenant-companion"
+
+[architecture.operations.inputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.inputs]]
+object = "STATE"
+minimum = 1
+authorization = "covenant-companion"
+
+[architecture.operations.inputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "DEPOSIT_ENTITLEMENT"
+minimum = 1
+
+[architecture.operations.outputs.maximum]
+kind = "bound"
+bound = "ADMISSION_BATCH_MAX"
+
+[[architecture.operations.outputs]]
+object = "ENTITLEMENT_AUTHORITY"
+minimum = 1
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "RESV"
+minimum = 1
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "STATE"
+minimum = 1
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.canonical_deltas]]
+asset = "ENT"
+kind = "issuance"
+condition = "positive-admitted-principal"
+
+[[architecture.operations.projections]]
+projection = "transition-certificate"
+rule = "required"
+
+[[architecture.operations]]
+code = 4
+id = "cycle"
+kind = "covenant-branch"
+authorization = "cadence-band"
+open_flows = [
+    "fee-sponsor",
+    "reserve-carry",
+]
+reads = [
+    "cycle-issuance",
+    "floor-phi",
+]
+writes = []
+witnesses = [
+    "canonical-delta",
+    "distribution-closure",
+    "floor-nondecrease",
+    "native-fee-auction",
+    "resv-succession",
+    "state-succession",
+    "value-flow-closure",
+]
+value_flows = [
+    "immutable-destination",
+    "sponsor-envelope",
+]
+bounds = ["FEE_SPONSOR_INPUT_MAX"]
+data_outputs = []
+
+[[architecture.operations.roots]]
+root = "DIST_AUTH"
+use_kind = "succession"
+
+[[architecture.operations.roots]]
+root = "PACE"
+use_kind = "succession"
+
+[[architecture.operations.roots]]
+root = "RESV"
+use_kind = "succession"
+
+[[architecture.operations.roots]]
+root = "STATE"
+use_kind = "succession"
+
+[[architecture.operations.issuances]]
+asset = "DIST_CTL"
+authority = "DIST_AUTH"
+condition = "positive-cycle-principal"
+
+[[architecture.operations.issuances]]
+asset = "U"
+authority = "PACE"
+condition = "positive-cycle-issuance"
+
+[[architecture.operations.inputs]]
+object = "DISTRIBUTION_AUTHORITY"
+minimum = 1
+authorization = "covenant-companion"
+
+[architecture.operations.inputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.inputs]]
+object = "PACE"
+minimum = 1
+authorization = "covenant-companion"
+
+[architecture.operations.inputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.inputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+authorization = "sponsor-owner"
+
+[architecture.operations.inputs.maximum]
+kind = "bound"
+bound = "FEE_SPONSOR_INPUT_MAX"
+
+[[architecture.operations.inputs]]
+object = "RESV"
+minimum = 1
+authorization = "covenant-companion"
+
+[architecture.operations.inputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.inputs]]
+object = "STATE"
+minimum = 1
+authorization = "covenant-companion"
+
+[architecture.operations.inputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "CPFP_ANCHOR"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "DISTRIBUTION_AUTHORITY"
+minimum = 1
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "DISTRIBUTION_CONTROL"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "DISTRIBUTION_VAULT"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "PACE"
+minimum = 1
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "RECEIPT_L"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "RECEIPT_T"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "RESV"
+minimum = 1
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "STATE"
+minimum = 1
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.canonical_deltas]]
+asset = "DIST_CTL"
+kind = "issuance"
+condition = "positive-cycle-principal"
+
+[[architecture.operations.canonical_deltas]]
+asset = "U"
+kind = "issuance"
+condition = "positive-cycle-issuance"
+
+[[architecture.operations.projections]]
+projection = "transition-certificate"
+rule = "required"
+
+[[architecture.operations]]
+code = 5
+id = "settle-distribution"
+kind = "covenant-branch"
+authorization = "permissionless"
+open_flows = ["fee-sponsor"]
+reads = []
+writes = []
+witnesses = [
+    "canonical-delta",
+    "distribution-closure",
+    "entitlement-closure",
+    "receipt-owner-routing",
+    "utxo-lifecycle",
+    "value-flow-closure",
+]
+value_flows = [
+    "immutable-destination",
+    "ownerless-terminal-sink",
+    "sponsor-envelope",
+]
+bounds = [
+    "FEE_SPONSOR_INPUT_MAX",
+    "SETTLEMENT_BATCH_MAX",
+]
+roots = []
+issuances = []
+
+[[architecture.operations.inputs]]
+object = "DEPOSIT_ENTITLEMENT"
+minimum = 1
+authorization = "permissionless"
+
+[architecture.operations.inputs.maximum]
+kind = "bound"
+bound = "SETTLEMENT_BATCH_MAX"
+
+[[architecture.operations.inputs]]
+object = "DISTRIBUTION_CONTROL"
+minimum = 1
+authorization = "permissionless"
+
+[architecture.operations.inputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.inputs]]
+object = "DISTRIBUTION_VAULT"
+minimum = 0
+authorization = "permissionless"
+
+[architecture.operations.inputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.inputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+authorization = "sponsor-owner"
+
+[architecture.operations.inputs.maximum]
+kind = "bound"
+bound = "FEE_SPONSOR_INPUT_MAX"
+
+[[architecture.operations.outputs]]
+object = "DISTRIBUTION_CONTROL"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "DISTRIBUTION_VAULT"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "RECEIPT_L"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "bound"
+bound = "SETTLEMENT_BATCH_MAX"
+
+[[architecture.operations.outputs]]
+object = "RECEIPT_T"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "bound"
+bound = "SETTLEMENT_BATCH_MAX"
+
+[[architecture.operations.canonical_deltas]]
+asset = "DIST_CTL"
+kind = "destruction"
+condition = "distribution-terminates"
+destruction_tag = "tag-distribution-control-close"
+
+[[architecture.operations.canonical_deltas]]
+asset = "DIST_CTL"
+kind = "lateral"
+condition = "distribution-continues"
+
+[[architecture.operations.canonical_deltas]]
+asset = "ENT"
+kind = "destruction"
+condition = "always"
+destruction_tag = "tag-entitlement"
+
+[[architecture.operations.canonical_deltas]]
+asset = "U"
+kind = "destruction"
+condition = "positive-distribution-residue"
+destruction_tag = "tag-distribution-residue"
+
+[[architecture.operations.canonical_deltas]]
+asset = "U"
+kind = "lateral"
+condition = "positive-settlement-u-output"
+
+[[architecture.operations.data_outputs]]
+kind = "destruction"
+tag = "tag-distribution-control-close"
+asset = "DIST_CTL"
+minimum = 1
+condition = "distribution-terminates"
+
+[architecture.operations.data_outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.data_outputs]]
+kind = "destruction"
+tag = "tag-distribution-residue"
+asset = "U"
+minimum = 1
+condition = "positive-distribution-residue"
+
+[architecture.operations.data_outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.data_outputs]]
+kind = "destruction"
+tag = "tag-entitlement"
+asset = "ENT"
+minimum = 1
+condition = "always"
+
+[architecture.operations.data_outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.projections]]
+projection = "distribution-residue"
+rule = "optional"
+
+[[architecture.operations.projections]]
+projection = "transition-certificate"
+rule = "required"
+
+[[architecture.operations]]
+code = 6
+id = "transfer-live-receipts"
+kind = "covenant-branch"
+authorization = "receipt-owners"
+open_flows = ["fee-sponsor"]
+reads = []
+writes = []
+witnesses = [
+    "canonical-delta",
+    "receipt-class-closure",
+    "receipt-owner-routing",
+    "value-flow-closure",
+]
+value_flows = [
+    "owner-consented",
+    "sponsor-envelope",
+]
+bounds = [
+    "FEE_SPONSOR_INPUT_MAX",
+    "TRANSFER_INPUT_MAX",
+    "TRANSFER_OUTPUT_MAX",
+]
+roots = []
+issuances = []
+data_outputs = []
+
+[[architecture.operations.inputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+authorization = "sponsor-owner"
+
+[architecture.operations.inputs.maximum]
+kind = "bound"
+bound = "FEE_SPONSOR_INPUT_MAX"
+
+[[architecture.operations.inputs]]
+object = "RECEIPT_L"
+minimum = 1
+authorization = "input-owner"
+
+[architecture.operations.inputs.maximum]
+kind = "bound"
+bound = "TRANSFER_INPUT_MAX"
+
+[[architecture.operations.outputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "RECEIPT_L"
+minimum = 1
+
+[architecture.operations.outputs.maximum]
+kind = "bound"
+bound = "TRANSFER_OUTPUT_MAX"
+
+[[architecture.operations.canonical_deltas]]
+asset = "U"
+kind = "lateral"
+condition = "always"
+
+[[architecture.operations.projections]]
+projection = "transition-certificate"
+rule = "required"
+
+[[architecture.operations]]
+code = 7
+id = "transfer-time-locked-receipts"
+kind = "covenant-branch"
+authorization = "receipt-owners"
+open_flows = ["fee-sponsor"]
+reads = []
+writes = []
+witnesses = [
+    "canonical-delta",
+    "receipt-class-closure",
+    "receipt-owner-routing",
+    "value-flow-closure",
+]
+value_flows = [
+    "owner-consented",
+    "sponsor-envelope",
+]
+bounds = [
+    "FEE_SPONSOR_INPUT_MAX",
+    "TRANSFER_INPUT_MAX",
+    "TRANSFER_OUTPUT_MAX",
+]
+roots = []
+issuances = []
+data_outputs = []
+
+[[architecture.operations.inputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+authorization = "sponsor-owner"
+
+[architecture.operations.inputs.maximum]
+kind = "bound"
+bound = "FEE_SPONSOR_INPUT_MAX"
+
+[[architecture.operations.inputs]]
+object = "RECEIPT_T"
+minimum = 1
+authorization = "input-owner"
+
+[architecture.operations.inputs.maximum]
+kind = "bound"
+bound = "TRANSFER_INPUT_MAX"
+
+[[architecture.operations.outputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "RECEIPT_T"
+minimum = 1
+
+[architecture.operations.outputs.maximum]
+kind = "bound"
+bound = "TRANSFER_OUTPUT_MAX"
+
+[[architecture.operations.canonical_deltas]]
+asset = "U"
+kind = "lateral"
+condition = "always"
+
+[[architecture.operations.projections]]
+projection = "transition-certificate"
+rule = "required"
+
+[[architecture.operations]]
+code = 8
+id = "redeem"
+kind = "covenant-branch"
+authorization = "receipt-owners"
+open_flows = [
+    "fee-sponsor",
+    "redemption",
+]
+reads = [
+    "floor-phi",
+    "redemption-payout",
+]
+writes = []
+witnesses = [
+    "canonical-delta",
+    "floor-nondecrease",
+    "receipt-owner-routing",
+    "resv-succession",
+    "state-succession",
+    "value-flow-closure",
+]
+value_flows = [
+    "formula-bound-payout",
+    "owner-consented",
+    "ownerless-terminal-sink",
+    "sponsor-envelope",
+]
+bounds = ["FEE_SPONSOR_INPUT_MAX"]
+issuances = []
+
+[[architecture.operations.roots]]
+root = "RESV"
+use_kind = "succession-or-termination"
+
+[[architecture.operations.roots]]
+root = "STATE"
+use_kind = "succession"
+
+[[architecture.operations.inputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+authorization = "sponsor-owner"
+
+[architecture.operations.inputs.maximum]
+kind = "bound"
+bound = "FEE_SPONSOR_INPUT_MAX"
+
+[[architecture.operations.inputs]]
+object = "RECEIPT_L"
+minimum = 1
+authorization = "input-owner"
+
+[architecture.operations.inputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.inputs]]
+object = "RESV"
+minimum = 1
+authorization = "covenant-companion"
+
+[architecture.operations.inputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.inputs]]
+object = "STATE"
+minimum = 1
+authorization = "covenant-companion"
+
+[architecture.operations.inputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "PLAIN_LBTC"
+minimum = 1
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 2
+
+[[architecture.operations.outputs]]
+object = "RESV"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "STATE"
+minimum = 1
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.canonical_deltas]]
+asset = "U"
+kind = "destruction"
+condition = "always"
+destruction_tag = "tag-redeem"
+
+[[architecture.operations.data_outputs]]
+kind = "destruction"
+tag = "tag-redeem"
+asset = "U"
+minimum = 1
+condition = "always"
+
+[architecture.operations.data_outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.projections]]
+projection = "transition-certificate"
+rule = "required"
+
+[[architecture.operations]]
+code = 9
+id = "receipt-relabel"
+kind = "covenant-branch"
+authorization = "permissionless"
+open_flows = ["fee-sponsor"]
+reads = []
+writes = []
+witnesses = [
+    "canonical-delta",
+    "receipt-class-closure",
+    "receipt-owner-routing",
+    "state-succession",
+    "utxo-lifecycle",
+    "value-flow-closure",
+]
+value_flows = [
+    "immutable-destination",
+    "sponsor-envelope",
+]
+bounds = [
+    "FEE_SPONSOR_INPUT_MAX",
+    "RELABEL_BATCH_MAX",
+]
+issuances = []
+data_outputs = []
+
+[[architecture.operations.roots]]
+root = "STATE"
+use_kind = "succession"
+
+[[architecture.operations.inputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+authorization = "sponsor-owner"
+
+[architecture.operations.inputs.maximum]
+kind = "bound"
+bound = "FEE_SPONSOR_INPUT_MAX"
+
+[[architecture.operations.inputs]]
+object = "RECEIPT_T"
+minimum = 1
+authorization = "permissionless"
+
+[architecture.operations.inputs.maximum]
+kind = "bound"
+bound = "RELABEL_BATCH_MAX"
+
+[[architecture.operations.inputs]]
+object = "STATE"
+minimum = 1
+authorization = "covenant-companion"
+
+[architecture.operations.inputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "RECEIPT_L"
+minimum = 1
+
+[architecture.operations.outputs.maximum]
+kind = "bound"
+bound = "RELABEL_BATCH_MAX"
+
+[[architecture.operations.outputs]]
+object = "STATE"
+minimum = 1
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.canonical_deltas]]
+asset = "U"
+kind = "lateral"
+condition = "always"
+
+[[architecture.operations.projections]]
+projection = "transition-certificate"
+rule = "required"
+
+[[architecture.operations]]
+code = 10
+id = "burn"
+kind = "covenant-branch"
+authorization = "receipt-owners"
+open_flows = ["fee-sponsor"]
+reads = []
+writes = []
+witnesses = [
+    "ash-lineage",
+    "attestation-authentication",
+    "canonical-delta",
+    "receipt-class-closure",
+    "receipt-owner-routing",
+    "value-flow-closure",
+]
+value_flows = [
+    "owner-consented",
+    "ownerless-bound-sink",
+    "sponsor-envelope",
+]
+bounds = [
+    "BURN_CHANGE_MAX",
+    "BURN_INPUT_MAX",
+    "BURN_RECORD_MAX",
+    "FEE_SPONSOR_INPUT_MAX",
+]
+roots = []
+issuances = []
+
+[[architecture.operations.inputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+authorization = "sponsor-owner"
+
+[architecture.operations.inputs.maximum]
+kind = "bound"
+bound = "FEE_SPONSOR_INPUT_MAX"
+
+[[architecture.operations.inputs]]
+object = "RECEIPT_L"
+minimum = 1
+authorization = "input-owner"
+
+[architecture.operations.inputs.maximum]
+kind = "bound"
+bound = "BURN_INPUT_MAX"
+
+[[architecture.operations.outputs]]
+object = "ASH"
+minimum = 1
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "RECEIPT_L"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "bound"
+bound = "BURN_CHANGE_MAX"
+
+[[architecture.operations.canonical_deltas]]
+asset = "U"
+kind = "lateral"
+condition = "always"
+
+[[architecture.operations.data_outputs]]
+kind = "burn-record"
+tag = "tag-burn"
+minimum = 0
+condition = "always"
+
+[architecture.operations.data_outputs.maximum]
+kind = "bound"
+bound = "BURN_RECORD_MAX"
+
+[[architecture.operations.projections]]
+projection = "burn-event"
+rule = "required"
+
+[[architecture.operations.projections]]
+projection = "transition-certificate"
+rule = "required"
+
+[[architecture.operations]]
+code = 11
+id = "compact-ash"
+kind = "covenant-branch"
+authorization = "permissionless"
+open_flows = ["fee-sponsor"]
+reads = []
+writes = []
+witnesses = [
+    "ash-lineage",
+    "canonical-delta",
+    "utxo-lifecycle",
+    "value-flow-closure",
+]
+value_flows = [
+    "ownerless-bound-movement",
+    "sponsor-envelope",
+]
+bounds = [
+    "ASH_BATCH_MAX",
+    "FEE_SPONSOR_INPUT_MAX",
+]
+roots = []
+issuances = []
+data_outputs = []
+
+[[architecture.operations.inputs]]
+object = "ASH"
+minimum = 2
+authorization = "permissionless"
+
+[architecture.operations.inputs.maximum]
+kind = "bound"
+bound = "ASH_BATCH_MAX"
+
+[[architecture.operations.inputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+authorization = "sponsor-owner"
+
+[architecture.operations.inputs.maximum]
+kind = "bound"
+bound = "FEE_SPONSOR_INPUT_MAX"
+
+[[architecture.operations.outputs]]
+object = "ASH"
+minimum = 1
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.canonical_deltas]]
+asset = "U"
+kind = "ownerless-lateral"
+condition = "always"
+
+[[architecture.operations.projections]]
+projection = "transition-certificate"
+rule = "required"
+
+[[architecture.operations]]
+code = 12
+id = "clear"
+kind = "covenant-branch"
+authorization = "permissionless"
+open_flows = ["fee-sponsor"]
+reads = []
+writes = []
+witnesses = [
+    "ash-lineage",
+    "canonical-delta",
+    "floor-nondecrease",
+    "native-fee-auction",
+    "state-succession",
+    "value-flow-closure",
+]
+value_flows = [
+    "ownerless-terminal-sink",
+    "sponsor-envelope",
+]
+bounds = [
+    "ASH_BATCH_MAX",
+    "FEE_SPONSOR_INPUT_MAX",
+]
+issuances = []
+
+[[architecture.operations.roots]]
+root = "STATE"
+use_kind = "succession"
+
+[[architecture.operations.inputs]]
+object = "ASH"
+minimum = 1
+authorization = "permissionless"
+
+[architecture.operations.inputs.maximum]
+kind = "bound"
+bound = "ASH_BATCH_MAX"
+
+[[architecture.operations.inputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+authorization = "sponsor-owner"
+
+[architecture.operations.inputs.maximum]
+kind = "bound"
+bound = "FEE_SPONSOR_INPUT_MAX"
+
+[[architecture.operations.inputs]]
+object = "STATE"
+minimum = 1
+authorization = "covenant-companion"
+
+[architecture.operations.inputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "ASH"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "STATE"
+minimum = 1
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.canonical_deltas]]
+asset = "U"
+kind = "destruction"
+condition = "always"
+destruction_tag = "tag-recon"
+
+[[architecture.operations.canonical_deltas]]
+asset = "U"
+kind = "ownerless-lateral"
+condition = "positive-ash-residual"
+
+[[architecture.operations.data_outputs]]
+kind = "destruction"
+tag = "tag-recon"
+asset = "U"
+minimum = 1
+condition = "always"
+
+[architecture.operations.data_outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.projections]]
+projection = "clear-event"
+rule = "required"
+
+[[architecture.operations.projections]]
+projection = "transition-certificate"
+rule = "required"
+
+[[architecture.operations]]
+code = 13
+id = "announce-maturity"
+kind = "covenant-branch"
+authorization = "operator"
+open_flows = ["fee-sponsor"]
+reads = []
+writes = []
+witnesses = [
+    "native-fee-auction",
+    "state-succession",
+    "value-flow-closure",
+]
+value_flows = [
+    "owner-consented",
+    "sponsor-envelope",
+]
+bounds = ["FEE_SPONSOR_INPUT_MAX"]
+issuances = []
+canonical_deltas = []
+data_outputs = []
+
+[[architecture.operations.roots]]
+root = "STATE"
+use_kind = "succession"
+
+[[architecture.operations.inputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+authorization = "sponsor-owner"
+
+[architecture.operations.inputs.maximum]
+kind = "bound"
+bound = "FEE_SPONSOR_INPUT_MAX"
+
+[[architecture.operations.inputs]]
+object = "STATE"
+minimum = 1
+authorization = "covenant-companion"
+
+[architecture.operations.inputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "PLAIN_LBTC"
+minimum = 0
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.outputs]]
+object = "STATE"
+minimum = 1
+
+[architecture.operations.outputs.maximum]
+kind = "exact"
+value = 1
+
+[[architecture.operations.projections]]
+projection = "transition-certificate"
+rule = "required"
+
+[[architecture.quantities]]
+code = 1
+id = "floor-phi"
+kind = "monetary"
+reads = [
+    "state.omega",
+    "state.y-live",
+    "state.y-time-locked",
+]
+writers = []
+
+[[architecture.quantities.readers]]
+kind = "operation"
+operation = "cycle"
+
+[[architecture.quantities.readers]]
+kind = "operation"
+operation = "redeem"
+
+[[architecture.quantities.readers]]
+kind = "external-auditor"
+
+[[architecture.quantities]]
+code = 2
+id = "redemption-payout"
+kind = "monetary"
+reads = [
+    "state.omega",
+    "state.y-live",
+    "state.y-time-locked",
+]
+writers = []
+
+[[architecture.quantities.readers]]
+kind = "operation"
+operation = "redeem"
+
+[[architecture.quantities]]
+code = 3
+id = "cycle-issuance"
+kind = "monetary"
+reads = [
+    "state.omega",
+    "state.q",
+    "state.y-live",
+    "state.y-time-locked",
+]
+writers = []
+
+[[architecture.quantities.readers]]
+kind = "operation"
+operation = "cycle"
+
+[[architecture.quantities]]
+code = 4
+id = "attestation-delta"
+kind = "derived"
+reads = [
+    "burn-record.amount",
+    "clear.omega",
+    "clear.y",
+]
+writers = []
+
+[[architecture.quantities.readers]]
+kind = "attestation-indexer"
+
+[[architecture.quantities]]
+code = 5
+id = "attestation-map"
+kind = "interface"
+reads = ["attestation.terms"]
+writers = []
+
+[[architecture.quantities.readers]]
+kind = "attestation-indexer"
+
+[[architecture.quantities.readers]]
+kind = "external-auditor"
+
+[[architecture.quantities.readers]]
+kind = "consumer-formula"
+
+[[architecture.quantities]]
+code = 6
+id = "historical-live-residue"
+kind = "audit-only"
+reads = ["history.residue-live"]
+writers = []
+
+[[architecture.quantities.readers]]
+kind = "invariant-checker"
+
+[[architecture.quantities.readers]]
+kind = "external-auditor"
+
+[[architecture.quantities]]
+code = 7
+id = "historical-time-locked-residue"
+kind = "audit-only"
+reads = ["history.residue-time-locked"]
+writers = []
+
+[[architecture.quantities.readers]]
+kind = "invariant-checker"
+
+[[architecture.quantities.readers]]
+kind = "external-auditor"
+
+[[architecture.quantities]]
+code = 8
+id = "receipt-accounting-audit"
+kind = "audit-only"
+reads = [
+    "history.residue-live",
+    "history.residue-time-locked",
+    "state.y-live",
+    "state.y-time-locked",
+]
+writers = []
+
+[[architecture.quantities.readers]]
+kind = "invariant-checker"
+
+[[architecture.quantities.readers]]
+kind = "external-auditor"
+
+[[architecture.witnesses]]
+code = 1
+id = "canonical-delta"
+semantic_tag = "lem:invariant:delta"
+
+[[architecture.witnesses]]
+code = 2
+id = "ash-lineage"
+semantic_tag = "inv:invariant:accounting"
+
+[[architecture.witnesses]]
+code = 3
+id = "state-succession"
+semantic_tag = "inv:invariant:succession"
+
+[[architecture.witnesses]]
+code = 4
+id = "resv-succession"
+semantic_tag = "inv:invariant:succession"
+
+[[architecture.witnesses]]
+code = 5
+id = "receipt-owner-routing"
+semantic_tag = "lem:invariant:flow"
+
+[[architecture.witnesses]]
+code = 6
+id = "value-flow-closure"
+semantic_tag = "lem:invariant:flow"
+
+[[architecture.witnesses]]
+code = 7
+id = "request-closure"
+semantic_tag = "lem:invariant:flow"
+
+[[architecture.witnesses]]
+code = 8
+id = "entitlement-closure"
+semantic_tag = "inv:invariant:escrow-receipts"
+
+[[architecture.witnesses]]
+code = 9
+id = "distribution-closure"
+semantic_tag = "inv:invariant:no-starve"
+
+[[architecture.witnesses]]
+code = 10
+id = "receipt-class-closure"
+semantic_tag = "inv:invariant:accounting"
+
+[[architecture.witnesses]]
+code = 11
+id = "attestation-authentication"
+semantic_tag = "sec:ledger:authentication"
+
+[[architecture.witnesses]]
+code = 12
+id = "native-fee-auction"
+semantic_tag = "res:trust:op"
+
+[[architecture.witnesses]]
+code = 13
+id = "utxo-lifecycle"
+semantic_tag = "inv:invariant:succession"
+
+[[architecture.witnesses]]
+code = 14
+id = "floor-nondecrease"
+semantic_tag = "lem:invariant:rate"
+
+[[architecture.clauses]]
+code = 1
+id = "inv:invariant:identity"
+
+[[architecture.clauses]]
+code = 2
+id = "inv:invariant:domains"
+
+[[architecture.clauses]]
+code = 3
+id = "inv:invariant:rate-floor"
+
+[[architecture.clauses]]
+code = 4
+id = "inv:invariant:no-trap"
+
+[[architecture.clauses]]
+code = 5
+id = "inv:invariant:backing"
+
+[[architecture.clauses]]
+code = 6
+id = "inv:invariant:no-starve"
+
+[[architecture.clauses]]
+code = 7
+id = "inv:invariant:escrow-receipts"
+
+[[architecture.clauses]]
+code = 8
+id = "inv:invariant:accounting"
+
+[[architecture.clauses]]
+code = 9
+id = "inv:invariant:consensus-value"
+
+[[architecture.clauses]]
+code = 10
+id = "inv:invariant:succession"
+
+[[architecture.clauses]]
+code = 11
+id = "inv:invariant:maturity"
+
+[[architecture.dependencies]]
+code = 1
+id = "native-asset-conservation"
+verification_required = true
+rationale = "Closed-asset scarcity and no-forgery depend on Elements native-asset conservation."
+
+[[architecture.dependencies]]
+code = 2
+id = "issuance-introspection"
+verification_required = true
+rationale = "Receipt, entitlement, and control issuance are pinned through issuance introspection."
+
+[[architecture.dependencies]]
+code = 3
+id = "explicit-value-introspection"
+verification_required = true
+rationale = "Explicit-arithmetic and public-delta seams read explicit consensus values."
+
+[[architecture.dependencies]]
+code = 4
+id = "sighash-profile"
+verification_required = true
+rationale = "Owner signatures must commit all outputs; ANYONECANPAY remains a separate input-set policy."
+
+[[architecture.dependencies]]
+code = 5
+id = "package-relay"
+verification_required = true
+rationale = "The maturity-cycle CPFP anchor depends on package selection."
+
+[[architecture.dependencies]]
+code = 6
+id = "unspendable-utxo-exclusion"
+verification_required = true
+rationale = "Tagged destruction outputs must not remain in the current UTXO set."
+
+[[architecture.dependencies]]
+code = 7
+id = "weld-enforcement"
+verification_required = true
+rationale = "Emitted script must enforce STATE/RESV and control/vault welds represented by the model."
+
+[[architecture.dependencies]]
+code = 8
+id = "lbtc-settlement"
+verification_required = true
+rationale = "L-BTC settlement is provided by the Liquid functionary consortium."
+
+[[architecture.dependencies]]
+code = 9
+id = "script-emission-fidelity"
+verification_required = true
+rationale = "The compiler must emit script matching the typed transition model."
+
+[[architecture.dependencies]]
+code = 10
+id = "confidential-value-conservation"
+verification_required = true
+rationale = "Blind lateral movements discharge conservation through consensus CT balancing."
+
+[[architecture.dependencies]]
+code = 11
+id = "value-commitment-equality"
+verification_required = true
+rationale = "Amount-blind relabel discharges per-object preservation by commitment equality."
+
+[[architecture.dependencies]]
+code = 12
+id = "value-commitment-opening"
+verification_required = false
+rationale = "Reveal-at-spend paths, if implemented, authenticate openings on-chain."
+
+[[architecture.decisions]]
+code = 1
+id = "no-onchain-attestation-accumulator"
+status = "closed"
+rationale = [
+    "A root would not make the unbounded fold self-verifying.",
+    "A shared root would serialize the burn hot path.",
+    "Full-chain verifiers recompute attestation from public history.",
+]
+
+[[architecture.decisions]]
+code = 2
+id = "full-chain-attestation-verification"
+status = "closed"
+rationale = [
+    "Ordinary users may trust their Layer-1 system.",
+    "Verifier parties maintain canonical history.",
+]
+
+[[architecture.decisions]]
+code = 3
+id = "historical-residue-audit-only"
+status = "closed"
+rationale = [
+    "Historical residue explains conservative recorded supply.",
+    "No monetary, interface, covenant, or consumer formula reads residue.",
+]
+
+[[architecture.decisions]]
+code = 4
+id = "one-entitlement-per-request"
+status = "closed"
+rationale = [
+    "Admission must not possess payout-affecting aggregation discretion.",
+    "Integer floor allocation is not additive across merged requests.",
+]
+
+[[architecture.decisions]]
+code = 5
+id = "settlement-permissionless"
+status = "closed"
+rationale = [
+    "Lost owner keys must not retain shared distribution state.",
+    "Settlement outputs are owner-preserving and formula-bound.",
+]
+
+[[architecture.decisions]]
+code = 6
+id = "atomic-maturity-cycle"
+status = "closed"
+rationale = [
+    "Maturity conversion occurs in the cycle reaching the maturity cycle index.",
+    "No announced-but-unconverted limbo state is permitted.",
+]
+
+[[architecture.decisions]]
+code = 7
+id = "active-backing-cap"
+status = "closed"
+rationale = [
+    "The cap does not limit cumulative historical deposit volume.",
+    "The cap is enforced at genesis, admission, cycle, and invariant validation.",
+    "The pool never holds more active L-BTC backing plus admitted escrow than the maximum L-BTC supply.",
+]
+
+[[architecture.bounds]]
+code = 1
+id = "ADMISSION_BATCH_MAX"
+default_value = 32
+requires_deployment_calibration = true
+
+[[architecture.bounds]]
+code = 2
+id = "SETTLEMENT_BATCH_MAX"
+default_value = 32
+requires_deployment_calibration = true
+
+[[architecture.bounds]]
+code = 3
+id = "RELABEL_BATCH_MAX"
+default_value = 32
+requires_deployment_calibration = true
+
+[[architecture.bounds]]
+code = 4
+id = "ASH_BATCH_MAX"
+default_value = 64
+requires_deployment_calibration = true
+
+[[architecture.bounds]]
+code = 5
+id = "BURN_INPUT_MAX"
+default_value = 64
+requires_deployment_calibration = true
+
+[[architecture.bounds]]
+code = 6
+id = "BURN_CHANGE_MAX"
+default_value = 32
+requires_deployment_calibration = true
+
+[[architecture.bounds]]
+code = 7
+id = "BURN_RECORD_MAX"
+default_value = 64
+requires_deployment_calibration = true
+
+[[architecture.bounds]]
+code = 8
+id = "TRANSFER_INPUT_MAX"
+default_value = 64
+requires_deployment_calibration = true
+
+[[architecture.bounds]]
+code = 9
+id = "TRANSFER_OUTPUT_MAX"
+default_value = 64
+requires_deployment_calibration = true
+
+[[architecture.bounds]]
+code = 10
+id = "FEE_SPONSOR_INPUT_MAX"
+default_value = 16
+requires_deployment_calibration = true
+
+[[architecture.amount_limits]]
+code = 1
+id = "ACTIVE_BACKING_MAX"
+asset = "L-BTC"
+value = 2100000000000000
+unit = "lbtc-atomic-unit"
+rationale = "Maximum simultaneous settled reserve plus admitted deposit escrow."
+
+[[architecture.tags]]
+code = 1
+id = "tag-burn"
+participates_in_attestation = true
+
+[[architecture.tags]]
+code = 2
+id = "tag-recon"
+participates_in_attestation = false
+
+[[architecture.tags]]
+code = 3
+id = "tag-redeem"
+participates_in_attestation = false
+
+[[architecture.tags]]
+code = 4
+id = "tag-entitlement"
+participates_in_attestation = false
+
+[[architecture.tags]]
+code = 5
+id = "tag-distribution-control-close"
+participates_in_attestation = false
+
+[[architecture.tags]]
+code = 6
+id = "tag-distribution-residue"
+participates_in_attestation = false
+
+[[architecture.input_authorization_evidence]]
+input_authorization = "covenant-companion"
+model_evidence = "model-branch-shape"
+compiler_evidence = "compiler-covenant-predicate"
+deployment_evidence = "deployment-script-semantics"
+
+[[architecture.input_authorization_evidence]]
+input_authorization = "input-owner"
+model_evidence = "model-signer-set"
+compiler_evidence = "compiler-checksig"
+deployment_evidence = "deployment-sighash"
+
+[[architecture.input_authorization_evidence]]
+input_authorization = "refund-key"
+model_evidence = "model-signer-set"
+compiler_evidence = "compiler-checksig"
+deployment_evidence = "deployment-sighash"
+
+[[architecture.input_authorization_evidence]]
+input_authorization = "sponsor-owner"
+model_evidence = "model-signer-set"
+compiler_evidence = "compiler-checksig"
+deployment_evidence = "deployment-sighash"
+
+[[architecture.input_authorization_evidence]]
+input_authorization = "permissionless"
+model_evidence = "none-permissionless"
+compiler_evidence = "none-permissionless"
+deployment_evidence = "none-permissionless"
+
+[[architecture.operation_authorization_evidence]]
+permission_class = "client-authorized"
+model_evidence = "model-signer-set"
+compiler_evidence = "compiler-checksig"
+deployment_evidence = "deployment-sighash"
+
+[[architecture.operation_authorization_evidence]]
+permission_class = "refund-key"
+model_evidence = "model-signer-set"
+compiler_evidence = "compiler-checksig"
+deployment_evidence = "deployment-sighash"
+
+[[architecture.operation_authorization_evidence]]
+permission_class = "permissionless"
+model_evidence = "none-permissionless"
+compiler_evidence = "none-permissionless"
+deployment_evidence = "none-permissionless"
+
+[[architecture.operation_authorization_evidence]]
+permission_class = "cadence-band"
+model_evidence = "model-cadence-band"
+compiler_evidence = "compiler-cadence-leaves"
+deployment_evidence = "deployment-csv-semantics"
+
+[[architecture.operation_authorization_evidence]]
+permission_class = "receipt-owners"
+model_evidence = "model-signer-set"
+compiler_evidence = "compiler-checksig"
+deployment_evidence = "deployment-sighash"
+
+[[architecture.operation_authorization_evidence]]
+permission_class = "operator"
+model_evidence = "model-signer-set"
+compiler_evidence = "compiler-checksig"
+deployment_evidence = "deployment-sighash"

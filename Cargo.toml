@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "packages/architecture",
+    "packages/artifacts",
     "packages/cli-common",
     "packages/execwrap",
     "packages/flatten-latex-main",
@@ -18,6 +19,7 @@ version = "0.0.0-dev"
 
 [workspace.dependencies]
 architecture = { package = "tripod-architecture", path = "packages/architecture" }
+artifacts = { package = "tripod-artifacts", path = "packages/artifacts" }
 cli-common = { path = "packages/cli-common" }
 execwrap = { path = "packages/execwrap" }
 flatten-latex-main = { path = "packages/flatten-latex-main" }

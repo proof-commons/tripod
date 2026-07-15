@@ -1,0 +1,81 @@
+[
+  {
+    "declassifies": [
+      "issuance:ENT:positive-admitted-principal"
+    ],
+    "operation": "admit-deposits"
+  },
+  {
+    "declassifies": [],
+    "operation": "announce-maturity"
+  },
+  {
+    "declassifies": [
+      "projection:burn-event",
+      "record:tag-burn"
+    ],
+    "operation": "burn"
+  },
+  {
+    "declassifies": [],
+    "operation": "cancel-request"
+  },
+  {
+    "declassifies": [
+      "destruction:U:always",
+      "projection:clear-event",
+      "record:tag-recon"
+    ],
+    "operation": "clear"
+  },
+  {
+    "declassifies": [],
+    "operation": "compact-ash"
+  },
+  {
+    "declassifies": [],
+    "operation": "create-request"
+  },
+  {
+    "declassifies": [
+      "issuance:DIST_CTL:positive-cycle-principal",
+      "issuance:U:positive-cycle-issuance",
+      "read:cycle-issuance",
+      "read:floor-phi"
+    ],
+    "operation": "cycle"
+  },
+  {
+    "declassifies": [],
+    "operation": "receipt-relabel"
+  },
+  {
+    "declassifies": [
+      "destruction:U:always",
+      "read:floor-phi",
+      "read:redemption-payout",
+      "record:tag-redeem"
+    ],
+    "operation": "redeem"
+  },
+  {
+    "declassifies": [
+      "destruction:DIST_CTL:distribution-terminates",
+      "destruction:ENT:always",
+      "destruction:U:positive-distribution-residue",
+      "projection:distribution-residue",
+      "record:tag-distribution-control-close",
+      "record:tag-distribution-residue",
+      "record:tag-entitlement"
+    ],
+    "operation": "settle-distribution"
+  },
+  {
+    "declassifies": [],
+    "operation": "transfer-live-receipts"
+  },
+  {
+    "declassifies": [],
+    "operation": "transfer-time-locked-receipts"
+  }
+]
