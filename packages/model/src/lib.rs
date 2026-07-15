@@ -33,15 +33,27 @@
 //!   `´def:recognition:ash-view´`.
 //! - [`fee`] — fee envelope `´def:auction:fee-envelope´`,
 //!   `´rule:auction:fee-envelope-validation´`.
+//! - [`policy`] — branch policy `´def:verification:branch-policy´`.
 //! - `kernel` (crate-private) — output staging, exact canonical-flow and issuance
 //!   declarations, the transaction builder, conservation validators,
 //!   exact witness partition, atomic commit, and root-cursor update
 //!   `´def:verification:transition-builder´` through
 //!   `´rule:verification:root-cursor-update´`.
+//! - [`shape`] — operation-independent branch-shape validation
+//!   `´def:verification:object-kind´` through
+//!   `´rule:verification:branch-event-projections´`.
 //! - `certify` (crate-private) — transition-certificate derivation
 //!   `´rule:verification:derive-transition-certificate´` and its helper
 //!   rules (root shapes, root edges, canonical deltas, projections,
 //!   data-output validation).
+//! - [`genesis`](mod@genesis) — trusted-setup genesis constructor
+//!   `´protocol:state:genesis´`.
+//! - [`invariant`] — full invariant checker over the state and history
+//!   `´def:verification:invariant-checker´` and its component rules.
+//! - [`ops`] — operation bodies (requests, admission, cycle,
+//!   settlement, transfer, redemption, relabel, burn, ASH maintenance,
+//!   maturity announcement, adversarial injection).
+//! - [`transition`] — atomic transition API `´rule:verification:pure-transition´`.
 //!
 //! # Trust boundary: a transparent reference model
 //!
@@ -116,28 +128,52 @@
 )]
 
 pub mod asset;
+pub(crate) mod certify;
 pub mod constants;
 pub mod fee;
+pub mod genesis;
 pub mod guard;
 pub mod history;
+pub mod invariant;
+pub(crate) mod kernel;
+pub mod manifest;
 pub mod object;
+pub mod ops;
+pub mod policy;
 pub mod pool;
 pub mod queries;
 pub mod recognition;
 pub mod scalar;
+pub mod shape;
 pub mod signer;
+pub mod transition;
 pub mod world;
 
 pub use asset::{Asset, Maturity, ReceiptClass};
 pub use constants::Constants;
 pub use fee::{FeeChange, FeeEnvelope, validate_fee_envelope};
+pub use genesis::{GENESIS_OWNER, OPERATOR_KEY, genesis};
 pub use guard::{Guard, InvariantError};
 pub use history::{
     BranchKind, BurnProjection, BurnRecord, CanonicalDelta, ClearProjection, DeltaKind,
     DistributionResidueProjection, GenesisProjection, History, OpenFlowKind, OpenFlowProjection,
     RootEdge, TransitionCertificate,
 };
+pub use invariant::{AccountingFold, check_invariant, clause_of};
+pub use manifest::{
+    assert_no_attestation_singleton, asset_of, bound_value, branch_operation, declared_asset,
+    operation_branch, validate_architecture_conformance, validate_bound_conformance,
+    validate_profile_bound_conformance,
+};
 pub use object::{DataOutput, Meta, Tag, Utxo};
+pub use ops::{
+    AdmitDeposits, AnnounceMaturity, BurnReceipts, CancelRequest, ClearAsh, CompactAsh,
+    CreateRequest, CycleCaller, ReceiptDestination, RedeemReceipt, RelabelReceipts, RunCycle,
+    SettleDistribution, TransferReceipts, inject_open_object,
+};
+pub use policy::{
+    BranchPolicy, RootUse, ValueFlowClass, branch_policy, expected_value_flow_classes,
+};
 pub use pool::PoolState;
 pub use queries::{cycle_issuance_query, floor_terms, redemption_payout};
 pub use recognition::{
@@ -150,5 +186,7 @@ pub use scalar::{
     OutPoint, OwnerKey, Ratio, Sat, SchemaVersion, TWO_51, TxId, TxIndex, checked_active_backing,
     checked_add_to_map, checked_sum_sats, floor_mul_div, floor_ratio,
 };
+pub use shape::{ObjectKind, ShapePolicy};
 pub use signer::{SignerSet, require_signer};
+pub use transition::{Transition, execute};
 pub use world::{ExternalBudget, RootCursor, Wallets, World};
