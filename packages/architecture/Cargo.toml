@@ -1,0 +1,25 @@
+[package]
+name = "tripod-architecture"
+description = "Typed normative architecture manifest of the attestation realization"
+
+# Package metadata is inherited from the Blueprint workspace.
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+# Imported as `architecture` everywhere; the package name above stays
+# the published identity (`-p tripod-architecture`).
+[lib]
+name = "architecture"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+toml = { workspace = true }
+
+[lints]
+workspace = true

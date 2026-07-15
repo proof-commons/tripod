@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "packages/architecture",
     "packages/cli-common",
     "packages/execwrap",
     "packages/flatten-latex-main",
@@ -15,6 +16,7 @@ rust-version = "1.88"
 version = "0.0.0-dev"
 
 [workspace.dependencies]
+architecture = { package = "tripod-architecture", path = "packages/architecture" }
 cli-common = { path = "packages/cli-common" }
 execwrap = { path = "packages/execwrap" }
 flatten-latex-main = { path = "packages/flatten-latex-main" }
