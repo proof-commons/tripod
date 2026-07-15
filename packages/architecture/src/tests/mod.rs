@@ -15,9 +15,13 @@
 //!   mutations.
 //! - [`versioning_gate_tests`] — the denotation gate: the behavioural
 //!   hash may move only with a `realization_version` bump.
+//! - [`doc_conformance_tests`] — the register-1 → document weld:
+//!   every manifest-carried document label appears verbatim in the
+//!   realization markdown.
 
 mod conformance_tests;
 mod deployment_tests;
+mod doc_conformance_tests;
 mod mutation_tests;
 mod validation_tests;
 mod versioning_gate_tests;
