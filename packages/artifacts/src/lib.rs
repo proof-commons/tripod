@@ -26,6 +26,8 @@ use anyhow::{Context, bail, ensure};
 use architecture::{ARCHITECTURE, PublishedArchitecture, validate_draft};
 use serde::Serialize;
 
+pub mod weld;
+
 /// Schema version for the `check-generated` stdout report.
 pub const CHECK_REPORT_SCHEMA: u32 = 1;
 
@@ -240,3 +242,6 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

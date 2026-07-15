@@ -36,6 +36,12 @@ crate. Regenerate with:
 cargo run -p tripod-artifacts --bin generate-all
 ```
 
+Check without writing (tests and CI use the same non-writing path):
+
+```sh
+cargo run -p tripod-artifacts --bin check-generated | jq .
+```
+
 ## Requirements
 
 - meson and ninja

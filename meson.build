@@ -121,3 +121,19 @@ test(
   suite: 'unit',
   timeout: 1800,
 )
+
+# Non-writing stale-artifact gate: committed generated artifacts must
+# equal their typed-source derivations (ADR-010 binary; JSON report on
+# stdout, which the test harness captures).
+test(
+  'check-generated',
+  cargo,
+  args: [
+    'run',
+    '--manifest-path', cargo_manifest,
+    '--package', 'tripod-artifacts',
+    '--bin', 'check-generated',
+  ],
+  suite: 'generated',
+  timeout: 600,
+)
