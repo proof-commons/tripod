@@ -53,6 +53,14 @@
 //! - [`ops`] — operation bodies (requests, admission, cycle,
 //!   settlement, transfer, redemption, relabel, burn, ASH maintenance,
 //!   maturity announcement, adversarial injection).
+//! - [`quiescence`] — quiescence/lifecycle reports, audit helpers, and
+//!   the residue-reader policy
+//!   `´def:verification:quiescence-report´` through
+//!   `´rule:verification:residue-readers´`.
+//! - [`maintenance`] — sponsored-maintenance actions, scheduler
+//!   interface, and the sweepability driver
+//!   `´def:verification:maintenance-action´` through
+//!   `´rule:verification:apply-maintenance-action´`.
 //! - [`transition`] — atomic transition API `´rule:verification:pure-transition´`.
 //!
 //! # Trust boundary: a transparent reference model
@@ -136,12 +144,14 @@ pub mod guard;
 pub mod history;
 pub mod invariant;
 pub(crate) mod kernel;
+pub mod maintenance;
 pub mod manifest;
 pub mod object;
 pub mod ops;
 pub mod policy;
 pub mod pool;
 pub mod queries;
+pub mod quiescence;
 pub mod recognition;
 pub mod scalar;
 pub mod shape;
@@ -160,6 +170,12 @@ pub use history::{
     RootEdge, TransitionCertificate,
 };
 pub use invariant::{AccountingFold, check_invariant, clause_of};
+pub use maintenance::{
+    DeterministicMaintenanceScheduler, MaintenanceAction, MaintenanceMode, MaintenanceScheduler,
+    MaintenanceSponsor, StateCandidate, apply_maintenance_action, drive_quiescence_with_scheduler,
+    drive_shared_state_sweepability, drive_shared_state_to_fixpoint, drive_sponsored_quiescence,
+    maintenance_phase_potential, next_model_order,
+};
 pub use manifest::{
     assert_no_attestation_singleton, asset_of, bound_value, branch_operation, declared_asset,
     operation_branch, validate_architecture_conformance, validate_bound_conformance,
@@ -176,6 +192,12 @@ pub use policy::{
 };
 pub use pool::PoolState;
 pub use queries::{cycle_issuance_query, floor_terms, redemption_payout};
+pub use quiescence::{
+    ProtocolObservable, QuantityId, QuiescenceEligibility, QuiescenceReport, QuiescenceResidual,
+    assert_protocol_noninterference, assert_residue_noninterference, assert_residue_reader_policy,
+    classify_quiescence_eligibility, lifecycle_report, perturb_residue_projection,
+    protocol_observable, quantity_reads_residue, residuals_match_report, shared_state_is_swept,
+};
 pub use recognition::{
     CanonicalObject, DistributionControlView, EntitlementView, ReceiptView, RequestView,
     StateClass, classify_state_object, read_ash, read_distribution_control, read_entitlement,
