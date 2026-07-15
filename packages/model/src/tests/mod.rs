@@ -65,10 +65,11 @@
 //!
 //! | Category | Modules | Evidence class | Claim |
 //! |---|---|---|---|
-//! | kernel-structural | `kernel_tests`, `exact_flow_tests`, `open_flow_tests`, `canonical_flow_fault_tests` | executable-test-backed (structural) | conservation, exact witness partition, shape — **not** authorization |
+//! | kernel-structural | `kernel_tests`, `exact_flow_tests`, `open_flow_tests`, `canonical_flow_fault_tests`, `property_flow_fault_tests` | executable-test-backed (structural) | conservation, exact witness partition, shape — **not** authorization |
 //! | operations | `request_lifecycle_tests`, `admission_tests`, `cycle_tests`, `settlement_tests`, `transfer_tests`, `redemption_tests`, `relabel_tests`, `burn_attestation_tests`, `ash_clear_tests`, `authorization_tests` | executable-test-backed (model authorization) | branch semantics plus signer-set authorization |
 //! | invariant | `class_accounting_tests`, `canonical_closure_tests`, `clause_weld_tests`, `guard_listing_weld_tests`, `distribution_bijection_tests`, `root_provenance_tests`, `root_certificate_fault_tests`, `corruption_fixtures`, `bound_conformance_tests` | executable-test-backed | invariant and corruption rejection |
 //! | indexer | `indexer_conformance_tests`, `serialization_tests`, `attestation_reorg_tests`, `canonical_rejection_tests`, `checkpoint_semantics_tests`, `no_accumulator_tests` | executable-test-backed (oracle projections) | attestation derivation from certificates |
+//! | property | `property_trace_tests`, `property_maintenance_tests`, `property_open_injection_tests` | executable-test-backed (generated) | trace-level invariants over generated action spaces |
 //! | assumption-backed | scarcity/no-forgery statements inside invariant tests | assumption-backed | canonical assets cannot be externally created (Elements conservation dependency) |
 //! | deployment | (later) | deployment-tested | raw Elements transactions, sighash behavior |
 #![allow(dead_code, clippy::wildcard_imports)]
@@ -102,11 +103,14 @@ mod open_flow_tests;
 mod redemption_tests;
 mod relabel_tests;
 mod request_lifecycle_tests;
+mod residue_branch_noninterference_tests;
+mod residue_noninterference_tests;
 mod root_certificate_fault_tests;
 mod root_provenance_tests;
 mod serialization_tests;
 mod settlement_tests;
 mod stronger_fee_auction_tests;
+mod sweepability_tests;
 mod transfer_tests;
 
 mod active_backing_cap_tests;
@@ -114,3 +118,7 @@ mod canonical_flow_fault_tests;
 mod fee_auction_tests;
 mod indexer_conformance_tests;
 mod no_accumulator_tests;
+mod property_flow_fault_tests;
+mod property_maintenance_tests;
+mod property_open_injection_tests;
+mod property_trace_tests;
