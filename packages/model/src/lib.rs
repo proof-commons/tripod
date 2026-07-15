@@ -172,6 +172,9 @@ pub mod signer;
 pub mod transition;
 pub mod world;
 
+#[cfg(test)]
+mod tests;
+
 pub use asset::{Asset, Maturity, ReceiptClass};
 pub use audit::{
     ReceiptAccountingAuditProjection, ResidueAuditEvent, compare_receipt_accounting_audit,
