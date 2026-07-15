@@ -144,6 +144,7 @@
     clippy::use_self
 )]
 
+pub mod artifacts;
 pub mod asset;
 pub mod audit;
 pub(crate) mod certify;
