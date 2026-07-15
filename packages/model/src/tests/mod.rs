@@ -65,9 +65,9 @@
 //!
 //! | Category | Modules | Evidence class | Claim |
 //! |---|---|---|---|
-//! | kernel-structural | `kernel_tests` | executable-test-backed (structural) | conservation, exact witness partition, shape — **not** authorization |
+//! | kernel-structural | `kernel_tests`, `exact_flow_tests`, `open_flow_tests`, `canonical_flow_fault_tests` | executable-test-backed (structural) | conservation, exact witness partition, shape — **not** authorization |
 //! | operations | `request_lifecycle_tests`, `admission_tests`, `cycle_tests`, `settlement_tests`, `transfer_tests`, `redemption_tests`, `relabel_tests`, `burn_attestation_tests`, `ash_clear_tests`, `authorization_tests` | executable-test-backed (model authorization) | branch semantics plus signer-set authorization |
-//! | invariant | `corruption_fixtures` | executable-test-backed | invariant and corruption rejection |
+//! | invariant | `class_accounting_tests`, `canonical_closure_tests`, `clause_weld_tests`, `guard_listing_weld_tests`, `distribution_bijection_tests`, `root_provenance_tests`, `root_certificate_fault_tests`, `corruption_fixtures`, `bound_conformance_tests` | executable-test-backed | invariant and corruption rejection |
 //! | assumption-backed | scarcity/no-forgery statements inside invariant tests | assumption-backed | canonical assets cannot be externally created (Elements conservation dependency) |
 //! | deployment | (later) | deployment-tested | raw Elements transactions, sighash behavior |
 #![allow(dead_code, clippy::wildcard_imports)]
@@ -83,15 +83,27 @@ pub mod test_fixtures;
 mod admission_tests;
 mod ash_clear_tests;
 mod authorization_tests;
+mod bound_conformance_tests;
 mod burn_attestation_tests;
+mod canonical_closure_tests;
+mod class_accounting_tests;
+mod clause_weld_tests;
 mod cycle_tests;
+mod distribution_bijection_tests;
+mod exact_flow_tests;
+mod guard_listing_weld_tests;
 mod kernel_tests;
+mod open_asset_immunity_tests;
+mod open_flow_tests;
 mod redemption_tests;
 mod relabel_tests;
 mod request_lifecycle_tests;
+mod root_certificate_fault_tests;
+mod root_provenance_tests;
 mod settlement_tests;
 mod stronger_fee_auction_tests;
 mod transfer_tests;
 
 mod active_backing_cap_tests;
+mod canonical_flow_fault_tests;
 mod fee_auction_tests;

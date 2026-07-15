@@ -956,6 +956,25 @@ pub fn destruction_flow(
     }
 }
 
+/// Retained for kernel structural tests that declare a combined
+/// movement-plus-destruction flow directly.
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn mixed_flow(
+    asset: Asset,
+    kind: DeltaKind,
+    source_inputs: Vec<OutPoint>,
+    destination_outputs: Vec<OutputRef>,
+    destructions: Vec<DestructionLeg>,
+) -> CanonicalFlow {
+    CanonicalFlow {
+        asset,
+        source_inputs,
+        destination_outputs,
+        destructions,
+        movement_kind: Some(kind),
+    }
+}
+
 // ´rule:verification:root-input-policy´
 //
 // Branch-specific validation additionally forbids every `RESV_SPK`-shaped
