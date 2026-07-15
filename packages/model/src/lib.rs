@@ -28,6 +28,11 @@
 //!   complete pure `World` `´def:verification:root-cursor´`,
 //!   `´def:verification:wallets´`, `´def:verification:external-budget´`,
 //!   `´def:verification:world´`.
+//! - [`recognition`] — state projection classifier and branch-specific
+//!   validators/readers `´def:recognition:state-class´` through
+//!   `´def:recognition:ash-view´`.
+//! - [`fee`] — fee envelope `´def:auction:fee-envelope´`,
+//!   `´rule:auction:fee-envelope-validation´`.
 //! - `kernel` (crate-private) — output staging, exact canonical-flow and issuance
 //!   declarations, the transaction builder, conservation validators,
 //!   exact witness partition, atomic commit, and root-cursor update
@@ -112,16 +117,20 @@
 
 pub mod asset;
 pub mod constants;
+pub mod fee;
 pub mod guard;
 pub mod history;
 pub mod object;
 pub mod pool;
+pub mod queries;
+pub mod recognition;
 pub mod scalar;
 pub mod signer;
 pub mod world;
 
 pub use asset::{Asset, Maturity, ReceiptClass};
 pub use constants::Constants;
+pub use fee::{FeeChange, FeeEnvelope, validate_fee_envelope};
 pub use guard::{Guard, InvariantError};
 pub use history::{
     BranchKind, BurnProjection, BurnRecord, CanonicalDelta, ClearProjection, DeltaKind,
@@ -130,6 +139,12 @@ pub use history::{
 };
 pub use object::{DataOutput, Meta, Tag, Utxo};
 pub use pool::PoolState;
+pub use queries::{cycle_issuance_query, floor_terms, redemption_payout};
+pub use recognition::{
+    CanonicalObject, DistributionControlView, EntitlementView, ReceiptView, RequestView,
+    StateClass, classify_state_object, read_ash, read_distribution_control, read_entitlement,
+    read_receipt, validate_request_for_admission,
+};
 pub use scalar::{
     ACTIVE_BACKING_MAX, AttestationAddress, BlockHash, BlockHeight, CanonicalOrder, Cycle,
     OutPoint, OwnerKey, Ratio, Sat, SchemaVersion, TWO_51, TxId, TxIndex, checked_active_backing,
