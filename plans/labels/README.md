@@ -54,13 +54,14 @@ aggregate register.
 
 An explicit update command regenerates the registers.
 
-Conceptually:
+Run:
 
 ```sh
-python3 scripts/doc-labels.py update
+cargo run --locked \
+    -p tripod-labels \
+    --bin generate-label-registers \
+    -- --repository-root . --output-root .
 ```
-
-The exact command is fixed when the checker lands.
 
 Update mode may write only the two owned register files.
 
@@ -69,7 +70,10 @@ Update mode may write only the two owned register files.
 CI uses non-writing check mode:
 
 ```sh
-python3 scripts/doc-labels.py check
+cargo run --locked \
+    -p tripod-labels \
+    --bin check-labels \
+    -- --repository-root . | jq .
 ```
 
 The checker derives expected bytes in memory and fails when a register is

@@ -20,10 +20,8 @@ It does not contain:
 - conversational history.
 
 Long-term sequencing is owned by [`roadmap.md`](roadmap.md). Cross-package
-architecture is owned by
-[`toolchain-architecture.md`](toolchain-architecture.md). Package-specific
-requirements are owned by [`packages/`](packages/), and unresolved research is
-owned by [`research/`](research/).
+direction is owned by [`decisions/`](decisions/), package-specific requirements
+by [`packages/`](packages/), and unresolved research by [`research/`](research/).
 
 ---
 
@@ -93,7 +91,7 @@ into focused documents, after which superseded files are removed.
 | ID | Status | Task | Depends on | Output |
 |---|---|---|---|---|
 | `P0-001` | **DONE** | Rewrite the plan index and governance rules. | none | `plans/README.md` |
-| `P0-002` | **DONE** | Write the cross-package toolchain architecture. | `P0-001` | `plans/toolchain-architecture.md` |
+| `P0-002` | **DONE** | Establish cross-package ownership. | `P0-001` | decisions and package contracts |
 | `P0-003` | **DONE** | Write the gate-driven roadmap. | `P0-001`, `P0-002` | `plans/roadmap.md` |
 | `P0-004` | **DONE** | Rewrite the current execution backlog. | `P0-003` | `plans/backlog.md` |
 | `P0-005` | **DONE** | Write accepted implementation decision records. | `P0-002` | `plans/decisions/*.md` |
@@ -108,11 +106,11 @@ into focused documents, after which superseded files are removed.
 ## P0-001 — Rewrite the plan index
 
 > **Status:** DONE
-> **Evidence:** commit db9a930; plans/README.md is the concise index; scripts/check-plans.sh census green
+> **Evidence:** commit db9a930; plans/README.md is the clear index; scripts/check-plans.sh census green
 
 ### Scope
 
-Create a concise `plans/README.md` that owns:
+Create a clear `plans/README.md` that owns:
 
 - planning authority and non-normative status;
 - current phase;
@@ -125,7 +123,7 @@ Create a concise `plans/README.md` that owns:
 
 ### Exit check
 
-- [ ] `plans/README.md` is a concise index rather than a monolithic plan.
+- [ ] `plans/README.md` is a usable index rather than a monolithic plan.
 - [ ] Every intended document in the new tree appears in the index.
 - [ ] Plans are explicitly excluded as protocol/compiler inputs.
 - [ ] The next phase and current gate are clear.
@@ -137,27 +135,21 @@ Record the final document path and Markdown-link check when complete.
 
 ---
 
-## P0-002 — Write the toolchain architecture
+## P0-002 — Establish cross-package ownership
 
 > **Status:** DONE
-> **Evidence:** commit db9a930; plans/toolchain-architecture.md
+> **Evidence:** decisions and package contracts
 > **Depends on:** `P0-001`
 
 ### Scope
 
-Create `plans/toolchain-architecture.md` as the single planning home for:
+Assign cross-package direction to the final planning owners:
 
-- typed data flow;
-- package responsibilities;
-- dependency direction;
-- calibration orchestration;
-- identity/hash ownership;
-- generated-artifact direction;
-- assurance boundaries;
-- model/compiler separation;
-- target/backend boundary;
-- representation policy;
-- permissionless constructibility;
+- source direction, realization, backend, assurance, representation, and ABI
+  policy to decisions;
+- package responsibilities and dependency direction to package contracts;
+- sequencing to roadmap and phase cards;
+- research mechanics to research notes.
 - canonical layouts;
 - object constructors;
 - deterministic builds;

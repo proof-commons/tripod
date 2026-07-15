@@ -16,6 +16,7 @@ A compiler is proved by what it compiles. This tree therefore carries, beside th
 - `packages/model/` - Executable state-machine model of the attestation contract.
 - `packages/architecture/` - Typed normative architecture manifest of the realization.
 - `packages/artifacts/` - Generator/checker for the generated derivative artifacts.
+- `packages/labels/` - Repository-wide documentation-label registries and checks.
 - `adr/` - Architecture decision records for the repository tooling.
 
 ## Command-line output contract
@@ -40,6 +41,24 @@ Check without writing (tests and CI use the same non-writing path):
 
 ```sh
 cargo run -p tripod-artifacts --bin check-generated | jq .
+```
+
+Regenerate planning label registers explicitly:
+
+```sh
+cargo run --locked \
+  -p tripod-labels \
+  --bin generate-label-registers \
+  -- --repository-root . --output-root .
+```
+
+Check repository labels without writing:
+
+```sh
+cargo run --locked \
+  -p tripod-labels \
+  --bin check-labels \
+  -- --repository-root . | jq .
 ```
 
 ## Requirements

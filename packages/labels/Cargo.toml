@@ -1,8 +1,7 @@
 [package]
-name = "tripod-artifacts"
-description = "Single generator/checker for the workspace's generated derivative artifacts"
+name = "tripod-labels"
+description = "Repository-wide documentation-label registries and conformance checks"
 
-# Package metadata is inherited from the Blueprint workspace.
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,22 +9,18 @@ publish.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
-# Imported as `artifacts`; the package name above is the published
-# identity (`-p tripod-artifacts`).
 [lib]
-name = "artifacts"
+name = "labels"
 
 [dependencies]
 anyhow = { workspace = true }
 architecture = { workspace = true }
 clap = { workspace = true }
 cli-common = { workspace = true }
-labels = { workspace = true }
-model = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
-toml = { workspace = true }
+thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [lints]

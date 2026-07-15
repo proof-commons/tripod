@@ -67,7 +67,7 @@
 //! |---|---|---|---|
 //! | kernel-structural | `kernel_tests`, `exact_flow_tests`, `open_flow_tests`, `canonical_flow_fault_tests`, `property_flow_fault_tests` | executable-test-backed (structural) | conservation, exact witness partition, shape — **not** authorization |
 //! | operations | `request_lifecycle_tests`, `admission_tests`, `cycle_tests`, `settlement_tests`, `transfer_tests`, `redemption_tests`, `relabel_tests`, `burn_attestation_tests`, `ash_clear_tests`, `authorization_tests` | executable-test-backed (model authorization) | branch semantics plus signer-set authorization |
-//! | invariant | `class_accounting_tests`, `canonical_closure_tests`, `clause_weld_tests`, `guard_listing_weld_tests`, `model_label_tests`, `distribution_bijection_tests`, `root_provenance_tests`, `root_certificate_fault_tests`, `corruption_fixtures`, `bound_conformance_tests` | executable-test-backed | invariant and corruption rejection |
+//! | invariant | `class_accounting_tests`, `canonical_closure_tests`, `clause_weld_tests`, `guard_listing_weld_tests`, `distribution_bijection_tests`, `root_provenance_tests`, `root_certificate_fault_tests`, `corruption_fixtures`, `bound_conformance_tests` | executable-test-backed | invariant and corruption rejection |
 //! | indexer | `indexer_conformance_tests`, `serialization_tests`, `attestation_reorg_tests`, `canonical_rejection_tests`, `checkpoint_semantics_tests`, `no_accumulator_tests` | executable-test-backed (oracle projections) | attestation derivation from certificates |
 //! | property | `property_trace_tests`, `property_maintenance_tests`, `property_open_injection_tests` | executable-test-backed (generated) | trace-level invariants over generated action spaces |
 //! | assumption-backed | scarcity/no-forgery statements inside invariant tests | assumption-backed | canonical assets cannot be externally created (Elements conservation dependency) |
@@ -99,7 +99,6 @@ mod distribution_bijection_tests;
 mod exact_flow_tests;
 mod guard_listing_weld_tests;
 mod kernel_tests;
-mod model_label_tests;
 mod open_asset_immunity_tests;
 mod open_flow_tests;
 mod redemption_tests;

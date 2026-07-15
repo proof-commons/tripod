@@ -137,3 +137,32 @@ test(
   suite: 'generated',
   timeout: 600,
 )
+
+test(
+  'labels-check',
+  cargo,
+  args: [
+    'run',
+    '--manifest-path', cargo_manifest,
+    '--package', 'tripod-labels',
+    '--bin', 'check-labels',
+    '--',
+    '--repository-root', meson.project_source_root(),
+  ],
+  suite: ['documentation', 'generated'],
+  timeout: 600,
+)
+
+run_target(
+  'generate-label-registers',
+  command: [
+    cargo,
+    'run',
+    '--manifest-path', cargo_manifest,
+    '--package', 'tripod-labels',
+    '--bin', 'generate-label-registers',
+    '--',
+    '--repository-root', meson.project_source_root(),
+    '--output-root', meson.project_source_root(),
+  ],
+)

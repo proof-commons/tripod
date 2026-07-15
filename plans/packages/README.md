@@ -24,6 +24,7 @@ remain narrow.
 | Package | Planned first-party direct dependencies |
 |---|---|
 | `realization` | `architecture` |
+| `labels` | `architecture` |
 | `compiler` | `realization` |
 | `target-elements` | none |
 | `tapscript` | `compiler`, `target-elements` |
@@ -41,6 +42,7 @@ Cargo metadata and dependency review establish actual dependency conformance.
 | Package | Status | Direct role |
 |---|---|---|
 | [realization.md](realization.md) | Active | Target-independent semantic declaration. |
+| [labels.md](labels.md) | Active | Repository-wide documentation label registries and checks. |
 | [compiler.md](compiler.md) | Planned | Relation, proof, disclosure, lifecycle, placement, and layout analysis. |
 | [target-elements.md](target-elements.md) | Planned | Typed Liquid/Elements compatibility contract. |
 | [tapscript.md](tapscript.md) | Planned | First production target backend. |

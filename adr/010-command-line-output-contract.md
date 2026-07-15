@@ -253,6 +253,8 @@ Existing command classifications are:
 | `flatten-latex-main` | side effect; writes `--output` |
 | `generate-all` | side effect; writes `--output` |
 | `check-generated` | one JSON stdout result |
+| `check-labels` | one JSON stdout result |
+| `generate-label-registers` | side effect; explicit `--output-root` |
 
 ## Rejected alternatives · `sec:output:alternatives`
 

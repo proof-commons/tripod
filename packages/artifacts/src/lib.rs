@@ -107,6 +107,9 @@ pub fn expected_artifacts() -> anyhow::Result<Vec<ExpectedArtifact>> {
         .validate_envelope()
         .context("validating re-parsed TOML envelope")?;
 
+    let model_labels = labels::model_labels_json(&labels::RepositoryPaths::workspace_default())
+        .context("deriving model-label registry")?;
+
     Ok(vec![
         ExpectedArtifact {
             name: "architecture.json",
@@ -122,7 +125,7 @@ pub fn expected_artifacts() -> anyhow::Result<Vec<ExpectedArtifact>> {
         },
         ExpectedArtifact {
             name: "model_labels.json",
-            bytes: model::artifacts::model_labels_json().into_bytes(),
+            bytes: model_labels.into_bytes(),
         },
     ])
 }

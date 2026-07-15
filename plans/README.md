@@ -68,7 +68,6 @@ Imported citations are linted under
 |---|---|
 | [roadmap.md](roadmap.md) | Phase order and dependency overview. |
 | [backlog.md](backlog.md) | Current executable task queue only. |
-| [toolchain-architecture.md](toolchain-architecture.md) | Existing cross-package plan pending migration into decisions and package contracts. |
 
 ## Planning laws · `rule:plans:laws`
 
@@ -104,9 +103,9 @@ adr/
 must remain below the accepted documentation budget.
 
 The documentation checker reports total bytes, bytes by directory,
-authored-file threshold warnings, and generated-register bytes.
-
-Density is preferred over repeated explanation.
+authored-file threshold warnings, and generated-register bytes. The budget is a
+guardrail against accidental duplication, not a reason to omit useful rationale,
+examples, or implementation detail.
 
 ## Updating · `rule:plans:update`
 

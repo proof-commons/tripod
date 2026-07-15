@@ -6,6 +6,7 @@ members = [
     "packages/cli-common",
     "packages/execwrap",
     "packages/flatten-latex-main",
+    "packages/labels",
     "packages/model",
 ]
 
@@ -23,6 +24,7 @@ artifacts = { package = "tripod-artifacts", path = "packages/artifacts" }
 cli-common = { path = "packages/cli-common" }
 execwrap = { path = "packages/execwrap" }
 flatten-latex-main = { path = "packages/flatten-latex-main" }
+labels = { package = "tripod-labels", path = "packages/labels" }
 model = { package = "tripod-model", path = "packages/model" }
 
 anyhow = "1"

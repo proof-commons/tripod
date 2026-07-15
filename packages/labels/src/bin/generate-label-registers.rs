@@ -1,0 +1,44 @@
+use std::{path::PathBuf, process::ExitCode};
+
+use clap::Parser;
+use cli_common::{BaseArgs, run_no_stdout_command};
+
+#[derive(Parser)]
+#[command(
+    name = "generate-label-registers",
+    version,
+    about = "Generate planning upstream-label registers"
+)]
+struct Args {
+    #[command(flatten)]
+    base: BaseArgs,
+    #[arg(long, value_name = "DIR")]
+    repository_root: Option<PathBuf>,
+    #[arg(long, value_name = "DIR")]
+    output_root: PathBuf,
+}
+
+fn main() -> ExitCode {
+    let args = cli_common::parse_args_or_exit::<Args>();
+    run_no_stdout_command(
+        "generate-label-registers",
+        args.base.debug,
+        tracing::Level::INFO,
+        || {
+            let paths = args.repository_root.map_or_else(
+                labels::RepositoryPaths::workspace_default,
+                labels::RepositoryPaths::from_root,
+            );
+            let registers = labels::generate_registers(&paths, &args.output_root)
+                .inspect_err(|error| {
+                    for diagnostic in error.diagnostics() {
+                        tracing::error!(code = ?diagnostic.code, path = %diagnostic.path, line = diagnostic.line, message = %diagnostic.message, "label source validation failed");
+                    }
+                })?;
+            for register in registers {
+                tracing::info!(path = %register.path.display(), bytes = register.bytes, "label register written");
+            }
+            Ok::<(), labels::repository::GenerateError>(())
+        },
+    )
+}
