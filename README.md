@@ -26,7 +26,25 @@ help, usage, diagnostics, panics — is JSON on stderr; exit codes are
 
 ## Requirements
 
+- meson and ninja
 - a Rust toolchain (cargo, edition 2024)
+- TeX Live with `xelatex`, `biber`, and `latexmk`
+
+## Building
+
+```sh
+meson setup build
+meson compile -C build attestation
+```
+
+The rendered PDF lands in `archive/rendered/` and a flattened single-file
+`.tex` (for arXiv submission or diffing) in `archive/flattened/`.
+
+Rust checks:
+
+```sh
+meson test -C build
+```
 
 ## Licensing
 
