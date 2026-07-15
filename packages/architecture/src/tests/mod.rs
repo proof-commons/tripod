@@ -10,7 +10,11 @@
 //!   read bidirectionality, and bound resolution.
 //! - [`mutation_tests`] — deliberate manifest corruptions that must
 //!   each fail draft validation.
+//! - [`deployment_tests`] — deployment-release validation: the
+//!   synthetic final profile fixture and per-field rejection
+//!   mutations.
 
 mod conformance_tests;
+mod deployment_tests;
 mod mutation_tests;
 mod validation_tests;
