@@ -66,6 +66,7 @@
 //! | Category | Modules | Evidence class | Claim |
 //! |---|---|---|---|
 //! | kernel-structural | `kernel_tests` | executable-test-backed (structural) | conservation, exact witness partition, shape — **not** authorization |
+//! | operations | `request_lifecycle_tests`, `admission_tests`, `cycle_tests`, `settlement_tests`, `transfer_tests`, `redemption_tests`, `relabel_tests`, `burn_attestation_tests`, `ash_clear_tests`, `authorization_tests` | executable-test-backed (model authorization) | branch semantics plus signer-set authorization |
 //! | invariant | `corruption_fixtures` | executable-test-backed | invariant and corruption rejection |
 //! | assumption-backed | scarcity/no-forgery statements inside invariant tests | assumption-backed | canonical assets cannot be externally created (Elements conservation dependency) |
 //! | deployment | (later) | deployment-tested | raw Elements transactions, sighash behavior |
@@ -79,4 +80,18 @@ pub mod property_strategy;
 pub mod scenario_fixtures;
 pub mod test_fixtures;
 
+mod admission_tests;
+mod ash_clear_tests;
+mod authorization_tests;
+mod burn_attestation_tests;
+mod cycle_tests;
 mod kernel_tests;
+mod redemption_tests;
+mod relabel_tests;
+mod request_lifecycle_tests;
+mod settlement_tests;
+mod stronger_fee_auction_tests;
+mod transfer_tests;
+
+mod active_backing_cap_tests;
+mod fee_auction_tests;
