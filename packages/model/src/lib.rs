@@ -53,6 +53,15 @@
 //! - [`ops`] — operation bodies (requests, admission, cycle,
 //!   settlement, transfer, redemption, relabel, burn, ASH maintenance,
 //!   maturity announcement, adversarial injection).
+//! - [`ledger`] — exact attestation indexer, canonical serializer and
+//!   decoder, reorg-aware checkpoint, and the split event/query
+//!   differential-conformance comparisons
+//!   `´def:ledgers:burn-transaction´` through
+//!   `´rule:verification:indexer-reproject´`.
+//! - [`audit`] — receipt-accounting audit projection and residue
+//!   differential under the external-auditor role
+//!   `´def:verification:residue-audit-event´` through
+//!   `´rule:verification:compare-receipt-accounting-audit´`.
 //! - [`quiescence`] — quiescence/lifecycle reports, audit helpers, and
 //!   the residue-reader policy
 //!   `´def:verification:quiescence-report´` through
@@ -136,6 +145,7 @@
 )]
 
 pub mod asset;
+pub mod audit;
 pub(crate) mod certify;
 pub mod constants;
 pub mod fee;
@@ -144,6 +154,7 @@ pub mod guard;
 pub mod history;
 pub mod invariant;
 pub(crate) mod kernel;
+pub mod ledger;
 pub mod maintenance;
 pub mod manifest;
 pub mod object;
@@ -160,6 +171,10 @@ pub mod transition;
 pub mod world;
 
 pub use asset::{Asset, Maturity, ReceiptClass};
+pub use audit::{
+    ReceiptAccountingAuditProjection, ResidueAuditEvent, compare_receipt_accounting_audit,
+    receipt_accounting_audit,
+};
 pub use constants::Constants;
 pub use fee::{FeeChange, FeeEnvelope, validate_fee_envelope};
 pub use genesis::{GENESIS_OWNER, OPERATOR_KEY, genesis};
@@ -170,6 +185,25 @@ pub use history::{
     RootEdge, TransitionCertificate,
 };
 pub use invariant::{AccountingFold, check_invariant, clause_of};
+// The low-level transaction builder and its flow/issuance declaration
+// types are deliberately crate-private (`crate::kernel`): they prove
+// structural transaction validity but do not establish owner/operator
+// authorization, so they must not be reachable as a public
+// construction path. The public normative transition surface is the
+// operation-constructor set re-exported from [`ops`] plus
+// [`transition::execute`]. Kernel structural unit tests import the
+// crate-private path directly.
+pub use ledger::{
+    ATTESTATION_QUERY_DOMAIN, ATTESTATION_SCHEMA_VERSION, AttestationContext, AttestationEventId,
+    AttestationEventSnapshot, AttestationQueryProvider, AttestationQueryResult, AttestationTerm,
+    BurnTransaction, CanonicalBlock, ClearEntry, ClearId, DecodeError, DifferentialError,
+    EncodeError, ExactRational, IndependentAttestationIndexer, IndexerCheckpoint, IndexerSnapshot,
+    OrderedAttestationEvent, QueryValidationError, RecognizedAttestationEvent, ReferenceIndexer,
+    ValidatedChainView, compare_attestation_events, compare_attestation_indexers,
+    compare_attestation_query, decode_biguint, decode_varint, deserialize_query, encode_biguint,
+    encode_varint, expected_architecture_manifest_hash, serialize_query, validate_event_index,
+    validate_query,
+};
 pub use maintenance::{
     DeterministicMaintenanceScheduler, MaintenanceAction, MaintenanceMode, MaintenanceScheduler,
     MaintenanceSponsor, StateCandidate, apply_maintenance_action, drive_quiescence_with_scheduler,
