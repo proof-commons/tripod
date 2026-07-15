@@ -12,12 +12,12 @@
 > **Affected packages:** `realization`, `compiler`, `target-elements`,
 > `tapscript`, `linker`, `transaction`, `vectors`, and `release`
 > **Depends on decisions:**
-> [D001](../decisions/001-typed-rust-is-normative.md),
-> [D002](../decisions/002-target-independent-realization-layer.md),
-> [D003](../decisions/003-multiple-backends-tapscript-first.md),
-> [D004](../decisions/004-translation-validation-over-compiler-trust.md),
-> [D005](../decisions/005-value-parametric-asset-rigid.md),
-> [D006](../decisions/006-canonical-transaction-layout-abi.md)
+> [D001](../decisions/001-typed-rust-source.md),
+> [D002](../decisions/002-realization-layer.md),
+> [D003](../decisions/003-tapscript-first.md),
+> [D004](../decisions/004-translation-validation.md),
+> [D005](../decisions/005-value-representation.md),
+> [D006](../decisions/006-transaction-abi.md)
 > **Related normative constraints:** semantic value is independent of target
 > representation; consensus value is authoritative; closed asset identity is
 > explicit in the initial backend; burn publishes a fresh ASH aggregate;
@@ -2052,12 +2052,12 @@ availability, or accepted transaction form.
 
 ### Decisions
 
-- [D001](../decisions/001-typed-rust-is-normative.md)
-- [D002](../decisions/002-target-independent-realization-layer.md)
-- [D003](../decisions/003-multiple-backends-tapscript-first.md)
-- [D004](../decisions/004-translation-validation-over-compiler-trust.md)
-- [D005](../decisions/005-value-parametric-asset-rigid.md)
-- [D006](../decisions/006-canonical-transaction-layout-abi.md)
+- [D001](../decisions/001-typed-rust-source.md)
+- [D002](../decisions/002-realization-layer.md)
+- [D003](../decisions/003-tapscript-first.md)
+- [D004](../decisions/004-translation-validation.md)
+- [D005](../decisions/005-value-representation.md)
+- [D006](../decisions/006-transaction-abi.md)
 
 ### Package plans
 

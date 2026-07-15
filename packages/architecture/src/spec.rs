@@ -390,7 +390,7 @@ pub fn tracked_realization_version(workspace_version: &str) -> String {
 // -------------------------------------------------------------------------
 
 pub const DOCUMENT: DocumentSpec = DocumentSpec {
-    realization_version: "0.0.0-dev",
+    realization_version: "0.1.0-dev",
     // Schema 17 (revision 13a): lifts the version fields into the
     // publication envelope, adds the behavioural hash, and splits the
     // explicit-values dependency into its four proof-method components.

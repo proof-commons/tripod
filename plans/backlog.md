@@ -243,12 +243,12 @@ Create:
 ```text
 plans/decisions/
 ├── README.md
-├── 001-typed-rust-is-normative.md
-├── 002-target-independent-realization-layer.md
-├── 003-multiple-backends-tapscript-first.md
-├── 004-translation-validation-over-compiler-trust.md
-├── 005-value-parametric-asset-rigid.md
-└── 006-canonical-transaction-layout-abi.md
+├── 001-typed-rust-source.md
+├── 002-realization-layer.md
+├── 003-tapscript-first.md
+├── 004-translation-validation.md
+├── 005-value-representation.md
+└── 006-transaction-abi.md
 ```
 
 Each record must state:

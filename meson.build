@@ -1,4 +1,4 @@
-project('tripod', version: '0.0.0-dev', subproject_dir: 'papers')
+project('tripod', version: '0.1.0-dev', subproject_dir: 'papers')
 
 # ---------------------------------------------------------------------------
 # External tools required for the LaTeX build.

@@ -189,7 +189,7 @@ semantic inputs to the first-party compiler, linker, transaction builder, or
 release gate.
 
 This direction is governed by
-[Decision 001](decisions/001-typed-rust-is-normative.md).
+[Decision 001](decisions/001-typed-rust-source.md).
 
 ---
 
@@ -1185,7 +1185,7 @@ relation
 A broad successful operation test cannot substitute for relation coverage.
 
 The evidence story is governed by
-[Decision 004](decisions/004-translation-validation-over-compiler-trust.md).
+[Decision 004](decisions/004-translation-validation.md).
 
 ---
 
@@ -1267,7 +1267,7 @@ A target/backend adapter maps abstract capabilities to concrete proof methods.
 
 The first implementation targets Elements tapscript. Simplicity remains a
 second backend behind the same semantic boundary, as recorded by
-[Decision 003](decisions/003-multiple-backends-tapscript-first.md).
+[Decision 003](decisions/003-tapscript-first.md).
 
 ---
 
@@ -1316,7 +1316,7 @@ A confidential or unclassified output must not silently carry one of these
 assets outside the recognized object closure.
 
 This policy is recorded by
-[Decision 005](decisions/005-value-parametric-asset-rigid.md).
+[Decision 005](decisions/005-value-representation.md).
 
 ---
 
@@ -1445,7 +1445,7 @@ No obligation may exist only in compiler metadata while being enforced by no
 script.
 
 The canonical-layout policy is recorded by
-[Decision 006](decisions/006-canonical-transaction-layout-abi.md).
+[Decision 006](decisions/006-transaction-abi.md).
 
 ---
 

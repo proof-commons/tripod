@@ -1,128 +1,297 @@
 # ADR-010: Command-Line Output Contract
 
 **Status:** Decided and implemented
-**Scope:** every first-party executable in this workspace
-**Implemented by:** `packages/cli-common`
-
-Adapted from an upstream architecture decision record ("global command-line
-output contract"); summarized and re-scoped for this repository.
+**Scope:** Every first-party executable shipped by this workspace
+**Implementation:** `packages/cli-common`
+**Excludes:** tests, examples, benches, build-script protocol output, and
+library crates without executables
 
 ---
 
-## Context
+## Context · `sec:output:context`
 
-The workspace ships several command-line executables — build helpers on the
-paper build path (`execwrap`, `flatten-latex-main`) and generated-artifact
-tools (`generate-all`, `check-generated`) — and will grow more as the
-realization/compiler toolchain lands. If each command decides independently
-what stdout and stderr mean, shell and build integration becomes brittle and
-diagnostics can corrupt data streams.
+Workspace commands are consumed by shell scripts, Meson, CI, and later
+toolchain packages. Plain-text diagnostics mixed with result data make those
+interfaces ambiguous and can corrupt pipelines.
 
-## Decision
+The workspace therefore assigns one machine-readable meaning to each standard
+stream and one shared set of process exit classes.
 
-Adopt one repository-wide JSON-only command-line output contract for every
-first-party executable. New executables are governed by this contract from
-creation.
+## Streams · `rule:output:streams`
 
-## Contract
+Standard output carries result data only.
 
-### Streams
+Standard error carries control-plane records:
 
-- Stdout and stderr are both **machine-readable** streams: JSON records or
-  nothing. Plain human-readable text is not a valid output format on either
-  stream.
-- **Stdout is reserved for result data** intended for a caller to consume.
-  Everything else — diagnostics, logs, progress, warnings, help, usage,
-  status — goes to **stderr as JSON control-plane records**.
-- A command with no stdout result data leaves stdout empty.
-- **Assets are not stdout.** A command that produces files (rendered
-  artifacts, flattened documents, generated manifests) writes them to paths
-  supplied by arguments such as `--output`, never by dumping bytes to stdout.
-  One deliberate exception: `execwrap` exists to relay a wrapped child's
-  byte streams; its pass-through and `--redirect*` routing reproduce the
-  child's bytes verbatim and are the command's result data, not diagnostics.
+- diagnostics;
+- logs;
+- warnings;
+- progress;
+- help;
+- version;
+- usage errors;
+- panic reports;
+- TTY refusal.
 
-### JSON output
+Both streams contain JSON records or nothing.
 
-- When a command emits stdout result data, the default wire format is exactly
-  **one JSON object followed by one trailing newline**.
-- Streaming stdout result data uses **NDJSON**: one complete JSON object per
-  line. A command using NDJSON documents that exception in its own contract.
-- On success (exit 0) the result object is emitted on stdout; on failure
-  stdout is empty and the exit code is the branch signal for callers.
-- Stderr, when it emits multiple records over time, is NDJSON: one complete
-  JSON object per line, written through a non-interleaving locked writer.
+A command with no stdout result leaves stdout empty.
 
-### TTY refusal
+### Child-byte relay
 
-A command that emits stdout result data **refuses to run when stdout is
-attached to a terminal** (exit 2, JSON diagnostic on stderr). The refusal is
-unconditional — result data is for another process or file; pipe to `jq`,
-`less`, or `cat` to inspect interactively. Commands without stdout result
-data do not refuse a terminal.
+`execwrap` may reproduce a child process's raw stdout or stderr bytes. Those
+bytes are the wrapper's result data, not wrapper diagnostics.
 
-### Exit codes
+Wrapper diagnostics still use JSON on stderr.
 
-| Class   | Code | Meaning |
-|---------|------|---------|
-| success | 0    | Command succeeded. |
-| failure | 1    | Runtime, startup, internal, or execution failure. |
-| usage   | 2    | Usage failure: clap argv errors, TTY refusal, invalid arguments. |
+## Result encoding · `rule:output:json`
 
-Command-specific non-usage exit codes may be documented by the owning
-command's contract; the baseline classes stay stable.
+A non-streaming result is:
 
-### Diagnostics
+```text
+one JSON object
+one trailing newline
+```
 
-- Diagnostics use `tracing` with the JSON writer on stderr.
-- Filter precedence: a non-empty `RUST_LOG` wins; otherwise the shared
-  `--debug` flag selects debug level; otherwise the command's default level.
-- No `println!`/`eprintln!` for progress, status, or errors. The workspace
-  denies `clippy::print_stdout`, `clippy::print_stderr`, and `clippy::exit`;
-  the only allowed exceptions live inside `cli-common`'s controlled emitters.
-- Help/version requests write a JSON control record to stderr and exit 0;
-  argv errors write one and exit 2. Raw clap text is always wrapped.
-- Panics emit one JSON diagnostic record on stderr through the shared panic
-  hook and exit 1; Rust's default text panic output is not used. Panic string
-  payloads are included only under `--debug`, since payloads may contain
-  secrets.
+A streaming result uses NDJSON:
 
-### Control-plane record schema
+```text
+one complete JSON object per line
+```
 
-Shared stderr control-plane records carry: `schema` (number, currently 1),
-`command` (string), `kind` (`help` | `version` | `usage_error` |
-`tty_refusal` | `panic` | `status` | `diagnostic`), `message` (string), and
-an optional kind-specific `fields` object. See `cli_common::ControlPlaneRecord`.
+A command using streaming output must document that choice.
 
-### Redaction
+On runtime failure:
 
-Before anything reaches JSON stderr: never log raw credential-bearing URLs,
-private keys, tokens, session secrets, API keys, or passwords. The shared
-helpers (`redact_field_value`, `redact_database_url`) replace secret-like
-fields with `[redacted]` and strip userinfo and secret query parameters from
-database URLs.
+- stdout is empty;
+- stderr carries JSON diagnostics;
+- the process status selects the failure branch.
 
-## Shared infrastructure
+JSON presentation is deterministic where result identity requires it.
 
-`packages/cli-common` is the single implementation of this contract: JSON
-clap wrapping (`parse_args_or_exit`), control-plane emission
-(`emit_control_plane_record`), the JSON panic hook, locked JSON stderr
-tracing, TTY refusal, the stdout emitter (`emit`), the shared `--debug` flag
-(`BaseArgs`), exit-class centralization (`CommandExit`, `exit_with`), and
-runners for the two command classes (`run_stdout_json_command`,
-`run_no_stdout_command`). Binaries return `ExitCode` from `main` — `Result`
-termination would write raw `Error: ...` text to stderr.
+## Assets · `rule:output:assets`
 
-## Command classification
+Files, documents, bundles, reports, manifests, and other assets are written
+only to paths supplied by arguments such as:
 
-| Command | Class | Notes |
-|---|---|---|
-| `execwrap` | no stdout result data | side-effect wrapper; child-byte relay is exempt as result data |
-| `flatten-latex-main` | no stdout result data | writes the flattened `.tex` via `--output` |
-| `generate-all` | no stdout result data | writes generated artifacts via `--output` |
-| `check-generated` | stdout result data | one JSON report object; TTY refusal applies |
+```text
+--output
+--output-dir
+```
 
-## Out of scope
+Assets are never dumped to stdout as an undocumented byte stream.
 
-Tests, benches, examples, build-script Cargo protocol output, and library
-crates with no shipped binary.
+A check command does not repair or regenerate tracked assets.
+
+Generation and checking remain separate operations.
+
+The `execwrap` child-byte relay is the deliberate exception described in
+(`rule:output:streams`).
+
+## TTY refusal · `rule:output:tty`
+
+A command producing stdout result data refuses to run when stdout is attached
+to a terminal.
+
+It returns:
+
+```text
+exit 2
+JSON tty_refusal record on stderr
+empty stdout
+```
+
+The caller may pipe to:
+
+```text
+jq
+cat
+less
+a file
+another process
+```
+
+Commands with no stdout result data do not refuse terminal stdout.
+
+## Exit classes · `rule:output:exit-codes`
+
+| Class | Code | Meaning |
+|---|---:|---|
+| success | 0 | Command completed successfully. |
+| failure | 1 | Runtime, startup, execution, internal, or validation failure. |
+| usage | 2 | Invalid arguments, clap usage failure, or TTY refusal. |
+
+A command-specific status may be added only when its command contract
+documents it. Codes 0-2 retain the meanings above.
+
+Binaries return `ExitCode` from `main`. They do not use `Result` termination,
+which could write Rust's plain-text `Error: ...` format.
+
+## Control-plane records · `rule:output:control-plane`
+
+Shared early control records contain:
+
+```text
+schema
+command
+kind
+message
+optional structured fields
+```
+
+Shared kinds include:
+
+```text
+help
+version
+usage_error
+tty_refusal
+panic
+status
+diagnostic
+```
+
+Multiple stderr records use NDJSON and a non-interleaving locked writer.
+
+Help and version:
+
+```text
+exit 0
+JSON on stderr
+empty stdout
+```
+
+Usage failure:
+
+```text
+exit 2
+JSON on stderr
+empty stdout
+```
+
+## Diagnostics · `rule:output:diagnostics`
+
+Runtime diagnostics use JSON `tracing` output on stderr.
+
+Filter precedence is:
+
+1. nonempty `RUST_LOG`;
+2. parsed `--debug`;
+3. command default.
+
+Plain `println!` and `eprintln!` are prohibited for first-party command
+diagnostics. Controlled emission remains centralized in `cli-common`.
+
+A diagnostic must not be treated as result data merely because it is useful to
+a human reader.
+
+## Redaction · `rule:output:redaction`
+
+Commands must not emit raw:
+
+- credentials;
+- private keys;
+- tokens;
+- API keys;
+- passwords;
+- session secrets;
+- credential-bearing URLs;
+- secret witness material;
+- production blinding data.
+
+Structured diagnostics should prefer known-safe typed fields.
+
+Untrusted free-form text must pass through the shared redaction helpers before
+emission.
+
+Child argv is not logged. Program identity and argument count may be logged
+when safe.
+
+Redaction is a call-site and shared-infrastructure obligation. A JSON envelope
+does not make unsafe text safe.
+
+## Panics · `rule:output:panics`
+
+Every executable installs the shared JSON panic hook before normal startup
+work.
+
+The hook:
+
+- suppresses Rust's default text panic output;
+- emits at most one best-effort JSON panic record;
+- exits with code 1;
+- omits the panic payload unless parsed `--debug` explicitly enabled it.
+
+Payload reporting begins disabled. A panic before argument parsing therefore
+fails closed.
+
+Panic payloads remain subject to secret-handling rules even in debug mode.
+
+## Shared implementation · `rule:output:implementation`
+
+`cli-common` owns:
+
+- clap help/version/usage wrapping;
+- control-plane records;
+- JSON stderr writing;
+- tracing initialization;
+- panic handling;
+- stdout TTY refusal;
+- stdout JSON emission;
+- exit classes;
+- shared `--debug`;
+- redaction helpers;
+- runners for stdout-result and side-effect commands.
+
+New executables use this package rather than reimplementing the contract.
+
+Existing command classifications are:
+
+| Command | Class |
+|---|---|
+| `execwrap` | side effect plus deliberate child-byte relay |
+| `flatten-latex-main` | side effect; writes `--output` |
+| `generate-all` | side effect; writes `--output` |
+| `check-generated` | one JSON stdout result |
+
+## Rejected alternatives · `sec:output:alternatives`
+
+### Human text on stderr
+
+Rejected because machine callers cannot reliably distinguish diagnostics,
+usage, progress, and panic output.
+
+### Result data mixed with logs on stdout
+
+Rejected because diagnostics can corrupt a data pipeline.
+
+### Pretty-print automatically on a terminal
+
+Rejected because result commands have one machine contract. Interactive users
+must opt into a consumer such as `jq`.
+
+### Panic payloads enabled before parsing
+
+Rejected because payloads may contain secrets.
+
+### Per-command exit conventions
+
+Rejected because shared automation needs stable branch classes.
+
+## Verification · `gate:output:verification`
+
+The contract is implemented when:
+
+- help and version use JSON stderr and exit 0;
+- invalid argv uses JSON stderr and exit 2;
+- result commands refuse terminal stdout;
+- successful single results are one JSON line;
+- failure leaves result stdout empty;
+- side-effect commands write only explicit assets;
+- panic output is JSON-only;
+- panic payloads default to hidden;
+- child argv and credential URLs do not leak;
+- stderr records do not interleave;
+- subprocess tests cover each shipped executable;
+- Clippy denies uncontrolled stdout/stderr printing and process exit outside
+  the shared implementation.

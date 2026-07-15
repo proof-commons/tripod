@@ -4,7 +4,8 @@
 # compiler, linker, or release tool.
 #
 # Checks:
-#   - every Markdown file under plans/ is indexed in plans/README.md;
+#   - every planning directory has a README that indexes its direct Markdown
+#     children and direct child directories;
 #   - every relative Markdown link resolves;
 #   - no placeholder URL (example.invalid) remains;
 #   - no old package path (packages/tripod-*) remains;
@@ -25,18 +26,39 @@ set -eu
 
 cd "$(dirname "$0")/.."
 
+python3 scripts/doc-labels.py check
+
 python3 - <<'EOF'
 import os, re, glob, sys
 
 fail = []
 
 md_files = sorted(glob.glob('plans/**/*.md', recursive=True))
-readme = open('plans/README.md').read()
+directories = sorted(
+    path for path, _, _ in os.walk('plans')
+)
 
-for f in md_files:
-    rel = os.path.relpath(f, 'plans')
-    if rel != 'README.md' and rel not in readme:
-        fail.append(f"census: {rel} not indexed in plans/README.md")
+for directory in directories:
+    readme_path = os.path.join(directory, 'README.md')
+    if not os.path.isfile(readme_path):
+        fail.append(f"ownership: {directory} has no README.md")
+        continue
+    readme = open(readme_path).read()
+    for child in sorted(os.listdir(directory)):
+        child_path = os.path.join(directory, child)
+        if child == 'README.md':
+            continue
+        if os.path.isfile(child_path) and child.endswith('.md'):
+            if child not in readme:
+                fail.append(f"ownership: {child_path} not indexed in {readme_path}")
+        elif os.path.isdir(child_path):
+            child_readme = f"{child}/README.md"
+            if not os.path.isfile(os.path.join(child_path, 'README.md')):
+                fail.append(f"ownership: {child_path} has no README.md")
+            elif child_readme not in readme:
+                fail.append(
+                    f"ownership: {child_path} not indexed in {readme_path}"
+                )
 
 link_re = re.compile(r'\[[^\]]*\]\(([^)#\s]+)(#[^)\s]*)?\)')
 for f in md_files:
@@ -77,16 +99,32 @@ for f in md_files:
             f"(starts with {first_line[:40]!r})"
         )
 
+# Decision records have stable numeric identities. This intentionally checks
+# only record structure; decision-local labels remain unlinted planning aids.
+for f in sorted(glob.glob('plans/decisions/[0-9][0-9][0-9]-*.md')):
+    text = open(f).read()
+    number = os.path.basename(f)[:3]
+    if not re.match(rf'^# D{number}:', text):
+        fail.append(f"decision heading: {f} must open with '# D{number}:'")
+    if not re.search(r'^> \*\*Status:\*\*\s+\S+', text, re.M):
+        fail.append(f"decision status: {f} has no status field")
+
 # ADR-011 target policy: the active target documents must not
 # reintroduce consensus-implementation source pinning as identity or
 # release vocabulary. (Other plans may mention the dropped policy
-# historically; these three are where Phase-3 identity design reads.)
+# historically; these four are where Phase-3 identity and release
+# design reads.) "exact commit(?!ment)" catches commit/release
+# pinning while sparing cryptographic-commitment vocabulary.
 TARGET_POLICY_DOCS = [
     'plans/packages/target-elements.md',
     'plans/reference/elements-tapscript.md',
     'plans/packages/vectors.md',
+    'plans/packages/release.md',
 ]
-prohibited = re.compile(r'(?i)source[ -]pin|exact upstream')
+prohibited = re.compile(
+    r'(?i)source[ -]pin|exact upstream'
+    r'|upstream repository identity|exact commit(?!ment)'
+)
 for f in TARGET_POLICY_DOCS:
     for number, line_text in enumerate(open(f), start=1):
         if prohibited.search(line_text):
@@ -102,13 +140,13 @@ declarations = {
     'plans/backlog.md': declared_phase(
         'plans/backlog.md', r'^> \*\*Current gate:\*\* Phase (\d+)'),
     'plans/roadmap.md': declared_phase(
-        'plans/roadmap.md', r'^> \*\*Current phase:\*\* Phase (\d+)'),
+        'plans/roadmap.md', r'^Current: Phase (\d+) - '),
     'plans/toolchain-architecture.md': declared_phase(
         'plans/toolchain-architecture.md',
         r'^> \*\*Current phase:\*\* Phase (\d+)'),
     'plans/README.md': declared_phase(
         'plans/README.md',
-        r'^## 2\. Current phase[\s\S]*?^Phase (\d+) — '),
+        r'^## Current phase[\s\S]*?^Phase (\d+) - '),
 }
 
 authoritative = declarations['plans/backlog.md']
@@ -124,7 +162,21 @@ else:
                 f"backlog.md says Phase {authoritative}"
             )
 
-print(f"checked {len(md_files)} plan documents", file=sys.stderr)
+total_bytes = sum(os.path.getsize(path) for path in md_files)
+bytes_by_directory = {}
+for path in md_files:
+    directory = os.path.dirname(path)
+    bytes_by_directory[directory] = bytes_by_directory.get(directory, 0) + os.path.getsize(path)
+generated_register_bytes = sum(
+    os.path.getsize(path)
+    for path in md_files
+    if path.startswith('plans/labels/') and os.path.basename(path) != 'README.md'
+)
+
+print(f"checked {len(md_files)} plan documents ({total_bytes} bytes)", file=sys.stderr)
+for directory in sorted(bytes_by_directory):
+    print(f"bytes {directory}: {bytes_by_directory[directory]}", file=sys.stderr)
+print(f"generated register bytes: {generated_register_bytes}", file=sys.stderr)
 if fail:
     for item in fail:
         print(f"FAIL {item}", file=sys.stderr)
