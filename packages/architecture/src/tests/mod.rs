@@ -13,8 +13,11 @@
 //! - [`deployment_tests`] — deployment-release validation: the
 //!   synthetic final profile fixture and per-field rejection
 //!   mutations.
+//! - [`versioning_gate_tests`] — the denotation gate: the behavioural
+//!   hash may move only with a `realization_version` bump.
 
 mod conformance_tests;
 mod deployment_tests;
 mod mutation_tests;
 mod validation_tests;
+mod versioning_gate_tests;
