@@ -88,6 +88,16 @@ The relocatable bundle contains:
 
 The final linked bundle is linker-owned.
 
+> Illustrative boundary; names and exact fields are not frozen.
+
+```rust
+pub fn emit(
+	plan: &compiler::TargetCompilationPlan,
+	target: &target_elements::ElementsTarget,
+	configuration: &TapscriptConfiguration,
+) -> Result<RelocatableTapscriptBundle, TapscriptError>;
+```
+
 ## Forbidden behavior · `sec:tapscript:forbidden`
 
 The backend must not:
@@ -259,3 +269,15 @@ Backend foundation exits when:
 - prototype-only arithmetic/constructor code cannot enter release output;
 - target-native pattern tests pass;
 - output is deterministic and the checkout remains clean.
+
+## Error vocabulary · `sec:tapscript:errors`
+
+See [`errors/tapscript.md`](errors/tapscript.md).
+
+## Open questions · `sec:tapscript:open`
+
+- Which package owns a future backend-neutral relocatable interface?
+- Where does resource-sensitive final proof selection occur?
+- Is a local typed interpreter needed in addition to target-native execution?
+- What leaf-weight policy is handed to the linker?
+- Which constructor and arithmetic prototypes are accepted?

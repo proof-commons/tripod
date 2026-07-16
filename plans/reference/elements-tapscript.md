@@ -99,6 +99,63 @@ Paths may move. The review records the actual locations consulted.
 
 Exact opcode numbers and stack behavior belong in the typed target registry.
 
+## Surveyed opcode registry · `tbl:elements-ref:opcodes`
+
+> Provisional survey facts; verify before encoding them in `target-elements`.
+
+| Code | Surveyed name | Group |
+|---:|---|---|
+| 196 | `OP_SHA256INITIALIZE` | streaming SHA-256 |
+| 197 | `OP_SHA256UPDATE` | streaming SHA-256 |
+| 198 | `OP_SHA256FINALIZE` | streaming SHA-256 |
+| 199 | `OP_INSPECTINPUTOUTPOINT` | input introspection |
+| 200 | `OP_INSPECTINPUTASSET` | input introspection |
+| 201 | `OP_INSPECTINPUTVALUE` | input introspection |
+| 202 | `OP_INSPECTINPUTSCRIPTPUBKEY` | input introspection |
+| 203 | `OP_INSPECTINPUTSEQUENCE` | input introspection |
+| 204 | `OP_INSPECTINPUTISSUANCE` | input introspection |
+| 205 | `OP_PUSHCURRENTINPUTINDEX` | current input |
+| 206 | `OP_INSPECTOUTPUTASSET` | output introspection |
+| 207 | `OP_INSPECTOUTPUTVALUE` | output introspection |
+| 208 | `OP_INSPECTOUTPUTNONCE` | output introspection |
+| 209 | `OP_INSPECTOUTPUTSCRIPTPUBKEY` | output introspection |
+| 210–214 | `OP_INSPECTVERSION` through `OP_TXWEIGHT` | transaction introspection |
+| 215–219 | `OP_ADD64` through `OP_NEG64` | signed fixed-width arithmetic |
+| 220–223 | signed 64-bit comparisons | signed comparison |
+| 224–226 | fixed-width conversion operations | conversion |
+| 227 | `OP_ECMULSCALARVERIFY` | elliptic-curve verification |
+| 228 | `OP_TWEAKVERIFY` | elliptic-curve verification |
+
+## Surveyed encodings · `tbl:elements-ref:encoding-values`
+
+> Provisional survey facts; verify before encoding them in `target-elements`.
+
+| Class | Surveyed prefix or form |
+|---|---|
+| explicit asset | `0x01` |
+| explicit value | `0x01` |
+| confidential value | `0x08`, `0x09` |
+| confidential asset | `0x0a`, `0x0b` |
+| explicit inspected value | 8-byte little-endian target amount |
+| arithmetic operands | exact 8-byte signed little-endian |
+
+## Surveyed sharp edges · `tbl:elements-ref:sharp-edges`
+
+> Provisional survey facts; verify before encoding them in `target-elements`.
+
+| Surface | Surveyed behavior requiring exact verification |
+|---|---|
+| arithmetic overflow | operands may remain while a false success flag is pushed |
+| division result | remainder, quotient, success in target stack order |
+| indexed inspection | negative or out-of-range index aborts |
+| stack plus altstack | surveyed combined limit 1000 |
+| stack element | surveyed limit 520 bytes |
+| initial push policy | surveyed 80-byte policy claim; exact scope unresolved |
+| crypto budget | surveyed base `50 + serialized input witness bytes` |
+| crypto operation cost | surveyed cost 50 for selected signature/EC operations |
+| input nonce | may not remain available in the spend-time introspection path |
+| unknown key lengths | forward-compatibility behavior must not be accepted accidentally |
+
 ## Execution domain · `sec:elements-ref:execution-domain`
 
 Before backend use, verify:

@@ -6,6 +6,7 @@ use crate::{
     label::{Label, LabelShape},
     latex::harvest_attestation,
     markdown::{InlineCodeContext, scan_markdown},
+    model_labels_json,
     owner::{ImportedLabel, LabelOwner},
     repository::{RepositoryLabels, RepositoryPaths, generate_registers},
     rust_source::harvest_model,
@@ -306,4 +307,40 @@ fn register_generation_is_deterministic_in_an_explicit_output_root() {
         fs::read(output.path().join("plans/labels/realization.md"))
             .expect("generated realization register")
     );
+}
+
+#[test]
+fn model_label_derivation_ignores_invalid_planning_imports() {
+    let directory = tempfile::tempdir().expect("temporary repository");
+    let root = directory.path();
+    for directory in [
+        "papers/attestation/sections",
+        "adr",
+        "plans",
+        "packages/model/src",
+    ] {
+        fs::create_dir_all(root.join(directory)).expect("fixture directory");
+    }
+    fs::write(
+        root.join("papers/attestation/main.tex"),
+        "\\label{def:model:known}\n",
+    )
+    .expect("attestation source");
+    fs::write(
+        root.join("docs/attestation/realization.md"),
+        "# Realization\n`sec:fixture`\n",
+    )
+    .expect("realization source");
+    fs::write(
+        root.join("packages/model/src/fixture.rs"),
+        "// ´test:fixture:defined´\n",
+    )
+    .expect("model source");
+    fs::write(root.join("plans/invalid.md"), "(`[A-def:model:missing]`)\n")
+        .expect("invalid planning import");
+
+    let paths = RepositoryPaths::from_root(root);
+    let labels = model_labels_json(&paths).expect("model labels ignore planning imports");
+    assert!(labels.contains("test:fixture:defined"));
+    assert!(RepositoryLabels::harvest_sources(&paths).has_errors());
 }

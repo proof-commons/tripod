@@ -97,6 +97,15 @@ The core analyzed value contains:
 A later target-selected plan may bind an abstract target capability identity
 and deterministic proof choices.
 
+> Illustrative boundary; names and exact fields are not frozen.
+
+```rust
+pub fn analyze(
+	realization: &realization::RealizationSpec,
+	policy: &AnalysisPolicy,
+) -> Result<AnalyzedProgram, CompileError>;
+```
+
 ## Forbidden inputs · `sec:compiler:forbidden`
 
 The compiler must not consume:
@@ -304,3 +313,15 @@ Phase 2 exits when:
 - no target opcode or concrete target index enters compiler core;
 - unsupported capability sets fail closed;
 - workspace checks remain green and clean.
+
+## Error vocabulary · `sec:compiler:errors`
+
+See [`errors/compiler.md`](errors/compiler.md).
+
+## Open questions · `sec:compiler:open`
+
+- Where does generic target-capability matching live without a cycle?
+- Does target planning return one selected proof plan or a canonical feasible set?
+- How does one shared analysis node retain several source relation identities?
+- How is pilot-valid but lifecycle-incomplete represented?
+- How general may placement requirements become before target evidence exists?

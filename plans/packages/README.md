@@ -25,7 +25,7 @@ remain narrow.
 |---|---|
 | `realization` | `architecture` |
 | `labels` | `architecture` |
-| `compiler` | `realization` |
+| `compiler` | `realization`; `architecture` when public APIs name architecture-owned IDs |
 | `target-elements` | none |
 | `tapscript` | `compiler`, `target-elements` |
 | `simplicity` | none while parked |
@@ -51,6 +51,7 @@ Cargo metadata and dependency review establish actual dependency conformance.
 | [transaction.md](transaction.md) | Planned | Canonical transaction and witness ABI. |
 | [vectors.md](vectors.md) | Planned | Translation-validation evidence. |
 | [release.md](release.md) | Planned | Final evidence/profile/publication gate. |
+| [errors/](errors/README.md) | Active | Illustrative typed error vocabularies for planned package boundaries. |
 
 ## Contract form · `rule:packages:form`
 
@@ -63,7 +64,9 @@ Cross-cutting rationale is cited from decisions rather than repeated.
 
 ## Dependency rule · `rule:packages:dependencies`
 
-Package plans list direct dependencies only. A new shared package is introduced
+Package plans list expected minimal direct dependencies. A package directly
+depends on the package owning every public type it names; it must not hide real
+type ownership through transitive re-exports. A new shared package is introduced
 only when at least two concrete consumers demonstrate one stable common
 abstraction. Planning convenience alone is insufficient.
 

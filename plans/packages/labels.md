@@ -34,6 +34,38 @@ The package reads typed architecture labels and documentation source files:
 It produces typed owner registries, diagnostics, one JSON check report,
 deterministic Layer-0 and v13 registers, and the model-label JSON derivation.
 
+## Scoped derivations · `rule:labels-package:scopes`
+
+The package keeps one parser implementation but separates derivation scopes:
+
+```rust
+derive_register_sources(paths)  // attestation and realization
+derive_model_sources(paths)     // and model sources
+check_repository(paths)         // every owner
+```
+
+Each verifies only the census groups it reads, so a stale plan or ADR census
+cannot block an upstream derivation. `generate-label-registers` derives from
+the two upstream sources alone; `model_labels_json` adds model Rust to them,
+because a model label's citations must resolve upstream. `check-labels` runs
+every owner and the publication-freshness check. Planning or ADR prose must
+not block model-label publication.
+
+## Source census · `rule:labels-package:census`
+
+Repository-wide means every first-party source class with an explicit label
+policy, not arbitrary checkout recursion. The census includes Attestation LaTeX,
+Realization, ADR and planning Markdown, first-party Markdown consumers such
+as root/package READMEs and `human.md`, and model Rust. It excludes `target/`,
+build directories, `archive/`, `.git/`, generated binary artifacts, and
+third-party/vendor trees. Traversal errors are diagnostics; an unreadable tree
+must not silently become an empty census.
+
+`MODEL-` is an explicit imported owner for future planning citations. Existing
+unprefixed model spans in the realization remain a document-specific legacy
+form. Owner-qualified spans in the realization retain that document's existing
+syntax; planning and ADR imports require the parenthesized square-bracket form.
+
 ## Forbidden use · `sec:labels-package:forbidden`
 
 No semantic package consumes label registries or planning labels. The package
@@ -55,6 +87,10 @@ generate-label-registers
 Meson invokes one direct non-writing `labels-check` test and exposes one
 explicit non-default `generate-label-registers` run target. It owns no separate
 parser or generated source.
+
+## Error vocabulary · `sec:labels-package:errors`
+
+See [`errors/labels.md`](errors/labels.md).
 
 ## Exit gate · `gate:labels-package:exit`
 

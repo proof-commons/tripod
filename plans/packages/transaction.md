@@ -80,6 +80,15 @@ Stages include:
 
 Candidate and final bundle/ABI statuses remain distinct.
 
+> Illustrative boundary; names and exact fields are not frozen.
+
+```rust
+pub fn derive_abi(
+	bundle: &linker::LinkedBundle,
+	target: &target_elements::ElementsTarget,
+) -> Result<TransactionAbi, TransactionError>;
+```
+
 ## Operation requests · `rule:transaction:requests`
 
 A request contains only choices the caller is semantically authorized to make.
@@ -296,3 +305,16 @@ Compact-ASH transaction support exits when:
 - constructor and control data match the bundle;
 - worst-case fixtures are valid and deterministic;
 - vectors can consume the result without bypassing the safe API.
+
+## Error vocabulary · `sec:transaction:errors`
+
+See [`errors/transaction.md`](errors/transaction.md).
+
+## Open questions · `sec:transaction:open`
+
+- Which Rust Elements library owns transaction, sighash, and CT proof types?
+- How are linked layout types finalized without a linker/transaction cycle?
+- Does construction evaluate realization expressions directly or use linked recipes?
+- What signer-capability interface supports hardware and remote signers?
+- Where does fee-market policy end and ABI-valid sponsor construction begin?
+- Which package owns trusted-setup or genesis transaction construction?

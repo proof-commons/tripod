@@ -85,6 +85,15 @@ The principal output is a validated, explicitly scoped realization containing:
 
 Exact Rust fields remain provisional until the two pilots pass.
 
+> Illustrative boundary; names and exact fields are not frozen.
+
+```rust
+pub fn derive(
+   architecture: &architecture::Architecture,
+   scope: RealizationScope,
+) -> Result<RealizationSpec, RealizationError>;
+```
+
 ## Forbidden inputs · `sec:realization:forbidden`
 
 The package must not parse or scrape:
@@ -288,3 +297,15 @@ Later operation declarations must import accepted results from:
 
 Research may refine proof alternatives and lifecycle requirements. It must not
 insert target opcodes into realization types.
+
+## Error vocabulary · `sec:realization:errors`
+
+See [`errors/realization.md`](errors/realization.md).
+
+## Open questions · `sec:realization:open`
+
+- How is partial pilot scope represented?
+- Does the amount domain remain realization-owned until a second consumer exists?
+- Are fact, expression, and relation identities explicit keys, structural hashes, or both?
+- How do structurally shared relations retain operation-specific provenance?
+- When is a public realization identity safe to mint?

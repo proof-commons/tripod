@@ -61,11 +61,32 @@ baseline.
 
 The baseline record is the set of identities recorded below, together with the canonical architecture publications they were measured over.
 
-Planning documents do not duplicate all current hash values.
 
-The baseline precedes later behavioural-hash algorithm migrations. Current
-identities are read from typed/generated source rather than this historical
-phase card.
+## Recorded baseline · `tbl:phase0:baseline`
+
+| Field | Recorded value |
+|---|---|
+| architecture schema | 17 |
+| realization version | `0.6.0-dev` |
+| publication status | final |
+| semantic algorithm | `sha256-canonical-json-v2` |
+| behavioural algorithm | `sha256-canonical-json-behavioural-v2` |
+| behavioural hash | `2044e02acb727323678732455915cc04679a819eb2564441a85c460edecfac63` |
+| Attestation version | `0.5.0` |
+
+| Lane | Recorded environment |
+|---|---|
+| MSRV | Rust 1.88.0 |
+| stable | Rust 1.97.0 at baseline |
+| additional | nightly 1.99.0, diagnostic only |
+| Meson | 1.9.2 |
+| Ninja | 1.13.2 |
+| XeTeX | TeX Live 2026 environment |
+| Biber | 2.21 |
+| cargo audit | skipped because unavailable; reported loudly |
+
+This is a historical record. Current source identities may differ through a
+recorded algorithm migration without changing the denotation.
 
 ## Evidence · `sec:phase0:evidence`
 

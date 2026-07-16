@@ -6,19 +6,24 @@ This directory contains non-normative implementation planning for Tripod, the co
 
 When artifacts disagree:
 
-1. Layer-0 economic specification;
-2. Realization conformance contract;
-3. typed architecture;
-4. implemented ADRs;
-5. accepted planning decisions;
-6. package contracts;
-7. phase cards;
-8. research candidates;
-9. active backlog.
 
 The executable model is current behavioural evidence and remains authoritative
 for its implemented reference behavior. It does not override the typed
 architecture or realization contract.
+| Subject | Owner |
+|---|---|
+| abstract economic interface | the Attestation specification |
+| realization meaning, invariants, obligations, and residuals | the realization document |
+| finite architecture registries and stable identifiers | typed architecture |
+| current executable reference behavior | executable model |
+| implemented repository engineering policy | ADRs |
+| accepted future implementation direction | planning decisions |
+| package boundaries | package contracts |
+| sequencing | roadmap and phase cards |
+| unresolved implementation alternatives | research notes |
+| current execution | backlog |
+
+A lower row never overrides an upper owner on that owner's subject.
 
 ## Current phase · `phase:plans:current`
 
@@ -58,6 +63,7 @@ Imported citations are linted under
 | [`labels/`](labels/README.md) | Generated upstream-label registers. |
 | [`decisions/`](decisions/README.md) | Accepted cross-package implementation choices. |
 | [`packages/`](packages/README.md) | Typed package contracts and boundaries. |
+| [`registers/`](registers/README.md) | Cross-package identity and artifact ownership indexes. |
 | [`phases/`](phases/README.md) | Phase entry conditions, deliverables, evidence, and exit gates. |
 | [`research/`](research/README.md) | Unresolved prototype-driven questions. |
 | [`reference/`](reference/README.md) | External technical reference material. |
@@ -118,6 +124,28 @@ a reference for external facts; and the backlog for current work.
 
 Git history is the archive. Superseded long prose is deleted rather than copied
 into another planning folder.
+
+## Status vocabulary · `tbl:plans:status`
+
+| Status | Meaning |
+|---|---|
+| active | Current maintained work or policy. |
+| accepted | Implementation choice approved; implementation may remain. |
+| planned | Intended future work not started. |
+| prototype required | Interface waits for executable evidence. |
+| open | Unresolved question. |
+| blocked | Named dependency prevents progress. |
+| parked | Deliberately outside the active path. |
+| complete | Gate passed and evidence recorded. |
+| superseded | Replaced by a named document. |
+| dropped | No longer intended; rationale recorded. |
+
+## Supersession · `rule:plans:supersession`
+
+A replacement receives a new durable decision or ADR identity where needed,
+names what it supersedes, updates the old status and nearest-folder indexes,
+updates package and roadmap consumers, and removes stale active claims. Git
+history preserves old prose; plans do not keep duplicate archives.
 
 ## Verification · `gate:plans:verification`
 

@@ -78,6 +78,15 @@ Only `ValidatedRelease` may enter the final publication API.
 Candidate, regtest, pilot, and production statuses must be explicit and
 noninterchangeable.
 
+> Illustrative boundary; names and exact fields are not frozen.
+
+```rust
+pub fn validate_release(
+	inputs: ReleaseInputs<'_>,
+	policy: &ReleasePolicy,
+) -> Result<ValidatedRelease, ReleaseError>;
+```
+
 ## Identity graph · `rule:release:identity-graph`
 
 Release validates the chain:
@@ -292,6 +301,15 @@ ambient-clock data.
 
 Two clean publications from the same inputs must be byte-identical.
 
+## Hash recipes · `rule:release:hash-recipes`
+
+No release field is populated from an informal directory hash. Before use, each
+artifact hash defines its algorithm and domain, typed or path census, canonical
+relative paths, file-byte treatment, line-ending, executable-bit, symlink, and
+generated-file policies, archive metadata normalization, and migration policy.
+Artifact byte hashes remain distinct from semantic identities unless one
+canonical serialization explicitly binds them.
+
 ## Secret boundary · `rule:release:secrets`
 
 Release never receives production private keys.
@@ -335,3 +353,18 @@ A production release exits only when:
 - profile and release identities verify;
 - publication is secret-free and byte-reproducible;
 - the checker leaves the source checkout clean.
+
+## Error vocabulary · `sec:release:errors`
+
+See [`errors/release.md`](errors/release.md).
+
+## Open questions · `sec:release:open`
+
+- What is the release-manifest schema?
+- When does the deployment-profile schema gain compiler-era identities?
+- What canonical recipe produces the normative source-tree hash?
+- What enters the compiler-configuration artifact hash?
+- What is the `reference_indexer` artifact?
+- What archive format and metadata normalization are canonical?
+- Is release signing added, and what remains the unsigned identity?
+- Does calibration remain release-owned?

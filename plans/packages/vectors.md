@@ -81,6 +81,15 @@ Separate reports cover:
 
 Reports remain distinct even when one runner invokes several checks.
 
+> Illustrative boundary; names and exact fields are not frozen.
+
+```rust
+pub fn execute_vectors(
+	vectors: &TargetVectorRegistry,
+	executor: &mut impl TargetExecutor,
+) -> Result<TargetExecutionReport, VectorError>;
+```
+
 ## Semantic fixtures · `rule:vectors:fixtures`
 
 A positive fixture begins from a model-valid world produced through the model’s
@@ -284,3 +293,17 @@ The first bundle report exits when:
 - permissionless construction uses public data only;
 - predicted and observed resources agree;
 - reports are deterministic, identity-bound, and secret-free.
+
+## Error vocabulary · `sec:vectors:errors`
+
+See [`errors/vectors.md`](errors/vectors.md).
+
+## Open questions · `sec:vectors:open`
+
+- Where do shared evidence-envelope types live?
+- Which exact target runner and RPC adapter are used?
+- How are public model fixtures exposed without test-only internals?
+- What low-level mutation API remains inaccessible to production callers?
+- What coverage policy governs duplicated carriers and collateral mutations?
+- How are external observer tools invoked and their independence declared?
+- Which canonical binary vectors are committed versus generated for release?

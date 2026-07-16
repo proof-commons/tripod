@@ -290,6 +290,10 @@ fn harvest_attestation_citations(path: &Path, source: &str, result: &mut Reposit
     }
 }
 fn validate(result: &mut RepositoryLabels) {
+    validate_references(result);
+    validate_architecture_weld(result);
+}
+fn validate_references(result: &mut RepositoryLabels) {
     for (label, location) in &result.realization_internal {
         if !result.registries.realization.contains(label) {
             result.diagnostics.push(LabelDiagnostic::error(
@@ -340,7 +344,6 @@ fn validate(result: &mut RepositoryLabels) {
             Some(_) => {}
         }
     }
-    validate_architecture_weld(result);
 }
 fn validate_architecture_weld(result: &mut RepositoryLabels) {
     let location = SourceLocation::new("packages/architecture/src/spec.rs", 1, 1);
@@ -454,11 +457,23 @@ pub fn generate_registers(
     Ok(written)
 }
 pub fn model_labels_json(paths: &RepositoryPaths) -> Result<String, GenerateError> {
-    let labels = RepositoryLabels::harvest_sources(paths);
+    let labels = derive_model_sources(paths);
     if labels.has_errors() {
         return Err(GenerateError::Validation(labels.diagnostics));
     }
     Ok(render::model_labels_json(&labels.registries.model)?)
+}
+
+fn derive_model_sources(paths: &RepositoryPaths) -> RepositoryLabels {
+    let mut result = RepositoryLabels::default();
+    let (attestation, diagnostics) = harvest_attestation(paths);
+    result.registries.attestation = attestation;
+    result.diagnostics.extend(diagnostics);
+    harvest_realization(paths, &mut result);
+    add_model(harvest_model(paths), &mut result);
+    validate_references(&mut result);
+    sort_diagnostics(&mut result.diagnostics);
+    result
 }
 fn write(path: &Path, bytes: &[u8]) -> Result<(), std::io::Error> {
     let directory = path.parent().unwrap_or_else(|| Path::new("."));

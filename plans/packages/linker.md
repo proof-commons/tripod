@@ -87,6 +87,17 @@ unresolved mandatory value.
 
 Candidate and final bundles are distinct typed states.
 
+> Illustrative boundary; names and exact fields are not frozen.
+
+```rust
+pub fn link_candidate(
+	relocatable: &tapscript::RelocatableTapscriptBundle,
+	target: &target_elements::ElementsTarget,
+	deployment: &LinkDeploymentParameters,
+	bounds: &BoundAssignment,
+) -> Result<CandidateLinkedBundle, LinkError>;
+```
+
 ## Symbols · `rule:linker:symbols`
 
 Symbols identify typed roles rather than display strings.
@@ -258,3 +269,15 @@ The first candidate compact-ASH bundle exits when:
 - layout/witness/resource handoff is complete;
 - candidate status is explicit;
 - transaction can consume the typed output without linker mutation.
+
+## Error vocabulary · `sec:linker:errors`
+
+See [`errors/linker.md`](errors/linker.md).
+
+## Open questions · `sec:linker:open`
+
+- Which linked-artifact roles are truly backend-neutral?
+- What deterministic, possibly length-limited taptree algorithm is selected?
+- What is the canonical bundle archive format?
+- Does calibration remain in release or later move to a dedicated package?
+- Which package owns genesis and issuance ceremony construction?

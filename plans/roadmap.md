@@ -66,6 +66,33 @@ A phase-order change must state changed dependency, supporting evidence,
 affected package contracts, affected research notes, effect on current backlog,
 and normative-versioning impact, if any.
 
+## Parallel work · `rule:roadmap:parallel`
+
+Allowed before the consuming phase: source review, throwaway target
+experiments, isolated constructor/arithmetic/declassification prototypes, vector
+design, independent observer implementation, and report-schema experiments.
+
+Not allowed before the consuming gate: target fields in `RealizationSpec`, a
+stable prototype ABI, release capability claims, calibrated bounds from draft
+defaults, production-marked target proof patterns, or test doubles labeled
+independent.
+
+## Deferred work · `sec:roadmap:deferred`
+
+Deferred until after the first tapscript deployment:
+
+- production Simplicity backend;
+- confidential closed protocol asset identity;
+- general optimizer infrastructure;
+- broad formal target semantics;
+- private entitlement arithmetic;
+- arbitrary sponsor sidecars;
+- wallet-balance activation in the model; and
+- protocol changes not required by implementation evidence.
+
+Deferred work re-enters only through an accepted decision or research note and
+a roadmap change.
+
 ## Cross-phase laws · `rule:roadmap:laws`
 
 Every phase preserves:

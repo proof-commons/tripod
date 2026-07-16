@@ -81,3 +81,7 @@ The first pilot exits only when it consumes unchanged semantic relation IDs,
 passes target-native positive and negative vectors, matches the model’s public
 semantic projection, and exposes any leaked tapscript assumptions found in
 shared interfaces.
+
+## Error vocabulary · `sec:simplicity:errors`
+
+See [`errors/simplicity.md`](errors/simplicity.md).

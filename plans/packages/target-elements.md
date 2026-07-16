@@ -274,3 +274,16 @@ Phase 3 target work exits when:
 - target-native tests cover every capability used by the first backend;
 - no protocol operation policy appears in the package;
 - output is deterministic and workspace checks remain clean.
+
+## Error vocabulary · `sec:target-elements:errors`
+
+See [`errors/target-elements.md`](errors/target-elements.md).
+
+## Open questions · `sec:target-elements:open`
+
+- Which Rust Elements library/version provides transaction and encoding types?
+- Where does the compiler-target capability adapter live?
+- Are consensus and policy separate sub-identities?
+- What exactly is the initial-witness push policy scope?
+- Which sighash profile is selected?
+- How is production activation evidenced separately from regtest behavior?
