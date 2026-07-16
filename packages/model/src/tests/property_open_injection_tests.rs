@@ -1,6 +1,6 @@
 //! Property tests for adversarial open-asset injection.
 //!
-//! Implements `´test:verification:property-open-asset-immunity´`.
+//! Implements `(´test:verification:property-open-asset-immunity´)`.
 //!
 //! The generated malformed open objects shrink to minimal
 //! counterexamples: every accepted injection preserves the pool

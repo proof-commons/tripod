@@ -1,8 +1,8 @@
 //! Identifiers, exact scalar types, and checked arithmetic.
 //!
-//! Implements `´def:verification:identifiers´`, `´def:domains:sat´`,
-//! `´def:domains:ratio´`, `´rule:domains:checked-arithmetic´`, and
-//! `´rule:domains:active-backing-cap´`.
+//! Implements `(´def:verification:identifiers´)`, `(´def:domains:sat´)`,
+//! `(´def:domains:ratio´)`, `(´rule:domains:checked-arithmetic´)`, and
+//! `(´rule:domains:active-backing-cap´)`.
 
 use std::collections::BTreeMap;
 

@@ -1,28 +1,28 @@
 //! Property-test action model and state-aware executor.
 //!
-//! Implements `´def:verification:property-action´`,
-//! `´def:verification:property-step-result´`,
-//! `´lst:verification:property-owner-helpers´`,
-//! `´rule:verification:property-world-funding´`,
-//! `´rule:verification:property-selectors´`,
-//! `´def:verification:property-action-seed´`,
-//! `´rule:verification:property-create-request´`,
-//! `´rule:verification:property-cancel-request´`,
-//! `´rule:verification:property-admission´`,
-//! `´rule:verification:property-cycle´`,
-//! `´rule:verification:property-settlement´`,
-//! `´rule:verification:property-transfer´`,
-//! `´rule:verification:property-redemption´`,
-//! `´rule:verification:property-relabel´`,
-//! `´rule:verification:property-burn´`,
-//! `´rule:verification:property-ash-compaction´`,
-//! `´rule:verification:property-clear´`,
-//! `´rule:verification:property-announce-maturity´`,
-//! `´rule:verification:property-open-injection´`,
-//! `´rule:verification:property-step´`,
-//! `´rule:verification:materialize-action´`,
-//! `´rule:verification:property-seed-trace´`, and
-//! `´rule:verification:property-trace´`.
+//! Implements `(´def:verification:property-action´)`,
+//! `(´def:verification:property-step-result´)`,
+//! `(´lst:verification:property-owner-helpers´)`,
+//! `(´rule:verification:property-world-funding´)`,
+//! `(´rule:verification:property-selectors´)`,
+//! `(´def:verification:property-action-seed´)`,
+//! `(´rule:verification:property-create-request´)`,
+//! `(´rule:verification:property-cancel-request´)`,
+//! `(´rule:verification:property-admission´)`,
+//! `(´rule:verification:property-cycle´)`,
+//! `(´rule:verification:property-settlement´)`,
+//! `(´rule:verification:property-transfer´)`,
+//! `(´rule:verification:property-redemption´)`,
+//! `(´rule:verification:property-relabel´)`,
+//! `(´rule:verification:property-burn´)`,
+//! `(´rule:verification:property-ash-compaction´)`,
+//! `(´rule:verification:property-clear´)`,
+//! `(´rule:verification:property-announce-maturity´)`,
+//! `(´rule:verification:property-open-injection´)`,
+//! `(´rule:verification:property-step´)`,
+//! `(´rule:verification:materialize-action´)`,
+//! `(´rule:verification:property-seed-trace´)`, and
+//! `(´rule:verification:property-trace´)`.
 //!
 //! The generated values remain far below the `Sat` ceiling; dedicated
 //! boundary tests cover near-ceiling arithmetic separately. The

@@ -125,7 +125,7 @@ target construction rule
 
 | Mint | Candidate | Strength | Main risk |
 |---|---|---|---|
-| `candidate:constructor:dynamic-metadata-leaf` | Static code root plus dynamic unspendable metadata leaf | Preserves one static code identity while metadata changes | Tweak verification, root authentication, key-path and totality |
+| (`candidate:constructor:dynamic-metadata-leaf`) | Static code root plus dynamic unspendable metadata leaf | Preserves one static code identity while metadata changes | Tweak verification, root authentication, key-path and totality |
 | `candidate:constructor:separate-metadata-output` | Fixed program plus separately welded metadata object | Simple fixed program | Adds pairing/object state and may require normative change |
 | `candidate:constructor:metadata-in-every-leaf` | Metadata embedded into all operation leaves | Direct metadata visibility | Entire code tree changes; recursive commitment |
 | `candidate:constructor:witness-only-metadata` | Fixed program with witness metadata only | Small constructor | Metadata is unauthenticated; rejected absent another commitment |

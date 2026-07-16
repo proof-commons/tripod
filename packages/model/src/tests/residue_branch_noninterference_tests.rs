@@ -1,7 +1,7 @@
 //! Residue noninterference over branch-local computation, exhaustive
 //! over the operation registry.
 //!
-//! Implements `´test:verification:residue-noninterference-branches´`:
+//! Implements `(´test:verification:residue-noninterference-branches´)`:
 //! audit-only residue history must be unreadable by every covenant
 //! operation. The dispatch below matches `OperationId` without a
 //! wildcard, so declaring a new operation fails compilation here until

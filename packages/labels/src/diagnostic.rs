@@ -18,9 +18,9 @@ pub enum LabelErrorCode {
     DuplicateLatexLabel,
     ArchitectureLabelMissing,
     AttestationAnchorSetMismatch,
+    AttestationIndexStale,
     GeneratedRegisterMissing,
     GeneratedRegisterStale,
-    ModelLabelPublicationStale,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]

@@ -362,7 +362,7 @@ fn low_level_duplicate_burn_payload_indices_are_rejected() {
     assert_eq!(tx.finish(), Err(Guard::WrongShape));
 }
 
-// ´rule:verification:declared-cardinality´ — manifest-driven static
+// (´rule:verification:declared-cardinality´) — manifest-driven static
 // minima and maxima at the kernel shape gate.
 
 #[test]

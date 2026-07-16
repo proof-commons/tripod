@@ -56,7 +56,7 @@ pub fn scan_markdown(path: &Path, source: &str) -> MarkdownScan {
     scan
 }
 
-fn fence_open(line: &str) -> Option<(char, usize)> {
+pub(crate) fn fence_open(line: &str) -> Option<(char, usize)> {
     let trimmed = after_fence_indent(line)?;
     let marker = trimmed.chars().next()?;
     if !matches!(marker, '`' | '~') {
@@ -65,7 +65,7 @@ fn fence_open(line: &str) -> Option<(char, usize)> {
     let length = trimmed.chars().take_while(|value| *value == marker).count();
     (length >= 3).then_some((marker, length))
 }
-fn fence_close(line: &str, marker: char, length: usize) -> bool {
+pub(crate) fn fence_close(line: &str, marker: char, length: usize) -> bool {
     let Some(trimmed) = after_fence_indent(line) else {
         return false;
     };

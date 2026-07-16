@@ -1,8 +1,9 @@
 # ADR-012: Documentation Labels and Cross-Reference Layers
 
-**Status:** Decided; implementation pending
+**Status:** Implemented; the unlinted-local-label and lint-boundary decisions
+are superseded by [ADR-013](013-global-label-graph.md)
 **Scope:** Markdown under `adr/` and `plans/`, plus upstream-label registers and documentation checks
-**Implemented by:** documentation harvest/check scripts and `scripts/check-plans.sh`
+**Implemented by:** `packages/labels` and `scripts/check-plans.sh`
 
 ---
 

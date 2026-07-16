@@ -1,14 +1,14 @@
 //! State projection classifier, branch-specific request validator, and
 //! branch-specific object readers.
 //!
-//! Implements `´def:recognition:state-class´`,
-//! `´rule:recognition:state-projection´`,
-//! `´def:recognition:request-view´`,
-//! `´rule:recognition:request-admission´`,
-//! `´def:recognition:receipt-view´`,
-//! `´def:recognition:entitlement-view´`,
-//! `´def:recognition:distribution-control-view´`, and
-//! `´def:recognition:ash-view´`.
+//! Implements `(´def:recognition:state-class´)`,
+//! `(´rule:recognition:state-projection´)`,
+//! `(´def:recognition:request-view´)`,
+//! `(´rule:recognition:request-admission´)`,
+//! `(´def:recognition:receipt-view´)`,
+//! `(´def:recognition:entitlement-view´)`,
+//! `(´def:recognition:distribution-control-view´)`, and
+//! `(´def:recognition:ash-view´)`.
 
 use crate::asset::{Asset, ReceiptClass};
 use crate::constants::Constants;

@@ -1,7 +1,7 @@
 //! Request creation and cancellation.
 //!
-//! Implements `´protocol:operations:create-request´` and
-//! `´branch:operations:cancel-request´`.
+//! Implements `(´protocol:operations:create-request´)` and
+//! `(´branch:operations:cancel-request´)`.
 
 use crate::asset::Asset;
 use crate::fee::{FeeChange, FeeEnvelope};

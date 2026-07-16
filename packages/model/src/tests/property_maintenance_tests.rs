@@ -1,8 +1,8 @@
 //! Periodic maintenance property — sponsored quiescence after an
 //! arbitrary busy trace.
 //!
-//! Implements `´test:verification:property-maintenance´` and
-//! `´rule:verification:maintenance-progress´` (deterministic loop
+//! Implements `(´test:verification:property-maintenance´)` and
+//! `(´rule:verification:maintenance-progress´)` (deterministic loop
 //! rejection).
 //!
 //! Each action is materialized against the evolving world by the
@@ -87,7 +87,7 @@ proptest! {
     }
 }
 
-// ´rule:verification:maintenance-progress´
+// (´rule:verification:maintenance-progress´)
 //
 // A deliberately broken scheduler repeats an empty cycle, which is a
 // valid transition that makes no maintenance progress. The driver must

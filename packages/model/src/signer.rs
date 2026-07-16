@@ -1,6 +1,6 @@
 //! Signer abstraction.
 //!
-//! Implements `´def:verification:signer-set´`.
+//! Implements `(´def:verification:signer-set´)`.
 //!
 //! The model interprets signer membership as authorization of the
 //! complete modeled transaction output set under an output-committing

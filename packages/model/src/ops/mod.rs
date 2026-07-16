@@ -3,18 +3,18 @@
 //!
 //! Each submodule carries the spec labels it implements:
 //!
-//! - [`request`] — `´protocol:operations:create-request´`,
-//!   `´branch:operations:cancel-request´`.
-//! - [`admission`] — `´branch:operations:admit-deposits´`.
-//! - [`cycle`] — `´def:operations:cycle-caller´`, `´branch:operations:cycle´`.
-//! - [`settlement`] — `´branch:operations:settle-distribution´`.
-//! - [`transfer`] — `´protocol:operations:transfer´`.
-//! - [`redeem`] — `´branch:operations:redeem´`.
-//! - [`relabel`] — `´branch:operations:receipt-relabel´`.
-//! - [`burn`] — `´branch:operations:burn´`.
-//! - [`ash`] — `´branch:operations:compact-ash´`, `´branch:operations:clear´`.
-//! - [`maturity`] — `´branch:operations:announce-maturity´`.
-//! - [`inject`] — `´def:verification:open-object-injection´`.
+//! - [`request`] — `(´protocol:operations:create-request´)`,
+//!   `(´branch:operations:cancel-request´)`.
+//! - [`admission`] — `(´branch:operations:admit-deposits´)`.
+//! - [`cycle`] — `(´def:operations:cycle-caller´)`, `(´branch:operations:cycle´)`.
+//! - [`settlement`] — `(´branch:operations:settle-distribution´)`.
+//! - [`transfer`] — `(´protocol:operations:transfer´)`.
+//! - [`redeem`] — `(´branch:operations:redeem´)`.
+//! - [`relabel`] — `(´branch:operations:receipt-relabel´)`.
+//! - [`burn`] — `(´branch:operations:burn´)`.
+//! - [`ash`] — `(´branch:operations:compact-ash´)`, `(´branch:operations:clear´)`.
+//! - [`maturity`] — `(´branch:operations:announce-maturity´)`.
+//! - [`inject`] — `(´def:verification:open-object-injection´)`.
 
 pub mod admission;
 pub mod ash;

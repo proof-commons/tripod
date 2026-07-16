@@ -1,9 +1,9 @@
 //! Genesis constructor.
 //!
-//! Implements `´protocol:state:genesis´`.
+//! Implements `(´protocol:state:genesis´)`.
 //!
 //! Genesis is trusted setup, recorded as the dedicated
-//! `´def:verification:genesis-history´` projection carried by
+//! `(´def:verification:genesis-history´)` projection carried by
 //! [`crate::history::History`], never as an ordinary branch kind — but
 //! its resulting state is still checked against the full invariant.
 

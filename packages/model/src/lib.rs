@@ -8,69 +8,69 @@
 //!
 //! Module map (each module carries the spec labels it implements):
 //!
-//! - [`scalar`] — identifiers and exact scalar types `´def:verification:identifiers´`,
-//!   `´def:domains:sat´`, `´def:domains:ratio´`, checked arithmetic
-//!   `´rule:domains:checked-arithmetic´`.
-//! - [`asset`] — assets, classes, and maturity `´def:architecture:assets´`,
-//!   `´def:architecture:receipt-class´`, `´def:state:maturity´`.
-//! - [`pool`] — pool state `´def:state:pool-state´`.
-//! - [`object`] — UTXO metadata and objects `´def:objects:metadata´`,
-//!   `´def:verification:utxo´`, domain-separated data outputs
-//!   `´def:objects:destruction-tags´`, `´def:verification:data-output´`.
-//! - [`constants`] — configuration and finite bounds `´def:domains:constants´`.
-//! - [`guard`] — guard and invariant errors `´def:verification:guard´`,
-//!   `´def:verification:invariant-error´`.
-//! - [`signer`] — signer abstraction `´def:verification:signer-set´`.
+//! - [`scalar`] — identifiers and exact scalar types `(´def:verification:identifiers´)`,
+//!   `(´def:domains:sat´)`, `(´def:domains:ratio´)`, checked arithmetic
+//!   `(´rule:domains:checked-arithmetic´)`.
+//! - [`asset`] — assets, classes, and maturity `(´def:architecture:assets´)`,
+//!   `(´def:architecture:receipt-class´)`, `(´def:state:maturity´)`.
+//! - [`pool`] — pool state `(´def:state:pool-state´)`.
+//! - [`object`] — UTXO metadata and objects `(´def:objects:metadata´)`,
+//!   `(´def:verification:utxo´)`, domain-separated data outputs
+//!   `(´def:objects:destruction-tags´)`, `(´def:verification:data-output´)`.
+//! - [`constants`] — configuration and finite bounds `(´def:domains:constants´)`.
+//! - [`guard`] — guard and invariant errors `(´def:verification:guard´)`,
+//!   `(´def:verification:invariant-error´)`.
+//! - [`signer`] — signer abstraction `(´def:verification:signer-set´)`.
 //! - [`history`] — transition kinds, root edges, canonical deltas,
 //!   transition certificates, derived projections, and canonical chain
-//!   history `´def:verification:branch-kind´` through `´def:verification:history´`.
+//!   history `(´def:verification:branch-kind´)` through `(´def:verification:history´)`.
 //! - [`world`] — root cursors, wallets, adversarial environment, and the
-//!   complete pure `World` `´def:verification:root-cursor´`,
-//!   `´def:verification:wallets´`, `´def:verification:external-budget´`,
-//!   `´def:verification:world´`.
+//!   complete pure `World` `(´def:verification:root-cursor´)`,
+//!   `(´def:verification:wallets´)`, `(´def:verification:external-budget´)`,
+//!   `(´def:verification:world´)`.
 //! - [`recognition`] — state projection classifier and branch-specific
-//!   validators/readers `´def:recognition:state-class´` through
-//!   `´def:recognition:ash-view´`.
-//! - [`fee`] — fee envelope `´def:auction:fee-envelope´`,
-//!   `´rule:auction:fee-envelope-validation´`.
-//! - [`policy`] — branch policy `´def:verification:branch-policy´`.
+//!   validators/readers `(´def:recognition:state-class´)` through
+//!   `(´def:recognition:ash-view´)`.
+//! - [`fee`] — fee envelope `(´def:auction:fee-envelope´)`,
+//!   `(´rule:auction:fee-envelope-validation´)`.
+//! - [`policy`] — branch policy `(´def:verification:branch-policy´)`.
 //! - `kernel` (crate-private) — output staging, exact canonical-flow and issuance
 //!   declarations, the transaction builder, conservation validators,
 //!   exact witness partition, atomic commit, and root-cursor update
-//!   `´def:verification:transition-builder´` through
-//!   `´rule:verification:root-cursor-update´`.
+//!   `(´def:verification:transition-builder´)` through
+//!   `(´rule:verification:root-cursor-update´)`.
 //! - [`shape`] — operation-independent branch-shape validation
-//!   `´def:verification:object-kind´` through
-//!   `´rule:verification:branch-event-projections´`.
+//!   `(´def:verification:object-kind´)` through
+//!   `(´rule:verification:branch-event-projections´)`.
 //! - `certify` (crate-private) — transition-certificate derivation
-//!   `´rule:verification:derive-transition-certificate´` and its helper
+//!   `(´rule:verification:derive-transition-certificate´)` and its helper
 //!   rules (root shapes, root edges, canonical deltas, projections,
 //!   data-output validation).
 //! - [`genesis`](mod@genesis) — trusted-setup genesis constructor
-//!   `´protocol:state:genesis´`.
+//!   `(´protocol:state:genesis´)`.
 //! - [`invariant`] — full invariant checker over the state and history
-//!   `´def:verification:invariant-checker´` and its component rules.
+//!   `(´def:verification:invariant-checker´)` and its component rules.
 //! - [`ops`] — operation bodies (requests, admission, cycle,
 //!   settlement, transfer, redemption, relabel, burn, ASH maintenance,
 //!   maturity announcement, adversarial injection).
 //! - [`ledger`] — exact attestation indexer, canonical serializer and
 //!   decoder, reorg-aware checkpoint, and the split event/query
 //!   differential-conformance comparisons
-//!   `´def:ledgers:burn-transaction´` through
-//!   `´rule:verification:indexer-reproject´`.
+//!   `(´def:ledgers:burn-transaction´)` through
+//!   `(´rule:verification:indexer-reproject´)`.
 //! - [`audit`] — receipt-accounting audit projection and residue
 //!   differential under the external-auditor role
-//!   `´def:verification:residue-audit-event´` through
-//!   `´rule:verification:compare-receipt-accounting-audit´`.
+//!   `(´def:verification:residue-audit-event´)` through
+//!   `(´rule:verification:compare-receipt-accounting-audit´)`.
 //! - [`quiescence`] — quiescence/lifecycle reports, audit helpers, and
 //!   the residue-reader policy
-//!   `´def:verification:quiescence-report´` through
-//!   `´rule:verification:residue-readers´`.
+//!   `(´def:verification:quiescence-report´)` through
+//!   `(´rule:verification:residue-readers´)`.
 //! - [`maintenance`] — sponsored-maintenance actions, scheduler
 //!   interface, and the sweepability driver
-//!   `´def:verification:maintenance-action´` through
-//!   `´rule:verification:apply-maintenance-action´`.
-//! - [`transition`] — atomic transition API `´rule:verification:pure-transition´`.
+//!   `(´def:verification:maintenance-action´)` through
+//!   `(´rule:verification:apply-maintenance-action´)`.
+//! - [`transition`] — atomic transition API `(´rule:verification:pure-transition´)`.
 //!
 //! # Trust boundary: a transparent reference model
 //!

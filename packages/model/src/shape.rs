@@ -1,38 +1,38 @@
 //! Operation-independent branch-shape validation and branch-specific
 //! semantic postconditions.
 //!
-//! Implements `´def:verification:object-kind´`,
-//! `´rule:verification:object-kind´`,
-//! `´def:verification:shape-policy´`,
-//! `´rule:verification:shape-policy´`,
-//! `´rule:verification:branch-shape-validation´`,
-//! `´rule:verification:declared-cardinality´`,
-//! `´rule:verification:required-cardinality´`,
-//! `´rule:verification:data-output-family´`,
-//! `´rule:verification:postcommit-shape´`,
-//! `´rule:verification:branch-state-delta´`,
-//! `´rule:verification:cycle-maturity-delta´`,
-//! `´rule:verification:branch-event-projections´`,
-//! `´rule:verification:transaction-object-helpers´`,
-//! `´rule:verification:state-edge-pair´`,
-//! `´rule:verification:issuance-lookup´`,
-//! `´rule:verification:admission-postconditions´`,
-//! `´def:verification:cycle-arithmetic´`,
-//! `´rule:verification:derive-cycle-arithmetic´`,
-//! `´rule:verification:cycle-postconditions´`,
-//! `´rule:verification:settlement-postconditions´`,
-//! `´rule:verification:relabel-positional-bijection´`,
-//! `´rule:verification:open-flow-object-helpers´`,
-//! `´rule:verification:open-flow-semantics´`,
-//! `´rule:verification:create-request-postconditions´`,
-//! `´rule:verification:cancel-request-postconditions´`,
-//! `´rule:verification:transfer-postconditions´`,
-//! `´rule:verification:redemption-postconditions´`,
-//! `´rule:verification:burn-postconditions´`,
-//! `´rule:verification:ash-compaction-postconditions´`,
-//! `´rule:verification:clear-postconditions´`,
-//! `´rule:verification:maturity-announcement-postconditions´`, and
-//! `´rule:verification:branch-semantic-postconditions´`.
+//! Implements `(´def:verification:object-kind´)`,
+//! `(´rule:verification:object-kind´)`,
+//! `(´def:verification:shape-policy´)`,
+//! `(´rule:verification:shape-policy´)`,
+//! `(´rule:verification:branch-shape-validation´)`,
+//! `(´rule:verification:declared-cardinality´)`,
+//! `(´rule:verification:required-cardinality´)`,
+//! `(´rule:verification:data-output-family´)`,
+//! `(´rule:verification:postcommit-shape´)`,
+//! `(´rule:verification:branch-state-delta´)`,
+//! `(´rule:verification:cycle-maturity-delta´)`,
+//! `(´rule:verification:branch-event-projections´)`,
+//! `(´rule:verification:transaction-object-helpers´)`,
+//! `(´rule:verification:state-edge-pair´)`,
+//! `(´rule:verification:issuance-lookup´)`,
+//! `(´rule:verification:admission-postconditions´)`,
+//! `(´def:verification:cycle-arithmetic´)`,
+//! `(´rule:verification:derive-cycle-arithmetic´)`,
+//! `(´rule:verification:cycle-postconditions´)`,
+//! `(´rule:verification:settlement-postconditions´)`,
+//! `(´rule:verification:relabel-positional-bijection´)`,
+//! `(´rule:verification:open-flow-object-helpers´)`,
+//! `(´rule:verification:open-flow-semantics´)`,
+//! `(´rule:verification:create-request-postconditions´)`,
+//! `(´rule:verification:cancel-request-postconditions´)`,
+//! `(´rule:verification:transfer-postconditions´)`,
+//! `(´rule:verification:redemption-postconditions´)`,
+//! `(´rule:verification:burn-postconditions´)`,
+//! `(´rule:verification:ash-compaction-postconditions´)`,
+//! `(´rule:verification:clear-postconditions´)`,
+//! `(´rule:verification:maturity-announcement-postconditions´)`, and
+//! `(´rule:verification:branch-semantic-postconditions´)`.
 //!
 //! The postcommit semantic validators can derive values, recipients,
 //! classes, roots, history projections, and open-flow purposes. They
@@ -486,7 +486,7 @@ pub(crate) fn validate_branch_shape_postcommit(
 
     validate_branch_semantics(before, after, certificate)?;
 
-    // ´rule:verification:manifest-delta-conformance´: the actual
+    // (´rule:verification:manifest-delta-conformance´): the actual
     // canonical-delta set must equal the manifest's active expected
     // set for this operation.
     crate::manifest::validate_manifest_delta_conformance(before, after, certificate)?;

@@ -211,20 +211,19 @@ fn pending_identity(path: &Path) -> io::Result<FileIdentity> {
         _ => Path::new("."),
     };
 
-    // Canonicalize the parent when it exists (resolving
-    // symlinked directories); a parent that safe_open will
-    // create later falls back to lexical normalization.
-    let parent = parent
-        .canonicalize()
-        .or_else(|_| normalize_lexically(parent))?;
+    let parent = resolve_pending_directory(parent)?;
 
     Ok(FileIdentity::Pending(parent, file_name))
 }
 
-/// Absolute, lexically normalized form of a path that does not exist
-/// yet: `.` components dropped, `..` resolved against the accumulated
-/// prefix.
-fn normalize_lexically(path: &Path) -> io::Result<PathBuf> {
+/// Absolute identity of a directory whose trailing components may not
+/// exist yet: every existing prefix component is resolved through the
+/// filesystem (following symlinks), and only the missing suffix is
+/// resolved lexically. Canonicalizing the whole parent — falling back
+/// to a purely lexical form when any component is missing — would let
+/// two routes through a symlinked existing ancestor with directories
+/// still to be created below it register as distinct identities.
+fn resolve_pending_directory(path: &Path) -> io::Result<PathBuf> {
     use std::path::Component;
 
     let absolute = if path.is_absolute() {
@@ -233,18 +232,40 @@ fn normalize_lexically(path: &Path) -> io::Result<PathBuf> {
         std::env::current_dir()?.join(path)
     };
 
-    let mut normalized = PathBuf::new();
+    let mut resolved = PathBuf::new();
+    // Number of trailing components that could not be resolved through
+    // the filesystem. While zero, `resolved` is canonical and every
+    // new component is re-resolved — so a `..` that pops back out of
+    // the missing suffix returns to filesystem-backed resolution
+    // instead of leaving later symlinked components lexical.
+    let mut missing = 0_usize;
     for component in absolute.components() {
         match component {
             Component::CurDir => {}
+            // Exact in both modes: a canonical prefix is symlink-free,
+            // and a missing suffix directory is created literally.
             Component::ParentDir => {
-                normalized.pop();
+                resolved.pop();
+                missing = missing.saturating_sub(1);
             }
-            other => normalized.push(other),
+            other => {
+                if missing > 0 {
+                    resolved.push(other);
+                    missing += 1;
+                    continue;
+                }
+                resolved.push(other);
+                match resolved.canonicalize() {
+                    Ok(canonical) => resolved = canonical,
+                    // Missing (or unreadable) component: lexical until
+                    // a `..` climbs back into existing space.
+                    Err(_) => missing = 1,
+                }
+            }
         }
     }
 
-    Ok(normalized)
+    Ok(resolved)
 }
 
 fn collect_file_specs(cfg: &RoutingConfig) -> Result<Vec<FileSpec>, ExecError> {

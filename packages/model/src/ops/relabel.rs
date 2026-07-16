@@ -1,7 +1,7 @@
 //! Receipt relabel.
 //!
 //! Implements `´def:operations:relabel-receipts´` and
-//! `´branch:operations:receipt-relabel´`.
+//! `(´branch:operations:receipt-relabel´)`.
 //!
 //! Relabeling uses a canonical positional bijection by transaction
 //! layout, not a separate witness that could conflict with

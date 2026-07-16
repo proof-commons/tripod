@@ -2,26 +2,26 @@
 //! deterministic maintenance scheduler, and the sweepability and
 //! sponsored-quiescence drivers.
 //!
-//! Implements `´def:verification:maintenance-action´`,
-//! `´def:verification:maintenance-sponsor´`,
-//! `´def:verification:quiescence-scheduler´`,
-//! `´rule:verification:apply-maintenance-action´`,
-//! `´rule:verification:next-test-order´`,
-//! `´def:verification:maintenance-mode´`,
-//! `´def:verification:deterministic-maintenance-scheduler´`,
-//! `´def:verification:maintenance-phase-potential´`,
-//! `´rule:verification:maintenance-progress´`,
-//! `´rule:verification:admissible-requests´`,
-//! `´rule:verification:live-distribution-cycles´`,
-//! `´rule:verification:entitlement-batch-for-cycle´`,
-//! `´rule:verification:clearable-ash-batch´`,
-//! `´rule:verification:compactable-ash-batch´`,
-//! `´rule:verification:relabelable-receipt-batch´`,
-//! `´rule:verification:deterministic-maintenance-selection´`,
-//! `´thm:scalability:sponsored-quiescence´`,
-//! `´thm:scalability:sweepability´` (driver forms),
-//! `´def:verification:state-candidate´`, and
-//! `´rule:verification:apply-state-candidate´`.
+//! Implements `(´def:verification:maintenance-action´)`,
+//! `(´def:verification:maintenance-sponsor´)`,
+//! `(´def:verification:quiescence-scheduler´)`,
+//! `(´rule:verification:apply-maintenance-action´)`,
+//! `(´rule:verification:next-test-order´)`,
+//! `(´def:verification:maintenance-mode´)`,
+//! `(´def:verification:deterministic-maintenance-scheduler´)`,
+//! `(´def:verification:maintenance-phase-potential´)`,
+//! `(´rule:verification:maintenance-progress´)`,
+//! `(´rule:verification:admissible-requests´)`,
+//! `(´rule:verification:live-distribution-cycles´)`,
+//! `(´rule:verification:entitlement-batch-for-cycle´)`,
+//! `(´rule:verification:clearable-ash-batch´)`,
+//! `(´rule:verification:compactable-ash-batch´)`,
+//! `(´rule:verification:relabelable-receipt-batch´)`,
+//! `(´rule:verification:deterministic-maintenance-selection´)`,
+//! `(´thm:scalability:sponsored-quiescence´)`,
+//! `(´thm:scalability:sweepability´)` (driver forms),
+//! `(´def:verification:state-candidate´)`, and
+//! `(´rule:verification:apply-state-candidate´)`.
 //!
 //! The scheduler is a test harness, not covenant state. The
 //! sweepability and quiescence drivers prove that valid collection
@@ -612,7 +612,7 @@ pub fn drive_sponsored_quiescence(
     drive_quiescence_with_scheduler(initial, &scheduler, maximum_steps, true)
 }
 
-// ´thm:scalability:sweepability´ (shared-state driver)
+// (´thm:scalability:sweepability´) (shared-state driver)
 
 pub fn drive_shared_state_sweepability(
     initial: &World,

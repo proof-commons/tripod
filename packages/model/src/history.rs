@@ -1,11 +1,11 @@
 //! Transition kinds, root edges, canonical deltas, transition
 //! certificates, derived event projections, and canonical chain history.
 //!
-//! Implements `´def:verification:branch-kind´`,
-//! `´def:verification:root-edge´`, `´def:verification:canonical-delta´`,
-//! `´def:verification:transition-certificate´`, `´def:state:burn-event´`,
-//! `´def:state:clear-event´`, `´def:state:distribution-residue-event´`,
-//! `´def:verification:genesis-history´`, and `´def:verification:history´`.
+//! Implements `(´def:verification:branch-kind´)`,
+//! `(´def:verification:root-edge´)`, `(´def:verification:canonical-delta´)`,
+//! `(´def:verification:transition-certificate´)`, `(´def:state:burn-event´)`,
+//! `(´def:state:clear-event´)`, `(´def:state:distribution-residue-event´)`,
+//! `(´def:verification:genesis-history´)`, and `(´def:verification:history´)`.
 //!
 //! All projections are derived by the transition kernel from actual
 //! consumed/created objects. Operation code does not author them

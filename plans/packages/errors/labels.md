@@ -5,31 +5,25 @@
 
 ```rust
 pub enum LabelErrorCode {
-    ReadSource, InvalidUtf8, SourceOutsideRepository,
-    UnclosedMarkdownFence, UnclosedInlineCode, AsymmetricCitation,
-    MalformedMarkdownLabel, DuplicateMint, MissingMint,
-    InvalidOwnerLocalLabel, UnknownImportedOwner, UnknownImportedLabel,
-    InvalidImportedCitationForm, ImportedLabelMintedLocally,
-    InvalidLatexLabel, DuplicateLatexLabel, MalformedAttestationMacroInvocation,
-    UnclosedAcuteDelimiter, UnknownModelLabelType, MissingRealizationCitation,
-    ManifestLabelMissing, AttestationAnchorSetMismatch,
+    Io, UnclosedMarkdownFence, UnclosedInlineCode, AsymmetricCitation,
+    DuplicateMint, MissingMint,
+    UnknownOwner, UnknownImportedLabel, InvalidImportedCitationForm,
+    InvalidLabel, DuplicateLatexLabel,
+    ArchitectureLabelMissing, AttestationAnchorSetMismatch, AttestationIndexStale,
     GeneratedRegisterMissing, GeneratedRegisterStale,
-    ModelLabelPublicationMissing, ModelLabelPublicationStale,
 }
 
-pub enum LabelToolError {
-    InvalidRepositoryRoot(PathBuf),
-    Read { path: PathBuf, source: std::io::Error },
-    ListDirectory { path: PathBuf, source: std::io::Error },
-    Render { artifact: LabelArtifactKind, source: serde_json::Error },
-    CreateDirectory { path: PathBuf, source: std::io::Error },
-    Write { path: PathBuf, source: std::io::Error },
-    SourceValidation { diagnostics: Vec<LabelDiagnostic> },
+pub enum GenerateError {
+    Validation(Vec<LabelDiagnostic>),
+    Io(std::io::Error),
+    Json(serde_json::Error),
 }
 ```
 
 A stale publication is a validation diagnostic, not I/O. Check mode reports it
 without writing; generation may repair owned publications only after source
-relationships validate. Plan-local duplicate or dangling labels are silent by
-policy, while unknown square-bracket imports fail because they claim upstream
-authority.
+relationships validate. Every owner's duplicate mints and unresolved citations
+fail — planning and documentation labels included, under
+(`[ADR013-rule:labels:global-resolution]`) — and a `AttestationIndexStale`
+diagnostic means the committed upward-citation index no longer presents
+exactly the body's anchor set.

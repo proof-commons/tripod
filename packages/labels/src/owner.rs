@@ -8,6 +8,13 @@ pub enum LabelOwner {
     Realization,
     Adr(u16),
     Model,
+    Plan,
+    Doc,
+    /// One owner per first-party Cargo package other than the model
+    /// crate, named by its `packages/` directory. Crate labels have no
+    /// public import prefix until a real cross-owner citation needs
+    /// one (ADR-013 owner registry).
+    Crate(String),
 }
 
 impl LabelOwner {
@@ -17,6 +24,9 @@ impl LabelOwner {
             Self::Realization => "RZ-".to_owned(),
             Self::Adr(number) => format!("ADR{number:03}-"),
             Self::Model => "MODEL-".to_owned(),
+            Self::Plan => "PLAN-".to_owned(),
+            Self::Doc => "DOC-".to_owned(),
+            Self::Crate(name) => format!("{name}-"),
         }
     }
     pub const fn shape(&self) -> LabelShape {
@@ -24,7 +34,8 @@ impl LabelOwner {
             Self::Attestation => LabelShape::Attestation,
             Self::Realization => LabelShape::Realization,
             Self::Adr(_) => LabelShape::Adr,
-            Self::Model => LabelShape::Model,
+            Self::Model | Self::Crate(_) => LabelShape::Model,
+            Self::Plan | Self::Doc => LabelShape::Planning,
         }
     }
 }
@@ -43,6 +54,10 @@ impl ImportedLabel {
             (LabelOwner::Realization, label)
         } else if let Some(label) = value.strip_prefix("MODEL-") {
             (LabelOwner::Model, label)
+        } else if let Some(label) = value.strip_prefix("PLAN-") {
+            (LabelOwner::Plan, label)
+        } else if let Some(label) = value.strip_prefix("DOC-") {
+            (LabelOwner::Doc, label)
         } else if let Some(rest) = value.strip_prefix("ADR") {
             let Some((number, label)) = rest.split_once('-') else {
                 return Err(OwnerParseError::Unknown(value.to_owned()));

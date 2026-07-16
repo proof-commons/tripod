@@ -72,7 +72,7 @@ Small fixed-ratio splits may use a separate narrow pattern.
 
 | Mint | Candidate | Witness | Main trade-off |
 |---|---|---|---|
-| `candidate:arithmetic:derived-limbs` | Quotient/remainder with script-derived limbs | `q,r` | Small witness; more script and stack work |
+| (`candidate:arithmetic:derived-limbs`) | Quotient/remainder with script-derived limbs | `q,r` | Small witness; more script and stack work |
 | `candidate:arithmetic:witnessed-limbs` | Witnessed limbs and carries, all recomposed and checked | `q,r,limbs,carries` | Larger witness; simpler local equations |
 | `candidate:arithmetic:sandwich` | Verify `q*d <= a*b < (q+1)*d` | `q` | Direct form; three wide products/comparisons |
 | `candidate:arithmetic:long-division` | Statically unrolled division | none or partial | Likely large and difficult to audit |

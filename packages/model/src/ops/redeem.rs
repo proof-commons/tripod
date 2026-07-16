@@ -1,6 +1,6 @@
 //! Redemption.
 //!
-//! Implements `´branch:operations:redeem´`.
+//! Implements `(´branch:operations:redeem´)`.
 //!
 //! The generic certificate derivation emits:
 //!

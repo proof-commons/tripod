@@ -1,7 +1,7 @@
 //! Cycle processing with atomic maturity conversion.
 //!
-//! Implements `´def:operations:cycle-caller´` and
-//! `´branch:operations:cycle´`.
+//! Implements `(´def:operations:cycle-caller´)` and
+//! `(´branch:operations:cycle´)`.
 //!
 //! The maturity-cycle CPFP anchor is modeled as a zero-value open
 //! output. It does not enter the pool invariant.

@@ -198,12 +198,17 @@ impl ControlPlaneRecord {
     }
 
     /// Build an argv usage-error record.
+    ///
+    /// The message is fixed here, not caller-supplied: a usage record
+    /// carries no argument values (ADR-010), and argument text may
+    /// embed inline secrets. The machine-readable detail is the error
+    /// class alone.
     #[must_use]
-    pub fn usage_error(command: &str, message: &str, clap_error_kind: &str) -> Self {
+    pub fn usage_error(command: &str, clap_error_kind: &str) -> Self {
         Self::new(
             command,
             ControlPlaneRecordKind::UsageError,
-            message,
+            "invalid command-line arguments",
             Some(ControlPlaneFields::UsageError {
                 exit_code: CommandExit::Usage.code(),
                 clap_error_kind: clap_error_kind.to_string(),
@@ -660,14 +665,15 @@ where
             ControlPlaneRecord::version(&command_name, &text),
             CommandExit::Success,
         ),
-        // Usage errors reproduce the offending argument, which may
-        // contain an inline secret (`--api-token=...`, a credential
-        // URL). Help/version text is generated from the static command
-        // definition and stays verbatim.
+        // Usage errors happen before the early-startup boundary, so the
+        // record omits argument values wholesale instead of relying on
+        // heuristic redaction: clap's rendered text reproduces the
+        // offending argument, which may embed an inline secret
+        // (`--api-token=...`, a credential URL). Help/version text is
+        // generated from the static command definition and stays verbatim.
         _ => CliExit::new(
             ControlPlaneRecord::usage_error(
                 &command_name,
-                &redact_text(&text),
                 &clap_error_kind_name(clap_error.kind()),
             ),
             CommandExit::Usage,

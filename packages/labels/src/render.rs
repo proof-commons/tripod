@@ -2,14 +2,19 @@ use std::fmt::Write as _;
 
 use crate::{owner::LabelOwner, registry::LabelRegistry, source::slash_path};
 
+// Register tokens render as double-backtick spans: the label scanner
+// treats those as nonparticipating examples, so a register can never
+// mint or cite the labels it indexes (ADR-013 generated-register
+// nonparticipation rule).
+
 pub fn specification_register(registry: &LabelRegistry) -> String {
     let mut output = String::from(
-        "# Specification Upstream Label Register\n\n> Generated from the specification LaTeX sources by `tripod-labels`.\n> Do not edit by hand.\n> The Attestation specification owns these labels.\n\n| Plan citation | Owner-local label | Source file |\n|---|---|---|\n",
+        "# Specification Upstream Label Register\n\n> Generated from the specification LaTeX sources by `tripod-labels`.\n> Do not edit by hand.\n> The Attestation specification owns these labels.\n> Displayed tokens are nonparticipating examples.\n\n| Plan citation | Owner-local label | Source file |\n|---|---|---|\n",
     );
     for (label, mint) in registry.iter() {
         writeln!(
             output,
-            "| `[{}{}]` | `{label}` | `{}` |",
+            "| ``[{}{}]`` | ``{label}`` | `{}` |",
             LabelOwner::Attestation.prefix(),
             label,
             slash_path(&mint.location.relative_path),
@@ -21,7 +26,7 @@ pub fn specification_register(registry: &LabelRegistry) -> String {
 
 pub fn realization_register(registry: &LabelRegistry) -> String {
     let mut output = String::from(
-        "# Realization Upstream Label Register\n\n> Generated from `docs/attestation/realization.md` by `tripod-labels`.\n> Do not edit by hand.\n> The realization document owns these labels.\n\n| Plan citation | Owner-local label | Owning heading |\n|---|---|---|\n",
+        "# Realization Upstream Label Register\n\n> Generated from `docs/attestation/realization.md` by `tripod-labels`.\n> Do not edit by hand.\n> The realization document owns these labels.\n> Displayed tokens are nonparticipating examples.\n\n| Plan citation | Owner-local label | Owning heading |\n|---|---|---|\n",
     );
     for (label, mint) in registry.iter() {
         let home = mint
@@ -31,7 +36,7 @@ pub fn realization_register(registry: &LabelRegistry) -> String {
             .replace('|', "\\|");
         writeln!(
             output,
-            "| `[{}{}]` | `{label}` | {home} |",
+            "| ``[{}{}]`` | ``{label}`` | {home} |",
             LabelOwner::Realization.prefix(),
             label,
         )

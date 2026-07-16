@@ -15,7 +15,9 @@ imported upstream citation:
     (`[RZ-sec:realization:representation]`)
 ```
 
-Plan-local labels are non-normative and unlinted.
+Plan-local labels are non-normative, but they are mechanically complete:
+every planning label has one mint and every local citation resolves
+across the planning tree (`[ADR013-rule:labels:global-resolution]`).
 
 Imported labels are authoritative references and are linted under
 (`[ADR012-rule:labels:external-citation]`).

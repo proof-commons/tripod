@@ -1,7 +1,7 @@
 //! Assets, receipt classes, and maturity.
 //!
-//! Implements `´def:architecture:assets´`,
-//! `´def:architecture:receipt-class´`, and `´def:state:maturity´`.
+//! Implements `(´def:architecture:assets´)`,
+//! `(´def:architecture:receipt-class´)`, and `(´def:state:maturity´)`.
 
 use crate::scalar::Cycle;
 

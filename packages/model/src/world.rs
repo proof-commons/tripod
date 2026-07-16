@@ -1,9 +1,9 @@
 //! Root cursors, wallets, adversarial environment, and the complete
 //! pure `World`.
 //!
-//! Implements `´def:verification:root-cursor´`,
-//! `´def:verification:wallets´`, `´def:verification:external-budget´`,
-//! and `´def:verification:world´`.
+//! Implements `(´def:verification:root-cursor´)`,
+//! `(´def:verification:wallets´)`, `(´def:verification:external-budget´)`,
+//! and `(´def:verification:world´)`.
 
 use std::collections::BTreeMap;
 

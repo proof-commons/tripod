@@ -2,16 +2,16 @@
 //! test helpers, the residue-reader policy, and the
 //! protocol-observable projection.
 //!
-//! Implements `´def:verification:quiescence-report´`,
-//! `´rule:verification:lifecycle-report´`,
-//! `´def:verification:quiescence-eligibility´`,
-//! `´rule:verification:classify-quiescence-eligibility´`,
-//! `´thm:scalability:sweepability´` (predicate form),
-//! `´thm:ledgers:residue-noninterference´`,
-//! `´rule:verification:residue-readers´`,
-//! `´def:verification:residue-perturbation´`,
-//! `´def:verification:protocol-observable´`, and
-//! `´rule:verification:project-protocol-observable´`.
+//! Implements `(´def:verification:quiescence-report´)`,
+//! `(´rule:verification:lifecycle-report´)`,
+//! `(´def:verification:quiescence-eligibility´)`,
+//! `(´rule:verification:classify-quiescence-eligibility´)`,
+//! `(´thm:scalability:sweepability´)` (predicate form),
+//! `(´thm:ledgers:residue-noninterference´)`,
+//! `(´rule:verification:residue-readers´)`,
+//! `(´def:verification:residue-perturbation´)`,
+//! `(´def:verification:protocol-observable´)`, and
+//! `(´rule:verification:project-protocol-observable´)`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -139,7 +139,7 @@ pub fn lifecycle_report(world: &World) -> Result<QuiescenceReport, Guard> {
     Ok(report)
 }
 
-// ´thm:scalability:sweepability´
+// (´thm:scalability:sweepability´)
 
 /// This predicate assumes:
 ///
@@ -341,7 +341,7 @@ pub fn protocol_observable(world: &World) -> Result<ProtocolObservable, Guard> {
     })
 }
 
-// ´thm:ledgers:residue-noninterference´ (branch-local form)
+// (´thm:ledgers:residue-noninterference´) (branch-local form)
 
 /// Compares protocol computations that are forbidden to read residue.
 ///

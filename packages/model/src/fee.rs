@@ -1,7 +1,7 @@
 //! Fee envelope.
 //!
-//! Implements `´def:auction:fee-envelope´` and
-//! `´rule:auction:fee-envelope-validation´`.
+//! Implements `(´def:auction:fee-envelope´)` and
+//! `(´rule:auction:fee-envelope-validation´)`.
 
 use std::collections::BTreeSet;
 

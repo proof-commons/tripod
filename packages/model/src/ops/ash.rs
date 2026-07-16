@@ -1,7 +1,7 @@
 //! ASH compaction and clear.
 //!
-//! Implements `´branch:operations:compact-ash´` and
-//! `´branch:operations:clear´`.
+//! Implements `(´branch:operations:compact-ash´)` and
+//! `(´branch:operations:clear´)`.
 //!
 //! Compaction is attestation-silent because its event-type anchor
 //! includes ASH inputs. The kernel derives a `ClearProjection` from the

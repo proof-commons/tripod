@@ -1,6 +1,6 @@
 //! Pure monetary query helpers.
 //!
-//! Implements `´rule:verification:monetary-queries´`.
+//! Implements `(´rule:verification:monetary-queries´)`.
 //!
 //! These functions consume committed STATE only. They cannot read
 //! historical residue.

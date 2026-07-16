@@ -1,6 +1,6 @@
 //! Maturity announcement.
 //!
-//! Implements `´branch:operations:announce-maturity´`.
+//! Implements `(´branch:operations:announce-maturity´)`.
 //!
 //! The branch is weld-exempt. Its transaction-shape pin forbids every
 //! `RESV_SPK` input and every RESV output.

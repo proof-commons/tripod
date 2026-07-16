@@ -8,6 +8,9 @@
 //! | `aliased_redirection_paths_are_rejected`            | `a.log` vs `./a.log` conflict           |
 //! | `symlink_and_hardlink_aliases_are_rejected`         | link aliases resolve to one identity    |
 //! | `parent_symlink_alias_is_rejected`                  | symlinked parent dirs resolve           |
+//! | `symlinked_ancestor_with_missing_directories_is_rejected` | pending suffixes share identity   |
+//! | `parent_dir_through_missing_component_still_resolves_symlinks` | `..` re-enters resolution    |
+//! | `missing_directories_under_distinct_ancestors_validate` | distinct pending targets accepted  |
 //! | `dangling_symlink_alias_is_rejected`                | dangling link aliases its target        |
 //! | `dangling_symlink_chain_resolves_to_final_target`   | chains resolve to the last target       |
 //! | `symlink_loop_is_an_error`                          | link loops error instead of hanging     |
@@ -138,6 +141,79 @@ fn parent_symlink_alias_is_rejected() {
         super::preflight_routing(&cfg),
         Err(ExecError::AmbiguousRedirection { .. }),
     ));
+}
+
+#[test]
+fn symlinked_ancestor_with_missing_directories_is_rejected() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    let real = dir.path().join("real");
+    std::fs::create_dir(&real).expect("create real dir");
+
+    let alias = dir.path().join("alias");
+    std::os::unix::fs::symlink(&real, &alias).expect("symlink dir");
+
+    // Two missing directory levels below the symlinked ancestor:
+    // canonicalizing the complete parent fails on both routes, so a
+    // lexical fallback would accept them as distinct identities and
+    // open one file under two routing kinds.
+    let cfg = RoutingConfig {
+        redirect: Some(real.join("new/sub/x.log")),
+        redirect_output: Some(alias.join("new/sub/x.log")),
+        ..RoutingConfig::default()
+    };
+
+    assert!(matches!(
+        super::preflight_routing(&cfg),
+        Err(ExecError::AmbiguousRedirection { .. }),
+    ));
+
+    // Rejection happens before any directory or file is created.
+    assert!(!real.join("new").exists());
+}
+
+#[test]
+fn parent_dir_through_missing_component_still_resolves_symlinks() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    let real = dir.path().join("real");
+    std::fs::create_dir(&real).expect("create real dir");
+
+    let alias = dir.path().join("alias");
+    std::os::unix::fs::symlink(&real, &alias).expect("symlink dir");
+
+    // `newdir` does not exist; the `..` climbs back out of the missing
+    // suffix, so the following symlinked component must be resolved
+    // through the filesystem again, not appended lexically.
+    let cfg = RoutingConfig {
+        redirect: Some(dir.path().join("newdir/../alias/out.txt")),
+        redirect_output: Some(real.join("out.txt")),
+        ..RoutingConfig::default()
+    };
+
+    assert!(matches!(
+        super::preflight_routing(&cfg),
+        Err(ExecError::AmbiguousRedirection { .. }),
+    ));
+}
+
+#[test]
+fn missing_directories_under_distinct_ancestors_validate() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    let first = dir.path().join("first");
+    let second = dir.path().join("second");
+    std::fs::create_dir(&first).expect("create first dir");
+    std::fs::create_dir(&second).expect("create second dir");
+
+    let cfg = RoutingConfig {
+        redirect_output: Some(first.join("new/sub/x.log")),
+        redirect_error: Some(second.join("new/sub/x.log")),
+        ..RoutingConfig::default()
+    };
+
+    let specs = collect_file_specs(&cfg).expect("distinct pending targets are valid");
+    assert_eq!(specs.len(), 2);
 }
 
 #[test]

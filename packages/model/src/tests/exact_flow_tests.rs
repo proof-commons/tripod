@@ -1,7 +1,7 @@
 //! Exact-flow destruction test (kernel structural).
 //!
 //! Implements `´test:verification:exact-flow-destruction´` and
-//! `´test:verification:kernel-structural-validity´`.
+//! `(´test:verification:kernel-structural-validity´)`.
 //!
 //! This test proves both:
 //!

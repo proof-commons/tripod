@@ -1,7 +1,7 @@
 //! Kernel structural tests for open-value flows.
 //!
 //! Implements `´test:verification:open-flow-partition´` and
-//! `´test:verification:kernel-structural-validity´`.
+//! `(´test:verification:kernel-structural-validity´)`.
 
 use super::test_fixtures::*;
 use crate::kernel::{OpenFlow, TxBuilder, movement_flow};

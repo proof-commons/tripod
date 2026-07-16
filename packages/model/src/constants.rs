@@ -1,6 +1,6 @@
 //! Configuration and finite bounds.
 //!
-//! Implements `´def:domains:constants´`.
+//! Implements `(´def:domains:constants´)`.
 
 use crate::guard::Guard;
 use crate::scalar::{Cycle, Ratio};

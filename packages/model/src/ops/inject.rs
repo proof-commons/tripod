@@ -1,6 +1,6 @@
 //! External open-asset injection.
 //!
-//! Implements `´def:verification:open-object-injection´`.
+//! Implements `(´def:verification:open-object-injection´)`.
 //!
 //! Open-asset junk may be request-shaped, RESV-shaped, anchor-shaped,
 //! or state-shaped. It remains inert unless a branch-specific validator

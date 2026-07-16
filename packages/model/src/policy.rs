@@ -1,9 +1,9 @@
 //! Branch policy.
 //!
-//! Implements `´def:verification:root-use´`,
-//! `´def:verification:branch-policy´`,
-//! `´rule:verification:branch-policy´`, and
-//! `´rule:verification:value-flow-matrix´`.
+//! Implements `(´def:verification:root-use´)`,
+//! `(´def:verification:branch-policy´)`,
+//! `(´rule:verification:branch-policy´)`, and
+//! `(´rule:verification:value-flow-matrix´)`.
 //!
 //! One may assume naively that these tables must be hand-maintained
 //! and separately checked against the architecture; instead both the

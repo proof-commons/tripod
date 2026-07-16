@@ -320,6 +320,129 @@ fn unknown_fields_are_rejected() {
     assert!(serde_json::from_slice::<PublishedArchitecture>(&bytes).is_err());
 }
 
+// Every externally deserialized DTO shape must reject unknown fields,
+// not only the top-level publication object: a nested unknown field
+// that serde silently discards would survive body-hash verification
+// (the hash covers the parsed DTO) and typed-equality validation (the
+// field no longer exists in memory), defeating the generated-artifact
+// policy for tagged enum variants.
+fn nested_object_paths(value: &serde_json::Value) -> Vec<Vec<String>> {
+    let architecture = &value["architecture"];
+    let mut paths = Vec::new();
+    let mut push = |base: &[&str], list: &str, item: usize, tail: &[&str]| {
+        let mut path: Vec<String> = base.iter().map(ToString::to_string).collect();
+        path.push(list.to_owned());
+        path.push(item.to_string());
+        path.extend(tail.iter().map(ToString::to_string));
+        paths.push(path);
+    };
+    for (index, object) in architecture["objects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+    {
+        let base = [
+            "architecture".to_owned(),
+            "objects".to_owned(),
+            index.to_string(),
+        ];
+        let base: Vec<&str> = base.iter().map(String::as_str).collect();
+        for list in ["allocators", "deallocators", "authorization_paths"] {
+            for item in 0..object[list].as_array().unwrap().len() {
+                push(&base, list, item, &[]);
+            }
+        }
+    }
+    for (index, operation) in architecture["operations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+    {
+        let base = [
+            "architecture".to_owned(),
+            "operations".to_owned(),
+            index.to_string(),
+        ];
+        let base: Vec<&str> = base.iter().map(String::as_str).collect();
+        for list in ["inputs", "outputs", "data_outputs"] {
+            for item in 0..operation[list].as_array().unwrap().len() {
+                push(&base, list, item, &["maximum"]);
+            }
+        }
+    }
+    for (index, quantity) in architecture["quantities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+    {
+        let base = [
+            "architecture".to_owned(),
+            "quantities".to_owned(),
+            index.to_string(),
+        ];
+        let base: Vec<&str> = base.iter().map(String::as_str).collect();
+        for item in 0..quantity["readers"].as_array().unwrap().len() {
+            push(&base, "readers", item, &[]);
+        }
+    }
+    assert!(
+        !paths.is_empty(),
+        "the fixture architecture exercises no nested variants"
+    );
+    paths
+}
+
+fn with_unknown_field_at(value: &serde_json::Value, path: &[String]) -> serde_json::Value {
+    let mut mutated = value.clone();
+    let mut cursor = &mut mutated;
+    for step in path {
+        cursor = match cursor {
+            serde_json::Value::Array(items) => &mut items[step.parse::<usize>().unwrap()],
+            other => other.get_mut(step).unwrap(),
+        };
+    }
+    cursor
+        .as_object_mut()
+        .unwrap()
+        .insert("unexpected".to_owned(), serde_json::Value::Bool(true));
+    mutated
+}
+
+#[test]
+fn nested_unknown_fields_are_rejected_in_json() {
+    let published = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let value = serde_json::to_value(published).unwrap();
+
+    for path in nested_object_paths(&value) {
+        let mutated = with_unknown_field_at(&value, &path);
+        let bytes = serde_json::to_vec(&mutated).unwrap();
+        assert!(
+            serde_json::from_slice::<PublishedArchitecture>(&bytes).is_err(),
+            "nested unknown field silently accepted at {}",
+            path.join("."),
+        );
+    }
+}
+
+#[test]
+fn nested_unknown_fields_are_rejected_in_toml() {
+    let published = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let value = serde_json::to_value(published).unwrap();
+
+    for path in nested_object_paths(&value) {
+        let mutated = with_unknown_field_at(&value, &path);
+        let rendered = toml::to_string(&mutated).unwrap();
+        assert!(
+            toml::from_str::<PublishedArchitecture>(&rendered).is_err(),
+            "nested unknown field silently accepted at {}",
+            path.join("."),
+        );
+    }
+}
+
 #[test]
 fn incorrect_algorithm_identifier_invalidates_envelope() {
     // The body hash intentionally excludes envelope metadata, so the

@@ -401,27 +401,155 @@ pub struct RootUseExport {
     pub use_kind: String,
 }
 
+// Serde does not enforce `deny_unknown_fields` on internally tagged
+// enums: unknown (and explicitly null) variant fields are buffered and
+// discarded, so a mutated publication would still verify its body hash
+// and compare equal to the typed expected value. Every tagged enum in
+// this module therefore deserializes through a `*Repr` struct that
+// rejects unknown fields and explicit `null`s, while serialization
+// stays derived so canonical bytes are unchanged.
+
+/// One optional variant field distinguishing three wire states:
+/// absent, explicitly `null`, and a value. Serde derives cannot make
+/// this distinction with `Option<T>` alone, and a discarded `null`
+/// would survive body-hash verification exactly like an unknown field.
+#[derive(Default)]
+enum VariantField<T> {
+    #[default]
+    Absent,
+    Null,
+    Value(T),
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for VariantField<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(match Option::<T>::deserialize(deserializer)? {
+            Some(value) => Self::Value(value),
+            None => Self::Null,
+        })
+    }
+}
+
+impl<T> VariantField<T> {
+    fn required(self, container: &str, kind: &str, field: &str) -> Result<T, String> {
+        match self {
+            Self::Value(value) => Ok(value),
+            Self::Absent | Self::Null => Err(format!(
+                "{container} kind {kind:?} requires field {field:?}"
+            )),
+        }
+    }
+
+    fn forbid(&self, container: &str, kind: &str, field: &str) -> Result<(), String> {
+        match self {
+            Self::Absent => Ok(()),
+            Self::Null | Self::Value(_) => Err(format!(
+                "{container} kind {kind:?} does not accept field {field:?}"
+            )),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    try_from = "AllocatorExportRepr"
+)]
 pub enum AllocatorExport {
     Genesis,
     External,
     Operation { operation: String },
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AllocatorExportRepr {
+    kind: String,
+    #[serde(default)]
+    operation: VariantField<String>,
+}
+
+impl TryFrom<AllocatorExportRepr> for AllocatorExport {
+    type Error = String;
+
+    fn try_from(repr: AllocatorExportRepr) -> Result<Self, Self::Error> {
+        match repr.kind.as_str() {
+            "genesis" => {
+                repr.operation.forbid("allocator", "genesis", "operation")?;
+                Ok(Self::Genesis)
+            }
+            "external" => {
+                repr.operation
+                    .forbid("allocator", "external", "operation")?;
+                Ok(Self::External)
+            }
+            "operation" => Ok(Self::Operation {
+                operation: repr
+                    .operation
+                    .required("allocator", "operation", "operation")?,
+            }),
+            other => Err(format!("unknown allocator kind {other:?}")),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    try_from = "DeallocatorExportRepr"
+)]
 pub enum DeallocatorExport {
     None,
     ExternalSpend,
     Operation { operation: String },
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DeallocatorExportRepr {
+    kind: String,
+    #[serde(default)]
+    operation: VariantField<String>,
+}
+
+impl TryFrom<DeallocatorExportRepr> for DeallocatorExport {
+    type Error = String;
+
+    fn try_from(repr: DeallocatorExportRepr) -> Result<Self, Self::Error> {
+        match repr.kind.as_str() {
+            "none" => {
+                repr.operation.forbid("deallocator", "none", "operation")?;
+                Ok(Self::None)
+            }
+            "external-spend" => {
+                repr.operation
+                    .forbid("deallocator", "external-spend", "operation")?;
+                Ok(Self::ExternalSpend)
+            }
+            "operation" => Ok(Self::Operation {
+                operation: repr
+                    .operation
+                    .required("deallocator", "operation", "operation")?,
+            }),
+            other => Err(format!("unknown deallocator kind {other:?}")),
+        }
+    }
+}
+
 /// One derived recognition/authorization path of an object: either a
 /// declared operation input consuming the object, or an external
 /// wallet-level spend.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    try_from = "ObjectAuthorizationExportRepr"
+)]
 pub enum ObjectAuthorizationExport {
     Operation {
         operation: String,
@@ -431,6 +559,48 @@ pub enum ObjectAuthorizationExport {
     ExternalSpend {
         authorization: String,
     },
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ObjectAuthorizationExportRepr {
+    kind: String,
+    #[serde(default)]
+    operation: VariantField<String>,
+    #[serde(default)]
+    authorization: VariantField<String>,
+}
+
+impl TryFrom<ObjectAuthorizationExportRepr> for ObjectAuthorizationExport {
+    type Error = String;
+
+    fn try_from(repr: ObjectAuthorizationExportRepr) -> Result<Self, Self::Error> {
+        const CONTAINER: &str = "authorization path";
+        match repr.kind.as_str() {
+            "operation" => Ok(Self::Operation {
+                operation: repr
+                    .operation
+                    .required(CONTAINER, "operation", "operation")?,
+                authorization: repr.authorization.required(
+                    CONTAINER,
+                    "operation",
+                    "authorization",
+                )?,
+            }),
+            "external-spend" => {
+                repr.operation
+                    .forbid(CONTAINER, "external-spend", "operation")?;
+                Ok(Self::ExternalSpend {
+                    authorization: repr.authorization.required(
+                        CONTAINER,
+                        "external-spend",
+                        "authorization",
+                    )?,
+                })
+            }
+            other => Err(format!("unknown {CONTAINER} kind {other:?}")),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -463,10 +633,46 @@ pub struct IssuanceExport {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    try_from = "MaximumExportRepr"
+)]
 pub enum MaximumExport {
     Exact { value: u16 },
     Bound { bound: String },
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MaximumExportRepr {
+    kind: String,
+    #[serde(default)]
+    value: VariantField<u16>,
+    #[serde(default)]
+    bound: VariantField<String>,
+}
+
+impl TryFrom<MaximumExportRepr> for MaximumExport {
+    type Error = String;
+
+    fn try_from(repr: MaximumExportRepr) -> Result<Self, Self::Error> {
+        match repr.kind.as_str() {
+            "exact" => {
+                repr.bound.forbid("maximum", "exact", "bound")?;
+                Ok(Self::Exact {
+                    value: repr.value.required("maximum", "exact", "value")?,
+                })
+            }
+            "bound" => {
+                repr.value.forbid("maximum", "bound", "value")?;
+                Ok(Self::Bound {
+                    bound: repr.bound.required("maximum", "bound", "bound")?,
+                })
+            }
+            other => Err(format!("unknown maximum kind {other:?}")),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -543,13 +749,43 @@ pub struct OperationExport {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
+#[serde(tag = "kind", rename_all = "kebab-case", try_from = "ReaderExportRepr")]
 pub enum ReaderExport {
     Operation { operation: String },
     AttestationIndexer,
     InvariantChecker,
     ExternalAuditor,
     ConsumerFormula,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReaderExportRepr {
+    kind: String,
+    #[serde(default)]
+    operation: VariantField<String>,
+}
+
+impl TryFrom<ReaderExportRepr> for ReaderExport {
+    type Error = String;
+
+    fn try_from(repr: ReaderExportRepr) -> Result<Self, Self::Error> {
+        if repr.kind == "operation" {
+            return Ok(Self::Operation {
+                operation: repr
+                    .operation
+                    .required("reader", "operation", "operation")?,
+            });
+        }
+        repr.operation.forbid("reader", &repr.kind, "operation")?;
+        match repr.kind.as_str() {
+            "attestation-indexer" => Ok(Self::AttestationIndexer),
+            "invariant-checker" => Ok(Self::InvariantChecker),
+            "external-auditor" => Ok(Self::ExternalAuditor),
+            "consumer-formula" => Ok(Self::ConsumerFormula),
+            other => Err(format!("unknown reader kind {other:?}")),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

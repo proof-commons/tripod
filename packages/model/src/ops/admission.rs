@@ -1,6 +1,6 @@
 //! Bounded-batch deposit admission.
 //!
-//! Implements `´branch:operations:admit-deposits´`.
+//! Implements `(´branch:operations:admit-deposits´)`.
 //!
 //! Admission emits exactly one entitlement per request. It never
 //! aggregates entitlements by owner or target.

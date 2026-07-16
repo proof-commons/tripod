@@ -1,10 +1,10 @@
 //! Receipt-accounting audit projection and its differential
 //! comparison.
 //!
-//! Implements `´def:verification:residue-audit-event´`,
-//! `´def:verification:receipt-accounting-audit-projection´`,
-//! `´rule:verification:receipt-accounting-audit´`, and
-//! `´rule:verification:compare-receipt-accounting-audit´`.
+//! Implements `(´def:verification:residue-audit-event´)`,
+//! `(´def:verification:receipt-accounting-audit-projection´)`,
+//! `(´rule:verification:receipt-accounting-audit´)`, and
+//! `(´rule:verification:compare-receipt-accounting-audit´)`.
 //!
 //! Historical distribution residue is audit-only by the manifest's
 //! reader matrix: it is readable by the invariant checker and the

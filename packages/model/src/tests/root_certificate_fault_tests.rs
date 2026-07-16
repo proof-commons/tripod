@@ -1,6 +1,6 @@
 //! Root-certificate corruption helpers and fault tests.
 //!
-//! Implements `´test:verification:certificate-corruption-fixtures´`
+//! Implements `(´test:verification:certificate-corruption-fixtures´)`
 //! and `´test:verification:root-certificate-faults´`.
 
 use super::scenario_fixtures::*;

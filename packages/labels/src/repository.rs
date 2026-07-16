@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     fs,
     io::Write,
     path::{Path, PathBuf},
@@ -10,11 +11,11 @@ use crate::{
     diagnostic::{LabelDiagnostic, LabelErrorCode, sort_diagnostics},
     label::{Label, LabelShape},
     latex::harvest_attestation,
-    markdown::{InlineCodeContext, scan_markdown},
+    markdown::{InlineCodeContext, fence_close, fence_open, scan_markdown},
     owner::{ImportedLabel, LabelOwner},
     registry::{LabelMint, LabelRegistry, RegistrySet},
     render,
-    rust_source::{ModelHarvest, harvest_model},
+    rust_source::{RustHarvest, harvest_crates, harvest_model},
     source::{SourceLocation, relative_to},
 };
 
@@ -58,8 +59,14 @@ pub struct RepositoryLabels {
     pub diagnostics: Vec<LabelDiagnostic>,
     realization_internal: Vec<(Label, SourceLocation)>,
     adr_internal: Vec<(u16, Label, SourceLocation)>,
+    model_internal: Vec<(Label, SourceLocation)>,
+    plan_internal: Vec<(Label, SourceLocation)>,
+    doc_internal: Vec<(Label, SourceLocation)>,
+    crate_internal: Vec<(String, Label, SourceLocation)>,
     imports: Vec<(ImportedLabel, SourceLocation)>,
     attestation_anchor_names: Vec<String>,
+    attestation_index_names: BTreeSet<String>,
+    attestation_index_location: Option<SourceLocation>,
 }
 impl RepositoryLabels {
     pub fn harvest_sources(paths: &RepositoryPaths) -> Self {
@@ -69,9 +76,21 @@ impl RepositoryLabels {
         result.diagnostics.extend(diagnostics);
         harvest_realization(paths, &mut result);
         harvest_adrs(paths, &mut result);
-        harvest_imports(paths, &mut result);
+        harvest_plans(paths, &mut result);
+        harvest_docs(paths, &mut result);
         let model = harvest_model(paths);
         add_model(model, &mut result);
+        for (name, harvest) in harvest_crates(paths) {
+            result.crate_internal.extend(
+                harvest
+                    .citations
+                    .into_iter()
+                    .map(|(label, location)| (name.clone(), label, location)),
+            );
+            result.imports.extend(harvest.imports);
+            result.diagnostics.extend(harvest.diagnostics);
+            result.registries.crates.insert(name, harvest.registry);
+        }
         validate(&mut result);
         sort_diagnostics(&mut result.diagnostics);
         result
@@ -84,10 +103,9 @@ impl RepositoryLabels {
     }
 }
 
-fn add_model(model: ModelHarvest, result: &mut RepositoryLabels) {
-    for (label, location) in model.realization_citations {
-        result.realization_internal.push((label, location));
-    }
+fn add_model(model: RustHarvest, result: &mut RepositoryLabels) {
+    result.model_internal.extend(model.citations);
+    result.imports.extend(model.imports);
     result.registries.model = model.registry;
     result.diagnostics.extend(model.diagnostics);
 }
@@ -135,8 +153,11 @@ fn harvest_realization(paths: &RepositoryPaths, result: &mut RepositoryLabels) {
                     location: span.location.clone(),
                     home: span.home,
                 };
-                if result.registries.realization.insert(mint).is_err() { /* Existing source repeats some locator spans; first mint remains canonical. */
-                }
+                result.registries.realization.insert_or_diagnose(
+                    mint,
+                    "the realization",
+                    &mut result.diagnostics,
+                );
             }
             InlineCodeContext::Parenthesized => {
                 result.realization_internal.push((label, span.location));
@@ -150,7 +171,7 @@ fn harvest_realization(paths: &RepositoryPaths, result: &mut RepositoryLabels) {
     }
 }
 fn harvest_adrs(paths: &RepositoryPaths, result: &mut RepositoryLabels) {
-    for path in files(&paths.adr_dir) {
+    for path in files(&paths.root, &paths.adr_dir, &mut result.diagnostics) {
         let Some(number) = path
             .file_name()
             .and_then(|name| name.to_str())
@@ -193,13 +214,11 @@ fn harvest_adrs(paths: &RepositoryPaths, result: &mut RepositoryLabels) {
                         location: span.location.clone(),
                         home: span.home,
                     };
-                    if registry.insert(mint).is_err() {
-                        result.diagnostics.push(LabelDiagnostic::error(
-                            LabelErrorCode::DuplicateMint,
-                            &span.location,
-                            "duplicate ADR label mint",
-                        ));
-                    }
+                    registry.insert_or_diagnose(
+                        mint,
+                        &format!("ADR{number:03}"),
+                        &mut result.diagnostics,
+                    );
                 }
                 InlineCodeContext::Parenthesized => {
                     result.adr_internal.push((number, label, span.location));
@@ -214,38 +233,183 @@ fn harvest_adrs(paths: &RepositoryPaths, result: &mut RepositoryLabels) {
         result.registries.adrs.insert(number, registry);
     }
 }
-fn harvest_imports(paths: &RepositoryPaths, result: &mut RepositoryLabels) {
-    for path in files(&paths.plans_dir) {
+// Planning and repository-documentation Markdown are complete label
+// owners (ADR-013): a bare planning-shaped label mints, a parenthesized
+// one cites, and citations resolve against the complete owner registry
+// across files — not merely against imports.
+
+/// The two Markdown owners this harvest serves. A dedicated enum keeps
+/// the registry and citation-sink dispatch exhaustive: a future owner
+/// must choose destinations explicitly instead of falling into a
+/// catch-all.
+#[derive(Clone, Copy)]
+enum MarkdownOwner {
+    Plan,
+    Doc,
+}
+
+impl MarkdownOwner {
+    const fn owner(self) -> LabelOwner {
+        match self {
+            Self::Plan => LabelOwner::Plan,
+            Self::Doc => LabelOwner::Doc,
+        }
+    }
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Plan => "PLAN",
+            Self::Doc => "DOC",
+        }
+    }
+}
+
+fn harvest_plans(paths: &RepositoryPaths, result: &mut RepositoryLabels) {
+    for path in files(&paths.root, &paths.plans_dir, &mut result.diagnostics) {
         if path == paths.specification_register || path == paths.realization_register {
+            // Generated registers are derivative publications and must
+            // not contribute source mints or citations.
             continue;
         }
-        let relative = relative_to(&paths.root, &path);
-        let Ok(source) = fs::read_to_string(&path) else {
+        harvest_markdown_owner(paths, &path, MarkdownOwner::Plan, result);
+    }
+}
+
+/// Directory names excluded from the repository documentation census
+/// (ADR-013): build products, archives, and vendored trees. Hidden
+/// directories are excluded unconditionally.
+const EXCLUDED_CENSUS_DIRS: &[&str] = &["archive", "build", "builddir", "target", "vendor"];
+
+/// Harvest every authored Markdown file outside the trees owned
+/// elsewhere as the `DOC` owner. The census is discovered by walking,
+/// not by allowlist, so a newly added README cannot silently sit
+/// outside the label graph.
+fn harvest_docs(paths: &RepositoryPaths, result: &mut RepositoryLabels) {
+    let mut census = Vec::new();
+    walk_docs(paths, &paths.root, &mut census, &mut result.diagnostics);
+    census.sort();
+    for path in census {
+        harvest_markdown_owner(paths, &path, MarkdownOwner::Doc, result);
+    }
+}
+
+fn walk_docs(
+    paths: &RepositoryPaths,
+    directory: &Path,
+    output: &mut Vec<PathBuf>,
+    diagnostics: &mut Vec<LabelDiagnostic>,
+) {
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) => {
+            diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::Io,
+                &SourceLocation::new(relative_to(&paths.root, directory), 1, 1),
+                format!("cannot traverse documentation sources: {error}"),
+            ));
+            return;
+        }
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        let scan = scan_markdown(&relative, &source);
-        result.diagnostics.extend(scan.diagnostics);
-        for span in scan.code_spans {
-            if span.delimiter_len != 1 {
+        if path.is_dir() {
+            if name.starts_with('.')
+                || EXCLUDED_CENSUS_DIRS.contains(&name)
+                || path == paths.plans_dir
+            {
                 continue;
             }
-            if let Some(token) = square(&span.content) {
-                if span.context == InlineCodeContext::Parenthesized {
-                    import(token, &span.location, result);
-                } else {
-                    result.diagnostics.push(LabelDiagnostic::error(
-                        LabelErrorCode::InvalidImportedCitationForm,
-                        &span.location,
-                        "imported citation must be parenthesized",
-                    ));
-                }
-            } else if looks_imported(&span.content) {
+            walk_docs(paths, &path, output, diagnostics);
+        } else if path.extension().is_some_and(|extension| extension == "md") {
+            // Files with their own owner: the realization document
+            // (R13) and numbered ADRs (ADRNNN).
+            if path == paths.realization {
+                continue;
+            }
+            if path.parent() == Some(paths.adr_dir.as_path())
+                && name
+                    .get(..3)
+                    .is_some_and(|number| number.parse::<u16>().is_ok())
+            {
+                continue;
+            }
+            output.push(path);
+        }
+    }
+}
+
+fn harvest_markdown_owner(
+    paths: &RepositoryPaths,
+    path: &Path,
+    owner: MarkdownOwner,
+    result: &mut RepositoryLabels,
+) {
+    let relative = relative_to(&paths.root, path);
+    let source = match fs::read_to_string(path) {
+        Ok(source) => source,
+        Err(error) => {
+            result.diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::Io,
+                &SourceLocation::new(relative, 1, 1),
+                error.to_string(),
+            ));
+            return;
+        }
+    };
+    let scan = scan_markdown(&relative, &source);
+    result.diagnostics.extend(scan.diagnostics);
+    for span in scan.code_spans {
+        if span.delimiter_len != 1 {
+            continue;
+        }
+        if let Some(token) = square(&span.content) {
+            if span.context == InlineCodeContext::Parenthesized {
+                import(token, &span.location, result);
+            } else {
                 result.diagnostics.push(LabelDiagnostic::error(
                     LabelErrorCode::InvalidImportedCitationForm,
                     &span.location,
-                    "imported citation must use square brackets",
+                    "imported citation must be parenthesized",
                 ));
             }
+            continue;
+        }
+        if looks_imported(&span.content) {
+            result.diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::InvalidImportedCitationForm,
+                &span.location,
+                "imported citation must use square brackets",
+            ));
+            continue;
+        }
+        let Ok(label) = Label::parse(span.content.trim(), LabelShape::Planning) else {
+            continue;
+        };
+        let registry = match owner {
+            MarkdownOwner::Plan => &mut result.registries.plan,
+            MarkdownOwner::Doc => &mut result.registries.doc,
+        };
+        match span.context {
+            InlineCodeContext::Bare => {
+                let mint = LabelMint {
+                    owner: owner.owner(),
+                    label,
+                    location: span.location.clone(),
+                    home: span.home,
+                };
+                registry.insert_or_diagnose(mint, owner.name(), &mut result.diagnostics);
+            }
+            InlineCodeContext::Parenthesized => match owner {
+                MarkdownOwner::Plan => result.plan_internal.push((label, span.location)),
+                MarkdownOwner::Doc => result.doc_internal.push((label, span.location)),
+            },
+            InlineCodeContext::Asymmetric => result.diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::AsymmetricCitation,
+                &span.location,
+                "label citation has an unmatched parenthesis",
+            )),
         }
     }
 }
@@ -259,39 +423,131 @@ fn import(token: &str, location: &SourceLocation, result: &mut RepositoryLabels)
         )),
     }
 }
+/// Harvest attestation citations from the realization body only.
+///
+/// Fenced code is ignored, and tokens inside the generated §17
+/// upward-citation index are collected separately: the pinned
+/// anchor-set hash and the imported-citation set derive from body
+/// occurrences, so a token present only in the index cannot keep
+/// itself in the release anchor set. The committed index is instead
+/// welded to the body by set equality.
 fn harvest_attestation_citations(path: &Path, source: &str, result: &mut RepositoryLabels) {
-    let mut offset = 0;
-    while let Some(found) = source[offset..].find("[A-") {
-        let start = offset + found;
-        let body = start + "[A-".len();
-        let Some(close) = source[body..].find(']') else {
-            break;
-        };
-        let value = &source[body..body + close];
-        if let Ok(label) = Label::parse(value, LabelShape::Attestation) {
-            let location = SourceLocation::new(
-                path,
-                source[..start].lines().count() + 1,
-                source[..start]
-                    .lines()
-                    .last()
-                    .map_or(1, |line| line.chars().count() + 1),
-            );
-            result.attestation_anchor_names.push(value.to_owned());
-            result.imports.push((
-                ImportedLabel {
-                    owner: LabelOwner::Attestation,
-                    label,
-                },
-                location,
-            ));
+    let mut fence: Option<(char, usize)> = None;
+    let mut in_index = false;
+    let mut index_location = SourceLocation::new(path, 1, 1);
+    let mut index_names: BTreeSet<String> = BTreeSet::new();
+    for (number, line) in source.lines().enumerate() {
+        if let Some((marker, length)) = fence {
+            if fence_close(line, marker, length) {
+                fence = None;
+            }
+            continue;
         }
-        offset = body + close + 1;
+        if let Some(open) = fence_open(line) {
+            fence = Some(open);
+            continue;
+        }
+        if line.starts_with("## ") {
+            // Matched on the locator mint form so a heading merely
+            // citing (`sec:anchors`) cannot open the index region.
+            in_index = line.contains(" · `sec:realization:anchors`");
+            if in_index {
+                index_location = SourceLocation::new(path, number + 1, 1);
+            }
+        }
+        let nonparticipating = nonparticipating_ranges(line);
+        let mut offset = 0;
+        while let Some(found) = line[offset..].find("[A-") {
+            let start = offset + found;
+            let body = start + "[A-".len();
+            let Some(close) = line[body..].find(']') else {
+                break;
+            };
+            let value = &line[body..body + close];
+            let example = nonparticipating
+                .iter()
+                .any(|(from, to)| start >= *from && start < *to);
+            if !example && let Ok(label) = Label::parse(value, LabelShape::Attestation) {
+                if in_index {
+                    index_names.insert(value.to_owned());
+                } else {
+                    result.attestation_anchor_names.push(value.to_owned());
+                    result.imports.push((
+                        ImportedLabel {
+                            owner: LabelOwner::Attestation,
+                            label,
+                        },
+                        SourceLocation::new(path, number + 1, line[..start].chars().count() + 1),
+                    ));
+                }
+            }
+            offset = body + close + 1;
+        }
     }
+    result.attestation_index_names = index_names;
+    result.attestation_index_location = Some(index_location);
 }
+
+/// Byte ranges of inline code spans with a delimiter run of two or
+/// more backticks on one line: nonparticipating example spans under
+/// ADR-013, excluded from the raw anchor scan.
+fn nonparticipating_ranges(line: &str) -> Vec<(usize, usize)> {
+    let bytes = line.as_bytes();
+    let mut ranges = Vec::new();
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        if bytes[cursor] != b'`' {
+            cursor += 1;
+            continue;
+        }
+        let start = cursor;
+        let length = backtick_run(bytes, cursor);
+        cursor += length;
+        let mut end = cursor;
+        while end < bytes.len() && !(bytes[end] == b'`' && backtick_run(bytes, end) == length) {
+            end += 1;
+        }
+        if end == bytes.len() {
+            break;
+        }
+        if length >= 2 {
+            ranges.push((start, end + length));
+        }
+        cursor = end + length;
+    }
+    ranges
+}
+
+fn backtick_run(bytes: &[u8], start: usize) -> usize {
+    bytes[start..]
+        .iter()
+        .take_while(|value| **value == b'`')
+        .count()
+}
+
 fn validate(result: &mut RepositoryLabels) {
     validate_references(result);
+    validate_attestation_index(result);
     validate_architecture_weld(result);
+}
+
+/// Weld the committed §17 upward-citation index to the body anchor
+/// set. Full-check only: the scoped derivations neither read nor
+/// write the index, and a stale index must not block regenerating
+/// registers or the model-label publication whose content does not
+/// depend on it.
+fn validate_attestation_index(result: &mut RepositoryLabels) {
+    let Some(location) = result.attestation_index_location.clone() else {
+        return;
+    };
+    let body_names: BTreeSet<String> = result.attestation_anchor_names.iter().cloned().collect();
+    if result.attestation_index_names != body_names {
+        result.diagnostics.push(LabelDiagnostic::error(
+            LabelErrorCode::AttestationIndexStale,
+            &location,
+            "the committed upward-citation index does not present exactly the body's attestation anchor set",
+        ));
+    }
 }
 fn validate_references(result: &mut RepositoryLabels) {
     for (label, location) in &result.realization_internal {
@@ -317,12 +573,56 @@ fn validate_references(result: &mut RepositoryLabels) {
             ));
         }
     }
+    for (label, location) in &result.model_internal {
+        if !result.registries.model.contains(label) {
+            result.diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::MissingMint,
+                location,
+                format!("unresolved model citation {label}"),
+            ));
+        }
+    }
+    for (label, location) in &result.plan_internal {
+        if !result.registries.plan.contains(label) {
+            result.diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::MissingMint,
+                location,
+                format!("unresolved planning citation {label}"),
+            ));
+        }
+    }
+    for (label, location) in &result.doc_internal {
+        if !result.registries.doc.contains(label) {
+            result.diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::MissingMint,
+                location,
+                format!("unresolved documentation citation {label}"),
+            ));
+        }
+    }
+    for (name, label, location) in &result.crate_internal {
+        let resolved = result
+            .registries
+            .crates
+            .get(name)
+            .is_some_and(|registry| registry.contains(label));
+        if !resolved {
+            result.diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::MissingMint,
+                location,
+                format!("unresolved {name} crate citation {label}"),
+            ));
+        }
+    }
     for (imported, location) in &result.imports {
         let registry = match imported.owner {
             LabelOwner::Attestation => Some(&result.registries.attestation),
             LabelOwner::Realization => Some(&result.registries.realization),
             LabelOwner::Adr(number) => result.registries.adrs.get(&number),
             LabelOwner::Model => Some(&result.registries.model),
+            LabelOwner::Plan => Some(&result.registries.plan),
+            LabelOwner::Doc => Some(&result.registries.doc),
+            LabelOwner::Crate(ref name) => result.registries.crates.get(name),
         };
         match registry {
             None => result.diagnostics.push(LabelDiagnostic::error(
@@ -387,21 +687,41 @@ fn square(value: &str) -> Option<&str> {
 fn looks_imported(value: &str) -> bool {
     ImportedLabel::parse(value).is_ok()
 }
-fn files(root: &Path) -> Vec<PathBuf> {
+fn files(
+    repository_root: &Path,
+    root: &Path,
+    diagnostics: &mut Vec<LabelDiagnostic>,
+) -> Vec<PathBuf> {
     let mut output = Vec::new();
-    walk(root, &mut output);
+    walk(repository_root, root, &mut output, diagnostics);
     output.sort();
     output
 }
-fn walk(root: &Path, output: &mut Vec<PathBuf>) {
-    if let Ok(entries) = fs::read_dir(root) {
-        for entry in entries.filter_map(Result::ok) {
-            let path = entry.path();
-            if path.is_dir() {
-                walk(&path, output);
-            } else if path.extension().is_some_and(|extension| extension == "md") {
-                output.push(path);
-            }
+fn walk(
+    repository_root: &Path,
+    root: &Path,
+    output: &mut Vec<PathBuf>,
+    diagnostics: &mut Vec<LabelDiagnostic>,
+) {
+    let entries = match fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(error) => {
+            // An unreadable tree must fail the census, not silently
+            // become an empty one.
+            diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::Io,
+                &SourceLocation::new(relative_to(repository_root, root), 1, 1),
+                format!("cannot traverse documentation sources: {error}"),
+            ));
+            return;
+        }
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if path.is_dir() {
+            walk(repository_root, &path, output, diagnostics);
+        } else if path.extension().is_some_and(|extension| extension == "md") {
+            output.push(path);
         }
     }
 }
@@ -428,11 +748,17 @@ impl GenerateError {
         }
     }
 }
+/// Generate the specification and realization registers from their owning
+/// upstream sources only.
+///
+/// An unrelated planning or ADR defect must not block regenerating an
+/// upstream register (ADR-013 scoped-derivation rule);
+/// `check_repository` remains the full repository-wide gate.
 pub fn generate_registers(
     paths: &RepositoryPaths,
     output_root: &Path,
 ) -> Result<Vec<GeneratedRegister>, GenerateError> {
-    let labels = RepositoryLabels::harvest_sources(paths);
+    let labels = derive_model_sources(paths);
     if labels.has_errors() {
         return Err(GenerateError::Validation(labels.diagnostics));
     }
@@ -471,6 +797,16 @@ fn derive_model_sources(paths: &RepositoryPaths) -> RepositoryLabels {
     result.diagnostics.extend(diagnostics);
     harvest_realization(paths, &mut result);
     add_model(harvest_model(paths), &mut result);
+    // Imports naming owners outside this scope are validated by
+    // check_repository; validating them here against registries that
+    // were never harvested would fail the scoped derivation on a
+    // defect in an unrelated owner.
+    result.imports.retain(|(imported, _)| {
+        matches!(
+            imported.owner,
+            LabelOwner::Attestation | LabelOwner::Realization | LabelOwner::Model
+        )
+    });
     validate_references(&mut result);
     sort_diagnostics(&mut result.diagnostics);
     result

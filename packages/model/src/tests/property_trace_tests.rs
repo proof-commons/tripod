@@ -2,8 +2,8 @@
 //! global invariant, and generated burns exercise the full burn
 //! parameter space.
 //!
-//! Implements `´test:verification:property-traces´` and
-//! `´test:verification:property-burn-variability´`.
+//! Implements `(´test:verification:property-traces´)` and
+//! `(´test:verification:property-burn-variability´)`.
 
 use super::property_strategy::*;
 use super::test_fixtures;

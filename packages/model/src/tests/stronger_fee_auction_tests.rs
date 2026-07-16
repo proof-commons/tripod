@@ -1,7 +1,7 @@
 //! Contended-STATE fixture and stronger fee-auction tests.
 //!
-//! Implements `´test:verification:contended-state-fixture´` and
-//! `´test:verification:native-fee-auction-two-valid´`.
+//! Implements `(´test:verification:contended-state-fixture´)` and
+//! `(´test:verification:native-fee-auction-two-valid´)`.
 //!
 //! The fixture creates: admitted escrow Q > 0 (making cycle useful);
 //! another unadmitted request (making admission useful); and a

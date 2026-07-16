@@ -1,7 +1,7 @@
 //! Guard and invariant errors.
 //!
-//! Implements `´def:verification:guard´` and
-//! `´def:verification:invariant-error´`.
+//! Implements `(´def:verification:guard´)` and
+//! `(´def:verification:invariant-error´)`.
 
 // One declaration produces the enum, `ALL`, and `name()`, so no
 // hand-maintained variant list can silently omit a new variant.

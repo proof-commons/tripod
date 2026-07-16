@@ -1,6 +1,6 @@
 //! Property-seed strategies for the trace and maintenance suites.
 //!
-//! Implements `´test:verification:property-seed-strategy´`.
+//! Implements `(´test:verification:property-seed-strategy´)`.
 //!
 //! Amounts are full-width `u64` values biased toward useful small
 //! amounts and critical boundaries, so Proptest can shrink cleanly

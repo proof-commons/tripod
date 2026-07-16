@@ -1,7 +1,7 @@
 //! UTXO metadata, objects, and domain-separated data outputs.
 //!
-//! Implements `´def:objects:metadata´`, `´def:verification:utxo´`,
-//! `´def:objects:destruction-tags´`, and `´def:verification:data-output´`.
+//! Implements `(´def:objects:metadata´)`, `(´def:verification:utxo´)`,
+//! `(´def:objects:destruction-tags´)`, and `(´def:verification:data-output´)`.
 
 use crate::asset::{Asset, ReceiptClass};
 use crate::pool::PoolState;

@@ -1,8 +1,8 @@
 //! Property tests for exact canonical-flow witness faults (kernel
 //! structural).
 //!
-//! Implements `´test:verification:property-canonical-flow-faults´` and
-//! `´test:verification:kernel-structural-validity´`.
+//! Implements `(´test:verification:property-canonical-flow-faults´)` and
+//! `(´test:verification:kernel-structural-validity´)`.
 //!
 //! Each fault kind builds its malformed transaction in a dedicated
 //! helper rather than continuing after a declaration error, so the

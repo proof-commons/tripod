@@ -193,8 +193,8 @@ The control is the natural transaction coordinator.
 
 | Mint | Candidate | Strength | Main risk |
 |---|---|---|---|
-| `candidate:settlement:global-control` | Control verifies complete batch and outputs | Strong global completeness | Large control program and stack |
-| `candidate:settlement:distributed` | Entitlements verify local floors/routing; control verifies aggregates | Distributes arithmetic | Cross-input consistency and uniqueness |
+| (`candidate:settlement:global-control`) | Control verifies complete batch and outputs | Strong global completeness | Large control program and stack |
+| (`candidate:settlement:distributed`) | Entitlements verify local floors/routing; control verifies aggregates | Distributes arithmetic | Cross-input consistency and uniqueness |
 | `candidate:settlement:per-entitlement-outputs` | Positive outputs in entitlement order; no aggregation | Direct mapping | Variable output ranks |
 | `candidate:settlement:owner-aggregation` | Aggregate after floors by owner/class | Fewer outputs | Loopless grouping and uniqueness |
 | `candidate:settlement:provenance-metadata` | Receipt output carries entitlement provenance | Easier mapping | May alter semantic object schema |

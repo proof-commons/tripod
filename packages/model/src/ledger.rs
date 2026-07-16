@@ -1,23 +1,23 @@
 //! Exact attestation indexer, canonical serializer, and exact rational
 //! reduction.
 //!
-//! Implements `´def:ledgers:burn-transaction´`,
-//! `´def:ledgers:clear-entry´`, `´def:ledgers:attestation-context´`,
-//! `´def:ledgers:attestation-term´`,
-//! `´def:ledgers:attestation-query-result´`,
-//! `´def:verification:reference-indexer´`,
-//! `´rule:ledgers:sample-clear´`, `´rule:ledgers:group-credit´`,
-//! `´rule:ledgers:query-attestation´`, `´def:ledgers:exact-rational´`,
-//! `´rule:ledgers:reduce-attestation´`,
-//! `´rule:ledgers:canonical-biguint´`, `´rule:ledgers:canonical-varint´`,
-//! `´rule:ledgers:canonical-attestation-serialization´`,
-//! `´def:ledgers:decode-error´`, `´rule:ledgers:decode-varint´`,
-//! `´rule:ledgers:decode-biguint´`,
-//! `´rule:ledgers:decode-attestation-query´`,
-//! `´def:verification:canonical-block´`,
-//! `´def:verification:validated-chain-view´`,
-//! `´def:verification:indexer-checkpoint´`, and
-//! `´rule:verification:indexer-reproject´`.
+//! Implements `(´def:ledgers:burn-transaction´)`,
+//! `(´def:ledgers:clear-entry´)`, `(´def:ledgers:attestation-context´)`,
+//! `(´def:ledgers:attestation-term´)`,
+//! `(´def:ledgers:attestation-query-result´)`,
+//! `(´def:verification:reference-indexer´)`,
+//! `(´rule:ledgers:sample-clear´)`, `(´rule:ledgers:group-credit´)`,
+//! `(´rule:ledgers:query-attestation´)`, `(´def:ledgers:exact-rational´)`,
+//! `(´rule:ledgers:reduce-attestation´)`,
+//! `(´rule:ledgers:canonical-biguint´)`, `(´rule:ledgers:canonical-varint´)`,
+//! `(´rule:ledgers:canonical-attestation-serialization´)`,
+//! `(´def:ledgers:decode-error´)`, `(´rule:ledgers:decode-varint´)`,
+//! `(´rule:ledgers:decode-biguint´)`,
+//! `(´rule:ledgers:decode-attestation-query´)`,
+//! `(´def:verification:canonical-block´)`,
+//! `(´def:verification:validated-chain-view´)`,
+//! `(´def:verification:indexer-checkpoint´)`, and
+//! `(´rule:verification:indexer-reproject´)`.
 //!
 //! The raw burn log stores no sampled clear identifier. Clear
 //! assignment is derived here relative to one canonical history. The
@@ -274,13 +274,40 @@ fn validate_burn_records(records: &[BurnRecord]) -> Result<(), Guard> {
     Ok(())
 }
 
+/// Validate one burn payload against the facts every kernel-derived
+/// burn guarantees: positive fresh ASH, kernel-shaped records, and a
+/// record sum inside the `Sat` domain (so `records_accepted` cannot
+/// fail at query time on an already-accepted payload).
+///
+/// Over-claiming (`Σ records > ash_value`) stays valid here: the
+/// attestation gate is a credit verdict derived per query, not burn
+/// provenance, so only arithmetic-domain failure rejects.
+fn validate_burn_payload(ash_value: Sat, records: &[BurnRecord]) -> Result<(), Guard> {
+    if ash_value.is_zero() {
+        return Err(Guard::Domain);
+    }
+
+    validate_burn_records(records)?;
+
+    Sat::checked_sum(records.iter().map(|record| record.amount))?;
+
+    Ok(())
+}
+
 /// A clear used for attestation is operational: genesis has E₀ > 0,
 /// clear refuses a sealed state and leaves Y >= 1, and 𝗜₃ gives
 /// Ω >= Y, so zero `omega` or zero `y` cannot correspond to a valid
 /// clearing (the wire-level `validate_query` applies the same rule to
 /// serialized terms).
 fn validate_clear_payload(clear: &ClearEntry) -> Result<(), Guard> {
-    if clear.omega.is_zero() || clear.y.is_zero() {
+    validate_clear_values(clear.omega, clear.y)
+}
+
+/// By-value form serving both a stored [`ClearEntry`] and a raw
+/// [`crate::history::ClearProjection`], so the operational-clear rule
+/// has exactly one home.
+fn validate_clear_values(omega: Sat, y: Sat) -> Result<(), Guard> {
+    if omega.is_zero() || y.is_zero() {
         return Err(Guard::Domain);
     }
 
@@ -312,7 +339,7 @@ fn validate_checkpoint_semantics(
     }
 
     for burn in burns.values() {
-        validate_burn_records(&burn.records)?;
+        validate_burn_payload(burn.ash_value, &burn.records)?;
     }
 
     for clear in clears.values() {
@@ -802,14 +829,15 @@ impl ReferenceIndexer {
                 return Err(Guard::WrongShape);
             }
 
+            // Applied here so forged payloads after the checkpoint are
+            // also rejected; the indexed prefix is re-validated as a
+            // whole by `validate_checkpoint_semantics` below.
             if let Some(burn) = &certificate.burn {
-                validate_burn_records(&burn.records)?;
+                validate_burn_payload(burn.ash_value, &burn.records)?;
             }
 
-            if let Some(clear) = &certificate.clear
-                && (clear.omega.is_zero() || clear.y.is_zero())
-            {
-                return Err(Guard::Domain);
+            if let Some(clear) = &certificate.clear {
+                validate_clear_values(clear.omega, clear.y)?;
             }
 
             // The ReferenceIndexer is bound to one prefix. Events
@@ -869,6 +897,19 @@ impl ReferenceIndexer {
         }
 
         validate_event_index(&indexer.burns, &indexer.clears, &indexer.events)?;
+
+        // The loop above validates transition payloads, but the genesis
+        // clear is inserted from the publicly constructible `History`
+        // without passing through it: the shared semantic validator
+        // closes that gap (zero genesis omega/y fails here, not at
+        // query time) and keeps every non-test construction path on
+        // the same constructor invariant as checkpoint reconstruction.
+        validate_checkpoint_semantics(
+            &indexer.context,
+            &indexer.burns,
+            &indexer.clears,
+            &indexer.events,
+        )?;
 
         Ok(indexer)
     }

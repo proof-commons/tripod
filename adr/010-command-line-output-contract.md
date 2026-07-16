@@ -185,9 +185,12 @@ diagnostics. Controlled emission remains centralized in `cli-common`.
 A diagnostic must not be treated as result data merely because it is useful to
 a human reader.
 
-## Redaction · `rule:output:redaction`
+## Diagnostic data classification · `rule:output:data-classification`
 
-Commands must not emit raw:
+Diagnostic safety is field-based. The command-line infrastructure does not
+claim to discover every secret embedded in arbitrary free-form text.
+
+Fields explicitly classified as secret-bearing are never emitted:
 
 - credentials;
 - private keys;
@@ -195,20 +198,50 @@ Commands must not emit raw:
 - API keys;
 - passwords;
 - session secrets;
-- credential-bearing URLs;
 - secret witness material;
-- production blinding data.
+- production blinding data;
+- raw child argv.
 
-Structured diagnostics should prefer known-safe typed fields.
+Structured diagnostics prefer known-safe typed fields. Known URL fields use
+the shared URL redactor.
 
-Untrusted free-form text must pass through the shared redaction helpers before
-emission.
+The shared free-form redaction helpers are best-effort presentation tools,
+not a completeness guarantee. No emission path may rely on them as a security
+boundary; safety comes from omitting classified fields.
 
-Child argv is not logged. Program identity and argument count may be logged
+Raw child argv is a prohibited field class. It is not made safe by debug mode
+or by heuristic redaction. Program identity and argument count may be logged
 when safe.
 
-Redaction is a call-site and shared-infrastructure obligation. A JSON envelope
-does not make unsafe text safe.
+## Early startup · `rule:output:early-startup`
+
+Early startup ends after arguments are parsed, the `--debug` state is
+recorded, and JSON tracing is initialized.
+
+Before that boundary, executables do not perform general secret sweeping.
+Early records contain only static text and known-safe typed metadata, and
+omit wholesale:
+
+- raw argv and offending argument values;
+- environment values;
+- panic payloads;
+- every field classified in (`rule:output:data-classification`).
+
+Help and version text generated from the static command definition may be
+emitted verbatim. A usage record reports the command, the clap error class,
+and one fixed generic message. It does not reproduce argument values.
+
+## Debug diagnostics · `rule:output:debug-disclosure`
+
+Parsed `--debug` enables documented free-form diagnostic detail, including
+string panic payloads.
+
+Debug output may contain application-provided free-form text. The
+infrastructure does not promise to detect secrets embedded in that text, so
+operators must treat debug output as sensitive.
+
+Fields classified as secret-bearing and raw child argv remain prohibited in
+debug mode.
 
 ## Panics · `rule:output:panics`
 
@@ -223,9 +256,8 @@ The hook:
 - omits the panic payload unless parsed `--debug` explicitly enabled it.
 
 Payload reporting begins disabled. A panic before argument parsing therefore
-fails closed.
-
-Panic payloads remain subject to secret-handling rules even in debug mode.
+fails closed under (`rule:output:early-startup`). After parsing, payload
+disclosure follows (`rule:output:debug-disclosure`).
 
 ## Shared implementation · `rule:output:implementation`
 
@@ -276,6 +308,16 @@ must opt into a consumer such as `jq`.
 
 Rejected because payloads may contain secrets.
 
+### Heuristic secret sweeping as a security boundary
+
+Rejected because a free-form scanner cannot recognize every secret shape.
+Safety comes from omitting classified fields, not from rewriting text.
+
+### Echoing offending argv in usage errors
+
+Rejected because an unknown argument may embed an inline secret, and early
+startup performs no sweeping.
+
 ### Per-command exit conventions
 
 Rejected because shared automation needs stable branch classes.
@@ -292,7 +334,8 @@ The contract is implemented when:
 - side-effect commands write only explicit assets;
 - panic output is JSON-only;
 - panic payloads default to hidden;
-- child argv and credential URLs do not leak;
+- usage records carry no argument values;
+- child argv never appears in wrapper diagnostics;
 - stderr records do not interleave;
 - subprocess tests cover each shipped executable;
 - Clippy denies uncontrolled stdout/stderr printing and process exit outside

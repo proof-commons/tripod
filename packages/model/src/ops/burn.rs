@@ -1,6 +1,6 @@
 //! Burn.
 //!
-//! Implements `´branch:operations:burn´`.
+//! Implements `(´branch:operations:burn´)`.
 //!
 //! The kernel derives a `BurnProjection` only if:
 //!

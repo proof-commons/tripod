@@ -1,6 +1,6 @@
 //! Pool state.
 //!
-//! Implements `´def:state:pool-state´`.
+//! Implements `(´def:state:pool-state´)`.
 
 use crate::asset::Maturity;
 use crate::guard::Guard;

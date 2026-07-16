@@ -1,21 +1,21 @@
 //! Invariant checker over \((\Gamma, H)\).
 //!
-//! Implements `´def:verification:accounting-folds´`,
-//! `´rule:verification:derive-residue-history´`,
-//! `´rule:verification:root-exactness´`,
-//! `´rule:verification:state-projection-fold´`,
-//! `´def:verification:replayed-roots´`,
-//! `´rule:verification:certificate-set-integrity´`,
-//! `´rule:verification:root-edge-membership´`,
-//! `´rule:verification:replay-nonterminating-root´`,
-//! `´rule:verification:replay-resv-root´`,
-//! `´rule:verification:full-root-history-replay´`,
-//! `´rule:verification:replayed-root-cursor-match´`,
-//! `´rule:verification:distribution-bijection´`,
-//! `´rule:verification:entitlement-lifecycle-check´`,
-//! `´rule:verification:receipt-accounting-check´`,
-//! `´rule:verification:maturity-coherence´`, and
-//! `´def:verification:invariant-checker´`.
+//! Implements `(´def:verification:accounting-folds´)`,
+//! `(´rule:verification:derive-residue-history´)`,
+//! `(´rule:verification:root-exactness´)`,
+//! `(´rule:verification:state-projection-fold´)`,
+//! `(´def:verification:replayed-roots´)`,
+//! `(´rule:verification:certificate-set-integrity´)`,
+//! `(´rule:verification:root-edge-membership´)`,
+//! `(´rule:verification:replay-nonterminating-root´)`,
+//! `(´rule:verification:replay-resv-root´)`,
+//! `(´rule:verification:full-root-history-replay´)`,
+//! `(´rule:verification:replayed-root-cursor-match´)`,
+//! `(´rule:verification:distribution-bijection´)`,
+//! `(´rule:verification:entitlement-lifecycle-check´)`,
+//! `(´rule:verification:receipt-accounting-check´)`,
+//! `(´rule:verification:maturity-coherence´)`, and
+//! `(´def:verification:invariant-checker´)`.
 //!
 //! History is audit-only. No branch reads the historical residue
 //! values derived here.

@@ -14,27 +14,27 @@
 //! crate-private; the public normative transition surface is the
 //! operation-constructor set plus [`crate::transition::execute`].
 //!
-//! Implements `´def:verification:output-reference´`,
-//! `´def:verification:destruction-leg´`,
-//! `´def:verification:canonical-flow´`,
-//! `´def:verification:issuance-route´`,
-//! `´def:verification:destruction´`,
-//! `´def:verification:transition-builder´`,
-//! `´rule:verification:transition-builder-constructor´`,
-//! `´rule:verification:declare-issuance´`,
-//! `´rule:verification:declare-canonical-flow´`,
-//! `´rule:verification:apply-fee-envelope´`,
-//! `´rule:verification:asset-delta´`,
-//! `´def:verification:commit-result´`,
-//! `´rule:verification:atomic-commit-pipeline´`,
-//! `´rule:verification:canonical-witness-partition´`,
-//! `´rule:verification:flow-destructions´`,
-//! `´rule:verification:root-input-policy´`,
-//! `´rule:verification:closed-asset-conservation´`,
-//! `´rule:verification:issuance-authority´`,
-//! `´rule:verification:open-asset-conservation´`,
-//! `´rule:verification:root-cursor-update´`, and
-//! `´rule:verification:distinct-outpoints´`.
+//! Implements `(´def:verification:output-reference´)`,
+//! `(´def:verification:destruction-leg´)`,
+//! `(´def:verification:canonical-flow´)`,
+//! `(´def:verification:issuance-route´)`,
+//! `(´def:verification:destruction´)`,
+//! `(´def:verification:transition-builder´)`,
+//! `(´rule:verification:transition-builder-constructor´)`,
+//! `(´rule:verification:declare-issuance´)`,
+//! `(´rule:verification:declare-canonical-flow´)`,
+//! `(´rule:verification:apply-fee-envelope´)`,
+//! `(´rule:verification:asset-delta´)`,
+//! `(´def:verification:commit-result´)`,
+//! `(´rule:verification:atomic-commit-pipeline´)`,
+//! `(´rule:verification:canonical-witness-partition´)`,
+//! `(´rule:verification:flow-destructions´)`,
+//! `(´rule:verification:root-input-policy´)`,
+//! `(´rule:verification:closed-asset-conservation´)`,
+//! `(´rule:verification:issuance-authority´)`,
+//! `(´rule:verification:open-asset-conservation´)`,
+//! `(´rule:verification:root-cursor-update´)`, and
+//! `(´rule:verification:distinct-outpoints´)`.
 //!
 //! Aggregate canonical-asset conservation is insufficient if the same
 //! input or output can be cited by more than one witness declaration.

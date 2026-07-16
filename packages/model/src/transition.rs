@@ -1,6 +1,6 @@
 //! Atomic transition API.
 //!
-//! Implements `´rule:verification:pure-transition´`.
+//! Implements `(´rule:verification:pure-transition´)`.
 //!
 //! [`execute`] is the normative public state-transition entry point:
 //! it applies a declared operation and re-checks the global invariant

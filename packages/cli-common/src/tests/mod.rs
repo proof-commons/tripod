@@ -33,7 +33,7 @@
 //! | `unparseable_url_ish_token_fails_closed` | Unparseable `://` tokens become `[redacted]`.  |
 //! | `keeps_non_sensitive_key_value_tokens` | Safe key=value tokens survive untouched.         |
 //! | `redacts_runner_style_error_display`   | Runner-shaped error text loses credential URLs.  |
-//! | `usage_error_text_never_reproduces_secrets` | Clap echo of secret argv is sanitized.      |
+//! | `usage_error_text_never_reproduces_secrets` | Usage records omit argument values.         |
 //! | `keeps_public_key_fields_visible`      | Public key metadata is not treated as secret.    |
 //!
 //! `refuse_if_stdout_is_tty` and `init_json_tracing` mutate
@@ -225,7 +225,7 @@ fn json_line_writer_appends_newline() {
 
 #[test]
 fn usage_error_record_carries_fields() {
-    let record = ControlPlaneRecord::usage_error("fixture", "unknown argument", "unknown_argument");
+    let record = ControlPlaneRecord::usage_error("fixture", "unknown_argument");
 
     assert_eq!(record.kind, ControlPlaneRecordKind::UsageError);
     assert_eq!(
@@ -360,7 +360,7 @@ fn parse_args_from_returns_usage_record() {
     assert_eq!(exit.exit, CommandExit::Usage);
     assert_eq!(exit.record.command, "fixture-helper");
     assert_eq!(exit.record.kind, ControlPlaneRecordKind::UsageError);
-    assert!(exit.record.message.contains("--no-such-flag"));
+    assert_eq!(exit.record.message, "invalid command-line arguments");
 
     let Some(ControlPlaneFields::UsageError {
         exit_code,

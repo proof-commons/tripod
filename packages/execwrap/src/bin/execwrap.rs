@@ -96,13 +96,12 @@ fn main() -> ExitCode {
     };
 
     // Conflicting routing for one path is an invalid argument
-    // combination: usage class 2, before any side effect.
-    if let Err(error @ ExecError::AmbiguousRedirection { .. }) = preflight_routing(&cfg) {
-        let record = cli_common::ControlPlaneRecord::usage_error(
-            COMMAND_NAME,
-            &error.to_string(),
-            "ambiguous_redirection",
-        );
+    // combination: usage class 2, before any side effect. The
+    // conflicting path is an argument value and stays out of the
+    // record; the fixed usage message comes from the constructor.
+    if let Err(ExecError::AmbiguousRedirection { .. }) = preflight_routing(&cfg) {
+        let record =
+            cli_common::ControlPlaneRecord::usage_error(COMMAND_NAME, "ambiguous_redirection");
         let _ignored = emit_control_plane_record(&record);
         return CommandExit::Usage.exit_code();
     }

@@ -1,7 +1,7 @@
 //! Exact canonical-flow fault tests (kernel structural).
 //!
 //! Implements `´test:verification:canonical-flow-faults´` and
-//! `´test:verification:kernel-structural-validity´`.
+//! `(´test:verification:kernel-structural-validity´)`.
 
 use super::scenario_fixtures::*;
 use super::test_fixtures;

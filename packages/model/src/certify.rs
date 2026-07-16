@@ -1,19 +1,19 @@
 //! Transition-certificate derivation.
 //!
-//! Implements `´rule:verification:root-shape´`,
-//! `´rule:verification:created-output-selectors´`,
-//! `´rule:verification:derive-simple-root-edge´`,
-//! `´rule:verification:derive-state-edge´`,
-//! `´rule:verification:derive-resv-edge´`,
-//! `´rule:verification:derive-authority-edges´`,
-//! `´rule:verification:resolve-output-refs´`,
-//! `´rule:verification:collect-created-outputs´`,
-//! `´rule:verification:derive-canonical-deltas´`,
-//! `´rule:verification:derive-burn-projection´`,
-//! `´rule:verification:derive-clear-projection´`,
-//! `´rule:verification:derive-distribution-residue´`,
-//! `´rule:verification:derive-transition-certificate´`, and
-//! `´rule:verification:data-output-validation´`.
+//! Implements `(´rule:verification:root-shape´)`,
+//! `(´rule:verification:created-output-selectors´)`,
+//! `(´rule:verification:derive-simple-root-edge´)`,
+//! `(´rule:verification:derive-state-edge´)`,
+//! `(´rule:verification:derive-resv-edge´)`,
+//! `(´rule:verification:derive-authority-edges´)`,
+//! `(´rule:verification:resolve-output-refs´)`,
+//! `(´rule:verification:collect-created-outputs´)`,
+//! `(´rule:verification:derive-canonical-deltas´)`,
+//! `(´rule:verification:derive-burn-projection´)`,
+//! `(´rule:verification:derive-clear-projection´)`,
+//! `(´rule:verification:derive-distribution-residue´)`,
+//! `(´rule:verification:derive-transition-certificate´)`, and
+//! `(´rule:verification:data-output-validation´)`.
 //!
 //! Branches construct consumed inputs and outputs. The generic kernel
 //! derives certificates and event projections. Branches do not author

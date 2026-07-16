@@ -1,6 +1,6 @@
 //! Receipt transfer.
 //!
-//! Implements `´protocol:operations:transfer´`.
+//! Implements `(´protocol:operations:transfer´)`.
 //!
 //! Every required owner authorizes the complete modeled output set.
 //! Exact sighash bytes remain a compiler/deployment concern.

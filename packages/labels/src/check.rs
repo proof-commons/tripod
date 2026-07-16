@@ -10,7 +10,7 @@ use crate::{
     source::{SourceLocation, relative_to},
 };
 
-pub const CHECK_REPORT_SCHEMA: u32 = 1;
+pub const CHECK_REPORT_SCHEMA: u32 = 3;
 #[derive(Debug, Serialize)]
 pub struct CheckReport {
     pub schema: u32,
@@ -18,6 +18,9 @@ pub struct CheckReport {
     pub realization_labels: usize,
     pub adr_labels: usize,
     pub model_labels: usize,
+    pub planning_labels: usize,
+    pub doc_labels: usize,
+    pub crate_labels: usize,
     pub imported_citations: usize,
     pub valid: bool,
 }
@@ -56,6 +59,14 @@ pub fn check_repository(paths: &RepositoryPaths) -> (CheckReport, Vec<LabelDiagn
             .map(crate::registry::LabelRegistry::len)
             .sum(),
         model_labels: labels.registries.model.len(),
+        planning_labels: labels.registries.plan.len(),
+        doc_labels: labels.registries.doc.len(),
+        crate_labels: labels
+            .registries
+            .crates
+            .values()
+            .map(crate::registry::LabelRegistry::len)
+            .sum(),
         imported_citations: labels.imported_citation_count(),
         valid,
     };

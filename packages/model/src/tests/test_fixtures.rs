@@ -1,6 +1,6 @@
 //! Test fixtures.
 //!
-//! Implements `´test:verification:fixtures´`.
+//! Implements `(´test:verification:fixtures´)`.
 
 use crate::*;
 

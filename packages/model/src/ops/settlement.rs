@@ -1,6 +1,6 @@
 //! Distribution settlement.
 //!
-//! Implements `´branch:operations:settle-distribution´`.
+//! Implements `(´branch:operations:settle-distribution´)`.
 //!
 //! Settlement always emits the distribution's original receipt classes.
 //! It never reads current maturity state.

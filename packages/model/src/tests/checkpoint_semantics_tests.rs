@@ -182,6 +182,76 @@ fn zero_amount_burn_record_checkpoint_is_rejected() {
     assert_eq!(ReferenceIndexer::try_from(checkpoint), Err(Guard::Domain),);
 }
 
+#[test]
+fn zero_ash_value_burn_checkpoint_is_rejected() {
+    // BurnReceipts and the derived projection require positive fresh
+    // ASH, so a zero-ASH burn payload is kernel-impossible.
+    let mut checkpoint = burned_indexer().checkpoint();
+
+    let burn_txid = *checkpoint.burns.keys().next().unwrap();
+
+    checkpoint.burns.get_mut(&burn_txid).unwrap().ash_value = Sat::ZERO;
+
+    assert_eq!(ReferenceIndexer::try_from(checkpoint), Err(Guard::Domain),);
+}
+
+#[test]
+fn burn_record_sum_outside_sat_domain_checkpoint_is_rejected() {
+    // Each record amount is a valid Sat, but their sum leaves the Sat
+    // domain: without ingestion rejection, `records_accepted` would
+    // fail at query time on a successfully reconstructed indexer.
+    let mut checkpoint = burned_indexer().checkpoint();
+
+    let burn_txid = *checkpoint.burns.keys().next().unwrap();
+
+    checkpoint.burns.get_mut(&burn_txid).unwrap().records = vec![
+        BurnRecord {
+            record_index: 0,
+            address: ADDRESS_A,
+            amount: sat(2_000_000_000_000_000),
+        },
+        BurnRecord {
+            record_index: 1,
+            address: ADDRESS_A,
+            amount: sat(2_000_000_000_000_000),
+        },
+    ];
+
+    assert_eq!(ReferenceIndexer::try_from(checkpoint), Err(Guard::Domain),);
+}
+
+#[test]
+fn overclaimed_burn_checkpoint_reconstructs() {
+    // Σ records > ash_value is a credit verdict, not burn provenance:
+    // ingestion accepts the payload and the query pays no credit.
+    let mut checkpoint = burned_indexer().checkpoint();
+
+    let burn_txid = *checkpoint.burns.keys().next().unwrap();
+
+    checkpoint.burns.get_mut(&burn_txid).unwrap().ash_value = Sat::ONE;
+
+    let indexer = ReferenceIndexer::try_from(checkpoint).unwrap();
+
+    let query = indexer.query(ADDRESS_A).unwrap();
+
+    assert_eq!(query.terms, [] as [ledger::AttestationTerm; 0]);
+}
+
+#[test]
+fn underclaimed_burn_checkpoint_reconstructs() {
+    let mut checkpoint = burned_indexer().checkpoint();
+
+    let burn_txid = *checkpoint.burns.keys().next().unwrap();
+
+    checkpoint.burns.get_mut(&burn_txid).unwrap().records[0].amount = Sat::ONE;
+
+    let indexer = ReferenceIndexer::try_from(checkpoint).unwrap();
+
+    let query = indexer.query(ADDRESS_A).unwrap();
+
+    assert_eq!(query.terms.len(), 1);
+}
+
 // Wire-level context identity: a fabricated query with placeholder
 // network or genesis identity must fail validation, serialization,
 // and deserialization even when its schema and architecture hash are
@@ -349,6 +419,46 @@ fn forged_history_zero_clear_omega_is_rejected() {
         .as_mut()
         .unwrap()
         .omega = Sat::ZERO;
+
+    assert_eq!(from_forged_history(&world), Err(Guard::Domain));
+}
+
+// The genesis projection is inserted from the publicly constructible
+// history without passing through the transition loop, so it is
+// covered only by the shared semantic validator at the end of
+// `from_history`.
+
+#[test]
+fn forged_history_zero_genesis_omega_is_rejected() {
+    let mut world = burned_world();
+
+    world.history.genesis.omega = Sat::ZERO;
+
+    assert_eq!(from_forged_history(&world), Err(Guard::Domain));
+}
+
+#[test]
+fn forged_history_zero_genesis_y_is_rejected() {
+    let mut world = burned_world();
+
+    world.history.genesis.y = Sat::ZERO;
+
+    assert_eq!(from_forged_history(&world), Err(Guard::Domain));
+}
+
+#[test]
+fn forged_history_zero_ash_value_burn_is_rejected() {
+    let mut world = burned_world();
+
+    world
+        .history
+        .transitions
+        .last_mut()
+        .unwrap()
+        .burn
+        .as_mut()
+        .unwrap()
+        .ash_value = Sat::ZERO;
 
     assert_eq!(from_forged_history(&world), Err(Guard::Domain));
 }

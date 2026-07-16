@@ -25,7 +25,8 @@ repository itself.
 |---|---|---|
 | [ADR-010](010-command-line-output-contract.md) | Decided and implemented | First-party command-line streams, diagnostics, and exit classes. |
 | [ADR-011](011-toolchain-and-dependency-policy.md) | Decided and implemented | Rust, dependency, locking, unsafe-code, target-compatibility, and reproducibility policy. |
-| [ADR-012](012-documentation-labels.md) | Decided; implementation pending | Documentation labels, citation layers, registers, and lint boundaries. |
+| [ADR-012](012-documentation-labels.md) | Implemented; superseded in part by ADR-013 | Documentation labels, citation layers, registers, and lint boundaries. |
+| [ADR-013](013-global-label-graph.md) | Decided and implemented | Owner-aware global label graph across Markdown and Rust sources. |
 
 ## Numbering · `rule:adr:numbering`
 
@@ -37,14 +38,16 @@ for density.
 
 ## Labels · `rule:adr:labels`
 
-ADRs mint labels under (`[ADR012-rule:labels:mint]`).
+Each numbered ADR is an independent label owner under
+(`[ADR013-rule:labels:adr-owners]`); mint discipline follows
+(`[ADR012-rule:labels:mint]`).
 
 A plan citing an ADR label uses the ADR owner prefix, for example:
 
 ```text
 (`[ADR010-rule:output:streams]`)
 (`[ADR011-rule:toolchain:locked]`)
-(`[ADR012-rule:labels:external-citation]`)
+(`[ADR013-rule:labels:owner-relative]`)
 ```
 
 ADR labels are policy-owned upstream labels and are linted when imported.

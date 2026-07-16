@@ -1,7 +1,7 @@
 //! Typed architecture-conformance contract.
 //!
-//! Implements `´rule:verification:no-accumulator-manifest´` and
-//! `´test:verification:no-accumulator-branches´` (world check) against
+//! Implements `(´rule:verification:no-accumulator-manifest´)` and
+//! `(´test:verification:no-accumulator-branches´)` (world check) against
 //! the typed manifest in `tripod-architecture`.
 //!
 //! The normative architecture is the typed Rust declaration in the
