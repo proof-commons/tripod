@@ -31,3 +31,14 @@ Cargo.lock
 *.swp
 *.swo
 *~
+
+# Data blobs: JSON and zip archives are ignored by default; every JSON
+# the repository keeps is an explicit exception below.
+*.json
+*.zip
+
+# Generated artifacts owned by tripod-artifacts (checked by
+# check-generated; regenerated only by generate-all).
+!packages/model/generated/architecture.json
+!packages/model/generated/declassification.json
+!packages/model/generated/model_labels.json
