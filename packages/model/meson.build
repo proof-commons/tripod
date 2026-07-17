@@ -1,7 +1,7 @@
 # Rust-source census of the model crate (ADR-014): explicit and
 # hand-managed — a new source file must be listed here, or the census
 # audit fails the build.
-model_source_names = [
+model_source_files += files(
   'src/artifacts.rs',
   'src/asset.rs',
   'src/audit.rs',
@@ -90,23 +90,14 @@ model_source_names = [
   'src/tests/transfer_tests.rs',
   'src/transition.rs',
   'src/world.rs',
-]
-foreach name : model_source_names
-  model_source_files += files(name)
-  model_source_paths += 'packages/model' / name
-endforeach
+)
 
 # Committed generated artifacts (ADR-011: publications, never semantic
 # inputs), owned by generate-all.
-model_generated_names = [
+generated_files += files(
   'generated/architecture.json',
   'generated/architecture.toml',
   'generated/declassification.json',
-]
-foreach name : model_generated_names
-  generated_files += files(name)
-  generated_paths += 'packages/model' / name
-endforeach
+)
 
 model_labels_json_file = files('generated/model_labels.json')
-model_labels_json_path = 'packages/model/generated/model_labels.json'

@@ -80,11 +80,8 @@ attestation_pdf = attestation_proj.get_variable('install_pdf')
 attestation_flat = attestation_proj.get_variable('flat_build_target')
 
 attestation_main_file = attestation_proj.get_variable('main_tex')
-attestation_main_path = attestation_proj.get_variable('attestation_main_path')
 attestation_section_files = attestation_proj.get_variable('attestation_section_files')
-attestation_section_paths = attestation_proj.get_variable('attestation_section_paths')
 realization_file = attestation_proj.get_variable('realization_doc_file')
-realization_path = attestation_proj.get_variable('realization_doc_path')
 
 # ---------------------------------------------------------------------------
 # Lint census (ADR-014). Every subject directory declares its files in
@@ -95,29 +92,57 @@ realization_path = attestation_proj.get_variable('realization_doc_path')
 # missed file is a build failure, never a silent omission.
 # ---------------------------------------------------------------------------
 adr_files = []
-adr_paths = []
 plan_files = []
-plan_paths = []
 doc_files = []
-doc_paths = []
 model_source_files = []
-model_source_paths = []
 crate_source_files = []
-crate_source_paths = []
 generated_files = []
-generated_paths = []
 
 subdir('adr')
 subdir('plans')
 subdir('packages')
 
 # Repository-root and subproject documentation (DOC owner).
-doc_files += files('AGENTS.md')
-doc_paths += 'AGENTS.md'
-doc_files += files('README.md')
-doc_paths += 'README.md'
+doc_files += files('AGENTS.md', 'README.md')
 doc_files += attestation_proj.get_variable('human_doc_file')
-doc_paths += attestation_proj.get_variable('human_doc_path')
+
+# Repository-relative path strings for checker argv and the census
+# audit, derived from the declared file objects.
+source_root = meson.project_source_root()
+attestation_main_path = fs.relative_to(attestation_main_file[0], source_root)
+realization_path = fs.relative_to(realization_file[0], source_root)
+specification_register_path = fs.relative_to(specification_register_file[0], source_root)
+realization_register_path = fs.relative_to(realization_register_file[0], source_root)
+model_labels_json_path = fs.relative_to(model_labels_json_file[0], source_root)
+
+attestation_section_paths = []
+foreach f : attestation_section_files
+  attestation_section_paths += fs.relative_to(f, source_root)
+endforeach
+adr_paths = []
+foreach f : adr_files
+  adr_paths += fs.relative_to(f, source_root)
+endforeach
+plan_paths = []
+foreach f : plan_files
+  plan_paths += fs.relative_to(f, source_root)
+endforeach
+doc_paths = []
+foreach f : doc_files
+  doc_paths += fs.relative_to(f, source_root)
+endforeach
+model_source_paths = []
+foreach f : model_source_files
+  model_source_paths += fs.relative_to(f, source_root)
+endforeach
+crate_source_paths = []
+foreach f : crate_source_files
+  crate_source_paths += fs.relative_to(f, source_root)
+endforeach
+generated_paths = []
+foreach f : generated_files
+  generated_paths += fs.relative_to(f, source_root)
+endforeach
 
 generated_dir = fs.parent(model_labels_json_path)
 
@@ -257,22 +282,24 @@ generated_stamp = custom_target(
   console: true,
 )
 
-plans_lane_paths = []
+# The plan-structure lane covers everything under adr/ and plans/,
+# including the non-numbered ADR README (DOC owner) and the generated
+# registers.
 plans_lane_files = []
-foreach p : adr_paths + plan_paths + doc_paths
+plans_lane_paths = []
+foreach f : adr_files + plan_files + doc_files
+  p = fs.relative_to(f, source_root)
   if p.startswith('adr/') or p.startswith('plans/')
+    plans_lane_files += f
     plans_lane_paths += p
   endif
 endforeach
-foreach f : adr_files + plan_files + doc_files
-  plans_lane_files += f
-endforeach
+plans_lane_files += specification_register_file + realization_register_file
 plans_lane_paths += [specification_register_path, realization_register_path]
 
 plans_stamp = custom_target(
   'plans-check',
-  input: plans_lane_files + specification_register_file + realization_register_file
-         + [files('scripts/check_plans.py')],
+  input: plans_lane_files + [files('scripts/check_plans.py')],
   output: 'plans.ok',
   command: [
     python, files('scripts/check_plans.py'),

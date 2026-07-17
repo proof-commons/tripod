@@ -9,36 +9,26 @@ bib_file = files('references.bib')
 
 # Specification lint census (ADR-014): explicit and hand-managed — a new
 # section must be listed here, or the census audit fails the build.
-# The parent project imports these lists for the label-check lane
-# (meson's subproject sandbox forbids it grabbing the files itself),
-# so both file objects and repository-relative paths are exported.
-attestation_section_names = [
-  '00_title.tex',
-  '01_interface.tex',
-  '02_model.tex',
-  '03_operations.tex',
-  '04_invariants.tex',
-  '05_costliness.tex',
-  '06_containment.tex',
-  '07_discipline.tex',
-  '08_seigniorage.tex',
-  '09_maturity.tex',
-  '10_limitations.tex',
-  'A1_verification.tex',
-  'B1_symbols.tex',
-]
-attestation_section_files = []
-attestation_section_paths = []
-foreach name : attestation_section_names
-  attestation_section_files += files('sections' / name)
-  attestation_section_paths += 'papers/attestation/sections' / name
-endforeach
-
-attestation_main_path = 'papers/attestation/main.tex'
+# The parent project imports these file objects for the label-check
+# lane (meson's subproject sandbox forbids it grabbing the files
+# itself) and derives repository-relative paths with fs.relative_to.
+attestation_section_files = files(
+  'sections/00_title.tex',
+  'sections/01_interface.tex',
+  'sections/02_model.tex',
+  'sections/03_operations.tex',
+  'sections/04_invariants.tex',
+  'sections/05_costliness.tex',
+  'sections/06_containment.tex',
+  'sections/07_discipline.tex',
+  'sections/08_seigniorage.tex',
+  'sections/09_maturity.tex',
+  'sections/10_limitations.tex',
+  'sections/A1_verification.tex',
+  'sections/B1_symbols.tex',
+)
 realization_doc_file = files('realization.md')
-realization_doc_path = 'docs/attestation/realization.md'
 human_doc_file = files('human.md')
-human_doc_path = 'papers/attestation/human.md'
 
 # TeX dependencies
 tex_dependencies = files('macros_attestation.tex') + attestation_section_files
