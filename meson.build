@@ -112,6 +112,8 @@ subdir('plans')
 subdir('packages')
 
 # Repository-root and subproject documentation (DOC owner).
+doc_files += files('AGENTS.md')
+doc_paths += 'AGENTS.md'
 doc_files += files('README.md')
 doc_paths += 'README.md'
 doc_files += attestation_proj.get_variable('human_doc_file')
