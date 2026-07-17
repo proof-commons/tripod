@@ -1,7 +1,8 @@
 # Rust-source census of the labels crate (ADR-014): explicit and
 # hand-managed — a new source file must be listed here, or the census
-# audit fails the build.
-crate_source_files += files(
+# audit fails the build. The parent meson.build accumulates this list
+# into its role group.
+labels_source_files = files(
   'src/bin/check-labels.rs',
   'src/bin/generate-label-registers.rs',
   'src/census.rs',
@@ -21,4 +22,4 @@ crate_source_files += files(
 )
 
 # Crate documentation (DOC owner).
-doc_files += files('README.md')
+labels_doc_files = files('README.md')

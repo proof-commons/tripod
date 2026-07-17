@@ -1,7 +1,8 @@
 # Rust-source census of the model crate (ADR-014): explicit and
 # hand-managed — a new source file must be listed here, or the census
-# audit fails the build.
-model_source_files += files(
+# audit fails the build. The parent meson.build accumulates this list
+# into its role group.
+model_source_files = files(
   'src/artifacts.rs',
   'src/asset.rs',
   'src/audit.rs',
@@ -94,7 +95,7 @@ model_source_files += files(
 
 # Committed generated artifacts (ADR-011: publications, never semantic
 # inputs), owned by generate-all.
-generated_files += files(
+model_generated_files = files(
   'generated/architecture.json',
   'generated/architecture.toml',
   'generated/declassification.json',

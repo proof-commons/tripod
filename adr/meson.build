@@ -1,6 +1,7 @@
 # ADR census (ADR-014): explicit and hand-managed — a new file must
-# be listed here, or the census audit fails the build.
-adr_files += files(
+# be listed here, or the census audit fails the build. The parent
+# meson.build accumulates this list into its role group.
+adr_record_files = files(
   '010-command-line-output-contract.md',
   '011-toolchain-and-dependency-policy.md',
   '012-documentation-labels.md',
@@ -9,4 +10,4 @@ adr_files += files(
 )
 
 # Non-numbered documentation in this directory (DOC owner).
-doc_files += files('README.md')
+adr_doc_files = files('README.md')

@@ -1,7 +1,8 @@
 # Rust-source census of the architecture crate (ADR-014): explicit and
 # hand-managed — a new source file must be listed here, or the census
-# audit fails the build.
-crate_source_files += files(
+# audit fails the build. The parent meson.build accumulates this list
+# into its role group.
+architecture_source_files = files(
   'src/canonical.rs',
   'src/deployment.rs',
   'src/export.rs',

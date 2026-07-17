@@ -1,6 +1,7 @@
 # Planning census (ADR-014): explicit and hand-managed — a new file must
-# be listed here, or the census audit fails the build.
-plan_files += files(
+# be listed here, or the census audit fails the build. The parent
+# meson.build accumulates this list into its role group.
+plans_phases_files = files(
   '00-baseline.md',
   '01-realization.md',
   '02-compiler.md',

@@ -85,26 +85,23 @@ realization_file = attestation_proj.get_variable('realization_doc_file')
 
 # ---------------------------------------------------------------------------
 # Lint census (ADR-014). Every subject directory declares its files in
-# an explicit, hand-managed meson.build list; the subdirs below append
-# to these accumulators. The census-audit target diffs the declared
-# lists against git ls-files on every build, and each checker
-# re-verifies its argument census against the on-disk tree, so a
-# missed file is a build failure, never a silent omission.
+# an explicit, hand-managed meson.build list under its own name, and
+# each parent composes its children's lists into the role groups. The
+# census-audit target diffs the declared lists against git ls-files on
+# every build, and each checker re-verifies its argument census
+# against the on-disk tree, so a missed file is a build failure, never
+# a silent omission.
 # ---------------------------------------------------------------------------
-adr_files = []
-plan_files = []
-doc_files = []
-model_source_files = []
-crate_source_files = []
-generated_files = []
-
 subdir('adr')
 subdir('plans')
 subdir('packages')
 
+adr_files = adr_record_files
+
 # Repository-root and subproject documentation (DOC owner).
-doc_files += files('AGENTS.md', 'README.md')
-doc_files += attestation_proj.get_variable('human_doc_file')
+doc_files = files('AGENTS.md', 'README.md') \
+  + adr_doc_files + packages_doc_files \
+  + attestation_proj.get_variable('human_doc_file')
 
 # Repository-relative path strings for checker argv and the census
 # audit, derived from the declared file objects.
