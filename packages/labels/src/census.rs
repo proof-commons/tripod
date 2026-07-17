@@ -200,6 +200,71 @@ impl RepositoryCensus {
     }
 }
 
+/// Schema version for the `census-audit` stdout report.
+pub const CENSUS_AUDIT_SCHEMA: u32 = 1;
+
+/// Result of auditing the hand-managed build census against the
+/// tracked file set (ADR-014).
+#[derive(Debug, serde::Serialize)]
+pub struct CensusAuditReport {
+    /// Report schema version.
+    pub schema: u32,
+    /// Tracked files considered.
+    pub tracked: usize,
+    /// Tracked files that are lint subjects after exclusions.
+    pub subjects: usize,
+    /// Files the build census declares.
+    pub declared: usize,
+    /// Tracked subjects absent from the declared census: each needs a
+    /// line in its directory's meson.build list.
+    pub missing_from_census: Vec<String>,
+    /// Declared files that are not tracked subjects: stale list
+    /// entries, or files that were never `git add`ed.
+    pub not_tracked: Vec<String>,
+    /// True when the declared census and the tracked subjects agree.
+    pub valid: bool,
+}
+
+/// Audit the declared census against the tracked file list.
+///
+/// A tracked file is a lint subject unless the categorical exclusion
+/// pattern matches it or it appears in the explicit per-directory
+/// exclusion list. The declared census must equal the subject set
+/// exactly; both directions of disagreement are reported.
+pub fn audit_census<'a>(
+    tracked: impl IntoIterator<Item = &'a str>,
+    declared: impl IntoIterator<Item = &'a str>,
+    excluded: impl IntoIterator<Item = &'a str>,
+    exclude_pattern: &regex::Regex,
+) -> CensusAuditReport {
+    let excluded: BTreeSet<&str> = excluded.into_iter().collect();
+    let declared: BTreeSet<&str> = declared.into_iter().collect();
+    let mut tracked_count = 0;
+    let subjects: BTreeSet<&str> = tracked
+        .into_iter()
+        .inspect(|_| tracked_count += 1)
+        .filter(|path| !exclude_pattern.is_match(path) && !excluded.contains(path))
+        .collect();
+    let missing_from_census: Vec<String> = subjects
+        .difference(&declared)
+        .map(ToString::to_string)
+        .collect();
+    let not_tracked: Vec<String> = declared
+        .difference(&subjects)
+        .map(ToString::to_string)
+        .collect();
+    let valid = missing_from_census.is_empty() && not_tracked.is_empty();
+    CensusAuditReport {
+        schema: CENSUS_AUDIT_SCHEMA,
+        tracked: tracked_count,
+        subjects: subjects.len(),
+        declared: declared.len(),
+        missing_from_census,
+        not_tracked,
+        valid,
+    }
+}
+
 /// Group role-tagged crate source arguments by crate name, derived
 /// from the mandatory `packages/<name>/src/` prefix.
 ///

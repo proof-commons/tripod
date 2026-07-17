@@ -64,6 +64,13 @@ sources, Attestation TeX sources. No globs, no configure-time discovery: a
 file joins the census by being written into its own directory's list,
 and the top-level build assembles the role groups from those lists.
 
+Exclusions are equally explicit. A file of a subject type that is
+deliberately not a lint subject — an imported TeX macro file, an
+integration-test source — is declared in its directory's exclusion
+list; tracked paths that are categorically never subjects (build
+definitions, licences, archives, scripts, data blobs) are matched by
+one exclusion pattern the build supplies to the audit.
+
 Only tracked files are lint subjects, which aligns the lint gate with
 the clean-tree law (`[ADR011-rule:toolchain:clean-tree]`): what CI
 validates is exactly what the repository records.
@@ -73,11 +80,12 @@ validates is exactly what the repository records.
 The hand-managed lists are audited, never trusted, from two
 independent directions:
 
-1. A cheap always-stale build target diffs the declared lists against
-   the tracked-file census (`git ls-files`, partitioned by one shared
-   script) on every build. A tracked subject missing from its
-   directory's list — or a declared file no longer tracked — fails the
-   build naming the paths.
+1. A cheap always-stale audit target runs a first-party binary that
+   invokes `git ls-files` itself — the build passes the git program,
+   the declared census, and the exclusions — so the weld is fresh on
+   every build. A tracked subject missing from its directory's list,
+   or a declared file no longer tracked, fails the build naming the
+   paths.
 2. The discovery walk of (`[ADR013-rule:labels:census]`) survives
    inside each checker as a verifier, not a source: the checker
    re-discovers its subjects on disk and hard-fails when the argument

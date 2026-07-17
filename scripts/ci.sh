@@ -14,10 +14,12 @@
 #   8. plans            check-plans.sh (documentation structure)
 #   9. clean tree       git diff --exit-code
 #
-# The checker lanes receive their subjects by argument (ADR-014): the
-# census comes from scripts/census.sh, the same source meson partitions
-# at configure time. Census paths never contain whitespace (census.sh
-# rejects them), so the unquoted expansions below are deliberate.
+# The checker lanes receive their subjects by argument (ADR-014). The
+# census_args function below derives role-tagged argv from git
+# ls-files; the meson build derives the same census from hand-managed
+# per-directory lists, and the census-audit target welds the two.
+# Paths in this repository never contain whitespace, so the unquoted
+# expansions are deliberate.
 #
 # The Meson/LaTeX document lanes are separate because they need a TeX
 # toolchain:
@@ -34,6 +36,36 @@
 set -eu
 
 cd "$(dirname "$0")/.."
+
+# census_args <labels|scoped>: role-tagged checker argv. The exclusion
+# cases mirror the meson census: categorical non-subjects first, then
+# the same-typed exclusions declared in per-directory meson.build
+# lists (macros_attestation.tex, execwrap integration tests).
+census_args() {
+  git ls-files | LC_ALL=C sort | while IFS= read -r path; do
+    case "$path" in
+      .* | */.* | archive/* | scripts/*) continue ;;
+      papers/attestation/macros_attestation.tex) continue ;;
+      packages/execwrap/tests/*) continue ;;
+      papers/attestation/main.tex) printf ' --attestation-main %s' "$path" ;;
+      papers/attestation/sections/*.tex) printf ' --attestation-section %s' "$path" ;;
+      docs/attestation/realization.md) printf ' --realization %s' "$path" ;;
+      packages/model/src/*.rs) printf ' --model-source %s' "$path" ;;
+      *)
+        [ "$1" = labels ] || continue
+        case "$path" in
+          plans/labels/specification.md) printf ' --specification-register %s' "$path" ;;
+          plans/labels/realization.md) printf ' --realization-register %s' "$path" ;;
+          packages/model/generated/model_labels.json) printf ' --model-labels-json %s' "$path" ;;
+          plans/*.md) printf ' --plan %s' "$path" ;;
+          adr/[0-9][0-9][0-9]*.md) printf ' --adr %s' "$path" ;;
+          packages/*/src/*.rs) printf ' --crate-source %s' "$path" ;;
+          *.md) printf ' --doc %s' "$path" ;;
+        esac
+        ;;
+    esac
+  done
+}
 
 echo "==> lane 1/9: cargo fmt" >&2
 cargo fmt --all --check
@@ -52,13 +84,13 @@ echo "==> lane 5/9: check-generated" >&2
 cargo run --locked -p tripod-artifacts --bin check-generated -- \
   --repository-root . \
   --generated-dir packages/model/generated \
-  $(sh scripts/census-args.sh . scoped) > /dev/null
+  $(census_args scoped) > /dev/null
 
 echo "==> lane 6/9: check-labels" >&2
 # shellcheck disable=SC2046
 cargo run --locked -p tripod-labels --bin check-labels -- \
   --repository-root . \
-  $(sh scripts/census-args.sh . labels) > /dev/null
+  $(census_args labels) > /dev/null
 
 echo "==> lane 7/9: cargo audit" >&2
 if command -v cargo-audit > /dev/null 2>&1; then

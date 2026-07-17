@@ -8,3 +8,9 @@ execwrap_source_files = files(
   'src/tests/mod.rs',
   'src/writer.rs',
 )
+
+# Same-typed files deliberately outside the crate-source census
+# (ADR-014): integration-test sources are cargo test inputs, not label
+# subjects. The census audit accepts the exclusion only because it is
+# declared here.
+execwrap_excluded_files = files('tests/subprocess_contract.rs')

@@ -761,3 +761,45 @@ fn register_generation_ignores_unrelated_adr_defects() {
     )
     .expect("upstream registers regenerate despite the ADR defect");
 }
+
+#[test]
+fn census_audit_welds_declared_lists_to_the_tracked_set() {
+    let pattern =
+        regex::Regex::new("(^|/)[.]|^archive/|(^|/)meson[.](build|options)$|[.](bib|zip)$")
+            .expect("valid exclusion pattern");
+    let tracked = [
+        ".gitignore",
+        "adr/010-fixture.md",
+        "adr/meson.build",
+        "archive/old.md",
+        "papers/attestation/macros.tex",
+        "papers/attestation/main.tex",
+        "papers/attestation/references.bib",
+    ];
+
+    // Complete census: categorical exclusions and the explicit
+    // same-typed exclusion cover everything undeclared.
+    let report = crate::census::audit_census(
+        tracked,
+        ["adr/010-fixture.md", "papers/attestation/main.tex"],
+        ["papers/attestation/macros.tex"],
+        &pattern,
+    );
+    assert!(report.valid, "{report:?}");
+    assert_eq!((report.tracked, report.subjects), (7, 2));
+
+    // A tracked subject missing from the declared lists fails, naming
+    // the path; so does a declared entry that is not tracked.
+    let report = crate::census::audit_census(
+        tracked,
+        ["adr/010-fixture.md", "plans/ghost.md"],
+        ["papers/attestation/macros.tex"],
+        &pattern,
+    );
+    assert!(!report.valid);
+    assert_eq!(
+        report.missing_from_census,
+        vec!["papers/attestation/main.tex".to_owned()]
+    );
+    assert_eq!(report.not_tracked, vec!["plans/ghost.md".to_owned()]);
+}

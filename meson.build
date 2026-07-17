@@ -181,21 +181,20 @@ census_paths = [attestation_main_path, realization_path, specification_register_
                + attestation_section_paths + adr_paths + plan_paths + doc_paths \
                + model_source_paths + crate_source_paths + generated_paths
 
-# Census audit: build_always_stale re-runs the diff on every ninja
-# invocation; the stamp is created once and never re-dated on a no-op
-# run, so restat keeps the lint targets below clean.
-census_audit = custom_target(
-  'census-audit',
-  output: 'census.ok',
-  command: [
-    find_program('scripts/census-audit.sh'),
-    meson.project_source_root(),
-    '@OUTPUT@',
-  ] + census_paths,
-  build_always_stale: true,
-  build_by_default: true,
-  console: false,
-)
+# Tracked paths that are categorically never lint subjects: dotfiles,
+# archives, helper scripts, build and package definitions, licences,
+# and binary or data blobs. Same-typed exceptions (a stray .tex or .rs
+# that is deliberately not a subject) are NOT listed here — they live
+# in their directory's explicit exclusion list.
+census_exclude_pattern = '(^|/)[.]|^archive/|^scripts/|^LICENSE-' \
+  + '|(^|/)meson[.](build|options)$|(^|/)Cargo[.]toml$|[.](bib|txt|zip)$'
+
+census_excluded_files = packages_excluded_files \
+  + attestation_proj.get_variable('attestation_excluded_files')
+census_excluded_args = []
+foreach f : census_excluded_files
+  census_excluded_args += ['--excluded', fs.relative_to(f, source_root)]
+endforeach
 
 # ---------------------------------------------------------------------------
 # First-party checker and generator binaries as real build targets
@@ -234,6 +233,38 @@ generate_registers_bin = custom_target(
   build_always_stale: true,
 )
 
+census_audit_bin = custom_target(
+  'cargo-census-audit',
+  output: 'census-audit-bin',
+  command: [
+    cargo_bin_sync, cargo, cargo_manifest,
+    'tripod-labels', 'census-audit', '@OUTPUT@',
+  ],
+  console: true,
+  build_always_stale: true,
+)
+
+# Census audit (ADR-014): the binary invokes git ls-files itself, so
+# the weld is fresh on every build — a file tracked without a census
+# list entry fails immediately, not at the next reconfigure. No lint
+# stamp depends on this target: its stamp is re-touched on every
+# successful run (the target is unconditional), and an edge would
+# needlessly dirty the lint suites each build; a failing audit fails
+# the build by itself.
+census_audit = custom_target(
+  'census-audit',
+  output: 'census.ok',
+  command: [census_audit_bin,
+    '--repository-root', source_root,
+    '--git', git.full_path(),
+    '--exclude-pattern', census_exclude_pattern,
+    '--stamp', '@OUTPUT@',
+  ] + census_excluded_args + census_paths,
+  build_always_stale: true,
+  build_by_default: true,
+  console: true,
+)
+
 generate_all_bin = custom_target(
   'cargo-generate-all',
   output: 'generate-all-bin',
@@ -261,7 +292,6 @@ labels_stamp = custom_target(
          + model_labels_json_file,
   output: 'labels.ok',
   command: [check_labels_bin] + labels_census_args + ['--stamp', '@OUTPUT@'],
-  depends: census_audit,
   build_by_default: true,
   console: true,
 )
@@ -274,7 +304,6 @@ generated_stamp = custom_target(
     '--generated-dir', generated_dir,
     '--stamp', '@OUTPUT@',
   ],
-  depends: census_audit,
   build_by_default: true,
   console: true,
 )
@@ -303,7 +332,6 @@ plans_stamp = custom_target(
     '--repository-root', meson.project_source_root(),
     '--stamp', '@OUTPUT@',
   ] + plans_lane_paths,
-  depends: census_audit,
   build_by_default: true,
   console: true,
 )

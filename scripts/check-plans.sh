@@ -3,15 +3,12 @@ set -eu
 
 cd "$(dirname "$0")/.."
 
+# Label linting lives in ci.sh lane 6 and the meson labels-check
+# target; this gate covers plan-tree structure and whitespace hygiene.
+# Paths in this repository never contain whitespace, so the unquoted
+# expansion is deliberate.
 # shellcheck disable=SC2046
-cargo run -p tripod-labels --bin check-labels -- \
-  --repository-root . \
-  $(sh scripts/census-args.sh . labels) > /dev/null
-
-# The plan-structure lane covers everything under adr/ and plans/.
-# shellcheck disable=SC2046
-python3 scripts/check_plans.py \
-  $(sh scripts/census.sh . | awk -F'\t' '$2 ~ /^(adr|plans)\//{print $2}')
+python3 scripts/check_plans.py $(git ls-files adr plans | grep '\.md$')
 
 git diff --check
 git diff --cached --check

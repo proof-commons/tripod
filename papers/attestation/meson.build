@@ -30,8 +30,14 @@ attestation_section_files = files(
 realization_doc_file = files('realization.md')
 human_doc_file = files('human.md')
 
+# Same-typed files deliberately outside the Layer-0 lint census
+# (ADR-014): the macro file is a TeX build input, not a label subject.
+# The census audit accepts the exclusion only because it is declared
+# here.
+attestation_excluded_files = files('macros_attestation.tex')
+
 # TeX dependencies
-tex_dependencies = files('macros_attestation.tex') + attestation_section_files
+tex_dependencies = attestation_excluded_files + attestation_section_files
 
 # Source template for the generated stamps.tex. It is a TeX build input
 # rather than a label subject, and it is listed among the inputs so an

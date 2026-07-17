@@ -102,3 +102,9 @@ model_generated_files = files(
 )
 
 model_labels_json_file = files('generated/model_labels.json')
+
+# Same-typed files deliberately outside the crate-source census
+# (ADR-014): integration-test sources are cargo test inputs, not label
+# subjects. The census audit accepts the exclusion only because it is
+# declared here.
+model_excluded_files = files('tests/public_api.rs')
