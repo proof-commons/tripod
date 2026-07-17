@@ -1,28 +1,45 @@
 //! Hermeticity and freshness tests for the generator/checker split.
+//!
+//! The committed generated directory itself is validated by the
+//! Meson-driven `check-generated` target (ADR-014); these tests use
+//! synthetic fixture repositories only.
 
 mod weld_tests;
 
-use crate::{ARTIFACT_NAMES, ArtifactFreshness, check, expected_artifacts, generated_dir};
+use crate::{ARTIFACT_NAMES, ArtifactFreshness, check, expected_artifacts};
 
-/// The committed generated directory is current: every artifact equals
-/// its in-memory derivation and no unexpected file exists. This is the
-/// library-level form of `check-generated`; it never writes.
-#[test]
-fn committed_generated_directory_is_current() {
-    let report = check(&generated_dir()).expect("check runs");
-
-    assert!(
-        report.current,
-        "generated artifacts are stale; run \
-         `cargo run -p tripod-artifacts --bin generate-all` \
-         and commit the diff: {report:?}",
-    );
+/// A minimal synthetic repository providing the scoped label census
+/// the model-label derivation needs.
+fn fixture_census() -> (tempfile::TempDir, labels::RepositoryCensus) {
+    let directory = tempfile::tempdir().expect("temporary repository");
+    let root = directory.path();
+    for child in ["papers/attestation/sections", "packages/model/src"] {
+        std::fs::create_dir_all(root.join(child)).expect("fixture directory");
+    }
+    std::fs::write(
+        root.join("papers/attestation/main.tex"),
+        "\\label{def:model:known}\n",
+    )
+    .expect("attestation source");
+    std::fs::write(
+        root.join("docs/attestation/realization.md"),
+        "# Realization\n`sec:fixture`\n",
+    )
+    .expect("realization source");
+    std::fs::write(
+        root.join("packages/model/src/fixture.rs"),
+        "// \u{b4}test:fixture:defined\u{b4}\n",
+    )
+    .expect("model source");
+    let census = labels::RepositoryCensus::discover(root);
+    (directory, census)
 }
 
 /// The expected artifact set covers exactly the owned census, in order.
 #[test]
 fn expected_artifacts_match_the_census() {
-    let expected = expected_artifacts().expect("artifacts derive");
+    let (_fixture, census) = fixture_census();
+    let expected = expected_artifacts(&census).expect("artifacts derive");
 
     assert_eq!(
         expected
@@ -40,8 +57,9 @@ fn expected_artifacts_match_the_census() {
 /// Derivation is deterministic: two renders produce identical bytes.
 #[test]
 fn expected_artifacts_are_deterministic() {
-    let first = expected_artifacts().expect("artifacts derive");
-    let second = expected_artifacts().expect("artifacts derive");
+    let (_fixture, census) = fixture_census();
+    let first = expected_artifacts(&census).expect("artifacts derive");
+    let second = expected_artifacts(&census).expect("artifacts derive");
 
     for (left, right) in first.iter().zip(second.iter()) {
         assert_eq!(left.name, right.name);
@@ -53,20 +71,21 @@ fn expected_artifacts_are_deterministic() {
 /// checking never mutates the directory.
 #[test]
 fn checker_reports_stale_missing_and_unexpected() {
+    let (_fixture, census) = fixture_census();
     let dir = tempfile::tempdir().expect("tempdir");
 
-    for artifact in expected_artifacts().expect("artifacts derive") {
+    for artifact in expected_artifacts(&census).expect("artifacts derive") {
         std::fs::write(dir.path().join(artifact.name), &artifact.bytes).expect("write");
     }
 
-    let clean = check(dir.path()).expect("check runs");
+    let clean = check(dir.path(), &census).expect("check runs");
     assert!(clean.current);
 
     std::fs::write(dir.path().join("architecture.json"), b"corrupted").expect("write");
     std::fs::remove_file(dir.path().join("model_labels.json")).expect("remove");
     std::fs::write(dir.path().join("stray.txt"), b"stray").expect("write");
 
-    let report = check(dir.path()).expect("check runs");
+    let report = check(dir.path(), &census).expect("check runs");
     assert!(!report.current);
 
     let status_of = |name: &str| {

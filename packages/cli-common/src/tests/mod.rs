@@ -569,3 +569,27 @@ fn usage_error_text_never_reproduces_secrets() {
         "usage record leaked the secret: {rendered}"
     );
 }
+
+#[test]
+fn touch_stamp_creates_empty_then_only_updates_mtime() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let stamp = dir.path().join("suite.ok");
+
+    crate::touch_stamp(&stamp).expect("first touch creates");
+    let created = std::fs::metadata(&stamp).expect("stamp exists");
+    assert_eq!(created.len(), 0, "a stamp carries no content");
+
+    // A stamp is never truncated or rewritten, only re-dated: seed
+    // bytes must survive a second touch with a newer mtime.
+    std::fs::write(&stamp, b"seed").expect("seed stamp");
+    let before = std::fs::metadata(&stamp)
+        .expect("metadata")
+        .modified()
+        .expect("mtime");
+    std::thread::sleep(std::time::Duration::from_millis(20));
+
+    crate::touch_stamp(&stamp).expect("second touch updates");
+    let metadata = std::fs::metadata(&stamp).expect("metadata");
+    assert_eq!(std::fs::read(&stamp).expect("read"), b"seed");
+    assert!(metadata.modified().expect("mtime") > before);
+}

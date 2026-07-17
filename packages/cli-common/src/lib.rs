@@ -1031,3 +1031,33 @@ pub struct BaseArgs {
     #[arg(long)]
     pub debug: bool,
 }
+
+/// Touch an ADR-014 stamp file: create it empty when absent, otherwise
+/// update its modification time.
+///
+/// The stamp carries no content — the JSON report stays on stdout —
+/// and a failing command must not call this, so the build graph keeps
+/// the target dirty.
+///
+/// # Errors
+///
+/// Returns the underlying I/O error.
+pub fn touch_stamp(path: &std::path::Path) -> io::Result<()> {
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+    {
+        Ok(_created) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            let file = std::fs::File::options().write(true).open(path)?;
+            let now = std::time::SystemTime::now();
+            file.set_times(
+                std::fs::FileTimes::new()
+                    .set_accessed(now)
+                    .set_modified(now),
+            )
+        }
+        Err(error) => Err(error),
+    }
+}

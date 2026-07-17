@@ -2,7 +2,9 @@
 //!
 //! Computes the expected bytes of every generated artifact in memory
 //! and compares them with the committed files. Never writes. The
-//! writing path is `generate-all`.
+//! writing path is `generate-all`. The generated directory and the
+//! scoped label census arrive by argument (ADR-014); on success the
+//! optional `--stamp` file is touched for the build graph.
 //!
 //! ADR-010: stdout result data (one JSON [`artifacts::CheckReport`]
 //! object) is emitted only on success (exit 0: everything current);
@@ -17,7 +19,7 @@ use clap::Parser;
 use cli_common::{
     BaseArgs, CommandExit, emit_control_plane_record, init_json_tracing_with_debug,
     install_json_panic_hook, parse_args_or_exit, set_panic_payload_reporting_enabled,
-    stdout_tty_refusal_record,
+    stdout_tty_refusal_record, touch_stamp,
 };
 
 const COMMAND_NAME: &str = "check-generated";
@@ -32,10 +34,33 @@ struct Args {
     #[command(flatten)]
     base: BaseArgs,
 
-    /// Generated directory to check. Defaults to the committed
-    /// generated directory (packages/model/generated).
+    /// Repository root; relative subject paths resolve against it.
     #[arg(long, value_name = "DIR")]
-    generated_dir: Option<PathBuf>,
+    repository_root: PathBuf,
+
+    /// The Attestation specification root TeX file.
+    #[arg(long, value_name = "FILE")]
+    attestation_main: PathBuf,
+
+    /// Attestation specification section TeX files.
+    #[arg(long = "attestation-section", value_name = "FILE")]
+    attestation_sections: Vec<PathBuf>,
+
+    /// The realization Markdown document.
+    #[arg(long, value_name = "FILE")]
+    realization: PathBuf,
+
+    /// Model crate Rust sources.
+    #[arg(long = "model-source", value_name = "FILE")]
+    model_sources: Vec<PathBuf>,
+
+    /// Generated directory to check.
+    #[arg(long, value_name = "DIR")]
+    generated_dir: PathBuf,
+
+    /// Stamp file touched on success (ADR-014 output-or-stamp).
+    #[arg(long, value_name = "FILE")]
+    stamp: Option<PathBuf>,
 }
 
 fn main() -> ExitCode {
@@ -50,9 +75,19 @@ fn main() -> ExitCode {
         return CommandExit::Usage.exit_code();
     }
 
-    let dir = args.generated_dir.unwrap_or_else(artifacts::generated_dir);
+    let root = &args.repository_root;
+    let resolve = |path: &PathBuf| labels::RepositoryCensus::resolve(root, path.clone());
+    let census = labels::RepositoryCensus {
+        root: root.clone(),
+        attestation_main: resolve(&args.attestation_main),
+        attestation_sections: args.attestation_sections.iter().map(resolve).collect(),
+        realization: resolve(&args.realization),
+        model_sources: args.model_sources.iter().map(resolve).collect(),
+        ..labels::RepositoryCensus::default()
+    };
+    let dir = resolve(&args.generated_dir);
 
-    let report = match artifacts::check(&dir) {
+    let report = match artifacts::check(&dir, &census) {
         Ok(report) => report,
         Err(error) => {
             tracing::error!(error = %error, "check failed");
@@ -67,7 +102,7 @@ fn main() -> ExitCode {
                     artifact = %artifact.name,
                     status = ?artifact.status,
                     "generated artifact is not current; run \
-                     `cargo run -p tripod-artifacts --bin generate-all` \
+                     `meson compile -C <builddir> generate-artifacts` \
                      and commit the diff",
                 );
             }
@@ -78,6 +113,13 @@ fn main() -> ExitCode {
                 "unexpected file in generated directory",
             );
         }
+        return CommandExit::Failure.exit_code();
+    }
+
+    if let Some(stamp) = &args.stamp
+        && let Err(error) = touch_stamp(stamp)
+    {
+        tracing::error!(error = %error, "failed to touch the stamp file");
         return CommandExit::Failure.exit_code();
     }
 

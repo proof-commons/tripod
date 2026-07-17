@@ -8,6 +8,7 @@ use std::{
 use thiserror::Error;
 
 use crate::{
+    census::RepositoryCensus,
     diagnostic::{LabelDiagnostic, LabelErrorCode, sort_diagnostics},
     label::{Label, LabelShape},
     latex::harvest_attestation,
@@ -18,40 +19,6 @@ use crate::{
     rust_source::{RustHarvest, harvest_crates, harvest_model},
     source::{SourceLocation, relative_to},
 };
-
-#[derive(Clone, Debug)]
-pub struct RepositoryPaths {
-    pub root: PathBuf,
-    pub attestation_main: PathBuf,
-    pub attestation_sections: PathBuf,
-    pub realization: PathBuf,
-    pub adr_dir: PathBuf,
-    pub plans_dir: PathBuf,
-    pub model_src: PathBuf,
-    pub specification_register: PathBuf,
-    pub realization_register: PathBuf,
-    pub model_labels_json: PathBuf,
-}
-impl RepositoryPaths {
-    pub fn from_root(root: impl AsRef<Path>) -> Self {
-        let root = root.as_ref().to_path_buf();
-        Self {
-            attestation_main: root.join("papers/attestation/main.tex"),
-            attestation_sections: root.join("papers/attestation/sections"),
-            realization: root.join("docs/attestation/realization.md"),
-            adr_dir: root.join("adr"),
-            plans_dir: root.join("plans"),
-            model_src: root.join("packages/model/src"),
-            specification_register: root.join("plans/labels/specification.md"),
-            realization_register: root.join("plans/labels/realization.md"),
-            model_labels_json: root.join("packages/model/generated/model_labels.json"),
-            root,
-        }
-    }
-    pub fn workspace_default() -> Self {
-        Self::from_root(Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
-    }
-}
 
 #[derive(Default)]
 pub struct RepositoryLabels {
@@ -69,7 +36,7 @@ pub struct RepositoryLabels {
     attestation_index_location: Option<SourceLocation>,
 }
 impl RepositoryLabels {
-    pub fn harvest_sources(paths: &RepositoryPaths) -> Self {
+    pub fn harvest_sources(paths: &RepositoryCensus) -> Self {
         let mut result = Self::default();
         let (attestation, diagnostics) = harvest_attestation(paths);
         result.registries.attestation = attestation;
@@ -109,7 +76,7 @@ fn add_model(model: RustHarvest, result: &mut RepositoryLabels) {
     result.registries.model = model.registry;
     result.diagnostics.extend(model.diagnostics);
 }
-fn harvest_realization(paths: &RepositoryPaths, result: &mut RepositoryLabels) {
+fn harvest_realization(paths: &RepositoryCensus, result: &mut RepositoryLabels) {
     let relative = relative_to(&paths.root, &paths.realization);
     let Ok(source) = fs::read_to_string(&paths.realization) else {
         result.diagnostics.push(LabelDiagnostic::error(
@@ -170,8 +137,8 @@ fn harvest_realization(paths: &RepositoryPaths, result: &mut RepositoryLabels) {
         }
     }
 }
-fn harvest_adrs(paths: &RepositoryPaths, result: &mut RepositoryLabels) {
-    for path in files(&paths.root, &paths.adr_dir, &mut result.diagnostics) {
+fn harvest_adrs(paths: &RepositoryCensus, result: &mut RepositoryLabels) {
+    for path in &paths.adrs {
         let Some(number) = path
             .file_name()
             .and_then(|name| name.to_str())
@@ -180,8 +147,8 @@ fn harvest_adrs(paths: &RepositoryPaths, result: &mut RepositoryLabels) {
         else {
             continue;
         };
-        let relative = relative_to(&paths.root, &path);
-        let Ok(source) = fs::read_to_string(&path) else {
+        let relative = relative_to(&paths.root, path);
+        let Ok(source) = fs::read_to_string(path) else {
             continue;
         };
         let scan = scan_markdown(&relative, &source);
@@ -263,85 +230,30 @@ impl MarkdownOwner {
     }
 }
 
-fn harvest_plans(paths: &RepositoryPaths, result: &mut RepositoryLabels) {
-    for path in files(&paths.root, &paths.plans_dir, &mut result.diagnostics) {
-        if path == paths.specification_register || path == paths.realization_register {
+fn harvest_plans(paths: &RepositoryCensus, result: &mut RepositoryLabels) {
+    for path in &paths.plans {
+        if *path == paths.specification_register || *path == paths.realization_register {
             // Generated registers are derivative publications and must
             // not contribute source mints or citations.
             continue;
         }
-        harvest_markdown_owner(paths, &path, MarkdownOwner::Plan, result);
+        harvest_markdown_owner(paths, path, MarkdownOwner::Plan, result);
     }
 }
-
-/// Directory names excluded from the repository documentation census
-/// (ADR-013): build products, archives, and vendored trees. Hidden
-/// directories are excluded unconditionally.
-const EXCLUDED_CENSUS_DIRS: &[&str] = &["archive", "build", "builddir", "target", "vendor"];
 
 /// Harvest every authored Markdown file outside the trees owned
-/// elsewhere as the `DOC` owner. The census is discovered by walking,
-/// not by allowlist, so a newly added README cannot silently sit
-/// outside the label graph.
-fn harvest_docs(paths: &RepositoryPaths, result: &mut RepositoryLabels) {
-    let mut census = Vec::new();
-    walk_docs(paths, &paths.root, &mut census, &mut result.diagnostics);
-    census.sort();
-    for path in census {
-        harvest_markdown_owner(paths, &path, MarkdownOwner::Doc, result);
-    }
-}
-
-fn walk_docs(
-    paths: &RepositoryPaths,
-    directory: &Path,
-    output: &mut Vec<PathBuf>,
-    diagnostics: &mut Vec<LabelDiagnostic>,
-) {
-    let entries = match fs::read_dir(directory) {
-        Ok(entries) => entries,
-        Err(error) => {
-            diagnostics.push(LabelDiagnostic::error(
-                LabelErrorCode::Io,
-                &SourceLocation::new(relative_to(&paths.root, directory), 1, 1),
-                format!("cannot traverse documentation sources: {error}"),
-            ));
-            return;
-        }
-    };
-    for entry in entries.filter_map(Result::ok) {
-        let path = entry.path();
-        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-        if path.is_dir() {
-            if name.starts_with('.')
-                || EXCLUDED_CENSUS_DIRS.contains(&name)
-                || path == paths.plans_dir
-            {
-                continue;
-            }
-            walk_docs(paths, &path, output, diagnostics);
-        } else if path.extension().is_some_and(|extension| extension == "md") {
-            // Files with their own owner: the realization document
-            // (R13) and numbered ADRs (ADRNNN).
-            if path == paths.realization {
-                continue;
-            }
-            if path.parent() == Some(paths.adr_dir.as_path())
-                && name
-                    .get(..3)
-                    .is_some_and(|number| number.parse::<u16>().is_ok())
-            {
-                continue;
-            }
-            output.push(path);
-        }
+/// elsewhere as the `DOC` owner. Membership comes from the argument
+/// census; the census verifier keeps that census welded to the walked
+/// reality (ADR-014), so a newly added README still cannot silently
+/// sit outside the label graph.
+fn harvest_docs(paths: &RepositoryCensus, result: &mut RepositoryLabels) {
+    for path in &paths.docs {
+        harvest_markdown_owner(paths, path, MarkdownOwner::Doc, result);
     }
 }
 
 fn harvest_markdown_owner(
-    paths: &RepositoryPaths,
+    paths: &RepositoryCensus,
     path: &Path,
     owner: MarkdownOwner,
     result: &mut RepositoryLabels,
@@ -687,45 +599,6 @@ fn square(value: &str) -> Option<&str> {
 fn looks_imported(value: &str) -> bool {
     ImportedLabel::parse(value).is_ok()
 }
-fn files(
-    repository_root: &Path,
-    root: &Path,
-    diagnostics: &mut Vec<LabelDiagnostic>,
-) -> Vec<PathBuf> {
-    let mut output = Vec::new();
-    walk(repository_root, root, &mut output, diagnostics);
-    output.sort();
-    output
-}
-fn walk(
-    repository_root: &Path,
-    root: &Path,
-    output: &mut Vec<PathBuf>,
-    diagnostics: &mut Vec<LabelDiagnostic>,
-) {
-    let entries = match fs::read_dir(root) {
-        Ok(entries) => entries,
-        Err(error) => {
-            // An unreadable tree must fail the census, not silently
-            // become an empty one.
-            diagnostics.push(LabelDiagnostic::error(
-                LabelErrorCode::Io,
-                &SourceLocation::new(relative_to(repository_root, root), 1, 1),
-                format!("cannot traverse documentation sources: {error}"),
-            ));
-            return;
-        }
-    };
-    for entry in entries.filter_map(Result::ok) {
-        let path = entry.path();
-        if path.is_dir() {
-            walk(repository_root, &path, output, diagnostics);
-        } else if path.extension().is_some_and(|extension| extension == "md") {
-            output.push(path);
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct GeneratedRegister {
     pub path: PathBuf,
@@ -749,14 +622,16 @@ impl GenerateError {
     }
 }
 /// Generate the specification and realization registers from their owning
-/// upstream sources only.
+/// upstream sources only, writing to the argument-supplied output
+/// paths (ADR-014: assets go only where arguments route them).
 ///
 /// An unrelated planning or ADR defect must not block regenerating an
 /// upstream register (ADR-013 scoped-derivation rule);
 /// `check_repository` remains the full repository-wide gate.
 pub fn generate_registers(
-    paths: &RepositoryPaths,
-    output_root: &Path,
+    paths: &RepositoryCensus,
+    specification_output: &Path,
+    realization_output: &Path,
 ) -> Result<Vec<GeneratedRegister>, GenerateError> {
     let labels = derive_model_sources(paths);
     if labels.has_errors() {
@@ -764,11 +639,11 @@ pub fn generate_registers(
     }
     let outputs = [
         (
-            output_root.join("plans/labels/specification.md"),
+            specification_output.to_path_buf(),
             render::specification_register(&labels.registries.attestation),
         ),
         (
-            output_root.join("plans/labels/realization.md"),
+            realization_output.to_path_buf(),
             render::realization_register(&labels.registries.realization),
         ),
     ];
@@ -782,7 +657,7 @@ pub fn generate_registers(
     }
     Ok(written)
 }
-pub fn model_labels_json(paths: &RepositoryPaths) -> Result<String, GenerateError> {
+pub fn model_labels_json(paths: &RepositoryCensus) -> Result<String, GenerateError> {
     let labels = derive_model_sources(paths);
     if labels.has_errors() {
         return Err(GenerateError::Validation(labels.diagnostics));
@@ -790,8 +665,14 @@ pub fn model_labels_json(paths: &RepositoryPaths) -> Result<String, GenerateErro
     Ok(render::model_labels_json(&labels.registries.model)?)
 }
 
-fn derive_model_sources(paths: &RepositoryPaths) -> RepositoryLabels {
+fn derive_model_sources(paths: &RepositoryCensus) -> RepositoryLabels {
     let mut result = RepositoryLabels::default();
+    // Scoped census verification (ADR-014): a stale plan or ADR census
+    // must not block an upstream derivation, but a stale scoped census
+    // would silently change the derived registers.
+    result
+        .diagnostics
+        .extend(paths.verify(crate::census::CensusGroup::SCOPED));
     let (attestation, diagnostics) = harvest_attestation(paths);
     result.registries.attestation = attestation;
     result.diagnostics.extend(diagnostics);

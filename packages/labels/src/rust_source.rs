@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    RepositoryPaths,
+    RepositoryCensus,
     diagnostic::{LabelDiagnostic, LabelErrorCode},
     label::{Label, LabelShape},
     markdown::{fence_close, fence_open},
@@ -30,40 +30,29 @@ pub struct RustHarvest {
     pub diagnostics: Vec<LabelDiagnostic>,
 }
 
-pub fn harvest_model(paths: &RepositoryPaths) -> RustHarvest {
-    harvest_rust_crate(&paths.root, &paths.model_src, &LabelOwner::Model)
+pub fn harvest_model(paths: &RepositoryCensus) -> RustHarvest {
+    harvest_rust_crate(&paths.root, &paths.model_sources, &LabelOwner::Model)
 }
 
 /// Harvest every first-party crate other than the model crate as its
 /// own label owner (ADR-013: one owner per Cargo package). Crates with
 /// no participating labels have empty registries, which is valid.
-pub fn harvest_crates(paths: &RepositoryPaths) -> BTreeMap<String, RustHarvest> {
-    let mut crates = BTreeMap::new();
-    let packages = paths.root.join("packages");
-    let Ok(entries) = fs::read_dir(&packages) else {
-        return crates;
-    };
-    for entry in entries.filter_map(Result::ok) {
-        let path = entry.path();
-        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-        let source = path.join("src");
-        if name == "model" || !source.is_dir() {
-            continue;
-        }
-        crates.insert(
-            name.to_owned(),
-            harvest_rust_crate(&paths.root, &source, &LabelOwner::Crate(name.to_owned())),
-        );
-    }
-    crates
+pub fn harvest_crates(paths: &RepositoryCensus) -> BTreeMap<String, RustHarvest> {
+    paths
+        .crate_sources
+        .iter()
+        .map(|(name, sources)| {
+            (
+                name.clone(),
+                harvest_rust_crate(&paths.root, sources, &LabelOwner::Crate(name.clone())),
+            )
+        })
+        .collect()
 }
 
-fn harvest_rust_crate(root: &Path, source_dir: &Path, owner: &LabelOwner) -> RustHarvest {
+fn harvest_rust_crate(root: &Path, sources: &[PathBuf], owner: &LabelOwner) -> RustHarvest {
     let mut result = RustHarvest::default();
-    let mut files = Vec::new();
-    collect(root, source_dir, &mut files, &mut result.diagnostics);
+    let mut files = sources.to_vec();
     files.sort();
     for path in files {
         let relative = relative_to(root, &path);
@@ -498,33 +487,6 @@ fn harvest_label(
             &location,
             format!("unknown Rust label type {kind}"),
         ));
-    }
-}
-
-fn collect(
-    root: &Path,
-    directory: &Path,
-    files: &mut Vec<PathBuf>,
-    diagnostics: &mut Vec<LabelDiagnostic>,
-) {
-    let entries = match fs::read_dir(directory) {
-        Ok(entries) => entries,
-        Err(error) => {
-            diagnostics.push(LabelDiagnostic::error(
-                LabelErrorCode::Io,
-                &SourceLocation::new(relative_to(root, directory), 1, 1),
-                format!("cannot traverse Rust sources: {error}"),
-            ));
-            return;
-        }
-    };
-    for entry in entries.filter_map(Result::ok) {
-        let path = entry.path();
-        if path.is_dir() {
-            collect(root, &path, files, diagnostics);
-        } else if path.extension().is_some_and(|extension| extension == "rs") {
-            files.push(path);
-        }
     }
 }
 

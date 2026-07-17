@@ -1,7 +1,7 @@
 use std::{fs, path::Path};
 
 use crate::{
-    RepositoryPaths,
+    RepositoryCensus,
     diagnostic::{LabelDiagnostic, LabelErrorCode},
     label::{Label, LabelShape},
     owner::LabelOwner,
@@ -9,17 +9,11 @@ use crate::{
     source::{SourceLocation, relative_to},
 };
 
-pub fn harvest_attestation(paths: &RepositoryPaths) -> (LabelRegistry, Vec<LabelDiagnostic>) {
+pub fn harvest_attestation(paths: &RepositoryCensus) -> (LabelRegistry, Vec<LabelDiagnostic>) {
     let mut files = vec![paths.attestation_main.clone()];
-    if let Ok(entries) = fs::read_dir(&paths.attestation_sections) {
-        let mut paths = entries
-            .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .filter(|path| path.extension().is_some_and(|extension| extension == "tex"))
-            .collect::<Vec<_>>();
-        paths.sort();
-        files.extend(paths);
-    }
+    let mut sections = paths.attestation_sections.clone();
+    sections.sort();
+    files.extend(sections);
     let mut registry = LabelRegistry::default();
     let mut diagnostics = Vec::new();
     for path in files {

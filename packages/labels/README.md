@@ -13,6 +13,12 @@ semantic package consumes its registries or planning labels.
 - model Rust source; and
 - committed label registers and model-label publication.
 
+Every subject file arrives by role-tagged command-line argument
+(ADR-014): the build system states census membership from its
+hand-managed per-directory lists, and the binaries re-verify that
+census against the on-disk tree before trusting it. Nothing in this
+package resolves a repository path from its own compiled location.
+
 ## Outputs
 
 The library returns owner-aware registries and diagnostics. It also renders the

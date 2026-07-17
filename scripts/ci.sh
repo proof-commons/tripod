@@ -14,6 +14,11 @@
 #   8. plans            check-plans.sh (documentation structure)
 #   9. clean tree       git diff --exit-code
 #
+# The checker lanes receive their subjects by argument (ADR-014): the
+# census comes from scripts/census.sh, the same source meson partitions
+# at configure time. Census paths never contain whitespace (census.sh
+# rejects them), so the unquoted expansions below are deliberate.
+#
 # The Meson/LaTeX document lanes are separate because they need a TeX
 # toolchain:
 #   meson setup <builddir> && meson compile -C <builddir> attestation \
@@ -43,10 +48,17 @@ echo "==> lane 4/9: cargo test (release)" >&2
 cargo test --workspace --release --locked
 
 echo "==> lane 5/9: check-generated" >&2
-cargo run --locked -p tripod-artifacts --bin check-generated > /dev/null
+# shellcheck disable=SC2046
+cargo run --locked -p tripod-artifacts --bin check-generated -- \
+  --repository-root . \
+  --generated-dir packages/model/generated \
+  $(sh scripts/census-args.sh . scoped) > /dev/null
 
 echo "==> lane 6/9: check-labels" >&2
-cargo run --locked -p tripod-labels --bin check-labels -- --repository-root . > /dev/null
+# shellcheck disable=SC2046
+cargo run --locked -p tripod-labels --bin check-labels -- \
+  --repository-root . \
+  $(sh scripts/census-args.sh . labels) > /dev/null
 
 echo "==> lane 7/9: cargo audit" >&2
 if command -v cargo-audit > /dev/null 2>&1; then

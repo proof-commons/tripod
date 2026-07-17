@@ -20,7 +20,7 @@
 //! compiler, linker, and release logic must consume typed Rust, not
 //! these artifacts.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, bail, ensure};
 use architecture::{ARCHITECTURE, PublishedArchitecture, validate_draft};
@@ -49,17 +49,12 @@ pub struct ExpectedArtifact {
     pub bytes: Vec<u8>,
 }
 
-/// The committed generated directory, resolved from this crate's
-/// source location: `packages/model/generated`.
-#[must_use]
-pub fn generated_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("model")
-        .join("generated")
-}
-
 /// Render every generated artifact from its typed source, in memory.
+///
+/// The model-label publication derives from the scoped label census
+/// (attestation, realization, and model sources), which arrives by
+/// argument (ADR-014): nothing here resolves a repository path from
+/// this crate's compiled location.
 ///
 /// The architecture artifacts are validated before rendering: the
 /// typed draft must validate, the publication envelope must verify,
@@ -68,7 +63,9 @@ pub fn generated_dir() -> PathBuf {
 /// # Errors
 ///
 /// Returns a validation or serialization failure; nothing is written.
-pub fn expected_artifacts() -> anyhow::Result<Vec<ExpectedArtifact>> {
+pub fn expected_artifacts(
+    census: &labels::RepositoryCensus,
+) -> anyhow::Result<Vec<ExpectedArtifact>> {
     if let Err(errors) = validate_draft(&ARCHITECTURE) {
         let rendered = errors
             .iter()
@@ -107,8 +104,8 @@ pub fn expected_artifacts() -> anyhow::Result<Vec<ExpectedArtifact>> {
         .validate_envelope()
         .context("validating re-parsed TOML envelope")?;
 
-    let model_labels = labels::model_labels_json(&labels::RepositoryPaths::workspace_default())
-        .context("deriving model-label registry")?;
+    let model_labels =
+        labels::model_labels_json(census).context("deriving model-label registry")?;
 
     Ok(vec![
         ExpectedArtifact {
@@ -175,8 +172,8 @@ pub struct CheckReport {
 /// Returns an error when the expected artifacts cannot be derived or
 /// the directory cannot be read; freshness problems are reported in
 /// the returned [`CheckReport`], not as errors.
-pub fn check(dir: &Path) -> anyhow::Result<CheckReport> {
-    let expected = expected_artifacts()?;
+pub fn check(dir: &Path, census: &labels::RepositoryCensus) -> anyhow::Result<CheckReport> {
+    let expected = expected_artifacts(census)?;
 
     let mut artifacts = Vec::new();
     for artifact in &expected {

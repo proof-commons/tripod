@@ -13,6 +13,7 @@
     clippy::too_many_lines
 )]
 
+pub mod census;
 pub mod check;
 pub mod diagnostic;
 pub mod label;
@@ -25,10 +26,11 @@ pub mod repository;
 pub mod rust_source;
 pub mod source;
 
+pub use census::{CensusGroup, RepositoryCensus, group_crate_sources};
 pub use check::{CheckReport, check_repository};
 pub use diagnostic::{LabelDiagnostic, LabelErrorCode, Severity};
 pub use label::{Label, LabelShape};
-pub use repository::{RepositoryPaths, generate_registers, model_labels_json};
+pub use repository::{generate_registers, model_labels_json};
 
 #[cfg(test)]
 mod tests;

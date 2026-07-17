@@ -21,6 +21,7 @@ pub enum LabelErrorCode {
     AttestationIndexStale,
     GeneratedRegisterMissing,
     GeneratedRegisterStale,
+    CensusStale,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]

@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
-"""Non-semantic documentation structure and hygiene checks."""
+"""Non-semantic documentation structure and hygiene checks.
+
+Subject files arrive as positional arguments from the build system
+(ADR-014); the script re-discovers them on disk and hard-fails on any
+disagreement, so a stale census cannot silently pass. On success the
+optional --stamp file is touched for the build graph.
+"""
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 import re
 import sys
@@ -73,10 +80,33 @@ def warn_threshold(relative: Path) -> int | None:
     return None
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repository-root", type=Path, default=ROOT)
+    parser.add_argument("--stamp", type=Path, default=None)
+    parser.add_argument("subjects", nargs="*", type=Path)
+    return parser.parse_args()
+
+
 def main() -> int:
+    global ROOT
+    args = parse_args()
+    ROOT = args.repository_root.resolve()
+
     failures: list[str] = []
     warnings: list[str] = []
     files = markdown_files()
+
+    if args.subjects:
+        declared = sorted(
+            ((ROOT / subject) if not subject.is_absolute() else subject).resolve()
+            for subject in args.subjects
+        )
+        discovered = sorted(path.resolve() for path in files)
+        for missing in set(declared) - set(discovered):
+            failures.append(f"census: declared subject absent on disk: {missing}")
+        for extra in set(discovered) - set(declared):
+            failures.append(f"census: file outside the build census (rerun meson setup): {extra}")
 
     directories: list[Path] = []
     for root in (ROOT / "adr", ROOT / "plans"):
@@ -156,7 +186,11 @@ def main() -> int:
         print("WARNING combined Markdown exceeds soft target", file=sys.stderr)
     for failure in failures:
         print(f"FAIL {failure}", file=sys.stderr)
-    return 1 if failures else 0
+    if failures:
+        return 1
+    if args.stamp is not None:
+        args.stamp.touch()
+    return 0
 
 
 if __name__ == "__main__":

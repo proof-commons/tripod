@@ -43,8 +43,6 @@
 //! JSON (see `plans/README.md`, "Declassification is derived, not
 //! authored").
 //!
-use std::path::Path;
-
 use architecture::ARCHITECTURE;
 
 /// The universal projection every operation carries; derived history,
@@ -136,10 +134,4 @@ pub fn declassification_json() -> String {
         .collect::<Vec<_>>();
 
     serde_json::to_string_pretty(&rows).expect("declassification map serializes") + "\n"
-}
-
-/// The model package root (compile-time manifest directory).
-#[must_use]
-pub fn package_root() -> &'static Path {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
 }

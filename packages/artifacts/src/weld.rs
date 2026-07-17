@@ -12,31 +12,7 @@
 //! Extraction is structural — explicit unique markers, not broad
 //! substring searches.
 
-use std::path::PathBuf;
-
-use anyhow::{Context, bail, ensure};
-
-/// Path of the realization document, resolved from this crate's
-/// source location.
-#[must_use]
-pub fn realization_document_path() -> PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("docs")
-        .join("attestation")
-        .join("realization.md")
-}
-
-/// Read the realization document.
-///
-/// # Errors
-///
-/// Returns an error when the document cannot be read.
-pub fn realization_document() -> anyhow::Result<String> {
-    let path = realization_document_path();
-    std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))
-}
+use anyhow::{bail, ensure};
 
 /// The document masthead: every line before the first thematic break
 /// (`---`). This is where the document states its release identities.

@@ -4,9 +4,10 @@ use serde::Serialize;
 
 use crate::{
     LabelDiagnostic, LabelErrorCode,
+    census::{CensusGroup, RepositoryCensus},
     diagnostic::sort_diagnostics,
     render,
-    repository::{RepositoryLabels, RepositoryPaths},
+    repository::RepositoryLabels,
     source::{SourceLocation, relative_to},
 };
 
@@ -24,8 +25,11 @@ pub struct CheckReport {
     pub imported_citations: usize,
     pub valid: bool,
 }
-pub fn check_repository(paths: &RepositoryPaths) -> (CheckReport, Vec<LabelDiagnostic>) {
+pub fn check_repository(paths: &RepositoryCensus) -> (CheckReport, Vec<LabelDiagnostic>) {
     let mut labels = RepositoryLabels::harvest_sources(paths);
+    // Full census verification (ADR-014): the argument census must
+    // equal the on-disk discovery for every group.
+    labels.diagnostics.extend(paths.verify(CensusGroup::ALL));
     current(
         paths,
         &paths.specification_register,
@@ -73,7 +77,7 @@ pub fn check_repository(paths: &RepositoryPaths) -> (CheckReport, Vec<LabelDiagn
     (report, labels.diagnostics)
 }
 fn current(
-    paths: &RepositoryPaths,
+    paths: &RepositoryCensus,
     path: &std::path::Path,
     expected: &str,
     diagnostics: &mut Vec<LabelDiagnostic>,

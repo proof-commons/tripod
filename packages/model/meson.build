@@ -1,0 +1,112 @@
+# Rust-source census of the model crate (ADR-014): explicit and
+# hand-managed — a new source file must be listed here, or the census
+# audit fails the build.
+model_source_names = [
+  'src/artifacts.rs',
+  'src/asset.rs',
+  'src/audit.rs',
+  'src/certify.rs',
+  'src/constants.rs',
+  'src/fee.rs',
+  'src/genesis.rs',
+  'src/guard.rs',
+  'src/history.rs',
+  'src/invariant.rs',
+  'src/kernel.rs',
+  'src/ledger.rs',
+  'src/lib.rs',
+  'src/maintenance.rs',
+  'src/manifest.rs',
+  'src/object.rs',
+  'src/ops/admission.rs',
+  'src/ops/ash.rs',
+  'src/ops/burn.rs',
+  'src/ops/cycle.rs',
+  'src/ops/inject.rs',
+  'src/ops/maturity.rs',
+  'src/ops/mod.rs',
+  'src/ops/redeem.rs',
+  'src/ops/relabel.rs',
+  'src/ops/request.rs',
+  'src/ops/settlement.rs',
+  'src/ops/transfer.rs',
+  'src/policy.rs',
+  'src/pool.rs',
+  'src/property.rs',
+  'src/queries.rs',
+  'src/quiescence.rs',
+  'src/recognition.rs',
+  'src/scalar.rs',
+  'src/shape.rs',
+  'src/signer.rs',
+  'src/tests/active_backing_cap_tests.rs',
+  'src/tests/admission_tests.rs',
+  'src/tests/advanced_fixtures.rs',
+  'src/tests/ash_clear_tests.rs',
+  'src/tests/attestation_history_fixture.rs',
+  'src/tests/attestation_reorg_tests.rs',
+  'src/tests/authorization_tests.rs',
+  'src/tests/bound_conformance_tests.rs',
+  'src/tests/burn_attestation_tests.rs',
+  'src/tests/canonical_closure_tests.rs',
+  'src/tests/canonical_flow_fault_tests.rs',
+  'src/tests/canonical_rejection_tests.rs',
+  'src/tests/checkpoint_semantics_tests.rs',
+  'src/tests/class_accounting_tests.rs',
+  'src/tests/clause_weld_tests.rs',
+  'src/tests/corruption_fixtures.rs',
+  'src/tests/cycle_tests.rs',
+  'src/tests/declassification_tests.rs',
+  'src/tests/distribution_bijection_tests.rs',
+  'src/tests/distribution_fixtures.rs',
+  'src/tests/exact_flow_tests.rs',
+  'src/tests/fee_auction_tests.rs',
+  'src/tests/guard_listing_weld_tests.rs',
+  'src/tests/indexer_conformance_tests.rs',
+  'src/tests/indexer_order_tests.rs',
+  'src/tests/kernel_tests.rs',
+  'src/tests/mod.rs',
+  'src/tests/no_accumulator_tests.rs',
+  'src/tests/open_asset_immunity_tests.rs',
+  'src/tests/open_flow_tests.rs',
+  'src/tests/property_flow_fault_tests.rs',
+  'src/tests/property_maintenance_tests.rs',
+  'src/tests/property_open_injection_tests.rs',
+  'src/tests/property_strategy.rs',
+  'src/tests/property_trace_tests.rs',
+  'src/tests/redemption_tests.rs',
+  'src/tests/relabel_tests.rs',
+  'src/tests/request_lifecycle_tests.rs',
+  'src/tests/residue_branch_noninterference_tests.rs',
+  'src/tests/residue_noninterference_tests.rs',
+  'src/tests/root_certificate_fault_tests.rs',
+  'src/tests/root_provenance_tests.rs',
+  'src/tests/scenario_fixtures.rs',
+  'src/tests/serialization_tests.rs',
+  'src/tests/settlement_tests.rs',
+  'src/tests/stronger_fee_auction_tests.rs',
+  'src/tests/sweepability_tests.rs',
+  'src/tests/test_fixtures.rs',
+  'src/tests/transfer_tests.rs',
+  'src/transition.rs',
+  'src/world.rs',
+]
+foreach name : model_source_names
+  model_source_files += files(name)
+  model_source_paths += 'packages/model' / name
+endforeach
+
+# Committed generated artifacts (ADR-011: publications, never semantic
+# inputs), owned by generate-all.
+model_generated_names = [
+  'generated/architecture.json',
+  'generated/architecture.toml',
+  'generated/declassification.json',
+]
+foreach name : model_generated_names
+  generated_files += files(name)
+  generated_paths += 'packages/model' / name
+endforeach
+
+model_labels_json_file = files('generated/model_labels.json')
+model_labels_json_path = 'packages/model/generated/model_labels.json'

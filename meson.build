@@ -1,5 +1,7 @@
 project('tripod', version: '0.1.0-dev', subproject_dir: 'papers')
 
+fs = import('fs')
+
 # ---------------------------------------------------------------------------
 # External tools required for the LaTeX build.
 # ---------------------------------------------------------------------------
@@ -8,16 +10,18 @@ xelatex = find_program('xelatex', required: true)
 biber = find_program('biber', required: true)
 
 # ---------------------------------------------------------------------------
-# Rust toolchain. Configuration never compiles the workspace: the paper
-# subproject declares one custom target per required helper binary
-# (execwrap, flatten-latex-main), each running
-# scripts/cargo-bin-sync.sh — `cargo build --release --locked` for that
-# binary plus a copy-if-changed into the declared output — so the paper
-# targets carry real dependency edges and cargo remains the Rust
-# dependency tracker.
+# Rust toolchain. Configuration never compiles the workspace: every
+# required helper binary is a custom target running
+# scripts/cargo-bin-sync.sh — `cargo build --release` for that
+# binary plus a copy-if-changed into the declared output — so the
+# consuming targets carry real dependency edges and cargo remains the
+# Rust dependency tracker.
 # ---------------------------------------------------------------------------
 cargo = find_program('cargo', required: true)
 cargo_manifest = meson.project_source_root() / 'Cargo.toml'
+cargo_bin_sync = find_program('scripts/cargo-bin-sync.sh')
+sh = find_program('sh')
+python = find_program('python3')
 
 # ---------------------------------------------------------------------------
 # Reproducible document builds (ADR-011): TeX date material derives from
@@ -65,29 +69,306 @@ latex_default_options = [
 ]
 
 # ---------------------------------------------------------------------------
-# Paper subproject.
+# Paper subproject. Besides the document targets it owns the attestation
+# part of the lint census (meson's subproject sandbox forbids the
+# parent grabbing those files itself).
 # ---------------------------------------------------------------------------
 attestation_proj = subproject('attestation', default_options: latex_default_options)
 
 attestation_dep = attestation_proj.get_variable('document_dep')
-
-# `install_pdf` is the canonical build-dir artifact consumed by `meson
-# install`. The mirror target copies that PDF into <repo>/archive/rendered/,
-# and the flatten target emits the single-file .tex into
-# <repo>/archive/flattened/. The `attestation` alias bundles both so
-# `meson compile -C build attestation` exports both deliverables.
 attestation_pdf = attestation_proj.get_variable('install_pdf')
-attestation_mirror = attestation_proj.get_variable('mirror_pdf_target')
-attestation_flatten = attestation_proj.get_variable('flatten_target')
+attestation_flat = attestation_proj.get_variable('flat_build_target')
+
+attestation_main_file = attestation_proj.get_variable('main_tex')
+attestation_main_path = attestation_proj.get_variable('attestation_main_path')
+attestation_section_files = attestation_proj.get_variable('attestation_section_files')
+attestation_section_paths = attestation_proj.get_variable('attestation_section_paths')
+realization_file = attestation_proj.get_variable('realization_doc_file')
+realization_path = attestation_proj.get_variable('realization_doc_path')
+
+# ---------------------------------------------------------------------------
+# Lint census (ADR-014). Every subject directory declares its files in
+# an explicit, hand-managed meson.build list; the subdirs below append
+# to these accumulators. The census-audit target diffs the declared
+# lists against git ls-files on every build, and each checker
+# re-verifies its argument census against the on-disk tree, so a
+# missed file is a build failure, never a silent omission.
+# ---------------------------------------------------------------------------
+adr_files = []
+adr_paths = []
+plan_files = []
+plan_paths = []
+doc_files = []
+doc_paths = []
+model_source_files = []
+model_source_paths = []
+crate_source_files = []
+crate_source_paths = []
+generated_files = []
+generated_paths = []
+
+subdir('adr')
+subdir('plans')
+subdir('packages')
+
+# Repository-root and subproject documentation (DOC owner).
+doc_files += files('README.md')
+doc_paths += 'README.md'
+doc_files += attestation_proj.get_variable('human_doc_file')
+doc_paths += attestation_proj.get_variable('human_doc_path')
+
+generated_dir = fs.parent(model_labels_json_path)
+
+# Role-tagged argument lists. Paths stay repository-relative: every
+# binary resolves them against --repository-root, while the file
+# objects above give ninja its dependency edges.
+scoped_census_args = [
+  '--repository-root', meson.project_source_root(),
+  '--attestation-main', attestation_main_path,
+  '--realization', realization_path,
+]
+foreach p : attestation_section_paths
+  scoped_census_args += ['--attestation-section', p]
+endforeach
+foreach p : model_source_paths
+  scoped_census_args += ['--model-source', p]
+endforeach
+
+labels_census_args = scoped_census_args + [
+  '--specification-register', specification_register_path,
+  '--realization-register', realization_register_path,
+  '--model-labels-json', model_labels_json_path,
+]
+foreach p : adr_paths
+  labels_census_args += ['--adr', p]
+endforeach
+foreach p : plan_paths
+  labels_census_args += ['--plan', p]
+endforeach
+foreach p : doc_paths
+  labels_census_args += ['--doc', p]
+endforeach
+foreach p : crate_source_paths
+  labels_census_args += ['--crate-source', p]
+endforeach
+
+census_paths = [attestation_main_path, realization_path, specification_register_path,
+                realization_register_path, model_labels_json_path] \
+               + attestation_section_paths + adr_paths + plan_paths + doc_paths \
+               + model_source_paths + crate_source_paths + generated_paths
+
+# Census audit: build_always_stale re-runs the diff on every ninja
+# invocation; the stamp is created once and never re-dated on a no-op
+# run, so restat keeps the lint targets below clean.
+census_audit = custom_target(
+  'census-audit',
+  output: 'census.ok',
+  command: [
+    find_program('scripts/census-audit.sh'),
+    meson.project_source_root(),
+    '@OUTPUT@',
+  ] + census_paths,
+  build_always_stale: true,
+  build_by_default: true,
+  console: false,
+)
+
+# ---------------------------------------------------------------------------
+# First-party checker and generator binaries as real build targets
+# (same idiom as the paper subproject's helper binaries).
+# ---------------------------------------------------------------------------
+check_labels_bin = custom_target(
+  'cargo-check-labels',
+  output: 'check-labels-bin',
+  command: [
+    cargo_bin_sync, cargo, cargo_manifest,
+    'tripod-labels', 'check-labels', '@OUTPUT@',
+  ],
+  console: true,
+  build_always_stale: true,
+)
+
+check_generated_bin = custom_target(
+  'cargo-check-generated',
+  output: 'check-generated-bin',
+  command: [
+    cargo_bin_sync, cargo, cargo_manifest,
+    'tripod-artifacts', 'check-generated', '@OUTPUT@',
+  ],
+  console: true,
+  build_always_stale: true,
+)
+
+generate_registers_bin = custom_target(
+  'cargo-generate-label-registers',
+  output: 'generate-label-registers-bin',
+  command: [
+    cargo_bin_sync, cargo, cargo_manifest,
+    'tripod-labels', 'generate-label-registers', '@OUTPUT@',
+  ],
+  console: true,
+  build_always_stale: true,
+)
+
+generate_all_bin = custom_target(
+  'cargo-generate-all',
+  output: 'generate-all-bin',
+  command: [
+    cargo_bin_sync, cargo, cargo_manifest,
+    'tripod-artifacts', 'generate-all', '@OUTPUT@',
+  ],
+  console: true,
+  build_always_stale: true,
+)
+
+# ---------------------------------------------------------------------------
+# Lint suites as stamp targets (ADR-014): inputs are the suite's census
+# slice plus the checker binary, the output is a build-dir stamp the
+# checker touches on success. A rerun on an unchanged tree executes
+# nothing.
+# ---------------------------------------------------------------------------
+scoped_census_inputs = attestation_main_file + attestation_section_files + realization_file \
+                       + model_source_files
+
+labels_stamp = custom_target(
+  'labels-check',
+  input: scoped_census_inputs + adr_files + plan_files + doc_files
+         + crate_source_files + specification_register_file + realization_register_file
+         + model_labels_json_file,
+  output: 'labels.ok',
+  command: [check_labels_bin] + labels_census_args + ['--stamp', '@OUTPUT@'],
+  depends: census_audit,
+  build_by_default: true,
+  console: true,
+)
+
+generated_stamp = custom_target(
+  'generated-check',
+  input: scoped_census_inputs + generated_files + model_labels_json_file,
+  output: 'generated.ok',
+  command: [check_generated_bin] + scoped_census_args + [
+    '--generated-dir', generated_dir,
+    '--stamp', '@OUTPUT@',
+  ],
+  depends: census_audit,
+  build_by_default: true,
+  console: true,
+)
+
+plans_lane_paths = []
+plans_lane_files = []
+foreach p : adr_paths + plan_paths + doc_paths
+  if p.startswith('adr/') or p.startswith('plans/')
+    plans_lane_paths += p
+  endif
+endforeach
+foreach f : adr_files + plan_files + doc_files
+  plans_lane_files += f
+endforeach
+plans_lane_paths += [specification_register_path, realization_register_path]
+
+plans_stamp = custom_target(
+  'plans-check',
+  input: plans_lane_files + specification_register_file + realization_register_file
+         + [files('scripts/check_plans.py')],
+  output: 'plans.ok',
+  command: [
+    python, files('scripts/check_plans.py'),
+    '--repository-root', meson.project_source_root(),
+    '--stamp', '@OUTPUT@',
+  ] + plans_lane_paths,
+  depends: census_audit,
+  build_by_default: true,
+  console: true,
+)
+
+alias_target('lint', labels_stamp, generated_stamp, plans_stamp)
+
+# ---------------------------------------------------------------------------
+# Generators: committed in-tree publications cannot be declared
+# outputs, so a shell wrapper touches the build-dir stamp after the
+# generator succeeds (ADR-014 generator-stamp rule). On-demand targets;
+# regeneration is incremental over the same census slices.
+# ---------------------------------------------------------------------------
+generator_wrap = [sh, '-c', 'stamp="$1"; shift; "$@" && : > "$stamp"', 'sh', '@OUTPUT@']
+
+generate_registers_target = custom_target(
+  'run-generate-label-registers',
+  input: scoped_census_inputs,
+  output: 'generate-label-registers.ok',
+  command: generator_wrap + [generate_registers_bin] + scoped_census_args + [
+    '--specification-register-output', specification_register_path,
+    '--realization-register-output', realization_register_path,
+  ],
+  build_by_default: false,
+  console: true,
+)
+alias_target('generate-label-registers', generate_registers_target)
+
+generate_artifacts_target = custom_target(
+  'run-generate-artifacts',
+  input: scoped_census_inputs,
+  output: 'generate-artifacts.ok',
+  command: generator_wrap + [generate_all_bin] + scoped_census_args + [
+    '--output', generated_dir,
+  ],
+  build_by_default: false,
+  console: true,
+)
+alias_target('generate-artifacts', generate_artifacts_target)
+
+# ---------------------------------------------------------------------------
+# Archive exports. `install_pdf` is the canonical build-dir artifact
+# consumed by `meson install`; the mirror targets copy the PDF into
+# <repo>/archive/rendered/ and the flattened .tex into
+# <repo>/archive/flattened/, gated on the label-check stamp (ADR-014):
+# a publication must not embed an unlinted label graph. The plain
+# in-build PDF compile stays independent for fast draft iteration.
+# ---------------------------------------------------------------------------
+mirror_wrap = [
+  sh, '-c',
+  'mkdir -p "$(dirname "$2")" && cp "$1" "$2" && : > "$3"',
+  'sh', '@INPUT@',
+]
+
+attestation_mirror = custom_target(
+  'mirror-attestation-pdf',
+  input: attestation_pdf,
+  output: 'attestation-pdf.mirrored.stamp',
+  command: mirror_wrap + [
+    meson.project_source_root() / 'archive' / 'rendered'
+    / fs.name(attestation_pdf.full_path()),
+    '@OUTPUT@',
+  ],
+  depends: labels_stamp,
+  build_by_default: true,
+  console: false,
+)
+
+attestation_flatten = custom_target(
+  'flatten-attestation-mirror',
+  input: attestation_flat,
+  output: 'attestation-flat.mirrored.stamp',
+  command: mirror_wrap + [
+    meson.project_source_root() / 'archive' / 'flattened'
+    / fs.name(attestation_flat.full_path()),
+    '@OUTPUT@',
+  ],
+  depends: labels_stamp,
+  build_by_default: true,
+  console: false,
+)
 
 alias_target('attestation', attestation_mirror, attestation_flatten)
 alias_target('flatten-attestation', attestation_flatten)
 alias_target('papers', attestation_mirror, attestation_flatten)
 
 # ---------------------------------------------------------------------------
-# Rust lint / test / generated-artifact suites surfaced through meson test.
-# Cargo always runs --locked: CI and document builds must not silently
-# update dependency resolution.
+# Meson test surface. The cargo-global lanes stay cargo-tracked
+# (ADR-014): cargo is their dependency tracker and resolves versions
+# from Cargo.toml (ADR-011). The lint suites are thin wrappers over
+# the stamp targets above — `meson test` builds the stamps (running
+# only what changed) and then merely asserts they exist.
 # ---------------------------------------------------------------------------
 test(
   'cargo-fmt',
@@ -122,47 +403,40 @@ test(
   timeout: 1800,
 )
 
-# Non-writing stale-artifact gate: committed generated artifacts must
-# equal their typed-source derivations (ADR-010 binary; JSON report on
-# stdout, which the test harness captures).
+stamp_probe = ['-c', 'test -f "$1"', 'sh']
+
+test(
+  'census-audit',
+  sh,
+  args: stamp_probe + [census_audit.full_path()],
+  depends: census_audit,
+  suite: 'lint',
+  timeout: 60,
+)
+
 test(
   'check-generated',
-  cargo,
-  args: [
-    'run',
-    '--manifest-path', cargo_manifest,
-    '--package', 'tripod-artifacts',
-    '--bin', 'check-generated',
-  ],
+  sh,
+  args: stamp_probe + [generated_stamp.full_path()],
+  depends: generated_stamp,
   suite: 'generated',
-  timeout: 600,
+  timeout: 60,
 )
 
 test(
   'labels-check',
-  cargo,
-  args: [
-    'run',
-    '--manifest-path', cargo_manifest,
-    '--package', 'tripod-labels',
-    '--bin', 'check-labels',
-    '--',
-    '--repository-root', meson.project_source_root(),
-  ],
+  sh,
+  args: stamp_probe + [labels_stamp.full_path()],
+  depends: labels_stamp,
   suite: ['documentation', 'generated'],
-  timeout: 600,
+  timeout: 60,
 )
 
-run_target(
-  'generate-label-registers',
-  command: [
-    cargo,
-    'run',
-    '--manifest-path', cargo_manifest,
-    '--package', 'tripod-labels',
-    '--bin', 'generate-label-registers',
-    '--',
-    '--repository-root', meson.project_source_root(),
-    '--output-root', meson.project_source_root(),
-  ],
+test(
+  'plans-check',
+  sh,
+  args: stamp_probe + [plans_stamp.full_path()],
+  depends: plans_stamp,
+  suite: 'documentation',
+  timeout: 60,
 )

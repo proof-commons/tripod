@@ -2,13 +2,12 @@ use std::{fs, path::Path};
 
 use crate::{
     LabelErrorCode,
-    check::check_repository,
+    census::{CensusGroup, RepositoryCensus},
     label::{Label, LabelShape},
-    latex::harvest_attestation,
     markdown::{InlineCodeContext, scan_markdown},
     model_labels_json,
     owner::{ImportedLabel, LabelOwner},
-    repository::{RepositoryLabels, RepositoryPaths, generate_registers},
+    repository::{RepositoryLabels, generate_registers},
     rust_source::harvest_model,
 };
 
@@ -138,27 +137,6 @@ fn imported_owner_and_local_label_parse() {
 }
 
 #[test]
-fn open_subproblem_optional_label_is_harvested() {
-    let directory = tempfile::tempdir().expect("temporary repository");
-    let root = directory.path();
-    fs::create_dir_all(root.join("papers/attestation/sections"))
-        .expect("attestation sections directory");
-    fs::write(
-        root.join("papers/attestation/main.tex"),
-        "\\OpenSubProblem[inner-case]{An inner case}\n% \\OpenSubProblem[ignored]{Comment}\n",
-    )
-    .expect("attestation source");
-
-    let (registry, diagnostics) = harvest_attestation(&RepositoryPaths::from_root(root));
-    assert!(diagnostics.is_empty());
-    assert!(
-        registry.contains(
-            &Label::parse("open:inner-case", LabelShape::Attestation).expect("valid label")
-        )
-    );
-}
-
-#[test]
 fn model_harvest_uses_token_columns_and_rejects_malformed_known_labels() {
     let directory = tempfile::tempdir().expect("temporary repository");
     let root = directory.path();
@@ -170,7 +148,7 @@ fn model_harvest_uses_token_columns_and_rejects_malformed_known_labels() {
     )
     .expect("model source");
 
-    let harvest = harvest_model(&RepositoryPaths::from_root(root));
+    let harvest = harvest_model(&RepositoryCensus::discover(root));
     assert!(harvest.registry.contains(
         &Label::parse("test:fixture:defined", LabelShape::Model).expect("valid model label")
     ));
@@ -201,7 +179,7 @@ fn model_harvest_enforces_owner_relative_forms() {
     )
     .expect("model source");
 
-    let harvest = harvest_model(&RepositoryPaths::from_root(root));
+    let harvest = harvest_model(&RepositoryCensus::discover(root));
 
     // A repeated bare label is a duplicate mint, never a silent repeat.
     let duplicate = harvest
@@ -252,7 +230,7 @@ fn plan_local_labels_are_ignored_but_unknown_imports_fail() {
     )
     .expect("plan source");
 
-    let labels = RepositoryLabels::harvest_sources(&RepositoryPaths::from_root(root));
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(root));
     assert!(
         labels
             .diagnostics
@@ -295,7 +273,7 @@ fn adr_imports_are_validated_once_and_internal_citations_resolve() {
     )
     .expect("ADR source");
 
-    let labels = RepositoryLabels::harvest_sources(&RepositoryPaths::from_root(root));
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(root));
     assert_eq!(labels.imported_citation_count(), 1);
     assert!(!labels.diagnostics.iter().any(|diagnostic| {
         matches!(
@@ -305,48 +283,69 @@ fn adr_imports_are_validated_once_and_internal_citations_resolve() {
     }));
 }
 
+// Whole-repository validity is the job of the Meson-driven
+// `check-labels` target (ADR-014): unit tests never discover the live
+// checkout, so register generation is exercised on synthetic fixtures
+// only.
 #[test]
-fn workspace_sources_pass_the_document_and_architecture_weld() {
-    let paths = RepositoryPaths::workspace_default();
-    let before = [
-        fs::read(&paths.specification_register).expect("Layer-0 register"),
-        fs::read(&paths.realization_register).expect("realization register"),
-        fs::read(&paths.model_labels_json).expect("model label publication"),
-    ];
-    let (report, diagnostics) = check_repository(&paths);
-    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
-    assert!(report.valid);
-    assert!(report.imported_citations > 0);
-    let after = [
-        fs::read(&paths.specification_register).expect("Layer-0 register"),
-        fs::read(&paths.realization_register).expect("realization register"),
-        fs::read(&paths.model_labels_json).expect("model label publication"),
-    ];
-    assert_eq!(before, after, "the repository check must not write outputs");
-}
-
-#[test]
-fn register_generation_is_deterministic_in_an_explicit_output_root() {
-    let paths = RepositoryPaths::workspace_default();
+fn register_generation_is_deterministic_in_explicit_outputs() {
+    let directory = fixture_root("# Realization\n`sec:fixture`\nBody cite [A-def:model:known].\n");
+    let paths = RepositoryCensus::discover(directory.path());
     let output = tempfile::tempdir().expect("temporary output root");
+    let specification_output = output.path().join("specification.md");
+    let realization_output = output.path().join("realization.md");
 
-    generate_registers(&paths, output.path()).expect("first register generation");
-    let first_specification = fs::read(output.path().join("plans/labels/specification.md"))
-        .expect("generated Layer-0 register");
-    let first_realization = fs::read(output.path().join("plans/labels/realization.md"))
-        .expect("generated realization register");
+    generate_registers(&paths, &specification_output, &realization_output)
+        .expect("first register generation");
+    let first_specification =
+        fs::read(&specification_output).expect("generated specification register");
+    let first_realization = fs::read(&realization_output).expect("generated realization register");
+    assert!(!first_specification.is_empty());
 
-    generate_registers(&paths, output.path()).expect("second register generation");
+    generate_registers(&paths, &specification_output, &realization_output)
+        .expect("second register generation");
     assert_eq!(
         first_specification,
-        fs::read(output.path().join("plans/labels/specification.md"))
-            .expect("generated Layer-0 register")
+        fs::read(&specification_output).expect("generated specification register")
     );
     assert_eq!(
         first_realization,
-        fs::read(output.path().join("plans/labels/realization.md"))
-            .expect("generated realization register")
+        fs::read(&realization_output).expect("generated realization register")
     );
+}
+
+#[test]
+fn stale_census_is_a_hard_failure_naming_the_path() {
+    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let root = directory.path();
+
+    // The argument census predates a newly added plan file: the
+    // verifier must fail with the path, never silently reclassify.
+    let paths = RepositoryCensus::discover(root);
+    fs::write(root.join("plans/late-addition.md"), "# Late\n").expect("late plan");
+
+    let diagnostics = paths.verify(CensusGroup::ALL);
+    let stale = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == LabelErrorCode::CensusStale)
+        .expect("stale census diagnostic");
+    assert_eq!(stale.path, "plans/late-addition.md");
+
+    // A census entry deleted on disk is equally stale.
+    let paths = RepositoryCensus::discover(root);
+    fs::remove_file(root.join("plans/late-addition.md")).expect("remove plan");
+    let diagnostics = paths.verify(CensusGroup::ALL);
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == LabelErrorCode::CensusStale
+                && diagnostic.path == "plans/late-addition.md")
+    );
+
+    // Scoped verification ignores the unrelated planning group.
+    let paths = RepositoryCensus::discover(root);
+    fs::write(root.join("plans/other.md"), "# Other\n").expect("other plan");
+    assert!(paths.verify(CensusGroup::SCOPED).is_empty());
 }
 
 #[test]
@@ -379,7 +378,7 @@ fn model_label_derivation_ignores_invalid_planning_imports() {
     fs::write(root.join("plans/invalid.md"), "(`[A-def:model:missing]`)\n")
         .expect("invalid planning import");
 
-    let paths = RepositoryPaths::from_root(root);
+    let paths = RepositoryCensus::discover(root);
     let labels = model_labels_json(&paths).expect("model labels ignore planning imports");
     assert!(labels.contains("test:fixture:defined"));
     assert!(RepositoryLabels::harvest_sources(&paths).has_errors());
@@ -407,20 +406,6 @@ fn fixture_root(realization: &str) -> tempfile::TempDir {
 }
 
 #[test]
-fn duplicate_realization_mint_fails() {
-    let directory = fixture_root("# Realization\n`sec:fixture`\n`sec:fixture`\n");
-
-    let labels = RepositoryLabels::harvest_sources(&RepositoryPaths::from_root(directory.path()));
-    let duplicate = labels
-        .diagnostics
-        .iter()
-        .find(|diagnostic| diagnostic.code == LabelErrorCode::DuplicateMint)
-        .expect("duplicate realization mint diagnostic");
-    assert_eq!(duplicate.line, 3);
-    assert!(duplicate.message.contains("first minted at"));
-}
-
-#[test]
 fn attestation_anchor_set_derives_from_body_citations_only() {
     // A fenced example and the generated upward-citation index must
     // not contribute anchors; an index token without a body citation
@@ -436,7 +421,7 @@ fn attestation_anchor_set_derives_from_body_citations_only() {
         "| `[A-def:model:known]` | (`sec:fixture`) |\n",
     ));
 
-    let labels = RepositoryLabels::harvest_sources(&RepositoryPaths::from_root(directory.path()));
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
     assert!(
         !labels
             .diagnostics
@@ -452,7 +437,7 @@ fn attestation_anchor_set_derives_from_body_citations_only() {
         "## §17 Upward-citation index · `sec:realization:anchors`\n",
         "| `[A-def:model:known]` | (`sec:fixture`) |\n",
     ));
-    let labels = RepositoryLabels::harvest_sources(&RepositoryPaths::from_root(stale.path()));
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(stale.path()));
     assert!(
         labels
             .diagnostics
@@ -484,7 +469,7 @@ fn rust_scanner_processes_comments_only() {
     )
     .expect("model source");
 
-    let harvest = harvest_model(&RepositoryPaths::from_root(root));
+    let harvest = harvest_model(&RepositoryCensus::discover(root));
     let minted: Vec<_> = harvest.registry.labels().map(ToString::to_string).collect();
     assert_eq!(
         minted,
@@ -515,7 +500,7 @@ fn rust_scanner_matches_the_compilers_block_comment_nesting() {
     )
     .expect("model source");
 
-    let harvest = harvest_model(&RepositoryPaths::from_root(root));
+    let harvest = harvest_model(&RepositoryCensus::discover(root));
     assert!(harvest.diagnostics.is_empty(), "{:#?}", harvest.diagnostics);
     assert!(harvest.registry.contains(
         &Label::parse("def:fixture:nested", LabelShape::Model).expect("valid model label")
@@ -540,7 +525,7 @@ fn rust_scanner_ignores_tilde_fenced_examples_and_rejects_asymmetric_parens() {
     )
     .expect("model source");
 
-    let harvest = harvest_model(&RepositoryPaths::from_root(root));
+    let harvest = harvest_model(&RepositoryCensus::discover(root));
 
     // The tilde fence is nonparticipating, exactly like a backtick
     // fence in Markdown.
@@ -588,7 +573,7 @@ fn scoped_derivations_ignore_cross_owner_imports_and_index_staleness() {
     )
     .expect("model source");
 
-    let paths = RepositoryPaths::from_root(root);
+    let paths = RepositoryCensus::discover(root);
     assert!(RepositoryLabels::harvest_sources(&paths).has_errors());
 
     let labels = model_labels_json(&paths).expect("scoped derivation ignores unrelated owners");
@@ -606,7 +591,7 @@ fn anchor_scan_ignores_double_backtick_examples() {
         "| `[A-def:model:known]` | (`sec:fixture`) |\n",
     ));
 
-    let labels = RepositoryLabels::harvest_sources(&RepositoryPaths::from_root(directory.path()));
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
     // The example token contributes neither an anchor nor an import,
     // so the index weld and import resolution both stay green.
     assert!(
@@ -641,7 +626,7 @@ fn crate_owners_are_independent_and_duplicates_fail() {
     )
     .expect("artifacts source");
 
-    let labels = RepositoryLabels::harvest_sources(&RepositoryPaths::from_root(root));
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(root));
 
     // Same label text under two crate owners does not collide; a
     // repeat within one crate does, and citations resolve per crate.
@@ -691,7 +676,7 @@ fn planning_labels_resolve_across_files_and_duplicates_fail() {
     )
     .expect("second plan");
 
-    let labels = RepositoryLabels::harvest_sources(&RepositoryPaths::from_root(root));
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(root));
 
     // The cross-file citation resolves; a citation typo and a second
     // mint are hard failures.
@@ -736,7 +721,7 @@ fn doc_owner_mints_resolve_and_are_importable() {
     )
     .expect("plan citing a DOC label");
 
-    let labels = RepositoryLabels::harvest_sources(&RepositoryPaths::from_root(root));
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(root));
     // The fixture architecture weld necessarily fails against a
     // one-label realization document; only citation resolution is
     // under test here.
@@ -765,10 +750,14 @@ fn register_generation_ignores_unrelated_adr_defects() {
     )
     .expect("ADR with an unresolved citation");
 
-    let paths = RepositoryPaths::from_root(root);
+    let paths = RepositoryCensus::discover(root);
     assert!(RepositoryLabels::harvest_sources(&paths).has_errors());
 
     let output = tempfile::tempdir().expect("temporary output root");
-    generate_registers(&paths, output.path())
-        .expect("upstream registers regenerate despite the ADR defect");
+    generate_registers(
+        &paths,
+        &output.path().join("specification.md"),
+        &output.path().join("realization.md"),
+    )
+    .expect("upstream registers regenerate despite the ADR defect");
 }

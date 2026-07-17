@@ -1,9 +1,10 @@
 //! `generate-all`: the workspace's single generated-artifact writer.
 //!
 //! Renders every artifact in [`artifacts::ARTIFACT_NAMES`] from its
-//! typed source and writes it atomically into `--output` (default:
-//! the committed `packages/model/generated` directory). The check
-//! path is `check-generated`, which never writes.
+//! typed source and writes it atomically into `--output`. The scoped
+//! label census feeding the model-label publication arrives by
+//! argument (ADR-014). The check path is `check-generated`, which
+//! never writes.
 //!
 //! ADR-010: side-effect command; no stdout result data. Written files
 //! are assets routed by `--output`; diagnostics are JSON on stderr.
@@ -26,10 +27,29 @@ struct Args {
     #[command(flatten)]
     base: BaseArgs,
 
-    /// Output directory for the generated artifacts. Defaults to the
-    /// committed generated directory (packages/model/generated).
+    /// Repository root; relative subject paths resolve against it.
     #[arg(long, value_name = "DIR")]
-    output: Option<PathBuf>,
+    repository_root: PathBuf,
+
+    /// The Attestation specification root TeX file.
+    #[arg(long, value_name = "FILE")]
+    attestation_main: PathBuf,
+
+    /// Attestation specification section TeX files.
+    #[arg(long = "attestation-section", value_name = "FILE")]
+    attestation_sections: Vec<PathBuf>,
+
+    /// The realization Markdown document.
+    #[arg(long, value_name = "FILE")]
+    realization: PathBuf,
+
+    /// Model crate Rust sources.
+    #[arg(long = "model-source", value_name = "FILE")]
+    model_sources: Vec<PathBuf>,
+
+    /// Output directory for the generated artifacts.
+    #[arg(long, value_name = "DIR")]
+    output: PathBuf,
 }
 
 fn main() -> ExitCode {
@@ -37,11 +57,21 @@ fn main() -> ExitCode {
     let args = parse_args_or_exit::<Args>();
 
     run_no_stdout_command(COMMAND_NAME, args.base.debug, tracing::Level::INFO, || {
-        let output = args.output.clone().unwrap_or_else(artifacts::generated_dir);
+        let root = &args.repository_root;
+        let resolve = |path: &PathBuf| labels::RepositoryCensus::resolve(root, path.clone());
+        let census = labels::RepositoryCensus {
+            root: root.clone(),
+            attestation_main: resolve(&args.attestation_main),
+            attestation_sections: args.attestation_sections.iter().map(resolve).collect(),
+            realization: resolve(&args.realization),
+            model_sources: args.model_sources.iter().map(resolve).collect(),
+            ..labels::RepositoryCensus::default()
+        };
+        let output = resolve(&args.output);
 
         std::fs::create_dir_all(&output)?;
 
-        for artifact in artifacts::expected_artifacts()? {
+        for artifact in artifacts::expected_artifacts(&census)? {
             let path = output.join(artifact.name);
             artifacts::atomic_write(&path, &artifact.bytes)?;
             tracing::info!(

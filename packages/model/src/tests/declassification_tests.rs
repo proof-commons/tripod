@@ -5,9 +5,12 @@
 //! check the committed artifact without writing. Regeneration is
 //! `generate-all`'s job, never a test side effect.
 
-use crate::artifacts::{declassification_json, declassification_rows, package_root};
+use crate::artifacts::{declassification_json, declassification_rows};
 
-const INDEX_RELATIVE_PATH: &str = "generated/declassification.json";
+/// The committed artifact, embedded at compile time so cargo tracks
+/// the fixture and the test never resolves a repository path at
+/// runtime (ADR-014 hermetic-test rule).
+const COMMITTED_INDEX: &str = include_str!("../../generated/declassification.json");
 
 /// The private membrane, pinned: lateral-only operations declassify
 /// nothing.
@@ -61,11 +64,8 @@ fn boundary_operations_declassify_their_deltas() {
 fn declassification_index_is_current() {
     let rendered = declassification_json();
 
-    let index_path = package_root().join(INDEX_RELATIVE_PATH);
-    let committed = std::fs::read_to_string(&index_path).unwrap_or_default();
-
     assert_eq!(
-        committed, rendered,
+        COMMITTED_INDEX, rendered,
         "generated/declassification.json is stale; run \
          `cargo run -p tripod-artifacts --bin generate-all` \
          and commit the diff",

@@ -7,20 +7,26 @@ use architecture::{
     ARCHITECTURE, PublishedArchitecture, behavioural_hash_hex, canonical, semantic_hash_hex,
 };
 
-use crate::weld::{extract_appendix_toml, masthead, realization_document};
+use crate::weld::{extract_appendix_toml, masthead};
+
+/// The committed realization document, embedded at compile time so
+/// cargo tracks the fixture and the test never resolves a repository
+/// path at runtime (ADR-014 hermetic-test rule).
+const REALIZATION_DOCUMENT: &str = include_str!("../../../../docs/attestation/realization.md");
+
+/// The committed generated manifest, embedded the same way.
+const COMMITTED_ARCHITECTURE_TOML: &str =
+    include_str!("../../../model/generated/architecture.toml");
 
 /// The appendix TOML is byte-for-byte the generated artifact, parses
 /// as the supported envelope, validates both hashes, and equals the
 /// complete typed expected value.
 #[test]
 fn appendix_toml_is_the_generated_manifest_verbatim() {
-    let document = realization_document().expect("realization document reads");
-    let attached = extract_appendix_toml(&document).expect("appendix extracts");
+    let attached = extract_appendix_toml(REALIZATION_DOCUMENT).expect("appendix extracts");
 
-    let committed = std::fs::read_to_string(crate::generated_dir().join("architecture.toml"))
-        .expect("generated architecture.toml reads");
     assert_eq!(
-        attached, committed,
+        attached, COMMITTED_ARCHITECTURE_TOML,
         "the app:realization:architecture appendix is not byte-identical to \
          packages/model/generated/architecture.toml",
     );
@@ -38,8 +44,7 @@ fn appendix_toml_is_the_generated_manifest_verbatim() {
 /// hash, realization version, and publication status.
 #[test]
 fn masthead_identities_match_the_typed_architecture() {
-    let document = realization_document().expect("realization document reads");
-    let masthead = masthead(&document).expect("masthead extracts");
+    let masthead = masthead(REALIZATION_DOCUMENT).expect("masthead extracts");
 
     let schema = ARCHITECTURE.document.architecture_schema_version;
     assert!(
@@ -92,7 +97,7 @@ fn masthead_identities_match_the_typed_architecture() {
 /// second toml fence is a hard failure, not a silent first match.
 #[test]
 fn appendix_extraction_rejects_ambiguity() {
-    let document = realization_document().expect("realization document reads");
+    let document = REALIZATION_DOCUMENT;
 
     let duplicated_heading =
         format!("{document}\n## Appendix — duplicate · `app:realization:architecture`\n");

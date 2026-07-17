@@ -13,15 +13,13 @@
 //! unconditionally.
 
 use std::collections::BTreeSet;
-use std::path::Path;
 
 use crate::*;
 
-const DOC_RELATIVE_PATH: &str = "../../docs/attestation/realization.md";
-
-fn doc_path() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(DOC_RELATIVE_PATH)
-}
+/// The committed realization document, embedded at compile time so
+/// cargo tracks the fixture and the test never resolves a repository
+/// path at runtime (ADR-014 hermetic-test rule).
+const REALIZATION_DOCUMENT: &str = include_str!("../../../../docs/attestation/realization.md");
 
 const ALLOWED_NON_VARIANTS: &[&str] = &["Guard", "InvariantError"];
 
@@ -203,10 +201,7 @@ fn fences_stop_at_the_next_heading() {
 
 #[test]
 fn guard_listing_is_a_projection_of_the_model() {
-    let document = std::fs::read_to_string(doc_path())
-        .expect("realization.md must exist once the label freeze is declared");
-
-    let violations = projection_violations(&listing_fences(&document));
+    let violations = projection_violations(&listing_fences(REALIZATION_DOCUMENT));
 
     assert!(violations.is_empty(), "{}", violations.join("\n"));
 }
