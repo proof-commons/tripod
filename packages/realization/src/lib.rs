@@ -27,24 +27,44 @@
 )]
 
 pub mod binding;
+pub mod declassification;
+pub mod derive;
 pub mod domain;
 pub mod error;
+pub mod evaluate;
 pub mod expression;
 pub mod identity;
+pub mod observation;
+pub mod operation;
+pub mod relation;
 pub mod scope;
 pub mod value;
 
+mod declarations;
+mod validate;
+
 pub use binding::ArchitectureBinding;
+pub use declassification::{
+    DeclassificationAnalysis, DisclosureEdge, DisclosureNode, DisclosureReason,
+};
+pub use derive::{ScopedRealizationSpec, derive};
 pub use domain::{Count, PROTOCOL_AMOUNT_LIMIT_EXCLUSIVE, ProtocolAmount, RepresentationMode};
-pub use error::RealizationError;
+pub use error::{ArchitectureMismatchField, RealizationError};
+pub use evaluate::{ConformanceReport, RelationStatus, RelationVerdict, evaluate_operation};
 pub use expression::{
-    DependencyEdge, EvaluatedExpressions, ExpressionDeclaration, ExpressionNode,
-    ExpressionRegistry, FactValues,
+    DependencyEdge, EvaluatedExpressions, ExpressionDeclaration, ExpressionNode, FactValues,
+    build_expression_graph, evaluate_expressions,
 };
 pub use identity::{
     ExprId, ExpressionRole, FactId, ProofAlternativeId, ProofKind, RelationId, RelationKind,
     RelationSubject, TransactionSide,
 };
+pub use observation::{
+    ObservedAsset, ObservedObject, ObservedObjectKind, ObservedObjectRef, ObservedOpenFlow,
+    ObservedRootEffect, ObservedSide, OperationObservation,
+};
+pub use operation::OperationRealization;
+pub use relation::{CardinalityMaximum, Relation, RelationDeclaration, RelationEdge};
 pub use scope::{CompleteRealizationScope, RealizationScope};
 pub use value::{OwnerId, SemanticType, SemanticValue};
 

@@ -1,21 +1,21 @@
-//! Typed expression declarations.
-//!
-//! The expression vocabulary is intentionally small. Phase 1 needs
-//! checked sums, exact equality, ordered comparison, conjunction, and
-//! owner-set inclusion. More expressive forms are added only when a
-//! concrete semantic operation requires them.
+//! Typed expression declarations and direct Petgraph construction.
 
 use std::collections::BTreeMap;
 
 use petgraph::{
     algo::{kosaraju_scc, toposort},
     graph::{DiGraph, NodeIndex},
-    visit::EdgeRef,
 };
 
 use crate::{Count, ExprId, FactId, ProtocolAmount, RealizationError, SemanticType, SemanticValue};
 
 /// Typed dependency edge in an expression graph.
+///
+/// Edge direction is:
+///
+/// ```text
+/// dependency -> consumer
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DependencyEdge {
     Operand { position: u32 },
@@ -23,6 +23,7 @@ pub enum DependencyEdge {
     Right,
     RequiredOwners,
     PresentedSigners,
+    Condition,
 }
 
 /// One typed expression node.
@@ -63,185 +64,13 @@ pub enum ExpressionNode {
     },
 }
 
-impl ExpressionNode {
-    fn dependency_edges(
-        &self,
-        expression: &ExprId,
-    ) -> Result<Vec<(ExprId, DependencyEdge)>, RealizationError> {
-        match self {
-            Self::Fact(_) | Self::Bool(_) | Self::Count(_) | Self::Amount(_) => Ok(Vec::new()),
-
-            Self::CheckedSum { terms, .. } | Self::All { terms } => terms
-                .iter()
-                .enumerate()
-                .map(|(position, term)| {
-                    Ok((
-                        term.clone(),
-                        DependencyEdge::Operand {
-                            position: operand_position(expression, position, terms.len())?,
-                        },
-                    ))
-                })
-                .collect(),
-
-            Self::Equal { left, right } | Self::LessOrEqual { left, right } => Ok(vec![
-                (left.clone(), DependencyEdge::Left),
-                (right.clone(), DependencyEdge::Right),
-            ]),
-
-            Self::OwnerSubset {
-                required,
-                presented,
-            } => Ok(vec![
-                (required.clone(), DependencyEdge::RequiredOwners),
-                (presented.clone(), DependencyEdge::PresentedSigners),
-            ]),
-        }
-    }
-}
-
-/// One named expression declaration.
+/// One stable expression declaration stored directly as a Petgraph node weight.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExpressionDeclaration {
     pub id: ExprId,
     pub ty: SemanticType,
     pub node: ExpressionNode,
 }
-
-/// Frozen deterministic expression registry.
-#[derive(Clone, Debug)]
-pub struct ExpressionRegistry {
-    declarations: BTreeMap<ExprId, ExpressionDeclaration>,
-    graph: DiGraph<ExprId, DependencyEdge, u32>,
-    node_by_id: BTreeMap<ExprId, NodeIndex<u32>>,
-    evaluation_order: Vec<ExprId>,
-}
-
-impl ExpressionRegistry {
-    /// Validate and freeze expression declarations.
-    pub fn new(
-        declarations: impl IntoIterator<Item = ExpressionDeclaration>,
-    ) -> Result<Self, RealizationError> {
-        let mut by_id = BTreeMap::new();
-
-        for declaration in declarations {
-            let id = declaration.id.clone();
-
-            if by_id.insert(id.clone(), declaration).is_some() {
-                return Err(RealizationError::DuplicateExpression(id));
-            }
-        }
-
-        for declaration in by_id.values() {
-            validate_expression_declaration(declaration, &by_id)?;
-        }
-
-        let edge_declarations = expression_dependencies(&by_id)?;
-        let mut graph = DiGraph::<ExprId, DependencyEdge, u32>::with_capacity(
-            by_id.len(),
-            edge_declarations.len(),
-        );
-        let mut node_by_id = BTreeMap::new();
-
-        for id in by_id.keys() {
-            let node = graph.add_node(id.clone());
-            node_by_id.insert(id.clone(), node);
-        }
-
-        for dependency in &edge_declarations {
-            let source = node_by_id[&dependency.dependency];
-            let target = node_by_id[&dependency.consumer];
-            graph.add_edge(source, target, dependency.edge);
-        }
-
-        let evaluation_order = topological_expression_order(&graph)?;
-
-        Ok(Self {
-            declarations: by_id,
-            graph,
-            node_by_id,
-            evaluation_order,
-        })
-    }
-
-    /// Look up one declaration.
-    #[must_use]
-    pub fn get(&self, id: &ExprId) -> Option<&ExpressionDeclaration> {
-        self.declarations.get(id)
-    }
-
-    /// Iterate declarations in stable expression-ID order.
-    pub fn iter(&self) -> impl Iterator<Item = (&ExprId, &ExpressionDeclaration)> {
-        self.declarations.iter()
-    }
-
-    /// Canonical dependency-before-consumer evaluation order.
-    #[must_use]
-    pub fn evaluation_order(&self) -> &[ExprId] {
-        &self.evaluation_order
-    }
-
-    /// Direct Petgraph dependency graph.
-    #[must_use]
-    pub const fn dependency_graph(&self) -> &DiGraph<ExprId, DependencyEdge, u32> {
-        &self.graph
-    }
-
-    /// Return the local Petgraph node for a stable expression ID.
-    #[must_use]
-    pub fn node_index(&self, id: &ExprId) -> Option<NodeIndex<u32>> {
-        self.node_by_id.get(id).copied()
-    }
-
-    /// Number of expressions.
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.declarations.len()
-    }
-
-    /// Return whether the registry is empty.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.declarations.is_empty()
-    }
-
-    /// Evaluate the complete registry from primitive facts.
-    pub fn evaluate(&self, facts: &FactValues) -> Result<EvaluatedExpressions, RealizationError> {
-        let mut values = BTreeMap::new();
-
-        for id in &self.evaluation_order {
-            let declaration = self.declarations.get(id).ok_or_else(|| {
-                RealizationError::UnknownEvaluatedExpression {
-                    expression: id.clone(),
-                }
-            })?;
-
-            let value = evaluate_node(&declaration.node, facts, &values)?;
-
-            if value.semantic_type() != declaration.ty {
-                return Err(RealizationError::ExpressionTypeMismatch {
-                    expression: declaration.id.clone(),
-                    expected: declaration.ty,
-                    actual: value.semantic_type(),
-                });
-            }
-
-            values.insert(declaration.id.clone(), value);
-        }
-
-        Ok(EvaluatedExpressions { values })
-    }
-}
-
-impl PartialEq for ExpressionRegistry {
-    fn eq(&self, other: &Self) -> bool {
-        self.declarations == other.declarations
-            && canonical_graph_edges(&self.graph) == canonical_graph_edges(&other.graph)
-            && self.evaluation_order == other.evaluation_order
-    }
-}
-
-impl Eq for ExpressionRegistry {}
 
 /// Primitive fact values supplied to the evaluator.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -339,10 +168,179 @@ impl FactId {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct ExpressionDependency {
+struct PendingDependency {
     dependency: ExprId,
     consumer: ExprId,
     edge: DependencyEdge,
+}
+
+/// Build a direct Petgraph expression dependency graph.
+///
+/// Nodes and edges are inserted in stable typed-key order. Petgraph computes
+/// topology and SCC membership; first-party code translates local indices back
+/// to stable IDs and canonicalizes unordered SCC output.
+#[allow(clippy::type_complexity)]
+pub fn build_expression_graph(
+    declarations: impl IntoIterator<Item = ExpressionDeclaration>,
+) -> Result<
+    (
+        DiGraph<ExpressionDeclaration, DependencyEdge, u32>,
+        BTreeMap<ExprId, NodeIndex<u32>>,
+        Vec<ExprId>,
+    ),
+    RealizationError,
+> {
+    let mut by_id = BTreeMap::new();
+
+    for declaration in declarations {
+        let id = declaration.id.clone();
+
+        if by_id.insert(id.clone(), declaration).is_some() {
+            return Err(RealizationError::DuplicateExpression(id));
+        }
+    }
+
+    for declaration in by_id.values() {
+        validate_expression_declaration(declaration, &by_id)?;
+    }
+
+    let mut dependencies = Vec::new();
+    for declaration in by_id.values() {
+        dependencies.extend(expression_dependencies(declaration)?);
+    }
+    dependencies.sort();
+
+    let mut graph = DiGraph::<ExpressionDeclaration, DependencyEdge, u32>::with_capacity(
+        by_id.len(),
+        dependencies.len(),
+    );
+    let mut node_by_id = BTreeMap::new();
+
+    for declaration in by_id.values() {
+        let node = graph.add_node(declaration.clone());
+        node_by_id.insert(declaration.id.clone(), node);
+    }
+
+    for dependency in dependencies {
+        let source = node_by_id[&dependency.dependency];
+        let target = node_by_id[&dependency.consumer];
+        graph.add_edge(source, target, dependency.edge);
+    }
+
+    let evaluation_order = toposort(&graph, None)
+        .map_err(|_cycle| RealizationError::ExpressionDependencyCycle {
+            components: cyclic_expression_components(&graph),
+        })?
+        .into_iter()
+        .map(|node| graph[node].id.clone())
+        .collect();
+
+    Ok((graph, node_by_id, evaluation_order))
+}
+
+/// Evaluate a direct Petgraph expression graph from primitive facts.
+pub fn evaluate_expressions(
+    graph: &DiGraph<ExpressionDeclaration, DependencyEdge, u32>,
+    node_by_id: &BTreeMap<ExprId, NodeIndex<u32>>,
+    evaluation_order: &[ExprId],
+    facts: &FactValues,
+) -> Result<EvaluatedExpressions, RealizationError> {
+    let mut values = BTreeMap::new();
+
+    for id in evaluation_order {
+        let node = node_by_id.get(id).copied().ok_or_else(|| {
+            RealizationError::UnknownEvaluatedExpression {
+                expression: id.clone(),
+            }
+        })?;
+        let declaration = &graph[node];
+        let value = evaluate_node(&declaration.node, facts, &values)?;
+
+        if value.semantic_type() != declaration.ty {
+            return Err(RealizationError::ExpressionTypeMismatch {
+                expression: declaration.id.clone(),
+                expected: declaration.ty,
+                actual: value.semantic_type(),
+            });
+        }
+
+        values.insert(declaration.id.clone(), value);
+    }
+
+    Ok(EvaluatedExpressions { values })
+}
+
+fn expression_dependencies(
+    declaration: &ExpressionDeclaration,
+) -> Result<Vec<PendingDependency>, RealizationError> {
+    let consumer = declaration.id.clone();
+    let dependency = |id: &ExprId, edge| PendingDependency {
+        dependency: id.clone(),
+        consumer: consumer.clone(),
+        edge,
+    };
+
+    match &declaration.node {
+        ExpressionNode::Fact(_)
+        | ExpressionNode::Bool(_)
+        | ExpressionNode::Count(_)
+        | ExpressionNode::Amount(_) => Ok(Vec::new()),
+
+        ExpressionNode::CheckedSum { terms, .. } | ExpressionNode::All { terms } => terms
+            .iter()
+            .enumerate()
+            .map(|(position, term)| {
+                let position = u32::try_from(position).map_err(|_| {
+                    RealizationError::TooManyExpressionOperands {
+                        expression: declaration.id.clone(),
+                    }
+                })?;
+
+                Ok(dependency(term, DependencyEdge::Operand { position }))
+            })
+            .collect(),
+
+        ExpressionNode::Equal { left, right } | ExpressionNode::LessOrEqual { left, right } => {
+            Ok(vec![
+                dependency(left, DependencyEdge::Left),
+                dependency(right, DependencyEdge::Right),
+            ])
+        }
+
+        ExpressionNode::OwnerSubset {
+            required,
+            presented,
+        } => Ok(vec![
+            dependency(required, DependencyEdge::RequiredOwners),
+            dependency(presented, DependencyEdge::PresentedSigners),
+        ]),
+    }
+}
+
+fn cyclic_expression_components(
+    graph: &DiGraph<ExpressionDeclaration, DependencyEdge, u32>,
+) -> Vec<Vec<ExprId>> {
+    let mut components = kosaraju_scc(graph)
+        .into_iter()
+        .filter(|component| {
+            component.len() > 1
+                || component
+                    .first()
+                    .is_some_and(|node| graph.find_edge(*node, *node).is_some())
+        })
+        .map(|component| {
+            let mut ids = component
+                .into_iter()
+                .map(|node| graph[node].id.clone())
+                .collect::<Vec<_>>();
+
+            ids.sort();
+            ids
+        })
+        .collect::<Vec<_>>();
+
+    components.sort();
+    components
 }
 
 fn validate_expression_declaration(
@@ -358,11 +356,11 @@ fn validate_expression_declaration(
         });
     }
 
-    for (dependency, _) in declaration.node.dependency_edges(&declaration.id)? {
-        if !declarations.contains_key(&dependency) {
+    for dependency in expression_dependencies(declaration)? {
+        if !declarations.contains_key(&dependency.dependency) {
             return Err(RealizationError::UnknownExpressionDependency {
                 expression: declaration.id.clone(),
-                dependency,
+                dependency: dependency.dependency,
             });
         }
     }
@@ -477,78 +475,6 @@ fn infer_node_type(
             Ok(SemanticType::Bool)
         }
     }
-}
-
-fn expression_dependencies(
-    declarations: &BTreeMap<ExprId, ExpressionDeclaration>,
-) -> Result<Vec<ExpressionDependency>, RealizationError> {
-    let mut dependencies = Vec::new();
-
-    for declaration in declarations.values() {
-        for (dependency, edge) in declaration.node.dependency_edges(&declaration.id)? {
-            dependencies.push(ExpressionDependency {
-                dependency,
-                consumer: declaration.id.clone(),
-                edge,
-            });
-        }
-    }
-
-    dependencies.sort();
-    Ok(dependencies)
-}
-
-fn topological_expression_order(
-    graph: &DiGraph<ExprId, DependencyEdge, u32>,
-) -> Result<Vec<ExprId>, RealizationError> {
-    match toposort(graph, None) {
-        Ok(nodes) => Ok(nodes.into_iter().map(|node| graph[node].clone()).collect()),
-        Err(_cycle) => Err(RealizationError::ExpressionDependencyCycle {
-            components: cyclic_components(graph),
-        }),
-    }
-}
-
-fn cyclic_components(graph: &DiGraph<ExprId, DependencyEdge, u32>) -> Vec<Vec<ExprId>> {
-    let mut components = kosaraju_scc(graph)
-        .into_iter()
-        .filter(|component| {
-            component.len() > 1
-                || component
-                    .first()
-                    .is_some_and(|node| graph.find_edge(*node, *node).is_some())
-        })
-        .map(|component| {
-            let mut ids = component
-                .into_iter()
-                .map(|node| graph[node].clone())
-                .collect::<Vec<_>>();
-
-            ids.sort();
-            ids
-        })
-        .collect::<Vec<_>>();
-
-    components.sort();
-    components
-}
-
-fn canonical_graph_edges(
-    graph: &DiGraph<ExprId, DependencyEdge, u32>,
-) -> Vec<(ExprId, ExprId, DependencyEdge)> {
-    let mut edges = graph
-        .edge_references()
-        .map(|edge| {
-            (
-                graph[edge.source()].clone(),
-                graph[edge.target()].clone(),
-                *edge.weight(),
-            )
-        })
-        .collect::<Vec<_>>();
-
-    edges.sort();
-    edges
 }
 
 fn evaluate_node(
@@ -725,14 +651,4 @@ fn evaluate_owner_subset(
     Ok(SemanticValue::Bool(
         required_owners.is_subset(presented_owners),
     ))
-}
-
-fn operand_position(
-    expression: &ExprId,
-    position: usize,
-    _count: usize,
-) -> Result<u32, RealizationError> {
-    u32::try_from(position).map_err(|_| RealizationError::TooManyExpressionOperands {
-        expression: expression.clone(),
-    })
 }

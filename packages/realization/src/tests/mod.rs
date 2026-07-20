@@ -1,3 +1,5 @@
+mod compact_ash_tests;
+mod derivation_tests;
 mod expression_tests;
 mod type_tests;
 

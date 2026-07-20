@@ -4,15 +4,26 @@
 # into its role group.
 realization_source_files = files(
   'src/binding.rs',
+  'src/declarations/compact_ash.rs',
+  'src/declarations/mod.rs',
+  'src/declassification.rs',
+  'src/derive.rs',
   'src/domain.rs',
   'src/error.rs',
+  'src/evaluate.rs',
   'src/expression.rs',
   'src/identity.rs',
   'src/lib.rs',
+  'src/observation.rs',
+  'src/operation.rs',
+  'src/relation.rs',
   'src/scope.rs',
+  'src/tests/compact_ash_tests.rs',
+  'src/tests/derivation_tests.rs',
   'src/tests/expression_tests.rs',
   'src/tests/mod.rs',
   'src/tests/type_tests.rs',
+  'src/validate.rs',
   'src/value.rs',
 )
 

@@ -1,9 +1,9 @@
 use architecture::{AssetId, ObjectId, OperationId};
 
 use crate::{
-    Count, ExprId, ExpressionDeclaration, ExpressionNode, ExpressionRegistry, ExpressionRole,
-    FactId, RealizationError, RelationId, RelationKind, RelationSubject, SemanticType,
-    TransactionSide,
+    Count, ExprId, ExpressionDeclaration, ExpressionNode, ExpressionRole, FactId, RealizationError,
+    RelationId, RelationKind, RelationSubject, SemanticType, TransactionSide,
+    build_expression_graph,
 };
 
 #[test]
@@ -28,7 +28,7 @@ fn amount_and_count_operands_cannot_be_compared() {
     };
     let predicate = ExprId::relation(relation, ExpressionRole::Predicate);
 
-    let error = ExpressionRegistry::new([
+    let error = build_expression_graph([
         ExpressionDeclaration {
             id: ExprId::fact(count_fact.clone()),
             ty: SemanticType::Count,
@@ -75,7 +75,7 @@ fn owner_sets_cannot_be_ordered() {
         operation: OperationId::TransferLive,
     };
 
-    let error = ExpressionRegistry::new([
+    let error = build_expression_graph([
         ExpressionDeclaration {
             id: ExprId::fact(owners.clone()),
             ty: SemanticType::OwnerSet,
@@ -111,7 +111,7 @@ fn a_sum_cannot_be_declared_over_booleans() {
         RelationSubject::Operation,
     );
 
-    let error = ExpressionRegistry::new([ExpressionDeclaration {
+    let error = build_expression_graph([ExpressionDeclaration {
         id: ExprId::relation(relation, ExpressionRole::Predicate),
         ty: SemanticType::Bool,
         node: ExpressionNode::CheckedSum {
@@ -136,12 +136,13 @@ fn literal_count_remains_a_count() {
     );
     let expression = ExprId::relation(relation, ExpressionRole::Minimum);
 
-    let registry = ExpressionRegistry::new([ExpressionDeclaration {
+    let (graph, nodes, _) = build_expression_graph([ExpressionDeclaration {
         id: expression.clone(),
         ty: SemanticType::Count,
         node: ExpressionNode::Count(Count::new(2)),
     }])
     .unwrap();
+    let node = nodes[&expression];
 
-    assert_eq!(registry.get(&expression).unwrap().ty, SemanticType::Count,);
+    assert_eq!(graph[node].ty, SemanticType::Count);
 }

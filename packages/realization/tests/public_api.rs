@@ -6,15 +6,25 @@
 //! keys, and explicit partial scope are public without exposing local
 //! graph handles or mutable registries.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use architecture::{ARCHITECTURE, AssetId, ObjectId, OperationId};
+use petgraph::graph::{DiGraph, NodeIndex};
 use realization::{
     ArchitectureBinding, DependencyEdge, ExprId, ExpressionDeclaration, ExpressionNode,
-    ExpressionRegistry, ExpressionRole, FactId, FactValues, OwnerId, ProofAlternativeId, ProofKind,
-    RealizationScope, RelationId, RelationKind, RelationSubject, SemanticType, SemanticValue,
-    TransactionSide,
+    ExpressionRole, FactId, FactValues, OwnerId, ProofAlternativeId, ProofKind, RealizationScope,
+    RelationId, RelationKind, RelationSubject, SemanticType, SemanticValue, TransactionSide,
+    build_expression_graph, evaluate_expressions,
 };
+
+type AuthorizationFixture = (
+    DiGraph<ExpressionDeclaration, DependencyEdge, u32>,
+    BTreeMap<ExprId, NodeIndex<u32>>,
+    Vec<ExprId>,
+    FactId,
+    FactId,
+    ExprId,
+);
 
 #[test]
 fn phase1_foundation_is_publicly_constructible() {
@@ -59,7 +69,7 @@ fn stable_relation_keys_use_architecture_owned_ids() {
 
 #[test]
 fn downstream_code_can_evaluate_typed_authorization_without_local_handles() {
-    let (registry, owners, signers, predicate) = authorization_fixture();
+    let (graph, nodes, order, owners, signers, predicate) = authorization_fixture();
     let alice = OwnerId([1_u8; 32]);
     let bob = OwnerId([2_u8; 32]);
     let mut facts = FactValues::default();
@@ -78,18 +88,24 @@ fn downstream_code_can_evaluate_typed_authorization_without_local_handles() {
         )
         .unwrap();
 
-    assert!(registry.evaluate(&facts).unwrap().bool(&predicate).unwrap());
+    assert!(
+        evaluate_expressions(&graph, &nodes, &order, &facts)
+            .unwrap()
+            .bool(&predicate)
+            .unwrap()
+    );
 }
 
 #[test]
 fn dependency_graph_is_direct_petgraph() {
-    let (registry, _, _, _) = authorization_fixture();
-    let graph: &petgraph::graph::DiGraph<ExprId, DependencyEdge, u32> = registry.dependency_graph();
+    let (graph, nodes, _, _, _, _) = authorization_fixture();
 
-    assert_eq!(graph.node_count(), registry.len());
+    let graph: &DiGraph<ExpressionDeclaration, DependencyEdge, u32> = &graph;
+
+    assert_eq!(graph.node_count(), nodes.len());
 }
 
-fn authorization_fixture() -> (ExpressionRegistry, FactId, FactId, ExprId) {
+fn authorization_fixture() -> AuthorizationFixture {
     let relation = RelationId::new(
         OperationId::TransferLive,
         RelationKind::Authorization,
@@ -107,7 +123,7 @@ fn authorization_fixture() -> (ExpressionRegistry, FactId, FactId, ExprId) {
     };
     let predicate = ExprId::relation(relation, ExpressionRole::Predicate);
 
-    let registry = ExpressionRegistry::new([
+    let (graph, nodes, order) = build_expression_graph([
         ExpressionDeclaration {
             id: ExprId::fact(owners.clone()),
             ty: SemanticType::OwnerSet,
@@ -129,5 +145,5 @@ fn authorization_fixture() -> (ExpressionRegistry, FactId, FactId, ExprId) {
     ])
     .unwrap();
 
-    (registry, owners, signers, predicate)
+    (graph, nodes, order, owners, signers, predicate)
 }

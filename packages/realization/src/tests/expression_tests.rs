@@ -1,11 +1,22 @@
+use std::collections::BTreeMap;
+
 use architecture::{AssetId, ObjectId, OperationId, ProjectionId};
-use petgraph::visit::EdgeRef;
+use petgraph::{
+    graph::{DiGraph, NodeIndex},
+    visit::EdgeRef,
+};
 
 use crate::{
-    Count, ExprId, ExpressionDeclaration, ExpressionNode, ExpressionRegistry, ExpressionRole,
-    FactId, FactValues, OwnerId, ProtocolAmount, RealizationError, RelationId, RelationKind,
-    RelationSubject, SemanticType, SemanticValue, TransactionSide,
+    Count, DependencyEdge, ExprId, ExpressionDeclaration, ExpressionNode, FactId, FactValues,
+    OwnerId, ProtocolAmount, RealizationError, RelationId, RelationKind, RelationSubject,
+    SemanticType, SemanticValue, TransactionSide, build_expression_graph, evaluate_expressions,
 };
+
+type ExpressionGraphParts = (
+    DiGraph<ExpressionDeclaration, DependencyEdge, u32>,
+    BTreeMap<ExprId, NodeIndex<u32>>,
+    Vec<ExprId>,
+);
 
 fn transfer_conservation_relation() -> RelationId {
     RelationId::new(
@@ -31,13 +42,13 @@ fn fact_expression(fact: FactId) -> ExpressionDeclaration {
     }
 }
 
-fn conservation_registry() -> ExpressionRegistry {
+fn conservation_declarations() -> Vec<ExpressionDeclaration> {
     let relation = transfer_conservation_relation();
     let input = ExprId::fact(amount_fact(TransactionSide::Input));
     let output = ExprId::fact(amount_fact(TransactionSide::Output));
-    let predicate = ExprId::relation(relation, ExpressionRole::Predicate);
+    let predicate = ExprId::relation(relation, crate::ExpressionRole::Predicate);
 
-    ExpressionRegistry::new([
+    vec![
         fact_expression(amount_fact(TransactionSide::Output)),
         ExpressionDeclaration {
             id: predicate,
@@ -48,13 +59,16 @@ fn conservation_registry() -> ExpressionRegistry {
             },
         },
         fact_expression(amount_fact(TransactionSide::Input)),
-    ])
-    .unwrap()
+    ]
+}
+
+fn conservation_graph() -> ExpressionGraphParts {
+    build_expression_graph(conservation_declarations()).unwrap()
 }
 
 #[test]
 fn exact_amount_conservation_evaluates() {
-    let registry = conservation_registry();
+    let (graph, nodes, order) = conservation_graph();
     let mut facts = FactValues::default();
 
     facts
@@ -63,7 +77,6 @@ fn exact_amount_conservation_evaluates() {
             SemanticValue::Amount(ProtocolAmount::new(100).unwrap()),
         )
         .unwrap();
-
     facts
         .insert(
             amount_fact(TransactionSide::Output),
@@ -71,15 +84,18 @@ fn exact_amount_conservation_evaluates() {
         )
         .unwrap();
 
-    let evaluated = registry.evaluate(&facts).unwrap();
-    let predicate = ExprId::relation(transfer_conservation_relation(), ExpressionRole::Predicate);
+    let evaluated = evaluate_expressions(&graph, &nodes, &order, &facts).unwrap();
+    let predicate = ExprId::relation(
+        transfer_conservation_relation(),
+        crate::ExpressionRole::Predicate,
+    );
 
     assert!(evaluated.bool(&predicate).unwrap());
 }
 
 #[test]
 fn amount_conservation_failure_is_a_false_relation_not_an_evaluator_error() {
-    let registry = conservation_registry();
+    let (graph, nodes, order) = conservation_graph();
     let mut facts = FactValues::default();
 
     facts
@@ -88,7 +104,6 @@ fn amount_conservation_failure_is_a_false_relation_not_an_evaluator_error() {
             SemanticValue::Amount(ProtocolAmount::new(100).unwrap()),
         )
         .unwrap();
-
     facts
         .insert(
             amount_fact(TransactionSide::Output),
@@ -96,76 +111,38 @@ fn amount_conservation_failure_is_a_false_relation_not_an_evaluator_error() {
         )
         .unwrap();
 
-    let evaluated = registry.evaluate(&facts).unwrap();
-    let predicate = ExprId::relation(transfer_conservation_relation(), ExpressionRole::Predicate);
+    let evaluated = evaluate_expressions(&graph, &nodes, &order, &facts).unwrap();
+    let predicate = ExprId::relation(
+        transfer_conservation_relation(),
+        crate::ExpressionRole::Predicate,
+    );
 
     assert!(!evaluated.bool(&predicate).unwrap());
 }
 
 #[test]
-fn expression_construction_is_insertion_order_independent() {
-    let relation = transfer_conservation_relation();
-    let declarations = vec![
-        fact_expression(amount_fact(TransactionSide::Input)),
-        fact_expression(amount_fact(TransactionSide::Output)),
-        ExpressionDeclaration {
-            id: ExprId::relation(relation, ExpressionRole::Predicate),
-            ty: SemanticType::Bool,
-            node: ExpressionNode::Equal {
-                left: ExprId::fact(amount_fact(TransactionSide::Input)),
-                right: ExprId::fact(amount_fact(TransactionSide::Output)),
-            },
-        },
-    ];
-
+fn graph_construction_is_insertion_order_independent() {
+    let declarations = conservation_declarations();
     let mut reversed = declarations.clone();
     reversed.reverse();
 
-    assert_eq!(
-        ExpressionRegistry::new(declarations).unwrap(),
-        ExpressionRegistry::new(reversed).unwrap(),
-    );
-}
+    let first = build_expression_graph(declarations).unwrap();
+    let second = build_expression_graph(reversed).unwrap();
 
-#[test]
-fn canonical_graph_construction_ignores_declaration_order() {
-    let relation = transfer_conservation_relation();
-    let declarations = vec![
-        fact_expression(amount_fact(TransactionSide::Input)),
-        fact_expression(amount_fact(TransactionSide::Output)),
-        ExpressionDeclaration {
-            id: ExprId::relation(relation, ExpressionRole::Predicate),
-            ty: SemanticType::Bool,
-            node: ExpressionNode::Equal {
-                left: ExprId::fact(amount_fact(TransactionSide::Input)),
-                right: ExprId::fact(amount_fact(TransactionSide::Output)),
-            },
-        },
-    ];
-
-    let mut reversed = declarations.clone();
-    reversed.reverse();
-
-    let first = ExpressionRegistry::new(declarations).unwrap();
-    let second = ExpressionRegistry::new(reversed).unwrap();
-
-    assert_eq!(graph_snapshot(&first), graph_snapshot(&second));
-    assert_eq!(first.evaluation_order(), second.evaluation_order());
+    assert_eq!(graph_snapshot(&first.0), graph_snapshot(&second.0));
+    assert_eq!(first.2, second.2);
 }
 
 #[test]
 fn petgraph_topology_orders_dependencies_before_consumers() {
-    let registry = conservation_registry();
+    let (_, _, order) = conservation_graph();
     let input = ExprId::fact(amount_fact(TransactionSide::Input));
     let output = ExprId::fact(amount_fact(TransactionSide::Output));
-    let predicate = ExprId::relation(transfer_conservation_relation(), ExpressionRole::Predicate);
-    let position = |id: &ExprId| {
-        registry
-            .evaluation_order()
-            .iter()
-            .position(|candidate| candidate == id)
-            .unwrap()
-    };
+    let predicate = ExprId::relation(
+        transfer_conservation_relation(),
+        crate::ExpressionRole::Predicate,
+    );
+    let position = |id: &ExprId| order.iter().position(|candidate| candidate == id).unwrap();
 
     assert!(position(&input) < position(&predicate));
     assert!(position(&output) < position(&predicate));
@@ -174,9 +151,9 @@ fn petgraph_topology_orders_dependencies_before_consumers() {
 #[test]
 fn unresolved_expression_dependency_is_rejected() {
     let relation = transfer_conservation_relation();
-    let predicate = ExprId::relation(relation, ExpressionRole::Predicate);
+    let predicate = ExprId::relation(relation, crate::ExpressionRole::Predicate);
 
-    let error = ExpressionRegistry::new([ExpressionDeclaration {
+    let error = build_expression_graph([ExpressionDeclaration {
         id: predicate.clone(),
         ty: SemanticType::Bool,
         node: ExpressionNode::Equal {
@@ -209,10 +186,10 @@ fn dependency_cycle_is_rejected_in_stable_order() {
             projection: ProjectionId::TransitionCertificate,
         },
     );
-    let first = ExprId::relation(first_relation, ExpressionRole::Predicate);
-    let second = ExprId::relation(second_relation, ExpressionRole::Predicate);
+    let first = ExprId::relation(first_relation, crate::ExpressionRole::Predicate);
+    let second = ExprId::relation(second_relation, crate::ExpressionRole::Predicate);
 
-    let error = ExpressionRegistry::new([
+    let error = build_expression_graph([
         ExpressionDeclaration {
             id: first.clone(),
             ty: SemanticType::Bool,
@@ -233,7 +210,6 @@ fn dependency_cycle_is_rejected_in_stable_order() {
     let RealizationError::ExpressionDependencyCycle { components } = error else {
         panic!("expected a dependency-cycle failure");
     };
-
     let mut expected = vec![first, second];
     expected.sort();
 
@@ -243,19 +219,10 @@ fn dependency_cycle_is_rejected_in_stable_order() {
 #[test]
 fn checked_amount_sum_reestablishes_the_amount_domain() {
     let relation = transfer_conservation_relation();
-    let first_fact = FactId::FamilyAmount {
-        operation: OperationId::TransferLive,
-        side: TransactionSide::Input,
-        object: ObjectId::ReceiptLive,
-    };
-    let second_fact = FactId::FamilyAmount {
-        operation: OperationId::TransferLive,
-        side: TransactionSide::Output,
-        object: ObjectId::ReceiptLive,
-    };
-    let sum = ExprId::relation(relation, ExpressionRole::InputTotal);
-
-    let registry = ExpressionRegistry::new([
+    let first_fact = amount_fact(TransactionSide::Input);
+    let second_fact = amount_fact(TransactionSide::Output);
+    let sum = ExprId::relation(relation, crate::ExpressionRole::InputTotal);
+    let (graph, nodes, order) = build_expression_graph([
         fact_expression(first_fact.clone()),
         fact_expression(second_fact.clone()),
         ExpressionDeclaration {
@@ -271,20 +238,18 @@ fn checked_amount_sum_reestablishes_the_amount_domain() {
         },
     ])
     .unwrap();
-
     let maximum = ProtocolAmount::new((1_u64 << 51) - 1).unwrap();
     let mut facts = FactValues::default();
 
     facts
         .insert(first_fact, SemanticValue::Amount(maximum))
         .unwrap();
-
     facts
         .insert(second_fact, SemanticValue::Amount(ProtocolAmount::ONE))
         .unwrap();
 
     assert_eq!(
-        registry.evaluate(&facts),
+        evaluate_expressions(&graph, &nodes, &order, &facts),
         Err(RealizationError::AmountOutOfDomain { value: 1_u64 << 51 }),
     );
 }
@@ -306,8 +271,8 @@ fn owner_authorization_is_set_inclusion() {
     let presented_fact = FactId::Signers {
         operation: OperationId::TransferLive,
     };
-    let predicate = ExprId::relation(relation, ExpressionRole::Predicate);
-    let registry = ExpressionRegistry::new([
+    let predicate = ExprId::relation(relation, crate::ExpressionRole::Predicate);
+    let (graph, nodes, order) = build_expression_graph([
         fact_expression(required_fact.clone()),
         fact_expression(presented_fact.clone()),
         ExpressionDeclaration {
@@ -322,8 +287,8 @@ fn owner_authorization_is_set_inclusion() {
     .unwrap();
     let alice = OwnerId([1_u8; 32]);
     let bob = OwnerId([2_u8; 32]);
-
     let mut missing = FactValues::default();
+
     missing
         .insert(
             required_fact.clone(),
@@ -338,8 +303,7 @@ fn owner_authorization_is_set_inclusion() {
         .unwrap();
 
     assert!(
-        !registry
-            .evaluate(&missing)
+        !evaluate_expressions(&graph, &nodes, &order, &missing)
             .unwrap()
             .bool(&predicate)
             .unwrap()
@@ -360,8 +324,7 @@ fn owner_authorization_is_set_inclusion() {
         .unwrap();
 
     assert!(
-        registry
-            .evaluate(&complete)
+        evaluate_expressions(&graph, &nodes, &order, &complete)
             .unwrap()
             .bool(&predicate)
             .unwrap()
@@ -384,10 +347,9 @@ fn count_comparison_is_distinct_from_amount_comparison() {
         object: ObjectId::Ash,
     };
     let observed = ExprId::fact(count_fact.clone());
-    let minimum = ExprId::relation(relation.clone(), ExpressionRole::Minimum);
-    let predicate = ExprId::relation(relation, ExpressionRole::Predicate);
-
-    let registry = ExpressionRegistry::new([
+    let minimum = ExprId::relation(relation.clone(), crate::ExpressionRole::Minimum);
+    let predicate = ExprId::relation(relation, crate::ExpressionRole::Predicate);
+    let (graph, nodes, order) = build_expression_graph([
         fact_expression(count_fact.clone()),
         ExpressionDeclaration {
             id: minimum.clone(),
@@ -404,34 +366,42 @@ fn count_comparison_is_distinct_from_amount_comparison() {
         },
     ])
     .unwrap();
-
     let mut one = FactValues::default();
     one.insert(count_fact.clone(), SemanticValue::Count(Count::ONE))
         .unwrap();
 
-    assert!(!registry.evaluate(&one).unwrap().bool(&predicate).unwrap());
+    assert!(
+        !evaluate_expressions(&graph, &nodes, &order, &one)
+            .unwrap()
+            .bool(&predicate)
+            .unwrap()
+    );
 
     let mut two = FactValues::default();
     two.insert(count_fact, SemanticValue::Count(Count::new(2)))
         .unwrap();
 
-    assert!(registry.evaluate(&two).unwrap().bool(&predicate).unwrap());
+    assert!(
+        evaluate_expressions(&graph, &nodes, &order, &two)
+            .unwrap()
+            .bool(&predicate)
+            .unwrap()
+    );
 }
 
 fn graph_snapshot(
-    registry: &ExpressionRegistry,
-) -> (Vec<ExprId>, Vec<(ExprId, ExprId, crate::DependencyEdge)>) {
-    let graph = registry.dependency_graph();
+    graph: &DiGraph<ExpressionDeclaration, DependencyEdge, u32>,
+) -> (Vec<ExprId>, Vec<(ExprId, ExprId, DependencyEdge)>) {
     let nodes = graph
         .node_indices()
-        .map(|node| graph[node].clone())
+        .map(|node| graph[node].id.clone())
         .collect::<Vec<_>>();
     let mut edges = graph
         .edge_references()
         .map(|edge| {
             (
-                graph[edge.source()].clone(),
-                graph[edge.target()].clone(),
+                graph[edge.source()].id.clone(),
+                graph[edge.target()].id.clone(),
                 *edge.weight(),
             )
         })

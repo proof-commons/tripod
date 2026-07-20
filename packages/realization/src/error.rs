@@ -1,7 +1,22 @@
-use architecture::{ManifestError, OperationId};
+use architecture::{BoundId, ManifestError, OperationId};
 use thiserror::Error;
 
-use crate::{ExprId, FactId, SemanticType};
+use crate::{ExprId, FactId, ObservedObjectRef, RelationId, SemanticType};
+
+/// Architecture field whose declared shape no longer matches a realization weld.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArchitectureMismatchField {
+    Authorization,
+    InputFamilies,
+    OutputFamilies,
+    AshInput,
+    AshOutput,
+    CanonicalDelta,
+    OpenFlows,
+    ValueFlows,
+    RootPolicy,
+    ProjectionPolicy,
+}
 
 /// Failure while constructing or validating target-independent
 /// realization values.
@@ -129,4 +144,50 @@ pub enum RealizationError {
     /// typed dependency edge.
     #[error("expression {expression:?} has too many operands")]
     TooManyExpressionOperands { expression: ExprId },
+
+    /// A scoped operation has no realization declaration in this tranche.
+    #[error("operation {0} has no realization declaration")]
+    UnsupportedOperationDeclaration(OperationId),
+
+    /// One operation declaration was produced more than once.
+    #[error("operation {0} is declared more than once")]
+    DuplicateOperationDeclaration(OperationId),
+
+    /// An architecture operation needed by realization is absent.
+    #[error("architecture operation {0} is missing")]
+    MissingArchitectureOperation(OperationId),
+
+    /// A realization weld disagrees with one architecture operation field.
+    #[error("architecture operation {operation} mismatches realization field {field:?}")]
+    ArchitectureOperationMismatch {
+        operation: OperationId,
+        field: ArchitectureMismatchField,
+    },
+
+    /// One relation ID was declared more than once.
+    #[error("relation {0:?} is declared more than once")]
+    DuplicateRelation(RelationId),
+
+    /// One relation referenced an undeclared dependency.
+    #[error("relation {relation:?} references unknown dependency {dependency:?}")]
+    UnknownRelationDependency {
+        relation: RelationId,
+        dependency: RelationId,
+    },
+
+    /// Declared relation dependencies contain at least one cycle.
+    #[error("relation dependency graph contains one or more cycles")]
+    RelationDependencyCycle { components: Vec<Vec<RelationId>> },
+
+    /// A relation result was requested outside the relation graph.
+    #[error("relation {0:?} is unknown")]
+    UnknownRelation(RelationId),
+
+    /// A required runtime bound value was absent from an observation.
+    #[error("bound {0} has no supplied runtime value")]
+    MissingBoundValue(BoundId),
+
+    /// A flow or relation referenced an unknown observed object.
+    #[error("observed object {0:?} is unknown")]
+    UnknownObservedObject(ObservedObjectRef),
 }
