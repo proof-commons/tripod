@@ -1,4 +1,9 @@
-project('tripod', version: '0.1.0-dev', subproject_dir: 'papers')
+project(
+  'tripod',
+  version: '0.1.0-dev',
+  meson_version: '>=1.3.0',
+  subproject_dir: 'papers',
+)
 
 fs = import('fs')
 
@@ -250,15 +255,23 @@ census_audit_bin = custom_target(
 # stamp depends on this target: its stamp is re-touched on every
 # successful run (the target is unconditional), and an edge would
 # needlessly dirty the lint suites each build; a failing audit fails
-# the build by itself.
+# the build by itself. Checker stdout is ADR-010 JSON result data, so
+# Meson declares it as a build output instead of exposing it to the
+# interactive terminal inherited by console targets.
+checker_wrap = [
+  sh, '-c',
+  'report="$1"; program="$2"; shift 2; case "$program" in */*) exec "$program" "$@" > "$report" ;; *) exec "./$program" "$@" > "$report" ;; esac',
+  'sh',
+]
+
 census_audit = custom_target(
   'census-audit',
-  output: 'census.ok',
-  command: [census_audit_bin,
+  output: ['census.ok', 'census-audit.json'],
+  command: checker_wrap + ['@OUTPUT1@', census_audit_bin,
     '--repository-root', source_root,
     '--git', git.full_path(),
     '--exclude-pattern', census_exclude_pattern,
-    '--stamp', '@OUTPUT@',
+    '--stamp', '@OUTPUT0@',
   ] + census_excluded_args + census_paths,
   build_always_stale: true,
   build_by_default: true,
@@ -278,9 +291,9 @@ generate_all_bin = custom_target(
 
 # ---------------------------------------------------------------------------
 # Lint suites as stamp targets (ADR-014): inputs are the suite's census
-# slice plus the checker binary, the output is a build-dir stamp the
-# checker touches on success. A rerun on an unchanged tree executes
-# nothing.
+# slice plus the checker binary, and outputs are a build-dir stamp the
+# checker touches on success plus the checker JSON report. A rerun on
+# an unchanged tree executes nothing.
 # ---------------------------------------------------------------------------
 scoped_census_inputs = attestation_main_file + attestation_section_files + realization_file \
                        + model_source_files
@@ -290,8 +303,10 @@ labels_stamp = custom_target(
   input: scoped_census_inputs + adr_files + plan_files + doc_files
          + crate_source_files + specification_register_file + realization_register_file
          + model_labels_json_file,
-  output: 'labels.ok',
-  command: [check_labels_bin] + labels_census_args + ['--stamp', '@OUTPUT@'],
+  output: ['labels.ok', 'labels-check.json'],
+  command: checker_wrap + ['@OUTPUT1@', check_labels_bin] + labels_census_args + [
+    '--stamp', '@OUTPUT0@',
+  ],
   build_by_default: true,
   console: true,
 )
@@ -299,10 +314,10 @@ labels_stamp = custom_target(
 generated_stamp = custom_target(
   'generated-check',
   input: scoped_census_inputs + generated_files + model_labels_json_file,
-  output: 'generated.ok',
-  command: [check_generated_bin] + scoped_census_args + [
+  output: ['generated.ok', 'generated-check.json'],
+  command: checker_wrap + ['@OUTPUT1@', check_generated_bin] + scoped_census_args + [
     '--generated-dir', generated_dir,
-    '--stamp', '@OUTPUT@',
+    '--stamp', '@OUTPUT0@',
   ],
   build_by_default: true,
   console: true,
@@ -462,7 +477,7 @@ stamp_probe = ['-c', 'test -f "$1"', 'sh']
 test(
   'census-audit',
   sh,
-  args: stamp_probe + [census_audit.full_path()],
+  args: stamp_probe + [census_audit[0].full_path()],
   depends: census_audit,
   suite: 'lint',
   timeout: 60,
@@ -471,7 +486,7 @@ test(
 test(
   'check-generated',
   sh,
-  args: stamp_probe + [generated_stamp.full_path()],
+  args: stamp_probe + [generated_stamp[0].full_path()],
   depends: generated_stamp,
   suite: 'generated',
   timeout: 60,
@@ -480,7 +495,7 @@ test(
 test(
   'labels-check',
   sh,
-  args: stamp_probe + [labels_stamp.full_path()],
+  args: stamp_probe + [labels_stamp[0].full_path()],
   depends: labels_stamp,
   suite: ['documentation', 'generated'],
   timeout: 60,

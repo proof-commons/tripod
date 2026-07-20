@@ -15,6 +15,8 @@ A compiler is proved by what it compiles. This tree therefore carries, beside th
 - `packages/cli-common/` - Shared Rust CLI scaffolding (implements ADR-010).
 - `packages/model/` - Executable state-machine model of the attestation contract.
 - `packages/architecture/` - Typed normative architecture manifest of the realization.
+- `packages/realization/` - Target-independent typed semantic realization
+  shared by executable-model conformance and future compiler analysis.
 - `packages/artifacts/` - Generator/checker for the generated derivative artifacts.
 - `packages/labels/` - Repository-wide documentation-label registries and checks.
 - `adr/` - Architecture decision records for the repository tooling.

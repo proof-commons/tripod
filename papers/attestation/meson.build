@@ -1,6 +1,6 @@
 # papers/attestation/meson.build - Attestation paper subproject
 
-project('attestation', 'c', version: '1.0.0')
+project('attestation', 'c', version: '1.0.0', meson_version: '>=1.1.0')
 
 # Paper configuration
 main_tex = files('main.tex')
