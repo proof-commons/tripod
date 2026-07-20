@@ -9,6 +9,10 @@ Research notes do not define production policy.
 
 | Question | Status | Blocks |
 |---|---|---|
+| [compiler-algorithms.md](compiler-algorithms.md) | Design and prototype required | Compiler graph, identity, proof, placement, and coverage algorithms. |
+| [linker-algorithms.md](linker-algorithms.md) | Design and prototype required | Linker graph, SCC, relocation, taptree, and resource algorithms. |
+| [numerical-linear-algebra.md](numerical-linear-algebra.md) | Dependency review and prototype required | Exact/numerical solver and certification policy. |
+| [optimization-solvers.md](optimization-solvers.md) | Open; exact prototype required | Proof, placement, calibration, and external solver policy. |
 | [state-constructor.md](state-constructor.md) | Prototype required | STATE-spending backend operations. |
 | [wide-arithmetic.md](wide-arithmetic.md) | Prototype and measurement required | Redemption, settlement, and cycle arithmetic. |
 | [public-declassification.md](public-declassification.md) | Open; prototype required | Confidential-to-public lifecycle paths. |

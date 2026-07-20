@@ -3,6 +3,10 @@
 # meson.build accumulates this list into its role group.
 plans_research_files = files(
   'README.md',
+  'compiler-algorithms.md',
+  'linker-algorithms.md',
+  'numerical-linear-algebra.md',
+  'optimization-solvers.md',
   'public-declassification.md',
   'settlement-layout.md',
   'state-constructor.md',

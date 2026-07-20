@@ -2,1380 +2,1189 @@
 
 > **Status:** ACTIVE
 > **Current gate:** Phase 1 — typed realization foundation
-> **Next gate:** Phase 2 — compiler analysis preparation
-> **Authority:** Current execution queue only; normative source, accepted
-> decisions, package plans, and the roadmap take precedence
-> **Last status review:** 2026-07-15
+> **Parallel preparation lane:** compiler/linker algorithm and dependency foundations
+> **Next gate:** Phase 2 — target-independent compiler analysis
+> **Authority:** Current execution queue only; normative source, implemented
+> ADRs, accepted planning decisions, package contracts, research results, and
+> the roadmap take precedence
 
-This file contains the work that is ready or nearly ready to execute.
+This file contains current and immediately preparatory implementation work.
 
 It does not contain:
 
 - the complete long-term roadmap;
-- package architecture;
-- accepted-decision rationale;
-- unresolved design essays;
-- normative protocol requirements;
-- copied source identities;
-- conversational history.
+- protocol or realization semantics;
+- package architecture duplicated from package contracts;
+- unresolved design essays duplicated from research notes;
+- generated identities copied from canonical artifacts;
+- conversational history;
+- implementation-source revisions treated as protocol identity.
 
 Long-term sequencing is owned by [`roadmap.md`](roadmap.md). Cross-package
-direction is owned by [`decisions/`](decisions/), package-specific requirements
-by [`packages/`](packages/), and unresolved research by [`research/`](research/).
+direction is owned by [`decisions/`](decisions/README.md), package boundaries by
+[`packages/`](packages/README.md), phase gates by
+[`phases/`](phases/README.md), and unresolved prototypes by
+[`research/`](research/README.md).
 
 ---
 
-## 1. Using this backlog
+## 1. Using this backlog · `sec:backlog:usage`
 
-### 1.1 Task statuses
+### 1.1 Status vocabulary · `tbl:backlog:status`
 
 | Status | Meaning |
 |---|---|
-| **TODO** | Ready to start once named dependencies are complete. |
-| **IN PROGRESS** | Actively being implemented or drafted. |
-| **BLOCKED** | Cannot proceed until the named dependency or research result is available. |
+| **TODO** | Ready once the named dependencies complete. |
+| **IN PROGRESS** | Actively being drafted, implemented, or reviewed. |
+| **BLOCKED** | Cannot proceed until the named dependency or research result exists. |
 | **DONE** | Implemented, tested, documented, and linked to evidence. |
-| **DROPPED** | No longer intended; rationale and replacement are recorded. |
+| **DROPPED** | Deliberately not implemented; rationale and replacement recorded. |
 
-A task is not `DONE` merely because source code appears to contain the intended
-change. Completion requires the task's exit check to pass.
+Source code appearing to contain an intended change is not enough for `DONE`.
+The task’s exit check and applicable repository gates must pass.
 
-### 1.2 Task identifiers
+### 1.2 Task prefixes · `tbl:backlog:prefixes`
 
-Task prefixes indicate the owning gate:
-
-| Prefix | Gate |
+| Prefix | Owner |
 |---|---|
-| `P0` | Planning-folder rewrite |
-| `B0` | Baseline correctness, security, and reproducibility |
+| `P0` | Completed planning reset |
+| `B0` | Completed baseline hardening |
+| `C1` | Compiler/linker algorithm and dependency preparation |
 | `R1` | Typed realization foundation |
-| `C1` | Compiler analysis preparation |
-| `Q` | Research question or prototype dependency |
+| `Q` | Prototype/research dependency |
 
-Only `P0`, `B0`, and the immediately following `R1` tasks are active in this
-backlog. Later compiler/backend work belongs in the roadmap until Phase 1 is
-complete.
+`C1` is a preparation lane, not permission to skip Phase 1. Its research,
+dependency review, exact-oracle work, and synthetic prototypes may proceed in
+parallel. Production compiler analysis still begins only after the Phase-1 gate.
 
-### 1.3 Definition of done
+### 1.3 Definition of done · `rule:backlog:done`
 
-Every completed implementation task must record:
+Every completed implementation task records:
 
 1. implementing source files;
 2. positive tests;
-3. negative or mutation tests where applicable;
-4. documentation or ADR updates;
-5. verification command;
-6. confirmation that tests/checkers did not modify tracked files.
+3. negative, mutation, or property tests where applicable;
+4. documentation, decision, package-contract, or ADR updates;
+5. exact verification command;
+6. confirmation that checks did not modify tracked files;
+7. identity and generated-artifact impact;
+8. dependency and feature impact where applicable.
 
-Every completed planning task must record:
+Every completed research task records:
 
-1. new authoritative document;
-2. replaced or deleted documents;
-3. link/index validation;
-4. confirmation that no normative or generated identity changed.
+1. the question answered;
+2. exact dependency/tool/target versions used;
+3. positive and negative prototype evidence;
+4. complexity and resource measurements;
+5. accepted and rejected candidates;
+6. result and decision handoff;
+7. permanent tests required by production;
+8. whether the result is semantic authority, implementation policy, or
+   diagnostic evidence.
+
+### 1.4 Planning-label rule · `rule:backlog:labels`
+
+Planning labels are non-normative and non-identity-bearing, but they are
+mechanically checked under ADR-013:
+
+- every planning mint is unique across the PLAN owner;
+- every same-owner citation resolves;
+- cross-owner citations use explicit owner prefixes;
+- generated registers do not participate in the source graph.
+
+Planning labels never become compiler, linker, ABI, deployment, or release
+identity.
 
 ---
 
-# 2. Completed gate: P0 — planning-folder rewrite
+# 2. Current execution summary · `sec:backlog:current`
 
-> **Gate status:** DONE (2026-07-15)
-> **Blocks:** Phase-0 baseline completion and the start of substantial
-> `realization` implementation
+## 2.1 Completed foundation · `tbl:backlog:completed`
 
-The planning rewrite is a blank-page information-architecture rewrite. Existing
-long-form plan files are not edited into place; valid conclusions are rewritten
-into focused documents, after which superseded files are removed.
+| Gate | Status | Result |
+|---|---|---|
+| P0 — planning rewrite | **DONE** | Focused decisions, package contracts, phase cards, research notes, registers, and backlog |
+| B0 — baseline hardening | **DONE** | Reproducible, fail-closed compiler-era baseline |
+| ADR-010 | Implemented | JSON CLI streams, stable exit classes, panic and TTY policy |
+| ADR-011 | Implemented | Toolchain, locking, dependency, unsafe, target, and reproducibility policy |
+| ADR-013 | Implemented | Owner-aware global Markdown/Rust label graph |
+| ADR-014 | Implemented in source; ADR status review required | Build-owned census and stamp graph |
 
-## 2.1 Planning task summary
+## 2.2 Current implementation · `tbl:backlog:packages`
+
+| Package | Current role |
+|---|---|
+| `architecture` | Typed normative architecture and deployment profile |
+| `model` | Executable reference behavior and property/corruption evidence |
+| `artifacts` | Generated-publication writer and checker |
+| `labels` | Documentation/source label graph and registers |
+| `cli-common` | Shared ADR-010 command infrastructure |
+| `execwrap` | Byte-preserving child-process wrapper |
+| `flatten-latex-main` | Deterministic atomic LaTeX flattener |
+
+Not yet implemented:
+
+```text
+realization
+compiler
+target-elements
+tapscript
+linker
+transaction
+vectors
+release
+```
+
+## 2.3 Readiness capsule · `rem:backlog:readiness`
+
+```text
+Attestation specification:        published
+Realization contract:         published and architecture-welded
+Typed architecture release:       final and pinned
+Executable reference model:       implemented
+Typed realization package:        not yet implemented
+Compiler analysis:                not yet implemented
+Target/backend/linker:             not yet implemented
+Independent deployment observers: not yet implemented
+Deployment release:               none
+```
+
+Architecture finality does not imply deployment readiness.
+
+---
+
+# 3. Historical baseline record · `sec:backlog:baseline`
+
+> **Recorded:** 2026-07-15
+> **Status:** Historical and immutable
+
+The baseline identities remain recorded in the annotated tag and
+[`phases/00-baseline.md`](phases/00-baseline.md). Current source identities may
+differ through reviewed presentation or hash-algorithm migrations without
+rewriting the historical record.
+
+## 3.1 Historical identities · `tbl:backlog:baseline-identities`
+
+| Field | Baseline value |
+|---|---|
+| architecture schema | 17 |
+| realization version | tracked compiler-line binding |
+| denotation-preserving change | 13a |
+| publication status | final |
+| semantic algorithm | `sha256-canonical-json-v2` |
+| semantic hash | |
+| behavioural algorithm | `sha256-canonical-json-behavioural-v2` |
+| behavioural hash | |
+| Layer-0 version | `0.5.0` |
+| Layer-0 anchor-set hash | |
+| reproducible PDF SHA-256 | |
+
+The current behavioural-hash algorithm is v3. Its migration record is owned by
+architecture’s versioning gate and the Realization revision history.
+
+## 3.2 Completed Phase-0 evidence · `tbl:backlog:baseline-evidence`
+
+| Lane | Recorded result |
+|---|---|
+| Rust MSRV | 1.88.0 green |
+| stable Rust | green at baseline |
+| additional nightly | diagnostic only |
+| formatting | green |
+| Clippy `-D warnings` | green |
+| debug/release tests | green |
+| generated-artifact check | green |
+| documentation/label checks | green |
+| Meson document build | green |
+| PDF reproducibility | byte-identical clean builds |
+| clean tree | green |
+| `cargo audit` | skipped loudly when unavailable |
+
+Git history owns the detailed completed P0/B0 task prose. This backlog now keeps
+only the compact baseline record and current work.
+
+---
+
+# 4. Algorithm and dependency laws · `sec:backlog:algorithm-laws`
+
+The compiler and linker preparation lane follows these non-negotiable rules.
+
+## 4.1 Problem-class separation · `rule:backlog:problem-classes`
+
+```text
+typed semantic AST:
+    first-party typed source
+
+graph reachability, SCCs, traversal:
+    petgraph-backed private graphs
+
+exact semantic arithmetic:
+    checked integers, BigInt, BigRational
+
+numerical dense/sparse linear algebra:
+    faer-backed private working values
+
+proof and placement selection:
+    exact finite search initially
+
+LP/MILP/SAT:
+    separate solver review only after measured need
+
+target tree optimization:
+    explicit bounded-depth coding algorithm
+
+target arithmetic:
+    exact target relations and independent integer reference
+
+cryptographic/consensus math:
+    reviewed Elements and secp256k1-zkp ecosystem
+```
+
+A numerical linear solve is not a proof-selection solver. An LP solver is not a
+graph algorithm. A graph library is not an AST. A floating residual is not
+exact semantic equality.
+
+## 4.2 Exactness · `rule:backlog:exactness`
+
+Exact semantic, conservation, authorization, identity, calibration, and release
+claims use:
+
+- checked bounded integers;
+- arbitrary-precision integers;
+- reduced exact rationals;
+- exact finite search;
+- independently checked certificates;
+- target-native execution where the target claim is concrete.
+
+Numerical analysis may produce:
+
+- candidates;
+- diagnostics;
+- sensitivity information;
+- least-squares fits;
+- conditioning and rank diagnostics;
+- conservative estimates.
+
+A release-sensitive numerical result must be converted into and checked as:
+
+- an exact integer;
+- a reduced rational;
+- a conservative exact interval or bound;
+- an independently checked primal/dual or other certificate.
+
+## 4.3 Identity · `rule:backlog:algorithm-identity`
+
+Every analysis distinguishes:
+
+```text
+local handle:
+    process-local arena or graph position
+
+stable key:
+    complete typed semantic identity
+
+digest:
+    optional domain-separated commitment
+```
+
+The following are never semantic identity:
+
+- `petgraph::NodeIndex`;
+- `petgraph::EdgeIndex`;
+- matrix row/column number;
+- solver variable number;
+- hash-map iteration order;
+- source traversal order;
+- pivot order;
+- raw floating-point bits;
+- solver iteration count;
+- thread schedule;
+- temporary path.
+
+## 4.4 Canonical ordering · `rule:backlog:canonical-order`
+
+Every canonical graph, matrix, plan, bundle, ABI, vector set, and report uses
+explicit stable-key ordering.
+
+Third-party container iteration is never assumed canonical.
+
+## 4.5 Independent algorithm oracles · `rule:backlog:oracles`
+
+Every nontrivial production algorithm has an independent small-instance oracle.
+
+| Production analysis | Oracle |
+|---|---|
+| topological order | valid-order enumeration and least-key policy |
+| SCC | mutual-reachability equivalence |
+| interning | non-interned evaluator |
+| dependency closure | repeated complete scan |
+| exact linear solve | second rational elimination path |
+| numerical solve | exact/high-precision comparison where applicable |
+| proof selection | exhaustive candidate enumeration |
+| placement | exhaustive carrier-subset enumeration |
+| taptree construction | exhaustive small binary-tree enumeration |
+| relocation | independent structured expected program |
+| calibration search | exhaustive finite candidate range |
+| resource formula | complete target transaction measurement |
+
+## 4.6 Complexity failure · `rule:backlog:complexity`
+
+A search or analysis that exceeds its explicit budget fails with a typed
+complexity error.
+
+It must not:
+
+- drop a relation;
+- weaken authorization;
+- expose extra information;
+- remove a lifecycle exit;
+- select a greedy fallback;
+- claim optimality from an incomplete search;
+- accept the best partial result seen so far.
+
+---
+
+# 5. Current preparation lane: C1 — algorithms and dependencies · `sec:backlog:c1`
+
+> **Lane status:** ACTIVE PREPARATION
+> **Production compiler entry:** blocked on (`gate:phase1:exit`)
+> **Production linker entry:** blocked on compiler, target, and backend artifacts
+> **Allowed now:** dependency review, typed contracts, exact oracles, synthetic
+> prototypes, complexity measurements
+> **Not allowed now:** stable compiler/linker ABI, target fields in realization,
+> production-marked backend patterns, final calibration claims
+
+## 5.1 Task summary · `tbl:backlog:c1-tasks`
 
 | ID | Status | Task | Depends on | Output |
 |---|---|---|---|---|
-| `P0-001` | **DONE** | Rewrite the plan index and governance rules. | none | `plans/README.md` |
-| `P0-002` | **DONE** | Establish cross-package ownership. | `P0-001` | decisions and package contracts |
-| `P0-003` | **DONE** | Write the gate-driven roadmap. | `P0-001`, `P0-002` | `plans/roadmap.md` |
-| `P0-004` | **DONE** | Rewrite the current execution backlog. | `P0-003` | `plans/backlog.md` |
-| `P0-005` | **DONE** | Write accepted implementation decision records. | `P0-002` | `plans/decisions/*.md` |
-| `P0-006` | **DONE** | Write all future package plans. | `P0-002`, `P0-005` | `plans/packages/*.md` |
-| `P0-007` | **DONE** | Write prototype-driven research notes. | `P0-002`, `P0-005` | `plans/research/*.md` |
-| `P0-008` | **DONE** | Replace the copied opcode plan with a compatibility reference. | none | `plans/reference/elements-tapscript.md` |
-| `P0-009` | **DONE** | Remove superseded conversational plans. | `P0-005`–`P0-008` | old files deleted |
-| `P0-010` | **DONE** | Validate the rewritten plan tree. | `P0-009` | link/census/style checks |
+| `C1-001` | **DONE** | Land algorithm research notes and census updates. | none | four research notes |
+| `C1-002` | **TODO** | Record the petgraph graph-substrate decision. | `C1-001` | planning decision D007 |
+| `C1-003` | **TODO** | Record exact/certified mathematics policy. | `C1-001` | planning decision D008 |
+| `C1-004` | **TODO** | Review and select concrete dependency releases/features. | `C1-002`, `C1-003` | dependency review record |
+| `C1-005` | **TODO** | Specify and prototype canonical graph adapters. | `C1-002`, `C1-004` | frozen typed graph prototype |
+| `C1-006` | **TODO** | Specify and prototype exact keyed linear systems. | `C1-003`, `C1-004` | exact matrix/Bareiss prototype |
+| `C1-007` | **TODO** | Specify and prototype certified numerical analysis. | `C1-003`, `C1-004`, `C1-006` | `faer` wrapper prototype |
+| `C1-008` | **BLOCKED** | Implement exact proof-plan search prototype. | realization relation vocabulary | exhaustive/branch-and-bound prototype |
+| `C1-009` | **BLOCKED** | Implement execution-case-aware placement prototype. | realization/compiler relation vocabulary | exact placement prototype |
+| `C1-010` | **TODO** | Prototype typed symbol resolution and SCC policy. | `C1-002`, `C1-005` | synthetic linker graph prototype |
+| `C1-011` | **TODO** | Prototype structured/simultaneous relocation. | `C1-010` | relocation prototype |
+| `C1-012` | **TODO** | Prototype deterministic bounded-depth taptree construction. | `C1-010` | package-merge prototype |
+| `C1-013` | **BLOCKED** | Build the complete algorithm-oracle suite. | `C1-005`–`C1-012` | property/exhaustive oracle tests |
+| `C1-014` | **BLOCKED** | Run preparation review and hand off to Phase 2. | `C1-001`–`C1-013`, Phase 1 | accepted algorithm policy |
 
 ---
 
-## P0-001 — Rewrite the plan index
+## C1-001 — Land algorithm research notes
 
 > **Status:** DONE
-> **Evidence:** commit db9a930; plans/README.md is the clear index; scripts/check-plans.sh census green
+> **Output:**
+> [`compiler-algorithms.md`](research/compiler-algorithms.md)
+> [`linker-algorithms.md`](research/linker-algorithms.md)
+> [`numerical-linear-algebra.md`](research/numerical-linear-algebra.md)
+> [`optimization-solvers.md`](research/optimization-solvers.md)
+> **Result:** Four notes landed; research README index and Meson census
+> updated; documentation-structure and label-graph gates pass on a clean tree.
 
 ### Scope
 
-Create a clear `plans/README.md` that owns:
+Add the four research notes in the existing research-document form.
 
-- planning authority and non-normative status;
-- current phase;
-- plan document classes;
-- exhaustive active-document index;
-- status vocabulary;
-- conflict and supersession rules;
-- update procedure;
-- immediate navigation.
-
-### Exit check
-
-- [ ] `plans/README.md` is a usable index rather than a monolithic plan.
-- [ ] Every intended document in the new tree appears in the index.
-- [ ] Plans are explicitly excluded as protocol/compiler inputs.
-- [ ] The next phase and current gate are clear.
-- [ ] No copied architecture hashes or stale source identities appear.
-
-### Evidence
-
-Record the final document path and Markdown-link check when complete.
-
----
-
-## P0-002 — Establish cross-package ownership
-
-> **Status:** DONE
-> **Evidence:** decisions and package contracts
-> **Depends on:** `P0-001`
-
-### Scope
-
-Assign cross-package direction to the final planning owners:
-
-- source direction, realization, backend, assurance, representation, and ABI
-  policy to decisions;
-- package responsibilities and dependency direction to package contracts;
-- sequencing to roadmap and phase cards;
-- research mechanics to research notes.
-- canonical layouts;
-- object constructors;
-- deterministic builds;
-- fail-closed package behavior.
-
-### Exit check
-
-- [ ] Every planned package has one cross-package responsibility.
-- [ ] Compiler semantics never depend on generated files or source scraping.
-- [ ] Model and compiler roles remain independent.
-- [ ] The linker/transaction/calibration data flow is acyclic.
-- [ ] Architecture, realization, compiler, target, bundle, ABI, evidence, and
-      deployment-profile identities remain distinct.
-- [ ] Target-specific assumptions do not appear above the backend boundary.
-
----
-
-## P0-003 — Write the roadmap
-
-> **Status:** DONE
-> **Evidence:** commit db9a930; plans/roadmap.md
-> **Depends on:** `P0-001`, `P0-002`
-
-### Scope
-
-Create `plans/roadmap.md` with:
-
-- Phase 0 baseline hardening;
-- Phase 1 realization pilots;
-- Phase 2 compiler analysis;
-- Phase 3 target and foundational prototypes;
-- Phase 4 end-to-end `compact-ash`;
-- Phase 5 live receipt transfer;
-- Phase 6 STATE and maturity announcement;
-- Phase 7 burn/ASH/clear;
-- Phase 8 arithmetic and redemption;
-- Phase 9 requests/admission;
-- Phase 10 settlement;
-- Phase 11 cycle;
-- Phase 12 evidence/release.
-
-### Exit check
-
-- [ ] Every phase has purpose, deliverables, dependencies, and an exit gate.
-- [ ] Research prototypes do not silently freeze package APIs.
-- [ ] `compact-ash` is the first complete backend operation.
-- [ ] settlement requires a batch-size-2 prototype.
-- [ ] cycle is implemented after its dependent seams.
-- [ ] independent deployment evidence is kept separate from model evidence.
-
----
-
-## P0-004 — Rewrite the current backlog
-
-> **Status:** DONE
-> **Evidence:** commits a7e99fc, db9a930; this file
-> **Depends on:** `P0-003`
-
-### Scope
-
-Replace the historical maintenance report with this dependency-ordered task
-queue.
-
-### Exit check
-
-- [ ] Every current review finding has a task.
-- [ ] Every task has an output and objective exit check.
-- [ ] Long-term package design remains outside the backlog.
-- [ ] The start of Phase 1 is represented without prematurely adding backend
-      tasks.
-- [ ] Completed tasks can link to implementation and verification evidence.
-
----
-
-## P0-005 — Write accepted decision records
-
-> **Status:** DONE
-> **Evidence:** commit db9a930; plans/decisions/001..006 + README
-> **Depends on:** `P0-002`
-
-Create:
+Update:
 
 ```text
-plans/decisions/
-├── README.md
-├── 001-typed-rust-source.md
-├── 002-realization-layer.md
-├── 003-tapscript-first.md
-├── 004-translation-validation.md
-├── 005-value-representation.md
-└── 006-transaction-abi.md
+plans/research/README.md
+plans/research/meson.build
+plans/backlog.md
 ```
 
-Each record must state:
+The notes must remain:
 
-- status;
-- context;
-- accepted implementation decision;
-- consequences;
-- alternatives;
-- evidence or prototype dependency;
-- supersession conditions;
-- relevant normative constraints.
+- non-normative;
+- non-machine-consumed;
+- explicit about blocked production interfaces;
+- explicit about exact versus numerical claims;
+- explicit about small-instance oracle requirements;
+- free of unreviewed concrete dependency-version claims.
 
 ### Exit check
 
-- [ ] All six records use one template.
-- [ ] They describe implementation direction, not protocol authority.
-- [ ] Package plans can cite them instead of repeating their arguments.
-- [ ] Unresolved technical content remains in research notes rather than being
-      misclassified as accepted.
-
----
-
-## P0-006 — Write package plans
-
-> **Status:** DONE
-> **Evidence:** commit db9a930; nine plans under plans/packages/
-> **Depends on:** `P0-002`, `P0-005`
-
-Create:
-
-```text
-plans/packages/
-├── realization.md
-├── compiler.md
-├── target-elements.md
-├── tapscript.md
-├── simplicity.md
-├── linker.md
-├── transaction.md
-├── vectors.md
-└── release.md
-```
-
-Every package plan must state:
-
-- purpose;
-- normative typed inputs;
-- forbidden inputs;
-- typed outputs;
-- dependency direction;
-- public API/trust boundary;
-- determinism and identity;
-- responsibilities;
-- evidence obligations;
-- generated artifacts;
-- non-goals;
-- milestones;
-- exit criteria;
-- open research dependencies.
-
-### Exit check
-
-- [ ] All nine package plans exist.
-- [ ] API sketches are explicitly provisional.
-- [ ] No package consumes a generated publication as semantic input.
-- [ ] `simplicity.md` is clearly parked.
-- [ ] `realization.md` is marked as the next substantial package.
-- [ ] Package responsibilities do not overlap ambiguously.
-
----
-
-## P0-007 — Write research notes
-
-> **Status:** DONE
-> **Evidence:** commit db9a930; four notes + register under plans/research/
-> **Depends on:** `P0-002`, `P0-005`
-
-Create:
-
-```text
-plans/research/
-├── README.md
-├── state-constructor.md
-├── wide-arithmetic.md
-├── public-declassification.md
-└── settlement-layout.md
-```
-
-Each research note must name:
-
-- the unresolved question;
-- blocked packages/phases;
-- existing constraints;
-- candidate approaches;
-- required prototype;
-- measurements;
-- acceptance/rejection criteria;
-- expected decision output.
-
-### Exit check
-
-- [ ] No unresolved constructor/arithmetic/declassification/settlement design is
-      hidden inside an accepted package plan.
-- [ ] Each question has an executable decision path.
-- [ ] Prototype results cannot silently become publication contracts.
-
----
-
-## P0-008 — Replace the Elements opcode reference
-
-> **Status:** DONE — completed as documentation work; the original
-> source-pinning requirement was dropped (2026-07-15)
-> **Evidence:** commit db9a930; plans/reference/elements-tapscript.md supersedes the copied survey
-
-Replace:
-
-```text
-plans/doc/tapscript_opcodes.md
-```
-
-with:
-
-```text
-plans/reference/elements-tapscript.md
-```
-
-**Scope revision (2026-07-15):** this task originally required an exact
-upstream source revision. That requirement was dropped: an exact
-Elements implementation revision is not a protocol or release identity.
-the attestation realization targets the tapscript capability set deployed on
-Liquid mainnet and trusts consensus rather than re-auditing it; see
-ADR-011, "Target substrate compatibility". The replacement reference
-documents the stable Liquid tapscript interface used by the backend and
-remains non-authoritative.
-
-The reference must state:
-
-- reference-only status;
-- upstream repository (explanatory reference only);
-- upstream license/provenance expectations for any copied excerpt;
-- relevant opcode semantics;
-- production and regtest activation status;
-- resource-limit facts;
-- byte-order/prefix facts;
-- known test gaps;
-- distinction from the future typed target compatibility contract;
-- explicit statement that the compiler does not consume the Markdown.
-
-### Exit check
-
-- [ ] No broken repository-relative upstream links remain.
-- [ ] Copied text is attributed and license-compatible.
-- [ ] The reference does not present itself as deployment evidence.
-- [ ] The reference does not present an implementation source pin as a
-      protocol or release requirement.
-- [ ] `plans/README.md` indexes the replacement.
-
----
-
-## P0-009 — Remove superseded plan files
-
-> **Status:** DONE
-> **Evidence:** commit db9a930; arch.md, plan.md, compiler-linker.md, doc/tapscript_opcodes.md deleted
-> **Depends on:** `P0-005`–`P0-008`
-
-Delete after valid content has been rewritten:
-
-```text
-plans/arch.md
-plans/plan.md
-plans/compiler-linker.md
-plans/doc/tapscript_opcodes.md
-```
-
-Remove `plans/doc/` if it becomes empty.
-
-Do not create duplicate historical copies under `plans/history/` unless a
-specific legal or review requirement is identified. Git history is the default
-historical record.
-
-### Exit check
-
-- [ ] No conversational transcript remains under `plans/`.
-- [ ] No active plan depends on a deleted document.
-- [ ] No accepted decision exists only in deleted prose.
-- [ ] No stale schema/hash/package-name claim remains because of copied text.
-
----
-
-## P0-010 — Validate the planning tree
-
-> **Status:** DONE
-> **Evidence:** commit db9a930 + follow-up; scripts/check-plans.sh green (26 documents, census/links/hygiene), git diff --check green
-> **Depends on:** `P0-009`
-
-### Required checks
-
-- every Markdown file under `plans/` appears in `plans/README.md`;
-- every relative Markdown link resolves;
-- no deleted plan is referenced;
-- no placeholder URL remains;
-- no old package path/name remains;
-- no confidence percentage remains;
-- no chat-style assistant language remains;
-- no generated file is described as a first-party semantic input;
-- no plan describes itself as protocol-normative;
-- `git diff --check` passes.
-
-A small plan-census/link-check script may be added if useful, but it must remain
-a documentation checker rather than a semantic compiler input.
-
-### Exit check
-
-```sh
-git diff --check
-```
-
-plus the repository's chosen Markdown link/census checker.
-
----
-
-# 3. Completed gate: B0 — baseline hardening
-
-> **Gate status:** DONE (2026-07-15)
-> **Depends on:** planning tasks may proceed in parallel
-> **Blocks:** recording the compiler-era baseline and beginning Phase 1
-
-The tasks below come from static source review. Before implementation, reproduce
-the behavior with focused tests where practical. If a finding proves invalid,
-mark the task `DROPPED` with evidence rather than silently deleting it.
-
-## 3.1 Baseline task summary
-
-| ID | Status | Task | Depends on | Primary output |
-|---|---|---|---|---|
-| `B0-001` | **DONE** | Remove raw child-argv logging from `execwrap`. | none | safe diagnostic metadata |
-| `B0-002` | **DONE** | Preserve unredirected child streams and fail on relay loss. | none | corrected stream routing |
-| `B0-003` | **DONE** | Correct `execwrap` help/version/usage behavior. | none | ADR-010 subprocess contract |
-| `B0-004` | **DONE** | Disable panic payload reporting by default. | none | fail-closed panic redaction |
-| `B0-005` | **DONE** | Reject indexer checkpoints without exactly one genesis clear. | none | stronger event-index validation |
-| `B0-006` | **DONE** | Make PDF builds reproducible. | none | source-date policy and reproducibility test |
-| `B0-007` | **DONE** | Split hash verification from supported/release envelope validation. | none | explicit envelope APIs |
-| `B0-008` | **DONE** | Validate architecture document metadata at release. | `B0-007` recommended | `DocumentSpec` validation |
-| `B0-009` | **DONE** | Reject duplicate set-like architecture declarations. | none | duplicate validation/mutations |
-| `B0-010` | **DONE** | Make artifact writes collision-safe. | none | unique temporary writes |
-| `B0-011` | **DONE** | Correct independent-indexer claims in human-facing docs. | none | accurate assurance wording |
-| `B0-012` | **DONE** | Reject unmatched label delimiters. | none | strict label harvesting |
-| `B0-013` | **DONE** | Add the full baseline verification lane. | `B0-001`–`B0-012` | green clean checkout |
-| `B0-014` | **DONE** | Record the compiler-era baseline. | `P0-010`, `B0-013` | baseline commit record |
-
----
-
-## B0-001 — Remove raw child-argv logging
-
-> **Status:** DONE
-> **Evidence:** commit f09cc1e (+29a5b54 credential-URL test); `cargo test --locked -p execwrap` green
-> **Primary files:**
-> `packages/execwrap/src/lib.rs`,
-> `packages/execwrap/tests/subprocess_contract.rs`
-> **Contract:** ADR-010 redaction requirements
-
-### Problem
-
-`execwrap::run` currently logs the complete child command vector:
-
-```rust
-tracing::info!(
-    command = ?command,
-    pid = child.id(),
-    "executing command",
-);
-```
-
-Arguments may contain credentials, URLs with userinfo, tokens, passwords,
-private keys, or other secrets. Existing redaction helpers are not applied to
-this field.
-
-### Required change
-
-At the default log level, log only safe metadata, for example:
-
-- executable/program name;
-- argument count;
-- process ID.
-
-Do not log raw argv under `--debug` unless a future centrally enforced safe
-renderer is separately designed and tested.
-
-### Required tests
-
-Add a subprocess test using a recognizable secret, such as:
-
-```text
---api-token SHOULD_NOT_APPEAR
-```
-
-Require:
-
-- process behavior remains correct;
-- stdout does not contain the secret;
-- no JSON stderr record contains the secret;
-- the program name and argument count may still appear.
-
-Also test a credential-bearing URL.
-
-### Exit check
-
-- [ ] no raw command vector is logged;
-- [ ] default and debug modes do not leak test secrets;
-- [ ] ADR-010 documentation and code agree;
-- [ ] all `execwrap` tests pass.
+- [x] all four files exist;
+- [x] nearest README indexes every file;
+- [x] Meson census names every file;
+- [x] every local/imported citation resolves;
+- [x] combined documentation budget passes;
+- [x] no production API is frozen by research prose;
+- [x] documentation checks leave the tree clean.
 
 Verification:
 
 ```sh
-cargo test --locked -p execwrap
-```
-
----
-
-## B0-002 — Preserve unredirected streams and fail on relay loss
-
-> **Status:** DONE
-> **Evidence:** commits f09cc1e, 29a5b54; subprocess tests cover bare/partial redirection, pipes, /dev/full data loss
-> **Primary files:**
-> `packages/execwrap/src/lib.rs`,
-> `packages/execwrap/tests/subprocess_contract.rs`
-
-### Problem
-
-A child stream with no file subscriber is currently relayed only if the parent
-stream was a TTY. Under `Command::output()`, CI capture, or a shell pipeline,
-unsubscribed output may be discarded while the wrapper reports success.
-
-Parent relay errors and reader-thread panics are also not fully reflected in
-`data_loss`.
-
-### Required change
-
-Unless the user explicitly requests discard behavior:
-
-- every unsubscribed child stdout stream is forwarded to parent stdout;
-- every unsubscribed child stderr stream is forwarded to parent stderr;
-- relay write/flush failure marks data loss;
-- reader-thread panic marks wrapper failure/data loss;
-- a successful child cannot produce a successful wrapper result after output
-  loss.
-
-Do not introduce silent discard as an implicit TTY policy. If discard is ever
-needed, make it explicit and separately documented.
-
-### Required tests
-
-End-to-end subprocess tests for:
-
-1. no redirection under `Command::output()` preserves stdout;
-2. no redirection preserves stderr;
-3. redirect stdout only while stderr remains forwarded;
-4. redirect stderr only while stdout remains forwarded;
-5. pipeline/non-TTY forwarding;
-6. parent write failure, if a hermetic fixture can simulate it;
-7. reader failure/panic policy;
-8. `/dev/full` or equivalent data-loss failure.
-
-### Exit check
-
-```sh
-cargo test --locked -p execwrap
-```
-
-All pass-through behavior must be documented in the binary contract.
-
----
-
-## B0-003 — Correct `execwrap` help, version, and usage behavior
-
-> **Status:** DONE
-> **Evidence:** commits f09cc1e, 29a5b54; full help/version/usage/exit-class subprocess matrix green
-> **Primary file:** `packages/execwrap/src/bin/execwrap.rs`
-> **Contract:** ADR-010
-
-### Problem
-
-The binary checks for the `--` child-command separator before clap handles help
-or version. As a result:
-
-```text
-execwrap --help
-execwrap --version
-```
-
-can be reported as missing-separator usage failures.
-
-Ambiguous routing is also an invalid-argument combination but currently follows
-a runtime failure path.
-
-### Required change
-
-- install the panic hook at the earliest safe point;
-- allow clap help/version control paths before separator validation;
-- preserve the required `--` rule for real child execution;
-- return usage code 2 for invalid argument combinations;
-- perform routing semantic preflight before opening files or spawning a child;
-- keep stdout empty for help/version/usage diagnostics;
-- emit one or more valid JSON stderr records only.
-
-### Required subprocess matrix
-
-```text
-execwrap --help
-    exit 0
-    JSON help on stderr
-    empty stdout
-
-execwrap --version
-    exit 0
-    JSON version on stderr
-    empty stdout
-
-execwrap --no-such-flag
-    exit 2
-    JSON usage error
-    empty stdout
-
-execwrap true
-    exit 2
-    missing-separator usage error
-
-execwrap -- true
-    exit 0
-
-execwrap --redirect x --redirect-output x -- true
-    exit 2
-    invalid-argument diagnostic
-```
-
-### Exit check
-
-```sh
-cargo test --locked -p execwrap
-```
-
----
-
-## B0-004 — Disable panic payload reporting by default
-
-> **Status:** DONE
-> **Evidence:** commit f09cc1e; gate defaults disabled, `cargo test --locked -p cli-common` green
-> **Primary files:**
-> `packages/cli-common/src/lib.rs`,
-> `packages/cli-common/src/tests/mod.rs`
-> **Contract:** ADR-010
-
-### Problem
-
-The global panic-payload gate currently starts enabled, so a panic before
-successful argument parsing may expose a secret payload without `--debug`.
-
-### Required change
-
-Default the global gate to disabled.
-
-After successful argument parsing, set it from the parsed debug flag.
-
-A panic before debug status is known must omit its payload.
-
-If early debug-payload support is later desired, it requires a separately
-reviewed pre-parse mechanism that cannot mistake a child argument or arbitrary
-value for the wrapper's debug flag.
-
-### Required tests
-
-- default state omits payload;
-- non-debug parsed state omits payload;
-- debug state includes string payload;
-- non-string payload remains omitted;
-- JSON panic record remains valid;
-- no Rust default panic text appears in binary subprocess tests.
-
-### Exit check
-
-```sh
-cargo test --locked -p cli-common
-```
-
-and relevant binary subprocess tests.
-
----
-
-## B0-005 — Require exactly one genesis clear in indexer checkpoints
-
-> **Status:** DONE
-> **Evidence:** commits 2284df0, 29a5b54; all nine rejection mutations plus round-trip green
-> **Primary files:**
-> `packages/model/src/ledger.rs`,
-> `packages/model/src/tests/indexer_order_tests.rs`
-
-### Problem
-
-An empty burn map, clear map, and event list can satisfy the current census and
-be accepted as a `ReferenceIndexer` checkpoint even though the event model
-requires genesis clearing first.
-
-### Required change
-
-`validate_event_index` must require:
-
-- a nonempty event list;
-- the first event is `GenesisClear`;
-- the clear ID is the genesis variant;
-- exactly one genesis clear exists in the clear map;
-- exactly one genesis-clear event exists;
-- its payload order matches the event order;
-- every other event follows it in strict canonical order.
-
-### Required mutation tests
-
-Reject:
-
-1. empty maps and events;
-2. clear map without genesis;
-3. event list without genesis;
-4. ordinary clear as first event;
-5. burn as first event;
-6. two genesis-clear events;
-7. two distinct genesis-clear IDs;
-8. genesis clear present in map but absent from events;
-9. genesis event referencing a missing clear.
-
-Retain positive round-trip coverage for a valid checkpoint.
-
-### Exit check
-
-```sh
-cargo test --locked -p tripod-model
-```
-
----
-
-## B0-006 — Make PDF builds reproducible
-
-> **Status:** DONE
-> **Evidence:** commits 00e7d68, 29a5b54; `scripts/check-document-reproducibility.sh` green (sha256-equal PDFs)
-> **Primary files:**
-> `papers/attestation/main.tex`,
-> `papers/attestation/sections/00_title.tex`,
-> `papers/attestation/meson.build`,
-> repository build documentation
-> **Contract:** ADR-011
-
-### Problem
-
-The paper uses ambient date material:
-
-```tex
-\date{\today}
-pdfdate={\today}
-```
-
-The build does not currently expose one explicit source-date input for all TeX
-tools. Identical source built on different days may produce different visible
-content and PDF metadata.
-
-### Required decision
-
-Adopt one reproducible date policy:
-
-1. release/source date passed as an explicit typed/build input; or
-2. source date derived from a pinned `SOURCE_DATE_EPOCH`.
-
-The chosen date must govern:
-
-- visible title date;
-- PDF metadata date;
-- XeLaTeX;
-- Biber;
-- latexmk;
-- any document ID/creation timestamp behavior supported by the installed
-  toolchain.
-
-### Required implementation
-
-- remove direct ambient-clock dependence;
-- document the source-date input;
-- set reproducibility environment consistently in Meson;
-- preserve local developer ergonomics without weakening release builds;
-- add a reproducibility script or test.
-
-### Required test
-
-Build the release PDF twice in separate clean build directories with the same
-source-date input and compare exact bytes/hashes.
-
-### Exit check
-
-The exact command should be recorded after implementation, conceptually:
-
-```sh
-scripts/check-document-reproducibility.sh
-```
-
-It must succeed in the documented TeX environment.
-
----
-
-## B0-007 — Split publication hash verification from envelope support validation
-
-> **Status:** DONE
-> **Evidence:** commits cd49938, 29a5b54; verify_hashes/validate_envelope/validate_release_envelope split, malformed version rejected
-> **Primary files:**
-> `packages/architecture/src/export.rs`,
-> `packages/architecture/src/tests/export_hash_tests.rs`
-
-### Problem
-
-`PublishedArchitecture::validate_envelope` verifies hash algorithms and digests
-but accepts arbitrary schema version, realization version, and publication
-status because those fields are correctly excluded from the hashes.
-
-Hash invisibility is not the same as support or release validity.
-
-### Required API distinction
-
-Provide clearly named operations for at least:
-
-1. **hash verification**
-   - supported declared hash algorithms;
-   - body hash;
-   - behavioural hash.
-
-2. **supported-envelope validation**
-   - supported architecture schema;
-   - recognized publication status;
-   - valid realization-version syntax or supported identity;
-   - hash verification.
-
-3. **release-envelope validation**
-   - supported envelope;
-   - final publication status;
-   - expected architecture/release identity where applicable;
-   - release pins.
-
-Exact names may differ, but callers must not mistake hash verification for
-complete release validation.
-
-### Required tests
-
-- arbitrary envelope metadata can leave hashes valid;
-- unsupported schema is rejected by supported-envelope validation;
-- malformed realization version is rejected;
-- unknown publication status is rejected at parse or validation;
-- draft is rejected by release-envelope validation;
-- final expected envelope passes;
-- generated JSON/TOML still equal the typed expected value exactly.
-
-### Exit check
-
-```sh
-cargo test --locked -p tripod-architecture
-cargo test --locked -p tripod-artifacts
-```
-
-Update callers and documentation to use the correct validation level.
-
----
-
-## B0-008 — Validate architecture document metadata
-
-> **Status:** DONE
-> **Evidence:** commit cd49938; per-field DocumentSpec mutations incl. zero anchor pin
-> **Primary files:**
-> `packages/architecture/src/validate.rs`,
-> architecture validation tests
-> **Depends on:** `B0-007` recommended
-
-### Problem
-
-Architecture release validation checks final status and presence of an anchor
-hash but does not comprehensively validate `DocumentSpec`.
-
-### Required validation
-
-Define explicit rules for:
-
-- supported nonzero architecture schema;
-- nonblank realization version;
-- valid realization-version form;
-- nonblank Layer-0 version;
-- nonblank target network;
-- release anchor-set hash policy;
-- all-zero anchor hash;
-- expected target-network constraints, if this crate is specifically bound to
-  Liquid;
-- publication status.
-
-Distinguish:
-
-- draft-valid metadata;
-- supported publication metadata;
-- final release metadata.
-
-### Required mutation tests
-
-Mutate each field independently and require the intended error:
-
-- schema 0;
-- unsupported schema;
-- blank realization version;
-- malformed realization version;
-- blank Layer-0 version;
-- blank target network;
-- absent release pin;
-- zero release pin;
-- draft release status.
-
-### Exit check
-
-```sh
-cargo test --locked -p tripod-architecture
-```
-
----
-
-## B0-009 — Reject duplicate set-like declarations
-
-> **Status:** DONE
-> **Evidence:** commits cd49938, 29a5b54; per-collection-class duplicate mutations, artifacts/hashes unchanged
-> **Primary files:**
-> `packages/architecture/src/validate.rs`,
-> `packages/architecture/src/export.rs`,
-> mutation tests
-
-### Problem
-
-Several export fields are sorted and deduplicated. Validation does not
-consistently reject duplicate declarations before that normalization.
-
-A duplicate in normative typed source may therefore disappear from publication
-and hashes.
-
-### Required change
-
-Reject duplicates in every normative collection treated semantically as a set.
-
-At minimum inspect:
-
-- operation open flows;
-- operation reads;
-- operation writes;
-- operation witnesses;
-- operation value-flow classes;
-- operation bounds;
-- object allocators;
-- object mutators;
-- object deallocators;
-- object witnesses;
-- quantity reads;
-- quantity readers;
-- quantity writers;
-- asset destruction operations;
-- decision rationale, if declared set-like;
-- root uses;
-- projections;
-- issuances;
-- canonical-delta signatures;
-- data-output-family signatures.
-
-Do not deduplicate silently unless duplicate-insensitivity is itself an explicit
-normative rule.
-
-### Required tests
-
-Add one mutation per collection class proving duplicate rejection.
-
-Where ordering is presentation-only, continue canonical sorting after
-validation.
-
-### Exit check
-
-```sh
-cargo test --locked -p tripod-architecture
-cargo run --locked -p tripod-artifacts --bin check-generated > /dev/null
-git diff --exit-code
-```
-
-Any intentional change to canonical artifact bytes or architecture hashes must
-undergo separate normative review rather than being hidden in this task.
-
----
-
-## B0-010 — Make generated-artifact writes collision-safe
-
-> **Status:** DONE
-> **Evidence:** commits 312a563, 29a5b54; unique staged tempfiles, concurrency/failure/no-leftover tests green
-> **Primary file:** `packages/artifacts/src/lib.rs`
-
-### Problem
-
-Temporary output paths are derived with:
-
-```rust
-path.with_extension("tmp")
-```
-
-Files such as:
-
-```text
-architecture.json
-architecture.toml
-```
-
-both map to:
-
-```text
-architecture.tmp
-```
-
-Concurrent generators can race or exchange bytes.
-
-### Required change
-
-Use unique temporary files in the destination directory, then atomically
-persist/rename.
-
-Preferred implementation:
-
-- `tempfile::NamedTempFile` or equivalent;
-- destination-directory staging;
-- cleanup on failure;
-- no predictable shared temporary path;
-- target replacement only after complete write and flush.
-
-If the generated directory is treated as one release unit, consider staging the
-complete set and validating it before replacement. That larger transaction is
-optional for this task; per-file collision safety is mandatory.
-
-### Required tests
-
-- concurrent writes to different same-stem artifacts do not collide;
-- failure leaves the original target intact;
-- no temporary file remains after success;
-- expected bytes remain exact;
-- check path remains non-writing.
-
-### Exit check
-
-```sh
-cargo test --locked -p tripod-artifacts
-```
-
----
-
-## B0-011 — Correct independent-indexer claims
-
-> **Status:** DONE
-> **Evidence:** commit 312a563; human.md wording matches the realization deployment requirement
-> **Primary files:**
-> `papers/attestation/human.md`,
-> any related README/plan wording
-
-### Problem
-
-Human-facing prose currently implies the repository already runs two separately
-implemented indexers and compares them. The source contains a strong
-differential API and mismatch-detection tests, but deployment-grade independent
-implementations remain future evidence.
-
-### Required change
-
-State precisely:
-
-- the model provides separate event and query comparison boundaries;
-- current tests prove those comparisons detect representative mismatches;
-- deployment release requires a separately implemented candidate indexer;
-- another `ReferenceIndexer` invocation is not independent evidence;
-- receipt-accounting audit remains a third separate claim.
-
-Do not weaken the intended deployment requirement.
-
-### Exit check
-
-- [ ] no document claims independent deployment implementation already exists
-      unless one is actually present;
-- [ ] realization and human-facing wording agree;
-- [ ] generated/paper builds remain green.
-
----
-
-## B0-012 — Reject unmatched label delimiters
-
-> **Status:** DONE
-> **Evidence:** commits 312a563, 29a5b54; scan_labels + document harvester strictness tests green
-> **Primary files:**
-> `packages/model/src/artifacts.rs`,
-> model label tests,
-> architecture document label harvesters as applicable
-
-### Problem
-
-Label harvesters split lines on acute accents or backticks and may ignore an
-unclosed token instead of reporting malformed source.
-
-### Required change
-
-For each controlled label delimiter:
-
-- require balanced delimiters on every relevant line;
-- reject an unmatched opening or closing delimiter;
-- preserve existing label shape/type checks;
-- avoid mistaking unrelated Markdown structures for model labels;
-- report file and line where possible.
-
-### Required tests
-
-- unmatched acute opening;
-- unmatched acute closing or odd count;
-- malformed label inside balanced delimiters;
-- valid multiple labels on one line;
-- unrelated text remains ignored as intended;
-- relevant document backtick structures remain correctly classified.
-
-### Exit check
-
-```sh
-cargo test --locked -p tripod-model
-cargo test --locked -p tripod-architecture
-```
-
----
-
-## B0-013 — Run and preserve the complete baseline gate
-
-> **Status:** DONE
-> **Evidence:** see evidence record below
-> **Depends on:** `B0-001`–`B0-012`
-
-### Required Rust lanes
-
-```sh
-scripts/ci.sh
-```
-
-Run on:
-
-- declared Rust MSRV;
-- current stable Rust.
-
-### Required document lanes
-
-```sh
-meson setup build
-meson compile -C build attestation
+meson compile -C build
 meson test -C build --print-errorlogs
-git diff --exit-code
+scripts/check-plans.sh
+git diff --check
 ```
 
-Also run the new PDF reproducibility check from `B0-006`.
+---
 
-### Required evidence
+## C1-002 — Record the petgraph substrate decision
+
+> **Status:** TODO
+> **Depends on:** `C1-001`
+> **Primary output:** `plans/decisions/007-petgraph-internal-graph-substrate.md`
+
+### Decision
 
 Record:
 
-- toolchain versions;
-- whether `cargo audit` ran or was skipped;
-- Meson/Ninja/TeX versions;
-- successful generated-artifact report;
-- successful clean-tree check;
-- successful reproducibility hashes.
+> `petgraph` is the preferred private graph substrate for realization,
+> compiler, and linker analyses. Petgraph indices, traversal order,
+> serialization, and generic graph structure are not semantic identity or public
+> API. Typed ASTs, stable keys, canonical ordering, graph schemas, solver
+> policies, and publications remain first-party.
 
-A missing optional advisory tool remains a loudly recorded skip under ADR-011,
-not a silent pass. Release policy may later require the lane to be installed.
+### Required scope
 
-### Evidence record (2026-07-15, commit 29a5b54)
+- graph storage;
+- SCC;
+- reachability;
+- traversal;
+- reverse dependency analysis;
+- condensation support;
+- graph diagnostics.
 
-- Rust lanes green on three toolchains: nightly 1.99.0 (2026-07-07),
-  MSRV rustc 1.88.0, stable rustc 1.97.0 — fmt, clippy `-D warnings`,
-  and all 19 workspace test suites each (`claude-rust` toolbox,
-  per-toolchain `CARGO_TARGET_DIR`).
-- `cargo audit`: SKIPPED (not installed) — recorded loudly per ADR-011.
-- Document lane green: meson 1.9.2, ninja 1.13.2, XeTeX
-  3.141592653-2.6-0.999998 (TeX Live 2026 Flatpak), biber 2.21;
-  4/4 meson tests including the `check-generated` gate.
-- `check-generated` report: all four artifacts current, no strays.
-- Reproducibility: `scripts/check-document-reproducibility.sh` green —
-  both clean builds render sha256
- .
-- Clean tree: `git diff --exit-code -- . ':(exclude)plans'` green
-  (plans/ carried the in-progress P0 rewrite).
+### Explicit exclusions
 
-### Exit check
-
-Every required lane passes without modifying tracked files.
-
----
-
-## B0-014 — Record the compiler-era baseline
-
-> **Status:** DONE
-> **Depends on:** `P0-010`, `B0-013`
-
-### Required output
-
-Record one clean commit as the baseline for Phase 1.
-
-The baseline record must contain or link to:
-
-- commit ID;
-- architecture schema;
-- realization version;
-- architecture semantic hash;
-- architecture behavioural hash;
-- Layer-0 version and anchor-set hash;
-- target-independent package graph status;
-- verification matrix result;
-- document reproducibility result.
-
-Do not copy these identities into every plan. Keep one baseline record and link
-to canonical generated artifacts.
-
-### Baseline record (2026-07-15)
-
-- **Identities:** architecture schema 17; realization version tracked compiler-line binding
-  (letter 13a); publication status final; semantic hash
- 
-  (`sha256-canonical-json-v2`); behavioural hash
- 
-  (`sha256-canonical-json-behavioural-v2`); Layer-0 v0.5.0, anchor-set
-  hash
- .
-  Canonical artifacts: `packages/model/generated/architecture.{json,toml}`.
-- **Package graph:** architecture, model, artifacts, cli-common,
-  execwrap, flatten-latex-main. No realization/compiler/backend crates
-  exist yet (Phase-1 scope).
-- **Verification matrix:** see the B0-013 evidence record (nightly
-  1.99.0 / MSRV 1.88.0 / stable 1.97.0 Rust lanes, meson document
-  lane, check-generated, plan-tree checker) — re-run green at the
-  baseline commit.
-- **Document reproducibility:**
-  `scripts/check-document-reproducibility.sh` green; both clean builds
-  render sha256
- .
+- semantic AST ownership;
+- semantic IDs;
+- canonical topological order;
+- canonical serialization;
+- proof selection;
+- placement constraints;
+- relocation;
+- taptree optimization;
+- resource formulas;
+- release identity.
 
 ### Exit check
 
-- [ ] repository is clean;
-- [ ] all Phase-0 gates pass;
-- [ ] baseline commit is immutable and identifiable;
-- [ ] `roadmap.md` marks Phase 0 complete;
-- [ ] `backlog.md` promotes the Phase-1 tasks to current work.
+- [ ] D007 uses the planning-decision template;
+- [ ] decision index and Meson census are updated;
+- [ ] package contracts cite the decision instead of repeating it;
+- [ ] no repository-wide law forbids a specialized first-party algorithm;
+- [ ] no generic shared graph crate is authorized prematurely.
 
 ---
 
-# 4. Current gate: R1 — typed realization foundation
+## C1-003 — Record exact and certified mathematics policy
 
-> **Gate status:** CURRENT (Phase-0 baseline recorded)
-> **Depends on:** `B0-014` (DONE)
-> **Primary plan:** [`packages/realization.md`](packages/realization.md)
+> **Status:** TODO
+> **Depends on:** `C1-001`
+> **Primary output:** `plans/decisions/008-exact-and-certified-mathematics.md`
 
-The Phase-0 baseline is recorded: these tasks are current work.
+### Decision
 
-## 4.1 Phase-1 task summary
+Record:
+
+> Exact semantic and release claims use checked integer/rational reasoning or
+> independently checked certificates. `faer` is the preferred private numerical
+> linear-algebra substrate for candidate generation, diagnostics, sensitivity,
+> least squares, and certified numerical analyses. Raw floating-point output is
+> never semantic identity or sufficient release proof.
+
+### Required distinctions
+
+- numerical \(Ax=b\);
+- exact rational \(Ax=b\);
+- LP/QP;
+- MILP/SAT;
+- graph analysis;
+- target arithmetic;
+- cryptographic math.
+
+### Required policy
+
+- exact keyed matrix is authoritative;
+- numerical matrix is derivative working state;
+- solver method is explicit;
+- tolerances are explicit;
+- residual and conditioning checks are required;
+- rank ambiguity fails closed for release-sensitive uses;
+- exact or conservative certification is required;
+- no explicit inverse for routine solves;
+- QR/SVD preferred over accidental normal equations;
+- parallel numerical execution disabled initially;
+- no raw `f64` bits in semantic identities.
+
+### Exit check
+
+- [ ] D008 uses the planning-decision template;
+- [ ] `faer`, `num-rational`, and existing `num-*` roles are distinct;
+- [ ] optimizer policy remains owned by solver research;
+- [ ] target/cryptographic math remains separately reviewed;
+- [ ] package contracts and identity register are updated.
+
+---
+
+## C1-004 — Review and select dependencies
+
+> **Status:** TODO
+> **Depends on:** `C1-002`, `C1-003`
+> **Initial candidates:** `petgraph`, `faer`, `num-rational`
+
+### Review record
+
+For each selected release record:
+
+- exact crates.io package/version;
+- upstream repository and matching release;
+- license;
+- Rust 1.88 compatibility;
+- exact enabled features;
+- default-feature policy;
+- transitive dependency graph;
+- duplicate versions;
+- unsafe/SIMD/native trust surface;
+- maintenance status;
+- advisory status;
+- determinism implications;
+- canonical-output implications;
+- direct package consumers;
+- public API exposure policy;
+- replacement boundary.
+
+### Adoption policy
+
+```text
+petgraph:
+    workspace-owned when the realization graph consumer lands
+
+num-rational:
+    workspace-owned when exact rational analysis lands
+
+faer:
+    workspace-owned core numerical dependency;
+    direct dependency only of an actual numerical-analysis consumer
+```
+
+Do not add unused dependencies only to advertise future intent.
+
+Disable optional parallel, serialization, ecosystem-adapter, or native features
+unless a concrete API needs them.
+
+### Exit check
+
+```sh
+cargo tree --locked -p petgraph -e features
+cargo tree --locked -p faer -e features
+cargo tree --locked -p num-rational -e features
+
+cargo tree --locked -i petgraph
+cargo tree --locked -i faer
+cargo tree --locked -i num-rational
+```
+
+Then run Rust 1.88 and stable workspace lanes.
+
+A dependency is accepted only when the lockfile diff and focused tests are
+reviewed.
+
+---
+
+## C1-005 — Canonical graph adapter prototype
+
+> **Status:** TODO
+> **Depends on:** `C1-002`, `C1-004`
+> **Likely production owner:** realization first, compiler/linker later
+
+### Required adapter properties
+
+- first-party typed node/edge schemas;
+- stable-key collection;
+- canonical node insertion;
+- canonical edge insertion;
+- key-to-index and index-to-key maps;
+- private petgraph indices;
+- explicit self-loop policy;
+- explicit parallel-edge policy;
+- frozen post-validation graph;
+- deterministic diagnostics;
+- first-party publication DTO;
+- no direct petgraph serialization.
+
+### Required algorithms
+
+- canonical Kahn topological order;
+- cycle remainder detection;
+- SCC normalization;
+- deterministic representative cycle;
+- reachability;
+- reverse dependency closure.
+
+### Required tests
+
+- node/edge insertion permutations;
+- unrelated-node insertion;
+- duplicate keys;
+- missing endpoints;
+- self-loop;
+- one large SCC;
+- deep chain;
+- disconnected graph;
+- dense small graph;
+- no graph index in public output;
+- equality across repeated construction.
+
+### Exit check
+
+Production algorithms agree with independent small-instance topology and SCC
+oracles.
+
+---
+
+## C1-006 — Exact keyed linear-system prototype
+
+> **Status:** TODO
+> **Depends on:** `C1-003`, `C1-004`
+> **Dependencies:** existing `num-bigint`, `num-integer`, `num-traits`;
+> selected `num-rational`
+
+### Required types
+
+- stable typed row keys;
+- stable typed column keys;
+- exact rational coefficients;
+- canonical sparse or dense coefficient DTO;
+- exact right-hand side;
+- exact solution/certificate;
+- no matrix position as semantic identity.
+
+### Required algorithm
+
+Implement fraction-free Bareiss elimination for small systems.
+
+Support:
+
+- exact rank;
+- exact consistency;
+- exact determinant where useful;
+- exact square solve;
+- exact substitution verification.
+
+Keep a simpler independent `BigRational` Gaussian-elimination oracle for small
+tests.
+
+### Required tests
+
+- identity and diagonal matrices;
+- full-rank integer systems;
+- exact rational solutions;
+- singular systems;
+- inconsistent systems;
+- row/column permutations;
+- redundant equations;
+- nonzero equation scaling;
+- coefficient mutation;
+- coefficient-growth boundaries.
+
+### Exit check
+
+Bareiss and the independent rational oracle agree on every generated accepted
+small system.
+
+---
+
+## C1-007 — Certified `faer` numerical prototype
+
+> **Status:** TODO
+> **Depends on:** `C1-003`, `C1-004`, `C1-006`
+> **Production status:** diagnostic/certified numerical analysis only
+
+### Required methods
+
+Prototype explicit policies for:
+
+- pivoted LU;
+- QR;
+- SVD;
+- Cholesky after SPD validation;
+- multiple right-hand sides;
+- sparse analysis only if measured dimensions justify it.
+
+### Required acceptance checks
+
+For \(Ax=b\), recompute:
+
+\[
+\eta=
+\frac{\lVert b-Ax\rVert_\infty}
+{\lVert A\rVert_\infty\lVert x\rVert_\infty+\lVert b\rVert_\infty}
+\]
+
+Also record:
+
+- finite inputs and outputs;
+- decomposition status;
+- rank;
+- condition estimate;
+- residual;
+- backward error;
+- explicit tolerance policy;
+- exact or conservative certification mode.
+
+### Forbidden use
+
+The prototype must not establish:
+
+- exact semantic equality;
+- proof-plan optimality;
+- carrier coverage;
+- exact calibration;
+- release identity.
+
+### Required tests
+
+- exact/numerical cross-check;
+- rank deficiency;
+- ill-conditioning;
+- bad scaling;
+- overdetermined least squares;
+- non-SPD Cholesky rejection;
+- zero pivot requiring pivoting;
+- nonfinite input;
+- row/column permutation;
+- no raw float in identity-bearing output.
+
+### Exit check
+
+Well-conditioned numerical results agree with exact solutions under declared
+tolerances. Ill-conditioned or rank-ambiguous systems cannot receive certified
+release-sensitive status.
+
+---
+
+## C1-008 — Exact proof-plan search
+
+> **Status:** BLOCKED
+> **Depends on:** Phase-1 relation and proof-alternative vocabulary
+> **Research:** [`optimization-solvers.md`](research/optimization-solvers.md)
+
+### Required algorithm
+
+Implement deterministic exact enumeration or branch-and-bound over pilot proof
+alternatives.
+
+Hard constraints include:
+
+- semantic relation preservation;
+- target capability;
+- authenticatable sources;
+- witness availability;
+- permissionless constructibility;
+- representation;
+- disclosure;
+- lifecycle;
+- relation coverage.
+
+Cost is evaluated only after hard constraints pass.
+
+Retain a Pareto frontier where no accepted total order exists.
+
+### Required oracle
+
+Exhaustively enumerate every complete assignment for generated small instances.
+
+### Exit check
+
+- exact search and exhaustive oracle agree;
+- greedy counterexamples are included;
+- equal optima select by stable typed keys;
+- complexity exhaustion fails closed;
+- no external solver is required for pilots.
+
+---
+
+## C1-009 — Exact placement and coverage search
+
+> **Status:** BLOCKED
+> **Depends on:** Phase-1/Phase-2 relation, carrier, and execution-case types
+
+### Required model
+
+```text
+relations
+↔ carriers
+↔ execution cases
+```
+
+Require for every relation \(r\):
+
+\[
+\operatorname{requiredCases}(r)
+\subseteq
+\bigcup_{c\text{ carries }r}
+\operatorname{executedCases}(c)
+\]
+
+### Required failures
+
+- missing carrier;
+- optional-only carrier for unconditional relation;
+- local-only carrier for global relation;
+- unreachable carrier;
+- execution-case gap;
+- unavailable fact source;
+- permissionless secret dependency;
+- ambiguous equal-cost selection;
+- complexity exhaustion.
+
+### Required oracle
+
+Exhaustive carrier-subset enumeration for small generated instances.
+
+### Exit check
+
+Exact placement agrees with the oracle and every pilot relation is covered in
+every active case.
+
+---
+
+## C1-010 — Typed linker graph and SCC prototype
+
+> **Status:** TODO
+> **Depends on:** `C1-002`, `C1-005`
+> **Production linker:** still blocked on backend artifacts
+
+### Required prototype
+
+- two-pass typed symbol resolution;
+- complete definition census;
+- complete reference resolution;
+- typed reference graph;
+- canonical SCCs;
+- typed condensation DAG;
+- canonical condensation order;
+- explicit strategy on every cyclic edge.
+
+### Required cycle strategies
+
+Prototype classification for:
+
+- static link-time value;
+- target identity introspection;
+- authenticated witnessed root;
+- in-program constructor reconstruction;
+- deployment relocation;
+- unsupported cycle.
+
+SCC membership never makes a cycle valid by itself.
+
+### Required tests
+
+- forward reference;
+- duplicate and ambiguous symbols;
+- incompatible symbol type;
+- self-loop with/without strategy;
+- multi-node SCC;
+- deep chain;
+- repeated-hashing fixed-point attempt;
+- stale constructor identity.
+
+### Exit check
+
+SCC results agree with a mutual-reachability oracle and every unresolved cycle
+fails deterministically.
+
+---
+
+## C1-011 — Structured relocation prototype
+
+> **Status:** TODO
+> **Depends on:** `C1-010`
+
+### Preferred path
+
+Resolve structured target programs before byte serialization.
+
+### Byte-relocation fallback
+
+If byte relocation is necessary, require:
+
+- fixed width;
+- typed source and destination;
+- exact encoding;
+- exact expected placeholder;
+- no overlaps;
+- one resolution per mandatory relocation;
+- replacement values computed against pristine bytes;
+- canonical offset ordering;
+- simultaneous application;
+- full post-link reparse and validation.
+
+Variable-width byte relocation is prohibited.
+
+### Required oracle
+
+Construct the expected linked structured program independently without
+patching.
+
+### Exit check
+
+- structured and relocation paths agree;
+- overlap and stale-placeholder mutations reject;
+- earlier patches cannot move or alter later patch interpretation;
+- final program identity derives from reparsed validated output.
+
+---
+
+## C1-012 — Deterministic bounded-depth taptree prototype
+
+> **Status:** TODO
+> **Depends on:** `C1-010`
+
+### Initial objective
+
+Use deterministic length-limited Huffman construction by package-merge:
+
+\[
+\min\sum_i w_i d_i
+\qquad\text{subject to}\qquad
+d_i\le L
+\]
+
+Inputs:
+
+- stable leaf key;
+- target program identity;
+- leaf version;
+- positive integer weight;
+- maximum depth;
+- target branch-hash ordering.
+
+If no defensible execution frequencies exist, use equal weights.
+
+### Required tests
+
+- one leaf;
+- equal weights;
+- unequal weights;
+- duplicate weights;
+- impossible depth;
+- insertion permutations;
+- stable tie-breaking;
+- duplicate leaf bytes;
+- relation provenance under deliberate coalescing;
+- exact target child ordering.
+
+### Required oracle
+
+Enumerate every full binary tree for small leaf sets and compare the objective
+and depth result.
+
+### Exit check
+
+Package-merge agrees with the exhaustive oracle and tree policy is an explicit
+bundle/ABI identity input.
+
+---
+
+## C1-013 — Complete algorithm-oracle suite
+
+> **Status:** BLOCKED
+> **Depends on:** `C1-005`–`C1-012`
+
+### Required suites
+
+- graph permutations;
+- topology;
+- SCC;
+- interning;
+- closure;
+- exact matrices;
+- numerical certification;
+- proof selection;
+- placement;
+- relocation;
+- package-merge;
+- calibration monotonicity;
+- resource formulas.
+
+### Metamorphic requirements
+
+- source declaration permutation does not change canonical results;
+- map/hash insertion order does not change results;
+- unrelated nodes do not renumber stable identities;
+- presentation-only labels do not move semantic analysis;
+- thread count does not affect accepted exact output;
+- no raw third-party handle enters a publication;
+- no raw floating-point value enters semantic identity;
+- unsupported complexity fails rather than weakening semantics.
+
+### Exit check
+
+The complete oracle suite passes under:
+
+- Rust 1.88;
+- current stable;
+- debug;
+- release;
+- repeated clean runs.
+
+---
+
+## C1-014 — Algorithm-preparation review
+
+> **Status:** BLOCKED
+> **Depends on:** `C1-001`–`C1-013`, (`gate:phase1:exit`)
+
+### Exit decision
+
+The review records:
+
+- accepted graph substrate;
+- accepted exact arithmetic;
+- accepted numerical policy;
+- proof/placement algorithm;
+- external-solver status;
+- linker SCC/cycle policy;
+- relocation policy;
+- taptree policy;
+- complexity limits;
+- oracle coverage;
+- dependency versions/features;
+- deferred alternatives.
+
+### Exit check
+
+The compiler phase may begin when:
+
+- algorithm contracts are typed;
+- dependencies pass policy review;
+- pilot exact-search scale is measured;
+- no external solver is load-bearing without need;
+- all small-instance oracles pass;
+- no third-party implementation detail is a public semantic contract;
+- Phase 1 passes independently.
+
+---
+
+# 6. Current gate: R1 — typed realization foundation · `sec:backlog:r1`
+
+> **Gate status:** CURRENT
+> **Phase card:** [`phases/01-realization.md`](phases/01-realization.md)
+> **Package contract:** [`packages/realization.md`](packages/realization.md)
+> **Allowed first-party direct dependency:** `architecture`
+> **Preferred graph substrate:** selected `petgraph` release after `C1-004`
+> **Numerical dependency:** none unless a concrete Phase-1 matrix use exists
+
+## 6.1 Task summary · `tbl:backlog:r1-tasks`
 
 | ID | Status | Task | Depends on | Output |
 |---|---|---|---|---|
-| `R1-001` | **TODO** | Create the realization crate skeleton and package contract. | `B0-014`, package plan | workspace crate |
-| `R1-002` | **TODO** | Define identity ownership and deterministic semantic IDs. | `R1-001` | fact/expression/relation IDs |
-| `R1-003` | **TODO** | Define typed domains and the expression arena. | `R1-002` | typed expression graph |
+| `R1-001` | **TODO** | Create the realization crate skeleton and package contract. | baseline, `C1-004` for graph dependency | workspace crate |
+| `R1-002` | **TODO** | Define local handles, stable keys, and deterministic semantic IDs. | `R1-001` | identity types |
+| `R1-003` | **TODO** | Define typed domains, expression arena, and frozen dependency graph. | `R1-002`, `C1-005` | typed expression DAG |
 | `R1-004` | **TODO** | Define the minimum semantic relation vocabulary. | `R1-003` | relation types |
 | `R1-005` | **TODO** | Define operation, constructibility, lifecycle, and representation declarations. | `R1-004` | operation schema |
-| `R1-006` | **TODO** | Implement `derive(&Architecture)`. | `R1-005` | deterministic `RealizationSpec` |
+| `R1-006` | **TODO** | Implement deterministic `derive(&Architecture)`. | `R1-005` | scoped `RealizationSpec` |
 | `R1-007` | **TODO** | Declare `compact-ash`. | `R1-006` | first pilot |
 | `R1-008` | **TODO** | Declare `transfer-live-receipts`. | `R1-006` | second pilot |
 | `R1-009` | **TODO** | Derive declassification for both pilots. | `R1-007`, `R1-008` | typed disclosure result |
 | `R1-010` | **TODO** | Add architecture/realization bidirectional validation. | `R1-007`, `R1-008` | validation suite |
 | `R1-011` | **TODO** | Add model-conformance tests for both pilots. | `R1-009`, `R1-010` | conformance evidence |
-| `R1-012` | **TODO** | Add deterministic derivative publication only if needed. | `R1-009` | optional generated artifact |
-| `R1-013` | **TODO** | Run and record the Phase-1 exit gate. | `R1-001`–`R1-012` | green Phase 1 |
-
-`TODO` here follows the status vocabulary: ready to start once the named
-preceding `R1` dependencies are complete.
+| `R1-012` | **TODO** | Add a derivative publication only if a real need exists. | `R1-009` | optional publication |
+| `R1-013` | **TODO** | Run and record the Phase-1 exit gate. | required `R1` tasks | green Phase 1 |
 
 ---
 
-## R1-001 — Create the realization crate skeleton
+## R1-001 — Create the realization crate
 
 > **Status:** TODO
-> **Depends on:** `B0-014`,
-> [`packages/realization.md`](packages/realization.md)
+> **Depends on:** completed baseline and reviewed first-consumer dependency set
 
-### Required package metadata
+### Required metadata
 
 ```text
 directory: packages/realization
 Cargo package: tripod-realization
-Rust library name: realization
+Rust library: realization
 ```
 
-Inherit:
+Inherit workspace:
 
 - authors;
 - edition;
 - license;
-- publish status;
+- publication policy;
 - Rust version;
 - workspace version;
-- workspace lints.
+- lints.
 
-Initial dependency:
+Required first-party dependency:
 
 ```text
 architecture
 ```
 
-Avoid dependencies on:
+Expected initial third-party dependencies:
 
-- model;
-- compiler;
-- target-elements;
-- tapscript;
-- linker;
-- generated publication parsers.
+```text
+petgraph
+thiserror
+```
 
-### Required crate-level documentation
+`num-rational` is added only if Phase-1 exact affine analysis uses it.
+
+`faer` is not added to realization solely for architectural symmetry.
+
+Forbidden first-party dependencies:
+
+```text
+model
+compiler
+target-elements
+tapscript
+simplicity
+linker
+transaction
+vectors
+release
+artifacts
+labels
+```
+
+### Required crate documentation
 
 State:
 
 - purpose;
 - normative typed input;
+- explicit pilot scope;
 - forbidden inputs;
 - target independence;
 - deterministic derivation;
-- relation to model conformance;
-- relation to compiler analysis;
+- graph-library privacy;
+- model-conformance boundary;
+- compiler-consumption boundary;
 - current provisional status.
+
+### Census
+
+Add:
+
+```text
+packages/realization/meson.build
+```
+
+with explicit Rust-source lists under ADR-014.
+
+Update:
+
+```text
+Cargo.toml
+packages/meson.build
+README.md
+```
 
 ### Exit check
 
@@ -1391,267 +1200,370 @@ cargo clippy --locked -p tripod-realization --all-targets -- -D warnings
 > **Status:** TODO
 > **Depends on:** `R1-001`
 
-### Required decisions
+### Required separation
 
-Define which identifiers remain owned by `architecture` and which are introduced
-by `realization`.
-
-Likely ownership:
+Define distinct:
 
 ```text
-architecture:
-    AssetId
-    RootId
-    ObjectId
-    OperationId
-    QuantityId
-    WitnessId
-    ClauseId
-    BoundId
-    TagId
-    stable architecture discriminants
-
-realization:
-    FactId
-    ExprId
-    RelationId
-    ObservableId
-    LifecycleRequirementId
-    ProofAlternativeId
+FactHandle / FactKey / optional FactDigest
+ExprHandle / ExprKey / optional ExprDigest
+RelationHandle / RelationKey / optional RelationDigest
+ObservableId
+ConstructibilityRequirementId
+LifecycleRequirementId
+ProofAlternativeId
 ```
 
-Compiler-lowered node/program IDs remain future compiler ownership.
+Architecture retains ownership of:
+
+```text
+AssetId
+RootId
+ObjectId
+OperationId
+QuantityId
+WitnessId
+InvariantClauseId
+BoundId
+TagId
+stable architecture discriminants
+```
 
 ### Requirements
 
-- IDs are deterministic;
-- IDs do not depend on declaration insertion order;
-- structural identifiers use explicit domain separation;
-- collisions are handled fail-closed;
-- IDs can carry source provenance;
-- no target opcode participates in semantic identity.
+- local handles are dense and owner-local;
+- stable keys are insertion-order independent;
+- digests are domain-separated;
+- complete structural keys remain the collision boundary;
+- source provenance does not define identity;
+- target opcodes do not define semantic identity;
+- structurally shared nodes retain all source relation provenance;
+- unrelated declaration insertion does not renumber stable IDs.
 
-### Exit check
+### Required tests
 
-Focused tests prove:
-
-- same typed declaration → same IDs;
-- source-order permutation → same structural IDs where order is semantic-set
-  order;
-- semantic mutation → changed affected IDs;
-- unrelated presentation mutation → unchanged semantic IDs where intended.
+- repeated derivation equality;
+- source-order permutation;
+- graph insertion permutation;
+- semantic mutation affects only intended identities;
+- presentation mutation does not move semantic IDs;
+- deliberate digest-collision fixture fails closed;
+- unrelated node insertion preserves existing stable keys.
 
 ---
 
-## R1-003 — Define typed domains and expression arena
+## R1-003 — Define typed domains and expression DAG
 
 > **Status:** TODO
-> **Depends on:** `R1-002`
+> **Depends on:** `R1-002`, accepted graph-adapter contract
 
 ### Required domains
 
-At minimum distinguish:
+At minimum:
 
-- protocol amount;
+- boolean;
 - count/cardinality;
+- protocol amount;
+- asset;
+- object;
+- owner;
+- input reference;
+- output reference.
+
+Later declarations may add:
+
 - cycle;
 - block age;
-- boolean;
-- ratio/configuration constant;
-- asset identity;
-- object/root identity;
-- owner/address identity;
-- output/input reference.
+- ratio;
+- root;
+- address;
+- tag;
+- canonical order.
 
-Do not use one untyped integer domain for all semantic values.
+A count is not an amount.
 
-### Required expression behavior
+### Expression arena
 
+Provide first-party typed nodes for:
+
+- constants;
+- fact references;
 - checked addition/subtraction;
-- multiplication with explicit bounds;
-- exact floor operation;
-- equality and ordering;
+- multiplication with explicit domain;
+- exact floor relation where needed later;
+- equality and comparison;
 - conditional activation;
 - bounded family sums;
-- typed constants;
-- fact references;
-- deterministic structural identity;
-- dependency traversal;
-- reference evaluation in tests.
+- dependency traversal.
 
-### Exit check
+### Graph projection
 
-- ill-typed expressions are unrepresentable or rejected;
-- overflow/domain semantics are explicit;
-- dependency traversal is deterministic;
-- reference evaluation matches current model helper arithmetic on boundary
-  fixtures.
+Use the private frozen graph adapter for:
+
+- dependency validation;
+- canonical topology;
+- cycle diagnostics;
+- reverse closure.
+
+Petgraph types remain private.
+
+### Reference evaluator
+
+Implement a small deterministic evaluator for supported Phase-1 expressions.
+
+It is not the executable model.
+
+### Required tests
+
+- ill-typed expression rejection;
+- checked overflow/domain rejection;
+- unresolved fact;
+- dependency cycle;
+- canonical topological order;
+- insertion permutations;
+- deep-chain stack safety;
+- evaluator versus direct reference arithmetic;
+- no graph index in public output.
 
 ---
 
-## R1-004 — Define the minimum relation vocabulary
+## R1-004 — Define semantic relation vocabulary
 
 > **Status:** TODO
 > **Depends on:** `R1-003`
 
-The initial vocabulary must be sufficient for the two pilots without encoding
-all future target details.
+Initial relation families must express both pilots without generic string
+predicates.
 
-Expected relation families include:
+Expected families:
 
 - domain;
 - cardinality;
-- object recognition;
+- object/asset recognition;
 - authorization;
 - equality;
 - conservation;
 - recipient pin;
-- object/class closure;
-- open-flow isolation;
-- state assignment;
-- root succession;
-- event projection;
+- class closure;
+- output-family closure;
+- sponsor isolation;
+- root policy;
+- event projection policy;
 - constructibility;
-- lifecycle.
+- lifecycle;
+- representation;
+- proof alternative.
 
-The final enum structure is intentionally not predetermined by this backlog.
+### Requirements
+
+- every relation has typed operands;
+- every relation has operation ownership;
+- every relation has source provenance;
+- activation is typed;
+- target detail is absent;
+- relation IDs are deterministic;
+- duplicate semantic relation IDs fail;
+- structural sharing does not erase source relation ownership.
 
 ### Exit check
 
-- both pilot operations can be expressed without generic string predicates;
-- every relation has typed operands and provenance;
-- no relation embeds tapscript/Elements details;
-- relation dependency traversal is complete.
+Both pilot relation sets can be represented without:
+
+- target opcodes;
+- transaction indexes;
+- stack positions;
+- stringly predicates;
+- model callbacks;
+- generated-file parsing.
 
 ---
 
-## R1-005 — Define operation and representation declarations
+## R1-005 — Define operation adjuncts
 
 > **Status:** TODO
 > **Depends on:** `R1-004`
 
-Define typed structures for:
+Define typed declarations for:
 
 - input families;
 - output families;
-- semantic preconditions;
 - authorization;
+- preconditions;
 - state effects;
 - projections;
 - public observables;
 - constructibility;
 - witness availability;
-- lifecycle effects;
+- lifecycle exits;
 - representation capabilities;
-- proof alternatives.
+- proof alternatives;
+- architecture bound references.
 
-### Exit check
+### Requirements
 
 - permissionless versus owner-authorized construction is explicit;
-- public and private witness availability cannot be conflated;
-- representation latitude does not alter semantic value;
-- lifecycle exits are declared;
-- architecture operation ownership is exact.
+- verification capability and witness availability are distinct;
+- public and private facts are distinct;
+- representation does not alter semantic value;
+- required lifecycle exits are explicit;
+- pilot-incomplete lifecycle is representable without claiming release
+  completeness;
+- operation ownership is exactly architecture-owned.
 
 ---
 
-## R1-006 — Implement deterministic architecture derivation
+## R1-006 — Implement deterministic derivation
 
 > **Status:** TODO
 > **Depends on:** `R1-005`
 
-Implement the planned derivation:
+Illustrative boundary:
 
 ```rust
 pub fn derive(
     architecture: &architecture::Architecture,
+    scope: RealizationScope,
 ) -> Result<RealizationSpec, RealizationError>;
 ```
-
-> Illustrative signature until the package plan is accepted.
 
 ### Required behavior
 
 - pure;
 - deterministic;
-- no filesystem reads;
-- no environment reads;
-- no generated artifact reads;
-- no model source scraping;
-- complete validation;
-- explicit errors for missing declarations or unresolved references.
+- explicit scope;
+- architecture validation;
+- no filesystem;
+- no environment;
+- no generated publication;
+- no model source or test parsing;
+- no planning/ADR parsing;
+- no target dependency;
+- complete stable-key construction;
+- canonical graph construction;
+- bidirectional references;
+- typed failure on unresolved/duplicate/cyclic declarations.
 
-### Exit check
+### Scope rule
 
-Repeated derivation produces equal typed values and stable canonical debug/test
-representations.
+A two-operation pilot value must carry an incomplete-scope state.
 
----
-
-## R1-007 — Declare `compact-ash`
-
-> **Status:** TODO
-> **Depends on:** `R1-006`
-
-Declare the complete semantic operation described by the roadmap and package
-plan.
-
-### Required model comparisons
-
-- minimum ASH cardinality;
-- maximum bound reference;
-- ownerless `U` conservation;
-- one ASH output;
-- no burn projection;
-- no root use;
-- permissionless constructibility;
-- sponsor flow separation.
-
-### Exit check
-
-Architecture, realization, and model agree on every declared family and
-semantic relation.
+It must be impossible to validate or publish it as a complete deployment
+realization.
 
 ---
 
-## R1-008 — Declare `transfer-live-receipts`
+## R1-007 — Declare compact ASH
 
 > **Status:** TODO
 > **Depends on:** `R1-006`
 
 Declare:
 
-- live-only receipt inputs and outputs;
-- owner authorization;
-- exact semantic value conservation;
-- destination-owner freedom;
-- sponsor separation;
-- representation alternatives;
-- no root use.
+- ASH input minimum two;
+- maximum `ASH_BATCH_MAX`;
+- exactly one ASH output;
+- explicit semantic `U` conservation;
+- permissionless operation authorization;
+- no owner or operator witness;
+- optional isolated sponsor flow;
+- no roots;
+- transition-certificate projection;
+- no burn, clear, or residue projection;
+- public constructibility;
+- compact and clear lifecycle exits.
+
+### Exit check
+
+Architecture, realization, and model agree on:
+
+- families;
+- minima/maxima;
+- authorization;
+- value relation;
+- roots;
+- flow classes;
+- projections;
+- constructibility;
+- lifecycle.
+
+---
+
+## R1-008 — Declare live receipt transfer
+
+> **Status:** TODO
+> **Depends on:** `R1-006`
+
+Declare:
+
+- nonempty bounded live-receipt inputs;
+- nonempty bounded live-receipt outputs;
+- owner authorization for every input;
+- live-class closure;
+- exact aggregate semantic `U` conservation;
+- authorized destination freedom;
+- optional isolated sponsor flow;
+- no roots;
+- transition-certificate projection;
+- explicit and private-committed value alternatives;
+- transfer, burn, and redemption lifecycle obligations.
 
 ### Exit check
 
 Architecture, realization, and model agree on every declared family and
 semantic relation.
 
+Representation alternatives must not weaken:
+
+- explicit closed `U` identity;
+- owner authorization;
+- output-family closure;
+- value conservation;
+- future lifecycle.
+
 ---
 
-## R1-009 — Derive pilot declassification
+## R1-009 — Derive declassification
 
 > **Status:** TODO
 > **Depends on:** `R1-007`, `R1-008`
 
-Derive disclosure facts from operation expression/relation dependencies.
+Derive disclosure by deterministic reverse dependency closure.
 
-Do not author a parallel disclosure list.
+Seed reasons:
 
-### Exit check
+- public state;
+- public event/interface;
+- permissionless construction.
 
-- declassification is deterministic;
-- every disclosed fact has dependency provenance;
-- no undisclosed required fact exists;
-- no target encoding decision is treated as an abstract disclosure;
-- compiler-facing code consumes the typed result, not a JSON file.
+Retain:
+
+```text
+fact
+disclosure reason
+source relation
+dependency provenance
+```
+
+Expected pilot behavior:
+
+```text
+compact ASH:
+    public ASH facts remain publicly usable;
+    no owner-private disclosure introduced
+
+live transfer:
+    abstract lateral relation requires no numerical value disclosure
+```
+
+### Required tests
+
+- several dependency paths;
+- reason union;
+- source relation provenance;
+- irrelevant fact exclusion;
+- insertion permutation;
+- repeated-full-scan oracle agreement;
+- no handwritten parallel disclosure list.
 
 ---
 
@@ -1660,228 +1572,429 @@ Do not author a parallel disclosure list.
 > **Status:** TODO
 > **Depends on:** `R1-007`, `R1-008`
 
-Validation must be bidirectional:
+Validation is bidirectional:
 
-- every architecture pilot operation has one realization;
+- every scoped architecture operation has one realization declaration;
 - every realization operation maps to one architecture operation;
-- every family, bound, flow, authorization, and projection resolves;
+- every input/output family resolves;
+- every bound resolves;
+- authorization agrees;
+- root policy agrees;
+- value-flow classes agree;
+- projection policy agrees;
 - no undeclared semantic object appears;
 - no required architecture fact is omitted;
-- no duplicate semantic relation ID exists.
+- no duplicate stable relation identity exists.
 
-### Exit check
+### Mutation tests
 
-Focused mutation tests prove omissions, duplicates, transpositions, and wrong
-bound references fail.
+- missing operation;
+- unexpected operation;
+- wrong input/output family;
+- transposed operation IDs;
+- wrong bound;
+- wrong authorization;
+- wrong projection;
+- wrong value-flow class;
+- duplicate fact/expression/relation;
+- unresolved reference;
+- dependency cycle;
+- incomplete scope falsely marked complete.
 
 ---
 
-## R1-011 — Add model-conformance tests
+## R1-011 — Add model conformance
 
 > **Status:** TODO
 > **Depends on:** `R1-009`, `R1-010`
 
 For each pilot:
 
-- construct valid worlds/transitions through the model;
-- project relevant semantic facts;
-- evaluate declared relations;
-- compare declared event/certificate effects;
-- mutate one relation at a time and require failure;
-- preserve the distinction between model evidence and future backend evidence.
+1. construct valid worlds through public model APIs;
+2. execute valid operations;
+3. project realization facts from predecessor, request, and successor;
+4. evaluate every active relation;
+5. compare certificate/projection effects;
+6. mutate one semantic fact or relation at a time;
+7. require precise conformance failure;
+8. preserve realization and model as separate evidence roles.
 
-### Exit check
+### Evidence limits
 
-Positive and negative conformance tests pass in debug and release profiles.
+Shared helpers and architecture types are documented.
+
+A green conformance test is model evidence. It is not target, linker, ABI, or
+deployment evidence.
 
 ---
 
-## R1-012 — Add derivative publication only if required
+## R1-012 — Optional derivative publication
 
 > **Status:** TODO
 > **Depends on:** `R1-009`
 
-A realization publication is optional during Phase 1.
+A publication is added only if a concrete review or external-consumer need
+exists.
 
-If added, it must have:
+If added, require:
 
-- typed source;
-- canonical schema;
+- one typed source;
+- explicit schema;
+- canonical ordering;
 - deterministic bytes;
+- unknown-field rejection;
 - explicit generator;
 - non-writing checker;
-- unknown-field rejection;
-- no reverse semantic dependency.
+- no reverse semantic dependency;
+- explicit incomplete pilot scope.
 
-Do not add a generated artifact merely because one might be useful later.
-
-### Exit check
-
-If no publication is needed, mark this task `DROPPED` with rationale.
+If no need exists, mark this task `DROPPED` with rationale.
 
 ---
 
-## R1-013 — Run the Phase-1 gate
+## R1-013 — Phase-1 gate
 
 > **Status:** TODO
 > **Depends on:** all required `R1` tasks
 
-Run:
+### Exit requirements
+
+- realization is a workspace crate;
+- architecture is its only first-party direct dependency;
+- selected graph dependency is private;
+- local handles and stable identities are distinct;
+- both pilots are complete;
+- typed domains and expressions validate;
+- canonical graph analysis is deterministic;
+- declassification is dependency-derived;
+- constructibility and lifecycle are explicit;
+- architecture and realization agree bidirectionally;
+- model transitions satisfy all active declarations;
+- focused semantic mutations fail;
+- pilot scope cannot be mistaken for complete scope;
+- no generated file, model source, target type, or planning file is consumed;
+- no raw graph index or floating result enters semantic identity;
+- Rust MSRV/stable, Meson, labels, plans, generated artifacts, and clean-tree
+  gates pass.
+
+Verification:
 
 ```sh
 scripts/ci.sh
+meson compile -C build
+meson test -C build --print-errorlogs
+git diff --exit-code
 ```
 
-and the Phase-1 focused tests documented in
-[`roadmap.md`](roadmap.md).
-
-### Exit check
-
-All Phase-1 roadmap criteria pass and the checkout remains clean.
-
 ---
 
-# 5. Blocked research register
+# 7. Research and prototype register · `sec:backlog:research`
 
-These are not current implementation tasks. They are listed so Phase-1 work
-does not accidentally absorb target-specific questions.
+## 7.1 Active preparation questions · `tbl:backlog:research-active`
 
-| ID | Status | Research note | Blocks |
+| ID | Research note | Status | Blocks |
 |---|---|---|---|
-| `Q-STATE` | **PROTOTYPE REQUIRED** | `research/state-constructor.md` | STATE backend ABI and Phase 6 |
-| `Q-ARITH` | **PROTOTYPE REQUIRED** | `research/wide-arithmetic.md` | redemption, admission, settlement, cycle |
-| `Q-DECLASS` | **OPEN / PROTOTYPE REQUIRED** | `research/public-declassification.md` | confidential-to-public backend paths |
-| `Q-SETTLE` | **OPEN / PROTOTYPE REQUIRED** | `research/settlement-layout.md` | settlement ABI and calibrated batch size |
+| `Q-COMPILER-ALG` | [`compiler-algorithms.md`](research/compiler-algorithms.md) | Design and prototype required | Compiler graph, identity, proof, placement, coverage |
+| `Q-LINKER-ALG` | [`linker-algorithms.md`](research/linker-algorithms.md) | Design and prototype required | Linker SCC, relocation, taptree, carrier closure |
+| `Q-NUMERICAL` | [`numerical-linear-algebra.md`](research/numerical-linear-algebra.md) | Dependency review and prototype required | Certified numerical analysis |
+| `Q-OPTIMIZATION` | [`optimization-solvers.md`](research/optimization-solvers.md) | Exact prototype required | Solver-backed proof, placement, calibration |
 
-Research prototypes may begin before their consuming phases, but they must not
-add target-specific fields to `RealizationSpec`.
+## 7.2 Target-dependent questions · `tbl:backlog:research-target`
 
----
+| ID | Research note | Status | Blocks |
+|---|---|---|---|
+| `Q-STATE` | [`state-constructor.md`](research/state-constructor.md) | Prototype required | STATE backend ABI and Phase 6 |
+| `Q-ARITH` | [`wide-arithmetic.md`](research/wide-arithmetic.md) | Prototype and measurement required | Redemption, settlement, cycle |
+| `Q-DECLASS` | [`public-declassification.md`](research/public-declassification.md) | Open; prototype required | Direct private burn/redemption paths |
+| `Q-SETTLE` | [`settlement-layout.md`](research/settlement-layout.md) | Open; prototype required | Settlement ABI and calibrated batch size |
 
-# 6. Recently established foundation
+## 7.3 Research isolation · `rule:backlog:research-isolation`
 
-The source snapshot already contains substantial maintenance infrastructure
-that the Phase-0 gate must preserve and reverify:
+Research prototypes may begin before consuming phases, but they must not:
 
-- behavioural-hash v2 with calibrated draft defaults projected out;
-- explicit retirement record for behavioural-hash v1;
-- generated-artifact writer/checker split;
-- non-writing generated checks;
-- complete architecture JSON/TOML equality checks;
-- realization appendix and masthead welds;
-- workspace ADRs for CLI and dependency policy;
-- runner-agnostic CI script;
-- Cargo `--locked` build paths;
-- byte-exact raw `execwrap` writer mode;
-- deterministic/atomic LaTeX flattener;
-- model public-boundary documentation;
-- deployment-profile census tests;
-- separate event/query/accounting differential APIs.
+- add target-specific fields to `RealizationSpec`;
+- publish stable production ABI;
+- become release artifacts;
+- claim production capability;
+- use draft defaults as calibration;
+- label model wrappers as independent observers;
+- introduce solver output as semantic identity;
+- bypass package dependency direction.
 
-These are not marked as newly completed backlog tasks because they predate this
-rewritten queue. They remain part of the baseline and must continue passing.
-
-If the Phase-0 gate reveals that one of these claims is incomplete, add a
-specific `B0` task rather than weakening the gate.
+Accepted results move into typed source, permanent tests, package contracts, and
+a planning decision or ADR where appropriate.
 
 ---
 
-# 7. Backlog hygiene
+# 8. Dependency map · `sec:backlog:dependencies`
 
-## 7.1 Adding a task
+## 8.1 Immediate candidate map · `tbl:backlog:dependency-map`
 
-A new task must state:
+| Dependency | Status | Intended role | Initial consumers |
+|---|---|---|---|
+| `petgraph` | review/adopt with first consumer | graph storage, SCC, reachability, traversal | realization, compiler, linker |
+| `faer` | review as core numerical substrate | dense/sparse numerical linear algebra | compiler or future calibration analysis |
+| `num-rational` | review/adopt when exact matrices land | exact rational coefficients/certificates | realization/compiler analysis |
+| `fixedbitset` | deferred/conditional | dense local coverage and case sets | compiler/linker |
+| `elements` | Phase-3 review | target transaction and consensus types | target-elements, transaction |
+| `elements-miniscript` | conditional | standard target program/control support | tapscript tooling |
+| `secp256k1-zkp` | prototype-gated | CT commitments and proofs | transaction/target research |
+| SAT/LP/MILP solver | deferred | large exact planning problems | compiler/linker |
+| `salsa` | deferred | incremental query execution | compiler |
+| `egg` | deferred | equality saturation | compiler |
+| `rayon` | deferred | independent evidence execution | vectors |
 
-- one owning phase;
-- one status;
+## 8.2 Existing dependencies to reuse · `tbl:backlog:dependency-existing`
+
+| Dependency | Use |
+|---|---|
+| `serde` | first-party DTOs and external envelopes |
+| `serde_json` | deterministic review/report publications |
+| `sha2` | project semantic/artifact identities |
+| `thiserror` | typed library/package failures |
+| `anyhow` | binary/orchestration boundaries only |
+| `num-bigint` | exact integer oracle |
+| `num-integer` | exact integer helpers |
+| `num-traits` | numeric traits |
+| `proptest` | generated algorithm/model tests |
+| `tempfile` | collision-safe staging and hermetic fixtures |
+
+## 8.3 Deferred dependency rule · `rule:backlog:deferred-dependencies`
+
+A deferred dependency enters only after:
+
+1. a concrete consumer exists;
+2. current code demonstrates the missing functionality;
+3. simpler exact first-party code is insufficient;
+4. purpose, license, maintenance, MSRV, unsafe boundary, transitive graph,
+   determinism, and advisories are reviewed;
+5. public API leakage is considered;
+6. focused tests and an independent oracle exist;
+7. the lockfile update is reviewed;
+8. all gates remain green and clean.
+
+---
+
+# 9. Verification matrix · `sec:backlog:verification`
+
+## 9.1 Rust lanes
+
+Run on declared MSRV and current stable:
+
+```sh
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cargo test --workspace --release --locked
+scripts/ci.sh
+```
+
+## 9.2 Dependency lanes
+
+For each new dependency:
+
+```sh
+cargo tree --locked -p <package>
+cargo tree --locked -p <package> -e features
+cargo tree --locked -i <package>
+git diff -- Cargo.toml Cargo.lock packages/*/Cargo.toml
+```
+
+When installed:
+
+```sh
+cargo audit
+```
+
+If repository policy later adopts them:
+
+```sh
+cargo deny check
+cargo vet
+```
+
+A missing required release tool is not a pass.
+
+## 9.3 Meson/document lanes
+
+```sh
+meson compile -C build
+meson test -C build --print-errorlogs
+scripts/check-document-reproducibility.sh
+```
+
+## 9.4 Documentation and census
+
+```sh
+scripts/check-plans.sh
+git diff --check
+```
+
+Every new tracked Rust or documentation subject must be added to its nearest
+`meson.build` census.
+
+## 9.5 Mathematical algorithm lane
+
+The algorithm gate must include:
+
+```text
+canonical graph insertion permutations
+topological oracle
+SCC mutual-reachability oracle
+declassification closure oracle
+Bareiss versus rational elimination
+faer versus exact well-conditioned solutions
+rank-deficient and ill-conditioned rejection
+proof search versus exhaustive oracle
+placement versus exhaustive carrier oracle
+relocation versus independent structured output
+package-merge versus exhaustive small-tree oracle
+calibration enumeration and monotonicity checks
+no graph/matrix/solver local handle in semantic identity
+```
+
+---
+
+# 10. Backlog hygiene · `sec:backlog:hygiene`
+
+## 10.1 Adding a task · `rule:backlog:add`
+
+A new task states:
+
+- owner phase or preparation lane;
+- status;
 - dependencies;
 - concrete output;
+- assurance class;
 - focused exit check;
-- affected files or package;
-- verification command where known.
+- affected package/files;
+- verification command;
+- identity impact;
+- dependency impact.
 
-## 7.2 Splitting a task
+## 10.2 Splitting a task · `rule:backlog:split`
 
 Split a task when:
 
-- it has independently reviewable security consequences;
-- it changes more than one assurance boundary;
-- one part can complete while another remains blocked;
-- it would otherwise mix normative and implementation changes.
+- it crosses semantic, compiler, linker, target, transaction, evidence, or
+  release boundaries;
+- it has an independently reviewable security consequence;
+- part can complete while another remains prototype-blocked;
+- it mixes exact correctness with numerical diagnostics;
+- it mixes dependency adoption with algorithm acceptance.
 
-## 7.3 Dropping a task
+## 10.3 Dropping a task · `rule:backlog:drop`
 
-A dropped task must record:
+A dropped task records:
 
-- why it is no longer needed;
-- evidence supporting the conclusion;
-- replacement task or decision, if any;
-- whether documentation was corrected.
+- why it is unnecessary;
+- evidence;
+- replacement;
+- affected documentation;
+- identity/release consequences.
 
-## 7.4 Completed-task retention
+## 10.4 Completed-task retention · `rule:backlog:retention`
 
-Keep recently completed tasks long enough to support phase review. After a
-phase baseline is recorded, compact older completed tasks into a phase record
-or release note and remove them from the active queue.
+After a phase baseline:
+
+- compact completed task prose into the phase card or release record;
+- retain immutable evidence in Git history;
+- keep only current and immediately preparatory work in this backlog;
+- do not build a second historical archive inside `plans/`.
 
 The active backlog should remain reviewable in one sitting.
 
 ---
 
-# 8. Current execution order
+# 11. Current execution order · `sec:backlog:order`
 
-Unless dependencies change, execute in this order:
+Unless evidence changes dependencies, execute:
 
 ```text
-2. Execute R1-001 through R1-013 in dependency order.
-3. Do not begin production backend operation emission before Phase 2.
+1. Land C1-001 research notes and census updates.
+2. Record D007 and D008.
+3. Review concrete petgraph/faer/num-rational releases and features.
+4. Begin R1-001 realization crate.
+5. Implement R1 identity, typed expression, and canonical graph foundations.
+6. Complete compact-ASH and live-transfer realization pilots.
+7. Derive declassification and model conformance.
+8. Complete Phase-1 gate.
+9. In parallel, complete synthetic linker and mathematical algorithm prototypes.
+10. Begin production compiler analysis only after Phase 1.
+11. Keep target/backend production work behind Phase 3.
 ```
 
-Within the baseline tasks, use this security-first order:
+The focused near-term dependency order is:
 
 ```text
-B0-001  secret logging
-B0-002  stream/data-loss behavior
-B0-003  CLI control paths
-B0-004  panic redaction
-B0-005  indexer genesis
-B0-006  PDF reproducibility
-B0-007  envelope API
-B0-008  document metadata
-B0-009  duplicate declarations
-B0-010  artifact temporary writes
-B0-011  documentation accuracy
-B0-012  delimiter strictness
-B0-013  complete verification
-B0-014  baseline record
+C1-001
+  ├── C1-002 ──┐
+  └── C1-003 ──┴── C1-004
+                         ├── C1-005 → R1-002/R1-003
+                         ├── C1-006 → C1-007
+                         └── C1-010 → C1-011/C1-012
+
+R1-003 → R1-004/R1-005 → R1-006
+                              ├── R1-007
+                              └── R1-008
+                                   ↓
+                              R1-009/R1-010
+                                   ↓
+                                R1-011
+                                   ↓
+                                R1-013
+
+R1 relation vocabulary
+    → C1-008/C1-009
+    → C1-013
+    → C1-014
+    → Phase 2
 ```
 
 ---
 
-# 9. Current gate completion
+# 12. Current gate completion · `gate:backlog:current`
 
-Phase 0 is complete only when:
+Phase 1 is complete only when:
 
 ```text
-P0-001 … P0-010  DONE
-B0-001 … B0-014  DONE
+required C1 dependency/graph prerequisites accepted
+R1-001 … R1-011 DONE
+R1-012 DONE or DROPPED with rationale
+R1-013 DONE
 ```
 
-and the complete Phase-0 exit gate in [`roadmap.md`](roadmap.md) passes.
+The algorithm-preparation lane is ready for Phase 2 only when:
 
-Until then:
+```text
+C1-001 … C1-014 DONE
+```
 
-- the repository remains in baseline-hardening mode;
-- `realization` production implementation is blocked;
-- compiler/backend package proliferation is deferred;
-- target prototypes must remain isolated and non-normative.
+with the following allowed overlap:
+
+- C1 synthetic linker/taptree prototypes may complete before production
+  backend artifacts;
+- final linker production interfaces remain blocked on actual relocatable
+  tapscript artifacts;
+- external solver adoption may remain `DROPPED` or deferred if exact pilot
+  search is sufficient;
+- sparse or parallel `faer` support may remain deferred if no measured need
+  exists.
+
+Until the current gate passes:
+
+- production compiler analysis remains blocked;
+- target-specific fields remain forbidden in realization;
+- no stable linker or transaction ABI is published;
+- no floating-point result becomes semantic identity;
+- no draft bound becomes deployment calibration;
+- no target prototype becomes release evidence.
 
 ---
 
-# 10. One-line backlog
+# 13. One-line backlog · `rem:backlog:one-line`
 
-> Rewrite the planning tree; close the outstanding security, stream-integrity,
-> indexer, envelope, manifest, artifact, documentation, label, and PDF
-> reproducibility findings; record one clean compiler-era baseline; then build
-> the typed realization vocabulary and prove it on `compact-ash` and live
-> receipt transfer before any production backend work begins.
+> Establish reviewed graph, exact-math, numerical, optimization, SCC,
+> relocation, and bounded-depth tree algorithms with independent small-instance
+> oracles; then implement the typed realization on compact ASH and live transfer
+> before production compiler, linker, or backend interfaces freeze.
