@@ -234,6 +234,20 @@ fn valid_compact_ash_satisfies_every_runtime_relation() {
 }
 
 #[test]
+fn compact_ash_canonical_delta_amount_mutation_fails() {
+    let mut observation = valid_observation();
+
+    observation.canonical_deltas[0].amount = ProtocolAmount::new(99).unwrap();
+
+    let report = evaluate(&observation);
+
+    assert!(
+        failed(&report, &canonical_delta_policy()),
+        "a compact-ASH canonical delta whose amount disagrees with its referenced objects must fail"
+    );
+}
+
+#[test]
 fn compact_ash_negative_observations_name_the_load_bearing_relation() {
     for (name, mutate, relation) in relation_cases() {
         let mut observation = valid_observation();

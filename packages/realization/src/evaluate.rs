@@ -194,8 +194,10 @@ fn evaluate_relation(
             object,
             asset,
         } => status(
-            declared_objects(observation, *side, *object)
-                .all(|observed| observed.asset == ObservedAsset::Declared(*asset)),
+            declared_objects(observation, *side, *object).all(|observed| {
+                observed.asset == ObservedAsset::Declared(*asset)
+                    && observed_object_shape_holds(*object, observed)
+            }),
             RelationFailure::ObjectRecognition,
         ),
         Relation::AmountConservation {
@@ -209,9 +211,9 @@ fn evaluate_relation(
             status(input == output, RelationFailure::AmountConservation)
         }
         Relation::OwnerAuthorization { object } => {
-            let required = declared_objects(observation, ObservedSide::Input, *object)
-                .filter_map(|observed| observed.owner)
-                .collect::<BTreeSet<_>>();
+            let Some(required) = required_owners(observation, *object) else {
+                return status(false, RelationFailure::MissingOwnerAuthorization);
+            };
 
             status(
                 required.is_subset(&observation.protocol_signers),
@@ -234,7 +236,7 @@ fn evaluate_relation(
             RelationFailure::ProjectionPolicy,
         ),
         Relation::CanonicalDeltaPolicy { expected } => status(
-            canonical_delta_policy_holds(expected, observation),
+            canonical_delta_policy_holds(expected, observation)?,
             RelationFailure::CanonicalDeltaPolicy,
         ),
         Relation::OpenFlowPolicy { allowed } => status(
@@ -250,9 +252,9 @@ fn evaluate_relation(
                 RelationFailure::Constructibility,
             ),
             ConstructibilityClass::OwnersOf { object } => {
-                let required = declared_objects(observation, ObservedSide::Input, *object)
-                    .filter_map(|observed| observed.owner)
-                    .collect::<BTreeSet<_>>();
+                let Some(required) = required_owners(observation, *object) else {
+                    return status(false, RelationFailure::Constructibility);
+                };
 
                 status(
                     required.is_subset(&observation.protocol_signers),
@@ -285,7 +287,7 @@ fn status(passed: bool, reason: RelationFailure) -> Result<RelationStatus, Reali
 fn canonical_delta_policy_holds(
     expected: &BTreeSet<ExpectedCanonicalDelta>,
     observation: &OperationObservation,
-) -> bool {
+) -> Result<bool, RealizationError> {
     let actual = observation
         .canonical_deltas
         .iter()
@@ -296,20 +298,85 @@ fn canonical_delta_policy_holds(
         })
         .collect::<BTreeSet<_>>();
 
-    &actual == expected
-        && expected.iter().all(|delta| match delta.kind {
-            DeltaKind::OwnerlessLateral => canonical_delta_membership_holds(
-                observation,
-                ObjectId::Ash,
-                DeltaKind::OwnerlessLateral,
-            ),
-            DeltaKind::Lateral => canonical_delta_membership_holds(
-                observation,
-                ObjectId::ReceiptLive,
-                DeltaKind::Lateral,
-            ),
-            _ => true,
-        })
+    if &actual != expected {
+        return Ok(false);
+    }
+
+    for delta in &observation.canonical_deltas {
+        let Some(source_total) = sum_delta_side(
+            observation,
+            &delta.sources,
+            delta.asset,
+            ObservedSide::Input,
+        )?
+        else {
+            return Ok(false);
+        };
+        let Some(destination_total) = sum_delta_side(
+            observation,
+            &delta.destinations,
+            delta.asset,
+            ObservedSide::Output,
+        )?
+        else {
+            return Ok(false);
+        };
+
+        let amount_is_consistent = match delta.kind {
+            DeltaKind::Lateral | DeltaKind::OwnerlessLateral => {
+                source_total == delta.amount && destination_total == delta.amount
+            }
+            DeltaKind::Issuance => delta.sources.is_empty() && destination_total == delta.amount,
+            DeltaKind::Destruction => {
+                destination_total.is_zero()
+                    && source_total == delta.amount
+                    && delta.destruction_tag.is_some()
+            }
+        };
+
+        if !amount_is_consistent {
+            return Ok(false);
+        }
+    }
+
+    Ok(expected.iter().all(|delta| match delta.kind {
+        DeltaKind::OwnerlessLateral => canonical_delta_membership_holds(
+            observation,
+            ObjectId::Ash,
+            DeltaKind::OwnerlessLateral,
+        ),
+        DeltaKind::Lateral => {
+            canonical_delta_membership_holds(observation, ObjectId::ReceiptLive, DeltaKind::Lateral)
+        }
+        _ => true,
+    }))
+}
+
+fn sum_delta_side(
+    observation: &OperationObservation,
+    references: &[ObservedObjectRef],
+    asset: AssetId,
+    side: ObservedSide,
+) -> Result<Option<ProtocolAmount>, RealizationError> {
+    let mut total = ProtocolAmount::ZERO;
+
+    for reference in references {
+        if reference.side != side {
+            return Err(RealizationError::WrongObservedReferenceSide(*reference));
+        }
+
+        let object = observation
+            .object(*reference)
+            .ok_or(RealizationError::UnknownObservedObject(*reference))?;
+
+        if object.asset != ObservedAsset::Declared(asset) {
+            return Ok(None);
+        }
+
+        total = total.checked_add(object.value)?;
+    }
+
+    Ok(Some(total))
 }
 
 fn canonical_delta_membership_holds(
@@ -357,6 +424,34 @@ fn declared_objects(
     observation.objects.iter().filter(move |observed| {
         observed.reference.side == side && observed.kind == ObservedObjectKind::Declared(object)
     })
+}
+
+fn observed_object_shape_holds(object: ObjectId, observed: &ObservedObject) -> bool {
+    match object {
+        ObjectId::ReceiptLive
+        | ObjectId::ReceiptTimeLocked
+        | ObjectId::DepositRequest
+        | ObjectId::DepositEntitlement
+        | ObjectId::PlainLbtc => observed.owner.is_some(),
+        ObjectId::State
+        | ObjectId::Resv
+        | ObjectId::Pace
+        | ObjectId::EntitlementAuthority
+        | ObjectId::DistributionAuthority
+        | ObjectId::DistributionControl
+        | ObjectId::DistributionVault
+        | ObjectId::Ash
+        | ObjectId::CpfpAnchor => true,
+    }
+}
+
+fn required_owners(
+    observation: &OperationObservation,
+    object: ObjectId,
+) -> Option<BTreeSet<crate::OwnerId>> {
+    declared_objects(observation, ObservedSide::Input, object)
+        .map(|observed| observed.owner)
+        .collect()
 }
 
 fn sum_selected_amounts(
@@ -451,6 +546,16 @@ fn flow_total(
             || object.asset != ObservedAsset::Declared(AssetId::Lbtc)
         {
             return Ok(None);
+        }
+
+        if side == ObservedSide::Input {
+            let Some(owner) = object.owner else {
+                return Ok(None);
+            };
+
+            if !observation.sponsor_signers.contains(&owner) {
+                return Ok(None);
+            }
         }
 
         total = total.checked_add(object.value)?;

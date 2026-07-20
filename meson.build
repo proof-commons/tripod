@@ -147,18 +147,24 @@ foreach f : generated_files
 endforeach
 
 generated_dir = fs.parent(model_labels_json_path)
+artifact_generation_output_dir = get_option('artifact_generation_output_dir')
+if artifact_generation_output_dir == ''
+  artifact_generation_output_dir = generated_dir
+endif
 
 # Role-tagged argument lists. Paths stay repository-relative: every
 # binary resolves them against --repository-root, while the file
 # objects above give ninja its dependency edges.
-scoped_census_args = [
+register_census_args = [
   '--repository-root', meson.project_source_root(),
   '--attestation-main', attestation_main_path,
   '--realization', realization_path,
 ]
 foreach p : attestation_section_paths
-  scoped_census_args += ['--attestation-section', p]
+  register_census_args += ['--attestation-section', p]
 endforeach
+
+scoped_census_args = register_census_args
 foreach p : model_source_paths
   scoped_census_args += ['--model-source', p]
 endforeach
@@ -295,8 +301,8 @@ generate_all_bin = custom_target(
 # checker touches on success plus the checker JSON report. A rerun on
 # an unchanged tree executes nothing.
 # ---------------------------------------------------------------------------
-scoped_census_inputs = attestation_main_file + attestation_section_files + realization_file \
-                       + model_source_files
+register_census_inputs = attestation_main_file + attestation_section_files + realization_file
+scoped_census_inputs = register_census_inputs + model_source_files
 
 labels_stamp = custom_target(
   'labels-check',
@@ -356,20 +362,26 @@ alias_target('lint', labels_stamp, generated_stamp, plans_stamp)
 # ---------------------------------------------------------------------------
 # Generators: committed in-tree publications cannot be declared
 # outputs, so a shell wrapper touches the build-dir stamp after the
-# generator succeeds (ADR-014 generator-stamp rule). On-demand targets;
-# regeneration is incremental over the same census slices.
+# generator succeeds (ADR-014 generator-stamp rule). On-demand targets
+# are always stale so an explicit repair request reruns the generator
+# even when the stamp is newer than a corrupted committed publication.
 # ---------------------------------------------------------------------------
-generator_wrap = [sh, '-c', 'stamp="$1"; shift; "$@" && : > "$stamp"', 'sh', '@OUTPUT@']
+generator_wrap = [
+  sh, '-c',
+  'stamp="$1"; program="$2"; shift 2; case "$program" in */*) "$program" "$@" ;; *) "./$program" "$@" ;; esac && : > "$stamp"',
+  'sh', '@OUTPUT@',
+]
 
 generate_registers_target = custom_target(
   'run-generate-label-registers',
-  input: scoped_census_inputs,
+  input: register_census_inputs,
   output: 'generate-label-registers.ok',
-  command: generator_wrap + [generate_registers_bin] + scoped_census_args + [
+  command: generator_wrap + [generate_registers_bin] + register_census_args + [
     '--specification-register-output', specification_register_path,
     '--realization-register-output', realization_register_path,
   ],
   build_by_default: false,
+  build_always_stale: true,
   console: true,
 )
 alias_target('generate-label-registers', generate_registers_target)
@@ -379,9 +391,10 @@ generate_artifacts_target = custom_target(
   input: scoped_census_inputs,
   output: 'generate-artifacts.ok',
   command: generator_wrap + [generate_all_bin] + scoped_census_args + [
-    '--output', generated_dir,
+    '--output', artifact_generation_output_dir,
   ],
   build_by_default: false,
+  build_always_stale: true,
   console: true,
 )
 alias_target('generate-artifacts', generate_artifacts_target)
@@ -544,4 +557,15 @@ test(
   depends: plans_stamp,
   suite: 'documentation',
   timeout: 60,
+)
+
+generator_repair_test = find_program('scripts/test-meson-generator-repair.sh')
+
+test(
+  'meson-generator-repair',
+  generator_repair_test,
+  args: [meson.project_source_root()],
+  suite: 'build-integration',
+  timeout: 600,
+  is_parallel: false,
 )

@@ -17,6 +17,7 @@ type RelationCase = (&'static str, ObservationMutation, RelationId);
 const ALICE: OwnerId = OwnerId([1_u8; 32]);
 const BOB: OwnerId = OwnerId([2_u8; 32]);
 const CAROL: OwnerId = OwnerId([3_u8; 32]);
+const DAVE: OwnerId = OwnerId([4_u8; 32]);
 
 fn pilot_realization() -> crate::ScopedRealizationSpec {
     derive(&ARCHITECTURE, RealizationScope::phase1_pilots()).unwrap()
@@ -33,15 +34,19 @@ fn receipt(side: ObservedSide, ordinal: u32, value: u64, owner: OwnerId) -> Obse
     }
 }
 
-fn lbtc(side: ObservedSide, ordinal: u32, value: u64) -> ObservedObject {
+fn lbtc_owned(side: ObservedSide, ordinal: u32, value: u64, owner: OwnerId) -> ObservedObject {
     ObservedObject {
         reference: ObservedObjectRef { side, ordinal },
         kind: ObservedObjectKind::Declared(ObjectId::PlainLbtc),
         asset: ObservedAsset::Declared(AssetId::Lbtc),
         value: ProtocolAmount::new(value).unwrap(),
-        owner: Some(CAROL),
+        owner: Some(owner),
         representation: RepresentationMode::Explicit,
     }
+}
+
+fn lbtc(side: ObservedSide, ordinal: u32, value: u64) -> ObservedObject {
+    lbtc_owned(side, ordinal, value, CAROL)
 }
 
 fn valid_split_observation() -> OperationObservation {
@@ -86,6 +91,64 @@ fn valid_split_observation() -> OperationObservation {
     }
 }
 
+fn valid_sponsored_observation() -> OperationObservation {
+    let mut observation = valid_split_observation();
+    let sponsor_input = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 1,
+    };
+    let sponsor_change = ObservedObjectRef {
+        side: ObservedSide::Output,
+        ordinal: 2,
+    };
+
+    observation
+        .objects
+        .push(lbtc_owned(ObservedSide::Input, 1, 10, CAROL));
+    observation
+        .objects
+        .push(lbtc_owned(ObservedSide::Output, 2, 7, CAROL));
+    observation.open_flows.push(ObservedOpenFlow {
+        kind: architecture::OpenFlowKind::FeeSponsor,
+        sources: vec![sponsor_input],
+        destinations: vec![sponsor_change],
+        fee: ProtocolAmount::new(3).unwrap(),
+    });
+    observation.sponsor_signers.insert(CAROL);
+
+    observation
+}
+
+fn multi_owner_sponsor_observation() -> OperationObservation {
+    let mut observation = valid_split_observation();
+    let carol_input = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 1,
+    };
+    let dave_input = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 2,
+    };
+    let sponsor_change = ObservedObjectRef {
+        side: ObservedSide::Output,
+        ordinal: 2,
+    };
+
+    observation.objects.extend([
+        lbtc_owned(ObservedSide::Input, 1, 10, CAROL),
+        lbtc_owned(ObservedSide::Input, 2, 7, DAVE),
+        lbtc_owned(ObservedSide::Output, 2, 12, CAROL),
+    ]);
+    observation.open_flows.push(ObservedOpenFlow {
+        kind: architecture::OpenFlowKind::FeeSponsor,
+        sources: vec![carol_input, dave_input],
+        destinations: vec![sponsor_change],
+        fee: ProtocolAmount::new(5).unwrap(),
+    });
+
+    observation
+}
+
 fn evaluate(observation: &OperationObservation) -> crate::ConformanceReport {
     let realization = pilot_realization();
 
@@ -115,6 +178,26 @@ fn input_cardinality() -> RelationId {
 fn output_cardinality() -> RelationId {
     relation_id(
         RelationKind::Cardinality,
+        RelationSubject::ObjectFamily {
+            side: TransactionSide::Output,
+            object: ObjectId::ReceiptLive,
+        },
+    )
+}
+
+fn input_recognition() -> RelationId {
+    relation_id(
+        RelationKind::Recognition,
+        RelationSubject::ObjectFamily {
+            side: TransactionSide::Input,
+            object: ObjectId::ReceiptLive,
+        },
+    )
+}
+
+fn output_recognition() -> RelationId {
+    relation_id(
+        RelationKind::Recognition,
         RelationSubject::ObjectFamily {
             side: TransactionSide::Output,
             object: ObjectId::ReceiptLive,
@@ -222,6 +305,151 @@ fn relation_declaration_order_does_not_change_relation_graph_projection() {
 #[test]
 fn valid_live_transfer_satisfies_every_runtime_relation() {
     let report = evaluate(&valid_split_observation());
+
+    assert!(
+        report.is_conformant(),
+        "failed relations: {:?}",
+        report.failed_relations().collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn canonical_delta_amount_mutation_fails() {
+    let mut observation = valid_split_observation();
+
+    observation.canonical_deltas[0].amount = ProtocolAmount::new(99).unwrap();
+
+    let report = evaluate(&observation);
+
+    assert!(
+        failed(&report, &canonical_delta_policy()),
+        "a canonical delta whose amount disagrees with its referenced objects must fail"
+    );
+}
+
+#[test]
+fn canonical_delta_empty_duplicate_fails() {
+    let mut missing = valid_split_observation();
+    missing.canonical_deltas.clear();
+
+    let missing_report = evaluate(&missing);
+
+    assert!(
+        failed(&missing_report, &canonical_delta_policy()),
+        "live transfer without its required lateral U delta must fail"
+    );
+
+    let realization = pilot_realization();
+    let mut duplicated = valid_split_observation();
+    duplicated
+        .canonical_deltas
+        .push(duplicated.canonical_deltas[0].clone());
+
+    let error = evaluate_operation(
+        &realization.relation_graph,
+        &realization.relation_node_by_id,
+        &realization.relation_evaluation_order,
+        &duplicated,
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error,
+        crate::RealizationError::ObservedCanonicalPartitionOverlap
+    );
+}
+
+#[test]
+fn live_receipt_input_without_owner_fails() {
+    let mut observation = valid_split_observation();
+
+    observation
+        .objects
+        .iter_mut()
+        .find(|object| {
+            object.reference.side == ObservedSide::Input
+                && object.kind == ObservedObjectKind::Declared(ObjectId::ReceiptLive)
+        })
+        .expect("fixture has a live-receipt input")
+        .owner = None;
+    observation.protocol_signers.clear();
+
+    let report = evaluate(&observation);
+
+    assert!(
+        failed(&report, &input_recognition()),
+        "owner presence is part of live-receipt input recognition"
+    );
+}
+
+#[test]
+fn live_receipt_output_without_owner_fails() {
+    let mut observation = valid_split_observation();
+
+    observation
+        .objects
+        .iter_mut()
+        .find(|object| {
+            object.reference.side == ObservedSide::Output
+                && object.kind == ObservedObjectKind::Declared(ObjectId::ReceiptLive)
+        })
+        .expect("fixture has a live-receipt output")
+        .owner = None;
+
+    let report = evaluate(&observation);
+
+    assert!(
+        failed(&report, &output_recognition()),
+        "owner presence is part of live-receipt output recognition"
+    );
+}
+
+#[test]
+fn valid_sponsored_live_transfer_conforms() {
+    let report = evaluate(&valid_sponsored_observation());
+
+    assert!(
+        report.is_conformant(),
+        "failed relations: {:?}",
+        report.failed_relations().collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn missing_sponsor_signer_fails() {
+    let mut observation = valid_sponsored_observation();
+
+    observation.sponsor_signers.clear();
+
+    let report = evaluate(&observation);
+
+    assert!(
+        failed(&report, &sponsor()),
+        "balanced sponsor value without sponsor authorization must fail"
+    );
+}
+
+#[test]
+fn one_missing_sponsor_owner_among_many_fails() {
+    let mut observation = multi_owner_sponsor_observation();
+
+    observation.sponsor_signers.insert(CAROL);
+
+    let report = evaluate(&observation);
+
+    assert!(
+        failed(&report, &sponsor()),
+        "every consumed sponsor owner must authorize the sponsor flow"
+    );
+}
+
+#[test]
+fn every_sponsor_owner_authorizes_multi_owner_flow() {
+    let mut observation = multi_owner_sponsor_observation();
+
+    observation.sponsor_signers.extend([CAROL, DAVE]);
+
+    let report = evaluate(&observation);
 
     assert!(
         report.is_conformant(),

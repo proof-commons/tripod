@@ -2,14 +2,18 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use architecture::{ObjectId, OperationId};
+#[cfg(test)]
+use architecture::ObjectId;
+use architecture::OperationId;
 use petgraph::{
     Direction,
     graph::{DiGraph, NodeIndex},
     visit::EdgeRef,
 };
 
-use crate::{FactId, RealizationError, RelationId, RelationKind, RelationSubject, TransactionSide};
+use crate::{FactId, RealizationError, RelationId};
+#[cfg(test)]
+use crate::{RelationKind, RelationSubject, TransactionSide};
 
 /// Visibility before operation execution.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -276,13 +280,15 @@ pub fn project_disclosure_graph(
 ///
 /// # Panics
 ///
-/// Panics only if the hard-coded Phase-1 disclosure declarations are internally
-/// inconsistent. Production derivation builds the same graph through fallible
-/// graph construction.
+/// Panics only if the built-in Phase-1 realization stops deriving.
 #[must_use]
 pub fn phase1_declassification() -> DeclassificationAnalysis {
-    let (graph, node_by_id, seeds) = phase1_disclosure_declarations();
-    analyze_disclosure(&graph, &node_by_id, &seeds).expect("phase1 disclosure graph is valid")
+    crate::derive::derive(
+        &architecture::ARCHITECTURE,
+        crate::RealizationScope::phase1_pilots(),
+    )
+    .expect("the built-in Phase-1 realization must derive")
+    .declassification
 }
 
 #[allow(clippy::type_complexity)]
@@ -292,8 +298,9 @@ pub fn phase1_declassification() -> DeclassificationAnalysis {
 ///
 /// Panics only if the hard-coded Phase-1 disclosure declaration fixture is
 /// internally inconsistent.
+#[cfg(test)]
 #[allow(clippy::too_many_lines)]
-pub fn phase1_disclosure_declarations() -> (
+pub(crate) fn phase1_disclosure_declarations() -> (
     DiGraph<DisclosureNode, DisclosureEdge, u32>,
     BTreeMap<DisclosureNodeId, NodeIndex<u32>>,
     Vec<DisclosureSeed>,
@@ -424,6 +431,7 @@ pub fn phase1_disclosure_declarations() -> (
     (graph, node_by_id, seeds)
 }
 
+#[cfg(test)]
 fn fact(id: FactId, initial_visibility: InitialVisibility) -> DisclosureNode {
     DisclosureNode::Fact {
         id,
@@ -431,6 +439,7 @@ fn fact(id: FactId, initial_visibility: InitialVisibility) -> DisclosureNode {
     }
 }
 
+#[cfg(test)]
 fn edge(
     source: DisclosureNodeId,
     target: DisclosureNodeId,

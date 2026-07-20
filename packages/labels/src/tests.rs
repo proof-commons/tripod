@@ -847,6 +847,48 @@ fn register_generation_ignores_unrelated_adr_defects() {
 }
 
 #[test]
+fn malformed_model_label_does_not_block_upstream_register_generation() {
+    let directory = fixture_root("# Realization\n`sec:fixture`\nBody cite [A-def:model:known].\n");
+    let root = directory.path();
+    fs::write(
+        root.join("packages/model/src/fixture.rs"),
+        "// ´def:broken´\n",
+    )
+    .expect("malformed model source");
+
+    let paths = RepositoryCensus::discover(root);
+    let output = tempfile::tempdir().expect("temporary register output");
+    let specification_output = output.path().join("specification.md");
+    let realization_output = output.path().join("realization.md");
+
+    generate_registers(&paths, &specification_output, &realization_output)
+        .expect("a malformed model-owned label must not block upstream register generation");
+
+    assert!(specification_output.is_file());
+    assert!(realization_output.is_file());
+
+    let model = harvest_model(&paths);
+    assert!(
+        model.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == LabelErrorCode::InvalidLabel
+                && diagnostic.path == "packages/model/src/fixture.rs"
+        }),
+        "{:#?}",
+        model.diagnostics
+    );
+
+    let complete = RepositoryLabels::harvest_sources(&paths);
+    assert!(
+        complete.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == LabelErrorCode::InvalidLabel
+                && diagnostic.path == "packages/model/src/fixture.rs"
+        }),
+        "{:#?}",
+        complete.diagnostics
+    );
+}
+
+#[test]
 fn census_audit_welds_declared_lists_to_the_tracked_set() {
     let pattern =
         regex::Regex::new("(^|/)[.]|^archive/|(^|/)meson[.](build|options)$|[.](bib|zip)$")

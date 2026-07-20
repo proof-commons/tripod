@@ -36,32 +36,23 @@ help, usage, diagnostics, panics — is JSON on stderr; exit codes are
 crate. Regenerate with:
 
 ```sh
-cargo run -p tripod-artifacts --bin generate-all
+meson compile -C build generate-artifacts
 ```
 
-Check without writing (tests and CI use the same non-writing path):
+Check generated artifacts and repository labels without writing:
 
 ```sh
-cargo run -p tripod-artifacts --bin check-generated | jq .
+meson compile -C build lint
 ```
 
 Regenerate planning label registers explicitly:
 
 ```sh
-cargo run --locked \
-  -p tripod-labels \
-  --bin generate-label-registers \
-  -- --repository-root . --output-root .
+meson compile -C build generate-label-registers
 ```
 
-Check repository labels without writing:
-
-```sh
-cargo run --locked \
-  -p tripod-labels \
-  --bin check-labels \
-  -- --repository-root . | jq .
-```
+Direct Cargo invocations of the generator/checker binaries are build-system
+internals: they require the full role-tagged ADR-014 census that Meson derives.
 
 ## Requirements
 
@@ -82,7 +73,7 @@ The rendered PDF lands in `archive/rendered/` and a flattened single-file
 Rust checks:
 
 ```sh
-meson test -C build
+meson test -C build --print-errorlogs
 ```
 
 ## CI

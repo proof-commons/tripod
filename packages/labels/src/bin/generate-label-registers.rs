@@ -1,9 +1,9 @@
 //! `generate-label-registers`: the register-publication writer.
 //!
-//! Scoped derivation (ADR-013): only the Layer-0, realization, and
-//! model sources feed the registers, and they arrive by role-tagged
-//! argument (ADR-014). The two register outputs are argument-supplied
-//! assets; the build system wraps this command with its own stamp.
+//! Scoped derivation (ADR-013): only the Layer-0 and realization
+//! sources feed the registers, and they arrive by role-tagged argument
+//! (ADR-014). The two register outputs are argument-supplied assets;
+//! the build system wraps this command with its own stamp.
 
 use std::{path::PathBuf, process::ExitCode};
 
@@ -33,10 +33,7 @@ struct Args {
     /// The realization Markdown document.
     #[arg(long, value_name = "FILE")]
     realization: PathBuf,
-    /// Model crate Rust sources.
-    #[arg(long = "model-source", value_name = "FILE")]
-    model_sources: Vec<PathBuf>,
-    /// Output path of the Layer-0 register.
+    /// Output path of the specification register.
     #[arg(long, value_name = "FILE")]
     specification_register_output: PathBuf,
     /// Output path of the realization register.
@@ -57,7 +54,6 @@ fn main() -> ExitCode {
             attestation_main: resolve(&args.attestation_main),
             attestation_sections: args.attestation_sections.iter().map(resolve).collect(),
             realization: resolve(&args.realization),
-            model_sources: args.model_sources.iter().map(resolve).collect(),
             ..labels::RepositoryCensus::default()
         };
         let registers = labels::generate_registers(

@@ -76,9 +76,18 @@ proptest! {
                     .try_fold(Sat::ZERO, |acc, value| acc.checked_add(value))
                     .unwrap();
 
-                let indexer_accepts = claimed <= burn.ash_value;
+                let transaction = BurnTransaction {
+                    txid: certificate.txid,
+                    block_hash: test_fixtures::block_hash(0),
+                    order: certificate.order,
+                    ash_value: burn.ash_value,
+                    records: burn.records.clone(),
+                };
 
-                prop_assert!(indexer_accepts || claimed > burn.ash_value);
+                prop_assert_eq!(
+                    transaction.records_accepted().unwrap(),
+                    claimed <= burn.ash_value,
+                );
 
                 prop_assert!(check_invariant(&next).is_ok());
             }

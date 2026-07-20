@@ -15,7 +15,7 @@ import re
 import sys
 
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path.cwd()
 BASELINE_MARKDOWN_BYTES = 1_295_616
 HARD_CAP_BYTES = 768 * 1024
 SOFT_TARGET_BYTES = 512 * 1024
@@ -82,7 +82,7 @@ def warn_threshold(relative: Path) -> int | None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository-root", type=Path, default=ROOT)
+    parser.add_argument("--repository-root", type=Path, required=True)
     parser.add_argument("--stamp", type=Path, default=None)
     parser.add_argument("subjects", nargs="*", type=Path)
     return parser.parse_args()

@@ -286,7 +286,7 @@ Existing command classifications are:
 | `generate-all` | side effect; writes `--output` |
 | `check-generated` | one JSON stdout result |
 | `check-labels` | one JSON stdout result |
-| `generate-label-registers` | side effect; explicit `--output-root` |
+| `generate-label-registers` | side effect; explicit `--specification-register-output` and `--realization-register-output` |
 
 ## Rejected alternatives · `sec:output:alternatives`
 

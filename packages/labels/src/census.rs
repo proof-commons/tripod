@@ -76,8 +76,9 @@ impl CensusGroup {
         Self::Model,
         Self::Crates,
     ];
-    /// The groups feeding the scoped register and model-label
-    /// derivations.
+    /// The groups feeding the scoped register derivation.
+    pub const REGISTER_SCOPED: &[Self] = &[Self::Attestation, Self::Realization];
+    /// The groups feeding the scoped model-label derivation.
     pub const SCOPED: &[Self] = &[Self::Attestation, Self::Realization, Self::Model];
 }
 

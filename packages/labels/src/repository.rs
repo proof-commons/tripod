@@ -920,15 +920,15 @@ impl GenerateError {
 /// upstream sources only, writing to the argument-supplied output
 /// paths (ADR-014: assets go only where arguments route them).
 ///
-/// An unrelated planning or ADR defect must not block regenerating an
-/// upstream register (ADR-013 scoped-derivation rule);
+/// An unrelated planning, ADR, or model defect must not block regenerating
+/// an upstream register (ADR-013 scoped-derivation rule);
 /// `check_repository` remains the full repository-wide gate.
 pub fn generate_registers(
     paths: &RepositoryCensus,
     specification_output: &Path,
     realization_output: &Path,
 ) -> Result<Vec<GeneratedRegister>, GenerateError> {
-    let labels = derive_model_sources(paths);
+    let labels = derive_register_sources(paths);
     if labels.has_errors() {
         return Err(GenerateError::Validation(labels.diagnostics));
     }
@@ -960,6 +960,22 @@ pub fn model_labels_json(paths: &RepositoryCensus) -> Result<String, GenerateErr
     Ok(render::model_labels_json(&labels.registries.model)?)
 }
 
+fn derive_register_sources(paths: &RepositoryCensus) -> RepositoryLabels {
+    let mut result = RepositoryLabels::default();
+    result
+        .diagnostics
+        .extend(paths.verify(crate::census::CensusGroup::REGISTER_SCOPED));
+    let (attestation, diagnostics) = harvest_attestation(paths);
+    result.registries.attestation = attestation;
+    result.diagnostics.extend(diagnostics);
+    harvest_realization(paths, &mut result);
+    result
+        .pending_citations
+        .retain(register_citation_participates);
+    build_scoped_graph(&mut result);
+    result
+}
+
 fn derive_model_sources(paths: &RepositoryCensus) -> RepositoryLabels {
     let mut result = RepositoryLabels::default();
     // Scoped census verification (ADR-014): a stale plan or ADR census
@@ -976,13 +992,25 @@ fn derive_model_sources(paths: &RepositoryCensus) -> RepositoryLabels {
     result
         .pending_citations
         .retain(scoped_citation_participates);
+    build_scoped_graph(&mut result);
+    result
+}
+
+fn build_scoped_graph(result: &mut RepositoryLabels) {
     let citations = std::mem::take(&mut result.pending_citations);
     let (graph, graph_node_by_id) =
         build_label_graph(&result.registries, citations, &mut result.diagnostics);
     result.graph = graph;
     result.graph_node_by_id = graph_node_by_id;
     sort_diagnostics(&mut result.diagnostics);
-    result
+}
+
+const fn register_citation_participates(citation: &LabelCitation) -> bool {
+    matches!(citation.source_owner, LabelOwner::Realization)
+        && matches!(
+            citation.target.owner,
+            LabelOwner::Attestation | LabelOwner::Realization
+        )
 }
 
 const fn scoped_citation_participates(citation: &LabelCitation) -> bool {

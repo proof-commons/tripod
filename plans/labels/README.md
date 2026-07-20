@@ -59,10 +59,7 @@ An explicit update command regenerates the registers.
 Run:
 
 ```sh
-cargo run --locked \
-    -p tripod-labels \
-    --bin generate-label-registers \
-    -- --repository-root . --output-root .
+meson compile -C build generate-label-registers
 ```
 
 Update mode may write only the two owned register files.
@@ -72,10 +69,7 @@ Update mode may write only the two owned register files.
 CI uses non-writing check mode:
 
 ```sh
-cargo run --locked \
-    -p tripod-labels \
-    --bin check-labels \
-    -- --repository-root . | jq .
+meson compile -C build lint
 ```
 
 The checker derives expected bytes in memory and fails when a register is

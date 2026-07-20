@@ -116,6 +116,7 @@ identity.
 |---|---|
 | `architecture` | Typed normative architecture and deployment profile |
 | `model` | Executable reference behavior and property/corruption evidence |
+| `realization` | Typed semantic realization for the compact-ASH and live-transfer pilots |
 | `artifacts` | Generated-publication writer and checker |
 | `labels` | Documentation/source label graph and registers |
 | `cli-common` | Shared ADR-010 command infrastructure |
@@ -125,7 +126,6 @@ identity.
 Not yet implemented:
 
 ```text
-realization
 compiler
 target-elements
 tapscript
@@ -142,7 +142,7 @@ Attestation specification:        published
 Realization contract:         published and architecture-welded
 Typed architecture release:       final and pinned
 Executable reference model:       implemented
-Typed realization package:        not yet implemented
+Typed realization package:        implemented for Phase-1 pilots; exit gate pending
 Compiler analysis:                not yet implemented
 Target/backend/linker:             not yet implemented
 Independent deployment observers: not yet implemented
@@ -358,9 +358,9 @@ It must not:
 | ID | Status | Task | Depends on | Output |
 |---|---|---|---|---|
 | `C1-001` | **DONE** | Land algorithm research notes and census updates. | none | four research notes |
-| `C1-002` | **TODO** | Record the petgraph graph-substrate decision. | `C1-001` | planning decision D007 |
-| `C1-003` | **TODO** | Record exact/certified mathematics policy. | `C1-001` | planning decision D008 |
-| `C1-004` | **TODO** | Review and select concrete dependency releases/features. | `C1-002`, `C1-003` | dependency review record |
+| `C1-002` | **DONE** | Record the petgraph graph-substrate decision. | `C1-001` | planning decision D007 |
+| `C1-003` | **DONE** | Record exact/certified mathematics policy. | `C1-001` | planning decision D008 |
+| `C1-004` | **IN PROGRESS** | Review and select concrete dependency releases/features. | `C1-002`, `C1-003` | dependency review record |
 | `C1-005` | **TODO** | Specify and prototype canonical graph adapters. | `C1-002`, `C1-004` | frozen typed graph prototype |
 | `C1-006` | **TODO** | Specify and prototype exact keyed linear systems. | `C1-003`, `C1-004` | exact matrix/Bareiss prototype |
 | `C1-007` | **TODO** | Specify and prototype certified numerical analysis. | `C1-003`, `C1-004`, `C1-006` | `faer` wrapper prototype |
@@ -429,7 +429,7 @@ git diff --check
 
 ## C1-002 — Record the petgraph substrate decision
 
-> **Status:** TODO
+> **Status:** DONE
 > **Depends on:** `C1-001`
 > **Primary output:** `plans/decisions/007-petgraph-internal-graph-substrate.md`
 
@@ -478,7 +478,7 @@ Record:
 
 ## C1-003 — Record exact and certified mathematics policy
 
-> **Status:** TODO
+> **Status:** DONE
 > **Depends on:** `C1-001`
 > **Primary output:** `plans/decisions/008-exact-and-certified-mathematics.md`
 
@@ -528,7 +528,7 @@ Record:
 
 ## C1-004 — Review and select dependencies
 
-> **Status:** TODO
+> **Status:** IN PROGRESS
 > **Depends on:** `C1-002`, `C1-003`
 > **Initial candidates:** `petgraph`, `faer`, `num-rational`
 
@@ -1081,25 +1081,25 @@ The compiler phase may begin when:
 
 | ID | Status | Task | Depends on | Output |
 |---|---|---|---|---|
-| `R1-001` | **TODO** | Create the realization crate skeleton and package contract. | baseline, `C1-004` for graph dependency | workspace crate |
-| `R1-002` | **TODO** | Define local handles, stable keys, and deterministic semantic IDs. | `R1-001` | identity types |
-| `R1-003` | **TODO** | Define typed domains, expression arena, and frozen dependency graph. | `R1-002`, `C1-005` | typed expression DAG |
-| `R1-004` | **TODO** | Define the minimum semantic relation vocabulary. | `R1-003` | relation types |
-| `R1-005` | **TODO** | Define operation, constructibility, lifecycle, and representation declarations. | `R1-004` | operation schema |
-| `R1-006` | **TODO** | Implement deterministic `derive(&Architecture)`. | `R1-005` | scoped `RealizationSpec` |
-| `R1-007` | **TODO** | Declare `compact-ash`. | `R1-006` | first pilot |
-| `R1-008` | **TODO** | Declare `transfer-live-receipts`. | `R1-006` | second pilot |
-| `R1-009` | **TODO** | Derive declassification for both pilots. | `R1-007`, `R1-008` | typed disclosure result |
-| `R1-010` | **TODO** | Add architecture/realization bidirectional validation. | `R1-007`, `R1-008` | validation suite |
-| `R1-011` | **TODO** | Add model-conformance tests for both pilots. | `R1-009`, `R1-010` | conformance evidence |
-| `R1-012` | **TODO** | Add a derivative publication only if a real need exists. | `R1-009` | optional publication |
-| `R1-013` | **TODO** | Run and record the Phase-1 exit gate. | required `R1` tasks | green Phase 1 |
+| `R1-001` | **DONE** | Create the realization crate skeleton and package contract. | baseline, `C1-004` for graph dependency | workspace crate |
+| `R1-002` | **DONE** | Define local handles, stable keys, and deterministic semantic IDs. | `R1-001` | identity types |
+| `R1-003` | **DONE** | Define typed domains, expression arena, and frozen dependency graph. | `R1-002`, `C1-005` | typed expression DAG |
+| `R1-004` | **DONE** | Define the minimum semantic relation vocabulary. | `R1-003` | relation types |
+| `R1-005` | **DONE** | Define operation, constructibility, lifecycle, and representation declarations. | `R1-004` | operation schema |
+| `R1-006` | **DONE** | Implement deterministic `derive(&Architecture)`. | `R1-005` | scoped `RealizationSpec` |
+| `R1-007` | **DONE** | Declare `compact-ash`. | `R1-006` | first pilot |
+| `R1-008` | **DONE** | Declare `transfer-live-receipts`. | `R1-006` | second pilot |
+| `R1-009` | **DONE** | Derive declassification for both pilots. | `R1-007`, `R1-008` | typed disclosure result |
+| `R1-010` | **DONE** | Add architecture/realization bidirectional validation. | `R1-007`, `R1-008` | validation suite |
+| `R1-011` | **DONE** | Add model-conformance tests for both pilots. | `R1-009`, `R1-010` | conformance evidence |
+| `R1-012` | **DROPPED** | Add a derivative publication only if a real need exists. | `R1-009` | no realization-owned publication needed |
+| `R1-013` | **IN PROGRESS** | Run and record the Phase-1 exit gate. | required `R1` tasks | green Phase 1 |
 
 ---
 
 ## R1-001 — Create the realization crate
 
-> **Status:** TODO
+> **Status:** DONE
 > **Depends on:** completed baseline and reviewed first-consumer dependency set
 
 ### Required metadata
@@ -1197,7 +1197,7 @@ cargo clippy --locked -p tripod-realization --all-targets -- -D warnings
 
 ## R1-002 — Define semantic identity ownership
 
-> **Status:** TODO
+> **Status:** DONE
 > **Depends on:** `R1-001`
 
 ### Required separation
@@ -1254,7 +1254,7 @@ stable architecture discriminants
 
 ## R1-003 — Define typed domains and expression DAG
 
-> **Status:** TODO
+> **Status:** DONE
 > **Depends on:** `R1-002`, accepted graph-adapter contract
 
 ### Required domains
@@ -1329,7 +1329,7 @@ It is not the executable model.
 
 ## R1-004 — Define semantic relation vocabulary
 
-> **Status:** TODO
+> **Status:** DONE
 > **Depends on:** `R1-003`
 
 Initial relation families must express both pilots without generic string
@@ -1380,7 +1380,7 @@ Both pilot relation sets can be represented without:
 
 ## R1-005 — Define operation adjuncts
 
-> **Status:** TODO
+> **Status:** DONE
 > **Depends on:** `R1-004`
 
 Define typed declarations for:
@@ -1414,7 +1414,7 @@ Define typed declarations for:
 
 ## R1-006 — Implement deterministic derivation
 
-> **Status:** TODO
+> **Status:** DONE
 > **Depends on:** `R1-005`
 
 Illustrative boundary:
@@ -1454,7 +1454,7 @@ realization.
 
 ## R1-007 — Declare compact ASH
 
-> **Status:** TODO
+> **Status:** DONE
 > **Depends on:** `R1-006`
 
 Declare:
@@ -1490,7 +1490,7 @@ Architecture, realization, and model agree on:
 
 ## R1-008 — Declare live receipt transfer
 
-> **Status:** TODO
+> **Status:** DONE
 > **Depends on:** `R1-006`
 
 Declare:
@@ -1524,7 +1524,7 @@ Representation alternatives must not weaken:
 
 ## R1-009 — Derive declassification
 
-> **Status:** TODO
+> **Status:** DONE
 > **Depends on:** `R1-007`, `R1-008`
 
 Derive disclosure by deterministic reverse dependency closure.
@@ -1569,7 +1569,7 @@ live transfer:
 
 ## R1-010 — Add architecture/realization validation
 
-> **Status:** TODO
+> **Status:** DONE
 > **Depends on:** `R1-007`, `R1-008`
 
 Validation is bidirectional:
@@ -1605,7 +1605,7 @@ Validation is bidirectional:
 
 ## R1-011 — Add model conformance
 
-> **Status:** TODO
+> **Status:** DONE
 > **Depends on:** `R1-009`, `R1-010`
 
 For each pilot:
@@ -1630,7 +1630,7 @@ deployment evidence.
 
 ## R1-012 — Optional derivative publication
 
-> **Status:** TODO
+> **Status:** DROPPED
 > **Depends on:** `R1-009`
 
 A publication is added only if a concrete review or external-consumer need
@@ -1911,17 +1911,11 @@ The active backlog should remain reviewable in one sitting.
 Unless evidence changes dependencies, execute:
 
 ```text
-1. Land C1-001 research notes and census updates.
-2. Record D007 and D008.
-3. Review concrete petgraph/faer/num-rational releases and features.
-4. Begin R1-001 realization crate.
-5. Implement R1 identity, typed expression, and canonical graph foundations.
-6. Complete compact-ASH and live-transfer realization pilots.
-7. Derive declassification and model conformance.
-8. Complete Phase-1 gate.
-9. In parallel, complete synthetic linker and mathematical algorithm prototypes.
-10. Begin production compiler analysis only after Phase 1.
-11. Keep target/backend production work behind Phase 3.
+1. Complete concrete dependency release/feature review.
+2. Run and record the Phase-1 exit gate.
+3. In parallel, complete synthetic linker and mathematical algorithm prototypes.
+4. Begin production compiler analysis only after Phase 1.
+5. Keep target/backend production work behind Phase 3.
 ```
 
 The focused near-term dependency order is:

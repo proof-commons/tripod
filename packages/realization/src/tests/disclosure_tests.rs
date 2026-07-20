@@ -3,11 +3,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use petgraph::visit::EdgeRef;
 
 use crate::{
-    DisclosureNode, DisclosureNodeId, DisclosureReason, FactId, InitialVisibility, TransactionSide,
+    DisclosureNode, DisclosureNodeId, DisclosureReason, FactId, InitialVisibility,
+    RealizationScope, TransactionSide,
     declassification::{
         analysis_from_reason_map, disclosure_reasons_by_node, phase1_disclosure_declarations,
     },
-    phase1_declassification,
+    derive, phase1_declassification,
 };
 
 #[test]
@@ -34,6 +35,21 @@ fn phase1_disclosure_classifies_pilots_correctly() {
         side: TransactionSide::Input,
         object: architecture::ObjectId::ReceiptLive,
     }));
+}
+
+#[test]
+fn production_phase1_declassification_equals_operation_derived_analysis() {
+    let realization = derive(
+        &architecture::ARCHITECTURE,
+        RealizationScope::phase1_pilots(),
+    )
+    .expect("Phase-1 realization derives");
+
+    assert_eq!(
+        phase1_declassification(),
+        realization.declassification,
+        "the public Phase-1 declassification helper and production operation declarations have drifted"
+    );
 }
 
 #[test]

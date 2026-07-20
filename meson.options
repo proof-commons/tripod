@@ -1,0 +1,6 @@
+option(
+  'artifact_generation_output_dir',
+  type: 'string',
+  value: '',
+  description: 'Override generate-artifacts output directory for isolated integration tests',
+)
