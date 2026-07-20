@@ -14,6 +14,8 @@ name = "realization"
 
 [dependencies]
 architecture = { workspace = true }
+petgraph = { workspace = true }
+thiserror = { workspace = true }
 
 [lints]
 workspace = true

@@ -6,7 +6,8 @@
 > **Library:** `realization`
 > **Decisions:** [D001](../decisions/001-typed-rust-source.md),
 > [D002](../decisions/002-realization-layer.md),
-> [D005](../decisions/005-value-representation.md)
+> [D005](../decisions/005-value-representation.md),
+> [D007](../decisions/007-petgraph-graph-substrate.md)
 
 ## Purpose · `sec:realization:purpose`
 
@@ -36,6 +37,10 @@ Allowed first-party direct dependency:
 ```text
 architecture
 ```
+
+Graph-shaped realization internals use the workspace-owned Petgraph dependency
+directly under [D007](../decisions/007-petgraph-graph-substrate.md). Petgraph
+indices remain local graph handles, not semantic identity.
 
 Forbidden dependencies:
 

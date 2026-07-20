@@ -1,7 +1,8 @@
 //! Stable first-party semantic keys.
 //!
 //! These values are complete typed keys. They are not graph positions,
-//! source locations, declaration ordinals, or target identities.
+//! source locations, declaration ordinals, target identities, matrix
+//! positions, or backend handles.
 
 use architecture::{AssetId, BoundId, ObjectId, OperationId, ProjectionId, RootId};
 
@@ -31,13 +32,13 @@ pub enum FactId {
         object: ObjectId,
     },
 
-    /// Owner set carried by one input family.
+    /// Owners committed by one input family.
     InputOwners {
         operation: OperationId,
         object: ObjectId,
     },
 
-    /// Signer set presented for one operation.
+    /// Signers presented for one operation.
     Signers { operation: OperationId },
 
     /// Presence of one derived projection.
@@ -46,8 +47,35 @@ pub enum FactId {
         projection: ProjectionId,
     },
 
-    /// Runtime value assigned to an architecture-owned bound.
+    /// Runtime value assigned to an architecture-owned cardinality
+    /// bound.
     BoundValue { bound: BoundId },
+
+    /// Whether every observed member of one object family passed
+    /// architecture-owned object/asset recognition.
+    ///
+    /// The later model adapter derives this from primitive observed
+    /// objects. It must not accept a caller-authored assertion as
+    /// evidence.
+    FamilyRecognized {
+        operation: OperationId,
+        side: TransactionSide,
+        object: ObjectId,
+    },
+
+    /// Whether one declared sponsor region is isolated from protocol
+    /// value.
+    ///
+    /// As with `FamilyRecognized`, the observation adapter derives
+    /// this from primitive flows and object families rather than
+    /// accepting a pre-decided boolean from an untrusted caller.
+    SponsorIsolated { operation: OperationId },
+
+    /// Whether the operation used any owner or operator secret.
+    ///
+    /// Used by constructibility relations for permissionless
+    /// operations. Sponsor-owner witnesses are modeled separately.
+    ProtocolSecretUsed { operation: OperationId },
 }
 
 /// Semantic relation family.
@@ -137,6 +165,69 @@ impl RelationId {
     #[must_use]
     pub const fn subject(&self) -> &RelationSubject {
         &self.subject
+    }
+}
+
+/// Semantic role of an expression owned by one relation.
+///
+/// Roles are semantic names, not arena positions. Adding an unrelated
+/// expression therefore does not renumber existing expression IDs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ExpressionRole {
+    /// Final boolean predicate of the relation.
+    Predicate,
+
+    /// Lower cardinality or value bound.
+    Minimum,
+
+    /// Upper cardinality or value bound.
+    Maximum,
+
+    /// Exact expected value.
+    Expected,
+
+    /// Aggregate input-side term.
+    InputTotal,
+
+    /// Aggregate output-side term.
+    OutputTotal,
+
+    /// Activation condition of a conditional relation.
+    Condition,
+
+    /// Authorization requirement.
+    RequiredOwners,
+
+    /// Presented authorization evidence.
+    PresentedSigners,
+}
+
+/// Stable identity of one expression.
+///
+/// A primitive fact expression uses the fact's complete key directly.
+/// Relation-owned constants and derived expressions use the complete
+/// relation key plus a typed semantic role.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ExprId {
+    Fact(FactId),
+
+    Relation {
+        relation: RelationId,
+        role: ExpressionRole,
+    },
+}
+
+impl ExprId {
+    /// Stable ID of a primitive fact expression.
+    #[must_use]
+    pub const fn fact(fact: FactId) -> Self {
+        Self::Fact(fact)
+    }
+
+    /// Stable ID of a relation-owned expression.
+    #[must_use]
+    pub const fn relation(relation: RelationId, role: ExpressionRole) -> Self {
+        Self::Relation { relation, role }
     }
 }
 

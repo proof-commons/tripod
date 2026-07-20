@@ -20,6 +20,7 @@ current task status, or unresolved target research.
 | [004](004-translation-validation.md) | Accepted | Validate each released bundle rather than initially trusting the compiler. |
 | [005](005-value-representation.md) | Accepted | Permit value-representation latitude; keep closed asset identity rigid initially. |
 | [006](006-transaction-abi.md) | Accepted | Generate one canonical transaction/witness ABI per target bundle. |
+| [007](007-petgraph-graph-substrate.md) | Accepted | Use full-featured Petgraph directly for every first-party graph. |
 
 ## Record form · `rule:decisions:form`
 
@@ -41,7 +42,8 @@ dec:<area>:<name>
 ```
 
 Other sections may mint local plan labels as needed. Decision labels remain
-non-normative and unlinted.
+non-normative and non-identity-bearing, but their mints and citations are
+mechanically checked under ADR-013.
 
 ## Machine use · `rem:decisions:machine-use`
 

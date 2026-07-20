@@ -3,8 +3,9 @@
 > **Status:** Active
 > **Package:** `tripod-labels`
 > **Library:** `labels`
-> **Direct dependency:** `architecture`
-> **Policy:** (`[ADR012-rule:labels:decision]`)
+> **Direct dependencies:** `architecture`, `petgraph`
+> **Policy:** (`[ADR012-rule:labels:decision]`),
+> [D007](../decisions/007-petgraph-graph-substrate.md)
 > **Assurance class:** Documentation conformance
 
 ## Purpose · `sec:labels-package:purpose`

@@ -1,3 +1,6 @@
+mod expression_tests;
+mod type_tests;
+
 use architecture::{ARCHITECTURE, OperationId, semantic_hash};
 
 use crate::{

@@ -6,10 +6,14 @@ realization_source_files = files(
   'src/binding.rs',
   'src/domain.rs',
   'src/error.rs',
+  'src/expression.rs',
   'src/identity.rs',
   'src/lib.rs',
   'src/scope.rs',
+  'src/tests/expression_tests.rs',
   'src/tests/mod.rs',
+  'src/tests/type_tests.rs',
+  'src/value.rs',
 )
 
 # Crate documentation (DOC owner).

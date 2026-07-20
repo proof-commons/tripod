@@ -447,12 +447,25 @@ test(
   timeout: 120,
 )
 
+stamp_probe = ['-c', 'test -f "$1"', 'sh']
+
 # clippy and the test suite compile the whole workspace on a cold cache, so
-# they need far more than meson's default 30-second test timeout.
-test(
-  'cargo-clippy',
-  cargo,
-  args: [
+# they need far more than meson's default 30-second test timeout. These targets
+# are deliberately always-stale: Meson does not model Cargo's complete input
+# graph here, so the command must run and let Cargo decide what is fresh. Without
+# this, an old cargo-*.ok stamp could satisfy `meson test` after Rust sources,
+# manifests, or Cargo's own dependency graph changed.
+cargo_quiet_stamp_wrap = [
+  sh, '-c',
+  'stamp="$1"; log="$2"; shift 2; if CARGO_TERM_PROGRESS_WHEN=never "$@" > "$log" 2>&1; then : > "$stamp"; else cat "$log" >&2; exit 1; fi',
+  'sh', '@OUTPUT0@', '@OUTPUT1@',
+]
+
+cargo_clippy_stamp = custom_target(
+  'cargo-clippy-check',
+  output: ['cargo-clippy.ok', 'cargo-clippy.log'],
+  command: cargo_quiet_stamp_wrap + [
+    cargo,
     'clippy',
     '--workspace',
     '--all-targets',
@@ -460,19 +473,42 @@ test(
     '--',
     '-D', 'warnings',
   ],
+  build_by_default: false,
+  build_always_stale: true,
+  console: true,
+)
+
+test(
+  'cargo-clippy',
+  sh,
+  args: stamp_probe + [cargo_clippy_stamp[0].full_path()],
+  depends: cargo_clippy_stamp,
   suite: 'lint',
-  timeout: 1800,
+  timeout: 60,
+)
+
+cargo_test_stamp = custom_target(
+  'cargo-test-check',
+  output: ['cargo-test.ok', 'cargo-test.log'],
+  command: cargo_quiet_stamp_wrap + [
+    cargo,
+    'test',
+    '--workspace',
+    '--manifest-path', cargo_manifest,
+  ],
+  build_by_default: false,
+  build_always_stale: true,
+  console: true,
 )
 
 test(
   'cargo-test',
-  cargo,
-  args: ['test', '--workspace', '--locked', '--manifest-path', cargo_manifest],
+  sh,
+  args: stamp_probe + [cargo_test_stamp[0].full_path()],
+  depends: cargo_test_stamp,
   suite: 'unit',
-  timeout: 1800,
+  timeout: 60,
 )
-
-stamp_probe = ['-c', 'test -f "$1"', 'sh']
 
 test(
   'census-audit',

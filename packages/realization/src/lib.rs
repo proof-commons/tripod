@@ -21,6 +21,7 @@
 #![forbid(unsafe_code)]
 #![allow(
     clippy::missing_errors_doc,
+    clippy::missing_const_for_fn,
     clippy::module_name_repetitions,
     clippy::must_use_candidate
 )]
@@ -28,17 +29,24 @@
 pub mod binding;
 pub mod domain;
 pub mod error;
+pub mod expression;
 pub mod identity;
 pub mod scope;
+pub mod value;
 
 pub use binding::ArchitectureBinding;
 pub use domain::{Count, PROTOCOL_AMOUNT_LIMIT_EXCLUSIVE, ProtocolAmount, RepresentationMode};
 pub use error::RealizationError;
+pub use expression::{
+    DependencyEdge, EvaluatedExpressions, ExpressionDeclaration, ExpressionNode,
+    ExpressionRegistry, FactValues,
+};
 pub use identity::{
-    FactId, ProofAlternativeId, ProofKind, RelationId, RelationKind, RelationSubject,
-    TransactionSide,
+    ExprId, ExpressionRole, FactId, ProofAlternativeId, ProofKind, RelationId, RelationKind,
+    RelationSubject, TransactionSide,
 };
 pub use scope::{CompleteRealizationScope, RealizationScope};
+pub use value::{OwnerId, SemanticType, SemanticValue};
 
 #[cfg(test)]
 mod tests;
