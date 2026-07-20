@@ -3,7 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use architecture::{
-    AssetId, BoundId, ObjectId, OperationId, ProjectionId, ProjectionRule, RootId, RootUse,
+    AssetId, BoundId, DeltaKind, ObjectId, OpenFlowKind, OperationId, ProjectionId, ProjectionRule,
+    RootId, RootUse, TagId,
 };
 use petgraph::{
     algo::{kosaraju_scc, toposort},
@@ -28,6 +29,14 @@ pub enum ConstructibilityClass {
 pub enum CardinalityMaximum {
     Exact(Count),
     Bound(BoundId),
+}
+
+/// Expected canonical delta family.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ExpectedCanonicalDelta {
+    pub asset: AssetId,
+    pub kind: DeltaKind,
+    pub destruction_tag: Option<TagId>,
 }
 
 /// Runtime-evaluable or declaration-level semantic relation.
@@ -64,6 +73,12 @@ pub enum Relation {
     ProjectionPolicy {
         expected: BTreeMap<ProjectionId, ProjectionRule>,
     },
+    CanonicalDeltaPolicy {
+        expected: BTreeSet<ExpectedCanonicalDelta>,
+    },
+    OpenFlowPolicy {
+        allowed: BTreeSet<OpenFlowKind>,
+    },
     Constructibility {
         class: ConstructibilityClass,
     },
@@ -96,6 +111,8 @@ pub enum RelationEdge {
     AuthorizationBeforeConstructibility,
     SponsorBeforeConstructibility,
     SponsorBeforeOperation,
+    OpenFlowPolicyBeforeSponsor,
+    CanonicalDeltaBeforeValue,
     RepresentationBeforeLifecycle,
     ProjectionPolicyBeforeOperation,
     RootPolicyBeforeOperation,
@@ -158,6 +175,14 @@ pub fn build_relation_graph(
 
     let mut pending_edges = dependencies.into_iter().collect::<Vec<_>>();
     pending_edges.sort();
+
+    for pair in pending_edges.windows(2) {
+        if pair[0] == pair[1] {
+            return Err(RealizationError::DuplicateRelationDependency(
+                pair[0].clone(),
+            ));
+        }
+    }
 
     for dependency in &pending_edges {
         if !by_id.contains_key(&dependency.prerequisite) {

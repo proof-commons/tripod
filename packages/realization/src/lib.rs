@@ -63,7 +63,9 @@ pub use derive::{
 };
 pub use domain::{Count, PROTOCOL_AMOUNT_LIMIT_EXCLUSIVE, ProtocolAmount, RepresentationMode};
 pub use error::{ArchitectureMismatchField, RealizationError};
-pub use evaluate::{ConformanceReport, RelationStatus, RelationVerdict, evaluate_operation};
+pub use evaluate::{
+    ConformanceReport, RelationFailure, RelationStatus, RelationVerdict, evaluate_operation,
+};
 pub use expression::{
     DependencyEdge, EvaluatedExpressions, ExpressionDeclaration, ExpressionDependencyProjection,
     ExpressionGraphProjection, ExpressionNode, FactValues, build_expression_graph,
@@ -79,13 +81,13 @@ pub use lifecycle::{
     project_lifecycle_graph, require_lifecycle_exit,
 };
 pub use observation::{
-    ObservedAsset, ObservedObject, ObservedObjectKind, ObservedObjectRef, ObservedOpenFlow,
-    ObservedRootEffect, ObservedSide, OperationObservation,
+    ObservedAsset, ObservedCanonicalDelta, ObservedObject, ObservedObjectKind, ObservedObjectRef,
+    ObservedOpenFlow, ObservedRootEffect, ObservedSide, OperationObservation, validate_observation,
 };
 pub use operation::OperationRealization;
 pub use relation::{
-    CardinalityMaximum, ConstructibilityClass, Relation, RelationDeclaration,
-    RelationDependencyDeclaration, RelationDependencyProjection, RelationEdge,
+    CardinalityMaximum, ConstructibilityClass, ExpectedCanonicalDelta, Relation,
+    RelationDeclaration, RelationDependencyDeclaration, RelationDependencyProjection, RelationEdge,
     RelationGraphProjection, project_relation_graph,
 };
 pub use scope::{CompleteRealizationScope, RealizationScope};

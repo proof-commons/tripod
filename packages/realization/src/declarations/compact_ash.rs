@@ -3,19 +3,20 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use architecture::{
-    Architecture, AssetId, BoundId, ObjectId, OperationId, ProjectionId, ProjectionRule, RootId,
-    RootUse,
+    Architecture, AssetId, BoundId, DeltaKind, ObjectId, OpenFlowKind, OperationId, ProjectionId,
+    ProjectionRule, RootId, RootUse,
 };
 
 use crate::{
     AvailabilityClass, CardinalityMaximum, ConstructibilityDependencyDeclaration,
     ConstructibilityEdge, ConstructibilityEdgeRole, ConstructibilityNode, ConstructibilityNodeId,
     Count, DisclosureDependencyDeclaration, DisclosureEdge, DisclosureNode, DisclosureNodeId,
-    DisclosureReason, DisclosureSeed, FactId, InitialVisibility, LifecycleDependencyDeclaration,
-    LifecycleEdge, LifecycleNode, LifecycleNodeId, OperationRealization, ProofAlternativeId,
-    ProofKind, RealizationError, Relation, RelationDeclaration, RelationDependencyDeclaration,
-    RelationEdge, RelationId, RelationKind, RelationSubject, RepresentationMode,
-    RequirementStrength, TransactionSide, WitnessRole, validate::validate_compact_ash_architecture,
+    DisclosureReason, DisclosureSeed, ExpectedCanonicalDelta, FactId, InitialVisibility,
+    LifecycleDependencyDeclaration, LifecycleEdge, LifecycleNode, LifecycleNodeId,
+    OperationRealization, ProofAlternativeId, ProofKind, RealizationError, Relation,
+    RelationDeclaration, RelationDependencyDeclaration, RelationEdge, RelationId, RelationKind,
+    RelationSubject, RepresentationMode, RequirementStrength, TransactionSide, WitnessRole,
+    validate::validate_compact_ash_architecture,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -54,6 +55,8 @@ struct Ids {
     input_closure: RelationId,
     output_closure: RelationId,
     sponsor: RelationId,
+    open_flow_policy: RelationId,
+    canonical_delta_policy: RelationId,
     roots: RelationId,
     projections: RelationId,
     constructibility: RelationId,
@@ -113,6 +116,18 @@ impl Ids {
                 },
             ),
             sponsor: relation_id(RelationKind::SponsorIsolation, RelationSubject::Sponsor),
+            open_flow_policy: relation_id(
+                RelationKind::SponsorIsolation,
+                RelationSubject::Projection {
+                    projection: ProjectionId::TransitionCertificate,
+                },
+            ),
+            canonical_delta_policy: relation_id(
+                RelationKind::Conservation,
+                RelationSubject::Projection {
+                    projection: ProjectionId::TransitionCertificate,
+                },
+            ),
             roots: relation_id(RelationKind::RootPolicy, RelationSubject::Operation),
             projections: relation_id(RelationKind::ProjectionPolicy, RelationSubject::Operation),
             constructibility: relation_id(
@@ -226,6 +241,24 @@ fn relation_declarations(ids: &Ids) -> Vec<RelationDeclaration> {
             [ProofKind::ManifestShape],
         ),
         declaration(
+            ids.open_flow_policy.clone(),
+            Relation::OpenFlowPolicy {
+                allowed: BTreeSet::from([OpenFlowKind::FeeSponsor]),
+            },
+            [ProofKind::ManifestShape],
+        ),
+        declaration(
+            ids.canonical_delta_policy.clone(),
+            Relation::CanonicalDeltaPolicy {
+                expected: BTreeSet::from([ExpectedCanonicalDelta {
+                    asset: AssetId::U,
+                    kind: DeltaKind::OwnerlessLateral,
+                    destruction_tag: None,
+                }]),
+            },
+            [ProofKind::ManifestShape],
+        ),
+        declaration(
             ids.roots.clone(),
             Relation::RootPolicy {
                 expected: expected_roots,
@@ -307,6 +340,11 @@ fn relation_dependencies(ids: &Ids) -> Vec<RelationDependencyDeclaration> {
             RelationEdge::RecognitionBeforeValue,
         ),
         dep(
+            &ids.canonical_delta_policy,
+            &ids.conservation,
+            RelationEdge::CanonicalDeltaBeforeValue,
+        ),
+        dep(
             &ids.permissionless,
             &ids.input_closure,
             RelationEdge::AuthorizationBeforeClosure,
@@ -315,6 +353,11 @@ fn relation_dependencies(ids: &Ids) -> Vec<RelationDependencyDeclaration> {
             &ids.permissionless,
             &ids.constructibility,
             RelationEdge::AuthorizationBeforeConstructibility,
+        ),
+        dep(
+            &ids.open_flow_policy,
+            &ids.sponsor,
+            RelationEdge::OpenFlowPolicyBeforeSponsor,
         ),
         dep(
             &ids.sponsor,

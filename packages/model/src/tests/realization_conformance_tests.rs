@@ -31,7 +31,12 @@ fn evaluate(observation: &realization::OperationObservation) -> realization::Con
 
 fn failed(report: &realization::ConformanceReport, relation: &realization::RelationId) -> bool {
     report.verdicts.iter().any(|verdict| {
-        verdict.relation == *relation && verdict.status == realization::RelationStatus::Failed
+        verdict.relation == *relation
+            && matches!(
+                verdict.status,
+                realization::RelationStatus::Failed { .. }
+                    | realization::RelationStatus::Blocked { .. }
+            )
     })
 }
 
@@ -156,6 +161,26 @@ fn compact_ash_observation_mutations_are_load_bearing() {
         &evaluate(&burn_projection),
         &compact_projection_policy()
     ));
+}
+
+#[test]
+fn compact_ash_observation_requires_exact_one_transition_extension() {
+    let world = world_with_two_ash();
+    let transition = CompactAsh {
+        ash_inputs: find_ash(&world),
+        fee_envelope: FeeEnvelope::default(),
+    };
+    let after = transition.apply(&world, next_order(&world)).unwrap();
+    let mut not_one = after.clone();
+    not_one
+        .history
+        .transitions
+        .push(after.history.transitions.last().unwrap().clone());
+
+    assert_eq!(
+        observe_compact_ash(&world, &transition, &not_one),
+        Err(ConformanceProjectionError::NotOneTransitionExtension),
+    );
 }
 
 #[test]

@@ -1,14 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use architecture::{
-    ARCHITECTURE, AssetId, BoundId, ObjectId, OperationId, ProjectionId, RootId, RootUse,
+    ARCHITECTURE, AssetId, BoundId, DeltaKind, ObjectId, OperationId, ProjectionId, RootId, RootUse,
 };
 
 use crate::{
-    Count, ObservedAsset, ObservedObject, ObservedObjectKind, ObservedObjectRef, ObservedOpenFlow,
-    ObservedRootEffect, ObservedSide, OperationObservation, ProtocolAmount, RealizationScope,
-    RelationId, RelationKind, RelationStatus, RelationSubject, RepresentationMode, TransactionSide,
-    derive, evaluate_operation,
+    Count, ObservedAsset, ObservedCanonicalDelta, ObservedObject, ObservedObjectKind,
+    ObservedObjectRef, ObservedOpenFlow, ObservedRootEffect, ObservedSide, OperationObservation,
+    ProtocolAmount, RealizationScope, RelationId, RelationKind, RelationStatus, RelationSubject,
+    RepresentationMode, TransactionSide, derive, evaluate_operation,
 };
 
 type ObservationMutation = Box<dyn Fn(&mut OperationObservation)>;
@@ -46,6 +46,19 @@ fn lbtc(side: ObservedSide, ordinal: u32, value: u64) -> ObservedObject {
 }
 
 fn valid_observation() -> OperationObservation {
+    let input0 = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 0,
+    };
+    let input1 = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 1,
+    };
+    let output0 = ObservedObjectRef {
+        side: ObservedSide::Output,
+        ordinal: 0,
+    };
+
     OperationObservation {
         operation: OperationId::CompactAsh,
         objects: vec![
@@ -55,6 +68,14 @@ fn valid_observation() -> OperationObservation {
         ],
         protocol_signers: BTreeSet::new(),
         sponsor_signers: BTreeSet::new(),
+        canonical_deltas: vec![ObservedCanonicalDelta {
+            asset: AssetId::U,
+            kind: DeltaKind::OwnerlessLateral,
+            amount: ProtocolAmount::new(100).unwrap(),
+            sources: vec![input0, input1],
+            destinations: vec![output0],
+            destruction_tag: None,
+        }],
         open_flows: Vec::new(),
         root_effects: Vec::new(),
         projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
@@ -128,6 +149,24 @@ fn conservation() -> RelationId {
     )
 }
 
+fn canonical_delta_policy() -> RelationId {
+    relation_id(
+        RelationKind::Conservation,
+        RelationSubject::Projection {
+            projection: ProjectionId::TransitionCertificate,
+        },
+    )
+}
+
+fn open_flow_policy() -> RelationId {
+    relation_id(
+        RelationKind::SponsorIsolation,
+        RelationSubject::Projection {
+            projection: ProjectionId::TransitionCertificate,
+        },
+    )
+}
+
 fn authorization() -> RelationId {
     relation_id(RelationKind::Authorization, RelationSubject::Operation)
 }
@@ -174,10 +213,13 @@ fn representation() -> RelationId {
 }
 
 fn failed(report: &crate::ConformanceReport, relation: &RelationId) -> bool {
-    report
-        .verdicts
-        .iter()
-        .any(|verdict| verdict.relation == *relation && verdict.status == RelationStatus::Failed)
+    report.verdicts.iter().any(|verdict| {
+        verdict.relation == *relation
+            && matches!(
+                verdict.status,
+                RelationStatus::Failed { .. } | RelationStatus::Blocked { .. }
+            )
+    })
 }
 
 #[test]
@@ -211,13 +253,7 @@ fn relation_cases() -> Vec<RelationCase> {
         (
             "one ash input",
             Box::new(|observation| {
-                observation.objects.retain(|object| {
-                    object.reference
-                        != ObservedObjectRef {
-                            side: ObservedSide::Input,
-                            ordinal: 1,
-                        }
-                });
+                observation.objects[1].kind = ObservedObjectKind::Declared(ObjectId::PlainLbtc);
             }),
             input_cardinality(),
         ),
@@ -231,9 +267,7 @@ fn relation_cases() -> Vec<RelationCase> {
         (
             "no ash output",
             Box::new(|observation| {
-                observation
-                    .objects
-                    .retain(|object| object.reference.side != ObservedSide::Output);
+                observation.objects[2].kind = ObservedObjectKind::Declared(ObjectId::PlainLbtc);
             }),
             output_cardinality(),
         ),
@@ -260,6 +294,25 @@ fn relation_cases() -> Vec<RelationCase> {
                 observation.objects[2].asset = ObservedAsset::Declared(AssetId::Lbtc);
             }),
             output_recognition(),
+        ),
+        (
+            "wrong canonical delta kind",
+            Box::new(|observation| {
+                observation.canonical_deltas[0].kind = DeltaKind::Lateral;
+            }),
+            canonical_delta_policy(),
+        ),
+        (
+            "undeclared open flow role",
+            Box::new(|observation| {
+                observation.open_flows.push(ObservedOpenFlow {
+                    kind: architecture::OpenFlowKind::RequestCreation,
+                    sources: Vec::new(),
+                    destinations: Vec::new(),
+                    fee: ProtocolAmount::ZERO,
+                });
+            }),
+            open_flow_policy(),
         ),
         (
             "foreign input object",
@@ -331,6 +384,16 @@ fn relation_cases() -> Vec<RelationCase> {
 }
 
 #[test]
+fn compact_conservation_is_blocked_when_recognition_fails() {
+    let mut observation = valid_observation();
+    observation.objects[2].asset = ObservedAsset::Declared(AssetId::Lbtc);
+    let report = evaluate(&observation);
+    let verdict = report.verdict(&conservation()).unwrap();
+
+    assert!(matches!(verdict.status, RelationStatus::Blocked { .. }));
+}
+
+#[test]
 fn compact_ash_sponsor_isolation_is_load_bearing() {
     for (name, mutate) in sponsor_cases() {
         let mut observation = valid_observation();
@@ -376,9 +439,16 @@ fn sponsor_cases() -> Vec<SponsorCase> {
             "duplicate sponsor source",
             Box::new(move |observation| {
                 observation.objects.push(lbtc(ObservedSide::Input, 2, 10));
+                observation.objects.push(lbtc(ObservedSide::Input, 3, 1));
                 observation.open_flows.push(ObservedOpenFlow {
                     kind: architecture::OpenFlowKind::FeeSponsor,
-                    sources: vec![source, source],
+                    sources: vec![
+                        source,
+                        ObservedObjectRef {
+                            side: ObservedSide::Input,
+                            ordinal: 3,
+                        },
+                    ],
                     destinations: Vec::new(),
                     fee: ProtocolAmount::new(10).unwrap(),
                 });

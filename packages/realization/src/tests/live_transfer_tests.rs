@@ -1,14 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use architecture::{
-    ARCHITECTURE, AssetId, BoundId, ObjectId, OperationId, ProjectionId, RootId, RootUse,
+    ARCHITECTURE, AssetId, BoundId, DeltaKind, ObjectId, OperationId, ProjectionId, RootId, RootUse,
 };
 
 use crate::{
-    Count, ObservedAsset, ObservedObject, ObservedObjectKind, ObservedObjectRef, ObservedOpenFlow,
-    ObservedRootEffect, ObservedSide, OperationObservation, OwnerId, ProtocolAmount,
-    RealizationScope, RelationId, RelationKind, RelationStatus, RelationSubject,
-    RepresentationMode, TransactionSide, derive, evaluate_operation,
+    Count, ObservedAsset, ObservedCanonicalDelta, ObservedObject, ObservedObjectKind,
+    ObservedObjectRef, ObservedOpenFlow, ObservedRootEffect, ObservedSide, OperationObservation,
+    OwnerId, ProtocolAmount, RealizationScope, RelationId, RelationKind, RelationStatus,
+    RelationSubject, RepresentationMode, TransactionSide, derive, evaluate_operation,
 };
 
 type ObservationMutation = Box<dyn Fn(&mut OperationObservation)>;
@@ -45,6 +45,19 @@ fn lbtc(side: ObservedSide, ordinal: u32, value: u64) -> ObservedObject {
 }
 
 fn valid_split_observation() -> OperationObservation {
+    let input0 = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 0,
+    };
+    let output0 = ObservedObjectRef {
+        side: ObservedSide::Output,
+        ordinal: 0,
+    };
+    let output1 = ObservedObjectRef {
+        side: ObservedSide::Output,
+        ordinal: 1,
+    };
+
     OperationObservation {
         operation: OperationId::TransferLive,
         objects: vec![
@@ -54,6 +67,14 @@ fn valid_split_observation() -> OperationObservation {
         ],
         protocol_signers: BTreeSet::from([ALICE]),
         sponsor_signers: BTreeSet::new(),
+        canonical_deltas: vec![ObservedCanonicalDelta {
+            asset: AssetId::U,
+            kind: DeltaKind::Lateral,
+            amount: ProtocolAmount::new(100).unwrap(),
+            sources: vec![input0],
+            destinations: vec![output0, output1],
+            destruction_tag: None,
+        }],
         open_flows: Vec::new(),
         root_effects: Vec::new(),
         projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
@@ -138,6 +159,15 @@ fn conservation() -> RelationId {
     )
 }
 
+fn canonical_delta_policy() -> RelationId {
+    relation_id(
+        RelationKind::Conservation,
+        RelationSubject::Projection {
+            projection: ProjectionId::TransitionCertificate,
+        },
+    )
+}
+
 fn sponsor() -> RelationId {
     relation_id(RelationKind::SponsorIsolation, RelationSubject::Sponsor)
 }
@@ -160,10 +190,13 @@ fn representation() -> RelationId {
 }
 
 fn failed(report: &crate::ConformanceReport, relation: &RelationId) -> bool {
-    report
-        .verdicts
-        .iter()
-        .any(|verdict| verdict.relation == *relation && verdict.status == RelationStatus::Failed)
+    report.verdicts.iter().any(|verdict| {
+        verdict.relation == *relation
+            && matches!(
+                verdict.status,
+                RelationStatus::Failed { .. } | RelationStatus::Blocked { .. }
+            )
+    })
 }
 
 #[test]
@@ -237,6 +270,13 @@ fn relation_cases() -> Vec<RelationCase> {
             "amount mismatch",
             Box::new(|observation| observation.objects[1].value = ProtocolAmount::new(41).unwrap()),
             conservation(),
+        ),
+        (
+            "wrong canonical delta kind",
+            Box::new(|observation| {
+                observation.canonical_deltas[0].kind = DeltaKind::OwnerlessLateral;
+            }),
+            canonical_delta_policy(),
         ),
         (
             "extra output beyond bound",

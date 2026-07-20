@@ -7,14 +7,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use realization::{
-    Count, ObservedAsset, ObservedObject, ObservedObjectKind, ObservedObjectRef, ObservedOpenFlow,
-    ObservedRootEffect, ObservedSide, OperationObservation, OwnerId, ProtocolAmount,
-    RepresentationMode,
+    Count, ObservedAsset, ObservedCanonicalDelta, ObservedObject, ObservedObjectKind,
+    ObservedObjectRef, ObservedOpenFlow, ObservedRootEffect, ObservedSide, OperationObservation,
+    OwnerId, ProtocolAmount, RepresentationMode,
 };
 
 use crate::{
-    Asset, BranchKind, CompactAsh, Meta, ReceiptClass, RootEdge, Sat, SignerSet, TransferReceipts,
-    TransitionCertificate, Utxo, World,
+    Asset, BranchKind, CompactAsh, Meta, OutPoint, ReceiptClass, RootEdge, Sat, SignerSet, Tag,
+    TransferReceipts, TransitionCertificate, Utxo, World,
 };
 
 /// Failure while projecting a model transition into realization facts.
@@ -29,6 +29,18 @@ pub enum ConformanceProjectionError {
     MissingCreatedObject(u64),
     UnknownFlowSource(u64),
     UnknownFlowDestination(u64),
+    UnknownDeltaSource(u64),
+    UnknownDeltaDestination(u64),
+    UndeclaredCanonicalAsset,
+    UnexpectedIssuanceAuthority,
+    HistoryLengthOverflow,
+    NotOneTransitionExtension,
+    HistoryPrefixChanged,
+    NonIncreasingOrder,
+    ConsumedCreatedOverlap,
+    ConsumedObjectSurvived(u64),
+    CreatedObjectAlreadyExisted(u64),
+    InvalidObservation(realization::RealizationError),
     AmountOutOfDomain,
     BoundOutOfDomain,
 }
@@ -78,11 +90,8 @@ fn observe_transition(
     sponsor_signers: BTreeSet<OwnerId>,
     representation: RepresentationMode,
 ) -> Result<OperationObservation, ConformanceProjectionError> {
-    let certificate = after
-        .history
-        .transitions
-        .last()
-        .ok_or(ConformanceProjectionError::NoTransition)?;
+    let certificate = appended_certificate(before, after)?;
+    validate_certificate_membership(before, after, certificate)?;
 
     if certificate.branch != expected_branch {
         return Err(ConformanceProjectionError::WrongBranch {
@@ -159,16 +168,90 @@ fn observe_transition(
         })
         .collect::<Result<Vec<_>, ConformanceProjectionError>>()?;
 
-    Ok(OperationObservation {
+    let observation = OperationObservation {
         operation: crate::manifest::branch_operation(certificate.branch),
         objects,
         protocol_signers,
         sponsor_signers,
+        canonical_deltas: observe_canonical_deltas(certificate, &reference_by_outpoint)?,
         open_flows,
         root_effects: observe_root_effects(certificate),
         projections: observe_projections(certificate),
         bounds: observe_bounds(&before.constants)?,
-    })
+    };
+
+    realization::validate_observation(observation)
+        .map_err(ConformanceProjectionError::InvalidObservation)
+}
+
+fn appended_certificate<'a>(
+    before: &World,
+    after: &'a World,
+) -> Result<&'a TransitionCertificate, ConformanceProjectionError> {
+    let expected_length = before
+        .history
+        .transitions
+        .len()
+        .checked_add(1)
+        .ok_or(ConformanceProjectionError::HistoryLengthOverflow)?;
+
+    if after.history.transitions.len() != expected_length {
+        return Err(ConformanceProjectionError::NotOneTransitionExtension);
+    }
+
+    if !after
+        .history
+        .transitions
+        .starts_with(&before.history.transitions)
+    {
+        return Err(ConformanceProjectionError::HistoryPrefixChanged);
+    }
+
+    after
+        .history
+        .transitions
+        .last()
+        .ok_or(ConformanceProjectionError::NoTransition)
+}
+
+fn validate_certificate_membership(
+    before: &World,
+    after: &World,
+    certificate: &TransitionCertificate,
+) -> Result<(), ConformanceProjectionError> {
+    if certificate.order <= before.history.last_order() {
+        return Err(ConformanceProjectionError::NonIncreasingOrder);
+    }
+
+    if !certificate.consumed.is_disjoint(&certificate.created) {
+        return Err(ConformanceProjectionError::ConsumedCreatedOverlap);
+    }
+
+    for outpoint in &certificate.consumed {
+        if !before.utxos.contains_key(outpoint) {
+            return Err(ConformanceProjectionError::MissingConsumedObject(*outpoint));
+        }
+
+        if after.utxos.contains_key(outpoint) {
+            return Err(ConformanceProjectionError::ConsumedObjectSurvived(
+                *outpoint,
+            ));
+        }
+    }
+
+    for outpoint in &certificate.created {
+        if before.utxos.contains_key(outpoint) {
+            return Err(ConformanceProjectionError::CreatedObjectAlreadyExisted(
+                *outpoint,
+            ));
+        }
+
+        if !after.utxos.contains_key(outpoint) {
+            return Err(ConformanceProjectionError::MissingCreatedObject(*outpoint));
+        }
+    }
+
+    Ok(())
 }
 
 fn observe_utxo(
@@ -244,6 +327,72 @@ fn observed_owner(utxo: &Utxo) -> Option<OwnerId> {
 
 fn observed_amount(amount: Sat) -> Result<ProtocolAmount, ConformanceProjectionError> {
     ProtocolAmount::new(amount.get()).map_err(|_| ConformanceProjectionError::AmountOutOfDomain)
+}
+
+fn observe_canonical_deltas(
+    certificate: &TransitionCertificate,
+    reference_by_outpoint: &BTreeMap<OutPoint, ObservedObjectRef>,
+) -> Result<Vec<ObservedCanonicalDelta>, ConformanceProjectionError> {
+    certificate
+        .canonical_deltas
+        .iter()
+        .map(|delta| {
+            if delta.authority_input.is_some() {
+                return Err(ConformanceProjectionError::UnexpectedIssuanceAuthority);
+            }
+
+            let asset = crate::manifest::declared_asset(delta.asset)
+                .ok_or(ConformanceProjectionError::UndeclaredCanonicalAsset)?;
+            let sources = delta
+                .source_inputs
+                .iter()
+                .map(|outpoint| {
+                    reference_by_outpoint
+                        .get(outpoint)
+                        .copied()
+                        .ok_or(ConformanceProjectionError::UnknownDeltaSource(*outpoint))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let destinations = delta
+                .destination_outputs
+                .iter()
+                .map(|outpoint| {
+                    reference_by_outpoint.get(outpoint).copied().ok_or(
+                        ConformanceProjectionError::UnknownDeltaDestination(*outpoint),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            Ok(ObservedCanonicalDelta {
+                asset,
+                kind: architecture_delta_kind(delta.kind),
+                amount: observed_amount(delta.amount)?,
+                sources,
+                destinations,
+                destruction_tag: delta.destruction_tag.map(architecture_tag),
+            })
+        })
+        .collect()
+}
+
+fn architecture_delta_kind(kind: crate::DeltaKind) -> architecture::DeltaKind {
+    match kind {
+        crate::DeltaKind::Issuance => architecture::DeltaKind::Issuance,
+        crate::DeltaKind::Destruction => architecture::DeltaKind::Destruction,
+        crate::DeltaKind::Lateral => architecture::DeltaKind::Lateral,
+        crate::DeltaKind::OwnerlessLateral => architecture::DeltaKind::OwnerlessLateral,
+    }
+}
+
+fn architecture_tag(tag: Tag) -> architecture::TagId {
+    match tag {
+        Tag::Burn => architecture::TagId::Burn,
+        Tag::Recon => architecture::TagId::Recon,
+        Tag::Redeem => architecture::TagId::Redeem,
+        Tag::Entitlement => architecture::TagId::Entitlement,
+        Tag::DistributionControlClose => architecture::TagId::DistributionControlClose,
+        Tag::DistributionResidue => architecture::TagId::DistributionResidue,
+    }
 }
 
 fn observe_root_effects(certificate: &TransitionCertificate) -> Vec<ObservedRootEffect> {

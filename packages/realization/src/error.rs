@@ -1,9 +1,9 @@
-use architecture::{BoundId, ManifestError, ObjectId, OperationId};
+use architecture::{BoundId, ManifestError, ObjectId, OperationId, RootId};
 use thiserror::Error;
 
 use crate::{
     ConstructibilityNodeId, DisclosureNodeId, ExprId, FactId, LifecycleNodeId, ObservedObjectRef,
-    RelationId, RepresentationMode, SemanticType,
+    RelationDependencyDeclaration, RelationId, RepresentationMode, SemanticType,
 };
 
 /// Architecture field whose declared shape no longer matches a realization weld.
@@ -186,6 +186,10 @@ pub enum RealizationError {
         dependency: RelationId,
     },
 
+    /// One typed relation dependency edge was declared more than once.
+    #[error("relation dependency {0:?} is declared more than once")]
+    DuplicateRelationDependency(RelationDependencyDeclaration),
+
     /// Declared relation dependencies contain at least one cycle.
     #[error("relation dependency graph contains one or more cycles")]
     RelationDependencyCycle { components: Vec<Vec<RelationId>> },
@@ -201,6 +205,26 @@ pub enum RealizationError {
     /// A flow or relation referenced an unknown observed object.
     #[error("observed object {0:?} is unknown")]
     UnknownObservedObject(ObservedObjectRef),
+
+    /// An observation contains the same object reference more than once.
+    #[error("observed object {0:?} appears more than once")]
+    DuplicateObservedObject(ObservedObjectRef),
+
+    /// An observation reuses one object reference inside a partition.
+    #[error("observed object reference is duplicated inside a partition")]
+    DuplicateObservedReference,
+
+    /// An observation lists one root effect more than once.
+    #[error("observed root {0} appears more than once")]
+    DuplicateObservedRoot(RootId),
+
+    /// An observed reference appears on the wrong transaction side.
+    #[error("observed reference {0:?} appears on the wrong side")]
+    WrongObservedReferenceSide(ObservedObjectRef),
+
+    /// Canonical-delta source or destination partitions overlap.
+    #[error("observed canonical delta partition overlaps")]
+    ObservedCanonicalPartitionOverlap,
 
     #[error("constructibility node {0:?} is declared more than once")]
     DuplicateConstructibilityNode(ConstructibilityNodeId),

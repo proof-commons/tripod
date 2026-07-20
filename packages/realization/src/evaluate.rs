@@ -2,21 +2,46 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use architecture::{AssetId, ObjectId, ProjectionId, ProjectionRule, RootId, RootUse};
-use petgraph::graph::{DiGraph, NodeIndex};
-
-use crate::{
-    CardinalityMaximum, ConstructibilityClass, Count, ObservedAsset, ObservedObject,
-    ObservedObjectKind, ObservedObjectRef, ObservedOpenFlow, ObservedSide, OperationObservation,
-    ProtocolAmount, RealizationError, Relation, RelationDeclaration, RelationEdge, RelationId,
+use architecture::{AssetId, DeltaKind, ObjectId, ProjectionId, ProjectionRule, RootId, RootUse};
+use petgraph::{
+    Direction,
+    graph::{DiGraph, NodeIndex},
+    visit::EdgeRef as _,
 };
 
-/// Result class for one relation.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+use crate::{
+    CardinalityMaximum, ConstructibilityClass, Count, ExpectedCanonicalDelta, ObservedAsset,
+    ObservedObject, ObservedObjectKind, ObservedObjectRef, ObservedOpenFlow, ObservedSide,
+    OperationObservation, ProtocolAmount, RealizationError, Relation, RelationDeclaration,
+    RelationEdge, RelationId,
+};
+
+/// Result class for one realization relation.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RelationStatus {
     Passed,
-    Failed,
-    DeclarationOnly,
+    Failed { reason: RelationFailure },
+    Blocked { prerequisites: Vec<RelationId> },
+    StaticallyValidated,
+}
+
+/// Focused runtime failure class.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RelationFailure {
+    CardinalityBelowMinimum,
+    CardinalityAboveMaximum,
+    UndeclaredObjectFamily,
+    ObjectRecognition,
+    AmountConservation,
+    MissingOwnerAuthorization,
+    UnexpectedProtocolAuthorization,
+    SponsorIsolation,
+    RootPolicy,
+    ProjectionPolicy,
+    Constructibility,
+    Representation,
+    CanonicalDeltaPolicy,
+    OpenFlowPolicy,
 }
 
 /// One stable relation verdict.
@@ -36,15 +61,30 @@ pub struct ConformanceReport {
 impl ConformanceReport {
     #[must_use]
     pub fn is_conformant(&self) -> bool {
-        self.verdicts
-            .iter()
-            .all(|verdict| verdict.status != RelationStatus::Failed)
+        self.verdicts.iter().all(|verdict| {
+            matches!(
+                verdict.status,
+                RelationStatus::Passed | RelationStatus::StaticallyValidated
+            )
+        })
     }
 
     pub fn failed_relations(&self) -> impl Iterator<Item = &RelationId> {
         self.verdicts.iter().filter_map(|verdict| {
-            (verdict.status == RelationStatus::Failed).then_some(&verdict.relation)
+            matches!(
+                verdict.status,
+                RelationStatus::Failed { .. } | RelationStatus::Blocked { .. }
+            )
+            .then_some(&verdict.relation)
         })
+    }
+
+    #[must_use]
+    pub fn verdict(&self, relation: &RelationId) -> Option<&RelationVerdict> {
+        self.verdicts
+            .binary_search_by(|verdict| verdict.relation.cmp(relation))
+            .ok()
+            .map(|index| &self.verdicts[index])
     }
 }
 
@@ -55,7 +95,8 @@ pub fn evaluate_operation(
     relation_evaluation_order: &[RelationId],
     observation: &OperationObservation,
 ) -> Result<ConformanceReport, RealizationError> {
-    let mut verdicts = Vec::new();
+    let observation = observation.clone().validate_and_normalize()?;
+    let mut status_by_relation = BTreeMap::new();
 
     for relation_id in relation_evaluation_order {
         let node = relation_node_by_id
@@ -68,13 +109,38 @@ pub fn evaluate_operation(
             continue;
         }
 
-        verdicts.push(RelationVerdict {
-            relation: declaration.id.clone(),
-            status: evaluate_relation(&declaration.relation, observation)?,
-        });
+        let mut blocking = relation_graph
+            .edges_directed(node, Direction::Incoming)
+            .filter_map(|edge| {
+                let prerequisite = &relation_graph[edge.source()].id;
+
+                match status_by_relation.get(prerequisite) {
+                    Some(RelationStatus::Passed | RelationStatus::StaticallyValidated) => None,
+                    Some(RelationStatus::Failed { .. } | RelationStatus::Blocked { .. }) => {
+                        Some(prerequisite.clone())
+                    }
+                    None => Some(prerequisite.clone()),
+                }
+            })
+            .collect::<Vec<_>>();
+        blocking.sort();
+        blocking.dedup();
+
+        let status = if blocking.is_empty() {
+            evaluate_relation(&declaration.relation, &observation)?
+        } else {
+            RelationStatus::Blocked {
+                prerequisites: blocking,
+            }
+        };
+
+        status_by_relation.insert(declaration.id.clone(), status);
     }
 
-    verdicts.sort_by(|left, right| left.relation.cmp(&right.relation));
+    let verdicts = status_by_relation
+        .into_iter()
+        .map(|(relation, status)| RelationVerdict { relation, status })
+        .collect();
 
     Ok(ConformanceReport {
         operation: observation.operation,
@@ -82,18 +148,22 @@ pub fn evaluate_operation(
     })
 }
 
+#[allow(clippy::too_many_lines)]
 fn evaluate_relation(
     relation: &Relation,
     observation: &OperationObservation,
 ) -> Result<RelationStatus, RealizationError> {
-    let passed = match relation {
+    match relation {
         Relation::Cardinality {
             side,
             object,
             minimum,
             maximum,
         } => {
-            let count = Count::new(u64::try_from(declared_objects(observation, *side, *object).count()).map_err(|_| RealizationError::CountOverflow)?);
+            let count = Count::new(
+                u64::try_from(declared_objects(observation, *side, *object).count())
+                    .map_err(|_| RealizationError::CountOverflow)?,
+            );
             let maximum = match maximum {
                 CardinalityMaximum::Exact(value) => *value,
                 CardinalityMaximum::Bound(bound) => observation
@@ -103,19 +173,31 @@ fn evaluate_relation(
                     .ok_or(RealizationError::MissingBoundValue(*bound))?,
             };
 
-            count >= *minimum && count <= maximum
+            if count < *minimum {
+                status(false, RelationFailure::CardinalityBelowMinimum)
+            } else if count > maximum {
+                status(false, RelationFailure::CardinalityAboveMaximum)
+            } else {
+                status(true, RelationFailure::CardinalityBelowMinimum)
+            }
         }
-        Relation::AllowedObjectFamilies { side, allowed } => observation
-            .objects
-            .iter()
-            .filter(|object| object.reference.side == *side)
-            .all(|object| matches!(object.kind, ObservedObjectKind::Declared(kind) if allowed.contains(&kind))),
+        Relation::AllowedObjectFamilies { side, allowed } => status(
+            observation
+                .objects
+                .iter()
+                .filter(|object| object.reference.side == *side)
+                .all(|object| matches!(object.kind, ObservedObjectKind::Declared(kind) if allowed.contains(&kind))),
+            RelationFailure::UndeclaredObjectFamily,
+        ),
         Relation::Recognition {
             side,
             object,
             asset,
-        } => declared_objects(observation, *side, *object)
-            .all(|observed| observed.asset == ObservedAsset::Declared(*asset)),
+        } => status(
+            declared_objects(observation, *side, *object)
+                .all(|observed| observed.asset == ObservedAsset::Declared(*asset)),
+            RelationFailure::ObjectRecognition,
+        ),
         Relation::AmountConservation {
             asset,
             input_objects,
@@ -124,43 +206,147 @@ fn evaluate_relation(
             let input = sum_selected_amounts(observation, ObservedSide::Input, *asset, input_objects)?;
             let output = sum_selected_amounts(observation, ObservedSide::Output, *asset, output_objects)?;
 
-            input == output
+            status(input == output, RelationFailure::AmountConservation)
         }
         Relation::OwnerAuthorization { object } => {
             let required = declared_objects(observation, ObservedSide::Input, *object)
                 .filter_map(|observed| observed.owner)
                 .collect::<BTreeSet<_>>();
 
-            required.is_subset(&observation.protocol_signers)
+            status(
+                required.is_subset(&observation.protocol_signers),
+                RelationFailure::MissingOwnerAuthorization,
+            )
         }
-        Relation::PermissionlessAuthorization => observation.protocol_signers.is_empty(),
-        Relation::SponsorIsolation => sponsor_is_isolated(observation)?,
-        Relation::RootPolicy { expected } => root_policy_holds(expected, observation),
-        Relation::ProjectionPolicy { expected } => projection_policy_holds(expected, observation),
+        Relation::PermissionlessAuthorization => status(
+            observation.protocol_signers.is_empty(),
+            RelationFailure::UnexpectedProtocolAuthorization,
+        ),
+        Relation::SponsorIsolation => status(
+            sponsor_is_isolated(observation)?,
+            RelationFailure::SponsorIsolation,
+        ),
+        Relation::RootPolicy { expected } => {
+            status(root_policy_holds(expected, observation), RelationFailure::RootPolicy)
+        }
+        Relation::ProjectionPolicy { expected } => status(
+            projection_policy_holds(expected, observation),
+            RelationFailure::ProjectionPolicy,
+        ),
+        Relation::CanonicalDeltaPolicy { expected } => status(
+            canonical_delta_policy_holds(expected, observation),
+            RelationFailure::CanonicalDeltaPolicy,
+        ),
+        Relation::OpenFlowPolicy { allowed } => status(
+            observation
+                .open_flows
+                .iter()
+                .all(|flow| allowed.contains(&flow.kind)),
+            RelationFailure::OpenFlowPolicy,
+        ),
         Relation::Constructibility { class } => match class {
-            ConstructibilityClass::PublicPermissionless => observation.protocol_signers.is_empty(),
+            ConstructibilityClass::PublicPermissionless => status(
+                observation.protocol_signers.is_empty(),
+                RelationFailure::Constructibility,
+            ),
             ConstructibilityClass::OwnersOf { object } => {
                 let required = declared_objects(observation, ObservedSide::Input, *object)
                     .filter_map(|observed| observed.owner)
                     .collect::<BTreeSet<_>>();
 
-                required.is_subset(&observation.protocol_signers)
+                status(
+                    required.is_subset(&observation.protocol_signers),
+                    RelationFailure::Constructibility,
+                )
             }
         },
-        Relation::Representation { object, allowed } => observation.objects.iter().all(|observed| {
-            observed.kind != ObservedObjectKind::Declared(*object)
-                || allowed.contains(&observed.representation)
-        }),
+        Relation::Representation { object, allowed } => status(
+            observation.objects.iter().all(|observed| {
+                observed.kind != ObservedObjectKind::Declared(*object)
+                    || allowed.contains(&observed.representation)
+            }),
+            RelationFailure::Representation,
+        ),
         Relation::LifecycleExit { .. } | Relation::ExpressionPredicate { .. } => {
-            return Ok(RelationStatus::DeclarationOnly);
+            Ok(RelationStatus::StaticallyValidated)
         }
-    };
+    }
+}
 
+#[allow(clippy::unnecessary_wraps)]
+fn status(passed: bool, reason: RelationFailure) -> Result<RelationStatus, RealizationError> {
     Ok(if passed {
         RelationStatus::Passed
     } else {
-        RelationStatus::Failed
+        RelationStatus::Failed { reason }
     })
+}
+
+fn canonical_delta_policy_holds(
+    expected: &BTreeSet<ExpectedCanonicalDelta>,
+    observation: &OperationObservation,
+) -> bool {
+    let actual = observation
+        .canonical_deltas
+        .iter()
+        .map(|delta| ExpectedCanonicalDelta {
+            asset: delta.asset,
+            kind: delta.kind,
+            destruction_tag: delta.destruction_tag,
+        })
+        .collect::<BTreeSet<_>>();
+
+    &actual == expected
+        && expected.iter().all(|delta| match delta.kind {
+            DeltaKind::OwnerlessLateral => canonical_delta_membership_holds(
+                observation,
+                ObjectId::Ash,
+                DeltaKind::OwnerlessLateral,
+            ),
+            DeltaKind::Lateral => canonical_delta_membership_holds(
+                observation,
+                ObjectId::ReceiptLive,
+                DeltaKind::Lateral,
+            ),
+            _ => true,
+        })
+}
+
+fn canonical_delta_membership_holds(
+    observation: &OperationObservation,
+    object: ObjectId,
+    expected_kind: DeltaKind,
+) -> bool {
+    let protocol_refs = observation
+        .objects
+        .iter()
+        .filter(|observed| observed.kind == ObservedObjectKind::Declared(object))
+        .map(|observed| observed.reference)
+        .collect::<BTreeSet<_>>();
+    let source_refs = observation
+        .canonical_deltas
+        .iter()
+        .filter(|delta| delta.kind == expected_kind)
+        .flat_map(|delta| delta.sources.iter().copied())
+        .collect::<BTreeSet<_>>();
+    let destination_refs = observation
+        .canonical_deltas
+        .iter()
+        .filter(|delta| delta.kind == expected_kind)
+        .flat_map(|delta| delta.destinations.iter().copied())
+        .collect::<BTreeSet<_>>();
+    let expected_sources = protocol_refs
+        .iter()
+        .copied()
+        .filter(|reference| reference.side == ObservedSide::Input)
+        .collect::<BTreeSet<_>>();
+    let expected_destinations = protocol_refs
+        .iter()
+        .copied()
+        .filter(|reference| reference.side == ObservedSide::Output)
+        .collect::<BTreeSet<_>>();
+
+    source_refs == expected_sources && destination_refs == expected_destinations
 }
 
 fn declared_objects(
