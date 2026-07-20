@@ -61,12 +61,9 @@ pub enum RealizationError {
         dependency: ExprId,
     },
 
-    /// Declared expression dependencies contain a cycle.
-    #[error(
-        "expression dependency graph contains a cycle involving {} expression(s)",
-        nodes.len()
-    )]
-    ExpressionDependencyCycle { nodes: Vec<ExprId> },
+    /// Declared expression dependencies contain at least one cycle.
+    #[error("expression dependency graph contains one or more cycles")]
+    ExpressionDependencyCycle { components: Vec<Vec<ExprId>> },
 
     /// One expression's declared type differs from its node type.
     #[error("expression {expression:?} has type {actual:?}, expected {expected:?}")]
@@ -130,6 +127,6 @@ pub enum RealizationError {
 
     /// One expression has too many ordered operands to record in the
     /// typed dependency edge.
-    #[error("expression {expression:?} has too many operands: {count}")]
-    TooManyExpressionOperands { expression: ExprId, count: usize },
+    #[error("expression {expression:?} has too many operands")]
+    TooManyExpressionOperands { expression: ExprId },
 }

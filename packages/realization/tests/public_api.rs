@@ -10,9 +10,10 @@ use std::collections::BTreeSet;
 
 use architecture::{ARCHITECTURE, AssetId, ObjectId, OperationId};
 use realization::{
-    ArchitectureBinding, ExprId, ExpressionDeclaration, ExpressionNode, ExpressionRegistry,
-    ExpressionRole, FactId, FactValues, OwnerId, ProofAlternativeId, ProofKind, RealizationScope,
-    RelationId, RelationKind, RelationSubject, SemanticType, SemanticValue, TransactionSide,
+    ArchitectureBinding, DependencyEdge, ExprId, ExpressionDeclaration, ExpressionNode,
+    ExpressionRegistry, ExpressionRole, FactId, FactValues, OwnerId, ProofAlternativeId, ProofKind,
+    RealizationScope, RelationId, RelationKind, RelationSubject, SemanticType, SemanticValue,
+    TransactionSide,
 };
 
 #[test]
@@ -58,6 +59,37 @@ fn stable_relation_keys_use_architecture_owned_ids() {
 
 #[test]
 fn downstream_code_can_evaluate_typed_authorization_without_local_handles() {
+    let (registry, owners, signers, predicate) = authorization_fixture();
+    let alice = OwnerId([1_u8; 32]);
+    let bob = OwnerId([2_u8; 32]);
+    let mut facts = FactValues::default();
+
+    facts
+        .insert(
+            owners,
+            SemanticValue::OwnerSet(BTreeSet::from([alice, bob])),
+        )
+        .unwrap();
+
+    facts
+        .insert(
+            signers,
+            SemanticValue::OwnerSet(BTreeSet::from([alice, bob])),
+        )
+        .unwrap();
+
+    assert!(registry.evaluate(&facts).unwrap().bool(&predicate).unwrap());
+}
+
+#[test]
+fn dependency_graph_is_direct_petgraph() {
+    let (registry, _, _, _) = authorization_fixture();
+    let graph: &petgraph::graph::DiGraph<ExprId, DependencyEdge, u32> = registry.dependency_graph();
+
+    assert_eq!(graph.node_count(), registry.len());
+}
+
+fn authorization_fixture() -> (ExpressionRegistry, FactId, FactId, ExprId) {
     let relation = RelationId::new(
         OperationId::TransferLive,
         RelationKind::Authorization,
@@ -96,23 +128,6 @@ fn downstream_code_can_evaluate_typed_authorization_without_local_handles() {
         },
     ])
     .unwrap();
-    let alice = OwnerId([1_u8; 32]);
-    let bob = OwnerId([2_u8; 32]);
-    let mut facts = FactValues::default();
 
-    facts
-        .insert(
-            owners,
-            SemanticValue::OwnerSet(BTreeSet::from([alice, bob])),
-        )
-        .unwrap();
-
-    facts
-        .insert(
-            signers,
-            SemanticValue::OwnerSet(BTreeSet::from([alice, bob])),
-        )
-        .unwrap();
-
-    assert!(registry.evaluate(&facts).unwrap().bool(&predicate).unwrap());
+    (registry, owners, signers, predicate)
 }

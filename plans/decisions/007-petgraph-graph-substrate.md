@@ -11,7 +11,7 @@
 
 ## Choice · `rule:graph:petgraph`
 
-Use `petgraph` as the repository-wide graph data-structure and graph-algorithm
+Use `petgraph` as the repository-wide graph data structure and graph algorithm
 dependency.
 
 Every first-party structure whose semantics are nodes connected by typed edges
@@ -35,13 +35,14 @@ framework is introduced.
 
 ## Dependency · `rule:graph:dependency`
 
-The reviewed initial release is:
+The selected release is:
 
 ```text
 petgraph 0.8.3
 ```
 
-It is workspace-owned and enabled with its complete feature surface.
+It is workspace-owned, exact-version pinned, and enabled with its complete
+selected feature surface.
 
 The workspace uses Petgraph's default features and explicitly enables every
 optional public feature selected for this release, including serialization,

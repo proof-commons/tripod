@@ -18,8 +18,9 @@ use crate::{Count, ExprId, FactId, ProtocolAmount, RealizationError, SemanticTyp
 /// Typed dependency edge in an expression graph.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DependencyEdge {
-    Operand { position: u16 },
-    Condition,
+    Operand { position: u32 },
+    Left,
+    Right,
     RequiredOwners,
     PresentedSigners,
 }
@@ -84,8 +85,8 @@ impl ExpressionNode {
                 .collect(),
 
             Self::Equal { left, right } | Self::LessOrEqual { left, right } => Ok(vec![
-                (left.clone(), DependencyEdge::Operand { position: 0 }),
-                (right.clone(), DependencyEdge::Operand { position: 1 }),
+                (left.clone(), DependencyEdge::Left),
+                (right.clone(), DependencyEdge::Right),
             ]),
 
             Self::OwnerSubset {
@@ -502,26 +503,34 @@ fn topological_expression_order(
 ) -> Result<Vec<ExprId>, RealizationError> {
     match toposort(graph, None) {
         Ok(nodes) => Ok(nodes.into_iter().map(|node| graph[node].clone()).collect()),
-        Err(cycle) => Err(RealizationError::ExpressionDependencyCycle {
-            nodes: cycle_component_ids(graph, cycle.node_id()),
+        Err(_cycle) => Err(RealizationError::ExpressionDependencyCycle {
+            components: cyclic_components(graph),
         }),
     }
 }
 
-fn cycle_component_ids(
-    graph: &DiGraph<ExprId, DependencyEdge, u32>,
-    cycle_node: NodeIndex<u32>,
-) -> Vec<ExprId> {
-    let mut component = kosaraju_scc(graph)
+fn cyclic_components(graph: &DiGraph<ExprId, DependencyEdge, u32>) -> Vec<Vec<ExprId>> {
+    let mut components = kosaraju_scc(graph)
         .into_iter()
-        .find(|nodes| nodes.contains(&cycle_node))
-        .unwrap_or_else(|| vec![cycle_node])
-        .into_iter()
-        .map(|node| graph[node].clone())
+        .filter(|component| {
+            component.len() > 1
+                || component
+                    .first()
+                    .is_some_and(|node| graph.find_edge(*node, *node).is_some())
+        })
+        .map(|component| {
+            let mut ids = component
+                .into_iter()
+                .map(|node| graph[node].clone())
+                .collect::<Vec<_>>();
+
+            ids.sort();
+            ids
+        })
         .collect::<Vec<_>>();
 
-    component.sort();
-    component
+    components.sort();
+    components
 }
 
 fn canonical_graph_edges(
@@ -721,10 +730,9 @@ fn evaluate_owner_subset(
 fn operand_position(
     expression: &ExprId,
     position: usize,
-    count: usize,
-) -> Result<u16, RealizationError> {
-    u16::try_from(position).map_err(|_| RealizationError::TooManyExpressionOperands {
+    _count: usize,
+) -> Result<u32, RealizationError> {
+    u32::try_from(position).map_err(|_| RealizationError::TooManyExpressionOperands {
         expression: expression.clone(),
-        count,
     })
 }

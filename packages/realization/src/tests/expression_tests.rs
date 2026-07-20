@@ -1,6 +1,5 @@
-use std::collections::BTreeSet;
-
 use architecture::{AssetId, ObjectId, OperationId, ProjectionId};
+use petgraph::visit::EdgeRef;
 
 use crate::{
     Count, ExprId, ExpressionDeclaration, ExpressionNode, ExpressionRegistry, ExpressionRole,
@@ -129,6 +128,50 @@ fn expression_construction_is_insertion_order_independent() {
 }
 
 #[test]
+fn canonical_graph_construction_ignores_declaration_order() {
+    let relation = transfer_conservation_relation();
+    let declarations = vec![
+        fact_expression(amount_fact(TransactionSide::Input)),
+        fact_expression(amount_fact(TransactionSide::Output)),
+        ExpressionDeclaration {
+            id: ExprId::relation(relation, ExpressionRole::Predicate),
+            ty: SemanticType::Bool,
+            node: ExpressionNode::Equal {
+                left: ExprId::fact(amount_fact(TransactionSide::Input)),
+                right: ExprId::fact(amount_fact(TransactionSide::Output)),
+            },
+        },
+    ];
+
+    let mut reversed = declarations.clone();
+    reversed.reverse();
+
+    let first = ExpressionRegistry::new(declarations).unwrap();
+    let second = ExpressionRegistry::new(reversed).unwrap();
+
+    assert_eq!(graph_snapshot(&first), graph_snapshot(&second));
+    assert_eq!(first.evaluation_order(), second.evaluation_order());
+}
+
+#[test]
+fn petgraph_topology_orders_dependencies_before_consumers() {
+    let registry = conservation_registry();
+    let input = ExprId::fact(amount_fact(TransactionSide::Input));
+    let output = ExprId::fact(amount_fact(TransactionSide::Output));
+    let predicate = ExprId::relation(transfer_conservation_relation(), ExpressionRole::Predicate);
+    let position = |id: &ExprId| {
+        registry
+            .evaluation_order()
+            .iter()
+            .position(|candidate| candidate == id)
+            .unwrap()
+    };
+
+    assert!(position(&input) < position(&predicate));
+    assert!(position(&output) < position(&predicate));
+}
+
+#[test]
 fn unresolved_expression_dependency_is_rejected() {
     let relation = transfer_conservation_relation();
     let predicate = ExprId::relation(relation, ExpressionRole::Predicate);
@@ -187,16 +230,14 @@ fn dependency_cycle_is_rejected_in_stable_order() {
     ])
     .unwrap_err();
 
-    let RealizationError::ExpressionDependencyCycle { nodes } = error else {
+    let RealizationError::ExpressionDependencyCycle { components } = error else {
         panic!("expected a dependency-cycle failure");
     };
 
-    assert_eq!(
-        nodes,
-        BTreeSet::from([first, second])
-            .into_iter()
-            .collect::<Vec<_>>(),
-    );
+    let mut expected = vec![first, second];
+    expected.sort();
+
+    assert_eq!(components, vec![expected]);
 }
 
 #[test]
@@ -375,4 +416,28 @@ fn count_comparison_is_distinct_from_amount_comparison() {
         .unwrap();
 
     assert!(registry.evaluate(&two).unwrap().bool(&predicate).unwrap());
+}
+
+fn graph_snapshot(
+    registry: &ExpressionRegistry,
+) -> (Vec<ExprId>, Vec<(ExprId, ExprId, crate::DependencyEdge)>) {
+    let graph = registry.dependency_graph();
+    let nodes = graph
+        .node_indices()
+        .map(|node| graph[node].clone())
+        .collect::<Vec<_>>();
+    let mut edges = graph
+        .edge_references()
+        .map(|edge| {
+            (
+                graph[edge.source()].clone(),
+                graph[edge.target()].clone(),
+                *edge.weight(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    edges.sort();
+
+    (nodes, edges)
 }
