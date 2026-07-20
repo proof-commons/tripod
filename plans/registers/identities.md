@@ -8,6 +8,7 @@ It is a planning aid, not a substitute for typed identity definitions.
 | anchor-set hash | architecture/weld | imported anchor set | architecture semantics |
 | architecture semantic hash | architecture | complete canonical architecture body | authenticity by itself |
 | architecture behavioural hash | architecture | denotation projection | complete publication bytes |
+| Petgraph node/edge index | graph-owning package, local only | one in-memory graph position | semantic identity, publication identity, or evidence identity |
 | realization identity | realization | target-independent semantic graph | architecture identity |
 | compiler configuration identity | compiler | analysis and policy choices | realization identity |
 | analyzed-program identity | compiler | one normalized relation analysis | linked bundle |

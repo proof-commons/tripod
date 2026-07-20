@@ -48,13 +48,16 @@ pub use declassification::{
     DeclassificationAnalysis, DisclosureEdge, DisclosureNode, DisclosureReason,
     phase1_declassification,
 };
-pub use derive::{ScopedRealizationSpec, derive};
+pub use derive::{
+    ScopedRealizationProjection, ScopedRealizationSpec, derive, project_scoped_realization,
+};
 pub use domain::{Count, PROTOCOL_AMOUNT_LIMIT_EXCLUSIVE, ProtocolAmount, RepresentationMode};
 pub use error::{ArchitectureMismatchField, RealizationError};
 pub use evaluate::{ConformanceReport, RelationStatus, RelationVerdict, evaluate_operation};
 pub use expression::{
-    DependencyEdge, EvaluatedExpressions, ExpressionDeclaration, ExpressionNode, FactValues,
-    build_expression_graph, evaluate_expressions,
+    DependencyEdge, EvaluatedExpressions, ExpressionDeclaration, ExpressionDependencyProjection,
+    ExpressionGraphProjection, ExpressionNode, FactValues, build_expression_graph,
+    evaluate_expressions, project_expression_graph,
 };
 pub use identity::{
     ExprId, ExpressionRole, FactId, ProofAlternativeId, ProofKind, RelationId, RelationKind,
@@ -66,7 +69,8 @@ pub use observation::{
 };
 pub use operation::OperationRealization;
 pub use relation::{
-    CardinalityMaximum, ConstructibilityClass, Relation, RelationDeclaration, RelationEdge,
+    CardinalityMaximum, ConstructibilityClass, Relation, RelationDeclaration,
+    RelationDependencyProjection, RelationEdge, RelationGraphProjection, project_relation_graph,
 };
 pub use scope::{CompleteRealizationScope, RealizationScope};
 pub use value::{OwnerId, SemanticType, SemanticValue};

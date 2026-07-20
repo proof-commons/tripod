@@ -167,6 +167,26 @@ fn failed(report: &crate::ConformanceReport, relation: &RelationId) -> bool {
 }
 
 #[test]
+fn relation_declaration_order_does_not_change_relation_graph_projection() {
+    let realization = pilot_realization();
+    let declarations = realization
+        .operations
+        .get(&OperationId::TransferLive)
+        .unwrap()
+        .relations
+        .clone();
+    let mut reversed = declarations.clone();
+    reversed.reverse();
+    let first = crate::relation::build_relation_graph(declarations).unwrap();
+    let second = crate::relation::build_relation_graph(reversed).unwrap();
+
+    assert_eq!(
+        crate::relation::project_relation_graph(&first.0),
+        crate::relation::project_relation_graph(&second.0),
+    );
+}
+
+#[test]
 fn valid_live_transfer_satisfies_every_runtime_relation() {
     let report = evaluate(&valid_split_observation());
 

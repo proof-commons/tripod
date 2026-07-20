@@ -1,5 +1,7 @@
 use std::{fs, path::Path};
 
+use petgraph::Direction;
+
 use crate::{
     LabelErrorCode,
     census::{CensusGroup, RepositoryCensus},
@@ -7,7 +9,9 @@ use crate::{
     markdown::{InlineCodeContext, scan_markdown},
     model_labels_json,
     owner::{ImportedLabel, LabelOwner},
-    repository::{RepositoryLabels, generate_registers},
+    repository::{
+        CitationClass, LabelGraphEdge, LabelGraphNode, RepositoryLabels, generate_registers,
+    },
     rust_source::harvest_model,
 };
 
@@ -196,7 +200,14 @@ fn model_harvest_enforces_owner_relative_forms() {
 
     // The parenthesized imported form is harvested; the bare imported
     // form fails.
-    assert_eq!(harvest.imports.len(), 1);
+    assert_eq!(
+        harvest
+            .citations
+            .iter()
+            .filter(|citation| citation.class == CitationClass::AuthoredImported)
+            .count(),
+        1,
+    );
     assert!(harvest.diagnostics.iter().any(|diagnostic| {
         diagnostic.code == LabelErrorCode::InvalidImportedCitationForm && diagnostic.line == 5
     }));
@@ -403,6 +414,79 @@ fn fixture_root(realization: &str) -> tempfile::TempDir {
     fs::write(root.join("docs/attestation/realization.md"), realization)
         .expect("realization source");
     directory
+}
+
+#[test]
+fn repository_analysis_exposes_a_direct_petgraph_graph() {
+    let directory = fixture_root("# Realization\n`sec:fixture`\n(`sec:fixture`)\n");
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
+    let graph: &petgraph::graph::DiGraph<LabelGraphNode, LabelGraphEdge, u32> = &labels.graph;
+
+    assert!(graph.node_count() > 0);
+}
+
+#[test]
+fn every_authored_citation_resolves_to_one_mint_edge() {
+    let directory = fixture_root(concat!(
+        "# Realization\n",
+        "`sec:fixture`\n",
+        "(`sec:fixture`)\n",
+        "Body cite [A-def:model:known].\n",
+    ));
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
+
+    for node in labels.graph.node_indices() {
+        let LabelGraphNode::Citation(citation) = &labels.graph[node] else {
+            continue;
+        };
+
+        if citation.class == CitationClass::SyntheticArchitecture {
+            continue;
+        }
+
+        assert_eq!(
+            labels
+                .graph
+                .edges_directed(node, Direction::Outgoing)
+                .count(),
+            1,
+        );
+    }
+}
+
+#[test]
+fn self_qualified_import_is_rejected_by_the_graph_builder() {
+    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let root = directory.path();
+
+    fs::write(
+        root.join("adr/013-fixture.md"),
+        concat!(
+            "# ADR\n",
+            "`rule:fixture:defined`\n",
+            "(`[ADR013-rule:fixture:defined]`)\n",
+        ),
+    )
+    .unwrap();
+
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(root));
+
+    assert!(
+        labels
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.code == LabelErrorCode::InvalidImportedCitationForm })
+    );
+}
+
+#[test]
+fn petgraph_serde_feature_is_available_for_noncanonical_diagnostics() {
+    let mut graph = petgraph::graph::DiGraph::<u8, u8, u32>::new();
+    graph.add_node(1);
+
+    let rendered = serde_json::to_string(&graph).unwrap();
+
+    assert!(!rendered.is_empty());
 }
 
 #[test]

@@ -33,5 +33,10 @@ pinned attestation anchor set, and generated-publication freshness.
 - `plans/labels/specification.md`; and
 - `plans/labels/realization.md`.
 
-Plan-local labels remain non-normative and are not linted. The `artifacts`
-package remains responsible for writing `packages/model/generated/model_labels.json`.
+Plan-local labels remain non-normative and non-identity-bearing, but their
+mints, citations, and owner crossings are mechanically checked under ADR-013.
+
+The complete source-reference relation is stored and validated as a direct
+Petgraph graph. Stable owner/label keys are semantic identities; Petgraph
+indices are local handles only. The `artifacts` package remains responsible for
+writing `packages/model/generated/model_labels.json`.

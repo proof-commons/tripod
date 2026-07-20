@@ -35,7 +35,9 @@ The package reads typed architecture labels and documentation source files:
 ## Outputs · `sec:labels-package:outputs`
 
 It produces typed owner registries, diagnostics, one JSON check report,
-deterministic Layer-0 and v13 registers, and the model-label JSON derivation.
+deterministic upstream registers, and the model-label JSON derivation.
+The package owns a direct Petgraph graph whose nodes are mints and citations
+and whose edges resolve each citation to exactly one mint.
 
 ## Scoped derivations · `rule:labels-package:scopes`
 

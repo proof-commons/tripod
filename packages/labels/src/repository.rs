@@ -1,10 +1,17 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
     io::Write,
     path::{Path, PathBuf},
 };
 
+use architecture::{InvariantClauseId, WitnessId};
+use petgraph::{
+    Direction,
+    algo::is_cyclic_directed,
+    graph::{DiGraph, NodeIndex},
+    visit::EdgeRef,
+};
 use thiserror::Error;
 
 use crate::{
@@ -20,17 +27,98 @@ use crate::{
     source::{SourceLocation, relative_to},
 };
 
+/// Class of one citation occurrence.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CitationClass {
+    AuthoredSameOwner,
+    AuthoredImported,
+    SyntheticArchitecture,
+}
+
+/// Stable origin of one citation.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CitationOrigin {
+    Source {
+        owner: LabelOwner,
+        location: SourceLocation,
+    },
+    ArchitectureWitness(WitnessId),
+    ArchitectureClause(InvariantClauseId),
+}
+
+/// One citation occurrence.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LabelCitation {
+    pub source_owner: LabelOwner,
+    pub target: ImportedLabel,
+    pub origin: CitationOrigin,
+    pub class: CitationClass,
+}
+
+/// Complete stable identity of one label-graph node.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum LabelGraphNodeId {
+    Mint {
+        owner: LabelOwner,
+        label: Label,
+    },
+    Citation {
+        origin: CitationOrigin,
+        target_owner: LabelOwner,
+        label: Label,
+    },
+}
+
+/// Direct Petgraph node weight.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LabelGraphNode {
+    Mint(LabelMint),
+    Citation(LabelCitation),
+}
+
+impl LabelGraphNode {
+    #[must_use]
+    pub fn id(&self) -> LabelGraphNodeId {
+        match self {
+            Self::Mint(mint) => LabelGraphNodeId::Mint {
+                owner: mint.owner.clone(),
+                label: mint.label.clone(),
+            },
+            Self::Citation(citation) => LabelGraphNodeId::Citation {
+                origin: citation.origin.clone(),
+                target_owner: citation.target.owner.clone(),
+                label: citation.target.label.clone(),
+            },
+        }
+    }
+}
+
+/// Direct Petgraph citation-resolution edge.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum LabelGraphEdge {
+    ResolvesTo,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct LabelGraphEdgeProjection {
+    pub source: LabelGraphNodeId,
+    pub target: LabelGraphNodeId,
+    pub edge: LabelGraphEdge,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LabelGraphProjection {
+    pub nodes: Vec<LabelGraphNodeId>,
+    pub edges: Vec<LabelGraphEdgeProjection>,
+}
+
 #[derive(Default)]
 pub struct RepositoryLabels {
     pub registries: RegistrySet,
     pub diagnostics: Vec<LabelDiagnostic>,
-    realization_internal: Vec<(Label, SourceLocation)>,
-    adr_internal: Vec<(u16, Label, SourceLocation)>,
-    model_internal: Vec<(Label, SourceLocation)>,
-    plan_internal: Vec<(Label, SourceLocation)>,
-    doc_internal: Vec<(Label, SourceLocation)>,
-    crate_internal: Vec<(String, Label, SourceLocation)>,
-    imports: Vec<(ImportedLabel, SourceLocation)>,
+    pub graph: DiGraph<LabelGraphNode, LabelGraphEdge, u32>,
+    pub graph_node_by_id: BTreeMap<LabelGraphNodeId, NodeIndex<u32>>,
+    pending_citations: Vec<LabelCitation>,
     attestation_anchor_names: Vec<String>,
     attestation_index_names: BTreeSet<String>,
     attestation_index_location: Option<SourceLocation>,
@@ -48,13 +136,7 @@ impl RepositoryLabels {
         let model = harvest_model(paths);
         add_model(model, &mut result);
         for (name, harvest) in harvest_crates(paths) {
-            result.crate_internal.extend(
-                harvest
-                    .citations
-                    .into_iter()
-                    .map(|(label, location)| (name.clone(), label, location)),
-            );
-            result.imports.extend(harvest.imports);
+            result.pending_citations.extend(harvest.citations);
             result.diagnostics.extend(harvest.diagnostics);
             result.registries.crates.insert(name, harvest.registry);
         }
@@ -65,14 +147,58 @@ impl RepositoryLabels {
     pub fn has_errors(&self) -> bool {
         self.diagnostics.iter().any(LabelDiagnostic::is_error)
     }
-    pub const fn imported_citation_count(&self) -> usize {
-        self.imports.len()
+    pub fn imported_citation_count(&self) -> usize {
+        self.graph
+            .node_weights()
+            .filter(|node| {
+                matches!(
+                    node,
+                    LabelGraphNode::Citation(LabelCitation {
+                        class: CitationClass::AuthoredImported,
+                        ..
+                    })
+                )
+            })
+            .count()
+    }
+
+    fn push_same_owner_citation(
+        &mut self,
+        owner: LabelOwner,
+        label: Label,
+        location: SourceLocation,
+    ) {
+        self.pending_citations.push(LabelCitation {
+            source_owner: owner.clone(),
+            target: ImportedLabel {
+                owner: owner.clone(),
+                label,
+            },
+            origin: CitationOrigin::Source { owner, location },
+            class: CitationClass::AuthoredSameOwner,
+        });
+    }
+
+    fn push_imported_citation(
+        &mut self,
+        source_owner: LabelOwner,
+        target: ImportedLabel,
+        location: SourceLocation,
+    ) {
+        self.pending_citations.push(LabelCitation {
+            source_owner: source_owner.clone(),
+            target,
+            origin: CitationOrigin::Source {
+                owner: source_owner,
+                location,
+            },
+            class: CitationClass::AuthoredImported,
+        });
     }
 }
 
 fn add_model(model: RustHarvest, result: &mut RepositoryLabels) {
-    result.model_internal.extend(model.citations);
-    result.imports.extend(model.imports);
+    result.pending_citations.extend(model.citations);
     result.registries.model = model.registry;
     result.diagnostics.extend(model.diagnostics);
 }
@@ -96,15 +222,16 @@ fn harvest_realization(paths: &RepositoryCensus, result: &mut RepositoryLabels) 
         if let Some(token) = square(&span.content) {
             if !token.starts_with("A-") {
                 if let Ok(imported) = ImportedLabel::parse(token) {
-                    result.imports.push((imported, span.location));
+                    result.push_imported_citation(LabelOwner::Realization, imported, span.location);
                 } else if let Ok(label) = Label::parse(token, LabelShape::Model) {
-                    result.imports.push((
+                    result.push_imported_citation(
+                        LabelOwner::Realization,
                         ImportedLabel {
                             owner: LabelOwner::Model,
                             label,
                         },
                         span.location,
-                    ));
+                    );
                 }
             }
             continue;
@@ -127,7 +254,7 @@ fn harvest_realization(paths: &RepositoryCensus, result: &mut RepositoryLabels) 
                 );
             }
             InlineCodeContext::Parenthesized => {
-                result.realization_internal.push((label, span.location));
+                result.push_same_owner_citation(LabelOwner::Realization, label, span.location);
             }
             InlineCodeContext::Asymmetric => result.diagnostics.push(LabelDiagnostic::error(
                 LabelErrorCode::AsymmetricCitation,
@@ -160,7 +287,7 @@ fn harvest_adrs(paths: &RepositoryCensus, result: &mut RepositoryLabels) {
             }
             if let Some(token) = square(&span.content) {
                 if span.context == InlineCodeContext::Parenthesized {
-                    import(token, &span.location, result);
+                    import(token, &span.location, LabelOwner::Adr(number), result);
                 } else {
                     result.diagnostics.push(LabelDiagnostic::error(
                         LabelErrorCode::InvalidImportedCitationForm,
@@ -188,7 +315,7 @@ fn harvest_adrs(paths: &RepositoryCensus, result: &mut RepositoryLabels) {
                     );
                 }
                 InlineCodeContext::Parenthesized => {
-                    result.adr_internal.push((number, label, span.location));
+                    result.push_same_owner_citation(LabelOwner::Adr(number), label, span.location);
                 }
                 InlineCodeContext::Asymmetric => result.diagnostics.push(LabelDiagnostic::error(
                     LabelErrorCode::AsymmetricCitation,
@@ -278,7 +405,7 @@ fn harvest_markdown_owner(
         }
         if let Some(token) = square(&span.content) {
             if span.context == InlineCodeContext::Parenthesized {
-                import(token, &span.location, result);
+                import(token, &span.location, owner.owner(), result);
             } else {
                 result.diagnostics.push(LabelDiagnostic::error(
                     LabelErrorCode::InvalidImportedCitationForm,
@@ -314,8 +441,12 @@ fn harvest_markdown_owner(
                 registry.insert_or_diagnose(mint, owner.name(), &mut result.diagnostics);
             }
             InlineCodeContext::Parenthesized => match owner {
-                MarkdownOwner::Plan => result.plan_internal.push((label, span.location)),
-                MarkdownOwner::Doc => result.doc_internal.push((label, span.location)),
+                MarkdownOwner::Plan => {
+                    result.push_same_owner_citation(LabelOwner::Plan, label, span.location);
+                }
+                MarkdownOwner::Doc => {
+                    result.push_same_owner_citation(LabelOwner::Doc, label, span.location);
+                }
             },
             InlineCodeContext::Asymmetric => result.diagnostics.push(LabelDiagnostic::error(
                 LabelErrorCode::AsymmetricCitation,
@@ -325,9 +456,14 @@ fn harvest_markdown_owner(
         }
     }
 }
-fn import(token: &str, location: &SourceLocation, result: &mut RepositoryLabels) {
+fn import(
+    token: &str,
+    location: &SourceLocation,
+    source_owner: LabelOwner,
+    result: &mut RepositoryLabels,
+) {
     match ImportedLabel::parse(token) {
-        Ok(value) => result.imports.push((value, location.clone())),
+        Ok(value) => result.push_imported_citation(source_owner, value, location.clone()),
         Err(error) => result.diagnostics.push(LabelDiagnostic::error(
             LabelErrorCode::UnknownOwner,
             location,
@@ -384,13 +520,14 @@ fn harvest_attestation_citations(path: &Path, source: &str, result: &mut Reposit
                     index_names.insert(value.to_owned());
                 } else {
                     result.attestation_anchor_names.push(value.to_owned());
-                    result.imports.push((
+                    result.push_imported_citation(
+                        LabelOwner::Realization,
                         ImportedLabel {
                             owner: LabelOwner::Attestation,
                             label,
                         },
                         SourceLocation::new(path, number + 1, line[..start].chars().count() + 1),
-                    ));
+                    );
                 }
             }
             offset = body + close + 1;
@@ -438,9 +575,14 @@ fn backtick_run(bytes: &[u8], start: usize) -> usize {
 }
 
 fn validate(result: &mut RepositoryLabels) {
-    validate_references(result);
+    add_architecture_citations(result);
+    let citations = std::mem::take(&mut result.pending_citations);
+    let (graph, graph_node_by_id) =
+        build_label_graph(&result.registries, citations, &mut result.diagnostics);
+    result.graph = graph;
+    result.graph_node_by_id = graph_node_by_id;
     validate_attestation_index(result);
-    validate_architecture_weld(result);
+    validate_attestation_anchor_pin(result);
 }
 
 /// Weld the committed §17 upward-citation index to the body anchor
@@ -461,125 +603,9 @@ fn validate_attestation_index(result: &mut RepositoryLabels) {
         ));
     }
 }
-fn validate_references(result: &mut RepositoryLabels) {
-    for (label, location) in &result.realization_internal {
-        if !result.registries.realization.contains(label) {
-            result.diagnostics.push(LabelDiagnostic::error(
-                LabelErrorCode::MissingMint,
-                location,
-                format!("unresolved Realization citation {label}"),
-            ));
-        }
-    }
-    for (number, label, location) in &result.adr_internal {
-        let resolved = result
-            .registries
-            .adrs
-            .get(number)
-            .is_some_and(|registry| registry.contains(label));
-        if !resolved {
-            result.diagnostics.push(LabelDiagnostic::error(
-                LabelErrorCode::MissingMint,
-                location,
-                format!("unresolved ADR{number:03} citation {label}"),
-            ));
-        }
-    }
-    for (label, location) in &result.model_internal {
-        if !result.registries.model.contains(label) {
-            result.diagnostics.push(LabelDiagnostic::error(
-                LabelErrorCode::MissingMint,
-                location,
-                format!("unresolved model citation {label}"),
-            ));
-        }
-    }
-    for (label, location) in &result.plan_internal {
-        if !result.registries.plan.contains(label) {
-            result.diagnostics.push(LabelDiagnostic::error(
-                LabelErrorCode::MissingMint,
-                location,
-                format!("unresolved planning citation {label}"),
-            ));
-        }
-    }
-    for (label, location) in &result.doc_internal {
-        if !result.registries.doc.contains(label) {
-            result.diagnostics.push(LabelDiagnostic::error(
-                LabelErrorCode::MissingMint,
-                location,
-                format!("unresolved documentation citation {label}"),
-            ));
-        }
-    }
-    for (name, label, location) in &result.crate_internal {
-        let resolved = result
-            .registries
-            .crates
-            .get(name)
-            .is_some_and(|registry| registry.contains(label));
-        if !resolved {
-            result.diagnostics.push(LabelDiagnostic::error(
-                LabelErrorCode::MissingMint,
-                location,
-                format!("unresolved {name} crate citation {label}"),
-            ));
-        }
-    }
-    for (imported, location) in &result.imports {
-        let registry = match imported.owner {
-            LabelOwner::Attestation => Some(&result.registries.attestation),
-            LabelOwner::Realization => Some(&result.registries.realization),
-            LabelOwner::Adr(number) => result.registries.adrs.get(&number),
-            LabelOwner::Model => Some(&result.registries.model),
-            LabelOwner::Plan => Some(&result.registries.plan),
-            LabelOwner::Doc => Some(&result.registries.doc),
-            LabelOwner::Crate(ref name) => result.registries.crates.get(name),
-        };
-        match registry {
-            None => result.diagnostics.push(LabelDiagnostic::error(
-                LabelErrorCode::UnknownOwner,
-                location,
-                "imported owner has no registry",
-            )),
-            Some(registry) if !registry.contains(&imported.label) => {
-                result.diagnostics.push(LabelDiagnostic::error(
-                    LabelErrorCode::UnknownImportedLabel,
-                    location,
-                    format!(
-                        "unresolved imported label {}{}",
-                        imported.owner.prefix(),
-                        imported.label
-                    ),
-                ));
-            }
-            Some(_) => {}
-        }
-    }
-}
-fn validate_architecture_weld(result: &mut RepositoryLabels) {
+fn validate_attestation_anchor_pin(result: &mut RepositoryLabels) {
     let location = SourceLocation::new("packages/architecture/src/spec.rs", 1, 1);
     let architecture = &architecture::ARCHITECTURE;
-    for label in architecture
-        .witnesses
-        .iter()
-        .map(|witness| witness.semantic_tag)
-        .chain(architecture.clauses.iter().map(|clause| clause.as_str()))
-    {
-        match Label::parse(label, LabelShape::Realization) {
-            Ok(label) if result.registries.realization.contains(&label) => {}
-            Ok(_) => result.diagnostics.push(LabelDiagnostic::error(
-                LabelErrorCode::ArchitectureLabelMissing,
-                &location,
-                format!("architecture manifest label {label} is missing from Realization"),
-            )),
-            Err(error) => result.diagnostics.push(LabelDiagnostic::error(
-                LabelErrorCode::InvalidLabel,
-                &location,
-                error.to_string(),
-            )),
-        }
-    }
     if let Some(pinned) = architecture.document.specification.anchor_set_hash {
         let actual = architecture::anchor_set_hash(
             result.attestation_anchor_names.iter().map(String::as_str),
@@ -593,6 +619,275 @@ fn validate_architecture_weld(result: &mut RepositoryLabels) {
         }
     }
 }
+
+fn add_architecture_citations(result: &mut RepositoryLabels) {
+    for witness in architecture::ARCHITECTURE.witnesses {
+        match Label::parse(witness.semantic_tag, LabelShape::Realization) {
+            Ok(label) => result.pending_citations.push(LabelCitation {
+                source_owner: LabelOwner::Model,
+                target: ImportedLabel {
+                    owner: LabelOwner::Realization,
+                    label,
+                },
+                origin: CitationOrigin::ArchitectureWitness(witness.id),
+                class: CitationClass::SyntheticArchitecture,
+            }),
+            Err(error) => result.diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::InvalidLabel,
+                &architecture_location(),
+                error.to_string(),
+            )),
+        }
+    }
+
+    for clause in architecture::ARCHITECTURE.clauses {
+        match Label::parse(clause.as_str(), LabelShape::Realization) {
+            Ok(label) => result.pending_citations.push(LabelCitation {
+                source_owner: LabelOwner::Model,
+                target: ImportedLabel {
+                    owner: LabelOwner::Realization,
+                    label,
+                },
+                origin: CitationOrigin::ArchitectureClause(*clause),
+                class: CitationClass::SyntheticArchitecture,
+            }),
+            Err(error) => result.diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::InvalidLabel,
+                &architecture_location(),
+                error.to_string(),
+            )),
+        }
+    }
+}
+
+fn architecture_location() -> SourceLocation {
+    SourceLocation::new("packages/architecture/src/spec.rs", 1, 1)
+}
+
+/// Build the direct Petgraph label graph from typed registries and citations.
+pub fn build_label_graph(
+    registries: &RegistrySet,
+    citations: impl IntoIterator<Item = LabelCitation>,
+    diagnostics: &mut Vec<LabelDiagnostic>,
+) -> (
+    DiGraph<LabelGraphNode, LabelGraphEdge, u32>,
+    BTreeMap<LabelGraphNodeId, NodeIndex<u32>>,
+) {
+    let mut nodes = registry_mints(registries)
+        .into_iter()
+        .map(LabelGraphNode::Mint)
+        .collect::<Vec<_>>();
+    let mut citations = citations.into_iter().collect::<Vec<_>>();
+
+    citations.sort_by(|left, right| {
+        (
+            &left.origin,
+            &left.target.owner,
+            &left.target.label,
+            left.class,
+        )
+            .cmp(&(
+                &right.origin,
+                &right.target.owner,
+                &right.target.label,
+                right.class,
+            ))
+    });
+
+    for citation in citations {
+        if citation.class == CitationClass::AuthoredImported
+            && citation.source_owner == citation.target.owner
+        {
+            diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::InvalidImportedCitationForm,
+                &citation_location(&citation),
+                "same-owner citation must use the local parenthesized form",
+            ));
+            continue;
+        }
+
+        nodes.push(LabelGraphNode::Citation(citation));
+    }
+
+    nodes.sort_by_key(LabelGraphNode::id);
+
+    let mut graph =
+        DiGraph::<LabelGraphNode, LabelGraphEdge, u32>::with_capacity(nodes.len(), nodes.len());
+    let mut node_by_id = BTreeMap::new();
+
+    for node_weight in nodes {
+        let id = node_weight.id();
+
+        if node_by_id.contains_key(&id) {
+            report_duplicate_graph_node(&node_weight, diagnostics);
+            continue;
+        }
+
+        let node = graph.add_node(node_weight);
+        node_by_id.insert(id, node);
+    }
+
+    let mint_nodes = node_by_id
+        .iter()
+        .filter_map(|(id, node)| match id {
+            LabelGraphNodeId::Mint { owner, label } => {
+                Some(((owner.clone(), label.clone()), *node))
+            }
+            LabelGraphNodeId::Citation { .. } => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut pending_edges = Vec::new();
+
+    for node in graph.node_indices() {
+        let LabelGraphNode::Citation(citation) = &graph[node] else {
+            continue;
+        };
+        let target_key = (citation.target.owner.clone(), citation.target.label.clone());
+
+        match mint_nodes.get(&target_key).copied() {
+            Some(target) => {
+                pending_edges.push((graph[node].id(), node, graph[target].id(), target));
+            }
+            None => report_unresolved_citation(citation, diagnostics),
+        }
+    }
+
+    pending_edges.sort_by(|left, right| (&left.0, &left.2).cmp(&(&right.0, &right.2)));
+
+    for (_, source, _, target) in pending_edges {
+        graph.add_edge(source, target, LabelGraphEdge::ResolvesTo);
+    }
+
+    if is_cyclic_directed(&graph) {
+        diagnostics.push(LabelDiagnostic::error(
+            LabelErrorCode::InvalidLabel,
+            &SourceLocation::new("<label-graph>", 1, 1),
+            "documentation label graph contains an impossible cycle",
+        ));
+    }
+
+    validate_citation_outdegrees(&graph, diagnostics);
+
+    (graph, node_by_id)
+}
+
+fn registry_mints(registries: &RegistrySet) -> Vec<LabelMint> {
+    registries
+        .attestation
+        .iter()
+        .map(|(_, mint)| mint.clone())
+        .chain(registries.realization.iter().map(|(_, mint)| mint.clone()))
+        .chain(
+            registries
+                .adrs
+                .values()
+                .flat_map(|registry| registry.iter().map(|(_, mint)| mint.clone())),
+        )
+        .chain(registries.model.iter().map(|(_, mint)| mint.clone()))
+        .chain(registries.plan.iter().map(|(_, mint)| mint.clone()))
+        .chain(registries.doc.iter().map(|(_, mint)| mint.clone()))
+        .chain(
+            registries
+                .crates
+                .values()
+                .flat_map(|registry| registry.iter().map(|(_, mint)| mint.clone())),
+        )
+        .collect()
+}
+
+fn citation_location(citation: &LabelCitation) -> SourceLocation {
+    match &citation.origin {
+        CitationOrigin::Source { location, .. } => location.clone(),
+        CitationOrigin::ArchitectureWitness(_) | CitationOrigin::ArchitectureClause(_) => {
+            architecture_location()
+        }
+    }
+}
+
+fn report_duplicate_graph_node(node: &LabelGraphNode, diagnostics: &mut Vec<LabelDiagnostic>) {
+    let location = match node {
+        LabelGraphNode::Mint(mint) => mint.location.clone(),
+        LabelGraphNode::Citation(citation) => citation_location(citation),
+    };
+
+    diagnostics.push(LabelDiagnostic::error(
+        LabelErrorCode::InvalidLabel,
+        &location,
+        "duplicate documentation label graph node",
+    ));
+}
+
+fn report_unresolved_citation(citation: &LabelCitation, diagnostics: &mut Vec<LabelDiagnostic>) {
+    let location = citation_location(citation);
+    let (code, message) = match citation.class {
+        CitationClass::AuthoredSameOwner => (
+            LabelErrorCode::MissingMint,
+            format!("unresolved same-owner citation {}", citation.target.label),
+        ),
+        CitationClass::AuthoredImported => (
+            LabelErrorCode::UnknownImportedLabel,
+            format!(
+                "unresolved imported label {}{}",
+                citation.target.owner.prefix(),
+                citation.target.label,
+            ),
+        ),
+        CitationClass::SyntheticArchitecture => (
+            LabelErrorCode::ArchitectureLabelMissing,
+            format!(
+                "architecture manifest label {} is missing from the realization",
+                citation.target.label,
+            ),
+        ),
+    };
+
+    diagnostics.push(LabelDiagnostic::error(code, &location, message));
+}
+
+fn validate_citation_outdegrees(
+    graph: &DiGraph<LabelGraphNode, LabelGraphEdge, u32>,
+    diagnostics: &mut Vec<LabelDiagnostic>,
+) {
+    for node in graph.node_indices() {
+        let LabelGraphNode::Citation(citation) = &graph[node] else {
+            continue;
+        };
+        let count = graph.edges_directed(node, Direction::Outgoing).count();
+
+        if count > 1 {
+            diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::MissingMint,
+                &citation_location(citation),
+                format!("citation resolves to {count} label mints; expected exactly one"),
+            ));
+        }
+    }
+}
+
+/// Project a direct Petgraph label graph into stable typed values.
+#[must_use]
+pub fn project_label_graph(
+    graph: &DiGraph<LabelGraphNode, LabelGraphEdge, u32>,
+) -> LabelGraphProjection {
+    let mut nodes = graph
+        .node_weights()
+        .map(LabelGraphNode::id)
+        .collect::<Vec<_>>();
+    nodes.sort();
+
+    let mut edges = graph
+        .edge_references()
+        .map(|edge| LabelGraphEdgeProjection {
+            source: graph[edge.source()].id(),
+            target: graph[edge.target()].id(),
+            edge: *edge.weight(),
+        })
+        .collect::<Vec<_>>();
+    edges.sort();
+
+    LabelGraphProjection { nodes, edges }
+}
+
 fn square(value: &str) -> Option<&str> {
     value.strip_prefix('[')?.strip_suffix(']')
 }
@@ -678,19 +973,26 @@ fn derive_model_sources(paths: &RepositoryCensus) -> RepositoryLabels {
     result.diagnostics.extend(diagnostics);
     harvest_realization(paths, &mut result);
     add_model(harvest_model(paths), &mut result);
-    // Imports naming owners outside this scope are validated by
-    // check_repository; validating them here against registries that
-    // were never harvested would fail the scoped derivation on a
-    // defect in an unrelated owner.
-    result.imports.retain(|(imported, _)| {
-        matches!(
-            imported.owner,
-            LabelOwner::Attestation | LabelOwner::Realization | LabelOwner::Model
-        )
-    });
-    validate_references(&mut result);
+    result
+        .pending_citations
+        .retain(scoped_citation_participates);
+    let citations = std::mem::take(&mut result.pending_citations);
+    let (graph, graph_node_by_id) =
+        build_label_graph(&result.registries, citations, &mut result.diagnostics);
+    result.graph = graph;
+    result.graph_node_by_id = graph_node_by_id;
     sort_diagnostics(&mut result.diagnostics);
     result
+}
+
+const fn scoped_citation_participates(citation: &LabelCitation) -> bool {
+    matches!(
+        citation.source_owner,
+        LabelOwner::Attestation | LabelOwner::Realization | LabelOwner::Model
+    ) && matches!(
+        citation.target.owner,
+        LabelOwner::Attestation | LabelOwner::Realization | LabelOwner::Model
+    )
 }
 fn write(path: &Path, bytes: &[u8]) -> Result<(), std::io::Error> {
     let directory = path.parent().unwrap_or_else(|| Path::new("."));

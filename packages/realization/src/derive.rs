@@ -7,8 +7,10 @@ use petgraph::graph::{DiGraph, NodeIndex};
 
 use crate::{
     ArchitectureBinding, DependencyEdge, ExprId, ExpressionDeclaration, OperationRealization,
-    RealizationError, RealizationScope, RelationDeclaration, RelationEdge, RelationId,
-    declarations, expression::build_expression_graph, relation::build_relation_graph,
+    RealizationError, RealizationScope, RelationDeclaration, RelationEdge, RelationGraphProjection,
+    RelationId, declarations,
+    expression::{ExpressionGraphProjection, build_expression_graph, project_expression_graph},
+    relation::{build_relation_graph, project_relation_graph},
 };
 
 /// Explicitly scoped target-independent realization.
@@ -21,6 +23,18 @@ pub struct ScopedRealizationSpec {
     pub expression_node_by_id: BTreeMap<ExprId, NodeIndex<u32>>,
     pub relation_graph: DiGraph<RelationDeclaration, RelationEdge, u32>,
     pub relation_node_by_id: BTreeMap<RelationId, NodeIndex<u32>>,
+    pub expression_evaluation_order: Vec<ExprId>,
+    pub relation_evaluation_order: Vec<RelationId>,
+}
+
+/// Stable typed projection of a scoped realization for deterministic comparison.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScopedRealizationProjection {
+    pub architecture: ArchitectureBinding,
+    pub scope: RealizationScope,
+    pub operations: Vec<(OperationId, OperationRealization)>,
+    pub expressions: ExpressionGraphProjection,
+    pub relations: RelationGraphProjection,
     pub expression_evaluation_order: Vec<ExprId>,
     pub relation_evaluation_order: Vec<RelationId>,
 }
@@ -73,4 +87,24 @@ pub fn derive(
     crate::validate::validate_scoped_realization(architecture, &result)?;
 
     Ok(result)
+}
+
+/// Project a scoped realization into stable typed values.
+#[must_use]
+pub fn project_scoped_realization(
+    realization: &ScopedRealizationSpec,
+) -> ScopedRealizationProjection {
+    ScopedRealizationProjection {
+        architecture: realization.architecture.clone(),
+        scope: realization.scope.clone(),
+        operations: realization
+            .operations
+            .iter()
+            .map(|(operation, declaration)| (*operation, declaration.clone()))
+            .collect(),
+        expressions: project_expression_graph(&realization.expression_graph),
+        relations: project_relation_graph(&realization.relation_graph),
+        expression_evaluation_order: realization.expression_evaluation_order.clone(),
+        relation_evaluation_order: realization.relation_evaluation_order.clone(),
+    }
 }

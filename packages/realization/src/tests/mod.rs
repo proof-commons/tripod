@@ -2,6 +2,7 @@ mod compact_ash_tests;
 mod derivation_tests;
 mod expression_tests;
 mod live_transfer_tests;
+mod property_graph_tests;
 mod type_tests;
 
 use architecture::{ARCHITECTURE, OperationId, semantic_hash};

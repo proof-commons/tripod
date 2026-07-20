@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use petgraph::{
     algo::{kosaraju_scc, toposort},
     graph::{DiGraph, NodeIndex},
+    visit::EdgeRef,
 };
 
 use crate::{Count, ExprId, FactId, ProtocolAmount, RealizationError, SemanticType, SemanticValue};
@@ -70,6 +71,21 @@ pub struct ExpressionDeclaration {
     pub id: ExprId,
     pub ty: SemanticType,
     pub node: ExpressionNode,
+}
+
+/// Stable typed projection of one expression dependency edge.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ExpressionDependencyProjection {
+    pub source: ExprId,
+    pub target: ExprId,
+    pub edge: DependencyEdge,
+}
+
+/// Canonical typed projection of one expression graph.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExpressionGraphProjection {
+    pub nodes: Vec<ExpressionDeclaration>,
+    pub edges: Vec<ExpressionDependencyProjection>,
 }
 
 /// Primitive fact values supplied to the evaluator.
@@ -236,6 +252,27 @@ pub fn build_expression_graph(
         .collect();
 
     Ok((graph, node_by_id, evaluation_order))
+}
+
+/// Project a direct Petgraph expression graph into stable typed values.
+#[must_use]
+pub fn project_expression_graph(
+    graph: &DiGraph<ExpressionDeclaration, DependencyEdge, u32>,
+) -> ExpressionGraphProjection {
+    let mut nodes = graph.node_weights().cloned().collect::<Vec<_>>();
+    nodes.sort_by(|left, right| left.id.cmp(&right.id));
+
+    let mut edges = graph
+        .edge_references()
+        .map(|edge| ExpressionDependencyProjection {
+            source: graph[edge.source()].id.clone(),
+            target: graph[edge.target()].id.clone(),
+            edge: *edge.weight(),
+        })
+        .collect::<Vec<_>>();
+    edges.sort();
+
+    ExpressionGraphProjection { nodes, edges }
 }
 
 /// Evaluate a direct Petgraph expression graph from primitive facts.

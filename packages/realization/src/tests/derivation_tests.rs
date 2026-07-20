@@ -1,6 +1,6 @@
 use architecture::{ARCHITECTURE, OperationId};
 
-use crate::{RealizationError, RealizationScope, derive};
+use crate::{RealizationError, RealizationScope, derive, project_scoped_realization};
 
 #[test]
 fn compact_ash_scope_derives_direct_graphs() {
@@ -33,6 +33,38 @@ fn phase1_scope_derives_both_pilots() {
         realization
             .operations
             .contains_key(&OperationId::TransferLive)
+    );
+}
+
+#[test]
+fn repeated_phase1_derivation_is_equal() {
+    let first = derive(&ARCHITECTURE, RealizationScope::phase1_pilots()).unwrap();
+    let second = derive(&ARCHITECTURE, RealizationScope::phase1_pilots()).unwrap();
+
+    assert_eq!(
+        project_scoped_realization(&first),
+        project_scoped_realization(&second),
+    );
+}
+
+#[test]
+fn operation_scope_order_does_not_change_the_result() {
+    let first = derive(
+        &ARCHITECTURE,
+        RealizationScope::from_operations([OperationId::CompactAsh, OperationId::TransferLive])
+            .unwrap(),
+    )
+    .unwrap();
+    let second = derive(
+        &ARCHITECTURE,
+        RealizationScope::from_operations([OperationId::TransferLive, OperationId::CompactAsh])
+            .unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        project_scoped_realization(&first),
+        project_scoped_realization(&second),
     );
 }
 

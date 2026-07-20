@@ -11,6 +11,7 @@ use crate::{
     markdown::{fence_close, fence_open},
     owner::{ImportedLabel, LabelOwner},
     registry::{LabelMint, LabelRegistry},
+    repository::{CitationClass, CitationOrigin, LabelCitation},
     source::{SourceLocation, relative_to},
 };
 
@@ -25,8 +26,7 @@ pub const REALIZATION_TYPES: &[&str] = &[
 #[derive(Default)]
 pub struct RustHarvest {
     pub registry: LabelRegistry,
-    pub citations: Vec<(Label, SourceLocation)>,
-    pub imports: Vec<(ImportedLabel, SourceLocation)>,
+    pub citations: Vec<LabelCitation>,
     pub diagnostics: Vec<LabelDiagnostic>,
 }
 
@@ -441,7 +441,15 @@ fn harvest_label(
             return;
         }
         match ImportedLabel::parse(token) {
-            Ok(imported) => result.imports.push((imported, location)),
+            Ok(imported) => result.citations.push(LabelCitation {
+                source_owner: owner.clone(),
+                target: imported,
+                origin: CitationOrigin::Source {
+                    owner: owner.clone(),
+                    location,
+                },
+                class: CitationClass::AuthoredImported,
+            }),
             Err(error) => result.diagnostics.push(LabelDiagnostic::error(
                 LabelErrorCode::UnknownOwner,
                 &location,
@@ -453,7 +461,18 @@ fn harvest_label(
     let kind = value.split(':').next().unwrap_or_default();
     if MODEL_TYPES.contains(&kind) {
         match Label::parse(value, LabelShape::Model) {
-            Ok(label) if parenthesized => result.citations.push((label, location)),
+            Ok(label) if parenthesized => result.citations.push(LabelCitation {
+                source_owner: owner.clone(),
+                target: ImportedLabel {
+                    owner: owner.clone(),
+                    label,
+                },
+                origin: CitationOrigin::Source {
+                    owner: owner.clone(),
+                    location,
+                },
+                class: CitationClass::AuthoredSameOwner,
+            }),
             Ok(label) => {
                 let mint = LabelMint {
                     owner: owner.clone(),

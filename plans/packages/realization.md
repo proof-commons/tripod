@@ -41,6 +41,10 @@ architecture
 Graph-shaped realization internals use the workspace-owned Petgraph dependency
 directly under [D007](../decisions/007-petgraph-graph-substrate.md). Petgraph
 indices remain local graph handles, not semantic identity.
+All expression, relation, constructibility, lifecycle, and disclosure graphs are
+concrete Petgraph graph values used directly. The package introduces no graph
+wrapper, stable realization hash, or Phase-1 publication; model conformance is a
+post-execution observation check and does not decide model acceptance.
 
 Forbidden dependencies:
 

@@ -8,6 +8,7 @@ use architecture::{
 use petgraph::{
     algo::{kosaraju_scc, toposort},
     graph::{DiGraph, NodeIndex},
+    visit::EdgeRef,
 };
 
 use crate::{
@@ -106,6 +107,21 @@ pub struct RelationDeclaration {
     pub proof_alternatives: BTreeSet<ProofAlternativeId>,
 }
 
+/// Stable typed projection of one relation dependency edge.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct RelationDependencyProjection {
+    pub source: RelationId,
+    pub target: RelationId,
+    pub edge: RelationEdge,
+}
+
+/// Canonical typed projection of one relation graph.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RelationGraphProjection {
+    pub nodes: Vec<RelationDeclaration>,
+    pub edges: Vec<RelationDependencyProjection>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct PendingRelationEdge {
     prerequisite: RelationId,
@@ -182,6 +198,27 @@ pub fn build_relation_graph(
         .collect();
 
     Ok((graph, node_by_id, evaluation_order))
+}
+
+/// Project a direct Petgraph relation graph into stable typed values.
+#[must_use]
+pub fn project_relation_graph(
+    graph: &DiGraph<RelationDeclaration, RelationEdge, u32>,
+) -> RelationGraphProjection {
+    let mut nodes = graph.node_weights().cloned().collect::<Vec<_>>();
+    nodes.sort_by(|left, right| left.id.cmp(&right.id));
+
+    let mut edges = graph
+        .edge_references()
+        .map(|edge| RelationDependencyProjection {
+            source: graph[edge.source()].id.clone(),
+            target: graph[edge.target()].id.clone(),
+            edge: *edge.weight(),
+        })
+        .collect::<Vec<_>>();
+    edges.sort();
+
+    RelationGraphProjection { nodes, edges }
 }
 
 fn classify_relation_edge(prerequisite: &Relation, dependent: &Relation) -> RelationEdge {
