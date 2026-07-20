@@ -46,6 +46,7 @@ mod validate;
 pub use binding::ArchitectureBinding;
 pub use declassification::{
     DeclassificationAnalysis, DisclosureEdge, DisclosureNode, DisclosureReason,
+    phase1_declassification,
 };
 pub use derive::{ScopedRealizationSpec, derive};
 pub use domain::{Count, PROTOCOL_AMOUNT_LIMIT_EXCLUSIVE, ProtocolAmount, RepresentationMode};
@@ -64,7 +65,9 @@ pub use observation::{
     ObservedRootEffect, ObservedSide, OperationObservation,
 };
 pub use operation::OperationRealization;
-pub use relation::{CardinalityMaximum, Relation, RelationDeclaration, RelationEdge};
+pub use relation::{
+    CardinalityMaximum, ConstructibilityClass, Relation, RelationDeclaration, RelationEdge,
+};
 pub use scope::{CompleteRealizationScope, RealizationScope};
 pub use value::{OwnerId, SemanticType, SemanticValue};
 

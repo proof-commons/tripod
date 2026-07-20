@@ -33,7 +33,7 @@ pub enum ObservedAsset {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ObservedObjectKind {
     Declared(ObjectId),
-    Foreign(u32),
+    Unrecognized,
 }
 
 /// Primitive semantic object observation.

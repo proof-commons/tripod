@@ -8,9 +8,10 @@ use architecture::{
 };
 
 use crate::{
-    CardinalityMaximum, Count, OperationRealization, ProofAlternativeId, ProofKind,
-    RealizationError, Relation, RelationDeclaration, RelationId, RelationKind, RelationSubject,
-    RepresentationMode, TransactionSide, validate::validate_compact_ash_architecture,
+    CardinalityMaximum, ConstructibilityClass, Count, OperationRealization, ProofAlternativeId,
+    ProofKind, RealizationError, Relation, RelationDeclaration, RelationId, RelationKind,
+    RelationSubject, RepresentationMode, TransactionSide,
+    validate::validate_compact_ash_architecture,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -72,7 +73,6 @@ pub fn derive(architecture: &Architecture) -> Result<OperationRealization, Reali
         RelationKind::Representation,
         RelationSubject::Representation {
             object: ObjectId::Ash,
-            mode: RepresentationMode::PublicCommitted,
         },
     );
     let compact_lifecycle = relation_id(
@@ -218,7 +218,9 @@ pub fn derive(architecture: &Architecture) -> Result<OperationRealization, Reali
         },
         RelationDeclaration {
             id: constructibility.clone(),
-            relation: Relation::PublicConstructibility,
+            relation: Relation::Constructibility {
+                class: ConstructibilityClass::PublicPermissionless,
+            },
             prerequisites: BTreeSet::from([permissionless, input_recognition, sponsor]),
             proof_alternatives: proofs(constructibility.clone(), ProofKind::PublicConstructibility),
         },

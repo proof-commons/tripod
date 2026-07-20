@@ -6,8 +6,6 @@
 
 use architecture::{AssetId, BoundId, ObjectId, OperationId, ProjectionId, RootId};
 
-use crate::RepresentationMode;
-
 /// Input or output side of a transaction family.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TransactionSide {
@@ -126,7 +124,6 @@ pub enum RelationSubject {
 
     Representation {
         object: ObjectId,
-        mode: RepresentationMode,
     },
 }
 

@@ -148,6 +148,7 @@ pub mod artifacts;
 pub mod asset;
 pub mod audit;
 pub(crate) mod certify;
+pub mod conformance;
 pub mod constants;
 pub mod fee;
 pub mod genesis;
@@ -180,6 +181,7 @@ pub use audit::{
     ReceiptAccountingAuditProjection, ResidueAuditEvent, compare_receipt_accounting_audit,
     receipt_accounting_audit,
 };
+pub use conformance::{ConformanceProjectionError, observe_compact_ash, observe_live_transfer};
 pub use constants::Constants;
 pub use fee::{FeeChange, FeeEnvelope, validate_fee_envelope};
 pub use genesis::{GENESIS_OWNER, OPERATOR_KEY, genesis};

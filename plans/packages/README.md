@@ -21,9 +21,10 @@ remain narrow.
 
 ## Direct-dependency plan · `tbl:packages:dependencies`
 
-| Package | Planned first-party direct dependencies |
+| Package | Planned/current first-party direct dependencies |
 |---|---|
 | `realization` | `architecture` |
+| `model` | `architecture`; `realization` for conformance projection |
 | `labels` | `architecture` |
 | `compiler` | `realization`; `architecture` when public APIs name architecture-owned IDs |
 | `target-elements` | none |
@@ -36,6 +37,8 @@ remain narrow.
 
 This is planning ownership, not dependency configuration. Once crates exist,
 Cargo metadata and dependency review establish actual dependency conformance.
+The model's runtime transition acceptance remains independent of realization;
+its realization dependency is for post-execution conformance projection.
 
 ## Index · `tbl:packages:index`
 

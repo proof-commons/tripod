@@ -24,3 +24,8 @@ It is a planning aid, not a substitute for typed identity definitions.
 
 Implementation revisions remain review or test provenance unless a typed
 compatibility contract explicitly makes another fact identity-relevant.
+
+Phase-1 realization mints no public hash. It carries an explicit architecture
+binding and stable typed keys for its scoped declarations only; complete
+realization identity remains deferred until the complete-scope schema and
+projection policy are reviewed.

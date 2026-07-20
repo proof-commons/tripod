@@ -101,6 +101,7 @@ mod guard_listing_weld_tests;
 mod kernel_tests;
 mod open_asset_immunity_tests;
 mod open_flow_tests;
+mod realization_conformance_tests;
 mod redemption_tests;
 mod relabel_tests;
 mod request_lifecycle_tests;

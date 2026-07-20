@@ -6,9 +6,9 @@ use architecture::{AssetId, ObjectId, ProjectionId, ProjectionRule, RootId, Root
 use petgraph::graph::{DiGraph, NodeIndex};
 
 use crate::{
-    CardinalityMaximum, Count, ObservedAsset, ObservedObject, ObservedObjectKind,
-    ObservedObjectRef, ObservedOpenFlow, ObservedSide, OperationObservation, ProtocolAmount,
-    RealizationError, Relation, RelationDeclaration, RelationEdge, RelationId,
+    CardinalityMaximum, ConstructibilityClass, Count, ObservedAsset, ObservedObject,
+    ObservedObjectKind, ObservedObjectRef, ObservedOpenFlow, ObservedSide, OperationObservation,
+    ProtocolAmount, RealizationError, Relation, RelationDeclaration, RelationEdge, RelationId,
 };
 
 /// Result class for one relation.
@@ -137,12 +137,16 @@ fn evaluate_relation(
         Relation::SponsorIsolation => sponsor_is_isolated(observation)?,
         Relation::RootPolicy { expected } => root_policy_holds(expected, observation),
         Relation::ProjectionPolicy { expected } => projection_policy_holds(expected, observation),
-        Relation::PublicConstructibility => observation.protocol_signers.is_empty()
-            && observation.objects.iter().all(|object| {
-                object.reference.side != ObservedSide::Input
-                    || object.owner.is_none()
-                    || object.kind == ObservedObjectKind::Declared(ObjectId::PlainLbtc)
-            }),
+        Relation::Constructibility { class } => match class {
+            ConstructibilityClass::PublicPermissionless => observation.protocol_signers.is_empty(),
+            ConstructibilityClass::OwnersOf { object } => {
+                let required = declared_objects(observation, ObservedSide::Input, *object)
+                    .filter_map(|observed| observed.owner)
+                    .collect::<BTreeSet<_>>();
+
+                required.is_subset(&observation.protocol_signers)
+            }
+        },
         Relation::Representation { object, allowed } => observation.objects.iter().all(|observed| {
             observed.kind != ObservedObjectKind::Declared(*object)
                 || allowed.contains(&observed.representation)

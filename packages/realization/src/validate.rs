@@ -3,9 +3,9 @@
 use std::collections::BTreeSet;
 
 use architecture::{
-    Architecture, BoundId, DeltaCondition, DeltaKind, InputAuthorization, MaxCount, ObjectId,
-    OpenFlowKind, OperationId, PermissionClass, ProjectionId, ProjectionRule, RootId, RootUse,
-    ValueFlowClass,
+    Architecture, AssetId, BoundId, DeltaCondition, DeltaKind, InputAuthorization, MaxCount,
+    ObjectId, OpenFlowKind, OperationId, PermissionClass, ProjectionId, ProjectionRule, RootId,
+    RootUse, ValueFlowClass, WitnessId,
 };
 
 use crate::{ArchitectureMismatchField, RealizationError, ScopedRealizationSpec};
@@ -154,4 +154,179 @@ fn mismatch(field: ArchitectureMismatchField) -> Result<(), RealizationError> {
         operation: OperationId::CompactAsh,
         field,
     })
+}
+
+#[allow(clippy::too_many_lines)]
+pub fn validate_live_transfer_architecture(
+    architecture: &Architecture,
+) -> Result<(), RealizationError> {
+    let operation = architecture.operation(OperationId::TransferLive).ok_or(
+        RealizationError::MissingArchitectureOperation(OperationId::TransferLive),
+    )?;
+
+    if operation.authorization != PermissionClass::ReceiptOwners {
+        return mismatch_live(ArchitectureMismatchField::Authorization);
+    }
+
+    let input_families = operation
+        .inputs
+        .iter()
+        .map(|input| input.object)
+        .collect::<BTreeSet<_>>();
+
+    if input_families != BTreeSet::from([ObjectId::ReceiptLive, ObjectId::PlainLbtc]) {
+        return mismatch_live(ArchitectureMismatchField::InputFamilies);
+    }
+
+    let output_families = operation
+        .outputs
+        .iter()
+        .map(|output| output.object)
+        .collect::<BTreeSet<_>>();
+
+    if output_families != BTreeSet::from([ObjectId::ReceiptLive, ObjectId::PlainLbtc]) {
+        return mismatch_live(ArchitectureMismatchField::OutputFamilies);
+    }
+
+    let receipt_input = operation
+        .inputs
+        .iter()
+        .find(|input| input.object == ObjectId::ReceiptLive)
+        .ok_or_else(|| live_error(ArchitectureMismatchField::ReceiptInput))?;
+
+    if receipt_input.minimum != 1
+        || receipt_input.maximum != MaxCount::Bound(BoundId::TransferInputMax)
+        || receipt_input.authorization != InputAuthorization::InputOwner
+    {
+        return mismatch_live(ArchitectureMismatchField::ReceiptInput);
+    }
+
+    let sponsor_input = operation
+        .inputs
+        .iter()
+        .find(|input| input.object == ObjectId::PlainLbtc)
+        .ok_or_else(|| live_error(ArchitectureMismatchField::SponsorInput))?;
+
+    if sponsor_input.minimum != 0
+        || sponsor_input.maximum != MaxCount::Bound(BoundId::FeeSponsorInputMax)
+        || sponsor_input.authorization != InputAuthorization::SponsorOwner
+    {
+        return mismatch_live(ArchitectureMismatchField::SponsorInput);
+    }
+
+    let receipt_output = operation
+        .outputs
+        .iter()
+        .find(|output| output.object == ObjectId::ReceiptLive)
+        .ok_or_else(|| live_error(ArchitectureMismatchField::ReceiptOutput))?;
+
+    if receipt_output.minimum != 1
+        || receipt_output.maximum != MaxCount::Bound(BoundId::TransferOutputMax)
+    {
+        return mismatch_live(ArchitectureMismatchField::ReceiptOutput);
+    }
+
+    let sponsor_output = operation
+        .outputs
+        .iter()
+        .find(|output| output.object == ObjectId::PlainLbtc)
+        .ok_or_else(|| live_error(ArchitectureMismatchField::SponsorOutput))?;
+
+    if sponsor_output.minimum != 0 || sponsor_output.maximum != MaxCount::Exact(1) {
+        return mismatch_live(ArchitectureMismatchField::SponsorOutput);
+    }
+
+    if operation.bounds.iter().copied().collect::<BTreeSet<_>>()
+        != BTreeSet::from([
+            BoundId::TransferInputMax,
+            BoundId::TransferOutputMax,
+            BoundId::FeeSponsorInputMax,
+        ])
+    {
+        return mismatch_live(ArchitectureMismatchField::Bounds);
+    }
+
+    if operation
+        .open_flows
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        != BTreeSet::from([OpenFlowKind::FeeSponsor])
+    {
+        return mismatch_live(ArchitectureMismatchField::OpenFlows);
+    }
+
+    if operation
+        .value_flows
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        != BTreeSet::from([
+            ValueFlowClass::OwnerConsented,
+            ValueFlowClass::SponsorEnvelope,
+        ])
+    {
+        return mismatch_live(ArchitectureMismatchField::ValueFlows);
+    }
+
+    for root in RootId::ALL {
+        if operation.root_use(*root) != RootUse::Forbidden {
+            return mismatch_live(ArchitectureMismatchField::RootPolicy);
+        }
+    }
+
+    if operation.canonical_deltas.len() != 1 {
+        return mismatch_live(ArchitectureMismatchField::CanonicalDeltas);
+    }
+
+    let delta = operation.canonical_deltas[0];
+    if delta.asset != AssetId::U
+        || delta.kind != DeltaKind::Lateral
+        || delta.condition != DeltaCondition::Always
+        || delta.destruction_tag.is_some()
+    {
+        return mismatch_live(ArchitectureMismatchField::CanonicalDeltas);
+    }
+
+    if !operation.data_outputs.is_empty() {
+        return mismatch_live(ArchitectureMismatchField::DataOutputs);
+    }
+
+    if operation.projection_rule(ProjectionId::TransitionCertificate) != ProjectionRule::Required {
+        return mismatch_live(ArchitectureMismatchField::ProjectionPolicy);
+    }
+
+    for projection in [
+        ProjectionId::BurnEvent,
+        ProjectionId::ClearEvent,
+        ProjectionId::DistributionResidue,
+    ] {
+        if operation.projection_rule(projection) != ProjectionRule::Forbidden {
+            return mismatch_live(ArchitectureMismatchField::ProjectionPolicy);
+        }
+    }
+
+    if operation.witnesses.iter().copied().collect::<BTreeSet<_>>()
+        != BTreeSet::from([
+            WitnessId::CanonicalDelta,
+            WitnessId::ReceiptOwnerRouting,
+            WitnessId::ReceiptClassClosure,
+            WitnessId::ValueFlowClosure,
+        ])
+    {
+        return mismatch_live(ArchitectureMismatchField::Witnesses);
+    }
+
+    Ok(())
+}
+
+fn live_error(field: ArchitectureMismatchField) -> RealizationError {
+    RealizationError::ArchitectureOperationMismatch {
+        operation: OperationId::TransferLive,
+        field,
+    }
+}
+
+fn mismatch_live(field: ArchitectureMismatchField) -> Result<(), RealizationError> {
+    Err(live_error(field))
 }

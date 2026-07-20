@@ -11,11 +11,19 @@ pub enum ArchitectureMismatchField {
     OutputFamilies,
     AshInput,
     AshOutput,
+    ReceiptInput,
+    ReceiptOutput,
+    SponsorInput,
+    SponsorOutput,
+    Bounds,
     CanonicalDelta,
+    CanonicalDeltas,
+    DataOutputs,
     OpenFlows,
     ValueFlows,
     RootPolicy,
     ProjectionPolicy,
+    Witnesses,
 }
 
 /// Failure while constructing or validating target-independent

@@ -15,6 +15,13 @@ use crate::{
     RepresentationMode,
 };
 
+/// Semantic constructibility class for one operation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConstructibilityClass {
+    PublicPermissionless,
+    OwnersOf { object: ObjectId },
+}
+
 /// Cardinality maximum retained in architecture-owned form.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CardinalityMaximum {
@@ -56,7 +63,9 @@ pub enum Relation {
     ProjectionPolicy {
         expected: BTreeMap<ProjectionId, ProjectionRule>,
     },
-    PublicConstructibility,
+    Constructibility {
+        class: ConstructibilityClass,
+    },
     Representation {
         object: ObjectId,
         allowed: BTreeSet<RepresentationMode>,

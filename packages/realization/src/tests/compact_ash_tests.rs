@@ -169,7 +169,6 @@ fn representation() -> RelationId {
         RelationKind::Representation,
         RelationSubject::Representation {
             object: ObjectId::Ash,
-            mode: RepresentationMode::PublicCommitted,
         },
     )
 }
@@ -264,7 +263,7 @@ fn relation_cases() -> Vec<RelationCase> {
         ),
         (
             "foreign input object",
-            Box::new(|observation| observation.objects[0].kind = ObservedObjectKind::Foreign(7)),
+            Box::new(|observation| observation.objects[0].kind = ObservedObjectKind::Unrecognized),
             input_closure(),
         ),
         (

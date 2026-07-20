@@ -19,3 +19,8 @@ checker are explicit so convenient output files do not become semantic inputs.
 | future vectors/reports | vectors | explicit evidence runner | vectors/release checker | evidence only |
 | deployment profile | release from architecture-owned type | release | release checker | release object |
 | release manifest | release | release | release checker | publication index |
+
+Phase 1 cross-checks the compact-ASH and live-transfer rows of
+`declassification.json` against realization's typed pilot analysis. The full
+publication remains model-owned until realization scope covers every architecture
+operation.

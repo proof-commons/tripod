@@ -21,15 +21,31 @@ fn compact_ash_scope_derives_direct_graphs() {
 }
 
 #[test]
-fn undeclared_live_transfer_scope_rejects_for_now() {
+fn phase1_scope_derives_both_pilots() {
+    let realization = derive(&ARCHITECTURE, RealizationScope::phase1_pilots()).unwrap();
+
+    assert!(
+        realization
+            .operations
+            .contains_key(&OperationId::CompactAsh)
+    );
+    assert!(
+        realization
+            .operations
+            .contains_key(&OperationId::TransferLive)
+    );
+}
+
+#[test]
+fn undeclared_burn_scope_rejects_for_now() {
     let error = derive(
         &ARCHITECTURE,
-        RealizationScope::from_operations([OperationId::TransferLive]).unwrap(),
+        RealizationScope::from_operations([OperationId::Burn]).unwrap(),
     )
     .unwrap_err();
 
     assert_eq!(
         error,
-        RealizationError::UnsupportedOperationDeclaration(OperationId::TransferLive),
+        RealizationError::UnsupportedOperationDeclaration(OperationId::Burn),
     );
 }
