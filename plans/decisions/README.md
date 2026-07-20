@@ -21,6 +21,7 @@ current task status, or unresolved target research.
 | [005](005-value-representation.md) | Accepted | Permit value-representation latitude; keep closed asset identity rigid initially. |
 | [006](006-transaction-abi.md) | Accepted | Generate one canonical transaction/witness ABI per target bundle. |
 | [007](007-petgraph-graph-substrate.md) | Accepted | Use full-featured Petgraph directly for every first-party graph. |
+| [008](008-exact-certified-mathematics.md) | Accepted | Exact semantics and release claims; certified numerical analysis only. |
 
 ## Record form · `rule:decisions:form`
 

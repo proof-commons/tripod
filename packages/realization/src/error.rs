@@ -1,7 +1,10 @@
-use architecture::{BoundId, ManifestError, OperationId};
+use architecture::{BoundId, ManifestError, ObjectId, OperationId};
 use thiserror::Error;
 
-use crate::{ExprId, FactId, ObservedObjectRef, RelationId, SemanticType};
+use crate::{
+    ConstructibilityNodeId, DisclosureNodeId, ExprId, FactId, LifecycleNodeId, ObservedObjectRef,
+    RelationId, RepresentationMode, SemanticType,
+};
 
 /// Architecture field whose declared shape no longer matches a realization weld.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -198,4 +201,74 @@ pub enum RealizationError {
     /// A flow or relation referenced an unknown observed object.
     #[error("observed object {0:?} is unknown")]
     UnknownObservedObject(ObservedObjectRef),
+
+    #[error("constructibility node {0:?} is declared more than once")]
+    DuplicateConstructibilityNode(ConstructibilityNodeId),
+
+    #[error("constructibility node {0:?} is unknown")]
+    UnknownConstructibilityNode(ConstructibilityNodeId),
+
+    #[error("constructibility graph contains one or more cycles")]
+    ConstructibilityCycle {
+        components: Vec<Vec<ConstructibilityNodeId>>,
+    },
+
+    #[error("operation {0} has no constructibility node")]
+    MissingConstructibilityOperation(OperationId),
+
+    #[error("permissionless operation {operation} depends on private source {source_node:?}")]
+    PermissionlessPrivateDependency {
+        operation: OperationId,
+        source_node: ConstructibilityNodeId,
+    },
+
+    #[error("sponsor-local dependency {source_node:?} escaped sponsor-only edge for {operation}")]
+    SponsorDependencyEscaped {
+        operation: OperationId,
+        source_node: ConstructibilityNodeId,
+    },
+
+    #[error("lifecycle node {0:?} is declared more than once")]
+    DuplicateLifecycleNode(LifecycleNodeId),
+
+    #[error("lifecycle node {0:?} is unknown")]
+    UnknownLifecycleNode(LifecycleNodeId),
+
+    #[error("lifecycle graph contains one or more cycles")]
+    LifecycleCycle {
+        components: Vec<Vec<LifecycleNodeId>>,
+    },
+
+    #[error("missing lifecycle representation {object:?} {mode:?}")]
+    MissingLifecycleRepresentation {
+        object: ObjectId,
+        mode: RepresentationMode,
+    },
+
+    #[error("missing lifecycle exit node {object:?} {exit}")]
+    MissingLifecycleExitNode { object: ObjectId, exit: OperationId },
+
+    #[error("missing lifecycle path {object:?} {mode:?} -> {exit}")]
+    MissingLifecyclePath {
+        object: ObjectId,
+        mode: RepresentationMode,
+        exit: OperationId,
+    },
+
+    #[error("disclosure node {0:?} is declared more than once")]
+    DuplicateDisclosureNode(DisclosureNodeId),
+
+    #[error("disclosure node {0:?} is unknown")]
+    UnknownDisclosureNode(DisclosureNodeId),
+
+    #[error("disclosure graph contains one or more cycles")]
+    DisclosureCycle {
+        components: Vec<Vec<DisclosureNodeId>>,
+    },
+
+    #[error("representation/lifecycle mismatch for {object:?} {mode:?}")]
+    RepresentationLifecycleMismatch {
+        object: ObjectId,
+        mode: RepresentationMode,
+    },
 }

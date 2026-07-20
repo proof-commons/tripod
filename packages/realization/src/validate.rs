@@ -8,12 +8,17 @@ use architecture::{
     RootUse, ValueFlowClass, WitnessId,
 };
 
-use crate::{ArchitectureMismatchField, RealizationError, ScopedRealizationSpec};
+use crate::{
+    ArchitectureMismatchField, RealizationError, RepresentationMode, ScopedRealizationSpec,
+    require_lifecycle_exit, validate_constructibility,
+};
 
 pub fn validate_scoped_realization(
-    _architecture: &Architecture,
+    architecture: &Architecture,
     realization: &ScopedRealizationSpec,
 ) -> Result<(), RealizationError> {
+    realization.scope.validate_against(architecture)?;
+
     let scoped = realization
         .scope
         .operations()
@@ -26,17 +31,70 @@ pub fn validate_scoped_realization(
         .copied()
         .collect::<BTreeSet<_>>();
 
-    if scoped == declared {
-        Ok(())
-    } else {
-        Err(RealizationError::UnsupportedOperationDeclaration(
+    if scoped != declared {
+        return Err(RealizationError::UnsupportedOperationDeclaration(
             scoped
                 .symmetric_difference(&declared)
                 .copied()
                 .next()
                 .unwrap_or(OperationId::CompactAsh),
-        ))
+        ));
     }
+
+    for operation in realization.scope.operations() {
+        validate_constructibility(
+            &realization.constructibility_graph,
+            &realization.constructibility_node_by_id,
+            *operation,
+            *operation == OperationId::CompactAsh,
+        )?;
+    }
+
+    validate_pilot_lifecycle(realization)?;
+
+    Ok(())
+}
+
+fn validate_pilot_lifecycle(realization: &ScopedRealizationSpec) -> Result<(), RealizationError> {
+    if realization.scope.contains(OperationId::CompactAsh) {
+        for mode in [
+            RepresentationMode::Explicit,
+            RepresentationMode::PublicCommitted,
+        ] {
+            for exit in [OperationId::CompactAsh, OperationId::Clear] {
+                require_lifecycle_exit(
+                    &realization.lifecycle_graph,
+                    &realization.lifecycle_node_by_id,
+                    ObjectId::Ash,
+                    mode,
+                    exit,
+                )?;
+            }
+        }
+    }
+
+    if realization.scope.contains(OperationId::TransferLive) {
+        for mode in [
+            RepresentationMode::Explicit,
+            RepresentationMode::PrivateCommitted,
+        ] {
+            for exit in [
+                OperationId::TransferLive,
+                OperationId::Burn,
+                OperationId::Redeem,
+            ] {
+                require_lifecycle_exit(
+                    &realization.lifecycle_graph,
+                    &realization.lifecycle_node_by_id,
+                    ObjectId::ReceiptLive,
+                    mode,
+                    exit,
+                )?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 pub fn validate_compact_ash_architecture(

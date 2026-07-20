@@ -27,6 +27,7 @@
 )]
 
 pub mod binding;
+pub mod constructibility;
 pub mod declassification;
 pub mod derive;
 pub mod domain;
@@ -34,6 +35,7 @@ pub mod error;
 pub mod evaluate;
 pub mod expression;
 pub mod identity;
+pub mod lifecycle;
 pub mod observation;
 pub mod operation;
 pub mod relation;
@@ -44,9 +46,17 @@ mod declarations;
 mod validate;
 
 pub use binding::ArchitectureBinding;
+pub use constructibility::{
+    AvailabilityClass, ConstructibilityDependencyDeclaration, ConstructibilityDependencyProjection,
+    ConstructibilityEdge, ConstructibilityEdgeRole, ConstructibilityGraphProjection,
+    ConstructibilityNode, ConstructibilityNodeId, RequirementStrength, WitnessRole,
+    build_constructibility_graph, project_constructibility_graph, validate_constructibility,
+};
 pub use declassification::{
-    DeclassificationAnalysis, DisclosureEdge, DisclosureNode, DisclosureReason,
-    phase1_declassification,
+    DeclassificationAnalysis, DisclosureDependencyDeclaration, DisclosureDependencyProjection,
+    DisclosureEdge, DisclosureGraphProjection, DisclosureNode, DisclosureNodeId, DisclosureReason,
+    DisclosureSeed, InitialVisibility, analyze_disclosure, build_disclosure_graph,
+    phase1_declassification, project_disclosure_graph,
 };
 pub use derive::{
     ScopedRealizationProjection, ScopedRealizationSpec, derive, project_scoped_realization,
@@ -63,6 +73,11 @@ pub use identity::{
     ExprId, ExpressionRole, FactId, ProofAlternativeId, ProofKind, RelationId, RelationKind,
     RelationSubject, TransactionSide,
 };
+pub use lifecycle::{
+    LifecycleDependencyDeclaration, LifecycleDependencyProjection, LifecycleEdge,
+    LifecycleGraphProjection, LifecycleNode, LifecycleNodeId, build_lifecycle_graph,
+    project_lifecycle_graph, require_lifecycle_exit,
+};
 pub use observation::{
     ObservedAsset, ObservedObject, ObservedObjectKind, ObservedObjectRef, ObservedOpenFlow,
     ObservedRootEffect, ObservedSide, OperationObservation,
@@ -70,7 +85,8 @@ pub use observation::{
 pub use operation::OperationRealization;
 pub use relation::{
     CardinalityMaximum, ConstructibilityClass, Relation, RelationDeclaration,
-    RelationDependencyProjection, RelationEdge, RelationGraphProjection, project_relation_graph,
+    RelationDependencyDeclaration, RelationDependencyProjection, RelationEdge,
+    RelationGraphProjection, project_relation_graph,
 };
 pub use scope::{CompleteRealizationScope, RealizationScope};
 pub use value::{OwnerId, SemanticType, SemanticValue};

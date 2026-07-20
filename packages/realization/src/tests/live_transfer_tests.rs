@@ -169,16 +169,16 @@ fn failed(report: &crate::ConformanceReport, relation: &RelationId) -> bool {
 #[test]
 fn relation_declaration_order_does_not_change_relation_graph_projection() {
     let realization = pilot_realization();
-    let declarations = realization
+    let operation = realization
         .operations
         .get(&OperationId::TransferLive)
-        .unwrap()
-        .relations
-        .clone();
+        .unwrap();
+    let declarations = operation.relations.clone();
+    let dependencies = operation.relation_dependencies.clone();
     let mut reversed = declarations.clone();
     reversed.reverse();
-    let first = crate::relation::build_relation_graph(declarations).unwrap();
-    let second = crate::relation::build_relation_graph(reversed).unwrap();
+    let first = crate::relation::build_relation_graph(declarations, dependencies.clone()).unwrap();
+    let second = crate::relation::build_relation_graph(reversed, dependencies).unwrap();
 
     assert_eq!(
         crate::relation::project_relation_graph(&first.0),

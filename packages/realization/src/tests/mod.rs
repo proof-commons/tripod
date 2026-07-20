@@ -1,6 +1,9 @@
 mod compact_ash_tests;
+mod constructibility_tests;
 mod derivation_tests;
+mod disclosure_tests;
 mod expression_tests;
+mod lifecycle_tests;
 mod live_transfer_tests;
 mod property_graph_tests;
 mod type_tests;

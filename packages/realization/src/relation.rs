@@ -89,11 +89,15 @@ pub enum Relation {
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RelationEdge {
+    RecognitionBeforeCardinality,
     RecognitionBeforeValue,
     CardinalityBeforeValue,
     AuthorizationBeforeClosure,
+    AuthorizationBeforeConstructibility,
+    SponsorBeforeConstructibility,
     SponsorBeforeOperation,
-    ProjectionBeforeOperation,
+    RepresentationBeforeLifecycle,
+    ProjectionPolicyBeforeOperation,
     RootPolicyBeforeOperation,
     StaticRequirement,
 }
@@ -103,8 +107,15 @@ pub enum RelationEdge {
 pub struct RelationDeclaration {
     pub id: RelationId,
     pub relation: Relation,
-    pub prerequisites: BTreeSet<RelationId>,
     pub proof_alternatives: BTreeSet<ProofAlternativeId>,
+}
+
+/// One explicit stable relation dependency-edge declaration.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct RelationDependencyDeclaration {
+    pub prerequisite: RelationId,
+    pub dependent: RelationId,
+    pub edge: RelationEdge,
 }
 
 /// Stable typed projection of one relation dependency edge.
@@ -122,17 +133,11 @@ pub struct RelationGraphProjection {
     pub edges: Vec<RelationDependencyProjection>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct PendingRelationEdge {
-    prerequisite: RelationId,
-    dependent: RelationId,
-    edge: RelationEdge,
-}
-
 /// Build a direct Petgraph relation dependency graph.
 #[allow(clippy::type_complexity)]
 pub fn build_relation_graph(
     declarations: impl IntoIterator<Item = RelationDeclaration>,
+    dependencies: impl IntoIterator<Item = RelationDependencyDeclaration>,
 ) -> Result<
     (
         DiGraph<RelationDeclaration, RelationEdge, u32>,
@@ -151,26 +156,24 @@ pub fn build_relation_graph(
         }
     }
 
-    let mut pending_edges = Vec::new();
+    let mut pending_edges = dependencies.into_iter().collect::<Vec<_>>();
+    pending_edges.sort();
 
-    for declaration in by_id.values() {
-        for prerequisite in &declaration.prerequisites {
-            if !by_id.contains_key(prerequisite) {
-                return Err(RealizationError::UnknownRelationDependency {
-                    relation: declaration.id.clone(),
-                    dependency: prerequisite.clone(),
-                });
-            }
+    for dependency in &pending_edges {
+        if !by_id.contains_key(&dependency.prerequisite) {
+            return Err(RealizationError::UnknownRelationDependency {
+                relation: dependency.dependent.clone(),
+                dependency: dependency.prerequisite.clone(),
+            });
+        }
 
-            pending_edges.push(PendingRelationEdge {
-                prerequisite: prerequisite.clone(),
-                dependent: declaration.id.clone(),
-                edge: classify_relation_edge(&by_id[prerequisite].relation, &declaration.relation),
+        if !by_id.contains_key(&dependency.dependent) {
+            return Err(RealizationError::UnknownRelationDependency {
+                relation: dependency.dependent.clone(),
+                dependency: dependency.dependent.clone(),
             });
         }
     }
-
-    pending_edges.sort();
 
     let mut graph = DiGraph::<RelationDeclaration, RelationEdge, u32>::with_capacity(
         by_id.len(),
@@ -183,10 +186,10 @@ pub fn build_relation_graph(
         node_by_id.insert(declaration.id.clone(), node);
     }
 
-    for pending in pending_edges {
-        let source = node_by_id[&pending.prerequisite];
-        let target = node_by_id[&pending.dependent];
-        graph.add_edge(source, target, pending.edge);
+    for dependency in pending_edges {
+        let source = node_by_id[&dependency.prerequisite];
+        let target = node_by_id[&dependency.dependent];
+        graph.add_edge(source, target, dependency.edge);
     }
 
     let evaluation_order = toposort(&graph, None)
@@ -219,25 +222,6 @@ pub fn project_relation_graph(
     edges.sort();
 
     RelationGraphProjection { nodes, edges }
-}
-
-fn classify_relation_edge(prerequisite: &Relation, dependent: &Relation) -> RelationEdge {
-    match (prerequisite, dependent) {
-        (Relation::Recognition { .. }, Relation::AmountConservation { .. }) => {
-            RelationEdge::RecognitionBeforeValue
-        }
-        (Relation::Cardinality { .. }, Relation::AmountConservation { .. }) => {
-            RelationEdge::CardinalityBeforeValue
-        }
-        (
-            Relation::OwnerAuthorization { .. } | Relation::PermissionlessAuthorization,
-            Relation::AllowedObjectFamilies { .. },
-        ) => RelationEdge::AuthorizationBeforeClosure,
-        (Relation::SponsorIsolation, _) => RelationEdge::SponsorBeforeOperation,
-        (Relation::ProjectionPolicy { .. }, _) => RelationEdge::ProjectionBeforeOperation,
-        (Relation::RootPolicy { .. }, _) => RelationEdge::RootPolicyBeforeOperation,
-        _ => RelationEdge::StaticRequirement,
-    }
 }
 
 fn cyclic_relation_components(

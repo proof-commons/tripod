@@ -6,10 +6,17 @@ use architecture::{Architecture, OperationId};
 use petgraph::graph::{DiGraph, NodeIndex};
 
 use crate::{
-    ArchitectureBinding, DependencyEdge, ExprId, ExpressionDeclaration, OperationRealization,
-    RealizationError, RealizationScope, RelationDeclaration, RelationEdge, RelationGraphProjection,
-    RelationId, declarations,
+    ArchitectureBinding, ConstructibilityEdge, ConstructibilityGraphProjection,
+    ConstructibilityNode, ConstructibilityNodeId, DeclassificationAnalysis, DependencyEdge,
+    DisclosureEdge, DisclosureGraphProjection, DisclosureNode, DisclosureNodeId, ExprId,
+    ExpressionDeclaration, LifecycleEdge, LifecycleGraphProjection, LifecycleNode, LifecycleNodeId,
+    OperationRealization, RealizationError, RealizationScope, RelationDeclaration, RelationEdge,
+    RelationGraphProjection, RelationId,
+    constructibility::{build_constructibility_graph, project_constructibility_graph},
+    declarations,
+    declassification::{analyze_disclosure, build_disclosure_graph, project_disclosure_graph},
     expression::{ExpressionGraphProjection, build_expression_graph, project_expression_graph},
+    lifecycle::{build_lifecycle_graph, project_lifecycle_graph},
     relation::{build_relation_graph, project_relation_graph},
 };
 
@@ -25,6 +32,15 @@ pub struct ScopedRealizationSpec {
     pub relation_node_by_id: BTreeMap<RelationId, NodeIndex<u32>>,
     pub expression_evaluation_order: Vec<ExprId>,
     pub relation_evaluation_order: Vec<RelationId>,
+    pub constructibility_graph: DiGraph<ConstructibilityNode, ConstructibilityEdge, u32>,
+    pub constructibility_node_by_id: BTreeMap<ConstructibilityNodeId, NodeIndex<u32>>,
+    pub constructibility_order: Vec<ConstructibilityNodeId>,
+    pub lifecycle_graph: DiGraph<LifecycleNode, LifecycleEdge, u32>,
+    pub lifecycle_node_by_id: BTreeMap<LifecycleNodeId, NodeIndex<u32>>,
+    pub lifecycle_order: Vec<LifecycleNodeId>,
+    pub disclosure_graph: DiGraph<DisclosureNode, DisclosureEdge, u32>,
+    pub disclosure_node_by_id: BTreeMap<DisclosureNodeId, NodeIndex<u32>>,
+    pub declassification: DeclassificationAnalysis,
 }
 
 /// Stable typed projection of a scoped realization for deterministic comparison.
@@ -35,6 +51,10 @@ pub struct ScopedRealizationProjection {
     pub operations: Vec<(OperationId, OperationRealization)>,
     pub expressions: ExpressionGraphProjection,
     pub relations: RelationGraphProjection,
+    pub constructibility: ConstructibilityGraphProjection,
+    pub lifecycle: LifecycleGraphProjection,
+    pub disclosure: DisclosureGraphProjection,
+    pub declassification: DeclassificationAnalysis,
     pub expression_evaluation_order: Vec<ExprId>,
     pub relation_evaluation_order: Vec<RelationId>,
 }
@@ -69,8 +89,51 @@ pub fn derive(
         .values()
         .flat_map(|operation| operation.relations.iter().cloned())
         .collect::<Vec<_>>();
+    let relation_dependencies = operations
+        .values()
+        .flat_map(|operation| operation.relation_dependencies.iter().cloned())
+        .collect::<Vec<_>>();
     let (relation_graph, relation_node_by_id, relation_evaluation_order) =
-        build_relation_graph(relation_declarations)?;
+        build_relation_graph(relation_declarations, relation_dependencies)?;
+
+    let constructibility_nodes = operations
+        .values()
+        .flat_map(|operation| operation.constructibility_nodes.iter().cloned())
+        .collect::<Vec<_>>();
+    let constructibility_edges = operations
+        .values()
+        .flat_map(|operation| operation.constructibility_edges.iter().cloned())
+        .collect::<Vec<_>>();
+    let (constructibility_graph, constructibility_node_by_id, constructibility_order) =
+        build_constructibility_graph(constructibility_nodes, constructibility_edges)?;
+
+    let lifecycle_nodes = operations
+        .values()
+        .flat_map(|operation| operation.lifecycle_nodes.iter().cloned())
+        .collect::<Vec<_>>();
+    let lifecycle_edges = operations
+        .values()
+        .flat_map(|operation| operation.lifecycle_edges.iter().cloned())
+        .collect::<Vec<_>>();
+    let (lifecycle_graph, lifecycle_node_by_id, lifecycle_order) =
+        build_lifecycle_graph(lifecycle_nodes, lifecycle_edges)?;
+
+    let disclosure_nodes = operations
+        .values()
+        .flat_map(|operation| operation.disclosure_nodes.iter().cloned())
+        .collect::<Vec<_>>();
+    let disclosure_edges = operations
+        .values()
+        .flat_map(|operation| operation.disclosure_edges.iter().cloned())
+        .collect::<Vec<_>>();
+    let disclosure_seeds = operations
+        .values()
+        .flat_map(|operation| operation.disclosure_seeds.iter().cloned())
+        .collect::<Vec<_>>();
+    let (disclosure_graph, disclosure_node_by_id) =
+        build_disclosure_graph(disclosure_nodes, disclosure_edges)?;
+    let declassification =
+        analyze_disclosure(&disclosure_graph, &disclosure_node_by_id, &disclosure_seeds)?;
 
     let result = ScopedRealizationSpec {
         architecture: binding,
@@ -82,6 +145,15 @@ pub fn derive(
         relation_node_by_id,
         expression_evaluation_order,
         relation_evaluation_order,
+        constructibility_graph,
+        constructibility_node_by_id,
+        constructibility_order,
+        lifecycle_graph,
+        lifecycle_node_by_id,
+        lifecycle_order,
+        disclosure_graph,
+        disclosure_node_by_id,
+        declassification,
     };
 
     crate::validate::validate_scoped_realization(architecture, &result)?;
@@ -104,6 +176,10 @@ pub fn project_scoped_realization(
             .collect(),
         expressions: project_expression_graph(&realization.expression_graph),
         relations: project_relation_graph(&realization.relation_graph),
+        constructibility: project_constructibility_graph(&realization.constructibility_graph),
+        lifecycle: project_lifecycle_graph(&realization.lifecycle_graph),
+        disclosure: project_disclosure_graph(&realization.disclosure_graph),
+        declassification: realization.declassification.clone(),
         expression_evaluation_order: realization.expression_evaluation_order.clone(),
         relation_evaluation_order: realization.relation_evaluation_order.clone(),
     }

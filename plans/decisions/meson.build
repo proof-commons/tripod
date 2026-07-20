@@ -9,5 +9,6 @@ plans_decisions_files = files(
   '005-value-representation.md',
   '006-transaction-abi.md',
   '007-petgraph-graph-substrate.md',
+  '008-exact-certified-mathematics.md',
   'README.md',
 )
