@@ -533,3 +533,92 @@ fn canonical_inputs_reject_paths_that_escape_the_repository() {
         Err(StampError::InvalidInputPath)
     ));
 }
+
+// ---------------------------------------------------------------------------
+// Template rendering and idempotent output
+// ---------------------------------------------------------------------------
+
+fn render_values() -> AttestationStampValues {
+    AttestationStampValues {
+        date: "2030-01-02".to_owned(),
+        timestamp: PreparedTimestamp {
+            epoch: 1_893_542_400,
+            iso_8601: "2030-01-02T00:00:00Z".to_owned(),
+            pdf: "D:20300102000000Z".to_owned(),
+        },
+        document_uuid: "11111111-2222-3333-4444-555555555555".to_owned(),
+        instance_uuid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".to_owned(),
+    }
+}
+
+#[test]
+fn render_stamps_fills_all_four_placeholders() {
+    let template = concat!(
+        r"\newcommand{\AttestationDate}{@ATTESTATION_DATE@}",
+        "\n",
+        r"\newcommand{\AttestationTimestamp}{@ATTESTATION_TIMESTAMP@}",
+        "\n",
+        r"\newcommand{\AttestationDocumentUUID}{@ATTESTATION_DOCUMENT_UUID@}",
+        "\n",
+        r"\newcommand{\AttestationInstanceUUID}{@ATTESTATION_INSTANCE_UUID@}",
+        "\n",
+    );
+    let rendered = render_stamps(template, &render_values()).expect("renders");
+
+    assert!(rendered.contains("{2030-01-02}"));
+    assert!(rendered.contains("{D:20300102000000Z}"));
+    assert!(rendered.contains("{11111111-2222-3333-4444-555555555555}"));
+    assert!(rendered.contains("{aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee}"));
+    assert!(!rendered.contains("@ATTESTATION_"));
+}
+
+#[test]
+fn render_stamps_rejects_an_unresolved_placeholder() {
+    let template = "@ATTESTATION_DATE@ and @ATTESTATION_UNKNOWN@";
+    assert!(matches!(
+        render_stamps(template, &render_values()),
+        Err(StampError::UnresolvedPlaceholder)
+    ));
+}
+
+#[test]
+fn write_if_changed_creates_an_absent_file() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("out");
+    write_if_changed(&path, b"content").expect("writes");
+    assert_eq!(std::fs::read(&path).expect("read"), b"content");
+}
+
+#[test]
+fn write_if_changed_skips_identical_content() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("out");
+    write_if_changed(&path, b"same").expect("writes");
+
+    // Pin an old mtime; a rewrite would move it to ~now, a skip preserves it.
+    let old = std::time::SystemTime::UNIX_EPOCH;
+    std::fs::File::options()
+        .write(true)
+        .open(&path)
+        .expect("open")
+        .set_times(std::fs::FileTimes::new().set_modified(old))
+        .expect("set mtime");
+
+    write_if_changed(&path, b"same").expect("writes");
+
+    let mtime = std::fs::metadata(&path)
+        .expect("metadata")
+        .modified()
+        .expect("mtime");
+    assert_eq!(mtime, old, "identical content must not be rewritten");
+    assert_eq!(std::fs::read(&path).expect("read"), b"same");
+}
+
+#[test]
+fn write_if_changed_rewrites_changed_content() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("out");
+    write_if_changed(&path, b"one").expect("writes");
+    write_if_changed(&path, b"two").expect("rewrites");
+    assert_eq!(std::fs::read(&path).expect("read"), b"two");
+}

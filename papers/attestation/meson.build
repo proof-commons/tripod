@@ -59,7 +59,6 @@ xelatex = find_program(get_option('xelatex_path'))
 biber = find_program(get_option('biber_path'))
 latexmk = find_program(get_option('latexmk_path'))
 git = find_program(get_option('git_path'), required: true)
-jq = find_program(get_option('jq_path'), required: true)
 sh = find_program('sh')
 
 # The generated stamps.tex lives in the build directory, so it must be
@@ -124,15 +123,14 @@ attestation_stamps_bin = custom_target(
 )
 
 # Build-time provenance stamps (ADR-014). The Rust binary derives four
-# values from committed Git state; prepare-attestation-stamps.sh renders
-# them into stamps.tex and source-date-epoch (and a .ok success probe).
-# build_always_stale is required because ninja cannot otherwise see a
-# changed HEAD, a paper-tree commit touching no all_inputs file, or a
-# dirty working tree; the wrapper's compare-if-changed writes let ninja
-# restat skip downstream rebuilds when the derived values are unchanged.
-prepare_attestation_stamps = find_program(
-  meson.global_source_root() / 'scripts' / 'prepare-attestation-stamps.sh'
-)
+# values from committed Git state and renders them directly into
+# stamps.tex and source-date-epoch (and touches a .ok success probe):
+# rendering, the fail-closed placeholder check, and the compare-if-changed
+# writes all live in the binary and are unit-tested there. build_always_stale
+# is required because ninja cannot otherwise see a changed HEAD, a paper-tree
+# commit touching no all_inputs file, or a dirty working tree; the
+# compare-if-changed writes let ninja restat skip downstream rebuilds when
+# the derived values are unchanged.
 repository_root = meson.global_source_root()
 all_input_args = []
 foreach input_file : all_inputs
@@ -140,21 +138,19 @@ foreach input_file : all_inputs
 endforeach
 
 attestation_stamps = custom_target(
-  'prepare-attestation-stamps',
+  'generate-attestation-stamps',
   input: all_inputs,
   output: ['stamps.tex', 'source-date-epoch', 'attestation-stamps.ok'],
   command: [
-    prepare_attestation_stamps,
     attestation_stamps_bin,
-    jq,
-    git,
-    repository_root,
-    'HEAD',
-    'papers/attestation',
-    stamps_template,
-    '@OUTPUT0@',
-    '@OUTPUT1@',
-    '@OUTPUT2@',
+    '--git', git.full_path(),
+    '--repository-root', repository_root,
+    '--tree-ref', 'HEAD',
+    '--tree', 'papers/attestation',
+    '--template', stamps_template,
+    '--stamps-output', '@OUTPUT0@',
+    '--epoch-output', '@OUTPUT1@',
+    '--stamp', '@OUTPUT2@',
   ] + all_input_args,
   build_always_stale: true,
   console: true,

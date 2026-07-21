@@ -59,7 +59,7 @@ internals: they require the full role-tagged ADR-014 census that Meson derives.
 - meson and ninja
 - a Rust toolchain (cargo, edition 2024)
 - TeX Live with `xelatex`, `biber`, and `latexmk`
-- `git` and `jq` (for the build-time paper provenance stamps)
+- `git` (for the build-time paper provenance stamps)
 
 ## Building
 

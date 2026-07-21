@@ -1,17 +1,22 @@
 //! `attestation-stamps`: derive deterministic Attestation paper
-//! metadata from committed Git state and emit it as one JSON object.
+//! metadata from committed Git state.
 //!
 //! The build system supplies the Git program, the repository root, the
-//! revision, the paper subtree, and the exact publication-input set. On
-//! success the four prepared values go to stdout as one JSON line
-//! (ADR-010); the command performs no writes.
+//! revision, the paper subtree, and the exact publication-input set. In
+//! the default mode the four prepared values go to stdout as one JSON
+//! line (ADR-010) and nothing is written. In render mode (the four
+//! `--template`/`--stamps-output`/`--epoch-output`/`--stamp` arguments)
+//! the command instead writes the generated `stamps.tex`, the
+//! `source-date-epoch` file, and a success stamp, emitting no stdout.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Parser;
-use cli_common::{BaseArgs, install_json_panic_hook, run_stdout_json_command};
-use document_stamps::StampRequest;
+use cli_common::{
+    BaseArgs, install_json_panic_hook, run_no_stdout_command, run_stdout_json_command,
+};
+use document_stamps::{RenderRequest, StampRequest};
 
 const COMMAND_NAME: &str = "attestation-stamps";
 
@@ -39,6 +44,23 @@ struct Args {
     /// Exact publication-input members (repository-relative).
     #[arg(long = "input", value_name = "FILE", required = true)]
     inputs: Vec<PathBuf>,
+    /// Render mode: the `stamps.tex.in` template to fill. Requires the
+    /// three output arguments; enables writing instead of JSON stdout.
+    #[arg(
+        long,
+        value_name = "FILE",
+        requires_all = ["stamps_output", "epoch_output", "stamp"]
+    )]
+    template: Option<PathBuf>,
+    /// Render mode: where the generated `stamps.tex` is written.
+    #[arg(long, value_name = "FILE")]
+    stamps_output: Option<PathBuf>,
+    /// Render mode: where the `source-date-epoch` file is written.
+    #[arg(long, value_name = "FILE")]
+    epoch_output: Option<PathBuf>,
+    /// Render mode: the success-probe stamp touched on completion.
+    #[arg(long, value_name = "FILE")]
+    stamp: Option<PathBuf>,
 }
 
 fn main() -> ExitCode {
@@ -54,7 +76,27 @@ fn main() -> ExitCode {
         tree: args.tree,
         inputs: args.inputs,
     };
-    run_stdout_json_command(COMMAND_NAME, debug, tracing::Level::INFO, move || {
-        document_stamps::run(&request)
-    })
+
+    // `requires_all` makes the render arguments all-or-nothing, so this
+    // tuple is either fully populated (render mode) or fully empty (JSON).
+    if let (Some(template), Some(stamps_output), Some(epoch_output), Some(stamp)) = (
+        args.template,
+        args.stamps_output,
+        args.epoch_output,
+        args.stamp,
+    ) {
+        run_no_stdout_command(COMMAND_NAME, debug, tracing::Level::INFO, move || {
+            document_stamps::render(&RenderRequest {
+                stamps: &request,
+                template: &template,
+                stamps_output: &stamps_output,
+                epoch_output: &epoch_output,
+                stamp: &stamp,
+            })
+        })
+    } else {
+        run_stdout_json_command(COMMAND_NAME, debug, tracing::Level::INFO, move || {
+            document_stamps::run(&request)
+        })
+    }
 }

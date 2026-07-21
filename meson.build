@@ -33,16 +33,11 @@ python = find_program('python3')
 # revision. It is required for canonical publication.
 git = find_program('git', required: true)
 
-# jq validates and renders the derived stamp JSON into the generated
-# stamps.tex and source-date-epoch (see scripts/prepare-attestation-stamps.sh).
-jq = find_program('jq', required: true)
-
 latex_default_options = [
   'xelatex_path=' + xelatex.full_path(),
   'biber_path=' + biber.full_path(),
   'latexmk_path=' + latexmk.full_path(),
   'git_path=' + git.full_path(),
-  'jq_path=' + jq.full_path(),
 ]
 
 # ---------------------------------------------------------------------------

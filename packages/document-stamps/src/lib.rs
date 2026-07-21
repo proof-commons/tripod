@@ -2,11 +2,13 @@
 //! metadata from committed Git state.
 //!
 //! The build system supplies the Git program, the repository root, the
-//! paper subtree, and the exact publication-input set. From those this
-//! library derives four prepared values and returns them as a
-//! [`AttestationStampValues`] object; the binary in
-//! [`src/bin/attestation-stamps.rs`](../bin/attestation-stamps.rs) serialises
-//! that object as one JSON line on stdout. Nothing here writes to disk.
+//! paper subtree, and the exact publication-input set. From those [`run`]
+//! derives four prepared values as an [`AttestationStampValues`] object.
+//! [`render`] additionally fills the `stamps.tex.in` template with those
+//! values and writes the generated `stamps.tex`, the `source-date-epoch`
+//! file, and a `.ok` stamp (compare-if-changed, for ninja `restat`); the
+//! rendering and fail-closed placeholder check are unit-tested here rather
+//! than in a shell wrapper.
 //!
 //! The four values, and their intentionally distinct domains:
 //!
@@ -84,6 +86,18 @@ pub enum StampError {
     /// tree; repository object identity is unexpectedly ambiguous.
     #[error("the 128-bit tree prefix did not uniquely resolve to the expected tree")]
     TreePrefixResolutionFailure,
+
+    /// The template could not be read.
+    #[error("the stamps template could not be read")]
+    TemplateReadFailed,
+
+    /// The rendered template still contains an unresolved placeholder.
+    #[error("the rendered stamps template still contains an unresolved placeholder")]
+    UnresolvedPlaceholder,
+
+    /// A generated output file could not be written.
+    #[error("a generated stamp output could not be written")]
+    OutputWriteFailed,
 }
 
 /// The four prepared values emitted as one JSON object.
@@ -140,6 +154,86 @@ pub fn run(request: &StampRequest) -> Result<AttestationStampValues, StampError>
         repository_root: request.repository_root.clone(),
     };
     derive(&git, request)
+}
+
+/// A request to derive the values and render the build inputs.
+#[derive(Debug, Clone)]
+pub struct RenderRequest<'a> {
+    /// The derivation request.
+    pub stamps: &'a StampRequest,
+    /// The `stamps.tex.in` template to fill.
+    pub template: &'a Path,
+    /// Where the rendered `stamps.tex` is written.
+    pub stamps_output: &'a Path,
+    /// Where the `source-date-epoch` file is written.
+    pub epoch_output: &'a Path,
+    /// The success-probe stamp touched last.
+    pub stamp: &'a Path,
+}
+
+/// Derive the four values and write the paper build inputs.
+///
+/// Writes the rendered `stamps.tex`, the `source-date-epoch` file, and
+/// the `.ok` stamp. Both content files use compare-if-changed writes so an
+/// unchanged rebuild preserves their mtime (ninja `restat`).
+///
+/// # Errors
+///
+/// Returns a [`StampError`] on any derivation failure (see [`run`]), if
+/// the template cannot be read, if a placeholder is left unresolved, or
+/// if an output cannot be written.
+pub fn render(request: &RenderRequest<'_>) -> Result<(), StampError> {
+    let values = run(request.stamps)?;
+    let template = std::fs::read_to_string(request.template)
+        .map_err(|_error| StampError::TemplateReadFailed)?;
+    let rendered = render_stamps(&template, &values)?;
+
+    write_if_changed(request.stamps_output, rendered.as_bytes())?;
+    write_if_changed(
+        request.epoch_output,
+        format!("{}\n", values.timestamp.epoch).as_bytes(),
+    )?;
+    cli_common::touch_stamp(request.stamp).map_err(|_error| StampError::OutputWriteFailed)?;
+    Ok(())
+}
+
+/// Substitute the four placeholders into the template, fail-closed if any
+/// `@ATTESTATION_` token survives. The values are ASCII-constrained and
+/// contain no placeholder syntax, so substitution cannot cascade.
+fn render_stamps(template: &str, values: &AttestationStampValues) -> Result<String, StampError> {
+    let rendered = template
+        .replace("@ATTESTATION_DATE@", &values.date)
+        .replace("@ATTESTATION_TIMESTAMP@", &values.timestamp.pdf)
+        .replace("@ATTESTATION_DOCUMENT_UUID@", &values.document_uuid)
+        .replace("@ATTESTATION_INSTANCE_UUID@", &values.instance_uuid);
+    if rendered.contains("@ATTESTATION_") {
+        return Err(StampError::UnresolvedPlaceholder);
+    }
+    Ok(rendered)
+}
+
+/// Write `bytes` to `path` only if the current contents differ, using an
+/// atomic temp-file rename. The skip keeps ninja `restat` from cascading
+/// rebuilds when the derived values are unchanged.
+fn write_if_changed(path: &Path, bytes: &[u8]) -> Result<(), StampError> {
+    if std::fs::read(path).is_ok_and(|existing| existing == bytes) {
+        return Ok(());
+    }
+    let directory = path.parent().ok_or(StampError::OutputWriteFailed)?;
+    let mut staged = tempfile::Builder::new()
+        .prefix(".stamps-staged-")
+        .tempfile_in(directory)
+        .map_err(|_error| StampError::OutputWriteFailed)?;
+    std::io::Write::write_all(&mut staged, bytes)
+        .map_err(|_error| StampError::OutputWriteFailed)?;
+    staged
+        .as_file()
+        .sync_all()
+        .map_err(|_error| StampError::OutputWriteFailed)?;
+    staged
+        .persist(path)
+        .map_err(|_error| StampError::OutputWriteFailed)?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
