@@ -10,5 +10,10 @@
   file must be listed in its directory's `meson.build`, or the
   census-audit target fails the build. This file, for example, is
   listed in the repository-root `meson.build`.
+- Do not write the raw Rust generic token `&lt;char&gt;` in tracked files.
+  Some review/report pipelines treat angle-bracketed text as markup and
+  may substitute chat-role text such as "Assistant". Prefer inferred
+  Rust spellings such as `Vec<_>` or `collect::<Vec<_>>()`, and use the
+  escaped spelling `&lt;char&gt;` when prose must discuss the exact token.
 - `scripts/ci.sh` is the runner-agnostic CI gate for environments
   without a TeX toolchain.

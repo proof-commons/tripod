@@ -12,7 +12,8 @@
 #   6. labels           check-labels (non-writing label gate)
 #   7. advisories       cargo audit (skipped loudly when not installed)
 #   8. plans            check-plans.sh (documentation structure)
-#   9. clean tree       git diff --exit-code
+#   9. forbidden text   check-forbidden-text.sh
+#  10. clean tree       git diff --exit-code
 #
 # The checker lanes receive their subjects by argument (ADR-014). The
 # census_args function below derives role-tagged argv from git
@@ -99,10 +100,13 @@ else
   echo "WARNING: cargo-audit is not installed; advisory lane SKIPPED" >&2
 fi
 
-echo "==> lane 8/9: plan-tree checks" >&2
+echo "==> lane 8/10: plan-tree checks" >&2
 sh scripts/check-plans.sh
 
-echo "==> lane 9/9: clean working tree" >&2
+echo "==> lane 9/10: forbidden text" >&2
+sh scripts/check-forbidden-text.sh
+
+echo "==> lane 10/10: clean working tree" >&2
 git diff --exit-code
 
 echo "==> CI green" >&2

@@ -357,7 +357,21 @@ plans_stamp = custom_target(
   console: true,
 )
 
-alias_target('lint', labels_stamp, generated_stamp, plans_stamp)
+forbidden_text_script = files('scripts/check-forbidden-text.sh')
+forbidden_text_stamp = custom_target(
+  'forbidden-text-check',
+  input: forbidden_text_script,
+  output: 'forbidden-text.ok',
+  command: [
+    sh, forbidden_text_script,
+    '--stamp', '@OUTPUT@',
+  ],
+  build_by_default: true,
+  build_always_stale: true,
+  console: true,
+)
+
+alias_target('lint', labels_stamp, generated_stamp, plans_stamp, forbidden_text_stamp)
 
 # ---------------------------------------------------------------------------
 # Generators: committed in-tree publications cannot be declared
@@ -556,6 +570,15 @@ test(
   args: stamp_probe + [plans_stamp.full_path()],
   depends: plans_stamp,
   suite: 'documentation',
+  timeout: 60,
+)
+
+test(
+  'forbidden-text-check',
+  sh,
+  args: stamp_probe + [forbidden_text_stamp.full_path()],
+  depends: forbidden_text_stamp,
+  suite: 'lint',
   timeout: 60,
 )
 
