@@ -68,7 +68,7 @@ fn residue_does_not_change_attestation_query() {
     let chain = chain_view_for_history(&burned);
 
     let before_indexer =
-        ReferenceIndexer::from_history(&burned.history, &chain, [0_u8; 32]).unwrap();
+        ReferenceIndexer::from_model_history(&burned.history, &chain, [0_u8; 32]).unwrap();
 
     let before_query = before_indexer.query(ADDRESS_A).unwrap();
 
@@ -85,7 +85,7 @@ fn residue_does_not_change_attestation_query() {
     residue.time_locked_residue = sat(17);
 
     let after_indexer =
-        ReferenceIndexer::from_history(&perturbed.history, &chain, [0_u8; 32]).unwrap();
+        ReferenceIndexer::from_model_history(&perturbed.history, &chain, [0_u8; 32]).unwrap();
 
     let after_query = after_indexer.query(ADDRESS_A).unwrap();
 

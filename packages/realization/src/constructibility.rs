@@ -1,6 +1,6 @@
 //! Typed constructibility requirements stored in a direct Petgraph graph.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use architecture::{ObjectId, OperationId};
 use petgraph::{
@@ -93,7 +93,7 @@ pub struct ConstructibilityGraphProjection {
 }
 
 #[allow(clippy::type_complexity)]
-pub fn build_constructibility_graph(
+pub(crate) fn build_constructibility_graph(
     nodes: impl IntoIterator<Item = ConstructibilityNode>,
     edges: impl IntoIterator<Item = ConstructibilityDependencyDeclaration>,
 ) -> Result<
@@ -117,6 +117,14 @@ pub fn build_constructibility_graph(
 
     let mut edges = edges.into_iter().collect::<Vec<_>>();
     edges.sort();
+
+    for pair in edges.windows(2) {
+        if pair[0] == pair[1] {
+            return Err(RealizationError::DuplicateConstructibilityDependency(
+                pair[0].clone(),
+            ));
+        }
+    }
 
     let mut graph = DiGraph::<ConstructibilityNode, ConstructibilityEdge, u32>::with_capacity(
         nodes.len(),
@@ -154,7 +162,7 @@ pub fn build_constructibility_graph(
     Ok((graph, node_by_id, order))
 }
 
-pub fn validate_constructibility(
+pub(crate) fn validate_constructibility(
     graph: &DiGraph<ConstructibilityNode, ConstructibilityEdge, u32>,
     node_by_id: &BTreeMap<ConstructibilityNodeId, NodeIndex<u32>>,
     operation: OperationId,
@@ -165,12 +173,21 @@ pub fn validate_constructibility(
         RealizationError::MissingConstructibilityOperation(operation),
     )?;
 
-    for edge in graph.edges_directed(operation_node, Direction::Incoming) {
-        let source = &graph[edge.source()].id;
-        let availability = match source {
-            ConstructibilityNodeId::Fact { availability, .. }
-            | ConstructibilityNodeId::Witness { availability, .. } => *availability,
-            ConstructibilityNodeId::Operation(_) => continue,
+    for ancestor in reverse_reachable_ancestors(graph, operation_node) {
+        let source = &graph[ancestor].id;
+        let path = path_to_operation(graph, ancestor, operation_node)
+            .unwrap_or_else(|| vec![source.clone(), ConstructibilityNodeId::Operation(operation)]);
+
+        if !node_belongs_to_operation(source, operation) {
+            return Err(RealizationError::CrossOperationConstructibilityDependency {
+                operation,
+                source_node: source.clone(),
+                path,
+            });
+        }
+
+        let Some(availability) = node_availability(source) else {
+            continue;
         };
 
         if permissionless
@@ -182,15 +199,17 @@ pub fn validate_constructibility(
             return Err(RealizationError::PermissionlessPrivateDependency {
                 operation,
                 source_node: source.clone(),
+                path,
             });
         }
 
         if availability == AvailabilityClass::SponsorLocal
-            && edge.weight().role != ConstructibilityEdgeRole::SponsorOnly
+            && let Some(path) = sponsor_escape_path(graph, ancestor, operation_node)
         {
             return Err(RealizationError::SponsorDependencyEscaped {
                 operation,
                 source_node: source.clone(),
+                path,
             });
         }
     }
@@ -198,8 +217,163 @@ pub fn validate_constructibility(
     Ok(())
 }
 
+fn reverse_reachable_ancestors(
+    graph: &DiGraph<ConstructibilityNode, ConstructibilityEdge, u32>,
+    operation_node: NodeIndex<u32>,
+) -> Vec<NodeIndex<u32>> {
+    let mut seen = BTreeSet::new();
+    let mut stack = graph
+        .edges_directed(operation_node, Direction::Incoming)
+        .map(|edge| edge.source())
+        .collect::<Vec<_>>();
+
+    while let Some(node) = stack.pop() {
+        if !seen.insert(node) {
+            continue;
+        }
+
+        stack.extend(
+            graph
+                .edges_directed(node, Direction::Incoming)
+                .map(|edge| edge.source()),
+        );
+    }
+
+    let mut ancestors = seen.into_iter().collect::<Vec<_>>();
+    ancestors.sort_by(|left, right| graph[*left].id.cmp(&graph[*right].id));
+    ancestors
+}
+
+fn node_availability(node: &ConstructibilityNodeId) -> Option<AvailabilityClass> {
+    match node {
+        ConstructibilityNodeId::Fact { availability, .. }
+        | ConstructibilityNodeId::Witness { availability, .. } => Some(*availability),
+        ConstructibilityNodeId::Operation(_) => None,
+    }
+}
+
+fn node_belongs_to_operation(node: &ConstructibilityNodeId, operation: OperationId) -> bool {
+    match node {
+        ConstructibilityNodeId::Operation(node_operation)
+        | ConstructibilityNodeId::Witness {
+            operation: node_operation,
+            ..
+        } => *node_operation == operation,
+        ConstructibilityNodeId::Fact {
+            operation: node_operation,
+            fact,
+            ..
+        } => {
+            *node_operation == operation
+                && fact_operation(fact).is_none_or(|fact_operation| fact_operation == operation)
+        }
+    }
+}
+
+fn fact_operation(fact: &FactId) -> Option<OperationId> {
+    match fact {
+        FactId::FamilyCount { operation, .. }
+        | FactId::FamilyAmount { operation, .. }
+        | FactId::InputOwners { operation, .. }
+        | FactId::Signers { operation }
+        | FactId::ProjectionPresent { operation, .. }
+        | FactId::FamilyRecognized { operation, .. }
+        | FactId::SponsorIsolated { operation }
+        | FactId::ProtocolSecretUsed { operation } => Some(*operation),
+        FactId::BoundValue { .. } => None,
+    }
+}
+
+fn path_to_operation(
+    graph: &DiGraph<ConstructibilityNode, ConstructibilityEdge, u32>,
+    source: NodeIndex<u32>,
+    operation_node: NodeIndex<u32>,
+) -> Option<Vec<ConstructibilityNodeId>> {
+    if source == operation_node {
+        return Some(vec![graph[source].id.clone()]);
+    }
+
+    let successors = sorted_successors(graph, source);
+
+    for successor in successors {
+        if let Some(mut path) = path_to_operation(graph, successor, operation_node) {
+            path.insert(0, graph[source].id.clone());
+            return Some(path);
+        }
+    }
+
+    None
+}
+
+fn sponsor_escape_path(
+    graph: &DiGraph<ConstructibilityNode, ConstructibilityEdge, u32>,
+    source: NodeIndex<u32>,
+    operation_node: NodeIndex<u32>,
+) -> Option<Vec<ConstructibilityNodeId>> {
+    fn visit(
+        graph: &DiGraph<ConstructibilityNode, ConstructibilityEdge, u32>,
+        node: NodeIndex<u32>,
+        operation_node: NodeIndex<u32>,
+        path: &mut Vec<ConstructibilityNodeId>,
+    ) -> Option<Vec<ConstructibilityNodeId>> {
+        if node == operation_node {
+            return None;
+        }
+
+        for (successor, edge) in sorted_outgoing_edges(graph, node) {
+            path.push(graph[successor].id.clone());
+
+            let edge_escapes = edge.role != ConstructibilityEdgeRole::SponsorOnly;
+            let node_escapes = successor != operation_node
+                && node_availability(&graph[successor].id) != Some(AvailabilityClass::SponsorLocal);
+
+            if edge_escapes || node_escapes {
+                return Some(path.clone());
+            }
+
+            if let Some(path) = visit(graph, successor, operation_node, path) {
+                return Some(path);
+            }
+
+            path.pop();
+        }
+
+        None
+    }
+
+    let mut path = vec![graph[source].id.clone()];
+    visit(graph, source, operation_node, &mut path)
+}
+
+fn sorted_successors(
+    graph: &DiGraph<ConstructibilityNode, ConstructibilityEdge, u32>,
+    node: NodeIndex<u32>,
+) -> Vec<NodeIndex<u32>> {
+    sorted_outgoing_edges(graph, node)
+        .into_iter()
+        .map(|(successor, _edge)| successor)
+        .collect()
+}
+
+fn sorted_outgoing_edges(
+    graph: &DiGraph<ConstructibilityNode, ConstructibilityEdge, u32>,
+    node: NodeIndex<u32>,
+) -> Vec<(NodeIndex<u32>, ConstructibilityEdge)> {
+    let mut edges = graph
+        .edges_directed(node, Direction::Outgoing)
+        .map(|edge| (edge.target(), *edge.weight()))
+        .collect::<Vec<_>>();
+    edges.sort_by(|(left_node, left_edge), (right_node, right_edge)| {
+        graph[*left_node]
+            .id
+            .cmp(&graph[*right_node].id)
+            .then_with(|| left_edge.cmp(right_edge))
+    });
+    edges
+}
+
 #[must_use]
-pub fn project_constructibility_graph(
+pub(crate) fn project_constructibility_graph(
     graph: &DiGraph<ConstructibilityNode, ConstructibilityEdge, u32>,
 ) -> ConstructibilityGraphProjection {
     let mut nodes = graph.node_weights().cloned().collect::<Vec<_>>();

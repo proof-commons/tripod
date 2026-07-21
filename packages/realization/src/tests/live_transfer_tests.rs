@@ -328,6 +328,71 @@ fn canonical_delta_amount_mutation_fails() {
 }
 
 #[test]
+fn zero_value_live_input_fails_recognition() {
+    let mut observation = valid_split_observation();
+
+    observation.objects[0].value = ProtocolAmount::ZERO;
+
+    let report = evaluate(&observation);
+
+    assert!(failed(&report, &input_recognition()));
+}
+
+#[test]
+fn zero_value_live_output_fails_recognition() {
+    let mut observation = valid_split_observation();
+
+    observation.objects[1].value = ProtocolAmount::ZERO;
+
+    let report = evaluate(&observation);
+
+    assert!(failed(&report, &output_recognition()));
+}
+
+#[test]
+fn zero_amount_lateral_delta_fails_policy() {
+    let mut observation = valid_split_observation();
+
+    observation.canonical_deltas[0].amount = ProtocolAmount::ZERO;
+
+    let report = evaluate(&observation);
+    assert!(failed(&report, &canonical_delta_policy()));
+}
+
+#[test]
+fn sponsor_input_without_owner_fails_recognition() {
+    let mut observation = valid_sponsored_observation();
+
+    observation
+        .objects
+        .iter_mut()
+        .find(|object| object.kind == ObservedObjectKind::Declared(ObjectId::PlainLbtc))
+        .expect("fixture has a sponsor input")
+        .owner = None;
+
+    let report = evaluate(&observation);
+    assert!(failed(&report, &sponsor()));
+}
+
+#[test]
+fn sponsor_change_without_owner_fails_recognition() {
+    let mut observation = valid_sponsored_observation();
+
+    observation
+        .objects
+        .iter_mut()
+        .find(|object| {
+            object.reference.side == ObservedSide::Output
+                && object.kind == ObservedObjectKind::Declared(ObjectId::PlainLbtc)
+        })
+        .expect("fixture has sponsor change")
+        .owner = None;
+
+    let report = evaluate(&observation);
+    assert!(failed(&report, &sponsor()));
+}
+
+#[test]
 fn canonical_delta_empty_duplicate_fails() {
     let mut missing = valid_split_observation();
     missing.canonical_deltas.clear();

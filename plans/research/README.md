@@ -35,7 +35,9 @@ handoff.
 ## Labels · `rule:research:labels`
 
 Primary questions use `q:<area>:<name>` and candidate labels may use
-`candidate:<area>:<name>`. Research labels are plan-local and unlinted.
+`candidate:<area>:<name>`. Research labels are plan-local,
+non-normative, and non-identity-bearing; uniqueness and citation checks
+still apply.
 
 ## Machine use · `rem:research:machine-use`
 

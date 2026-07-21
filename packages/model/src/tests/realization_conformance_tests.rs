@@ -20,13 +20,7 @@ fn phase1_realization() -> realization::ScopedRealizationSpec {
 fn evaluate(observation: &realization::OperationObservation) -> realization::ConformanceReport {
     let spec = phase1_realization();
 
-    realization::evaluate_operation(
-        &spec.relation_graph,
-        &spec.relation_node_by_id,
-        &spec.relation_evaluation_order,
-        observation,
-    )
-    .unwrap()
+    spec.evaluate_operation(observation).unwrap()
 }
 
 fn failed(report: &realization::ConformanceReport, relation: &realization::RelationId) -> bool {

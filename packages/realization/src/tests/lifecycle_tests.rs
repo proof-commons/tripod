@@ -83,6 +83,34 @@ fn missing_lifecycle_path_fails_with_stable_ids() {
 }
 
 #[test]
+fn duplicate_lifecycle_dependency_is_rejected() {
+    let source = LifecycleNodeId::Representation {
+        object: ObjectId::Ash,
+        mode: RepresentationMode::Explicit,
+    };
+    let target = LifecycleNodeId::RequiredExit {
+        object: ObjectId::Ash,
+        operation: OperationId::Clear,
+    };
+    let dependency = LifecycleDependencyDeclaration {
+        source: source.clone(),
+        target: target.clone(),
+        edge: LifecycleEdge::RequiresExit,
+    };
+
+    let error = build_lifecycle_graph(
+        [LifecycleNode { id: source }, LifecycleNode { id: target }],
+        [dependency.clone(), dependency.clone()],
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error,
+        RealizationError::DuplicateLifecycleDependency(dependency)
+    );
+}
+
+#[test]
 fn lifecycle_cycles_are_reported_by_stable_components() {
     let first = LifecycleNodeId::Representation {
         object: ObjectId::Ash,

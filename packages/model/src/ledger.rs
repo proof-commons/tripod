@@ -49,8 +49,11 @@ use num_traits::{One, Zero};
 
 use architecture::{ARCHITECTURE, semantic_hash};
 
+use crate::asset::Asset;
 use crate::guard::Guard;
-use crate::history::{BranchKind, BurnRecord, History};
+use crate::history::{
+    BranchKind, BurnProjection, BurnRecord, DeltaKind, History, TransitionCertificate,
+};
 use crate::scalar::{
     AttestationAddress, BlockHash, BlockHeight, CanonicalOrder, Sat, SchemaVersion, TxId,
 };
@@ -290,6 +293,81 @@ fn validate_burn_payload(ash_value: Sat, records: &[BurnRecord]) -> Result<(), G
     validate_burn_records(records)?;
 
     Sat::checked_sum(records.iter().map(|record| record.amount))?;
+
+    Ok(())
+}
+
+/// Validate the certificate/projection facts available at the
+/// model-history boundary. This is defense in depth for histories
+/// produced by the executable-model kernel; it is not independent raw
+/// target-transaction recognition.
+fn validate_model_burn_projection(
+    certificate: &TransitionCertificate,
+    burn: &BurnProjection,
+) -> Result<(), Guard> {
+    if certificate.branch != BranchKind::Burn
+        || certificate.clear.is_some()
+        || certificate.distribution_residue.is_some()
+    {
+        return Err(Guard::WrongShape);
+    }
+
+    validate_burn_payload(burn.ash_value, &burn.records)?;
+
+    if !certificate.created.contains(&burn.ash_output) {
+        return Err(Guard::WrongShape);
+    }
+
+    let mut saw_ash_lateral_destination = false;
+
+    for delta in &certificate.canonical_deltas {
+        if delta.asset != Asset::U {
+            continue;
+        }
+
+        match delta.kind {
+            DeltaKind::Lateral => {
+                if delta.amount.is_zero()
+                    || delta.authority_input.is_some()
+                    || delta.source_inputs.is_empty()
+                    || delta.destination_outputs.is_empty()
+                    || delta.destruction_tag.is_some()
+                {
+                    return Err(Guard::WrongShape);
+                }
+
+                if !delta
+                    .source_inputs
+                    .iter()
+                    .all(|source| certificate.consumed.contains(source))
+                    || !delta
+                        .destination_outputs
+                        .iter()
+                        .all(|destination| certificate.created.contains(destination))
+                {
+                    return Err(Guard::WrongShape);
+                }
+
+                if delta.destination_outputs.contains(&burn.ash_output) {
+                    if delta.amount < burn.ash_value {
+                        return Err(Guard::ValuePin);
+                    }
+
+                    saw_ash_lateral_destination = true;
+                }
+            }
+
+            DeltaKind::Destruction => {
+                return Err(Guard::WrongShape);
+            }
+
+            DeltaKind::Issuance | DeltaKind::OwnerlessLateral => {}
+        }
+    }
+
+    if !saw_ash_lateral_destination {
+        return Err(Guard::WrongShape);
+    }
 
     Ok(())
 }
@@ -668,7 +746,8 @@ impl ReferenceIndexer {
 
     /// Synthetic constructor for deterministic unit tests.
     ///
-    /// Production code should use `from_history`.
+    /// Production model projection code should use
+    /// `from_model_history`.
     #[cfg(test)]
     pub(crate) fn empty_for_test(context: AttestationContext) -> Self {
         Self {
@@ -725,22 +804,23 @@ impl ReferenceIndexer {
         validate_event_index(&self.burns, &self.clears, &self.events)
     }
 
-    /// The history may contain transitions after the checkpoint. They
-    /// are validated for strict order and txid uniqueness but are not
-    /// indexed: the `ReferenceIndexer` is bound to one prefix.
+    /// Project attestation events from history previously produced by
+    /// the trusted executable-model kernel.
     ///
-    /// `History` is publicly constructible, so this boundary treats
-    /// every certificate as untrusted: an event's type is accepted
-    /// only when the specialized projection matches the certificate's
-    /// declared branch exactly as the transition kernel derives it
-    /// (burn ⟺ `Burn`, clear ⟺ `Clear`, residue only on
-    /// `SettleDistribution`), burn records must be kernel-shaped, and
-    /// clear payloads must be operational. A forged certificate that
-    /// pairs a projection with a foreign branch is rejected rather
-    /// than indexed as a genuine event. The deployment indexer derives
-    /// events from raw transactions; this model boundary fails closed
-    /// on anything the kernel could not have emitted.
-    pub fn from_history(
+    /// This constructor validates internal certificate/event
+    /// consistency, but it does not independently recognize or
+    /// authenticate arbitrary caller-authored history. In particular,
+    /// a model [`History`] does not carry enough data to prove every
+    /// consumed object was a live receipt, that no ASH input was
+    /// consumed, or that the ASH output value came from target
+    /// consensus data. Independent deployment event recognition must
+    /// derive events from validated target transactions.
+    ///
+    /// The history may contain transitions after the checkpoint. They
+    /// are validated for strict order, txid uniqueness, and local
+    /// projection/certificate consistency but are not indexed: the
+    /// `ReferenceIndexer` is bound to one prefix.
+    pub fn from_model_history(
         history: &History,
         chain: &ValidatedChainView,
         genesis_clear_id: [u8; 32],
@@ -833,7 +913,7 @@ impl ReferenceIndexer {
             // also rejected; the indexed prefix is re-validated as a
             // whole by `validate_checkpoint_semantics` below.
             if let Some(burn) = &certificate.burn {
-                validate_burn_payload(burn.ash_value, &burn.records)?;
+                validate_model_burn_projection(certificate, burn)?;
             }
 
             if let Some(clear) = &certificate.clear {
@@ -898,12 +978,12 @@ impl ReferenceIndexer {
 
         validate_event_index(&indexer.burns, &indexer.clears, &indexer.events)?;
 
-        // The loop above validates transition payloads, but the genesis
-        // clear is inserted from the publicly constructible `History`
-        // without passing through it: the shared semantic validator
-        // closes that gap (zero genesis omega/y fails here, not at
-        // query time) and keeps every non-test construction path on
-        // the same constructor invariant as checkpoint reconstruction.
+        // The loop above validates transition payloads, but the
+        // genesis clear is inserted directly from the model history
+        // projection: the shared semantic validator closes that gap
+        // (zero genesis omega/y fails here, not at query time) and
+        // keeps every non-test construction path on the same
+        // constructor invariant as checkpoint reconstruction.
         validate_checkpoint_semantics(
             &indexer.context,
             &indexer.burns,
@@ -1632,7 +1712,7 @@ pub struct IndexerCheckpoint {
 // assignment changes. Reconstruction validates the event index — and
 // the checkpoint's context identity and payload semantics — before
 // accepting it: a checkpoint is untrusted input, and reconstruction
-// must uphold the same constructor guarantees as `from_history`.
+// must uphold the same constructor guarantees as `from_model_history`.
 
 impl TryFrom<IndexerCheckpoint> for ReferenceIndexer {
     type Error = Guard;

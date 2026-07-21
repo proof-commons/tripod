@@ -28,46 +28,12 @@ cargo_bin_sync = find_program('scripts/cargo-bin-sync.sh')
 sh = find_program('sh')
 python = find_program('python3')
 
-# ---------------------------------------------------------------------------
-# Reproducible document builds (ADR-011): TeX date material derives from
-# the source commit epoch, not the ambient clock, so identical inputs
-# render byte-identical PDFs. Falls back to the Unix epoch outside a
-# git checkout. Note: the value is captured at configure time; rerun
-# meson setup (or configure) after committing to refresh it.
-# ---------------------------------------------------------------------------
+# Git is used by the census audit and passed to document subprojects
+# that derive build-time reproducibility metadata from the selected
+# source revision.
 git = find_program('git', required: false)
-source_date_epoch = '0'
-zero_id = '0000000000000000000000000000000000000000'
-source_commit = zero_id
-source_tree = zero_id
-if git.found()
-  epoch_result = run_command(
-    git, '-C', meson.project_source_root(), 'log', '-1', '--format=%ct',
-    check: false,
-  )
-  if epoch_result.returncode() == 0 and epoch_result.stdout().strip() != ''
-    source_date_epoch = epoch_result.stdout().strip()
-  endif
-  commit_result = run_command(
-    git, '-C', meson.project_source_root(), 'log', '-1', '--format=%H',
-    check: false,
-  )
-  if commit_result.returncode() == 0 and commit_result.stdout().strip() != ''
-    source_commit = commit_result.stdout().strip()
-  endif
-  tree_result = run_command(
-    git, '-C', meson.project_source_root(), 'log', '-1', '--format=%T',
-    check: false,
-  )
-  if tree_result.returncode() == 0 and tree_result.stdout().strip() != ''
-    source_tree = tree_result.stdout().strip()
-  endif
-endif
 
 latex_default_options = [
-  'source_date_epoch=' + source_date_epoch,
-  'source_commit=' + source_commit,
-  'source_tree=' + source_tree,
   'xelatex_path=' + xelatex.full_path(),
   'biber_path=' + biber.full_path(),
   'latexmk_path=' + latexmk.full_path(),
@@ -150,6 +116,11 @@ generated_dir = fs.parent(model_labels_json_path)
 artifact_generation_output_dir = get_option('artifact_generation_output_dir')
 if artifact_generation_output_dir == ''
   artifact_generation_output_dir = generated_dir
+endif
+
+publication_archive_root = get_option('publication_archive_root')
+if publication_archive_root == ''
+  publication_archive_root = meson.project_source_root() / 'archive'
 endif
 
 # Role-tagged argument lists. Paths stay repository-relative: every
@@ -415,29 +386,27 @@ alias_target('generate-artifacts', generate_artifacts_target)
 
 # ---------------------------------------------------------------------------
 # Archive exports. `install_pdf` is the canonical build-dir artifact
-# consumed by `meson install`; the mirror targets copy the PDF into
-# <repo>/archive/rendered/ and the flattened .tex into
-# <repo>/archive/flattened/, gated on the label-check stamp (ADR-014):
-# a publication must not embed an unlinted label graph. The plain
-# in-build PDF compile stays independent for fast draft iteration.
+# consumed by `meson install`; the mirror targets repair the PDF under
+# archive/rendered/ and the flattened .tex under archive/flattened/,
+# gated on the label-check stamp (ADR-014): a publication must not
+# embed an unlinted label graph. The plain in-build PDF compile stays
+# independent for fast draft iteration.
 # ---------------------------------------------------------------------------
-mirror_wrap = [
-  sh, '-c',
-  'mkdir -p "$(dirname "$2")" && cp "$1" "$2" && : > "$3"',
-  'sh', '@INPUT@',
-]
+sync_publication = find_program('scripts/sync-publication.sh')
 
 attestation_mirror = custom_target(
   'mirror-attestation-pdf',
   input: attestation_pdf,
   output: 'attestation-pdf.mirrored.stamp',
-  command: mirror_wrap + [
-    meson.project_source_root() / 'archive' / 'rendered'
-    / fs.name(attestation_pdf.full_path()),
+  command: [
+    sync_publication,
+    '@INPUT@',
+    publication_archive_root / 'rendered' / fs.name(attestation_pdf.full_path()),
     '@OUTPUT@',
   ],
   depends: labels_stamp,
   build_by_default: true,
+  build_always_stale: true,
   console: false,
 )
 
@@ -445,13 +414,15 @@ attestation_flatten = custom_target(
   'flatten-attestation-mirror',
   input: attestation_flat,
   output: 'attestation-flat.mirrored.stamp',
-  command: mirror_wrap + [
-    meson.project_source_root() / 'archive' / 'flattened'
-    / fs.name(attestation_flat.full_path()),
+  command: [
+    sync_publication,
+    '@INPUT@',
+    publication_archive_root / 'flattened' / fs.name(attestation_flat.full_path()),
     '@OUTPUT@',
   ],
   depends: labels_stamp,
   build_by_default: true,
+  build_always_stale: true,
   console: false,
 )
 
@@ -583,6 +554,7 @@ test(
 )
 
 generator_repair_test = find_program('scripts/test-meson-generator-repair.sh')
+publication_repair_test = find_program('scripts/test-meson-publication-repair.sh')
 
 test(
   'meson-generator-repair',
@@ -590,5 +562,14 @@ test(
   args: [meson.project_source_root()],
   suite: 'build-integration',
   timeout: 600,
+  is_parallel: false,
+)
+
+test(
+  'meson-publication-repair',
+  publication_repair_test,
+  args: [meson.project_source_root()],
+  suite: 'build-integration',
+  timeout: 900,
   is_parallel: false,
 )

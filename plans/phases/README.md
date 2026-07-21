@@ -38,4 +38,5 @@ prototype-dependent production APIs freeze.
 ## Labels · `rule:phases:labels`
 
 Primary phase labels use `phase:roadmap:<name>` and exit gates use
-`gate:<phase>:exit`. Both are plan-local and unlinted.
+`gate:<phase>:exit`. Both are plan-local, non-normative, and
+non-identity-bearing; uniqueness and citation checks still apply.

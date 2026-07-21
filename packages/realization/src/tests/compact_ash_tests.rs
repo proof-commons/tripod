@@ -248,6 +248,66 @@ fn compact_ash_canonical_delta_amount_mutation_fails() {
 }
 
 #[test]
+fn zero_value_ash_input_fails_recognition() {
+    let mut observation = valid_observation();
+
+    observation.objects[0].value = ProtocolAmount::ZERO;
+
+    let report = evaluate(&observation);
+
+    assert!(failed(&report, &input_recognition()));
+}
+
+#[test]
+fn zero_value_ash_output_fails_recognition() {
+    let mut observation = valid_observation();
+
+    observation.objects[2].value = ProtocolAmount::ZERO;
+
+    let report = evaluate(&observation);
+
+    assert!(failed(&report, &output_recognition()));
+}
+
+#[test]
+fn ash_with_owner_fails_recognition() {
+    let mut observation = valid_observation();
+
+    observation.objects[2].owner = Some(crate::OwnerId([9_u8; 32]));
+
+    let report = evaluate(&observation);
+
+    assert!(failed(&report, &output_recognition()));
+}
+
+#[test]
+fn empty_zero_canonical_delta_fails_policy() {
+    let mut observation = valid_observation();
+
+    observation.canonical_deltas.push(ObservedCanonicalDelta {
+        asset: AssetId::U,
+        kind: DeltaKind::OwnerlessLateral,
+        amount: ProtocolAmount::ZERO,
+        sources: Vec::new(),
+        destinations: Vec::new(),
+        destruction_tag: None,
+    });
+
+    let report = evaluate(&observation);
+    assert!(failed(&report, &canonical_delta_policy()));
+}
+
+#[test]
+fn zero_amount_ownerless_lateral_delta_fails_policy() {
+    let mut observation = valid_observation();
+
+    observation.canonical_deltas[0].amount = ProtocolAmount::ZERO;
+
+    let report = evaluate(&observation);
+    assert!(failed(&report, &canonical_delta_policy()));
+}
+
+#[test]
 fn compact_ash_negative_observations_name_the_load_bearing_relation() {
     for (name, mutate, relation) in relation_cases() {
         let mut observation = valid_observation();

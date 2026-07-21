@@ -37,7 +37,8 @@ fn indexed_burn_world() -> (World, ReferenceIndexer) {
 
     let chain = chain_view_for_history(&burned);
 
-    let indexer = ReferenceIndexer::from_history(&burned.history, &chain, [0_u8; 32]).unwrap();
+    let indexer =
+        ReferenceIndexer::from_model_history(&burned.history, &chain, [0_u8; 32]).unwrap();
 
     (burned, indexer)
 }
@@ -369,7 +370,7 @@ fn query_uses_indexer_bound_context() {
 
     let chain = chain_view_for_history(&world);
 
-    let indexer = ReferenceIndexer::from_history(&world.history, &chain, [0_u8; 32]).unwrap();
+    let indexer = ReferenceIndexer::from_model_history(&world.history, &chain, [0_u8; 32]).unwrap();
 
     let query = indexer.query(ADDRESS_A).unwrap();
 

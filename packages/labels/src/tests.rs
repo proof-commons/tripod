@@ -1,5 +1,8 @@
 use std::{fs, path::Path};
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 use petgraph::Direction;
 
 use crate::{
@@ -214,7 +217,7 @@ fn model_harvest_enforces_owner_relative_forms() {
 }
 
 #[test]
-fn plan_local_labels_are_ignored_but_unknown_imports_fail() {
+fn plan_local_labels_resolve_while_unknown_imports_fail() {
     let directory = tempfile::tempdir().expect("temporary repository");
     let root = directory.path();
     for directory in [
@@ -294,13 +297,38 @@ fn adr_imports_are_validated_once_and_internal_citations_resolve() {
     }));
 }
 
+#[cfg(unix)]
+#[test]
+fn unreadable_adr_is_an_io_diagnostic() {
+    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let root = directory.path();
+    let adr = root.join("adr/012-unreadable.md");
+
+    fs::write(&adr, "# ADR\n`rule:labels:defined`\n").expect("ADR source");
+    fs::set_permissions(&adr, fs::Permissions::from_mode(0o0)).expect("make ADR unreadable");
+
+    if fs::read_to_string(&adr).is_ok() {
+        fs::set_permissions(&adr, fs::Permissions::from_mode(0o644)).expect("restore readable ADR");
+        return;
+    }
+
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(root));
+
+    fs::set_permissions(&adr, fs::Permissions::from_mode(0o644)).expect("restore readable ADR");
+
+    assert!(labels.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == LabelErrorCode::Io && diagnostic.path == "adr/012-unreadable.md"
+    }));
+}
+
 // Whole-repository validity is the job of the Meson-driven
 // `check-labels` target (ADR-014): unit tests never discover the live
 // checkout, so register generation is exercised on synthetic fixtures
 // only.
 #[test]
 fn register_generation_is_deterministic_in_explicit_outputs() {
-    let directory = fixture_root("# Realization\n`sec:fixture`\nBody cite [A-def:model:known].\n");
+    let directory =
+        fixture_root("# Realization\n`sec:fixture`\nBody cite (`[A-def:model:known]`).\n");
     let paths = RepositoryCensus::discover(directory.path());
     let output = tempfile::tempdir().expect("temporary output root");
     let specification_output = output.path().join("specification.md");
@@ -431,7 +459,7 @@ fn every_authored_citation_resolves_to_one_mint_edge() {
         "# Realization\n",
         "`sec:fixture`\n",
         "(`sec:fixture`)\n",
-        "Body cite [A-def:model:known].\n",
+        "Body cite (`[A-def:model:known]`).\n",
     ));
     let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
 
@@ -497,7 +525,7 @@ fn attestation_anchor_set_derives_from_body_citations_only() {
     let directory = fixture_root(concat!(
         "# Realization\n",
         "`sec:fixture`\n",
-        "Body cite [A-def:model:known].\n",
+        "Body cite (`[A-def:model:known]`).\n",
         "```text\n",
         "[A-def:model:fenced]\n",
         "```\n",
@@ -528,6 +556,102 @@ fn attestation_anchor_set_derives_from_body_citations_only() {
             .iter()
             .any(|diagnostic| diagnostic.code == LabelErrorCode::AttestationIndexStale)
     );
+}
+
+#[test]
+fn malformed_attestation_import_is_invalid_label() {
+    let directory = fixture_root("# Realization\n`sec:fixture`\n(`[A-def:Bad]`)\n");
+
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
+
+    assert!(labels.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == LabelErrorCode::InvalidLabel
+            && diagnostic.path == "docs/attestation/realization.md"
+            && diagnostic.line == 3
+    }));
+}
+
+#[test]
+fn unclosed_attestation_import_is_diagnostic() {
+    let directory = fixture_root("# Realization\n`sec:fixture`\n(`[A-def:model:known]\n");
+
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
+
+    assert!(labels.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == LabelErrorCode::UnclosedInlineCode
+            && diagnostic.path == "docs/attestation/realization.md"
+            && diagnostic.line == 3
+    }));
+}
+
+#[test]
+fn non_parenthesized_attestation_import_is_rejected() {
+    let directory = fixture_root("# Realization\n`sec:fixture`\n`[A-def:model:known]`\n");
+
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
+
+    assert!(labels.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == LabelErrorCode::InvalidImportedCitationForm
+            && diagnostic.path == "docs/attestation/realization.md"
+            && diagnostic.line == 3
+    }));
+}
+
+#[test]
+fn raw_text_attestation_token_is_nonparticipating() {
+    let directory = fixture_root("# Realization\n`sec:fixture`\nRaw [A-def:model:known].\n");
+
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
+
+    assert_eq!(labels.imported_citation_count(), 0);
+    assert!(!labels.diagnostics.iter().any(|diagnostic| matches!(
+        diagnostic.code,
+        LabelErrorCode::InvalidImportedCitationForm | LabelErrorCode::UnknownImportedLabel
+    )));
+}
+
+#[test]
+fn double_backtick_attestation_example_is_nonparticipating() {
+    let directory =
+        fixture_root("# Realization\n`sec:fixture`\nExample ``[A-def:model:missing]``.\n");
+
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
+
+    assert!(!labels.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == LabelErrorCode::UnknownImportedLabel
+            && diagnostic.message.contains("def:model:missing")
+    }));
+}
+
+#[test]
+fn fenced_attestation_example_is_nonparticipating() {
+    let directory =
+        fixture_root("# Realization\n`sec:fixture`\n```text\n(`[A-def:model:missing]`)\n```\n");
+
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
+
+    assert!(!labels.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == LabelErrorCode::UnknownImportedLabel
+            && diagnostic.message.contains("def:model:missing")
+    }));
+}
+
+#[test]
+fn upward_index_token_does_not_sustain_body_anchor() {
+    let directory = fixture_root(concat!(
+        "# Realization\n",
+        "`sec:fixture`\n",
+        "## §17 Upward-citation index · `sec:realization:anchors`\n",
+        "| `[A-def:model:known]` | (`sec:fixture`) |\n",
+    ));
+
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
+
+    assert!(labels.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == LabelErrorCode::AttestationIndexStale
+            && diagnostic.path == "docs/attestation/realization.md"
+    }));
+    assert_eq!(labels.imported_citation_count(), 0);
 }
 
 #[test]
@@ -647,7 +771,7 @@ fn scoped_derivations_ignore_cross_owner_imports_and_index_staleness() {
     let directory = fixture_root(concat!(
         "# Realization\n",
         "`sec:fixture`\n",
-        "Body cite [A-def:model:known].\n",
+        "Body cite (`[A-def:model:known]`).\n",
         "## §17 Upward-citation index · `sec:realization:anchors`\n",
     ));
     let root = directory.path();
@@ -669,7 +793,7 @@ fn anchor_scan_ignores_double_backtick_examples() {
     let directory = fixture_root(concat!(
         "# Realization\n",
         "`sec:fixture`\n",
-        "Body cite [A-def:model:known].\n",
+        "Body cite (`[A-def:model:known]`).\n",
         "A display-only example: ``[A-def:model:example-only]``.\n",
         "## §17 Upward-citation index · `sec:realization:anchors`\n",
         "| `[A-def:model:known]` | (`sec:fixture`) |\n",
@@ -848,7 +972,8 @@ fn register_generation_ignores_unrelated_adr_defects() {
 
 #[test]
 fn malformed_model_label_does_not_block_upstream_register_generation() {
-    let directory = fixture_root("# Realization\n`sec:fixture`\nBody cite [A-def:model:known].\n");
+    let directory =
+        fixture_root("# Realization\n`sec:fixture`\nBody cite (`[A-def:model:known]`).\n");
     let root = directory.path();
     fs::write(
         root.join("packages/model/src/fixture.rs"),

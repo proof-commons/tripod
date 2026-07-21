@@ -59,7 +59,7 @@ fn boundary_operations_declassify_their_deltas() {
 
 /// The committed artifact equals the in-memory derivation. Pure check:
 /// the test never writes; a stale artifact is regenerated with
-/// `cargo run -p tripod-artifacts --bin generate-all`.
+/// `meson compile -C build generate-artifacts`.
 #[test]
 fn declassification_index_is_current() {
     let rendered = declassification_json();
@@ -67,7 +67,7 @@ fn declassification_index_is_current() {
     assert_eq!(
         COMMITTED_INDEX, rendered,
         "generated/declassification.json is stale; run \
-         `cargo run -p tripod-artifacts --bin generate-all` \
+         `meson compile -C build generate-artifacts` \
          and commit the diff",
     );
 }

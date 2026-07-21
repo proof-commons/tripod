@@ -488,7 +488,7 @@ fn generated_json_equals_typed_architecture_completely() {
         generated,
         expected.to_artifact_json().unwrap(),
         "committed architecture.json is not the canonical presentation; \
-         run `cargo run -p tripod-artifacts --bin generate-all`",
+         run `meson compile -C build generate-artifacts`",
     );
 }
 
@@ -514,7 +514,7 @@ fn generated_toml_equals_typed_architecture_completely() {
         generated,
         expected.to_artifact_toml().unwrap(),
         "committed architecture.toml is not the canonical presentation; \
-         run `cargo run -p tripod-artifacts --bin generate-all`",
+         run `meson compile -C build generate-artifacts`",
     );
 }
 

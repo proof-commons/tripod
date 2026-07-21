@@ -196,7 +196,7 @@ struct PendingDependency {
 /// topology and SCC membership; first-party code translates local indices back
 /// to stable IDs and canonicalizes unordered SCC output.
 #[allow(clippy::type_complexity)]
-pub fn build_expression_graph(
+pub(crate) fn build_expression_graph(
     declarations: impl IntoIterator<Item = ExpressionDeclaration>,
 ) -> Result<
     (
@@ -256,7 +256,7 @@ pub fn build_expression_graph(
 
 /// Project a direct Petgraph expression graph into stable typed values.
 #[must_use]
-pub fn project_expression_graph(
+pub(crate) fn project_expression_graph(
     graph: &DiGraph<ExpressionDeclaration, DependencyEdge, u32>,
 ) -> ExpressionGraphProjection {
     let mut nodes = graph.node_weights().cloned().collect::<Vec<_>>();
@@ -276,7 +276,8 @@ pub fn project_expression_graph(
 }
 
 /// Evaluate a direct Petgraph expression graph from primitive facts.
-pub fn evaluate_expressions(
+#[cfg(test)]
+pub(crate) fn evaluate_expressions(
     graph: &DiGraph<ExpressionDeclaration, DependencyEdge, u32>,
     node_by_id: &BTreeMap<ExprId, NodeIndex<u32>>,
     evaluation_order: &[ExprId],
@@ -514,6 +515,7 @@ fn infer_node_type(
     }
 }
 
+#[cfg(test)]
 fn evaluate_node(
     node: &ExpressionNode,
     facts: &FactValues,
@@ -554,6 +556,7 @@ fn evaluate_node(
     }
 }
 
+#[cfg(test)]
 fn evaluated_value<'a>(
     values: &'a BTreeMap<ExprId, SemanticValue>,
     id: &ExprId,
@@ -565,6 +568,7 @@ fn evaluated_value<'a>(
         })
 }
 
+#[cfg(test)]
 fn evaluate_checked_sum(
     ty: SemanticType,
     terms: &[ExprId],
@@ -615,6 +619,7 @@ fn evaluate_checked_sum(
     }
 }
 
+#[cfg(test)]
 fn evaluate_less_or_equal(
     left: &ExprId,
     right: &ExprId,
@@ -639,6 +644,7 @@ fn evaluate_less_or_equal(
     Ok(SemanticValue::Bool(result))
 }
 
+#[cfg(test)]
 fn evaluate_all(
     terms: &[ExprId],
     values: &BTreeMap<ExprId, SemanticValue>,
@@ -661,6 +667,7 @@ fn evaluate_all(
     Ok(SemanticValue::Bool(result))
 }
 
+#[cfg(test)]
 fn evaluate_owner_subset(
     required: &ExprId,
     presented: &ExprId,

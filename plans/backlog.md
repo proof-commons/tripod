@@ -108,7 +108,7 @@ identity.
 | ADR-010 | Implemented | JSON CLI streams, stable exit classes, panic and TTY policy |
 | ADR-011 | Implemented | Toolchain, locking, dependency, unsafe, target, and reproducibility policy |
 | ADR-013 | Implemented | Owner-aware global Markdown/Rust label graph |
-| ADR-014 | Implemented in source; ADR status review required | Build-owned census and stamp graph |
+| ADR-014 | Implemented | Build-owned census and stamp graph |
 
 ## 2.2 Current implementation · `tbl:backlog:packages`
 

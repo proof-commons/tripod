@@ -8,23 +8,15 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use architecture::{ARCHITECTURE, AssetId, ObjectId, OperationId};
-use petgraph::graph::{DiGraph, NodeIndex};
-use realization::{
-    ArchitectureBinding, DependencyEdge, ExprId, ExpressionDeclaration, ExpressionNode,
-    ExpressionRole, FactId, FactValues, OwnerId, ProofAlternativeId, ProofKind, RealizationScope,
-    RelationId, RelationKind, RelationSubject, SemanticType, SemanticValue, TransactionSide,
-    build_expression_graph, evaluate_expressions,
+use architecture::{
+    ARCHITECTURE, AssetId, BoundId, DeltaKind, ObjectId, OperationId, ProjectionId,
 };
-
-type AuthorizationFixture = (
-    DiGraph<ExpressionDeclaration, DependencyEdge, u32>,
-    BTreeMap<ExprId, NodeIndex<u32>>,
-    Vec<ExprId>,
-    FactId,
-    FactId,
-    ExprId,
-);
+use realization::{
+    ArchitectureBinding, Count, ObservedAsset, ObservedCanonicalDelta, ObservedObject,
+    ObservedObjectKind, ObservedObjectRef, ObservedSide, OperationObservation, ProofAlternativeId,
+    ProofKind, ProtocolAmount, RealizationScope, RelationId, RelationKind, RelationSubject,
+    RepresentationMode, derive,
+};
 
 #[test]
 fn phase1_foundation_is_publicly_constructible() {
@@ -68,82 +60,85 @@ fn stable_relation_keys_use_architecture_owned_ids() {
 }
 
 #[test]
-fn downstream_code_can_evaluate_typed_authorization_without_local_handles() {
-    let (graph, nodes, order, owners, signers, predicate) = authorization_fixture();
-    let alice = OwnerId([1_u8; 32]);
-    let bob = OwnerId([2_u8; 32]);
-    let mut facts = FactValues::default();
+fn downstream_code_can_evaluate_without_local_graph_handles() {
+    let realization = derive(
+        &ARCHITECTURE,
+        RealizationScope::from_operations([OperationId::CompactAsh]).unwrap(),
+    )
+    .unwrap();
 
-    facts
-        .insert(
-            owners,
-            SemanticValue::OwnerSet(BTreeSet::from([alice, bob])),
-        )
+    let report = realization
+        .evaluate_operation(&compact_ash_observation())
         .unwrap();
 
-    facts
-        .insert(
-            signers,
-            SemanticValue::OwnerSet(BTreeSet::from([alice, bob])),
-        )
-        .unwrap();
-
-    assert!(
-        evaluate_expressions(&graph, &nodes, &order, &facts)
-            .unwrap()
-            .bool(&predicate)
-            .unwrap()
-    );
+    assert!(report.is_conformant());
 }
 
 #[test]
-fn dependency_graph_is_direct_petgraph() {
-    let (graph, nodes, _, _, _, _) = authorization_fixture();
+fn stable_projection_exposes_typed_graph_shape_without_local_handles() {
+    let realization = derive(&ARCHITECTURE, RealizationScope::phase1_pilots()).unwrap();
+    let projection = realization.project();
 
-    let graph: &DiGraph<ExpressionDeclaration, DependencyEdge, u32> = &graph;
-
-    assert_eq!(graph.node_count(), nodes.len());
+    assert_eq!(projection.scope, RealizationScope::phase1_pilots());
+    assert_eq!(projection.operations.len(), 2);
+    assert_eq!(
+        projection.relations.nodes.len(),
+        realization.relations().count()
+    );
+    assert_ne!(
+        projection.constructibility.edges,
+        [] as [realization::ConstructibilityDependencyProjection; 0]
+    );
 }
 
-fn authorization_fixture() -> AuthorizationFixture {
-    let relation = RelationId::new(
-        OperationId::TransferLive,
-        RelationKind::Authorization,
-        RelationSubject::ObjectFamily {
-            side: TransactionSide::Input,
-            object: ObjectId::ReceiptLive,
-        },
-    );
-    let owners = FactId::InputOwners {
-        operation: OperationId::TransferLive,
-        object: ObjectId::ReceiptLive,
+fn compact_ash_observation() -> OperationObservation {
+    let input0 = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 0,
     };
-    let signers = FactId::Signers {
-        operation: OperationId::TransferLive,
+    let input1 = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 1,
     };
-    let predicate = ExprId::relation(relation, ExpressionRole::Predicate);
+    let output0 = ObservedObjectRef {
+        side: ObservedSide::Output,
+        ordinal: 0,
+    };
 
-    let (graph, nodes, order) = build_expression_graph([
-        ExpressionDeclaration {
-            id: ExprId::fact(owners.clone()),
-            ty: SemanticType::OwnerSet,
-            node: ExpressionNode::Fact(owners.clone()),
-        },
-        ExpressionDeclaration {
-            id: ExprId::fact(signers.clone()),
-            ty: SemanticType::OwnerSet,
-            node: ExpressionNode::Fact(signers.clone()),
-        },
-        ExpressionDeclaration {
-            id: predicate.clone(),
-            ty: SemanticType::Bool,
-            node: ExpressionNode::OwnerSubset {
-                required: ExprId::fact(owners.clone()),
-                presented: ExprId::fact(signers.clone()),
-            },
-        },
-    ])
-    .unwrap();
+    OperationObservation {
+        operation: OperationId::CompactAsh,
+        objects: vec![
+            ash(ObservedSide::Input, 0, 40),
+            ash(ObservedSide::Input, 1, 60),
+            ash(ObservedSide::Output, 0, 100),
+        ],
+        protocol_signers: BTreeSet::new(),
+        sponsor_signers: BTreeSet::new(),
+        canonical_deltas: vec![ObservedCanonicalDelta {
+            asset: AssetId::U,
+            kind: DeltaKind::OwnerlessLateral,
+            amount: ProtocolAmount::new(100).unwrap(),
+            sources: vec![input0, input1],
+            destinations: vec![output0],
+            destruction_tag: None,
+        }],
+        open_flows: Vec::new(),
+        root_effects: Vec::new(),
+        projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
+        bounds: BTreeMap::from([
+            (BoundId::AshBatchMax, Count::new(64)),
+            (BoundId::FeeSponsorInputMax, Count::new(16)),
+        ]),
+    }
+}
 
-    (graph, nodes, order, owners, signers, predicate)
+fn ash(side: ObservedSide, ordinal: u32, value: u64) -> ObservedObject {
+    ObservedObject {
+        reference: ObservedObjectRef { side, ordinal },
+        kind: ObservedObjectKind::Declared(ObjectId::Ash),
+        asset: ObservedAsset::Declared(AssetId::U),
+        value: ProtocolAmount::new(value).unwrap(),
+        owner: None,
+        representation: RepresentationMode::Explicit,
+    }
 }

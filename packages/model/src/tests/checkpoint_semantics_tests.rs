@@ -1,12 +1,14 @@
 //! Checkpoint-reconstruction and forged-history rejection tests.
 //!
-//! `ReferenceIndexer::try_from(IndexerCheckpoint)` and
-//! `ReferenceIndexer::from_history` are untrusted ingestion
-//! boundaries: checkpoints and histories are publicly constructible,
-//! so every constructor guarantee established by
-//! `ValidatedChainView::new` must hold on these paths too. Each test
-//! mutates exactly one fact a validated chain and kernel-derived
-//! history could never produce and demonstrates closed failure.
+//! `ReferenceIndexer::try_from(IndexerCheckpoint)` ingests untrusted
+//! checkpoints. `ReferenceIndexer::from_model_history` projects
+//! trusted executable-model history and validates every consistency
+//! fact that history carries, without claiming independent raw
+//! transaction recognition. Each test mutates exactly one fact a
+//! validated chain and kernel-derived history could never produce and
+//! demonstrates closed failure.
+
+use std::collections::BTreeSet;
 
 use super::advanced_fixtures::*;
 use super::scenario_fixtures::*;
@@ -35,7 +37,7 @@ fn burned_indexer() -> ReferenceIndexer {
 
     let chain = chain_view_for_history(&world);
 
-    ReferenceIndexer::from_history(&world.history, &chain, [0_u8; 32]).unwrap()
+    ReferenceIndexer::from_model_history(&world.history, &chain, [0_u8; 32]).unwrap()
 }
 
 fn cleared_world() -> World {
@@ -56,7 +58,7 @@ fn cleared_world() -> World {
 fn from_forged_history(world: &World) -> Result<ReferenceIndexer, Guard> {
     let chain = chain_view_for_history(world);
 
-    ReferenceIndexer::from_history(&world.history, &chain, [0_u8; 32])
+    ReferenceIndexer::from_model_history(&world.history, &chain, [0_u8; 32])
 }
 
 // Checkpoint reconstruction: context identity.
@@ -319,6 +321,92 @@ fn burn_branch_without_burn_projection_is_rejected() {
 }
 
 #[test]
+fn model_history_rejects_burn_projection_whose_ash_is_not_created() {
+    let mut world = burned_world();
+
+    let certificate = world.history.transitions.last_mut().unwrap();
+    let ash_output = certificate.burn.as_ref().unwrap().ash_output;
+
+    assert!(certificate.created.remove(&ash_output));
+
+    assert_eq!(from_forged_history(&world), Err(Guard::WrongShape));
+}
+
+#[test]
+fn model_history_rejects_empty_fabricated_burn_certificate() {
+    let mut world = test_fixtures::world();
+
+    world.history.transitions.push(TransitionCertificate {
+        txid: txid(99),
+        order: next_order(&world),
+        branch: BranchKind::Burn,
+
+        consumed: BTreeSet::new(),
+        created: BTreeSet::new(),
+
+        state_edge: None,
+        resv_edge: None,
+        pace_edge: None,
+        entitlement_authority_edge: None,
+        distribution_authority_edge: None,
+
+        canonical_deltas: Vec::new(),
+        open_flows: Vec::new(),
+
+        chain_fee: Sat::ZERO,
+
+        burn: Some(BurnProjection {
+            ash_output: 99,
+            ash_value: sat(1),
+            records: Vec::new(),
+        }),
+        clear: None,
+        distribution_residue: None,
+    });
+
+    assert_eq!(from_forged_history(&world), Err(Guard::WrongShape));
+}
+
+#[test]
+fn fabricated_burn_does_not_create_attestation_credit() {
+    let mut world = test_fixtures::world();
+
+    world.history.transitions.push(TransitionCertificate {
+        txid: txid(99),
+        order: next_order(&world),
+        branch: BranchKind::Burn,
+
+        consumed: BTreeSet::new(),
+        created: BTreeSet::new(),
+
+        state_edge: None,
+        resv_edge: None,
+        pace_edge: None,
+        entitlement_authority_edge: None,
+        distribution_authority_edge: None,
+
+        canonical_deltas: Vec::new(),
+        open_flows: Vec::new(),
+
+        chain_fee: Sat::ZERO,
+
+        burn: Some(BurnProjection {
+            ash_output: 99,
+            ash_value: sat(100),
+            records: vec![BurnRecord {
+                record_index: 0,
+                address: ADDRESS_A,
+                amount: sat(100),
+            }],
+        }),
+        clear: None,
+        distribution_residue: None,
+    });
+
+    assert_eq!(from_forged_history(&world), Err(Guard::WrongShape));
+}
+
+#[test]
 fn burn_certificate_carrying_clear_is_rejected() {
     let mut world = burned_world();
 
@@ -426,7 +514,7 @@ fn forged_history_zero_clear_omega_is_rejected() {
 // The genesis projection is inserted from the publicly constructible
 // history without passing through the transition loop, so it is
 // covered only by the shared semantic validator at the end of
-// `from_history`.
+// `from_model_history`.
 
 #[test]
 fn forged_history_zero_genesis_omega_is_rejected() {

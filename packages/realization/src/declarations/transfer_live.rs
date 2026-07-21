@@ -52,6 +52,8 @@ struct Ids {
     sponsor_output_cardinality: RelationId,
     input_recognition: RelationId,
     output_recognition: RelationId,
+    sponsor_input_recognition: RelationId,
+    sponsor_output_recognition: RelationId,
     authorization: RelationId,
     input_closure: RelationId,
     output_closure: RelationId,
@@ -77,6 +79,8 @@ impl Ids {
             sponsor_output_cardinality: sponsor_cardinality(TransactionSide::Output),
             input_recognition: object_relation(RelationKind::Recognition, TransactionSide::Input),
             output_recognition: object_relation(RelationKind::Recognition, TransactionSide::Output),
+            sponsor_input_recognition: sponsor_recognition(TransactionSide::Input),
+            sponsor_output_recognition: sponsor_recognition(TransactionSide::Output),
             authorization: object_relation(RelationKind::Authorization, TransactionSide::Input),
             input_closure: object_relation(RelationKind::OutputClosure, TransactionSide::Input),
             output_closure: object_relation(RelationKind::OutputClosure, TransactionSide::Output),
@@ -187,6 +191,24 @@ fn relation_declarations(ids: &Ids) -> Vec<RelationDeclaration> {
                 side: crate::ObservedSide::Output,
                 object: ObjectId::ReceiptLive,
                 asset: AssetId::U,
+            },
+            [ProofKind::ManifestShape],
+        ),
+        declaration(
+            ids.sponsor_input_recognition.clone(),
+            Relation::Recognition {
+                side: crate::ObservedSide::Input,
+                object: ObjectId::PlainLbtc,
+                asset: AssetId::Lbtc,
+            },
+            [ProofKind::ManifestShape],
+        ),
+        declaration(
+            ids.sponsor_output_recognition.clone(),
+            Relation::Recognition {
+                side: crate::ObservedSide::Output,
+                object: ObjectId::PlainLbtc,
+                asset: AssetId::Lbtc,
             },
             [ProofKind::ManifestShape],
         ),
@@ -309,6 +331,7 @@ fn relation_declarations(ids: &Ids) -> Vec<RelationDeclaration> {
     ]
 }
 
+#[allow(clippy::too_many_lines)]
 fn relation_dependencies(ids: &Ids) -> Vec<RelationDependencyDeclaration> {
     vec![
         dep(
@@ -319,6 +342,16 @@ fn relation_dependencies(ids: &Ids) -> Vec<RelationDependencyDeclaration> {
         dep(
             &ids.output_recognition,
             &ids.output_cardinality,
+            RelationEdge::RecognitionBeforeCardinality,
+        ),
+        dep(
+            &ids.sponsor_input_recognition,
+            &ids.sponsor_input_cardinality,
+            RelationEdge::RecognitionBeforeCardinality,
+        ),
+        dep(
+            &ids.sponsor_output_recognition,
+            &ids.sponsor_output_cardinality,
             RelationEdge::RecognitionBeforeCardinality,
         ),
         dep(
@@ -360,6 +393,16 @@ fn relation_dependencies(ids: &Ids) -> Vec<RelationDependencyDeclaration> {
             &ids.open_flow_policy,
             &ids.sponsor,
             RelationEdge::OpenFlowPolicyBeforeSponsor,
+        ),
+        dep(
+            &ids.sponsor_input_recognition,
+            &ids.sponsor,
+            RelationEdge::StaticRequirement,
+        ),
+        dep(
+            &ids.sponsor_output_recognition,
+            &ids.sponsor,
+            RelationEdge::StaticRequirement,
         ),
         dep(
             &ids.sponsor,
@@ -520,6 +563,16 @@ fn object_relation(kind: RelationKind, side: TransactionSide) -> RelationId {
 fn sponsor_cardinality(side: TransactionSide) -> RelationId {
     id(
         kind_cardinality(),
+        RelationSubject::ObjectFamily {
+            side,
+            object: ObjectId::PlainLbtc,
+        },
+    )
+}
+
+fn sponsor_recognition(side: TransactionSide) -> RelationId {
+    id(
+        RelationKind::Recognition,
         RelationSubject::ObjectFamily {
             side,
             object: ObjectId::PlainLbtc,

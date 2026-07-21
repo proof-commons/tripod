@@ -1,6 +1,4 @@
 option('xelatex_path', type: 'string', value: '', description: 'Path to xelatex program')
 option('biber_path', type: 'string', value: '', description: 'Path to biber program')
 option('latexmk_path', type: 'string', value: '', description: 'Path to latexmk program')
-option('source_commit', type: 'string', value: '0000000000000000000000000000000000000000', description: 'Source commit the paper stamps derive from')
-option('source_tree', type: 'string', value: '0000000000000000000000000000000000000000', description: 'Source tree the rendered instance derives from')
-option('source_date_epoch', type: 'string', value: '0', description: 'SOURCE_DATE_EPOCH for reproducible TeX builds')
+option('source_date_epoch', type: 'string', value: '', description: 'Explicit SOURCE_DATE_EPOCH override for reproducible TeX builds outside Git')

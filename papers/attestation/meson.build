@@ -56,61 +56,37 @@ xelatex = find_program(get_option('xelatex_path'))
 biber = find_program(get_option('biber_path'))
 latexmk = find_program(get_option('latexmk_path'))
 
-# The document's four provenance stamps derive from the same committed
-# state the epoch does, so two builds of one source render identical
-# bytes and no value follows the ambient clock: the visible date and the
-# timestamp from the source epoch, the document identity from the commit
-# that publishes the source, the instance identity from the tree that is
-# rendered. `main.tex` inputs the generated file, and the flattener is
-# given the build directory below so the self-contained source carries
-# the macros rather than an unresolved input.
-date_program = find_program('date', required: true)
-stamp_date = run_command(
-  date_program, '-u', '-d', '@' + get_option('source_date_epoch'), '+%Y-%m-%d',
-  check: true,
-).stdout().strip()
-stamp_timestamp = run_command(
-  date_program, '-u', '-d', '@' + get_option('source_date_epoch'), '+%Y-%m-%dT%H:%M:%SZ',
-  check: true,
-).stdout().strip()
-
-stamp_commit = get_option('source_commit')
-stamp_tree = get_option('source_tree')
-
-stamps_configuration = configuration_data()
-stamps_configuration.set('ATTESTATION_DATE', stamp_date)
-stamps_configuration.set('ATTESTATION_TIMESTAMP', stamp_timestamp)
-stamps_configuration.set(
-  'ATTESTATION_DOCUMENT_UUID',
-  '@0@-@1@-@2@-@3@-@4@'.format(
-    stamp_commit.substring(0, 8), stamp_commit.substring(8, 12),
-    stamp_commit.substring(12, 16), stamp_commit.substring(16, 20),
-    stamp_commit.substring(20, 32),
-  ),
-)
-stamps_configuration.set(
-  'ATTESTATION_INSTANCE_UUID',
-  '@0@-@1@-@2@-@3@-@4@'.format(
-    stamp_tree.substring(0, 8), stamp_tree.substring(8, 12),
-    stamp_tree.substring(12, 16), stamp_tree.substring(16, 20),
-    stamp_tree.substring(20, 32),
-  ),
-)
-
-stamps_tex = configure_file(
-  input: stamps_template,
-  output: 'stamps.tex',
-  configuration: stamps_configuration,
-)
-
 # Reproducible TeX environment: \today, pdfdate, PDF CreationDate, and
-# the trailer ID all derive from the pinned source epoch instead of the
-# ambient clock (ADR-011). The build directory joins TEXINPUTS so
-# xelatex resolves the generated stamps.
+# the trailer ID all derive from a build-time source epoch artifact
+# instead of the ambient clock (ADR-011).
+explicit_source_date_epoch = get_option('source_date_epoch')
+git_for_epoch = find_program('git', required: explicit_source_date_epoch == '')
+source_date_epoch_script = find_program(
+  meson.global_source_root() / 'scripts' / 'write-source-date-epoch.sh'
+)
+source_date_epoch_wrap = find_program(
+  meson.global_source_root() / 'scripts' / 'with-source-date-epoch.sh'
+)
+git_for_epoch_arg = 'git'
+if git_for_epoch.found()
+  git_for_epoch_arg = git_for_epoch.full_path()
+endif
+source_date_epoch_file = custom_target(
+  'source-date-epoch',
+  output: 'source-date-epoch.txt',
+  command: [
+    source_date_epoch_script,
+    git_for_epoch_arg,
+    meson.global_source_root(),
+    '@OUTPUT@',
+    explicit_source_date_epoch,
+  ],
+  build_always_stale: true,
+  console: false,
+)
+source_date_epoch_path = meson.current_build_dir() / 'source-date-epoch.txt'
 reproducible_tex_env = {
   'TEXINPUTS': meson.current_source_dir() + ':' + meson.current_build_dir() + ':',
-  'SOURCE_DATE_EPOCH': get_option('source_date_epoch'),
-  'FORCE_SOURCE_DATE': '1',
 }
 
 # The two Rust helper binaries are real build targets, not
@@ -168,14 +144,14 @@ pre_generate = custom_target(
     '--quiet',
     '--notify-on-write',
     '--redirect', pre_generate_log,
-    '--', xelatex,
+    '--', source_date_epoch_wrap, source_date_epoch_path, xelatex,
     '-halt-on-error',
     '-interaction=nonstopmode',
     '-shell-escape',
     '-output-directory=@OUTDIR@',
     '-no-pdf', main_tex[0],
   ],
-  depends: [copy_references],
+  depends: [copy_references, source_date_epoch_file],
   env: reproducible_tex_env,
   console: true,
 )
@@ -192,10 +168,10 @@ generate_bibliography = custom_target(
     '--change-directory', meson.current_build_dir(),
     '--notify-on-write',
     '--redirect', generate_bibliography_log,
-    '--', biber,
+    '--', source_date_epoch_wrap, source_date_epoch_path, biber,
     'main',
   ],
-  depends: copy_references,
+  depends: [copy_references, source_date_epoch_file],
   env: reproducible_tex_env,
   console: true,
 )
@@ -213,6 +189,8 @@ render_document = custom_target(
     '--notify-on-write',
     '--redirect', render_document_log,
     '--',
+    source_date_epoch_wrap,
+    source_date_epoch_path,
     latexmk,
     '-r', latexmk_rc[0],
     '-output-directory=@OUTDIR@',

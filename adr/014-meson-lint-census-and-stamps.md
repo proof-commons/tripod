@@ -1,6 +1,6 @@
 # ADR-014: Meson Lint Census and Stamp-File Dependency Graph
 
-**Status:** Draft for review
+**Status:** Decided and implemented
 **Scope:** Every first-party checker and generator command, their Meson
 wiring, the file census they consume, and the unit-test fixture policy
 **Amends:** the census-discovery mechanism of

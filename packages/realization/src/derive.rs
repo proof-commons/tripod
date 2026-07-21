@@ -8,8 +8,8 @@ use petgraph::graph::{DiGraph, NodeIndex};
 use crate::{
     ArchitectureBinding, ConstructibilityEdge, ConstructibilityGraphProjection,
     ConstructibilityNode, ConstructibilityNodeId, DeclassificationAnalysis, DependencyEdge,
-    DisclosureEdge, DisclosureGraphProjection, DisclosureNode, DisclosureNodeId, ExprId,
-    ExpressionDeclaration, LifecycleEdge, LifecycleGraphProjection, LifecycleNode, LifecycleNodeId,
+    DisclosureEdge, DisclosureGraphProjection, DisclosureNode, ExprId, ExpressionDeclaration,
+    LifecycleEdge, LifecycleGraphProjection, LifecycleNode, LifecycleNodeId, OperationObservation,
     OperationRealization, RealizationError, RealizationScope, RelationDeclaration, RelationEdge,
     RelationGraphProjection, RelationId,
     constructibility::{build_constructibility_graph, project_constructibility_graph},
@@ -26,21 +26,60 @@ pub struct ScopedRealizationSpec {
     pub architecture: ArchitectureBinding,
     pub scope: RealizationScope,
     pub operations: BTreeMap<OperationId, OperationRealization>,
-    pub expression_graph: DiGraph<ExpressionDeclaration, DependencyEdge, u32>,
-    pub expression_node_by_id: BTreeMap<ExprId, NodeIndex<u32>>,
-    pub relation_graph: DiGraph<RelationDeclaration, RelationEdge, u32>,
-    pub relation_node_by_id: BTreeMap<RelationId, NodeIndex<u32>>,
-    pub expression_evaluation_order: Vec<ExprId>,
-    pub relation_evaluation_order: Vec<RelationId>,
-    pub constructibility_graph: DiGraph<ConstructibilityNode, ConstructibilityEdge, u32>,
-    pub constructibility_node_by_id: BTreeMap<ConstructibilityNodeId, NodeIndex<u32>>,
-    pub constructibility_order: Vec<ConstructibilityNodeId>,
-    pub lifecycle_graph: DiGraph<LifecycleNode, LifecycleEdge, u32>,
-    pub lifecycle_node_by_id: BTreeMap<LifecycleNodeId, NodeIndex<u32>>,
-    pub lifecycle_order: Vec<LifecycleNodeId>,
-    pub disclosure_graph: DiGraph<DisclosureNode, DisclosureEdge, u32>,
-    pub disclosure_node_by_id: BTreeMap<DisclosureNodeId, NodeIndex<u32>>,
+    pub(crate) expression_graph: DiGraph<ExpressionDeclaration, DependencyEdge, u32>,
+    pub(crate) relation_graph: DiGraph<RelationDeclaration, RelationEdge, u32>,
+    pub(crate) relation_node_by_id: BTreeMap<RelationId, NodeIndex<u32>>,
+    pub(crate) expression_evaluation_order: Vec<ExprId>,
+    pub(crate) relation_evaluation_order: Vec<RelationId>,
+    pub(crate) constructibility_graph: DiGraph<ConstructibilityNode, ConstructibilityEdge, u32>,
+    pub(crate) constructibility_node_by_id: BTreeMap<ConstructibilityNodeId, NodeIndex<u32>>,
+    pub(crate) lifecycle_graph: DiGraph<LifecycleNode, LifecycleEdge, u32>,
+    pub(crate) lifecycle_node_by_id: BTreeMap<LifecycleNodeId, NodeIndex<u32>>,
+    pub(crate) disclosure_graph: DiGraph<DisclosureNode, DisclosureEdge, u32>,
     pub declassification: DeclassificationAnalysis,
+}
+
+impl ScopedRealizationSpec {
+    /// Return one declared operation by stable architecture-owned ID.
+    #[must_use]
+    pub fn operation(&self, id: OperationId) -> Option<&OperationRealization> {
+        self.operations.get(&id)
+    }
+
+    /// Return one relation by stable realization ID.
+    #[must_use]
+    pub fn relation(&self, id: &RelationId) -> Option<&RelationDeclaration> {
+        self.relation_node_by_id
+            .get(id)
+            .copied()
+            .map(|node| &self.relation_graph[node])
+    }
+
+    /// Iterate relations in deterministic evaluation order.
+    pub fn relations(&self) -> impl Iterator<Item = &RelationDeclaration> {
+        self.relation_evaluation_order
+            .iter()
+            .filter_map(|id| self.relation(id))
+    }
+
+    /// Evaluate one observed operation against this realization.
+    pub fn evaluate_operation(
+        &self,
+        observation: &OperationObservation,
+    ) -> Result<crate::ConformanceReport, RealizationError> {
+        crate::evaluate::evaluate_operation(
+            &self.relation_graph,
+            &self.relation_node_by_id,
+            &self.relation_evaluation_order,
+            observation,
+        )
+    }
+
+    /// Project this realization into stable typed values.
+    #[must_use]
+    pub fn project(&self) -> ScopedRealizationProjection {
+        project_scoped_realization(self)
+    }
 }
 
 /// Stable typed projection of a scoped realization for deterministic comparison.
@@ -82,7 +121,7 @@ pub fn derive(
         .values()
         .flat_map(|operation| operation.expressions.iter().cloned())
         .collect::<Vec<_>>();
-    let (expression_graph, expression_node_by_id, expression_evaluation_order) =
+    let (expression_graph, _expression_node_by_id, expression_evaluation_order) =
         build_expression_graph(expression_declarations)?;
 
     let relation_declarations = operations
@@ -104,7 +143,7 @@ pub fn derive(
         .values()
         .flat_map(|operation| operation.constructibility_edges.iter().cloned())
         .collect::<Vec<_>>();
-    let (constructibility_graph, constructibility_node_by_id, constructibility_order) =
+    let (constructibility_graph, constructibility_node_by_id, _constructibility_order) =
         build_constructibility_graph(constructibility_nodes, constructibility_edges)?;
 
     let lifecycle_nodes = operations
@@ -115,7 +154,7 @@ pub fn derive(
         .values()
         .flat_map(|operation| operation.lifecycle_edges.iter().cloned())
         .collect::<Vec<_>>();
-    let (lifecycle_graph, lifecycle_node_by_id, lifecycle_order) =
+    let (lifecycle_graph, lifecycle_node_by_id, _lifecycle_order) =
         build_lifecycle_graph(lifecycle_nodes, lifecycle_edges)?;
 
     let disclosure_nodes = operations
@@ -140,19 +179,15 @@ pub fn derive(
         scope,
         operations,
         expression_graph,
-        expression_node_by_id,
         relation_graph,
         relation_node_by_id,
         expression_evaluation_order,
         relation_evaluation_order,
         constructibility_graph,
         constructibility_node_by_id,
-        constructibility_order,
         lifecycle_graph,
         lifecycle_node_by_id,
-        lifecycle_order,
         disclosure_graph,
-        disclosure_node_by_id,
         declassification,
     };
 

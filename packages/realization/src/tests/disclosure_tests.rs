@@ -3,10 +3,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use petgraph::visit::EdgeRef;
 
 use crate::{
-    DisclosureNode, DisclosureNodeId, DisclosureReason, FactId, InitialVisibility,
-    RealizationScope, TransactionSide,
+    DisclosureDependencyDeclaration, DisclosureEdge, DisclosureNode, DisclosureNodeId,
+    DisclosureReason, FactId, InitialVisibility, RealizationError, RealizationScope,
+    TransactionSide,
     declassification::{
-        analysis_from_reason_map, disclosure_reasons_by_node, phase1_disclosure_declarations,
+        analysis_from_reason_map, build_disclosure_graph, disclosure_reasons_by_node,
+        phase1_disclosure_declarations,
     },
     derive, phase1_declassification,
 };
@@ -63,6 +65,111 @@ fn disclosure_worklist_matches_full_scan_oracle() {
         analysis_from_reason_map(&graph, &worklist),
         analysis_from_reason_map_by_id(&graph, &oracle),
     );
+}
+
+#[test]
+fn duplicate_disclosure_dependency_is_rejected() {
+    let source = FactId::FamilyCount {
+        operation: architecture::OperationId::CompactAsh,
+        side: TransactionSide::Input,
+        object: architecture::ObjectId::Ash,
+    };
+    let target = FactId::FamilyAmount {
+        operation: architecture::OperationId::CompactAsh,
+        side: TransactionSide::Input,
+        object: architecture::ObjectId::Ash,
+    };
+    let dependency = DisclosureDependencyDeclaration {
+        source: DisclosureNodeId::Fact(source.clone()),
+        target: DisclosureNodeId::Fact(target.clone()),
+        edge: DisclosureEdge::RelationOperand,
+    };
+
+    let error = build_disclosure_graph(
+        [
+            DisclosureNode::Fact {
+                id: source,
+                initial_visibility: InitialVisibility::Public,
+            },
+            DisclosureNode::Fact {
+                id: target,
+                initial_visibility: InitialVisibility::Private,
+            },
+        ],
+        [dependency.clone(), dependency.clone()],
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error,
+        RealizationError::DuplicateDisclosureDependency(dependency)
+    );
+}
+
+#[test]
+fn cyclic_disclosure_dependencies_reach_the_least_fixed_point() {
+    let first = FactId::FamilyCount {
+        operation: architecture::OperationId::CompactAsh,
+        side: TransactionSide::Input,
+        object: architecture::ObjectId::Ash,
+    };
+    let second = FactId::FamilyAmount {
+        operation: architecture::OperationId::CompactAsh,
+        side: TransactionSide::Input,
+        object: architecture::ObjectId::Ash,
+    };
+    let unseeded = FactId::BoundValue {
+        bound: architecture::BoundId::AshBatchMax,
+    };
+    let reason = DisclosureReason::PublicInterface;
+    let (graph, nodes) = build_disclosure_graph(
+        [
+            DisclosureNode::Fact {
+                id: first.clone(),
+                initial_visibility: InitialVisibility::Private,
+            },
+            DisclosureNode::Fact {
+                id: second.clone(),
+                initial_visibility: InitialVisibility::Private,
+            },
+            DisclosureNode::Fact {
+                id: unseeded.clone(),
+                initial_visibility: InitialVisibility::Private,
+            },
+        ],
+        [
+            DisclosureDependencyDeclaration {
+                source: DisclosureNodeId::Fact(first.clone()),
+                target: DisclosureNodeId::Fact(second.clone()),
+                edge: DisclosureEdge::RelationOperand,
+            },
+            DisclosureDependencyDeclaration {
+                source: DisclosureNodeId::Fact(second.clone()),
+                target: DisclosureNodeId::Fact(first.clone()),
+                edge: DisclosureEdge::RelationOperand,
+            },
+        ],
+    )
+    .unwrap();
+    let worklist = disclosure_reasons_by_node(
+        &graph,
+        &nodes,
+        &[crate::DisclosureSeed {
+            node: DisclosureNodeId::Fact(first.clone()),
+            reason: reason.clone(),
+        }],
+    )
+    .unwrap();
+    let analysis = analysis_from_reason_map(&graph, &worklist);
+
+    assert_eq!(
+        analysis.newly_disclosed,
+        BTreeMap::from([
+            (first, BTreeSet::from([reason.clone()])),
+            (second, BTreeSet::from([reason])),
+        ]),
+    );
+    assert_eq!(analysis.retained_private, BTreeSet::from([unseeded]));
 }
 
 fn analyze_disclosure_by_full_scan(

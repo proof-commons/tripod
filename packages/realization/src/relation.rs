@@ -152,7 +152,7 @@ pub struct RelationGraphProjection {
 
 /// Build a direct Petgraph relation dependency graph.
 #[allow(clippy::type_complexity)]
-pub fn build_relation_graph(
+pub(crate) fn build_relation_graph(
     declarations: impl IntoIterator<Item = RelationDeclaration>,
     dependencies: impl IntoIterator<Item = RelationDependencyDeclaration>,
 ) -> Result<
@@ -230,7 +230,7 @@ pub fn build_relation_graph(
 
 /// Project a direct Petgraph relation graph into stable typed values.
 #[must_use]
-pub fn project_relation_graph(
+pub(crate) fn project_relation_graph(
     graph: &DiGraph<RelationDeclaration, RelationEdge, u32>,
 ) -> RelationGraphProjection {
     let mut nodes = graph.node_weights().cloned().collect::<Vec<_>>();

@@ -103,7 +103,7 @@ fn overclaiming_records_do_not_invalidate_burn() {
 
     let chain = chain_view_for_history(&next);
 
-    let indexer = ReferenceIndexer::from_history(&next.history, &chain, [0_u8; 32]).unwrap();
+    let indexer = ReferenceIndexer::from_model_history(&next.history, &chain, [0_u8; 32]).unwrap();
 
     let burn = indexer.burns().values().next().expect("indexed burn");
 
@@ -129,9 +129,12 @@ fn underclaiming_records_is_a_valid_donation() {
         }],
     );
 
-    let indexer =
-        ReferenceIndexer::from_history(&next.history, &chain_view_for_history(&next), [0_u8; 32])
-            .unwrap();
+    let indexer = ReferenceIndexer::from_model_history(
+        &next.history,
+        &chain_view_for_history(&next),
+        [0_u8; 32],
+    )
+    .unwrap();
 
     let burn = indexer.burns().values().next().unwrap();
 
@@ -279,9 +282,12 @@ fn bare_burn_tag_without_burn_projection_attests_nothing() {
         distribution_residue: None,
     });
 
-    let indexer =
-        ReferenceIndexer::from_history(&world.history, &chain_view_for_history(&world), [0_u8; 32])
-            .unwrap();
+    let indexer = ReferenceIndexer::from_model_history(
+        &world.history,
+        &chain_view_for_history(&world),
+        [0_u8; 32],
+    )
+    .unwrap();
 
     assert!(indexer.burns().is_empty());
 }
@@ -339,7 +345,7 @@ fn indexer_excludes_events_after_checkpoint() {
     .unwrap();
 
     let prefix_indexer =
-        ReferenceIndexer::from_history(&full.history, &checkpoint_chain, [0_u8; 32]).unwrap();
+        ReferenceIndexer::from_model_history(&full.history, &checkpoint_chain, [0_u8; 32]).unwrap();
 
     assert_eq!(prefix_indexer.burns().len(), 1);
 
@@ -347,9 +353,12 @@ fn indexer_excludes_events_after_checkpoint() {
 
     assert_eq!(indexed_burn.records[0].address, ADDRESS_A);
 
-    let full_indexer =
-        ReferenceIndexer::from_history(&full.history, &chain_view_for_history(&full), [0_u8; 32])
-            .unwrap();
+    let full_indexer = ReferenceIndexer::from_model_history(
+        &full.history,
+        &chain_view_for_history(&full),
+        [0_u8; 32],
+    )
+    .unwrap();
 
     assert_eq!(full_indexer.burns().len(), 2);
 }
@@ -379,7 +388,7 @@ fn duplicate_transition_txid_is_rejected_by_indexer() {
     forged.history.transitions.push(duplicate);
 
     assert_eq!(
-        ReferenceIndexer::from_history(
+        ReferenceIndexer::from_model_history(
             &forged.history,
             &chain_view_for_history(&forged),
             [0_u8; 32],
@@ -461,9 +470,12 @@ fn indexer_query_result_always_passes_semantic_validation() {
         }],
     );
 
-    let indexer =
-        ReferenceIndexer::from_history(&next.history, &chain_view_for_history(&next), [0_u8; 32])
-            .unwrap();
+    let indexer = ReferenceIndexer::from_model_history(
+        &next.history,
+        &chain_view_for_history(&next),
+        [0_u8; 32],
+    )
+    .unwrap();
 
     let query = indexer.query(ADDRESS_A).unwrap();
 
@@ -490,7 +502,7 @@ fn transition_reusing_genesis_txid_is_rejected_by_indexer() {
     forged.history.transitions.last_mut().unwrap().txid = forged.history.genesis.txid;
 
     assert_eq!(
-        ReferenceIndexer::from_history(
+        ReferenceIndexer::from_model_history(
             &forged.history,
             &chain_view_for_history(&forged),
             [0_u8; 32],

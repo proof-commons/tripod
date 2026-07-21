@@ -19,8 +19,8 @@ use crate::{
     diagnostic::{LabelDiagnostic, LabelErrorCode, sort_diagnostics},
     label::{Label, LabelShape},
     latex::harvest_attestation,
-    markdown::{InlineCodeContext, fence_close, fence_open, scan_markdown},
-    owner::{ImportedLabel, LabelOwner},
+    markdown::{InlineCodeContext, MarkdownScan, scan_markdown},
+    owner::{ImportedLabel, LabelOwner, OwnerParseError},
     registry::{LabelMint, LabelRegistry, RegistrySet},
     render,
     rust_source::{RustHarvest, harvest_crates, harvest_model},
@@ -212,9 +212,9 @@ fn harvest_realization(paths: &RepositoryCensus, result: &mut RepositoryLabels) 
         ));
         return;
     };
-    harvest_attestation_citations(&relative, &source, result);
     let scan = scan_markdown(&relative, &source);
-    result.diagnostics.extend(scan.diagnostics);
+    result.diagnostics.extend(scan.diagnostics.clone());
+    harvest_attestation_citations(&relative, &source, &scan, result);
     for span in scan.code_spans {
         if span.delimiter_len != 1 {
             continue;
@@ -275,8 +275,16 @@ fn harvest_adrs(paths: &RepositoryCensus, result: &mut RepositoryLabels) {
             continue;
         };
         let relative = relative_to(&paths.root, path);
-        let Ok(source) = fs::read_to_string(path) else {
-            continue;
+        let source = match fs::read_to_string(path) {
+            Ok(source) => source,
+            Err(error) => {
+                result.diagnostics.push(LabelDiagnostic::error(
+                    LabelErrorCode::Io,
+                    &SourceLocation::new(relative, 1, 1),
+                    error.to_string(),
+                ));
+                continue;
+            }
         };
         let scan = scan_markdown(&relative, &source);
         result.diagnostics.extend(scan.diagnostics);
@@ -479,22 +487,18 @@ fn import(
 /// occurrences, so a token present only in the index cannot keep
 /// itself in the release anchor set. The committed index is instead
 /// welded to the body by set equality.
-fn harvest_attestation_citations(path: &Path, source: &str, result: &mut RepositoryLabels) {
-    let mut fence: Option<(char, usize)> = None;
+fn harvest_attestation_citations(
+    path: &Path,
+    source: &str,
+    scan: &MarkdownScan,
+    result: &mut RepositoryLabels,
+) {
     let mut in_index = false;
     let mut index_location = SourceLocation::new(path, 1, 1);
     let mut index_names: BTreeSet<String> = BTreeSet::new();
+    let mut index_lines = BTreeSet::new();
+
     for (number, line) in source.lines().enumerate() {
-        if let Some((marker, length)) = fence {
-            if fence_close(line, marker, length) {
-                fence = None;
-            }
-            continue;
-        }
-        if let Some(open) = fence_open(line) {
-            fence = Some(open);
-            continue;
-        }
         if line.starts_with("## ") {
             // Matched on the locator mint form so a heading merely
             // citing (`sec:anchors`) cannot open the index region.
@@ -503,75 +507,98 @@ fn harvest_attestation_citations(path: &Path, source: &str, result: &mut Reposit
                 index_location = SourceLocation::new(path, number + 1, 1);
             }
         }
-        let nonparticipating = nonparticipating_ranges(line);
-        let mut offset = 0;
-        while let Some(found) = line[offset..].find("[A-") {
-            let start = offset + found;
-            let body = start + "[A-".len();
-            let Some(close) = line[body..].find(']') else {
-                break;
-            };
-            let value = &line[body..body + close];
-            let example = nonparticipating
-                .iter()
-                .any(|(from, to)| start >= *from && start < *to);
-            if !example && let Ok(label) = Label::parse(value, LabelShape::Attestation) {
-                if in_index {
-                    index_names.insert(value.to_owned());
-                } else {
-                    result.attestation_anchor_names.push(value.to_owned());
-                    result.push_imported_citation(
-                        LabelOwner::Realization,
-                        ImportedLabel {
-                            owner: LabelOwner::Attestation,
-                            label,
-                        },
-                        SourceLocation::new(path, number + 1, line[..start].chars().count() + 1),
-                    );
-                }
-            }
-            offset = body + close + 1;
+
+        if in_index {
+            index_lines.insert(number + 1);
         }
     }
-    result.attestation_index_names = index_names;
-    result.attestation_index_location = Some(index_location);
-}
 
-/// Byte ranges of inline code spans with a delimiter run of two or
-/// more backticks on one line: nonparticipating example spans under
-/// ADR-013, excluded from the raw anchor scan.
-fn nonparticipating_ranges(line: &str) -> Vec<(usize, usize)> {
-    let bytes = line.as_bytes();
-    let mut ranges = Vec::new();
-    let mut cursor = 0;
-    while cursor < bytes.len() {
-        if bytes[cursor] != b'`' {
-            cursor += 1;
+    for span in &scan.code_spans {
+        if span.delimiter_len != 1 {
             continue;
         }
-        let start = cursor;
-        let length = backtick_run(bytes, cursor);
-        cursor += length;
-        let mut end = cursor;
-        while end < bytes.len() && !(bytes[end] == b'`' && backtick_run(bytes, end) == length) {
-            end += 1;
-        }
-        if end == bytes.len() {
-            break;
-        }
-        if length >= 2 {
-            ranges.push((start, end + length));
-        }
-        cursor = end + length;
-    }
-    ranges
-}
 
-fn backtick_run(bytes: &[u8], start: usize) -> usize {
-    bytes[start..]
-        .iter()
-        .take_while(|value| **value == b'`')
-        .count()
+        let content = span.content.trim();
+        let Some(token) = square(content) else {
+            if content.starts_with("[A-") {
+                result.diagnostics.push(LabelDiagnostic::error(
+                    LabelErrorCode::InvalidImportedCitationForm,
+                    &span.location,
+                    "attestation import must use square brackets",
+                ));
+            }
+            continue;
+        };
+
+        if !token.starts_with("A-") {
+            continue;
+        }
+
+        let in_index = index_lines.contains(&span.location.line);
+
+        if !in_index {
+            match span.context {
+                InlineCodeContext::Parenthesized => {}
+                InlineCodeContext::Asymmetric => {
+                    result.diagnostics.push(LabelDiagnostic::error(
+                        LabelErrorCode::AsymmetricCitation,
+                        &span.location,
+                        "label citation has an unmatched parenthesis",
+                    ));
+                    continue;
+                }
+                InlineCodeContext::Bare => {
+                    result.diagnostics.push(LabelDiagnostic::error(
+                        LabelErrorCode::InvalidImportedCitationForm,
+                        &span.location,
+                        "attestation import must be parenthesized",
+                    ));
+                    continue;
+                }
+            }
+        }
+
+        let imported = match ImportedLabel::parse(token) {
+            Ok(imported) => imported,
+            Err(OwnerParseError::Unknown(error)) => {
+                result.diagnostics.push(LabelDiagnostic::error(
+                    LabelErrorCode::UnknownOwner,
+                    &span.location,
+                    format!("unknown imported-label owner in {error:?}"),
+                ));
+                continue;
+            }
+            Err(OwnerParseError::Label(error)) => {
+                result.diagnostics.push(LabelDiagnostic::error(
+                    LabelErrorCode::InvalidLabel,
+                    &span.location,
+                    error.to_string(),
+                ));
+                continue;
+            }
+        };
+
+        if imported.owner != LabelOwner::Attestation {
+            result.diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::UnknownOwner,
+                &span.location,
+                "attestation import must use the A owner prefix",
+            ));
+            continue;
+        }
+
+        if in_index {
+            index_names.insert(imported.label.as_str().to_owned());
+        } else {
+            result
+                .attestation_anchor_names
+                .push(imported.label.as_str().to_owned());
+            result.push_imported_citation(LabelOwner::Realization, imported, span.location.clone());
+        }
+    }
+
+    result.attestation_index_names = index_names;
+    result.attestation_index_location = Some(index_location);
 }
 
 fn validate(result: &mut RepositoryLabels) {

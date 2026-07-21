@@ -2,8 +2,9 @@ use architecture::{BoundId, ManifestError, ObjectId, OperationId, RootId};
 use thiserror::Error;
 
 use crate::{
-    ConstructibilityNodeId, DisclosureNodeId, ExprId, FactId, LifecycleNodeId, ObservedObjectRef,
-    RelationDependencyDeclaration, RelationId, RepresentationMode, SemanticType,
+    ConstructibilityDependencyDeclaration, ConstructibilityNodeId, DisclosureDependencyDeclaration,
+    DisclosureNodeId, ExprId, FactId, LifecycleDependencyDeclaration, LifecycleNodeId,
+    ObservedObjectRef, RelationDependencyDeclaration, RelationId, RepresentationMode, SemanticType,
 };
 
 /// Architecture field whose declared shape no longer matches a realization weld.
@@ -232,6 +233,9 @@ pub enum RealizationError {
     #[error("constructibility node {0:?} is unknown")]
     UnknownConstructibilityNode(ConstructibilityNodeId),
 
+    #[error("constructibility dependency {0:?} is declared more than once")]
+    DuplicateConstructibilityDependency(ConstructibilityDependencyDeclaration),
+
     #[error("constructibility graph contains one or more cycles")]
     ConstructibilityCycle {
         components: Vec<Vec<ConstructibilityNodeId>>,
@@ -244,12 +248,23 @@ pub enum RealizationError {
     PermissionlessPrivateDependency {
         operation: OperationId,
         source_node: ConstructibilityNodeId,
+        path: Vec<ConstructibilityNodeId>,
     },
 
     #[error("sponsor-local dependency {source_node:?} escaped sponsor-only edge for {operation}")]
     SponsorDependencyEscaped {
         operation: OperationId,
         source_node: ConstructibilityNodeId,
+        path: Vec<ConstructibilityNodeId>,
+    },
+
+    #[error(
+        "constructibility dependency {source_node:?} belongs to another operation than {operation}"
+    )]
+    CrossOperationConstructibilityDependency {
+        operation: OperationId,
+        source_node: ConstructibilityNodeId,
+        path: Vec<ConstructibilityNodeId>,
     },
 
     #[error("lifecycle node {0:?} is declared more than once")]
@@ -257,6 +272,9 @@ pub enum RealizationError {
 
     #[error("lifecycle node {0:?} is unknown")]
     UnknownLifecycleNode(LifecycleNodeId),
+
+    #[error("lifecycle dependency {0:?} is declared more than once")]
+    DuplicateLifecycleDependency(LifecycleDependencyDeclaration),
 
     #[error("lifecycle graph contains one or more cycles")]
     LifecycleCycle {
@@ -285,10 +303,8 @@ pub enum RealizationError {
     #[error("disclosure node {0:?} is unknown")]
     UnknownDisclosureNode(DisclosureNodeId),
 
-    #[error("disclosure graph contains one or more cycles")]
-    DisclosureCycle {
-        components: Vec<Vec<DisclosureNodeId>>,
-    },
+    #[error("disclosure dependency {0:?} is declared more than once")]
+    DuplicateDisclosureDependency(DisclosureDependencyDeclaration),
 
     #[error("representation/lifecycle mismatch for {object:?} {mode:?}")]
     RepresentationLifecycleMismatch {

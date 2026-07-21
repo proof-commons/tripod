@@ -225,7 +225,7 @@ conceptual home without a diagnostic.
 Rejected because ordinary Rustdoc spans would need a fragile "label-like"
 heuristic to avoid false mints.
 
-### Keeping plan-local labels unlinted
+### Leaving plan-local labels unchecked
 
 Rejected because the permitted dangling references hid real defects; the
 cost of completeness fell once resolution became owner-aware and cross-file.

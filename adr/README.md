@@ -27,7 +27,7 @@ repository itself.
 | [ADR-011](011-toolchain-and-dependency-policy.md) | Decided and implemented | Rust, dependency, locking, unsafe-code, target-compatibility, and reproducibility policy. |
 | [ADR-012](012-documentation-labels.md) | Implemented; superseded in part by ADR-013 | Documentation labels, citation layers, registers, and lint boundaries. |
 | [ADR-013](013-global-label-graph.md) | Decided and implemented | Owner-aware global label graph across Markdown and Rust sources. |
-| [ADR-014](014-meson-lint-census-and-stamps.md) | Draft for review | Build-system-owned lint census, argument-passed inputs, and stamp-file dependency edges. |
+| [ADR-014](014-meson-lint-census-and-stamps.md) | Decided and implemented | Build-system-owned lint census, argument-passed inputs, and stamp-file dependency edges. |
 
 ## Numbering · `rule:adr:numbering`
 

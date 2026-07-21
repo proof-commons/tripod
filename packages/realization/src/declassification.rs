@@ -1,4 +1,9 @@
 //! Dependency-derived public-availability and declassification analysis.
+//!
+//! Disclosure dependency cycles are allowed. The analysis computes the
+//! monotone least fixed point of seeded disclosure reasons over incoming
+//! dependencies, so a cycle discloses exactly the facts reachable from seeded
+//! public requirements and no unseeded component.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -114,7 +119,7 @@ pub struct DeclassificationAnalysis {
 }
 
 #[allow(clippy::type_complexity)]
-pub fn build_disclosure_graph(
+pub(crate) fn build_disclosure_graph(
     nodes: impl IntoIterator<Item = DisclosureNode>,
     edges: impl IntoIterator<Item = DisclosureDependencyDeclaration>,
 ) -> Result<
@@ -135,6 +140,14 @@ pub fn build_disclosure_graph(
 
     let mut edges = edges.into_iter().collect::<Vec<_>>();
     edges.sort();
+
+    for pair in edges.windows(2) {
+        if pair[0] == pair[1] {
+            return Err(RealizationError::DuplicateDisclosureDependency(
+                pair[0].clone(),
+            ));
+        }
+    }
 
     let mut graph =
         DiGraph::<DisclosureNode, DisclosureEdge, u32>::with_capacity(nodes.len(), edges.len());
@@ -161,7 +174,7 @@ pub fn build_disclosure_graph(
     Ok((graph, node_by_id))
 }
 
-pub fn analyze_disclosure(
+pub(crate) fn analyze_disclosure(
     graph: &DiGraph<DisclosureNode, DisclosureEdge, u32>,
     node_by_id: &BTreeMap<DisclosureNodeId, NodeIndex<u32>>,
     seeds: &[DisclosureSeed],
@@ -170,7 +183,7 @@ pub fn analyze_disclosure(
     Ok(analysis_from_reason_map(graph, &reasons_by_node))
 }
 
-pub fn disclosure_reasons_by_node(
+pub(crate) fn disclosure_reasons_by_node(
     graph: &DiGraph<DisclosureNode, DisclosureEdge, u32>,
     node_by_id: &BTreeMap<DisclosureNodeId, NodeIndex<u32>>,
     seeds: &[DisclosureSeed],
@@ -215,7 +228,7 @@ pub fn disclosure_reasons_by_node(
     Ok(reasons_by_node)
 }
 
-pub fn analysis_from_reason_map(
+pub(crate) fn analysis_from_reason_map(
     graph: &DiGraph<DisclosureNode, DisclosureEdge, u32>,
     reasons_by_node: &BTreeMap<NodeIndex<u32>, BTreeSet<DisclosureReason>>,
 ) -> DeclassificationAnalysis {
@@ -255,7 +268,7 @@ pub fn analysis_from_reason_map(
 }
 
 #[must_use]
-pub fn project_disclosure_graph(
+pub(crate) fn project_disclosure_graph(
     graph: &DiGraph<DisclosureNode, DisclosureEdge, u32>,
 ) -> DisclosureGraphProjection {
     let mut nodes = graph

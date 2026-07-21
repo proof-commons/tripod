@@ -4,3 +4,9 @@ option(
   value: '',
   description: 'Override generate-artifacts output directory for isolated integration tests',
 )
+option(
+  'publication_archive_root',
+  type: 'string',
+  value: '',
+  description: 'Override archive mirror root for isolated publication-repair tests',
+)

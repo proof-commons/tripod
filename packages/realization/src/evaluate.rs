@@ -89,7 +89,7 @@ impl ConformanceReport {
 }
 
 /// Evaluate all relations owned by one operation.
-pub fn evaluate_operation(
+pub(crate) fn evaluate_operation(
     relation_graph: &DiGraph<RelationDeclaration, RelationEdge, u32>,
     relation_node_by_id: &BTreeMap<RelationId, NodeIndex<u32>>,
     relation_evaluation_order: &[RelationId],
@@ -303,6 +303,10 @@ fn canonical_delta_policy_holds(
     }
 
     for delta in &observation.canonical_deltas {
+        if !canonical_delta_shape_holds(delta) {
+            return Ok(false);
+        }
+
         let Some(source_total) = sum_delta_side(
             observation,
             &delta.sources,
@@ -350,6 +354,30 @@ fn canonical_delta_policy_holds(
         }
         _ => true,
     }))
+}
+
+fn canonical_delta_shape_holds(delta: &crate::ObservedCanonicalDelta) -> bool {
+    if delta.amount.is_zero() {
+        return false;
+    }
+
+    match delta.kind {
+        DeltaKind::Lateral | DeltaKind::OwnerlessLateral => {
+            !delta.sources.is_empty()
+                && !delta.destinations.is_empty()
+                && delta.destruction_tag.is_none()
+        }
+        DeltaKind::Issuance => {
+            delta.sources.is_empty()
+                && !delta.destinations.is_empty()
+                && delta.destruction_tag.is_none()
+        }
+        DeltaKind::Destruction => {
+            !delta.sources.is_empty()
+                && delta.destinations.is_empty()
+                && delta.destruction_tag.is_some()
+        }
+    }
 }
 
 fn sum_delta_side(
@@ -428,20 +456,23 @@ fn declared_objects(
 
 fn observed_object_shape_holds(object: ObjectId, observed: &ObservedObject) -> bool {
     match object {
-        ObjectId::ReceiptLive
-        | ObjectId::ReceiptTimeLocked
-        | ObjectId::DepositRequest
-        | ObjectId::DepositEntitlement
-        | ObjectId::PlainLbtc => observed.owner.is_some(),
         ObjectId::State
-        | ObjectId::Resv
         | ObjectId::Pace
         | ObjectId::EntitlementAuthority
         | ObjectId::DistributionAuthority
-        | ObjectId::DistributionControl
-        | ObjectId::DistributionVault
-        | ObjectId::Ash
-        | ObjectId::CpfpAnchor => true,
+        | ObjectId::DistributionControl => {
+            observed.value == ProtocolAmount::ONE && observed.owner.is_none()
+        }
+        ObjectId::Resv => observed.owner.is_none(),
+        ObjectId::ReceiptLive
+        | ObjectId::ReceiptTimeLocked
+        | ObjectId::DepositRequest
+        | ObjectId::DepositEntitlement => !observed.value.is_zero() && observed.owner.is_some(),
+        ObjectId::DistributionVault | ObjectId::Ash => {
+            !observed.value.is_zero() && observed.owner.is_none()
+        }
+        ObjectId::PlainLbtc => observed.owner.is_some(),
+        ObjectId::CpfpAnchor => observed.value.is_zero() && observed.owner.is_none(),
     }
 }
 

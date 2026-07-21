@@ -50,6 +50,8 @@ struct Ids {
     output_cardinality: RelationId,
     input_recognition: RelationId,
     output_recognition: RelationId,
+    sponsor_input_recognition: RelationId,
+    sponsor_output_recognition: RelationId,
     conservation: RelationId,
     permissionless: RelationId,
     input_closure: RelationId,
@@ -94,6 +96,20 @@ impl Ids {
                 RelationSubject::ObjectFamily {
                     side: TransactionSide::Output,
                     object: ObjectId::Ash,
+                },
+            ),
+            sponsor_input_recognition: relation_id(
+                RelationKind::Recognition,
+                RelationSubject::ObjectFamily {
+                    side: TransactionSide::Input,
+                    object: ObjectId::PlainLbtc,
+                },
+            ),
+            sponsor_output_recognition: relation_id(
+                RelationKind::Recognition,
+                RelationSubject::ObjectFamily {
+                    side: TransactionSide::Output,
+                    object: ObjectId::PlainLbtc,
                 },
             ),
             conservation: relation_id(
@@ -202,6 +218,24 @@ fn relation_declarations(ids: &Ids) -> Vec<RelationDeclaration> {
                 side: crate::ObservedSide::Output,
                 object: ObjectId::Ash,
                 asset: AssetId::U,
+            },
+            [ProofKind::ManifestShape],
+        ),
+        declaration(
+            ids.sponsor_input_recognition.clone(),
+            Relation::Recognition {
+                side: crate::ObservedSide::Input,
+                object: ObjectId::PlainLbtc,
+                asset: AssetId::Lbtc,
+            },
+            [ProofKind::ManifestShape],
+        ),
+        declaration(
+            ids.sponsor_output_recognition.clone(),
+            Relation::Recognition {
+                side: crate::ObservedSide::Output,
+                object: ObjectId::PlainLbtc,
+                asset: AssetId::Lbtc,
             },
             [ProofKind::ManifestShape],
         ),
@@ -358,6 +392,16 @@ fn relation_dependencies(ids: &Ids) -> Vec<RelationDependencyDeclaration> {
             &ids.open_flow_policy,
             &ids.sponsor,
             RelationEdge::OpenFlowPolicyBeforeSponsor,
+        ),
+        dep(
+            &ids.sponsor_input_recognition,
+            &ids.sponsor,
+            RelationEdge::StaticRequirement,
+        ),
+        dep(
+            &ids.sponsor_output_recognition,
+            &ids.sponsor,
+            RelationEdge::StaticRequirement,
         ),
         dep(
             &ids.sponsor,

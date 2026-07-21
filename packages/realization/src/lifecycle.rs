@@ -54,7 +54,7 @@ pub struct LifecycleGraphProjection {
 }
 
 #[allow(clippy::type_complexity)]
-pub fn build_lifecycle_graph(
+pub(crate) fn build_lifecycle_graph(
     nodes: impl IntoIterator<Item = LifecycleNode>,
     edges: impl IntoIterator<Item = LifecycleDependencyDeclaration>,
 ) -> Result<
@@ -76,6 +76,14 @@ pub fn build_lifecycle_graph(
 
     let mut edges = edges.into_iter().collect::<Vec<_>>();
     edges.sort();
+
+    for pair in edges.windows(2) {
+        if pair[0] == pair[1] {
+            return Err(RealizationError::DuplicateLifecycleDependency(
+                pair[0].clone(),
+            ));
+        }
+    }
 
     let mut graph =
         DiGraph::<LifecycleNode, LifecycleEdge, u32>::with_capacity(nodes.len(), edges.len());
@@ -110,7 +118,7 @@ pub fn build_lifecycle_graph(
     Ok((graph, node_by_id, order))
 }
 
-pub fn require_lifecycle_exit(
+pub(crate) fn require_lifecycle_exit(
     graph: &DiGraph<LifecycleNode, LifecycleEdge, u32>,
     node_by_id: &BTreeMap<LifecycleNodeId, NodeIndex<u32>>,
     object: ObjectId,
@@ -137,7 +145,7 @@ pub fn require_lifecycle_exit(
 }
 
 #[must_use]
-pub fn project_lifecycle_graph(
+pub(crate) fn project_lifecycle_graph(
     graph: &DiGraph<LifecycleNode, LifecycleEdge, u32>,
 ) -> LifecycleGraphProjection {
     let mut nodes = graph.node_weights().cloned().collect::<Vec<_>>();
