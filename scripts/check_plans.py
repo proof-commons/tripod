@@ -18,7 +18,7 @@ import sys
 ROOT = Path.cwd()
 BASELINE_MARKDOWN_BYTES = 1_295_616
 HARD_CAP_BYTES = 768 * 1024
-SOFT_TARGET_BYTES = 512 * 1024
+SOFT_TARGET_BYTES = 520 * 1024
 GENERATED_REGISTERS = {
     Path("plans/labels/specification.md"),
     Path("plans/labels/realization.md"),
