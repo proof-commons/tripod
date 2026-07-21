@@ -1,4 +1,5 @@
 option('xelatex_path', type: 'string', value: '', description: 'Path to xelatex program')
 option('biber_path', type: 'string', value: '', description: 'Path to biber program')
 option('latexmk_path', type: 'string', value: '', description: 'Path to latexmk program')
-option('source_date_epoch', type: 'string', value: '', description: 'Explicit SOURCE_DATE_EPOCH override for reproducible TeX builds outside Git')
+option('git_path', type: 'string', value: '', description: 'Path to git program')
+option('jq_path', type: 'string', value: '', description: 'Path to jq program')

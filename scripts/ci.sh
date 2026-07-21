@@ -47,6 +47,7 @@ census_args() {
     case "$path" in
       .* | */.* | archive/* | scripts/*) continue ;;
       papers/attestation/macros_attestation.tex) continue ;;
+      papers/attestation/stamps.tex.in) continue ;;
       packages/execwrap/tests/*) continue ;;
       papers/attestation/main.tex) printf ' --attestation-main %s' "$path" ;;
       papers/attestation/sections/*.tex) printf ' --attestation-section %s' "$path" ;;

@@ -1,11 +1,21 @@
 # papers/attestation/meson.build - Attestation paper subproject
 
-project('attestation', 'c', version: '1.0.0', meson_version: '>=1.1.0')
+project('attestation', 'c', version: '1.0.0', meson_version: '>=1.3.0')
+
+fs = import('fs')
 
 # Paper configuration
 main_tex = files('main.tex')
 latexmk_rc = files('.latexmkrc')
 bib_file = files('references.bib')
+
+# Specification macros published for importing documents. Sibling
+# subprojects stage a build-dir copy of this via configure_file instead of an
+# in-tree symlink, so meson tracks edits across subproject boundaries.
+macros_attestation_src = files('macros_attestation.tex')
+
+# Source template for the generated stamps.tex (Git-derived provenance).
+stamps_template = files('stamps.tex.in')
 
 # Specification lint census (ADR-014): explicit and hand-managed — a new
 # section must be listed here, or the census audit fails the build.
@@ -28,64 +38,47 @@ attestation_section_files = files(
   'sections/B1_symbols.tex',
 )
 
-# Same-typed files deliberately outside the Layer-0 lint census
-# (ADR-014): the macro file is a TeX build input, not a label subject.
-# The census audit accepts the exclusion only because it is declared
-# here.
-attestation_excluded_files = files('macros_attestation.tex')
+# Same-typed files deliberately outside the specification lint census
+# (ADR-014): the macro file and the stamps template are TeX build
+# inputs, not label subjects. The census audit accepts the exclusion
+# only because both are declared here.
+attestation_excluded_files = macros_attestation_src + stamps_template
 
-# TeX dependencies
-tex_dependencies = attestation_excluded_files + attestation_section_files
+# TeX dependencies (label subjects excluded from all_inputs are handled
+# separately). The stamps template is a publication input but not a
+# label source, so it enters all_inputs directly, not tex_dependencies.
+tex_dependencies = macros_attestation_src + attestation_section_files
 
-# Source template for the generated stamps.tex. It is a TeX build input
-# rather than a label subject, and it is listed among the inputs so an
-# edit to it re-renders the document.
-stamps_template = files('stamps.tex.in')
-
+# The exact publication-input set fed to the stamp digest. The generated
+# stamps.tex is deliberately NOT a member (it is derived from these), so
+# the document identity has no self-reference.
 all_inputs = main_tex + tex_dependencies + latexmk_rc + bib_file + stamps_template
 
-# Specification macros published for importing documents. Sibling
-# subprojects stage a build-dir copy of this via configure_file instead of an
-# in-tree symlink, so meson tracks edits across subproject boundaries.
-macros_attestation_src = files('macros_attestation.tex')
-
-# TeX tool paths come from parent project options.
+# Tool paths come from parent project options.
 xelatex = find_program(get_option('xelatex_path'))
 biber = find_program(get_option('biber_path'))
 latexmk = find_program(get_option('latexmk_path'))
+git = find_program(get_option('git_path'), required: true)
+jq = find_program(get_option('jq_path'), required: true)
+sh = find_program('sh')
 
-# Reproducible TeX environment: \today, pdfdate, PDF CreationDate, and
-# the trailer ID all derive from a build-time source epoch artifact
-# instead of the ambient clock (ADR-011).
-explicit_source_date_epoch = get_option('source_date_epoch')
-git_for_epoch = find_program('git', required: explicit_source_date_epoch == '')
-source_date_epoch_script = find_program(
-  meson.global_source_root() / 'scripts' / 'write-source-date-epoch.sh'
-)
+# The generated stamps.tex lives in the build directory, so it must be
+# searchable from there in addition to the source tree. SOURCE_DATE_EPOCH
+# and FORCE_SOURCE_DATE are injected per-command by with-source-date-epoch.sh
+# from the build-time generated epoch, not the ambient clock (ADR-011).
 source_date_epoch_wrap = find_program(
   meson.global_source_root() / 'scripts' / 'with-source-date-epoch.sh'
 )
-git_for_epoch_arg = 'git'
-if git_for_epoch.found()
-  git_for_epoch_arg = git_for_epoch.full_path()
-endif
-source_date_epoch_file = custom_target(
-  'source-date-epoch',
-  output: 'source-date-epoch.txt',
-  command: [
-    source_date_epoch_script,
-    git_for_epoch_arg,
-    meson.global_source_root(),
-    '@OUTPUT@',
-    explicit_source_date_epoch,
-  ],
-  build_always_stale: true,
-  console: false,
-)
-source_date_epoch_path = meson.current_build_dir() / 'source-date-epoch.txt'
 reproducible_tex_env = {
-  'TEXINPUTS': meson.current_source_dir() + ':' + meson.current_build_dir() + ':',
+  'TEXINPUTS':
+    meson.current_build_dir() + ':' + meson.current_source_dir() + ':',
 }
+
+# Absolute path to the generated epoch file, for the with-source-date-epoch.sh
+# argument. It must be absolute because the Biber step runs with a changed
+# working directory; the dependency edge on the generating target is carried
+# by each consumer's input/depends list, not this string.
+source_date_epoch_path = meson.current_build_dir() / 'source-date-epoch'
 
 # The two Rust helper binaries are real build targets, not
 # configure-time discoveries: each custom target runs the repo's
@@ -119,6 +112,64 @@ flatten_latex_main = custom_target(
   build_always_stale: true,
 )
 
+attestation_stamps_bin = custom_target(
+  'cargo-attestation-stamps',
+  output: 'attestation-stamps',
+  command: [
+    cargo_bin_sync, cargo, cargo_manifest,
+    'tripod-document-stamps', 'attestation-stamps', '@OUTPUT@',
+  ],
+  console: true,
+  build_always_stale: true,
+)
+
+# Build-time provenance stamps (ADR-014). The Rust binary derives four
+# values from committed Git state; prepare-attestation-stamps.sh renders
+# them into stamps.tex and source-date-epoch (and a .ok success probe).
+# build_always_stale is required because ninja cannot otherwise see a
+# changed HEAD, a paper-tree commit touching no all_inputs file, or a
+# dirty working tree; the wrapper's compare-if-changed writes let ninja
+# restat skip downstream rebuilds when the derived values are unchanged.
+prepare_attestation_stamps = find_program(
+  meson.global_source_root() / 'scripts' / 'prepare-attestation-stamps.sh'
+)
+repository_root = meson.global_source_root()
+all_input_args = []
+foreach input_file : all_inputs
+  all_input_args += ['--input', fs.relative_to(input_file, repository_root)]
+endforeach
+
+attestation_stamps = custom_target(
+  'prepare-attestation-stamps',
+  input: all_inputs,
+  output: ['stamps.tex', 'source-date-epoch', 'attestation-stamps.ok'],
+  command: [
+    prepare_attestation_stamps,
+    attestation_stamps_bin,
+    jq,
+    git,
+    repository_root,
+    'HEAD',
+    'papers/attestation',
+    stamps_template,
+    '@OUTPUT0@',
+    '@OUTPUT1@',
+    '@OUTPUT2@',
+  ] + all_input_args,
+  build_always_stale: true,
+  console: true,
+)
+
+# Success probe for the stamps generation (ADR-014 output-or-stamp).
+test(
+  'attestation-stamps',
+  sh,
+  args: ['-c', 'test -f "$1"', 'sh', attestation_stamps[2].full_path()],
+  depends: attestation_stamps,
+  suite: 'documentation',
+  timeout: 60,
+)
+
 # The specification cites nothing outside itself: it imports no sibling .aux and stages no
 # xref bridge. It only PUBLISHES its own .aux (below) for importing layers.
 
@@ -135,7 +186,7 @@ copy_references = custom_target(
 pre_generate_log = meson.current_build_dir() / 'pre-generate.log'
 pre_generate = custom_target(
   'pre-generate',
-  input: all_inputs,
+  input: all_inputs + [attestation_stamps[0], attestation_stamps[1]],
   output: 'main.bcf',
   command: [
     execwrap,
@@ -149,7 +200,7 @@ pre_generate = custom_target(
     '-output-directory=@OUTDIR@',
     '-no-pdf', main_tex[0],
   ],
-  depends: [copy_references, source_date_epoch_file],
+  depends: [copy_references, attestation_stamps],
   env: reproducible_tex_env,
   console: true,
 )
@@ -158,7 +209,7 @@ pre_generate = custom_target(
 generate_bibliography_log = meson.current_build_dir() / 'generate-bibliography.log'
 generate_bibliography = custom_target(
   'generate-bibliography',
-  input: pre_generate,
+  input: [pre_generate, attestation_stamps[1]],
   output: 'main.bbl',
   command: [
     execwrap,
@@ -169,7 +220,7 @@ generate_bibliography = custom_target(
     '--', source_date_epoch_wrap, source_date_epoch_path, biber,
     'main',
   ],
-  depends: [copy_references, source_date_epoch_file],
+  depends: [copy_references, attestation_stamps],
   env: reproducible_tex_env,
   console: true,
 )
@@ -178,9 +229,9 @@ generate_bibliography = custom_target(
 render_document_log = meson.current_build_dir() / 'render-document.log'
 render_document = custom_target(
   'render-document',
-  input: all_inputs,
+  input: all_inputs + [attestation_stamps[0], attestation_stamps[1]],
   output: 'main.pdf',
-  depends: generate_bibliography,
+  depends: [generate_bibliography, attestation_stamps],
   command: [
     execwrap,
     '--quiet',
@@ -252,7 +303,7 @@ document_dep = declare_dependency(
 flat_basename = 'Tripod_Attestation_v@0@_flat.tex'.format(meson.project_version())
 flat_build_target = custom_target(
   'flatten-attestation-build',
-  input: all_inputs,
+  input: all_inputs + [attestation_stamps[0]],
   output: flat_basename,
   command: [
     flatten_latex_main,
@@ -261,5 +312,6 @@ flat_build_target = custom_target(
     '--output', '@OUTPUT@',
     '--strict-bib',
   ],
+  depends: attestation_stamps,
   console: false,
 )
