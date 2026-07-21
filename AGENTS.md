@@ -17,3 +17,14 @@
   escaped spelling `&lt;char&gt;` when prose must discuss the exact token.
 - `scripts/ci.sh` is the runner-agnostic CI gate for environments
   without a TeX toolchain.
+- Meson graph and command wiring is tested by the mocked contract lane
+  (`scripts/test-meson-mock.sh`): it configures one disposable build under
+  `build/mocks/` with `-Dmock_mode=true` and simulates only the TeX
+  toolchain via `execwrap --mock-child`, so it needs meson+ninja but no
+  TeX. `build/mocks/` is the sole allowed exception to the no-parallel-
+  build-directory rule; it is git-ignored and rebuilt from scratch each
+  run. Do NOT add tests that invoke the real TeX toolchain, configure a
+  second production build directory, or build the document twice — put
+  semantic behaviour in Rust unit tests and graph/wiring in the mock lane.
+  Byte reproducibility remains a separate manual/release check
+  (`scripts/check-document-reproducibility.sh`), not an ordinary CI lane.

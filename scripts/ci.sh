@@ -13,7 +13,8 @@
 #   7. advisories       cargo audit (skipped loudly when not installed)
 #   8. plans            check-plans.sh (documentation structure)
 #   9. forbidden text   check-forbidden-text.sh
-#  10. clean tree       git diff --exit-code
+#  10. meson contract   test-meson-mock.sh (mocked TeX; skipped without meson/ninja)
+#  11. clean tree       git diff --exit-code
 #
 # The checker lanes receive their subjects by argument (ADR-014). The
 # census_args function below derives role-tagged argv from git
@@ -69,45 +70,56 @@ census_args() {
   done
 }
 
-echo "==> lane 1/9: cargo fmt" >&2
+echo "==> lane 1/11: cargo fmt" >&2
 cargo fmt --all --check
 
-echo "==> lane 2/9: cargo clippy (-D warnings)" >&2
+echo "==> lane 2/11: cargo clippy (-D warnings)" >&2
 cargo clippy --workspace --all-targets --locked -- -D warnings
 
-echo "==> lane 3/9: cargo test (debug)" >&2
+echo "==> lane 3/11: cargo test (debug)" >&2
 cargo test --workspace --locked
 
-echo "==> lane 4/9: cargo test (release)" >&2
+echo "==> lane 4/11: cargo test (release)" >&2
 cargo test --workspace --release --locked
 
-echo "==> lane 5/9: check-generated" >&2
+echo "==> lane 5/11: check-generated" >&2
 # shellcheck disable=SC2046
 cargo run --locked -p tripod-artifacts --bin check-generated -- \
   --repository-root . \
   --generated-dir packages/model/generated \
   $(census_args scoped) > /dev/null
 
-echo "==> lane 6/9: check-labels" >&2
+echo "==> lane 6/11: check-labels" >&2
 # shellcheck disable=SC2046
 cargo run --locked -p tripod-labels --bin check-labels -- \
   --repository-root . \
   $(census_args labels) > /dev/null
 
-echo "==> lane 7/9: cargo audit" >&2
+echo "==> lane 7/11: cargo audit" >&2
 if command -v cargo-audit > /dev/null 2>&1; then
   cargo audit
 else
   echo "WARNING: cargo-audit is not installed; advisory lane SKIPPED" >&2
 fi
 
-echo "==> lane 8/10: plan-tree checks" >&2
+echo "==> lane 8/11: plan-tree checks" >&2
 sh scripts/check-plans.sh
 
-echo "==> lane 9/10: forbidden text" >&2
+echo "==> lane 9/11: forbidden text" >&2
 sh scripts/check-forbidden-text.sh
 
-echo "==> lane 10/10: clean working tree" >&2
+# Mocked Meson contract: exercises the real Meson graph with the TeX
+# toolchain simulated (execwrap --mock-child), so it needs meson+ninja but
+# no TeX. Skipped loudly where meson/ninja are absent, preserving this
+# script's "runs without a TeX toolchain" contract.
+echo "==> lane 10/11: mocked Meson contract" >&2
+if command -v meson > /dev/null 2>&1 && command -v ninja > /dev/null 2>&1; then
+  sh scripts/test-meson-mock.sh .
+else
+  echo "WARNING: meson/ninja not installed; mocked Meson contract lane SKIPPED" >&2
+fi
+
+echo "==> lane 11/11: clean working tree" >&2
 git diff --exit-code
 
 echo "==> CI green" >&2

@@ -59,9 +59,29 @@ struct Args {
     #[arg(long, short = 'q')]
     quiet: bool,
 
+    #[command(flatten)]
+    mock: MockArgs,
+
     /// Command and its arguments (after `--`).
     #[arg(last = true, required = true, num_args = 1.., value_name = "COMMAND")]
     command: Vec<OsString>,
+}
+
+/// Test-only mock-mode flags, grouped so the child TeX toolchain can be
+/// simulated by the Meson graph without a real toolchain.
+#[derive(Debug, clap::Args)]
+struct MockArgs {
+    /// Simulate this TeX child instead of spawning the wrapped command.
+    #[arg(long = "mock-child", hide = true, requires = "outdir")]
+    child: Option<execwrap::MockChild>,
+
+    /// Directory the simulated child writes to.
+    #[arg(long = "mock-outdir", hide = true, value_name = "DIR")]
+    outdir: Option<PathBuf>,
+
+    /// Fail without writing any output.
+    #[arg(long = "mock-fail", hide = true)]
+    fail: bool,
 }
 
 fn main() -> ExitCode {
@@ -84,6 +104,27 @@ fn main() -> ExitCode {
 
     set_panic_payload_reporting_enabled(args.debug);
     init_json_tracing_with_debug(args.debug, default_level(&args));
+
+    // Mock mode (test-only): fabricate the child's outputs and return
+    // without spawning, so the Meson graph runs without a TeX toolchain.
+    if let Some(kind) = args.mock.child {
+        let Some(outdir) = args.mock.outdir.as_deref() else {
+            // `requires` enforces this at parse time; stay fail-closed.
+            tracing::error!("--mock-child requires --mock-outdir");
+            return CommandExit::Usage.exit_code();
+        };
+        if args.mock.fail {
+            tracing::error!("mock TeX child failure injected");
+            return CommandExit::Failure.exit_code();
+        }
+        return match execwrap::run_mock_child(kind, outdir) {
+            Ok(()) => CommandExit::Success.exit_code(),
+            Err(error) => {
+                tracing::error!(error = %error, "mock TeX child failed to write outputs");
+                CommandExit::Failure.exit_code()
+            }
+        };
+    }
 
     let cfg = RoutingConfig {
         redirect: args.redirect,

@@ -549,3 +549,52 @@ fn calligraphic_output_is_chunking_invariant() {
     assert!(text.contains('\u{20ac}'));
     assert!(!text.contains('\u{fffd}'));
 }
+
+// ---------------------------------------------------------------------------
+// Mocked TeX children (mock_mode)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn mock_xelatex_writes_bcf_and_aux() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    crate::run_mock_child(crate::MockChild::Xelatex, dir.path()).expect("mock runs");
+    assert!(dir.path().join("main.bcf").is_file());
+    assert!(dir.path().join("main.aux").is_file());
+}
+
+#[test]
+fn mock_biber_writes_bbl() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    crate::run_mock_child(crate::MockChild::Biber, dir.path()).expect("mock runs");
+    assert!(dir.path().join("main.bbl").is_file());
+}
+
+#[test]
+fn mock_latexmk_writes_pdf_and_aux() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    crate::run_mock_child(crate::MockChild::Latexmk, dir.path()).expect("mock runs");
+    assert!(dir.path().join("main.pdf").is_file());
+    assert!(dir.path().join("main.aux").is_file());
+}
+
+#[test]
+fn mock_child_is_compare_if_changed() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    crate::run_mock_child(crate::MockChild::Latexmk, dir.path()).expect("mock runs");
+    let pdf = dir.path().join("main.pdf");
+
+    let old = std::time::SystemTime::UNIX_EPOCH;
+    std::fs::File::options()
+        .write(true)
+        .open(&pdf)
+        .expect("open")
+        .set_times(std::fs::FileTimes::new().set_modified(old))
+        .expect("set mtime");
+
+    crate::run_mock_child(crate::MockChild::Latexmk, dir.path()).expect("mock runs");
+    let mtime = std::fs::metadata(&pdf)
+        .expect("metadata")
+        .modified()
+        .expect("mtime");
+    assert_eq!(mtime, old, "identical mock output must not be rewritten");
+}

@@ -10,3 +10,9 @@ option(
   value: '',
   description: 'Override archive mirror root for isolated publication-repair tests',
 )
+option(
+  'mock_mode',
+  type: 'boolean',
+  value: false,
+  description: 'Mock the TeX toolchain (via execwrap --mock-child) so the Meson graph runs without a TeX toolchain, for the mocked contract test',
+)

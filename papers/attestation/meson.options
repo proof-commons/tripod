@@ -2,3 +2,5 @@ option('xelatex_path', type: 'string', value: '', description: 'Path to xelatex 
 option('biber_path', type: 'string', value: '', description: 'Path to biber program')
 option('latexmk_path', type: 'string', value: '', description: 'Path to latexmk program')
 option('git_path', type: 'string', value: '', description: 'Path to git program')
+option('mock_mode', type: 'boolean', value: false, description: 'Mock the TeX toolchain for the Meson contract test')
+option('mock_fail_child', type: 'string', value: '', description: 'Force the named mock TeX child (e.g. latexmk) to fail, for the failure-propagation contract test')

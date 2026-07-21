@@ -54,12 +54,17 @@ tex_dependencies = macros_attestation_src + attestation_section_files
 # the document identity has no self-reference.
 all_inputs = main_tex + tex_dependencies + latexmk_rc + bib_file + stamps_template
 
-# Tool paths come from parent project options.
-xelatex = find_program(get_option('xelatex_path'))
-biber = find_program(get_option('biber_path'))
-latexmk = find_program(get_option('latexmk_path'))
+# Tool paths come from parent project options. In mock_mode the TeX
+# toolchain is simulated by execwrap --mock-child, so its programs are not
+# discovered (the parent does not pass their paths).
+mock_mode = get_option('mock_mode')
 git = find_program(get_option('git_path'), required: true)
 sh = find_program('sh')
+if not mock_mode
+  xelatex = find_program(get_option('xelatex_path'))
+  biber = find_program(get_option('biber_path'))
+  latexmk = find_program(get_option('latexmk_path'))
+endif
 
 # The generated stamps.tex lives in the build directory, so it must be
 # searchable from there in addition to the source tree. SOURCE_DATE_EPOCH
@@ -180,11 +185,18 @@ copy_references = custom_target(
 
 # Target 1: Generate .aux file using xelatex
 pre_generate_log = meson.current_build_dir() / 'pre-generate.log'
-pre_generate = custom_target(
-  'pre-generate',
-  input: all_inputs + [attestation_stamps[0], attestation_stamps[1]],
-  output: 'main.bcf',
-  command: [
+if mock_mode
+  pre_generate_command = [
+    execwrap,
+    '--quiet',
+    '--notify-on-write',
+    '--redirect', pre_generate_log,
+    '--mock-child', 'xelatex',
+    '--mock-outdir', '@OUTDIR@',
+    '--', 'true',
+  ]
+else
+  pre_generate_command = [
     execwrap,
     '--quiet',
     '--notify-on-write',
@@ -195,7 +207,13 @@ pre_generate = custom_target(
     '-shell-escape',
     '-output-directory=@OUTDIR@',
     '-no-pdf', main_tex[0],
-  ],
+  ]
+endif
+pre_generate = custom_target(
+  'pre-generate',
+  input: all_inputs + [attestation_stamps[0], attestation_stamps[1]],
+  output: 'main.bcf',
+  command: pre_generate_command,
   depends: [copy_references, attestation_stamps],
   env: reproducible_tex_env,
   console: true,
@@ -203,11 +221,18 @@ pre_generate = custom_target(
 
 # Target 2: Run Biber
 generate_bibliography_log = meson.current_build_dir() / 'generate-bibliography.log'
-generate_bibliography = custom_target(
-  'generate-bibliography',
-  input: [pre_generate, attestation_stamps[1]],
-  output: 'main.bbl',
-  command: [
+if mock_mode
+  generate_bibliography_command = [
+    execwrap,
+    '--quiet',
+    '--notify-on-write',
+    '--redirect', generate_bibliography_log,
+    '--mock-child', 'biber',
+    '--mock-outdir', '@OUTDIR@',
+    '--', 'true',
+  ]
+else
+  generate_bibliography_command = [
     execwrap,
     '--quiet',
     '--change-directory', meson.current_build_dir(),
@@ -215,7 +240,13 @@ generate_bibliography = custom_target(
     '--redirect', generate_bibliography_log,
     '--', source_date_epoch_wrap, source_date_epoch_path, biber,
     'main',
-  ],
+  ]
+endif
+generate_bibliography = custom_target(
+  'generate-bibliography',
+  input: [pre_generate, attestation_stamps[1]],
+  output: 'main.bbl',
+  command: generate_bibliography_command,
   depends: [copy_references, attestation_stamps],
   env: reproducible_tex_env,
   console: true,
@@ -223,12 +254,19 @@ generate_bibliography = custom_target(
 
 # Target 3: Generate final PDF
 render_document_log = meson.current_build_dir() / 'render-document.log'
-render_document = custom_target(
-  'render-document',
-  input: all_inputs + [attestation_stamps[0], attestation_stamps[1]],
-  output: 'main.pdf',
-  depends: [generate_bibliography, attestation_stamps],
-  command: [
+if mock_mode
+  render_mock_flags = ['--mock-child', 'latexmk', '--mock-outdir', '@OUTDIR@']
+  if get_option('mock_fail_child') == 'latexmk'
+    render_mock_flags += ['--mock-fail']
+  endif
+  render_document_command = [
+    execwrap,
+    '--quiet',
+    '--notify-on-write',
+    '--redirect', render_document_log,
+  ] + render_mock_flags + ['--', 'true']
+else
+  render_document_command = [
     execwrap,
     '--quiet',
     '--notify-on-write',
@@ -246,7 +284,14 @@ render_document = custom_target(
     '-quiet',
     '-silent',
     '-time', main_tex[0],
-  ],
+  ]
+endif
+render_document = custom_target(
+  'render-document',
+  input: all_inputs + [attestation_stamps[0], attestation_stamps[1]],
+  output: 'main.pdf',
+  depends: [generate_bibliography, attestation_stamps],
+  command: render_document_command,
   env: reproducible_tex_env,
   build_by_default: true,
   console: true,

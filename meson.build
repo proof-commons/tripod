@@ -8,11 +8,14 @@ project(
 fs = import('fs')
 
 # ---------------------------------------------------------------------------
-# External tools required for the LaTeX build.
+# External tools required for the LaTeX build. In mock_mode the TeX
+# toolchain is simulated by execwrap --mock-child, so it is not required —
+# this lets the mocked Meson contract test configure without TeX on PATH.
 # ---------------------------------------------------------------------------
-latexmk = find_program('latexmk', required: true)
-xelatex = find_program('xelatex', required: true)
-biber = find_program('biber', required: true)
+mock_mode = get_option('mock_mode')
+latexmk = find_program('latexmk', required: not mock_mode)
+xelatex = find_program('xelatex', required: not mock_mode)
+biber = find_program('biber', required: not mock_mode)
 
 # ---------------------------------------------------------------------------
 # Rust toolchain. Configuration never compiles the workspace: every
@@ -34,11 +37,16 @@ python = find_program('python3')
 git = find_program('git', required: true)
 
 latex_default_options = [
-  'xelatex_path=' + xelatex.full_path(),
-  'biber_path=' + biber.full_path(),
-  'latexmk_path=' + latexmk.full_path(),
   'git_path=' + git.full_path(),
+  'mock_mode=' + mock_mode.to_string(),
 ]
+if not mock_mode
+  latex_default_options += [
+    'xelatex_path=' + xelatex.full_path(),
+    'biber_path=' + biber.full_path(),
+    'latexmk_path=' + latexmk.full_path(),
+  ]
+endif
 
 # ---------------------------------------------------------------------------
 # Paper subproject. Besides the document targets it owns the attestation
@@ -558,33 +566,19 @@ test(
   timeout: 60,
 )
 
-generator_repair_test = find_program('scripts/test-meson-generator-repair.sh')
-publication_repair_test = find_program('scripts/test-meson-publication-repair.sh')
+# Real-derivation integration test (cargo + git, no TeX): proves the
+# Git-derived identity scopes that the mocked contract test cannot. The
+# heavier Meson graph properties (mirror/generator repair, restat, failure
+# propagation) are covered by scripts/test-meson-mock.sh, which runs from
+# scripts/ci.sh with the TeX toolchain mocked rather than as a nested
+# Meson test.
 attestation_stamps_test = find_program('scripts/test-attestation-stamps.sh')
 
 test(
   'attestation-stamps-scopes',
   attestation_stamps_test,
   args: [meson.project_source_root()],
-  suite: 'build-integration',
+  suite: 'integration',
   timeout: 600,
-  is_parallel: false,
-)
-
-test(
-  'meson-generator-repair',
-  generator_repair_test,
-  args: [meson.project_source_root()],
-  suite: 'build-integration',
-  timeout: 600,
-  is_parallel: false,
-)
-
-test(
-  'meson-publication-repair',
-  publication_repair_test,
-  args: [meson.project_source_root()],
-  suite: 'build-integration',
-  timeout: 900,
   is_parallel: false,
 )

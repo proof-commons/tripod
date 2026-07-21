@@ -147,6 +147,17 @@ the Meson-driven checker targets. No unit test re-implements it, and the
 compile-time workspace-root constructors are deleted rather than kept as
 a test convenience.
 
+## The Meson graph is tested with a mocked toolchain · `rule:build:mock-contract`
+
+Meson wiring — programs, arguments, dependencies, restat, output repair, and
+failure propagation — is tested by one contract build that runs the real
+graph with only the TeX toolchain simulated (`execwrap --mock-child`, under
+`-Dmock_mode=true`), writing solely under the ignored `build/mocks/`. It
+replaces the former full-toolchain tests that configured extra build
+directories and re-rendered the document. Real XeTeX behaviour and PDF byte
+reproducibility are not its claims: those belong to the ordinary document
+build and the separate release reproducibility check.
+
 ## Consequences · `sec:build:consequences`
 
 - A no-op rebuild is a no-op: unchanged inputs rerun no lint, and

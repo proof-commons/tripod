@@ -618,3 +618,58 @@ fn spawn_reader<R: Read + Send + 'static>(
         }
     })
 }
+
+// ---------------------------------------------------------------------------
+// Mocked TeX children (ADR-014 mock_mode). In mock_mode the Meson graph
+// selects these instead of the real toolchain so the graph, dependencies,
+// restat behaviour, and failure propagation can be exercised without a TeX
+// toolchain. The real TeX command wiring is XeLaTeX's own concern; this only
+// fabricates the deterministic outputs each step's downstream target needs.
+// ---------------------------------------------------------------------------
+
+/// A mocked external TeX child, selected by the build in `mock_mode`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum MockChild {
+    /// Simulates `xelatex -no-pdf`: writes `main.bcf` and `main.aux`.
+    Xelatex,
+    /// Simulates `biber`: writes `main.bbl`.
+    Biber,
+    /// Simulates `latexmk`: writes `main.pdf` and `main.aux`.
+    Latexmk,
+}
+
+const MOCK_BCF: &[u8] = b"% mock main.bcf\n";
+const MOCK_AUX: &[u8] = b"\\relax\n% mock main.aux\n";
+const MOCK_BBL: &[u8] = b"% mock main.bbl\n";
+const MOCK_PDF: &[u8] = b"MOCK TRIPOD ATTESTATION PDF\n";
+
+/// Fabricate the deterministic outputs a mocked TeX child produces, under
+/// `outdir`.
+///
+/// Compare-if-changed writes keep a rebuild byte- and mtime-stable so the
+/// mock exercises ninja `restat` the same way the real build does.
+///
+/// # Errors
+///
+/// Returns an I/O error if `outdir` cannot be created or an output written.
+pub fn run_mock_child(kind: MockChild, outdir: &Path) -> io::Result<()> {
+    let outputs: &[(&str, &[u8])] = match kind {
+        MockChild::Xelatex => &[("main.bcf", MOCK_BCF), ("main.aux", MOCK_AUX)],
+        MockChild::Biber => &[("main.bbl", MOCK_BBL)],
+        MockChild::Latexmk => &[("main.pdf", MOCK_PDF), ("main.aux", MOCK_AUX)],
+    };
+    create_dir_all(outdir)?;
+    for (name, bytes) in outputs {
+        write_if_changed_under(outdir, name, bytes)?;
+    }
+    Ok(())
+}
+
+/// Write `bytes` to `dir/name` only if the current contents differ.
+fn write_if_changed_under(dir: &Path, name: &str, bytes: &[u8]) -> io::Result<()> {
+    let path = dir.join(name);
+    if std::fs::read(&path).is_ok_and(|existing| existing == bytes) {
+        return Ok(());
+    }
+    std::fs::write(&path, bytes)
+}
