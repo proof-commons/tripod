@@ -59,6 +59,7 @@ internals: they require the full role-tagged ADR-014 census that Meson derives.
 - meson and ninja
 - a Rust toolchain (cargo, edition 2024)
 - TeX Live with `xelatex`, `biber`, and `latexmk`
+- `git` and `jq` (for the build-time paper provenance stamps)
 
 ## Building
 
@@ -69,6 +70,29 @@ meson compile -C build attestation
 
 The rendered PDF lands in `archive/rendered/` and a flattened single-file
 `.tex` (for arXiv submission or diffing) in `archive/flattened/`.
+
+### Paper provenance
+
+Before rendering, Meson derives four values from committed Git state
+(`tripod-document-stamps`) and renders them into a generated
+`stamps.tex` and a `source-date-epoch` file:
+
+- **DocumentUUID** — first 128 bits of a canonical SHA-256 digest over the
+  exact declared paper inputs (XMP `DocumentID`).
+- **InstanceUUID** — first 128 bits of the Git SHA-1 tree object ID for
+  `papers/attestation`, formatted with UUID grouping and no bit rewriting
+  (XMP `InstanceID`). Removing the hyphens recovers the tree-object prefix,
+  which Git must resolve uniquely or publication aborts.
+- **date** — UTC date of the latest commit touching an exact paper input
+  (the visible frontmatter date).
+- **timestamp** — UTC time of the latest commit touching the paper subtree,
+  used as `SOURCE_DATE_EPOCH` and all XMP dates.
+
+A dirty paper subtree blocks canonical publication. The two UUIDs are XMP
+identities; the PDF trailer `/ID` is left toolchain-derived (no PDF-rewrite
+step). The values are source-provenance identities, not hashes of the final
+PDF bytes; byte reproducibility is established separately by
+[scripts/check-document-reproducibility.sh](scripts/check-document-reproducibility.sh).
 
 Rust checks:
 

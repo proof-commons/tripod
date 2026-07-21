@@ -565,6 +565,16 @@ test(
 
 generator_repair_test = find_program('scripts/test-meson-generator-repair.sh')
 publication_repair_test = find_program('scripts/test-meson-publication-repair.sh')
+attestation_stamps_test = find_program('scripts/test-attestation-stamps.sh')
+
+test(
+  'attestation-stamps-scopes',
+  attestation_stamps_test,
+  args: [meson.project_source_root()],
+  suite: 'build-integration',
+  timeout: 600,
+  is_parallel: false,
+)
 
 test(
   'meson-generator-repair',
