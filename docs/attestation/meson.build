@@ -1,10 +1,12 @@
-# docs/attestation/meson.build - the attestation companion documents.
+# docs/attestation/meson.build - Attestation companion documents.
 #
-# Lint census: explicit and hand-managed. The realization document is a
-# census group of its own; the human companion is an ordinary document
-# file. The parent census composes these once the build reaches docs/.
+# Lint census (ADR-014): explicit and hand-managed. The realization
+# document owns its own R13 labels and is a single-file census group;
+# the README and human companion are ordinary DOC-owned files. The
+# parent docs/meson.build composes these into the repository groups.
 attestation_realization_file = files('realization.md')
 
 attestation_doc_files = files(
+  'README.md',
   'human.md',
 )

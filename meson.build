@@ -52,7 +52,6 @@ attestation_flat = attestation_proj.get_variable('flat_build_target')
 
 attestation_main_file = attestation_proj.get_variable('main_tex')
 attestation_section_files = attestation_proj.get_variable('attestation_section_files')
-realization_file = attestation_proj.get_variable('realization_doc_file')
 
 # ---------------------------------------------------------------------------
 # Lint census (ADR-014). Every subject directory declares its files in
@@ -64,15 +63,20 @@ realization_file = attestation_proj.get_variable('realization_doc_file')
 # a silent omission.
 # ---------------------------------------------------------------------------
 subdir('adr')
+subdir('docs')
 subdir('plans')
 subdir('packages')
 
 adr_files = adr_record_files
 
-# Repository-root and subproject documentation (DOC owner).
+# The realization document owns its own R13 labels; it lives under
+# docs/attestation so its edits do not perturb the paper's identity.
+realization_file = attestation_realization_file
+
+# Repository-root and repository documentation (DOC owner).
 doc_files = files('AGENTS.md', 'README.md') \
   + adr_doc_files + packages_doc_files \
-  + attestation_proj.get_variable('human_doc_file')
+  + docs_doc_files
 
 # Repository-relative path strings for checker argv and the census
 # audit, derived from the declared file objects.

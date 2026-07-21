@@ -7,13 +7,14 @@
 
 | Plan citation | Owner-local label | Owning heading |
 |---|---|---|
-| ``[RZ-app:realization:architecture]`` | ``app:architecture`` | Appendix — Typed architecture manifest |
+| ``[RZ-app:realization:architecture]`` | ``app:realization:architecture`` | Appendix — Typed architecture manifest |
+| ``[RZ-def:representation:sponsor-erasure]`` | ``def:representation:sponsor-erasure`` | §10 Representation conformance and opacity |
 | ``[RZ-def:versioning:denotation-law]`` | ``def:versioning:denotation-law`` | §0.4 The versioning law |
 | ``[RZ-fig:architecture:cluster]`` | ``fig:architecture:cluster`` | §2 Architecture — the bound UTXO set |
 | ``[RZ-fig:architecture:pipeline]`` | ``fig:architecture:pipeline`` | §2.6 The deposit pipeline |
-| ``[RZ-fig:overview:stack]`` | ``fig:overview:stack`` | §0.1 Position in the stack; the one-directional rule |
-| ``[RZ-ins:identity:lesson]`` | ``ins:identity:lesson`` | §9 Recognition and identity |
-| ``[RZ-ins:trust:favorable-facts]`` | ``ins:trust:favorable-facts`` | §14 Trust surface, residuals, dependencies, and decisions |
+| ``[RZ-fig:overview:stack]`` | ``fig:overview:stack`` | §0.1 Position beside the specification; the one-directional rule |
+| ``[RZ-intuit:identity:lesson]`` | ``intuit:identity:lesson`` | §9 Recognition and identity |
+| ``[RZ-intuit:trust:favorable-facts]`` | ``intuit:trust:favorable-facts`` | §14 Trust surface, residuals, dependencies, and decisions |
 | ``[RZ-inv:invariant:accounting]`` | ``inv:invariant:accounting`` | §8.1 State clauses |
 | ``[RZ-inv:invariant:backing]`` | ``inv:invariant:backing`` | §8.1 State clauses |
 | ``[RZ-inv:invariant:consensus-value]`` | ``inv:invariant:consensus-value`` | §8.1 State clauses |
@@ -31,15 +32,15 @@
 | ``[RZ-lem:invariant:flow]`` | ``lem:invariant:flow`` | §8.2 Transition lemmas |
 | ``[RZ-lem:invariant:rate]`` | ``lem:invariant:rate`` | §8.2 Transition lemmas |
 | ``[RZ-lem:invariant:rec]`` | ``lem:invariant:rec`` | §8.2 Transition lemmas |
-| ``[RZ-lst:architecture:weld-shape]`` | ``lst:architecture:weld-shape`` | §2.4 The pool: STATE and RESV, welded |
-| ``[RZ-lst:arithmetic:floor]`` | ``lst:arithmetic:floor`` | §4.2 The four gadgets — witnessed division, and the sole explicit low-level how |
-| ``[RZ-lst:domains:guard]`` | ``lst:domains:guard`` | §4.1 Newtypes and bounds |
-| ``[RZ-lst:domains:ratio]`` | ``lst:domains:ratio`` | §4.1 Newtypes and bounds |
-| ``[RZ-lst:domains:sat]`` | ``lst:domains:sat`` | §4.1 Newtypes and bounds |
-| ``[RZ-lst:identity:recognize]`` | ``lst:identity:recognize`` | §9 Recognition and identity |
-| ``[RZ-lst:invariant:check]`` | ``lst:invariant:check`` | §8 The global invariant 𝗜 — the conformance contract |
-| ``[RZ-lst:kernel:certificate]`` | ``lst:kernel:certificate`` | §5.4 The transition certificate and separable root edges |
-| ``[RZ-lst:oracle:reductions]`` | ``lst:oracle:reductions`` | §13.2 Seeded reductions |
+| ``[RZ-listing:architecture:weld-shape]`` | ``listing:architecture:weld-shape`` | §2.4 The pool: STATE and RESV, welded |
+| ``[RZ-listing:arithmetic:floor]`` | ``listing:arithmetic:floor`` | §4.2 The four gadgets — witnessed division, and the sole explicit low-level how |
+| ``[RZ-listing:domains:guard]`` | ``listing:domains:guard`` | §4.1 Newtypes and bounds |
+| ``[RZ-listing:domains:ratio]`` | ``listing:domains:ratio`` | §4.1 Newtypes and bounds |
+| ``[RZ-listing:domains:sat]`` | ``listing:domains:sat`` | §4.1 Newtypes and bounds |
+| ``[RZ-listing:identity:recognize]`` | ``listing:identity:recognize`` | §9 Recognition and identity |
+| ``[RZ-listing:invariant:check]`` | ``listing:invariant:check`` | §8 The global invariant 𝗜 — the conformance contract |
+| ``[RZ-listing:kernel:certificate]`` | ``listing:kernel:certificate`` | §5.4 The transition certificate and separable root edges |
+| ``[RZ-listing:oracle:reductions]`` | ``listing:oracle:reductions`` | §13.2 Seeded reductions |
 | ``[RZ-obl:oracle:adversary]`` | ``obl:oracle:adversary`` | §13.1 The nine obligations |
 | ``[RZ-obl:oracle:determinism]`` | ``obl:oracle:determinism`` | §13.1 The nine obligations |
 | ``[RZ-obl:oracle:disclosure]`` | ``obl:oracle:disclosure`` | §13.1 The nine obligations |
@@ -167,6 +168,10 @@
 | ``[RZ-res:trust:lag-issuance]`` | ``res:trust:lag-issuance`` | §14.1 Named residuals |
 | ``[RZ-res:trust:locked-residue]`` | ``res:trust:locked-residue`` | §14.1 Named residuals |
 | ``[RZ-res:trust:op]`` | ``res:trust:op`` | §14.1 Named residuals |
+| ``[RZ-rule:representation:anchor-identity]`` | ``rule:representation:anchor-identity`` | §10 Representation conformance and opacity |
+| ``[RZ-rule:representation:inspection-burden]`` | ``rule:representation:inspection-burden`` | §10 Representation conformance and opacity |
+| ``[RZ-rule:representation:inspection-necessity]`` | ``rule:representation:inspection-necessity`` | §10 Representation conformance and opacity |
+| ``[RZ-rule:representation:sponsor-canonicality]`` | ``rule:representation:sponsor-canonicality`` | §10 Representation conformance and opacity |
 | ``[RZ-rule:translation:bind]`` | ``rule:translation:bind`` | §11 Translation discipline — model relation ⇒ tapscript |
 | ``[RZ-rule:translation:certificate-leaf]`` | ``rule:translation:certificate-leaf`` | §11 Translation discipline — model relation ⇒ tapscript |
 | ``[RZ-rule:translation:collections]`` | ``rule:translation:collections`` | §11 Translation discipline — model relation ⇒ tapscript |
@@ -182,25 +187,6 @@
 | ``[RZ-rule:translation:struct]`` | ``rule:translation:struct`` | §11 Translation discipline — model relation ⇒ tapscript |
 | ``[RZ-rule:translation:timelocks]`` | ``rule:translation:timelocks`` | §11 Translation discipline — model relation ⇒ tapscript |
 | ``[RZ-rule:versioning:decision]`` | ``rule:versioning:decision`` | §0.4 The versioning law |
-| ``[RZ-sec:realization:anchors]`` | ``sec:anchors`` | §17 Upward-citation index |
-| ``[RZ-sec:realization:architecture]`` | ``sec:architecture`` | §2 Architecture — the bound UTXO set |
-| ``[RZ-sec:realization:arithmetic]`` | ``sec:arithmetic`` | §4 Domains and arithmetic |
-| ``[RZ-sec:realization:authorization]`` | ``sec:authorization`` | §7 Authorization |
-| ``[RZ-sec:realization:identity]`` | ``sec:identity`` | §9 Recognition and identity |
-| ``[RZ-sec:realization:invariant]`` | ``sec:invariant`` | §8 The global invariant 𝗜 — the conformance contract |
-| ``[RZ-sec:realization:kernel]`` | ``sec:kernel`` | §5 The kernel and the transition certificate |
-| ``[RZ-sec:realization:ledger]`` | ``sec:ledger`` | §12 The off-chain attestation ledger and reader matrix |
-| ``[RZ-sec:realization:manifest]`` | ``sec:manifest`` | §3 The manifest, and how to read it |
-| ``[RZ-sec:realization:operations]`` | ``sec:operations`` | §6 The operations |
-| ``[RZ-sec:realization:oracle]`` | ``sec:oracle`` | §13 The oracle — the conformance obligation |
-| ``[RZ-sec:realization:overview]`` | ``sec:overview`` | §0 What this document is |
-| ``[RZ-sec:realization:pins]`` | ``sec:pins`` | §15 Build pins and code-generation obligations |
-| ``[RZ-sec:realization:representation]`` | ``sec:representation`` | §10 Representation conformance and opacity |
-| ``[RZ-sec:realization:requirements]`` | ``sec:requirements`` | §1 What the covenant must guarantee |
-| ``[RZ-sec:realization:reviewer]`` | ``sec:reviewer`` | §16 Reviewer's guide |
-| ``[RZ-sec:realization:translation]`` | ``sec:translation`` | §11 Translation discipline — model relation ⇒ tapscript |
-| ``[RZ-sec:realization:trust]`` | ``sec:trust`` | §14 Trust surface, residuals, dependencies, and decisions |
-| ``[RZ-sec:realization:versioning]`` | ``sec:versioning`` | §0.4 The versioning law |
 | ``[RZ-sec:architecture:authorities]`` | ``sec:architecture:authorities`` | §2.5 Authorities off state |
 | ``[RZ-sec:architecture:burn-ledger]`` | ``sec:architecture:burn-ledger`` | §2.8 Burn machinery: ash, records, and no accumulator |
 | ``[RZ-sec:architecture:deposit-pipe]`` | ``sec:architecture:deposit-pipe`` | §2.6 The deposit pipeline |
@@ -229,6 +215,7 @@
 | ``[RZ-sec:kernel:open-flow]`` | ``sec:kernel:open-flow`` | §5.3 The exact open-flow partition |
 | ``[RZ-sec:kernel:recipient]`` | ``sec:kernel:recipient`` | §5.6 Recipient safety is not conservation |
 | ``[RZ-sec:kernel:replay]`` | ``sec:kernel:replay`` | §5.5 Full root-history replay |
+| ``[RZ-sec:kernel:sponsor-opacity]`` | ``sec:kernel:sponsor-opacity`` | §5.8 Sponsor-value opacity |
 | ``[RZ-sec:ledger:authentication]`` | ``sec:ledger:authentication`` | §12.1 The dual-anchor gate |
 | ``[RZ-sec:ledger:convergence]`` | ``sec:ledger:convergence`` | §12.5 Demand-driven convergence |
 | ``[RZ-sec:ledger:model]`` | ``sec:ledger:model`` | §12.2 Three layers and a hash-bound checkpoint |
@@ -267,28 +254,47 @@
 | ``[RZ-sec:pins:maturity]`` | ``sec:pins:maturity`` | §15.6 Maturity, clock, and companion pins |
 | ``[RZ-sec:pins:representation]`` | ``sec:pins:representation`` | §15.8 Representation and disclosure pins |
 | ``[RZ-sec:pins:terminal]`` | ``sec:pins:terminal`` | §15.4 Terminal, distribution, and permissionless-path pins |
+| ``[RZ-sec:realization:anchors]`` | ``sec:realization:anchors`` | §17 Upward-citation index |
+| ``[RZ-sec:realization:architecture]`` | ``sec:realization:architecture`` | §2 Architecture — the bound UTXO set |
+| ``[RZ-sec:realization:arithmetic]`` | ``sec:realization:arithmetic`` | §4 Domains and arithmetic |
+| ``[RZ-sec:realization:authorization]`` | ``sec:realization:authorization`` | §7 Authorization |
+| ``[RZ-sec:realization:identity]`` | ``sec:realization:identity`` | §9 Recognition and identity |
+| ``[RZ-sec:realization:invariant]`` | ``sec:realization:invariant`` | §8 The global invariant 𝗜 — the conformance contract |
+| ``[RZ-sec:realization:kernel]`` | ``sec:realization:kernel`` | §5 The kernel and the transition certificate |
+| ``[RZ-sec:realization:ledger]`` | ``sec:realization:ledger`` | §12 The off-chain attestation ledger and reader matrix |
+| ``[RZ-sec:realization:manifest]`` | ``sec:realization:manifest`` | §3 The manifest, and how to read it |
+| ``[RZ-sec:realization:operations]`` | ``sec:realization:operations`` | §6 The operations |
+| ``[RZ-sec:realization:oracle]`` | ``sec:realization:oracle`` | §13 The oracle — the conformance obligation |
+| ``[RZ-sec:realization:overview]`` | ``sec:realization:overview`` | §0 What this document is |
+| ``[RZ-sec:realization:pins]`` | ``sec:realization:pins`` | §15 Build pins and code-generation obligations |
+| ``[RZ-sec:realization:representation]`` | ``sec:realization:representation`` | §10 Representation conformance and opacity |
+| ``[RZ-sec:realization:requirements]`` | ``sec:realization:requirements`` | §1 What the covenant must guarantee |
+| ``[RZ-sec:realization:reviewer]`` | ``sec:realization:reviewer`` | §16 Reviewer's guide |
+| ``[RZ-sec:realization:translation]`` | ``sec:realization:translation`` | §11 Translation discipline — model relation ⇒ tapscript |
+| ``[RZ-sec:realization:trust]`` | ``sec:realization:trust`` | §14 Trust surface, residuals, dependencies, and decisions |
+| ``[RZ-sec:realization:versioning]`` | ``sec:realization:versioning`` | §0.4 The versioning law |
 | ``[RZ-sec:requirements:discharge-map]`` | ``sec:requirements:discharge-map`` | §1.1 The I₀ discharge map |
 | ``[RZ-sec:trust:decisions]`` | ``sec:trust:decisions`` | §14.3 Closed architecture decisions |
 | ``[RZ-sec:trust:out-of-scope]`` | ``sec:trust:out-of-scope`` | §14.4 Out of scope |
 | ``[RZ-sec:trust:residuals]`` | ``sec:trust:residuals`` | §14.1 Named residuals |
 | ``[RZ-sec:trust:verify]`` | ``sec:trust:verify`` | §14.2 Deployment verification surface |
-| ``[RZ-tbl:anchors:index]`` | ``tbl:anchors:index`` | §17 Upward-citation index |
-| ``[RZ-tbl:authorization:band]`` | ``tbl:authorization:band`` | §7.1 The cadence band |
-| ``[RZ-tbl:codegen:checklist]`` | ``tbl:codegen:checklist`` | §15.9 Code-generation checklist |
-| ``[RZ-tbl:invariant:clauses]`` | ``tbl:invariant:clauses`` | §8.1 State clauses |
-| ``[RZ-tbl:kernel:flow-roles]`` | ``tbl:kernel:flow-roles`` | §5.3 The exact open-flow partition |
-| ``[RZ-tbl:ledger:readers]`` | ``tbl:ledger:readers`` | §12.6 The quantity-reader firewall |
-| ``[RZ-tbl:manifest:closure]`` | ``tbl:manifest:closure`` | §3.2 Well-formedness and closure |
-| ``[RZ-tbl:manifest:fields]`` | ``tbl:manifest:fields`` | §3.1 Field semantics |
-| ``[RZ-tbl:manifest:input-authorization-evidence]`` | ``tbl:manifest:input-authorization-evidence`` | §7 Authorization |
-| ``[RZ-tbl:manifest:operation-authorization-evidence]`` | ``tbl:manifest:operation-authorization-evidence`` | §7 Authorization |
-| ``[RZ-tbl:overview:registers]`` | ``tbl:overview:registers`` | §0.0 The four registers |
-| ``[RZ-tbl:requirements:discharge]`` | ``tbl:requirements:discharge`` | §1.1 The I₀ discharge map |
-| ``[RZ-tbl:requirements:guarantees]`` | ``tbl:requirements:guarantees`` | §1 What the covenant must guarantee |
-| ``[RZ-tbl:translation:master]`` | ``tbl:translation:master`` | §11 Translation discipline — model relation ⇒ tapscript |
-| ``[RZ-tbl:trust:decisions]`` | ``tbl:trust:decisions`` | §14.3 Closed architecture decisions |
-| ``[RZ-tbl:trust:dependencies]`` | ``tbl:trust:dependencies`` | §14.2 Deployment verification surface |
-| ``[RZ-tbl:trust:surface]`` | ``tbl:trust:surface`` | §14 Trust surface, residuals, dependencies, and decisions |
+| ``[RZ-tab:anchors:index]`` | ``tab:anchors:index`` | §17 Upward-citation index |
+| ``[RZ-tab:authorization:band]`` | ``tab:authorization:band`` | §7.1 The cadence band |
+| ``[RZ-tab:codegen:checklist]`` | ``tab:codegen:checklist`` | §15.9 Code-generation checklist |
+| ``[RZ-tab:invariant:clauses]`` | ``tab:invariant:clauses`` | §8.1 State clauses |
+| ``[RZ-tab:kernel:flow-roles]`` | ``tab:kernel:flow-roles`` | §5.3 The exact open-flow partition |
+| ``[RZ-tab:ledger:readers]`` | ``tab:ledger:readers`` | §12.6 The quantity-reader firewall |
+| ``[RZ-tab:manifest:closure]`` | ``tab:manifest:closure`` | §3.2 Well-formedness and closure |
+| ``[RZ-tab:manifest:fields]`` | ``tab:manifest:fields`` | §3.1 Field semantics |
+| ``[RZ-tab:manifest:input-authorization-evidence]`` | ``tab:manifest:input-authorization-evidence`` | §7 Authorization |
+| ``[RZ-tab:manifest:operation-authorization-evidence]`` | ``tab:manifest:operation-authorization-evidence`` | §7 Authorization |
+| ``[RZ-tab:overview:registers]`` | ``tab:overview:registers`` | §0.0 The four registers |
+| ``[RZ-tab:requirements:discharge]`` | ``tab:requirements:discharge`` | §1.1 The I₀ discharge map |
+| ``[RZ-tab:requirements:guarantees]`` | ``tab:requirements:guarantees`` | §1 What the covenant must guarantee |
+| ``[RZ-tab:translation:master]`` | ``tab:translation:master`` | §11 Translation discipline — model relation ⇒ tapscript |
+| ``[RZ-tab:trust:decisions]`` | ``tab:trust:decisions`` | §14.3 Closed architecture decisions |
+| ``[RZ-tab:trust:dependencies]`` | ``tab:trust:dependencies`` | §14.2 Deployment verification surface |
+| ``[RZ-tab:trust:surface]`` | ``tab:trust:surface`` | §14 Trust surface, residuals, dependencies, and decisions |
 | ``[RZ-trap:architecture:accumulator]`` | ``trap:architecture:accumulator`` | §2.8 Burn machinery: ash, records, and no accumulator |
 | ``[RZ-trap:architecture:authority-off-state]`` | ``trap:architecture:authority-off-state`` | §2.5 Authorities off state |
 | ``[RZ-trap:architecture:burn-flag]`` | ``trap:architecture:burn-flag`` | §2.8 Burn machinery: ash, records, and no accumulator |
@@ -320,6 +326,7 @@
 | ``[RZ-trap:branches:transfer-generic]`` | ``trap:branches:transfer-generic`` | §6.6 Transfer receipts |
 | ``[RZ-trap:domains:active-backing]`` | ``trap:domains:active-backing`` | §4.1 Newtypes and bounds |
 | ``[RZ-trap:invariant:compute-onchain]`` | ``trap:invariant:compute-onchain`` | §8 The global invariant 𝗜 — the conformance contract |
+| ``[RZ-trap:kernel:sponsor-positivity]`` | ``trap:kernel:sponsor-positivity`` | §5.8 Sponsor-value opacity |
 | ``[RZ-trap:ledger:event-anchor]`` | ``trap:ledger:event-anchor`` | §12.1 The dual-anchor gate |
 | ``[RZ-trap:ledger:replay]`` | ``trap:ledger:replay`` | §12.3 Valuation and canonical event order |
 | ``[RZ-trap:ledger:residue-decrement]`` | ``trap:ledger:residue-decrement`` | §12.6 The quantity-reader firewall |

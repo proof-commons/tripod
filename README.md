@@ -7,9 +7,9 @@ A compiler is proved by what it compiles. This tree therefore carries, beside th
 ## Layout
 
 - `papers/attestation/` - LaTeX source of the *Attestation* specification.
-- `docs/attestation/` - the documents the specification is realized by.
-  - `realization.md` - the Elements/Liquid realization document.
+- `docs/attestation/` - companion documentation outside the paper source tree.
   - `human.md` - plain-language companion report.
+  - `realization.md` - the Elements/Liquid realization document.
 - `packages/execwrap/` - Rust stdout/stderr routing wrapper used by the paper build.
 - `packages/flatten-latex-main/` - Rust utility for flattening the paper entrypoint.
 - `packages/cli-common/` - Shared Rust CLI scaffolding (implements ADR-010).

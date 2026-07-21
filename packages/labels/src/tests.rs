@@ -222,6 +222,7 @@ fn plan_local_labels_resolve_while_unknown_imports_fail() {
     let root = directory.path();
     for directory in [
         "papers/attestation/sections",
+        "docs/attestation",
         "adr",
         "plans",
         "packages/model/src",
@@ -265,6 +266,7 @@ fn adr_imports_are_validated_once_and_internal_citations_resolve() {
     let root = directory.path();
     for directory in [
         "papers/attestation/sections",
+        "docs/attestation",
         "adr",
         "plans",
         "packages/model/src",
@@ -393,6 +395,7 @@ fn model_label_derivation_ignores_invalid_planning_imports() {
     let root = directory.path();
     for directory in [
         "papers/attestation/sections",
+        "docs/attestation",
         "adr",
         "plans",
         "packages/model/src",
@@ -428,6 +431,7 @@ fn fixture_root(realization: &str) -> tempfile::TempDir {
     let root = directory.path();
     for child in [
         "papers/attestation/sections",
+        "docs/attestation",
         "adr",
         "plans",
         "packages/model/src",

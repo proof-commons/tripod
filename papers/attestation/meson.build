@@ -27,8 +27,6 @@ attestation_section_files = files(
   'sections/A1_verification.tex',
   'sections/B1_symbols.tex',
 )
-realization_doc_file = files('realization.md')
-human_doc_file = files('human.md')
 
 # Same-typed files deliberately outside the Layer-0 lint census
 # (ADR-014): the macro file is a TeX build input, not a label subject.

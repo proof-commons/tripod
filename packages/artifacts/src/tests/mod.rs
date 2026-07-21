@@ -13,7 +13,11 @@ use crate::{ARTIFACT_NAMES, ArtifactFreshness, check, expected_artifacts};
 fn fixture_census() -> (tempfile::TempDir, labels::RepositoryCensus) {
     let directory = tempfile::tempdir().expect("temporary repository");
     let root = directory.path();
-    for child in ["papers/attestation/sections", "packages/model/src"] {
+    for child in [
+        "papers/attestation/sections",
+        "docs/attestation",
+        "packages/model/src",
+    ] {
         std::fs::create_dir_all(root.join(child)).expect("fixture directory");
     }
     std::fs::write(
