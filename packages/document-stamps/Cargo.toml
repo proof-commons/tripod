@@ -1,0 +1,32 @@
+[package]
+name = "tripod-document-stamps"
+description = "Derive deterministic Attestation paper metadata from Git"
+
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[lib]
+name = "document_stamps"
+
+[[bin]]
+name = "attestation-stamps"
+path = "src/bin/attestation-stamps.rs"
+
+[dependencies]
+cli-common = { workspace = true }
+
+clap = { workspace = true }
+serde = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

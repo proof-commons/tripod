@@ -4,6 +4,7 @@ members = [
     "packages/architecture",
     "packages/artifacts",
     "packages/cli-common",
+    "packages/document-stamps",
     "packages/execwrap",
     "packages/flatten-latex-main",
     "packages/labels",
