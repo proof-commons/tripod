@@ -265,6 +265,7 @@ does not depend on an unresolved semantic decision.
 | `F1-025` | P2 | **DONE** | Relation IDs reuse unrelated relation kinds and weaken semantic identity clarity. |
 | `F1-026` | P2 | **DONE** | Shell checker stamps and always-stale wiring violate no-op and touch-only claims. |
 | `F1-027` | P2 | **DONE** | Production `execwrap` exposes hidden mock flags that fabricate TeX outputs. |
+| `F1-028` | P3 | **DONE** | Maintenance-potential report counts used unchecked `as u64` narrowing. |
 
 ---
 
@@ -1352,6 +1353,30 @@ interface: "hidden from help" is not "unavailable".
   former mock flag as a usage error, the mock helper writes each child's
   outputs, and `--fail` writes nothing. Verified: execwrap suites and the
   end-to-end mocked Meson contract green.
+
+---
+
+### F1-028 — Use checked report-count conversions
+
+**Priority:** P3
+**Owners:** `model`
+
+The maintenance phase potential widened platform-local `usize` report counts
+into protocol-analysis `u64` values with unchecked `as u64` casts. On realistic
+platforms the widening is harmless, but the project's exactness policy avoids
+unreviewed casts in proof-relevant values.
+
+#### Evidence · DONE
+
+- Commit replaces the `as u64` casts on the report count fields in
+  `maintenance_phase_potential` (`admissible_requests`, `entitlements`,
+  `live_distributions`, `time_locked_receipts`, `ash_outputs`) with
+  `u64::try_from(..).map_err(|_| Guard::Overflow)?`. The function already
+  returns `Result`, so the checked conversion adds no new failure surface at
+  the call sites. Casts that follow an established bound elsewhere were left
+  unchanged; only the proof-relevant potential counts were converted.
+- Verified: full `tripod-model` suite and clippy `-D warnings` green
+  via the flatpak SDK.
 
 ---
 

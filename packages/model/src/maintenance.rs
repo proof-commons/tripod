@@ -150,7 +150,7 @@ pub fn maintenance_phase_potential(world: &World) -> Result<[u64; 7], Guard> {
     let report = lifecycle_report(world)?;
 
     let relabelable = if state.maturity == Maturity::Complete {
-        report.time_locked_receipts as u64
+        u64::try_from(report.time_locked_receipts).map_err(|_| Guard::Overflow)?
     } else {
         0
     };
@@ -171,12 +171,12 @@ pub fn maintenance_phase_potential(world: &World) -> Result<[u64; 7], Guard> {
     };
 
     Ok([
-        report.admissible_requests as u64,
+        u64::try_from(report.admissible_requests).map_err(|_| Guard::Overflow)?,
         u64::from(!state.q.is_zero()),
-        report.entitlements as u64,
-        report.live_distributions as u64,
+        u64::try_from(report.entitlements).map_err(|_| Guard::Overflow)?,
+        u64::try_from(report.live_distributions).map_err(|_| Guard::Overflow)?,
         relabelable,
-        report.ash_outputs as u64,
+        u64::try_from(report.ash_outputs).map_err(|_| Guard::Overflow)?,
         clearable.get(),
     ])
 }
