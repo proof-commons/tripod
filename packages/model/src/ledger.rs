@@ -1129,14 +1129,26 @@ impl ReferenceIndexer {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExactRational {
-    pub numerator: BigUint,
-    pub denominator: BigUint,
+    numerator: BigUint,
+    denominator: BigUint,
+}
+
+impl ExactRational {
+    #[must_use]
+    pub fn numerator(&self) -> &BigUint {
+        &self.numerator
+    }
+
+    #[must_use]
+    pub fn denominator(&self) -> &BigUint {
+        &self.denominator
+    }
 }
 
 // ´rule:ledgers:reduce-attestation´
 
 impl AttestationQueryResult {
-    pub fn reduce(&self) -> ExactRational {
+    fn reduce_validated(&self) -> ExactRational {
         let mut numerator = BigUint::zero();
 
         let mut denominator = BigUint::one();
@@ -1169,6 +1181,11 @@ impl AttestationQueryResult {
                 denominator,
             }
         }
+    }
+
+    pub fn try_reduce(&self) -> Result<ExactRational, QueryValidationError> {
+        validate_query(self)?;
+        Ok(self.reduce_validated())
     }
 }
 

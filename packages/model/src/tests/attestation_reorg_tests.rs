@@ -48,7 +48,10 @@ fn same_raw_burn_reprojects_across_clear_boundary() {
         second_terms.terms[0].clear_id,
     );
 
-    assert_ne!(first_terms.reduce(), second_terms.reduce());
+    assert_ne!(
+        first_terms.try_reduce().unwrap(),
+        second_terms.try_reduce().unwrap()
+    );
 }
 
 #[test]
@@ -88,11 +91,8 @@ fn genesis_clear_is_used_before_any_other_clear() {
 
     assert!(matches!(query.terms[0].clear_id, ClearId::Genesis(_)));
 
-    assert_eq!(
-        query.reduce(),
-        ExactRational {
-            numerator: BigUint::from(25_u32),
-            denominator: BigUint::one(),
-        },
-    );
+    let reduced = query.try_reduce().unwrap();
+
+    assert_eq!(reduced.numerator(), &BigUint::from(25_u32));
+    assert_eq!(reduced.denominator(), &BigUint::one());
 }

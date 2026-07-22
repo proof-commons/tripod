@@ -63,15 +63,46 @@ fn query_round_trip_is_canonical() {
 fn exact_rational_reduction_is_correct() {
     let query = sample_query();
 
-    let reduced = query.reduce();
+    let reduced = query.try_reduce().unwrap();
 
     // 2*(1000/1000)
     // + 3*(1100/1000)
     // = 2 + 33/10
     // = 53/10.
-    assert_eq!(reduced.numerator, BigUint::from(53_u32));
+    assert_eq!(reduced.numerator(), &BigUint::from(53_u32));
 
-    assert_eq!(reduced.denominator, BigUint::from(10_u32));
+    assert_eq!(reduced.denominator(), &BigUint::from(10_u32));
+}
+
+#[test]
+fn empty_query_reduces_to_zero() {
+    let mut query = sample_query();
+    query.terms.clear();
+
+    let reduced = query.try_reduce().unwrap();
+
+    assert_eq!(reduced.numerator(), &BigUint::zero());
+    assert_eq!(reduced.denominator(), &BigUint::from(1_u32));
+}
+
+#[test]
+fn reducible_query_reduces_by_gcd() {
+    let mut query = sample_query();
+    query.terms = vec![AttestationTerm {
+        clear_id: ClearId::Genesis([0_u8; 32]),
+        clear_order: CanonicalOrder {
+            height: 0,
+            tx_index: 0,
+        },
+        aggregate_burn_amount: BigUint::from(2_u32),
+        omega: BigUint::from(3_u32),
+        y: BigUint::from(6_u32),
+    }];
+
+    let reduced = query.try_reduce().unwrap();
+
+    assert_eq!(reduced.numerator(), &BigUint::from(1_u32));
+    assert_eq!(reduced.denominator(), &BigUint::from(1_u32));
 }
 
 #[test]

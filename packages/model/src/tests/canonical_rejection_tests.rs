@@ -57,6 +57,36 @@ fn zero_aggregate_term_is_rejected() {
 }
 
 #[test]
+fn try_reduce_rejects_zero_denominator() {
+    let mut query = sample_query();
+    query.terms[0].y = BigUint::zero();
+
+    assert_eq!(
+        query.try_reduce(),
+        Err(QueryValidationError::ZeroDenominator)
+    );
+}
+
+#[test]
+fn try_reduce_rejects_zero_aggregate() {
+    let mut query = sample_query();
+    query.terms[0].aggregate_burn_amount = BigUint::zero();
+
+    assert_eq!(query.try_reduce(), Err(QueryValidationError::ZeroAggregate));
+}
+
+#[test]
+fn try_reduce_rejects_wrong_manifest_context() {
+    let mut query = sample_query();
+    query.context.architecture_manifest_hash = [99_u8; 32];
+
+    assert_eq!(
+        query.try_reduce(),
+        Err(QueryValidationError::ArchitectureManifestMismatch)
+    );
+}
+
+#[test]
 fn fork_context_changes_serialized_query() {
     let query = sample_query();
 
