@@ -62,8 +62,9 @@ The compiler must maintain distinct typed models for at least:
 7. disclosure dependencies;
 8. evidence coverage.
 
-These models may use one private graph adapter and shared traversal utilities,
-but they are not one universal graph schema.
+These models use package-owned concrete Petgraph graphs directly. They may
+share package-local construction and traversal helpers, but they are not one
+universal graph schema and do not introduce a graph wrapper.
 
 An AST is not merely a graph. It additionally owns:
 
@@ -398,16 +399,17 @@ consumers demonstrate one stable common abstraction.
 
 ## Prototype · `sec:compiler-algorithms:prototype`
 
-### Stage 1 — frozen graph adapter
+### Stage 1 — canonical direct-Petgraph construction
 
 Implement:
 
+- package-owned concrete Petgraph graph construction;
 - stable-key node insertion;
 - typed edge insertion;
-- duplicate/self-loop policy;
-- key/index maps;
-- canonical node and edge publication DTOs;
-- permutation tests.
+- duplicate and self-loop policy;
+- stable-key/local-index maps;
+- canonical typed node and edge projections;
+- insertion-permutation tests.
 
 ### Stage 2 — topology and SCC
 

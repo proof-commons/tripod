@@ -56,7 +56,8 @@ The linker maintains distinct graph models for:
 6. resource-formula dependencies;
 7. candidate-to-final calibration dependencies.
 
-One private graph adapter may support these models, but edge kinds and
+Each model uses a package-owned concrete Petgraph graph directly. Package-local
+construction and traversal helpers may be shared, while edge kinds and
 acceptance rules remain graph-specific.
 
 A graph edge records:

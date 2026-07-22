@@ -1116,14 +1116,8 @@ Record:
 **Priority:** P2
 **Owners:** compiler/linker research notes, package contracts, backlog
 
-Remove active tasks requesting:
-
-```text
-CanonicalGraph
-FrozenGraph
-GraphAdapter
-private graph adapter
-```
+Remove active tasks requesting first-party graph wrapper types or adapter
+layers that reproduce or hide Petgraph storage/traversal.
 
 Replace them with:
 
