@@ -1,10 +1,15 @@
 # Phase 1 — Typed Realization Foundation · `phase:roadmap:realization`
 
-> **Status:** Active
+> **Status:** Complete
+> **Completed:** 2026-07-23
 > **Entry:** (`phase:roadmap:baseline`)
 > **Package:** [`realization`](../packages/realization.md)
 > **Decisions:** D001, D002, D005
 > **Target/backend work:** isolated research only
+
+## Completion evidence · `sec:phase1:completion`
+
+Phase 1 exited when every remediation finding (F1-001 through F1-016 and F1-018 through F1-034) closed and the full gate ran green: `scripts/ci.sh` under MSRV 1.88.0 and under stable, the Meson document lane (`meson compile`/`meson test`), the mocked Meson contract, and document reproducibility. The `cargo audit` advisory lane is skipped where the tool is absent (ADR-011). The durable record of that run is the tool-independent gate summary in the backlog archive (`gate:backlog:phase1`), which states what ran and what it established. The toolchain versions, per-lane results, architecture identities, and reproducibility hashes it omits are properties of one machine's run rather than of the phase that run closed, and the phase is what a later reader is asking about.
 
 ## Goal · `sec:phase1:goal`
 

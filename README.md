@@ -133,8 +133,8 @@ derivation of another (the realization binding):
 | Architecture schema `17` | manifest envelope | Shape of the exported manifest DTO. Envelope metadata, never a hash input. |
 | Attestation wire schema | (`[RZ-rem:manifest:discriminants]`) | Canonical attestation query encoding. |
 | Deployment-profile schema `2` | `packages/architecture/src/deployment.rs` | Shape and census rules of the deployment-evidence profile. |
-| Cargo workspace `0.1.0-dev` | `Cargo.toml` | The compiler line's version, inherited by every member crate through `version.workspace`; crates are `publish = false` and carry no repository URL. A tag and its version are one fact: the tree declares the series of the highest name minted at its height, and a patch name names the commit it points at without moving a carrier. |
-| Meson project `0.1.0-dev` | `meson.build` | Build-system definition version; mirrors the cargo workspace version rather than diverging from it. The specification paper is a meson subproject with its own version (`1.0.0`), and it is that subproject version — not this one — that names the rendered PDF. |
+| Cargo workspace `0.2.0-dev` | `Cargo.toml` | The compiler line's version, inherited by every member crate through `version.workspace`; crates are `publish = false` and carry no repository URL. A tag and its version are one fact: the tree declares the series of the highest name minted at its height, and a patch name names the commit it points at without moving a carrier. |
+| Meson project `0.2.0-dev` | `meson.build` | Build-system definition version; mirrors the cargo workspace version rather than diverging from it. The specification paper is a meson subproject with its own version (`1.0.0`), and it is that subproject version — not this one — that names the rendered PDF. |
 
 ## Licensing
 

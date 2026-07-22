@@ -4,7 +4,7 @@
 
 *The realization document of the* Attestation *specification. Self-contained, with one declared upward dependency: the abstract object it enforces is defined in* Attestation *(**v1.0.0**), cited throughout by ``[A-...]`` anchors under the consumer prefix `A-`. The dependency is machine-checked, not prose — the attached manifest's document block binds the specification version, and release validation refuses an unpinned anchor set (`rem:overview:anchor-pin`). The manifest itself —* `architecture.toml`*, architecture schema 17, semantic hash* `3974e4d7860d2cddad97c6ab63f5c358e303505a2529bf757d47db462285aa68`*, behavioural hash* `756ea65ce3dc370e76ec70dc001231693facd58e53ebca315d549967f03cf206` *— is attached as the closing appendix (`app:realization:architecture`) and is authoritative on every enumerated fact.*
 
-> **Release envelope.** The attached manifest carries `publication_status = "final"` and `realization_version = "0.1.0-dev"` — the tracked binding of (`def:versioning:denotation-law`), which moves with the compiler line's minor and signals nothing about content; the behavioural hash printed above is the denotation's sole stability witness. The semantic hash printed above is the *release* hash, minted at the pin ceremony that set the specification anchor-set hash (`b0cafaa48ac2ed388984f6a2d757a011a9c8654acf224f5f64516f26a3f7ee35`) for the specification's v1.0.0 release. The prior release identities were re-measured, not redefined: the ceremony renamed two anchor names with the specification's own-division label area, the retired anchor-set value was reproduced before the new one was taken, and the behavioural hash — unchanged across the ceremony — witnesses that the denotation did not move. The earlier recipe migration that domain-separated both identities is recorded in ADR-021.
+> **Release envelope.** The attached manifest carries `publication_status = "final"` and `realization_version = "0.2.0-dev"` — the tracked binding of (`def:versioning:denotation-law`), which moves with the compiler line's minor and signals nothing about content; the behavioural hash printed above is the denotation's sole stability witness. The semantic hash printed above is the *release* hash, minted at the pin ceremony that set the specification anchor-set hash (`b0cafaa48ac2ed388984f6a2d757a011a9c8654acf224f5f64516f26a3f7ee35`) for the specification's v1.0.0 release. The prior release identities were re-measured, not redefined: the ceremony renamed two anchor names with the specification's own-division label area, the retired anchor-set value was reproduced before the new one was taken, and the behavioural hash — unchanged across the ceremony — witnesses that the denotation did not move. The earlier recipe migration that domain-separated both identities is recorded in ADR-021.
 
 ---
 
@@ -2153,7 +2153,7 @@ The complete `architecture.toml` is attached here **verbatim**. It is architectu
 ```toml
 publication_status = "final"
 architecture_schema_version = 17
-realization_version = "0.1.0-dev"
+realization_version = "0.2.0-dev"
 semantic_hash_algorithm = "sha256-canonical-json-v2"
 semantic_hash = "3974e4d7860d2cddad97c6ab63f5c358e303505a2529bf757d47db462285aa68"
 behavioural_hash_algorithm = "sha256-canonical-json-behavioural-v3"

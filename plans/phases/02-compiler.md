@@ -1,6 +1,6 @@
 # Phase 2 — Target-Independent Compiler Analysis · `phase:roadmap:compiler`
 
-> **Status:** Planned
+> **Status:** Active
 > **Entry:** (`gate:phase1:exit`)
 > **Package:** [`compiler`](../packages/compiler.md)
 > **Decisions:** D001–D006

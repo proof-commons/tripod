@@ -1,6 +1,6 @@
 publication_status = "final"
 architecture_schema_version = 17
-realization_version = "0.1.0-dev"
+realization_version = "0.2.0-dev"
 semantic_hash_algorithm = "sha256-canonical-json-v2"
 semantic_hash = "3974e4d7860d2cddad97c6ab63f5c358e303505a2529bf757d47db462285aa68"
 behavioural_hash_algorithm = "sha256-canonical-json-behavioural-v3"

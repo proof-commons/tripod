@@ -1,9 +1,9 @@
 # Tripod Implementation Backlog
 
 > **Status:** ACTIVE
-> **Current gate:** Phase 1 — typed realization foundation
-> **Current condition:** every Phase-1 correctness, build-graph, CLI-contract, and documentation remediation finding is closed; only the completion-evidence gate remains — the planning-status reconciliation (F1-016), the evidence-tag ceremony (F1-033), and the recorded gate run itself (F1-017 / R1-013)
-> **Next gate:** Phase 2 — target-independent compiler analysis
+> **Current gate:** Phase 2 — target-independent compiler analysis
+> **Current condition:** Phase 1 is complete — every remediation finding closed and the full gate recorded green under MSRV 1.88 and stable, with the Meson document lane and document reproducibility; evidence is bound by the annotated tag `phase1-realization-foundation-v1`. Phase 2 is now the active gate.
+> **Next gate:** Phase 3 — typed target and foundational prototypes
 > **Authority:** Current execution queue only; normative specifications, typed architecture, implemented ADRs, accepted decisions, package contracts, research results, phase cards, and the roadmap take precedence
 
 This backlog contains current release-blocking work and the immediately following
@@ -168,10 +168,10 @@ Attestation specification:             published
 Realization contract:                 published
 Typed architecture:                   final and pinned
 Executable model:                     implemented
-Typed realization pilots:             implemented; remediation landed
+Typed realization pilots:             implemented and remediated
 Phase-1 implementation foundation:    present
 Phase-1 correctness findings:         closed
-Phase-1 evidence gate:                awaiting its recorded run
+Phase-1 evidence gate:                recorded green (tag phase1-realization-foundation-v1)
 Post-Phase-1 compiler preparation:     partially prepared
 Target/backend/linker:                 not implemented
 Independent deployment evidence:      absent
@@ -259,8 +259,8 @@ does not depend on an unresolved semantic decision.
 | `F1-013` | P2 | **DONE** | Active planning still prescribes graph adapters prohibited by D007. |
 | `F1-014` | P2 | **DONE** | Full Meson tests depend on undeclared `jq`. |
 | `F1-015` | P3 | **DONE** | Shell/Python checker streams conflict with broad ADR-010/014 wording. |
-| `F1-016` | P3 | **TODO** | Planning statuses and completion evidence disagree. |
-| `F1-017` | Gate | **BLOCKED** | Complete Phase-1 gate has not been run and recorded. |
+| `F1-016` | P3 | **DONE** | Planning statuses and completion evidence disagree. |
+| `F1-017` | Gate | **DONE** | Complete Phase-1 gate has not been run and recorded. |
 | `F1-018` | P1 | **DONE** | Realization accepts zero-valued ordinary L-BTC that the model rejects. |
 | `F1-019` | P2 | **DONE** | Partial `attestation-stamps` render arguments silently select JSON mode. |
 | `F1-020` | P1 | **DONE** | One command cannot atomically commit stdout success and a filesystem stamp. |
@@ -276,7 +276,7 @@ does not depend on an unresolved semantic decision.
 | `F1-030` | P2 | **DONE** | Document stamp inputs are not fully canonical or committed-blob-bound. |
 | `F1-031` | P2 | **DONE** | `execwrap` logs caller-controlled child program text despite the raw-argv prohibition. |
 | `F1-032` | P2 | **DONE** | `census-audit` logs raw stderr from an argument-supplied external Git program. |
-| `F1-033` | P3 | **TODO** | Phase completion evidence lacks a non-self-referential commit/tag ceremony. |
+| `F1-033` | P3 | **DONE** | Phase completion evidence lacks a non-self-referential commit/tag ceremony. |
 | `F1-034` | P2 | **DONE** | Document-stamp render can partially publish its two real outputs after a late failure. |
 
 ---
@@ -1976,6 +1976,40 @@ Required closure:
 - current phase, roadmap, and phase card agree;
 - every `DONE` task satisfies (`rule:backlog:done`).
 
+#### Evidence · DONE
+
+- One atomic status-transition commit reconciles every planning owner:
+  `R1-013` reads DONE here and in the phase card; the summary table, the R1
+  table, and the readiness statement agree; the backlog current gate, the
+  roadmap current phase, and the active phase card all point to Phase 2, with
+  exactly one Active card (`check-plans` enforces this). C1 dependency review
+  already reflects the adopted Petgraph dependency, and the D007-superseded
+  adapter tasks were rewritten under F1-013.
+- "Implementation present" stays distinct from "phase gate passed": the R1
+  deliverables were complete earlier, but Phase 1 exits only now that the
+  recorded gate is green.
+- Verified: `check-plans` and `labels-check` green on the transition commit.
+
+---
+
+### F1-033 — Non-self-referential completion-evidence ceremony
+
+**Priority:** P3
+**Owners:** planning, release process
+
+#### Evidence · DONE
+
+- Phase-1 completion evidence is bound by an immutable annotated Git tag,
+  `phase1-realization-foundation-v1`, not by a commit hash embedded in a tracked
+  file: no source file names the completion commit's own hash (which would be a
+  self-reference). The tracked phase record carries the tool-independent gate
+  summary and the tag name; the annotated tag carries the detailed toolchain
+  versions, per-lane results, architecture identities, and PDF reproducibility
+  hashes, and binds the exact tested commit.
+- The candidate workflow was followed: the status-transition commit was prepared
+  and the full gate run on that exact clean commit before the tag was created;
+  the tag is created only after every required lane passed.
+
 ---
 
 ## 8. Phase-1 implementation lane · `sec:backlog:r1`
@@ -1996,11 +2030,12 @@ Required closure:
 | `R1-010` | **DONE** | Architecture/realization validation (exact weld F1-003 landed) |
 | `R1-011` | **DONE** | Model-conformance projection/tests (exact flows F1-002 landed) |
 | `R1-012` | **DROPPED** | No Phase-1 realization publication; typed values are direct inputs |
-| `R1-013` | **BLOCKED** | Complete Phase-1 evidence and exit |
+| `R1-013` | **DONE** | Complete Phase-1 evidence and exit |
 
-Every implementation deliverable is complete and its named F1 remediation has
-landed; only `R1-013` (the recorded exit gate) is outstanding, blocked solely on
-running and recording `F1-017`.
+Every implementation deliverable is complete, its named F1 remediation has
+landed, and `R1-013` closed when the full Phase-1 gate (`F1-017`) was run and
+recorded green under both toolchains; evidence is bound by the annotated tag
+`phase1-realization-foundation-v1`.
 
 ### 8.2 Phase-1 semantic closure
 
@@ -2115,6 +2150,30 @@ The Phase-1 evidence must establish:
 - the repository is genuinely clean.
 
 Only then does (`gate:phase1:exit`) pass.
+
+### 9.6 Recorded result · `F1-017` DONE
+
+The gate was run and recorded green. The full toolchain versions and per-lane
+results are bound by the annotated tag `phase1-realization-foundation-v1`; the
+compact summary:
+
+```text
+scripts/ci.sh under MSRV 1.88.0:   passed (fmt, clippy -D warnings,
+                                   test debug, test release, generated,
+                                   labels, plans, forbidden-text, clean tree)
+scripts/ci.sh under stable 1.97.1: passed (same lanes)
+meson compile + meson test:        passed (10/10)
+mocked Meson contract:             passed
+document reproducibility:          passed (identical PDF hash; reused-build
+                                   epoch probe matches a fresh build)
+no-op graph evidence:              asserted by the Meson test suite
+cargo audit:                       skipped (cargo-audit not installed;
+                                   advisory under ADR-011)
+final git status:                  clean
+```
+
+Two required lanes were duplicated per toolchain (the Rust lanes); the Meson
+document lane and reproducibility check ran once under the TeX environment.
 
 ---
 
