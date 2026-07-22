@@ -275,7 +275,7 @@ does not depend on an unresolved semantic decision.
 | `F1-029` | P3 | **TODO** | Positive scenario tests use bare `apply` + manual invariant check, blurring evidence class. |
 | `F1-030` | P2 | **DONE** | Document stamp inputs are not fully canonical or committed-blob-bound. |
 | `F1-031` | P2 | **DONE** | `execwrap` logs caller-controlled child program text despite the raw-argv prohibition. |
-| `F1-032` | P2 | **TODO** | `census-audit` logs raw stderr from an argument-supplied external Git program. |
+| `F1-032` | P2 | **DONE** | `census-audit` logs raw stderr from an argument-supplied external Git program. |
 | `F1-033` | P3 | **TODO** | Phase completion evidence lacks a non-self-referential commit/tag ceremony. |
 | `F1-034` | P2 | **TODO** | Document-stamp render can partially publish its two real outputs after a late failure. |
 
@@ -1676,6 +1676,36 @@ is prohibited by field class.
   path is raw child argv and is omitted.
 - Verified: `execwrap` clippy `-D warnings` and the full `execwrap` subprocess
   suite (21 tests) green via the flatpak SDK.
+
+---
+
+### F1-032 — Omit untrusted git stderr from `census-audit` diagnostics
+
+**Priority:** P2
+**Owners:** labels, ADR-010
+
+#### Problem
+
+`census-audit` takes the git program as an argument and, on a non-zero
+`git ls-files`, logged the child's raw stderr via
+`String::from_utf8_lossy(&listing.stderr)`. A supplied executable can print
+arbitrary secret-bearing text there, bypassing the field-based diagnostic
+policy — the external program's stderr is neither typed git status nor a safe
+field.
+
+#### Evidence · DONE
+
+- The failure branch now logs only the process status and the fixed
+  "git ls-files failed" message; the raw child stderr is omitted rather than
+  relayed or heuristically redacted. ADR-010 is clarified: the raw stderr of an
+  argument-supplied external program is arbitrary child output and is omitted,
+  with only the exit status reported.
+- A new subprocess regression runs the real `census-audit` binary against a
+  fake git script that writes a secret to stderr and exits 17. It asserts
+  exit 1, empty stdout, JSON-only stderr, the secret absent, and the generic
+  failure message present.
+- Verified: `tripod-labels` clippy `-D warnings` and the labels
+  subprocess suite green via the flatpak SDK.
 
 ---
 

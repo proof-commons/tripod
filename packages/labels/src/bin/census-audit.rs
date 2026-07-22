@@ -73,9 +73,13 @@ fn audit(args: &Args) -> anyhow::Result<labels::census::CensusAuditReport> {
         .output()
         .context("invoking git ls-files")?;
     if !listing.status.success() {
+        // The git program is argument-supplied, so its stderr is
+        // arbitrary child output, not a typed field (ADR-010). Report
+        // only the process status and a fixed message; the raw child
+        // stderr is omitted rather than relayed or heuristically
+        // redacted.
         tracing::error!(
             status = %listing.status,
-            stderr = %String::from_utf8_lossy(&listing.stderr),
             "git ls-files failed",
         );
         anyhow::bail!("git ls-files failed");
