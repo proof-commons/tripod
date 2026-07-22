@@ -462,9 +462,9 @@ pub(crate) fn validate_manifest_delta_conformance(
 
     let actual = certificate
         .canonical_partition
-        .canonical_deltas()
-        .iter()
-        .map(|delta| (delta.asset, delta.kind, delta.destruction_tag))
+        .active_families()
+        .into_iter()
+        .map(|family| (family.asset, family.kind, family.destruction_tag))
         .collect::<BTreeSet<_>>();
 
     if expected != actual {
