@@ -22,5 +22,11 @@ labels_source_files = files(
   'src/tests.rs',
 )
 
+# Same-typed files deliberately outside the crate-source census
+# (ADR-014): integration-test sources are cargo test inputs, not label
+# subjects. The census audit accepts the exclusion only because it is
+# declared here.
+labels_excluded_files = files('tests/subprocess_contract.rs')
+
 # Crate documentation (DOC owner).
 labels_doc_files = files('README.md')

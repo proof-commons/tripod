@@ -10,3 +10,9 @@ artifacts_source_files = files(
   'src/tests/weld_tests.rs',
   'src/weld.rs',
 )
+
+# Same-typed files deliberately outside the crate-source census
+# (ADR-014): integration-test sources are cargo test inputs, not label
+# subjects. The census audit accepts the exclusion only because it is
+# declared here.
+artifacts_excluded_files = files('tests/subprocess_contract.rs')
