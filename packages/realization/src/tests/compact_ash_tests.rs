@@ -322,6 +322,15 @@ fn valid_compact_ash_satisfies_every_runtime_relation() {
 }
 
 #[test]
+fn compact_ash_weld_accepts_the_published_architecture() {
+    // The compact-ASH weld now checks every architecture field exactly
+    // (sponsor input/output, bound/flow/witness sets, no data outputs);
+    // it must still accept the real published architecture.
+    crate::validate::validate_compact_ash_architecture(&ARCHITECTURE)
+        .expect("the compact-ASH weld must accept the published architecture");
+}
+
+#[test]
 fn compact_ash_canonical_delta_amount_mutation_fails() {
     let mut observation = valid_observation();
 

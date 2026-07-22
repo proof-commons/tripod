@@ -97,6 +97,7 @@ fn validate_pilot_lifecycle(realization: &ScopedRealizationSpec) -> Result<(), R
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn validate_compact_ash_architecture(
     architecture: &Architecture,
 ) -> Result<(), RealizationError> {
@@ -105,7 +106,7 @@ pub fn validate_compact_ash_architecture(
     )?;
 
     if operation.authorization != PermissionClass::Permissionless {
-        return mismatch(ArchitectureMismatchField::Authorization);
+        return mismatch_compact(ArchitectureMismatchField::Authorization);
     }
 
     let input_families = operation
@@ -115,7 +116,7 @@ pub fn validate_compact_ash_architecture(
         .collect::<BTreeSet<_>>();
 
     if input_families != BTreeSet::from([ObjectId::Ash, ObjectId::PlainLbtc]) {
-        return mismatch(ArchitectureMismatchField::InputFamilies);
+        return mismatch_compact(ArchitectureMismatchField::InputFamilies);
     }
 
     let output_families = operation
@@ -125,40 +126,63 @@ pub fn validate_compact_ash_architecture(
         .collect::<BTreeSet<_>>();
 
     if output_families != BTreeSet::from([ObjectId::Ash, ObjectId::PlainLbtc]) {
-        return mismatch(ArchitectureMismatchField::OutputFamilies);
+        return mismatch_compact(ArchitectureMismatchField::OutputFamilies);
     }
 
     let ash_input = operation
         .inputs
         .iter()
         .find(|input| input.object == ObjectId::Ash)
-        .ok_or(RealizationError::ArchitectureOperationMismatch {
-            operation: OperationId::CompactAsh,
-            field: ArchitectureMismatchField::InputFamilies,
-        })?;
+        .ok_or_else(|| compact_error(ArchitectureMismatchField::InputFamilies))?;
 
     if ash_input.minimum != 2
         || ash_input.maximum != MaxCount::Bound(BoundId::AshBatchMax)
         || ash_input.authorization != InputAuthorization::Permissionless
     {
-        return mismatch(ArchitectureMismatchField::AshInput);
+        return mismatch_compact(ArchitectureMismatchField::AshInput);
     }
 
     let ash_output = operation
         .outputs
         .iter()
         .find(|output| output.object == ObjectId::Ash)
-        .ok_or(RealizationError::ArchitectureOperationMismatch {
-            operation: OperationId::CompactAsh,
-            field: ArchitectureMismatchField::OutputFamilies,
-        })?;
+        .ok_or_else(|| compact_error(ArchitectureMismatchField::OutputFamilies))?;
 
     if ash_output.minimum != 1 || ash_output.maximum != MaxCount::Exact(1) {
-        return mismatch(ArchitectureMismatchField::AshOutput);
+        return mismatch_compact(ArchitectureMismatchField::AshOutput);
+    }
+
+    let sponsor_input = operation
+        .inputs
+        .iter()
+        .find(|input| input.object == ObjectId::PlainLbtc)
+        .ok_or_else(|| compact_error(ArchitectureMismatchField::SponsorInput))?;
+
+    if sponsor_input.minimum != 0
+        || sponsor_input.maximum != MaxCount::Bound(BoundId::FeeSponsorInputMax)
+        || sponsor_input.authorization != InputAuthorization::SponsorOwner
+    {
+        return mismatch_compact(ArchitectureMismatchField::SponsorInput);
+    }
+
+    let sponsor_output = operation
+        .outputs
+        .iter()
+        .find(|output| output.object == ObjectId::PlainLbtc)
+        .ok_or_else(|| compact_error(ArchitectureMismatchField::SponsorOutput))?;
+
+    if sponsor_output.minimum != 0 || sponsor_output.maximum != MaxCount::Exact(1) {
+        return mismatch_compact(ArchitectureMismatchField::SponsorOutput);
+    }
+
+    if operation.bounds.iter().copied().collect::<BTreeSet<_>>()
+        != BTreeSet::from([BoundId::AshBatchMax, BoundId::FeeSponsorInputMax])
+    {
+        return mismatch_compact(ArchitectureMismatchField::Bounds);
     }
 
     if operation.canonical_deltas.len() != 1 {
-        return mismatch(ArchitectureMismatchField::CanonicalDelta);
+        return mismatch_compact(ArchitectureMismatchField::CanonicalDelta);
     }
 
     let delta = operation.canonical_deltas[0];
@@ -167,31 +191,40 @@ pub fn validate_compact_ash_architecture(
         || delta.condition != DeltaCondition::Always
         || delta.destruction_tag.is_some()
     {
-        return mismatch(ArchitectureMismatchField::CanonicalDelta);
+        return mismatch_compact(ArchitectureMismatchField::CanonicalDelta);
     }
 
-    if operation.open_flows != [OpenFlowKind::FeeSponsor] {
-        return mismatch(ArchitectureMismatchField::OpenFlows);
-    }
-
-    if !operation
-        .value_flows
-        .contains(&ValueFlowClass::OwnerlessBoundMovement)
-        || !operation
-            .value_flows
-            .contains(&ValueFlowClass::SponsorEnvelope)
+    if operation
+        .open_flows
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        != BTreeSet::from([OpenFlowKind::FeeSponsor])
     {
-        return mismatch(ArchitectureMismatchField::ValueFlows);
+        return mismatch_compact(ArchitectureMismatchField::OpenFlows);
+    }
+
+    if operation
+        .value_flows
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        != BTreeSet::from([
+            ValueFlowClass::OwnerlessBoundMovement,
+            ValueFlowClass::SponsorEnvelope,
+        ])
+    {
+        return mismatch_compact(ArchitectureMismatchField::ValueFlows);
     }
 
     for root in RootId::ALL {
         if operation.root_use(*root) != RootUse::Forbidden {
-            return mismatch(ArchitectureMismatchField::RootPolicy);
+            return mismatch_compact(ArchitectureMismatchField::RootPolicy);
         }
     }
 
     if operation.projection_rule(ProjectionId::TransitionCertificate) != ProjectionRule::Required {
-        return mismatch(ArchitectureMismatchField::ProjectionPolicy);
+        return mismatch_compact(ArchitectureMismatchField::ProjectionPolicy);
     }
 
     for projection in [
@@ -200,18 +233,37 @@ pub fn validate_compact_ash_architecture(
         ProjectionId::DistributionResidue,
     ] {
         if operation.projection_rule(projection) != ProjectionRule::Forbidden {
-            return mismatch(ArchitectureMismatchField::ProjectionPolicy);
+            return mismatch_compact(ArchitectureMismatchField::ProjectionPolicy);
         }
+    }
+
+    if !operation.data_outputs.is_empty() {
+        return mismatch_compact(ArchitectureMismatchField::DataOutputs);
+    }
+
+    if operation.witnesses.iter().copied().collect::<BTreeSet<_>>()
+        != BTreeSet::from([
+            WitnessId::CanonicalDelta,
+            WitnessId::AshLineage,
+            WitnessId::ValueFlowClosure,
+            WitnessId::UtxoLifecycle,
+        ])
+    {
+        return mismatch_compact(ArchitectureMismatchField::Witnesses);
     }
 
     Ok(())
 }
 
-fn mismatch(field: ArchitectureMismatchField) -> Result<(), RealizationError> {
-    Err(RealizationError::ArchitectureOperationMismatch {
+fn compact_error(field: ArchitectureMismatchField) -> RealizationError {
+    RealizationError::ArchitectureOperationMismatch {
         operation: OperationId::CompactAsh,
         field,
-    })
+    }
+}
+
+fn mismatch_compact(field: ArchitectureMismatchField) -> Result<(), RealizationError> {
+    Err(compact_error(field))
 }
 
 #[allow(clippy::too_many_lines)]
