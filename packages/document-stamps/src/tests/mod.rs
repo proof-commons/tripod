@@ -41,6 +41,21 @@ impl FakeGit {
             .insert(key, (success, stdout.as_bytes().to_vec()));
         self
     }
+
+    /// Register a binary-safe response (for `cat-file blob`).
+    fn with_bytes(mut self, args: &[&str], success: bool, stdout: &[u8]) -> Self {
+        let key = args.iter().map(|arg| (*arg).to_owned()).collect();
+        self.responses.insert(key, (success, stdout.to_vec()));
+        self
+    }
+}
+
+/// The Git literal pathspec argument for a path, mirroring the library's
+/// runtime construction.
+fn literal(path: &str) -> String {
+    let mut spec = String::from(":(literal)");
+    spec.push_str(path);
+    spec
 }
 
 impl GitRunner for FakeGit {
@@ -222,43 +237,63 @@ fn instance_uuid_fails_hard_on_prefix_resolution() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn tracked_blob_mode_accepts_a_regular_blob() {
+fn tracked_blob_accepts_a_regular_blob() {
     let git = FakeGit::default().with(
-        &["ls-tree", "HEAD", "--", "papers/attestation/main.tex"],
+        &[
+            "ls-tree",
+            "HEAD",
+            "--",
+            &literal("papers/attestation/main.tex"),
+        ],
         true,
         "100644 blob 89abcd\tpapers/attestation/main.tex\n",
     );
-    assert_eq!(
-        tracked_blob_mode(&git, "HEAD", "papers/attestation/main.tex").expect("mode"),
-        "100644"
-    );
+    let blob = tracked_blob(&git, "HEAD", "papers/attestation/main.tex").expect("blob");
+    assert_eq!(blob.mode, "100644");
+    assert_eq!(blob.object_id, "89abcd");
 }
 
 #[test]
-fn tracked_blob_mode_rejects_non_blobs() {
+fn tracked_blob_rejects_non_blobs() {
     let symlink = FakeGit::default().with(
-        &["ls-tree", "HEAD", "--", "link"],
+        &["ls-tree", "HEAD", "--", &literal("link")],
         true,
         "120000 blob 89abcd\tlink\n",
     );
     assert!(matches!(
-        tracked_blob_mode(&symlink, "HEAD", "link"),
+        tracked_blob(&symlink, "HEAD", "link"),
         Err(StampError::InvalidTrackedInput)
     ));
 
     let tree = FakeGit::default().with(
-        &["ls-tree", "HEAD", "--", "dir"],
+        &["ls-tree", "HEAD", "--", &literal("dir")],
         true,
         "040000 tree 89abcd\tdir\n",
     );
     assert!(matches!(
-        tracked_blob_mode(&tree, "HEAD", "dir"),
+        tracked_blob(&tree, "HEAD", "dir"),
         Err(StampError::InvalidTrackedInput)
     ));
 
-    let untracked = FakeGit::default().with(&["ls-tree", "HEAD", "--", "ghost"], true, "");
+    let untracked =
+        FakeGit::default().with(&["ls-tree", "HEAD", "--", &literal("ghost")], true, "");
     assert!(matches!(
-        tracked_blob_mode(&untracked, "HEAD", "ghost"),
+        tracked_blob(&untracked, "HEAD", "ghost"),
+        Err(StampError::InvalidTrackedInput)
+    ));
+}
+
+#[test]
+fn tracked_blob_rejects_a_path_that_does_not_match_exactly() {
+    // A listing whose returned path differs from the requested one (a
+    // pathspec that matched something else) is a hard failure.
+    let git = FakeGit::default().with(
+        &["ls-tree", "HEAD", "--", &literal("wanted.tex")],
+        true,
+        "100644 blob 89abcd\tother.tex\n",
+    );
+    assert!(matches!(
+        tracked_blob(&git, "HEAD", "wanted.tex"),
         Err(StampError::InvalidTrackedInput)
     ));
 }
@@ -354,7 +389,7 @@ fn scenario(
                 "-z",
                 "--untracked-files=all",
                 "--",
-                "papers/attestation",
+                &literal("papers/attestation"),
             ],
             true,
             if dirty {
@@ -364,16 +399,23 @@ fn scenario(
             },
         );
 
-    for (path, bytes) in inputs {
+    for (index, (path, bytes)) in inputs.iter().enumerate() {
         let absolute = root.join(path);
         std::fs::create_dir_all(absolute.parent().expect("parent")).expect("mkdir");
         std::fs::write(&absolute, bytes).expect("write input");
         request_inputs.push(PathBuf::from(*path));
-        fake = fake.with(
-            &["ls-tree", "HEAD", "--", path],
-            true,
-            &format!("100644 blob deadbeef\t{path}\n"),
-        );
+
+        // Each input gets a distinct object id, and `cat-file blob`
+        // returns exactly the committed bytes (equal to the worktree
+        // bytes written above, so a clean scenario stays clean).
+        let object_id = format!("{:040x}", index + 1);
+        fake = fake
+            .with(
+                &["ls-tree", "HEAD", "--", &literal(path)],
+                true,
+                &format!("100644 blob {object_id}\t{path}\n"),
+            )
+            .with_bytes(&["cat-file", "blob", &object_id], true, bytes);
     }
 
     let prefix = &tree_oid[..32];
@@ -395,13 +437,16 @@ fn scenario(
                 "--format=%ct",
                 "HEAD",
                 "--",
-                "papers/attestation",
+                &literal("papers/attestation"),
             ],
             true,
             &format!("{timestamp_epoch}\n"),
         );
 
-    // The date query passes the sorted input paths after `--`.
+    // The date query passes the sorted input paths, as literal
+    // pathspecs, after `--`.
+    let mut sorted: Vec<&str> = inputs.iter().map(|(path, _)| *path).collect();
+    sorted.sort_unstable();
     let mut date_args = vec![
         "log".to_owned(),
         "-1".to_owned(),
@@ -409,10 +454,8 @@ fn scenario(
         "HEAD".to_owned(),
         "--".to_owned(),
     ];
-    let mut sorted: Vec<&str> = inputs.iter().map(|(path, _)| *path).collect();
-    sorted.sort_unstable();
     for path in sorted {
-        date_args.push(path.to_owned());
+        date_args.push(literal(path));
     }
     let date_refs: Vec<&str> = date_args.iter().map(String::as_str).collect();
     fake = fake.with(&date_refs, true, &format!("{date_epoch}\n"));
@@ -641,6 +684,108 @@ fn canonical_inputs_reject_paths_that_escape_the_repository() {
         derive(&git, &scenario.request),
         Err(StampError::InvalidInputPath)
     ));
+}
+
+#[test]
+fn a_leading_curdir_alias_is_an_invalid_path() {
+    // A leading `./` is a genuine `CurDir` component, rejected outright
+    // before any git lookup.
+    let (mut scenario, git) = scenario(
+        &[("papers/attestation/main.tex", b"main")],
+        "sha1",
+        false,
+        TREE_OID,
+        "1784118896",
+        "1784000000",
+    );
+    scenario
+        .request
+        .inputs
+        .push(PathBuf::from("./papers/attestation/main.tex"));
+    assert!(matches!(
+        derive(&git, &scenario.request),
+        Err(StampError::InvalidInputPath)
+    ));
+}
+
+#[test]
+fn a_normalising_alias_cannot_bypass_duplicate_detection() {
+    // A mid-path `/./` normalizes to the canonical path, so it collapses
+    // onto the genuine input and is caught as a duplicate rather than
+    // silently double-counted in the digest.
+    let (mut scenario, git) = scenario(
+        &[("papers/attestation/main.tex", b"main")],
+        "sha1",
+        false,
+        TREE_OID,
+        "1784118896",
+        "1784000000",
+    );
+    scenario
+        .request
+        .inputs
+        .push(PathBuf::from("papers/attestation/./main.tex"));
+    assert!(matches!(
+        derive(&git, &scenario.request),
+        Err(StampError::DuplicateInput)
+    ));
+}
+
+#[test]
+fn input_outside_the_paper_subtree_is_rejected() {
+    let (mut scenario, git) = scenario(
+        &[("papers/attestation/main.tex", b"main")],
+        "sha1",
+        false,
+        TREE_OID,
+        "1784118896",
+        "1784000000",
+    );
+    scenario
+        .request
+        .inputs
+        .push(PathBuf::from("docs/attestation/human.md"));
+    assert!(matches!(
+        derive(&git, &scenario.request),
+        Err(StampError::InputOutsidePaperTree)
+    ));
+}
+
+#[test]
+fn worktree_bytes_disagreeing_with_the_committed_blob_are_dirty() {
+    let (scenario, git) = scenario(
+        &[("papers/attestation/main.tex", b"worktree")],
+        "sha1",
+        false,
+        TREE_OID,
+        "1784118896",
+        "1784000000",
+    );
+
+    // Override the committed blob for the single input (object id of the
+    // first input) so it disagrees with the worktree bytes written above.
+    let object_id = format!("{:040x}", 1);
+    let git = git.with_bytes(&["cat-file", "blob", &object_id], true, b"committed");
+
+    assert!(matches!(
+        derive(&git, &scenario.request),
+        Err(StampError::DirtyPaperSubtree)
+    ));
+}
+
+#[test]
+fn a_pathspec_metacharacter_filename_is_looked_up_literally() {
+    // A filename containing a pathspec metacharacter must resolve
+    // through a literal pathspec; the fake only answers the literal form.
+    let (scenario, git) = scenario(
+        &[("papers/attestation/fig[1].tex", b"figure")],
+        "sha1",
+        false,
+        TREE_OID,
+        "1784118896",
+        "1784000000",
+    );
+    derive(&git, &scenario.request).expect("literal pathspec resolves the exact file");
 }
 
 // ---------------------------------------------------------------------------

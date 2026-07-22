@@ -82,7 +82,10 @@ Before rendering, Meson derives four values from committed Git state
 `stamps.tex` and a `source-date-epoch` file:
 
 - **DocumentUUID** — first 128 bits of a canonical SHA-256 digest over the
-  exact declared paper inputs (XMP `DocumentID`).
+  exact declared paper inputs (XMP `DocumentID`). Each input is a canonical
+  repository-relative path strictly beneath `papers/attestation`, and its
+  digest bytes are read from the committed Git blob and verified equal to the
+  rendered worktree bytes — a divergence is a dirty-subtree failure.
 - **InstanceUUID** — first 128 bits of the Git SHA-1 tree object ID for
   `papers/attestation`, formatted with UUID grouping and no bit rewriting
   (XMP `InstanceID`). Removing the hyphens recovers the tree-object prefix,

@@ -64,10 +64,16 @@ pub enum StampError {
     #[error("paper subtree is dirty")]
     DirtyPaperSubtree,
 
-    /// An input path is absolute, escapes the repository, or is not
-    /// valid UTF-8 for this repository's policy.
+    /// An input path is absolute, escapes the repository, contains a
+    /// lexical alias (`.`/`..`), or is not valid UTF-8 for this
+    /// repository's policy.
     #[error("input path is invalid or outside the repository")]
     InvalidInputPath,
+
+    /// A publication input is not strictly beneath the declared,
+    /// dirty-checked paper subtree.
+    #[error("publication input is outside the declared paper subtree")]
+    InputOutsidePaperTree,
 
     /// The same input path was supplied more than once.
     #[error("input occurs more than once")]
@@ -310,6 +316,17 @@ fn run_text(git: &dyn GitRunner, args: &[&str]) -> Result<String, StampError> {
     Ok(text.trim_end_matches(['\n', '\r']).to_owned())
 }
 
+/// Run Git and require a zero exit, returning raw stdout bytes. Used for
+/// binary-safe blob reads where trimming or UTF-8 decoding would corrupt
+/// the content.
+fn run_bytes(git: &dyn GitRunner, args: &[&str]) -> Result<Vec<u8>, StampError> {
+    let invocation = git.run(args)?;
+    if !invocation.status_success {
+        return Err(StampError::GitCommandFailed);
+    }
+    Ok(invocation.stdout)
+}
+
 // ---------------------------------------------------------------------------
 // Derivation
 // ---------------------------------------------------------------------------
@@ -322,15 +339,23 @@ fn derive(
     verify_object_format(git)?;
     verify_selected_revision_is_head(git, &request.tree_ref)?;
 
-    let tree = path_to_str(&request.tree)?;
+    let tree_path = canonical_relative_path(&request.tree)?;
+    let tree = path_to_str(&tree_path)?;
     reject_dirty_subtree(git, tree)?;
 
-    let inputs = canonical_inputs(git, request, &request.tree_ref)?;
+    let inputs = canonical_inputs(git, request, &request.tree_ref, &tree_path)?;
 
     let document_uuid = bytes_to_uuid_text(&document_digest(&inputs));
     let instance_uuid = instance_uuid(git, &request.tree_ref, tree)?;
     let timestamp = paper_timestamp(git, &request.tree_ref, tree)?;
     let date = input_date(git, &request.tree_ref, &inputs)?;
+
+    // Re-check cleanliness after reading every input, narrowing (not
+    // closing) the window in which the worktree changes mid-derivation.
+    // A live-worktree build cannot be made fully transactional across the
+    // subsequent TeX run; canonical release still needs a quiescent
+    // checkout and the final clean-tree gate.
+    reject_dirty_subtree(git, tree)?;
 
     Ok(AttestationStampValues {
         date,
@@ -338,6 +363,43 @@ fn derive(
         document_uuid,
         instance_uuid,
     })
+}
+
+/// Structurally canonicalize a repository-relative path, rejecting
+/// absolute paths and every lexical alias (`.`, `..`, root, prefix).
+/// A nonempty sequence of `Normal` components is required, so aliases
+/// like `./a` or `a/./b` cannot smuggle a duplicate past duplicate
+/// detection or change the digest framing.
+fn canonical_relative_path(path: &Path) -> Result<PathBuf, StampError> {
+    if path.is_absolute() {
+        return Err(StampError::InvalidInputPath);
+    }
+
+    let mut canonical = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(value) => canonical.push(value),
+            Component::CurDir
+            | Component::ParentDir
+            | Component::RootDir
+            | Component::Prefix(_) => return Err(StampError::InvalidInputPath),
+        }
+    }
+
+    if canonical.as_os_str().is_empty() {
+        return Err(StampError::InvalidInputPath);
+    }
+
+    Ok(canonical)
+}
+
+/// Build a Git literal pathspec so a filename containing pathspec
+/// metacharacters cannot change the selected file set. Assembled at
+/// runtime so no string literal resembles a magic pathspec.
+fn literal_pathspec(relative_path: &str) -> String {
+    let mut spec = String::from(":(literal)");
+    spec.push_str(relative_path);
+    spec
 }
 
 fn verify_repository_root(git: &dyn GitRunner, repository_root: &Path) -> Result<(), StampError> {
@@ -397,7 +459,7 @@ fn reject_dirty_subtree(git: &dyn GitRunner, tree: &str) -> Result<(), StampErro
         "-z",
         "--untracked-files=all",
         "--",
-        tree,
+        &literal_pathspec(tree),
     ])?;
     if !invocation.status_success {
         return Err(StampError::GitCommandFailed);
@@ -409,7 +471,8 @@ fn reject_dirty_subtree(git: &dyn GitRunner, tree: &str) -> Result<(), StampErro
     }
 }
 
-/// One validated publication input, ready for digesting.
+/// One validated publication input, ready for digesting. `bytes` are the
+/// committed blob bytes, verified equal to the worktree bytes.
 struct CanonicalInput {
     relative_path: String,
     git_mode: String,
@@ -420,6 +483,7 @@ fn canonical_inputs(
     git: &dyn GitRunner,
     request: &StampRequest,
     tree_ref: &str,
+    tree: &Path,
 ) -> Result<Vec<CanonicalInput>, StampError> {
     let mut inputs = Vec::with_capacity(request.inputs.len());
     for raw in &request.inputs {
@@ -427,6 +491,7 @@ fn canonical_inputs(
             git,
             &request.repository_root,
             tree_ref,
+            tree,
             raw,
         )?);
     }
@@ -443,48 +508,89 @@ fn canonical_input(
     git: &dyn GitRunner,
     repository_root: &Path,
     tree_ref: &str,
+    tree: &Path,
     raw: &Path,
 ) -> Result<CanonicalInput, StampError> {
-    let relative_path = path_to_str(raw)?.to_owned();
-    if raw.is_absolute()
-        || raw
-            .components()
-            .any(|component| !matches!(component, Component::Normal(_) | Component::CurDir))
-    {
-        return Err(StampError::InvalidInputPath);
+    let canonical = canonical_relative_path(raw)?;
+
+    // Every publication input must live strictly beneath the
+    // dirty-checked paper subtree, so the subtree status guard covers it.
+    if canonical == *tree || !canonical.starts_with(tree) {
+        return Err(StampError::InputOutsidePaperTree);
     }
 
-    let git_mode = tracked_blob_mode(git, tree_ref, &relative_path)?;
-    let bytes =
-        std::fs::read(repository_root.join(raw)).map_err(|_error| StampError::InputReadFailed)?;
+    let relative_path = path_to_str(&canonical)?.to_owned();
+
+    let blob = tracked_blob(git, tree_ref, &relative_path)?;
+
+    // Digest authority is the committed blob, not the worktree.
+    let committed_bytes = run_bytes(git, &["cat-file", "blob", &blob.object_id])?;
+
+    // The paper build renders the worktree, so bind each rendered input
+    // to its committed blob: any divergence is a dirty-subtree failure.
+    // This duplicates the broad `git status` guard on purpose — the
+    // per-input comparison is exact for the bytes actually rendered.
+    let worktree_bytes = std::fs::read(repository_root.join(&canonical))
+        .map_err(|_error| StampError::InputReadFailed)?;
+    if worktree_bytes != committed_bytes {
+        return Err(StampError::DirtyPaperSubtree);
+    }
 
     Ok(CanonicalInput {
         relative_path,
-        git_mode,
-        bytes,
+        git_mode: blob.mode,
+        bytes: committed_bytes,
     })
 }
 
-/// Return the Git file mode of a tracked regular blob, rejecting
-/// directories, symlinks, gitlinks, and untracked paths.
-fn tracked_blob_mode(
+/// A tracked regular blob: its Git file mode and object id.
+struct TrackedBlob {
+    mode: String,
+    object_id: String,
+}
+
+/// Resolve a tracked regular blob at `relative_path`, rejecting
+/// directories, symlinks, gitlinks, untracked paths, and any listing
+/// whose returned path is not exactly the requested one. A literal
+/// pathspec prevents a filename with pathspec metacharacters from
+/// selecting a different file.
+fn tracked_blob(
     git: &dyn GitRunner,
     tree_ref: &str,
     relative_path: &str,
-) -> Result<String, StampError> {
-    let listing = run_text(git, &["ls-tree", tree_ref, "--", relative_path])?;
-    let line = listing
-        .lines()
-        .next()
-        .ok_or(StampError::InvalidTrackedInput)?;
+) -> Result<TrackedBlob, StampError> {
+    let listing = run_text(
+        git,
+        &["ls-tree", tree_ref, "--", &literal_pathspec(relative_path)],
+    )?;
+
+    let mut lines = listing.lines();
+    let line = lines.next().ok_or(StampError::InvalidTrackedInput)?;
+    // Exactly one record must match the literal pathspec.
+    if lines.next().is_some() {
+        return Err(StampError::InvalidTrackedInput);
+    }
+
     // Format: "<mode> <type> <oid>\t<path>".
-    let mut fields = line.split_whitespace();
+    let (metadata, path) = line
+        .split_once('\t')
+        .ok_or(StampError::InvalidTrackedInput)?;
+    if path != relative_path {
+        return Err(StampError::InvalidTrackedInput);
+    }
+
+    let mut fields = metadata.split_whitespace();
     let mode = fields.next().ok_or(StampError::InvalidTrackedInput)?;
     let object_type = fields.next().ok_or(StampError::InvalidTrackedInput)?;
+    let object_id = fields.next().ok_or(StampError::InvalidTrackedInput)?;
     if object_type != "blob" || mode == "120000" {
         return Err(StampError::InvalidTrackedInput);
     }
-    Ok(mode.to_owned())
+
+    Ok(TrackedBlob {
+        mode: mode.to_owned(),
+        object_id: object_id.to_owned(),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -573,7 +679,8 @@ fn paper_timestamp(
     tree_ref: &str,
     tree: &str,
 ) -> Result<PreparedTimestamp, StampError> {
-    let epoch = commit_epoch(git, &["log", "-1", "--format=%ct", tree_ref, "--", tree])?;
+    let spec = literal_pathspec(tree);
+    let epoch = commit_epoch(git, &["log", "-1", "--format=%ct", tree_ref, "--", &spec])?;
     Ok(prepared_timestamp(epoch))
 }
 
@@ -582,9 +689,16 @@ fn input_date(
     tree_ref: &str,
     inputs: &[CanonicalInput],
 ) -> Result<String, StampError> {
+    // Literal pathspecs, owned until the call completes, so a filename
+    // with pathspec metacharacters cannot change the selected history.
+    let specs = inputs
+        .iter()
+        .map(|input| literal_pathspec(&input.relative_path))
+        .collect::<Vec<_>>();
+
     let mut args = vec!["log", "-1", "--format=%ct", tree_ref, "--"];
-    for input in inputs {
-        args.push(&input.relative_path);
+    for spec in &specs {
+        args.push(spec);
     }
     let epoch = commit_epoch(git, &args)?;
     let (year, month, day, _, _, _) = civil_from_epoch(epoch);

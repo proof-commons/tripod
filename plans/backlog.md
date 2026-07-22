@@ -267,6 +267,7 @@ does not depend on an unresolved semantic decision.
 | `F1-027` | P2 | **DONE** | Production `execwrap` exposes hidden mock flags that fabricate TeX outputs. |
 | `F1-028` | P3 | **DONE** | Maintenance-potential report counts used unchecked `as u64` narrowing. |
 | `F1-029` | P3 | **TODO** | Positive scenario tests use bare `apply` + manual invariant check, blurring evidence class. |
+| `F1-030` | P2 | **DONE** | Document stamp inputs are not fully canonical or committed-blob-bound. |
 
 ---
 
@@ -1406,6 +1407,46 @@ unreviewed casts in proof-relevant values.
   unchanged; only the proof-relevant potential counts were converted.
 - Verified: full `tripod-model` suite and clippy `-D warnings` green
   via the flatpak SDK.
+
+---
+
+### F1-030 — Bind canonical inputs to committed paper blobs
+
+**Priority:** P2
+**Owners:** `document-stamps`
+
+Three related input-identity defects: digest bytes were read from the worktree
+after a Git metadata lookup; inputs were not required beneath the dirty-checked
+paper subtree; and lexical aliases (`./`, `/./`) could bypass duplicate
+detection or canonical framing. The Part-III HEAD-only restriction narrows but
+does not close these.
+
+#### Evidence · DONE
+
+- Commit adds `canonical_relative_path`, which rejects absolute paths and every
+  lexical alias (leading `.`/`..`, root, prefix) and requires a nonempty
+  `Normal`-component path. The paper subtree is canonicalized the same way, and
+  every input must be strictly beneath it or fail the new
+  `InputOutsidePaperTree`, so the subtree dirty-check covers every rendered
+  input.
+- Digest authority moves to the committed blob: `tracked_blob` returns the mode
+  and object id via a `:(literal)` pathspec with exact-path verification, and
+  `cat-file blob <oid>` (a new binary-safe `run_bytes`) supplies the digest
+  bytes. Those bytes are compared to the worktree bytes the build renders; any
+  divergence is a dirty-subtree failure. History and status queries use literal
+  pathspecs so a metacharacter filename cannot change the selected set, and a
+  second subtree cleanliness check runs after all inputs are read (narrowing,
+  not closing, the live-worktree race — documented honestly).
+- Tests: leading-`./` alias rejected, normalizing `/./` alias caught as a
+  duplicate, input outside the subtree rejected, worktree/blob byte
+  disagreement flagged dirty, exact-path mismatch rejected, and a
+  pathspec-metacharacter filename resolved literally.
+- Identity: the digest recipe (domain, canonical path, mode, committed bytes)
+  is unchanged for clean canonical inputs, so the real-git integration test
+  `scripts/test-attestation-stamps.sh .` still passes every identity-scope
+  assertion; the accepted input domain is merely stricter.
+- Verified: `tripod-document-stamps` suite, clippy `-D warnings`, and
+  the real-git integration script green via the flatpak SDK.
 
 ---
 
