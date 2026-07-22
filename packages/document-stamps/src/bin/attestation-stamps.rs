@@ -4,10 +4,10 @@
 //! The build system supplies the Git program, the repository root, the
 //! revision, the paper subtree, and the exact publication-input set. In
 //! the default mode the four prepared values go to stdout as one JSON
-//! line (ADR-010) and nothing is written. In render mode (the four
-//! `--template`/`--stamps-output`/`--epoch-output`/`--stamp` arguments)
-//! the command instead writes the generated `stamps.tex`, the
-//! `source-date-epoch` file, and a success stamp, emitting no stdout.
+//! line (ADR-010) and nothing is written. In render mode (the
+//! `--template`/`--stamps-output`/`--epoch-output` arguments) the command
+//! instead writes the generated `stamps.tex` and `source-date-epoch`
+//! file, emitting no stdout.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -45,11 +45,11 @@ struct Args {
     #[arg(long = "input", value_name = "FILE", required = true)]
     inputs: Vec<PathBuf>,
     /// Render mode: the `stamps.tex.in` template to fill. Requires the
-    /// three output arguments; enables writing instead of JSON stdout.
+    /// two output arguments; enables writing instead of JSON stdout.
     #[arg(
         long,
         value_name = "FILE",
-        requires_all = ["stamps_output", "epoch_output", "stamp"]
+        requires_all = ["stamps_output", "epoch_output"]
     )]
     template: Option<PathBuf>,
     /// Render mode: where the generated `stamps.tex` is written.
@@ -58,9 +58,6 @@ struct Args {
     /// Render mode: where the `source-date-epoch` file is written.
     #[arg(long, value_name = "FILE", requires = "template")]
     epoch_output: Option<PathBuf>,
-    /// Render mode: the success-probe stamp touched on completion.
-    #[arg(long, value_name = "FILE", requires = "template")]
-    stamp: Option<PathBuf>,
 }
 
 fn main() -> ExitCode {
@@ -79,19 +76,15 @@ fn main() -> ExitCode {
 
     // `requires_all` makes the render arguments all-or-nothing, so this
     // tuple is either fully populated (render mode) or fully empty (JSON).
-    if let (Some(template), Some(stamps_output), Some(epoch_output), Some(stamp)) = (
-        args.template,
-        args.stamps_output,
-        args.epoch_output,
-        args.stamp,
-    ) {
+    if let (Some(template), Some(stamps_output), Some(epoch_output)) =
+        (args.template, args.stamps_output, args.epoch_output)
+    {
         run_no_stdout_command(COMMAND_NAME, debug, tracing::Level::INFO, move || {
             document_stamps::render(&RenderRequest {
                 stamps: &request,
                 template: &template,
                 stamps_output: &stamps_output,
                 epoch_output: &epoch_output,
-                stamp: &stamp,
             })
         })
     } else {

@@ -129,9 +129,9 @@ attestation_stamps_bin = custom_target(
 
 # Build-time provenance stamps (ADR-014). The Rust binary derives four
 # values from committed Git state and renders them directly into
-# stamps.tex and source-date-epoch (and touches a .ok success probe):
-# rendering, the fail-closed placeholder check, and the compare-if-changed
-# writes all live in the binary and are unit-tested there. build_always_stale
+# stamps.tex and source-date-epoch: rendering, the fail-closed placeholder
+# check, and the compare-if-changed writes all live in the binary and are
+# unit-tested there. build_always_stale
 # is required because ninja cannot otherwise see a changed HEAD, a paper-tree
 # commit touching no all_inputs file, or a dirty working tree; the
 # compare-if-changed writes let ninja restat skip downstream rebuilds when
@@ -145,7 +145,7 @@ endforeach
 attestation_stamps = custom_target(
   'generate-attestation-stamps',
   input: all_inputs,
-  output: ['stamps.tex', 'source-date-epoch', 'attestation-stamps.ok'],
+  output: ['stamps.tex', 'source-date-epoch'],
   command: [
     attestation_stamps_bin,
     '--git', git.full_path(),
@@ -155,17 +155,23 @@ attestation_stamps = custom_target(
     '--template', stamps_template,
     '--stamps-output', '@OUTPUT0@',
     '--epoch-output', '@OUTPUT1@',
-    '--stamp', '@OUTPUT2@',
   ] + all_input_args,
   build_always_stale: true,
   console: true,
 )
 
-# Success probe for the stamps generation (ADR-014 output-or-stamp).
+# Probe both real derived outputs (ADR-014); the derivation writes them
+# directly and needs no separate success stamp.
 test(
   'attestation-stamps',
   sh,
-  args: ['-c', 'test -f "$1"', 'sh', attestation_stamps[2].full_path()],
+  args: [
+    '-c',
+    'test -f "$1" && test -f "$2"',
+    'sh',
+    attestation_stamps[0].full_path(),
+    attestation_stamps[1].full_path(),
+  ],
   depends: attestation_stamps,
   suite: 'documentation',
   timeout: 60,

@@ -5,8 +5,8 @@
 //! paper subtree, and the exact publication-input set. From those [`run`]
 //! derives four prepared values as an [`AttestationStampValues`] object.
 //! [`render`] additionally fills the `stamps.tex.in` template with those
-//! values and writes the generated `stamps.tex`, the `source-date-epoch`
-//! file, and a `.ok` stamp (compare-if-changed, for ninja `restat`); the
+//! values and writes the generated `stamps.tex` and `source-date-epoch`
+//! file (compare-if-changed, for ninja `restat`); the
 //! rendering and fail-closed placeholder check are unit-tested here rather
 //! than in a shell wrapper.
 //!
@@ -167,15 +167,13 @@ pub struct RenderRequest<'a> {
     pub stamps_output: &'a Path,
     /// Where the `source-date-epoch` file is written.
     pub epoch_output: &'a Path,
-    /// The success-probe stamp touched last.
-    pub stamp: &'a Path,
 }
 
 /// Derive the four values and write the paper build inputs.
 ///
-/// Writes the rendered `stamps.tex`, the `source-date-epoch` file, and
-/// the `.ok` stamp. Both content files use compare-if-changed writes so an
-/// unchanged rebuild preserves their mtime (ninja `restat`).
+/// Writes the rendered `stamps.tex` and `source-date-epoch` file. Both
+/// content files use compare-if-changed writes so an unchanged rebuild
+/// preserves their mtime (ninja `restat`).
 ///
 /// # Errors
 ///
@@ -186,14 +184,27 @@ pub fn render(request: &RenderRequest<'_>) -> Result<(), StampError> {
     let values = run(request.stamps)?;
     let template = std::fs::read_to_string(request.template)
         .map_err(|_error| StampError::TemplateReadFailed)?;
-    let rendered = render_stamps(&template, &values)?;
-
-    write_if_changed(request.stamps_output, rendered.as_bytes())?;
-    write_if_changed(
+    render_outputs(
+        &template,
+        &values,
+        request.stamps_output,
         request.epoch_output,
+    )
+}
+
+fn render_outputs(
+    template: &str,
+    values: &AttestationStampValues,
+    stamps_output: &Path,
+    epoch_output: &Path,
+) -> Result<(), StampError> {
+    let rendered = render_stamps(template, values)?;
+
+    write_if_changed(stamps_output, rendered.as_bytes())?;
+    write_if_changed(
+        epoch_output,
         format!("{}\n", values.timestamp.epoch).as_bytes(),
     )?;
-    cli_common::touch_stamp(request.stamp).map_err(|_error| StampError::OutputWriteFailed)?;
     Ok(())
 }
 
