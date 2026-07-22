@@ -266,6 +266,7 @@ does not depend on an unresolved semantic decision.
 | `F1-026` | P2 | **DONE** | Shell checker stamps and always-stale wiring violate no-op and touch-only claims. |
 | `F1-027` | P2 | **DONE** | Production `execwrap` exposes hidden mock flags that fabricate TeX outputs. |
 | `F1-028` | P3 | **DONE** | Maintenance-potential report counts used unchecked `as u64` narrowing. |
+| `F1-029` | P3 | **TODO** | Positive scenario tests use bare `apply` + manual invariant check, blurring evidence class. |
 
 ---
 
@@ -1377,6 +1378,34 @@ unreviewed casts in proof-relevant values.
   unchanged; only the proof-relevant potential counts were converted.
 - Verified: full `tripod-model` suite and clippy `-D warnings` green
   via the flatpak SDK.
+
+---
+
+### F1-029 — Distinguish checked transitions from branch-local apply
+
+**Priority:** P3
+**Owners:** `model` tests
+
+Many positive scenario tests call `Transition::apply(..).unwrap()` and then a
+separate `check_invariant`, which proves "the branch guard accepted and the
+invariant held afterward" but reads like "the invariant-wrapped public path
+enforced it." The evidence class should be mechanically obvious in the test
+source. Fault, authorization-failure, corruption, and kernel/branch-local tests
+must keep raw `apply`, so this is a per-module discipline change, not a blind
+sweep.
+
+#### Progress — helper landed, first module converted
+
+Commit adds a shared `apply_checked` test helper (in `scenario_fixtures`) that
+runs a transition through the normative `execute` path — the invariant-wrapped
+public entry point — and returns the successor world. The receipt-relabel
+module is converted as the pilot: its two public positive-scenario tests now
+advance through `apply_checked` instead of `apply().unwrap()` plus a separate
+`check_invariant`, while its authorization-failure and kernel-structural
+fault-injection tests deliberately keep raw `apply`. Remaining positive
+scenario modules (cycle, settlement, redemption, admission, ...) are converted
+incrementally one at a time, so this finding stays **TODO** until that adoption
+is complete.
 
 ---
 

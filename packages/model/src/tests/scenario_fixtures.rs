@@ -47,6 +47,19 @@ pub fn next_block_order(world: &World) -> CanonicalOrder {
     }
 }
 
+/// Apply a transition through the normative [`execute`] path, which
+/// enforces the global invariant wrapper, and return the successor world.
+///
+/// Positive scenario tests should prefer this over a bare
+/// `transition.apply(..).unwrap()` followed by a separate
+/// `check_invariant`: it makes the evidence class explicit — the world
+/// advanced through the invariant-wrapped public path, not merely the
+/// operation guard. Fault, authorization-failure, corruption, and
+/// kernel/branch-local tests deliberately keep raw `apply`.
+pub fn apply_checked<T: Transition>(world: &World, transition: &T, order: CanonicalOrder) -> World {
+    execute(world, transition, order).expect("checked transition")
+}
+
 pub fn advance_blocks(world: &World, blocks: u64) -> World {
     let mut next = world.clone();
 

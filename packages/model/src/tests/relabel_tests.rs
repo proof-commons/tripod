@@ -39,12 +39,14 @@ fn relabel_preserves_owner_and_value() {
 
     let value = world.utxo(input).unwrap().value;
 
-    let next = RelabelReceipts {
-        receipts: vec![input],
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
+    let next = apply_checked(
+        &world,
+        &RelabelReceipts {
+            receipts: vec![input],
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    );
 
     let outputs = find_receipts(&next, GENESIS_OWNER, ReceiptClass::Live);
 
@@ -53,8 +55,6 @@ fn relabel_preserves_owner_and_value() {
             .iter()
             .any(|outpoint| next.utxo(*outpoint).unwrap().value == value),
     );
-
-    check_invariant(&next).unwrap();
 }
 
 #[test]
@@ -69,15 +69,22 @@ fn relabel_destinations_are_unrepresentable_in_the_public_api() {
 
     // The public transition constructor does not expose
     // custom relabel destinations, so an owner/value
-    // redistribution attempt is unrepresentable.
-    let next = RelabelReceipts {
-        receipts: inputs,
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
+    // redistribution attempt is unrepresentable: the only mapping the
+    // constructor can express commits through the invariant-wrapped
+    // path. Success of the checked transition is the assertion.
+    let next = apply_checked(
+        &world,
+        &RelabelReceipts {
+            receipts: inputs,
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    );
 
-    check_invariant(&next).unwrap();
+    assert_ne!(
+        find_receipts(&next, GENESIS_OWNER, ReceiptClass::Live),
+        [] as [u64; 0]
+    );
 }
 
 // Kernel-structural relabel fault injection. A mature world holds two
