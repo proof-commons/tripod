@@ -32,7 +32,7 @@ realization = { package = "tripod-realization", path = "packages/realization" }
 
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-nix = { version = "0", features = ["process", "signal", "fs"] }
+nix = { version = "0", features = ["process", "signal", "fs", "term"] }
 num-bigint = "0.4"
 num-integer = "0.1"
 num-traits = "0.2"

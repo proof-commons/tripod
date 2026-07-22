@@ -5,9 +5,9 @@
 //! missing or unknown argument is usage class 2, and every control-plane
 //! record is one JSON object on stderr while stdout stays empty.
 //!
-//! Success-path (the full repository census argv) and TTY-refusal coverage are
-//! tracked separately under F1-024; TTY refusal needs a PTY harness the
-//! workspace does not yet have, so that lane remains incomplete.
+//! TTY-refusal behaviour is covered by the PTY harness below (F1-024): a
+//! direct-mode checker refuses a terminal stdout before doing any semantic
+//! work, while build mode (with an explicit report/stamp destination) does not.
 
 use std::process::{Command, Output};
 
@@ -145,4 +145,174 @@ fn census_audit_omits_untrusted_git_stderr() {
         stderr.contains("git ls-files failed"),
         "expected the generic git-failure message: {stderr}",
     );
+}
+
+// ---------------------------------------------------------------------------
+// PTY-based TTY-refusal coverage (F1-024).
+//
+// Refusal depends on output *mode*, not binary identity: a direct-mode
+// checker with a terminal stdout must refuse (exit 2, one tty_refusal
+// record) before touching the filesystem, whereas build mode publishes a
+// report/stamp and never refuses. `census-audit` exercises both.
+// ---------------------------------------------------------------------------
+
+#[cfg(unix)]
+mod pty {
+    use std::fs::File;
+    use std::io::{Read, Seek, Write};
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::{Command, ExitStatus, Stdio};
+
+    /// Run `command` with its stdout attached to a real pseudo-terminal.
+    /// Returns the child status, the bytes the child wrote to the PTY, and
+    /// its captured stderr.
+    fn run_with_terminal_stdout(mut command: Command) -> (ExitStatus, Vec<u8>, Vec<u8>) {
+        let pty = nix::pty::openpty(None, None).expect("open pty");
+        let mut master = File::from(pty.master);
+        let slave = File::from(pty.slave);
+
+        let stderr_file = tempfile::tempfile().expect("stderr tempfile");
+        let mut stderr_reader = stderr_file.try_clone().expect("clone stderr");
+
+        // The child gets its own dup of the slave; the parent then drops
+        // its slave so the only remaining slave is the child's.
+        let child_slave = slave.try_clone().expect("clone slave");
+        let mut child = command
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(child_slave))
+            .stderr(Stdio::from(stderr_file))
+            .spawn()
+            .expect("command spawns");
+        drop(slave);
+
+        // Drain the master on a helper thread. In this sandbox the master
+        // does not reliably report EIO/EOF once the slave closes, so the
+        // thread may block on a final read; we collect via a channel with
+        // a grace period and never join it, so the test cannot hang.
+        let (sender, receiver) = std::sync::mpsc::channel::<Vec<u8>>();
+        std::thread::spawn(move || {
+            let mut buffer = [0_u8; 4096];
+            loop {
+                match master.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(read) => {
+                        if sender.send(buffer[..read].to_vec()).is_err() {
+                            break;
+                        }
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                    // EIO once the slave closes, or any other error: done.
+                    Err(_) => break,
+                }
+            }
+        });
+
+        let status = child.wait().expect("child exits");
+
+        let mut pty_stdout = Vec::new();
+        while let Ok(chunk) = receiver.recv_timeout(std::time::Duration::from_millis(500)) {
+            pty_stdout.extend_from_slice(&chunk);
+        }
+
+        stderr_reader.rewind().expect("rewind stderr");
+        let mut stderr = Vec::new();
+        stderr_reader.read_to_end(&mut stderr).expect("read stderr");
+
+        (status, pty_stdout, stderr)
+    }
+
+    /// Parse the single JSON control-plane record of the given kind, if any.
+    fn find_record(stderr: &[u8], kind: &str) -> Option<serde_json::Value> {
+        let text = String::from_utf8(stderr.to_vec()).expect("stderr is utf8");
+        for line in text.lines().filter(|line| !line.trim().is_empty()) {
+            let value: serde_json::Value =
+                serde_json::from_str(line).expect("every stderr line is one JSON object");
+            if value["kind"] == kind {
+                return Some(value);
+            }
+        }
+        None
+    }
+
+    /// A fake git that emits an empty `ls-files -z` listing and succeeds.
+    fn empty_git(dir: &std::path::Path) -> std::path::PathBuf {
+        let script = dir.join("empty-git.sh");
+        let mut file = File::create(&script).expect("create fake git");
+        writeln!(file, "#!/bin/sh").unwrap();
+        writeln!(file, "exit 0").unwrap();
+        let mut perms = file.metadata().unwrap().permissions();
+        perms.set_mode(0o755);
+        file.set_permissions(perms).unwrap();
+        script
+    }
+
+    fn census_audit() -> Command {
+        Command::new(env!("CARGO_BIN_EXE_census-audit"))
+    }
+
+    #[test]
+    fn census_audit_refuses_terminal_stdout_in_direct_mode() {
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        let mut command = census_audit();
+        command.args([
+            "--repository-root",
+            dir.path().to_str().unwrap(),
+            // Never invoked: direct-mode refusal precedes the semantic
+            // work, so the git program is irrelevant here.
+            "--git",
+            "/nonexistent/git",
+            "--exclude-pattern",
+            ".*",
+        ]);
+
+        let (status, pty_stdout, stderr) = run_with_terminal_stdout(command);
+
+        assert_eq!(status.code(), Some(2), "terminal stdout must be refused");
+        assert!(pty_stdout.is_empty(), "refusal must not write result data");
+
+        let record = find_record(&stderr, "tty_refusal").expect("one tty_refusal record");
+        assert_eq!(record["fields"]["stream"], "stdout");
+        assert_eq!(record["fields"]["exit_code"], 2);
+    }
+
+    #[test]
+    fn census_audit_build_mode_does_not_refuse_terminal_stdout() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let git = empty_git(dir.path());
+        let report = dir.path().join("census.json");
+        let stamp = dir.path().join("census.stamp");
+
+        let mut command = census_audit();
+        command.args([
+            "--repository-root",
+            dir.path().to_str().unwrap(),
+            "--git",
+            git.to_str().unwrap(),
+            "--exclude-pattern",
+            ".*",
+            "--report",
+            report.to_str().unwrap(),
+            "--stamp",
+            stamp.to_str().unwrap(),
+        ]);
+
+        let (status, pty_stdout, stderr) = run_with_terminal_stdout(command);
+
+        // Empty tracked set + empty declared census = a valid audit, so
+        // build mode publishes the report and stamp and exits 0 even
+        // though stdout is a terminal.
+        assert_eq!(
+            status.code(),
+            Some(0),
+            "build mode must not refuse a terminal"
+        );
+        assert!(pty_stdout.is_empty(), "build mode leaves stdout empty");
+        assert!(report.exists(), "build mode publishes the report");
+        assert!(stamp.exists(), "build mode touches the stamp");
+        assert!(
+            find_record(&stderr, "tty_refusal").is_none(),
+            "build mode must not emit a tty_refusal record",
+        );
+    }
 }

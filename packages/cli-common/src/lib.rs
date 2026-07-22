@@ -998,6 +998,19 @@ where
     install_json_panic_hook(command_name);
     init_json_tracing_with_debug(debug, default_level);
 
+    // Direct mode (no --report/--stamp) refuses terminal stdout *before*
+    // any semantic work: the JSON result would have nowhere safe to go,
+    // so running the check first would be wasted work and could touch
+    // the filesystem on the way. Build mode has an explicit report/stamp
+    // destination and is exempt. `finish_check_command` still performs
+    // its own refusal for direct callers.
+    if output.report.is_none() && output.stamp.is_none() {
+        if let Some(record) = stdout_tty_refusal_record(command_name) {
+            let _ignored = emit_control_plane_record(&record);
+            return CommandExit::Usage.exit_code();
+        }
+    }
+
     let report = match run() {
         Ok(report) => report,
         Err(error) => {

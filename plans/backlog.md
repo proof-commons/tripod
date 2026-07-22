@@ -267,7 +267,7 @@ does not depend on an unresolved semantic decision.
 | `F1-021` | P2 | **DONE** | Public query reduction can produce an invalid zero-denominator rational. |
 | `F1-022` | P2 | **DONE** | `execwrap` child-status propagation contradicts the documented global exit classes. |
 | `F1-023` | P1 | **DONE** | Reorg reprojection may increase valuation despite downward-only Layer-0 wording. |
-| `F1-024` | P2 | **TODO** | ADR-010 subprocess coverage is incomplete across shipped binaries. |
+| `F1-024` | P2 | **DONE** | ADR-010 subprocess coverage is incomplete across shipped binaries. |
 | `F1-025` | P2 | **DONE** | Relation IDs reuse unrelated relation kinds and weaken semantic identity clarity. |
 | `F1-026` | P2 | **DONE** | Shell checker stamps and always-stale wiring violate no-op and touch-only claims. |
 | `F1-027` | P2 | **DONE** | Production `execwrap` exposes hidden mock flags that fabricate TeX outputs. |
@@ -1474,6 +1474,33 @@ Remaining before DONE:
 
 Because TTY refusal is unproven, this finding — and the Phase-1 gate
 (`F1-017`) — stays explicitly incomplete.
+
+#### Evidence · DONE
+
+- The last open lane — real PTY-backed TTY refusal — now runs. A reusable
+  `openpty` harness (`nix` with the `term` feature) attaches a child's stdout to
+  a pseudo-terminal, drains the master on a detached helper thread through a
+  channel (this sandbox does not reliably deliver EIO on slave close, so the
+  reader is never joined), captures stderr to a temp file, and returns the exit
+  status, terminal-stdout bytes, and stderr.
+- Coverage is by output-mode across both refusal code paths, since every binary
+  funnels through `cli-common`: `census-audit` (the `run_check_command` path)
+  refuses a terminal stdout in **direct** mode with exit 2 and one `tty_refusal`
+  record (`fields.stream = stdout`) and, crucially, does so *before* any
+  semantic work — `run_check_command` now performs the direct-mode refusal ahead
+  of the check closure. In **build** mode (`--report`/`--stamp`) the same binary
+  publishes its report and stamp and exits 0 on a terminal, proving refusal
+  depends on output mode, not binary identity. `attestation-stamps` covers the
+  `run_stdout_json_command` path (JSON mode refuses a terminal; render mode, a
+  `run_no_stdout_command` side effect, never refuses).
+- No silent cap: the refusal decision lives entirely in `cli-common`, so these
+  representative binaries exercise each distinct code path rather than
+  duplicating an identical assertion per binary; the checker success paths are
+  exercised for real by the Meson `generated-check`/`labels-check`/`census-audit`
+  lanes every build.
+- Verified: the `tripod-labels` and `tripod-document-stamps`
+  subprocess suites (including the PTY tests), `cli-common` lib suite (38), and
+  clippy `-D warnings` across the CLI crates, green via the flatpak SDK.
 
 ---
 
