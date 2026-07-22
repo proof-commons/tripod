@@ -41,7 +41,9 @@ use crate::ops::{
     AdmitDeposits, AnnounceMaturity, ClearAsh, CompactAsh, CycleCaller, RedeemReceipt,
     RelabelReceipts, RunCycle, SettleDistribution,
 };
-use crate::quiescence::{QuiescenceReport, lifecycle_report};
+use crate::quiescence::{
+    QuiescenceOutcome, QuiescenceReport, lifecycle_report, quiescence_residuals,
+};
 use crate::recognition::{read_ash, validate_request_for_admission};
 use crate::scalar::{
     ACTIVE_BACKING_MAX, CanonicalOrder, Cycle, OutPoint, OwnerKey, Sat, checked_active_backing,
@@ -674,17 +676,41 @@ where
     Err(Guard::Overflow)
 }
 
+/// Drives the deterministic sponsored driver to its fixpoint and returns
+/// the terminal typed outcome.
+///
+/// The driver reaches a fixpoint at which every permissionlessly
+/// actionable shared-state object has been processed: it admits the
+/// canonical capacity-fitting subset of requests, runs required cycles,
+/// settles distributions, and compacts and clears ASH as far as the
+/// current state allows. Any object that remains belongs to a typed
+/// residual class ([`QuiescenceOutcome::residuals`]) requiring an
+/// external state change or owner action — a capacity-blocked request
+/// does not stop unrelated permissionless work.
+///
+/// This is stronger than "every valid open request is admitted", which
+/// is false under a finite active-backing cap.
+///
 /// `maximum_steps` prevents a buggy scheduler from looping forever in
 /// the test harness.
 pub fn drive_sponsored_quiescence(
     initial: &World,
     maximum_steps: usize,
-) -> Result<(World, QuiescenceReport), Guard> {
+) -> Result<QuiescenceOutcome, Guard> {
     let scheduler = DeterministicMaintenanceScheduler {
         mode: MaintenanceMode::FullSponsored,
     };
 
-    drive_quiescence_with_scheduler(initial, &scheduler, maximum_steps, true)
+    let (world, report) =
+        drive_quiescence_with_scheduler(initial, &scheduler, maximum_steps, true)?;
+
+    let residuals = quiescence_residuals(&world, &report)?;
+
+    Ok(QuiescenceOutcome {
+        world,
+        report,
+        residuals,
+    })
 }
 
 // (´thm:scalability:sweepability´) (shared-state driver)

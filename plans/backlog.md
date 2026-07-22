@@ -640,6 +640,30 @@ and near-cap property traces.
 - Verified: full `tripod-model` suite (277 tests) and clippy
   `-D warnings` green via the flatpak SDK.
 
+#### Refinement · progress before residual
+
+- Correcting the earlier "eligible ⇒ full discharge" framing, the driver now
+  returns a typed `QuiescenceOutcome { world, report, residuals }` with
+  `is_fully_discharged()`, and a shared terminal classifier
+  `quiescence_residuals` names every residual class present at the scheduler
+  fixpoint (not only the two blocking classes that a precondition test reports).
+  `classify_quiescence_eligibility` delegates to it, so the precondition and
+  terminal classifiers cannot drift apart.
+- `drive_sponsored_quiescence` returns the outcome instead of a bare
+  `(World, report)` pair, making explicit that the driver admits the canonical
+  capacity-fitting subset, processes each admitted request's cycle and
+  distribution to completion, and only then names what remains — a
+  capacity-blocked request never stalls unrelated permissionless work.
+- The `property_maintenance` theorem now drives *every* generated world (not
+  just the eligible ones) to a fixpoint and asserts the driver can neither
+  create nor clear a blocking residual: a world is eligible exactly when the
+  terminal outcome carries no blocking residual. New focused tests prove
+  progress-before-residual (admit 60 of {60,50} at headroom 100, cycle and
+  settle it fully, leave the 50 as a named residual) and full discharge when
+  the whole set fits.
+- Verified: full `tripod-model` suite (282 tests) and clippy
+  `-D warnings` green via the flatpak SDK.
+
 ---
 
 ### F1-011 — Derive constructibility authorization from architecture

@@ -244,7 +244,7 @@ fn capacity_plan_rejects_a_request_one_above_headroom() {
 
     assert!(!plan.all_fit);
     assert_eq!(plan.locally_valid.len(), 1);
-    assert!(plan.fitting_batch.is_empty());
+    assert_eq!(plan.fitting_batch, [] as [u64; 0]);
 
     let residuals = match classify_quiescence_eligibility(&world).unwrap() {
         QuiescenceEligibility::Residual(residuals) => residuals,
@@ -344,7 +344,7 @@ fn malformed_and_capacity_blocked_requests_do_not_collapse() {
     // Only the well-formed oversized request is locally valid.
     assert_eq!(plan.locally_valid.len(), 1);
     assert!(!plan.all_fit);
-    assert!(plan.fitting_batch.is_empty());
+    assert_eq!(plan.fitting_batch, [] as [u64; 0]);
 
     let residuals = match classify_quiescence_eligibility(&world).unwrap() {
         QuiescenceEligibility::Residual(residuals) => residuals,
@@ -357,4 +357,63 @@ fn malformed_and_capacity_blocked_requests_do_not_collapse() {
     let report = lifecycle_report(&world).unwrap();
 
     assert!(residuals_match_report(&world, &report, &residuals).unwrap());
+}
+
+// Progress before residual: the driver must make maximal permissionless
+// progress before reporting a residual. A capacity-blocked request must
+// not stop it from admitting a fitting request and running that request's
+// cycle and distribution all the way to a receipt.
+
+#[test]
+fn driver_admits_a_fitting_request_and_names_the_capacity_residual() {
+    let mut world = create_request_for(&cap_genesis(100), ALICE, ALICE, sat(60), Sat::ONE);
+
+    world = create_request_for(&world, BOB, BOB, sat(50), Sat::ONE);
+
+    // 60 + 50 = 110 > 100: exactly one request fits current headroom.
+    let outcome = drive_sponsored_quiescence(&world, 1_000).unwrap();
+
+    // The blocked request cannot be admitted (redemption would be
+    // required to restore headroom), so the driver stops short of full
+    // discharge and names the typed residual.
+    assert!(!outcome.is_fully_discharged());
+    assert!(
+        outcome
+            .residuals
+            .contains(&QuiescenceResidual::ActiveBackingCapacityBlocked)
+    );
+
+    // But the admitted request's entire lifecycle — cycle, distribution,
+    // settlement — was processed: exactly one request remains queued and
+    // every downstream shared-state queue is empty.
+    assert_eq!(outcome.report.admissible_requests, 1);
+    assert_eq!(outcome.report.entitlements, 0);
+    assert_eq!(outcome.report.live_distributions, 0);
+    assert!(outcome.report.ash_outputs <= 1);
+
+    let plan = admission_capacity_plan(&outcome.world).unwrap();
+    assert_eq!(plan.locally_valid.len(), 1);
+    assert_eq!(plan.fitting_batch, [] as [u64; 0]);
+
+    check_invariant(&outcome.world).unwrap();
+}
+
+#[test]
+fn driver_fully_discharges_when_every_request_fits() {
+    let mut world = create_request_for(&cap_genesis(200), ALICE, ALICE, sat(60), Sat::ONE);
+
+    world = create_request_for(&world, BOB, BOB, sat(50), Sat::ONE);
+
+    // 60 + 50 = 110 <= 200: the full set fits, so the driver leaves no
+    // residual at all.
+    let outcome = drive_sponsored_quiescence(&world, 1_000).unwrap();
+
+    assert!(outcome.is_fully_discharged());
+    assert!(outcome.residuals.is_empty());
+    assert_eq!(outcome.report.admissible_requests, 0);
+    assert_eq!(outcome.report.entitlements, 0);
+    assert_eq!(outcome.report.live_distributions, 0);
+    assert!(outcome.report.ash_outputs <= 1);
+
+    check_invariant(&outcome.world).unwrap();
 }

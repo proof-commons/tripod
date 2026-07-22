@@ -190,6 +190,29 @@ pub enum QuiescenceEligibility {
     Residual(BTreeSet<QuiescenceResidual>),
 }
 
+/// The terminal result of the sponsored-quiescence driver.
+///
+/// The driver reaches a fixpoint at which every permissionlessly
+/// actionable shared-state object has been processed. Any object that
+/// remains belongs to a typed residual class requiring an external state
+/// change or owner action; `residuals` names exactly those classes and
+/// is empty only on full discharge.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QuiescenceOutcome {
+    pub world: World,
+    pub report: QuiescenceReport,
+    pub residuals: BTreeSet<QuiescenceResidual>,
+}
+
+impl QuiescenceOutcome {
+    /// True when the driver left no residual: the shared queues are
+    /// empty and no owner action or external state change is required.
+    #[must_use]
+    pub fn is_fully_discharged(&self) -> bool {
+        self.residuals.is_empty()
+    }
+}
+
 // ´rule:verification:classify-quiescence-eligibility´
 
 /// Classifies whether the sponsored-quiescence theorem's precondition
@@ -207,13 +230,38 @@ pub enum QuiescenceEligibility {
 /// residual is also present, but never make a live, capacity-sufficient
 /// pool ineligible on their own.
 pub fn classify_quiescence_eligibility(world: &World) -> Result<QuiescenceEligibility, Guard> {
-    let state = world.state()?.1;
-
     let report = lifecycle_report(world)?;
 
-    let capacity = admission_capacity_plan(world)?;
+    let residuals = quiescence_residuals(world, &report)?;
 
-    let sealed = state.y()?.is_zero();
+    if residuals.contains(&QuiescenceResidual::SealedPoolWithPendingRequests)
+        || residuals.contains(&QuiescenceResidual::ActiveBackingCapacityBlocked)
+    {
+        Ok(QuiescenceEligibility::Residual(residuals))
+    } else {
+        Ok(QuiescenceEligibility::Eligible)
+    }
+}
+
+/// Terminal residual classifier applied at the scheduler fixpoint.
+///
+/// Unlike [`classify_quiescence_eligibility`], which tests the theorem's
+/// precondition *before* the driver runs and reports only the two
+/// blocking classes that make full discharge impossible, this names
+/// *every* residual class still present *after* the driver has made all
+/// permissionless progress — including the non-blocking ones (inert junk,
+/// refund-locked unadmittable requests), because at the fixpoint they are
+/// exactly the objects the driver could not discharge.
+///
+/// An empty set means full discharge: the shared queues are empty and no
+/// external action is required.
+pub fn quiescence_residuals(
+    world: &World,
+    report: &QuiescenceReport,
+) -> Result<BTreeSet<QuiescenceResidual>, Guard> {
+    let sealed = world.state()?.1.y()?.is_zero();
+
+    let capacity = admission_capacity_plan(world)?;
 
     let mut residuals = BTreeSet::new();
 
@@ -221,7 +269,7 @@ pub fn classify_quiescence_eligibility(world: &World) -> Result<QuiescenceEligib
         residuals.insert(QuiescenceResidual::SealedPoolWithPendingRequests);
     }
 
-    if !sealed && !capacity.all_fit {
+    if !sealed && !capacity.locally_valid.is_empty() && !capacity.all_fit {
         residuals.insert(QuiescenceResidual::ActiveBackingCapacityBlocked);
     }
 
@@ -235,13 +283,7 @@ pub fn classify_quiescence_eligibility(world: &World) -> Result<QuiescenceEligib
         residuals.insert(QuiescenceResidual::MalformedOpenJunkOnly);
     }
 
-    if residuals.contains(&QuiescenceResidual::SealedPoolWithPendingRequests)
-        || residuals.contains(&QuiescenceResidual::ActiveBackingCapacityBlocked)
-    {
-        Ok(QuiescenceEligibility::Residual(residuals))
-    } else {
-        Ok(QuiescenceEligibility::Eligible)
-    }
+    Ok(residuals)
 }
 
 fn unadmittable_request_count(world: &World) -> usize {

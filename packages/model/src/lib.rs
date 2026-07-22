@@ -242,10 +242,11 @@ pub use property::{
 };
 pub use queries::{cycle_issuance_query, floor_terms, redemption_payout};
 pub use quiescence::{
-    ProtocolObservable, QuantityId, QuiescenceEligibility, QuiescenceReport, QuiescenceResidual,
-    assert_protocol_noninterference, assert_residue_noninterference, assert_residue_reader_policy,
-    classify_quiescence_eligibility, lifecycle_report, perturb_residue_projection,
-    protocol_observable, quantity_reads_residue, residuals_match_report, shared_state_is_swept,
+    ProtocolObservable, QuantityId, QuiescenceEligibility, QuiescenceOutcome, QuiescenceReport,
+    QuiescenceResidual, assert_protocol_noninterference, assert_residue_noninterference,
+    assert_residue_reader_policy, classify_quiescence_eligibility, lifecycle_report,
+    perturb_residue_projection, protocol_observable, quantity_reads_residue, quiescence_residuals,
+    residuals_match_report, shared_state_is_swept,
 };
 pub use recognition::{
     CanonicalObject, DistributionControlView, EntitlementView, ReceiptView, RequestView,

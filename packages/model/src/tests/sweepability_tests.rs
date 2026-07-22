@@ -63,17 +63,19 @@ fn full_quiescence_processes_requests_cycles_and_distributions() {
 
     world = create_request_for(&world, BOB, BOB, sat(200), Sat::ONE);
 
-    let (quiet, report) = drive_sponsored_quiescence(&world, 1_000).unwrap();
+    let outcome = drive_sponsored_quiescence(&world, 1_000).unwrap();
 
-    assert_eq!(report.admissible_requests, 0);
+    assert!(outcome.is_fully_discharged());
 
-    assert_eq!(report.entitlements, 0);
+    assert_eq!(outcome.report.admissible_requests, 0);
 
-    assert_eq!(report.live_distributions, 0);
+    assert_eq!(outcome.report.entitlements, 0);
 
-    assert!(report.ash_outputs <= 1);
+    assert_eq!(outcome.report.live_distributions, 0);
 
-    check_invariant(&quiet).unwrap();
+    assert!(outcome.report.ash_outputs <= 1);
+
+    check_invariant(&outcome.world).unwrap();
 }
 
 #[test]
@@ -85,7 +87,7 @@ fn wallets_are_inert_in_v13() {
 
     world = create_request_for(&world, BOB, BOB, sat(200), Sat::ONE);
 
-    let (quiet, _report) = drive_sponsored_quiescence(&world, 1_000).unwrap();
+    let outcome = drive_sponsored_quiescence(&world, 1_000).unwrap();
 
-    assert_eq!(quiet.wallets, world.wallets);
+    assert_eq!(outcome.world.wallets, world.wallets);
 }
