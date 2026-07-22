@@ -366,7 +366,7 @@ alias_target('lint', labels_stamp, generated_stamp, plans_stamp, forbidden_text_
 # ---------------------------------------------------------------------------
 generator_wrap = [
   sh, '-c',
-  'stamp="$1"; program="$2"; shift 2; case "$program" in */*) "$program" "$@" ;; *) "./$program" "$@" ;; esac && : > "$stamp"',
+  'stamp="$1"; program="$2"; shift 2; case "$program" in */*) "$program" "$@" ;; *) "./$program" "$@" ;; esac && touch "$stamp"',
   'sh', '@OUTPUT@',
 ]
 
@@ -468,7 +468,7 @@ stamp_probe = ['-c', 'test -f "$1"', 'sh']
 # manifests, or Cargo's own dependency graph changed.
 cargo_quiet_stamp_wrap = [
   sh, '-c',
-  'stamp="$1"; log="$2"; shift 2; if CARGO_TERM_PROGRESS_WHEN=never "$@" > "$log" 2>&1; then : > "$stamp"; else cat "$log" >&2; exit 1; fi',
+  'stamp="$1"; log="$2"; shift 2; if CARGO_TERM_PROGRESS_WHEN=never "$@" > "$log" 2>&1; then touch "$stamp"; else cat "$log" >&2; exit 1; fi',
   'sh', '@OUTPUT0@', '@OUTPUT1@',
 ]
 

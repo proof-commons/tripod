@@ -47,7 +47,7 @@ case "$grep_status" in
 esac
 
 if [ -n "$stamp" ]; then
-	: > "$stamp"
+	touch "$stamp"
 fi
 
 echo "==> forbidden text check passed" >&2
