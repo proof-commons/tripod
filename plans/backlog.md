@@ -252,7 +252,7 @@ does not depend on an unresolved semantic decision.
 | `F1-012` | P2 | **BLOCKED** | Normative and companion prose contain arithmetic, weld, and valuation inaccuracies. |
 | `F1-013` | P2 | **DONE** | Active planning still prescribes graph adapters prohibited by D007. |
 | `F1-014` | P2 | **DONE** | Full Meson tests depend on undeclared `jq`. |
-| `F1-015` | P3 | **TODO** | Shell/Python checker streams conflict with broad ADR-010/014 wording. |
+| `F1-015` | P3 | **DONE** | Shell/Python checker streams conflict with broad ADR-010/014 wording. |
 | `F1-016` | P3 | **TODO** | Planning statuses and completion evidence disagree. |
 | `F1-017` | Gate | **BLOCKED** | Complete Phase-1 gate has not been run and recorded. |
 | `F1-018` | P1 | **DONE** | Realization accepts zero-valued ordinary L-BTC that the model rejects. |
@@ -263,7 +263,7 @@ does not depend on an unresolved semantic decision.
 | `F1-023` | P1 | **TODO** | Reorg reprojection may increase valuation despite downward-only Layer-0 wording. |
 | `F1-024` | P2 | **TODO** | ADR-010 subprocess coverage is incomplete across shipped binaries. |
 | `F1-025` | P2 | **DONE** | Relation IDs reuse unrelated relation kinds and weaken semantic identity clarity. |
-| `F1-026` | P2 | **TODO** | Shell checker stamps and always-stale wiring violate no-op and touch-only claims. |
+| `F1-026` | P2 | **DONE** | Shell checker stamps and always-stale wiring violate no-op and touch-only claims. |
 | `F1-027` | P2 | **DONE** | Production `execwrap` exposes hidden mock flags that fabricate TeX outputs. |
 
 ---
@@ -1212,6 +1212,19 @@ Alternative:
 
 Policy must not remain broader than implementation.
 
+#### Evidence · DONE
+
+- Commit takes the preferred path: the last shell checker on a build-facing
+  command boundary, `scripts/check-forbidden-text.sh`, is deleted and replaced
+  by a Rust `check-forbidden-text` binary that runs under the shared
+  `cli-common` two-mode contract. It emits a typed JSON report and JSON
+  diagnostics on stderr; no first-party checker now conflicts with the
+  ADR-010/014 stream wording. The remaining scripts (`check-plans.sh` wraps a
+  Python checker; `ci.sh`, `test-meson-mock.sh` are orchestration) do not own a
+  public diagnostic contract.
+- Verified: labels suite, workspace clippy `-D warnings`, and all 10 Meson
+  lanes green via the flatpak SDK.
+
 ---
 
 ### F1-022 — Resolve `execwrap` exit semantics
@@ -1372,6 +1385,23 @@ Meson wrappers, removing the accidental-truncation hazard. This is stamp-write
 hygiene only: the always-stale execution, the missing explicit tracked-file
 census, and the no-op lint claim are unaddressed, so this finding stays
 **TODO**.
+
+#### Evidence · DONE
+
+- Commit replaces the shell checker with a Rust `check-forbidden-text` binary
+  under the two-mode contract: build mode writes a compare-if-changed JSON
+  report and touches the success stamp only after the report is written, so
+  the truncation-and-touch stamp handling is now the shared, tested path.
+- The audit is now an explicitly declared always-fresh repository audit: its
+  own source files (`src/bin/check-forbidden-text.rs`, `src/forbidden.rs`) join
+  the labels crate-source census, and ADR-014 documents the two stamp-target
+  classes — incremental lint suites (no-op on an unchanged tree) versus the
+  `census-audit`/`forbidden-text-check` repository audits that ask git for the
+  complete tracked set every build and cascade nothing through their
+  compare-if-changed reports. The broad no-op claim is scoped to the
+  incremental suites, so implementation and policy agree.
+- Verified: labels suite, workspace clippy `-D warnings`, all 10 Meson lanes,
+  and the mocked Meson contract green via the flatpak SDK.
 
 ---
 

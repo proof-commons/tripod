@@ -228,6 +228,17 @@ generate_registers_bin = custom_target(
   build_always_stale: true,
 )
 
+check_forbidden_text_bin = custom_target(
+  'cargo-check-forbidden-text',
+  output: 'check-forbidden-text-bin',
+  command: [
+    cargo_bin_sync, cargo, cargo_manifest,
+    'tripod-labels', 'check-forbidden-text', '@OUTPUT@',
+  ],
+  console: true,
+  build_always_stale: true,
+)
+
 census_audit_bin = custom_target(
   'cargo-census-audit',
   output: 'census-audit-bin',
@@ -339,14 +350,21 @@ plans_stamp = custom_target(
   console: true,
 )
 
-forbidden_text_script = files('scripts/check-forbidden-text.sh')
+# Forbidden-text audit (ADR-014 always-fresh repository audit): the
+# binary invokes git grep over the complete tracked set on every build,
+# so it is build_always_stale rather than tracking a fixed input list.
+# It runs in build mode — an explicit JSON report plus a success stamp
+# touched only after the report is written — so its ADR-010 diagnostics
+# never sit behind shell stdout redirection.
 forbidden_text_stamp = custom_target(
   'forbidden-text-check',
-  input: forbidden_text_script,
-  output: 'forbidden-text.ok',
+  output: ['forbidden-text.ok', 'forbidden-text.json'],
   command: [
-    sh, forbidden_text_script,
-    '--stamp', '@OUTPUT@',
+    check_forbidden_text_bin,
+    '--repository-root', source_root,
+    '--git', git.full_path(),
+    '--report', '@OUTPUT1@',
+    '--stamp', '@OUTPUT0@',
   ],
   build_by_default: true,
   build_always_stale: true,

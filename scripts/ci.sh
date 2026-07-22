@@ -12,7 +12,7 @@
 #   6. labels           check-labels (non-writing label gate)
 #   7. advisories       cargo audit (skipped loudly when not installed)
 #   8. plans            check-plans.sh (documentation structure)
-#   9. forbidden text   check-forbidden-text.sh
+#   9. forbidden text   check-forbidden-text (typed repository audit)
 #  10. meson contract   test-meson-mock.sh (mocked TeX; skipped without meson/ninja)
 #  11. clean tree       staged, unstaged, and untracked nonignored paths
 #
@@ -106,7 +106,10 @@ echo "==> lane 8/11: plan-tree checks" >&2
 sh scripts/check-plans.sh
 
 echo "==> lane 9/11: forbidden text" >&2
-sh scripts/check-forbidden-text.sh
+# shellcheck disable=SC2046
+cargo run --locked -p tripod-labels --bin check-forbidden-text -- \
+  --repository-root . \
+  --git git > /dev/null
 
 # Mocked Meson contract: exercises the real Meson graph with the TeX
 # toolchain simulated (execwrap --mock-child), so it needs meson+ninja but

@@ -119,7 +119,25 @@ and its command ends with the stamp argument of
 The checker binaries are themselves custom targets built by the copy-if-changed cargo sync idiom, so the tools carry real dependency edges while cargo remains the tracker of Rust sources and resolves dependencies from the workspace manifests (`[ADR011-rule:toolchain:locked]`).
 
 `meson test` entries become thin wrappers that depend on the stamp
-targets. A rerun on an unchanged tree executes nothing.
+targets.
+
+Two stamp-target classes coexist deliberately:
+
+- **Incremental lint suites** — `labels-check`, `generated-check`,
+  `plans-check` — track an explicit census-slice input list, so a rerun
+  on an unchanged tree executes nothing.
+- **Always-fresh repository audits** — `census-audit` and
+  `forbidden-text-check` — ask git for the complete tracked set on every
+  build (a file committed without a census entry, or a newly committed
+  forbidden token, must fail immediately, not at the next reconfigure),
+  so they are `build_always_stale` and may run each build. Each writes a
+  compare-if-changed report, and no downstream edge depends on its
+  retouched stamp, so running them does not cascade the incremental
+  suites.
+
+The no-op guarantee therefore applies to the incremental lint suites and
+the generators, not to the two repository audits, which are intentionally
+unconditional.
 
 ## Generators emit stamps for committed publications · `rule:build:generator-stamps`
 
@@ -238,8 +256,10 @@ ADR-014 is implemented when:
   target's arguments;
 - a file added, removed, or renamed without updating its directory's
   list fails the census audit with a diagnostic naming the paths;
-- a second `ninja` invocation on an unchanged tree runs no lint or
-  generator command;
+- a second `ninja` invocation on an unchanged tree runs no incremental
+  lint or generator command; the always-fresh repository audits
+  (`census-audit`, `forbidden-text-check`) may run, but write
+  compare-if-changed reports that cascade nothing;
 - editing one lint subject reruns exactly the suites whose census
   contains it;
 - the archive mirror and flatten targets rebuild only after a current

@@ -4,11 +4,13 @@
 # into its role group.
 labels_source_files = files(
   'src/bin/census-audit.rs',
+  'src/bin/check-forbidden-text.rs',
   'src/bin/check-labels.rs',
   'src/bin/generate-label-registers.rs',
   'src/census.rs',
   'src/check.rs',
   'src/diagnostic.rs',
+  'src/forbidden.rs',
   'src/label.rs',
   'src/latex.rs',
   'src/lib.rs',

@@ -11,9 +11,10 @@
 
 use std::process::{Command, Output};
 
-const BINARIES: [&str; 3] = [
+const BINARIES: [&str; 4] = [
     env!("CARGO_BIN_EXE_check-labels"),
     env!("CARGO_BIN_EXE_census-audit"),
+    env!("CARGO_BIN_EXE_check-forbidden-text"),
     env!("CARGO_BIN_EXE_generate-label-registers"),
 ];
 
