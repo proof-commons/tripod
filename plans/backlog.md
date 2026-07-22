@@ -255,7 +255,7 @@ does not depend on an unresolved semantic decision.
 | `F1-009` | P2 | **DONE** | Arbitrary `tree_ref` can mix selected-ref metadata with worktree bytes. |
 | `F1-010` | P2 | **DONE** | CI cleanliness misses staged and untracked nonignored files. |
 | `F1-011` | P2 | **DONE** | Constructibility authorization is selected by operation name rather than architecture semantics. |
-| `F1-012` | P2 | **BLOCKED** | Normative and companion prose contain arithmetic, weld, and valuation inaccuracies. |
+| `F1-012` | P2 | **DONE** | Normative and companion prose contain arithmetic, weld, and valuation inaccuracies. |
 | `F1-013` | P2 | **DONE** | Active planning still prescribes graph adapters prohibited by D007. |
 | `F1-014` | P2 | **DONE** | Full Meson tests depend on undeclared `jq`. |
 | `F1-015` | P3 | **DONE** | Shell/Python checker streams conflict with broad ADR-010/014 wording. |
@@ -1873,7 +1873,7 @@ Record:
 - anchor-set impact;
 - label-register impact.
 
-#### Progress — presentation corrections landed; remains BLOCKED on F1-023
+#### Progress — presentation corrections landed
 
 Commit `dc25a74` landed the three presentation-only corrections that do not
 depend on the reorg decision: the floor-arithmetic wording
@@ -1881,10 +1881,36 @@ depend on the reorg decision: the floor-arithmetic wording
 conservative-valuation wording (`docs/attestation/human.md`), and the stale
 `§16 → §17` anchor-index comment (`packages/architecture/src/spec.rs`). These
 touched no label token, generated artifact, or architecture hash (`labels-check`
-and the `artifacts` weld tests pass unchanged). The **Reorg semantics**
-correction and any Realization semantic correction are deliberately
-deferred until `F1-023` fixes the monotonicity law; this finding therefore stays
-**BLOCKED**, not DONE.
+and the `artifacts` weld tests pass unchanged).
+
+#### Evidence · DONE
+
+- The remaining **Reorg semantics** correction was applied by `F1-023` (commit
+  `d7b0747`) consistently across every surface this finding names, and a
+  repository-wide search now finds no residual downward-only wording in
+  `papers`, `docs`, `packages`, or `plans` (outside these descriptive backlog
+  rows):
+  - **Layer 0** — the Monotonicity postulate in
+    `papers/attestation/sections/01_interface.tex` is stated over one consistent
+    chronology; a change of chronology may revalue a record *either upward or
+    downward*, and no monotone order is asserted between valuations drawn from
+    different chronologies.
+  - **Realization** — `docs/attestation/realization.md` (goals G4 and SP2,
+    and the reorg-sensitivity section 12.4) describes the derived valuation as
+    checkpoint-relative reprojection, monotone only relative to a checkpoint
+    policy.
+  - **Human companion** — `docs/attestation/human.md` re-values an immutable
+    record under a new history "possibly up, possibly down."
+  - **Model** — `packages/model` prose (`ledger.rs`, `lib.rs`) describes a reorg
+    as producing a fresh reference index / checkpoint reprojection, never a
+    downward-only revision.
+- Recorded impacts: Layer-0 version `0.5.0 → 0.5.1` (patch); architecture
+  semantic hash moved (`003bca0f… →…`); behavioural hash **unchanged**
+  (`04b0a11b…`), so no Realization letter/major revision was required; no label
+  anchor was minted or moved, so the anchor set and label registers are
+  unchanged (`labels-check` green throughout).
+- Verified: `labels-check`, `generated-check`, `plans-check`, and the `artifacts`
+  weld/versioning gate green via the flatpak SDK.
 
 ---
 
