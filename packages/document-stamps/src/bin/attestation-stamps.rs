@@ -53,13 +53,13 @@ struct Args {
     )]
     template: Option<PathBuf>,
     /// Render mode: where the generated `stamps.tex` is written.
-    #[arg(long, value_name = "FILE")]
+    #[arg(long, value_name = "FILE", requires = "template")]
     stamps_output: Option<PathBuf>,
     /// Render mode: where the `source-date-epoch` file is written.
-    #[arg(long, value_name = "FILE")]
+    #[arg(long, value_name = "FILE", requires = "template")]
     epoch_output: Option<PathBuf>,
     /// Render mode: the success-probe stamp touched on completion.
-    #[arg(long, value_name = "FILE")]
+    #[arg(long, value_name = "FILE", requires = "template")]
     stamp: Option<PathBuf>,
 }
 
