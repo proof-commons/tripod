@@ -6,10 +6,6 @@ This directory contains non-normative implementation planning for Tripod, the co
 
 When artifacts disagree:
 
-
-The executable model is current behavioural evidence and remains authoritative
-for its implemented reference behavior. It does not override the typed
-architecture or realization contract.
 | Subject | Owner |
 |---|---|
 | abstract economic interface | the Attestation specification |
@@ -22,6 +18,10 @@ architecture or realization contract.
 | sequencing | roadmap and phase cards |
 | unresolved implementation alternatives | research notes |
 | current execution | backlog |
+
+The executable model is current behavioral evidence and remains authoritative
+for its implemented reference behavior. It does not override the typed
+architecture or realization contract.
 
 A lower row never overrides an upper owner on that owner's subject.
 
@@ -160,7 +160,7 @@ The planning tree passes when:
 - upstream citations resolve;
 - generated label registers are current;
 - plan-local labels remain non-normative and non-identity-bearing while
-	uniqueness and citation checks pass;
+  uniqueness and citation checks pass;
 - weight limits pass;
 - current phase declarations agree;
 - no plan claims semantic authority;

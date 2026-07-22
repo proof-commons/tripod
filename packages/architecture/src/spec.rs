@@ -400,7 +400,7 @@ pub const DOCUMENT: DocumentSpec = DocumentSpec {
     specification: SpecificationBinding {
         version: "1.0.0",
         // sha256 over the newline-joined sorted distinct Layer-0 anchor
-        // names harvested from the document's §16 index (A- prefix
+        // names harvested from the document's §17 index (A- prefix
         // stripped): the pin ceremony of `rem:overview:anchor-pin`.
         anchor_set_hash: Some([
             0xb0, 0xca, 0xfa, 0xa4, 0x8a, 0xc2, 0xed, 0x38, 0x89, 0x84, 0xf6, 0xa2, 0xd7, 0x57,
