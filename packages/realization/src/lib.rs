@@ -97,8 +97,9 @@ pub use lifecycle::{
 #[allow(unused_imports)]
 pub(crate) use lifecycle::{build_lifecycle_graph, project_lifecycle_graph};
 pub use observation::{
-    ObservedAsset, ObservedCanonicalDelta, ObservedObject, ObservedObjectKind, ObservedObjectRef,
-    ObservedOpenFlow, ObservedRootEffect, ObservedSide, OperationObservation, validate_observation,
+    ObservedAsset, ObservedCanonicalFlow, ObservedCanonicalPartition, ObservedDestructionLeg,
+    ObservedIssuance, ObservedObject, ObservedObjectKind, ObservedObjectRef, ObservedOpenFlow,
+    ObservedRootEffect, ObservedSide, OperationObservation, validate_observation,
 };
 pub use operation::OperationRealization;
 pub use relation::{

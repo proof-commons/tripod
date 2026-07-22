@@ -12,10 +12,10 @@ use architecture::{
     ARCHITECTURE, AssetId, BoundId, DeltaKind, ObjectId, OperationId, ProjectionId,
 };
 use realization::{
-    ArchitectureBinding, Count, ObservedAsset, ObservedCanonicalDelta, ObservedObject,
-    ObservedObjectKind, ObservedObjectRef, ObservedSide, OperationObservation, ProofAlternativeId,
-    ProofKind, ProtocolAmount, RealizationScope, RelationId, RelationKind, RelationSubject,
-    RepresentationMode, derive,
+    ArchitectureBinding, Count, ObservedAsset, ObservedCanonicalFlow, ObservedCanonicalPartition,
+    ObservedObject, ObservedObjectKind, ObservedObjectRef, ObservedSide, OperationObservation,
+    ProofAlternativeId, ProofKind, ProtocolAmount, RealizationScope, RelationId, RelationKind,
+    RelationSubject, RepresentationMode, derive,
 };
 
 #[test]
@@ -114,14 +114,16 @@ fn compact_ash_observation() -> OperationObservation {
         ],
         protocol_signers: BTreeSet::new(),
         sponsor_signers: BTreeSet::new(),
-        canonical_deltas: vec![ObservedCanonicalDelta {
-            asset: AssetId::U,
-            kind: DeltaKind::OwnerlessLateral,
-            amount: ProtocolAmount::new(100).unwrap(),
-            sources: vec![input0, input1],
-            destinations: vec![output0],
-            destruction_tag: None,
-        }],
+        canonical_partition: ObservedCanonicalPartition {
+            issuances: Vec::new(),
+            flows: vec![ObservedCanonicalFlow {
+                asset: AssetId::U,
+                sources: vec![input0, input1],
+                destinations: vec![output0],
+                movement_kind: Some(DeltaKind::OwnerlessLateral),
+                destructions: Vec::new(),
+            }],
+        },
         open_flows: Vec::new(),
         root_effects: Vec::new(),
         projections: BTreeSet::from([ProjectionId::TransitionCertificate]),

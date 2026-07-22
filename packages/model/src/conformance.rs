@@ -7,7 +7,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use realization::{
-    Count, ObservedAsset, ObservedCanonicalDelta, ObservedObject, ObservedObjectKind,
+    Count, ObservedAsset, ObservedCanonicalFlow, ObservedCanonicalPartition,
+    ObservedDestructionLeg, ObservedIssuance, ObservedObject, ObservedObjectKind,
     ObservedObjectRef, ObservedOpenFlow, ObservedRootEffect, ObservedSide, OperationObservation,
     OwnerId, ProtocolAmount, RepresentationMode,
 };
@@ -32,7 +33,6 @@ pub enum ConformanceProjectionError {
     UnknownDeltaSource(u64),
     UnknownDeltaDestination(u64),
     UndeclaredCanonicalAsset,
-    UnexpectedIssuanceAuthority,
     HistoryLengthOverflow,
     NotOneTransitionExtension,
     HistoryPrefixChanged,
@@ -173,7 +173,7 @@ fn observe_transition(
         objects,
         protocol_signers,
         sponsor_signers,
-        canonical_deltas: observe_canonical_deltas(certificate, &reference_by_outpoint)?,
+        canonical_partition: observe_canonical_partition(certificate, &reference_by_outpoint)?,
         open_flows,
         root_effects: observe_root_effects(certificate),
         projections: observe_projections(certificate),
@@ -329,51 +329,81 @@ fn observed_amount(amount: Sat) -> Result<ProtocolAmount, ConformanceProjectionE
     ProtocolAmount::new(amount.get()).map_err(|_| ConformanceProjectionError::AmountOutOfDomain)
 }
 
-fn observe_canonical_deltas(
+fn observe_canonical_partition(
     certificate: &TransitionCertificate,
     reference_by_outpoint: &BTreeMap<OutPoint, ObservedObjectRef>,
-) -> Result<Vec<ObservedCanonicalDelta>, ConformanceProjectionError> {
-    certificate
-        .canonical_partition
-        .canonical_deltas()
-        .iter()
-        .map(|delta| {
-            if delta.authority_input.is_some() {
-                return Err(ConformanceProjectionError::UnexpectedIssuanceAuthority);
-            }
+) -> Result<ObservedCanonicalPartition, ConformanceProjectionError> {
+    let source_ref = |outpoint: &OutPoint| {
+        reference_by_outpoint
+            .get(outpoint)
+            .copied()
+            .ok_or(ConformanceProjectionError::UnknownDeltaSource(*outpoint))
+    };
+    let destination_ref = |outpoint: &OutPoint| {
+        reference_by_outpoint.get(outpoint).copied().ok_or(
+            ConformanceProjectionError::UnknownDeltaDestination(*outpoint),
+        )
+    };
 
-            let asset = crate::manifest::declared_asset(delta.asset)
-                .ok_or(ConformanceProjectionError::UndeclaredCanonicalAsset)?;
-            let sources = delta
-                .source_inputs
-                .iter()
-                .map(|outpoint| {
-                    reference_by_outpoint
-                        .get(outpoint)
-                        .copied()
-                        .ok_or(ConformanceProjectionError::UnknownDeltaSource(*outpoint))
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let destinations = delta
-                .destination_outputs
-                .iter()
-                .map(|outpoint| {
-                    reference_by_outpoint.get(outpoint).copied().ok_or(
-                        ConformanceProjectionError::UnknownDeltaDestination(*outpoint),
-                    )
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+    let mut issuances = Vec::new();
 
-            Ok(ObservedCanonicalDelta {
-                asset,
-                kind: architecture_delta_kind(delta.kind),
-                amount: observed_amount(delta.amount)?,
-                sources,
-                destinations,
-                destruction_tag: delta.destruction_tag.map(architecture_tag),
+    for issuance in &certificate.canonical_partition.issuances {
+        let asset = crate::manifest::declared_asset(issuance.asset)
+            .ok_or(ConformanceProjectionError::UndeclaredCanonicalAsset)?;
+        let authority = crate::manifest::declared_asset(issuance.authority_asset)
+            .ok_or(ConformanceProjectionError::UndeclaredCanonicalAsset)?;
+        let authority_input = source_ref(&issuance.authority_input)?;
+        let destinations = issuance
+            .destination_outputs
+            .iter()
+            .map(&destination_ref)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        issuances.push(ObservedIssuance {
+            asset,
+            authority,
+            authority_input,
+            amount: observed_amount(issuance.amount)?,
+            destinations,
+        });
+    }
+
+    let mut flows = Vec::new();
+
+    for flow in &certificate.canonical_partition.flows {
+        let asset = crate::manifest::declared_asset(flow.asset)
+            .ok_or(ConformanceProjectionError::UndeclaredCanonicalAsset)?;
+        let sources = flow
+            .source_inputs
+            .iter()
+            .map(&source_ref)
+            .collect::<Result<Vec<_>, _>>()?;
+        let destinations = flow
+            .destination_outputs
+            .iter()
+            .map(&destination_ref)
+            .collect::<Result<Vec<_>, _>>()?;
+        let destructions = flow
+            .destructions
+            .iter()
+            .map(|leg| {
+                Ok(ObservedDestructionLeg {
+                    tag: architecture_tag(leg.tag),
+                    amount: observed_amount(leg.amount)?,
+                })
             })
-        })
-        .collect()
+            .collect::<Result<Vec<_>, ConformanceProjectionError>>()?;
+
+        flows.push(ObservedCanonicalFlow {
+            asset,
+            sources,
+            destinations,
+            movement_kind: flow.movement_kind.map(architecture_delta_kind),
+            destructions,
+        });
+    }
+
+    Ok(ObservedCanonicalPartition { issuances, flows })
 }
 
 fn architecture_delta_kind(kind: crate::DeltaKind) -> architecture::DeltaKind {

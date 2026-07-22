@@ -48,15 +48,45 @@ pub struct ObservedObject {
     pub representation: RepresentationMode,
 }
 
-/// One canonical closed-asset delta derived from a transition certificate.
+/// One observed issuance: an authority mints `amount` of `asset` into
+/// the destination objects.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ObservedCanonicalDelta {
+pub struct ObservedIssuance {
     pub asset: AssetId,
-    pub kind: DeltaKind,
+    pub authority: AssetId,
+    pub authority_input: ObservedObjectRef,
     pub amount: ProtocolAmount,
+    pub destinations: Vec<ObservedObjectRef>,
+}
+
+/// One observed destruction leg inside a flow.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ObservedDestructionLeg {
+    pub tag: TagId,
+    pub amount: ProtocolAmount,
+}
+
+/// One exact observed canonical flow: a source set, a destination set,
+/// an optional movement kind, and zero or more destruction legs.
+///
+/// A flow may carry both a movement and destruction legs (partial clear,
+/// terminal settlement); they intentionally share this flow's single
+/// source set. Across flows, no source is reused — that is the
+/// distinction the flattened delta rows could not express.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ObservedCanonicalFlow {
+    pub asset: AssetId,
     pub sources: Vec<ObservedObjectRef>,
     pub destinations: Vec<ObservedObjectRef>,
-    pub destruction_tag: Option<TagId>,
+    pub movement_kind: Option<DeltaKind>,
+    pub destructions: Vec<ObservedDestructionLeg>,
+}
+
+/// The exact observed canonical partition of one operation.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ObservedCanonicalPartition {
+    pub issuances: Vec<ObservedIssuance>,
+    pub flows: Vec<ObservedCanonicalFlow>,
 }
 
 /// One exact open-value flow.
@@ -82,7 +112,7 @@ pub struct OperationObservation {
     pub objects: Vec<ObservedObject>,
     pub protocol_signers: BTreeSet<OwnerId>,
     pub sponsor_signers: BTreeSet<OwnerId>,
-    pub canonical_deltas: Vec<ObservedCanonicalDelta>,
+    pub canonical_partition: ObservedCanonicalPartition,
     pub open_flows: Vec<ObservedOpenFlow>,
     pub root_effects: Vec<ObservedRootEffect>,
     pub projections: BTreeSet<ProjectionId>,
@@ -106,55 +136,65 @@ impl OperationObservation {
             .map(|object| object.reference)
             .collect::<BTreeSet<_>>();
 
-        for delta in &mut self.canonical_deltas {
-            delta.sources.sort();
-            delta.destinations.sort();
+        for issuance in &mut self.canonical_partition.issuances {
+            check_reference(issuance.authority_input, ObservedSide::Input, &known)?;
 
-            if has_duplicates(&delta.sources) || has_duplicates(&delta.destinations) {
+            issuance.destinations.sort();
+
+            if has_duplicates(&issuance.destinations) {
                 return Err(RealizationError::DuplicateObservedReference);
             }
 
-            for source in &delta.sources {
-                if source.side != ObservedSide::Input {
-                    return Err(RealizationError::WrongObservedReferenceSide(*source));
-                }
+            for destination in &issuance.destinations {
+                check_reference(*destination, ObservedSide::Output, &known)?;
+            }
+        }
 
-                if !known.contains(source) {
-                    return Err(RealizationError::UnknownObservedObject(*source));
-                }
+        for flow in &mut self.canonical_partition.flows {
+            flow.sources.sort();
+            flow.destinations.sort();
+
+            if has_duplicates(&flow.sources) || has_duplicates(&flow.destinations) {
+                return Err(RealizationError::DuplicateObservedReference);
             }
 
-            for destination in &delta.destinations {
-                if destination.side != ObservedSide::Output {
-                    return Err(RealizationError::WrongObservedReferenceSide(*destination));
-                }
+            for source in &flow.sources {
+                check_reference(*source, ObservedSide::Input, &known)?;
+            }
 
-                if !known.contains(destination) {
-                    return Err(RealizationError::UnknownObservedObject(*destination));
+            for destination in &flow.destinations {
+                check_reference(*destination, ObservedSide::Output, &known)?;
+            }
+
+            flow.destructions.sort_by_key(|leg| leg.tag.code());
+
+            for pair in flow.destructions.windows(2) {
+                if pair[0].tag == pair[1].tag {
+                    return Err(RealizationError::DuplicateObservedReference);
                 }
             }
         }
 
-        self.canonical_deltas.sort_by(|left, right| {
+        self.canonical_partition.flows.sort_by(|left, right| {
             (
                 left.asset.code(),
-                left.kind.code(),
-                left.amount,
                 &left.sources,
                 &left.destinations,
-                left.destruction_tag.map(TagId::code),
+                left.movement_kind.map(DeltaKind::code),
             )
                 .cmp(&(
                     right.asset.code(),
-                    right.kind.code(),
-                    right.amount,
                     &right.sources,
                     &right.destinations,
-                    right.destruction_tag.map(TagId::code),
+                    right.movement_kind.map(DeltaKind::code),
                 ))
         });
 
-        validate_delta_reference_partition(&self.canonical_deltas)?;
+        self.canonical_partition
+            .issuances
+            .sort_by_key(|issuance| (issuance.asset.code(), issuance.amount));
+
+        validate_partition_reference_layout(&self.canonical_partition)?;
 
         for flow in &mut self.open_flows {
             flow.sources.sort();
@@ -221,20 +261,49 @@ fn has_duplicates<T: Ord>(values: &[T]) -> bool {
     values.windows(2).any(|pair| pair[0] == pair[1])
 }
 
-fn validate_delta_reference_partition(
-    deltas: &[ObservedCanonicalDelta],
+fn check_reference(
+    reference: ObservedObjectRef,
+    side: ObservedSide,
+    known: &BTreeSet<ObservedObjectRef>,
+) -> Result<(), RealizationError> {
+    if reference.side != side {
+        return Err(RealizationError::WrongObservedReferenceSide(reference));
+    }
+
+    if !known.contains(&reference) {
+        return Err(RealizationError::UnknownObservedObject(reference));
+    }
+
+    Ok(())
+}
+
+/// The exact between-partition reference rule: a source reference is
+/// used by exactly one flow, and a destination reference is used by
+/// exactly one flow or issuance. Within a single flow, a movement and
+/// its destruction legs share that flow's one source set — which is not
+/// a reuse, because the flow has a single source list.
+fn validate_partition_reference_layout(
+    partition: &ObservedCanonicalPartition,
 ) -> Result<(), RealizationError> {
     let mut source_uses = BTreeSet::new();
     let mut destination_uses = BTreeSet::new();
 
-    for delta in deltas {
-        for source in &delta.sources {
+    for flow in &partition.flows {
+        for source in &flow.sources {
             if !source_uses.insert(*source) {
                 return Err(RealizationError::ObservedCanonicalPartitionOverlap);
             }
         }
 
-        for destination in &delta.destinations {
+        for destination in &flow.destinations {
+            if !destination_uses.insert(*destination) {
+                return Err(RealizationError::ObservedCanonicalPartitionOverlap);
+            }
+        }
+    }
+
+    for issuance in &partition.issuances {
+        for destination in &issuance.destinations {
             if !destination_uses.insert(*destination) {
                 return Err(RealizationError::ObservedCanonicalPartitionOverlap);
             }

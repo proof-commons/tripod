@@ -305,99 +305,137 @@ fn canonical_delta_policy_holds(
     expected: &BTreeSet<ExpectedCanonicalDelta>,
     observation: &OperationObservation,
 ) -> Result<bool, RealizationError> {
-    let actual = observation
-        .canonical_deltas
-        .iter()
-        .map(|delta| ExpectedCanonicalDelta {
-            asset: delta.asset,
-            kind: delta.kind,
-            destruction_tag: delta.destruction_tag,
-        })
-        .collect::<BTreeSet<_>>();
+    let partition = &observation.canonical_partition;
 
-    if &actual != expected {
+    // 1. The active family set implied by the exact partition equals the
+    //    manifest's expected family set.
+    if &observed_active_families(partition) != expected {
         return Ok(false);
     }
 
-    for delta in &observation.canonical_deltas {
-        if !canonical_delta_shape_holds(delta) {
+    // 2. Each issuance issues its exact positive amount into a nonempty
+    //    destination set.
+    for issuance in &partition.issuances {
+        if issuance.amount.is_zero() || issuance.destinations.is_empty() {
             return Ok(false);
         }
 
-        let Some(source_total) = sum_delta_side(
+        let Some(destination_total) = sum_partition_side(
             observation,
-            &delta.sources,
-            delta.asset,
-            ObservedSide::Input,
-        )?
-        else {
-            return Ok(false);
-        };
-        let Some(destination_total) = sum_delta_side(
-            observation,
-            &delta.destinations,
-            delta.asset,
+            &issuance.destinations,
+            issuance.asset,
             ObservedSide::Output,
         )?
         else {
             return Ok(false);
         };
 
-        let amount_is_consistent = match delta.kind {
-            DeltaKind::Lateral | DeltaKind::OwnerlessLateral => {
-                source_total == delta.amount && destination_total == delta.amount
-            }
-            DeltaKind::Issuance => delta.sources.is_empty() && destination_total == delta.amount,
-            DeltaKind::Destruction => {
-                destination_total.is_zero()
-                    && source_total == delta.amount
-                    && delta.destruction_tag.is_some()
-            }
-        };
-
-        if !amount_is_consistent {
+        if destination_total != issuance.amount {
             return Ok(false);
         }
     }
 
-    Ok(expected.iter().all(|delta| match delta.kind {
-        DeltaKind::OwnerlessLateral => canonical_delta_membership_holds(
-            observation,
-            ObjectId::Ash,
-            DeltaKind::OwnerlessLateral,
-        ),
+    // 3. Each flow satisfies the exact source = destination + destruction
+    //    equation and the movement-kind rule.
+    for flow in &partition.flows {
+        if !canonical_flow_holds(observation, flow)? {
+            return Ok(false);
+        }
+    }
+
+    // 4. Each movement family covers exactly its protocol objects.
+    Ok(expected.iter().all(|family| match family.kind {
+        DeltaKind::OwnerlessLateral => {
+            movement_membership_holds(observation, ObjectId::Ash, DeltaKind::OwnerlessLateral)
+        }
         DeltaKind::Lateral => {
-            canonical_delta_membership_holds(observation, ObjectId::ReceiptLive, DeltaKind::Lateral)
+            movement_membership_holds(observation, ObjectId::ReceiptLive, DeltaKind::Lateral)
         }
         _ => true,
     }))
 }
 
-fn canonical_delta_shape_holds(delta: &crate::ObservedCanonicalDelta) -> bool {
-    if delta.amount.is_zero() {
-        return false;
+/// The active delta-family set implied by an observed partition.
+fn observed_active_families(
+    partition: &crate::ObservedCanonicalPartition,
+) -> BTreeSet<ExpectedCanonicalDelta> {
+    let mut families = BTreeSet::new();
+
+    for issuance in &partition.issuances {
+        families.insert(ExpectedCanonicalDelta {
+            asset: issuance.asset,
+            kind: DeltaKind::Issuance,
+            destruction_tag: None,
+        });
     }
 
-    match delta.kind {
-        DeltaKind::Lateral | DeltaKind::OwnerlessLateral => {
-            !delta.sources.is_empty()
-                && !delta.destinations.is_empty()
-                && delta.destruction_tag.is_none()
+    for flow in &partition.flows {
+        if let Some(kind) = flow.movement_kind {
+            families.insert(ExpectedCanonicalDelta {
+                asset: flow.asset,
+                kind,
+                destruction_tag: None,
+            });
         }
-        DeltaKind::Issuance => {
-            delta.sources.is_empty()
-                && !delta.destinations.is_empty()
-                && delta.destruction_tag.is_none()
-        }
-        DeltaKind::Destruction => {
-            !delta.sources.is_empty()
-                && delta.destinations.is_empty()
-                && delta.destruction_tag.is_some()
+
+        for leg in &flow.destructions {
+            families.insert(ExpectedCanonicalDelta {
+                asset: flow.asset,
+                kind: DeltaKind::Destruction,
+                destruction_tag: Some(leg.tag),
+            });
         }
     }
+
+    families
 }
 
-fn sum_delta_side(
+/// Exact per-flow arithmetic: nonempty sources, `source = destination +
+/// Σ destruction`, movement kind present iff the destination is
+/// positive, and every destruction leg positive.
+fn canonical_flow_holds(
+    observation: &OperationObservation,
+    flow: &crate::ObservedCanonicalFlow,
+) -> Result<bool, RealizationError> {
+    if flow.sources.is_empty() {
+        return Ok(false);
+    }
+
+    let Some(source_total) =
+        sum_partition_side(observation, &flow.sources, flow.asset, ObservedSide::Input)?
+    else {
+        return Ok(false);
+    };
+
+    let Some(destination_total) = sum_partition_side(
+        observation,
+        &flow.destinations,
+        flow.asset,
+        ObservedSide::Output,
+    )?
+    else {
+        return Ok(false);
+    };
+
+    let destruction_total =
+        ProtocolAmount::checked_sum(flow.destructions.iter().map(|leg| leg.amount))?;
+
+    if source_total != destination_total.checked_add(destruction_total)? {
+        return Ok(false);
+    }
+
+    if flow.movement_kind.is_some() == destination_total.is_zero() {
+        return Ok(false);
+    }
+
+    if flow.destructions.iter().any(|leg| leg.amount.is_zero()) {
+        return Ok(false);
+    }
+
+    Ok(true)
+}
+
+fn sum_partition_side(
     observation: &OperationObservation,
     references: &[ObservedObjectRef],
     asset: AssetId,
@@ -424,7 +462,7 @@ fn sum_delta_side(
     Ok(Some(total))
 }
 
-fn canonical_delta_membership_holds(
+fn movement_membership_holds(
     observation: &OperationObservation,
     object: ObjectId,
     expected_kind: DeltaKind,
@@ -436,16 +474,18 @@ fn canonical_delta_membership_holds(
         .map(|observed| observed.reference)
         .collect::<BTreeSet<_>>();
     let source_refs = observation
-        .canonical_deltas
+        .canonical_partition
+        .flows
         .iter()
-        .filter(|delta| delta.kind == expected_kind)
-        .flat_map(|delta| delta.sources.iter().copied())
+        .filter(|flow| flow.movement_kind == Some(expected_kind))
+        .flat_map(|flow| flow.sources.iter().copied())
         .collect::<BTreeSet<_>>();
     let destination_refs = observation
-        .canonical_deltas
+        .canonical_partition
+        .flows
         .iter()
-        .filter(|delta| delta.kind == expected_kind)
-        .flat_map(|delta| delta.destinations.iter().copied())
+        .filter(|flow| flow.movement_kind == Some(expected_kind))
+        .flat_map(|flow| flow.destinations.iter().copied())
         .collect::<BTreeSet<_>>();
     let expected_sources = protocol_refs
         .iter()

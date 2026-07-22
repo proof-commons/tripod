@@ -5,10 +5,11 @@ use architecture::{
 };
 
 use crate::{
-    Count, ObservedAsset, ObservedCanonicalDelta, ObservedObject, ObservedObjectKind,
-    ObservedObjectRef, ObservedOpenFlow, ObservedRootEffect, ObservedSide, OperationObservation,
-    OwnerId, ProtocolAmount, RealizationScope, RelationId, RelationKind, RelationStatus,
-    RelationSubject, RepresentationMode, TransactionSide, derive, evaluate_operation,
+    Count, ObservedAsset, ObservedCanonicalFlow, ObservedCanonicalPartition, ObservedObject,
+    ObservedObjectKind, ObservedObjectRef, ObservedOpenFlow, ObservedRootEffect, ObservedSide,
+    OperationObservation, OwnerId, ProtocolAmount, RealizationScope, RelationId, RelationKind,
+    RelationStatus, RelationSubject, RepresentationMode, TransactionSide, derive,
+    evaluate_operation,
 };
 
 type ObservationMutation = Box<dyn Fn(&mut OperationObservation)>;
@@ -72,14 +73,16 @@ fn valid_split_observation() -> OperationObservation {
         ],
         protocol_signers: BTreeSet::from([ALICE]),
         sponsor_signers: BTreeSet::new(),
-        canonical_deltas: vec![ObservedCanonicalDelta {
-            asset: AssetId::U,
-            kind: DeltaKind::Lateral,
-            amount: ProtocolAmount::new(100).unwrap(),
-            sources: vec![input0],
-            destinations: vec![output0, output1],
-            destruction_tag: None,
-        }],
+        canonical_partition: ObservedCanonicalPartition {
+            issuances: Vec::new(),
+            flows: vec![ObservedCanonicalFlow {
+                asset: AssetId::U,
+                sources: vec![input0],
+                destinations: vec![output0, output1],
+                movement_kind: Some(DeltaKind::Lateral),
+                destructions: Vec::new(),
+            }],
+        },
         open_flows: Vec::new(),
         root_effects: Vec::new(),
         projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
@@ -364,7 +367,9 @@ fn valid_live_transfer_satisfies_every_runtime_relation() {
 fn canonical_delta_amount_mutation_fails() {
     let mut observation = valid_split_observation();
 
-    observation.canonical_deltas[0].amount = ProtocolAmount::new(99).unwrap();
+    // Break the flow arithmetic: the source value no longer sums to the
+    // destinations.
+    observation.objects[0].value = ProtocolAmount::new(99).unwrap();
 
     let report = evaluate(&observation);
 
@@ -400,7 +405,10 @@ fn zero_value_live_output_fails_recognition() {
 fn zero_amount_lateral_delta_fails_policy() {
     let mut observation = valid_split_observation();
 
-    observation.canonical_deltas[0].amount = ProtocolAmount::ZERO;
+    // A movement flow whose destination total is zero fails the
+    // movement-kind rule.
+    observation.objects[1].value = ProtocolAmount::ZERO;
+    observation.objects[2].value = ProtocolAmount::ZERO;
 
     let report = evaluate(&observation);
     assert!(failed(&report, &canonical_delta_policy()));
@@ -500,7 +508,7 @@ fn zero_value_unclaimed_plain_lbtc_fails_recognition() {
 #[test]
 fn canonical_delta_empty_duplicate_fails() {
     let mut missing = valid_split_observation();
-    missing.canonical_deltas.clear();
+    missing.canonical_partition.flows.clear();
 
     let missing_report = evaluate(&missing);
 
@@ -512,8 +520,9 @@ fn canonical_delta_empty_duplicate_fails() {
     let realization = pilot_realization();
     let mut duplicated = valid_split_observation();
     duplicated
-        .canonical_deltas
-        .push(duplicated.canonical_deltas[0].clone());
+        .canonical_partition
+        .flows
+        .push(duplicated.canonical_partition.flows[0].clone());
 
     let error = evaluate_operation(
         &realization.relation_graph,
@@ -672,7 +681,8 @@ fn relation_cases() -> Vec<RelationCase> {
         (
             "wrong canonical delta kind",
             Box::new(|observation| {
-                observation.canonical_deltas[0].kind = DeltaKind::OwnerlessLateral;
+                observation.canonical_partition.flows[0].movement_kind =
+                    Some(DeltaKind::OwnerlessLateral);
             }),
             canonical_delta_policy(),
         ),

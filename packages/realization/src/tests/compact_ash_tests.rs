@@ -5,10 +5,11 @@ use architecture::{
 };
 
 use crate::{
-    Count, ObservedAsset, ObservedCanonicalDelta, ObservedObject, ObservedObjectKind,
-    ObservedObjectRef, ObservedOpenFlow, ObservedRootEffect, ObservedSide, OperationObservation,
-    OwnerId, ProtocolAmount, RealizationScope, RelationId, RelationKind, RelationStatus,
-    RelationSubject, RepresentationMode, TransactionSide, derive, evaluate_operation,
+    Count, ObservedAsset, ObservedCanonicalFlow, ObservedCanonicalPartition, ObservedObject,
+    ObservedObjectKind, ObservedObjectRef, ObservedOpenFlow, ObservedRootEffect, ObservedSide,
+    OperationObservation, OwnerId, ProtocolAmount, RealizationScope, RelationId, RelationKind,
+    RelationStatus, RelationSubject, RepresentationMode, TransactionSide, derive,
+    evaluate_operation,
 };
 
 type ObservationMutation = Box<dyn Fn(&mut OperationObservation)>;
@@ -81,14 +82,16 @@ fn valid_observation() -> OperationObservation {
         ],
         protocol_signers: BTreeSet::new(),
         sponsor_signers: BTreeSet::new(),
-        canonical_deltas: vec![ObservedCanonicalDelta {
-            asset: AssetId::U,
-            kind: DeltaKind::OwnerlessLateral,
-            amount: ProtocolAmount::new(100).unwrap(),
-            sources: vec![input0, input1],
-            destinations: vec![output0],
-            destruction_tag: None,
-        }],
+        canonical_partition: ObservedCanonicalPartition {
+            issuances: Vec::new(),
+            flows: vec![ObservedCanonicalFlow {
+                asset: AssetId::U,
+                sources: vec![input0, input1],
+                destinations: vec![output0],
+                movement_kind: Some(DeltaKind::OwnerlessLateral),
+                destructions: Vec::new(),
+            }],
+        },
         open_flows: Vec::new(),
         root_effects: Vec::new(),
         projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
@@ -334,7 +337,9 @@ fn compact_ash_weld_accepts_the_published_architecture() {
 fn compact_ash_canonical_delta_amount_mutation_fails() {
     let mut observation = valid_observation();
 
-    observation.canonical_deltas[0].amount = ProtocolAmount::new(99).unwrap();
+    // Break the flow arithmetic: the destination value no longer sums to
+    // the sources.
+    observation.objects[2].value = ProtocolAmount::new(99).unwrap();
 
     let report = evaluate(&observation);
 
@@ -378,17 +383,19 @@ fn ash_with_owner_fails_recognition() {
 }
 
 #[test]
-fn empty_zero_canonical_delta_fails_policy() {
+fn empty_flow_fails_policy() {
     let mut observation = valid_observation();
 
-    observation.canonical_deltas.push(ObservedCanonicalDelta {
-        asset: AssetId::U,
-        kind: DeltaKind::OwnerlessLateral,
-        amount: ProtocolAmount::ZERO,
-        sources: Vec::new(),
-        destinations: Vec::new(),
-        destruction_tag: None,
-    });
+    observation
+        .canonical_partition
+        .flows
+        .push(ObservedCanonicalFlow {
+            asset: AssetId::U,
+            sources: Vec::new(),
+            destinations: Vec::new(),
+            movement_kind: None,
+            destructions: Vec::new(),
+        });
 
     let report = evaluate(&observation);
     assert!(failed(&report, &canonical_delta_policy()));
@@ -398,7 +405,9 @@ fn empty_zero_canonical_delta_fails_policy() {
 fn zero_amount_ownerless_lateral_delta_fails_policy() {
     let mut observation = valid_observation();
 
-    observation.canonical_deltas[0].amount = ProtocolAmount::ZERO;
+    // A movement flow whose destination total is zero fails the
+    // movement-kind rule.
+    observation.objects[2].value = ProtocolAmount::ZERO;
 
     let report = evaluate(&observation);
     assert!(failed(&report, &canonical_delta_policy()));
@@ -538,7 +547,7 @@ fn relation_cases() -> Vec<RelationCase> {
         (
             "wrong canonical delta kind",
             Box::new(|observation| {
-                observation.canonical_deltas[0].kind = DeltaKind::Lateral;
+                observation.canonical_partition.flows[0].movement_kind = Some(DeltaKind::Lateral);
             }),
             canonical_delta_policy(),
         ),
