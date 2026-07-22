@@ -1004,11 +1004,12 @@ where
     // the filesystem on the way. Build mode has an explicit report/stamp
     // destination and is exempt. `finish_check_command` still performs
     // its own refusal for direct callers.
-    if output.report.is_none() && output.stamp.is_none() {
-        if let Some(record) = stdout_tty_refusal_record(command_name) {
-            let _ignored = emit_control_plane_record(&record);
-            return CommandExit::Usage.exit_code();
-        }
+    if output.report.is_none()
+        && output.stamp.is_none()
+        && let Some(record) = stdout_tty_refusal_record(command_name)
+    {
+        let _ignored = emit_control_plane_record(&record);
+        return CommandExit::Usage.exit_code();
     }
 
     let report = match run() {
