@@ -41,19 +41,31 @@ declared role is a diagnostic, not a silent reclassification.
 
 ## Output or stamp · `rule:build:output-or-stamp`
 
-Every Meson-invoked command declares its effect as exactly one of:
+Every Meson-invoked command declares its effect through
+argument-supplied paths, never ambient ones, as some combination of:
 
 1. real output files, written only to argument-supplied paths under
-   (`[ADR010-rule:output:assets]`);
+   (`[ADR010-rule:output:assets]`) — a generator's publications, or a
+   checker's explicit `--report <file>`;
 2. a `--stamp <file>` argument: on success the command creates the file
    empty if absent, or updates its modification time if present, and
    writes nothing else to it.
 
-On failure the stamp is left untouched, so the build graph keeps the
-target dirty and reruns it. The stamp carries no content; stdout remains
-the JSON report under (`[ADR010-rule:output:json]`). Stamp handling is
-implemented once, in the shared command-line crate, so every checker
-behaves identically.
+A checker runs in one of two modes. Invoked directly with neither
+`--report` nor `--stamp`, it writes its JSON result to stdout under
+(`[ADR010-rule:output:json]`) and touches no stamp; a terminal stdout is
+refused. Invoked by Meson with the reciprocal `--report`/`--stamp` pair,
+it publishes the JSON result as an explicit report asset with a
+compare-if-changed atomic write, keeps stdout empty, and touches the
+success stamp only after the report is written. A lone member of the
+pair is a usage error.
+
+On failure — a failed check, a failed report write, or a failed stamp
+touch — the stamp is left untouched, so the build graph keeps the target
+dirty and reruns it. The stamp carries no content and is the graph's
+success fact: report publication always precedes it. Both modes and
+stamp handling are implemented once, in the shared command-line crate,
+so every checker behaves identically.
 
 ## The build system owns the census · `rule:build:census`
 
@@ -216,9 +228,10 @@ ADR-014 is implemented when:
 - no first-party library or binary crate compiles a repository path
   into itself, and grep finds no `env!("CARGO_MANIFEST_DIR")` outside
   test fixtures;
-- every checker accepts `--stamp` with touch semantics from the shared
-  command-line crate, and every generator writes only argument-supplied
-  outputs;
+- every checker publishes its result through the shared command-line
+  crate's two-mode contract — direct-mode stdout, or a reciprocal
+  `--report`/`--stamp` pair whose stamp is touched only after the report
+  is written — and every generator writes only argument-supplied outputs;
 - every subject directory's `meson.build` declares its files in
   explicit hand-managed lists, and the top-level build assembles the
   role groups from those lists into every checker and generator

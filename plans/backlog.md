@@ -244,7 +244,7 @@ does not depend on an unresolved semantic decision.
 | `F1-004` | P1 | **DONE** | Realization accepts multiple generic sponsor envelopes. |
 | `F1-005` | P1 | **DONE** | Paper stamp success output defeats claimed Ninja restat behavior. |
 | `F1-006` | P1 | **DONE** | Sponsored quiescence ignores active-backing-cap-blocked requests. |
-| `F1-007` | P2 | **BLOCKED** | Checker stamps can be updated despite command failure. |
+| `F1-007` | P2 | **DONE** | Checker stamps can be updated despite command failure. |
 | `F1-008` | P2 | **DONE** | Malformed non-PA Realization imports may disappear silently. |
 | `F1-009` | P2 | **DONE** | Arbitrary `tree_ref` can mix selected-ref metadata with worktree bytes. |
 | `F1-010` | P2 | **DONE** | CI cleanliness misses staged and untracked nonignored files. |
@@ -257,7 +257,7 @@ does not depend on an unresolved semantic decision.
 | `F1-017` | Gate | **BLOCKED** | Complete Phase-1 gate has not been run and recorded. |
 | `F1-018` | P1 | **DONE** | Realization accepts zero-valued ordinary L-BTC that the model rejects. |
 | `F1-019` | P2 | **DONE** | Partial `attestation-stamps` render arguments silently select JSON mode. |
-| `F1-020` | P1 | **TODO** | One command cannot atomically commit stdout success and a filesystem stamp. |
+| `F1-020` | P1 | **DONE** | One command cannot atomically commit stdout success and a filesystem stamp. |
 | `F1-021` | P2 | **DONE** | Public query reduction can produce an invalid zero-denominator rational. |
 | `F1-022` | P2 | **DONE** | `execwrap` child-status propagation contradicts the documented global exit classes. |
 | `F1-023` | P1 | **TODO** | Reorg reprojection may increase valuation despite downward-only Layer-0 wording. |
@@ -930,6 +930,25 @@ and touches the stamp only after successful child exit.
 
 Update ADR-014 so the contract is mechanically satisfiable.
 
+#### Evidence · DONE
+
+- Commit adds the two-mode contract to `cli-common`. `CheckOutputArgs`
+  carries reciprocal `--report`/`--stamp` clap options (a lone member is a
+  usage error). `finish_check_command` publishes the result under the active
+  mode: direct mode writes JSON to stdout (refused on a terminal, exit class
+  2), build mode writes the report compare-if-changed via an atomic
+  sibling-temp rename and touches the success stamp only afterward.
+- The impossible ordering is gone because build mode never writes stdout: it
+  derives in memory, publishes the report, then touches the stamp last. A
+  failed report write leaves no success stamp; the target stays dirty.
+- ADR-014's output-or-stamp rule is rewritten to describe the two modes,
+  report-before-stamp, and the all-or-nothing pair, so the contract is now
+  mechanically satisfiable.
+- Tests: report-then-stamp success, compare-if-changed on rerun, half-specified
+  mode rejected, and a failed report write leaving the stamp untouched.
+- Verified: `cli-common` suite, clippy `-D warnings`, and all 10 Meson lanes
+  green via the flatpak SDK.
+
 ---
 
 ### F1-007 — Implement failure-safe checker completion
@@ -954,6 +973,27 @@ Test:
 - unchanged prior stamp on every pre-stamp failure.
 
 No binary may carry a private copy of the transaction ordering.
+
+#### Evidence · DONE
+
+- Commit centralizes the build-mode contract in `cli-common::run_check_command`,
+  which installs the panic hook and tracing, runs the check, and publishes
+  through `finish_check_command`. `check-generated`, `check-labels`, and
+  `census-audit` all migrate to it: each drops its `--stamp`-only argument and
+  private `touch_stamp`/`emit`/TTY-refusal handling and flattens
+  `CheckOutputArgs`. No binary carries a private copy of the ordering.
+- The Meson `checker_wrap` stdout-redirection shell shim is removed; the three
+  Rust checker targets consume `--report @OUTPUT1@ --stamp @OUTPUT0@` directly,
+  taking shell redirection off the correctness boundary.
+- Failure safety: a failed check returns `Err` from the closure (mapping to the
+  failure exit class) after emitting per-item diagnostics, so neither the report
+  nor the stamp is written; the shared `finish_check_command` tests cover the
+  pre-stamp failure leaving the stamp untouched.
+- Residual: broken-destination / full-destination / rename-failure fault
+  injection beyond the parent-is-a-file case is not separately simulated; the
+  atomic-rename path is shared and covered by the failed-write test.
+- Verified: checker crate suites, clippy `-D warnings`, all 10 Meson lanes, and
+  the mocked Meson contract green via the flatpak SDK.
 
 ---
 

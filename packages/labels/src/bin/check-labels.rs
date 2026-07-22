@@ -2,14 +2,14 @@
 //!
 //! Every subject file arrives by role-tagged argument (ADR-014): the
 //! build system states census membership, this binary validates shape
-//! and re-verifies the census against the on-disk discovery. On
-//! success the JSON report goes to stdout and `--stamp` (when given)
-//! is touched for the build graph's freshness tracking.
+//! and re-verifies the census against the on-disk discovery. On success
+//! the JSON report is published under the active output mode (ADR-014):
+//! direct-mode stdout, or a build-mode report asset plus success stamp.
 
 use std::{path::PathBuf, process::ExitCode};
 
 use clap::Parser;
-use cli_common::{BaseArgs, install_json_panic_hook, run_stdout_json_command, touch_stamp};
+use cli_common::{BaseArgs, CheckOutputArgs, install_json_panic_hook, run_check_command};
 
 const COMMAND_NAME: &str = "check-labels";
 
@@ -58,9 +58,8 @@ struct Args {
     /// The generated model-label publication.
     #[arg(long, value_name = "FILE")]
     model_labels_json: PathBuf,
-    /// Stamp file touched on success (ADR-014 output-or-stamp).
-    #[arg(long, value_name = "FILE")]
-    stamp: Option<PathBuf>,
+    #[command(flatten)]
+    output: CheckOutputArgs,
 }
 
 impl Args {
@@ -90,18 +89,21 @@ fn main() -> ExitCode {
     // with a JSON-only record (ADR-010 early-startup rule).
     install_json_panic_hook(COMMAND_NAME);
     let args = cli_common::parse_args_or_exit::<Args>();
-    run_stdout_json_command(COMMAND_NAME, args.base.debug, tracing::Level::INFO, || {
-        let paths = args.census()?;
-        let (report, diagnostics) = labels::check_repository(&paths);
-        if report.valid {
-            if let Some(stamp) = &args.stamp {
-                touch_stamp(stamp).map_err(|error| error.to_string())?;
+    run_check_command(
+        COMMAND_NAME,
+        args.base.debug,
+        tracing::Level::INFO,
+        &args.output,
+        || {
+            let paths = args.census()?;
+            let (report, diagnostics) = labels::check_repository(&paths);
+            if report.valid {
+                return Ok(report);
             }
-            return Ok(report);
-        }
-        for diagnostic in diagnostics {
-            tracing::error!(code = ?diagnostic.code, path = %diagnostic.path, line = diagnostic.line, message = %diagnostic.message, "label check failed");
-        }
-        Err("repository label validation failed".to_owned())
-    })
+            for diagnostic in diagnostics {
+                tracing::error!(code = ?diagnostic.code, path = %diagnostic.path, line = diagnostic.line, message = %diagnostic.message, "label check failed");
+            }
+            Err("repository label validation failed".to_owned())
+        },
+    )
 }

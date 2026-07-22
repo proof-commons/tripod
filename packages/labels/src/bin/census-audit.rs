@@ -5,14 +5,15 @@
 //! the explicit per-directory exclusion files, and the git program to
 //! use. This binary invokes `git ls-files` itself so the audit is
 //! fresh on every build — a tracked file added without a list entry
-//! fails immediately, not at the next reconfigure. On success the
-//! JSON report goes to stdout and `--stamp` (when given) is touched.
+//! fails immediately, not at the next reconfigure. On success the JSON
+//! report is published under the active output mode (ADR-014):
+//! direct-mode stdout, or a build-mode report asset plus success stamp.
 
 use std::{path::PathBuf, process::ExitCode};
 
 use anyhow::Context;
 use clap::Parser;
-use cli_common::{BaseArgs, install_json_panic_hook, run_stdout_json_command, touch_stamp};
+use cli_common::{BaseArgs, CheckOutputArgs, install_json_panic_hook, run_check_command};
 use labels::census::audit_census;
 
 const COMMAND_NAME: &str = "census-audit";
@@ -40,9 +41,8 @@ struct Args {
     /// their directory's meson.build exclusion list.
     #[arg(long = "excluded", value_name = "FILE")]
     excluded: Vec<String>,
-    /// Stamp file touched on success (ADR-014 output-or-stamp).
-    #[arg(long, value_name = "FILE")]
-    stamp: Option<PathBuf>,
+    #[command(flatten)]
+    output: CheckOutputArgs,
     /// The declared census: every lint subject, repository-relative.
     #[arg(value_name = "FILE")]
     declared: Vec<String>,
@@ -53,50 +53,55 @@ fn main() -> ExitCode {
     // with a JSON-only record (ADR-010 early-startup rule).
     install_json_panic_hook(COMMAND_NAME);
     let args = cli_common::parse_args_or_exit::<Args>();
-    run_stdout_json_command(COMMAND_NAME, args.base.debug, tracing::Level::INFO, || {
-        let pattern =
-            regex::Regex::new(&args.exclude_pattern).context("compiling the exclusion pattern")?;
+    run_check_command(
+        COMMAND_NAME,
+        args.base.debug,
+        tracing::Level::INFO,
+        &args.output,
+        || audit(&args),
+    )
+}
 
-        let listing = std::process::Command::new(&args.git)
-            .arg("-C")
-            .arg(&args.repository_root)
-            .args(["ls-files", "-z"])
-            .output()
-            .context("invoking git ls-files")?;
-        if !listing.status.success() {
-            tracing::error!(
-                status = %listing.status,
-                stderr = %String::from_utf8_lossy(&listing.stderr),
-                "git ls-files failed",
-            );
-            anyhow::bail!("git ls-files failed");
-        }
-        let tracked = String::from_utf8(listing.stdout).context("decoding git ls-files output")?;
+fn audit(args: &Args) -> anyhow::Result<labels::census::CensusAuditReport> {
+    let pattern =
+        regex::Regex::new(&args.exclude_pattern).context("compiling the exclusion pattern")?;
 
-        let report = audit_census(
-            tracked.split('\0').filter(|path| !path.is_empty()),
-            args.declared.iter().map(String::as_str),
-            args.excluded.iter().map(String::as_str),
-            &pattern,
+    let listing = std::process::Command::new(&args.git)
+        .arg("-C")
+        .arg(&args.repository_root)
+        .args(["ls-files", "-z"])
+        .output()
+        .context("invoking git ls-files")?;
+    if !listing.status.success() {
+        tracing::error!(
+            status = %listing.status,
+            stderr = %String::from_utf8_lossy(&listing.stderr),
+            "git ls-files failed",
         );
-        if report.valid {
-            if let Some(stamp) = &args.stamp {
-                touch_stamp(stamp).context("touching the stamp file")?;
-            }
-            return Ok(report);
-        }
-        for path in &report.missing_from_census {
-            tracing::error!(
-                path = %path,
-                "tracked lint subject is missing from its directory's meson.build census list",
-            );
-        }
-        for path in &report.not_tracked {
-            tracing::error!(
-                path = %path,
-                "declared census entry is not a tracked lint subject; git add it or drop the list entry",
-            );
-        }
-        anyhow::bail!("the hand-managed build census disagrees with git ls-files");
-    })
+        anyhow::bail!("git ls-files failed");
+    }
+    let tracked = String::from_utf8(listing.stdout).context("decoding git ls-files output")?;
+
+    let report = audit_census(
+        tracked.split('\0').filter(|path| !path.is_empty()),
+        args.declared.iter().map(String::as_str),
+        args.excluded.iter().map(String::as_str),
+        &pattern,
+    );
+    if report.valid {
+        return Ok(report);
+    }
+    for path in &report.missing_from_census {
+        tracing::error!(
+            path = %path,
+            "tracked lint subject is missing from its directory's meson.build census list",
+        );
+    }
+    for path in &report.not_tracked {
+        tracing::error!(
+            path = %path,
+            "declared census entry is not a tracked lint subject; git add it or drop the list entry",
+        );
+    }
+    anyhow::bail!("the hand-managed build census disagrees with git ls-files");
 }

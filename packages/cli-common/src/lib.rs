@@ -973,6 +973,50 @@ where
     }
 }
 
+/// Run an ADR-014 checker that produces a JSON report on success.
+///
+/// Installs the JSON panic hook and stderr tracing, runs the check, and
+/// publishes the result through [`finish_check_command`] under the
+/// active output mode: direct-mode stdout (refused on a terminal, exit
+/// class 2) or a build-mode report asset plus success stamp. The `run`
+/// closure must emit its own per-item diagnostics on stderr and return
+/// `Err` when the semantic check fails; that maps to the failure exit
+/// class and leaves both stdout and the stamp untouched.
+pub fn run_check_command<Report, CommandError, Run>(
+    command_name: &str,
+    debug: bool,
+    default_level: tracing::Level,
+    output: &CheckOutputArgs,
+    run: Run,
+) -> ExitCode
+where
+    Report: serde::Serialize,
+    CommandError: std::fmt::Display,
+    Run: FnOnce() -> Result<Report, CommandError>,
+{
+    set_panic_payload_reporting_enabled(debug);
+    install_json_panic_hook(command_name);
+    init_json_tracing_with_debug(debug, default_level);
+
+    let report = match run() {
+        Ok(report) => report,
+        Err(error) => {
+            // ADR-010: arbitrary errors may embed credential URLs.
+            tracing::error!(error = %redact_text(&error.to_string()), "command failed");
+            return CommandExit::Failure.exit_code();
+        }
+    };
+
+    match finish_check_command(command_name, output, &report) {
+        Ok(()) => CommandExit::Success.exit_code(),
+        Err(CheckResultError::TtyRefusal) => CommandExit::Usage.exit_code(),
+        Err(error) => {
+            tracing::error!(error = %error, "failed to publish the check result");
+            CommandExit::Failure.exit_code()
+        }
+    }
+}
+
 struct LockedStderr;
 
 impl<'writer> MakeWriter<'writer> for LockedStderr {
@@ -1060,4 +1104,115 @@ pub fn touch_stamp(path: &std::path::Path) -> io::Result<()> {
         }
         Err(error) => Err(error),
     }
+}
+
+/// Output arguments shared by ADR-014 checker binaries.
+///
+/// A checker runs in one of two modes:
+///
+/// - **direct** — no `--report`/`--stamp`: the JSON result goes to
+///   stdout (refused on a terminal) and no stamp is touched;
+/// - **build** — both `--report` and `--stamp`: the result is published
+///   as an explicit report asset (compare-if-changed), the stamp is
+///   touched only after a successful report write, and stdout stays
+///   empty.
+///
+/// `clap` enforces the reciprocal requirement, so a lone `--report` or
+/// `--stamp` is a usage error before the command runs.
+#[derive(clap::Args, Debug)]
+pub struct CheckOutputArgs {
+    /// Build mode: write the JSON result to this explicit report file.
+    #[arg(long, value_name = "FILE", requires = "stamp")]
+    pub report: Option<std::path::PathBuf>,
+
+    /// Build mode: touch this success stamp after publishing the report.
+    #[arg(long, value_name = "FILE", requires = "report")]
+    pub stamp: Option<std::path::PathBuf>,
+}
+
+/// Failure publishing a check result through [`finish_check_command`].
+#[derive(Debug, thiserror::Error)]
+pub enum CheckResultError {
+    /// Direct mode refused because stdout is a terminal (exit class 2).
+    #[error("stdout is a terminal; refusing to write result data")]
+    TtyRefusal,
+
+    /// Exactly one of `--report`/`--stamp` was supplied. `clap` normally
+    /// prevents this; the variant keeps the finalizer total.
+    #[error("invalid checker output mode: --report and --stamp are all-or-nothing")]
+    InvalidMode,
+
+    /// The report could not be published or the stamp could not be
+    /// touched.
+    #[error("failed to publish the check result")]
+    Io(#[from] io::Error),
+}
+
+/// Publish a successful check result under the active output mode.
+///
+/// In direct mode the report is written to stdout (refused on a
+/// terminal). In build mode the report is written compare-if-changed to
+/// its explicit path and only then is the success stamp touched, so a
+/// failed report publication never leaves a fresh stamp behind. Callers
+/// must invoke this only when the semantic check succeeded; a failed
+/// check leaves stdout empty and emits diagnostics on stderr.
+///
+/// # Errors
+///
+/// Returns [`CheckResultError::TtyRefusal`] in direct mode when stdout is
+/// a terminal, [`CheckResultError::InvalidMode`] if only one build-mode
+/// path is set, or [`CheckResultError::Io`] on a write failure.
+pub fn finish_check_command<T: serde::Serialize>(
+    command_name: &str,
+    output: &CheckOutputArgs,
+    report: &T,
+) -> Result<(), CheckResultError> {
+    match (&output.report, &output.stamp) {
+        (None, None) => {
+            if let Some(record) = stdout_tty_refusal_record(command_name) {
+                let _ignored = emit_control_plane_record(&record);
+                return Err(CheckResultError::TtyRefusal);
+            }
+            emit(report)?;
+            Ok(())
+        }
+
+        (Some(report_path), Some(stamp_path)) => {
+            write_json_report_if_changed(report_path, report)?;
+            touch_stamp(stamp_path)?;
+            Ok(())
+        }
+
+        _ => Err(CheckResultError::InvalidMode),
+    }
+}
+
+/// Write `value` as one JSON object plus trailing newline to `path`,
+/// skipping the write when the current contents already match.
+///
+/// The report is staged in a sibling temp file and atomically renamed,
+/// so a partial write never leaves a truncated report. The
+/// compare-if-changed skip keeps ninja `restat` from cascading rebuilds
+/// on unchanged results.
+fn write_json_report_if_changed<T: serde::Serialize>(
+    path: &std::path::Path,
+    value: &T,
+) -> io::Result<()> {
+    let mut bytes = serde_json::to_vec(value)?;
+    bytes.push(b'\n');
+
+    if std::fs::read(path).is_ok_and(|current| current == bytes) {
+        return Ok(());
+    }
+
+    let directory = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    std::fs::create_dir_all(directory)?;
+
+    let mut staged = tempfile::Builder::new()
+        .prefix(".check-report-staged-")
+        .tempfile_in(directory)?;
+    staged.write_all(&bytes)?;
+    staged.as_file().sync_all()?;
+    staged.persist(path).map_err(|error| error.error)?;
+    Ok(())
 }

@@ -593,3 +593,90 @@ fn touch_stamp_creates_empty_then_only_updates_mtime() {
     assert_eq!(std::fs::read(&stamp).expect("read"), b"seed");
     assert!(metadata.modified().expect("mtime") > before);
 }
+
+#[test]
+fn build_mode_writes_report_then_touches_stamp() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let report = dir.path().join("out/report.json");
+    let stamp = dir.path().join("suite.ok");
+    let output = crate::CheckOutputArgs {
+        report: Some(report.clone()),
+        stamp: Some(stamp.clone()),
+    };
+
+    crate::finish_check_command("demo", &output, &serde_json::json!({"valid": true}))
+        .expect("build-mode publish");
+
+    assert_eq!(
+        std::fs::read(&report).expect("report exists"),
+        b"{\"valid\":true}\n",
+    );
+    assert!(stamp.exists(), "the success stamp is touched");
+}
+
+#[test]
+fn build_mode_leaves_an_unchanged_report_untouched_on_rerun() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let report = dir.path().join("report.json");
+    let output = crate::CheckOutputArgs {
+        report: Some(report.clone()),
+        stamp: Some(dir.path().join("suite.ok")),
+    };
+    let value = serde_json::json!({"valid": true});
+
+    crate::finish_check_command("demo", &output, &value).expect("first publish");
+
+    let old = std::time::SystemTime::UNIX_EPOCH;
+    std::fs::File::options()
+        .write(true)
+        .open(&report)
+        .expect("open report")
+        .set_times(std::fs::FileTimes::new().set_modified(old))
+        .expect("pin mtime");
+
+    crate::finish_check_command("demo", &output, &value).expect("second publish");
+
+    let mtime = std::fs::metadata(&report)
+        .expect("metadata")
+        .modified()
+        .expect("mtime");
+    assert_eq!(mtime, old, "an unchanged report must not be rewritten");
+}
+
+#[test]
+fn a_half_specified_output_mode_is_invalid() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let output = crate::CheckOutputArgs {
+        report: Some(dir.path().join("report.json")),
+        stamp: None,
+    };
+    assert!(matches!(
+        crate::finish_check_command("demo", &output, &serde_json::json!({})),
+        Err(crate::CheckResultError::InvalidMode),
+    ));
+}
+
+#[test]
+fn a_failed_report_write_leaves_the_stamp_untouched() {
+    // Point the report at a path whose parent is a regular file, so
+    // directory creation fails and the report is never published. The
+    // stamp must not appear: it is the success fact.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let blocker = dir.path().join("blocker");
+    std::fs::write(&blocker, b"not a directory").expect("seed blocker");
+    let report = blocker.join("nested/report.json");
+    let stamp = dir.path().join("suite.ok");
+    let output = crate::CheckOutputArgs {
+        report: Some(report),
+        stamp: Some(stamp.clone()),
+    };
+
+    assert!(matches!(
+        crate::finish_check_command("demo", &output, &serde_json::json!({})),
+        Err(crate::CheckResultError::Io(_)),
+    ));
+    assert!(
+        !stamp.exists(),
+        "a failed report write leaves no success stamp"
+    );
+}

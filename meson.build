@@ -245,22 +245,18 @@ census_audit_bin = custom_target(
 # stamp depends on this target: its stamp is re-touched on every
 # successful run (the target is unconditional), and an edge would
 # needlessly dirty the lint suites each build; a failing audit fails
-# the build by itself. Checker stdout is ADR-010 JSON result data, so
-# Meson declares it as a build output instead of exposing it to the
-# interactive terminal inherited by console targets.
-checker_wrap = [
-  sh, '-c',
-  'report="$1"; program="$2"; shift 2; case "$program" in */*) exec "$program" "$@" > "$report" ;; *) exec "./$program" "$@" > "$report" ;; esac',
-  'sh',
-]
-
+# the build by itself. The checker runs in build mode: it publishes its
+# ADR-010 JSON result as an explicit report output (compare-if-changed)
+# and touches the success stamp only after the report is written, so no
+# shell stdout redirection sits on the correctness boundary.
 census_audit = custom_target(
   'census-audit',
   output: ['census.ok', 'census-audit.json'],
-  command: checker_wrap + ['@OUTPUT1@', census_audit_bin,
+  command: [census_audit_bin,
     '--repository-root', source_root,
     '--git', git.full_path(),
     '--exclude-pattern', census_exclude_pattern,
+    '--report', '@OUTPUT1@',
     '--stamp', '@OUTPUT0@',
   ] + census_excluded_args + census_paths,
   build_always_stale: true,
@@ -294,7 +290,8 @@ labels_stamp = custom_target(
          + crate_source_files + specification_register_file + realization_register_file
          + model_labels_json_file,
   output: ['labels.ok', 'labels-check.json'],
-  command: checker_wrap + ['@OUTPUT1@', check_labels_bin] + labels_census_args + [
+  command: [check_labels_bin] + labels_census_args + [
+    '--report', '@OUTPUT1@',
     '--stamp', '@OUTPUT0@',
   ],
   build_by_default: true,
@@ -305,8 +302,9 @@ generated_stamp = custom_target(
   'generated-check',
   input: scoped_census_inputs + generated_files + model_labels_json_file,
   output: ['generated.ok', 'generated-check.json'],
-  command: checker_wrap + ['@OUTPUT1@', check_generated_bin] + scoped_census_args + [
+  command: [check_generated_bin] + scoped_census_args + [
     '--generated-dir', generated_dir,
+    '--report', '@OUTPUT1@',
     '--stamp', '@OUTPUT0@',
   ],
   build_by_default: true,
