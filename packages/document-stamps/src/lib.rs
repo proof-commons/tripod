@@ -53,6 +53,13 @@ pub enum StampError {
     #[error("Git command emitted invalid UTF-8")]
     InvalidGitOutput,
 
+    /// The selected revision does not resolve to checked-out HEAD.
+    ///
+    /// Stamp derivation reads and renders the checked-out tree, so a
+    /// different revision would produce hybrid metadata.
+    #[error("selected revision is not checked-out HEAD")]
+    SelectedRevisionIsNotHead,
+
     /// The paper subtree has uncommitted or untracked changes.
     #[error("paper subtree is dirty")]
     DirtyPaperSubtree,
@@ -132,7 +139,9 @@ pub struct StampRequest {
     pub git: PathBuf,
     /// The repository root all paths resolve against.
     pub repository_root: PathBuf,
-    /// The revision committed objects and history are read from.
+    /// The revision to verify against checked-out `HEAD`. The current
+    /// implementation accepts only revisions that resolve to the same
+    /// commit as `HEAD`; a different revision is rejected.
     pub tree_ref: String,
     /// The repository-relative paper subtree.
     pub tree: PathBuf,
@@ -311,6 +320,7 @@ fn derive(
 ) -> Result<AttestationStampValues, StampError> {
     verify_repository_root(git, &request.repository_root)?;
     verify_object_format(git)?;
+    verify_selected_revision_is_head(git, &request.tree_ref)?;
 
     let tree = path_to_str(&request.tree)?;
     reject_dirty_subtree(git, tree)?;
@@ -349,6 +359,34 @@ fn verify_object_format(git: &dyn GitRunner) -> Result<(), StampError> {
         Ok(())
     } else {
         Err(StampError::UnsupportedGitObjectFormat(format))
+    }
+}
+
+/// Append git's "peel to commit" suffix (`^{commit}`) to a revision.
+/// Built at runtime so no string literal resembles a formatting
+/// argument.
+fn peel_to_commit(reference: &str) -> String {
+    let mut expr = String::from(reference);
+    expr.push('^');
+    expr.push('{');
+    expr.push_str("commit}");
+    expr
+}
+
+/// Reject any selected revision that does not resolve to the same commit
+/// object as checked-out `HEAD`. Derivation reads and renders the
+/// working tree, so publishing a different committed revision would mix
+/// its metadata with the checked-out bytes. A branch or tag that points
+/// at exactly `HEAD` is accepted: the rule is commit-object equality, not
+/// literal string equality.
+fn verify_selected_revision_is_head(git: &dyn GitRunner, tree_ref: &str) -> Result<(), StampError> {
+    let selected = run_text(git, &["rev-parse", "--verify", &peel_to_commit(tree_ref)])?;
+    let head = run_text(git, &["rev-parse", "--verify", &peel_to_commit("HEAD")])?;
+
+    if selected.eq_ignore_ascii_case(&head) {
+        Ok(())
+    } else {
+        Err(StampError::SelectedRevisionIsNotHead)
     }
 }
 

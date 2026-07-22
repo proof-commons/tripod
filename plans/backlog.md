@@ -246,7 +246,7 @@ does not depend on an unresolved semantic decision.
 | `F1-006` | P1 | **DONE** | Sponsored quiescence ignores active-backing-cap-blocked requests. |
 | `F1-007` | P2 | **BLOCKED** | Checker stamps can be updated despite command failure. |
 | `F1-008` | P2 | **DONE** | Malformed non-PA Realization imports may disappear silently. |
-| `F1-009` | P2 | **TODO** | Arbitrary `tree_ref` can mix selected-ref metadata with worktree bytes. |
+| `F1-009` | P2 | **DONE** | Arbitrary `tree_ref` can mix selected-ref metadata with worktree bytes. |
 | `F1-010` | P2 | **DONE** | CI cleanliness misses staged and untracked nonignored files. |
 | `F1-011` | P2 | **DONE** | Constructibility authorization is selected by operation name rather than architecture semantics. |
 | `F1-012` | P2 | **BLOCKED** | Normative and companion prose contain arithmetic, weld, and valuation inaccuracies. |
@@ -1065,6 +1065,28 @@ Do not retain hybrid metadata from a selected ref with bytes from another
 worktree revision.
 
 Test older ref from newer checkout, dirty HEAD, and unchanged scope behavior.
+
+#### Evidence · DONE
+
+- Commit adopts the HEAD-only contract. `packages/document-stamps/src/lib.rs`
+  gains `verify_selected_revision_is_head`, which peels both the selected
+  revision and `HEAD` to their commit objects
+  (`peel_to_commit` builds the `^{commit}` suffix at runtime) and rejects
+  inequality with the new typed `SelectedRevisionIsNotHead`. It runs in
+  `derive` after the object-format guard and before the dirty-subtree check and
+  any input read, so a non-HEAD revision aborts before Git and filesystem state
+  are ever mixed. Commit-object equality means a branch or tag pointing at
+  exactly HEAD is accepted; literal string equality is not required.
+- The CLI help and the `StampRequest::tree_ref` doc state the restriction, and
+  the README provenance section documents that selected-ref publication from an
+  un-checked-out revision is unsupported.
+- Tests: HEAD accepted, a branch alias resolving to HEAD accepted, an older
+  commit rejected, and a derive-level test proving the rejection happens before
+  digesting (the fake stubs only the pre-guard queries, so any later Git call
+  would panic). The dirty-subtree rejection is unchanged.
+- Verified: `tripod-document-stamps` suite, clippy `-D warnings`, and
+  `scripts/test-attestation-stamps.sh .` (all identity-scope assertions pass)
+  via the flatpak SDK.
 
 ---
 

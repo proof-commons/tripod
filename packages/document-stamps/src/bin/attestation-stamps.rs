@@ -35,7 +35,8 @@ struct Args {
     /// Repository root against which all paths resolve.
     #[arg(long, value_name = "DIR")]
     repository_root: PathBuf,
-    /// Git revision committed objects and history are read from.
+    /// Git revision to verify against checked-out HEAD. Only revisions
+    /// resolving to the same commit as HEAD are accepted.
     #[arg(long, value_name = "REV", default_value = "HEAD")]
     tree_ref: String,
     /// Repository-relative paper subtree.

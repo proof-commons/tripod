@@ -67,6 +67,18 @@ fn peeled(reference: &str) -> String {
     expr
 }
 
+/// The `rev-parse` argument git receives for a peeled commit reference.
+fn peeled_commit(reference: &str) -> String {
+    let mut expr = String::from(reference);
+    expr.push('^');
+    expr.push('{');
+    expr.push_str("commit}");
+    expr
+}
+
+/// A fixed commit oid the scenario's HEAD guard resolves to.
+const HEAD_COMMIT: &str = "cccccccccccccccccccccccccccccccccccccccc";
+
 fn input(path: &str, mode: &str, bytes: &[u8]) -> CanonicalInput {
     CanonicalInput {
         relative_path: path.to_owned(),
@@ -331,6 +343,11 @@ fn scenario(
             &format!("{object_format}\n"),
         )
         .with(
+            &["rev-parse", "--verify", &peeled_commit("HEAD")],
+            true,
+            &format!("{HEAD_COMMIT}\n"),
+        )
+        .with(
             &[
                 "status",
                 "--porcelain=v1",
@@ -511,6 +528,98 @@ fn derive_rejects_a_non_sha1_object_format() {
     assert!(matches!(
         derive(&git, &scenario.request),
         Err(StampError::UnsupportedGitObjectFormat(_))
+    ));
+}
+
+// ---------------------------------------------------------------------------
+// HEAD-only revision selection
+// ---------------------------------------------------------------------------
+
+#[test]
+fn head_is_accepted_as_the_selected_revision() {
+    let git = FakeGit::default().with(
+        &["rev-parse", "--verify", &peeled_commit("HEAD")],
+        true,
+        &format!("{HEAD_COMMIT}\n"),
+    );
+    verify_selected_revision_is_head(&git, "HEAD").expect("HEAD resolves to HEAD");
+}
+
+#[test]
+fn a_branch_alias_resolving_to_head_is_accepted() {
+    // A tag or branch that points at exactly HEAD is accepted: the rule
+    // is commit-object equality, not literal string equality.
+    let git = FakeGit::default()
+        .with(
+            &["rev-parse", "--verify", &peeled_commit("release")],
+            true,
+            &format!("{HEAD_COMMIT}\n"),
+        )
+        .with(
+            &["rev-parse", "--verify", &peeled_commit("HEAD")],
+            true,
+            &format!("{HEAD_COMMIT}\n"),
+        );
+    verify_selected_revision_is_head(&git, "release").expect("alias resolves to HEAD");
+}
+
+#[test]
+fn an_older_commit_is_rejected() {
+    let git = FakeGit::default()
+        .with(
+            &["rev-parse", "--verify", &peeled_commit("older")],
+            true,
+            "0000000000000000000000000000000000000000\n",
+        )
+        .with(
+            &["rev-parse", "--verify", &peeled_commit("HEAD")],
+            true,
+            &format!("{HEAD_COMMIT}\n"),
+        );
+    assert!(matches!(
+        verify_selected_revision_is_head(&git, "older"),
+        Err(StampError::SelectedRevisionIsNotHead)
+    ));
+}
+
+#[test]
+fn derive_rejects_a_non_head_revision_before_digesting() {
+    // The HEAD guard runs before the dirty-subtree check and before any
+    // input is read: this fake stubs only the checks up to the guard, so
+    // if derivation proceeded it would hit an unstubbed arg and panic.
+    let dir = tempfile::tempdir().expect("temp repo");
+    let root = dir.path();
+    let canonical_root = std::fs::canonicalize(root).expect("canonical root");
+
+    let git = FakeGit::default()
+        .with(
+            &["rev-parse", "--show-toplevel"],
+            true,
+            &format!("{}\n", canonical_root.display()),
+        )
+        .with(&["rev-parse", "--show-object-format"], true, "sha1\n")
+        .with(
+            &["rev-parse", "--verify", &peeled_commit("older")],
+            true,
+            "0000000000000000000000000000000000000000\n",
+        )
+        .with(
+            &["rev-parse", "--verify", &peeled_commit("HEAD")],
+            true,
+            &format!("{HEAD_COMMIT}\n"),
+        );
+
+    let request = StampRequest {
+        git: PathBuf::from("git"),
+        repository_root: root.to_path_buf(),
+        tree_ref: "older".to_owned(),
+        tree: PathBuf::from("papers/attestation"),
+        inputs: vec![PathBuf::from("papers/attestation/main.tex")],
+    };
+
+    assert!(matches!(
+        derive(&git, &request),
+        Err(StampError::SelectedRevisionIsNotHead)
     ));
 }
 

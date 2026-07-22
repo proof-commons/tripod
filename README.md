@@ -92,6 +92,11 @@ Before rendering, Meson derives four values from committed Git state
 - **timestamp** — UTC time of the latest commit touching the paper subtree,
   used as `SOURCE_DATE_EPOCH` and all XMP dates.
 
+The publication command derives and renders checked-out committed `HEAD`. A
+different `--tree-ref` is rejected unless it resolves to the same commit as
+`HEAD`; selected-ref publication from an un-checked-out revision is not
+currently supported.
+
 A dirty paper subtree blocks canonical publication. The two UUIDs are XMP
 identities; the PDF trailer `/ID` is left toolchain-derived (no PDF-rewrite
 step). The values are source-provenance identities, not hashes of the final
