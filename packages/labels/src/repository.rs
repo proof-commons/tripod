@@ -221,18 +221,7 @@ fn harvest_realization(paths: &RepositoryCensus, result: &mut RepositoryLabels) 
         }
         if let Some(token) = square(&span.content) {
             if !token.starts_with("A-") {
-                if let Ok(imported) = ImportedLabel::parse(token) {
-                    result.push_imported_citation(LabelOwner::Realization, imported, span.location);
-                } else if let Ok(label) = Label::parse(token, LabelShape::Model) {
-                    result.push_imported_citation(
-                        LabelOwner::Realization,
-                        ImportedLabel {
-                            owner: LabelOwner::Model,
-                            label,
-                        },
-                        span.location,
-                    );
-                }
+                harvest_realization_import(token, &span, result);
             }
             continue;
         }
@@ -264,6 +253,81 @@ fn harvest_realization(paths: &RepositoryCensus, result: &mut RepositoryLabels) 
         }
     }
 }
+
+fn harvest_realization_import(
+    token: &str,
+    span: &crate::markdown::InlineCodeSpan,
+    result: &mut RepositoryLabels,
+) {
+    match span.context {
+        InlineCodeContext::Parenthesized => {}
+        InlineCodeContext::Asymmetric => {
+            result.diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::AsymmetricCitation,
+                &span.location,
+                "imported citation has an unmatched parenthesis",
+            ));
+            return;
+        }
+        InlineCodeContext::Bare => {
+            result.diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::InvalidImportedCitationForm,
+                &span.location,
+                "imported citation must be parenthesized",
+            ));
+            return;
+        }
+    }
+
+    match ImportedLabel::parse(token) {
+        Ok(imported) => {
+            if imported.owner == LabelOwner::Realization {
+                result.diagnostics.push(LabelDiagnostic::error(
+                    LabelErrorCode::InvalidImportedCitationForm,
+                    &span.location,
+                    "same-owner citation must use the local parenthesized form",
+                ));
+                return;
+            }
+
+            result.push_imported_citation(LabelOwner::Realization, imported, span.location.clone());
+        }
+        Err(OwnerParseError::Label(error)) => {
+            result.diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::InvalidLabel,
+                &span.location,
+                error.to_string(),
+            ));
+        }
+        Err(OwnerParseError::Unknown(_)) => match Label::parse(token, LabelShape::Model) {
+            Ok(label) => {
+                result.push_imported_citation(
+                    LabelOwner::Realization,
+                    ImportedLabel {
+                        owner: LabelOwner::Model,
+                        label,
+                    },
+                    span.location.clone(),
+                );
+            }
+            Err(_) if looks_owner_qualified(token) => {
+                result.diagnostics.push(LabelDiagnostic::error(
+                    LabelErrorCode::UnknownOwner,
+                    &span.location,
+                    format!("unknown imported-label owner in {token:?}"),
+                ));
+            }
+            Err(error) => {
+                result.diagnostics.push(LabelDiagnostic::error(
+                    LabelErrorCode::InvalidLabel,
+                    &span.location,
+                    error.to_string(),
+                ));
+            }
+        },
+    }
+}
+
 fn harvest_adrs(paths: &RepositoryCensus, result: &mut RepositoryLabels) {
     for path in &paths.adrs {
         let Some(number) = path
@@ -921,6 +985,18 @@ fn square(value: &str) -> Option<&str> {
 fn looks_imported(value: &str) -> bool {
     ImportedLabel::parse(value).is_ok()
 }
+
+fn looks_owner_qualified(value: &str) -> bool {
+    let Some((prefix, _local)) = value.split_once('-') else {
+        return false;
+    };
+
+    !prefix.is_empty()
+        && prefix
+            .chars()
+            .all(|character| character.is_ascii_uppercase() || character.is_ascii_digit())
+}
+
 #[derive(Clone, Debug)]
 pub struct GeneratedRegister {
     pub path: PathBuf,
