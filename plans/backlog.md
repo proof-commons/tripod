@@ -135,10 +135,10 @@ release identity.
 | `execwrap` | Byte-preserving process wrapper and mocked TeX children |
 | `flatten-latex-main` | Deterministic atomic LaTeX flattener |
 | ADR-010 | Implemented in Rust commands; boundary corrections remain |
-| ADR-011 | Implemented; clean-tree gate correction remains |
+| ADR-011 | Implemented; clean-tree gate correction landed (F1-010) |
 | ADR-013 | Implemented; malformed Realization import correction remains |
 | ADR-014 | Implemented in broad shape; stamp/restat and shell-checker corrections remain |
-| D007 | Accepted; active planning cleanup remains |
+| D007 | Accepted; active planning cleanup landed (F1-013) |
 | D008 | Accepted |
 
 ### 2.2 Not implemented · `tbl:backlog:not-implemented`
@@ -246,18 +246,18 @@ does not depend on an unresolved semantic decision.
 | `F1-007` | P2 | **BLOCKED** | Checker stamps can be updated despite command failure. |
 | `F1-008` | P2 | **TODO** | Malformed non-PA Realization imports may disappear silently. |
 | `F1-009` | P2 | **TODO** | Arbitrary `tree_ref` can mix selected-ref metadata with worktree bytes. |
-| `F1-010` | P2 | **TODO** | CI cleanliness misses staged and untracked nonignored files. |
+| `F1-010` | P2 | **DONE** | CI cleanliness misses staged and untracked nonignored files. |
 | `F1-011` | P2 | **TODO** | Constructibility authorization is selected by operation name rather than architecture semantics. |
 | `F1-012` | P2 | **BLOCKED** | Normative and companion prose contain arithmetic, weld, and valuation inaccuracies. |
-| `F1-013` | P2 | **TODO** | Active planning still prescribes graph adapters prohibited by D007. |
-| `F1-014` | P2 | **TODO** | Full Meson tests depend on undeclared `jq`. |
+| `F1-013` | P2 | **DONE** | Active planning still prescribes graph adapters prohibited by D007. |
+| `F1-014` | P2 | **DONE** | Full Meson tests depend on undeclared `jq`. |
 | `F1-015` | P3 | **TODO** | Shell/Python checker streams conflict with broad ADR-010/014 wording. |
 | `F1-016` | P3 | **TODO** | Planning statuses and completion evidence disagree. |
 | `F1-017` | Gate | **BLOCKED** | Complete Phase-1 gate has not been run and recorded. |
-| `F1-018` | P1 | **TODO** | Realization accepts zero-valued ordinary L-BTC that the model rejects. |
-| `F1-019` | P2 | **TODO** | Partial `attestation-stamps` render arguments silently select JSON mode. |
+| `F1-018` | P1 | **DONE** | Realization accepts zero-valued ordinary L-BTC that the model rejects. |
+| `F1-019` | P2 | **DONE** | Partial `attestation-stamps` render arguments silently select JSON mode. |
 | `F1-020` | P1 | **TODO** | One command cannot atomically commit stdout success and a filesystem stamp. |
-| `F1-021` | P2 | **TODO** | Public query reduction can produce an invalid zero-denominator rational. |
+| `F1-021` | P2 | **DONE** | Public query reduction can produce an invalid zero-denominator rational. |
 | `F1-022` | P2 | **TODO** | `execwrap` child-status propagation contradicts the documented global exit classes. |
 | `F1-023` | P1 | **TODO** | Reorg reprojection may increase valuation despite downward-only Layer-0 wording. |
 | `F1-024` | P2 | **TODO** | ADR-010 subprocess coverage is incomplete across shipped binaries. |
@@ -573,6 +573,55 @@ CPFP_ANCHOR:
 Test zero-valued sponsor inputs/outputs, unclaimed zero-valued ordinary L-BTC,
 and valid zero-valued CPFP only in the exact declared condition.
 
+#### Evidence · DONE
+
+- Commit `6f1efd5`. `packages/realization/src/evaluate.rs`: the `PlainLbtc`
+  recognition shape now requires `!observed.value.is_zero() && owner.is_some()`,
+  folded into the positive-owned arm; `CpfpAnchor` remains the sole zero-value
+  shape.
+- Negative tests added in `compact_ash_tests.rs` and `live_transfer_tests.rs`:
+  zero-value sponsor input, zero-value sponsor change, and zero-value unclaimed
+  `PLAIN_LBTC` each fail recognition; positive owner-bearing sponsor
+  input/output remains accepted.
+- Verified via the Flatpak SDK: the `tripod-realization` tests and the
+  model `realization_conformance` suite pass; `cargo fmt` and clippy with
+  `-D warnings` are clean. No generated-artifact or label-register impact.
+- Residual: the scope of the positivity rule is disputed — see the Open concern
+  below, tracked for future research.
+
+#### Open concern — potential representation-layer over-assertion (future research)
+
+The F1-018 rule was implemented, but its scope is disputed and should be
+revisited before it is treated as settled. The realization positivity rule is
+applied to **every** recognized value-bearing L-BTC object, including the
+open, sponsor-owned pass-through coin. For a sponsor coin that merely funds
+the chain fee, this asserts a property (`value > 0`) that:
+
+- reads more state than the operation needs — the fee-sponsor role is defined
+  by a balance relation (`Σ sources = Σ destinations + fee`), which a backend
+  may discharge by consensus Confidential-Transaction conservation without ever
+  opening an individual sponsor value;
+- constrains implementation choices — `P-explicit` is deliberately scoped to
+  values consumed by covenant arithmetic (receipt, entitlement, vault, ASH,
+  reserve, payout, issuance); sponsor L-BTC is **not** in that list, and the
+  representation model treats value as a leakage axis (private/public/explicit
+  denote the same amount) under a stated minimality obligation;
+- is not backed by a well-specified attack. The stated justification is
+  partition cleanliness (keep exactly one zero-value carve-out, the ownerless
+  `CPFP_ANCHOR`, so the positive-value open-flow partition stays total), not a
+  demonstrated exploit against a positive-but-confidential or zero pass-through
+  sponsor coin.
+
+Research question: determine whether "value-bearing ⇒ positive" should be
+**narrowed** to protocol-accounted objects and lifted from open pass-through
+sponsor L-BTC; whether enforcing it at the sponsor seam costs a minimality
+violation (an emitted covenant cannot read a blinded sponsor value and should
+not be required to); and whether the realization document's §5.1 uniform rule
+should itself be re-scoped, since a real fee coin is positive anyway and a
+semantically-zero one is inert. Resolving this may reverse or narrow F1-018;
+until then the implemented rule stands as a conservative reference-model
+normalization, not a proven safety requirement.
+
 ---
 
 ### F1-021 — Make exact-rational reduction checked
@@ -612,6 +661,20 @@ validation.
 
 Test zero denominator, zero numerator, reducible terms, several terms, and
 canonical round trips.
+
+#### Evidence · DONE
+
+- Commit `0f890b5`. `packages/model/src/ledger.rs`: public `reduce()` replaced
+  by `try_reduce()` (validates via `validate_query` then reduces); the unchecked
+  reducer is now crate-private `reduce_validated()`; `ExactRational` fields are
+  private with `numerator()`/`denominator()` accessors.
+- Tests in `serialization_tests.rs`, `canonical_rejection_tests.rs`, and
+  `attestation_reorg_tests.rs`: zero-denominator and zero-aggregate terms return
+  `QueryValidationError`; reducible, canonical-zero (`0/1`), and multi-term round
+  trips pass; all `reduce()` callers migrated to `try_reduce().unwrap()`.
+- Verified via the Flatpak SDK: `cargo fmt --all --check`, the
+  `tripod-model` test suite, and clippy with `-D warnings` are all
+  green. No generated-artifact or label-register impact. No residual.
 
 ---
 
@@ -845,6 +908,22 @@ Every partial subset exits 2 with empty stdout and one JSON usage record.
 
 Implement through reciprocal requirements or one exact clap argument group.
 
+#### Evidence · DONE
+
+- Commit `550ae56`. `packages/document-stamps/src/bin/attestation-stamps.rs`:
+  each render output (`--stamps-output`, `--epoch-output`, `--stamp`) now
+  carries `requires = "template"`, making every partial render argument set a
+  clap usage error (reciprocal-requirements repair).
+- New integration test `packages/document-stamps/tests/subprocess_contract.rs`
+  drives every singleton and partial subset and asserts exit 2, empty stdout,
+  one JSON `usage_error` record on stderr, and no files written; `serde_json`
+  added as a dev-dependency; the `tests/` file is censused under
+  `document_stamps_excluded_files` (ADR-014), not the crate-source list.
+- Verified: `cargo test --locked -p tripod-document-stamps`, fmt, and
+  clippy `-D warnings` green; `meson test` `attestation-stamps` lanes pass.
+- Residual: the render success `--stamp` output is retained; whether it is
+  removed is governed by `F1-005`, not this finding.
+
 ---
 
 ### F1-009 — Make revision selection coherent
@@ -894,6 +973,18 @@ Permit ignored build products.
 
 Tests must cover all four cases and name offending paths.
 
+#### Evidence · DONE
+
+- Commit `a645f93`. `scripts/ci.sh` lane 11 replaces `git diff --exit-code`
+  with `git status --porcelain=v1 --untracked-files=all`, failing on any
+  non-empty status and printing offending paths.
+  `scripts/check-document-reproducibility.sh` strengthens its dirty-worktree
+  probe the same way.
+- Behavior verified in a disposable repository across all four cases: clean tree
+  passes; unstaged tracked change, staged change, and untracked nonignored file
+  each fail; an ignored build product passes.
+- No generated-artifact or label-register impact. No residual.
+
 ---
 
 ### F1-014 — Remove or declare `jq`
@@ -907,6 +998,17 @@ Alternative: resolve and pass `jq` explicitly and document it as a requirement.
 
 The full Meson test surface must not depend on an undeclared ambient PATH
 program.
+
+#### Evidence · DONE
+
+- Commit `a645f93`. `scripts/test-attestation-stamps.sh` replaces the `jq`
+  field extractor with an inline `python3` reader (python3 is already resolved
+  by top-level Meson); `README.md` requirements now list Python 3 and the POSIX
+  shell utilities.
+- Verified: `sh scripts/test-attestation-stamps.sh .` passes every
+  identity-scope assertion, and a `jq` word-boundary grep over `scripts`,
+  `meson.build`, and `README.md` finds no build or test dependency on it.
+- No generated-artifact or label-register impact. No residual.
 
 ---
 
@@ -1024,6 +1126,15 @@ command whose inputs are fully represented by the graph.
 If an always-stale Git-derived audit remains necessary, isolate and document it
 as such without claiming all lint commands are clean on no-op.
 
+#### Progress — stamp truncation replaced; core remains TODO
+
+Commit `478ccf9` replaced `: > "$stamp"` with `touch "$stamp"` in the
+forbidden-text checker, the publication mirror, and the generator/cargo-quiet
+Meson wrappers, removing the accidental-truncation hazard. This is stamp-write
+hygiene only: the always-stale execution, the missing explicit tracked-file
+census, and the no-op lint claim are unaddressed, so this finding stays
+**TODO**.
+
 ---
 
 ## 7. Label, documentation, and planning work · `sec:backlog:documentation-work`
@@ -1109,6 +1220,19 @@ Record:
 - anchor-set impact;
 - label-register impact.
 
+#### Progress — presentation corrections landed; remains BLOCKED on F1-023
+
+Commit `dc25a74` landed the three presentation-only corrections that do not
+depend on the reorg decision: the floor-arithmetic wording
+(`docs/attestation/realization.md`), the STATE/RESV operation census and the
+conservative-valuation wording (`docs/attestation/human.md`), and the stale
+`§16 → §17` anchor-index comment (`packages/architecture/src/spec.rs`). These
+touched no label token, generated artifact, or architecture hash (`labels-check`
+and the `artifacts` weld tests pass unchanged). The **Reorg semantics**
+correction and any Realization semantic correction are deliberately
+deferred until `F1-023` fixes the monotonicity law; this finding therefore stays
+**BLOCKED**, not DONE.
+
 ---
 
 ### F1-013 — Reconcile graph planning with D007
@@ -1134,6 +1258,20 @@ Package-local helper functions are allowed. A wrapper reproducing or hiding
 Petgraph storage/traversal is not.
 
 No shared graph crate is introduced.
+
+#### Evidence · DONE
+
+- Commit `03434c6`. `plans/research/compiler-algorithms.md` and
+  `plans/research/linker-algorithms.md` now prescribe direct package-owned
+  Petgraph construction (graph-boundary prose, the Stage-1 heading, and the
+  handoff line); `plans/backlog.md` rewrites the adapter task around forbidding
+  wrapper/adapter layers.
+- Verified: a grep for the prohibited `private graph adapter`,
+  `frozen graph adapter`, and `typed graph adapters` wording across the
+  research, package, phase, and backlog plans returns only text that enumerates
+  the forbidden designs; `check-plans.sh` and `labels-check` pass.
+- Residual: the rejected wrapper names survive only where D007 lists them as
+  forbidden.
 
 ---
 
