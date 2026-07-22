@@ -238,7 +238,7 @@ does not depend on an unresolved semantic decision.
 
 | ID | Priority | Status | Finding |
 |---|---:|---|---|
-| `F1-001` | P0 | **TODO** | Public checkpoint reconstruction can create credited events without chain provenance. |
+| `F1-001` | P0 | **DONE** | Public checkpoint reconstruction can create credited events without chain provenance. |
 | `F1-002` | P1 | **TODO** | Realization cannot represent exact mixed movement-plus-destruction flows. |
 | `F1-003` | P1 | **DONE** | Compact-ASH architecture/realization weld is incomplete. |
 | `F1-004` | P1 | **DONE** | Realization accepts multiple generic sponsor envelopes. |
@@ -336,11 +336,39 @@ independent event evidence.
 
 #### Exit
 
-- [ ] no public untrusted row-only path manufactures attestation credit;
-- [ ] consistency and provenance are separate typed claims;
-- [ ] event and query evidence remain separate;
-- [ ] public names and documentation expose the trust boundary;
-- [ ] schema and report identity impact are recorded.
+- [x] no public untrusted row-only path manufactures attestation credit;
+- [x] consistency and provenance are separate typed claims;
+- [x] event and query evidence remain separate;
+- [x] public names and documentation expose the trust boundary;
+- [x] schema and report identity impact are recorded.
+
+#### Evidence · DONE
+
+Adopted boundary **B** (explicit trusted cache), the Phase-1 decision.
+
+- Commit `ed6b33e`. `IndexerCheckpoint` becomes `ModelIndexerCheckpoint`
+  with private fields, obtainable only from an existing `ReferenceIndexer`.
+  The public `TryFrom<IndexerCheckpoint> for ReferenceIndexer` that promoted
+  arbitrary rows is removed; the opaque cache exposes read-only
+  `context`/`query`/`event_snapshot` over a private infallible `restore`. A
+  `compile_fail` doctest pins that arbitrary rows cannot be promoted.
+  `IndexerSnapshot` becomes `IndexerDiagnosticSnapshot`, documented as an
+  untrusted diagnostic projection with no path back to a query-capable index.
+  A test-only `UntrustedIndexerFixture` (whose `check` returns a consistency
+  result, not an indexer) replaces the checkpoint field-mutation tests.
+- Commit `7a6b1a0`. `from_model_history` becomes crate-private
+  `from_assumed_kernel_history`, named for the source and the assumption; a
+  `compile_fail` doctest proves external code cannot reach it. The projection
+  path and its private payload validators carry
+  `cfg_attr(not(test), allow(dead_code))` pending a future safe adapter.
+- Docs. Realization §12.2 now separates three roles explicitly: the trusted
+  reference-model projection (expected result), the independent deployment
+  event derivation required by O6 (the only provenance authenticator), and the
+  hash-bound checkpoint (a consistency cache, never event evidence).
+- Residual: provenance-validating reconstruction (boundary A) and independent
+  target-chain recognition remain future target/vector work, as designed.
+- Verified: full model suite (277), both `compile_fail` doctests, model clippy
+  `-D warnings`, and the Meson labels/generated lanes green via the flatpak SDK.
 
 ---
 
