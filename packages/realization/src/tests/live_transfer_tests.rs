@@ -275,6 +275,33 @@ fn sponsor() -> RelationId {
     relation_id(RelationKind::SponsorIsolation, RelationSubject::Sponsor)
 }
 
+fn sponsor_multiplicity() -> RelationId {
+    relation_id(
+        RelationKind::SponsorEnvelopeMultiplicity,
+        RelationSubject::Sponsor,
+    )
+}
+
+#[test]
+fn two_sponsor_envelopes_fail_multiplicity() {
+    let mut observation = valid_sponsored_observation();
+    // A second, disjoint, individually balanced fee-sponsor envelope: the
+    // count rises to two, which the one-envelope rule forbids.
+    observation.open_flows.push(ObservedOpenFlow {
+        kind: architecture::OpenFlowKind::FeeSponsor,
+        sources: Vec::new(),
+        destinations: Vec::new(),
+        fee: ProtocolAmount::ZERO,
+    });
+
+    let report = evaluate(&observation);
+
+    assert!(
+        failed(&report, &sponsor_multiplicity()),
+        "a second declared fee-sponsor envelope must fail sponsor-envelope multiplicity"
+    );
+}
+
 fn roots() -> RelationId {
     relation_id(RelationKind::RootPolicy, RelationSubject::Operation)
 }

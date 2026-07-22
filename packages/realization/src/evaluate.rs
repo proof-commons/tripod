@@ -36,6 +36,7 @@ pub enum RelationFailure {
     MissingOwnerAuthorization,
     UnexpectedProtocolAuthorization,
     SponsorIsolation,
+    SponsorEnvelopeMultiplicity,
     RootPolicy,
     ProjectionPolicy,
     Constructibility,
@@ -228,6 +229,22 @@ fn evaluate_relation(
             sponsor_is_isolated(observation)?,
             RelationFailure::SponsorIsolation,
         ),
+        Relation::SponsorEnvelopeMultiplicity { maximum } => {
+            let count = Count::new(
+                u64::try_from(
+                    observation
+                        .open_flows
+                        .iter()
+                        .filter(|flow| flow.kind == architecture::OpenFlowKind::FeeSponsor)
+                        .count(),
+                )
+                .map_err(|_| RealizationError::CountOverflow)?,
+            );
+            status(
+                count <= *maximum,
+                RelationFailure::SponsorEnvelopeMultiplicity,
+            )
+        }
         Relation::RootPolicy { expected } => {
             status(root_policy_holds(expected, observation), RelationFailure::RootPolicy)
         }

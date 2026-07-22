@@ -87,6 +87,7 @@ pub enum RelationKind {
     AllowedObjectFamilies,
     CanonicalDeltaPolicy,
     OpenFlowPolicy,
+    SponsorEnvelopeMultiplicity,
     SponsorIsolation,
     RootPolicy,
     ProjectionPolicy,

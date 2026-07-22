@@ -67,6 +67,9 @@ pub enum Relation {
     },
     PermissionlessAuthorization,
     SponsorIsolation,
+    SponsorEnvelopeMultiplicity {
+        maximum: Count,
+    },
     RootPolicy {
         expected: BTreeMap<RootId, RootUse>,
     },

@@ -57,6 +57,7 @@ struct Ids {
     input_closure: RelationId,
     output_closure: RelationId,
     sponsor: RelationId,
+    sponsor_multiplicity: RelationId,
     open_flow_policy: RelationId,
     canonical_delta_policy: RelationId,
     roots: RelationId,
@@ -132,6 +133,10 @@ impl Ids {
                 },
             ),
             sponsor: relation_id(RelationKind::SponsorIsolation, RelationSubject::Sponsor),
+            sponsor_multiplicity: relation_id(
+                RelationKind::SponsorEnvelopeMultiplicity,
+                RelationSubject::Sponsor,
+            ),
             open_flow_policy: relation_id(
                 RelationKind::OpenFlowPolicy,
                 RelationSubject::Projection {
@@ -275,6 +280,13 @@ fn relation_declarations(ids: &Ids) -> Vec<RelationDeclaration> {
             [ProofKind::ManifestShape],
         ),
         declaration(
+            ids.sponsor_multiplicity.clone(),
+            Relation::SponsorEnvelopeMultiplicity {
+                maximum: Count::ONE,
+            },
+            [ProofKind::ManifestShape],
+        ),
+        declaration(
             ids.open_flow_policy.clone(),
             Relation::OpenFlowPolicy {
                 allowed: BTreeSet::from([OpenFlowKind::FeeSponsor]),
@@ -341,6 +353,7 @@ fn relation_declarations(ids: &Ids) -> Vec<RelationDeclaration> {
     ]
 }
 
+#[allow(clippy::too_many_lines)]
 fn relation_dependencies(ids: &Ids) -> Vec<RelationDependencyDeclaration> {
     vec![
         dep(
@@ -392,6 +405,16 @@ fn relation_dependencies(ids: &Ids) -> Vec<RelationDependencyDeclaration> {
             &ids.open_flow_policy,
             &ids.sponsor,
             RelationEdge::OpenFlowPolicyBeforeSponsor,
+        ),
+        dep(
+            &ids.open_flow_policy,
+            &ids.sponsor_multiplicity,
+            RelationEdge::StaticRequirement,
+        ),
+        dep(
+            &ids.sponsor_multiplicity,
+            &ids.sponsor,
+            RelationEdge::StaticRequirement,
         ),
         dep(
             &ids.sponsor_input_recognition,
