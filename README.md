@@ -56,10 +56,12 @@ internals: they require the full role-tagged ADR-014 census that Meson derives.
 
 ## Requirements
 
-- meson and ninja
-- a Rust toolchain (cargo, edition 2024)
+- Meson and Ninja
+- Python 3
+- a Rust toolchain with Cargo, supporting Rust 1.88 and edition 2024
 - TeX Live with `xelatex`, `biber`, and `latexmk`
-- `git` (for the build-time paper provenance stamps)
+- Git, for the lint census and build-time paper provenance stamps
+- a POSIX shell environment with the standard file, comparison, hashing, and text utilities used by `scripts/`
 
 ## Building
 

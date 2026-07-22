@@ -75,7 +75,18 @@ derive() {
     --input "$section_tex"
 }
 
-field() { printf '%s' "$1" | jq -r "$2"; }
+field() {
+  printf '%s' "$1" |
+    python3 -c '
+import json
+import sys
+
+value = json.load(sys.stdin)
+for component in sys.argv[1].removeprefix(".").split("."):
+    value = value[component]
+print(value)
+' "$2"
+}
 
 fail() { echo "FAIL: $1" >&2; exit 1; }
 assert_eq() { [ "$2" = "$3" ] || fail "$1: expected '$3' == '$2'"; }

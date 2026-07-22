@@ -35,8 +35,11 @@ fi
 
 echo "==> document build is reproducible" >&2
 
-if ! git diff --quiet HEAD -- . || ! git diff --cached --quiet -- .; then
+tree_status="$(git status --porcelain=v1 --untracked-files=all)"
+if [ -n "$tree_status" ]; then
   echo "==> skipping reused-build epoch probe in dirty worktree" >&2
+  printf '%s
+' "$tree_status" >&2
   exit 0
 fi
 

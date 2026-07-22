@@ -14,7 +14,7 @@
 #   8. plans            check-plans.sh (documentation structure)
 #   9. forbidden text   check-forbidden-text.sh
 #  10. meson contract   test-meson-mock.sh (mocked TeX; skipped without meson/ninja)
-#  11. clean tree       git diff --exit-code
+#  11. clean tree       staged, unstaged, and untracked nonignored paths
 #
 # The checker lanes receive their subjects by argument (ADR-014). The
 # census_args function below derives role-tagged argv from git
@@ -120,6 +120,12 @@ else
 fi
 
 echo "==> lane 11/11: clean working tree" >&2
-git diff --exit-code
+tree_status="$(git status --porcelain=v1 --untracked-files=all)"
+if [ -n "$tree_status" ]; then
+  printf '%s
+' "$tree_status" >&2
+  echo "ERROR: repository contains staged, unstaged, or untracked nonignored changes" >&2
+  exit 1
+fi
 
 echo "==> CI green" >&2
