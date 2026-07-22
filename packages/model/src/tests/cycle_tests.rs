@@ -17,13 +17,15 @@ fn admitted_world(principal: u64) -> World {
 fn empty_cycle_advances_without_issuance() {
     let world = advance_blocks(&test_fixtures::world(), 100);
 
-    let next = RunCycle {
-        caller: CycleCaller::Anyone,
-        operator_signers: SignerSet::new(),
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
+    let next = apply_checked(
+        &world,
+        &RunCycle {
+            caller: CycleCaller::Anyone,
+            operator_signers: SignerSet::new(),
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    );
 
     let old_state = world.state().unwrap().1;
 
@@ -46,21 +48,21 @@ fn empty_cycle_advances_without_issuance() {
             .unwrap()
             .is_none()
     );
-
-    check_invariant(&next).unwrap();
 }
 
 #[test]
 fn cycle_creates_distribution_for_nonzero_q() {
     let world = advance_blocks(&admitted_world(1_000), 100);
 
-    let next = RunCycle {
-        caller: CycleCaller::Anyone,
-        operator_signers: SignerSet::new(),
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
+    let next = apply_checked(
+        &world,
+        &RunCycle {
+            caller: CycleCaller::Anyone,
+            operator_signers: SignerSet::new(),
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    );
 
     let cycle = next.state().unwrap().1.cycle;
 
@@ -79,8 +81,6 @@ fn cycle_creates_distribution_for_nonzero_q() {
             .amount,
         Sat::ONE,
     );
-
-    check_invariant(&next).unwrap();
 }
 
 #[test]
@@ -120,18 +120,20 @@ fn maturity_cycle_converts_even_when_empty() {
         fee_envelope: FeeEnvelope::default(),
     };
 
-    world = announce.apply(&world, next_order(&world)).unwrap();
+    world = apply_checked(&world, &announce, next_order(&world));
 
     for _ in 0..10 {
         world = advance_blocks(&world, 100);
 
-        world = RunCycle {
-            caller: CycleCaller::Anyone,
-            operator_signers: SignerSet::new(),
-            fee_envelope: FeeEnvelope::default(),
-        }
-        .apply(&world, next_order(&world))
-        .unwrap();
+        world = apply_checked(
+            &world,
+            &RunCycle {
+                caller: CycleCaller::Anyone,
+                operator_signers: SignerSet::new(),
+                fee_envelope: FeeEnvelope::default(),
+            },
+            next_order(&world),
+        );
     }
 
     let state = world.state().unwrap().1;
@@ -141,8 +143,6 @@ fn maturity_cycle_converts_even_when_empty() {
     assert_eq!(state.maturity, Maturity::Complete);
 
     assert_eq!(state.y_t, Sat::ZERO);
-
-    check_invariant(&world).unwrap();
 }
 
 #[test]
@@ -177,13 +177,15 @@ fn maturity_lead_bounds_are_enforced() {
 fn post_maturity_fee_share_is_entirely_live_class() {
     let mut world = test_fixtures::world();
 
-    world = AnnounceMaturity {
-        maturity_cycle: 10,
-        signers: signers(&[OPERATOR_KEY]),
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
+    world = apply_checked(
+        &world,
+        &AnnounceMaturity {
+            maturity_cycle: 10,
+            signers: signers(&[OPERATOR_KEY]),
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    );
 
     for _ in 0..10 {
         world = run_forced_cycle(&world);

@@ -29,12 +29,14 @@ fn compaction_preserves_ash_value_and_reduces_count() {
         .try_fold(Sat::ZERO, |acc, value| acc.checked_add(value))
         .unwrap();
 
-    let next = CompactAsh {
-        ash_inputs: ash,
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
+    let next = apply_checked(
+        &world,
+        &CompactAsh {
+            ash_inputs: ash,
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    );
 
     let next_ash = find_ash(&next);
 
@@ -42,8 +44,6 @@ fn compaction_preserves_ash_value_and_reduces_count() {
     assert_eq!(next.utxo(next_ash[0]).unwrap().value, total);
 
     assert!(next.history.transitions.last().unwrap().burn.is_none(),);
-
-    check_invariant(&next).unwrap();
 }
 
 #[test]
@@ -60,12 +60,14 @@ fn clear_decrements_y_l_and_ash_equally() {
         .try_fold(Sat::ZERO, |acc, value| acc.checked_add(value))
         .unwrap();
 
-    let next = ClearAsh {
-        ash_inputs: ash,
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
+    let next = apply_checked(
+        &world,
+        &ClearAsh {
+            ash_inputs: ash,
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    );
 
     let new_state = next.state().unwrap().1;
 
@@ -85,62 +87,66 @@ fn clear_decrements_y_l_and_ash_equally() {
 
     assert!(certificate.clear.is_some());
     assert!(certificate.burn.is_none());
-
-    check_invariant(&next).unwrap();
 }
 
 #[test]
 fn clear_never_reaches_zero_total_supply() {
     let (world, receipt) = sealing_world();
 
-    let burned = BurnReceipts {
-        receipts: vec![receipt],
-        signers: signers(&[GENESIS_OWNER]),
-        ash_value: world.utxo(receipt).unwrap().value,
-        change: Vec::new(),
-        records: Vec::new(),
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
+    let burned = apply_checked(
+        &world,
+        &BurnReceipts {
+            receipts: vec![receipt],
+            signers: signers(&[GENESIS_OWNER]),
+            ash_value: world.utxo(receipt).unwrap().value,
+            change: Vec::new(),
+            records: Vec::new(),
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    );
 
     let ash = find_ash(&burned);
 
-    let next = ClearAsh {
-        ash_inputs: ash,
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&burned, next_order(&burned))
-    .unwrap();
+    let next = apply_checked(
+        &burned,
+        &ClearAsh {
+            ash_inputs: ash,
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&burned),
+    );
 
     assert_eq!(next.state().unwrap().1.y(), Ok(Sat::ONE));
 
     assert_eq!(find_ash(&next).len(), 1);
-
-    check_invariant(&next).unwrap();
 }
 
 #[test]
 fn zero_progress_clear_is_rejected() {
     let (world, receipt) = sealing_world();
 
-    let burned = BurnReceipts {
-        receipts: vec![receipt],
-        signers: signers(&[GENESIS_OWNER]),
-        ash_value: world.utxo(receipt).unwrap().value,
-        change: Vec::new(),
-        records: Vec::new(),
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
+    let burned = apply_checked(
+        &world,
+        &BurnReceipts {
+            receipts: vec![receipt],
+            signers: signers(&[GENESIS_OWNER]),
+            ash_value: world.utxo(receipt).unwrap().value,
+            change: Vec::new(),
+            records: Vec::new(),
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    );
 
-    let first = ClearAsh {
-        ash_inputs: find_ash(&burned),
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&burned, next_order(&burned))
-    .unwrap();
+    let first = apply_checked(
+        &burned,
+        &ClearAsh {
+            ash_inputs: find_ash(&burned),
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&burned),
+    );
 
     assert_eq!(
         ClearAsh {
@@ -164,28 +170,32 @@ fn oversized_single_ash_partially_clears_with_residual() {
 
     // Burn the entire supply into one ash object: its value `y`
     // exceeds the clear capacity `y - 1`.
-    let burned = BurnReceipts {
-        receipts: vec![receipt],
-        signers: signers(&[GENESIS_OWNER]),
-        ash_value: y,
-        change: Vec::new(),
-        records: Vec::new(),
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
+    let burned = apply_checked(
+        &world,
+        &BurnReceipts {
+            receipts: vec![receipt],
+            signers: signers(&[GENESIS_OWNER]),
+            ash_value: y,
+            change: Vec::new(),
+            records: Vec::new(),
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    );
 
     let ash = find_ash(&burned);
 
     assert_eq!(ash.len(), 1);
     assert_eq!(burned.utxo(ash[0]).unwrap().value, y);
 
-    let next = ClearAsh {
-        ash_inputs: ash,
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&burned, next_order(&burned))
-    .unwrap();
+    let next = apply_checked(
+        &burned,
+        &ClearAsh {
+            ash_inputs: ash,
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&burned),
+    );
 
     // Partial clear: exactly `y - 1` cleared, supply floor preserved.
     let state = next.state().unwrap().1;
@@ -202,6 +212,4 @@ fn oversized_single_ash_partially_clears_with_residual() {
 
     assert!(certificate.clear.is_some());
     assert!(certificate.burn.is_none());
-
-    check_invariant(&next).unwrap();
 }

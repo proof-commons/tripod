@@ -49,12 +49,14 @@ fn cleared_world() -> World {
 
     let ash = find_ash(&burned);
 
-    ClearAsh {
-        ash_inputs: ash,
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&burned, next_order(&burned))
-    .unwrap()
+    apply_checked(
+        &burned,
+        &ClearAsh {
+            ash_inputs: ash,
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&burned),
+    )
 }
 
 fn from_forged_history(world: &World) -> Result<ReferenceIndexer, Guard> {

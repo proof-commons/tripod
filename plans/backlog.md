@@ -272,7 +272,7 @@ does not depend on an unresolved semantic decision.
 | `F1-026` | P2 | **DONE** | Shell checker stamps and always-stale wiring violate no-op and touch-only claims. |
 | `F1-027` | P2 | **DONE** | Production `execwrap` exposes hidden mock flags that fabricate TeX outputs. |
 | `F1-028` | P3 | **DONE** | Maintenance-potential report counts used unchecked `as u64` narrowing. |
-| `F1-029` | P3 | **TODO** | Positive scenario tests use bare `apply` + manual invariant check, blurring evidence class. |
+| `F1-029` | P3 | **DONE** | Positive scenario tests use bare `apply` + manual invariant check, blurring evidence class. |
 | `F1-030` | P2 | **DONE** | Document stamp inputs are not fully canonical or committed-blob-bound. |
 | `F1-031` | P2 | **DONE** | `execwrap` logs caller-controlled child program text despite the raw-argv prohibition. |
 | `F1-032` | P2 | **DONE** | `census-audit` logs raw stderr from an argument-supplied external Git program. |
@@ -1615,10 +1615,26 @@ public entry point — and returns the successor world. The receipt-relabel
 module is converted as the pilot: its two public positive-scenario tests now
 advance through `apply_checked` instead of `apply().unwrap()` plus a separate
 `check_invariant`, while its authorization-failure and kernel-structural
-fault-injection tests deliberately keep raw `apply`. Remaining positive
-scenario modules (cycle, settlement, redemption, admission, ...) are converted
-incrementally one at a time, so this finding stays **TODO** until that adoption
-is complete.
+fault-injection tests deliberately keep raw `apply`.
+
+#### Evidence · DONE
+
+- The adoption sweep is complete across the positive-scenario modules: `cycle`,
+  `ash_clear`, `redemption`, `admission`, `transfer`, `burn_attestation`,
+  `request_lifecycle`, `stronger_fee_auction`, `realization_conformance`, and
+  `checkpoint_semantics` now advance their success scenarios through
+  `apply_checked`, dropping the paired `apply().unwrap()` + separate
+  `check_invariant` where the invariant was the sole remaining assertion.
+- The discipline is per-module, not a blind sweep: raw `apply` is deliberately
+  retained wherever the evidence class differs — negative `Err` assertions
+  (authorization/cadence/ceiling/cap failures), fault-injection and
+  history-corruption robustness tests, kernel-structural `TxBuilder` cases,
+  forged-certificate/reorg-tamper tests, and stale-candidate `if let Ok(..)`
+  rebuilds. `fee_auction` is left untouched because its one apply is matched
+  against an expected `Err(CadenceTooEarly)`; `settlement` positives already
+  flow through the `settle_batch` fixture with no direct apply to convert.
+- Verified: full `tripod-model` suite (282 tests) and clippy
+  `-D warnings` green via the flatpak SDK.
 
 ---
 

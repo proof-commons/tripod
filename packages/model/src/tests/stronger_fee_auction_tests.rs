@@ -56,9 +56,9 @@ fn admission_and_cycle_are_both_valid_against_one_state() {
         fee_envelope: FeeEnvelope::default(),
     };
 
-    let admission_result = admission.apply(&world, next_order(&world)).unwrap();
+    let admission_result = apply_checked(&world, &admission, next_order(&world));
 
-    let cycle_result = cycle.apply(&world, next_order(&world)).unwrap();
+    let cycle_result = apply_checked(&world, &cycle, next_order(&world));
 
     for result in [&admission_result, &cycle_result] {
         check_invariant(result).unwrap();
@@ -95,15 +95,17 @@ fn admission_and_cycle_are_both_valid_against_one_state() {
 fn winner_invalidates_other_candidate_outpoint() {
     let (world, second_request) = contended_world();
 
-    let winner = AdmitDeposits {
-        requests: vec![second_request],
+    let winner = apply_checked(
+        &world,
+        &AdmitDeposits {
+            requests: vec![second_request],
 
-        admission_reward: Sat::ZERO,
+            admission_reward: Sat::ZERO,
 
-        reward_owner: RELAYER,
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
+            reward_owner: RELAYER,
+        },
+        next_order(&world),
+    );
 
     // Reusing the old candidate against the winner's
     // world must fail because the old STATE and RESV

@@ -117,7 +117,7 @@ fn compact_ash_model_transition_satisfies_realization() {
         ash_inputs: find_ash(&world),
         fee_envelope: FeeEnvelope::default(),
     };
-    let after = transition.apply(&world, next_order(&world)).unwrap();
+    let after = apply_checked(&world, &transition, next_order(&world));
     let observation = observe_compact_ash(&world, &transition, &after).unwrap();
     let report = evaluate(&observation);
 
@@ -200,7 +200,7 @@ fn live_transfer_split_satisfies_realization() {
         signers: signers(&[GENESIS_OWNER]),
         fee_envelope: FeeEnvelope::default(),
     };
-    let after = transition.apply(&world, next_order(&world)).unwrap();
+    let after = apply_checked(&world, &transition, next_order(&world));
     let observation = observe_live_transfer(&world, &transition, &after).unwrap();
     let report = evaluate(&observation);
 
@@ -215,33 +215,35 @@ fn live_transfer_split_satisfies_realization() {
 fn live_transfer_merge_satisfies_realization() {
     let world = test_fixtures::world();
     let input = find_receipts(&world, GENESIS_OWNER, ReceiptClass::Live)[0];
-    let split = TransferReceipts {
-        class: ReceiptClass::Live,
-        inputs: vec![input],
-        outputs: vec![
-            ReceiptDestination {
-                owner: ALICE,
-                value: sat(5),
-            },
-            ReceiptDestination {
-                owner: BOB,
-                value: sat(7),
-            },
-            ReceiptDestination {
-                owner: GENESIS_OWNER,
-                value: world
-                    .utxo(input)
-                    .unwrap()
-                    .value
-                    .checked_sub(sat(12))
-                    .unwrap(),
-            },
-        ],
-        signers: signers(&[GENESIS_OWNER]),
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
+    let split = apply_checked(
+        &world,
+        &TransferReceipts {
+            class: ReceiptClass::Live,
+            inputs: vec![input],
+            outputs: vec![
+                ReceiptDestination {
+                    owner: ALICE,
+                    value: sat(5),
+                },
+                ReceiptDestination {
+                    owner: BOB,
+                    value: sat(7),
+                },
+                ReceiptDestination {
+                    owner: GENESIS_OWNER,
+                    value: world
+                        .utxo(input)
+                        .unwrap()
+                        .value
+                        .checked_sub(sat(12))
+                        .unwrap(),
+                },
+            ],
+            signers: signers(&[GENESIS_OWNER]),
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    );
     let alice = find_receipts(&split, ALICE, ReceiptClass::Live)[0];
     let bob = find_receipts(&split, BOB, ReceiptClass::Live)[0];
     let transition = TransferReceipts {
@@ -254,7 +256,7 @@ fn live_transfer_merge_satisfies_realization() {
         signers: signers(&[ALICE, BOB]),
         fee_envelope: FeeEnvelope::default(),
     };
-    let after = transition.apply(&split, next_order(&split)).unwrap();
+    let after = apply_checked(&split, &transition, next_order(&split));
     let observation = observe_live_transfer(&split, &transition, &after).unwrap();
     let report = evaluate(&observation);
 

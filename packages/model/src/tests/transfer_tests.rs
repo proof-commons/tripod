@@ -18,30 +18,30 @@ fn split_and_merge_preserve_class_value() {
 
     let second = value.checked_sub(first).unwrap();
 
-    let next = TransferReceipts {
-        class: ReceiptClass::Live,
+    apply_checked(
+        &world,
+        &TransferReceipts {
+            class: ReceiptClass::Live,
 
-        inputs: vec![input],
+            inputs: vec![input],
 
-        outputs: vec![
-            ReceiptDestination {
-                owner: ALICE,
-                value: first,
-            },
-            ReceiptDestination {
-                owner: BOB,
-                value: second,
-            },
-        ],
+            outputs: vec![
+                ReceiptDestination {
+                    owner: ALICE,
+                    value: first,
+                },
+                ReceiptDestination {
+                    owner: BOB,
+                    value: second,
+                },
+            ],
 
-        signers: signers(&[GENESIS_OWNER]),
+            signers: signers(&[GENESIS_OWNER]),
 
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
-
-    check_invariant(&next).unwrap();
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    );
 }
 
 #[test]
@@ -50,37 +50,39 @@ fn mixed_owner_transfer_requires_every_signer() {
 
     let genesis_input = find_receipts(&world, GENESIS_OWNER, ReceiptClass::Live)[0];
 
-    let split = TransferReceipts {
-        class: ReceiptClass::Live,
+    let split = apply_checked(
+        &world,
+        &TransferReceipts {
+            class: ReceiptClass::Live,
 
-        inputs: vec![genesis_input],
+            inputs: vec![genesis_input],
 
-        outputs: vec![
-            ReceiptDestination {
-                owner: ALICE,
-                value: sat(5),
-            },
-            ReceiptDestination {
-                owner: BOB,
-                value: sat(7),
-            },
-            ReceiptDestination {
-                owner: GENESIS_OWNER,
-                value: world
-                    .utxo(genesis_input)
-                    .unwrap()
-                    .value
-                    .checked_sub(sat(12))
-                    .unwrap(),
-            },
-        ],
+            outputs: vec![
+                ReceiptDestination {
+                    owner: ALICE,
+                    value: sat(5),
+                },
+                ReceiptDestination {
+                    owner: BOB,
+                    value: sat(7),
+                },
+                ReceiptDestination {
+                    owner: GENESIS_OWNER,
+                    value: world
+                        .utxo(genesis_input)
+                        .unwrap()
+                        .value
+                        .checked_sub(sat(12))
+                        .unwrap(),
+                },
+            ],
 
-        signers: signers(&[GENESIS_OWNER]),
+            signers: signers(&[GENESIS_OWNER]),
 
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    );
 
     let alice = find_receipts(&split, ALICE, ReceiptClass::Live)[0];
 
@@ -105,24 +107,24 @@ fn mixed_owner_transfer_requires_every_signer() {
         Err(Guard::BadSignature),
     );
 
-    let next = TransferReceipts {
-        class: ReceiptClass::Live,
+    apply_checked(
+        &split,
+        &TransferReceipts {
+            class: ReceiptClass::Live,
 
-        inputs: vec![alice, bob],
+            inputs: vec![alice, bob],
 
-        outputs: vec![ReceiptDestination {
-            owner: CAROL,
-            value: sat(12),
-        }],
+            outputs: vec![ReceiptDestination {
+                owner: CAROL,
+                value: sat(12),
+            }],
 
-        signers: signers(&[ALICE, BOB]),
+            signers: signers(&[ALICE, BOB]),
 
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&split, next_order(&split))
-    .unwrap();
-
-    check_invariant(&next).unwrap();
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&split),
+    );
 }
 
 #[test]

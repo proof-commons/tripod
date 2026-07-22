@@ -21,13 +21,15 @@ fn partial_redemption_preserves_floor() {
 
     let old_state = world.state().unwrap().1;
 
-    let next = RedeemReceipt {
-        receipt,
-        signers: signers(&[ALICE]),
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
+    let next = apply_checked(
+        &world,
+        &RedeemReceipt {
+            receipt,
+            signers: signers(&[ALICE]),
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    );
 
     let new_state = next.state().unwrap().1;
 
@@ -40,8 +42,6 @@ fn partial_redemption_preserves_floor() {
     );
 
     assert_eq!(old_state.y_l.checked_sub(new_state.y_l).unwrap(), sat(100),);
-
-    check_invariant(&next).unwrap();
 }
 
 #[test]
@@ -107,13 +107,15 @@ fn pending_q_blocks_sealing_redemption() {
 fn sealing_redemption_terminates_resv_chain() {
     let (world, receipt) = sealing_world();
 
-    let next = RedeemReceipt {
-        receipt,
-        signers: signers(&[GENESIS_OWNER]),
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
+    let next = apply_checked(
+        &world,
+        &RedeemReceipt {
+            receipt,
+            signers: signers(&[GENESIS_OWNER]),
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    );
 
     let state = next.state().unwrap().1;
 
@@ -123,21 +125,21 @@ fn sealing_redemption_terminates_resv_chain() {
     let certificate = next.history.transitions.last().unwrap();
 
     assert!(matches!(certificate.resv_edge, Some(RootEdge::Term { .. })));
-
-    check_invariant(&next).unwrap();
 }
 
 #[test]
 fn sealed_pool_rejects_further_redemption() {
     let (world, receipt) = sealing_world();
 
-    let sealed = RedeemReceipt {
-        receipt,
-        signers: signers(&[GENESIS_OWNER]),
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
+    let sealed = apply_checked(
+        &world,
+        &RedeemReceipt {
+            receipt,
+            signers: signers(&[GENESIS_OWNER]),
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    );
 
     assert_eq!(sealed.active_resv(), Err(Guard::Sealed));
 }
@@ -146,13 +148,15 @@ fn sealed_pool_rejects_further_redemption() {
 fn sealed_pool_rejects_maturity_announcement() {
     let (world, receipt) = sealing_world();
 
-    let sealed = RedeemReceipt {
-        receipt,
-        signers: signers(&[GENESIS_OWNER]),
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
+    let sealed = apply_checked(
+        &world,
+        &RedeemReceipt {
+            receipt,
+            signers: signers(&[GENESIS_OWNER]),
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    );
 
     assert_eq!(
         AnnounceMaturity {

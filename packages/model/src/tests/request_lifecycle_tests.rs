@@ -61,13 +61,15 @@ fn request_cancellation_refunds_full_request_value() {
 
     let request_value = world.utxo(request).unwrap().value;
 
-    let next = CancelRequest {
-        request,
-        signers: signers(&[ALICE]),
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
+    let next = apply_checked(
+        &world,
+        &CancelRequest {
+            request,
+            signers: signers(&[ALICE]),
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    );
 
     let refund_total = next
         .utxos

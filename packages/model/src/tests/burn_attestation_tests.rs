@@ -181,12 +181,14 @@ fn compacted_ash_never_creates_another_burn_event() {
 
     assert_eq!(ash.len(), 2);
 
-    let compacted = CompactAsh {
-        ash_inputs: ash,
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&second, next_order(&second))
-    .unwrap();
+    let compacted = apply_checked(
+        &second,
+        &CompactAsh {
+            ash_inputs: ash,
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&second),
+    );
 
     let burn_count = compacted
         .history
@@ -313,20 +315,22 @@ fn indexer_excludes_events_after_checkpoint() {
     // Burn B in the next block, after the checkpoint.
     let receipt = find_receipts(&after_first, BOB, ReceiptClass::Live)[0];
 
-    let full = BurnReceipts {
-        receipts: vec![receipt],
-        signers: signers(&[BOB]),
-        ash_value: sat(50),
-        change: Vec::new(),
-        records: vec![BurnRecord {
-            record_index: 0,
-            address: ADDRESS_B,
-            amount: sat(50),
-        }],
-        fee_envelope: FeeEnvelope::default(),
-    }
-    .apply(&after_first, next_block_order(&after_first))
-    .unwrap();
+    let full = apply_checked(
+        &after_first,
+        &BurnReceipts {
+            receipts: vec![receipt],
+            signers: signers(&[BOB]),
+            ash_value: sat(50),
+            change: Vec::new(),
+            records: vec![BurnRecord {
+                record_index: 0,
+                address: ADDRESS_B,
+                amount: sat(50),
+            }],
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_block_order(&after_first),
+    );
 
     let genesis_height = full.history.genesis.order.height;
 

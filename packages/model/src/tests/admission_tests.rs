@@ -21,13 +21,15 @@ fn admission_preserves_exact_principal_partition() {
 
     let old_resv = world.active_resv().unwrap().1.value;
 
-    let next = AdmitDeposits {
-        requests: vec![request],
-        admission_reward: sat(40),
-        reward_owner: RELAYER,
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
+    let next = apply_checked(
+        &world,
+        &AdmitDeposits {
+            requests: vec![request],
+            admission_reward: sat(40),
+            reward_owner: RELAYER,
+        },
+        next_order(&world),
+    );
 
     let new_state = next.state().unwrap().1;
 
@@ -44,8 +46,6 @@ fn admission_preserves_exact_principal_partition() {
     let certificate = next.history.transitions.last().unwrap();
 
     assert_eq!(certificate.chain_fee, sat(60));
-
-    check_invariant(&next).unwrap();
 }
 
 #[test]
@@ -74,13 +74,15 @@ fn admission_creates_one_entitlement_per_request() {
         })
         .collect::<Vec<_>>();
 
-    let next = AdmitDeposits {
-        requests,
-        admission_reward: Sat::ZERO,
-        reward_owner: RELAYER,
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
+    let next = apply_checked(
+        &world,
+        &AdmitDeposits {
+            requests,
+            admission_reward: Sat::ZERO,
+            reward_owner: RELAYER,
+        },
+        next_order(&world),
+    );
 
     let entitlements = next
         .utxos
@@ -196,13 +198,13 @@ fn admission_reward_exceeding_budget_is_rejected() {
     );
 
     // The exact boundary is within the authorized envelope.
-    let next = AdmitDeposits {
-        requests: vec![request],
-        admission_reward: sat(100),
-        reward_owner: RELAYER,
-    }
-    .apply(&world, next_order(&world))
-    .unwrap();
-
-    check_invariant(&next).unwrap();
+    let _next = apply_checked(
+        &world,
+        &AdmitDeposits {
+            requests: vec![request],
+            admission_reward: sat(100),
+            reward_owner: RELAYER,
+        },
+        next_order(&world),
+    );
 }
