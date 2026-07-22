@@ -46,6 +46,30 @@ if grep -q '@ATTESTATION_' "$stamps"; then
 fi
 grep -q 'MOCK TRIPOD ATTESTATION PDF' "$pdf"
 
+# Byte equality alone cannot tell "the edge did not run" from "the edge
+# reran and restat restored identical bytes". Ninja's build log appends a
+# line every time an output edge executes, so counting an output's lines
+# before and after a no-op build detects a spurious rerun. The always-
+# stale stamp derivation is expected to rerun (Git state is not a Ninja
+# input), but its unchanged compare-if-changed outputs must keep the
+# downstream document render and the flattener from re-executing.
+ninja_log="$build/.ninja_log"
+test -f "$ninja_log"
+ninja_runs_for() {
+  awk -F '\t' -v output="$1" '$4 == output { count += 1 } END { print count + 0 }' "$ninja_log"
+}
+render_output="$(
+  awk -F '\t' '$4 ~ /papers\/attestation\/main[.]pdf$/ { output = $4 } END { print output }' \
+    "$ninja_log"
+)"
+flat_output="$(
+  awk -F '\t' \
+    '$4 ~ /papers\/attestation\/Tripod_Attestation_.*_flat[.]tex$/ { output = $4 } END { print output }' \
+    "$ninja_log"
+)"
+test -n "$render_output"
+test -n "$flat_output"
+
 echo "==> mirror repair (replaces publication-repair)" >&2
 cp "$pdf" "$mock_root/expected.pdf"
 cp "$flat" "$mock_root/expected.tex"
@@ -56,9 +80,17 @@ cmp -s "$pdf" "$mock_root/expected.pdf" || { echo "PDF mirror not repaired" >&2;
 cmp -s "$flat" "$mock_root/expected.tex" || { echo "flat mirror not repaired" >&2; exit 1; }
 
 before="$(sha256sum "$pdf" "$flat")"
+render_runs_before="$(ninja_runs_for "$render_output")"
+flat_runs_before="$(ninja_runs_for "$flat_output")"
 meson compile -C "$build" attestation >/dev/null
 after="$(sha256sum "$pdf" "$flat")"
+render_runs_after="$(ninja_runs_for "$render_output")"
+flat_runs_after="$(ninja_runs_for "$flat_output")"
 [ "$before" = "$after" ] || { echo "no-op rebuild changed mirror bytes" >&2; exit 1; }
+[ "$render_runs_before" = "$render_runs_after" ] \
+  || { echo "no-op build reran the mock document render" >&2; exit 1; }
+[ "$flat_runs_before" = "$flat_runs_after" ] \
+  || { echo "no-op build reran the LaTeX flattener" >&2; exit 1; }
 
 echo "==> generator repair (replaces generator-repair)" >&2
 meson compile -C "$build" generate-artifacts >/dev/null
