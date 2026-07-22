@@ -260,7 +260,7 @@ does not depend on an unresolved semantic decision.
 | `F1-020` | P1 | **DONE** | One command cannot atomically commit stdout success and a filesystem stamp. |
 | `F1-021` | P2 | **DONE** | Public query reduction can produce an invalid zero-denominator rational. |
 | `F1-022` | P2 | **DONE** | `execwrap` child-status propagation contradicts the documented global exit classes. |
-| `F1-023` | P1 | **TODO** | Reorg reprojection may increase valuation despite downward-only Layer-0 wording. |
+| `F1-023` | P1 | **DONE** | Reorg reprojection may increase valuation despite downward-only Layer-0 wording. |
 | `F1-024` | P2 | **TODO** | ADR-010 subprocess coverage is incomplete across shipped binaries. |
 | `F1-025` | P2 | **DONE** | Relation IDs reuse unrelated relation kinds and weaken semantic identity clarity. |
 | `F1-026` | P2 | **DONE** | Shell checker stamps and always-stale wiring violate no-op and touch-only claims. |
@@ -846,6 +846,50 @@ The first is more compatible with exact stateless recomputation.
 
 Record whether the correction is presentation-only or changes Layer-0 or
 realization denotation.
+
+#### Evidence · DONE
+
+Adopted the **context-relative law**: the valuation is specified over one
+consistent chronology, and a reorganization is a change of chronology under
+which the same immutable record is revalued upward or downward; no monotone
+order is asserted across chronologies. Treated as a **Layer-0 patch release
+(v0.5.0 → v0.5.1)**, per the maintainer decision.
+
+- Layer-0 paper: the Monotonicity postulate (Layer-0 §1 interface section) is
+  rewritten to the
+  consistent-chronology form — within one chronology the record adds only
+  nonnegative terms (non-decreasing); a reorg selects a different canonical
+  context and may revalue the same raw record up or down; the raw record is
+  invariant. The Conservative-Valuation bound is restated without the
+  downward-only phrasing. `\setversion` and the master/section headers,
+  changelog, `\pdfmetaversion`, and the paper `meson.build` are bumped to
+  v0.5.1. The label set is unchanged, so the Layer-0 anchor-set hash is stable.
+- Architecture binding: `SpecificationBinding::version` moves to `"0.5.1"` in
+  `spec.rs`. This moves the **architecture semantic hash**
+  (`003bca0f…` → `237846f3…`); the **behavioural hash is unchanged**
+  (`04b0a11b…`), confirming no behavioural-array change. The generated
+  `architecture.{json,toml}` are regenerated, and the realization masthead +
+  verbatim appendix + §17 index line are updated to the new hash/version — the
+  `tripod-artifacts` weld tests enforce byte-identity and pass.
+- Realization + companion: the realization reorg sections were already
+  checkpoint-relative (no downward-only wording); the human companion gains a
+  paragraph stating a reorg re-values the immutable record up or down against
+  the selected history, and to wait for settlement depth before treating a
+  valuation as final.
+- Tests: `attestation_reorg_tests.rs` adds explicit downward and upward
+  reprojection of the identical record and a raw-record-invariant check across
+  both chronologies, alongside the existing cross-boundary reprojection test.
+- Decision: this is a **denotation-preserving clarification** — the implemented
+  stateless recomputation already produced context-relative values; the
+  downward-only sentence was the inconsistency. It is shipped as a Layer-0
+  letter/patch under the versioning policy, not a semantic widening.
+- Residual: `plans/phases/00-baseline.md` is a frozen phase-0 snapshot (its
+  behavioural fields already predate the v3 behavioural hash) and is
+  intentionally left unsynced rather than half-updated.
+- Verified via the flatpak SDK: architecture suite incl. the versioning gate
+  and weld tests; full model suite incl. the reorg tests; generated-check and
+  labels-check lanes; workspace clippy `-D warnings`; and the mocked Meson
+  contract (after committing the paper subtree clean).
 
 ---
 
