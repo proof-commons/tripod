@@ -394,3 +394,80 @@ fn spawn_failure_emits_json_diagnostics() {
     }
     assert!(saw_json, "expected at least one JSON diagnostic");
 }
+
+/// The production wrapper no longer knows any mock flags: test simulation is
+/// unreachable through it. Each former flag is now an unknown argument (usage
+/// class 2), so the wrapper cannot be made to fabricate outputs (F1-027).
+#[test]
+fn production_wrapper_rejects_mock_flags() {
+    for flag in [
+        &["--mock-child", "xelatex", "--", "true"][..],
+        &["--mock-outdir", "/tmp", "--", "true"][..],
+        &["--mock-fail", "--", "true"][..],
+    ] {
+        let output = run(flag);
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "production execwrap must reject the mock flag {flag:?}",
+        );
+        assert!(output.stdout.is_empty(), "usage errors write no stdout");
+    }
+}
+
+fn mock_tex() -> Command {
+    Command::new(env!("CARGO_BIN_EXE_execwrap-mock-tex"))
+}
+
+/// The dedicated mock helper fabricates each child's deterministic outputs
+/// under `--outdir`, emitting no stdout.
+#[test]
+fn mock_tex_writes_each_child_outputs() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = dir.path();
+
+    for (child, files) in [
+        ("xelatex", &["main.bcf", "main.aux"][..]),
+        ("biber", &["main.bbl"][..]),
+        ("latexmk", &["main.pdf", "main.aux"][..]),
+    ] {
+        let output = mock_tex()
+            .args([
+                "--child",
+                child,
+                "--outdir",
+                out.to_str().expect("utf8 path"),
+            ])
+            .output()
+            .expect("mock tex runs");
+        assert!(output.status.success(), "mock {child} should succeed");
+        assert!(output.stdout.is_empty(), "mock {child} writes no stdout");
+        for name in files {
+            assert!(out.join(name).exists(), "mock {child} must write {name}");
+        }
+    }
+}
+
+/// `--fail` injects a render failure: exit 1 and no output written.
+#[test]
+fn mock_tex_fail_writes_nothing() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = dir.path();
+
+    let output = mock_tex()
+        .args([
+            "--child",
+            "latexmk",
+            "--outdir",
+            out.to_str().expect("utf8 path"),
+            "--fail",
+        ])
+        .output()
+        .expect("mock tex runs");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        !out.join("main.pdf").exists(),
+        "--fail must write no output"
+    );
+}

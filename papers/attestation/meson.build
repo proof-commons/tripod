@@ -55,8 +55,8 @@ tex_dependencies = macros_attestation_src + attestation_section_files
 all_inputs = main_tex + tex_dependencies + latexmk_rc + bib_file + stamps_template
 
 # Tool paths come from parent project options. In mock_mode the TeX
-# toolchain is simulated by execwrap --mock-child, so its programs are not
-# discovered (the parent does not pass their paths).
+# toolchain is simulated by the separate execwrap-mock-tex helper, so its
+# programs are not discovered (the parent does not pass their paths).
 mock_mode = get_option('mock_mode')
 git = find_program(get_option('git_path'), required: true)
 sh = find_program('sh')
@@ -104,6 +104,19 @@ execwrap = custom_target(
   console: true,
   build_always_stale: true,
 )
+
+# The mock TeX helper is a separate, test-only binary; the production
+# execwrap wrapper never simulates a child (F1-027). It is built only when
+# the TeX toolchain is mocked.
+if mock_mode
+  execwrap_mock_tex = custom_target(
+    'cargo-execwrap-mock-tex',
+    output: 'execwrap-mock-tex',
+    command: [cargo_bin_sync, cargo, cargo_manifest, 'execwrap', 'execwrap-mock-tex', '@OUTPUT@'],
+    console: true,
+    build_always_stale: true,
+  )
+endif
 
 flatten_latex_main = custom_target(
   'cargo-flatten-latex-main',
@@ -193,13 +206,9 @@ copy_references = custom_target(
 pre_generate_log = meson.current_build_dir() / 'pre-generate.log'
 if mock_mode
   pre_generate_command = [
-    execwrap,
-    '--quiet',
-    '--notify-on-write',
-    '--redirect', pre_generate_log,
-    '--mock-child', 'xelatex',
-    '--mock-outdir', '@OUTDIR@',
-    '--', 'true',
+    execwrap_mock_tex,
+    '--child', 'xelatex',
+    '--outdir', '@OUTDIR@',
   ]
 else
   pre_generate_command = [
@@ -229,13 +238,9 @@ pre_generate = custom_target(
 generate_bibliography_log = meson.current_build_dir() / 'generate-bibliography.log'
 if mock_mode
   generate_bibliography_command = [
-    execwrap,
-    '--quiet',
-    '--notify-on-write',
-    '--redirect', generate_bibliography_log,
-    '--mock-child', 'biber',
-    '--mock-outdir', '@OUTDIR@',
-    '--', 'true',
+    execwrap_mock_tex,
+    '--child', 'biber',
+    '--outdir', '@OUTDIR@',
   ]
 else
   generate_bibliography_command = [
@@ -261,16 +266,14 @@ generate_bibliography = custom_target(
 # Target 3: Generate final PDF
 render_document_log = meson.current_build_dir() / 'render-document.log'
 if mock_mode
-  render_mock_flags = ['--mock-child', 'latexmk', '--mock-outdir', '@OUTDIR@']
-  if get_option('mock_fail_child') == 'latexmk'
-    render_mock_flags += ['--mock-fail']
-  endif
   render_document_command = [
-    execwrap,
-    '--quiet',
-    '--notify-on-write',
-    '--redirect', render_document_log,
-  ] + render_mock_flags + ['--', 'true']
+    execwrap_mock_tex,
+    '--child', 'latexmk',
+    '--outdir', '@OUTDIR@',
+  ]
+  if get_option('mock_fail_child') == 'latexmk'
+    render_document_command += ['--fail']
+  endif
 else
   render_document_command = [
     execwrap,

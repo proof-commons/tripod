@@ -1,7 +1,8 @@
 #!/bin/sh
 # Mocked Meson contract test (ADR-014). Exercises the real production
-# Meson graph with the TeX toolchain simulated by execwrap --mock-child,
-# so no XeLaTeX/Biber/latexmk is invoked. Replaces the heavyweight
+# Meson graph with the TeX toolchain simulated by the dedicated
+# execwrap-mock-tex helper (the production execwrap never simulates a
+# child), so no XeLaTeX/Biber/latexmk is invoked. Replaces the heavyweight
 # meson-generator-repair and meson-publication-repair integration tests:
 # same repair / restat / failure-propagation properties, but without a
 # TeX toolchain and without a second real document build.

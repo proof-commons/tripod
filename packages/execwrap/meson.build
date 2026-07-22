@@ -4,6 +4,7 @@
 # into its role group.
 execwrap_source_files = files(
   'src/bin/execwrap.rs',
+  'src/bin/execwrap-mock-tex.rs',
   'src/lib.rs',
   'src/tests/mod.rs',
   'src/writer.rs',
