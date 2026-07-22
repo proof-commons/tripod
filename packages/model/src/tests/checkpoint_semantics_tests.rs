@@ -3,7 +3,7 @@
 //! The test-only `UntrustedIndexerFixture` consistency gate stands in
 //! for untrusted raw index rows: there is no public arbitrary-row
 //! constructor, so a rejection test asserts `fixture.check()` fails.
-//! `ReferenceIndexer::from_model_history` projects trusted
+//! `ReferenceIndexer::from_assumed_kernel_history` projects trusted
 //! executable-model history and validates every consistency fact that
 //! history carries, without claiming independent raw transaction
 //! recognition. Each test mutates exactly one fact a validated chain and
@@ -39,7 +39,7 @@ fn burned_indexer() -> ReferenceIndexer {
 
     let chain = chain_view_for_history(&world);
 
-    ReferenceIndexer::from_model_history(&world.history, &chain, [0_u8; 32]).unwrap()
+    ReferenceIndexer::from_assumed_kernel_history(&world.history, &chain, [0_u8; 32]).unwrap()
 }
 
 fn cleared_world() -> World {
@@ -60,7 +60,7 @@ fn cleared_world() -> World {
 fn from_forged_history(world: &World) -> Result<ReferenceIndexer, Guard> {
     let chain = chain_view_for_history(world);
 
-    ReferenceIndexer::from_model_history(&world.history, &chain, [0_u8; 32])
+    ReferenceIndexer::from_assumed_kernel_history(&world.history, &chain, [0_u8; 32])
 }
 
 // Checkpoint reconstruction: context identity.
@@ -504,7 +504,7 @@ fn forged_history_zero_clear_omega_is_rejected() {
 // The genesis projection is inserted from the publicly constructible
 // history without passing through the transition loop, so it is
 // covered only by the shared semantic validator at the end of
-// `from_model_history`.
+// `from_assumed_kernel_history`.
 
 #[test]
 fn forged_history_zero_genesis_omega_is_rejected() {

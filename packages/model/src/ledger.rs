@@ -261,6 +261,7 @@ fn validate_context_identity(context: &AttestationContext) -> Result<(), Guard> 
 ///
 /// Mirrors `derive_burn_records` so a checkpoint or forged history
 /// cannot smuggle a record shape the kernel could never emit.
+#[cfg_attr(not(test), allow(dead_code))]
 fn validate_burn_records(records: &[BurnRecord]) -> Result<(), Guard> {
     for (position, record) in records.iter().enumerate() {
         if record.amount.is_zero() {
@@ -285,6 +286,7 @@ fn validate_burn_records(records: &[BurnRecord]) -> Result<(), Guard> {
 /// Over-claiming (`Σ records > ash_value`) stays valid here: the
 /// attestation gate is a credit verdict derived per query, not burn
 /// provenance, so only arithmetic-domain failure rejects.
+#[cfg_attr(not(test), allow(dead_code))]
 fn validate_burn_payload(ash_value: Sat, records: &[BurnRecord]) -> Result<(), Guard> {
     if ash_value.is_zero() {
         return Err(Guard::Domain);
@@ -301,6 +303,7 @@ fn validate_burn_payload(ash_value: Sat, records: &[BurnRecord]) -> Result<(), G
 /// model-history boundary. This is defense in depth for histories
 /// produced by the executable-model kernel; it is not independent raw
 /// target-transaction recognition.
+#[cfg_attr(not(test), allow(dead_code))]
 fn validate_model_burn_projection(
     certificate: &TransitionCertificate,
     burn: &BurnProjection,
@@ -377,6 +380,7 @@ fn validate_model_burn_projection(
 /// Ω >= Y, so zero `omega` or zero `y` cannot correspond to a valid
 /// clearing (the wire-level `validate_query` applies the same rule to
 /// serialized terms).
+#[cfg_attr(not(test), allow(dead_code))]
 fn validate_clear_payload(clear: &ClearEntry) -> Result<(), Guard> {
     validate_clear_values(clear.omega, clear.y)
 }
@@ -384,6 +388,7 @@ fn validate_clear_payload(clear: &ClearEntry) -> Result<(), Guard> {
 /// By-value form serving both a stored [`ClearEntry`] and a raw
 /// [`crate::history::ClearProjection`], so the operational-clear rule
 /// has exactly one home.
+#[cfg_attr(not(test), allow(dead_code))]
 fn validate_clear_values(omega: Sat, y: Sat) -> Result<(), Guard> {
     if omega.is_zero() || y.is_zero() {
         return Err(Guard::Domain);
@@ -402,6 +407,7 @@ fn validate_clear_values(omega: Sat, y: Sat) -> Result<(), Guard> {
 /// Every non-test construction path applies both, so any
 /// `AttestationQueryResult` returned by a `ReferenceIndexer` passes
 /// `validate_query` by construction.
+#[cfg_attr(not(test), allow(dead_code))]
 fn validate_checkpoint_semantics(
     context: &AttestationContext,
     burns: &BTreeMap<TxId, BurnTransaction>,
@@ -555,6 +561,20 @@ impl ValidatedChainView {
 /// burn present in the map but absent from the event order (or the
 /// reverse) is an unchecked correspondence, so the type owns the
 /// relationship and every construction path validates it.
+///
+/// There is no public constructor that projects an index from a
+/// caller-authored [`History`]: the only projection path,
+/// `from_assumed_kernel_history`, is crate-private, so external code
+/// cannot fabricate a query-capable index from forged history. The
+/// following therefore does not compile:
+///
+/// ```compile_fail
+/// use model::ReferenceIndexer;
+///
+/// // `from_assumed_kernel_history` is crate-private; external code
+/// // cannot project an index from a caller-authored history.
+/// let _projector = ReferenceIndexer::from_assumed_kernel_history;
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReferenceIndexer {
     /// The validated checkpoint context this index is bound to. The
@@ -750,7 +770,7 @@ impl ReferenceIndexer {
     /// Synthetic constructor for deterministic unit tests.
     ///
     /// Production model projection code should use
-    /// `from_model_history`.
+    /// `from_assumed_kernel_history`.
     #[cfg(test)]
     pub(crate) fn empty_for_test(context: AttestationContext) -> Self {
         Self {
@@ -807,23 +827,33 @@ impl ReferenceIndexer {
         validate_event_index(&self.burns, &self.clears, &self.events)
     }
 
-    /// Project attestation events from history previously produced by
-    /// the trusted executable-model kernel.
+    /// Projects the reference event/query index from a history assumed
+    /// to have been produced by the executable model's declared
+    /// transition path.
     ///
-    /// This constructor validates internal certificate/event
-    /// consistency, but it does not independently recognize or
-    /// authenticate arbitrary caller-authored history. In particular,
-    /// a model [`History`] does not carry enough data to prove every
-    /// consumed object was a live receipt, that no ASH input was
-    /// consumed, or that the ASH output value came from target
-    /// consensus data. Independent deployment event recognition must
-    /// derive events from validated target transactions.
+    /// This is an internal expected-result path for model and
+    /// differential fixtures. It validates internal certificate/event
+    /// consistency, but it does **not** authenticate arbitrary
+    /// caller-authored history and is **not** independent target-chain
+    /// event evidence: a model [`History`] does not carry enough data to
+    /// prove every consumed object was a live receipt, that no ASH input
+    /// was consumed, or that the ASH output value came from target
+    /// consensus data. A sufficiently consistent forged history is
+    /// therefore accepted here — the assumption in the name, not this
+    /// function, is what excludes it. Independent deployment event
+    /// recognition must derive events from validated target
+    /// transactions.
+    ///
+    /// It is `pub(crate)` on purpose: no public API turns a
+    /// caller-authored [`History`] into a query-capable
+    /// [`ReferenceIndexer`].
     ///
     /// The history may contain transitions after the checkpoint. They
     /// are validated for strict order, txid uniqueness, and local
     /// projection/certificate consistency but are not indexed: the
     /// `ReferenceIndexer` is bound to one prefix.
-    pub fn from_model_history(
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn from_assumed_kernel_history(
         history: &History,
         chain: &ValidatedChainView,
         genesis_clear_id: [u8; 32],
