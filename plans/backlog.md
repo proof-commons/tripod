@@ -132,12 +132,12 @@ release identity.
 | `labels` | Owner-aware Markdown/Rust label graph and deterministic registers |
 | `cli-common` | Shared ADR-010 infrastructure and current stamp support |
 | `document-stamps` | Git-derived paper metadata |
-| `execwrap` | Byte-preserving process wrapper and mocked TeX children |
+| `execwrap` | Byte-preserving process wrapper; TeX simulation isolated in a separate `execwrap-mock-tex` binary (F1-027) |
 | `flatten-latex-main` | Deterministic atomic LaTeX flattener |
 | ADR-010 | Implemented in Rust commands; boundary corrections remain |
 | ADR-011 | Implemented; clean-tree gate correction landed (F1-010) |
 | ADR-013 | Implemented; malformed Realization import correction remains |
-| ADR-014 | Implemented in broad shape; stamp/restat and shell-checker corrections remain |
+| ADR-014 | Implemented; stamp/restat repair landed (F1-005), shell-checker no-op correction remains (F1-026) |
 | D007 | Accepted; active planning cleanup landed (F1-013) |
 | D008 | Accepted |
 
@@ -212,6 +212,7 @@ PHASE-1 SAFETY ROOT
 │   ├── F1-014 remove or declare jq
 │   ├── F1-015 classify shell/Python checker output
 │   ├── F1-022 resolve execwrap exit semantics
+│   ├── F1-027 isolate mock TeX execution from the production wrapper
 │   └── F1-024 real subprocess coverage for every binary
 │
 ├── P2 documentation and graph hygiene
@@ -239,12 +240,12 @@ does not depend on an unresolved semantic decision.
 |---|---:|---|---|
 | `F1-001` | P0 | **TODO** | Public checkpoint reconstruction can create credited events without chain provenance. |
 | `F1-002` | P1 | **TODO** | Realization cannot represent exact mixed movement-plus-destruction flows. |
-| `F1-003` | P1 | **TODO** | Compact-ASH architecture/realization weld is incomplete. |
-| `F1-004` | P1 | **TODO** | Realization accepts multiple generic sponsor envelopes. |
-| `F1-005` | P1 | **TODO** | Paper stamp success output defeats claimed Ninja restat behavior. |
+| `F1-003` | P1 | **DONE** | Compact-ASH architecture/realization weld is incomplete. |
+| `F1-004` | P1 | **DONE** | Realization accepts multiple generic sponsor envelopes. |
+| `F1-005` | P1 | **DONE** | Paper stamp success output defeats claimed Ninja restat behavior. |
 | `F1-006` | P1 | **TODO** | Sponsored quiescence ignores active-backing-cap-blocked requests. |
 | `F1-007` | P2 | **BLOCKED** | Checker stamps can be updated despite command failure. |
-| `F1-008` | P2 | **TODO** | Malformed non-PA Realization imports may disappear silently. |
+| `F1-008` | P2 | **DONE** | Malformed non-PA Realization imports may disappear silently. |
 | `F1-009` | P2 | **TODO** | Arbitrary `tree_ref` can mix selected-ref metadata with worktree bytes. |
 | `F1-010` | P2 | **DONE** | CI cleanliness misses staged and untracked nonignored files. |
 | `F1-011` | P2 | **TODO** | Constructibility authorization is selected by operation name rather than architecture semantics. |
@@ -258,11 +259,12 @@ does not depend on an unresolved semantic decision.
 | `F1-019` | P2 | **DONE** | Partial `attestation-stamps` render arguments silently select JSON mode. |
 | `F1-020` | P1 | **TODO** | One command cannot atomically commit stdout success and a filesystem stamp. |
 | `F1-021` | P2 | **DONE** | Public query reduction can produce an invalid zero-denominator rational. |
-| `F1-022` | P2 | **TODO** | `execwrap` child-status propagation contradicts the documented global exit classes. |
+| `F1-022` | P2 | **DONE** | `execwrap` child-status propagation contradicts the documented global exit classes. |
 | `F1-023` | P1 | **TODO** | Reorg reprojection may increase valuation despite downward-only Layer-0 wording. |
 | `F1-024` | P2 | **TODO** | ADR-010 subprocess coverage is incomplete across shipped binaries. |
-| `F1-025` | P2 | **TODO** | Relation IDs reuse unrelated relation kinds and weaken semantic identity clarity. |
+| `F1-025` | P2 | **DONE** | Relation IDs reuse unrelated relation kinds and weaken semantic identity clarity. |
 | `F1-026` | P2 | **TODO** | Shell checker stamps and always-stale wiring violate no-op and touch-only claims. |
+| `F1-027` | P2 | **DONE** | Production `execwrap` exposes hidden mock flags that fabricate TeX outputs. |
 
 ---
 
@@ -440,9 +442,21 @@ Required mutations include sponsor authorization/cardinality, bound
 replacement, missing/extra value flow, missing/extra witness, unexpected data
 output, changed root/projection, changed ASH minimum, and changed output count.
 
----
+#### Evidence · DONE
 
-### F1-004 — Enforce one generic sponsor envelope
+- Commit `a5fd729`. `packages/realization/src/validate.rs`:
+  `validate_compact_ash_architecture` now also checks the exact sponsor input
+  (PlainLbtc, min 0, `FeeSponsorInputMax`, `SponsorOwner`) and output (min 0,
+  exactly one), the exact bound set `{AshBatchMax, FeeSponsorInputMax}`, exact
+  open-flow and value-flow sets (set equality, not membership), an empty
+  data-output set, and the exact four-witness set (CanonicalDelta, AshLineage,
+  ValueFlowClosure, UtxoLifecycle) verified against the published architecture.
+  Ownership is explicit through `compact_error`/`mismatch_compact`.
+- A positive test (`compact_ash_weld_accepts_the_published_architecture`) pins
+  the hardened weld; the `derive(&ARCHITECTURE, …)` path already exercises it.
+  Verified: realization + model suites, fmt, clippy `-D warnings` green.
+- Residual: per-field mutation tests need an `Architecture`-mutation harness
+  that neither weld has (the spec is built from `&'static` slices); deferred.
 
 **Priority:** P1
 **Owners:** `realization`, `model`
@@ -465,9 +479,18 @@ Keep separate claims for:
 For both pilots, test zero, one, and two valid disjoint envelopes, plus duplicate
 source, duplicate destination, missing owner, and family-count overflow.
 
----
+#### Evidence · DONE
 
-### F1-006 — Make sponsored quiescence cap-aware
+- Commit `4ebb826`. Added a typed `SponsorEnvelopeMultiplicity` relation (its
+  own `RelationKind`, `Relation`, and `RelationFailure`) that counts declared
+  `FeeSponsor` open flows and fails when the count exceeds one. Both pilots
+  declare it with maximum one, ordered after open-flow policy and before
+  sponsor isolation. Sponsor cardinality, owner authorization, balance, and
+  isolation remain distinct relations.
+- A test in each pilot adds a second disjoint balanced envelope and confirms it
+  fails multiplicity (and only multiplicity). Realization now agrees with the
+  model's one-envelope rule (`open_flow_tests`). Verified: realization + model
+  suites, fmt, clippy `-D warnings` green.
 
 **Priority:** P1
 **Owners:** `model`
@@ -764,6 +787,18 @@ repair the vocabulary.
 Test ID stability under declaration order, no collisions, exact report
 classification, and unchanged pilot behavior.
 
+#### Evidence · DONE
+
+- Commit `fb9f884`. Added the `AllowedObjectFamilies`, `CanonicalDeltaPolicy`,
+  and `OpenFlowPolicy` relation kinds and retargeted each relation ID in both
+  pilots to the kind matching its `Relation` value; the genuine amount-
+  conservation (Asset) and sponsor-isolation (Sponsor) relations keep their
+  kinds. `OutputClosure` had no remaining meaning and was removed.
+- Test ID builders in both pilot suites, the model realization-conformance
+  fixture, and the realization public API moved in lockstep; the full
+  realization and model suites pass, so every stable relation key is accounted
+  for. Verified: fmt, clippy `-D warnings` green.
+
 ---
 
 ## 6. Build, CLI, and repository-contract work · `sec:backlog:tooling-work`
@@ -882,6 +917,20 @@ Exit requires:
 - changed paper Git state reruns the path;
 - dirty paper state still fails;
 - output-or-stamp classification is unambiguous.
+
+#### Evidence · DONE
+
+- Commit `3153f6c` removed the always-retouched `attestation-stamps.ok`
+  success output: `RenderRequest` and the CLI drop `--stamp`, the render mode
+  is the three-value `--template`/`--stamps-output`/`--epoch-output` set, and
+  the Meson target and probe use only the two real outputs.
+- Commit `6c7253a` proves command non-execution on a no-op build through
+  Ninja's build log: `scripts/test-meson-mock.sh` discovers the render
+  (`main.pdf`) and flattener outputs and asserts neither re-executes, while the
+  always-stale stamp derivation may rerun with unchanged outputs. Verified via
+  the mocked Meson contract (green end-to-end).
+- Residual: the changed-paper-Git-state rerun direction needs a cloned source
+  fixture (§11.3) and is deferred; the no-op count landed.
 
 ---
 
@@ -1061,6 +1110,18 @@ Choose one:
 
 Update ADR, README, tests, and Meson expectations together.
 
+#### Evidence · DONE
+
+- Commit `2a6e0c9`. `wrapper_exit_from_child_status` maps a relayed child
+  status onto the wrapper exit code so the reserved classes stay intact: child
+  0 → success 0, child 1 or 2 → wrapper failure 1 (code 2 stays reserved for
+  wrapper usage), child 3..=255 (including `128 + signal`) relay unchanged, and
+  an unspawnable child stays failure 1.
+- ADR-010 documents the child-status-relay exception, the root README no longer
+  claims every executable uses only 0/1/2, and subprocess tests cover the
+  0/1/2/3/42 mapping, the unspawnable-child case, and signal relay. Verified:
+  execwrap suites, fmt, clippy `-D warnings` green.
+
 ---
 
 ### F1-024 — Complete subprocess coverage
@@ -1101,6 +1162,53 @@ For each applicable binary test:
 - panic behavior where practical.
 
 The all-or-nothing render regression belongs here.
+
+#### Progress — control-plane coverage landed; remains TODO
+
+Commit `91b5ce8` added per-package subprocess tests for the six previously
+uncovered binaries (`check-generated`, `generate-all`, `check-labels`,
+`census-audit`, `generate-label-registers`, `flatten-latex-main`), pinning the
+uniform ADR-010 control-plane contract: `--help`/`--version` exit 0 with empty
+stdout, missing/unknown arguments are usage class 2, and every control-plane
+record is one JSON object on stderr. `attestation-stamps` and `execwrap`
+(+`execwrap-mock-tex`) already had subprocess coverage.
+
+Remaining before DONE:
+
+- success-path rows — the checkers need the full repository/generated census
+  argv;
+- TTY-refusal rows — cannot be proven without a PTY harness the workspace does
+  not yet have;
+- direct-versus-build-report mode and asset-write rows.
+
+Because TTY refusal is unproven, this finding — and the Phase-1 gate
+(`F1-017`) — stays explicitly incomplete.
+
+---
+
+### F1-027 — Isolate mocked TeX execution from the production wrapper
+
+**Priority:** P2
+**Owners:** `execwrap`, Meson
+
+#### Problem
+
+The production `execwrap` binary carried hidden `--mock-child`, `--mock-outdir`,
+and `--mock-fail` flags that skipped child execution and fabricated TeX outputs.
+Test simulation must not be reachable through the ordinary production wrapper
+interface: "hidden from help" is not "unavailable".
+
+#### Evidence · DONE
+
+- Commit `fa09ccf`. The simulation moved into a dedicated `execwrap-mock-tex`
+  binary (`--child`/`--outdir`/`--fail`, calling the existing `run_mock_child`),
+  classified under ADR-010 as a build/test-internal side-effect command. The
+  production wrapper now has no mock flags and always executes its child.
+- The mock Meson graph invokes `execwrap-mock-tex` directly (built only in
+  mock_mode). Subprocess tests confirm the production wrapper rejects every
+  former mock flag as a usage error, the mock helper writes each child's
+  outputs, and `--fail` writes nothing. Verified: execwrap suites and the
+  end-to-end mocked Meson contract green.
 
 ---
 
@@ -1161,6 +1269,23 @@ Required classes:
 Fenced and double-backtick examples remain nonparticipating.
 
 No imported-looking participating token may disappear silently.
+
+#### Evidence · DONE
+
+- Commit `e23fbc2` added the initial import classifier; commit `6cf6b53`
+  reworked the harvester to audit every square-bracketed token in its own
+  grammar class (the document's status-tag family): enforced-pin and invariant
+  tags are audited in place — enforced pins resolve to their pin mints,
+  invariant ordinals range-check against the architecture clause set — template
+  examples (placeholder glyphs) are explicitly exempted, and only genuine
+  citation-shaped tokens reach the import classifier. A dedicated
+  InvalidStatusTag diagnostic types every status-tag failure; unknown owner,
+  malformed label, and bare or asymmetric imported form each get their typed
+  diagnostic.
+- The realization document legend was corrected to "always backticked", one
+  bare model cite was repaired, and a test covers valid tags, both example
+  forms, and each malformed case. labels-check went from 101 false positives to
+  clean; fmt, clippy `-D warnings`, and the labels suite pass.
 
 ---
 
