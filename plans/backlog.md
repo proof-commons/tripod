@@ -215,6 +215,11 @@ PHASE-1 SAFETY ROOT
 │   ├── F1-027 isolate mock TeX execution from the production wrapper
 │   └── F1-024 real subprocess coverage for every binary
 │
+├── P2 output/diagnostic contracts
+│   ├── F1-031 caller-controlled execwrap diagnostics
+│   ├── F1-032 external Git stderr diagnostics
+│   └── F1-034 staged multi-output document stamps
+│
 ├── P2 documentation and graph hygiene
 │   ├── F1-008 exhaustive malformed-import diagnostics
 │   ├── F1-012 normative and companion corrections
@@ -223,8 +228,9 @@ PHASE-1 SAFETY ROOT
 │   └── F1-016 reconcile status and completion evidence
 │
 └── GATE
-    └── F1-017 complete Phase-1 evidence
-        └── R1-013 Phase-1 exit
+    └── F1-033 immutable evidence-tag ceremony
+        └── F1-017 complete Phase-1 evidence
+            └── R1-013 Phase-1 exit
 ```
 
 Every branch above `F1-017` must close. A task may proceed in parallel when it
@@ -268,6 +274,10 @@ does not depend on an unresolved semantic decision.
 | `F1-028` | P3 | **DONE** | Maintenance-potential report counts used unchecked `as u64` narrowing. |
 | `F1-029` | P3 | **TODO** | Positive scenario tests use bare `apply` + manual invariant check, blurring evidence class. |
 | `F1-030` | P2 | **DONE** | Document stamp inputs are not fully canonical or committed-blob-bound. |
+| `F1-031` | P2 | **DONE** | `execwrap` logs caller-controlled child program text despite the raw-argv prohibition. |
+| `F1-032` | P2 | **TODO** | `census-audit` logs raw stderr from an argument-supplied external Git program. |
+| `F1-033` | P3 | **TODO** | Phase completion evidence lacks a non-self-referential commit/tag ceremony. |
+| `F1-034` | P2 | **TODO** | Document-stamp render can partially publish its two real outputs after a late failure. |
 
 ---
 
@@ -1632,6 +1642,40 @@ census, and the no-op lint claim are unaddressed, so this finding stays
   incremental suites, so implementation and policy agree.
 - Verified: labels suite, workspace clippy `-D warnings`, all 10 Meson lanes,
   and the mocked Meson contract green via the flatpak SDK.
+
+---
+
+### F1-031 — Omit caller-controlled program text from `execwrap` diagnostics
+
+**Priority:** P2
+**Owners:** execwrap, ADR-010
+
+#### Problem
+
+`execwrap` logged the child program path on both the normal "executing command"
+info record and the spawn-failure error record. That path is caller-controlled
+`argv[0]` — raw child argv under ADR-010 — so a caller could surface arbitrary
+text (for example `/nonexistent/SHOULD_NOT_APPEAR_api-token`) in the JSON
+diagnostics. Hidden redaction is not an adequate boundary because raw child argv
+is prohibited by field class.
+
+#### Evidence · DONE
+
+- The `program` field is removed from the normal info record (now
+  `argument_count` and `pid` only, "executing child process") and the field is
+  dropped from `ExecError::Spawn` entirely, so its `Display`
+  ("failed to spawn child process: {source}") and the binary's spawn-failure
+  record can no longer disclose it. Argument count and pid remain as known-safe
+  metadata.
+- Two subprocess regressions execute the real binary: a spawn failure whose
+  program path embeds a secret, and one whose path is a credential-bearing URL.
+  Each asserts exit 1, empty stdout, the secret absent from stderr, and that
+  every non-blank stderr line is a JSON object.
+- ADR-010 is clarified: program identity may be logged only from trusted typed
+  configuration or an explicit safe identifier; a caller-supplied executable
+  path is raw child argv and is omitted.
+- Verified: `execwrap` clippy `-D warnings` and the full `execwrap` subprocess
+  suite (21 tests) green via the flatpak SDK.
 
 ---
 

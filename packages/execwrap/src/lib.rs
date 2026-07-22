@@ -54,10 +54,12 @@ pub enum ExecError {
     Io(#[from] io::Error),
 
     /// The child process could not be spawned.
-    #[error("failed to spawn child {program:?}: {source}")]
+    ///
+    /// The failing program path is caller-controlled `argv[0]` — raw
+    /// child argv under ADR-010 — so it is deliberately not carried on
+    /// this variant, keeping it out of every `Display` and diagnostic.
+    #[error("failed to spawn child process: {source}")]
     Spawn {
-        /// Program name that failed to start.
-        program: OsString,
         /// Underlying I/O error.
         #[source]
         source: io::Error,
@@ -435,20 +437,18 @@ pub fn run(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|source| ExecError::Spawn {
-            program: program.clone(),
-            source,
-        })?;
+        .map_err(|source| ExecError::Spawn { source })?;
 
-    // ADR-010 redaction: argv is never logged, even under --debug —
-    // command lines routinely carry tokens, passwords, and credential
-    // URLs, and no field-aware sanitizer guards this call site. Only
-    // safe metadata is recorded.
+    // ADR-010 redaction: neither argv nor the program path is logged,
+    // even under --debug. Command lines routinely carry tokens,
+    // passwords, and credential URLs, and the program is itself
+    // caller-controlled argv[0]; no field-aware sanitizer guards this
+    // call site, so only known-safe metadata (argument count and pid)
+    // is recorded.
     tracing::info!(
-        program = %program.to_string_lossy(),
         argument_count = args.len(),
         pid = child.id(),
-        "executing command",
+        "executing child process",
     );
 
     let stdout = child.stdout.take().expect("stdout pipe configured above");

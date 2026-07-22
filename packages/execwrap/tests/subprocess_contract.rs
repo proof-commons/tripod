@@ -133,6 +133,49 @@ fn unspawnable_child_is_wrapper_failure() {
     assert_eq!(output.status.code(), Some(1));
 }
 
+/// A spawn failure must not echo the caller-controlled program path:
+/// `argv[0]` is raw child argv under ADR-010, so a secret embedded in
+/// the executable path must stay out of the JSON diagnostics.
+#[test]
+fn spawn_failure_does_not_echo_child_program_text() {
+    let secret = "SHOULD_NOT_APPEAR_spawn-program-secret";
+    let program = format!("/nonexistent/{secret}");
+
+    let output = run(&["--", program.as_str()]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.stdout, [] as [u8; 0]);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains(secret),
+        "child program text leaked to diagnostics: {stderr}",
+    );
+
+    for line in stderr.lines().filter(|line| !line.trim().is_empty()) {
+        let value: serde_json::Value = serde_json::from_str(line).expect("diagnostic is JSON");
+        assert!(value.is_object());
+    }
+}
+
+/// A credential-bearing URL supplied as the program path must not appear
+/// in diagnostics on spawn failure either.
+#[test]
+fn spawn_failure_does_not_echo_credential_bearing_program_url() {
+    let program = "https://user:hunter2-secret@example.invalid/SHOULD_NOT_APPEAR";
+
+    let output = run(&["--", program]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.stdout, [] as [u8; 0]);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("hunter2-secret") && !stderr.contains("SHOULD_NOT_APPEAR"),
+        "credential program URL leaked to diagnostics: {stderr}",
+    );
+}
+
 /// Signal termination is reported as 128 + signal.
 #[test]
 fn signal_termination_maps_to_128_plus_signal() {
@@ -161,7 +204,7 @@ fn ambiguous_same_path_routing_is_a_usage_failure() {
 
     let output = run(&["--redirect", path, "--redirect-output", path, "--", "true"]);
     assert_eq!(output.status.code(), Some(2));
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout, [] as [u8; 0]);
     assert!(!log.exists(), "usage failure must not open log files");
 }
 
@@ -258,7 +301,7 @@ fn redirect_error_only_still_forwards_stdout() {
 fn bare_separator_invocation_succeeds() {
     let output = run(&["--", "true"]);
     assert_eq!(output.status.code(), Some(0));
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout, [] as [u8; 0]);
 }
 
 /// An unsubscribed child stream is relayed to the parent's stream even

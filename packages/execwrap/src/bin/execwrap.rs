@@ -119,8 +119,10 @@ fn main() -> ExitCode {
 
     let outcome = match run(&args.command, &cfg, emit_notification) {
         Ok(outcome) => outcome,
-        Err(ExecError::Spawn { program, source }) => {
-            tracing::error!(error = %source, program = %program.to_string_lossy(), "failed to spawn child");
+        Err(ExecError::Spawn { source }) => {
+            // The program path is caller-controlled argv[0]; only the
+            // spawn error itself is safe to report (ADR-010).
+            tracing::error!(error = %source, "failed to spawn child process");
             return CommandExit::Failure.exit_code();
         }
         Err(error) => {

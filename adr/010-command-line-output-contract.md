@@ -223,8 +223,15 @@ not a completeness guarantee. No emission path may rely on them as a security
 boundary; safety comes from omitting classified fields.
 
 Raw child argv is a prohibited field class. It is not made safe by debug mode
-or by heuristic redaction. Program identity and argument count may be logged
-when safe.
+or by heuristic redaction. Program identity may be logged only when it
+originates from trusted typed configuration or an explicit safe identifier; a
+caller-supplied executable path is raw child argv (it is `argv[0]`) and is
+omitted like any other argument value. Argument count is known-safe metadata
+and may be logged.
+
+Likewise, the raw stderr of an argument-supplied external program is arbitrary
+child output, not a typed field: it is omitted rather than relayed or
+heuristically redacted, and only the process exit status is reported.
 
 ## Early startup · `rule:output:early-startup`
 
