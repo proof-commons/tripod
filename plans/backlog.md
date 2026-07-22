@@ -2,7 +2,7 @@
 
 > **Status:** ACTIVE
 > **Current gate:** Phase 1 — typed realization foundation
-> **Current condition:** Phase-1 implementation exists, but provenance, semantic-conformance, build-graph, CLI-contract, and documentation findings block exit
+> **Current condition:** every Phase-1 correctness, build-graph, CLI-contract, and documentation remediation finding is closed; only the completion-evidence gate remains — the planning-status reconciliation (F1-016), the evidence-tag ceremony (F1-033), and the recorded gate run itself (F1-017 / R1-013)
 > **Next gate:** Phase 2 — target-independent compiler analysis
 > **Authority:** Current execution queue only; normative specifications, typed architecture, implemented ADRs, accepted decisions, package contracts, research results, phase cards, and the roadmap take precedence
 
@@ -134,10 +134,10 @@ release identity.
 | `document-stamps` | Git-derived paper metadata |
 | `execwrap` | Byte-preserving process wrapper; TeX simulation isolated in a separate `execwrap-mock-tex` binary (F1-027) |
 | `flatten-latex-main` | Deterministic atomic LaTeX flattener |
-| ADR-010 | Implemented in Rust commands; boundary corrections remain |
+| ADR-010 | Implemented in Rust commands; boundary corrections landed (F1-015 output classes, F1-024 subprocess/TTY coverage, F1-031/F1-032 caller-controlled-text omission) |
 | ADR-011 | Implemented; clean-tree gate correction landed (F1-010) |
-| ADR-013 | Implemented; malformed Realization import correction remains |
-| ADR-014 | Implemented; stamp/restat repair landed (F1-005), shell-checker no-op correction remains (F1-026) |
+| ADR-013 | Implemented; malformed Realization import correction landed (F1-008) |
+| ADR-014 | Implemented; stamp/restat repair landed (F1-005), shell-checker no-op correction landed (F1-026) |
 | D007 | Accepted; active planning cleanup landed (F1-013) |
 | D008 | Accepted |
 
@@ -168,9 +168,10 @@ Attestation specification:             published
 Realization contract:                 published
 Typed architecture:                   final and pinned
 Executable model:                     implemented
-Typed realization pilots:             implemented but under remediation
+Typed realization pilots:             implemented; remediation landed
 Phase-1 implementation foundation:    present
-Phase-1 correctness/evidence gate:     blocked
+Phase-1 correctness findings:         closed
+Phase-1 evidence gate:                awaiting its recorded run
 Post-Phase-1 compiler preparation:     partially prepared
 Target/backend/linker:                 not implemented
 Independent deployment evidence:      absent
@@ -223,7 +224,6 @@ PHASE-1 SAFETY ROOT
 ├── P2 documentation and graph hygiene
 │   ├── F1-008 exhaustive malformed-import diagnostics
 │   ├── F1-012 normative and companion corrections
-│   │   └── depends on F1-023 semantic decision
 │   ├── F1-013 remove D007-superseded adapter planning
 │   └── F1-016 reconcile status and completion evidence
 │
@@ -1454,7 +1454,7 @@ For each applicable binary test:
 
 The all-or-nothing render regression belongs here.
 
-#### Progress — control-plane coverage landed; remains TODO
+#### Progress — control-plane coverage landed first
 
 Commit `91b5ce8` added per-package subprocess tests for the six previously
 uncovered binaries (`check-generated`, `generate-all`, `check-labels`,
@@ -1462,18 +1462,8 @@ uncovered binaries (`check-generated`, `generate-all`, `check-labels`,
 uniform ADR-010 control-plane contract: `--help`/`--version` exit 0 with empty
 stdout, missing/unknown arguments are usage class 2, and every control-plane
 record is one JSON object on stderr. `attestation-stamps` and `execwrap`
-(+`execwrap-mock-tex`) already had subprocess coverage.
-
-Remaining before DONE:
-
-- success-path rows — the checkers need the full repository/generated census
-  argv;
-- TTY-refusal rows — cannot be proven without a PTY harness the workspace does
-  not yet have;
-- direct-versus-build-report mode and asset-write rows.
-
-Because TTY refusal is unproven, this finding — and the Phase-1 gate
-(`F1-017`) — stays explicitly incomplete.
+(+`execwrap-mock-tex`) already had subprocess coverage. The one lane that
+remained after this step was real PTY-backed TTY refusal, closed below.
 
 #### Evidence · DONE
 
@@ -1997,19 +1987,20 @@ Required closure:
 | `R1-001` | **DONE** | Realization crate and package contract |
 | `R1-002` | **DONE** | Typed stable IDs and local-handle separation |
 | `R1-003` | **DONE** | Typed domains, expression graph, evaluator |
-| `R1-004` | **DONE**, vocabulary remediation open | Semantic relation vocabulary |
-| `R1-005` | **DONE**, constructibility remediation open | Constructibility, lifecycle, representation |
+| `R1-004` | **DONE** | Semantic relation vocabulary (vocabulary remediation F1-025 landed) |
+| `R1-005` | **DONE** | Constructibility, lifecycle, representation (constructibility remediation F1-011 landed) |
 | `R1-006` | **DONE** | Deterministic scoped derivation |
-| `R1-007` | **DONE**, blocked from gate evidence | Compact-ASH pilot |
-| `R1-008` | **DONE**, blocked from gate evidence | Live-transfer pilot |
+| `R1-007` | **DONE** | Compact-ASH pilot (exact weld F1-003 landed) |
+| `R1-008` | **DONE** | Live-transfer pilot (one-sponsor-envelope F1-004 landed) |
 | `R1-009` | **DONE** | Dependency-derived pilot declassification |
-| `R1-010` | **DONE**, exact-weld remediation open | Architecture/realization validation |
-| `R1-011` | **DONE**, exact-flow remediation open | Model-conformance projection/tests |
+| `R1-010` | **DONE** | Architecture/realization validation (exact weld F1-003 landed) |
+| `R1-011` | **DONE** | Model-conformance projection/tests (exact flows F1-002 landed) |
 | `R1-012` | **DROPPED** | No Phase-1 realization publication; typed values are direct inputs |
 | `R1-013` | **BLOCKED** | Complete Phase-1 evidence and exit |
 
-“DONE, remediation open” means implementation exists but cannot contribute to
-the exit gate until its named F1 findings close.
+Every implementation deliverable is complete and its named F1 remediation has
+landed; only `R1-013` (the recorded exit gate) is outstanding, blocked solely on
+running and recording `F1-017`.
 
 ### 8.2 Phase-1 semantic closure
 
@@ -2049,7 +2040,7 @@ Phase 1 may exit only when:
 
 ```text
 F1-001 through F1-016 are closed
-F1-018 through F1-026 are closed
+F1-018 through F1-034 are closed
 F1-017 is DONE
 R1-013 is DONE
 ```
@@ -2616,7 +2607,7 @@ Unused dependencies are not added to advertise intent.
 | F1-003 | every compact-ASH architecture mutation fails |
 | F1-004 | two valid sponsor envelopes fail |
 | F1-005 | second unchanged build executes no document command |
-| F1-006 | eligible quiescence always succeeds |
+| F1-006 | driver reaches a progress-maximal typed outcome: an eligible world fully discharges; a blocked world admits its fitting subset and names its residual |
 | F1-007/F1-020 | no false stamp and no failure stdout contract breach |
 | F1-008 | every malformed import emits one diagnostic |
 | F1-009 | selected revision is coherent |
@@ -2627,9 +2618,16 @@ Unused dependencies are not added to advertise intent.
 | F1-021 | zero denominator cannot produce `ExactRational` |
 | F1-022 | child status and wrapper status are unambiguous |
 | F1-023 | both reorg directions have explicit expected semantics |
-| F1-024 | every binary’s real CLI contract is executed |
+| F1-024 | every binary’s real CLI contract is executed, TTY refusal PTY-tested and mode-dependent |
 | F1-025 | each relation family has exact typed identity |
 | F1-026 | represented no-op checks do not rerun or rewrite stamps |
+| F1-027 | production `execwrap` rejects the mock-TeX flags |
+| F1-028 | oversized report counts fail with a typed overflow, not silent narrowing |
+| F1-029 | positive scenarios advance through the invariant-wrapped `apply_checked` path |
+| F1-030 | stamp inputs are canonical and committed-blob-bound; a dirty subtree fails |
+| F1-031 | a spawn failure never echoes caller-controlled program text |
+| F1-032 | a failing external git never relays raw child stderr |
+| F1-034 | a staging failure leaves neither render output changed |
 
 ### 16.3 Meson and document evidence
 
@@ -2734,13 +2732,14 @@ Execute in this order unless new evidence changes dependencies:
 3. Select and implement the report/stamp contract:
        F1-020, then F1-007.
 4. Repair document/build contracts:
-       F1-005, F1-019, F1-009, F1-026.
-5. Repair repository and CLI policy:
-       F1-008, F1-010, F1-014, F1-015,
-       F1-022, F1-024.
+       F1-005, F1-019, F1-009, F1-026, F1-030, F1-034.
+5. Repair repository, CLI, and diagnostic policy:
+       F1-008, F1-010, F1-014, F1-015, F1-022, F1-024,
+       F1-027, F1-028, F1-029, F1-031, F1-032.
 6. Correct documents and planning:
        F1-012, F1-013, F1-016.
-7. Run and record F1-017.
+7. Prepare the non-self-referential evidence-tag ceremony (F1-033);
+       then run and record F1-017.
 8. Mark R1-013 and Phase 1 complete only if every required gate passes.
 9. Begin post-Phase-1 work with C1-004 and C1-005.
 10. Begin production compiler analysis only after the Phase-1 exit.
@@ -2758,7 +2757,7 @@ Phase 1 is complete only when:
 R1-001 through R1-011 are implementation-complete
 R1-012 remains explicitly DROPPED with rationale
 F1-001 through F1-016 are closed
-F1-018 through F1-026 are closed
+F1-018 through F1-034 are closed
 F1-017 is DONE
 R1-013 is DONE
 ```
