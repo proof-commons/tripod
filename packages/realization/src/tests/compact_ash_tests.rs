@@ -212,7 +212,7 @@ fn conservation() -> RelationId {
 
 fn canonical_delta_policy() -> RelationId {
     relation_id(
-        RelationKind::Conservation,
+        RelationKind::CanonicalDeltaPolicy,
         RelationSubject::Projection {
             projection: ProjectionId::TransitionCertificate,
         },
@@ -221,7 +221,7 @@ fn canonical_delta_policy() -> RelationId {
 
 fn open_flow_policy() -> RelationId {
     relation_id(
-        RelationKind::SponsorIsolation,
+        RelationKind::OpenFlowPolicy,
         RelationSubject::Projection {
             projection: ProjectionId::TransitionCertificate,
         },
@@ -234,7 +234,7 @@ fn authorization() -> RelationId {
 
 fn input_closure() -> RelationId {
     relation_id(
-        RelationKind::OutputClosure,
+        RelationKind::AllowedObjectFamilies,
         RelationSubject::ObjectFamily {
             side: TransactionSide::Input,
             object: ObjectId::Ash,
@@ -244,7 +244,7 @@ fn input_closure() -> RelationId {
 
 fn output_closure() -> RelationId {
     relation_id(
-        RelationKind::OutputClosure,
+        RelationKind::AllowedObjectFamilies,
         RelationSubject::ObjectFamily {
             side: TransactionSide::Output,
             object: ObjectId::Ash,

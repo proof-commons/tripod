@@ -82,21 +82,27 @@ impl Ids {
             sponsor_input_recognition: sponsor_recognition(TransactionSide::Input),
             sponsor_output_recognition: sponsor_recognition(TransactionSide::Output),
             authorization: object_relation(RelationKind::Authorization, TransactionSide::Input),
-            input_closure: object_relation(RelationKind::OutputClosure, TransactionSide::Input),
-            output_closure: object_relation(RelationKind::OutputClosure, TransactionSide::Output),
+            input_closure: object_relation(
+                RelationKind::AllowedObjectFamilies,
+                TransactionSide::Input,
+            ),
+            output_closure: object_relation(
+                RelationKind::AllowedObjectFamilies,
+                TransactionSide::Output,
+            ),
             conservation: id(
                 RelationKind::Conservation,
                 RelationSubject::Asset { asset: AssetId::U },
             ),
             sponsor: id(RelationKind::SponsorIsolation, RelationSubject::Sponsor),
             open_flow_policy: id(
-                RelationKind::SponsorIsolation,
+                RelationKind::OpenFlowPolicy,
                 RelationSubject::Projection {
                     projection: ProjectionId::TransitionCertificate,
                 },
             ),
             canonical_delta_policy: id(
-                RelationKind::Conservation,
+                RelationKind::CanonicalDeltaPolicy,
                 RelationSubject::Projection {
                     projection: ProjectionId::TransitionCertificate,
                 },

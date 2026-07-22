@@ -74,7 +74,7 @@ fn live_authorization() -> realization::RelationId {
 fn live_output_closure() -> realization::RelationId {
     relation_id(
         architecture::OperationId::TransferLive,
-        realization::RelationKind::OutputClosure,
+        realization::RelationKind::AllowedObjectFamilies,
         realization::RelationSubject::ObjectFamily {
             side: realization::TransactionSide::Output,
             object: architecture::ObjectId::ReceiptLive,

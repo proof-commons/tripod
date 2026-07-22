@@ -118,14 +118,14 @@ impl Ids {
             ),
             permissionless: relation_id(RelationKind::Authorization, RelationSubject::Operation),
             input_closure: relation_id(
-                RelationKind::OutputClosure,
+                RelationKind::AllowedObjectFamilies,
                 RelationSubject::ObjectFamily {
                     side: TransactionSide::Input,
                     object: ObjectId::Ash,
                 },
             ),
             output_closure: relation_id(
-                RelationKind::OutputClosure,
+                RelationKind::AllowedObjectFamilies,
                 RelationSubject::ObjectFamily {
                     side: TransactionSide::Output,
                     object: ObjectId::Ash,
@@ -133,13 +133,13 @@ impl Ids {
             ),
             sponsor: relation_id(RelationKind::SponsorIsolation, RelationSubject::Sponsor),
             open_flow_policy: relation_id(
-                RelationKind::SponsorIsolation,
+                RelationKind::OpenFlowPolicy,
                 RelationSubject::Projection {
                     projection: ProjectionId::TransitionCertificate,
                 },
             ),
             canonical_delta_policy: relation_id(
-                RelationKind::Conservation,
+                RelationKind::CanonicalDeltaPolicy,
                 RelationSubject::Projection {
                     projection: ProjectionId::TransitionCertificate,
                 },
