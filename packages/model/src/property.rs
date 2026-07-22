@@ -43,7 +43,7 @@ use crate::guard::Guard;
 use crate::history::BurnRecord;
 use crate::invariant::check_invariant;
 use crate::maintenance::{
-    admissible_requests, clearable_ash_batch, entitlement_batch_for_cycle, find_ash,
+    capacity_admissible_request_batch, clearable_ash_batch, entitlement_batch_for_cycle, find_ash,
     find_distribution_control, find_distribution_vault, live_distribution_cycles, next_model_order,
 };
 use crate::object::Meta;
@@ -331,7 +331,7 @@ fn property_cancel_request(world: &World) -> Result<World, Guard> {
 // ´rule:verification:property-admission´
 
 fn property_admit_requests(world: &World) -> Result<World, Guard> {
-    let requests = admissible_requests(world);
+    let requests = capacity_admissible_request_batch(world)?;
 
     if requests.is_empty() {
         return Err(Guard::NoSuch);

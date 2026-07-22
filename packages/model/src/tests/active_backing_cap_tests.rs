@@ -207,3 +207,154 @@ fn oversized_open_lbtc_is_inert_until_admission() {
         Err(Guard::ActiveBackingCapExceeded),
     );
 }
+
+// ´test:verification:admission-capacity-plan´
+//
+// The capacity plan separates locally valid requests from the canonical
+// batch that currently fits active-backing headroom, and reports whether
+// the full locally valid set could eventually be admitted. These tests
+// pin each notion against a small explicit headroom.
+
+fn request_principal(world: &World, outpoint: OutPoint) -> Sat {
+    match world.utxos.get(&outpoint).expect("request utxo").meta {
+        Meta::DepositRequest {
+            deposit_principal, ..
+        } => deposit_principal,
+
+        _ => panic!("outpoint is not a deposit request"),
+    }
+}
+
+#[test]
+fn capacity_plan_admits_a_request_that_exactly_fits_headroom() {
+    let world = create_request_for(&cap_genesis(100), ALICE, BOB, sat(100), Sat::ONE);
+
+    let plan = admission_capacity_plan(&world).unwrap();
+
+    assert!(plan.all_fit);
+    assert_eq!(plan.locally_valid.len(), 1);
+    assert_eq!(plan.fitting_batch.len(), 1);
+}
+
+#[test]
+fn capacity_plan_rejects_a_request_one_above_headroom() {
+    let world = create_request_for(&cap_genesis(100), ALICE, BOB, sat(101), Sat::ONE);
+
+    let plan = admission_capacity_plan(&world).unwrap();
+
+    assert!(!plan.all_fit);
+    assert_eq!(plan.locally_valid.len(), 1);
+    assert!(plan.fitting_batch.is_empty());
+
+    let residuals = match classify_quiescence_eligibility(&world).unwrap() {
+        QuiescenceEligibility::Residual(residuals) => residuals,
+        QuiescenceEligibility::Eligible => panic!("expected an active-backing capacity residual"),
+    };
+
+    assert!(residuals.contains(&QuiescenceResidual::ActiveBackingCapacityBlocked));
+
+    let report = lifecycle_report(&world).unwrap();
+
+    assert!(residuals_match_report(&world, &report, &residuals).unwrap());
+}
+
+#[test]
+fn capacity_plan_admits_a_fitting_subset_when_the_full_set_exceeds_headroom() {
+    let mut world = create_request_for(&cap_genesis(100), ALICE, ALICE, sat(60), Sat::ONE);
+
+    world = create_request_for(&world, BOB, BOB, sat(50), Sat::ONE);
+
+    let plan = admission_capacity_plan(&world).unwrap();
+
+    // 60 + 50 = 110 > 100: the full set does not fit, but a canonical
+    // single-request batch does.
+    assert!(!plan.all_fit);
+    assert_eq!(plan.locally_valid.len(), 2);
+    assert_eq!(plan.fitting_batch.len(), 1);
+}
+
+#[test]
+fn capacity_plan_skips_an_oversized_request_and_keeps_smaller_ones() {
+    let mut world = create_request_for(&cap_genesis(100), ALICE, ALICE, sat(110), Sat::ONE);
+
+    world = create_request_for(&world, BOB, BOB, sat(40), Sat::ONE);
+
+    world = create_request_for(&world, CAROL, CAROL, sat(50), Sat::ONE);
+
+    let plan = admission_capacity_plan(&world).unwrap();
+
+    // The 110-unit request never fits (110 > 100); 40 + 50 = 90 <= 100,
+    // so both smaller requests are batched regardless of canonical order.
+    assert!(!plan.all_fit);
+    assert_eq!(plan.locally_valid.len(), 3);
+    assert_eq!(plan.fitting_batch.len(), 2);
+
+    let oversized = plan
+        .locally_valid
+        .iter()
+        .copied()
+        .find(|outpoint| request_principal(&world, *outpoint) == sat(110))
+        .expect("oversized request is locally valid");
+
+    assert!(!plan.fitting_batch.contains(&oversized));
+}
+
+#[test]
+fn capacity_plan_bounds_the_fitting_batch_by_admission_batch_max() {
+    let batch_max = test_fixtures::constants().admission_batch_max;
+
+    let mut world = cap_genesis(1_000);
+
+    for _ in 0..=batch_max {
+        world = create_request_for(&world, ALICE, ALICE, sat(1), Sat::ONE);
+    }
+
+    let plan = admission_capacity_plan(&world).unwrap();
+
+    // Every unit-principal request fits (total <= headroom), but the
+    // batch is capped; the full-set proof is unaffected.
+    assert!(plan.all_fit);
+    assert_eq!(plan.locally_valid.len(), batch_max + 1);
+    assert_eq!(plan.fitting_batch.len(), batch_max);
+}
+
+#[test]
+fn malformed_and_capacity_blocked_requests_do_not_collapse() {
+    let mut world = create_request_for(&cap_genesis(100), ALICE, BOB, sat(101), Sat::ONE);
+
+    // A wrong-pool request is malformed junk: locally invalid, inert,
+    // recoverable only by its refund key. It must not be confused with
+    // the well-formed request blocked purely by capacity.
+    world.adversary.lbtc = world.adversary.lbtc.checked_add(sat(5)).unwrap();
+
+    let (world, _junk) = test_fixtures::inject_and_get_outpoint(
+        &world,
+        Asset::Lbtc,
+        sat(5),
+        Meta::DepositRequest {
+            pool_id: world.constants.pool_id + 1,
+            refund_key: CAROL,
+            receipt_owner: CAROL,
+            deposit_principal: sat(2),
+        },
+    );
+
+    let plan = admission_capacity_plan(&world).unwrap();
+
+    // Only the well-formed oversized request is locally valid.
+    assert_eq!(plan.locally_valid.len(), 1);
+    assert!(!plan.all_fit);
+    assert!(plan.fitting_batch.is_empty());
+
+    let residuals = match classify_quiescence_eligibility(&world).unwrap() {
+        QuiescenceEligibility::Residual(residuals) => residuals,
+        QuiescenceEligibility::Eligible => panic!("expected a mixed residual set"),
+    };
+
+    assert!(residuals.contains(&QuiescenceResidual::ActiveBackingCapacityBlocked));
+    assert!(residuals.contains(&QuiescenceResidual::UnderfundedLostRefundRequest));
+
+    let report = lifecycle_report(&world).unwrap();
+
+    assert!(residuals_match_report(&world, &report, &residuals).unwrap());
+}

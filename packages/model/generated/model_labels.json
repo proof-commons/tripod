@@ -251,6 +251,7 @@
   "rule:verification:value-flow-matrix",
   "test:verification:active-backing-cap",
   "test:verification:admission",
+  "test:verification:admission-capacity-plan",
   "test:verification:advanced-fixtures",
   "test:verification:ash-clear",
   "test:verification:attestation-history-fixture",

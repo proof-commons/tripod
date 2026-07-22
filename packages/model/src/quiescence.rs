@@ -18,6 +18,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::asset::{Asset, ReceiptClass};
 use crate::guard::Guard;
 use crate::history::{DistributionResidueProjection, History};
+use crate::maintenance::admission_capacity_plan;
 use crate::object::{Meta, Utxo};
 use crate::pool::PoolState;
 use crate::recognition::{
@@ -170,6 +171,13 @@ pub enum QuiescenceResidual {
     /// Malformed open junk outside the pool queue; it never enters the
     /// safety state and cannot be collected by maintenance.
     MalformedOpenJunkOnly,
+
+    /// One or more locally valid requests cannot fit the remaining
+    /// active-backing headroom (`(´rule:domains:active-backing-cap´)`).
+    /// Admission and cycle processing do not restore that headroom;
+    /// redemption or owner-authorized cancellation is required. This
+    /// blocks full discharge on a live pool.
+    ActiveBackingCapacityBlocked,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -192,26 +200,48 @@ pub enum QuiescenceEligibility {
 /// residuals (inert junk, unadmittable requests on a live pool) do not
 /// make a world ineligible: they remain outside the shared queues that
 /// the theorem discharges.
+///
+/// The two blocking residuals are a sealed pool with pending locally
+/// valid requests and active-backing capacity exhaustion. Malformed
+/// junk and owner-cancelable invalid requests are named when a blocking
+/// residual is also present, but never make a live, capacity-sufficient
+/// pool ineligible on their own.
 pub fn classify_quiescence_eligibility(world: &World) -> Result<QuiescenceEligibility, Guard> {
     let state = world.state()?.1;
 
     let report = lifecycle_report(world)?;
 
-    if state.y()?.is_zero() && report.admissible_requests > 0 {
-        let mut residuals = BTreeSet::from([QuiescenceResidual::SealedPoolWithPendingRequests]);
+    let capacity = admission_capacity_plan(world)?;
 
-        if unadmittable_request_count(world) > 0 {
-            residuals.insert(QuiescenceResidual::UnderfundedLostRefundRequest);
-        }
+    let sealed = state.y()?.is_zero();
 
-        if report.inert_open_junk > unadmittable_request_count(world) {
-            residuals.insert(QuiescenceResidual::MalformedOpenJunkOnly);
-        }
+    let mut residuals = BTreeSet::new();
 
-        return Ok(QuiescenceEligibility::Residual(residuals));
+    if sealed && !capacity.locally_valid.is_empty() {
+        residuals.insert(QuiescenceResidual::SealedPoolWithPendingRequests);
     }
 
-    Ok(QuiescenceEligibility::Eligible)
+    if !sealed && !capacity.all_fit {
+        residuals.insert(QuiescenceResidual::ActiveBackingCapacityBlocked);
+    }
+
+    let unadmittable = unadmittable_request_count(world);
+
+    if unadmittable > 0 {
+        residuals.insert(QuiescenceResidual::UnderfundedLostRefundRequest);
+    }
+
+    if report.inert_open_junk > unadmittable {
+        residuals.insert(QuiescenceResidual::MalformedOpenJunkOnly);
+    }
+
+    if residuals.contains(&QuiescenceResidual::SealedPoolWithPendingRequests)
+        || residuals.contains(&QuiescenceResidual::ActiveBackingCapacityBlocked)
+    {
+        Ok(QuiescenceEligibility::Residual(residuals))
+    } else {
+        Ok(QuiescenceEligibility::Eligible)
+    }
 }
 
 fn unadmittable_request_count(world: &World) -> usize {
@@ -247,6 +277,12 @@ pub fn residuals_match_report(
             }
 
             QuiescenceResidual::MalformedOpenJunkOnly => report.inert_open_junk > 0,
+
+            QuiescenceResidual::ActiveBackingCapacityBlocked => {
+                let capacity = admission_capacity_plan(world)?;
+
+                !state.y()?.is_zero() && !capacity.locally_valid.is_empty() && !capacity.all_fit
+            }
         };
 
         if !matches {

@@ -212,8 +212,9 @@ pub use ledger::{
     validate_query,
 };
 pub use maintenance::{
-    DeterministicMaintenanceScheduler, MaintenanceAction, MaintenanceMode, MaintenanceScheduler,
-    MaintenanceSponsor, StateCandidate, apply_maintenance_action, drive_quiescence_with_scheduler,
+    AdmissionCapacityPlan, DeterministicMaintenanceScheduler, MaintenanceAction, MaintenanceMode,
+    MaintenanceScheduler, MaintenanceSponsor, StateCandidate, admission_capacity_plan,
+    apply_maintenance_action, capacity_admissible_request_batch, drive_quiescence_with_scheduler,
     drive_shared_state_sweepability, drive_shared_state_to_fixpoint, drive_sponsored_quiescence,
     maintenance_phase_potential, next_model_order,
 };

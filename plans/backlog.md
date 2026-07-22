@@ -243,7 +243,7 @@ does not depend on an unresolved semantic decision.
 | `F1-003` | P1 | **DONE** | Compact-ASH architecture/realization weld is incomplete. |
 | `F1-004` | P1 | **DONE** | Realization accepts multiple generic sponsor envelopes. |
 | `F1-005` | P1 | **DONE** | Paper stamp success output defeats claimed Ninja restat behavior. |
-| `F1-006` | P1 | **TODO** | Sponsored quiescence ignores active-backing-cap-blocked requests. |
+| `F1-006` | P1 | **DONE** | Sponsored quiescence ignores active-backing-cap-blocked requests. |
 | `F1-007` | P2 | **BLOCKED** | Checker stamps can be updated despite command failure. |
 | `F1-008` | P2 | **DONE** | Malformed non-PA Realization imports may disappear silently. |
 | `F1-009` | P2 | **TODO** | Arbitrary `tree_ref` can mix selected-ref metadata with worktree bytes. |
@@ -458,6 +458,10 @@ output, changed root/projection, changed ASH minimum, and changed output count.
 - Residual: per-field mutation tests need an `Architecture`-mutation harness
   that neither weld has (the spec is built from `&'static` slices); deferred.
 
+---
+
+### F1-004 — Enforce one sponsor envelope
+
 **Priority:** P1
 **Owners:** `realization`, `model`
 
@@ -491,6 +495,10 @@ source, duplicate destination, missing owner, and family-count overflow.
   fails multiplicity (and only multiplicity). Realization now agrees with the
   model's one-envelope rule (`open_flow_tests`). Verified: realization + model
   suites, fmt, clippy `-D warnings` green.
+
+---
+
+### F1-006 — Make sponsored quiescence active-backing aware
 
 **Priority:** P1
 **Owners:** `model`
@@ -531,6 +539,36 @@ Eligible ⇒ deterministic sponsored driver succeeds
 Required tests cover exact headroom, one above, fitting subsets, individually
 oversized requests, mixed malformed/cap-blocked sets, sealed pools, progress,
 and near-cap property traces.
+
+#### Evidence · DONE
+
+- Commit lands a typed `AdmissionCapacityPlan` in
+  `packages/model/src/maintenance.rs` that separates three notions the old
+  single selector conflated: locally valid requests, the canonical bounded
+  batch that fits current active-backing headroom, and whether the entire
+  locally valid set could eventually be admitted without an intervening
+  redemption. Principals are subtracted from headroom one at a time in
+  canonical outpoint order, so an attacker-controlled open request set cannot
+  overflow `Sat`; two independent headroom counters keep the full-set proof
+  from being coupled to the finite current batch.
+- The ambiguous `admissible_requests` selector is replaced by
+  `capacity_admissible_request_batch`; the deterministic scheduler, the
+  shared-state sweepability precondition, and the property admission driver all
+  consume the capacity-aware helpers.
+- `packages/model/src/quiescence.rs` gains a typed
+  `ActiveBackingCapacityBlocked` residual. `classify_quiescence_eligibility`
+  now returns it for a live pool whose locally valid requests exceed headroom,
+  keeps the sealed-pool residual keyed on locally valid presence, and treats
+  malformed/underfunded requests as non-blocking. `residuals_match_report`
+  checks the new residual against the world.
+- Focused tests in `active_backing_cap_tests.rs` cover exact headroom, one
+  above, a fitting subset when the full set exceeds headroom, canonical skip of
+  an oversized request, the `admission_batch_max` bound, and a mixed
+  malformed/cap-blocked set that does not collapse. The non-vacuous
+  `property_maintenance` theorem still holds: eligible worlds fully discharge;
+  blocked worlds match their classified residuals.
+- Verified: full `tripod-model` suite (277 tests) and clippy
+  `-D warnings` green via the flatpak SDK.
 
 ---
 

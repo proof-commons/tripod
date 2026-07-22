@@ -43,7 +43,9 @@ use crate::ops::{
 };
 use crate::quiescence::{QuiescenceReport, lifecycle_report};
 use crate::recognition::{read_ash, validate_request_for_admission};
-use crate::scalar::{CanonicalOrder, Cycle, OutPoint, OwnerKey, Sat};
+use crate::scalar::{
+    ACTIVE_BACKING_MAX, CanonicalOrder, Cycle, OutPoint, OwnerKey, Sat, checked_active_backing,
+};
 use crate::signer::SignerSet;
 use crate::transition::Transition;
 use crate::world::World;
@@ -349,19 +351,92 @@ pub fn find_distribution_vault(world: &World, cycle: Cycle) -> Option<OutPoint> 
 
 // ´rule:verification:admissible-requests´
 
-pub fn admissible_requests(world: &World) -> Vec<OutPoint> {
-    world
-        .utxos
-        .iter()
-        .filter_map(|(outpoint, utxo)| {
-            if validate_request_for_admission(&world.constants, utxo).is_ok() {
-                Some(*outpoint)
-            } else {
-                None
-            }
-        })
-        .take(world.constants.admission_batch_max)
-        .collect()
+/// A typed capacity plan for deposit admission against the current
+/// active-backing headroom (`(´rule:domains:active-backing-cap´)`).
+///
+/// It keeps three distinct notions apart, which a single request
+/// selector conflated:
+///
+/// - **locally valid** — well-formed for this pool, independent of
+///   headroom;
+/// - **fitting batch** — the canonical bounded batch that fits current
+///   headroom right now;
+/// - **all fit** — whether the *entire* locally valid set could
+///   eventually be admitted without any intervening redemption.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct AdmissionCapacityPlan {
+    /// Locally valid requests, in canonical outpoint order.
+    pub locally_valid: Vec<OutPoint>,
+
+    /// Canonical batch that fits current headroom, bounded by
+    /// `admission_batch_max`. Empty when the smallest locally valid
+    /// request already exceeds headroom.
+    pub fitting_batch: Vec<OutPoint>,
+
+    /// True only when every locally valid request can eventually be
+    /// admitted without any intervening redemption.
+    pub all_fit: bool,
+}
+
+/// Derives the admission capacity plan.
+///
+/// Requests are visited in canonical outpoint order — `World::utxos` is
+/// a `BTreeMap`, so its iteration is already ordered. Principals are
+/// subtracted from remaining headroom one at a time and never summed
+/// first, so an attacker-controlled open request set cannot overflow
+/// `Sat`. Two independent headroom counters keep the full-set proof
+/// (`all_fit`) from being coupled to the finite current `fitting_batch`.
+///
+/// This intentionally does not short-circuit on a sealed pool: a
+/// well-formed request against a sealed pool is still locally valid, and
+/// [`classify_quiescence_eligibility`](crate::quiescence::classify_quiescence_eligibility)
+/// relies on `locally_valid` to name the sealed-pool residual.
+pub fn admission_capacity_plan(world: &World) -> Result<AdmissionCapacityPlan, Guard> {
+    let state = world.state()?.1;
+
+    let active = checked_active_backing(state.omega, state.q)?;
+
+    let initial_headroom = Sat::new(ACTIVE_BACKING_MAX)?.checked_sub(active)?;
+
+    let mut total_remaining = initial_headroom;
+    let mut batch_remaining = initial_headroom;
+
+    let mut locally_valid = Vec::new();
+    let mut fitting_batch = Vec::new();
+    let mut all_fit = true;
+
+    for (outpoint, utxo) in &world.utxos {
+        let Ok(view) = validate_request_for_admission(&world.constants, utxo) else {
+            continue;
+        };
+
+        locally_valid.push(*outpoint);
+
+        if view.deposit_principal <= total_remaining {
+            total_remaining = total_remaining.checked_sub(view.deposit_principal)?;
+        } else {
+            all_fit = false;
+        }
+
+        if fitting_batch.len() < world.constants.admission_batch_max
+            && view.deposit_principal <= batch_remaining
+        {
+            fitting_batch.push(*outpoint);
+            batch_remaining = batch_remaining.checked_sub(view.deposit_principal)?;
+        }
+    }
+
+    Ok(AdmissionCapacityPlan {
+        locally_valid,
+        fitting_batch,
+        all_fit,
+    })
+}
+
+/// The canonical nonempty batch of requests that fits current
+/// active-backing headroom, or empty when none fit.
+pub fn capacity_admissible_request_batch(world: &World) -> Result<Vec<OutPoint>, Guard> {
+    Ok(admission_capacity_plan(world)?.fitting_batch)
 }
 
 // ´rule:verification:live-distribution-cycles´
@@ -486,7 +561,7 @@ fn relabelable_receipt_batch(world: &World) -> Result<Option<Vec<OutPoint>>, Gua
 impl MaintenanceScheduler for DeterministicMaintenanceScheduler {
     fn next_action(&self, world: &World) -> Result<Option<MaintenanceAction>, Guard> {
         if self.mode == MaintenanceMode::FullSponsored {
-            let requests = admissible_requests(world);
+            let requests = capacity_admissible_request_batch(world)?;
 
             if !requests.is_empty() {
                 return Ok(Some(MaintenanceAction::Admit {
@@ -620,7 +695,7 @@ pub fn drive_shared_state_sweepability(
 ) -> Result<(World, QuiescenceReport), Guard> {
     let state = initial.state()?.1;
 
-    if !state.q.is_zero() || !admissible_requests(initial).is_empty() {
+    if !state.q.is_zero() || !admission_capacity_plan(initial)?.locally_valid.is_empty() {
         return Err(Guard::BadAuthorization);
     }
 
