@@ -74,7 +74,7 @@ fn split_streams_route_to_their_own_files() {
     assert_eq!(read(&err_log), b"to-stderr\n");
 }
 
-/// A child's nonzero exit code is propagated unchanged.
+/// A child status in the relay range (3..=255) is propagated unchanged.
 #[test]
 fn child_exit_code_is_propagated() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -89,6 +89,48 @@ fn child_exit_code_is_propagated() {
         "exit 7",
     ]);
     assert_eq!(output.status.code(), Some(7));
+}
+
+/// Reserved workspace exit classes survive child-status relay: 0 stays
+/// success, a child 1 or 2 becomes wrapper runtime failure 1 (so code 2 stays
+/// reserved for wrapper usage), and 3..=255 relay unchanged.
+#[test]
+fn reserved_wrapper_exit_classes_are_preserved() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    for (child, wrapper) in [(0, 0), (1, 1), (2, 1), (3, 3), (42, 42)] {
+        let log = dir.path().join(format!("relay-{child}.log"));
+        let exit_command = format!("exit {child}");
+        let output = run(&[
+            "--redirect",
+            log.to_str().expect("utf8 path"),
+            "--",
+            "sh",
+            "-c",
+            exit_command.as_str(),
+        ]);
+        assert_eq!(
+            output.status.code(),
+            Some(wrapper),
+            "child {child} should map to wrapper {wrapper}",
+        );
+    }
+}
+
+/// A child that cannot be spawned is a wrapper runtime failure (1), not a
+/// relayed child status.
+#[test]
+fn unspawnable_child_is_wrapper_failure() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let log = dir.path().join("raw.log");
+
+    let output = run(&[
+        "--redirect",
+        log.to_str().expect("utf8 path"),
+        "--",
+        "definitely-not-a-real-program-b3f1",
+    ]);
+    assert_eq!(output.status.code(), Some(1));
 }
 
 /// Signal termination is reported as 128 + signal.

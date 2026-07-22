@@ -27,8 +27,10 @@ Every executable in this workspace follows
 [ADR-010](adr/010-command-line-output-contract.md): stdout carries only JSON
 result data (single object or NDJSON) and refuses a terminal; assets are
 written to paths given by arguments such as `--output`; everything else —
-help, usage, diagnostics, panics — is JSON on stderr; exit codes are
-0 (success), 1 (failure), 2 (usage).
+help, usage, diagnostics, panics — is JSON on stderr. Most commands use only
+exit classes 0 (success), 1 (failure), and 2 (usage); `execwrap` additionally
+relays child statuses 3-255 after successful wrapper startup, while codes 0-2
+retain the shared meanings.
 
 ## Generated artifacts
 

@@ -177,8 +177,21 @@ fn main() -> ExitCode {
         return CommandExit::Failure.exit_code();
     }
 
-    let code = u8::try_from(outcome.exit_code.clamp(0, i32::from(u8::MAX))).unwrap_or(1);
-    ExitCode::from(code)
+    wrapper_exit_from_child_status(outcome.exit_code)
+}
+
+/// Map a relayed child status onto the wrapper's exit code, keeping the
+/// reserved workspace classes intact: 0 stays success, a child 1 or 2 becomes
+/// wrapper runtime failure 1 (so code 2 stays reserved for wrapper usage), and
+/// child statuses 3..=255 (including `128 + signal`) are relayed unchanged.
+fn wrapper_exit_from_child_status(status: i32) -> ExitCode {
+    let status = status.clamp(0, i32::from(u8::MAX));
+
+    match status {
+        0 => CommandExit::Success.exit_code(),
+        1 | 2 => CommandExit::Failure.exit_code(),
+        other => ExitCode::from(u8::try_from(other).unwrap_or(1)),
+    }
 }
 
 const fn default_level(args: &Args) -> tracing::Level {

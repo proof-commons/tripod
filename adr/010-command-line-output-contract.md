@@ -124,6 +124,19 @@ Commands with no stdout result data do not refuse terminal stdout.
 A command-specific status may be added only when its command contract
 documents it. Codes 0-2 retain the meanings above.
 
+### `execwrap` child status relay
+
+After successful wrapper startup, `execwrap` may return a child status in the
+range 3-255. Codes 0-2 retain the workspace meanings:
+
+- child 0 returns success 0;
+- child 1 or 2 returns wrapper runtime failure 1;
+- wrapper argument or TTY usage failure returns 2;
+- child statuses 3-255 are relayed unchanged.
+
+Signal-derived statuses such as `128 + signal` are child-status relay values,
+not new workspace control-plane classes.
+
 Binaries return `ExitCode` from `main`. They do not use `Result` termination,
 which could write Rust's plain-text `Error: ...` format.
 
