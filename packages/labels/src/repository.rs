@@ -215,12 +215,25 @@ fn harvest_realization(paths: &RepositoryCensus, result: &mut RepositoryLabels) 
     let scan = scan_markdown(&relative, &source);
     result.diagnostics.extend(scan.diagnostics.clone());
     harvest_attestation_citations(&relative, &source, &scan, result);
+    // Status-tag references (`[enforced: P-…]`, `[invariant: 𝗜ₙ]`) are
+    // resolved after the loop, once every pin and clause mint has been
+    // harvested, so a forward reference resolves like any other.
+    let mut pin_refs: Vec<(Label, SourceLocation)> = Vec::new();
+    let mut clause_refs: Vec<(u32, SourceLocation)> = Vec::new();
     for span in scan.code_spans {
         if span.delimiter_len != 1 {
             continue;
         }
         if let Some(token) = square(&span.content) {
-            if !token.starts_with("A-") {
+            // Every square-bracketed token is audited in its own grammar
+            // class: attestation body cites are handled by
+            // `harvest_attestation_citations`; template examples are exempted;
+            // status tags are audited in place; the rest are imports
+            // (`rem:overview:status-tags`).
+            if !token.starts_with("A-")
+                && !is_example_token(token)
+                && !audit_status_tag(token, &span, result, &mut pin_refs, &mut clause_refs)
+            {
                 harvest_realization_import(token, &span, result);
             }
             continue;
@@ -250,6 +263,187 @@ fn harvest_realization(paths: &RepositoryCensus, result: &mut RepositoryLabels) 
                 &span.location,
                 "label citation has an unmatched parenthesis",
             )),
+        }
+    }
+    resolve_status_tag_refs(pin_refs, clause_refs, result);
+}
+
+/// The declared status-tag family (`rem:overview:status-tags`).
+const STATUS_TAGS: [&str; 4] = [
+    "accepted residual",
+    "liveness, not safety",
+    "design property",
+    "honesty note",
+];
+
+/// The mathematical sans-serif capital I that names an invariant clause.
+const INVARIANT_GLYPH: char = '\u{1d5dc}';
+
+/// A template example is explicitly exempted from grammar-class auditing: it
+/// carries a placeholder glyph rather than a live reference.
+fn is_example_token(token: &str) -> bool {
+    token.contains('\u{2026}') // horizontal ellipsis, e.g. `P-…`
+        || token.contains('\u{2099}') // subscript n, e.g. `𝗜ₙ`
+        || token.contains('<')
+        || token.contains('>')
+}
+
+/// Audit one square-bracketed token as a status tag. Returns `false` when the
+/// token is not a status tag, leaving it for the import classifier.
+fn audit_status_tag(
+    token: &str,
+    span: &crate::markdown::InlineCodeSpan,
+    result: &mut RepositoryLabels,
+    pin_refs: &mut Vec<(Label, SourceLocation)>,
+    clause_refs: &mut Vec<(u32, SourceLocation)>,
+) -> bool {
+    enum Kind<'a> {
+        Enforced(&'a str),
+        Invariant(&'a str),
+        Tag,
+    }
+
+    let kind = if let Some(pins) = token.strip_prefix("enforced: ") {
+        Kind::Enforced(pins)
+    } else if let Some(clause) = token.strip_prefix("invariant: ") {
+        Kind::Invariant(clause)
+    } else if STATUS_TAGS.contains(&token) {
+        Kind::Tag
+    } else {
+        return false;
+    };
+
+    // The family is read in place and never round-wrapped, so it cannot
+    // collide with the round-bracket cite rule (`rem:overview:status-tags`).
+    if span.context != InlineCodeContext::Bare {
+        result.diagnostics.push(LabelDiagnostic::error(
+            LabelErrorCode::InvalidStatusTag,
+            &span.location,
+            "status tag must not be round-wrapped",
+        ));
+        return true;
+    }
+
+    match kind {
+        Kind::Enforced(pins) => audit_enforced_pins(pins, span, result, pin_refs),
+        Kind::Invariant(clause) => audit_invariant_clause(clause, span, result, clause_refs),
+        Kind::Tag => {}
+    }
+    true
+}
+
+/// `enforced: P-a, P-b` cites one or more build pins by their glyphs; each
+/// `P-<name>` resolves to the `pin:pins:<name>` mint.
+fn audit_enforced_pins(
+    pins: &str,
+    span: &crate::markdown::InlineCodeSpan,
+    result: &mut RepositoryLabels,
+    pin_refs: &mut Vec<(Label, SourceLocation)>,
+) {
+    if pins.is_empty() {
+        result.diagnostics.push(LabelDiagnostic::error(
+            LabelErrorCode::InvalidStatusTag,
+            &span.location,
+            "enforced tag names no pin",
+        ));
+        return;
+    }
+    for entry in pins.split(", ") {
+        let Some(name) = entry.strip_prefix("P-") else {
+            result.diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::InvalidStatusTag,
+                &span.location,
+                format!("enforced tag entry {entry:?} is not a P- pin glyph"),
+            ));
+            continue;
+        };
+        match Label::parse(&format!("pin:pins:{name}"), LabelShape::Realization) {
+            Ok(label) => pin_refs.push((label, span.location.clone())),
+            Err(error) => result.diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::InvalidStatusTag,
+                &span.location,
+                format!("enforced tag pin {entry:?}: {error}"),
+            )),
+        }
+    }
+}
+
+/// `invariant: 𝗜ₙ` cites invariant clause `n`.
+fn audit_invariant_clause(
+    clause: &str,
+    span: &crate::markdown::InlineCodeSpan,
+    result: &mut RepositoryLabels,
+    clause_refs: &mut Vec<(u32, SourceLocation)>,
+) {
+    let Some(digits) = clause.strip_prefix(INVARIANT_GLYPH) else {
+        result.diagnostics.push(LabelDiagnostic::error(
+            LabelErrorCode::InvalidStatusTag,
+            &span.location,
+            format!("invariant tag {clause:?} does not name a 𝗜 clause"),
+        ));
+        return;
+    };
+    let mut ordinal: u32 = 0;
+    let mut any = false;
+    for character in digits.chars() {
+        let Some(digit) = subscript_digit(character) else {
+            result.diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::InvalidStatusTag,
+                &span.location,
+                format!("invariant tag {clause:?} has a non-subscript ordinal"),
+            ));
+            return;
+        };
+        ordinal = ordinal * 10 + digit;
+        any = true;
+    }
+    if !any {
+        result.diagnostics.push(LabelDiagnostic::error(
+            LabelErrorCode::InvalidStatusTag,
+            &span.location,
+            "invariant tag has no clause ordinal",
+        ));
+        return;
+    }
+    clause_refs.push((ordinal, span.location.clone()));
+}
+
+fn subscript_digit(character: char) -> Option<u32> {
+    u32::from(character)
+        .checked_sub(0x2080)
+        .filter(|digit| *digit <= 9)
+}
+
+/// Resolve collected status-tag references once every mint is harvested: each
+/// enforced pin must be minted, and each invariant clause ordinal must name a
+/// real architecture clause.
+fn resolve_status_tag_refs(
+    pin_refs: Vec<(Label, SourceLocation)>,
+    clause_refs: Vec<(u32, SourceLocation)>,
+    result: &mut RepositoryLabels,
+) {
+    for (label, location) in pin_refs {
+        if !result.registries.realization.contains(&label) {
+            result.diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::InvalidStatusTag,
+                &location,
+                format!(
+                    "enforced tag cites `{}` but no such pin is minted",
+                    label.as_str()
+                ),
+            ));
+        }
+    }
+    let clause_count = u32::try_from(architecture::ARCHITECTURE.clauses.len()).unwrap_or(u32::MAX);
+    for (ordinal, location) in clause_refs {
+        if ordinal == 0 || ordinal > clause_count {
+            result.diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::InvalidStatusTag,
+                &location,
+                format!(
+                    "invariant tag cites clause 𝗜{ordinal} but only {clause_count} clauses exist"
+                ),
+            ));
         }
     }
 }

@@ -15,6 +15,7 @@ pub enum LabelErrorCode {
     UnknownImportedLabel,
     InvalidImportedCitationForm,
     InvalidLabel,
+    InvalidStatusTag,
     DuplicateLatexLabel,
     ArchitectureLabelMissing,
     AttestationAnchorSetMismatch,

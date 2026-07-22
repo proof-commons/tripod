@@ -449,6 +449,47 @@ fn fixture_root(realization: &str) -> tempfile::TempDir {
 }
 
 #[test]
+fn status_tags_are_audited_in_their_grammar_class() {
+    // Each bracketed token is audited in its own grammar class: live status
+    // tags resolve their pin and clause references, template examples are
+    // exempted, and malformed tags are typed InvalidStatusTag diagnostics.
+    let directory = fixture_root(concat!(
+        "# Realization\n",                          // 1
+        "`sec:fixture`\n",                          // 2
+        "`pin:pins:fixture`\n",                     // 3 — the pin an enforced tag resolves to
+        "Enforced `[enforced: P-fixture]` live.\n", // 4 — valid, resolves
+        "Invariant `[invariant: 𝗜₅]` live.\n",      // 5 — valid clause ordinal
+        "Tag `[accepted residual]` live.\n",        // 6 — valid tag
+        "Example `[enforced: P-…]` shown.\n",       // 7 — placeholder → exempt
+        "Example `[invariant: 𝗜ₙ]` shown.\n",       // 8 — placeholder → exempt
+        "Unminted `[enforced: P-nonesuch]` bad.\n", // 9 — unresolved pin
+        "Shapeless `[enforced: burn]` bad.\n",      // 10 — not a P- glyph
+        "Range `[invariant: 𝗜₉₉]` bad.\n",          // 11 — clause out of range
+        "Wrapped (`[enforced: P-fixture]`) bad.\n", // 12 — round-wrapped
+    ));
+
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
+    let realization_diagnostics = labels
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.path == "docs/attestation/realization.md")
+        .map(|diagnostic| (diagnostic.line, diagnostic.code))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        realization_diagnostics,
+        vec![
+            (9, LabelErrorCode::InvalidStatusTag),
+            (10, LabelErrorCode::InvalidStatusTag),
+            (11, LabelErrorCode::InvalidStatusTag),
+            (12, LabelErrorCode::InvalidStatusTag),
+        ],
+        "{:#?}",
+        labels.diagnostics,
+    );
+}
+
+#[test]
 fn repository_analysis_exposes_a_direct_petgraph_graph() {
     let directory = fixture_root("# Realization\n`sec:fixture`\n(`sec:fixture`)\n");
     let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
