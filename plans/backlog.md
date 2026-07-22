@@ -277,7 +277,7 @@ does not depend on an unresolved semantic decision.
 | `F1-031` | P2 | **DONE** | `execwrap` logs caller-controlled child program text despite the raw-argv prohibition. |
 | `F1-032` | P2 | **DONE** | `census-audit` logs raw stderr from an argument-supplied external Git program. |
 | `F1-033` | P3 | **TODO** | Phase completion evidence lacks a non-self-referential commit/tag ceremony. |
-| `F1-034` | P2 | **TODO** | Document-stamp render can partially publish its two real outputs after a late failure. |
+| `F1-034` | P2 | **DONE** | Document-stamp render can partially publish its two real outputs after a late failure. |
 
 ---
 
@@ -1706,6 +1706,43 @@ field.
   failure message present.
 - Verified: `tripod-labels` clippy `-D warnings` and the labels
   subprocess suite green via the flatpak SDK.
+
+---
+
+### F1-034 — Stage both render outputs before publication
+
+**Priority:** P2
+**Owners:** document-stamps
+
+#### Problem
+
+Render mode wrote `stamps.tex` and `source-date-epoch` with two independent
+compare-if-changed atomic writes. If the first succeeded and the second failed,
+the command exited failure but left a partially updated pair. The failed Meson
+edge reruns and repairs the pair, so this is not a false success, but the
+multi-output effect was not transaction-like.
+
+#### Evidence · DONE
+
+- `write_if_changed` is split into two primitives: `stage_if_changed` performs
+  the compare, temp-file create, write, and fsync (returning `None` for an
+  unchanged output), and `publish` performs the single rename that mutates a
+  final path. `render_outputs` stages *both* outputs before publishing either,
+  so any read/create/write/fsync failure for either destination aborts before
+  any final output changes.
+- Publication order is dependency-first: `source-date-epoch` is renamed before
+  `stamps.tex`, so a failure during the second rename tends to leave the more
+  visible TeX metadata old rather than pairing new TeX metadata with an old
+  epoch. This is a documented recovery preference, not a proof of atomicity —
+  two independent paths cannot be renamed as one transaction, and the code and
+  tests say so honestly.
+- Failure-injection and coherence tests cover: epoch staging failure leaves
+  stamps untouched; stamps staging failure leaves epoch untouched; an epoch
+  publish (rename-onto-directory) failure leaves stamps unpublished; a
+  successful rerun repairs a partial prior state; and an identical rerun leaves
+  both mtimes unchanged.
+- Verified: `tripod-document-stamps` clippy `-D warnings` and the
+  full crate suite (39 lib + subprocess tests) green via the flatpak SDK.
 
 ---
 

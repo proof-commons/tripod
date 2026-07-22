@@ -214,12 +214,25 @@ fn render_outputs(
     epoch_output: &Path,
 ) -> Result<(), StampError> {
     let rendered = render_stamps(template, values)?;
+    let epoch_bytes = format!("{}\n", values.timestamp.epoch);
 
-    write_if_changed(stamps_output, rendered.as_bytes())?;
-    write_if_changed(
-        epoch_output,
-        format!("{}\n", values.timestamp.epoch).as_bytes(),
-    )?;
+    // Stage both outputs before publishing either: any read, temp-file
+    // create, write, or fsync failure for either destination therefore
+    // happens before any final output changes, so a late failure cannot
+    // leave one output new and the other old. Two independent paths
+    // cannot be renamed as a single transaction, so publishing is still
+    // two renames; if the second rename fails the build fails and the
+    // next invocation repairs the pair (F1-034).
+    let staged_stamps = stage_if_changed(stamps_output, rendered.as_bytes())?;
+    let staged_epoch = stage_if_changed(epoch_output, epoch_bytes.as_bytes())?;
+
+    // Publish the dependency-first metadata first and the more visible
+    // stamps.tex last, so a rename failure between the two tends to
+    // leave the visible TeX metadata old rather than pairing new TeX
+    // metadata with an old epoch. This is a recovery preference, not a
+    // proof of atomicity.
+    publish(staged_epoch)?;
+    publish(staged_stamps)?;
     Ok(())
 }
 
@@ -238,12 +251,26 @@ fn render_stamps(template: &str, values: &AttestationStampValues) -> Result<Stri
     Ok(rendered)
 }
 
-/// Write `bytes` to `path` only if the current contents differ, using an
-/// atomic temp-file rename. The skip keeps ninja `restat` from cascading
-/// rebuilds when the derived values are unchanged.
-fn write_if_changed(path: &Path, bytes: &[u8]) -> Result<(), StampError> {
+/// A destination whose new bytes are fully written and fsync'd to a
+/// sibling temp file, ready to be renamed into place. Holding one of
+/// these means every fallible step except the final rename has already
+/// succeeded.
+struct StagedOutput {
+    destination: PathBuf,
+    staged: tempfile::NamedTempFile,
+}
+
+/// Stage `bytes` for `path` without changing `path`.
+///
+/// Returns `Ok(None)` when the current contents already equal `bytes`
+/// (so nothing needs writing — this keeps ninja `restat` from cascading
+/// rebuilds), or `Ok(Some(staged))` when a sibling temp file has been
+/// created, written, and fsync'd and only awaits [`publish`]. Any read,
+/// create, write, or fsync failure is reported here, before `path` is
+/// touched.
+fn stage_if_changed(path: &Path, bytes: &[u8]) -> Result<Option<StagedOutput>, StampError> {
     if std::fs::read(path).is_ok_and(|existing| existing == bytes) {
-        return Ok(());
+        return Ok(None);
     }
     let directory = path.parent().ok_or(StampError::OutputWriteFailed)?;
     let mut staged = tempfile::Builder::new()
@@ -256,9 +283,21 @@ fn write_if_changed(path: &Path, bytes: &[u8]) -> Result<(), StampError> {
         .as_file()
         .sync_all()
         .map_err(|_error| StampError::OutputWriteFailed)?;
-    staged
-        .persist(path)
-        .map_err(|_error| StampError::OutputWriteFailed)?;
+    Ok(Some(StagedOutput {
+        destination: path.to_path_buf(),
+        staged,
+    }))
+}
+
+/// Rename a staged output into its destination. A `None` (unchanged
+/// output) is a no-op. This is the only step that mutates a final path.
+fn publish(staged: Option<StagedOutput>) -> Result<(), StampError> {
+    if let Some(output) = staged {
+        output
+            .staged
+            .persist(&output.destination)
+            .map_err(|_error| StampError::OutputWriteFailed)?;
+    }
     Ok(())
 }
 

@@ -835,6 +835,13 @@ fn render_stamps_rejects_an_unresolved_placeholder() {
     ));
 }
 
+/// Single-path convenience over the stage/publish primitives: the same
+/// compare-if-changed, atomic-rename semantics the two-output render path
+/// composes, exercised in isolation.
+fn write_if_changed(path: &std::path::Path, bytes: &[u8]) -> Result<(), StampError> {
+    publish(stage_if_changed(path, bytes)?)
+}
+
 #[test]
 fn write_if_changed_creates_an_absent_file() {
     let dir = tempfile::tempdir().expect("temp dir");
@@ -875,4 +882,142 @@ fn write_if_changed_rewrites_changed_content() {
     write_if_changed(&path, b"one").expect("writes");
     write_if_changed(&path, b"two").expect("rewrites");
     assert_eq!(std::fs::read(&path).expect("read"), b"two");
+}
+
+// F1-034: render stages both outputs before publishing either, so a
+// staging failure on one leaves neither final output changed. Two
+// independent paths cannot be renamed as one transaction, so a failure
+// during the second final rename can still leave a partial pair — the
+// build fails and the next invocation repairs it; these tests pin the
+// guarantees that do hold.
+
+const RENDER_TEMPLATE: &str = concat!(
+    r"\newcommand{\AttestationDate}{@ATTESTATION_DATE@}",
+    "\n",
+    r"\newcommand{\AttestationTimestamp}{@ATTESTATION_TIMESTAMP@}",
+    "\n",
+    r"\newcommand{\AttestationDocumentUUID}{@ATTESTATION_DOCUMENT_UUID@}",
+    "\n",
+    r"\newcommand{\AttestationInstanceUUID}{@ATTESTATION_INSTANCE_UUID@}",
+    "\n",
+);
+
+fn expected_epoch_bytes(values: &AttestationStampValues) -> String {
+    format!("{}\n", values.timestamp.epoch)
+}
+
+#[test]
+fn render_leaves_stamps_untouched_when_epoch_staging_fails() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let stamps = dir.path().join("stamps.tex");
+    // The epoch parent directory does not exist, so staging the epoch
+    // output fails before anything is published.
+    let epoch = dir.path().join("absent").join("source-date-epoch");
+
+    std::fs::write(&stamps, b"OLD STAMPS").expect("seed stamps");
+
+    let result = render_outputs(RENDER_TEMPLATE, &render_values(), &stamps, &epoch);
+
+    assert!(matches!(result, Err(StampError::OutputWriteFailed)));
+    assert_eq!(std::fs::read(&stamps).expect("read"), b"OLD STAMPS");
+    assert!(
+        !epoch.exists(),
+        "epoch must not be created on staging failure"
+    );
+}
+
+#[test]
+fn render_leaves_epoch_untouched_when_stamps_staging_fails() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    // The stamps parent directory does not exist, so staging the stamps
+    // output fails before anything is published.
+    let stamps = dir.path().join("absent").join("stamps.tex");
+    let epoch = dir.path().join("source-date-epoch");
+
+    std::fs::write(&epoch, b"OLD EPOCH").expect("seed epoch");
+
+    let result = render_outputs(RENDER_TEMPLATE, &render_values(), &stamps, &epoch);
+
+    assert!(matches!(result, Err(StampError::OutputWriteFailed)));
+    assert_eq!(std::fs::read(&epoch).expect("read"), b"OLD EPOCH");
+    assert!(
+        !stamps.exists(),
+        "stamps must not be created on staging failure"
+    );
+}
+
+#[test]
+fn render_leaves_stamps_untouched_when_epoch_publish_fails() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let stamps = dir.path().join("stamps.tex");
+    // The epoch destination is an existing directory: staging succeeds
+    // but the rename onto it fails. Because the epoch is published first,
+    // the stamps output is never published.
+    let epoch = dir.path().join("source-date-epoch");
+    std::fs::create_dir(&epoch).expect("epoch dir");
+
+    std::fs::write(&stamps, b"OLD STAMPS").expect("seed stamps");
+
+    let result = render_outputs(RENDER_TEMPLATE, &render_values(), &stamps, &epoch);
+
+    assert!(matches!(result, Err(StampError::OutputWriteFailed)));
+    assert_eq!(std::fs::read(&stamps).expect("read"), b"OLD STAMPS");
+    assert!(epoch.is_dir(), "the epoch directory is not clobbered");
+}
+
+#[test]
+fn render_repairs_a_partial_prior_state() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let stamps = dir.path().join("stamps.tex");
+    let epoch = dir.path().join("source-date-epoch");
+
+    let values = render_values();
+    let expected_stamps = render_stamps(RENDER_TEMPLATE, &values).expect("renders");
+
+    // A prior run published stamps.tex but not the epoch (a late
+    // failure): the pair is incoherent going in.
+    std::fs::write(&stamps, &expected_stamps).expect("seed stamps");
+    std::fs::write(&epoch, b"STALE\n").expect("seed epoch");
+
+    render_outputs(RENDER_TEMPLATE, &values, &stamps, &epoch).expect("rerun repairs");
+
+    assert_eq!(
+        std::fs::read_to_string(&stamps).expect("read"),
+        expected_stamps
+    );
+    assert_eq!(
+        std::fs::read_to_string(&epoch).expect("read"),
+        expected_epoch_bytes(&values),
+    );
+}
+
+#[test]
+fn render_is_a_no_op_on_an_identical_rerun() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let stamps = dir.path().join("stamps.tex");
+    let epoch = dir.path().join("source-date-epoch");
+    let values = render_values();
+
+    render_outputs(RENDER_TEMPLATE, &values, &stamps, &epoch).expect("first write");
+
+    // Pin an old mtime on both; a rewrite would move it to ~now.
+    let old = std::time::SystemTime::UNIX_EPOCH;
+    for path in [&stamps, &epoch] {
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .expect("open")
+            .set_times(std::fs::FileTimes::new().set_modified(old))
+            .expect("set mtime");
+    }
+
+    render_outputs(RENDER_TEMPLATE, &values, &stamps, &epoch).expect("identical rerun");
+
+    for path in [&stamps, &epoch] {
+        let mtime = std::fs::metadata(path)
+            .expect("metadata")
+            .modified()
+            .expect("mtime");
+        assert_eq!(mtime, old, "identical rerun must not rewrite {path:?}");
+    }
 }
