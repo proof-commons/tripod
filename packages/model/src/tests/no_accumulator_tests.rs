@@ -399,14 +399,16 @@ fn manifest_delta_conditions_match_real_certificates() {
 
     assert!(
         cycle_certificate
-            .canonical_deltas
+            .canonical_partition
+            .canonical_deltas()
             .iter()
             .any(|delta| { delta.asset == Asset::U && delta.kind == DeltaKind::Issuance })
     );
 
     assert!(
         cycle_certificate
-            .canonical_deltas
+            .canonical_partition
+            .canonical_deltas()
             .iter()
             .any(|delta| { delta.asset == Asset::DistCtl && delta.kind == DeltaKind::Issuance })
     );
@@ -419,18 +421,30 @@ fn manifest_delta_conditions_match_real_certificates() {
 
     assert_eq!(settle_certificate.branch, BranchKind::SettleDistribution);
 
-    assert!(settle_certificate.canonical_deltas.iter().any(|delta| {
-        delta.asset == Asset::Ent
-            && delta.kind == DeltaKind::Destruction
-            && delta.destruction_tag == Some(Tag::Entitlement)
-    }));
+    assert!(
+        settle_certificate
+            .canonical_partition
+            .canonical_deltas()
+            .iter()
+            .any(|delta| {
+                delta.asset == Asset::Ent
+                    && delta.kind == DeltaKind::Destruction
+                    && delta.destruction_tag == Some(Tag::Entitlement)
+            })
+    );
 
     // Single-batch settlement is terminal: the control closes.
-    assert!(settle_certificate.canonical_deltas.iter().any(|delta| {
-        delta.asset == Asset::DistCtl
-            && delta.kind == DeltaKind::Destruction
-            && delta.destruction_tag == Some(Tag::DistributionControlClose)
-    }));
+    assert!(
+        settle_certificate
+            .canonical_partition
+            .canonical_deltas()
+            .iter()
+            .any(|delta| {
+                delta.asset == Asset::DistCtl
+                    && delta.kind == DeltaKind::Destruction
+                    && delta.destruction_tag == Some(Tag::DistributionControlClose)
+            })
+    );
 
     assert!(settle_certificate.distribution_residue.is_some());
 

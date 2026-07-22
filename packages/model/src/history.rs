@@ -76,6 +76,168 @@ pub struct CanonicalDelta {
     pub destruction_tag: Option<Tag>,
 }
 
+// ´def:verification:certified-canonical-partition´
+
+/// One certified issuance: an authority mints `amount` of `asset` into
+/// the destination outputs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CertifiedIssuance {
+    pub asset: Asset,
+    pub authority_asset: Asset,
+    pub authority_input: OutPoint,
+    pub amount: Sat,
+    pub destination_outputs: Vec<OutPoint>,
+}
+
+/// One certified destruction leg: `amount` destroyed under a
+/// domain-separated tag inside its enclosing flow.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CertifiedDestructionLeg {
+    pub tag: Tag,
+    pub amount: Sat,
+}
+
+/// One exact canonical flow, preserving the kernel's grouping.
+///
+/// A flow carries a source set, a destination set, an optional movement
+/// kind, and zero or more destruction legs. `source_amount` and
+/// `destination_amount` are stored proof metadata (summed from the
+/// actual consumed/created objects), so history and indexer checks can
+/// validate the exact relation
+/// `source_amount = destination_amount + Σ destruction amounts` without
+/// reopening the predecessor/successor world.
+///
+/// A single flow may carry both a movement and destruction legs (partial
+/// clear, terminal settlement); they intentionally share this flow's
+/// source set. The between-flow uniqueness rule (no source in two flows)
+/// is what the flattened representation could not express.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CertifiedCanonicalFlow {
+    pub asset: Asset,
+
+    pub source_inputs: Vec<OutPoint>,
+    pub destination_outputs: Vec<OutPoint>,
+
+    pub source_amount: Sat,
+    pub destination_amount: Sat,
+
+    pub destructions: Vec<CertifiedDestructionLeg>,
+
+    /// Present iff `destination_amount > 0`.
+    pub movement_kind: Option<DeltaKind>,
+}
+
+/// The exact canonical partition of a transition: its issuances and its
+/// flows.
+///
+/// The architecture's delta-family registry is a projection of this
+/// partition (see [`CertifiedCanonicalPartition::active_families`]), not
+/// its replacement.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CertifiedCanonicalPartition {
+    pub issuances: Vec<CertifiedIssuance>,
+    pub flows: Vec<CertifiedCanonicalFlow>,
+}
+
+/// A stable canonical-delta family key: asset, kind, and (for
+/// destructions) the domain-separated tag.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct CanonicalDeltaFamily {
+    pub asset: Asset,
+    pub kind: DeltaKind,
+    pub destruction_tag: Option<Tag>,
+}
+
+impl CertifiedCanonicalPartition {
+    /// The active delta-family set implied by this partition: one
+    /// issuance family per issued asset, one movement family per flow
+    /// with a positive destination, and one destruction family per
+    /// destruction leg (keyed by tag). Several flows may share one
+    /// family.
+    #[must_use]
+    pub fn active_families(&self) -> BTreeSet<CanonicalDeltaFamily> {
+        let mut families = BTreeSet::new();
+
+        for issuance in &self.issuances {
+            families.insert(CanonicalDeltaFamily {
+                asset: issuance.asset,
+                kind: DeltaKind::Issuance,
+                destruction_tag: None,
+            });
+        }
+
+        for flow in &self.flows {
+            if let Some(kind) = flow.movement_kind {
+                families.insert(CanonicalDeltaFamily {
+                    asset: flow.asset,
+                    kind,
+                    destruction_tag: None,
+                });
+            }
+
+            for destruction in &flow.destructions {
+                families.insert(CanonicalDeltaFamily {
+                    asset: flow.asset,
+                    kind: DeltaKind::Destruction,
+                    destruction_tag: Some(destruction.tag),
+                });
+            }
+        }
+
+        families
+    }
+
+    /// Compatibility projection to the historical flattened delta rows,
+    /// in the original order (issuances, then per flow its movement then
+    /// its destruction legs). The exact partition is authoritative; this
+    /// derives the old view for consumers still reading flat deltas
+    /// during the F1-002 migration.
+    #[must_use]
+    pub fn canonical_deltas(&self) -> Vec<CanonicalDelta> {
+        let mut deltas = Vec::new();
+
+        for issuance in &self.issuances {
+            deltas.push(CanonicalDelta {
+                asset: issuance.asset,
+                kind: DeltaKind::Issuance,
+                amount: issuance.amount,
+                authority_input: Some(issuance.authority_input),
+                source_inputs: Vec::new(),
+                destination_outputs: issuance.destination_outputs.clone(),
+                destruction_tag: None,
+            });
+        }
+
+        for flow in &self.flows {
+            if let Some(kind) = flow.movement_kind {
+                deltas.push(CanonicalDelta {
+                    asset: flow.asset,
+                    kind,
+                    amount: flow.destination_amount,
+                    authority_input: None,
+                    source_inputs: flow.source_inputs.clone(),
+                    destination_outputs: flow.destination_outputs.clone(),
+                    destruction_tag: None,
+                });
+            }
+
+            for destruction in &flow.destructions {
+                deltas.push(CanonicalDelta {
+                    asset: flow.asset,
+                    kind: DeltaKind::Destruction,
+                    amount: destruction.amount,
+                    authority_input: None,
+                    source_inputs: flow.source_inputs.clone(),
+                    destination_outputs: Vec::new(),
+                    destruction_tag: Some(destruction.tag),
+                });
+            }
+        }
+
+        deltas
+    }
+}
+
 // ´def:verification:open-flow-kind´
 
 /// Open-value flow roles.
@@ -139,7 +301,7 @@ pub struct TransitionCertificate {
     pub entitlement_authority_edge: Option<RootEdge>,
     pub distribution_authority_edge: Option<RootEdge>,
 
-    pub canonical_deltas: Vec<CanonicalDelta>,
+    pub canonical_partition: CertifiedCanonicalPartition,
 
     pub open_flows: Vec<OpenFlowProjection>,
 

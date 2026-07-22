@@ -4,7 +4,7 @@
 
 use super::scenario_fixtures::*;
 use super::test_fixtures;
-use crate::shape::issuance_delta;
+use crate::shape::issuance_projection;
 use crate::*;
 
 fn admitted_world(principal: u64) -> World {
@@ -35,10 +35,14 @@ fn empty_cycle_advances_without_issuance() {
 
     let certificate = next.history.transitions.last().unwrap();
 
-    assert!(issuance_delta(certificate, Asset::U).unwrap().is_none());
+    assert!(
+        issuance_projection(certificate, Asset::U)
+            .unwrap()
+            .is_none()
+    );
 
     assert!(
-        issuance_delta(certificate, Asset::DistCtl)
+        issuance_projection(certificate, Asset::DistCtl)
             .unwrap()
             .is_none()
     );
@@ -69,7 +73,7 @@ fn cycle_creates_distribution_for_nonzero_q() {
     let certificate = next.history.transitions.last().unwrap();
 
     assert_eq!(
-        issuance_delta(certificate, Asset::DistCtl)
+        issuance_projection(certificate, Asset::DistCtl)
             .unwrap()
             .unwrap()
             .amount,

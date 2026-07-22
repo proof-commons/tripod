@@ -273,7 +273,7 @@ fn bare_burn_tag_without_burn_projection_attests_nothing() {
         entitlement_authority_edge: None,
         distribution_authority_edge: None,
 
-        canonical_deltas: Vec::new(),
+        canonical_partition: CertifiedCanonicalPartition::default(),
         open_flows: Vec::new(),
 
         chain_fee: Sat::ZERO,

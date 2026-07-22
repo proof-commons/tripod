@@ -66,7 +66,7 @@ use crate::constants::Constants;
 use crate::genesis::OPERATOR_KEY;
 use crate::guard::Guard;
 use crate::history::{
-    BranchKind, CanonicalDelta, DeltaKind, OpenFlowKind, OpenFlowProjection, RootEdge,
+    BranchKind, CertifiedIssuance, OpenFlowKind, OpenFlowProjection, RootEdge,
     TransitionCertificate,
 };
 use crate::kernel::{PendingOutput, branch_allows_open_flow};
@@ -795,14 +795,15 @@ fn state_pair_from_certificate(
 
 // ´rule:verification:issuance-lookup´
 
-pub(crate) fn issuance_delta(
+pub(crate) fn issuance_projection(
     certificate: &TransitionCertificate,
     asset: Asset,
-) -> Result<Option<&CanonicalDelta>, Guard> {
+) -> Result<Option<&CertifiedIssuance>, Guard> {
     let matches = certificate
-        .canonical_deltas
+        .canonical_partition
+        .issuances
         .iter()
-        .filter(|delta| delta.asset == asset && delta.kind == DeltaKind::Issuance)
+        .filter(|issuance| issuance.asset == asset)
         .collect::<Vec<_>>();
 
     match matches.len() {
@@ -915,7 +916,7 @@ fn validate_admission_postconditions(
         return Err(Guard::ResvWeld);
     }
 
-    let issuance = issuance_delta(certificate, Asset::Ent)?.ok_or(Guard::BadIssuance)?;
+    let issuance = issuance_projection(certificate, Asset::Ent)?.ok_or(Guard::BadIssuance)?;
 
     if issuance.amount != principal_total {
         return Err(Guard::BadIssuance);
@@ -1070,7 +1071,7 @@ fn validate_cycle_postconditions(
         return Err(Guard::ResvWeld);
     }
 
-    match issuance_delta(certificate, Asset::U)? {
+    match issuance_projection(certificate, Asset::U)? {
         Some(delta) if delta.amount == arithmetic.issuance => {}
 
         None if arithmetic.issuance.is_zero() => {}
@@ -1091,7 +1092,7 @@ fn validate_cycle_postconditions(
             return Err(Guard::WrongShape);
         }
 
-        if issuance_delta(certificate, Asset::DistCtl)?.is_some() {
+        if issuance_projection(certificate, Asset::DistCtl)?.is_some() {
             return Err(Guard::BadIssuance);
         }
     } else {
@@ -1131,7 +1132,7 @@ fn validate_cycle_postconditions(
         }
 
         let control_issuance =
-            issuance_delta(certificate, Asset::DistCtl)?.ok_or(Guard::BadIssuance)?;
+            issuance_projection(certificate, Asset::DistCtl)?.ok_or(Guard::BadIssuance)?;
 
         if control_issuance.amount != Sat::ONE {
             return Err(Guard::BadIssuance);

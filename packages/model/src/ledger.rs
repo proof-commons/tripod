@@ -323,7 +323,9 @@ fn validate_model_burn_projection(
 
     let mut saw_ash_lateral_destination = false;
 
-    for delta in &certificate.canonical_deltas {
+    let canonical_deltas = certificate.canonical_partition.canonical_deltas();
+
+    for delta in &canonical_deltas {
         if delta.asset != Asset::U {
             continue;
         }

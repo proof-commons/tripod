@@ -334,7 +334,8 @@ fn observe_canonical_deltas(
     reference_by_outpoint: &BTreeMap<OutPoint, ObservedObjectRef>,
 ) -> Result<Vec<ObservedCanonicalDelta>, ConformanceProjectionError> {
     certificate
-        .canonical_deltas
+        .canonical_partition
+        .canonical_deltas()
         .iter()
         .map(|delta| {
             if delta.authority_input.is_some() {

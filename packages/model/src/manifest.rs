@@ -461,7 +461,8 @@ pub(crate) fn validate_manifest_delta_conformance(
     }
 
     let actual = certificate
-        .canonical_deltas
+        .canonical_partition
+        .canonical_deltas()
         .iter()
         .map(|delta| (delta.asset, delta.kind, delta.destruction_tag))
         .collect::<BTreeSet<_>>();

@@ -187,9 +187,10 @@ pub use fee::{FeeChange, FeeEnvelope, validate_fee_envelope};
 pub use genesis::{GENESIS_OWNER, OPERATOR_KEY, genesis};
 pub use guard::{Guard, InvariantError};
 pub use history::{
-    BranchKind, BurnProjection, BurnRecord, CanonicalDelta, ClearProjection, DeltaKind,
-    DistributionResidueProjection, GenesisProjection, History, OpenFlowKind, OpenFlowProjection,
-    RootEdge, TransitionCertificate,
+    BranchKind, BurnProjection, BurnRecord, CanonicalDelta, CanonicalDeltaFamily,
+    CertifiedCanonicalFlow, CertifiedCanonicalPartition, CertifiedDestructionLeg,
+    CertifiedIssuance, ClearProjection, DeltaKind, DistributionResidueProjection,
+    GenesisProjection, History, OpenFlowKind, OpenFlowProjection, RootEdge, TransitionCertificate,
 };
 pub use invariant::{AccountingFold, check_invariant, clause_of};
 // The low-level transaction builder and its flow/issuance declaration

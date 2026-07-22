@@ -340,7 +340,7 @@ fn model_history_rejects_empty_fabricated_burn_certificate() {
         entitlement_authority_edge: None,
         distribution_authority_edge: None,
 
-        canonical_deltas: Vec::new(),
+        canonical_partition: CertifiedCanonicalPartition::default(),
         open_flows: Vec::new(),
 
         chain_fee: Sat::ZERO,
@@ -375,7 +375,7 @@ fn fabricated_burn_does_not_create_attestation_credit() {
         entitlement_authority_edge: None,
         distribution_authority_edge: None,
 
-        canonical_deltas: Vec::new(),
+        canonical_partition: CertifiedCanonicalPartition::default(),
         open_flows: Vec::new(),
 
         chain_fee: Sat::ZERO,

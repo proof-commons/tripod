@@ -24,8 +24,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::asset::{Asset, ReceiptClass};
 use crate::guard::Guard;
 use crate::history::{
-    BranchKind, BurnProjection, BurnRecord, CanonicalDelta, ClearProjection, DeltaKind,
-    DistributionResidueProjection, OpenFlowProjection, RootEdge, TransitionCertificate,
+    BranchKind, BurnProjection, BurnRecord, CertifiedCanonicalFlow, CertifiedCanonicalPartition,
+    CertifiedDestructionLeg, CertifiedIssuance, ClearProjection, DistributionResidueProjection,
+    OpenFlowProjection, RootEdge, TransitionCertificate,
 };
 use crate::kernel::{
     CanonicalFlow, DestructionDeclaration, IssuanceDeclaration, OpenFlow, OutputRef, PendingOutput,
@@ -99,7 +100,8 @@ pub fn derive_transition_certificate(
 
     let created_outputs = collect_created_outputs(after, output_map)?;
 
-    let canonical_deltas = derive_canonical_deltas(&created_outputs, output_map, issuances, flows)?;
+    let canonical_partition =
+        derive_canonical_partition(consumed, &created_outputs, output_map, issuances, flows)?;
 
     let open_flow_projections = derive_open_flow_projections(output_map, open_flows)?;
 
@@ -153,7 +155,7 @@ pub fn derive_transition_certificate(
         entitlement_authority_edge,
         distribution_authority_edge,
 
-        canonical_deltas,
+        canonical_partition,
         open_flows: open_flow_projections,
 
         chain_fee,
@@ -545,30 +547,47 @@ fn collect_created_outputs(
 }
 
 // ´rule:verification:derive-canonical-deltas´
+//
+// Derives the exact canonical partition (issuances + flows), preserving
+// the kernel's grouping instead of flattening each flow into separate
+// delta rows. Each flow stores its summed source/destination amounts as
+// proof metadata; the per-flow equation and the movement-kind rule are
+// re-checked here as defense in depth over the kernel's conservation.
 
-fn derive_canonical_deltas(
+fn derive_canonical_partition(
+    consumed: &BTreeMap<OutPoint, Utxo>,
     outputs: &[PendingOutput],
     output_map: &BTreeMap<OutputRef, OutPoint>,
     issuances: &[IssuanceDeclaration],
     flows: &[CanonicalFlow],
-) -> Result<Vec<CanonicalDelta>, Guard> {
-    let mut deltas = Vec::new();
+) -> Result<CertifiedCanonicalPartition, Guard> {
+    let mut certified_issuances = Vec::new();
 
     for issuance in issuances {
-        deltas.push(CanonicalDelta {
+        let mut destination_total = Sat::ZERO;
+
+        for destination in &issuance.destination_outputs {
+            let output = outputs
+                .get(destination.0)
+                .ok_or(Guard::MissingOutputIndex)?;
+
+            destination_total = destination_total.checked_add(output.value)?;
+        }
+
+        if destination_total != issuance.amount {
+            return Err(Guard::CanonicalDeltaMismatch);
+        }
+
+        certified_issuances.push(CertifiedIssuance {
             asset: issuance.asset,
-            kind: DeltaKind::Issuance,
+            authority_asset: issuance.authority_asset,
+            authority_input: issuance.authority_input,
             amount: issuance.amount,
-
-            authority_input: Some(issuance.authority_input),
-
-            source_inputs: Vec::new(),
-
             destination_outputs: resolve_output_refs(output_map, &issuance.destination_outputs)?,
-
-            destruction_tag: None,
         });
     }
+
+    let mut certified_flows = Vec::new();
 
     for flow in flows {
         let mut destination_total = Sat::ZERO;
@@ -581,44 +600,56 @@ fn derive_canonical_deltas(
             destination_total = destination_total.checked_add(output.value)?;
         }
 
-        if !destination_total.is_zero() {
-            let kind = flow.movement_kind.ok_or(Guard::CanonicalDeltaMismatch)?;
-
-            deltas.push(CanonicalDelta {
-                asset: flow.asset,
-                kind,
-                amount: destination_total,
-
-                authority_input: None,
-
-                source_inputs: flow.source_inputs.clone(),
-
-                destination_outputs: resolve_output_refs(output_map, &flow.destination_outputs)?,
-
-                destruction_tag: None,
-            });
-        } else if flow.movement_kind.is_some() {
+        // Movement kind present iff the destination amount is positive.
+        if destination_total.is_zero() == flow.movement_kind.is_some() {
             return Err(Guard::CanonicalDeltaMismatch);
         }
 
-        for destruction in &flow.destructions {
-            deltas.push(CanonicalDelta {
-                asset: flow.asset,
-                kind: DeltaKind::Destruction,
-                amount: destruction.amount,
+        let mut destruction_total = Sat::ZERO;
+        let mut destructions = Vec::new();
 
-                authority_input: None,
+        for leg in &flow.destructions {
+            if leg.amount.is_zero() {
+                return Err(Guard::CanonicalDeltaMismatch);
+            }
 
-                source_inputs: flow.source_inputs.clone(),
+            destruction_total = destruction_total.checked_add(leg.amount)?;
 
-                destination_outputs: Vec::new(),
-
-                destruction_tag: Some(destruction.tag),
+            destructions.push(CertifiedDestructionLeg {
+                tag: leg.tag,
+                amount: leg.amount,
             });
         }
+
+        // Sum the actual consumed source object values and require the
+        // exact per-flow equation source = destination + destruction.
+        let mut source_total = Sat::ZERO;
+
+        for source in &flow.source_inputs {
+            let utxo = consumed.get(source).ok_or(Guard::MissingOutputIndex)?;
+
+            source_total = source_total.checked_add(utxo.value)?;
+        }
+
+        if source_total != destination_total.checked_add(destruction_total)? {
+            return Err(Guard::CanonicalDeltaMismatch);
+        }
+
+        certified_flows.push(CertifiedCanonicalFlow {
+            asset: flow.asset,
+            source_inputs: flow.source_inputs.clone(),
+            destination_outputs: resolve_output_refs(output_map, &flow.destination_outputs)?,
+            source_amount: source_total,
+            destination_amount: destination_total,
+            destructions,
+            movement_kind: flow.movement_kind,
+        });
     }
 
-    Ok(deltas)
+    Ok(CertifiedCanonicalPartition {
+        issuances: certified_issuances,
+        flows: certified_flows,
+    })
 }
 
 // ´rule:verification:derive-burn-records´

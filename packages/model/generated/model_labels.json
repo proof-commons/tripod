@@ -50,6 +50,7 @@
   "def:verification:canonical-block",
   "def:verification:canonical-delta",
   "def:verification:canonical-flow",
+  "def:verification:certified-canonical-partition",
   "def:verification:commit-result",
   "def:verification:cycle-arithmetic",
   "def:verification:data-output",
