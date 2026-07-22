@@ -239,7 +239,7 @@ does not depend on an unresolved semantic decision.
 | ID | Priority | Status | Finding |
 |---|---:|---|---|
 | `F1-001` | P0 | **DONE** | Public checkpoint reconstruction can create credited events without chain provenance. |
-| `F1-002` | P1 | **TODO** | Realization cannot represent exact mixed movement-plus-destruction flows. |
+| `F1-002` | P1 | **DONE** | Realization cannot represent exact mixed movement-plus-destruction flows. |
 | `F1-003` | P1 | **DONE** | Compact-ASH architecture/realization weld is incomplete. |
 | `F1-004` | P1 | **DONE** | Realization accepts multiple generic sponsor envelopes. |
 | `F1-005` | P1 | **DONE** | Paper stamp success output defeats claimed Ninja restat behavior. |
@@ -429,11 +429,50 @@ partition and arithmetic validation.
 
 #### Exit
 
-- [ ] every model-valid mixed flow projects into realization;
-- [ ] no exact accounting constraint is weakened;
-- [ ] family projection and flow partition are distinct;
-- [ ] both existing pilots retain their current denotation;
-- [ ] identity/schema impact is recorded.
+- [x] every model-valid mixed flow projects into realization;
+- [x] no exact accounting constraint is weakened;
+- [x] family projection and flow partition are distinct;
+- [x] both existing pilots retain their current denotation;
+- [x] identity/schema impact is recorded.
+
+#### Evidence · DONE
+
+Adopted the first-class exact-flow value on both sides; no flattened
+representation is stored.
+
+- Commit `67ae17b` (model). The certificate stores
+  `CertifiedCanonicalPartition` (issuances + flows) instead of
+  `Vec<CanonicalDelta>`. Each flow keeps the kernel's grouping and its
+  summed source/destination amounts; derivation re-checks the exact
+  per-flow equation against the actual consumed source objects.
+  `active_families()` projects the delta-family set; a compatibility
+  `canonical_deltas()` derives the flat view for unmigrated consumers.
+  `issuance_delta` becomes `issuance_projection` over the stored partition.
+- Commit `d09eacd` (model). Manifest delta-family conformance derives its
+  actual set from `active_families()`, keeping family projection distinct
+  from exact accounting.
+- Commit `2d6b8c3` (realization). `OperationObservation` carries an
+  `ObservedCanonicalPartition`. The normalizer enforces between-flow
+  source/destination uniqueness while a flow's movement and destruction
+  legs share its one source set; the evaluator's `canonical_flow_holds`
+  checks the source/destination/destruction equation, the movement-kind
+  rule, and positive destruction legs; issuances check that the issued
+  amount equals their destination sum. The model→realization adapter
+  projects the exact partition and drops the old issuance-authority
+  rejection.
+- Tests: the pilots retain their denotation (compact ASH, live transfer);
+  fault cases break flow arithmetic, movement kind, and cross-flow source
+  reuse; a mixed movement-plus-destruction flow (partial-clear shape) is
+  now structurally representable, and reusing a source across flows is a
+  partition overlap. The model's existing clear/settlement transitions
+  exercise mixed flows through the new certificate partition.
+- Identity: no typed-architecture change, so the architecture semantic and
+  behavioural hashes are unchanged; only the model/realization public API
+  and the model label register (new `certified-canonical-partition` label)
+  move. Phase 1 has no public realization hash.
+- Verified via the flatpak SDK: full model suite (280) and realization
+  suite (90), clippy `-D warnings` on both, and the generated/labels Meson
+  lanes.
 
 ---
 

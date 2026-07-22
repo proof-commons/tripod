@@ -402,6 +402,119 @@ fn empty_flow_fails_policy() {
 }
 
 #[test]
+fn a_mixed_movement_and_destruction_flow_is_representable() {
+    // A partial-clear-shaped flow: two ASH sources, a residual ASH
+    // destination, and a reconciliation destruction leg — a movement and
+    // a destruction sharing one source set (40 + 60 = 50 + 50). The old
+    // flattened representation rejected this as a partition overlap; the
+    // exact partition accepts it structurally.
+    let input0 = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 0,
+    };
+    let input1 = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 1,
+    };
+    let output0 = ObservedObjectRef {
+        side: ObservedSide::Output,
+        ordinal: 0,
+    };
+
+    let observation = OperationObservation {
+        operation: OperationId::CompactAsh,
+        objects: vec![
+            ash(ObservedSide::Input, 0, 40),
+            ash(ObservedSide::Input, 1, 60),
+            ash(ObservedSide::Output, 0, 50),
+        ],
+        protocol_signers: BTreeSet::new(),
+        sponsor_signers: BTreeSet::new(),
+        canonical_partition: ObservedCanonicalPartition {
+            issuances: Vec::new(),
+            flows: vec![ObservedCanonicalFlow {
+                asset: AssetId::U,
+                sources: vec![input0, input1],
+                destinations: vec![output0],
+                movement_kind: Some(DeltaKind::OwnerlessLateral),
+                destructions: vec![crate::ObservedDestructionLeg {
+                    tag: architecture::TagId::Recon,
+                    amount: ProtocolAmount::new(50).unwrap(),
+                }],
+            }],
+        },
+        open_flows: Vec::new(),
+        root_effects: Vec::new(),
+        projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
+        bounds: BTreeMap::from([
+            (BoundId::AshBatchMax, Count::new(64)),
+            (BoundId::FeeSponsorInputMax, Count::new(16)),
+        ]),
+    };
+
+    let normalized =
+        crate::validate_observation(observation).expect("mixed flow is structurally valid");
+    let flow = &normalized.canonical_partition.flows[0];
+    assert!(flow.movement_kind.is_some());
+    assert_eq!(flow.destructions.len(), 1);
+}
+
+#[test]
+fn reusing_a_source_across_flows_is_a_partition_overlap() {
+    // Between flows, a source is used by exactly one flow. Two flows
+    // sharing input 0 is a hard overlap — the rule the flattened
+    // representation could not enforce independently of within-flow
+    // sharing.
+    let input0 = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 0,
+    };
+    let output0 = ObservedObjectRef {
+        side: ObservedSide::Output,
+        ordinal: 0,
+    };
+    let output1 = ObservedObjectRef {
+        side: ObservedSide::Output,
+        ordinal: 1,
+    };
+
+    let flow = |destination: ObservedObjectRef| ObservedCanonicalFlow {
+        asset: AssetId::U,
+        sources: vec![input0],
+        destinations: vec![destination],
+        movement_kind: Some(DeltaKind::OwnerlessLateral),
+        destructions: Vec::new(),
+    };
+
+    let observation = OperationObservation {
+        operation: OperationId::CompactAsh,
+        objects: vec![
+            ash(ObservedSide::Input, 0, 100),
+            ash(ObservedSide::Output, 0, 60),
+            ash(ObservedSide::Output, 1, 40),
+        ],
+        protocol_signers: BTreeSet::new(),
+        sponsor_signers: BTreeSet::new(),
+        canonical_partition: ObservedCanonicalPartition {
+            issuances: Vec::new(),
+            flows: vec![flow(output0), flow(output1)],
+        },
+        open_flows: Vec::new(),
+        root_effects: Vec::new(),
+        projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
+        bounds: BTreeMap::from([
+            (BoundId::AshBatchMax, Count::new(64)),
+            (BoundId::FeeSponsorInputMax, Count::new(16)),
+        ]),
+    };
+
+    assert!(matches!(
+        crate::validate_observation(observation),
+        Err(crate::RealizationError::ObservedCanonicalPartitionOverlap)
+    ));
+}
+
+#[test]
 fn zero_amount_ownerless_lateral_delta_fails_policy() {
     let mut observation = valid_observation();
 
