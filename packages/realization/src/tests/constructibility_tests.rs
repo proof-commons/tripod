@@ -1,11 +1,22 @@
 use architecture::{ObjectId, OperationId};
 
 use crate::{
-    AvailabilityClass, ConstructibilityDependencyDeclaration, ConstructibilityEdge,
-    ConstructibilityEdgeRole, ConstructibilityNode, ConstructibilityNodeId, FactId,
-    RealizationError, RequirementStrength, TransactionSide, WitnessRole,
-    build_constructibility_graph, derive, validate_constructibility,
+    AvailabilityClass, ConstructibilityAuthorization, ConstructibilityDependencyDeclaration,
+    ConstructibilityEdge, ConstructibilityEdgeRole, ConstructibilityNode, ConstructibilityNodeId,
+    FactId, RealizationError, RequirementStrength, TransactionSide, WitnessRole,
+    build_constructibility_graph, constructibility_authorizations, derive,
+    validate_constructibility,
 };
+
+fn permissionless() -> ConstructibilityAuthorization {
+    ConstructibilityAuthorization::Permissionless
+}
+
+fn input_owners(object: ObjectId) -> ConstructibilityAuthorization {
+    ConstructibilityAuthorization::InputOwners {
+        objects: std::iter::once(object).collect(),
+    }
+}
 
 #[test]
 fn phase1_constructibility_graph_is_direct_petgraph_and_validates() {
@@ -22,14 +33,14 @@ fn phase1_constructibility_graph_is_direct_petgraph_and_validates() {
         graph,
         &realization.constructibility_node_by_id,
         OperationId::CompactAsh,
-        true,
+        &permissionless(),
     )
     .unwrap();
     validate_constructibility(
         graph,
         &realization.constructibility_node_by_id,
         OperationId::TransferLive,
-        false,
+        &input_owners(ObjectId::ReceiptLive),
     )
     .unwrap();
 }
@@ -65,7 +76,7 @@ fn permissionless_private_dependency_fails() {
     .unwrap();
 
     assert_eq!(
-        validate_constructibility(&graph, &nodes, OperationId::CompactAsh, true),
+        validate_constructibility(&graph, &nodes, OperationId::CompactAsh, &permissionless()),
         Err(RealizationError::PermissionlessPrivateDependency {
             operation: OperationId::CompactAsh,
             source_node: owner_witness.clone(),
@@ -106,7 +117,7 @@ fn sponsor_local_dependency_must_stay_on_sponsor_edge() {
     .unwrap();
 
     assert_eq!(
-        validate_constructibility(&graph, &nodes, OperationId::CompactAsh, true),
+        validate_constructibility(&graph, &nodes, OperationId::CompactAsh, &permissionless()),
         Err(RealizationError::SponsorDependencyEscaped {
             operation: OperationId::CompactAsh,
             source_node: sponsor.clone(),
@@ -167,7 +178,7 @@ fn permissionless_private_dependency_cannot_be_laundered_through_public_fact() {
     .unwrap();
 
     assert_eq!(
-        validate_constructibility(&graph, &nodes, OperationId::CompactAsh, true),
+        validate_constructibility(&graph, &nodes, OperationId::CompactAsh, &permissionless()),
         Err(RealizationError::PermissionlessPrivateDependency {
             operation: OperationId::CompactAsh,
             source_node: owner_witness.clone(),
@@ -214,7 +225,7 @@ fn operator_dependency_cannot_be_laundered_through_two_facts() {
     .unwrap();
 
     assert_eq!(
-        validate_constructibility(&graph, &nodes, OperationId::CompactAsh, true),
+        validate_constructibility(&graph, &nodes, OperationId::CompactAsh, &permissionless()),
         Err(RealizationError::PermissionlessPrivateDependency {
             operation: OperationId::CompactAsh,
             source_node: operator.clone(),
@@ -250,7 +261,7 @@ fn sponsor_local_dependency_cannot_escape_through_required_fact_edge() {
     .unwrap();
 
     assert_eq!(
-        validate_constructibility(&graph, &nodes, OperationId::CompactAsh, true),
+        validate_constructibility(&graph, &nodes, OperationId::CompactAsh, &permissionless()),
         Err(RealizationError::SponsorDependencyEscaped {
             operation: OperationId::CompactAsh,
             source_node: sponsor_fact.clone(),
@@ -285,7 +296,7 @@ fn sponsor_local_chain_with_only_sponsor_edges_is_allowed() {
     )
     .unwrap();
 
-    validate_constructibility(&graph, &nodes, OperationId::CompactAsh, true).unwrap();
+    validate_constructibility(&graph, &nodes, OperationId::CompactAsh, &permissionless()).unwrap();
 }
 
 #[test]
@@ -314,7 +325,7 @@ fn public_dependency_chain_is_allowed_for_permissionless_operation() {
     )
     .unwrap();
 
-    validate_constructibility(&graph, &nodes, OperationId::CompactAsh, true).unwrap();
+    validate_constructibility(&graph, &nodes, OperationId::CompactAsh, &permissionless()).unwrap();
 }
 
 #[test]
@@ -332,7 +343,7 @@ fn cross_operation_private_dependency_is_rejected() {
     .unwrap();
 
     assert_eq!(
-        validate_constructibility(&graph, &nodes, OperationId::CompactAsh, true),
+        validate_constructibility(&graph, &nodes, OperationId::CompactAsh, &permissionless()),
         Err(RealizationError::CrossOperationConstructibilityDependency {
             operation: OperationId::CompactAsh,
             source_node: transfer_witness.clone(),
@@ -373,14 +384,144 @@ fn permissionless_laundered_path_is_insertion_order_stable() {
             &forward_graph,
             &forward_nodes,
             OperationId::CompactAsh,
-            true
+            &permissionless()
         ),
         validate_constructibility(
             &reversed_graph,
             &reversed_nodes,
             OperationId::CompactAsh,
-            true
+            &permissionless()
         ),
+    );
+}
+
+#[test]
+fn constructibility_authorizations_are_derived_from_permission_class() {
+    let arch = &architecture::ARCHITECTURE;
+    let cases = |id| constructibility_authorizations(arch.operation(id).unwrap()).unwrap();
+
+    assert_eq!(
+        cases(OperationId::AdmitDeposits),
+        vec![ConstructibilityAuthorization::Permissionless],
+    );
+    assert_eq!(
+        cases(OperationId::AnnounceMaturity),
+        vec![ConstructibilityAuthorization::Operator],
+    );
+    assert_eq!(
+        cases(OperationId::Cycle),
+        vec![
+            ConstructibilityAuthorization::CadenceOperator,
+            ConstructibilityAuthorization::CadencePermissionless,
+        ],
+    );
+
+    assert!(matches!(
+        cases(OperationId::TransferLive).as_slice(),
+        [ConstructibilityAuthorization::InputOwners { objects }]
+            if objects.contains(&ObjectId::ReceiptLive)
+    ));
+    assert!(matches!(
+        cases(OperationId::CreateRequest).as_slice(),
+        [ConstructibilityAuthorization::ClientAuthorized { .. }],
+    ));
+    assert!(matches!(
+        cases(OperationId::CancelRequest).as_slice(),
+        [ConstructibilityAuthorization::RefundKey { .. }],
+    ));
+}
+
+#[test]
+fn live_transfer_operator_dependency_is_unavailable_to_owners() {
+    // An operator witness is not discharged by receipt-owner
+    // authorization: it is unavailable, not merely a permissionless leak.
+    let operation = ConstructibilityNodeId::Operation(OperationId::TransferLive);
+    let operator = ConstructibilityNodeId::Witness {
+        operation: OperationId::TransferLive,
+        role: WitnessRole::OperatorAuthorization,
+        availability: AvailabilityClass::Operator,
+    };
+    let (graph, nodes, _) = build_constructibility_graph(
+        [node(operation.clone()), node(operator.clone())],
+        [edge(
+            operator.clone(),
+            operation.clone(),
+            ConstructibilityEdgeRole::RequiredWitness,
+        )],
+    )
+    .unwrap();
+
+    assert_eq!(
+        validate_constructibility(
+            &graph,
+            &nodes,
+            OperationId::TransferLive,
+            &input_owners(ObjectId::ReceiptLive),
+        ),
+        Err(RealizationError::ConstructibilityWitnessUnavailable {
+            operation: OperationId::TransferLive,
+            authorization: input_owners(ObjectId::ReceiptLive),
+            source_node: operator.clone(),
+            path: vec![operator, operation],
+        }),
+    );
+}
+
+#[test]
+fn mutating_operation_authorization_changes_constructibility() {
+    let realization = derive(
+        &architecture::ARCHITECTURE,
+        crate::RealizationScope::phase1_pilots(),
+    )
+    .unwrap();
+    let graph = &realization.constructibility_graph;
+    let nodes = &realization.constructibility_node_by_id;
+
+    // Under the real receipt-owner authorization the live-transfer owner
+    // witness is available.
+    validate_constructibility(
+        graph,
+        nodes,
+        OperationId::TransferLive,
+        &input_owners(ObjectId::ReceiptLive),
+    )
+    .unwrap();
+
+    // Mutating the typed operation row to permissionless makes the same
+    // owner witness a forbidden private dependency: the decision follows
+    // the architecture field, not the operation name.
+    let mut mutated = *architecture::ARCHITECTURE
+        .operation(OperationId::TransferLive)
+        .unwrap();
+    mutated.authorization = architecture::PermissionClass::Permissionless;
+
+    let cases = constructibility_authorizations(&mutated).unwrap();
+    assert_eq!(cases, vec![ConstructibilityAuthorization::Permissionless]);
+
+    assert!(matches!(
+        validate_constructibility(graph, nodes, OperationId::TransferLive, &cases[0]),
+        Err(RealizationError::PermissionlessPrivateDependency { .. }),
+    ));
+}
+
+#[test]
+fn refund_key_authorization_names_the_refund_input() {
+    let cancel = architecture::ARCHITECTURE
+        .operation(OperationId::CancelRequest)
+        .unwrap();
+
+    let expected_object = cancel
+        .inputs
+        .iter()
+        .find(|input| input.authorization == architecture::InputAuthorization::RefundKey)
+        .map(|input| input.object)
+        .expect("cancel-request has a refund-key input");
+
+    assert_eq!(
+        constructibility_authorizations(cancel).unwrap(),
+        vec![ConstructibilityAuthorization::RefundKey {
+            object: expected_object,
+        }],
     );
 }
 

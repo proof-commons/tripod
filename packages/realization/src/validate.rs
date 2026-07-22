@@ -9,8 +9,8 @@ use architecture::{
 };
 
 use crate::{
-    ArchitectureMismatchField, RealizationError, RepresentationMode, ScopedRealizationSpec,
-    require_lifecycle_exit, validate_constructibility,
+    ArchitectureMismatchField, ConstructibilityAuthorization, RealizationError, RepresentationMode,
+    ScopedRealizationSpec, require_lifecycle_exit, validate_constructibility,
 };
 
 pub fn validate_scoped_realization(
@@ -41,18 +41,79 @@ pub fn validate_scoped_realization(
         ));
     }
 
-    for operation in realization.scope.operations() {
-        validate_constructibility(
-            &realization.constructibility_graph,
-            &realization.constructibility_node_by_id,
-            *operation,
-            *operation == OperationId::CompactAsh,
+    for operation_id in realization.scope.operations() {
+        let operation = architecture.operation(*operation_id).ok_or(
+            RealizationError::MissingArchitectureOperation(*operation_id),
         )?;
+
+        for authorization in constructibility_authorizations(operation)? {
+            validate_constructibility(
+                &realization.constructibility_graph,
+                &realization.constructibility_node_by_id,
+                *operation_id,
+                &authorization,
+            )?;
+        }
     }
 
     validate_pilot_lifecycle(realization)?;
 
     Ok(())
+}
+
+/// Derives the constructibility authorization cases from one typed
+/// architecture operation row. The operation name is never inspected:
+/// the primary `PermissionClass` selects the case shape, and owner/refund
+/// cases read the operation's input authorizations. A cadence-band
+/// operation yields both its operator and delayed-permissionless windows.
+pub fn constructibility_authorizations(
+    operation: &architecture::OperationSpec,
+) -> Result<Vec<ConstructibilityAuthorization>, RealizationError> {
+    let cases = match operation.authorization {
+        PermissionClass::Permissionless => vec![ConstructibilityAuthorization::Permissionless],
+
+        PermissionClass::ReceiptOwners => vec![ConstructibilityAuthorization::InputOwners {
+            objects: input_owner_objects(operation),
+        }],
+
+        PermissionClass::ClientAuthorized => {
+            vec![ConstructibilityAuthorization::ClientAuthorized {
+                objects: input_owner_objects(operation),
+            }]
+        }
+
+        PermissionClass::RefundKey => {
+            let object = operation
+                .inputs
+                .iter()
+                .find(|input| input.authorization == InputAuthorization::RefundKey)
+                .map(|input| input.object)
+                .ok_or(RealizationError::ConstructibilityAuthorizationMismatch(
+                    operation.id,
+                ))?;
+
+            vec![ConstructibilityAuthorization::RefundKey { object }]
+        }
+
+        PermissionClass::Operator => vec![ConstructibilityAuthorization::Operator],
+
+        PermissionClass::CadenceBand => vec![
+            ConstructibilityAuthorization::CadenceOperator,
+            ConstructibilityAuthorization::CadencePermissionless,
+        ],
+    };
+
+    Ok(cases)
+}
+
+/// The set of objects whose consumed owners authorize an operation.
+fn input_owner_objects(operation: &architecture::OperationSpec) -> BTreeSet<ObjectId> {
+    operation
+        .inputs
+        .iter()
+        .filter(|input| input.authorization == InputAuthorization::InputOwner)
+        .map(|input| input.object)
+        .collect()
 }
 
 fn validate_pilot_lifecycle(realization: &ScopedRealizationSpec) -> Result<(), RealizationError> {

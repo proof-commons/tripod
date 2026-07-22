@@ -48,9 +48,10 @@ mod validate;
 pub use binding::ArchitectureBinding;
 pub(crate) use constructibility::validate_constructibility;
 pub use constructibility::{
-    AvailabilityClass, ConstructibilityDependencyDeclaration, ConstructibilityDependencyProjection,
-    ConstructibilityEdge, ConstructibilityEdgeRole, ConstructibilityGraphProjection,
-    ConstructibilityNode, ConstructibilityNodeId, RequirementStrength, WitnessRole,
+    AvailabilityClass, ConstructibilityAuthorization, ConstructibilityDependencyDeclaration,
+    ConstructibilityDependencyProjection, ConstructibilityEdge, ConstructibilityEdgeRole,
+    ConstructibilityGraphProjection, ConstructibilityNode, ConstructibilityNodeId,
+    RequirementStrength, WitnessRole,
 };
 #[cfg(test)]
 #[allow(unused_imports)]
@@ -109,6 +110,8 @@ pub use relation::{
 #[allow(unused_imports)]
 pub(crate) use relation::{build_relation_graph, project_relation_graph};
 pub use scope::{CompleteRealizationScope, RealizationScope};
+#[cfg(test)]
+pub(crate) use validate::constructibility_authorizations;
 pub use value::{OwnerId, SemanticType, SemanticValue};
 
 #[cfg(test)]

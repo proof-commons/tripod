@@ -248,7 +248,7 @@ does not depend on an unresolved semantic decision.
 | `F1-008` | P2 | **DONE** | Malformed non-PA Realization imports may disappear silently. |
 | `F1-009` | P2 | **TODO** | Arbitrary `tree_ref` can mix selected-ref metadata with worktree bytes. |
 | `F1-010` | P2 | **DONE** | CI cleanliness misses staged and untracked nonignored files. |
-| `F1-011` | P2 | **TODO** | Constructibility authorization is selected by operation name rather than architecture semantics. |
+| `F1-011` | P2 | **DONE** | Constructibility authorization is selected by operation name rather than architecture semantics. |
 | `F1-012` | P2 | **BLOCKED** | Normative and companion prose contain arithmetic, weld, and valuation inaccuracies. |
 | `F1-013` | P2 | **DONE** | Active planning still prescribes graph adapters prohibited by D007. |
 | `F1-014` | P2 | **DONE** | Full Meson tests depend on undeclared `jq`. |
@@ -599,6 +599,36 @@ A one-bit permissionless flag is insufficient for cadence.
 
 Test synthetic authorization mutations, owner/operator witness availability,
 cadence cases, sponsor-local isolation, and cross-operation laundering.
+
+#### Evidence · DONE
+
+- Commit replaces the `operation == OperationId::CompactAsh` boolean passed to
+  `validate_constructibility` with a typed `ConstructibilityAuthorization` case
+  set. `constructibility_authorizations` in
+  `packages/realization/src/validate.rs` derives those cases from the typed
+  operation row: `PermissionClass` selects the case shape, owner and
+  client-authorized cases read the operation's `InputOwner` input objects, the
+  refund-key case reads the `RefundKey` input, and a cadence-band operation
+  yields both an operator window and a delayed-permissionless window. The
+  operation name is never inspected.
+- `packages/realization/src/constructibility.rs` gains
+  `ConstructibilityAuthorization`, broadens `AvailabilityClass` with
+  `RefundKey`/`ClientOwners`, and validates each dependency's availability
+  against the case with `availability_allowed`. Permissionless and
+  delayed-permissionless windows keep the focused
+  `PermissionlessPrivateDependency` error; every other unmet authorization
+  reports the new typed `ConstructibilityWitnessUnavailable`. Sponsor-local
+  isolation and cross-operation laundering rejections are unchanged.
+- `validate_scoped_realization` now validates every derived authorization case
+  per scoped operation, so both pilots weld against real architecture with no
+  name special-case.
+- Tests: derivation of each `PermissionClass` against the real architecture,
+  an operator dependency unavailable to receipt owners, a mutation test that
+  flips `TransferLive` to permissionless and observes the owner witness become
+  a private-dependency failure, and the refund-key case naming its input. The
+  existing permissionless/sponsor/cross-operation rejections still hold.
+- Verified: full `tripod-realization` suite and clippy `-D warnings`
+  green via the flatpak SDK.
 
 ---
 

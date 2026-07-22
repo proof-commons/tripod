@@ -19,6 +19,27 @@ pub enum AvailabilityClass {
     InputOwners { object: ObjectId },
     Operator,
     SponsorLocal,
+    RefundKey { object: ObjectId },
+    ClientOwners { object: ObjectId },
+}
+
+/// Realization-owned analysis of how one operation is authorized.
+///
+/// This is not architecture identity: it is the derived case set that
+/// [`constructibility_authorizations`](crate::constructibility_authorizations)
+/// computes from the typed operation row, and against which every
+/// constructibility dependency's [`AvailabilityClass`] is checked. A
+/// cadence-band operation yields two cases — an operator window and a
+/// delayed permissionless window — so both are validated.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ConstructibilityAuthorization {
+    Permissionless,
+    InputOwners { objects: BTreeSet<ObjectId> },
+    RefundKey { object: ObjectId },
+    ClientAuthorized { objects: BTreeSet<ObjectId> },
+    Operator,
+    CadenceOperator,
+    CadencePermissionless,
 }
 
 /// Witness role distinct from target witness encoding.
@@ -166,7 +187,7 @@ pub(crate) fn validate_constructibility(
     graph: &DiGraph<ConstructibilityNode, ConstructibilityEdge, u32>,
     node_by_id: &BTreeMap<ConstructibilityNodeId, NodeIndex<u32>>,
     operation: OperationId,
-    permissionless: bool,
+    authorization: &ConstructibilityAuthorization,
 ) -> Result<(), RealizationError> {
     let operation_id = ConstructibilityNodeId::Operation(operation);
     let operation_node = node_by_id.get(&operation_id).copied().ok_or(
@@ -190,17 +211,13 @@ pub(crate) fn validate_constructibility(
             continue;
         };
 
-        if permissionless
-            && matches!(
-                availability,
-                AvailabilityClass::InputOwners { .. } | AvailabilityClass::Operator
-            )
-        {
-            return Err(RealizationError::PermissionlessPrivateDependency {
+        if !availability_allowed(availability, authorization) {
+            return Err(unavailable_dependency_error(
                 operation,
-                source_node: source.clone(),
+                authorization,
+                source.clone(),
                 path,
-            });
+            ));
         }
 
         if availability == AvailabilityClass::SponsorLocal
@@ -215,6 +232,71 @@ pub(crate) fn validate_constructibility(
     }
 
     Ok(())
+}
+
+/// Whether one dependency's availability class can be discharged under
+/// the given operation authorization. Public and sponsor-local
+/// dependencies are always allowed here (sponsor-local dependencies are
+/// separately confined to sponsor-only edges); every private class must
+/// be named by the authorization.
+fn availability_allowed(
+    availability: AvailabilityClass,
+    authorization: &ConstructibilityAuthorization,
+) -> bool {
+    use ConstructibilityAuthorization as Auth;
+
+    match availability {
+        AvailabilityClass::Public | AvailabilityClass::SponsorLocal => true,
+
+        AvailabilityClass::InputOwners { object } => matches!(
+            authorization,
+            Auth::InputOwners { objects } | Auth::ClientAuthorized { objects }
+                if objects.contains(&object)
+        ),
+
+        AvailabilityClass::Operator => {
+            matches!(authorization, Auth::Operator | Auth::CadenceOperator)
+        }
+
+        AvailabilityClass::RefundKey { object } => matches!(
+            authorization,
+            Auth::RefundKey { object: expected } if *expected == object
+        ),
+
+        AvailabilityClass::ClientOwners { object } => matches!(
+            authorization,
+            Auth::ClientAuthorized { objects } if objects.contains(&object)
+        ),
+    }
+}
+
+/// Selects the focused error for a dependency the authorization cannot
+/// discharge. Permissionless windows keep the historic
+/// `PermissionlessPrivateDependency`; every other authorization reports
+/// the typed unavailable-witness error.
+fn unavailable_dependency_error(
+    operation: OperationId,
+    authorization: &ConstructibilityAuthorization,
+    source_node: ConstructibilityNodeId,
+    path: Vec<ConstructibilityNodeId>,
+) -> RealizationError {
+    match authorization {
+        ConstructibilityAuthorization::Permissionless
+        | ConstructibilityAuthorization::CadencePermissionless => {
+            RealizationError::PermissionlessPrivateDependency {
+                operation,
+                source_node,
+                path,
+            }
+        }
+
+        _ => RealizationError::ConstructibilityWitnessUnavailable {
+            operation,
+            authorization: authorization.clone(),
+            source_node,
+            path,
+        },
+    }
 }
 
 fn reverse_reachable_ancestors(

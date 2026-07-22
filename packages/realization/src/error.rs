@@ -2,9 +2,10 @@ use architecture::{BoundId, ManifestError, ObjectId, OperationId, RootId};
 use thiserror::Error;
 
 use crate::{
-    ConstructibilityDependencyDeclaration, ConstructibilityNodeId, DisclosureDependencyDeclaration,
-    DisclosureNodeId, ExprId, FactId, LifecycleDependencyDeclaration, LifecycleNodeId,
-    ObservedObjectRef, RelationDependencyDeclaration, RelationId, RepresentationMode, SemanticType,
+    ConstructibilityAuthorization, ConstructibilityDependencyDeclaration, ConstructibilityNodeId,
+    DisclosureDependencyDeclaration, DisclosureNodeId, ExprId, FactId,
+    LifecycleDependencyDeclaration, LifecycleNodeId, ObservedObjectRef,
+    RelationDependencyDeclaration, RelationId, RepresentationMode, SemanticType,
 };
 
 /// Architecture field whose declared shape no longer matches a realization weld.
@@ -247,6 +248,24 @@ pub enum RealizationError {
     #[error("permissionless operation {operation} depends on private source {source_node:?}")]
     PermissionlessPrivateDependency {
         operation: OperationId,
+        source_node: ConstructibilityNodeId,
+        path: Vec<ConstructibilityNodeId>,
+    },
+
+    /// An operation authorization derived from architecture cannot be
+    /// built from the operation's own input rows (for example, a
+    /// refund-key operation with no refund-key input).
+    #[error("operation {0} authorization cannot be derived from its architecture inputs")]
+    ConstructibilityAuthorizationMismatch(OperationId),
+
+    /// A constructibility dependency requires a witness that the
+    /// operation's authorization does not provide.
+    #[error(
+        "operation {operation} dependency {source_node:?} is unavailable under authorization {authorization:?}"
+    )]
+    ConstructibilityWitnessUnavailable {
+        operation: OperationId,
+        authorization: ConstructibilityAuthorization,
         source_node: ConstructibilityNodeId,
         path: Vec<ConstructibilityNodeId>,
     },
