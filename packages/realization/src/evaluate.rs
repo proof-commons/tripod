@@ -467,11 +467,11 @@ fn observed_object_shape_holds(object: ObjectId, observed: &ObservedObject) -> b
         ObjectId::ReceiptLive
         | ObjectId::ReceiptTimeLocked
         | ObjectId::DepositRequest
-        | ObjectId::DepositEntitlement => !observed.value.is_zero() && observed.owner.is_some(),
+        | ObjectId::DepositEntitlement
+        | ObjectId::PlainLbtc => !observed.value.is_zero() && observed.owner.is_some(),
         ObjectId::DistributionVault | ObjectId::Ash => {
             !observed.value.is_zero() && observed.owner.is_none()
         }
-        ObjectId::PlainLbtc => observed.owner.is_some(),
         ObjectId::CpfpAnchor => observed.value.is_zero() && observed.owner.is_none(),
     }
 }

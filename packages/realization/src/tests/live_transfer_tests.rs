@@ -205,6 +205,26 @@ fn output_recognition() -> RelationId {
     )
 }
 
+fn sponsor_input_recognition() -> RelationId {
+    relation_id(
+        RelationKind::Recognition,
+        RelationSubject::ObjectFamily {
+            side: TransactionSide::Input,
+            object: ObjectId::PlainLbtc,
+        },
+    )
+}
+
+fn sponsor_output_recognition() -> RelationId {
+    relation_id(
+        RelationKind::Recognition,
+        RelationSubject::ObjectFamily {
+            side: TransactionSide::Output,
+            object: ObjectId::PlainLbtc,
+        },
+    )
+}
+
 fn authorization() -> RelationId {
     relation_id(
         RelationKind::Authorization,
@@ -366,12 +386,15 @@ fn sponsor_input_without_owner_fails_recognition() {
     observation
         .objects
         .iter_mut()
-        .find(|object| object.kind == ObservedObjectKind::Declared(ObjectId::PlainLbtc))
+        .find(|object| {
+            object.reference.side == ObservedSide::Input
+                && object.kind == ObservedObjectKind::Declared(ObjectId::PlainLbtc)
+        })
         .expect("fixture has a sponsor input")
         .owner = None;
 
     let report = evaluate(&observation);
-    assert!(failed(&report, &sponsor()));
+    assert!(failed(&report, &sponsor_input_recognition()));
 }
 
 #[test]
@@ -389,7 +412,62 @@ fn sponsor_change_without_owner_fails_recognition() {
         .owner = None;
 
     let report = evaluate(&observation);
-    assert!(failed(&report, &sponsor()));
+    assert!(failed(&report, &sponsor_output_recognition()));
+}
+
+#[test]
+fn zero_value_plain_lbtc_sponsor_input_fails_recognition() {
+    let mut observation = valid_sponsored_observation();
+
+    observation
+        .objects
+        .iter_mut()
+        .find(|object| {
+            object.reference.side == ObservedSide::Input
+                && object.kind == ObservedObjectKind::Declared(ObjectId::PlainLbtc)
+        })
+        .expect("fixture has a sponsor input")
+        .value = ProtocolAmount::ZERO;
+
+    let report = evaluate(&observation);
+    assert!(failed(&report, &sponsor_input_recognition()));
+}
+
+#[test]
+fn zero_value_plain_lbtc_sponsor_change_fails_recognition() {
+    let mut observation = valid_sponsored_observation();
+
+    observation
+        .objects
+        .iter_mut()
+        .find(|object| {
+            object.reference.side == ObservedSide::Output
+                && object.kind == ObservedObjectKind::Declared(ObjectId::PlainLbtc)
+        })
+        .expect("fixture has sponsor change")
+        .value = ProtocolAmount::ZERO;
+
+    let report = evaluate(&observation);
+    assert!(failed(&report, &sponsor_output_recognition()));
+}
+
+#[test]
+fn zero_value_unclaimed_plain_lbtc_fails_recognition() {
+    let mut observation = valid_split_observation();
+    observation.objects.push(ObservedObject {
+        reference: ObservedObjectRef {
+            side: ObservedSide::Input,
+            ordinal: 1,
+        },
+        kind: ObservedObjectKind::Declared(ObjectId::PlainLbtc),
+        asset: ObservedAsset::Declared(AssetId::Lbtc),
+        value: ProtocolAmount::ZERO,
+        owner: None,
+        representation: RepresentationMode::Explicit,
+    });
+
+    let report = evaluate(&observation);
+    assert!(failed(&report, &sponsor_input_recognition()));
 }
 
 #[test]

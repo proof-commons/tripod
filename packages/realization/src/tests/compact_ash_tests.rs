@@ -7,13 +7,15 @@ use architecture::{
 use crate::{
     Count, ObservedAsset, ObservedCanonicalDelta, ObservedObject, ObservedObjectKind,
     ObservedObjectRef, ObservedOpenFlow, ObservedRootEffect, ObservedSide, OperationObservation,
-    ProtocolAmount, RealizationScope, RelationId, RelationKind, RelationStatus, RelationSubject,
-    RepresentationMode, TransactionSide, derive, evaluate_operation,
+    OwnerId, ProtocolAmount, RealizationScope, RelationId, RelationKind, RelationStatus,
+    RelationSubject, RepresentationMode, TransactionSide, derive, evaluate_operation,
 };
 
 type ObservationMutation = Box<dyn Fn(&mut OperationObservation)>;
 type RelationCase = (&'static str, ObservationMutation, RelationId);
 type SponsorCase = (&'static str, ObservationMutation);
+
+const CAROL: OwnerId = OwnerId([3_u8; 32]);
 
 fn compact_scope() -> RealizationScope {
     RealizationScope::from_operations([OperationId::CompactAsh]).unwrap()
@@ -34,7 +36,18 @@ fn ash(side: ObservedSide, ordinal: u32, value: u64) -> ObservedObject {
     }
 }
 
-fn lbtc(side: ObservedSide, ordinal: u32, value: u64) -> ObservedObject {
+fn lbtc_owned(side: ObservedSide, ordinal: u32, value: u64, owner: OwnerId) -> ObservedObject {
+    ObservedObject {
+        reference: ObservedObjectRef { side, ordinal },
+        kind: ObservedObjectKind::Declared(ObjectId::PlainLbtc),
+        asset: ObservedAsset::Declared(AssetId::Lbtc),
+        value: ProtocolAmount::new(value).unwrap(),
+        owner: Some(owner),
+        representation: RepresentationMode::Explicit,
+    }
+}
+
+fn unclaimed_lbtc(side: ObservedSide, ordinal: u32, value: u64) -> ObservedObject {
     ObservedObject {
         reference: ObservedObjectRef { side, ordinal },
         kind: ObservedObjectKind::Declared(ObjectId::PlainLbtc),
@@ -84,6 +97,34 @@ fn valid_observation() -> OperationObservation {
             (BoundId::FeeSponsorInputMax, Count::new(16)),
         ]),
     }
+}
+
+fn valid_sponsored_observation() -> OperationObservation {
+    let mut observation = valid_observation();
+    let sponsor_input = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 2,
+    };
+    let sponsor_change = ObservedObjectRef {
+        side: ObservedSide::Output,
+        ordinal: 1,
+    };
+
+    observation
+        .objects
+        .push(lbtc_owned(ObservedSide::Input, 2, 10, CAROL));
+    observation
+        .objects
+        .push(lbtc_owned(ObservedSide::Output, 1, 7, CAROL));
+    observation.open_flows.push(ObservedOpenFlow {
+        kind: architecture::OpenFlowKind::FeeSponsor,
+        sources: vec![sponsor_input],
+        destinations: vec![sponsor_change],
+        fee: ProtocolAmount::new(3).unwrap(),
+    });
+    observation.sponsor_signers.insert(CAROL);
+
+    observation
 }
 
 fn evaluate(observation: &OperationObservation) -> crate::ConformanceReport {
@@ -138,6 +179,26 @@ fn output_recognition() -> RelationId {
         RelationSubject::ObjectFamily {
             side: TransactionSide::Output,
             object: ObjectId::Ash,
+        },
+    )
+}
+
+fn sponsor_input_recognition() -> RelationId {
+    relation_id(
+        RelationKind::Recognition,
+        RelationSubject::ObjectFamily {
+            side: TransactionSide::Input,
+            object: ObjectId::PlainLbtc,
+        },
+    )
+}
+
+fn sponsor_output_recognition() -> RelationId {
+    relation_id(
+        RelationKind::Recognition,
+        RelationSubject::ObjectFamily {
+            side: TransactionSide::Output,
+            object: ObjectId::PlainLbtc,
         },
     )
 }
@@ -305,6 +366,75 @@ fn zero_amount_ownerless_lateral_delta_fails_policy() {
 
     let report = evaluate(&observation);
     assert!(failed(&report, &canonical_delta_policy()));
+}
+
+#[test]
+fn valid_sponsored_compact_ash_conforms() {
+    let report = evaluate(&valid_sponsored_observation());
+
+    assert!(
+        report.is_conformant(),
+        "failed relations: {:?}",
+        report.failed_relations().collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn zero_value_plain_lbtc_sponsor_input_fails_recognition() {
+    let mut observation = valid_sponsored_observation();
+
+    observation
+        .objects
+        .iter_mut()
+        .find(|object| {
+            object.reference.side == ObservedSide::Input
+                && object.kind == ObservedObjectKind::Declared(ObjectId::PlainLbtc)
+        })
+        .expect("fixture has a sponsor input")
+        .value = ProtocolAmount::ZERO;
+
+    let report = evaluate(&observation);
+    assert!(failed(&report, &sponsor_input_recognition()));
+}
+
+#[test]
+fn zero_value_plain_lbtc_sponsor_change_fails_recognition() {
+    let mut observation = valid_sponsored_observation();
+
+    observation
+        .objects
+        .iter_mut()
+        .find(|object| {
+            object.reference.side == ObservedSide::Output
+                && object.kind == ObservedObjectKind::Declared(ObjectId::PlainLbtc)
+        })
+        .expect("fixture has sponsor change")
+        .value = ProtocolAmount::ZERO;
+
+    let report = evaluate(&observation);
+    assert!(failed(&report, &sponsor_output_recognition()));
+}
+
+#[test]
+fn zero_value_unclaimed_plain_lbtc_fails_recognition() {
+    let mut observation = valid_observation();
+    observation
+        .objects
+        .push(unclaimed_lbtc(ObservedSide::Input, 2, 0));
+
+    let report = evaluate(&observation);
+    assert!(failed(&report, &sponsor_input_recognition()));
+}
+
+#[test]
+fn ownerless_plain_lbtc_fails_recognition() {
+    let mut observation = valid_observation();
+    observation
+        .objects
+        .push(unclaimed_lbtc(ObservedSide::Input, 2, 10));
+
+    let report = evaluate(&observation);
+    assert!(failed(&report, &sponsor_input_recognition()));
 }
 
 #[test]
@@ -507,13 +637,21 @@ fn sponsor_cases() -> Vec<SponsorCase> {
         ),
         (
             "unclaimed lbtc",
-            Box::new(|observation| observation.objects.push(lbtc(ObservedSide::Input, 2, 10))),
+            Box::new(|observation| {
+                observation
+                    .objects
+                    .push(unclaimed_lbtc(ObservedSide::Input, 2, 10));
+            }),
         ),
         (
             "duplicate sponsor source",
             Box::new(move |observation| {
-                observation.objects.push(lbtc(ObservedSide::Input, 2, 10));
-                observation.objects.push(lbtc(ObservedSide::Input, 3, 1));
+                observation
+                    .objects
+                    .push(unclaimed_lbtc(ObservedSide::Input, 2, 10));
+                observation
+                    .objects
+                    .push(lbtc_owned(ObservedSide::Input, 3, 1, CAROL));
                 observation.open_flows.push(ObservedOpenFlow {
                     kind: architecture::OpenFlowKind::FeeSponsor,
                     sources: vec![
@@ -531,8 +669,12 @@ fn sponsor_cases() -> Vec<SponsorCase> {
         (
             "sponsor imbalance",
             Box::new(move |observation| {
-                observation.objects.push(lbtc(ObservedSide::Input, 2, 10));
-                observation.objects.push(lbtc(ObservedSide::Output, 1, 6));
+                observation
+                    .objects
+                    .push(unclaimed_lbtc(ObservedSide::Input, 2, 10));
+                observation
+                    .objects
+                    .push(lbtc_owned(ObservedSide::Output, 1, 6, CAROL));
                 observation.open_flows.push(ObservedOpenFlow {
                     kind: architecture::OpenFlowKind::FeeSponsor,
                     sources: vec![source],
