@@ -1,12 +1,14 @@
 //! Checkpoint-reconstruction and forged-history rejection tests.
 //!
-//! `ReferenceIndexer::try_from(IndexerCheckpoint)` ingests untrusted
-//! checkpoints. `ReferenceIndexer::from_model_history` projects
-//! trusted executable-model history and validates every consistency
-//! fact that history carries, without claiming independent raw
-//! transaction recognition. Each test mutates exactly one fact a
-//! validated chain and kernel-derived history could never produce and
-//! demonstrates closed failure.
+//! The test-only `UntrustedIndexerFixture` consistency gate stands in
+//! for untrusted raw index rows: there is no public arbitrary-row
+//! constructor, so a rejection test asserts `fixture.check()` fails.
+//! `ReferenceIndexer::from_model_history` projects trusted
+//! executable-model history and validates every consistency fact that
+//! history carries, without claiming independent raw transaction
+//! recognition. Each test mutates exactly one fact a validated chain and
+//! kernel-derived history could never produce and demonstrates closed
+//! failure.
 
 use std::collections::BTreeSet;
 
@@ -14,7 +16,7 @@ use super::advanced_fixtures::*;
 use super::scenario_fixtures::*;
 use super::test_fixtures;
 use super::test_fixtures::{block_hash, chain_view_for_history, txid};
-use crate::ledger::serialize_query_unchecked_for_test;
+use crate::ledger::{UntrustedIndexerFixture, serialize_query_unchecked_for_test};
 use crate::*;
 
 fn burned_world() -> World {
@@ -65,51 +67,45 @@ fn from_forged_history(world: &World) -> Result<ReferenceIndexer, Guard> {
 
 #[test]
 fn zero_network_id_checkpoint_is_rejected() {
-    let mut checkpoint = burned_indexer().checkpoint();
+    let mut checkpoint = UntrustedIndexerFixture::from_indexer(&burned_indexer());
 
     checkpoint.context.network_id = [0_u8; 32];
 
-    assert_eq!(ReferenceIndexer::try_from(checkpoint), Err(Guard::Domain),);
+    assert_eq!(checkpoint.check(), Err(Guard::Domain),);
 }
 
 #[test]
 fn zero_genesis_id_checkpoint_is_rejected() {
-    let mut checkpoint = burned_indexer().checkpoint();
+    let mut checkpoint = UntrustedIndexerFixture::from_indexer(&burned_indexer());
 
     checkpoint.context.genesis_id = [0_u8; 32];
 
-    assert_eq!(ReferenceIndexer::try_from(checkpoint), Err(Guard::Domain),);
+    assert_eq!(checkpoint.check(), Err(Guard::Domain),);
 }
 
 #[test]
 fn wrong_architecture_hash_checkpoint_is_rejected() {
-    let mut checkpoint = burned_indexer().checkpoint();
+    let mut checkpoint = UntrustedIndexerFixture::from_indexer(&burned_indexer());
 
     checkpoint.context.architecture_manifest_hash = [9_u8; 32];
 
-    assert_eq!(
-        ReferenceIndexer::try_from(checkpoint),
-        Err(Guard::BadConstant),
-    );
+    assert_eq!(checkpoint.check(), Err(Guard::BadConstant),);
 }
 
 #[test]
 fn unsupported_schema_checkpoint_is_rejected() {
-    let mut checkpoint = burned_indexer().checkpoint();
+    let mut checkpoint = UntrustedIndexerFixture::from_indexer(&burned_indexer());
 
     checkpoint.context.schema_version = ATTESTATION_SCHEMA_VERSION + 1;
 
-    assert_eq!(
-        ReferenceIndexer::try_from(checkpoint),
-        Err(Guard::UnsupportedSchema),
-    );
+    assert_eq!(checkpoint.check(), Err(Guard::UnsupportedSchema),);
 }
 
 // Checkpoint reconstruction: payload semantics.
 
 #[test]
 fn event_after_checkpoint_height_is_rejected() {
-    let mut checkpoint = burned_indexer().checkpoint();
+    let mut checkpoint = UntrustedIndexerFixture::from_indexer(&burned_indexer());
 
     let beyond = checkpoint.context.checkpoint_height + 1;
 
@@ -131,70 +127,64 @@ fn event_after_checkpoint_height_is_rejected() {
 
     checkpoint.burns.insert(forged.txid, forged);
 
-    assert_eq!(
-        ReferenceIndexer::try_from(checkpoint),
-        Err(Guard::WrongCheckpoint),
-    );
+    assert_eq!(checkpoint.check(), Err(Guard::WrongCheckpoint),);
 }
 
 #[test]
 fn zero_clear_omega_checkpoint_is_rejected() {
-    let mut checkpoint = burned_indexer().checkpoint();
+    let mut checkpoint = UntrustedIndexerFixture::from_indexer(&burned_indexer());
 
     let genesis_clear_id = ClearId::Genesis([0_u8; 32]);
 
     checkpoint.clears.get_mut(&genesis_clear_id).unwrap().omega = Sat::ZERO;
 
-    assert_eq!(ReferenceIndexer::try_from(checkpoint), Err(Guard::Domain),);
+    assert_eq!(checkpoint.check(), Err(Guard::Domain),);
 }
 
 #[test]
 fn zero_clear_y_checkpoint_is_rejected() {
-    let mut checkpoint = burned_indexer().checkpoint();
+    let mut checkpoint = UntrustedIndexerFixture::from_indexer(&burned_indexer());
 
     let genesis_clear_id = ClearId::Genesis([0_u8; 32]);
 
     checkpoint.clears.get_mut(&genesis_clear_id).unwrap().y = Sat::ZERO;
 
-    assert_eq!(ReferenceIndexer::try_from(checkpoint), Err(Guard::Domain),);
+    assert_eq!(checkpoint.check(), Err(Guard::Domain),);
 }
 
 #[test]
 fn noncontiguous_burn_record_ordinal_checkpoint_is_rejected() {
-    let mut checkpoint = burned_indexer().checkpoint();
+    let mut checkpoint = UntrustedIndexerFixture::from_indexer(&burned_indexer());
 
     let burn_txid = *checkpoint.burns.keys().next().unwrap();
 
     checkpoint.burns.get_mut(&burn_txid).unwrap().records[0].record_index = 1;
 
-    assert_eq!(
-        ReferenceIndexer::try_from(checkpoint),
-        Err(Guard::WrongShape),
-    );
+    assert_eq!(checkpoint.check(), Err(Guard::WrongShape),);
 }
 
 #[test]
 fn zero_amount_burn_record_checkpoint_is_rejected() {
-    let mut checkpoint = burned_indexer().checkpoint();
+    let mut checkpoint = UntrustedIndexerFixture::from_indexer(&burned_indexer());
 
     let burn_txid = *checkpoint.burns.keys().next().unwrap();
 
     checkpoint.burns.get_mut(&burn_txid).unwrap().records[0].amount = Sat::ZERO;
 
-    assert_eq!(ReferenceIndexer::try_from(checkpoint), Err(Guard::Domain),);
+    assert_eq!(checkpoint.check(), Err(Guard::Domain),);
 }
 
 #[test]
 fn zero_ash_value_burn_checkpoint_is_rejected() {
     // BurnReceipts and the derived projection require positive fresh
     // ASH, so a zero-ASH burn payload is kernel-impossible.
-    let mut checkpoint = burned_indexer().checkpoint();
+    let mut checkpoint = UntrustedIndexerFixture::from_indexer(&burned_indexer());
 
     let burn_txid = *checkpoint.burns.keys().next().unwrap();
 
     checkpoint.burns.get_mut(&burn_txid).unwrap().ash_value = Sat::ZERO;
 
-    assert_eq!(ReferenceIndexer::try_from(checkpoint), Err(Guard::Domain),);
+    assert_eq!(checkpoint.check(), Err(Guard::Domain),);
 }
 
 #[test]
@@ -202,7 +192,7 @@ fn burn_record_sum_outside_sat_domain_checkpoint_is_rejected() {
     // Each record amount is a valid Sat, but their sum leaves the Sat
     // domain: without ingestion rejection, `records_accepted` would
     // fail at query time on a successfully reconstructed indexer.
-    let mut checkpoint = burned_indexer().checkpoint();
+    let mut checkpoint = UntrustedIndexerFixture::from_indexer(&burned_indexer());
 
     let burn_txid = *checkpoint.burns.keys().next().unwrap();
 
@@ -219,20 +209,20 @@ fn burn_record_sum_outside_sat_domain_checkpoint_is_rejected() {
         },
     ];
 
-    assert_eq!(ReferenceIndexer::try_from(checkpoint), Err(Guard::Domain),);
+    assert_eq!(checkpoint.check(), Err(Guard::Domain),);
 }
 
 #[test]
 fn overclaimed_burn_checkpoint_reconstructs() {
     // Σ records > ash_value is a credit verdict, not burn provenance:
     // ingestion accepts the payload and the query pays no credit.
-    let mut checkpoint = burned_indexer().checkpoint();
+    let mut checkpoint = UntrustedIndexerFixture::from_indexer(&burned_indexer());
 
     let burn_txid = *checkpoint.burns.keys().next().unwrap();
 
     checkpoint.burns.get_mut(&burn_txid).unwrap().ash_value = Sat::ONE;
 
-    let indexer = ReferenceIndexer::try_from(checkpoint).unwrap();
+    let indexer = checkpoint.restore().unwrap();
 
     let query = indexer.query(ADDRESS_A).unwrap();
 
@@ -241,13 +231,13 @@ fn overclaimed_burn_checkpoint_reconstructs() {
 
 #[test]
 fn underclaimed_burn_checkpoint_reconstructs() {
-    let mut checkpoint = burned_indexer().checkpoint();
+    let mut checkpoint = UntrustedIndexerFixture::from_indexer(&burned_indexer());
 
     let burn_txid = *checkpoint.burns.keys().next().unwrap();
 
     checkpoint.burns.get_mut(&burn_txid).unwrap().records[0].amount = Sat::ONE;
 
-    let indexer = ReferenceIndexer::try_from(checkpoint).unwrap();
+    let indexer = checkpoint.restore().unwrap();
 
     let query = indexer.query(ADDRESS_A).unwrap();
 
@@ -558,11 +548,18 @@ fn forged_history_zero_ash_value_burn_is_rejected() {
 fn genuine_history_and_checkpoint_round_trip() {
     let indexer = burned_indexer();
 
-    let reconstructed = ReferenceIndexer::try_from(indexer.checkpoint()).unwrap();
+    // The opaque checkpoint answers the same query and event snapshot as
+    // the reference index it came from, through its read-only accessors.
+    let checkpoint = indexer.checkpoint();
 
-    assert_eq!(indexer, reconstructed);
+    assert_eq!(
+        checkpoint.event_snapshot().unwrap(),
+        indexer.event_snapshot().unwrap(),
+    );
 
-    let query = reconstructed.query(ADDRESS_A).unwrap();
+    let query = checkpoint.query(ADDRESS_A).unwrap();
+
+    assert_eq!(query, indexer.query(ADDRESS_A).unwrap());
 
     assert_eq!(validate_query(&query), Ok(()));
 

@@ -14,6 +14,7 @@ use num_traits::Zero;
 use super::attestation_history_fixture::{accepted_burn, clear_entry, genesis_clear};
 use super::scenario_fixtures::{ADDRESS_A, ADDRESS_B, sat};
 use super::test_fixtures::{block_hash, context, txid};
+use crate::ledger::UntrustedIndexerFixture;
 use crate::*;
 
 fn most_recent_clear_before_slow(
@@ -270,8 +271,8 @@ fn same_block_burn_before_clear_uses_previous_clear() {
 // Event-index completeness faults: every corrupted correspondence must
 // fail `validate_event_index` on reconstruction.
 
-fn valid_checkpoint() -> IndexerCheckpoint {
-    rich_indexer().checkpoint()
+fn valid_checkpoint() -> UntrustedIndexerFixture {
+    UntrustedIndexerFixture::from_indexer(&rich_indexer())
 }
 
 #[test]
@@ -282,7 +283,7 @@ fn burn_in_map_but_absent_from_events_is_rejected() {
         .events
         .retain(|event| event.id != AttestationEventId::Burn(txid(3)));
 
-    assert!(ReferenceIndexer::try_from(checkpoint).is_err());
+    assert!(checkpoint.check().is_err());
 }
 
 #[test]
@@ -291,7 +292,7 @@ fn event_referencing_missing_burn_is_rejected() {
 
     checkpoint.burns.remove(&txid(3));
 
-    assert!(ReferenceIndexer::try_from(checkpoint).is_err());
+    assert!(checkpoint.check().is_err());
 }
 
 #[test]
@@ -302,7 +303,7 @@ fn clear_in_map_but_absent_from_events_is_rejected() {
         .events
         .retain(|event| event.id != AttestationEventId::Clear(ClearId::Transaction(txid(2))));
 
-    assert!(ReferenceIndexer::try_from(checkpoint).is_err());
+    assert!(checkpoint.check().is_err());
 }
 
 #[test]
@@ -311,7 +312,7 @@ fn event_referencing_missing_clear_is_rejected() {
 
     checkpoint.clears.remove(&ClearId::Transaction(txid(2)));
 
-    assert!(ReferenceIndexer::try_from(checkpoint).is_err());
+    assert!(checkpoint.check().is_err());
 }
 
 #[test]
@@ -322,7 +323,7 @@ fn duplicate_event_is_rejected() {
 
     checkpoint.events.push(last);
 
-    assert!(ReferenceIndexer::try_from(checkpoint).is_err());
+    assert!(checkpoint.check().is_err());
 }
 
 #[test]
@@ -333,7 +334,7 @@ fn non_increasing_event_order_is_rejected() {
 
     checkpoint.events.swap(length - 1, length - 2);
 
-    assert!(ReferenceIndexer::try_from(checkpoint).is_err());
+    assert!(checkpoint.check().is_err());
 }
 
 #[test]
@@ -342,7 +343,7 @@ fn ordinary_event_before_genesis_is_rejected() {
 
     checkpoint.events.swap(0, 1);
 
-    assert!(ReferenceIndexer::try_from(checkpoint).is_err());
+    assert!(checkpoint.check().is_err());
 }
 
 #[test]
@@ -366,7 +367,7 @@ fn two_events_at_one_canonical_order_is_rejected() {
 
     checkpoint.burns.insert(forged.txid, forged);
 
-    assert!(ReferenceIndexer::try_from(checkpoint).is_err());
+    assert!(checkpoint.check().is_err());
 }
 
 // Genesis-anchor faults: a checkpoint with no genesis clearing (or a
@@ -382,7 +383,7 @@ fn completely_empty_checkpoint_is_rejected() {
     checkpoint.clears.clear();
     checkpoint.events.clear();
 
-    assert!(ReferenceIndexer::try_from(checkpoint).is_err());
+    assert!(checkpoint.check().is_err());
 }
 
 #[test]
@@ -392,7 +393,7 @@ fn clear_map_without_any_event_is_rejected() {
     checkpoint.burns.clear();
     checkpoint.events.clear();
 
-    assert!(ReferenceIndexer::try_from(checkpoint).is_err());
+    assert!(checkpoint.check().is_err());
 }
 
 #[test]
@@ -408,7 +409,7 @@ fn event_stream_without_genesis_is_rejected() {
         .clears
         .retain(|clear_id, _| !matches!(clear_id, ClearId::Genesis(_)));
 
-    assert!(ReferenceIndexer::try_from(checkpoint).is_err());
+    assert!(checkpoint.check().is_err());
 }
 
 #[test]
@@ -421,7 +422,7 @@ fn ordinary_clear_as_first_event_is_rejected() {
         .events
         .retain(|event| !matches!(event.id, AttestationEventId::GenesisClear(_)));
 
-    assert!(ReferenceIndexer::try_from(checkpoint).is_err());
+    assert!(checkpoint.check().is_err());
 }
 
 #[test]
@@ -434,7 +435,7 @@ fn genesis_event_referencing_missing_clear_is_rejected() {
         .clears
         .retain(|clear_id, _| !matches!(clear_id, ClearId::Genesis(_)));
 
-    assert!(ReferenceIndexer::try_from(checkpoint).is_err());
+    assert!(checkpoint.check().is_err());
 }
 
 #[test]
@@ -449,7 +450,7 @@ fn duplicated_genesis_event_is_rejected() {
         .expect("valid checkpoint has a genesis event");
     checkpoint.events.insert(1, genesis);
 
-    assert!(ReferenceIndexer::try_from(checkpoint).is_err());
+    assert!(checkpoint.check().is_err());
 }
 
 #[test]
@@ -477,7 +478,7 @@ fn second_distinct_genesis_clear_is_rejected() {
         },
     );
 
-    assert!(ReferenceIndexer::try_from(checkpoint).is_err());
+    assert!(checkpoint.check().is_err());
 }
 
 #[test]
@@ -489,14 +490,14 @@ fn burn_payload_order_differing_from_event_order_is_rejected() {
         tx_index: 7,
     };
 
-    assert!(ReferenceIndexer::try_from(checkpoint).is_err());
+    assert!(checkpoint.check().is_err());
 }
 
 #[test]
 fn valid_checkpoint_round_trips() {
     let indexer = rich_indexer();
 
-    let rebuilt = ReferenceIndexer::try_from(indexer.checkpoint()).unwrap();
+    let rebuilt = UntrustedIndexerFixture::from_indexer(&indexer).restore().unwrap();
 
     assert_eq!(rebuilt, indexer);
 

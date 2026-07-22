@@ -704,10 +704,13 @@ impl ReferenceIndexer {
         &self.events
     }
 
-    /// A validated checkpoint of this index, including its canonical
-    /// event order.
-    pub fn checkpoint(&self) -> IndexerCheckpoint {
-        IndexerCheckpoint {
+    /// An opaque cache of this reference index, including its canonical
+    /// event order. The returned value is a
+    /// [`ModelIndexerCheckpoint`]: its fields are private, so a
+    /// checkpoint can only originate from an already-projected reference
+    /// index and can never be assembled from arbitrary caller rows.
+    pub fn checkpoint(&self) -> ModelIndexerCheckpoint {
+        ModelIndexerCheckpoint {
             context: self.context,
             burns: self.burns.clone(),
             clears: self.clears.clone(),
@@ -1708,71 +1711,97 @@ pub fn deserialize_query(input: &[u8]) -> Result<AttestationQueryResult, DecodeE
 
 // ´def:verification:indexer-checkpoint´
 
+/// An opaque cache of a reference index already projected from an
+/// assumed kernel-produced model trace.
+///
+/// It is **not** an independent target-chain event recognizer and is
+/// **not** deployment event evidence. Its fields are private, so a
+/// checkpoint can only be obtained from an existing [`ReferenceIndexer`]
+/// via [`ReferenceIndexer::checkpoint`]; there is no public constructor
+/// and no public conversion that promotes arbitrary recognized rows into
+/// a query-capable reference index. The following therefore does not
+/// compile:
+///
+/// ```compile_fail
+/// use model::{ModelIndexerCheckpoint, ReferenceIndexer};
+///
+/// // The cache fields are private; arbitrary recognized rows cannot be
+/// // promoted into a query-capable reference index.
+/// let checkpoint = ModelIndexerCheckpoint {
+///     context: todo!(),
+///     burns: Default::default(),
+///     clears: Default::default(),
+///     events: Default::default(),
+/// };
+/// let _indexer: ReferenceIndexer = checkpoint.into();
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct IndexerCheckpoint {
-    pub context: AttestationContext,
+pub struct ModelIndexerCheckpoint {
+    context: AttestationContext,
 
-    pub burns: BTreeMap<TxId, BurnTransaction>,
+    burns: BTreeMap<TxId, BurnTransaction>,
 
-    pub clears: BTreeMap<ClearId, ClearEntry>,
+    clears: BTreeMap<ClearId, ClearEntry>,
 
-    /// Strict canonical order, genesis clearing first. The checkpoint
-    /// preserves the event order so reconstruction can validate it.
-    pub events: Vec<OrderedAttestationEvent>,
+    /// Strict canonical order, genesis clearing first.
+    events: Vec<OrderedAttestationEvent>,
 }
 
 // ´rule:verification:indexer-reproject´
 //
-// A reorg replaces the checkpoint's canonical burn and clear sets and
-// event order, then rebuilds the projections. Raw burn payloads
-// retained on both histories remain unchanged; only the clear
-// assignment changes. Reconstruction validates the event index — and
-// the checkpoint's context identity and payload semantics — before
-// accepting it: a checkpoint is untrusted input, and reconstruction
-// must uphold the same constructor guarantees as `from_model_history`.
+// A reorg produces a fresh reference index with a different canonical
+// burn/clear set and event order; its checkpoint is a new opaque cache.
+// Because the cache can only be created from an already-validated
+// reference index, restoring it needs no re-validation: the private
+// `restore` rebuilds the query-capable index for the read-only
+// accessors below. There is no public arbitrary-row reconstruction.
 
-impl TryFrom<IndexerCheckpoint> for ReferenceIndexer {
-    type Error = Guard;
-
-    fn try_from(checkpoint: IndexerCheckpoint) -> Result<Self, Guard> {
-        validate_event_index(&checkpoint.burns, &checkpoint.clears, &checkpoint.events)?;
-
-        validate_checkpoint_semantics(
-            &checkpoint.context,
-            &checkpoint.burns,
-            &checkpoint.clears,
-            &checkpoint.events,
-        )?;
-
-        Ok(Self {
-            context: checkpoint.context,
-            burns: checkpoint.burns,
-            clears: checkpoint.clears,
-            events: checkpoint.events,
-        })
-    }
-}
-
-impl IndexerCheckpoint {
-    pub fn rebuild_grouped_credits(
-        &self,
-    ) -> Result<BTreeMap<(AttestationAddress, ClearId), BigUint>, Guard> {
-        let indexer = ReferenceIndexer::try_from(self.clone())?;
-
-        indexer.group_all_credits_for_audit()
+impl ModelIndexerCheckpoint {
+    /// The validated checkpoint context this cache is bound to.
+    #[must_use]
+    pub const fn context(&self) -> AttestationContext {
+        self.context
     }
 
+    /// The raw recognized event/projection sequence for the
+    /// event-recognition differential.
+    pub fn event_snapshot(&self) -> Result<AttestationEventSnapshot, Guard> {
+        self.restore().event_snapshot()
+    }
+
+    /// The canonical attestation query for one address, computed from
+    /// the cached index.
     pub fn query(&self, address: AttestationAddress) -> Result<AttestationQueryResult, Guard> {
-        let indexer = ReferenceIndexer::try_from(self.clone())?;
+        self.restore().query(address)
+    }
 
-        indexer.query(address)
+    /// Rebuild the query-capable reference index from this opaque cache.
+    ///
+    /// Private on purpose: the cache is only ever created from an
+    /// already-valid [`ReferenceIndexer`], so this is the trusted
+    /// restoration path for the read-only accessors, not a public
+    /// arbitrary-row constructor.
+    fn restore(&self) -> ReferenceIndexer {
+        ReferenceIndexer {
+            context: self.context,
+            burns: self.burns.clone(),
+            clears: self.clears.clone(),
+            events: self.events.clone(),
+        }
     }
 }
 
 // ´def:verification:indexer-snapshot´
 
+/// A publicly constructible diagnostic projection of a reference index.
+///
+/// Suitable for diagnostics and comparisons only. Caller-authored values
+/// are untrusted, there is no conversion back to a query-capable
+/// [`ReferenceIndexer`], and it makes no claim of chain provenance. It is
+/// deliberately distinct from [`ModelIndexerCheckpoint`], which is the
+/// opaque cache the reference index itself produces.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct IndexerSnapshot {
+pub struct IndexerDiagnosticSnapshot {
     pub context: AttestationContext,
 
     pub burns: BTreeMap<TxId, BurnTransaction>,
@@ -1782,7 +1811,7 @@ pub struct IndexerSnapshot {
     pub events: Vec<OrderedAttestationEvent>,
 }
 
-impl From<&ReferenceIndexer> for IndexerSnapshot {
+impl From<&ReferenceIndexer> for IndexerDiagnosticSnapshot {
     fn from(indexer: &ReferenceIndexer) -> Self {
         Self {
             context: indexer.context,
@@ -1790,6 +1819,51 @@ impl From<&ReferenceIndexer> for IndexerSnapshot {
             clears: indexer.clears.clone(),
             events: indexer.events.clone(),
         }
+    }
+}
+
+/// Test-only untrusted raw index rows, used to exercise the ingestion
+/// gate without a public arbitrary-row constructor.
+///
+/// [`Self::check`] returns a consistency result — not a query-capable
+/// [`ReferenceIndexer`] — so rejection tests prove the gate closes
+/// without recreating the public provenance problem.
+/// [`Self::restore`] additionally rebuilds a query-capable index for the
+/// few in-crate tests that must exercise query semantics on a crafted
+/// payload; it has no public counterpart.
+#[cfg(test)]
+#[derive(Clone)]
+pub(crate) struct UntrustedIndexerFixture {
+    pub context: AttestationContext,
+    pub burns: BTreeMap<TxId, BurnTransaction>,
+    pub clears: BTreeMap<ClearId, ClearEntry>,
+    pub events: Vec<OrderedAttestationEvent>,
+}
+
+#[cfg(test)]
+impl UntrustedIndexerFixture {
+    pub(crate) fn from_indexer(indexer: &ReferenceIndexer) -> Self {
+        Self {
+            context: indexer.context,
+            burns: indexer.burns.clone(),
+            clears: indexer.clears.clone(),
+            events: indexer.events.clone(),
+        }
+    }
+
+    pub(crate) fn check(&self) -> Result<(), Guard> {
+        validate_event_index(&self.burns, &self.clears, &self.events)?;
+        validate_checkpoint_semantics(&self.context, &self.burns, &self.clears, &self.events)
+    }
+
+    pub(crate) fn restore(&self) -> Result<ReferenceIndexer, Guard> {
+        self.check()?;
+        Ok(ReferenceIndexer {
+            context: self.context,
+            burns: self.burns.clone(),
+            clears: self.clears.clone(),
+            events: self.events.clone(),
+        })
     }
 }
 

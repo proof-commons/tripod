@@ -19,6 +19,7 @@ use super::test_fixtures;
 use super::test_fixtures::{
     TEST_GENESIS_ID, TEST_NETWORK_ID, block_hash, chain_view_for_history, test_manifest_hash, txid,
 };
+use crate::ledger::UntrustedIndexerFixture;
 use crate::*;
 
 fn indexed_burn_world() -> (World, ReferenceIndexer) {
@@ -63,7 +64,7 @@ fn synthetic_indexer(clears: &[ClearEntry], burns: &[BurnTransaction]) -> Refere
 fn over_recognition_is_detected() {
     let (_world, expected) = indexed_burn_world();
 
-    let mut checkpoint = expected.checkpoint();
+    let mut checkpoint = UntrustedIndexerFixture::from_indexer(&expected);
 
     // Within the checkpoint prefix: reconstruction validates event
     // heights against the checkpoint, so an over-recognized event
@@ -92,7 +93,7 @@ fn over_recognition_is_detected() {
 
     checkpoint.burns.insert(forged.txid, forged);
 
-    let candidate = ReferenceIndexer::try_from(checkpoint).unwrap();
+    let candidate = checkpoint.restore().unwrap();
 
     assert_eq!(
         compare_attestation_query(&expected, &candidate, ADDRESS_A),
@@ -112,7 +113,7 @@ fn over_recognition_is_detected() {
 fn under_recognition_is_detected() {
     let (_world, expected) = indexed_burn_world();
 
-    let mut checkpoint = expected.checkpoint();
+    let mut checkpoint = UntrustedIndexerFixture::from_indexer(&expected);
 
     let txid_to_remove = *checkpoint.burns.keys().next().unwrap();
 
@@ -122,7 +123,7 @@ fn under_recognition_is_detected() {
         .events
         .retain(|event| event.id != AttestationEventId::Burn(txid_to_remove));
 
-    let candidate = ReferenceIndexer::try_from(checkpoint).unwrap();
+    let candidate = checkpoint.restore().unwrap();
 
     assert_eq!(
         compare_attestation_query(&expected, &candidate, ADDRESS_A),
