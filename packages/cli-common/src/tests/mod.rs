@@ -5,6 +5,7 @@
 //! | `emit_writes_one_json_line`           | `emit` produces compact JSON + trailing newline. |
 //! | `emit_propagates_serialisation_error` | A non-`Serialize`-friendly value surfaces `Err`. |
 //! | `emit_propagates_writer_error`        | A failing writer surfaces `Err` (broken pipe).   |
+//! | `partial_stdout_write_during_emit_is_not_reverted` | A mid-write pipe break leaves a partial prefix. |
 //! | `emit_to_real_stdout_succeeds`        | `emit` itself writes to the captured stdout.     |
 //! | `base_args_parses_default`            | `BaseArgs::debug` defaults to `false`.           |
 //! | `base_args_parses_long_flag`          | `--debug` flips `BaseArgs::debug` to `true`.     |
@@ -82,6 +83,31 @@ impl Write for FailingWriter {
     }
 }
 
+/// A `Write` that accepts a bounded prefix of bytes and then fails —
+/// modeling a stdout pipe that breaks partway through result emission.
+struct PrefixThenFailWriter {
+    written: Vec<u8>,
+    limit: usize,
+}
+
+impl Write for PrefixThenFailWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if self.written.len() >= self.limit {
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "test: pipe closed mid-write",
+            ));
+        }
+        let take = buf.len().min(self.limit - self.written.len());
+        self.written.extend_from_slice(&buf[..take]);
+        Ok(take)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 #[derive(Parser)]
 #[command(name = "fixture-helper", version = "1.2.3", about = "Fixture helper")]
 #[allow(dead_code)]
@@ -122,6 +148,30 @@ fn emit_propagates_writer_error() {
     let value = serde_json::json!({"k": "v"});
     let err = emit_to(FailingWriter, &value).expect_err("emit must surface writer errors");
     assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+}
+
+#[test]
+fn partial_stdout_write_during_emit_is_not_reverted() {
+    // A pipe that breaks partway through result emission: `emit` surfaces
+    // the error, but the prefix it already wrote cannot be un-written.
+    // ADR-010 therefore promises empty stdout only *before* result
+    // publication begins, never during it (`rule:output:json`).
+    let value = serde_json::json!({
+        "key": "a moderately long value that exceeds the prefix limit"
+    });
+
+    let mut writer = PrefixThenFailWriter {
+        written: Vec::new(),
+        limit: 8,
+    };
+    let err = emit_to(&mut writer, &value).expect_err("a mid-write pipe break surfaces an error");
+
+    assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+    assert_eq!(
+        writer.written.len(),
+        8,
+        "the partial prefix was already published to stdout and cannot be reverted",
+    );
 }
 
 #[test]

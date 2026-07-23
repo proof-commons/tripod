@@ -68,11 +68,21 @@ one complete JSON object per line
 
 A command using streaming output must document that choice.
 
-On runtime failure:
+On a runtime failure that occurs *before* result publication begins:
 
 - stdout is empty;
 - stderr carries JSON diagnostics;
 - the process status selects the failure branch.
+
+A failure *during* result publication — a partial write to stdout from a
+broken pipe, short write, or output quota — may leave a partial record on
+stdout. The result bytes and the process status are two independent effects
+that cannot be committed atomically, the same physical limitation the
+multi-output report/stamp design acknowledges (F1-020, F1-034). The command
+still exits on the failure branch and still emits a JSON diagnostic on stderr
+when stderr remains writable; it does not, and cannot, un-write bytes already
+accepted by stdout. A consumer needing an all-or-nothing result reads an
+explicit report file (`--report`) rather than stdout.
 
 JSON presentation is deterministic where result identity requires it.
 
