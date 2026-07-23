@@ -1984,15 +1984,16 @@ fn validate_burn_postconditions(
         return Err(Guard::ValuePin);
     }
 
-    // A burn transaction remains valid when records over-claim: the
-    // `claimed <= ash_value` gate is applied off-chain by the
-    // reference indexer, which rejects all records of an over-claiming
-    // burn. Only the checked record sum (overflow rejection) is a
-    // validity condition here.
-    burn.records
-        .iter()
-        .map(|record| record.amount)
-        .try_fold(Sat::ZERO, |acc, amount| acc.checked_add(amount))?;
+    // A burn transaction remains valid however much its records
+    // over-claim. The `Σ records <= ash_value` credit gate is a per-query
+    // verdict applied off-chain by the reference indexer
+    // (`BurnTransaction::records_accepted`), which voids all records of an
+    // over-claiming burn rather than invalidating the burn itself. Each
+    // record amount is already a positive `Sat` and the record count is
+    // bounded (`burn_record_max`), so there is no aggregate condition to
+    // enforce here — and summing in `Sat` would wrongly reject a
+    // legitimate over-claim whose aggregate exceeds the `Sat` maximum
+    // (up to `burn_record_max * (2^51 - 1)`).
 
     Ok(())
 }

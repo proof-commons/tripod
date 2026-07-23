@@ -190,10 +190,13 @@ fn zero_ash_value_burn_checkpoint_is_rejected() {
 }
 
 #[test]
-fn burn_record_sum_outside_sat_domain_checkpoint_is_rejected() {
+fn burn_record_sum_outside_sat_domain_reconstructs_and_credits_nothing() {
     // Each record amount is a valid Sat, but their sum leaves the Sat
-    // domain: without ingestion rejection, `records_accepted` would
-    // fail at query time on a successfully reconstructed indexer.
+    // domain. This is a valid over-claiming burn, not a malformed one:
+    // ingestion must accept it (the aggregate is compared in u128, never
+    // required to fit Sat) and the query pays zero credit. Rejecting it
+    // would let an over-claim's magnitude invalidate an otherwise-valid
+    // burn.
     let mut checkpoint = UntrustedIndexerFixture::from_indexer(&burned_indexer());
 
     let burn_txid = *checkpoint.burns.keys().next().unwrap();
@@ -211,7 +214,21 @@ fn burn_record_sum_outside_sat_domain_checkpoint_is_rejected() {
         },
     ];
 
-    assert_eq!(checkpoint.check(), Err(Guard::Domain),);
+    checkpoint
+        .check()
+        .expect("an over-claim beyond the Sat domain is still a valid burn");
+
+    let indexer = checkpoint.restore().unwrap();
+
+    let burn = indexer.burns().values().next().unwrap();
+    assert!(
+        !burn.records_accepted().unwrap(),
+        "the over-claim credits nothing",
+    );
+    assert_eq!(
+        indexer.query(ADDRESS_A).unwrap().terms,
+        [] as [ledger::AttestationTerm; 0]
+    );
 }
 
 #[test]

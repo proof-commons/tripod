@@ -73,14 +73,29 @@ pub struct BurnTransaction {
 impl BurnTransaction {
     /// The attestation gate is a derivation from source data,
     /// Σ record.amount <= ash_value, not a mutable stored decision.
+    ///
+    /// The claim total is accumulated in `u128`, not `Sat`: an
+    /// over-claiming burn is still a valid burn (its records simply
+    /// contribute zero), so the aggregate must be *compared* against the
+    /// fresh ASH value, never required to fit the `Sat` domain. Bounded
+    /// record counts of individually valid `Sat` amounts cannot overflow
+    /// `u128`, and the accumulation short-circuits as soon as the claim
+    /// exceeds the ASH value.
     pub fn records_accepted(&self) -> Result<bool, Guard> {
-        let claimed = self
-            .records
-            .iter()
-            .map(|record| record.amount)
-            .try_fold(Sat::ZERO, |acc, amount| acc.checked_add(amount))?;
+        let ash = u128::from(self.ash_value.get());
+        let mut claimed = 0_u128;
 
-        Ok(claimed <= self.ash_value)
+        for record in &self.records {
+            claimed = claimed
+                .checked_add(u128::from(record.amount.get()))
+                .ok_or(Guard::Overflow)?;
+
+            if claimed > ash {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
     }
 }
 
@@ -279,13 +294,16 @@ fn validate_burn_records(records: &[BurnRecord]) -> Result<(), Guard> {
 }
 
 /// Validate one burn payload against the facts every kernel-derived
-/// burn guarantees: positive fresh ASH, kernel-shaped records, and a
-/// record sum inside the `Sat` domain (so `records_accepted` cannot
-/// fail at query time on an already-accepted payload).
+/// burn guarantees: positive fresh ASH and kernel-shaped records
+/// (contiguous ordinals, positive amounts).
 ///
-/// Over-claiming (`Σ records > ash_value`) stays valid here: the
-/// attestation gate is a credit verdict derived per query, not burn
-/// provenance, so only arithmetic-domain failure rejects.
+/// Over-claiming (`Σ records > ash_value`) stays valid: the attestation
+/// gate is a credit verdict derived per query
+/// (`BurnTransaction::records_accepted`), not burn provenance. The
+/// aggregate claim is deliberately *not* required to fit the `Sat`
+/// domain — `records_accepted` compares it in `u128` — so a legitimate
+/// over-claim whose records sum beyond the `Sat` maximum is not rejected
+/// here.
 #[cfg_attr(not(test), allow(dead_code))]
 fn validate_burn_payload(ash_value: Sat, records: &[BurnRecord]) -> Result<(), Guard> {
     if ash_value.is_zero() {
@@ -293,8 +311,6 @@ fn validate_burn_payload(ash_value: Sat, records: &[BurnRecord]) -> Result<(), G
     }
 
     validate_burn_records(records)?;
-
-    Sat::checked_sum(records.iter().map(|record| record.amount))?;
 
     Ok(())
 }

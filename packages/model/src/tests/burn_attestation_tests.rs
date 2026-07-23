@@ -116,6 +116,52 @@ fn overclaiming_records_do_not_invalidate_burn() {
 }
 
 #[test]
+fn burn_record_overclaim_beyond_sat_domain_keeps_burn_valid() {
+    // A small fresh ASH with two individually-valid records whose sum
+    // leaves the Sat domain (each < TWO_51, together > TWO_51). Summing
+    // the claim in Sat would overflow and wrongly reject the burn; the
+    // burn transition must still succeed, the records stay in the raw
+    // burn log, and the over-claim credits nothing.
+    let world = give_live_receipt(&test_fixtures::world(), ALICE, sat(100));
+
+    let next = burn_from_owner(
+        &world,
+        ALICE,
+        sat(100),
+        vec![
+            BurnRecord {
+                record_index: 0,
+                address: ADDRESS_A,
+                amount: sat(2_000_000_000_000_000),
+            },
+            BurnRecord {
+                record_index: 1,
+                address: ADDRESS_A,
+                amount: sat(2_000_000_000_000_000),
+            },
+        ],
+    );
+
+    check_invariant(&next).unwrap();
+
+    let indexer = ReferenceIndexer::from_assumed_kernel_history(
+        &next.history,
+        &chain_view_for_history(&next),
+        [0_u8; 32],
+    )
+    .unwrap();
+
+    let burn = indexer.burns().values().next().expect("indexed burn");
+
+    assert_eq!(burn.records.len(), 2, "records remain in the raw burn log");
+    assert!(
+        !burn.records_accepted().unwrap(),
+        "an over-claim beyond the Sat domain credits nothing",
+    );
+    assert!(indexer.group_all_credits_for_audit().unwrap().is_empty());
+}
+
+#[test]
 fn underclaiming_records_is_a_valid_donation() {
     let world = give_live_receipt(&test_fixtures::world(), ALICE, sat(100));
 
