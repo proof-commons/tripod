@@ -5,9 +5,10 @@
 //! Port of the original `bin/create_flat_main.pl` script. The binary entry
 //! point lives in [`src/bin/flatten-latex-main.rs`](../bin/flatten-latex-main.rs).
 
+use std::ffi::{OsStr, OsString};
 use std::fs::{File, create_dir_all};
 use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 
@@ -23,16 +24,22 @@ pub struct FlattenOptions {
     pub strict_bibliography: bool,
 }
 
-/// Flatten `main_file` into `output_file`, resolving `\input{}` / `\subfile{}`
-/// and `\addbibresource{}` paths relative to `paper_dir`.
+/// Flatten `main_file` into `output_file`, inlining `\input{}` / `\subfile{}`
+/// and `\addbibresource{}` references.
 ///
-/// `include_dirs` is an ordered list of additional directories searched as a
-/// fallback when a referenced file is not found under `paper_dir`. This lets
-/// callers (e.g. meson) inline shared macros that are staged into a build
-/// directory rather than sitting next to the paper's other sources.
+/// The flattener is **directory-blind**: it performs no filesystem lookup to
+/// locate a referenced file and never learns the paper or build directory. It
+/// works only from `allowed_files` — the fixed set of inlineable files the
+/// caller (e.g. meson) supplies. A reference resolves by matching its trailing
+/// path components (filename first, then enclosing folders) against that list;
+/// exactly one match is required. Zero matches is a hard "not supplied" error
+/// and two or more is an ambiguity error.
 ///
-/// The flattener is intentionally blind to the surrounding repository layout:
-/// callers (e.g. meson) supply the paper directory and output path directly.
+/// Because a reference can only ever name a file already on `allowed_files`, an
+/// absolute include (`\input{/etc/passwd}`), a parent-directory escape
+/// (`\input{../../secret}`), and a symlink whose target is off the list cannot
+/// be read or published (ADR-015). `main_file` is the trusted entry point and
+/// is opened directly; it need not appear in `allowed_files`.
 ///
 /// The output is **reproducible** (same inputs, byte-identical output —
 /// no timestamps) and **atomic** (written to a uniquely named temporary
@@ -43,14 +50,14 @@ pub struct FlattenOptions {
 /// # Errors
 ///
 /// Returns any I/O failure encountered while reading inputs or writing the
-/// flattened output, including a missing `main_file` or `\input{}` target,
-/// an include cycle, or (with [`FlattenOptions::strict_bibliography`]) a
-/// missing bibliography file.
+/// flattened output, a reference that matches zero or multiple supplied files,
+/// a missing `main_file`, an include cycle, or (with
+/// [`FlattenOptions::strict_bibliography`]) a bibliography reference not on the
+/// supplied list.
 pub fn flatten(
-    paper_dir: &Path,
     main_file: &Path,
+    allowed_files: &[PathBuf],
     output_file: &Path,
-    include_dirs: &[PathBuf],
     options: &FlattenOptions,
 ) -> Result<()> {
     let output_parent = output_file
@@ -77,13 +84,7 @@ pub fn flatten(
         .tempfile_in(staging_dir)
         .with_context(|| format!("creating staging file in {}", staging_dir.display()))?;
 
-    write_flattened(
-        paper_dir,
-        main_file,
-        staged.as_file(),
-        include_dirs,
-        options,
-    )?;
+    write_flattened(main_file, allowed_files, staged.as_file(), options)?;
 
     staged
         .persist(output_file)
@@ -93,10 +94,9 @@ pub fn flatten(
 }
 
 fn write_flattened(
-    paper_dir: &Path,
     main_file: &Path,
+    allowed_files: &[PathBuf],
     staged: &File,
-    include_dirs: &[PathBuf],
     options: &FlattenOptions,
 ) -> Result<()> {
     let mut writer = BufWriter::new(staged);
@@ -119,8 +119,7 @@ fn write_flattened(
     writeln!(writer)?;
 
     let mut context = FlattenContext {
-        paper_dir,
-        include_dirs,
+        allowed: allowed_files,
         options,
         include_stack: Vec::new(),
     };
@@ -131,42 +130,109 @@ fn write_flattened(
     Ok(())
 }
 
-/// Resolve a referenced file name against `paper_dir` first, then each entry in
-/// `include_dirs`. When `name` has no extension, a `default_ext` variant is
-/// also tried in every directory. Returns the first existing candidate, or the
-/// best `paper_dir`-relative guess (preserving the original error messages)
-/// when nothing is found.
-fn resolve_reference(
+/// Resolve a LaTeX reference name to exactly one file on the supplied
+/// allowlist by matching trailing path components — the filename first, then
+/// each enclosing folder the reference names. The flattener performs no
+/// filesystem lookup: a reference resolves only if it names a supplied file,
+/// so an absolute path, a `..` escape, or a symlink target off the list is
+/// unreachable.
+///
+/// A reference whose final component has no extension also tries the
+/// `default_ext` variant.
+///
+/// # Errors
+///
+/// Fails when the reference contains a `..` component, matches no supplied
+/// file, or matches more than one supplied file (ambiguous).
+fn resolve_reference<'a>(
     name: &str,
-    paper_dir: &Path,
-    include_dirs: &[PathBuf],
+    allowed: &'a [PathBuf],
     default_ext: &str,
-) -> PathBuf {
-    let needs_ext = !name.contains('.');
-    for dir in std::iter::once(paper_dir).chain(include_dirs.iter().map(PathBuf::as_path)) {
-        let candidate = dir.join(name);
-        if candidate.exists() {
-            return candidate;
+) -> Result<&'a Path> {
+    let mut wanted = reference_components(name)?;
+    let mut matches = suffix_matches(allowed, &wanted);
+
+    // A reference without an extension (e.g. `\input{section}`) also tries
+    // `section.<default_ext>`.
+    if matches.is_empty() && !name.contains('.') {
+        if let Some(last) = wanted.last_mut() {
+            last.push(".");
+            last.push(default_ext);
         }
-        if needs_ext {
-            let with_ext = dir.join(format!("{name}.{default_ext}"));
-            if with_ext.exists() {
-                return with_ext;
-            }
-        }
+        matches = suffix_matches(allowed, &wanted);
     }
-    if needs_ext {
-        paper_dir.join(format!("{name}.{default_ext}"))
-    } else {
-        paper_dir.join(name)
+
+    match matches.as_slice() {
+        [single] => Ok(*single),
+        [] => bail!(
+            "reference {name:?} does not match any file supplied to the flattener; \
+             the flattener inlines only files on the caller's fixed --file list"
+        ),
+        many => bail!(
+            "reference {name:?} ambiguously matches {} supplied files: {}",
+            many.len(),
+            many.iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
+        ),
     }
 }
 
-/// Recursive flatten state: resolution roots, options, and the active
-/// include chain used for cycle detection.
+/// Split a LaTeX reference (always `/`-separated) into trailing-match
+/// components, rejecting an absolute reference or a `..` traversal outright.
+fn reference_components(name: &str) -> Result<Vec<OsString>> {
+    if name.starts_with('/') {
+        bail!("reference {name:?} is an absolute path; references must name a supplied file");
+    }
+    let mut components = Vec::new();
+    for part in name.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => bail!(
+                "reference {name:?} contains a parent-directory ('..') component; \
+                 references must name a supplied file, not a path to traverse"
+            ),
+            other => components.push(OsString::from(other)),
+        }
+    }
+    if components.is_empty() {
+        bail!("reference {name:?} is empty");
+    }
+    Ok(components)
+}
+
+/// Every supplied file whose path ends with exactly `wanted` (compared by
+/// path component, so `01_interface.tex` never matches `x01_interface.tex`).
+fn suffix_matches<'a>(allowed: &'a [PathBuf], wanted: &[OsString]) -> Vec<&'a Path> {
+    allowed
+        .iter()
+        .filter(|candidate| path_ends_with_components(candidate, wanted))
+        .map(PathBuf::as_path)
+        .collect()
+}
+
+fn path_ends_with_components(path: &Path, wanted: &[OsString]) -> bool {
+    let normal: Vec<&OsStr> = path
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(part) => Some(part),
+            _ => None,
+        })
+        .collect();
+    if wanted.len() > normal.len() {
+        return false;
+    }
+    normal[normal.len() - wanted.len()..]
+        .iter()
+        .zip(wanted.iter())
+        .all(|(have, want)| *have == want.as_os_str())
+}
+
+/// Recursive flatten state: the fixed allowlist of inlineable files, options,
+/// and the active include chain used for cycle detection.
 struct FlattenContext<'a> {
-    paper_dir: &'a Path,
-    include_dirs: &'a [PathBuf],
+    allowed: &'a [PathBuf],
     options: &'a FlattenOptions,
     include_stack: Vec<PathBuf>,
 }
@@ -178,19 +244,13 @@ impl FlattenContext<'_> {
         writer: &mut W,
         is_main: bool,
     ) -> Result<()> {
-        if !file_path.exists() {
-            return Err(anyhow!(
-                "could not find file to process: {}",
-                file_path.display()
-            ));
-        }
-
-        // Cycle detection over canonical paths: re-entering a file on
-        // the active include chain would recurse forever.
-        let canonical = file_path
-            .canonicalize()
-            .with_context(|| format!("canonicalizing {}", file_path.display()))?;
-        if self.include_stack.contains(&canonical) {
+        // Cycle detection over the resolved file identities on the active
+        // include chain. Every included file is a distinct entry on the
+        // caller's allowlist and the entry point is opened by its given
+        // path, so component-path equality is sufficient — no filesystem
+        // canonicalisation (and no directory lookup) is performed.
+        let identity = file_path.to_path_buf();
+        if self.include_stack.contains(&identity) {
             let chain = self
                 .include_stack
                 .iter()
@@ -199,10 +259,10 @@ impl FlattenContext<'_> {
                 .join(" -> ");
             bail!(
                 "include cycle detected: {} re-enters via {chain}",
-                canonical.display(),
+                identity.display(),
             );
         }
-        self.include_stack.push(canonical);
+        self.include_stack.push(identity);
 
         let result = self.process_lines(file_path, writer, is_main);
 
@@ -429,39 +489,41 @@ impl FlattenContext<'_> {
         bib_file: &str,
     ) -> Result<()> {
         writeln!(writer, "% {original_line}")?;
-        let bib_path = resolve_reference(bib_file, self.paper_dir, self.include_dirs, "bib");
 
-        if bib_path.exists() {
-            writeln!(
-                writer,
-                "% --- BEGIN embedded bibliography from: {bib_file} ---"
-            )?;
-            writeln!(writer, "\\begin{{filecontents*}}{{{bib_file}}}")?;
-            let bib =
-                File::open(&bib_path).with_context(|| format!("opening {}", bib_path.display()))?;
-            let reader = BufReader::new(bib);
-            for line_result in reader.lines() {
-                let line =
-                    line_result.with_context(|| format!("reading {}", bib_path.display()))?;
-                writeln!(writer, "{line}")?;
+        match resolve_reference(bib_file, self.allowed, "bib") {
+            Ok(bib_path) => {
+                let bib_path = bib_path.to_path_buf();
+                writeln!(
+                    writer,
+                    "% --- BEGIN embedded bibliography from: {bib_file} ---"
+                )?;
+                writeln!(writer, "\\begin{{filecontents*}}{{{bib_file}}}")?;
+                let bib = File::open(&bib_path)
+                    .with_context(|| format!("opening {}", bib_path.display()))?;
+                let reader = BufReader::new(bib);
+                for line_result in reader.lines() {
+                    let line =
+                        line_result.with_context(|| format!("reading {}", bib_path.display()))?;
+                    writeln!(writer, "{line}")?;
+                }
+                writeln!(writer, "\\end{{filecontents*}}")?;
+                writeln!(writer, "\\addbibresource{{{bib_file}}}")?;
+                writeln!(
+                    writer,
+                    "% --- END embedded bibliography from: {bib_file} ---"
+                )?;
             }
-            writeln!(writer, "\\end{{filecontents*}}")?;
-            writeln!(writer, "\\addbibresource{{{bib_file}}}")?;
-            writeln!(
-                writer,
-                "% --- END embedded bibliography from: {bib_file} ---"
-            )?;
-        } else if self.options.strict_bibliography {
-            bail!(
-                "bibliography file '{bib_file}' not found at '{}' (strict mode)",
-                bib_path.display(),
-            );
-        } else {
-            writeln!(
-                writer,
-                "% WARNING: Bibliography file '{bib_file}' not found at '{}'",
-                bib_path.display()
-            )?;
+            Err(_) if self.options.strict_bibliography => {
+                bail!(
+                    "bibliography file '{bib_file}' not found among the supplied files (strict mode)"
+                );
+            }
+            Err(_) => {
+                writeln!(
+                    writer,
+                    "% WARNING: Bibliography file '{bib_file}' not found among the supplied files"
+                )?;
+            }
         }
         Ok(())
     }
@@ -475,11 +537,10 @@ impl FlattenContext<'_> {
         false_branch: &str,
     ) -> Result<()> {
         writeln!(writer, "% {original_line}")?;
-        let included_path = resolve_reference(included, self.paper_dir, self.include_dirs, "tex");
-        if !included_path.exists() {
-            // The probed file is absent, so LaTeX would take the false
-            // branch. An empty false branch mirrors as a comment; a
-            // nonempty one would have to be emitted (and possibly
+        let Ok(resolved) = resolve_reference(included, self.allowed, "tex") else {
+            // The probed file is not on the supplied list, so LaTeX would
+            // take the false branch. An empty false branch mirrors as a
+            // comment; a nonempty one would have to be emitted (and possibly
             // flattened) to preserve semantics, which this line-based
             // flattener does not support — fail rather than silently
             // dropping it.
@@ -494,7 +555,8 @@ impl FlattenContext<'_> {
                 "% --- flatten: conditional include '{included}' absent; false branch taken ---"
             )?;
             return Ok(());
-        }
+        };
+        let included_path = resolved.to_path_buf();
         writeln!(writer, "% --- BEGIN included content from: {included} ---")?;
         self.process_file(&included_path, writer, false)?;
         writeln!(writer, "% --- END included content from: {included} ---")?;
@@ -512,7 +574,7 @@ impl FlattenContext<'_> {
         included: &str,
     ) -> Result<()> {
         writeln!(writer, "% {original_line}")?;
-        let included_path = resolve_reference(included, self.paper_dir, self.include_dirs, "tex");
+        let included_path = resolve_reference(included, self.allowed, "tex")?.to_path_buf();
         writeln!(writer, "% --- BEGIN included content from: {included} ---")?;
         self.process_file(&included_path, writer, false)?;
         writeln!(writer, "% --- END included content from: {included} ---")?;

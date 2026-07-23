@@ -20,28 +20,25 @@ struct Args {
     #[command(flatten)]
     base: BaseArgs,
 
-    /// Directory containing the paper's main TeX file. `\input{}`,
-    /// `\subfile{}`, and `\addbibresource{}` paths resolve relative to it.
-    #[arg(long, value_name = "DIR")]
-    paper_dir: PathBuf,
+    /// The paper's root TeX file (the flatten entry point). Opened directly;
+    /// it need not appear in the `--file` list.
+    #[arg(long, value_name = "FILE")]
+    main: PathBuf,
 
     /// Output file path for the flattened document.
     #[arg(long, value_name = "FILE")]
     output: PathBuf,
 
-    /// Additional directory searched (in order, after `--paper-dir`) when a
-    /// referenced `\input{}` / `\subfile{}` / `\addbibresource{}` file is not
-    /// found next to the paper's sources. May be passed multiple times; used
-    /// for build-staged shared macros.
-    #[arg(long = "include-dir", value_name = "DIR")]
-    include_dirs: Vec<PathBuf>,
+    /// A file that may be inlined by an `\input{}` / `\subfile{}` /
+    /// `\addbibresource{}` reference. Pass once per allowed file. The
+    /// flattener does no directory lookup: a reference resolves only by
+    /// matching its trailing path components against this fixed list, so a
+    /// reference to anything not listed is refused.
+    #[arg(long = "file", value_name = "FILE", required = true)]
+    files: Vec<PathBuf>,
 
-    /// Main TeX file to flatten. Relative paths resolve against `--paper-dir`.
-    #[arg(long, value_name = "FILE", default_value = "main.tex")]
-    main: PathBuf,
-
-    /// Fail when a referenced bibliography file is missing instead of
-    /// emitting a warning comment. Release builds should set this.
+    /// Fail when a referenced bibliography file is not on the `--file` list
+    /// instead of emitting a warning comment. Release builds should set this.
     #[arg(long)]
     strict_bib: bool,
 }
@@ -51,16 +48,10 @@ fn main() -> ExitCode {
     let args = parse_args_or_exit::<Args>();
 
     run_no_stdout_command(COMMAND_NAME, args.base.debug, tracing::Level::INFO, || {
-        let main_file = if args.main.is_absolute() {
-            args.main.clone()
-        } else {
-            args.paper_dir.join(&args.main)
-        };
         flatten(
-            &args.paper_dir,
-            &main_file,
+            &args.main,
+            &args.files,
             &args.output,
-            &args.include_dirs,
             &FlattenOptions {
                 strict_bibliography: args.strict_bib,
             },

@@ -351,17 +351,31 @@ document_dep = declare_dependency(
 # project mirrors it into <repo>/archive/flattened/ (gated on the
 # label-check stamp, ADR-014) so the checked-in copy stays in sync.
 flat_basename = 'Tripod_Attestation_v@0@_flat.tex'.format(meson.project_version())
+
+# The flattener is directory-blind (ADR-015): it never looks a file up by
+# directory. It inlines only the files on this explicit list, matching each
+# \input / \subfile / \addbibresource reference by its trailing path
+# components. A reference to anything not listed — an absolute path, a `..`
+# escape, or a symlink target off the list — is refused rather than read into
+# the publication. The generated stamps.tex is the build-dir member; the
+# sections, macros, and bibliography are the source members.
+flatten_allowed = attestation_section_files + macros_attestation_src + bib_file \
+  + [attestation_stamps[0]]
+flatten_file_args = []
+foreach allowed_file : flatten_allowed
+  flatten_file_args += ['--file', allowed_file]
+endforeach
+
 flat_build_target = custom_target(
   'flatten-attestation-build',
   input: all_inputs + [attestation_stamps[0]],
   output: flat_basename,
   command: [
     flatten_latex_main,
-    '--paper-dir', meson.current_source_dir(),
-    '--include-dir', meson.current_build_dir(),
+    '--main', main_tex[0],
     '--output', '@OUTPUT@',
     '--strict-bib',
-  ],
+  ] + flatten_file_args,
   depends: attestation_stamps,
   console: false,
 )
