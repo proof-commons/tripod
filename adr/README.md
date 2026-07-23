@@ -28,7 +28,7 @@ repository itself.
 | [ADR-012](012-documentation-labels.md) | Implemented; superseded in part by ADR-013 | Documentation labels, citation layers, registers, and lint boundaries. |
 | [ADR-013](013-global-label-graph.md) | Decided and implemented | Owner-aware global label graph across Markdown and Rust sources. |
 | [ADR-014](014-meson-lint-census-and-stamps.md) | Decided and implemented | Build-system-owned lint census, argument-passed inputs, and stamp-file dependency edges. |
-| [ADR-015](015-public-data-and-execution-trust.md) | Proposed | Public-data interfaces, untrusted execution, crash artifacts, and future secret boundaries. |
+| [ADR-015](015-public-data-and-execution-trust.md) | Decided and implemented | Public-data interfaces, untrusted execution, crash artifacts, and future secret boundaries. |
 
 ## Numbering · `rule:adr:numbering`
 

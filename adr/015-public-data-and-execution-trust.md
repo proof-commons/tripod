@@ -1,6 +1,6 @@
 # ADR-015: Public-Data Tools and the Execution-Environment Trust Boundary
 
-**Status:** Proposed
+**Status:** Decided and implemented
 **Scope:** Current first-party libraries, binaries, tests, build definitions,
 documentation tooling, generated publications, and release preparation
 **Amends:** the interpretation of ADR-010 diagnostic classification and
