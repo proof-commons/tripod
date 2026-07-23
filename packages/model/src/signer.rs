@@ -14,6 +14,11 @@ use crate::scalar::OwnerKey;
 
 // ´def:verification:signer-set´
 
+/// Set of public abstract owner identities considered to have authorized
+/// the complete modeled transaction.
+///
+/// This is model evidence only. It contains no signatures, private keys,
+/// signing nonces, or wallet capabilities (ADR-015).
 pub type SignerSet = BTreeSet<OwnerKey>;
 
 pub fn require_signer(signers: &SignerSet, owner: OwnerKey) -> Result<(), Guard> {

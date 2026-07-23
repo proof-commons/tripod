@@ -1,5 +1,14 @@
 //! Executable verification model for Peer attestation.
 //!
+//! # Public-data boundary
+//!
+//! This crate accepts and exposes transparent public semantic state. It
+//! does not accept production private keys, credentials, signing nonces,
+//! blinding factors, private openings, or wallet-private state. `OwnerKey`
+//! and `SignerSet` are public abstract authorization identities.
+//! Cryptographic signing and secret custody remain outside the model
+//! (ADR-015).
+//!
 //! Consolidated executable-model foundation, written as a pure
 //! `World -> Result<World, Guard>` state machine. It is normative only
 //! after it compiles and the generated seeded/property suites pass;

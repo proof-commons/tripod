@@ -7,6 +7,15 @@
 //! terminal alike; the wrapper never silently discards child output.
 //! Diagnostics are emitted through `tracing` so callers can configure
 //! JSON-on-stderr per ADR-010.
+//!
+//! # Execution trust boundary
+//!
+//! `execwrap` is not a sandbox. The caller authorizes the selected child
+//! executable to run with the operating-system authority of this process.
+//! Child argv is omitted from wrapper diagnostics, but remains present in
+//! process memory and may be visible through ordinary operating-system
+//! interfaces. Deliberately relayed child output is unsanitized child
+//! result data (ADR-015).
 
 use std::ffi::OsString;
 use std::fs::{File, create_dir_all};

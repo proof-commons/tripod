@@ -52,6 +52,12 @@ pub fn checked_active_backing(omega: Sat, q: Sat) -> Result<Sat, Guard> {
     Ok(backing)
 }
 
+/// Public abstract owner identity used by the executable model.
+///
+/// This value is not private key material. Callers must derive it from
+/// a public identity and must never place private key bytes, seed
+/// material, signing nonces, blinding factors, private openings, or
+/// credentials in it (ADR-015).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct OwnerKey(pub [u8; 32]);
 

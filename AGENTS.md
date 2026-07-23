@@ -28,3 +28,8 @@
   semantic behaviour in Rust unit tests and graph/wiring in the mock lane.
   Byte reproducibility remains a separate manual/release check
   (`scripts/check-document-reproducibility.sh`), not an ordinary CI lane.
+- Repository source, tests, Meson definitions, scripts, TeX, and
+  `.latexmkrc` are executable. Do not run an untrusted contribution in a
+  credential-bearing development environment; use an external secretless
+  VM or sandbox. The repository does not establish its own isolation
+  boundary (ADR-015).

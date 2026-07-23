@@ -17,6 +17,13 @@ interfaces ambiguous and can corrupt pipelines.
 The workspace therefore assigns one machine-readable meaning to each standard
 stream and one shared set of process exit classes.
 
+Current first-party commands are public-data tools. They do not define
+credential, private-key, signing-nonce, blinding-factor, or private-opening
+inputs. The classification rules below prevent accidental diagnostic echo and
+reserve a fail-closed shape for future code; they do not make the command
+process a sandbox or secret-processing boundary. ADR-015 owns that trust
+boundary.
+
 ## Streams · `rule:output:streams`
 
 Standard output carries result data only.
@@ -262,6 +269,18 @@ operators must treat debug output as sensitive.
 
 Fields classified as secret-bearing and raw child argv remain prohibited in
 debug mode.
+
+Debug mode may emit additional free-form application text and public input
+detail. It does not change the classification of explicitly secret-bearing
+fields, and it does not make out-of-contract secret inputs safe. Current
+commands accept public data only (ADR-015).
+
+### Child execution is an authority grant
+
+Selecting an executable is granting execution authority. Argument-supplied
+executables are trusted caller configuration. Omission of their argv and raw
+stderr from first-party diagnostics does not sandbox or authenticate them
+(ADR-015).
 
 ## Panics · `rule:output:panics`
 

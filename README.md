@@ -120,6 +120,17 @@ generated-artifact gate, `cargo audit` (when installed), and a
 clean-tree check — all Cargo invocations `--locked`. Toolchain and
 dependency policy is [ADR-011](adr/011-toolchain-and-dependency-policy.md).
 
+## Security and execution trust
+
+Current first-party packages are public-data tools and do not accept production
+secret material. Repository source and build definitions are executable;
+untrusted contributions must be run in a secretless isolated environment
+established outside the untrusted checkout. `execwrap` is not a sandbox, and
+architecture/model success is not deployment readiness.
+
+See [SECURITY.md](SECURITY.md) and
+[ADR-015](adr/015-public-data-and-execution-trust.md).
+
 ## Version registry
 
 The repository carries several intentionally distinct version numbers.

@@ -83,7 +83,7 @@ adr_files = adr_record_files
 realization_file = attestation_realization_file
 
 # Repository-root and repository documentation (DOC owner).
-doc_files = files('AGENTS.md', 'README.md') \
+doc_files = files('AGENTS.md', 'README.md', 'SECURITY.md') \
   + adr_doc_files + packages_doc_files \
   + docs_doc_files
 
