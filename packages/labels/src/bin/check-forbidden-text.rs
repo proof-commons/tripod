@@ -83,9 +83,11 @@ fn scan(args: &Args) -> anyhow::Result<ForbiddenTextReport> {
             anyhow::bail!("forbidden token found in tracked files");
         }
         other => {
+            // The git program is argument-supplied, so its stderr is
+            // arbitrary child output, not a typed field (ADR-010/ADR-015).
+            // Report only the process status; omit the raw child stderr.
             tracing::error!(
                 status = ?other,
-                stderr = %String::from_utf8_lossy(&listing.stderr),
                 "git grep failed while checking forbidden text",
             );
             anyhow::bail!("git grep failed while checking forbidden text");

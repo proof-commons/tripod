@@ -130,7 +130,7 @@ fn census_audit_omits_untrusted_git_stderr() {
         Some(1),
         "a failing git program is a runtime failure, not usage",
     );
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout, [] as [u8; 0]);
 
     let stderr = String::from_utf8(output.stderr.clone()).expect("stderr is utf8");
     assert!(
@@ -143,6 +143,58 @@ fn census_audit_omits_untrusted_git_stderr() {
     assert_json_only_stderr(&output);
     assert!(
         stderr.contains("git ls-files failed"),
+        "expected the generic git-failure message: {stderr}",
+    );
+}
+
+/// `check-forbidden-text` also takes the git program by argument; a git
+/// error (exit > 1) must surface only the status, never the raw child
+/// stderr (ADR-010/ADR-015).
+#[cfg(unix)]
+#[test]
+fn check_forbidden_text_omits_untrusted_git_stderr() {
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+
+    let secret = "SHOULD_NOT_APPEAR_grep_stderr_secret";
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let script = dir.path().join("fake-git.sh");
+    let mut file = std::fs::File::create(&script).expect("create script");
+    writeln!(file, "#!/bin/sh").unwrap();
+    writeln!(file, "echo '{secret}' >&2").unwrap();
+    writeln!(file, "exit 2").unwrap();
+    let mut perms = file.metadata().unwrap().permissions();
+    perms.set_mode(0o755);
+    file.set_permissions(perms).unwrap();
+    drop(file);
+
+    let output = run(
+        env!("CARGO_BIN_EXE_check-forbidden-text"),
+        &[
+            "--repository-root",
+            dir.path().to_str().expect("utf8 path"),
+            "--git",
+            script.to_str().expect("utf8 path"),
+        ],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "a failing git program is a runtime failure, not usage",
+    );
+    assert_eq!(output.stdout, [] as [u8; 0]);
+
+    let stderr = String::from_utf8(output.stderr.clone()).expect("stderr is utf8");
+    assert!(
+        !stderr.contains(secret),
+        "untrusted git stderr leaked into diagnostics: {stderr}",
+    );
+
+    assert_json_only_stderr(&output);
+    assert!(
+        stderr.contains("git grep failed"),
         "expected the generic git-failure message: {stderr}",
     );
 }
