@@ -2,7 +2,7 @@
 
 > **Status:** ACTIVE
 > **Current gate:** Phase 2 — target-independent compiler analysis
-> **Current condition:** Phase 1 has an immutable recorded completion tag, but a later static review of commit identified new correctness and assurance gaps. Those findings do not rewrite the historical tag. Remediation status (2026-07-24): F2-001 through F2-005, F2-007, and F2-008 are closed with evidence in section 4; the remaining open finding is the F2-006 representation-semantics decision, which must be resolved before proof and disclosure planning freeze. Compiler implementation may begin only behind the dependency and realization-boundary prerequisites named below.
+> **Current condition:** Phase 1 has an immutable recorded completion tag, but a later static review of commit identified new correctness and assurance gaps. Those findings do not rewrite the historical tag. Remediation status (2026-07-24): all eight findings F2-001 through F2-008 are closed with evidence in section 4; F2-006 resolved as sponsor-value opacity, carried by the Realization denotation-preserving change and D005. Compiler implementation may begin only behind the dependency and realization-boundary prerequisites named below.
 > **Next gate:** Phase 3 — Elements target and foundational prototypes
 > **Authority:** Current execution queue only. Normative specifications, typed architecture, implemented ADRs, accepted decisions, package contracts, research results, phase cards, and the roadmap take precedence.
 
@@ -254,7 +254,7 @@ must be corrected before the Phase-2 gate relies on that claim.
 | `F2-003` | P2 | **DONE** | Ordinary or unrelated Rust comments can suppress label harvesting through cross-comment fence state. |
 | `F2-004` | P2 | **DONE** | The LaTeX flattener’s off-list symlink-target confinement claim is not enforced. |
 | `F2-005` | P2 | **DONE** | Multi-output commands accept aliased destinations and may succeed without producing distinct assets. |
-| `F2-006` | P2 | **TODO** | Ordinary sponsor L-BTC positivity may over-constrain confidential-value minimality. |
+| `F2-006` | P2 | **DONE** | Ordinary sponsor L-BTC positivity may over-constrain confidential-value minimality. |
 | `F2-007` | P3 | **DONE** | Active graph-planning prose retains adapter terminology prohibited by D007. |
 | `F2-008` | P3 | **DONE** | Subprocess and Phase-1 evidence comments overstate or misstate current coverage. |
 
@@ -898,7 +898,7 @@ schemas and hashes:           unchanged
 ### F2-006 — Decide sponsor L-BTC positivity versus representation minimality
 
 **Priority:** P2
-**Status:** TODO
+**Status:** DONE
 **Owners:** `realization`, future `compiler`, D005 representation policy
 **Primary files:**
 
@@ -981,12 +981,55 @@ Choose one:
 
 #### Exit
 
-- [ ] D005 and realization state one rule;
-- [ ] compiler proof alternatives can represent the selected rule;
-- [ ] safety and minimality claims remain separate;
-- [ ] model/realization difference is intentional and documented if retained;
-- [ ] focused positive and negative tests pass;
-- [ ] no unsupported target capability is assumed.
+- [x] D005 and realization state one rule;
+- [x] compiler proof alternatives can represent the selected rule;
+- [x] safety and minimality claims remain separate;
+- [x] model/realization difference is intentional and documented if retained;
+- [x] focused positive and negative tests pass;
+- [x] no unsupported target capability is assumed.
+
+#### Evidence · DONE
+
+- Decision (2026-07-24): the narrowed rule — sponsor-value opacity.
+  Inspect only security-demanded facts; authenticate sponsor role and
+  conservation, never sponsor amount. Positivity is not a protocol
+  predicate: no counterexample under exact partitioning and
+  conservation requires reading a sponsor amount, and balanced theft
+  defeats positivity while the pinned protocol relation rejects it.
+- Realization (denotation-preserving change, hashes unchanged) carries the
+  load-bearing statement: the inspection-necessity rule and
+  inspection-burden counterexample criterion, the sponsor-erasure
+  protocol projection, the anchor-identity and canonical-construction
+  rules, the kernel sponsor-opacity residual-conservation proof with
+  the balanced-theft trap, family-based open-flow membership replacing
+  every positive-value read, and the monotonicity clarification for
+  latitude errata. D005 records the same rule with the intentional
+  model/realization difference (model zero-output rejection is
+  canonical-construction discipline); the public-declassification note
+  narrows the remaining question to the Elements substrate proof of
+  isolated sponsor-region conservation under opacity.
+- Realization code: PLAIN_LBTC recognition no longer reads the value
+  (asset, family, owner carry the load); sponsor isolation claims every
+  member including zero-valued ones; zero inputs still need owner
+  authorization; validate_sponsor_value_opacity structurally rejects
+  any derived spec whose expressions, disclosure graph,
+  declassification, or constructibility facts name a PLAIN_LBTC family
+  amount (error SponsorValueRead). The anchor stays family-recognized.
+- Tests (both pilots unless noted): zero sidecar accepted; mixed
+  zero/positive members accepted; zeroed claimed members pass
+  recognition and fail conservation; zero input without signature and
+  unclaimed zero members fail isolation; ownerless zero PLAIN_LBTC
+  fails recognition; a declared anchor fails the pilot family closure;
+  balanced-theft rejection; sponsor-shape noninterference over
+  non-sponsor verdicts; read-set absence plus structural rejection of
+  an injected sponsor-amount fact. Confidential sponsor plans assume no
+  unsupported capability: the semantic layer states the relation and
+  the substrate proof is the narrowed research question.
+- Commits: 1731888 (realization/model code and tests), 9f3b2d8 (realization document update
+  document), and the F2-006 plans-closure commit. Verified: fmt,
+  clippy -D warnings, realization (129), model (289), and artifacts
+  suites, check-labels with the regenerated registers, and check-plans;
+  full ci.sh at series end.
 
 ---
 
@@ -1368,7 +1411,7 @@ candidate or a hidden greedy fallback.
 
 **Priority:** P1
 **Status:** BLOCKED
-**Depends on:** F2-006
+**Depends on:** F2-006 (resolved: sponsor-value opacity); remains blocked with the Phase-2 compiler sequence
 
 For every relation operand, record an authenticatable source class such as:
 
@@ -2072,7 +2115,7 @@ Execute in this order unless new evidence changes dependencies:
 1. Close F2-001 immediately: false deployment-evidence acceptance. DONE.
 2. Close F2-002 before freezing any compiler semantic API. DONE.
 3. Run C1-004 dependency review in parallel.
-4. Resolve F2-006 before proof and disclosure planning freeze.
+4. Resolve F2-006 before proof and disclosure planning freeze. DONE.
 5. Close repository/tooling findings F2-003 through F2-005. DONE.
 6. Correct planning and evidence wording under F2-007 and F2-008. DONE.
 7. Create the compiler crate (P2-003).
@@ -2097,9 +2140,6 @@ The current gate is **not passed**.
 Current blockers are:
 
 ```text
-Sponsor-value representation decision:
-    F2-006
-
 Phase-2 dependency review:
     C1-004 / P2-002
 
@@ -2110,9 +2150,10 @@ Compiler relation, proof, disclosure, lifecycle, placement, and coverage:
     not yet implemented
 ```
 
-The former P0/P1 blockers F2-001 (deployment evidence binding) and F2-002
-(realization/compiler boundary) closed on 2026-07-24; their evidence records
-live in section 4 and P2-001 is DONE with F2-002.
+The entire F2 remediation register closed on 2026-07-24 — including the
+F2-006 sponsor-value-opacity decision (Realization, D005) that had gated
+proof and disclosure planning; the evidence records live in section 4 and
+P2-001 is DONE with F2-002.
 
 Phase 2 is complete only when (`gate:backlog:phase2`) passes.
 
@@ -2133,4 +2174,4 @@ Until then:
 
 ## 15. One-line backlog · `rem:backlog:one-line`
 
-> Calibration binding, the pilot architecture welds, and the source-label, flattener, and multi-output boundaries are repaired; settle sponsor-value semantics (F2-006); finish the Petgraph dependency review; then build the Phase-2 compiler as an exact, deterministic, target-independent analysis with complete relation, disclosure, constructibility, lifecycle, placement, and coverage evidence.
+> The F2 remediation register is closed — sponsor-value semantics settled as opacity (v13d) alongside the repaired calibration, weld, label, flattener, and multi-output boundaries; finish the Petgraph dependency review; then build the Phase-2 compiler as an exact, deterministic, target-independent analysis with complete relation, disclosure, constructibility, lifecycle, placement, and coverage evidence.

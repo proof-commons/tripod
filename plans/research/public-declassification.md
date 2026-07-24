@@ -396,6 +396,30 @@ Reject a candidate if:
 
 Direct rejection may still permit normalization or explicit-only support.
 
+## Sponsor-region conservation proof · `q:public-opening:sponsor-conservation`
+
+The F2-006 sponsor-positivity question is settled by policy (D005
+sponsor-value opacity; the realization): no protocol predicate may read an
+individual sponsor amount, and positivity is not a security relation. What
+remains for this research note is the substrate side:
+
+> Which Elements substrate proof establishes exact isolated sponsor-region
+> conservation while preserving opacity of every individual sponsor amount?
+
+Candidate proof routes:
+
+- global Confidential-Transaction balance after exact protocol-flow
+  cancellation (the residual-relation derivation of the kernel proof);
+- a domain-separated sponsor commitment subtotal;
+- explicit-value fallback selected only as deployment policy, recorded as
+  deployment-policy disclosure, never as semantic necessity;
+- another reviewed exact commitment proof.
+
+The target prototype must prove conservation and family isolation without
+reintroducing exact-value reads: the relation-indexed emitted-proof report
+must show that sponsor paths consume no input/output value-introspection
+facts unless a later reviewed policy explicitly supersedes opacity.
+
 ## Result · `sec:public-opening:result`
 
 Pending.

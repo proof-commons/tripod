@@ -169,6 +169,49 @@ Neither substitutes for the other.
 This table guides implementation. Typed realization and accepted research
 results remain authoritative over the final backend plan.
 
+## Sponsor-value opacity · `rule:representation:sponsor-value-opacity`
+
+Decided 2026-07-24 (closing finding F2-006); the load-bearing statement lives
+in the realization — the inspection-necessity rule, the inspection-burden
+counterexample criterion, the sponsor-erasure projection, and the sponsor
+opacity proof in the kernel section.
+
+The exact value of an ordinary sponsor L-BTC input or output is sponsor-local
+data, not a protocol-readable fact. A protocol predicate, compiler-selected
+proof, emitted target program, canonical public report, or release identity
+must not require an individual sponsor amount to be explicitly encoded for
+protocol use, decoded, opened, compared with zero, proved strictly positive,
+aggregated as a public integer, or emitted in a public diagnostic or evidence
+field — on either side of the transaction.
+
+Sponsor-value safety derives from exact L-BTC asset authentication; ordinary
+sponsor-family recognition; exact sponsor-region membership (zero-valued
+members included); source and destination reference uniqueness;
+sponsor/protocol reference disjointness; authorization by every sponsor input
+owner; output-committing signature semantics where required; at most one
+generic sponsor envelope; substrate-enforced exact value conservation,
+commitment balance, or another approved exact proof; and independent
+enforcement of every protocol payout, refund, reserve, issuance, state,
+destruction, recipient, and event relation. A zero-valued sponsor member is
+accepted by the target-independent semantic relation when those conditions
+hold; its presence may affect transaction shape, resources, wallet policy, or
+deployment-policy acceptance, never a protocol semantic result.
+
+Positivity was shown not to be a security boundary: balanced theft (protocol
+value short one unit, sponsor change up one, all sponsor amounts positive,
+totals conserved) passes any positivity check and is rejected by the pinned
+protocol relation; the vector is a permanent regression in both pilots.
+
+The intentional model/realization difference: the reference model, as the
+first-party canonical constructor, still rejects an explicit non-anchor
+zero-valued L-BTC output — canonical construction discipline, not a protocol
+predicate. The realization semantic layer accepts it; a deployment policy may
+separately reject nonstandard zero outputs as policy. CPFP_ANCHOR remains
+recognized by its declared family, never by testing an ordinary output for
+zero. The realization enforces the read-set structurally: deriving a scoped
+realization fails if any expression, disclosure node, declassification entry,
+or constructibility fact names a PLAIN_LBTC family amount.
+
 ## Does not authorize · `sec:representation:limits`
 
 This decision does not authorize:
@@ -179,6 +222,8 @@ This decision does not authorize:
 - unauthenticated public openings;
 - owner-assisted permissionless maintenance;
 - arbitrary foreign sponsor assets;
+- reading, opening, or comparing an individual sponsor amount as a protocol
+  fact;
 - changing recipient, authorization, formula, observable, or lifecycle through
   representation;
 - claiming universal transaction privacy.
