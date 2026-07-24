@@ -300,7 +300,7 @@ The Phase-1 tag remains unchanged.
 | ID | Priority | Status | Finding |
 |---|---:|---|---|
 | `F3-001` | P1 | **DONE** | A two-output Meson target is referenced without selecting its stamp output. |
-| `F3-002` | P1 | **TODO** | `ScopedRealizationSpec` can be externally mutated out of consistency with its private graphs. |
+| `F3-002` | P1 | **DONE** | `ScopedRealizationSpec` can be externally mutated out of consistency with its private graphs. |
 | `F3-003` | P1 | **TODO** | Strict flattener confinement can be bypassed through a symlinked ancestor directory. |
 | `F3-004` | P2 | **TODO** | `check-plans` accepts an empty argument census and falls back to discovery as authority. |
 | `F3-005` | P2 | **TODO** | The stable realization projection includes raw order-sensitive graph declaration vectors. |
@@ -420,7 +420,7 @@ Meson accepted configuration:    repaired or clarified
 ### F3-002 — Make `ScopedRealizationSpec` externally immutable
 
 **Priority:** P1
-**Status:** TODO
+**Status:** DONE
 **Owners:** `realization`, future `compiler`
 **Blocks:** compiler input API freeze
 **Primary files:**
@@ -528,12 +528,48 @@ future compiler API:              safer
 
 #### Exit
 
-- [ ] invariant-bearing fields are private;
-- [ ] read-only public access is sufficient for intended consumers;
-- [ ] malformed fixtures remain possible only through explicit test paths;
-- [ ] public API tests cover the negative boundary;
-- [ ] realization and model-conformance suites pass;
-- [ ] complete workspace and clean-tree gates pass.
+- [x] invariant-bearing fields are private;
+- [x] read-only public access is sufficient for intended consumers;
+- [x] malformed fixtures remain possible only through explicit test paths;
+- [x] public API tests cover the negative boundary;
+- [x] realization and model-conformance suites pass;
+- [x] complete workspace and clean-tree gates pass.
+
+#### Evidence · DONE
+
+- F3-002 closure commit. All four formerly public fields on
+  ScopedRealizationSpec (architecture, scope, operations,
+  declassification) are now crate-private alongside the already
+  private graphs, so a validated value cannot be desynchronized from
+  outside the crate. New read-only accessors: architecture(), scope(),
+  operations() (stable operation-ID order, each entry paired with its
+  declaration), declassification(); operation(id), relation(id),
+  relations(), evaluate_operation(), and project() are unchanged. No
+  mutation API exists.
+- Negative boundary: four compile_fail doctests on the type prove an
+  external consumer cannot clear operations, replace scope, replace
+  the architecture binding, or overwrite declassification (each block
+  first derives a real value, so the only failure is the privacy
+  error). The doctest lane runs them as an external crate; the fourth
+  block caught a real gap during development (declassification was
+  still public in the first edit) before it could land.
+- Positive boundary: the external public-API integration test gains
+  validated_realization_is_readable_but_not_externally_mutable,
+  proving downstream code can inspect the binding's schema version,
+  the scope, the operation iteration order, one operation lookup, the
+  declassification analysis, and a stable projection that equals it.
+- In-crate mutation fixtures are untouched: the F2-002 vec-and-leak
+  mutation harnesses rewrite architecture rows before derivation and
+  revalidate through the ordinary derive path, so malformed values
+  remain constructible only through explicit crate-internal test
+  paths.
+- Realization semantics, architecture identities, and generated
+  artifacts are unchanged; the public Rust API is intentionally
+  stricter.
+- Verified: fmt, clippy -D warnings (workspace, all targets),
+  realization suite (125 unit + 5 public-API + 4 doctests), model
+  suite (287 + conformance) under the nightly SDK toolchain. Complete
+  workspace and Meson gates run at the end of the F3 series.
 
 ---
 

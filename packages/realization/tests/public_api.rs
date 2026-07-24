@@ -75,6 +75,44 @@ fn downstream_code_can_evaluate_without_local_graph_handles() {
 }
 
 #[test]
+fn validated_realization_is_readable_but_not_externally_mutable() {
+    // The negative half of this boundary — that an external consumer
+    // cannot assign or clear any invariant-bearing field — is proved
+    // by the compile_fail doctests on ScopedRealizationSpec. This
+    // test proves the read-only surface stays sufficient.
+    let realization = derive(&ARCHITECTURE, RealizationScope::phase1_pilots()).unwrap();
+
+    assert_eq!(
+        realization.architecture().architecture_schema_version(),
+        ARCHITECTURE.document.architecture_schema_version,
+    );
+    assert_eq!(realization.scope(), &RealizationScope::phase1_pilots());
+
+    let operations: Vec<OperationId> = realization
+        .operations()
+        .map(|(operation, declaration)| {
+            assert_eq!(operation, declaration.operation);
+            operation
+        })
+        .collect();
+    assert_eq!(
+        operations,
+        vec![OperationId::TransferLive, OperationId::CompactAsh],
+    );
+
+    assert_eq!(
+        realization
+            .operation(OperationId::CompactAsh)
+            .unwrap()
+            .operation,
+        OperationId::CompactAsh,
+    );
+
+    let declassification = realization.declassification();
+    assert_eq!(realization.project().declassification, *declassification);
+}
+
+#[test]
 fn stable_projection_exposes_typed_graph_shape_without_local_handles() {
     let realization = derive(&ARCHITECTURE, RealizationScope::phase1_pilots()).unwrap();
     let projection = realization.project();

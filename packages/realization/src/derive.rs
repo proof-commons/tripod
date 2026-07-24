@@ -21,11 +21,55 @@ use crate::{
 };
 
 /// Explicitly scoped target-independent realization.
+///
+/// A value of this type is validated on construction and stays
+/// internally consistent afterwards: every field that the derived
+/// graphs summarize is private, so an external consumer can read the
+/// source declarations and projections but never desynchronize them
+/// from the graphs.
+///
+/// ```compile_fail
+/// let mut spec = realization::derive(
+///     &architecture::ARCHITECTURE,
+///     realization::RealizationScope::phase1_pilots(),
+/// )
+/// .unwrap();
+/// spec.operations.clear();
+/// ```
+///
+/// ```compile_fail
+/// let mut spec = realization::derive(
+///     &architecture::ARCHITECTURE,
+///     realization::RealizationScope::phase1_pilots(),
+/// )
+/// .unwrap();
+/// spec.scope = realization::RealizationScope::phase1_pilots();
+/// ```
+///
+/// ```compile_fail
+/// let mut spec = realization::derive(
+///     &architecture::ARCHITECTURE,
+///     realization::RealizationScope::phase1_pilots(),
+/// )
+/// .unwrap();
+/// let replacement = spec.architecture().clone();
+/// spec.architecture = replacement;
+/// ```
+///
+/// ```compile_fail
+/// let mut spec = realization::derive(
+///     &architecture::ARCHITECTURE,
+///     realization::RealizationScope::phase1_pilots(),
+/// )
+/// .unwrap();
+/// let replacement = spec.declassification().clone();
+/// spec.declassification = replacement;
+/// ```
 #[derive(Clone, Debug)]
 pub struct ScopedRealizationSpec {
-    pub architecture: ArchitectureBinding,
-    pub scope: RealizationScope,
-    pub operations: BTreeMap<OperationId, OperationRealization>,
+    pub(crate) architecture: ArchitectureBinding,
+    pub(crate) scope: RealizationScope,
+    pub(crate) operations: BTreeMap<OperationId, OperationRealization>,
     pub(crate) expression_graph: DiGraph<ExpressionDeclaration, DependencyEdge, u32>,
     pub(crate) expression_node_by_id: BTreeMap<ExprId, NodeIndex<u32>>,
     pub(crate) relation_graph: DiGraph<RelationDeclaration, RelationEdge, u32>,
@@ -37,10 +81,35 @@ pub struct ScopedRealizationSpec {
     pub(crate) lifecycle_graph: DiGraph<LifecycleNode, LifecycleEdge, u32>,
     pub(crate) lifecycle_node_by_id: BTreeMap<LifecycleNodeId, NodeIndex<u32>>,
     pub(crate) disclosure_graph: DiGraph<DisclosureNode, DisclosureEdge, u32>,
-    pub declassification: DeclassificationAnalysis,
+    pub(crate) declassification: DeclassificationAnalysis,
 }
 
 impl ScopedRealizationSpec {
+    /// Return the pinned architecture identity this realization binds.
+    #[must_use]
+    pub fn architecture(&self) -> &ArchitectureBinding {
+        &self.architecture
+    }
+
+    /// Return the explicit operation scope this realization covers.
+    #[must_use]
+    pub fn scope(&self) -> &RealizationScope {
+        &self.scope
+    }
+
+    /// Iterate declared operations in stable operation-ID order.
+    pub fn operations(&self) -> impl Iterator<Item = (OperationId, &OperationRealization)> {
+        self.operations
+            .iter()
+            .map(|(operation, declaration)| (*operation, declaration))
+    }
+
+    /// Return the declassification analysis of the disclosure graph.
+    #[must_use]
+    pub fn declassification(&self) -> &DeclassificationAnalysis {
+        &self.declassification
+    }
+
     /// Return one declared operation by stable architecture-owned ID.
     #[must_use]
     pub fn operation(&self, id: OperationId) -> Option<&OperationRealization> {
