@@ -255,8 +255,8 @@ must be corrected before the Phase-2 gate relies on that claim.
 | `F2-004` | P2 | **DONE** | The LaTeX flattener’s off-list symlink-target confinement claim is not enforced. |
 | `F2-005` | P2 | **DONE** | Multi-output commands accept aliased destinations and may succeed without producing distinct assets. |
 | `F2-006` | P2 | **TODO** | Ordinary sponsor L-BTC positivity may over-constrain confidential-value minimality. |
-| `F2-007` | P3 | **TODO** | Active graph-planning prose retains adapter terminology prohibited by D007. |
-| `F2-008` | P3 | **TODO** | Subprocess and Phase-1 evidence comments overstate or misstate current coverage. |
+| `F2-007` | P3 | **DONE** | Active graph-planning prose retains adapter terminology prohibited by D007. |
+| `F2-008` | P3 | **DONE** | Subprocess and Phase-1 evidence comments overstate or misstate current coverage. |
 
 ---
 
@@ -993,7 +993,7 @@ Choose one:
 ### F2-007 — Remove prohibited graph-adapter terminology
 
 **Priority:** P3
-**Status:** TODO
+**Status:** DONE
 **Owners:** compiler/linker research and package plans
 **Primary files:**
 
@@ -1037,17 +1037,30 @@ A lookup table or helper function is not a graph abstraction layer.
 
 #### Exit
 
-- [ ] no active plan requests a graph wrapper or adapter;
-- [ ] D007 terminology is consistent across compiler and linker notes;
-- [ ] no shared graph crate is proposed;
-- [ ] plan and label checks pass.
+- [x] no active plan requests a graph wrapper or adapter;
+- [x] D007 terminology is consistent across compiler and linker notes;
+- [x] no shared graph crate is proposed;
+- [x] plan and label checks pass.
+
+#### Evidence · DONE
+
+- F2-007 closure commit. In compiler-algorithms.md the expected handoff
+  now names package-owned direct Petgraph graphs with typed key/index
+  lookup metadata (formerly typed graph adapters), and the key/index
+  retention paragraph names the package-local lookup metadata (formerly
+  the private adapter). The linker notes and package plans contain no
+  adapter or wrapper requests; the remaining adapter mention in
+  compiler.md describes the narrow target-matching capability boundary,
+  not a graph abstraction, and D007's own prohibition text is untouched.
+  No shared graph crate is proposed anywhere. check-plans and
+  check-labels pass.
 
 ---
 
 ### F2-008 — Reconcile evidence comments with actual coverage
 
 **Priority:** P3
-**Status:** TODO
+**Status:** DONE
 **Owners:** CLI subprocess tests, Phase-1 planning record
 **Primary files:**
 
@@ -1082,10 +1095,27 @@ The Phase-1 completion record also needs to distinguish:
 
 #### Exit
 
-- [ ] comments match actual tests;
-- [ ] no obsolete “TTY lane incomplete” statement remains;
-- [ ] Phase-1 prose distinguishes historical pass from later findings;
-- [ ] documentation, labels, and complete gates pass.
+- [x] comments match actual tests;
+- [x] no obsolete “TTY lane incomplete” statement remains;
+- [x] Phase-1 prose distinguishes historical pass from later findings;
+- [x] documentation, labels, and complete gates pass.
+
+#### Evidence · DONE
+
+- F2-008 closure commit. The artifacts and flattener subprocess-test
+  headers no longer claim the TTY lane is incomplete under F1-024; both
+  now state the actual model: TTY refusal is implemented by the shared
+  cli-common output path and exercised representatively by the PTY
+  harnesses in the labels and document-stamps subprocess suites — one
+  test per distinct shared refusal path and output mode, never one
+  redundant test per binary — with success-path coverage owned by the
+  unit suites and the Meson-driven build.
+- The Phase-1 card's evidence section now carries a later-review status
+  note distinguishing the historical gate pass from the subsequently
+  found weld-field and deferred-mutation gaps, linking the reopened
+  work to F2-002 and naming the register's evidence records as
+  authoritative where the card and register disagree. The immutable
+  Phase-1 tag is unchanged.
 
 ---
 

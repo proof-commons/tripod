@@ -5,9 +5,12 @@
 //! missing or unknown argument is usage class 2, and every control-plane
 //! record is one JSON object on stderr while stdout stays empty.
 //!
-//! Success-path (the full generated-artifact argv) and TTY-refusal coverage are
-//! tracked separately under F1-024; TTY refusal needs a PTY harness the
-//! workspace does not yet have, so that lane remains incomplete.
+//! TTY refusal is implemented by the shared cli-common output path and is
+//! exercised representatively by the PTY harnesses in the labels and
+//! document-stamps subprocess suites — one test per distinct shared refusal
+//! path and output mode, not one redundant test per binary. Success-path
+//! coverage for the full generated-artifact argv lives in the Meson-driven
+//! build and the artifacts unit suite.
 
 use std::process::{Command, Output};
 

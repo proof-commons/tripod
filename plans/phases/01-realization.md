@@ -215,6 +215,15 @@ Required evidence includes:
 - repeated derivation equality;
 - debug and release workspace checks.
 
+Later-review status (2026-07-24): the recorded Phase-1 gate passed as run,
+but a subsequent static review found that the per-field pilot weld mutations
+required by finding F1-003 had been deferred at tag time, and that the pilot
+welds omitted the operation kind, quantity read, quantity write, and issuance
+fields. That coverage was reopened and completed under backlog task F2-002.
+Where this card and the F2 register disagree about what was tested, the
+register's evidence records are authoritative; the immutable Phase-1 tag is
+unchanged.
+
 ## Non-goals · `sec:phase1:non-goals`
 
 Phase 1 does not define:
