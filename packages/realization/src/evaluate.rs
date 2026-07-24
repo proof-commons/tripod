@@ -10,10 +10,11 @@ use petgraph::{
 };
 
 use crate::{
-    CardinalityMaximum, ConstructibilityClass, Count, ExpectedCanonicalDelta, ObservedAsset,
-    ObservedObject, ObservedObjectKind, ObservedObjectRef, ObservedOpenFlow, ObservedSide,
-    OperationObservation, ProtocolAmount, RealizationError, Relation, RelationDeclaration,
-    RelationEdge, RelationId,
+    CardinalityMaximum, ConstructibilityClass, Count, EvaluatedExpressions, ExpectedCanonicalDelta,
+    ExprId, FactId, ObservedAsset, ObservedObject, ObservedObjectKind, ObservedObjectRef,
+    ObservedOpenFlow, ObservedSide, OperationObservation, ProtocolAmount, RealizationError,
+    Relation, RelationDeclaration, RelationEdge, RelationId, SemanticValue, TransactionSide,
+    expression::{DependencyEdge, ExpressionDeclaration, FactValues},
 };
 
 /// Result class for one realization relation.
@@ -43,6 +44,7 @@ pub enum RelationFailure {
     Representation,
     CanonicalDeltaPolicy,
     OpenFlowPolicy,
+    ExpressionPredicate,
 }
 
 /// One stable relation verdict.
@@ -90,13 +92,24 @@ impl ConformanceReport {
 }
 
 /// Evaluate all relations owned by one operation.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn evaluate_operation(
     relation_graph: &DiGraph<RelationDeclaration, RelationEdge, u32>,
     relation_node_by_id: &BTreeMap<RelationId, NodeIndex<u32>>,
     relation_evaluation_order: &[RelationId],
+    expression_graph: &DiGraph<ExpressionDeclaration, DependencyEdge, u32>,
+    expression_node_by_id: &BTreeMap<ExprId, NodeIndex<u32>>,
+    expression_evaluation_order: &[ExprId],
     observation: &OperationObservation,
 ) -> Result<ConformanceReport, RealizationError> {
     let observation = observation.clone().validate_and_normalize()?;
+    let evaluated = evaluate_operation_expressions(
+        relation_graph,
+        expression_graph,
+        expression_node_by_id,
+        expression_evaluation_order,
+        &observation,
+    )?;
     let mut status_by_relation = BTreeMap::new();
 
     for relation_id in relation_evaluation_order {
@@ -128,7 +141,7 @@ pub(crate) fn evaluate_operation(
         blocking.dedup();
 
         let status = if blocking.is_empty() {
-            evaluate_relation(&declaration.relation, &observation)?
+            evaluate_relation(&declaration.relation, &observation, evaluated.as_ref())?
         } else {
             RelationStatus::Blocked {
                 prerequisites: blocking,
@@ -153,6 +166,7 @@ pub(crate) fn evaluate_operation(
 fn evaluate_relation(
     relation: &Relation,
     observation: &OperationObservation,
+    evaluated: Option<&EvaluatedExpressions>,
 ) -> Result<RelationStatus, RealizationError> {
     match relation {
         Relation::Cardinality {
@@ -286,9 +300,142 @@ fn evaluate_relation(
             }),
             RelationFailure::Representation,
         ),
-        Relation::LifecycleExit { .. } | Relation::ExpressionPredicate { .. } => {
-            Ok(RelationStatus::StaticallyValidated)
+        Relation::LifecycleExit { .. } => Ok(RelationStatus::StaticallyValidated),
+        Relation::ExpressionPredicate { expression } => {
+            let evaluated =
+                evaluated.ok_or_else(|| RealizationError::UnknownEvaluatedExpression {
+                    expression: expression.clone(),
+                })?;
+
+            status(
+                evaluated.bool(expression)?,
+                RelationFailure::ExpressionPredicate,
+            )
         }
+    }
+}
+
+/// Evaluate the expression closure this operation's expression-predicate
+/// relations need, deriving every primitive fact from the observation.
+///
+/// Returns `None` when the operation declares no expression predicate,
+/// so an expression-free operation never touches the expression graph.
+fn evaluate_operation_expressions(
+    relation_graph: &DiGraph<RelationDeclaration, RelationEdge, u32>,
+    expression_graph: &DiGraph<ExpressionDeclaration, DependencyEdge, u32>,
+    expression_node_by_id: &BTreeMap<ExprId, NodeIndex<u32>>,
+    expression_evaluation_order: &[ExprId],
+    observation: &OperationObservation,
+) -> Result<Option<EvaluatedExpressions>, RealizationError> {
+    let predicates = relation_graph
+        .node_weights()
+        .filter(|declaration| declaration.id.operation() == observation.operation)
+        .filter_map(|declaration| match &declaration.relation {
+            Relation::ExpressionPredicate { expression } => Some(expression.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    if predicates.is_empty() {
+        return Ok(None);
+    }
+
+    let scope =
+        crate::expression::ancestor_closure(expression_graph, expression_node_by_id, predicates)?;
+    let mut facts = FactValues::default();
+
+    for id in &scope {
+        if let ExprId::Fact(fact) = id {
+            facts.insert(fact.clone(), derive_fact(observation, fact)?)?;
+        }
+    }
+
+    crate::expression::evaluate_expressions_in(
+        expression_graph,
+        expression_node_by_id,
+        expression_evaluation_order,
+        &scope,
+        &facts,
+    )
+    .map(Some)
+}
+
+/// Derive one primitive fact value from the observation.
+///
+/// Facts are derived from primitive observed structure — never accepted
+/// as caller-authored assertions — and an operation-scoped fact of
+/// another operation is a declaration defect, not an evaluation input.
+fn derive_fact(
+    observation: &OperationObservation,
+    fact: &FactId,
+) -> Result<SemanticValue, RealizationError> {
+    if fact
+        .operation()
+        .is_some_and(|operation| operation != observation.operation)
+    {
+        return Err(RealizationError::ForeignExpressionFact {
+            fact: fact.clone(),
+            operation: observation.operation,
+        });
+    }
+
+    match fact {
+        FactId::FamilyCount { side, object, .. } => {
+            let count = Count::new(
+                u64::try_from(declared_objects(observation, observed_side(*side), *object).count())
+                    .map_err(|_| RealizationError::CountOverflow)?,
+            );
+
+            Ok(SemanticValue::Count(count))
+        }
+        FactId::FamilyAmount { side, object, .. } => {
+            let total = ProtocolAmount::checked_sum(
+                declared_objects(observation, observed_side(*side), *object)
+                    .map(|observed| observed.value),
+            )?;
+
+            Ok(SemanticValue::Amount(total))
+        }
+        FactId::InputOwners { object, .. } => required_owners(observation, *object)
+            .map(SemanticValue::OwnerSet)
+            .ok_or_else(|| RealizationError::UnderivableOwnerFact { fact: fact.clone() }),
+        FactId::Signers { .. } => Ok(SemanticValue::OwnerSet(
+            observation.protocol_signers.clone(),
+        )),
+        FactId::ProjectionPresent { projection, .. } => Ok(SemanticValue::Bool(
+            observation.projections.contains(projection),
+        )),
+        FactId::BoundValue { bound } => observation
+            .bounds
+            .get(bound)
+            .copied()
+            .map(SemanticValue::Count)
+            .ok_or(RealizationError::MissingBoundValue(*bound)),
+        FactId::FamilyRecognized { side, object, .. } => {
+            let recognized = architecture::ARCHITECTURE
+                .object(*object)
+                .is_some_and(|spec| {
+                    declared_objects(observation, observed_side(*side), *object).all(|observed| {
+                        observed.asset == ObservedAsset::Declared(spec.asset)
+                            && observed_object_shape_holds(*object, observed)
+                    })
+                });
+
+            Ok(SemanticValue::Bool(recognized))
+        }
+        FactId::SponsorIsolated { .. } => {
+            Ok(SemanticValue::Bool(sponsor_is_isolated(observation)?))
+        }
+        FactId::ProtocolSecretUsed { .. } => Ok(SemanticValue::Bool(
+            !observation.protocol_signers.is_empty(),
+        )),
+    }
+}
+
+const fn observed_side(side: TransactionSide) -> ObservedSide {
+    match side {
+        TransactionSide::Input => ObservedSide::Input,
+        TransactionSide::Output => ObservedSide::Output,
     }
 }
 

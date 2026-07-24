@@ -148,6 +148,17 @@ pub enum RealizationError {
     #[error("fact {0:?} has no supplied value")]
     MissingFactValue(FactId),
 
+    /// An expression predicate depends on a fact of another operation.
+    #[error("fact {fact:?} belongs to an operation other than observed {operation}")]
+    ForeignExpressionFact {
+        fact: FactId,
+        operation: OperationId,
+    },
+
+    /// An owner-set fact covers an observed input that commits no owner.
+    #[error("fact {fact:?} covers an observed input without a committed owner")]
+    UnderivableOwnerFact { fact: FactId },
+
     /// An expression result was requested before or outside complete
     /// evaluation.
     #[error("expression {expression:?} has no evaluated value")]

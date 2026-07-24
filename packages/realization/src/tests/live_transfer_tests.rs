@@ -159,6 +159,9 @@ fn evaluate(observation: &OperationObservation) -> crate::ConformanceReport {
         &realization.relation_graph,
         &realization.relation_node_by_id,
         &realization.relation_evaluation_order,
+        &realization.expression_graph,
+        &realization.expression_node_by_id,
+        &realization.expression_evaluation_order,
         observation,
     )
     .unwrap()
@@ -553,6 +556,9 @@ fn canonical_delta_empty_duplicate_fails() {
         &realization.relation_graph,
         &realization.relation_node_by_id,
         &realization.relation_evaluation_order,
+        &realization.expression_graph,
+        &realization.expression_node_by_id,
+        &realization.expression_evaluation_order,
         &duplicated,
     )
     .unwrap_err();

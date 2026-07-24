@@ -411,3 +411,160 @@ fn graph_snapshot(
 
     (nodes, edges)
 }
+
+// ---------------------------------------------------------------------------
+// Runtime expression-predicate relations: the relation evaluator derives
+// primitive facts from the observation and evaluates the declared
+// predicate, instead of reporting the relation statically validated.
+// ---------------------------------------------------------------------------
+
+fn predicate_expression_id() -> ExprId {
+    ExprId::relation(
+        transfer_conservation_relation(),
+        crate::ExpressionRole::Predicate,
+    )
+}
+
+type RelationGraphParts = (
+    DiGraph<crate::RelationDeclaration, crate::RelationEdge, u32>,
+    BTreeMap<RelationId, NodeIndex<u32>>,
+    Vec<RelationId>,
+);
+
+fn predicate_relation_graph() -> RelationGraphParts {
+    crate::build_relation_graph(
+        [crate::RelationDeclaration {
+            id: transfer_conservation_relation(),
+            relation: crate::Relation::ExpressionPredicate {
+                expression: predicate_expression_id(),
+            },
+            proof_alternatives: std::collections::BTreeSet::new(),
+        }],
+        [],
+    )
+    .unwrap()
+}
+
+fn receipt_observation(output_values: &[u64]) -> crate::OperationObservation {
+    let alice = OwnerId([1_u8; 32]);
+    let mut objects = vec![crate::ObservedObject {
+        reference: crate::ObservedObjectRef {
+            side: crate::ObservedSide::Input,
+            ordinal: 0,
+        },
+        kind: crate::ObservedObjectKind::Declared(ObjectId::ReceiptLive),
+        asset: crate::ObservedAsset::Declared(AssetId::U),
+        value: ProtocolAmount::new(100).unwrap(),
+        owner: Some(alice),
+        representation: crate::RepresentationMode::Explicit,
+    }];
+
+    for (ordinal, value) in output_values.iter().enumerate() {
+        objects.push(crate::ObservedObject {
+            reference: crate::ObservedObjectRef {
+                side: crate::ObservedSide::Output,
+                ordinal: u32::try_from(ordinal).unwrap(),
+            },
+            kind: crate::ObservedObjectKind::Declared(ObjectId::ReceiptLive),
+            asset: crate::ObservedAsset::Declared(AssetId::U),
+            value: ProtocolAmount::new(*value).unwrap(),
+            owner: Some(alice),
+            representation: crate::RepresentationMode::Explicit,
+        });
+    }
+
+    crate::OperationObservation {
+        operation: OperationId::TransferLive,
+        objects,
+        protocol_signers: std::collections::BTreeSet::from([alice]),
+        sponsor_signers: std::collections::BTreeSet::new(),
+        canonical_partition: crate::ObservedCanonicalPartition::default(),
+        open_flows: Vec::new(),
+        root_effects: Vec::new(),
+        projections: std::collections::BTreeSet::from([ProjectionId::TransitionCertificate]),
+        bounds: BTreeMap::new(),
+    }
+}
+
+fn evaluate_predicate_pilot(
+    expressions: Vec<ExpressionDeclaration>,
+    observation: &crate::OperationObservation,
+) -> Result<crate::ConformanceReport, RealizationError> {
+    let (relation_graph, relation_nodes, relation_order) = predicate_relation_graph();
+    let (expression_graph, expression_nodes, expression_order) =
+        build_expression_graph(expressions).unwrap();
+
+    crate::evaluate_operation(
+        &relation_graph,
+        &relation_nodes,
+        &relation_order,
+        &expression_graph,
+        &expression_nodes,
+        &expression_order,
+        observation,
+    )
+}
+
+#[test]
+fn expression_predicate_relation_passes_from_derived_facts() {
+    // Input and output family amounts derive from the primitive observed
+    // objects — 100 in, 40 + 60 out — so the declared conservation
+    // predicate holds and the relation passes as a runtime verdict, not
+    // as a static validation claim.
+    let report =
+        evaluate_predicate_pilot(conservation_declarations(), &receipt_observation(&[40, 60]))
+            .unwrap();
+
+    let verdict = report.verdict(&transfer_conservation_relation()).unwrap();
+    assert_eq!(verdict.status, crate::RelationStatus::Passed);
+    assert!(report.is_conformant());
+}
+
+#[test]
+fn expression_predicate_relation_fails_on_a_false_predicate() {
+    let report =
+        evaluate_predicate_pilot(conservation_declarations(), &receipt_observation(&[40, 30]))
+            .unwrap();
+
+    let verdict = report.verdict(&transfer_conservation_relation()).unwrap();
+    assert_eq!(
+        verdict.status,
+        crate::RelationStatus::Failed {
+            reason: crate::RelationFailure::ExpressionPredicate,
+        },
+    );
+    assert!(!report.is_conformant());
+}
+
+#[test]
+fn a_foreign_operation_fact_is_a_declaration_defect_not_an_input() {
+    // The predicate depends on a compact-ash fact while the observation
+    // is a live transfer: facts derive only from the observed operation,
+    // so the evaluation is refused instead of silently inventing a value.
+    let foreign = FactId::FamilyAmount {
+        operation: OperationId::CompactAsh,
+        side: TransactionSide::Input,
+        object: ObjectId::Ash,
+    };
+    let expressions = vec![
+        fact_expression(foreign.clone()),
+        ExpressionDeclaration {
+            id: predicate_expression_id(),
+            ty: SemanticType::Bool,
+            node: ExpressionNode::Equal {
+                left: ExprId::fact(foreign.clone()),
+                right: ExprId::fact(foreign.clone()),
+            },
+        },
+    ];
+
+    let error = evaluate_predicate_pilot(expressions, &receipt_observation(&[100])).unwrap_err();
+
+    assert_eq!(
+        error,
+        RealizationError::ForeignExpressionFact {
+            fact: foreign,
+            operation: OperationId::TransferLive,
+        },
+    );
+}

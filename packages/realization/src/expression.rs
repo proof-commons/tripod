@@ -165,6 +165,24 @@ impl EvaluatedExpressions {
 }
 
 impl FactId {
+    /// Owning operation of one operation-scoped fact.
+    ///
+    /// Architecture-owned bound values are operation-independent.
+    #[must_use]
+    pub const fn operation(&self) -> Option<architecture::OperationId> {
+        match self {
+            Self::FamilyCount { operation, .. }
+            | Self::FamilyAmount { operation, .. }
+            | Self::InputOwners { operation, .. }
+            | Self::Signers { operation }
+            | Self::ProjectionPresent { operation, .. }
+            | Self::FamilyRecognized { operation, .. }
+            | Self::SponsorIsolated { operation }
+            | Self::ProtocolSecretUsed { operation } => Some(*operation),
+            Self::BoundValue { .. } => None,
+        }
+    }
+
     /// Semantic type of one primitive fact.
     #[must_use]
     pub const fn semantic_type(&self) -> SemanticType {
@@ -283,9 +301,29 @@ pub(crate) fn evaluate_expressions(
     evaluation_order: &[ExprId],
     facts: &FactValues,
 ) -> Result<EvaluatedExpressions, RealizationError> {
+    let scope = evaluation_order.iter().cloned().collect();
+
+    evaluate_expressions_in(graph, node_by_id, evaluation_order, &scope, facts)
+}
+
+/// Evaluate the expressions named by `scope` in graph evaluation order.
+///
+/// The scope must be ancestor-closed — use [`ancestor_closure`] — so
+/// every dependency of a scoped expression is itself evaluated.
+pub(crate) fn evaluate_expressions_in(
+    graph: &DiGraph<ExpressionDeclaration, DependencyEdge, u32>,
+    node_by_id: &BTreeMap<ExprId, NodeIndex<u32>>,
+    evaluation_order: &[ExprId],
+    scope: &std::collections::BTreeSet<ExprId>,
+    facts: &FactValues,
+) -> Result<EvaluatedExpressions, RealizationError> {
     let mut values = BTreeMap::new();
 
     for id in evaluation_order {
+        if !scope.contains(id) {
+            continue;
+        }
+
         let node = node_by_id.get(id).copied().ok_or_else(|| {
             RealizationError::UnknownEvaluatedExpression {
                 expression: id.clone(),
@@ -306,6 +344,45 @@ pub(crate) fn evaluate_expressions(
     }
 
     Ok(EvaluatedExpressions { values })
+}
+
+/// The ancestor-closed dependency scope of `targets`: every expression
+/// the targets transitively depend on, including the targets.
+pub(crate) fn ancestor_closure(
+    graph: &DiGraph<ExpressionDeclaration, DependencyEdge, u32>,
+    node_by_id: &BTreeMap<ExprId, NodeIndex<u32>>,
+    targets: impl IntoIterator<Item = ExprId>,
+) -> Result<std::collections::BTreeSet<ExprId>, RealizationError> {
+    use petgraph::Direction;
+
+    let mut stack = Vec::new();
+
+    for target in targets {
+        let node = node_by_id
+            .get(&target)
+            .copied()
+            .ok_or(RealizationError::UnknownEvaluatedExpression { expression: target })?;
+
+        stack.push(node);
+    }
+
+    let mut seen = std::collections::BTreeSet::new();
+    let mut closure = std::collections::BTreeSet::new();
+
+    while let Some(node) = stack.pop() {
+        if !seen.insert(node) {
+            continue;
+        }
+
+        closure.insert(graph[node].id.clone());
+        stack.extend(
+            graph
+                .edges_directed(node, Direction::Incoming)
+                .map(|edge| edge.source()),
+        );
+    }
+
+    Ok(closure)
 }
 
 fn expression_dependencies(
@@ -515,7 +592,6 @@ fn infer_node_type(
     }
 }
 
-#[cfg(test)]
 fn evaluate_node(
     node: &ExpressionNode,
     facts: &FactValues,
@@ -556,7 +632,6 @@ fn evaluate_node(
     }
 }
 
-#[cfg(test)]
 fn evaluated_value<'a>(
     values: &'a BTreeMap<ExprId, SemanticValue>,
     id: &ExprId,
@@ -568,7 +643,6 @@ fn evaluated_value<'a>(
         })
 }
 
-#[cfg(test)]
 fn evaluate_checked_sum(
     ty: SemanticType,
     terms: &[ExprId],
@@ -619,7 +693,6 @@ fn evaluate_checked_sum(
     }
 }
 
-#[cfg(test)]
 fn evaluate_less_or_equal(
     left: &ExprId,
     right: &ExprId,
@@ -644,7 +717,6 @@ fn evaluate_less_or_equal(
     Ok(SemanticValue::Bool(result))
 }
 
-#[cfg(test)]
 fn evaluate_all(
     terms: &[ExprId],
     values: &BTreeMap<ExprId, SemanticValue>,
@@ -667,7 +739,6 @@ fn evaluate_all(
     Ok(SemanticValue::Bool(result))
 }
 
-#[cfg(test)]
 fn evaluate_owner_subset(
     required: &ExprId,
     presented: &ExprId,

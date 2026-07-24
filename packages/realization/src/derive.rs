@@ -27,6 +27,7 @@ pub struct ScopedRealizationSpec {
     pub scope: RealizationScope,
     pub operations: BTreeMap<OperationId, OperationRealization>,
     pub(crate) expression_graph: DiGraph<ExpressionDeclaration, DependencyEdge, u32>,
+    pub(crate) expression_node_by_id: BTreeMap<ExprId, NodeIndex<u32>>,
     pub(crate) relation_graph: DiGraph<RelationDeclaration, RelationEdge, u32>,
     pub(crate) relation_node_by_id: BTreeMap<RelationId, NodeIndex<u32>>,
     pub(crate) expression_evaluation_order: Vec<ExprId>,
@@ -71,6 +72,9 @@ impl ScopedRealizationSpec {
             &self.relation_graph,
             &self.relation_node_by_id,
             &self.relation_evaluation_order,
+            &self.expression_graph,
+            &self.expression_node_by_id,
+            &self.expression_evaluation_order,
             observation,
         )
     }
@@ -121,7 +125,7 @@ pub fn derive(
         .values()
         .flat_map(|operation| operation.expressions.iter().cloned())
         .collect::<Vec<_>>();
-    let (expression_graph, _expression_node_by_id, expression_evaluation_order) =
+    let (expression_graph, expression_node_by_id, expression_evaluation_order) =
         build_expression_graph(expression_declarations)?;
 
     let relation_declarations = operations
@@ -179,6 +183,7 @@ pub fn derive(
         scope,
         operations,
         expression_graph,
+        expression_node_by_id,
         relation_graph,
         relation_node_by_id,
         expression_evaluation_order,
