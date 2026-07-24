@@ -591,7 +591,7 @@ test(
 test(
   'forbidden-text-check',
   sh,
-  args: stamp_probe + [forbidden_text_stamp.full_path()],
+  args: stamp_probe + [forbidden_text_stamp[0].full_path()],
   depends: forbidden_text_stamp,
   suite: 'lint',
   timeout: 60,

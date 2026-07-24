@@ -299,7 +299,7 @@ The Phase-1 tag remains unchanged.
 
 | ID | Priority | Status | Finding |
 |---|---:|---|---|
-| `F3-001` | P1 | **TODO** | A two-output Meson target is referenced without selecting its stamp output. |
+| `F3-001` | P1 | **DONE** | A two-output Meson target is referenced without selecting its stamp output. |
 | `F3-002` | P1 | **TODO** | `ScopedRealizationSpec` can be externally mutated out of consistency with its private graphs. |
 | `F3-003` | P1 | **TODO** | Strict flattener confinement can be bypassed through a symlinked ancestor directory. |
 | `F3-004` | P2 | **TODO** | `check-plans` accepts an empty argument census and falls back to discovery as authority. |
@@ -318,7 +318,7 @@ focused test.
 ### F3-001 — Select the explicit Meson output for `forbidden-text-check`
 
 **Priority:** P1
-**Status:** TODO
+**Status:** DONE
 **Owner:** root Meson graph
 **Primary file:**
 
@@ -383,11 +383,37 @@ Meson accepted configuration:    repaired or clarified
 
 #### Exit
 
-- [ ] the test indexes output zero explicitly;
-- [ ] all multi-output custom-target uses are audited;
-- [ ] minimum-supported Meson setup succeeds;
-- [ ] focused and complete Meson tests pass;
-- [ ] the repository remains clean.
+- [x] the test indexes output zero explicitly;
+- [x] all multi-output custom-target uses are audited;
+- [x] minimum-supported Meson setup succeeds;
+- [x] focused and complete Meson tests pass;
+- [x] the repository remains clean.
+
+#### Evidence · DONE
+
+- F3-001 closure commit. The `forbidden-text-check` test now probes
+  output zero explicitly (forbidden-text.ok, the success stamp), never
+  the JSON report: stamp_probe receives forbidden_text_stamp[0].
+- Multi-output audit: every other custom-target full_path() use in the
+  tree is either already indexed (cargo_clippy_stamp[0],
+  cargo_test_stamp[0], census_audit[0], generated_stamp[0],
+  labels_stamp[0], plans_stamp[0]) or a single-output target
+  (install_pdf, flat_build_target) or a find_program result (git,
+  xelatex, biber, latexmk). No other unindexed multi-output use exists.
+- Fresh `meson setup` succeeds under both the minimum supported Meson
+  (1.3.0, installed into a scratch venv) and the current SDK Meson
+  (1.9.2), each into a throwaway build directory.
+- Focused verification: `meson test -C build forbidden-text-check
+  --print-errorlogs` green after reconfiguration; deleting
+  build/forbidden-text.ok and running the target rebuilds an empty
+  stamp beside the JSON report (the target is build_always_stale, so a
+  deleted stamp is always regenerated). A failed audit cannot create
+  or refresh the stamp because the shared build-mode path in
+  cli-common (finish_check_command) publishes the report and touches
+  the stamp only after a passing result — covered by the existing
+  cli-common unit and subprocess suites.
+- Complete Meson and workspace gates run at the end of the F3
+  remediation series.
 
 ---
 
