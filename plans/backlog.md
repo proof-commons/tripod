@@ -1003,11 +1003,20 @@ Choose one:
   rules, the kernel sponsor-opacity residual-conservation proof with
   the balanced-theft trap, family-based open-flow membership replacing
   every positive-value read, and the monotonicity clarification for
-  latitude errata. D005 records the same rule with the intentional
-  model/realization difference (model zero-output rejection is
-  canonical-construction discipline); the public-declassification note
+  latitude errata. D005 records the same rule (the difference retained
+  at first closure was removed the same day — see the follow-up entry
+  below); the public-declassification note
   narrows the remaining question to the Elements substrate proof of
   isolated sponsor-region conservation under opacity.
+- Follow-up (same day): the model's zero-output rejection was removed
+  as well — "pointless" is a comment, not a check. The model kernel's
+  open-flow membership is now family-based like the realization's
+  (anchor excluded by family on both sides, claimed members value-
+  blind), and the first-party builder omits a requested zero sponsor
+  change instead of erroring. Model and realization now state one
+  acceptance rule; zero-output pointlessness (weight, dust, relay
+  standardness) is recorded as wallet economics in the kernel comment
+  and D005.
 - Realization code: PLAIN_LBTC recognition no longer reads the value
   (asset, family, owner carry the load); sponsor isolation claims every
   member including zero-valued ones; zero inputs still need owner

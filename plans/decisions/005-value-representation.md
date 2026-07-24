@@ -202,15 +202,21 @@ value short one unit, sponsor change up one, all sponsor amounts positive,
 totals conserved) passes any positivity check and is rejected by the pinned
 protocol relation; the vector is a permanent regression in both pilots.
 
-The intentional model/realization difference: the reference model, as the
-first-party canonical constructor, still rejects an explicit non-anchor
-zero-valued L-BTC output — canonical construction discipline, not a protocol
-predicate. The realization semantic layer accepts it; a deployment policy may
-separately reject nonstandard zero outputs as policy. CPFP_ANCHOR remains
-recognized by its declared family, never by testing an ordinary output for
-zero. The realization enforces the read-set structurally: deriving a scoped
-realization fails if any expression, disclosure node, declassification entry,
-or constructibility fact names a PLAIN_LBTC family amount.
+Model and realization state one rule: the model kernel's open-flow membership
+is family-based (every non-anchor L-BTC member claimed exactly once,
+zero-valued included) and it neither requires nor forbids a zero-valued
+ordinary output — zero value is only meaningful for CPFP anchoring or another
+colored-output scheme outside this protocol, and is otherwise pointless
+(weight, dust, likely nonstandard under default relay policy), which is
+wallet economics recorded as a comment, not a check. The first-party builder
+normalizes: a requested zero sponsor change is omitted rather than emitted. A
+deployment policy may separately reject nonstandard zero outputs as policy.
+CPFP_ANCHOR remains recognized by its declared family — it stands outside the
+open-flow partition and can neither satisfy nor join a sponsor role — never
+by testing an ordinary output for zero. The realization enforces the read-set
+structurally: deriving a scoped realization fails if any expression,
+disclosure node, declassification entry, or constructibility fact names a
+PLAIN_LBTC family amount.
 
 ## Does not authorize · `sec:representation:limits`
 

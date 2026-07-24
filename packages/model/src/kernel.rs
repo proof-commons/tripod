@@ -486,11 +486,13 @@ impl<'a> TxBuilder<'a> {
 
         let mut destination_outputs = Vec::new();
 
-        if let Some(change) = envelope.change {
-            if change.value.is_zero() {
-                return Err(Guard::ZeroProgress);
-            }
-
+        // The first-party builder omits a known zero-valued change
+        // output rather than emitting it: it carries no value and
+        // costs weight (the canonical sponsor construction). The
+        // declared fee must still balance the envelope exactly.
+        if let Some(change) = envelope.change
+            && !change.value.is_zero()
+        {
             destination_outputs.push(self.emit(
                 Asset::Lbtc,
                 change.value,
@@ -835,7 +837,7 @@ fn validate_exact_open_flow_partition(
 
     for (outpoint, utxo) in inputs {
         if utxo.asset == Asset::Lbtc
-            && !utxo.value.is_zero()
+            && !matches!(utxo.meta, Meta::CpfpAnchor)
             && source_uses.get(outpoint).copied().unwrap_or(0) != 1
         {
             return Err(Guard::OpenFlowMismatch);
@@ -844,31 +846,23 @@ fn validate_exact_open_flow_partition(
 
     // Coverage faults — source and destination — are reported before
     // the aggregate fee equation, so a missing flow surfaces as an
-    // open-flow fault rather than a fee mismatch.
+    // open-flow fault rather than a fee mismatch. Membership is
+    // family-based (sponsor-value opacity): every ordinary L-BTC
+    // output, zero-valued included, is claimed exactly once; only the
+    // declared anchor stands outside the partition. A zero-valued
+    // ordinary output is permitted but pointless — value zero is only
+    // meaningful for CPFP anchoring (or other colored-output schemes
+    // outside this protocol); otherwise it burns weight and leaves
+    // dust with no capability behind it, and default relay policy is
+    // likely to refuse it. That is wallet economics, not a protocol
+    // predicate, so the kernel does not check it.
     for (index, output) in outputs.iter().enumerate() {
-        if output.asset == Asset::Lbtc && !output.value.is_zero() {
+        if output.asset == Asset::Lbtc && !matches!(output.meta, Meta::CpfpAnchor) {
             let output_ref = OutputRef(index);
 
             if destination_uses.get(&output_ref).copied().unwrap_or(0) != 1 {
                 return Err(Guard::OpenFlowMismatch);
             }
-        }
-
-        // Canonical-construction discipline, not a protocol predicate:
-        // the reference model is the first-party constructor and never
-        // emits a useless explicit zero sponsor output, so it rejects
-        // one here. Under sponsor-value opacity (v13d, F2-006) the
-        // target-independent semantic layer accepts a zero-valued
-        // ordinary sponsor member whose role structure is exact; this
-        // model/realization difference is intentional and recorded in
-        // D005. The anchor's zero value is its declared semantic role
-        // and is recognized by family, never by testing an ordinary
-        // output for zero.
-        if output.asset == Asset::Lbtc
-            && output.value.is_zero()
-            && !matches!(output.meta, Meta::CpfpAnchor)
-        {
-            return Err(Guard::Domain);
         }
     }
 
@@ -886,6 +880,10 @@ fn validate_exact_open_flow_partition(
         if utxo.asset != Asset::Lbtc {
             return Err(Guard::WrongAsset);
         }
+
+        if matches!(utxo.meta, Meta::CpfpAnchor) {
+            return Err(Guard::OpenFlowMismatch);
+        }
     }
 
     for (destination, count) in destination_uses {
@@ -897,7 +895,7 @@ fn validate_exact_open_flow_partition(
             .get(destination.0)
             .ok_or(Guard::MissingOutputIndex)?;
 
-        if output.asset != Asset::Lbtc || output.value.is_zero() {
+        if output.asset != Asset::Lbtc || matches!(output.meta, Meta::CpfpAnchor) {
             return Err(Guard::OpenFlowMismatch);
         }
     }
