@@ -301,7 +301,7 @@ The Phase-1 tag remains unchanged.
 |---|---:|---|---|
 | `F3-001` | P1 | **DONE** | A two-output Meson target is referenced without selecting its stamp output. |
 | `F3-002` | P1 | **DONE** | `ScopedRealizationSpec` can be externally mutated out of consistency with its private graphs. |
-| `F3-003` | P1 | **TODO** | Strict flattener confinement can be bypassed through a symlinked ancestor directory. |
+| `F3-003` | P1 | **DONE** | Strict flattener confinement can be bypassed through a symlinked ancestor directory. |
 | `F3-004` | P2 | **TODO** | `check-plans` accepts an empty argument census and falls back to discovery as authority. |
 | `F3-005` | P2 | **TODO** | The stable realization projection includes raw order-sensitive graph declaration vectors. |
 | `F3-006` | P2 | **TODO** | Realization derivation does not fully validate operation, relation, expression, and proof-alternative ownership. |
@@ -576,7 +576,7 @@ future compiler API:              safer
 ### F3-003 — Close symlinked-ancestor flattener confinement
 
 **Priority:** P1
-**Status:** TODO
+**Status:** DONE
 **Owner:** `flatten-latex-main`
 **Primary files:**
 
@@ -658,11 +658,44 @@ change canonical paper bytes.
 
 #### Exit
 
-- [ ] public documentation and implementation state one rule;
-- [ ] symlinked-ancestor behavior is covered;
-- [ ] validation precedes staging;
-- [ ] include-cycle identity remains correct;
-- [ ] flattener package and complete gates pass cleanly.
+- [x] public documentation and implementation state one rule;
+- [x] symlinked-ancestor behavior is covered;
+- [x] validation precedes staging;
+- [x] include-cycle identity remains correct;
+- [x] flattener package and complete gates pass cleanly.
+
+#### Evidence · DONE
+
+- F3-003 closure commit; the strict component-wise contract is
+  implemented. ensure_regular_file first validates the named file
+  itself (existing, regular, not a symlink — unchanged rejections and
+  messages), then walks every ancestor prefix of the supplied path
+  with symlink_metadata and rejects the first symlinked component
+  with a dedicated passes-through-the-symbolic-link error naming both
+  the supplied path and the offending prefix. The flatten
+  documentation now states the rule exactly: a regular file reached
+  through a symlink-free path, a symlink in any component rejected
+  before anything is read or staged. The check-then-open residual is
+  retained honestly and unchanged: a filesystem racing the flattener
+  remains outside the ADR-015 boundary (configuration-mistake
+  defense, not a malicious-filesystem sandbox); a stronger boundary
+  would need descriptor-relative platform facilities.
+- Regressions: a regular final file beneath a symlinked ancestor is
+  refused with the prior output preserved byte-for-byte and no
+  staging file (validation precedes staging); a main entry point
+  beneath a symlinked ancestor is refused; two nested symlinked
+  ancestor levels are refused at the first linked component with no
+  secret bytes published. The final-component rejections
+  (allowlisted symlink, symlinked main, symlink loop), hard-link
+  cycle detection, and every ordinary regular-path positive test are
+  unchanged and green.
+- Canonical paper bytes are unaffected: the flat build target
+  regenerates the flattened paper successfully under the stricter
+  walk (tracked regular files through real directories).
+- Verified: fmt, clippy -D warnings, flattener unit (34) and
+  subprocess (3) suites under the nightly SDK toolchain; canonical
+  flat target rebuilt via ninja. Complete gates run at the end of
+  the F3 series.
 
 ---
 

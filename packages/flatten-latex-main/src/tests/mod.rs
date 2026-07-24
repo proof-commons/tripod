@@ -31,6 +31,9 @@
 //! | `flatten_rejects_symlinked_main`            | The entry point must be a regular file  |
 //! | `flatten_rejects_symlink_cycles_without_recursing` | A symlink loop is refused, not chased |
 //! | `flatten_detects_cycles_through_hard_link_aliases` | Cycle identity is filesystem identity |
+//! | `flatten_rejects_file_beneath_symlinked_ancestor` | A symlinked parent directory is never followed |
+//! | `flatten_rejects_main_beneath_symlinked_ancestor` | The entry path must be symlink-free  |
+//! | `flatten_rejects_nested_symlinked_ancestors` | The whole ancestor chain is validated |
 //! | `failed_confinement_preserves_output_and_stages_nothing` | Validation precedes staging |
 //! | `flatten_disambiguates_by_folder`           | Folder components resolve a duplicate filename |
 
@@ -731,6 +734,120 @@ fn flatten_detects_cycles_through_hard_link_aliases() {
         .expect_err("a hard-link alias cycle must be detected");
     assert!(error.to_string().contains("include cycle"), "{error}");
     assert!(!output.exists());
+}
+
+// --- F3-003 symlinked-ancestor confinement: the final component being
+// a regular file is not enough — opening the path still follows a
+// symlink in any parent directory, so every component must be
+// symlink-free. ---
+
+#[cfg(unix)]
+#[test]
+fn flatten_rejects_file_beneath_symlinked_ancestor() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    let main = root.join("paper/main.tex");
+    // The real file lives outside the paper tree; the allowlisted path
+    // reaches it through a symlinked directory whose final component is
+    // an ordinary regular file. A final-component-only check accepts
+    // this path and then follows the parent link on open.
+    let outside = root.join("outside/secret.tex");
+    write_file(&outside, "TOP SECRET\n");
+    let alias = root.join("paper/allowed-parent");
+    fs::create_dir_all(alias.parent().unwrap()).expect("mkdir");
+    std::os::unix::fs::symlink(root.join("outside"), &alias).expect("symlink");
+    let listed = alias.join("secret.tex");
+    write_file(
+        &main,
+        "\\documentclass{article}\n\\begin{document}\n\\input{secret.tex}\n\\end{document}\n",
+    );
+
+    let output = root.join("out/flat.tex");
+    write_file(&output, "previous good output\n");
+
+    let error = flatten(&main, &[listed], &output, &FlattenOptions::default())
+        .expect_err("a regular file beneath a symlinked ancestor must be refused");
+    assert!(
+        error
+            .to_string()
+            .contains("passes through the symbolic link"),
+        "{error}"
+    );
+    assert_eq!(
+        fs::read_to_string(&output).expect("existing output"),
+        "previous good output\n",
+    );
+    let staged: Vec<_> = fs::read_dir(output.parent().unwrap())
+        .expect("output dir")
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".flatten-staged-")
+        })
+        .collect();
+    assert!(staged.is_empty(), "{staged:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn flatten_rejects_main_beneath_symlinked_ancestor() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    let real_main = root.join("real/main.tex");
+    write_file(
+        &real_main,
+        "\\documentclass{article}\n\\begin{document}\n\\end{document}\n",
+    );
+    let alias = root.join("paper");
+    std::os::unix::fs::symlink(root.join("real"), &alias).expect("symlink");
+    let main = alias.join("main.tex");
+
+    let output = root.join("flat.tex");
+    let error = flatten(&main, &[], &output, &FlattenOptions::default())
+        .expect_err("a main entry point beneath a symlinked ancestor must be refused");
+    assert!(
+        error
+            .to_string()
+            .contains("passes through the symbolic link"),
+        "{error}"
+    );
+    assert!(!output.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn flatten_rejects_nested_symlinked_ancestors() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    let main = root.join("paper/main.tex");
+    // Two levels of symlinked directories between the paper tree and
+    // the real file: the walk must reject the first linked component
+    // it meets, not only a directly linked parent.
+    let outside = root.join("outside/deeper/secret.tex");
+    write_file(&outside, "TOP SECRET\n");
+    let first = root.join("paper/level-one");
+    fs::create_dir_all(first.parent().unwrap()).expect("mkdir");
+    std::os::unix::fs::symlink(root.join("outside"), &first).expect("symlink");
+    let listed = first.join("deeper/secret.tex");
+    write_file(
+        &main,
+        "\\documentclass{article}\n\\begin{document}\n\\input{secret.tex}\n\\end{document}\n",
+    );
+
+    let output = root.join("flat.tex");
+    let error = flatten(&main, &[listed], &output, &FlattenOptions::default())
+        .expect_err("nested symlinked ancestors must be refused");
+    assert!(
+        error
+            .to_string()
+            .contains("passes through the symbolic link"),
+        "{error}"
+    );
+    assert!(!output.exists());
+    let text = fs::read_to_string(&output).unwrap_or_default();
+    assert!(!text.contains("TOP SECRET"));
 }
 
 #[cfg(unix)]

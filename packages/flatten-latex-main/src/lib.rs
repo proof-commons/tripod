@@ -39,14 +39,15 @@ pub struct FlattenOptions {
 /// absolute include (`\input{/etc/passwd}`) and a parent-directory escape
 /// (`\input{../../secret}`) cannot be read or published (ADR-015). Strict
 /// regular-file confinement: `main_file` and every entry of `allowed_files`
-/// must be an existing regular file — a symlink (including an allowlisted
-/// one) is rejected before anything is read or staged, so allowlisting a
-/// path never authorizes its resolved target. The check is
-/// check-then-open: a filesystem racing the flattener between validation
-/// and open can still swap a validated path, which is inside the ADR-015
-/// trust boundary (the flattener defends against configuration mistakes,
-/// not a malicious concurrent filesystem). `main_file` is the trusted
-/// entry point and need not appear in `allowed_files`.
+/// must be an existing regular file reached through a symlink-free path —
+/// a symlink in any component, the file itself (including an allowlisted
+/// one) or any ancestor directory, is rejected before anything is read or
+/// staged, so allowlisting a path never authorizes its resolved target.
+/// The check is check-then-open: a filesystem racing the flattener between
+/// validation and open can still swap a validated path, which is inside
+/// the ADR-015 trust boundary (the flattener defends against configuration
+/// mistakes, not a malicious concurrent filesystem). `main_file` is the
+/// trusted entry point and need not appear in `allowed_files`.
 ///
 /// The output is **reproducible** (same inputs, byte-identical output —
 /// no timestamps) and **atomic** (written to a uniquely named temporary
@@ -108,9 +109,12 @@ pub fn flatten(
 }
 
 /// Strict regular-file confinement (ADR-015): the flattener reads only
-/// existing regular files. `symlink_metadata` never follows the final
-/// component, so a symlink — even a dangling one — is rejected by its
-/// own file type, not by what it points at.
+/// regular files reached through symlink-free paths. `symlink_metadata`
+/// never follows the component it names, so the final file and every
+/// ancestor directory are each judged by their own file type, not by
+/// what they point at. Checking only the final component would leave a
+/// hole: opening `parent/file.tex` follows a symlinked `parent` to an
+/// off-list directory even when `file.tex` itself is a regular file.
 fn ensure_regular_file(path: &Path, role: &str) -> Result<()> {
     let metadata = std::fs::symlink_metadata(path)
         .with_context(|| format!("inspecting {role} {}", path.display()))?;
@@ -125,6 +129,27 @@ fn ensure_regular_file(path: &Path, role: &str) -> Result<()> {
 
     if !metadata.file_type().is_file() {
         bail!("{role} {} is not a regular file", path.display());
+    }
+
+    let mut prefix = PathBuf::new();
+    for component in path.components() {
+        prefix.push(component);
+        if prefix == path {
+            break;
+        }
+
+        let ancestor = std::fs::symlink_metadata(&prefix)
+            .with_context(|| format!("inspecting {role} {}", path.display()))?;
+
+        if ancestor.file_type().is_symlink() {
+            bail!(
+                "{role} {} passes through the symbolic link {}; the flattener reads \
+                 only regular files reached through symlink-free paths, and never a \
+                 link's resolved target",
+                path.display(),
+                prefix.display(),
+            );
+        }
     }
 
     Ok(())
