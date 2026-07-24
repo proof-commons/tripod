@@ -251,7 +251,7 @@ must be corrected before the Phase-2 gate relies on that claim.
 |---|---:|---|---|
 | `F2-001` | P0 | **DONE** | Bound calibrations are not bound to the final emitted script bundle. |
 | `F2-002` | P1 | **DONE** | Pilot architecture welds omit operation fields that can change semantics. |
-| `F2-003` | P2 | **TODO** | Ordinary or unrelated Rust comments can suppress label harvesting through cross-comment fence state. |
+| `F2-003` | P2 | **DONE** | Ordinary or unrelated Rust comments can suppress label harvesting through cross-comment fence state. |
 | `F2-004` | P2 | **TODO** | The LaTeX flattener’s off-list symlink-target confinement claim is not enforced. |
 | `F2-005` | P2 | **TODO** | Multi-output commands accept aliased destinations and may succeed without producing distinct assets. |
 | `F2-006` | P2 | **TODO** | Ordinary sponsor L-BTC positivity may over-constrain confidential-value minimality. |
@@ -565,7 +565,7 @@ behavioural-version gate.
 ### F2-003 — Scope Rustdoc fences to actual documentation blocks
 
 **Priority:** P2
-**Status:** TODO
+**Status:** DONE
 **Owner:** `labels`
 **Primary files:**
 
@@ -648,12 +648,39 @@ planning registers:           unchanged unless source labels change
 
 #### Exit
 
-- [ ] ordinary comments cannot suppress labels;
-- [ ] Rustdoc fences remain nonparticipating;
-- [ ] fence state cannot cross documentation blocks;
-- [ ] diagnostics retain correct line and column;
-- [ ] generated label publications are regenerated if needed;
-- [ ] labels, generated-artifact, census, and complete gates pass cleanly.
+- [x] ordinary comments cannot suppress labels;
+- [x] Rustdoc fences remain nonparticipating;
+- [x] fence state cannot cross documentation blocks;
+- [x] diagnostics retain correct line and column;
+- [x] generated label publications are regenerated if needed;
+- [x] labels, generated-artifact, census, and complete gates pass cleanly.
+
+#### Evidence · DONE
+
+- F2-003 closure commit. `packages/labels/src/rust_source.rs` now
+  retains typed comment provenance: a CommentKind (ordinary/outer-doc/
+  inner-doc, line and block forms, with `////` and `/***` classified
+  ordinary exactly as rustdoc does) and a contiguous block identity
+  (consecutive same-kind line comments with no intervening code share a
+  block; every block comment is its own block).
+- Fence handling opens only in documentation comments, lives inside one
+  contiguous documentation block, and a block ending with its fence
+  open is diagnosed (UnclosedMarkdownFence at the opening line) instead
+  of silently swallowing the rest of the file. Acute-label parsing in
+  ordinary comments is unchanged.
+- Regressions: plain-comment fence markers around a label still mint;
+  outer-doc, inner-doc (existing), and block-doc fenced examples stay
+  nonparticipating; an open fence followed by code or by another
+  documentation block suppresses nothing outside its block and is
+  diagnosed at line 1 of the fence; an ordinary comment between fenced
+  doc lines participates; labels before and after a fenced example
+  mint.
+- Repository impact: the full check-labels census run over the current
+  tree is green with no register or model_labels.json change, so no
+  previously hidden participating occurrence existed.
+- Verified: fmt, clippy -D warnings, labels suite (71 tests), and the
+  check-labels lane (ci.sh lane-6 argv) under the nightly SDK
+  toolchain.
 
 ---
 

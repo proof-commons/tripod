@@ -15,7 +15,7 @@ use crate::{
     repository::{
         CitationClass, LabelGraphEdge, LabelGraphNode, RepositoryLabels, generate_registers,
     },
-    rust_source::harvest_model,
+    rust_source::{RustHarvest, harvest_model},
 };
 
 #[test]
@@ -806,6 +806,162 @@ fn rust_scanner_ignores_tilde_fenced_examples_and_rejects_asymmetric_parens() {
             .registry
             .contains(&Label::parse("def:fixture:plain", LabelShape::Model).expect("valid label"))
     );
+}
+
+fn rust_fixture_harvest(source: &str) -> RustHarvest {
+    let directory = tempfile::tempdir().expect("temporary repository");
+    let root = directory.path();
+    let source_directory = root.join("packages/model/src");
+    fs::create_dir_all(&source_directory).expect("model source directory");
+    fs::write(source_directory.join("fixture.rs"), source).expect("model source");
+    harvest_model(&RepositoryCensus::discover(root))
+}
+
+// F2-003 fence scoping: only documentation comments open fences, and a
+// fence never outlives its contiguous documentation block.
+
+#[test]
+fn plain_comment_fence_markers_do_not_suppress_labels() {
+    let harvest = rust_fixture_harvest(concat!(
+        "// ```text\n",
+        "fn unrelated_code() {}\n",
+        "// \u{b4}def:fixture:hidden\u{b4}\n",
+        "// ```\n",
+    ));
+
+    assert!(
+        harvest
+            .registry
+            .contains(&Label::parse("def:fixture:hidden", LabelShape::Model).expect("valid label")),
+        "{:#?}",
+        harvest.diagnostics,
+    );
+    assert!(harvest.diagnostics.is_empty(), "{:#?}", harvest.diagnostics);
+}
+
+#[test]
+fn outer_doc_fenced_example_is_nonparticipating() {
+    let harvest = rust_fixture_harvest(concat!(
+        "/// ```text\n",
+        "/// \u{b4}def:fixture:outer-fenced\u{b4}\n",
+        "/// ```\n",
+        "fn documented() {}\n",
+    ));
+
+    assert!(!harvest.registry.contains(
+        &Label::parse("def:fixture:outer-fenced", LabelShape::Model).expect("valid label")
+    ));
+    assert!(harvest.diagnostics.is_empty(), "{:#?}", harvest.diagnostics);
+}
+
+#[test]
+fn block_doc_fenced_example_is_nonparticipating() {
+    let harvest = rust_fixture_harvest(concat!(
+        "/** docs\n",
+        "```text\n",
+        "\u{b4}def:fixture:block-fenced\u{b4}\n",
+        "```\n",
+        "*/\n",
+        "fn documented() {}\n",
+        "/* ordinary block \u{b4}def:fixture:block-plain\u{b4} */\n",
+    ));
+
+    // The documentation block comment hides its fenced example; the
+    // ordinary block comment cannot be fenced and its label
+    // participates.
+    assert!(
+        !harvest.registry.contains(
+            &Label::parse("def:fixture:block-fenced", LabelShape::Model).expect("valid label")
+        ),
+        "{:#?}",
+        harvest.diagnostics,
+    );
+    assert!(
+        harvest.registry.contains(
+            &Label::parse("def:fixture:block-plain", LabelShape::Model).expect("valid label")
+        ),
+        "{:#?}",
+        harvest.diagnostics,
+    );
+}
+
+#[test]
+fn open_fence_stops_at_the_end_of_its_documentation_block() {
+    let harvest = rust_fixture_harvest(concat!(
+        "/// ```text\n",
+        "fn code_between() {}\n",
+        "// \u{b4}def:fixture:after-code\u{b4}\n",
+        "/// fresh block \u{b4}def:fixture:next-doc\u{b4}\n",
+    ));
+
+    // The unclosed fence is diagnosed at its opening documentation
+    // line and suppresses nothing outside its own block.
+    assert!(harvest.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == LabelErrorCode::UnclosedMarkdownFence && diagnostic.line == 1
+    }));
+    assert!(
+        harvest.registry.contains(
+            &Label::parse("def:fixture:after-code", LabelShape::Model).expect("valid label")
+        ),
+        "{:#?}",
+        harvest.diagnostics,
+    );
+    assert!(
+        harvest.registry.contains(
+            &Label::parse("def:fixture:next-doc", LabelShape::Model).expect("valid label")
+        ),
+        "{:#?}",
+        harvest.diagnostics,
+    );
+}
+
+#[test]
+fn ordinary_comment_between_fenced_doc_lines_participates() {
+    let harvest = rust_fixture_harvest(concat!(
+        "/// ```text\n",
+        "// \u{b4}def:fixture:interleaved\u{b4}\n",
+        "/// ```\n",
+    ));
+
+    // The ordinary comment is a different block, so it participates;
+    // both severed documentation fragments leave open fences behind
+    // (the closing line reads as a new opening fence).
+    assert!(
+        harvest.registry.contains(
+            &Label::parse("def:fixture:interleaved", LabelShape::Model).expect("valid label")
+        ),
+        "{:#?}",
+        harvest.diagnostics,
+    );
+    assert!(
+        harvest
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.code == LabelErrorCode::UnclosedMarkdownFence })
+    );
+}
+
+#[test]
+fn labels_before_and_after_a_fenced_example_participate() {
+    let harvest = rust_fixture_harvest(concat!(
+        "/// before \u{b4}def:fixture:before\u{b4}\n",
+        "/// ```text\n",
+        "/// \u{b4}def:fixture:inside\u{b4}\n",
+        "/// ```\n",
+        "/// after \u{b4}def:fixture:after\u{b4}\n",
+    ));
+
+    let minted: Vec<_> = harvest.registry.labels().map(ToString::to_string).collect();
+    assert_eq!(
+        minted,
+        vec![
+            "def:fixture:after".to_owned(),
+            "def:fixture:before".to_owned(),
+        ],
+        "{:#?}",
+        harvest.diagnostics,
+    );
+    assert!(harvest.diagnostics.is_empty(), "{:#?}", harvest.diagnostics);
 }
 
 #[test]

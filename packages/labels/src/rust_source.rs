@@ -68,12 +68,40 @@ fn harvest_rust_crate(root: &Path, sources: &[PathBuf], owner: &LabelOwner) -> R
     result
 }
 
+/// Syntactic class of one comment, retained so fence handling can
+/// distinguish documentation from ordinary comments (ADR-013 excludes
+/// fenced Rustdoc examples, not arbitrary comment text).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CommentKind {
+    OrdinaryLine,
+    OuterDocLine,
+    InnerDocLine,
+    OrdinaryBlock,
+    OuterDocBlock,
+    InnerDocBlock,
+}
+
+impl CommentKind {
+    const fn is_documentation(self) -> bool {
+        matches!(
+            self,
+            Self::OuterDocLine | Self::InnerDocLine | Self::OuterDocBlock | Self::InnerDocBlock
+        )
+    }
+}
+
 /// One comment text run on one source line, positioned by the first
 /// character after the comment marker.
 struct CommentSegment {
     line: usize,
     column: usize,
     text: String,
+    kind: CommentKind,
+    /// Contiguous comment-block identity: consecutive same-kind line
+    /// comments with no intervening code share a block; every block
+    /// comment is its own block. A documentation fence never outlives
+    /// its block.
+    block: usize,
 }
 
 /// Extract comment and documentation-comment text from Rust source.
@@ -101,15 +129,52 @@ fn comment_segments(
         }
         *i += 1;
     };
+    // Block-identity bookkeeping: consecutive same-kind line comments
+    // with no intervening code continue one block; anything else opens
+    // a new one.
+    let mut next_block = 0_usize;
+    let mut previous_line_comment: Option<(usize, CommentKind, usize)> = None;
+    let mut code_since_comment = false;
     while i < chars.len() {
         match chars[i] {
             '/' if chars.get(i + 1) == Some(&'/') => {
-                // Line comment: skip the marker run (`//`, `///`,
-                // `//!`) and capture to end of line.
+                // Line comment: classify the marker run before
+                // consuming it. Exactly three slashes are outer
+                // documentation; `//!` is inner documentation; two or
+                // four-plus slashes are ordinary comments (rustdoc
+                // treats `////` as ordinary).
+                let slashes = chars[i..]
+                    .iter()
+                    .take_while(|character| **character == '/')
+                    .count();
+                let kind = if slashes == 3 {
+                    CommentKind::OuterDocLine
+                } else if slashes == 2 && chars.get(i + 2) == Some(&'!') {
+                    CommentKind::InnerDocLine
+                } else {
+                    CommentKind::OrdinaryLine
+                };
+                // Skip the marker run (`//`, `///`, `//!`) and capture
+                // to end of line.
                 while i < chars.len() && (chars[i] == '/' || chars[i] == '!') {
                     advance(&mut i, &mut line, &mut column);
                 }
                 let (start_line, start_column) = (line, column);
+                let block = match previous_line_comment {
+                    Some((previous_line, previous_kind, block))
+                        if previous_kind == kind
+                            && start_line == previous_line + 1
+                            && !code_since_comment =>
+                    {
+                        block
+                    }
+                    _ => {
+                        next_block += 1;
+                        next_block
+                    }
+                };
+                previous_line_comment = Some((start_line, kind, block));
+                code_since_comment = false;
                 let mut text = String::new();
                 while i < chars.len() && chars[i] != '\n' {
                     text.push(chars[i]);
@@ -119,12 +184,29 @@ fn comment_segments(
                     line: start_line,
                     column: start_column,
                     text,
+                    kind,
+                    block,
                 });
             }
             '/' if chars.get(i + 1) == Some(&'*') => {
                 // Block comment; Rust block comments nest, and every
                 // `/*` / `*/` consumes both characters so overlapping
                 // sequences like `*/*` cannot be double-counted.
+                // Classify before consuming: `/*!` is inner
+                // documentation; `/**` is outer documentation unless it
+                // is `/**/` (empty) or `/***` (ordinary, like `////`).
+                let kind = match chars.get(i + 2) {
+                    Some('!') => CommentKind::InnerDocBlock,
+                    Some('*')
+                        if chars.get(i + 3) != Some(&'*') && chars.get(i + 3) != Some(&'/') =>
+                    {
+                        CommentKind::OuterDocBlock
+                    }
+                    _ => CommentKind::OrdinaryBlock,
+                };
+                next_block += 1;
+                let block = next_block;
+                code_since_comment = false;
                 advance(&mut i, &mut line, &mut column);
                 advance(&mut i, &mut line, &mut column);
                 let mut depth = 1_usize;
@@ -145,6 +227,8 @@ fn comment_segments(
                                 line: start_line,
                                 column: start_column,
                                 text: std::mem::take(&mut text),
+                                kind,
+                                block,
                             });
                         } else {
                             text.push_str("*/");
@@ -158,6 +242,8 @@ fn comment_segments(
                             line: start_line,
                             column: start_column,
                             text: std::mem::take(&mut text),
+                            kind,
+                            block,
                         });
                         advance(&mut i, &mut line, &mut column);
                         start_line = line;
@@ -175,9 +261,13 @@ fn comment_segments(
                     ));
                 }
             }
-            '"' => skip_string(&chars, &mut i, &mut line, &mut column, &mut advance),
-            'b' | 'c' | 'r' => match string_prefix(&chars, i) {
-                Some(prefix) => {
+            '"' => {
+                code_since_comment = true;
+                skip_string(&chars, &mut i, &mut line, &mut column, &mut advance);
+            }
+            'b' | 'c' | 'r' => {
+                code_since_comment = true;
+                if let Some(prefix) = string_prefix(&chars, i) {
                     for _ in 0..prefix.len {
                         advance(&mut i, &mut line, &mut column);
                     }
@@ -196,14 +286,24 @@ fn comment_segments(
                         // escapes.
                         finish_plain_string(&chars, &mut i, &mut line, &mut column, &mut advance);
                     }
+                } else {
+                    advance(&mut i, &mut line, &mut column);
                 }
-                None => advance(&mut i, &mut line, &mut column),
-            },
-            '\'' => skip_char_or_lifetime(&chars, &mut i, &mut line, &mut column, &mut advance),
+            }
+            '\'' => {
+                code_since_comment = true;
+                skip_char_or_lifetime(&chars, &mut i, &mut line, &mut column, &mut advance);
+            }
             // Everything else — including identifier runs — advances
             // one character; `string_prefix`'s lookbehind already
-            // rejects prefix letters inside identifiers.
-            _ => advance(&mut i, &mut line, &mut column),
+            // rejects prefix letters inside identifiers. Whitespace is
+            // not code for block continuity; anything else is.
+            _ => {
+                if !chars[i].is_whitespace() {
+                    code_since_comment = true;
+                }
+                advance(&mut i, &mut line, &mut column);
+            }
         }
     }
     segments
@@ -340,20 +440,37 @@ fn harvest_file(path: &Path, source: &str, owner: &LabelOwner, result: &mut Rust
     let segments = comment_segments(path, source, &mut result.diagnostics);
     // Fenced Rustdoc examples are nonparticipating, using the same
     // fence recognition as the Markdown scanner (backtick and tilde
-    // markers alike). Fences open and close within comment text.
+    // markers alike). Only documentation comments open a fence, and a
+    // fence lives inside one contiguous documentation block: it cannot
+    // suppress ordinary comments, other blocks, or another item's
+    // documentation, and a block that ends with its fence open is
+    // diagnosed at the opening line rather than silently swallowing
+    // the rest of the file.
     let mut fence: Option<(char, usize)> = None;
     let mut fence_line = 0;
+    let mut fence_block = 0;
     for segment in segments {
+        if fence.is_some() && segment.block != fence_block {
+            result.diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::UnclosedMarkdownFence,
+                &SourceLocation::new(path, fence_line, 1),
+                "documentation fence is not closed",
+            ));
+            fence = None;
+        }
         if let Some((marker, length)) = fence {
             if fence_close(&segment.text, marker, length) {
                 fence = None;
             }
             continue;
         }
-        if let Some(open) = fence_open(&segment.text) {
-            fence = Some(open);
-            fence_line = segment.line;
-            continue;
+        if segment.kind.is_documentation() {
+            if let Some(open) = fence_open(&segment.text) {
+                fence = Some(open);
+                fence_line = segment.line;
+                fence_block = segment.block;
+                continue;
+            }
         }
         harvest_segment(path, &segment, owner, result);
     }
