@@ -62,6 +62,24 @@ fn missing_arguments_are_usage_errors() {
 }
 
 #[test]
+fn check_plans_without_a_subject_is_a_usage_error() {
+    // ADR-014 (F3-004): the build system states census membership by
+    // argument. An invocation that names a repository root but no
+    // subject must be refused as usage class 2, never run with the
+    // on-disk walk as the effective census source.
+    let output = run(
+        env!("CARGO_BIN_EXE_check-plans"),
+        &["--repository-root", "."],
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "check-plans with no --subject must be usage class 2",
+    );
+    assert_json_only_stderr(&output);
+}
+
+#[test]
 fn unknown_flag_is_a_usage_error() {
     for binary in BINARIES {
         let output = run(binary, &["--definitely-not-a-real-flag"]);

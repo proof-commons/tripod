@@ -189,10 +189,12 @@ fn read_dir_sorted(directory: &Path) -> anyhow::Result<Vec<PathBuf>> {
 }
 
 /// The declared census must equal the on-disk discovery (ADR-014).
+///
+/// There is deliberately no empty-declaration bypass: discovery stays a
+/// verifier, never the membership source, so an empty declaration
+/// against a nonempty tree reports every discovered file as outside
+/// the census and fails closed.
 fn verify_census(root: &Path, subjects: &[PathBuf], files: &[PathBuf], failures: &mut Vec<String>) {
-    if subjects.is_empty() {
-        return;
-    }
     let declared: BTreeSet<PathBuf> = subjects
         .iter()
         .map(|subject| {
@@ -517,11 +519,43 @@ mod tests {
     }
 
     #[test]
+    fn empty_declaration_fails_closed_on_a_nonempty_tree() {
+        // ADR-014: discovery is a verifier, never the membership
+        // source. An empty declared census must not turn the on-disk
+        // walk into the authority — every discovered file is outside
+        // the (empty) census and the check fails closed.
+        let dir = fixture();
+        let outcome = check_plans(dir.path(), &[]).expect("check runs");
+        assert!(!outcome.report.valid);
+        let census_failures = outcome
+            .failures
+            .iter()
+            .filter(|failure| failure.contains("file outside the build census"))
+            .count();
+        assert_eq!(census_failures, 5, "{:?}", outcome.failures);
+    }
+
+    #[test]
+    fn empty_declaration_against_an_empty_tree_is_an_environmental_fault() {
+        // The chosen empty-versus-empty behavior: the census check is
+        // vacuously satisfied and contributes nothing, and the run
+        // still fails — a tree with no plans/backlog.md is not a
+        // planning tree, reported as an environmental fault rather
+        // than a quietly valid empty census.
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(dir.path().join("adr")).expect("adr");
+        fs::create_dir_all(dir.path().join("plans")).expect("plans");
+        let error =
+            check_plans(dir.path(), &[]).expect_err("an empty planning tree must not validate");
+        assert!(error.to_string().contains("backlog.md"), "{error:#}");
+    }
+
+    #[test]
     fn unindexed_file_and_missing_readme_fail_ownership() {
         let dir = fixture();
         fs::write(dir.path().join("plans/orphan.md"), "# Orphan\n").expect("orphan");
         fs::create_dir(dir.path().join("plans/rogue")).expect("rogue dir");
-        let outcome = check_plans(dir.path(), &[]).expect("check runs");
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
         assert!(
             outcome
                 .failures
@@ -544,7 +578,7 @@ mod tests {
             "not a heading\n\n[gone](missing.md)\n\nBelow is a complete draft\n\nTODO_URL\n\n95% confident\n",
         )
         .expect("defective readme");
-        let outcome = check_plans(dir.path(), &[]).expect("check runs");
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
         let all = outcome.failures.join("\n");
         assert!(all.contains("heading: adr/README.md"));
         assert!(all.contains("broken link: adr/README.md -> missing.md"));
@@ -561,7 +595,7 @@ mod tests {
             "# Pilot\n\n> **Status:** Complete\n",
         )
         .expect("retired card");
-        let outcome = check_plans(dir.path(), &[]).expect("check runs");
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
         assert!(
             outcome
                 .failures
@@ -598,7 +632,7 @@ mod tests {
         fs::write(dir.path().join("adr/001-heavy.md"), heavy).expect("heavy adr");
         fs::write(dir.path().join("adr/README.md"), "# ADRs\n\n001-heavy.md\n")
             .expect("adr readme");
-        let outcome = check_plans(dir.path(), &[]).expect("check runs");
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
         assert!(outcome.report.valid, "{:?}", outcome.failures);
         assert!(
             outcome

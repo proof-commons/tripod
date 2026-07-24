@@ -302,7 +302,7 @@ The Phase-1 tag remains unchanged.
 | `F3-001` | P1 | **DONE** | A two-output Meson target is referenced without selecting its stamp output. |
 | `F3-002` | P1 | **DONE** | `ScopedRealizationSpec` can be externally mutated out of consistency with its private graphs. |
 | `F3-003` | P1 | **DONE** | Strict flattener confinement can be bypassed through a symlinked ancestor directory. |
-| `F3-004` | P2 | **TODO** | `check-plans` accepts an empty argument census and falls back to discovery as authority. |
+| `F3-004` | P2 | **DONE** | `check-plans` accepts an empty argument census and falls back to discovery as authority. |
 | `F3-005` | P2 | **TODO** | The stable realization projection includes raw order-sensitive graph declaration vectors. |
 | `F3-006` | P2 | **TODO** | Realization derivation does not fully validate operation, relation, expression, and proof-alternative ownership. |
 | `F3-007` | P3 | **TODO** | Layer-0 duplicate-label diagnostics do not name both mint locations. |
@@ -702,7 +702,7 @@ change canonical paper bytes.
 ### F3-004 — Make `check-plans` reject an empty census
 
 **Priority:** P2
-**Status:** TODO
+**Status:** DONE
 **Owners:** `labels`, ADR-014 checker boundary
 **Primary files:**
 
@@ -763,10 +763,44 @@ report schema:                  unchanged
 
 #### Exit
 
-- [ ] no production path uses discovery as census authority;
-- [ ] empty production census fails closed;
-- [ ] focused unit and subprocess tests pass;
-- [ ] plan, census, label, Meson, and clean-tree gates pass.
+- [x] no production path uses discovery as census authority;
+- [x] empty production census fails closed;
+- [x] focused unit and subprocess tests pass;
+- [x] plan, census, label, Meson, and clean-tree gates pass.
+
+#### Evidence · DONE
+
+- F3-004 closure commit. verify_census no longer early-returns on an
+  empty declaration: an empty declared census against a nonempty tree
+  reports every discovered file as outside the build census and fails
+  closed, with the no-bypass rule documented on the function. The
+  shipped CLI now requires at least one subject argument, so an
+  invocation that names a repository root but no census is usage
+  class 2 before any semantic work — a wiring regression that drops
+  every subject argument now fails in the checker itself, not only in
+  the separate census-audit.
+- Unit tests that previously leaned on the bypass pass explicit
+  discovery-derived fixture subjects through the existing test
+  helper; discovery survives only as that test helper and as the
+  verifier inside the checker.
+- Regressions: empty declaration against the nonempty fixture is
+  invalid with one outside-the-census failure per discovered file
+  (all five named); empty declaration against a deliberately empty
+  tree is pinned as an environmental fault (no census failure, and no
+  quietly valid run — a tree without a backlog is not a planning
+  tree); the existing both-ways census-disagreement, omitted-subject,
+  and stale-subject coverage is unchanged; a new subprocess test
+  proves a repository-root-only invocation exits usage class 2 with
+  JSON-only stderr.
+- Canonical wiring is untouched and still explicit: check-plans.sh
+  passes every tracked subject, and the Meson plans-check lane passes
+  its census by argument; both ran green after the change. Report
+  schema and accepted valid trees are unchanged; the accepted
+  argument set is strictly narrower.
+- Verified: fmt, clippy -D warnings, labels suite (67 unit + 8
+  subprocess) under the nightly SDK toolchain; scripts/check-plans.sh
+  and meson test plans-check green. Complete gates run at the end of
+  the F3 series.
 
 ---
 

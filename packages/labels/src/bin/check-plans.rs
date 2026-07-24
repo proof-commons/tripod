@@ -25,8 +25,12 @@ struct Args {
     /// Repository root; relative subject paths resolve against it.
     #[arg(long, value_name = "DIR")]
     repository_root: PathBuf,
-    /// Census subject Markdown files under adr/ and plans/.
-    #[arg(long = "subject", value_name = "FILE")]
+    /// Census subject Markdown files under adr/ and plans/. At least
+    /// one is required: the build system states census membership and
+    /// this binary re-verifies it, so an invocation with no declared
+    /// census is a usage error rather than a discovery-driven run
+    /// (ADR-014).
+    #[arg(long = "subject", value_name = "FILE", required = true)]
     subjects: Vec<PathBuf>,
     #[command(flatten)]
     output: CheckOutputArgs,
