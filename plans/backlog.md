@@ -2,7 +2,7 @@
 
 > **Status:** ACTIVE
 > **Current gate:** Phase 2 — target-independent compiler analysis
-> **Current condition:** Phase 1 remains an immutable historical completion record. The earlier F2 remediation series is closed, but static review of the current supplied snapshot identified a new F3 correctness and assurance set. The realization boundary, publication tooling, census enforcement, and Meson wiring must be re-closed before the compiler public API is frozen.
+> **Current condition:** Phase 1 remains an immutable historical completion record. The F2 remediation series is closed, and the F3 static-review series (F3-001 through F3-010) is now closed with evidence: the realization boundary is externally immutable, canonically projected, and ownership-validated; census enforcement, publication tooling, and Meson wiring are repaired. Remediation status (2026-07-24): full ci.sh (11 lanes) and the complete Meson suite ran green with a clean tree after the series. Compiler implementation remains behind the dependency-review prerequisite P2-002.
 > **Next gate:** Phase 3 — Elements target and foundational prototypes
 > **Authority:** Current execution queue only. Normative specifications, typed architecture, implemented ADRs, accepted decisions, package contracts, research results, phase cards, and the roadmap take precedence.
 
@@ -227,7 +227,7 @@ Executable model:                     implemented
 Typed realization pilots:             implemented
 Recorded Phase-1 gate:                historical and tagged
 Historical F2 remediation:            recorded as closed
-Current F3 findings:                  open
+F3 remediation:                       closed with evidence
 Phase-2 dependency review:            planning status IN PROGRESS
 Phase-2 compiler package:              absent
 Target/backend/linker/transaction:     absent
@@ -280,14 +280,11 @@ The F2 remediation series is recorded as closing:
 - graph-substrate terminology;
 - stale evidence comments.
 
-The current F3 findings identify additional cases not established by that
-series. In particular:
-
-- the realization value itself remains externally mutable;
-- its stable projection still contains order-sensitive declaration copies;
-- generic operation/proof ownership is not fully validated;
-- the flattener’s stronger public confinement statement is not yet enforced
-  for symlinked ancestor directories.
+The F3 findings identified additional cases not established by that
+series — an externally mutable realization value, order-sensitive
+declaration copies in the stable projection, unvalidated generic
+operation/proof ownership, and unenforced symlinked-ancestor flattener
+confinement. Each is closed with evidence in section 4.
 
 The Phase-1 tag remains unchanged.
 
@@ -1425,7 +1422,7 @@ The strict empty form is simpler to inspect, but truncation changes the current
 
 | ID | Priority | Status | Deliverable |
 |---|---:|---|---|
-| `P2-001` | P1 | **BLOCKED** | Re-close the realization compiler-input boundary under F3-002, F3-005, and F3-006 |
+| `P2-001` | P1 | **DONE** | Re-close the realization compiler-input boundary under F3-002, F3-005, and F3-006 |
 | `P2-002` | P2 | **IN PROGRESS** | Complete concrete Petgraph dependency review C1-004 |
 | `P2-003` | P1 | **BLOCKED** | Create `tripod-compiler` crate |
 | `P2-004` | P1 | **BLOCKED** | Architecture/realization binding and explicit compiler scope |
@@ -1440,14 +1437,15 @@ The strict empty form is simpler to inspect, but truncation changes the current
 | `P2-013` | Gate | **BLOCKED** | Complete Phase-2 evidence and exit |
 
 Compiler design and isolated algorithm prototypes may proceed, but no public
-compiler input API or analysis identity freezes while P2-001 remains blocked.
+compiler input API or analysis identity freezes before the P2-002 dependency
+review completes.
 
 ---
 
 ### P2-001 — Re-close the realization input boundary
 
 **Priority:** P1
-**Status:** BLOCKED on F3-002, F3-005, and F3-006
+**Status:** DONE
 
 The compiler must consume one immutable, canonical, ownership-validated
 realization value.
@@ -1460,6 +1458,18 @@ Required before compiler API freeze:
   disclosure ownership are validated;
 - pilot architecture welds remain complete;
 - no generated file or documentation source enters the boundary.
+
+#### Evidence · DONE
+
+- Discharged by the F3 closures recorded in section 4: F3-002
+  (externally immutable ScopedRealizationSpec with compile-fail
+  boundary proofs), F3-005 (canonical complete projection with
+  per-family permutation equality), and F3-006 (generic ownership and
+  proof-binding validation inside the shared assembly path). The
+  F2-002 pilot weld harness remains in force, and the boundary
+  consumes typed architecture only — no generated file or
+  documentation source enters it. Full ci.sh and complete Meson gates
+  ran green at series close.
 
 ---
 
@@ -1522,7 +1532,7 @@ consumer exists.
 ### P2-003 — Create the compiler crate
 
 **Priority:** P1
-**Status:** BLOCKED on P2-001 and P2-002
+**Status:** BLOCKED on P2-002
 **Package contract:** [packages/compiler.md](packages/compiler.md)
 
 Create:
@@ -2454,14 +2464,6 @@ The current gate is **not passed**.
 Current blockers are:
 
 ```text
-Current F3 remediation:
-    F3-001 through F3-010 open
-
-Realization compiler-input boundary:
-    externally mutable value
-    noncanonical complete projection
-    incomplete generic ownership validation
-
 Phase-2 dependency review:
     C1-004 / P2-002 incomplete
 
@@ -2471,6 +2473,9 @@ Compiler package:
 Compiler relation, proof, disclosure, lifecycle, placement, and coverage:
     not yet implemented
 ```
+
+The F3 remediation series and the realization compiler-input boundary
+(P2-001) closed on 2026-07-24 and no longer block the gate.
 
 The earlier F2 remediation register remains historical evidence. It does not
 close the newly identified F3 cases automatically.
