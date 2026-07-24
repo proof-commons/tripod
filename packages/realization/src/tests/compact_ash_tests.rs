@@ -515,6 +515,31 @@ fn reusing_a_source_across_flows_is_a_partition_overlap() {
 }
 
 #[test]
+fn an_unwitnessed_distribution_vault_output_fails_partition_membership() {
+    // The vault is a canonical-value family this pilot never moves, so
+    // the retired family-pinned membership check ignored it entirely.
+    // Partition exactness covers every canonical-value object: a U
+    // output outside every flow and issuance is unwitnessed and fails
+    // the policy regardless of which object family carries it.
+    let mut observation = valid_observation();
+
+    observation.objects.push(ObservedObject {
+        reference: ObservedObjectRef {
+            side: ObservedSide::Output,
+            ordinal: 1,
+        },
+        kind: ObservedObjectKind::Declared(ObjectId::DistributionVault),
+        asset: ObservedAsset::Declared(AssetId::U),
+        value: ProtocolAmount::new(5).unwrap(),
+        owner: None,
+        representation: RepresentationMode::Explicit,
+    });
+
+    let report = evaluate(&observation);
+    assert!(failed(&report, &canonical_delta_policy()));
+}
+
+#[test]
 fn zero_amount_ownerless_lateral_delta_fails_policy() {
     let mut observation = valid_observation();
 

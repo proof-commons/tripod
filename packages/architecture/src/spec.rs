@@ -169,6 +169,18 @@ pub fn owner_bearing(object: ObjectId) -> bool {
     )
 }
 
+/// Whether an asset is a canonical value asset of the exact canonical
+/// partition.
+///
+/// Every consumed input and created output of a canonical value asset
+/// belongs to exactly one declared issuance or flow. Singleton identity
+/// and authority assets are governed by root succession and closed-asset
+/// conservation instead, and open assets by the exact open-flow
+/// partition.
+pub fn canonical_value_asset(asset: AssetId) -> bool {
+    matches!(asset, AssetId::U | AssetId::Ent | AssetId::DistCtl)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OperationSpec {
     pub id: OperationId,

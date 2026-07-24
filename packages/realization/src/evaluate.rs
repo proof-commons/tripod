@@ -343,16 +343,10 @@ fn canonical_delta_policy_holds(
         }
     }
 
-    // 4. Each movement family covers exactly its protocol objects.
-    Ok(expected.iter().all(|family| match family.kind {
-        DeltaKind::OwnerlessLateral => {
-            movement_membership_holds(observation, ObjectId::Ash, DeltaKind::OwnerlessLateral)
-        }
-        DeltaKind::Lateral => {
-            movement_membership_holds(observation, ObjectId::ReceiptLive, DeltaKind::Lateral)
-        }
-        _ => true,
-    }))
+    // 4. Partition exactness: every observed canonical-value object is
+    //    cited by exactly one witness on its side, and no witness cites
+    //    a reference twice.
+    Ok(partition_membership_holds(observation))
 }
 
 /// The active delta-family set implied by an observed partition.
@@ -462,43 +456,61 @@ fn sum_partition_side(
     Ok(Some(total))
 }
 
-fn movement_membership_holds(
-    observation: &OperationObservation,
-    object: ObjectId,
-    expected_kind: DeltaKind,
-) -> bool {
-    let protocol_refs = observation
-        .objects
-        .iter()
-        .filter(|observed| observed.kind == ObservedObjectKind::Declared(object))
-        .map(|observed| observed.reference)
-        .collect::<BTreeSet<_>>();
-    let source_refs = observation
-        .canonical_partition
-        .flows
-        .iter()
-        .filter(|flow| flow.movement_kind == Some(expected_kind))
-        .flat_map(|flow| flow.sources.iter().copied())
-        .collect::<BTreeSet<_>>();
-    let destination_refs = observation
-        .canonical_partition
-        .flows
-        .iter()
-        .filter(|flow| flow.movement_kind == Some(expected_kind))
-        .flat_map(|flow| flow.destinations.iter().copied())
-        .collect::<BTreeSet<_>>();
-    let expected_sources = protocol_refs
-        .iter()
-        .copied()
-        .filter(|reference| reference.side == ObservedSide::Input)
-        .collect::<BTreeSet<_>>();
-    let expected_destinations = protocol_refs
-        .iter()
-        .copied()
-        .filter(|reference| reference.side == ObservedSide::Output)
-        .collect::<BTreeSet<_>>();
+/// The exact-partition membership rule: every observed object of a
+/// canonical value asset is cited by exactly one witness — a flow
+/// source on the input side; a flow or issuance destination on the
+/// output side — and no reference is cited by two witnesses. Membership
+/// derives from the architecture object table, never from a
+/// per-operation object-family map inside the evaluator.
+fn partition_membership_holds(observation: &OperationObservation) -> bool {
+    let partition = &observation.canonical_partition;
+    let mut cited_sources = BTreeSet::new();
+    let mut cited_destinations = BTreeSet::new();
 
-    source_refs == expected_sources && destination_refs == expected_destinations
+    for flow in &partition.flows {
+        for source in &flow.sources {
+            if !cited_sources.insert(*source) {
+                return false;
+            }
+        }
+
+        for destination in &flow.destinations {
+            if !cited_destinations.insert(*destination) {
+                return false;
+            }
+        }
+    }
+
+    for issuance in &partition.issuances {
+        for destination in &issuance.destinations {
+            if !cited_destinations.insert(*destination) {
+                return false;
+            }
+        }
+    }
+
+    let mut expected_sources = BTreeSet::new();
+    let mut expected_destinations = BTreeSet::new();
+
+    for observed in &observation.objects {
+        let ObservedObjectKind::Declared(object) = observed.kind else {
+            continue;
+        };
+        let canonical = architecture::ARCHITECTURE
+            .object(object)
+            .is_some_and(|spec| architecture::canonical_value_asset(spec.asset));
+
+        if !canonical {
+            continue;
+        }
+
+        match observed.reference.side {
+            ObservedSide::Input => expected_sources.insert(observed.reference),
+            ObservedSide::Output => expected_destinations.insert(observed.reference),
+        };
+    }
+
+    cited_sources == expected_sources && cited_destinations == expected_destinations
 }
 
 fn declared_objects(

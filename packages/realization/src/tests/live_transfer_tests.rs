@@ -402,6 +402,31 @@ fn zero_value_live_output_fails_recognition() {
 }
 
 #[test]
+fn an_unwitnessed_time_locked_receipt_fails_partition_membership() {
+    // A time-locked receipt is a canonical-value family this pilot
+    // never moves, so the retired family-pinned membership check
+    // ignored it entirely. Partition exactness covers every
+    // canonical-value object: a U output outside every flow and
+    // issuance is unwitnessed and fails the policy.
+    let mut observation = valid_split_observation();
+
+    observation.objects.push(ObservedObject {
+        reference: ObservedObjectRef {
+            side: ObservedSide::Output,
+            ordinal: 2,
+        },
+        kind: ObservedObjectKind::Declared(ObjectId::ReceiptTimeLocked),
+        asset: ObservedAsset::Declared(AssetId::U),
+        value: ProtocolAmount::new(5).unwrap(),
+        owner: Some(BOB),
+        representation: RepresentationMode::Explicit,
+    });
+
+    let report = evaluate(&observation);
+    assert!(failed(&report, &canonical_delta_policy()));
+}
+
+#[test]
 fn zero_amount_lateral_delta_fails_policy() {
     let mut observation = valid_split_observation();
 
