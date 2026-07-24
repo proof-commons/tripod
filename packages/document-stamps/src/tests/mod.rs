@@ -1021,3 +1021,19 @@ fn render_is_a_no_op_on_an_identical_rerun() {
         assert_eq!(mtime, old, "identical rerun must not rewrite {path:?}");
     }
 }
+
+#[test]
+fn render_rejects_aliased_output_destinations() {
+    // F2-005: the same destination for both roles previously published
+    // the epoch and then overwrote it with stamps.tex, exiting success
+    // with no distinct epoch asset.
+    let dir = tempfile::tempdir().expect("temp dir");
+    let shared = dir.path().join("out");
+    std::fs::write(&shared, b"PRIOR").expect("seed");
+
+    let result = render_outputs(RENDER_TEMPLATE, &render_values(), &shared, &shared);
+
+    assert!(matches!(result, Err(StampError::AliasedOutputs(_))));
+    // Validation precedes staging and publication.
+    assert_eq!(std::fs::read(&shared).expect("read"), b"PRIOR");
+}

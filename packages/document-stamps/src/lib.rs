@@ -36,6 +36,12 @@ mod tests;
 /// argv and environment values (ADR-010).
 #[derive(Debug, thiserror::Error)]
 pub enum StampError {
+    /// The two render outputs name one destination, so the second
+    /// publication would overwrite the first and no distinct epoch
+    /// asset would remain.
+    #[error("aliased render outputs: {0}")]
+    AliasedOutputs(#[from] cli_common::AliasedOutputs),
+
     /// The supplied repository root is not the Git top level.
     #[error("the supplied repository root is not the Git top level")]
     RepositoryRootMismatch,
@@ -213,6 +219,14 @@ fn render_outputs(
     stamps_output: &Path,
     epoch_output: &Path,
 ) -> Result<(), StampError> {
+    // Role uniqueness before any staging or publication (F2-005): the
+    // two outputs publish by independent renames, so one destination
+    // serving both roles would exit success with only stamps.tex bytes.
+    cli_common::ensure_distinct_outputs(&[
+        ("stamps-output", stamps_output),
+        ("epoch-output", epoch_output),
+    ])?;
+
     let rendered = render_stamps(template, values)?;
     let epoch_bytes = format!("{}\n", values.timestamp.epoch);
 

@@ -1255,3 +1255,22 @@ fn census_audit_welds_declared_lists_to_the_tracked_set() {
     );
     assert_eq!(report.not_tracked, vec!["plans/ghost.md".to_owned()]);
 }
+
+#[test]
+fn register_generation_rejects_aliased_outputs() {
+    // F2-005: the two registers are distinct assets; one destination
+    // serving both roles must fail before derivation or writing.
+    let directory =
+        fixture_root("# Realization\n`sec:fixture`\nBody cite (`[A-def:model:known]`).\n");
+    let paths = RepositoryCensus::discover(directory.path());
+    let output = tempfile::tempdir().expect("temporary output root");
+    let shared = output.path().join("register.md");
+
+    let error = generate_registers(&paths, &shared, &shared)
+        .expect_err("aliased register outputs must be rejected");
+    assert!(matches!(
+        error,
+        crate::repository::GenerateError::AliasedOutputs(_)
+    ));
+    assert!(!shared.exists(), "nothing may be written on alias failure");
+}

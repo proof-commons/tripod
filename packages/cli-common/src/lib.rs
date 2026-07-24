@@ -1144,6 +1144,128 @@ pub struct CheckOutputArgs {
     pub stamp: Option<std::path::PathBuf>,
 }
 
+/// Identity of one output destination for role-uniqueness validation.
+///
+/// Combines the canonicalized directory entry a publishing rename would
+/// replace with the filesystem identity of any file already at the
+/// destination, so existing hard-link aliases are recognized. A
+/// correctness guard against configuration mistakes — not a
+/// malicious-filesystem sandbox.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DestinationIdentity {
+    entry: std::path::PathBuf,
+    file: Option<(u64, u64)>,
+}
+
+impl DestinationIdentity {
+    fn aliases(&self, other: &Self) -> bool {
+        self.entry == other.entry
+            || matches!(
+                (self.file, other.file),
+                (Some(first), Some(second)) if first == second
+            )
+    }
+}
+
+/// Compute the destination identity of a possibly not-yet-existing path.
+///
+/// The deepest existing ancestor is canonicalized (so lexical `.`/`..`
+/// spellings and symlinked parent directories agree); the pending
+/// components below it cannot be symlinks — they do not exist — and
+/// fold lexically.
+#[must_use]
+pub fn destination_identity(path: &std::path::Path) -> DestinationIdentity {
+    DestinationIdentity {
+        entry: entry_identity(path),
+        file: existing_file_identity(path),
+    }
+}
+
+fn existing_file_identity(path: &std::path::Path) -> Option<(u64, u64)> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let metadata = std::fs::symlink_metadata(path).ok()?;
+        metadata
+            .file_type()
+            .is_file()
+            .then(|| (metadata.dev(), metadata.ino()))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        None
+    }
+}
+
+fn entry_identity(path: &std::path::Path) -> std::path::PathBuf {
+    let mut pending: Vec<std::ffi::OsString> = Vec::new();
+    let mut existing = path.to_path_buf();
+    loop {
+        let probe = if existing.as_os_str().is_empty() {
+            std::path::Path::new(".")
+        } else {
+            existing.as_path()
+        };
+        if let Ok(canonical) = probe.canonicalize() {
+            let mut entry = canonical;
+            for component in pending.iter().rev() {
+                if component == "." {
+                    continue;
+                }
+                if component == ".." {
+                    entry.pop();
+                    continue;
+                }
+                entry.push(component);
+            }
+            return entry;
+        }
+        let Some(name) = existing.file_name().map(ToOwned::to_owned) else {
+            // A root or `..`-terminated prefix that cannot be
+            // canonicalized: fall back to the lexical path.
+            return path.to_path_buf();
+        };
+        pending.push(name);
+        existing.pop();
+    }
+}
+
+/// Two output roles named one destination.
+#[derive(Debug, thiserror::Error)]
+#[error("output roles --{first} and --{second} name the same destination")]
+pub struct AliasedOutputs {
+    pub first: String,
+    pub second: String,
+}
+
+/// Reject aliased destinations among a command's output roles before
+/// any semantic work or file mutation: a multi-output command must
+/// never exit success with one role's bytes overwriting another's.
+///
+/// # Errors
+///
+/// Returns [`AliasedOutputs`] naming the first offending role pair.
+pub fn ensure_distinct_outputs(roles: &[(&str, &std::path::Path)]) -> Result<(), AliasedOutputs> {
+    let identities = roles
+        .iter()
+        .map(|(_, path)| destination_identity(path))
+        .collect::<Vec<_>>();
+
+    for (index, (first, _)) in roles.iter().enumerate() {
+        for (offset, (second, _)) in roles.iter().enumerate().skip(index + 1) {
+            if identities[index].aliases(&identities[offset]) {
+                return Err(AliasedOutputs {
+                    first: (*first).to_owned(),
+                    second: (*second).to_owned(),
+                });
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Failure publishing a check result through [`finish_check_command`].
 #[derive(Debug, thiserror::Error)]
 pub enum CheckResultError {
@@ -1160,6 +1282,12 @@ pub enum CheckResultError {
     /// touched.
     #[error("failed to publish the check result")]
     Io(#[from] io::Error),
+
+    /// Build mode named one destination for both the report and the
+    /// stamp; a stamp holding JSON bytes would contradict its
+    /// empty-stamp role.
+    #[error("aliased checker outputs: {0}")]
+    AliasedOutputs(#[from] AliasedOutputs),
 }
 
 /// Publish a successful check result under the active output mode.
@@ -1192,6 +1320,7 @@ pub fn finish_check_command<T: serde::Serialize>(
         }
 
         (Some(report_path), Some(stamp_path)) => {
+            ensure_distinct_outputs(&[("report", report_path), ("stamp", stamp_path)])?;
             write_json_report_if_changed(report_path, report)?;
             touch_stamp(stamp_path)?;
             Ok(())

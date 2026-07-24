@@ -1198,6 +1198,8 @@ pub struct GeneratedRegister {
 }
 #[derive(Debug, Error)]
 pub enum GenerateError {
+    #[error("aliased register outputs: {0}")]
+    AliasedOutputs(#[from] cli_common::AliasedOutputs),
     #[error("label source validation failed")]
     Validation(Vec<LabelDiagnostic>),
     #[error("I/O failure: {0}")]
@@ -1225,6 +1227,13 @@ pub fn generate_registers(
     specification_output: &Path,
     realization_output: &Path,
 ) -> Result<Vec<GeneratedRegister>, GenerateError> {
+    // Role uniqueness before derivation or writing (F2-005): the two
+    // registers are distinct assets and must never fold into one path.
+    cli_common::ensure_distinct_outputs(&[
+        ("specification-register-output", specification_output),
+        ("realization-register-output", realization_output),
+    ])?;
+
     let labels = derive_register_sources(paths);
     if labels.has_errors() {
         return Err(GenerateError::Validation(labels.diagnostics));

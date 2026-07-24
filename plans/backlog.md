@@ -253,7 +253,7 @@ must be corrected before the Phase-2 gate relies on that claim.
 | `F2-002` | P1 | **DONE** | Pilot architecture welds omit operation fields that can change semantics. |
 | `F2-003` | P2 | **DONE** | Ordinary or unrelated Rust comments can suppress label harvesting through cross-comment fence state. |
 | `F2-004` | P2 | **DONE** | The LaTeX flattener’s off-list symlink-target confinement claim is not enforced. |
-| `F2-005` | P2 | **TODO** | Multi-output commands accept aliased destinations and may succeed without producing distinct assets. |
+| `F2-005` | P2 | **DONE** | Multi-output commands accept aliased destinations and may succeed without producing distinct assets. |
 | `F2-006` | P2 | **TODO** | Ordinary sponsor L-BTC positivity may over-constrain confidential-value minimality. |
 | `F2-007` | P3 | **TODO** | Active graph-planning prose retains adapter terminology prohibited by D007. |
 | `F2-008` | P3 | **TODO** | Subprocess and Phase-1 evidence comments overstate or misstate current coverage. |
@@ -787,7 +787,7 @@ paper output.
 ### F2-005 — Reject aliased multi-output destinations
 
 **Priority:** P2
-**Status:** TODO
+**Status:** DONE
 **Owners:** `document-stamps`, `cli-common`, `labels`, shared filesystem helper if introduced
 **Primary files:**
 
@@ -858,11 +858,40 @@ schemas and hashes:           unchanged
 
 #### Exit
 
-- [ ] every multi-output command validates role uniqueness;
-- [ ] alias failures occur before publication;
-- [ ] no command exits success with one role overwriting another;
-- [ ] focused subprocess and filesystem tests pass;
-- [ ] complete CLI and Meson gates pass cleanly.
+- [x] every multi-output command validates role uniqueness;
+- [x] alias failures occur before publication;
+- [x] no command exits success with one role overwriting another;
+- [x] focused subprocess and filesystem tests pass;
+- [x] complete CLI and Meson gates pass cleanly.
+
+#### Evidence · DONE
+
+- F2-005 closure commit. The reusable destination-identity helper lives
+  in `cli-common` (not `execwrap`): destination_identity canonicalizes
+  the deepest existing ancestor (so lexical dot spellings and symlinked
+  parent directories agree), folds the necessarily nonexistent pending
+  components lexically, and additionally carries the device/inode of an
+  existing destination file so hard-link aliases are recognized;
+  ensure_distinct_outputs rejects the first aliased role pair. The
+  helper documents itself as a correctness guard, not a
+  malicious-filesystem sandbox.
+- Enforced before any semantic work or mutation at all three
+  multi-output boundaries: document-stamps render_outputs
+  (stamps/epoch), cli-common finish_check_command build mode
+  (report/stamp, with a dedicated CheckResultError variant so a stamp
+  can never hold report bytes), and labels generate_registers
+  (Layer-0/realization registers, with a GenerateError variant).
+- Regressions: identical paths, lexical dot-dot aliases, existing
+  hard-link aliases, symlinked-parent aliases, and distinct-paths
+  acceptance for the helper; aliased report/stamp fails before
+  publication with nothing written; aliased render outputs preserve
+  prior destination bytes; aliased register outputs write nothing.
+  Direct checker mode takes the (None, None) arm and is untouched.
+- Canonical Meson wiring already supplies distinct paths, so artifact
+  bytes, schemas, and hashes are unchanged; the accepted argument set
+  is strictly narrower.
+- Verified: fmt, clippy -D warnings, cli-common (50), document-stamps
+  (44), and labels (72) suites under the nightly SDK toolchain.
 
 ---
 

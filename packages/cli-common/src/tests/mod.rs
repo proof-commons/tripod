@@ -730,3 +730,96 @@ fn a_failed_report_write_leaves_the_stamp_untouched() {
         "a failed report write leaves no success stamp"
     );
 }
+
+// F2-005 output-role uniqueness: a multi-output command must never exit
+// success with one role's bytes overwriting another's, however the two
+// destinations are spelled.
+
+#[test]
+fn identical_output_paths_are_aliased() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = dir.path().join("out");
+
+    let error = crate::ensure_distinct_outputs(&[("first", &out), ("second", &out)])
+        .expect_err("identical destinations");
+    assert_eq!(error.first, "first");
+    assert_eq!(error.second, "second");
+}
+
+#[test]
+fn lexical_alias_spellings_are_aliased() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir(dir.path().join("sub")).expect("mkdir");
+    let plain = dir.path().join("out");
+    let dotted = dir.path().join("sub/../out");
+
+    let error = crate::ensure_distinct_outputs(&[("first", &plain), ("second", &dotted)])
+        .expect_err("lexical alias");
+    assert_eq!(
+        (error.first.as_str(), error.second.as_str()),
+        ("first", "second")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn existing_hard_link_aliases_are_aliased() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let first = dir.path().join("first-name");
+    std::fs::write(&first, b"content").expect("write");
+    let second = dir.path().join("second-name");
+    std::fs::hard_link(&first, &second).expect("hard link");
+
+    crate::ensure_distinct_outputs(&[("first", &first), ("second", &second)])
+        .expect_err("hard-link alias");
+}
+
+#[cfg(unix)]
+#[test]
+fn symlinked_parent_directories_are_aliased() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let real = dir.path().join("real");
+    std::fs::create_dir(&real).expect("mkdir");
+    let linked = dir.path().join("linked");
+    std::os::unix::fs::symlink(&real, &linked).expect("symlink");
+
+    // Neither pending destination exists yet; the aliased ancestor is
+    // what folds them onto one directory entry.
+    crate::ensure_distinct_outputs(&[
+        ("first", &real.join("out")),
+        ("second", &linked.join("out")),
+    ])
+    .expect_err("symlinked-parent alias");
+}
+
+#[test]
+fn distinct_destinations_validate() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    crate::ensure_distinct_outputs(&[
+        ("first", &dir.path().join("one")),
+        ("second", &dir.path().join("two")),
+    ])
+    .expect("distinct destinations are valid");
+}
+
+#[test]
+fn build_mode_rejects_aliased_report_and_stamp() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let shared = dir.path().join("shared");
+    let output = crate::CheckOutputArgs {
+        report: Some(shared.clone()),
+        stamp: Some(dir.path().join("sub/../shared")),
+    };
+    std::fs::create_dir(dir.path().join("sub")).expect("mkdir");
+
+    let error = crate::finish_check_command("demo", &output, &serde_json::json!({"valid": true}))
+        .expect_err("aliased report/stamp");
+
+    // The failure precedes publication: no report bytes, no stamp.
+    assert!(matches!(error, crate::CheckResultError::AliasedOutputs(_)));
+    assert!(
+        !shared.exists(),
+        "nothing may be published on alias failure"
+    );
+}
