@@ -27,6 +27,11 @@
 //! | `flatten_rejects_unlisted_file_on_disk`     | A real adjacent file not on the list is refused |
 //! | `flatten_rejects_symlink_escape`            | An unlisted symlink is never followed   |
 //! | `flatten_aborts_on_ambiguous_reference`     | A reference matching two listed files aborts |
+//! | `flatten_rejects_allowlisted_symlink`       | Listing a symlink never authorizes its target |
+//! | `flatten_rejects_symlinked_main`            | The entry point must be a regular file  |
+//! | `flatten_rejects_symlink_cycles_without_recursing` | A symlink loop is refused, not chased |
+//! | `flatten_detects_cycles_through_hard_link_aliases` | Cycle identity is filesystem identity |
+//! | `failed_confinement_preserves_output_and_stages_nothing` | Validation precedes staging |
 //! | `flatten_disambiguates_by_folder`           | Folder components resolve a duplicate filename |
 
 // These tests embed LaTeX include literals such as `\input{section}`. When a
@@ -626,4 +631,146 @@ fn flatten_disambiguates_by_folder() {
     let text = fs::read_to_string(output).expect("read output");
     assert!(text.contains("from b"));
     assert!(!text.contains("from a"));
+}
+
+// --- F2-004 strict regular-file confinement: an allowlisted path must
+// be an existing regular file; allowlisting never authorizes a
+// symlink's resolved target, and aliases cannot re-enter an include. ---
+
+#[cfg(unix)]
+#[test]
+fn flatten_rejects_allowlisted_symlink() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    let main = root.join("paper/main.tex");
+    let secret = root.join("outside-secret.tex");
+    write_file(&secret, "TOP SECRET\n");
+    // The symlink IS on the allowlist: the confinement claim is exactly
+    // that listing the link path does not authorize its target.
+    let link = root.join("paper/link.tex");
+    fs::create_dir_all(link.parent().unwrap()).expect("mkdir");
+    std::os::unix::fs::symlink(&secret, &link).expect("symlink");
+    write_file(
+        &main,
+        "\\documentclass{article}\n\\begin{document}\n\\input{link.tex}\n\\end{document}\n",
+    );
+
+    let output = root.join("flat.tex");
+    let error = flatten(&main, &[link], &output, &FlattenOptions::default())
+        .expect_err("an allowlisted symlink must be refused");
+    assert!(error.to_string().contains("symbolic link"), "{error}");
+    assert!(!output.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn flatten_rejects_symlinked_main() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    let real = root.join("real-main.tex");
+    write_file(
+        &real,
+        "\\documentclass{article}\n\\begin{document}\n\\end{document}\n",
+    );
+    let main = root.join("paper/main.tex");
+    fs::create_dir_all(main.parent().unwrap()).expect("mkdir");
+    std::os::unix::fs::symlink(&real, &main).expect("symlink");
+
+    let output = root.join("flat.tex");
+    let error = flatten(&main, &[], &output, &FlattenOptions::default())
+        .expect_err("a symlinked main entry point must be refused");
+    assert!(error.to_string().contains("symbolic link"), "{error}");
+    assert!(!output.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn flatten_rejects_symlink_cycles_without_recursing() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    let first = root.join("paper/a.tex");
+    let second = root.join("paper/b.tex");
+    fs::create_dir_all(first.parent().unwrap()).expect("mkdir");
+    // A symlink loop: validation rejects the links by their own file
+    // type before any open could chase the cycle.
+    std::os::unix::fs::symlink(&second, &first).expect("symlink");
+    std::os::unix::fs::symlink(&first, &second).expect("symlink");
+    let main = root.join("paper/main.tex");
+    write_file(
+        &main,
+        "\\documentclass{article}\n\\begin{document}\n\\input{a.tex}\n\\end{document}\n",
+    );
+
+    let output = root.join("flat.tex");
+    let error = flatten(&main, &[first, second], &output, &FlattenOptions::default())
+        .expect_err("a symlink loop must be refused, not followed");
+    assert!(error.to_string().contains("symbolic link"), "{error}");
+    assert!(!output.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn flatten_detects_cycles_through_hard_link_aliases() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    let main = root.join("paper/main.tex");
+    // a.tex includes b.tex, and b.tex is a hard link to a.tex: two
+    // allowlist entries, one regular file. Lexical path equality would
+    // recurse; filesystem identity closes the cycle.
+    let first = root.join("paper/a.tex");
+    write_file(&first, "\\input{b.tex}\n");
+    let second = root.join("paper/b.tex");
+    fs::hard_link(&first, &second).expect("hard link");
+    write_file(
+        &main,
+        "\\documentclass{article}\n\\begin{document}\n\\input{a.tex}\n\\end{document}\n",
+    );
+
+    let output = root.join("flat.tex");
+    let error = flatten(&main, &[first, second], &output, &FlattenOptions::default())
+        .expect_err("a hard-link alias cycle must be detected");
+    assert!(error.to_string().contains("include cycle"), "{error}");
+    assert!(!output.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn failed_confinement_preserves_output_and_stages_nothing() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    let main = root.join("paper/main.tex");
+    write_file(
+        &main,
+        "\\documentclass{article}\n\\begin{document}\n\\end{document}\n",
+    );
+    let secret = root.join("outside-secret.tex");
+    write_file(&secret, "TOP SECRET\n");
+    let link = root.join("paper/link.tex");
+    std::os::unix::fs::symlink(&secret, &link).expect("symlink");
+
+    let output = root.join("out/flat.tex");
+    write_file(&output, "previous good output\n");
+
+    let error = flatten(&main, &[link], &output, &FlattenOptions::default())
+        .expect_err("confinement failure");
+    assert!(error.to_string().contains("symbolic link"), "{error}");
+
+    // The prior output survives byte-for-byte and validation failed
+    // before staging, so no staging remnant exists anywhere under the
+    // output directory.
+    assert_eq!(
+        fs::read_to_string(&output).expect("existing output"),
+        "previous good output\n",
+    );
+    let staged: Vec<_> = fs::read_dir(output.parent().unwrap())
+        .expect("output dir")
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".flatten-staged-")
+        })
+        .collect();
+    assert!(staged.is_empty(), "{staged:?}");
 }

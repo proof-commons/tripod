@@ -252,7 +252,7 @@ must be corrected before the Phase-2 gate relies on that claim.
 | `F2-001` | P0 | **DONE** | Bound calibrations are not bound to the final emitted script bundle. |
 | `F2-002` | P1 | **DONE** | Pilot architecture welds omit operation fields that can change semantics. |
 | `F2-003` | P2 | **DONE** | Ordinary or unrelated Rust comments can suppress label harvesting through cross-comment fence state. |
-| `F2-004` | P2 | **TODO** | The LaTeX flattener’s off-list symlink-target confinement claim is not enforced. |
+| `F2-004` | P2 | **DONE** | The LaTeX flattener’s off-list symlink-target confinement claim is not enforced. |
 | `F2-005` | P2 | **TODO** | Multi-output commands accept aliased destinations and may succeed without producing distinct assets. |
 | `F2-006` | P2 | **TODO** | Ordinary sponsor L-BTC positivity may over-constrain confidential-value minimality. |
 | `F2-007` | P3 | **TODO** | Active graph-planning prose retains adapter terminology prohibited by D007. |
@@ -687,7 +687,7 @@ planning registers:           unchanged unless source labels change
 ### F2-004 — Enforce or narrow the flattener symlink contract
 
 **Priority:** P2
-**Status:** TODO
+**Status:** DONE
 **Owner:** `flatten-latex-main`
 **Primary files:**
 
@@ -748,11 +748,39 @@ paper output.
 
 #### Exit
 
-- [ ] public documentation states the implemented rule exactly;
-- [ ] allowlisted off-tree symlink behavior is tested;
-- [ ] include-cycle identity matches the selected rule;
-- [ ] failed flatten remains atomic;
-- [ ] flattener and complete workspace gates pass cleanly.
+- [x] public documentation states the implemented rule exactly;
+- [x] allowlisted off-tree symlink behavior is tested;
+- [x] include-cycle identity matches the selected rule;
+- [x] failed flatten remains atomic;
+- [x] flattener and complete workspace gates pass cleanly.
+
+#### Evidence · DONE
+
+- F2-004 closure commit; the preferred strict regular-file confinement
+  is implemented. `flatten` validates `main_file` and every supplied
+  file with `symlink_metadata` before anything is read or staged: a
+  symlink (allowlisted, dangling, or looping) is rejected by its own
+  file type, and only existing regular files are accepted. The library
+  documentation now states this rule exactly and documents the
+  check-then-open residual honestly: a filesystem racing the flattener
+  between validation and open is outside the ADR-015 boundary
+  (configuration-mistake defense, not a malicious-filesystem sandbox).
+- Include-cycle identity is filesystem identity where available
+  (device/inode of the validated regular file, unix) with
+  component-path equality as fallback, so two allowlist hard-link
+  aliases of one file close a cycle instead of recursing.
+- Regressions: allowlisted symlink to an off-tree target refused with
+  nothing published; symlinked main entry point refused; a symlink loop
+  refused without being chased; a hard-link alias include cycle
+  detected; confinement failure preserves an existing output
+  byte-for-byte and leaves no staging file (validation precedes
+  staging); the unlisted-symlink, absolute-path, and traversal
+  rejections are unchanged.
+- Canonical paper output is unaffected: the document-stamp boundary
+  already supplies tracked regular files, and the meson wiring passes
+  existing regular files only.
+- Verified: fmt, clippy -D warnings, flattener unit and subprocess
+  suites (34 tests) under the nightly SDK toolchain.
 
 ---
 

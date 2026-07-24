@@ -36,10 +36,17 @@ pub struct FlattenOptions {
 /// and two or more is an ambiguity error.
 ///
 /// Because a reference can only ever name a file already on `allowed_files`, an
-/// absolute include (`\input{/etc/passwd}`), a parent-directory escape
-/// (`\input{../../secret}`), and a symlink whose target is off the list cannot
-/// be read or published (ADR-015). `main_file` is the trusted entry point and
-/// is opened directly; it need not appear in `allowed_files`.
+/// absolute include (`\input{/etc/passwd}`) and a parent-directory escape
+/// (`\input{../../secret}`) cannot be read or published (ADR-015). Strict
+/// regular-file confinement: `main_file` and every entry of `allowed_files`
+/// must be an existing regular file — a symlink (including an allowlisted
+/// one) is rejected before anything is read or staged, so allowlisting a
+/// path never authorizes its resolved target. The check is
+/// check-then-open: a filesystem racing the flattener between validation
+/// and open can still swap a validated path, which is inside the ADR-015
+/// trust boundary (the flattener defends against configuration mistakes,
+/// not a malicious concurrent filesystem). `main_file` is the trusted
+/// entry point and need not appear in `allowed_files`.
 ///
 /// The output is **reproducible** (same inputs, byte-identical output —
 /// no timestamps) and **atomic** (written to a uniquely named temporary
@@ -60,6 +67,13 @@ pub fn flatten(
     output_file: &Path,
     options: &FlattenOptions,
 ) -> Result<()> {
+    // Confinement before any read or staging: a failed validation must
+    // leave an existing output untouched and no staging file behind.
+    ensure_regular_file(main_file, "main file")?;
+    for allowed in allowed_files {
+        ensure_regular_file(allowed, "supplied file")?;
+    }
+
     let output_parent = output_file
         .parent()
         .ok_or_else(|| anyhow!("output path has no parent"))?;
@@ -89,6 +103,29 @@ pub fn flatten(
     staged
         .persist(output_file)
         .with_context(|| format!("renaming into {}", output_file.display()))?;
+
+    Ok(())
+}
+
+/// Strict regular-file confinement (ADR-015): the flattener reads only
+/// existing regular files. `symlink_metadata` never follows the final
+/// component, so a symlink — even a dangling one — is rejected by its
+/// own file type, not by what it points at.
+fn ensure_regular_file(path: &Path, role: &str) -> Result<()> {
+    let metadata = std::fs::symlink_metadata(path)
+        .with_context(|| format!("inspecting {role} {}", path.display()))?;
+
+    if metadata.file_type().is_symlink() {
+        bail!(
+            "{role} {} is a symbolic link; the flattener reads only regular files \
+             named on its fixed list, and never a link's resolved target",
+            path.display(),
+        );
+    }
+
+    if !metadata.file_type().is_file() {
+        bail!("{role} {} is not a regular file", path.display());
+    }
 
     Ok(())
 }
@@ -229,12 +266,37 @@ fn path_ends_with_components(path: &Path, wanted: &[OsString]) -> bool {
         .all(|(have, want)| *have == want.as_os_str())
 }
 
+/// One entry on the active include chain: the path as given plus its
+/// filesystem identity, so two allowlist aliases of one file (e.g.
+/// hard links — symlinks are rejected up front) still close a cycle.
+struct IncludeFrame {
+    path: PathBuf,
+    identity: Option<(u64, u64)>,
+}
+
+/// Filesystem identity (device, inode) of a validated regular file.
+/// Identity is advisory for cycle detection only; a lookup failure
+/// falls back to component-path equality rather than aborting.
+fn file_identity(path: &Path) -> Option<(u64, u64)> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let metadata = std::fs::metadata(path).ok()?;
+        Some((metadata.dev(), metadata.ino()))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        None
+    }
+}
+
 /// Recursive flatten state: the fixed allowlist of inlineable files, options,
 /// and the active include chain used for cycle detection.
 struct FlattenContext<'a> {
     allowed: &'a [PathBuf],
     options: &'a FlattenOptions,
-    include_stack: Vec<PathBuf>,
+    include_stack: Vec<IncludeFrame>,
 }
 
 impl FlattenContext<'_> {
@@ -244,25 +306,37 @@ impl FlattenContext<'_> {
         writer: &mut W,
         is_main: bool,
     ) -> Result<()> {
-        // Cycle detection over the resolved file identities on the active
-        // include chain. Every included file is a distinct entry on the
+        // Cycle detection over the resolved file identities on the
+        // active include chain. Every included file is an entry on the
         // caller's allowlist and the entry point is opened by its given
-        // path, so component-path equality is sufficient — no filesystem
-        // canonicalisation (and no directory lookup) is performed.
-        let identity = file_path.to_path_buf();
-        if self.include_stack.contains(&identity) {
+        // path; entries are compared by filesystem identity where
+        // available so distinct allowlist aliases of one regular file
+        // (hard links) cannot re-enter, with component-path equality as
+        // the fallback.
+        let frame = IncludeFrame {
+            path: file_path.to_path_buf(),
+            identity: file_identity(file_path),
+        };
+        let re_enters =
+            self.include_stack
+                .iter()
+                .any(|entry| match (entry.identity, frame.identity) {
+                    (Some(existing), Some(candidate)) => existing == candidate,
+                    _ => entry.path == frame.path,
+                });
+        if re_enters {
             let chain = self
                 .include_stack
                 .iter()
-                .map(|path| path.display().to_string())
+                .map(|entry| entry.path.display().to_string())
                 .collect::<Vec<_>>()
                 .join(" -> ");
             bail!(
                 "include cycle detected: {} re-enters via {chain}",
-                identity.display(),
+                frame.path.display(),
             );
         }
-        self.include_stack.push(identity);
+        self.include_stack.push(frame);
 
         let result = self.process_lines(file_path, writer, is_main);
 
