@@ -231,8 +231,8 @@ Executable model:                     implemented
 Typed realization pilots:             implemented
 Phase-1 gate:                          historical tagged evidence
 F3 remediation:                       recorded closed historically
-Identity/digest architecture:         proposed, not yet adopted
-Phase-2 dependency review:            incomplete
+Identity/digest architecture:         adopted (ADR-016; I1-001 done)
+Phase-2 dependency review:            complete (Petgraph; P2-002/C1-004)
 Phase-2 compiler package:             absent
 Target/backend/linker/transaction:     absent
 Independent deployment evidence:      absent
@@ -729,7 +729,7 @@ Outside fenced and double-backtick examples:
 | ID | Priority | Status | Deliverable |
 |---|---:|---|---|
 | `P2-001` | P1 | DONE | Immutable, canonical, ownership-validated realization boundary |
-| `P2-002` | P2 | IN PROGRESS | Concrete Petgraph dependency and lockfile review |
+| `P2-002` | P2 | DONE | Concrete Petgraph dependency and lockfile review |
 | `P2-003` | P1 | BLOCKED | Create `tripod-compiler` |
 | `P2-004` | P1 | BLOCKED | Bind architecture, realization, policy, and explicit scope |
 | `P2-005` | P1 | BLOCKED | Canonical relation DAG over direct Petgraph |
@@ -763,13 +763,13 @@ considered sufficient for compiler API freeze until they close.
 ### P2-002 — Complete Petgraph dependency review · `task:phase2:dependency-review`
 
 **Priority:** P2
-**Status:** IN PROGRESS
+**Status:** DONE
 **Blocks:** P2-003
 
-Current declaration:
+Reviewed declaration (before this task):
 
 ```text
-petgraph = 0.8.3
+petgraph = "=0.8.3"
 
 selected features:
     serde-1
@@ -809,10 +809,82 @@ environment.
 
 No new numerical or solver dependency enters during this task.
 
+#### Review result (2026-07-24)
+
+**Selected version and source:** `petgraph = "=0.8.3"`, exact-pinned, from
+`registry+https://github.com/rust-lang/crates.io-index`
+(checksum `8701b58e…0b27455`). License `MIT OR Apache-2.0`; MSRV `1.64`,
+compatible with the workspace MSRV `1.88`.
+
+**First-party consumers:** `tripod-labels` and
+`tripod-realization` only. Both use core petgraph exclusively —
+`graph::DiGraph`, `graph::NodeIndex`, `Direction`, and `visit::EdgeRef`. No
+first-party code uses any non-default petgraph feature.
+
+**Feature decision:** four of the five enabled features had no first-party
+consumer and are removed under the backlog dependency-entry rule and
+(`[ADR016-rule:identity:admission]`) (a feature is not carried to advertise
+intent):
+
+```text
+dot_parser  removed — no consumer; additionally pulled dot-parser and
+                      dot-parser-macros at GPL-2.0-or-later into an
+                      MIT/Apache workspace
+rayon       removed — no consumer; added nondeterministic parallelism
+                      the algorithm-laws rule keeps out of semantic ordering
+unstable    removed — no consumer; unstable API surface
+generate    removed — no consumer; random-graph generators
+serde-1     retained — no product consumer yet, but raw label-graph
+                      serialization for noncanonical diagnostics is
+                      anticipated; kept deliberately with a guard test in
+                      packages/labels and a manifest note
+```
+
+**Transitive graph after trim:** petgraph depends only on `fixedbitset`
+(0.5.7), `hashbrown` (0.15.5), `indexmap` (2.14.0), `serde`, and
+`serde_derive` — all `MIT OR Apache-2.0`, all MSRV ≤ 1.88. A pre-existing
+duplicate `hashbrown` (0.15.5 and 0.17.1) is unchanged by this task. No new
+crate version is added.
+
+**Lockfile impact:** the trim removes 14 crates from `Cargo.lock` —
+`dot-parser`, `dot-parser-macros`, `pest`, `pest_derive`, `pest_generator`,
+`pest_meta`, `litrs`, `ucd-trie`, `rayon`, `rayon-core`, `crossbeam-deque`,
+`crossbeam-epoch`, `crossbeam-utils`, and `either`. `serde_derive` was already
+present through the workspace `serde` derive feature.
+
+**Unsafe boundary:** petgraph contains internal `unsafe` (≈17 sites in
+`graph_impl`, `stable_graph`, `matrix_graph`, and `unionfind`), confined to its
+own data structures. First-party crates deny `unsafe` (ADR-011) and rely only
+on petgraph's safe API; no petgraph unsafe invariant is exposed across a
+first-party boundary.
+
+**Determinism and parallelism:** with `rayon` removed, no parallel iterator
+enters the graph tree. The algorithms used (topological order, SCC,
+reachability) are deterministic, and canonical projections exclude `NodeIndex`
+per (`[ADR016-rule:identity:immediate-edges]`).
+
+**Advisory status:** `cargo audit` — advisory tooling is **not installed** in
+the review environment; recorded as skipped, never passed (per
+(`tbl:backlog:dependencies`) and the verification matrix). The Phase-2 gate
+must decide whether advisory tooling is mandatory in its final environment.
+
+**Serialization non-authority:** petgraph serde output is diagnostic only and
+is never protocol, semantic, or release identity.
+
+**Replacement boundary:** the graph substrate remains replaceable; only the
+safe core API is used, so a future substitution would touch construction and
+traversal call sites, not identity.
+
+**Verification (SDK build, tree `6dac0b5` + this change):** `cargo fmt --check`
+clean; `cargo clippy --workspace --all-targets --locked -D warnings` clean;
+`cargo test --workspace --locked` and `--release --locked` all pass, 0 failed;
+`meson test -C build` 10/10 OK (including census-audit, labels-check,
+check-generated, plans-check). Clean tree after commit.
+
 ### P2-003 — Create the compiler crate · `task:phase2:create-compiler`
 
 **Priority:** P1
-**Status:** BLOCKED on P2-002, I1-001 through I1-003, F4-001, and F4-002
+**Status:** BLOCKED on I1-002, I1-003, F4-001, and F4-002
 **Package contract:** [compiler.md](packages/compiler.md)
 
 Create:
@@ -1078,7 +1150,7 @@ series.
 | `C1-001` | DONE | Compiler/linker/mathematics/solver research notes |
 | `C1-002` | DONE | Direct Petgraph decision |
 | `C1-003` | DONE | Exact/certified mathematics decision |
-| `C1-004` | IN PROGRESS | Concrete Petgraph dependency and lockfile review |
+| `C1-004` | DONE | Concrete Petgraph dependency and lockfile review (see P2-002) |
 | `C1-005` | TODO | Canonical direct-Petgraph construction prototype |
 | `C1-006` | PARKED | Exact keyed linear systems until a concrete consumer exists |
 | `C1-007` | PARKED | Certified numerical analysis until a concrete consumer exists |
@@ -1163,7 +1235,7 @@ Required Phase-2 oracles:
 
 | Dependency | Status | Role |
 |---|---|---|
-| `petgraph = 0.8.3` | Adopted; review incomplete | Graph storage and standard algorithms |
+| `petgraph = 0.8.3` | Adopted; reviewed (P2-002); features trimmed to `serde-1` | Graph storage and standard algorithms |
 | `num-bigint` | Existing | Exact arbitrary-size integers |
 | `num-integer` | Existing | Exact integer helpers |
 | `num-traits` | Existing | Numeric traits |
@@ -1361,7 +1433,7 @@ Build/documentation correctness:
     F4-003 and F4-004 open static findings
 
 Dependency review:
-    P2-002 / C1-004 incomplete
+    P2-002 / C1-004 complete (Petgraph reviewed; features trimmed)
 
 Compiler:
     package absent

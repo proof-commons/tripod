@@ -593,6 +593,10 @@ fn self_qualified_import_is_rejected_by_the_graph_builder() {
     );
 }
 
+// Guards the deliberately retained petgraph `serde-1` feature (P2-002): the
+// raw label graph is not yet serialized by product code, but serialization is
+// anticipated for noncanonical diagnostics, so the feature and this guard are
+// kept while the other petgraph features were dropped as unused.
 #[test]
 fn petgraph_serde_feature_is_available_for_noncanonical_diagnostics() {
     let mut graph = petgraph::graph::DiGraph::<u8, u8, u32>::new();

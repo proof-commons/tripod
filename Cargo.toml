@@ -36,7 +36,17 @@ nix = { version = "0", features = ["process", "signal", "fs", "term"] }
 num-bigint = "0.4"
 num-integer = "0.1"
 num-traits = "0.2"
-petgraph = { version = "=0.8.3", features = ["serde-1", "rayon", "dot_parser", "unstable", "generate"] }
+# Only `serde-1` is enabled, retained deliberately for anticipated raw
+# label-graph serialization (noncanonical diagnostics; see the guard test
+# in packages/labels). The former `dot_parser`, `rayon`, `unstable`, and
+# `generate` features were dropped (P2-002 review): none had a first-party
+# consumer, and per the backlog dependency-entry rule / ADR-016 a feature is
+# not carried to advertise intent. `dot_parser` additionally pulled GPL-2.0-or-later
+# crates into the first-party build graph, which ADR-011's dependency rule
+# does not admit without a separate policy decision, and `rayon` added
+# nondeterministic parallelism. Consumers use only core petgraph
+# (DiGraph / NodeIndex / Direction / visit).
+petgraph = { version = "=0.8.3", features = ["serde-1"] }
 proptest = "1"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
