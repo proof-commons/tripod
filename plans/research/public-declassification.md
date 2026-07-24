@@ -420,6 +420,45 @@ reintroducing exact-value reads: the relation-indexed emitted-proof report
 must show that sponsor paths consume no input/output value-introspection
 facts unless a later reviewed policy explicitly supersedes opacity.
 
+## Future major: inclusion proofs, no sponsor concept · `q:public-opening:inclusion-partition`
+
+Recorded 2026-07-24, following the F2-006 opacity closure. After it, the
+sponsor-side restrictions that remain — exact membership of every ordinary
+L-BTC member, the sponsor input bound, one change output, one envelope — are
+not security relations. By the inspection-burden criterion no counterexample
+needs them: once the branch relation authenticates the protocol region
+exactly, consensus conservation forces the remainder to conserve, and
+unclaimed members are protected by their owners' signatures and the
+recognition spine. What the restrictions actually buy is bounded covenant
+introspection (the closure scans that make script resource calibration
+meaningful) and a deterministic certificate projection.
+
+The general question for a future major revision: invert the partition from
+exclusion to inclusion. The protocol would prove inclusion relations — each
+protocol object and flow proves its own membership, position, and relations
+at its declared ABI slot — instead of exclusion proofs that claim, scan, or
+bound everything else. The sponsor concept then disappears entirely: the
+non-protocol remainder is the canonical residual, conserved by consensus,
+erased by the protocol projection, with no membership, multiplicity, or
+shape rules of its own.
+
+To evaluate before deciding:
+
+- an inclusion-style replacement (or bounded-cost argument) for the one
+  genuine exclusion scan, closed-asset closure — no hidden closed-asset
+  output may escape recognition;
+- the calibration envelope when worst-case shape is bounded only by
+  consensus weight limits;
+- redefinition of the certificate's sponsor projection as the residual;
+- fee attribution as the residual of declared protocol-flow fees.
+
+This moves behavioural arrays (the sponsor input bound, change cardinality,
+and envelope-multiplicity rows leave the manifest), so it fires the
+versioning gate and is a manifest revision — presumptively major, however it
+is argued over the sponsor-erased projection. Decide it with the Phase-2/3
+compiler resource model in hand, when the closure-scan cost of an emitted
+script can be measured rather than assumed.
+
 ## Result · `sec:public-opening:result`
 
 Pending.
