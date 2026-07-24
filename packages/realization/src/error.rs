@@ -173,6 +173,31 @@ pub enum RealizationError {
     #[error("expression {expression:?} has too many operands")]
     TooManyExpressionOperands { expression: ExprId },
 
+    /// An expression-predicate relation names an expression its
+    /// operation does not declare (F4-001). Checked during derivation so
+    /// a missing predicate target fails before evaluation.
+    #[error(
+        "relation {relation:?} names predicate expression {expression:?}, \
+         which operation {operation} does not declare"
+    )]
+    UnknownPredicateExpression {
+        operation: OperationId,
+        relation: RelationId,
+        expression: ExprId,
+    },
+
+    /// An expression-predicate relation names a non-boolean expression
+    /// (F4-001).
+    #[error(
+        "relation {relation:?} predicate expression {expression:?} has type \
+         {actual:?}, expected Bool"
+    )]
+    NonBooleanPredicateExpression {
+        relation: RelationId,
+        expression: ExprId,
+        actual: SemanticType,
+    },
+
     /// A declaration consumed an ordinary sponsor L-BTC amount, which
     /// sponsor-value opacity removes from the protocol read-set.
     #[error("sponsor-value opacity violated: a declaration reads a PLAIN_LBTC family amount")]
@@ -388,6 +413,26 @@ pub enum RealizationError {
         object: ObjectId,
         mode: RepresentationMode,
         exit: OperationId,
+    },
+
+    /// A lifecycle `RequiresExit` edge is not shaped
+    /// representation -> required-exit (F4-002): a reversed,
+    /// representation-to-representation, or exit-to-exit edge.
+    #[error(
+        "lifecycle edge {source_node:?} -> {target_node:?} is not a \
+         representation-to-required-exit edge"
+    )]
+    MalformedLifecycleEdge {
+        source_node: LifecycleNodeId,
+        target_node: LifecycleNodeId,
+    },
+
+    /// A lifecycle `RequiresExit` edge connects two different objects
+    /// (F4-002).
+    #[error("lifecycle edge {source_node:?} -> {target_node:?} crosses object families")]
+    CrossObjectLifecycleEdge {
+        source_node: LifecycleNodeId,
+        target_node: LifecycleNodeId,
     },
 
     #[error("disclosure node {0:?} is declared more than once")]

@@ -568,3 +568,126 @@ fn a_foreign_operation_fact_is_a_declaration_defect_not_an_input() {
         },
     );
 }
+
+// ---------------------------------------------------------------------------
+// Derivation-time predicate-expression binding validation (F4-001).
+//
+// An expression-predicate relation must name a declared, same-operation,
+// boolean expression. This is enforced by per-operation ownership
+// validation before graph assembly, so a missing, foreign, or
+// non-boolean predicate target fails at derivation rather than only at
+// evaluation.
+// ---------------------------------------------------------------------------
+
+fn predicate_ownership_declaration(
+    expressions: Vec<ExpressionDeclaration>,
+    expression: ExprId,
+) -> crate::OperationRealization {
+    crate::OperationRealization {
+        operation: OperationId::TransferLive,
+        expressions,
+        relations: vec![crate::RelationDeclaration {
+            id: transfer_conservation_relation(),
+            relation: crate::Relation::ExpressionPredicate { expression },
+            proof_alternatives: std::collections::BTreeSet::new(),
+        }],
+        relation_dependencies: Vec::new(),
+        constructibility_nodes: Vec::new(),
+        constructibility_edges: Vec::new(),
+        lifecycle_nodes: Vec::new(),
+        lifecycle_edges: Vec::new(),
+        disclosure_nodes: Vec::new(),
+        disclosure_edges: Vec::new(),
+        disclosure_seeds: Vec::new(),
+    }
+}
+
+#[test]
+fn same_operation_boolean_predicate_binding_is_accepted() {
+    let declaration =
+        predicate_ownership_declaration(conservation_declarations(), predicate_expression_id());
+
+    crate::validate::validate_operation_ownership(OperationId::TransferLive, &declaration).unwrap();
+}
+
+#[test]
+fn same_operation_boolean_predicate_binding_survives_expression_permutation() {
+    let mut permuted = conservation_declarations();
+    permuted.reverse();
+    let declaration = predicate_ownership_declaration(permuted, predicate_expression_id());
+
+    crate::validate::validate_operation_ownership(OperationId::TransferLive, &declaration).unwrap();
+}
+
+#[test]
+fn undeclared_predicate_expression_is_rejected_at_derivation() {
+    // The operation declares no expressions, so the predicate target is
+    // unknown before any evaluation runs.
+    let declaration = predicate_ownership_declaration(Vec::new(), predicate_expression_id());
+
+    let error =
+        crate::validate::validate_operation_ownership(OperationId::TransferLive, &declaration)
+            .unwrap_err();
+
+    assert_eq!(
+        error,
+        RealizationError::UnknownPredicateExpression {
+            operation: OperationId::TransferLive,
+            relation: transfer_conservation_relation(),
+            expression: predicate_expression_id(),
+        },
+    );
+}
+
+#[test]
+fn foreign_operation_predicate_expression_is_rejected_at_derivation() {
+    // A live-transfer relation whose predicate names a compact-ash
+    // relation's expression is a foreign binding, caught before the
+    // existence and type checks.
+    let foreign = ExprId::relation(
+        RelationId::new(
+            OperationId::CompactAsh,
+            RelationKind::Conservation,
+            RelationSubject::Asset { asset: AssetId::U },
+        ),
+        crate::ExpressionRole::Predicate,
+    );
+    let declaration = predicate_ownership_declaration(Vec::new(), foreign.clone());
+
+    let error =
+        crate::validate::validate_operation_ownership(OperationId::TransferLive, &declaration)
+            .unwrap_err();
+
+    assert_eq!(
+        error,
+        RealizationError::ForeignExpressionOwnership {
+            operation: OperationId::TransferLive,
+            expression: foreign,
+        },
+    );
+}
+
+#[test]
+fn non_boolean_predicate_expression_is_rejected_at_derivation() {
+    // The predicate target is declared, same-operation, but count-typed.
+    let predicate = predicate_expression_id();
+    let expressions = vec![ExpressionDeclaration {
+        id: predicate.clone(),
+        ty: SemanticType::Count,
+        node: ExpressionNode::Count(Count::ZERO),
+    }];
+    let declaration = predicate_ownership_declaration(expressions, predicate.clone());
+
+    let error =
+        crate::validate::validate_operation_ownership(OperationId::TransferLive, &declaration)
+            .unwrap_err();
+
+    assert_eq!(
+        error,
+        RealizationError::NonBooleanPredicateExpression {
+            relation: transfer_conservation_relation(),
+            expression: predicate,
+            actual: SemanticType::Count,
+        },
+    );
+}

@@ -110,11 +110,85 @@ fn duplicate_lifecycle_dependency_is_rejected() {
     );
 }
 
+// Lifecycle edge semantic-shape validation (F4-002). A `RequiresExit`
+// edge must run representation -> required-exit over one object; a
+// reversed, representation-to-representation, exit-to-exit, or
+// cross-object edge is rejected before it can be satisfied through
+// generic reachability. With the shape enforced the graph is bipartite
+// and cannot cycle, so no valid-shaped cycle case exists to exercise the
+// retained cycle guard.
+
 #[test]
-fn lifecycle_cycles_are_reported_by_stable_components() {
+fn reversed_lifecycle_edge_is_rejected() {
+    let representation = LifecycleNodeId::Representation {
+        object: ObjectId::Ash,
+        mode: RepresentationMode::Explicit,
+    };
+    let exit = LifecycleNodeId::RequiredExit {
+        object: ObjectId::Ash,
+        operation: OperationId::Clear,
+    };
+    let error = build_lifecycle_graph(
+        [
+            LifecycleNode {
+                id: representation.clone(),
+            },
+            LifecycleNode { id: exit.clone() },
+        ],
+        [LifecycleDependencyDeclaration {
+            source: exit.clone(),
+            target: representation.clone(),
+            edge: LifecycleEdge::RequiresExit,
+        }],
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error,
+        RealizationError::MalformedLifecycleEdge {
+            source_node: exit,
+            target_node: representation,
+        },
+    );
+}
+
+#[test]
+fn representation_to_representation_lifecycle_edge_is_rejected() {
     let first = LifecycleNodeId::Representation {
         object: ObjectId::Ash,
         mode: RepresentationMode::Explicit,
+    };
+    let second = LifecycleNodeId::Representation {
+        object: ObjectId::Ash,
+        mode: RepresentationMode::PublicCommitted,
+    };
+    let error = build_lifecycle_graph(
+        [
+            LifecycleNode { id: first.clone() },
+            LifecycleNode { id: second.clone() },
+        ],
+        [LifecycleDependencyDeclaration {
+            source: first.clone(),
+            target: second.clone(),
+            edge: LifecycleEdge::RequiresExit,
+        }],
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error,
+        RealizationError::MalformedLifecycleEdge {
+            source_node: first,
+            target_node: second,
+        },
+    );
+}
+
+#[test]
+fn exit_to_exit_lifecycle_edge_is_rejected() {
+    let first = LifecycleNodeId::RequiredExit {
+        object: ObjectId::Ash,
+        operation: OperationId::CompactAsh,
     };
     let second = LifecycleNodeId::RequiredExit {
         object: ObjectId::Ash,
@@ -125,27 +199,84 @@ fn lifecycle_cycles_are_reported_by_stable_components() {
             LifecycleNode { id: first.clone() },
             LifecycleNode { id: second.clone() },
         ],
-        [
-            LifecycleDependencyDeclaration {
-                source: first.clone(),
-                target: second.clone(),
-                edge: LifecycleEdge::RequiresExit,
-            },
-            LifecycleDependencyDeclaration {
-                source: second.clone(),
-                target: first.clone(),
-                edge: LifecycleEdge::RequiresExit,
-            },
-        ],
+        [LifecycleDependencyDeclaration {
+            source: first.clone(),
+            target: second.clone(),
+            edge: LifecycleEdge::RequiresExit,
+        }],
     )
     .unwrap_err();
-    let mut expected = vec![first, second];
-    expected.sort();
 
     assert_eq!(
         error,
-        RealizationError::LifecycleCycle {
-            components: vec![expected],
+        RealizationError::MalformedLifecycleEdge {
+            source_node: first,
+            target_node: second,
         },
     );
+}
+
+#[test]
+fn cross_object_lifecycle_edge_is_rejected() {
+    let source = LifecycleNodeId::Representation {
+        object: ObjectId::Ash,
+        mode: RepresentationMode::Explicit,
+    };
+    let target = LifecycleNodeId::RequiredExit {
+        object: ObjectId::ReceiptLive,
+        operation: OperationId::Redeem,
+    };
+    let error = build_lifecycle_graph(
+        [
+            LifecycleNode { id: source.clone() },
+            LifecycleNode { id: target.clone() },
+        ],
+        [LifecycleDependencyDeclaration {
+            source: source.clone(),
+            target: target.clone(),
+            edge: LifecycleEdge::RequiresExit,
+        }],
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error,
+        RealizationError::CrossObjectLifecycleEdge {
+            source_node: source,
+            target_node: target,
+        },
+    );
+}
+
+#[test]
+fn well_shaped_lifecycle_edge_is_accepted() {
+    let source = LifecycleNodeId::Representation {
+        object: ObjectId::Ash,
+        mode: RepresentationMode::Explicit,
+    };
+    let target = LifecycleNodeId::RequiredExit {
+        object: ObjectId::Ash,
+        operation: OperationId::Clear,
+    };
+    let (graph, nodes, _) = build_lifecycle_graph(
+        [
+            LifecycleNode { id: source.clone() },
+            LifecycleNode { id: target.clone() },
+        ],
+        [LifecycleDependencyDeclaration {
+            source,
+            target,
+            edge: LifecycleEdge::RequiresExit,
+        }],
+    )
+    .unwrap();
+
+    require_lifecycle_exit(
+        &graph,
+        &nodes,
+        ObjectId::Ash,
+        RepresentationMode::Explicit,
+        OperationId::Clear,
+    )
+    .unwrap();
 }

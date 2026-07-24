@@ -85,6 +85,10 @@ pub(crate) fn build_lifecycle_graph(
         }
     }
 
+    for edge in &edges {
+        validate_lifecycle_edge_shape(edge)?;
+    }
+
     let mut graph =
         DiGraph::<LifecycleNode, LifecycleEdge, u32>::with_capacity(nodes.len(), edges.len());
     let mut node_by_id = BTreeMap::new();
@@ -116,6 +120,48 @@ pub(crate) fn build_lifecycle_graph(
         .collect();
 
     Ok((graph, node_by_id, order))
+}
+
+/// Enforce the semantic shape of a lifecycle edge (F4-002).
+///
+/// The only current edge kind, `RequiresExit`, connects a representation
+/// to a required exit of the same object. Reversed,
+/// representation-to-representation, exit-to-exit, and cross-object edges
+/// are rejected here rather than being admitted and satisfied through
+/// generic reachability. With this guard the graph is bipartite
+/// (representation -> required-exit) and therefore acyclic; the cycle
+/// guard in [`build_lifecycle_graph`] is retained for any future edge
+/// kind that would relax this shape.
+fn validate_lifecycle_edge_shape(
+    edge: &LifecycleDependencyDeclaration,
+) -> Result<(), RealizationError> {
+    let malformed = || RealizationError::MalformedLifecycleEdge {
+        source_node: edge.source.clone(),
+        target_node: edge.target.clone(),
+    };
+
+    let (
+        LifecycleNodeId::Representation {
+            object: source_object,
+            ..
+        },
+        LifecycleNodeId::RequiredExit {
+            object: target_object,
+            ..
+        },
+    ) = (&edge.source, &edge.target)
+    else {
+        return Err(malformed());
+    };
+
+    if source_object != target_object {
+        return Err(RealizationError::CrossObjectLifecycleEdge {
+            source_node: edge.source.clone(),
+            target_node: edge.target.clone(),
+        });
+    }
+
+    Ok(())
 }
 
 pub(crate) fn require_lifecycle_exit(

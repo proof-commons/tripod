@@ -506,15 +506,15 @@ not reproduced execution results.
 
 | ID | Priority | Status | Finding |
 |---|---:|---|---|
-| `F4-001` | P1 | TODO | Expression-predicate relations are not cross-validated against the expression graph during realization derivation. |
-| `F4-002` | P1 | TODO | Lifecycle edges and paths lack generic semantic-shape validation. |
-| `F4-003` | P2 | TODO | The strict empty-stamp rule is bypassed by shell-produced generator and publication stamps. |
+| `F4-001` | P1 | DONE | Expression-predicate relations are not cross-validated against the expression graph during realization derivation. |
+| `F4-002` | P1 | DONE | Lifecycle edges and paths lack generic semantic-shape validation. |
+| `F4-003` | P2 | DROPPED | The strict empty-stamp rule is bypassed by shell-produced generator and publication stamps. |
 | `F4-004` | P2 | TODO | Unknown or malformed bracket-free owner-qualified PLAN/DOC labels may be silently ignored. |
 
 ### F4-001 — Validate relation-to-expression binding · `task:findings:predicate-binding`
 
 **Priority:** P1
-**Status:** TODO
+**Status:** DONE
 **Owners:** `realization`, future compiler
 **Blocks:** trusted compiler input boundary
 
@@ -556,15 +556,37 @@ Before returning a validated realization:
 
 #### Exit
 
-- [ ] finding reproduced or disproved;
-- [ ] validation occurs during derivation, not first evaluation;
-- [ ] focused mutation tests pass;
-- [ ] realization, model conformance, and complete gates pass cleanly.
+- [x] finding reproduced or disproved;
+- [x] validation occurs during derivation, not first evaluation;
+- [x] focused mutation tests pass;
+- [x] realization, model conformance, and complete gates pass cleanly.
+
+#### Resolution (2026-07-24)
+
+Reproduced CONFIRMED, then fixed. Reproduction: `validate_operation_ownership`
+never matched `Relation::ExpressionPredicate`, `build_relation_graph` took no
+expression registry, and `validate_scoped_realization` did not inspect the
+variant, so existence, same-operation ownership, and `Bool` type were all
+deferred to `evaluate_operation` — a malformed predicate derived `Ok`.
+
+Fix: a new `validate_predicate_bindings` pass, invoked from
+`validate_operation_ownership` (per operation, before graph assembly), checks
+each predicate against the operation's own declared expressions: foreign
+targets report `ForeignExpressionOwnership`; undeclared targets report the new
+`UnknownPredicateExpression`; non-boolean targets report the new
+`NonBooleanPredicateExpression`. Same-operation ownership makes the operation's
+declared set the complete registry.
+
+Source: `packages/realization/src/validate.rs` (new pass and errors),
+`packages/realization/src/error.rs` (two focused variants). Tests
+(`packages/realization/src/tests/expression_tests.rs`): undeclared, foreign,
+non-boolean, valid same-operation boolean, and expression-permutation cases.
+Model conformance and existing pilots are unchanged.
 
 ### F4-002 — Validate lifecycle graph semantics · `task:findings:lifecycle-graph`
 
 **Priority:** P1
-**Status:** TODO
+**Status:** DONE
 **Owners:** `realization`, future compiler
 **Blocks:** lifecycle claims used by proof planning
 
@@ -614,19 +636,63 @@ and edge kinds rather than weakening the current edge.
 
 #### Exit
 
-- [ ] finding reproduced or disproved;
-- [ ] lifecycle reachability has semantic edge validation;
-- [ ] legitimate cross-operation exits remain representable;
-- [ ] realization and complete gates pass cleanly.
+- [x] finding reproduced or disproved;
+- [x] lifecycle reachability has semantic edge validation;
+- [x] legitimate cross-operation exits remain representable;
+- [x] realization and complete gates pass cleanly.
+
+#### Resolution (2026-07-24)
+
+Reproduced CONFIRMED, then fixed. Reproduction: `LifecycleDependencyDeclaration`
+endpoints are the untyped `LifecycleNodeId` enum, so reversed
+(`RequiredExit -> Representation`), representation-to-representation,
+exit-to-exit, and cross-object edges were all representable and passed
+`build_lifecycle_graph`, which checked only uniqueness, endpoint existence, and
+acyclicity. General reachability could then satisfy a required exit through a
+spurious edge.
+
+Fix: a new `validate_lifecycle_edge_shape` pass in `build_lifecycle_graph`
+requires each `RequiresExit` edge to run `Representation -> RequiredExit` over
+one object; reversed, representation-to-representation, and exit-to-exit edges
+report the new `MalformedLifecycleEdge`, and object mismatch reports the new
+`CrossObjectLifecycleEdge`. Legitimate cross-operation exits stay representable
+because the exit operation remains a typed payload of `RequiredExit` with a
+matching object. With the shape enforced the graph is bipartite and cannot
+cycle, so the retained cycle guard is now defensive for any future edge kind;
+lifecycle stays outside the per-operation ownership pass by design, since a
+`RequiredExit` names its exit operation as content, not an owner.
+
+Source: `packages/realization/src/lifecycle.rs` (shape pass),
+`packages/realization/src/error.rs` (two focused variants). Tests
+(`packages/realization/src/tests/lifecycle_tests.rs`): reversed,
+representation-to-representation, exit-to-exit, cross-object, and well-shaped
+acceptance; the derived-pilot path test continues to pass for ASH
+compact/clear and live transfer/burn/redeem.
 
 ### F4-003 — Apply strict empty-stamp policy to every stamp · `task:findings:stamp-contract`
 
 **Priority:** P2
-**Status:** TODO
+**Status:** DROPPED
 **Owners:** `cli-common`, Meson, publication scripts
 **Policy:** ADR-014
 
-#### Static basis
+#### Resolution (2026-07-24) — REFUTED by reproduction
+
+Dropped: reproduction showed the finding is false. The shell-`touch` sites do
+exist (`meson.build` `generator_wrap` and `cargo_quiet_stamp_wrap`,
+`scripts/sync-publication.sh`) and would re-date a nonempty file, but none of
+them is an ADR-014 `--stamp`-argument stamp. Every stamp the empty-byte
+contract governs — the checker `--stamp` outputs (`labels.ok`, `generated.ok`,
+`plans.ok`, `forbidden-text.ok`) — routes through `cli_common::touch_stamp`.
+The shell-`touch` outputs are `build_always_stale: true` build-dir markers
+whose bytes and mtime are never consulted as a freshness oracle, and ADR-014
+restates the empty-byte refusal only for the checker `--stamp` argument; its
+generator-stamp rule deliberately keeps a committed publication out of the
+declared build-dir outputs. The two sets are disjoint, so there is no policy
+bypass to fix. The finding conflated "produced by shell `touch`" with "subject
+to the strict empty-stamp policy".
+
+#### Original static basis (retained for the record)
 
 `cli_common::touch_stamp` rejects a nonempty stamp without truncating it.
 
@@ -640,7 +706,7 @@ scripts/sync-publication.sh
 Those paths accept and re-date a nonempty existing stamp, contradicting the
 strict empty-stamp policy.
 
-#### Required implementation
+#### Original required implementation (not pursued)
 
 Route every first-party stamp mutation through one shared implementation or one
 equivalent strict rule:
@@ -744,8 +810,8 @@ Outside fenced and double-backtick examples:
 
 ### P2-001 — Realization compiler-input boundary · `task:phase2:realization-boundary`
 
-**Status:** DONE in current source, subject to F4-001 and F4-002 closure before
-compiler trust
+**Status:** DONE; the F4-001 and F4-002 compiler-trust prerequisites are now
+closed
 
 Implemented source records:
 
@@ -757,8 +823,9 @@ Implemented source records:
   ownership validation;
 - no target types or generated publications as inputs.
 
-F4-001 and F4-002 refine two remaining validation relationships. P2-001 is not
-considered sufficient for compiler API freeze until they close.
+F4-001 and F4-002 refined two remaining validation relationships and are now
+closed: predicate bindings and lifecycle-edge shape are validated during
+derivation, so the realization boundary is sufficient for compiler API freeze.
 
 ### P2-002 — Complete Petgraph dependency review · `task:phase2:dependency-review`
 
@@ -1127,7 +1194,8 @@ Phase 2 exits only when:
 
 - I1-001 through I1-003 are done;
 - F4-001 and F4-002 are closed;
-- F4-003 and F4-004 are closed or formally shown not to block the gate;
+- F4-004 is closed, and F4-003 is dropped as reproduced-false, or both are
+  formally shown not to block the gate;
 - P2-002 through P2-012 are done;
 - C1-004, C1-005, C1-008, C1-009, and C1-010 are done;
 - active Phase-2 algorithm oracles are complete;
@@ -1427,10 +1495,10 @@ Identity architecture:
     I1-002 through I1-003 incomplete
 
 Realization validation:
-    F4-001 and F4-002 open static findings
+    F4-001 and F4-002 closed; predicate and lifecycle-edge shape validated
 
 Build/documentation correctness:
-    F4-003 and F4-004 open static findings
+    F4-003 dropped (reproduced false); F4-004 open static finding
 
 Dependency review:
     P2-002 / C1-004 complete (Petgraph reviewed; features trimmed)
@@ -1525,7 +1593,7 @@ Execute in this order unless new evidence changes dependencies:
 3. Define future immediate identity edges and activation points.
 4. Reproduce F4-001 through F4-004.
 5. Close F4-001 and F4-002 before freezing compiler input APIs.
-6. Close F4-003 and F4-004 in parallel.
+6. Close F4-004 (F4-003 dropped as reproduced-false).
 7. Complete the Petgraph dependency and lockfile review.
 8. Run and record the complete current repository gate.
 9. Create tripod-compiler.

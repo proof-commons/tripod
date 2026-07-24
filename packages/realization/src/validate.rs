@@ -10,8 +10,8 @@ use architecture::{
 
 use crate::{
     ArchitectureMismatchField, ConstructibilityAuthorization, ConstructibilityNodeId,
-    DisclosureNode, ExpressionNode, FactId, RealizationError, RepresentationMode,
-    ScopedRealizationSpec, require_lifecycle_exit, validate_constructibility,
+    DisclosureNode, ExpressionNode, FactId, RealizationError, Relation, RepresentationMode,
+    ScopedRealizationSpec, SemanticType, require_lifecycle_exit, validate_constructibility,
 };
 
 pub fn validate_scoped_realization(
@@ -651,6 +651,8 @@ pub fn validate_operation_ownership(
         }
     }
 
+    validate_predicate_bindings(requested, declaration)?;
+
     for dependency in &declaration.relation_dependencies {
         for endpoint in [&dependency.prerequisite, &dependency.dependent] {
             if endpoint.operation() != requested {
@@ -695,6 +697,53 @@ pub fn validate_operation_ownership(
                 operation: requested,
                 node: seed.node.clone(),
             });
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate expression-predicate relation bindings (F4-001).
+///
+/// Each `ExpressionPredicate` relation must name a declared,
+/// same-operation, boolean expression. Same-operation ownership makes the
+/// operation's own declared expressions the complete registry, so the
+/// binding is checked here during derivation rather than deferred to
+/// evaluation. Foreign predicate expressions are reported through the
+/// shared ownership error.
+fn validate_predicate_bindings(
+    requested: OperationId,
+    declaration: &crate::OperationRealization,
+) -> Result<(), RealizationError> {
+    let expression_types = declaration
+        .expressions
+        .iter()
+        .map(|expression| (expression.id.clone(), expression.ty))
+        .collect::<std::collections::BTreeMap<crate::ExprId, SemanticType>>();
+
+    for relation in &declaration.relations {
+        let Relation::ExpressionPredicate { expression } = &relation.relation else {
+            continue;
+        };
+
+        ensure_expression_owner(requested, expression)?;
+
+        match expression_types.get(expression) {
+            None => {
+                return Err(RealizationError::UnknownPredicateExpression {
+                    operation: requested,
+                    relation: relation.id.clone(),
+                    expression: expression.clone(),
+                });
+            }
+            Some(ty) if *ty != SemanticType::Bool => {
+                return Err(RealizationError::NonBooleanPredicateExpression {
+                    relation: relation.id.clone(),
+                    expression: expression.clone(),
+                    actual: *ty,
+                });
+            }
+            Some(_) => {}
         }
     }
 
