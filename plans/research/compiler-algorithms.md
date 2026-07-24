@@ -16,9 +16,9 @@
 > (`[RZ-obl:oracle:disclosure]`)
 > **Related research:** (`q:numerical:linear-algebra`),
 > (`q:optimization:solvers`)
-> **Expected handoff:** accepted compiler algorithm policy, typed graph
-> adapters, exhaustive small-instance oracles, and implementation-ready
-> complexity limits
+> **Expected handoff:** accepted compiler algorithm policy, package-owned
+> direct Petgraph graphs with typed key/index lookup metadata, exhaustive
+> small-instance oracles, and implementation-ready complexity limits
 
 ## Question · `sec:compiler-algorithms:question`
 
@@ -134,7 +134,7 @@ Every identity- or publication-relevant graph is constructed by:
 8. inserting edges;
 9. freezing the graph before analysis.
 
-The private adapter retains both:
+The package-local key/index lookup metadata retains both:
 
 ```text
 stable key → NodeIndex
