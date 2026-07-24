@@ -303,7 +303,7 @@ The Phase-1 tag remains unchanged.
 | `F3-002` | P1 | **DONE** | `ScopedRealizationSpec` can be externally mutated out of consistency with its private graphs. |
 | `F3-003` | P1 | **DONE** | Strict flattener confinement can be bypassed through a symlinked ancestor directory. |
 | `F3-004` | P2 | **DONE** | `check-plans` accepts an empty argument census and falls back to discovery as authority. |
-| `F3-005` | P2 | **TODO** | The stable realization projection includes raw order-sensitive graph declaration vectors. |
+| `F3-005` | P2 | **DONE** | The stable realization projection includes raw order-sensitive graph declaration vectors. |
 | `F3-006` | P2 | **TODO** | Realization derivation does not fully validate operation, relation, expression, and proof-alternative ownership. |
 | `F3-007` | P3 | **TODO** | Layer-0 duplicate-label diagnostics do not name both mint locations. |
 | `F3-008` | P3 | **TODO** | Authorization-evidence export arrays depend on enum declaration order rather than explicit canonical sorting. |
@@ -807,7 +807,7 @@ report schema:                  unchanged
 ### F3-005 — Canonicalize the complete realization projection
 
 **Priority:** P2
-**Status:** TODO
+**Status:** DONE
 **Owners:** `realization`, future `compiler`
 **Blocks:** stable compiler input projection
 **Primary files:**
@@ -895,11 +895,47 @@ realization identity exists.
 
 #### Exit
 
-- [ ] the stable projection has one canonical representation of each graph;
-- [ ] declaration-order permutations produce equal complete projections;
-- [ ] no semantic operand order is incorrectly normalized;
-- [ ] compiler input can rely on the projection deterministically;
-- [ ] realization and model-conformance tests pass cleanly.
+- [x] the stable projection has one canonical representation of each graph;
+- [x] declaration-order permutations produce equal complete projections;
+- [x] no semantic operand order is incorrectly normalized;
+- [x] compiler input can rely on the projection deterministically;
+- [x] realization and model-conformance tests pass cleanly.
+
+#### Evidence · DONE
+
+- F3-005 closure commit. The stable projection no longer clones raw
+  source-order declaration vectors. Each operation row is now a
+  canonical OperationRealizationProjection carrying exactly the facts
+  no graph projection represents: the operation identity and the
+  canonically sorted disclosure seeds. Every graph-shaped declaration
+  family (expressions, relations, relation dependencies,
+  constructibility nodes/edges, lifecycle nodes/edges, disclosure
+  nodes/edges) is represented once, in its canonical graph
+  projection, so the duplicate-graph-authority hazard is gone.
+  Operand order inside expressions is untouched — the
+  canonicalization applies to the outer set-like collections only.
+- Graph assembly and validation were factored into one crate-private
+  path (assemble_scoped_realization) shared by derive and by test
+  fixtures, so permuted declarations rebuild through the same
+  builders and scoped validation — this also discharges the F3-002
+  fixture-builder requirement concretely.
+- Regression: for each of the ten declaration families independently,
+  reversing that family's outer order in both pilot operations and
+  rebuilding produces a complete ScopedRealizationProjection equal to
+  the baseline — covering the canonical graph projections, the
+  evaluation orders, the declassification analysis, and the new
+  operation rows in one equality. The existing scope-order,
+  repeated-derivation, and relation-reorder properties are unchanged.
+  Stable keys are typed identities, so no Petgraph index or raw
+  source ordering can appear in (or be hashed from) the projection
+  type.
+- Phase 1 publishes no realization hash, so this lands before any
+  public realization identity exists; architecture identities and
+  generated artifacts are unchanged.
+- Verified: fmt, clippy -D warnings (workspace, all targets),
+  realization suite (126 unit + 5 public-API + 4 doctests), model and
+  artifacts suites green under the nightly SDK toolchain. Complete
+  gates run at the end of the F3 series.
 
 ---
 

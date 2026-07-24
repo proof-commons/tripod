@@ -10,8 +10,8 @@ use crate::{
     ConstructibilityNode, ConstructibilityNodeId, DeclassificationAnalysis, DependencyEdge,
     DisclosureEdge, DisclosureGraphProjection, DisclosureNode, ExprId, ExpressionDeclaration,
     LifecycleEdge, LifecycleGraphProjection, LifecycleNode, LifecycleNodeId, OperationObservation,
-    OperationRealization, RealizationError, RealizationScope, RelationDeclaration, RelationEdge,
-    RelationGraphProjection, RelationId,
+    OperationRealization, OperationRealizationProjection, RealizationError, RealizationScope,
+    RelationDeclaration, RelationEdge, RelationGraphProjection, RelationId,
     constructibility::{build_constructibility_graph, project_constructibility_graph},
     declarations,
     declassification::{analyze_disclosure, build_disclosure_graph, project_disclosure_graph},
@@ -156,11 +156,17 @@ impl ScopedRealizationSpec {
 }
 
 /// Stable typed projection of a scoped realization for deterministic comparison.
+///
+/// Every graph-shaped declaration appears exactly once, in its
+/// canonical graph projection; the per-operation rows carry only
+/// canonical operation-owned facts. Source declaration order never
+/// reaches this value, so two realizations with permuted set-like
+/// declaration collections project equal.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScopedRealizationProjection {
     pub architecture: ArchitectureBinding,
     pub scope: RealizationScope,
-    pub operations: Vec<(OperationId, OperationRealization)>,
+    pub operations: Vec<OperationRealizationProjection>,
     pub expressions: ExpressionGraphProjection,
     pub relations: RelationGraphProjection,
     pub constructibility: ConstructibilityGraphProjection,
@@ -190,6 +196,22 @@ pub fn derive(
         }
     }
 
+    assemble_scoped_realization(architecture, binding, scope, operations)
+}
+
+/// Build and validate one realization from explicit operation
+/// declarations.
+///
+/// Crate-private on purpose: this is the single graph-assembly and
+/// validation path shared by [`derive`] and by test fixtures that
+/// permute or mutate declarations — every constructed value passes
+/// through the same builders and `validate_scoped_realization`.
+pub(crate) fn assemble_scoped_realization(
+    architecture: &Architecture,
+    binding: ArchitectureBinding,
+    scope: RealizationScope,
+    operations: BTreeMap<OperationId, OperationRealization>,
+) -> Result<ScopedRealizationSpec, RealizationError> {
     let expression_declarations = operations
         .values()
         .flat_map(|operation| operation.expressions.iter().cloned())
@@ -280,8 +302,8 @@ pub fn project_scoped_realization(
         scope: realization.scope.clone(),
         operations: realization
             .operations
-            .iter()
-            .map(|(operation, declaration)| (*operation, declaration.clone()))
+            .values()
+            .map(OperationRealization::project)
             .collect(),
         expressions: project_expression_graph(&realization.expression_graph),
         relations: project_relation_graph(&realization.relation_graph),

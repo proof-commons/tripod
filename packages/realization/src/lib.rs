@@ -101,7 +101,7 @@ pub use observation::{
     ObservedIssuance, ObservedObject, ObservedObjectKind, ObservedObjectRef, ObservedOpenFlow,
     ObservedRootEffect, ObservedSide, OperationObservation, validate_observation,
 };
-pub use operation::OperationRealization;
+pub use operation::{OperationRealization, OperationRealizationProjection};
 pub use relation::{
     CardinalityMaximum, ConstructibilityClass, ExpectedCanonicalDelta, Relation,
     RelationDeclaration, RelationDependencyDeclaration, RelationDependencyProjection, RelationEdge,
