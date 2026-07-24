@@ -2,7 +2,7 @@
 
 > **Status:** ACTIVE
 > **Current gate:** Phase 2 — target-independent compiler analysis
-> **Current condition:** Phase 1 has an immutable recorded completion tag, but a later static review of commit identified new correctness and assurance gaps. Those findings do not rewrite the historical tag; they are current remediation work and must close before Phase 2 exits. Compiler implementation may begin only behind the dependency and realization-boundary prerequisites named below.
+> **Current condition:** Phase 1 has an immutable recorded completion tag, but a later static review of commit identified new correctness and assurance gaps. Those findings do not rewrite the historical tag. Remediation status (2026-07-24): F2-001 through F2-005, F2-007, and F2-008 are closed with evidence in section 4; the remaining open finding is the F2-006 representation-semantics decision, which must be resolved before proof and disclosure planning freeze. Compiler implementation may begin only behind the dependency and realization-boundary prerequisites named below.
 > **Next gate:** Phase 3 — Elements target and foundational prototypes
 > **Authority:** Current execution queue only. Normative specifications, typed architecture, implemented ADRs, accepted decisions, package contracts, research results, phase cards, and the roadmap take precedence.
 
@@ -2069,12 +2069,12 @@ After a phase baseline:
 Execute in this order unless new evidence changes dependencies:
 
 ```text
-1. Close F2-001 immediately: false deployment-evidence acceptance.
-2. Close F2-002 before freezing any compiler semantic API.
+1. Close F2-001 immediately: false deployment-evidence acceptance. DONE.
+2. Close F2-002 before freezing any compiler semantic API. DONE.
 3. Run C1-004 dependency review in parallel.
 4. Resolve F2-006 before proof and disclosure planning freeze.
-5. Close repository/tooling findings F2-003 through F2-005.
-6. Correct planning and evidence wording under F2-007 and F2-008.
+5. Close repository/tooling findings F2-003 through F2-005. DONE.
+6. Correct planning and evidence wording under F2-007 and F2-008. DONE.
 7. Create the compiler crate (P2-003).
 8. Implement relation DAG and checked folding (P2-004 through P2-006).
 9. Implement proof, disclosure, source, constructibility, and lifecycle analysis
@@ -2097,11 +2097,8 @@ The current gate is **not passed**.
 Current blockers are:
 
 ```text
-P0 deployment evidence binding:
-    F2-001
-
-P1 realization/compiler boundary:
-    F2-002
+Sponsor-value representation decision:
+    F2-006
 
 Phase-2 dependency review:
     C1-004 / P2-002
@@ -2112,6 +2109,10 @@ Compiler package:
 Compiler relation, proof, disclosure, lifecycle, placement, and coverage:
     not yet implemented
 ```
+
+The former P0/P1 blockers F2-001 (deployment evidence binding) and F2-002
+(realization/compiler boundary) closed on 2026-07-24; their evidence records
+live in section 4 and P2-001 is DONE with F2-002.
 
 Phase 2 is complete only when (`gate:backlog:phase2`) passes.
 
@@ -2132,4 +2133,4 @@ Until then:
 
 ## 15. One-line backlog · `rem:backlog:one-line`
 
-> Bind calibration to the exact final bundle; complete the pilot architecture weld; repair source-label, flattener, and multi-output boundaries; settle sponsor-value semantics; finish the Petgraph dependency review; then build the Phase-2 compiler as an exact, deterministic, target-independent analysis with complete relation, disclosure, constructibility, lifecycle, placement, and coverage evidence.
+> Calibration binding, the pilot architecture welds, and the source-label, flattener, and multi-output boundaries are repaired; settle sponsor-value semantics (F2-006); finish the Petgraph dependency review; then build the Phase-2 compiler as an exact, deterministic, target-independent analysis with complete relation, disclosure, constructibility, lifecycle, placement, and coverage evidence.
