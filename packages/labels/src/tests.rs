@@ -9,6 +9,7 @@ use crate::{
     LabelErrorCode,
     census::{CensusGroup, RepositoryCensus},
     label::{Label, LabelShape},
+    latex::harvest_attestation,
     markdown::{InlineCodeContext, scan_markdown},
     model_labels_json,
     owner::{ImportedLabel, LabelOwner},
@@ -141,6 +142,46 @@ fn imported_owner_and_local_label_parse() {
     let imported = ImportedLabel::parse("ADR012-rule:labels:decision").expect("ADR token parses");
     assert_eq!(imported.owner, LabelOwner::Adr(12));
     assert_eq!(imported.label.as_str(), "rule:labels:decision");
+}
+
+#[test]
+fn duplicate_attestation_mint_diagnostic_names_both_locations() {
+    // ADR-013 (F3-007): a duplicate-mint diagnostic identifies both
+    // the duplicate occurrence and the first mint, in canonical
+    // repository-relative locations, for the attestation owner exactly as for the
+    // shared insert_or_diagnose owners.
+    let directory = tempfile::tempdir().expect("temporary repository");
+    let root = directory.path();
+    fs::create_dir_all(root.join("papers/attestation/sections"))
+        .expect("attestation sections directory");
+    fs::write(root.join("papers/attestation/main.tex"), "% main\n").expect("attestation main");
+    fs::write(
+        root.join("papers/attestation/sections/first.tex"),
+        "\\label{def:model:classes}\n",
+    )
+    .expect("first section");
+    fs::write(
+        root.join("papers/attestation/sections/second.tex"),
+        "% preamble\n\\label{def:model:classes}\n",
+    )
+    .expect("second section");
+
+    let (_registry, diagnostics) = harvest_attestation(&RepositoryCensus::discover(root));
+    let duplicate = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == LabelErrorCode::DuplicateLatexLabel)
+        .expect("duplicate attestation diagnostic");
+    // The duplicate occurrence is the diagnostic's own location; the
+    // first mint is named in the message.
+    assert_eq!(duplicate.path, "papers/attestation/sections/second.tex");
+    assert_eq!(duplicate.line, 2);
+    assert!(
+        duplicate
+            .message
+            .contains("first minted at papers/attestation/sections/first.tex:1"),
+        "{}",
+        duplicate.message
+    );
 }
 
 #[test]

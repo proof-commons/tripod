@@ -305,7 +305,7 @@ The Phase-1 tag remains unchanged.
 | `F3-004` | P2 | **DONE** | `check-plans` accepts an empty argument census and falls back to discovery as authority. |
 | `F3-005` | P2 | **DONE** | The stable realization projection includes raw order-sensitive graph declaration vectors. |
 | `F3-006` | P2 | **DONE** | Realization derivation does not fully validate operation, relation, expression, and proof-alternative ownership. |
-| `F3-007` | P3 | **TODO** | Layer-0 duplicate-label diagnostics do not name both mint locations. |
+| `F3-007` | P3 | **DONE** | Layer-0 duplicate-label diagnostics do not name both mint locations. |
 | `F3-008` | P3 | **TODO** | Authorization-evidence export arrays depend on enum declaration order rather than explicit canonical sorting. |
 | `F3-009` | P3 | **TODO** | Conditional LaTeX flattening ignores the `IfFileExists` probe path when selecting the branch. |
 | `F3-010` | P3 | **TODO** | The empty-stamp contract conflicts with `touch_stamp` preserving pre-existing stamp bytes. |
@@ -403,8 +403,9 @@ Meson accepted configuration:    repaired or clarified
 - Fresh `meson setup` succeeds under both the minimum supported Meson
   (1.3.0, installed into a scratch venv) and the current SDK Meson
   (1.9.2), each into a throwaway build directory.
-- Focused verification: `meson test -C build forbidden-text-check
-  --print-errorlogs` green after reconfiguration; deleting
+- Focused verification: the focused Meson test
+  (`meson test -C build forbidden-text-check`) ran green after
+  reconfiguration; deleting
   build/forbidden-text.ok and running the target rebuilds an empty
   stamp beside the JSON report (the target is build_always_stale, so a
   deleted stamp is always regenerated). A failed audit cannot create
@@ -1095,7 +1096,7 @@ future compiler boundary:      safer
 ### F3-007 — Include both Layer-0 duplicate-mint locations
 
 **Priority:** P3
-**Status:** TODO
+**Status:** DONE
 **Owner:** `labels`
 **Primary files:**
 
@@ -1128,10 +1129,30 @@ diagnostic identifies both canonical repository-relative locations.
 
 #### Exit
 
-- [ ] both locations are present;
-- [ ] deterministic diagnostic ordering is preserved;
-- [ ] labels and generated registers remain current;
-- [ ] focused and complete label gates pass.
+- [x] both locations are present;
+- [x] deterministic diagnostic ordering is preserved;
+- [x] labels and generated registers remain current;
+- [x] focused and complete label gates pass.
+
+#### Evidence · DONE
+
+- F3-007 closure commit. The Layer-0 duplicate path now queries the
+  registry for the surviving first mint and reports both locations —
+  the duplicate occurrence as the diagnostic's own path/line and the
+  first mint as a canonical repository-relative path:line in the
+  message — matching the shared insert_or_diagnose wording while
+  keeping the dedicated DuplicateLatexLabel class, owner, and local
+  label value. Harvest order (sorted sections after main) is
+  untouched, so diagnostic ordering stays deterministic.
+- Regression: one Layer-0 label minted in two distinct section files
+  asserts the diagnostic sits at the second file's occurrence line
+  and names the first file's mint location exactly.
+- The canonical tree mints no duplicates, so generated registers and
+  model_labels.json are byte-unchanged; the full labels-check lane
+  ran green over the repository.
+- Verified: fmt, clippy -D warnings, labels suite (68 unit + 8
+  subprocess), and meson test labels-check under the nightly SDK
+  toolchain. Complete gates run at the end of the F3 series.
 
 ---
 

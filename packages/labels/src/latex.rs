@@ -210,11 +210,20 @@ fn insert(
                 location: location.clone(),
                 home: None,
             };
-            if registry.insert(mint).is_err() {
+            if let Err(duplicate) = registry.insert(mint) {
+                // ADR-013: a duplicate-mint diagnostic identifies both
+                // locations — the duplicate occurrence and the first
+                // mint — matching the shared insert_or_diagnose path.
+                let original = registry
+                    .get(&duplicate.label)
+                    .map(|first| {
+                        format!("{}:{}", first.location.display_path(), first.location.line)
+                    })
+                    .unwrap_or_default();
                 diagnostics.push(LabelDiagnostic::error(
                     LabelErrorCode::DuplicateLatexLabel,
                     &location,
-                    format!("duplicate attestation label {value}"),
+                    format!("duplicate attestation label {value}; first minted at {original}"),
                 ));
             }
         }
