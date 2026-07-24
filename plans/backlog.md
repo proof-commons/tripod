@@ -308,7 +308,7 @@ The Phase-1 tag remains unchanged.
 | `F3-007` | P3 | **DONE** | Layer-0 duplicate-label diagnostics do not name both mint locations. |
 | `F3-008` | P3 | **DONE** | Authorization-evidence export arrays depend on enum declaration order rather than explicit canonical sorting. |
 | `F3-009` | P3 | **DONE** | Conditional LaTeX flattening ignores the `IfFileExists` probe path when selecting the branch. |
-| `F3-010` | P3 | **TODO** | The empty-stamp contract conflicts with `touch_stamp` preserving pre-existing stamp bytes. |
+| `F3-010` | P3 | **DONE** | The empty-stamp contract conflicts with `touch_stamp` preserving pre-existing stamp bytes. |
 
 All F3 findings are static-review findings until reproduced or disproved by a
 focused test.
@@ -1330,7 +1330,7 @@ Prefer exact restricted support:
 ### F3-010 — Reconcile empty-stamp prose with implementation
 
 **Priority:** P3
-**Status:** TODO
+**Status:** DONE
 **Owners:** `cli-common`, ADR-014 documentation
 **Primary files:**
 
@@ -1383,10 +1383,39 @@ The strict empty form is simpler to inspect, but truncation changes the current
 
 #### Exit
 
-- [ ] implementation and ADR state one rule;
-- [ ] focused tests cover nonempty existing stamps;
-- [ ] Meson incremental behavior remains correct;
-- [ ] complete CLI and Meson gates pass.
+- [x] implementation and ADR state one rule;
+- [x] focused tests cover nonempty existing stamps;
+- [x] Meson incremental behavior remains correct;
+- [x] complete CLI and Meson gates pass.
+
+#### Evidence · DONE
+
+- F3-010 closure commit; the preferred strict rule was implemented:
+  reject with a hard, non-destructive error. touch_stamp creates an
+  absent stamp empty, re-dates an existing empty stamp, and refuses
+  an existing nonempty stamp with an InvalidData error that names the
+  path and byte count — the foreign bytes are preserved for
+  inspection, no fresh success fact appears, and the build graph
+  keeps the target dirty. Truncation was rejected as destructive:
+  bytes in a stamp mean something other than a first-party command
+  wrote it, and evidence should survive its own refusal.
+- ADR-014 now states the same rule in both the stamp-argument
+  definition and the failure paragraph: a stamp is empty, an existing
+  nonempty stamp is refused without truncation, and the refusal is
+  deliberately non-destructive. No repository prose still claims the
+  weaker touch-only behavior.
+- Regressions: absent-stamp creation and empty-stamp re-dating keep
+  their coverage; a new test pins the nonempty refusal — InvalidData
+  kind, contract wording, bytes preserved, mtime unchanged. The
+  report-before-stamp ordering, report/stamp alias rejection, and
+  no-fresh-stamp-on-failure coverage are unchanged.
+- Meson incremental behavior is unaffected for first-party stamps
+  (always empty); all four stamp lanes (labels-check, plans-check,
+  forbidden-text-check, check-generated) ran green over existing
+  build-dir stamps after the change.
+- Verified: fmt, clippy -D warnings, cli-common suite (46 unit + 5
+  public-API) under the nightly SDK toolchain. Complete gates run at
+  the end of the F3 series.
 
 ---
 

@@ -48,8 +48,10 @@ argument-supplied paths, never ambient ones, as some combination of:
    (`[ADR010-rule:output:assets]`) — a generator's publications, or a
    checker's explicit `--report <file>`;
 2. a `--stamp <file>` argument: on success the command creates the file
-   empty if absent, or updates its modification time if present, and
-   writes nothing else to it.
+   empty if absent, or updates the modification time of an existing
+   empty file, and writes nothing to it. An existing nonempty stamp is
+   refused with a hard error, without truncation: bytes in a stamp mean
+   something other than a first-party command wrote it.
 
 A checker runs in one of two modes. Invoked directly with neither
 `--report` nor `--stamp`, it writes its JSON result to stdout under
@@ -60,12 +62,14 @@ compare-if-changed atomic write, keeps stdout empty, and touches the
 success stamp only after the report is written. A lone member of the
 pair is a usage error.
 
-On failure — a failed check, a failed report write, or a failed stamp
-touch — the stamp is left untouched, so the build graph keeps the target
-dirty and reruns it. The stamp carries no content and is the graph's
-success fact: report publication always precedes it. Both modes and
-stamp handling are implemented once, in the shared command-line crate,
-so every checker behaves identically.
+On failure — a failed check, a failed report write, a failed stamp
+touch, or a nonempty existing stamp — the stamp is never freshly dated,
+so the build graph keeps the target dirty and reruns it. The stamp is
+empty and is the graph's success fact: report publication always
+precedes it, and the refusal of foreign stamp bytes is deliberately
+non-destructive so the corrupted stamp survives for inspection. Both
+modes and stamp handling are implemented once, in the shared
+command-line crate, so every checker behaves identically.
 
 ## The build system owns the census · `rule:build:census`
 

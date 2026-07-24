@@ -1090,16 +1090,21 @@ pub struct BaseArgs {
     pub debug: bool,
 }
 
-/// Touch an ADR-014 stamp file: create it empty when absent, otherwise
-/// update its modification time.
+/// Touch an ADR-014 stamp file: create it empty when absent, update
+/// the modification time of an existing empty stamp, and refuse a
+/// nonempty one.
 ///
-/// The stamp carries no content — the JSON report stays on stdout —
-/// and a failing command must not call this, so the build graph keeps
-/// the target dirty.
+/// A stamp is empty by contract — the JSON report is a separate asset
+/// — so bytes in an existing stamp mean something other than this
+/// command wrote it. Refusing (rather than truncating) is
+/// non-destructive: the foreign bytes survive for inspection, no
+/// fresh success stamp appears, and the build graph keeps the target
+/// dirty. A failing command must not call this at all.
 ///
 /// # Errors
 ///
-/// Returns the underlying I/O error.
+/// Returns the underlying I/O error, or an `InvalidData` error for an
+/// existing nonempty stamp.
 pub fn touch_stamp(path: &std::path::Path) -> io::Result<()> {
     match std::fs::OpenOptions::new()
         .write(true)
@@ -1109,6 +1114,17 @@ pub fn touch_stamp(path: &std::path::Path) -> io::Result<()> {
         Ok(_created) => Ok(()),
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
             let file = std::fs::File::options().write(true).open(path)?;
+            let length = file.metadata()?.len();
+            if length > 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "stamp {} holds {length} byte(s); a stamp is empty by contract, \
+                         refusing to re-date foreign bytes",
+                        path.display(),
+                    ),
+                ));
+            }
             let now = std::time::SystemTime::now();
             file.set_times(
                 std::fs::FileTimes::new()
