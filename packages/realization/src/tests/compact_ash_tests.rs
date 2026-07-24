@@ -871,3 +871,105 @@ fn sponsor_cases() -> Vec<SponsorCase> {
         ),
     ]
 }
+
+// Weld mutation coverage (review finding 2): every OperationSpec field
+// the weld checks must observably reject a mutation, including the
+// fields whose published pilot value is empty or a default. The kind
+// field decides whether the operation is an enforced covenant branch
+// at all, so it comes first.
+
+/// A copy of the published architecture with the compact-ASH operation
+/// row rewritten by `mutate`.
+fn compact_ash_mutated(
+    mutate: impl FnOnce(&mut architecture::OperationSpec),
+) -> architecture::Architecture {
+    let mut mutated = ARCHITECTURE;
+
+    let mut operations = mutated.operations.to_vec();
+    let operation = operations
+        .iter_mut()
+        .find(|operation| operation.id == OperationId::CompactAsh)
+        .expect("the architecture declares compact-ASH");
+    mutate(operation);
+    mutated.operations = operations.leak();
+
+    mutated
+}
+
+fn weld_rejects(
+    architecture: &architecture::Architecture,
+    field: crate::ArchitectureMismatchField,
+) {
+    assert_eq!(
+        crate::validate::validate_compact_ash_architecture(architecture),
+        Err(crate::RealizationError::ArchitectureOperationMismatch {
+            operation: OperationId::CompactAsh,
+            field,
+        }),
+    );
+}
+
+#[test]
+fn compact_ash_weld_rejects_a_client_protocol_reclassification() {
+    let mutated = compact_ash_mutated(|operation| {
+        operation.kind = architecture::OperationKind::ClientProtocol;
+    });
+
+    weld_rejects(&mutated, crate::ArchitectureMismatchField::OperationKind);
+}
+
+#[test]
+fn compact_ash_weld_rejects_a_new_issuance() {
+    let mutated = compact_ash_mutated(|operation| {
+        operation.issuances = vec![architecture::IssuanceSpec {
+            asset: AssetId::U,
+            authority: AssetId::U,
+            condition: architecture::IssuanceCondition::PositiveAdmittedPrincipal,
+        }]
+        .leak();
+    });
+
+    weld_rejects(&mutated, crate::ArchitectureMismatchField::Issuances);
+}
+
+#[test]
+fn compact_ash_weld_rejects_a_new_quantity_read() {
+    let mutated = compact_ash_mutated(|operation| {
+        operation.reads = vec![architecture::QuantityId::Floor].leak();
+    });
+
+    weld_rejects(&mutated, crate::ArchitectureMismatchField::Reads);
+}
+
+#[test]
+fn compact_ash_weld_rejects_a_new_quantity_write() {
+    let mutated = compact_ash_mutated(|operation| {
+        operation.writes = vec![architecture::QuantityId::Floor].leak();
+    });
+
+    weld_rejects(&mutated, crate::ArchitectureMismatchField::Writes);
+}
+
+#[test]
+fn a_draft_valid_quantity_read_is_still_rejected_by_the_weld() {
+    // The mutation that motivates checking reads in the weld at all: a
+    // new quantity read with its reciprocal reader declaration passes
+    // architecture draft validation, so no other rule catches it.
+    let mut mutated = compact_ash_mutated(|operation| {
+        operation.reads = vec![architecture::QuantityId::Floor].leak();
+    });
+
+    let mut quantities = mutated.quantities.to_vec();
+    let quantity = quantities
+        .iter_mut()
+        .find(|quantity| quantity.id == architecture::QuantityId::Floor)
+        .expect("the architecture declares the floor quantity");
+    let mut readers = quantity.readers.to_vec();
+    readers.push(architecture::ReaderId::Operation(OperationId::CompactAsh));
+    quantity.readers = readers.leak();
+    mutated.quantities = quantities.leak();
+
+    architecture::validate_draft(&mutated).expect("a reciprocal quantity read is draft-valid");
+
+    weld_rejects(&mutated, crate::ArchitectureMismatchField::Reads);
+}

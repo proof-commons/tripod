@@ -4,8 +4,8 @@ use std::collections::BTreeSet;
 
 use architecture::{
     Architecture, AssetId, BoundId, DeltaCondition, DeltaKind, InputAuthorization, MaxCount,
-    ObjectId, OpenFlowKind, OperationId, PermissionClass, ProjectionId, ProjectionRule, RootId,
-    RootUse, ValueFlowClass, WitnessId,
+    ObjectId, OpenFlowKind, OperationId, OperationKind, PermissionClass, ProjectionId,
+    ProjectionRule, RootId, RootUse, ValueFlowClass, WitnessId,
 };
 
 use crate::{
@@ -166,8 +166,24 @@ pub fn validate_compact_ash_architecture(
         RealizationError::MissingArchitectureOperation(OperationId::CompactAsh),
     )?;
 
+    if operation.kind != OperationKind::CovenantBranch {
+        return mismatch_compact(ArchitectureMismatchField::OperationKind);
+    }
+
     if operation.authorization != PermissionClass::Permissionless {
         return mismatch_compact(ArchitectureMismatchField::Authorization);
+    }
+
+    if !operation.issuances.is_empty() {
+        return mismatch_compact(ArchitectureMismatchField::Issuances);
+    }
+
+    if !operation.reads.is_empty() {
+        return mismatch_compact(ArchitectureMismatchField::Reads);
+    }
+
+    if !operation.writes.is_empty() {
+        return mismatch_compact(ArchitectureMismatchField::Writes);
     }
 
     let input_families = operation
@@ -335,8 +351,24 @@ pub fn validate_live_transfer_architecture(
         RealizationError::MissingArchitectureOperation(OperationId::TransferLive),
     )?;
 
+    if operation.kind != OperationKind::CovenantBranch {
+        return mismatch_live(ArchitectureMismatchField::OperationKind);
+    }
+
     if operation.authorization != PermissionClass::ReceiptOwners {
         return mismatch_live(ArchitectureMismatchField::Authorization);
+    }
+
+    if !operation.issuances.is_empty() {
+        return mismatch_live(ArchitectureMismatchField::Issuances);
+    }
+
+    if !operation.reads.is_empty() {
+        return mismatch_live(ArchitectureMismatchField::Reads);
+    }
+
+    if !operation.writes.is_empty() {
+        return mismatch_live(ArchitectureMismatchField::Writes);
     }
 
     let input_families = operation

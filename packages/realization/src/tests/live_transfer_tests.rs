@@ -818,3 +818,86 @@ fn live_transfer_sponsor_isolation_is_load_bearing() {
         );
     }
 }
+
+// Weld mutation coverage (review finding 2), mirroring the compact-ASH
+// suite: the live-transfer weld must accept the published architecture
+// and observably reject mutations of the operation fields whose pilot
+// value is empty or a default.
+
+#[test]
+fn live_transfer_weld_accepts_the_published_architecture() {
+    crate::validate::validate_live_transfer_architecture(&ARCHITECTURE)
+        .expect("the live-transfer weld must accept the published architecture");
+}
+
+/// A copy of the published architecture with the live-transfer
+/// operation row rewritten by `mutate`.
+fn live_transfer_mutated(
+    mutate: impl FnOnce(&mut architecture::OperationSpec),
+) -> architecture::Architecture {
+    let mut mutated = ARCHITECTURE;
+
+    let mut operations = mutated.operations.to_vec();
+    let operation = operations
+        .iter_mut()
+        .find(|operation| operation.id == OperationId::TransferLive)
+        .expect("the architecture declares live transfer");
+    mutate(operation);
+    mutated.operations = operations.leak();
+
+    mutated
+}
+
+fn weld_rejects(
+    architecture: &architecture::Architecture,
+    field: crate::ArchitectureMismatchField,
+) {
+    assert_eq!(
+        crate::validate::validate_live_transfer_architecture(architecture),
+        Err(crate::RealizationError::ArchitectureOperationMismatch {
+            operation: OperationId::TransferLive,
+            field,
+        }),
+    );
+}
+
+#[test]
+fn live_transfer_weld_rejects_a_client_protocol_reclassification() {
+    let mutated = live_transfer_mutated(|operation| {
+        operation.kind = architecture::OperationKind::ClientProtocol;
+    });
+
+    weld_rejects(&mutated, crate::ArchitectureMismatchField::OperationKind);
+}
+
+#[test]
+fn live_transfer_weld_rejects_a_new_issuance() {
+    let mutated = live_transfer_mutated(|operation| {
+        operation.issuances = vec![architecture::IssuanceSpec {
+            asset: AssetId::U,
+            authority: AssetId::U,
+            condition: architecture::IssuanceCondition::PositiveAdmittedPrincipal,
+        }]
+        .leak();
+    });
+
+    weld_rejects(&mutated, crate::ArchitectureMismatchField::Issuances);
+}
+
+#[test]
+fn live_transfer_weld_rejects_a_new_quantity_read() {
+    let mutated = live_transfer_mutated(|operation| {
+        operation.reads = vec![architecture::QuantityId::Floor].leak();
+    });
+
+    weld_rejects(&mutated, crate::ArchitectureMismatchField::Reads);
+}
+
+#[test]
+fn live_transfer_weld_rejects_a_new_quantity_write() {
+    let mutated = live_transfer_mutated(|operation| {
+        operation.writes = vec![architecture::QuantityId::Floor].leak();
+    });
+
+    weld_rejects(&mutated, crate::ArchitectureMismatchField::Writes);
+}

@@ -535,8 +535,13 @@ output, changed root/projection, changed ASH minimum, and changed output count.
 - A positive test (`compact_ash_weld_accepts_the_published_architecture`) pins
   the hardened weld; the `derive(&ARCHITECTURE, …)` path already exercises it.
   Verified: realization + model suites, fmt, clippy `-D warnings` green.
-- Residual: per-field mutation tests need an `Architecture`-mutation harness
-  that neither weld has (the spec is built from `&'static` slices); deferred.
+- Residual (resolved post-tag): the deferred per-field mutation tests landed
+  with the review-finding-2 weld hardening. Both pilot welds now also check
+  operation kind, issuances, quantity reads, and quantity writes, and each
+  pilot test module carries an architecture-mutation harness (vec-and-leak
+  over the operation row) with mutation regressions for those fields,
+  including a covenant-branch-to-client-protocol reclassification and a
+  draft-valid quantity read that only the weld rejects.
 
 ---
 

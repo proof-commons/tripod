@@ -11,7 +11,11 @@ use crate::{
 /// Architecture field whose declared shape no longer matches a realization weld.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArchitectureMismatchField {
+    OperationKind,
     Authorization,
+    Issuances,
+    Reads,
+    Writes,
     InputFamilies,
     OutputFamilies,
     AshInput,
