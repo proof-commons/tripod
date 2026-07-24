@@ -72,6 +72,15 @@ pub struct ConstructibilityNode {
     pub id: ConstructibilityNodeId,
 }
 
+/// Whether one constructibility dependency must be dischargeable in
+/// every validated authorization case.
+///
+/// A `Required` dependency's availability must be discharged by each
+/// authorization case. An `Optional` dependency marks an omissible
+/// subtree — the sponsor envelope, for example — that a case simply
+/// omits when it cannot discharge the availability; when the subtree is
+/// present it still obeys the sponsor-confinement and cross-operation
+/// rules.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RequirementStrength {
     Required,
@@ -193,6 +202,7 @@ pub(crate) fn validate_constructibility(
     let operation_node = node_by_id.get(&operation_id).copied().ok_or(
         RealizationError::MissingConstructibilityOperation(operation),
     )?;
+    let required = required_ancestors(graph, operation_node);
 
     for ancestor in reverse_reachable_ancestors(graph, operation_node) {
         let source = &graph[ancestor].id;
@@ -211,7 +221,11 @@ pub(crate) fn validate_constructibility(
             continue;
         };
 
-        if !availability_allowed(availability, authorization) {
+        // An ancestor whose every path to the operation crosses an
+        // Optional edge is an omissible subtree: an authorization case
+        // that cannot discharge its availability simply omits it, so
+        // unavailability is not a defect for that case.
+        if !availability_allowed(availability, authorization) && required.contains(&ancestor) {
             return Err(unavailable_dependency_error(
                 operation,
                 authorization,
@@ -297,6 +311,37 @@ fn unavailable_dependency_error(
             path,
         },
     }
+}
+
+/// Ancestors required in every authorization case: nodes with at least
+/// one path to the operation using only `Required`-strength edges. A
+/// node whose every path crosses an `Optional` edge belongs to an
+/// omissible subtree instead.
+fn required_ancestors(
+    graph: &DiGraph<ConstructibilityNode, ConstructibilityEdge, u32>,
+    operation_node: NodeIndex<u32>,
+) -> BTreeSet<NodeIndex<u32>> {
+    let mut seen = BTreeSet::new();
+    let mut stack = graph
+        .edges_directed(operation_node, Direction::Incoming)
+        .filter(|edge| edge.weight().strength == RequirementStrength::Required)
+        .map(|edge| edge.source())
+        .collect::<Vec<_>>();
+
+    while let Some(node) = stack.pop() {
+        if !seen.insert(node) {
+            continue;
+        }
+
+        stack.extend(
+            graph
+                .edges_directed(node, Direction::Incoming)
+                .filter(|edge| edge.weight().strength == RequirementStrength::Required)
+                .map(|edge| edge.source()),
+        );
+    }
+
+    seen
 }
 
 fn reverse_reachable_ancestors(

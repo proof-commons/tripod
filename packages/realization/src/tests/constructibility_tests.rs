@@ -593,3 +593,174 @@ fn edge(
         },
     }
 }
+
+// ---------------------------------------------------------------------------
+// RequirementStrength semantics: an Optional dependency marks an
+// omissible subtree, dischargeable case by case, while a Required path
+// keeps its availability obligation.
+// ---------------------------------------------------------------------------
+
+fn compact_ash_owner_witness() -> ConstructibilityNodeId {
+    ConstructibilityNodeId::Witness {
+        operation: OperationId::CompactAsh,
+        role: WitnessRole::ProtocolOwnerAuthorization,
+        availability: AvailabilityClass::InputOwners {
+            object: ObjectId::Ash,
+        },
+    }
+}
+
+fn witness_edge(
+    source: ConstructibilityNodeId,
+    target: ConstructibilityNodeId,
+    strength: RequirementStrength,
+) -> ConstructibilityDependencyDeclaration {
+    ConstructibilityDependencyDeclaration {
+        source,
+        target,
+        edge: ConstructibilityEdge {
+            role: ConstructibilityEdgeRole::RequiredWitness,
+            strength,
+        },
+    }
+}
+
+#[test]
+fn an_optional_private_dependency_is_omissible() {
+    // The owner witness is unavailable to a permissionless case, but its
+    // only edge is Optional: the case constructs the operation without
+    // that subtree, so validation accepts instead of failing.
+    let operation = ConstructibilityNodeId::Operation(OperationId::CompactAsh);
+    let owner_witness = compact_ash_owner_witness();
+    let (graph, nodes, _) = build_constructibility_graph(
+        [
+            ConstructibilityNode {
+                id: operation.clone(),
+            },
+            ConstructibilityNode {
+                id: owner_witness.clone(),
+            },
+        ],
+        [witness_edge(
+            owner_witness,
+            operation,
+            RequirementStrength::Optional,
+        )],
+    )
+    .unwrap();
+
+    validate_constructibility(&graph, &nodes, OperationId::CompactAsh, &permissionless()).unwrap();
+}
+
+#[test]
+fn an_optional_edge_anywhere_on_the_only_path_is_omissible() {
+    // The private fact sits behind a Required edge into an intermediate
+    // witness, but that witness reaches the operation only through an
+    // Optional edge: the whole subtree is omissible.
+    let operation = ConstructibilityNodeId::Operation(OperationId::CompactAsh);
+    let sponsor = ConstructibilityNodeId::Witness {
+        operation: OperationId::CompactAsh,
+        role: WitnessRole::SponsorAuthorization,
+        availability: AvailabilityClass::Public,
+    };
+    let owner_witness = compact_ash_owner_witness();
+    let (graph, nodes, _) = build_constructibility_graph(
+        [
+            ConstructibilityNode {
+                id: operation.clone(),
+            },
+            ConstructibilityNode {
+                id: sponsor.clone(),
+            },
+            ConstructibilityNode {
+                id: owner_witness.clone(),
+            },
+        ],
+        [
+            witness_edge(
+                owner_witness,
+                sponsor.clone(),
+                RequirementStrength::Required,
+            ),
+            witness_edge(sponsor, operation, RequirementStrength::Optional),
+        ],
+    )
+    .unwrap();
+
+    validate_constructibility(&graph, &nodes, OperationId::CompactAsh, &permissionless()).unwrap();
+}
+
+#[test]
+fn a_required_path_defeats_an_optional_alternative() {
+    // One Optional edge does not weaken a dependency that also reaches
+    // the operation over a Required path: the obligation stands.
+    let operation = ConstructibilityNodeId::Operation(OperationId::CompactAsh);
+    let sponsor = ConstructibilityNodeId::Witness {
+        operation: OperationId::CompactAsh,
+        role: WitnessRole::SponsorAuthorization,
+        availability: AvailabilityClass::Public,
+    };
+    let owner_witness = compact_ash_owner_witness();
+    let (graph, nodes, _) = build_constructibility_graph(
+        [
+            ConstructibilityNode {
+                id: operation.clone(),
+            },
+            ConstructibilityNode {
+                id: sponsor.clone(),
+            },
+            ConstructibilityNode {
+                id: owner_witness.clone(),
+            },
+        ],
+        [
+            witness_edge(
+                owner_witness.clone(),
+                sponsor.clone(),
+                RequirementStrength::Optional,
+            ),
+            witness_edge(sponsor, operation.clone(), RequirementStrength::Required),
+            witness_edge(owner_witness, operation, RequirementStrength::Required),
+        ],
+    )
+    .unwrap();
+
+    assert!(matches!(
+        validate_constructibility(&graph, &nodes, OperationId::CompactAsh, &permissionless()),
+        Err(RealizationError::PermissionlessPrivateDependency { .. }),
+    ));
+}
+
+#[test]
+fn an_optional_dependency_still_cannot_cross_operations() {
+    // Omissibility is availability semantics, not a licence for graph
+    // defects: a cross-operation dependency fails even behind an
+    // Optional edge.
+    let operation = ConstructibilityNodeId::Operation(OperationId::CompactAsh);
+    let foreign = ConstructibilityNodeId::Witness {
+        operation: OperationId::TransferLive,
+        role: WitnessRole::ProtocolOwnerAuthorization,
+        availability: AvailabilityClass::Public,
+    };
+    let (graph, nodes, _) = build_constructibility_graph(
+        [
+            ConstructibilityNode {
+                id: operation.clone(),
+            },
+            ConstructibilityNode {
+                id: foreign.clone(),
+            },
+        ],
+        [witness_edge(
+            foreign,
+            operation,
+            RequirementStrength::Optional,
+        )],
+    )
+    .unwrap();
+
+    assert!(matches!(
+        validate_constructibility(&graph, &nodes, OperationId::CompactAsh, &permissionless()),
+        Err(RealizationError::CrossOperationConstructibilityDependency { .. }),
+    ));
+}
