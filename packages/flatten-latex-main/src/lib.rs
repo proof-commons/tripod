@@ -412,16 +412,8 @@ impl FlattenContext<'_> {
             ensure_only_trailing_comment(line, "\\addbibresource", rest)?;
             return self.handle_bibliography(line, writer, &bib);
         }
-        if let Some((included, surviving_tokens, false_branch)) =
-            extract_if_file_exists_include(trimmed)
-        {
-            return self.handle_conditional_include(
-                line,
-                writer,
-                &included,
-                &surviving_tokens,
-                &false_branch,
-            );
+        if let Some(conditional) = extract_if_file_exists_include(trimmed) {
+            return self.handle_conditional_include(line, writer, &conditional);
         }
         if let Some((included, rest)) = extract_include_with_rest(trimmed) {
             ensure_only_trailing_comment(line, "include", rest)?;
@@ -517,21 +509,70 @@ fn extract_braced_with_rest<'a>(line: &'a str, command: &str) -> Option<(String,
     take_braced(after.trim_start())
 }
 
+/// Resolve one conditional probe against the fixed list.
+///
+/// `Ok(Some)` for exactly one match, `Ok(None)` for no match (LaTeX
+/// takes the false branch), and `Err` for a probe the flattener must
+/// not guess about: an absolute path, a traversal, or an ambiguous
+/// match.
+fn resolve_probe<'a>(
+    name: &str,
+    allowed: &'a [PathBuf],
+    default_ext: &str,
+) -> Result<Option<&'a Path>> {
+    let mut wanted = reference_components(name)?;
+    let mut matches = suffix_matches(allowed, &wanted);
+
+    if matches.is_empty() && !name.contains('.') {
+        if let Some(last) = wanted.last_mut() {
+            last.push(".");
+            last.push(default_ext);
+        }
+        matches = suffix_matches(allowed, &wanted);
+    }
+
+    match matches.as_slice() {
+        [single] => Ok(Some(*single)),
+        [] => Ok(None),
+        many => bail!(
+            "conditional probe {name:?} ambiguously matches {} supplied files: {}",
+            many.len(),
+            many.iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
+        ),
+    }
+}
+
 fn extract_include_with_rest(line: &str) -> Option<(String, &str)> {
     extract_braced_with_rest(line, "\\input")
         .or_else(|| extract_braced_with_rest(line, "\\subfile"))
 }
 
-fn extract_if_file_exists_include(line: &str) -> Option<(String, String, String)> {
+/// One parsed `\\IfFileExists{probe}{true}{false}` line whose true
+/// branch carries exactly one include.
+struct ConditionalInclude {
+    probe: String,
+    included: String,
+    surviving_tokens: String,
+    false_branch: String,
+}
+
+fn extract_if_file_exists_include(line: &str) -> Option<ConditionalInclude> {
     let after = line.strip_prefix("\\IfFileExists")?;
-    let (_, after_probe) = take_braced(after.trim_start())?;
+    let (probe, after_probe) = take_braced(after.trim_start())?;
     let (true_branch, after_true) = take_braced(after_probe.trim_start())?;
     let (false_branch, after_false) = take_braced(after_true.trim_start())?;
     if !active_part(after_false).trim().is_empty() {
         return None;
     }
-    extract_include_survivors(&true_branch)
-        .map(|(included, survivors)| (included, survivors, false_branch))
+    extract_include_survivors(&true_branch).map(|(included, surviving_tokens)| ConditionalInclude {
+        probe,
+        included,
+        surviving_tokens,
+        false_branch,
+    })
 }
 
 fn take_braced(input: &str) -> Option<(String, &str)> {
@@ -631,31 +672,56 @@ impl FlattenContext<'_> {
         &mut self,
         original_line: &str,
         writer: &mut W,
-        included: &str,
-        surviving_tokens: &str,
-        false_branch: &str,
+        conditional: &ConditionalInclude,
     ) -> Result<()> {
+        let ConditionalInclude {
+            probe,
+            included,
+            surviving_tokens,
+            false_branch,
+        } = conditional;
         writeln!(writer, "% {original_line}")?;
-        let Ok(resolved) = resolve_reference(included, self.allowed, "tex") else {
-            // The probed file is not on the supplied list, so LaTeX would
-            // take the false branch. An empty false branch mirrors as a
-            // comment; a nonempty one would have to be emitted (and possibly
-            // flattened) to preserve semantics, which this line-based
-            // flattener does not support — fail rather than silently
-            // dropping it.
+        // Branch selection follows the PROBE, exactly as LaTeX selects
+        // it, under the fixed-list model: a file exists iff it resolves
+        // on the supplied list. Deciding by the nested include instead
+        // would flatten `\IfFileExists{a}{\input{b}}{}` under different
+        // branch semantics from TeX when only one of the two exists.
+        let Some(probe_path) = resolve_probe(probe, self.allowed, "tex")? else {
+            // The probed file is not on the supplied list, so LaTeX
+            // takes the false branch. An empty false branch mirrors as
+            // a comment; a nonempty one would have to be emitted (and
+            // possibly flattened) to preserve semantics, which this
+            // line-based flattener does not support — fail rather than
+            // silently dropping it.
             if !false_branch.trim().is_empty() {
                 bail!(
-                    "unsupported conditional include in {original_line:?}: '{included}' is \
+                    "unsupported conditional include in {original_line:?}: probe '{probe}' is \
                      absent and the nonempty false branch would be silently dropped"
                 );
             }
             writeln!(
                 writer,
-                "% --- flatten: conditional include '{included}' absent; false branch taken ---"
+                "% --- flatten: conditional probe '{probe}' absent; false branch taken ---"
             )?;
             return Ok(());
         };
-        let included_path = resolved.to_path_buf();
+        let included_path = resolve_reference(included, self.allowed, "tex")
+            .with_context(|| {
+                format!(
+                    "conditional include in {original_line:?}: probe '{probe}' exists but the \
+                     true branch include cannot be flattened"
+                )
+            })?
+            .to_path_buf();
+        // Restricted exact support: the probe and the include must name
+        // one supplied file. Divergent probe/include pairs would need
+        // real conditional evaluation to preserve semantics.
+        if included_path != probe_path {
+            bail!(
+                "unsupported conditional include in {original_line:?}: probe '{probe}' and \
+                 include '{included}' resolve to different supplied files"
+            );
+        }
         writeln!(writer, "% --- BEGIN included content from: {included} ---")?;
         self.process_file(&included_path, writer, false)?;
         writeln!(writer, "% --- END included content from: {included} ---")?;

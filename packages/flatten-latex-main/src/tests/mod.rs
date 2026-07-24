@@ -16,6 +16,9 @@
 //! | `flatten_allows_trailing_comment_after_include` | `\input{a} % note` still flattens   |
 //! | `flatten_rejects_embedded_include`          | prefixed/mid-line includes fail         |
 //! | `flatten_rejects_nonempty_false_branch`     | absent conditional keeps no silent drop |
+//! | `conditional_with_absent_probe_takes_the_false_branch_even_if_include_exists` | Branch selection follows the probe |
+//! | `conditional_with_existing_probe_and_absent_include_is_an_error` | True branch failure is never silently dropped |
+//! | `conditional_probe_and_include_naming_distinct_files_is_rejected_atomically` | Divergent probe/include pairs are refused |
 //! | `flatten_passes_commented_includes`         | `% \input{a}` is inert                  |
 //! | `flatten_failure_leaves_no_partial_output`  | Atomic output on failed flatten         |
 //! | `flatten_failure_preserves_existing_output` | Failed flatten keeps prior output bytes |
@@ -176,6 +179,90 @@ fn flatten_expands_conditional_include() {
     assert!(text.contains("\\newcommand{\\linked}{yes}"));
     assert!(text.contains("% --- END included content from: bridge ---\n\\bridgetrue"));
     assert!(!text.contains("\\IfFileExists{bridge.tex}{%"));
+}
+
+// --- F3-009 conditional branch selection follows the probe, not the
+// nested include: the two need not name the same file, and guessing
+// from the include can flatten the wrong branch. ---
+
+#[test]
+fn conditional_with_absent_probe_takes_the_false_branch_even_if_include_exists() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    let main = root.join("paper/main.tex");
+    let bridge = root.join("build/bridge.tex");
+    write_file(&bridge, "\\newcommand{\\linked}{yes}\n");
+    // LaTeX probes probe-me.tex, which does not exist under the
+    // fixed-list model, so the (empty) false branch is taken even
+    // though the nested include would resolve.
+    write_file(
+        &main,
+        "\\documentclass{article}\n\\begin{document}\n\\IfFileExists{probe-me.tex}{\\input{bridge}}{}\n\\end{document}\n",
+    );
+
+    let output = root.join("flat.tex");
+    flatten(&main, &[bridge], &output, &FlattenOptions::default()).expect("flatten");
+    let text = fs::read_to_string(output).expect("read output");
+    assert!(text.contains("% --- flatten: conditional probe 'probe-me.tex' absent"));
+    assert!(!text.contains("BEGIN included content from: bridge"));
+    assert!(!text.contains("\\newcommand{\\linked}{yes}"));
+}
+
+#[test]
+fn conditional_with_existing_probe_and_absent_include_is_an_error() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    let main = root.join("paper/main.tex");
+    let probe = root.join("paper/probe-me.tex");
+    write_file(&probe, "probe body\n");
+    // LaTeX would take the true branch and then fail on the missing
+    // include; the flattener must fail too, never silently take the
+    // false branch.
+    write_file(
+        &main,
+        "\\documentclass{article}\n\\begin{document}\n\\IfFileExists{probe-me.tex}{\\input{missing}}{}\n\\end{document}\n",
+    );
+
+    let output = root.join("flat.tex");
+    let error = flatten(&main, &[probe], &output, &FlattenOptions::default())
+        .expect_err("an existing probe with an absent include must fail");
+    assert!(
+        error
+            .to_string()
+            .contains("probe 'probe-me.tex' exists but the true branch include"),
+        "{error:#}"
+    );
+    assert!(!output.exists());
+}
+
+#[test]
+fn conditional_probe_and_include_naming_distinct_files_is_rejected_atomically() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    let main = root.join("paper/main.tex");
+    let probe = root.join("paper/probe-me.tex");
+    let other = root.join("paper/other.tex");
+    write_file(&probe, "probe body\n");
+    write_file(&other, "other body\n");
+    write_file(
+        &main,
+        "\\documentclass{article}\n\\begin{document}\n\\IfFileExists{probe-me.tex}{\\input{other}}{}\n\\end{document}\n",
+    );
+
+    let output = root.join("flat.tex");
+    write_file(&output, "previous good output\n");
+    let error = flatten(&main, &[probe, other], &output, &FlattenOptions::default())
+        .expect_err("a divergent probe/include pair is outside exact restricted support");
+    assert!(
+        error
+            .to_string()
+            .contains("resolve to different supplied files"),
+        "{error:#}"
+    );
+    assert_eq!(
+        fs::read_to_string(&output).expect("existing output"),
+        "previous good output\n",
+    );
 }
 
 #[test]

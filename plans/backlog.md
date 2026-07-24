@@ -307,7 +307,7 @@ The Phase-1 tag remains unchanged.
 | `F3-006` | P2 | **DONE** | Realization derivation does not fully validate operation, relation, expression, and proof-alternative ownership. |
 | `F3-007` | P3 | **DONE** | Layer-0 duplicate-label diagnostics do not name both mint locations. |
 | `F3-008` | P3 | **DONE** | Authorization-evidence export arrays depend on enum declaration order rather than explicit canonical sorting. |
-| `F3-009` | P3 | **TODO** | Conditional LaTeX flattening ignores the `IfFileExists` probe path when selecting the branch. |
+| `F3-009` | P3 | **DONE** | Conditional LaTeX flattening ignores the `IfFileExists` probe path when selecting the branch. |
 | `F3-010` | P3 | **TODO** | The empty-stamp contract conflicts with `touch_stamp` preserving pre-existing stamp bytes. |
 
 All F3 findings are static-review findings until reproduced or disproved by a
@@ -1233,7 +1233,7 @@ should remain unchanged.
 ### F3-009 — Make conditional LaTeX flattening honor the probe path
 
 **Priority:** P3
-**Status:** TODO
+**Status:** DONE
 **Owner:** `flatten-latex-main`
 **Primary files:**
 
@@ -1289,10 +1289,41 @@ Prefer exact restricted support:
 
 #### Exit
 
-- [ ] branch selection follows the probe;
-- [ ] unsupported conditionals fail rather than change semantics;
-- [ ] canonical paper flatten remains unchanged;
-- [ ] focused and complete flattener gates pass.
+- [x] branch selection follows the probe;
+- [x] unsupported conditionals fail rather than change semantics;
+- [x] canonical paper flatten remains unchanged;
+- [x] focused and complete flattener gates pass.
+
+#### Evidence · DONE
+
+- F3-009 closure commit; the exact restricted support was
+  implemented. The parser now retains the probe path in a typed
+  ConditionalInclude, and branch selection follows the probe under
+  the fixed-list model (a file exists iff it resolves on the supplied
+  list), exactly as LaTeX selects it. A dedicated probe resolver
+  distinguishes the three probe outcomes: one match selects the true
+  branch, zero matches selects the false branch, and an absolute,
+  traversing, or ambiguous probe is a hard error the flattener never
+  guesses about.
+- Unsupported forms fail instead of changing semantics: an existing
+  probe whose true-branch include cannot resolve is an error (LaTeX
+  would take the true branch and fail — never silently flattened as
+  the false branch); a probe and include resolving to two different
+  supplied files is rejected as outside the restricted form; an
+  absent probe with a nonempty false branch still fails rather than
+  dropping the branch.
+- Regressions: absent probe with an existing include takes the empty
+  false branch and inlines nothing; existing probe with an absent
+  include errors naming the probe; divergent probe/include pair
+  errors with the prior output preserved byte-for-byte (atomicity);
+  the same-file bridge form, nonempty-false-branch rejection, and
+  trailing-content rejection are unchanged and green.
+- The canonical paper uses no IfFileExists form, and the flat build
+  target regenerates the flattened paper unchanged.
+- Verified: fmt, clippy -D warnings, flattener unit (37) and
+  subprocess (3) suites under the nightly SDK toolchain; canonical
+  flat target rebuilt via ninja. Complete gates run at the end of
+  the F3 series.
 
 ---
 
