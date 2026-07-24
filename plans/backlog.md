@@ -263,7 +263,7 @@ must be corrected before the Phase-2 gate relies on that claim.
 ### F2-001 — Bind every calibration to the released script bundle
 
 **Priority:** P0
-**Status:** TODO
+**Status:** DONE
 **Owners:** `architecture`, future `release`
 **Primary files:**
 
@@ -364,12 +364,37 @@ accepted deployment profiles: stricter
 
 #### Exit
 
-- [ ] every calibration names the final emitted bundle;
-- [ ] mismatch has a focused typed error;
-- [ ] the valid fixture uses matching identities;
-- [ ] stale-bundle mutations fail;
-- [ ] ABI-binding residual is stated honestly;
-- [ ] architecture tests and complete repository gates pass cleanly.
+- [x] every calibration names the final emitted bundle;
+- [x] mismatch has a focused typed error;
+- [x] the valid fixture uses matching identities;
+- [x] stale-bundle mutations fail;
+- [x] ABI-binding residual is stated honestly;
+- [x] architecture tests and complete repository gates pass cleanly.
+
+#### Evidence · DONE
+
+- Commits `47295dd` (validator, fixture, core regressions) and the F2-001
+  closure commit (absence/mismatch separation, ABI residual). In
+  `packages/architecture/src/deployment.rs`, validate_bound_calibrations
+  rejects any calibration whose nonzero bundle hash differs from
+  artifacts.emitted_script_bundle with the dedicated error
+  BoundCalibrationBundleMismatch(BoundId); a zero hash still reports
+  MissingBoundEvidence, so absence and identity mismatch never merge.
+- The synthetic release fixture binds every calibration and the artifact
+  to one RELEASED_BUNDLE constant; the former mismatching fixture shape is
+  now itself a regression (all-calibrations-stale case).
+- Regressions: one mismatched calibration, every calibration stale, final
+  bundle changed without recalibration, matching bindings produce no
+  mismatch error, zero bundle hash stays missing-evidence, and the
+  profile hash moves when a calibration's bundle binding changes.
+- ABI residual recorded on the BoundCalibration type: schema 2 cannot
+  bind the transaction ABI/configuration of the measurement, so bundle
+  equality alone does not prove the measured shape used the final ABI; a
+  future profile schema must add that binding before production release.
+  Deployment-profile schema is unchanged; accepted profiles are stricter.
+- Verified: fmt, clippy -D warnings, architecture suite green under the
+  nightly SDK toolchain; full workspace gates run at the end of the F2
+  remediation series.
 
 ---
 

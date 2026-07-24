@@ -63,6 +63,14 @@ impl VerificationStatus {
 /// Calibrated value and measurement evidence for one declared finite
 /// bound. Every bound with `requires_deployment_calibration` must
 /// appear exactly once in a release profile.
+///
+/// The calibration binds the exact emitted script bundle it measured
+/// (`script_bundle_hash` must equal the profile's released
+/// emitted-script-bundle artifact). Schema-2 residual: the calibration
+/// cannot yet bind the transaction ABI/configuration under which the
+/// measurement was taken, so bundle equality alone does not prove the
+/// measured transaction shape used the final ABI. A future profile
+/// schema must add that binding before any production release.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BoundCalibration {
     pub bound: BoundId,

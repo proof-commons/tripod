@@ -268,6 +268,32 @@ fn missing_bound_evidence_hash_is_rejected() {
 // other bundle — even one bound, even all bounds — is rejected.
 
 #[test]
+fn zero_calibration_bundle_hash_is_missing_evidence_not_mismatch() {
+    // Absence and identity mismatch are different defects: a zero
+    // bundle hash is missing evidence, never a bundle mismatch.
+    let architecture = release_architecture();
+
+    let mut profile = release_profile(&architecture);
+
+    for calibration in &mut profile.calibrated_bounds {
+        if calibration.bound == BoundId::TransferInputMax {
+            calibration.script_bundle_hash = [0; 32];
+        }
+    }
+
+    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+
+    assert!(errors.contains(&DeploymentError::MissingBoundEvidence(
+        BoundId::TransferInputMax,
+    )));
+    assert!(
+        !errors.contains(&DeploymentError::BoundCalibrationBundleMismatch(
+            BoundId::TransferInputMax,
+        ))
+    );
+}
+
+#[test]
 fn calibration_bound_to_different_bundle_is_rejected() {
     let architecture = release_architecture();
 
