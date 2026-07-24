@@ -249,8 +249,8 @@ must be corrected before the Phase-2 gate relies on that claim.
 
 | ID | Priority | Status | Finding |
 |---|---:|---|---|
-| `F2-001` | P0 | **TODO** | Bound calibrations are not bound to the final emitted script bundle. |
-| `F2-002` | P1 | **TODO** | Pilot architecture welds omit operation fields that can change semantics. |
+| `F2-001` | P0 | **DONE** | Bound calibrations are not bound to the final emitted script bundle. |
+| `F2-002` | P1 | **DONE** | Pilot architecture welds omit operation fields that can change semantics. |
 | `F2-003` | P2 | **TODO** | Ordinary or unrelated Rust comments can suppress label harvesting through cross-comment fence state. |
 | `F2-004` | P2 | **TODO** | The LaTeX flattener’s off-list symlink-target confinement claim is not enforced. |
 | `F2-005` | P2 | **TODO** | Multi-output commands accept aliased destinations and may succeed without producing distinct assets. |
@@ -401,7 +401,7 @@ accepted deployment profiles: stricter
 ### F2-002 — Make pilot architecture welds complete
 
 **Priority:** P1
-**Status:** TODO
+**Status:** DONE
 **Owners:** `realization`, `architecture`
 **Blocks:** Phase-2 compiler semantic API
 **Primary files:**
@@ -520,12 +520,45 @@ behavioural-version gate.
 
 #### Exit
 
-- [ ] all realization-relevant operation fields are welded;
-- [ ] every field family has at least one focused mutation;
-- [ ] the actual published architecture still derives both pilots;
-- [ ] pilot behavior remains unchanged;
-- [ ] Phase-1 completion prose no longer overclaims deferred coverage;
-- [ ] realization, model-conformance, architecture, and complete workspace gates pass cleanly.
+- [x] all realization-relevant operation fields are welded;
+- [x] every field family has at least one focused mutation;
+- [x] the actual published architecture still derives both pilots;
+- [x] pilot behavior remains unchanged;
+- [x] Phase-1 completion prose no longer overclaims deferred coverage;
+- [x] realization, model-conformance, architecture, and complete workspace gates pass cleanly.
+
+#### Evidence · DONE
+
+- Commits `bc43b74` (field welds, initial mutations) and the F2-002
+  closure commit (full per-field harness). Both pilot welds in
+  `packages/realization/src/validate.rs` now also check operation kind
+  (CovenantBranch), the empty issuance set, the empty quantity read set,
+  and the empty quantity write set, with dedicated mismatch classes
+  (OperationKind, Issuances, Reads, Writes). With the existing checks
+  this covers every realization-relevant OperationSpec field, absence
+  included; the operation ID is fixed by the lookup itself.
+- Mutation harness: each pilot test module rewrites the published
+  operation row (vec-and-leak) and runs a table of one focused mutation
+  per field family — primary authorization, input authorization, input
+  minimum, output maximum, sponsor input/output cardinality, added and
+  removed input family, added output family, changed bound set, delta
+  kind/condition/destruction-tag/extra-delta, added data output, removed
+  open flow, added or removed value-flow class, removed witness, changed
+  root use, changed projection rule — plus the kind reclassification,
+  issuance, read, and write cases and both weld-accept tests.
+- The draft-versus-weld distinction is demonstrated end to end twice: a
+  reciprocal quantity read (compact ASH) and a reciprocal quantity write
+  (live transfer) each pass validate_draft and are rejected only by the
+  weld.
+- Architecture declarations are untouched: schema, semantic hash,
+  behavioural hash, and pilot derivations are unchanged; the published
+  architecture still welds and derives both pilots.
+- The Phase-1 overclaim correction is carried by this register (F2-002
+  reopened the deferred F1-003 harness and closes it here); the immutable
+  Phase-1 tag is unchanged.
+- Verified: fmt, clippy -D warnings, realization suite green under the
+  nightly SDK toolchain; full workspace gates run at the end of the F2
+  remediation series.
 
 ---
 
@@ -978,7 +1011,7 @@ The Phase-1 completion record also needs to distinguish:
 
 | ID | Priority | Status | Deliverable |
 |---|---:|---|---|
-| `P2-001` | P1 | **BLOCKED** | Close realization-boundary prerequisite F2-002 |
+| `P2-001` | P1 | **DONE** | Close realization-boundary prerequisite F2-002 |
 | `P2-002` | P2 | **IN PROGRESS** | Complete dependency review C1-004 |
 | `P2-003` | P1 | **BLOCKED** | Create `tripod-compiler` crate |
 | `P2-004` | P1 | **BLOCKED** | Architecture/realization binding and explicit compiler scope |
@@ -1001,7 +1034,7 @@ may proceed without freezing public APIs.
 ### P2-001 — Close the realization input boundary
 
 **Priority:** P1
-**Status:** BLOCKED on F2-002
+**Status:** DONE with F2-002
 
 The compiler must not begin from a pilot realization whose architecture weld
 accepts unrepresented operation fields.

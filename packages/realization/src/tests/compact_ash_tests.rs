@@ -973,3 +973,253 @@ fn a_draft_valid_quantity_read_is_still_rejected_by_the_weld() {
 
     weld_rejects(&mutated, crate::ArchitectureMismatchField::Reads);
 }
+
+type WeldMutationCase = (
+    &'static str,
+    Box<dyn Fn(&mut architecture::OperationSpec)>,
+    crate::ArchitectureMismatchField,
+);
+
+/// One focused mutation per welded field family (F2-002): each case
+/// rewrites exactly one aspect of the published compact-ASH row and
+/// names the mismatch class the weld must report.
+#[allow(clippy::too_many_lines)]
+fn weld_mutation_cases() -> Vec<WeldMutationCase> {
+    use crate::ArchitectureMismatchField as Field;
+
+    fn edit_input(
+        operation: &mut architecture::OperationSpec,
+        object: ObjectId,
+        edit: impl Fn(&mut architecture::InputSpec),
+    ) {
+        let mut inputs = operation.inputs.to_vec();
+        edit(
+            inputs
+                .iter_mut()
+                .find(|input| input.object == object)
+                .expect("the pilot declares the input family"),
+        );
+        operation.inputs = inputs.leak();
+    }
+
+    fn edit_output(
+        operation: &mut architecture::OperationSpec,
+        object: ObjectId,
+        edit: impl Fn(&mut architecture::OutputSpec),
+    ) {
+        let mut outputs = operation.outputs.to_vec();
+        edit(
+            outputs
+                .iter_mut()
+                .find(|output| output.object == object)
+                .expect("the pilot declares the output family"),
+        );
+        operation.outputs = outputs.leak();
+    }
+
+    vec![
+        (
+            "primary authorization",
+            Box::new(|operation| {
+                operation.authorization = architecture::PermissionClass::Operator;
+            }),
+            Field::Authorization,
+        ),
+        (
+            "ash input authorization",
+            Box::new(|operation| {
+                edit_input(operation, ObjectId::Ash, |input| {
+                    input.authorization = architecture::InputAuthorization::InputOwner;
+                });
+            }),
+            Field::AshInput,
+        ),
+        (
+            "ash input minimum",
+            Box::new(|operation| {
+                edit_input(operation, ObjectId::Ash, |input| input.minimum = 1);
+            }),
+            Field::AshInput,
+        ),
+        (
+            "ash output maximum",
+            Box::new(|operation| {
+                edit_output(operation, ObjectId::Ash, |output| {
+                    output.maximum = architecture::MaxCount::Exact(2);
+                });
+            }),
+            Field::AshOutput,
+        ),
+        (
+            "sponsor input maximum",
+            Box::new(|operation| {
+                edit_input(operation, ObjectId::PlainLbtc, |input| {
+                    input.maximum = architecture::MaxCount::Exact(4);
+                });
+            }),
+            Field::SponsorInput,
+        ),
+        (
+            "sponsor output maximum",
+            Box::new(|operation| {
+                edit_output(operation, ObjectId::PlainLbtc, |output| {
+                    output.maximum = architecture::MaxCount::Exact(2);
+                });
+            }),
+            Field::SponsorOutput,
+        ),
+        (
+            "added input family",
+            Box::new(|operation| {
+                let mut inputs = operation.inputs.to_vec();
+                inputs.push(architecture::InputSpec {
+                    object: ObjectId::State,
+                    minimum: 1,
+                    maximum: architecture::MaxCount::Exact(1),
+                    authorization: architecture::InputAuthorization::CovenantCompanion,
+                });
+                operation.inputs = inputs.leak();
+            }),
+            Field::InputFamilies,
+        ),
+        (
+            "removed input family",
+            Box::new(|operation| {
+                let mut inputs = operation.inputs.to_vec();
+                inputs.retain(|input| input.object == ObjectId::Ash);
+                operation.inputs = inputs.leak();
+            }),
+            Field::InputFamilies,
+        ),
+        (
+            "added output family",
+            Box::new(|operation| {
+                let mut outputs = operation.outputs.to_vec();
+                outputs.push(architecture::OutputSpec {
+                    object: ObjectId::State,
+                    minimum: 1,
+                    maximum: architecture::MaxCount::Exact(1),
+                });
+                operation.outputs = outputs.leak();
+            }),
+            Field::OutputFamilies,
+        ),
+        (
+            "changed bound set",
+            Box::new(|operation| {
+                operation.bounds = vec![BoundId::AshBatchMax].leak();
+            }),
+            Field::Bounds,
+        ),
+        (
+            "delta kind",
+            Box::new(|operation| {
+                let mut deltas = operation.canonical_deltas.to_vec();
+                deltas[0].kind = DeltaKind::Lateral;
+                operation.canonical_deltas = deltas.leak();
+            }),
+            Field::CanonicalDelta,
+        ),
+        (
+            "delta condition",
+            Box::new(|operation| {
+                let mut deltas = operation.canonical_deltas.to_vec();
+                deltas[0].condition = architecture::DeltaCondition::PositiveAdmittedPrincipal;
+                operation.canonical_deltas = deltas.leak();
+            }),
+            Field::CanonicalDelta,
+        ),
+        (
+            "delta destruction tag",
+            Box::new(|operation| {
+                let mut deltas = operation.canonical_deltas.to_vec();
+                deltas[0].destruction_tag = Some(architecture::TagId::Burn);
+                operation.canonical_deltas = deltas.leak();
+            }),
+            Field::CanonicalDelta,
+        ),
+        (
+            "extra canonical delta",
+            Box::new(|operation| {
+                let mut deltas = operation.canonical_deltas.to_vec();
+                deltas.push(deltas[0]);
+                operation.canonical_deltas = deltas.leak();
+            }),
+            Field::CanonicalDelta,
+        ),
+        (
+            "added data output",
+            Box::new(|operation| {
+                operation.data_outputs = vec![architecture::DataOutputSpec {
+                    kind: architecture::DataOutputKind::Destruction,
+                    tag: architecture::TagId::Burn,
+                    asset: Some(AssetId::U),
+                    minimum: 1,
+                    maximum: architecture::MaxCount::Exact(1),
+                    condition: architecture::DeltaCondition::Always,
+                }]
+                .leak();
+            }),
+            Field::DataOutputs,
+        ),
+        (
+            "removed open flow",
+            Box::new(|operation| {
+                operation.open_flows = vec![].leak();
+            }),
+            Field::OpenFlows,
+        ),
+        (
+            "added value-flow class",
+            Box::new(|operation| {
+                let mut flows = operation.value_flows.to_vec();
+                flows.push(architecture::ValueFlowClass::OwnerConsented);
+                operation.value_flows = flows.leak();
+            }),
+            Field::ValueFlows,
+        ),
+        (
+            "removed witness",
+            Box::new(|operation| {
+                let mut witnesses = operation.witnesses.to_vec();
+                witnesses.retain(|witness| *witness != architecture::WitnessId::UtxoLifecycle);
+                operation.witnesses = witnesses.leak();
+            }),
+            Field::Witnesses,
+        ),
+        (
+            "changed root use",
+            Box::new(|operation| {
+                operation.roots = vec![architecture::RootUseSpec {
+                    root: RootId::ALL[0],
+                    use_kind: RootUse::Succession,
+                }]
+                .leak();
+            }),
+            Field::RootPolicy,
+        ),
+        (
+            "changed projection rule",
+            Box::new(|operation| {
+                operation.projections = vec![].leak();
+            }),
+            Field::ProjectionPolicy,
+        ),
+    ]
+}
+
+#[test]
+fn compact_ash_weld_rejects_every_field_mutation() {
+    for (name, mutate, field) in weld_mutation_cases() {
+        let mutated = compact_ash_mutated(|operation| mutate(operation));
+
+        assert_eq!(
+            crate::validate::validate_compact_ash_architecture(&mutated),
+            Err(crate::RealizationError::ArchitectureOperationMismatch {
+                operation: OperationId::CompactAsh,
+                field,
+            }),
+            "mutation case {name}",
+        );
+    }
+}
