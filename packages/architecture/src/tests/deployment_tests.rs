@@ -14,6 +14,10 @@ fn release_architecture() -> Architecture {
     architecture
 }
 
+/// The emitted-script-bundle artifact hash of the synthetic release
+/// profile. Every valid calibration must bind to exactly this bundle.
+const RELEASED_BUNDLE: [u8; 32] = [0xD3; 32];
+
 /// A fully populated synthetic final deployment profile bound to the
 /// release architecture.
 fn release_profile(architecture: &Architecture) -> DeploymentProfile {
@@ -24,7 +28,7 @@ fn release_profile(architecture: &Architecture) -> DeploymentProfile {
             bound: bound.id,
             value: bound.default_value.unwrap_or(32),
             evidence_hash: [0xA1; 32],
-            script_bundle_hash: [0xA2; 32],
+            script_bundle_hash: RELEASED_BUNDLE,
             measured_weight: 150_000,
             measured_witness_bytes: 40_000,
             measured_opcode_cost: 20_000,
@@ -64,7 +68,7 @@ fn release_profile(architecture: &Architecture) -> DeploymentProfile {
         artifacts: ArtifactHashes {
             normative_rust: [0xD1; 32],
             compiler_configuration: [0xD2; 32],
-            emitted_script_bundle: [0xD3; 32],
+            emitted_script_bundle: RELEASED_BUNDLE,
             reference_indexer: [0xD4; 32],
             architecture_json: [0xD5; 32],
             architecture_toml: [0xD6; 32],
@@ -256,6 +260,88 @@ fn missing_bound_evidence_hash_is_rejected() {
     assert!(errors.contains(&DeploymentError::MissingBoundEvidence(
         BoundId::TransferInputMax,
     )));
+}
+
+// Bundle binding: calibration evidence proves something about exactly
+// one script bundle, so every calibration must bind to the released
+// emitted-script-bundle artifact. A stale measurement against any
+// other bundle — even one bound, even all bounds — is rejected.
+
+#[test]
+fn calibration_bound_to_different_bundle_is_rejected() {
+    let architecture = release_architecture();
+
+    let mut profile = release_profile(&architecture);
+
+    for calibration in &mut profile.calibrated_bounds {
+        if calibration.bound == BoundId::TransferInputMax {
+            calibration.script_bundle_hash = [0x77; 32];
+        }
+    }
+
+    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+
+    assert!(
+        errors.contains(&DeploymentError::BoundCalibrationBundleMismatch(
+            BoundId::TransferInputMax,
+        ))
+    );
+}
+
+#[test]
+fn all_calibrations_bound_to_stale_bundle_are_rejected() {
+    let architecture = release_architecture();
+
+    let mut profile = release_profile(&architecture);
+
+    for calibration in &mut profile.calibrated_bounds {
+        calibration.script_bundle_hash = [0x77; 32];
+    }
+
+    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+
+    for bound in architecture.bounds {
+        if bound.requires_deployment_calibration {
+            assert!(errors.contains(&DeploymentError::BoundCalibrationBundleMismatch(bound.id)));
+        }
+    }
+}
+
+#[test]
+fn bundle_change_without_recalibration_is_rejected() {
+    // The final bundle artifact moves but no calibration is redone:
+    // every previously valid calibration is now stale evidence.
+    let architecture = release_architecture();
+
+    let mut profile = release_profile(&architecture);
+    profile.artifacts.emitted_script_bundle = [0x88; 32];
+
+    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+
+    for bound in architecture.bounds {
+        if bound.requires_deployment_calibration {
+            assert!(errors.contains(&DeploymentError::BoundCalibrationBundleMismatch(bound.id)));
+        }
+    }
+}
+
+#[test]
+fn matching_bundle_bindings_carry_no_mismatch_error() {
+    // The converse direction of the census: when every calibration
+    // binds the released bundle, no mismatch error may appear even
+    // when the profile fails for unrelated reasons.
+    let architecture = release_architecture();
+
+    let mut profile = release_profile(&architecture);
+    profile.network_id = [0; 32];
+
+    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+
+    assert!(
+        !errors
+            .iter()
+            .any(|error| matches!(error, DeploymentError::BoundCalibrationBundleMismatch(_)))
+    );
 }
 
 #[test]
@@ -643,6 +729,20 @@ fn deployment_profile_hash_changes_with_content() {
 // The profile hash commits each independent-evidence report
 // separately: changing exactly one report hash changes the profile
 // hash, so the three claims cannot be conflated in the commitment.
+
+#[test]
+fn profile_hash_changes_when_calibration_bundle_binding_changes() {
+    let architecture = release_architecture();
+    let profile = release_profile(&architecture);
+
+    let mut modified = profile.clone();
+    modified.calibrated_bounds[0].script_bundle_hash = [0xF4; 32];
+
+    assert_ne!(
+        deployment_profile_hash(&profile).unwrap(),
+        deployment_profile_hash(&modified).unwrap(),
+    );
+}
 
 #[test]
 fn profile_hash_changes_when_event_report_changes() {

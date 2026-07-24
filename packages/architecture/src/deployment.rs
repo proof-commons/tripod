@@ -174,6 +174,7 @@ pub enum DeploymentError {
     ZeroCalibratedValue(BoundId),
     CalibratedValueBelowManifestMinimum(BoundId),
     MissingBoundEvidence(BoundId),
+    BoundCalibrationBundleMismatch(BoundId),
     MissingBoundMeasurement(BoundId),
     MeasurementExceedsScriptLimit(BoundId),
 
@@ -224,6 +225,13 @@ impl fmt::Display for DeploymentError {
             }
             Self::MissingBoundEvidence(bound) => {
                 write!(formatter, "missing calibration evidence for bound {bound}")
+            }
+            Self::BoundCalibrationBundleMismatch(bound) => {
+                write!(
+                    formatter,
+                    "calibration for bound {bound} measured a different script bundle \
+                     than the released emitted-script-bundle artifact"
+                )
             }
             Self::MissingBoundMeasurement(bound) => {
                 write!(formatter, "missing script measurement for bound {bound}")
@@ -426,6 +434,11 @@ fn validate_bound_calibrations(
 
         if is_zero(&calibration.evidence_hash) || is_zero(&calibration.script_bundle_hash) {
             errors.push(DeploymentError::MissingBoundEvidence(bound.id));
+        } else if calibration.script_bundle_hash != profile.artifacts.emitted_script_bundle {
+            // Calibration evidence is meaningful only for the exact
+            // bundle being released: a measurement taken against any
+            // other script bundle is stale, whatever its values say.
+            errors.push(DeploymentError::BoundCalibrationBundleMismatch(bound.id));
         }
 
         if calibration.measured_weight == 0
