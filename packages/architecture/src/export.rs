@@ -1029,33 +1029,11 @@ impl ArchitectureExport {
 
         tags.sort_by_key(|tag| tag.code);
 
-        let input_authorization_evidence = InputAuthorization::ALL
-            .iter()
-            .map(|authorization| {
-                let evidence = authorization.evidence();
+        let input_authorization_evidence =
+            input_authorization_evidence_rows(InputAuthorization::ALL.iter().copied());
 
-                AuthorizationEvidenceExport {
-                    input_authorization: authorization.as_str().to_owned(),
-                    model_evidence: evidence.model.as_str().to_owned(),
-                    compiler_evidence: evidence.compiler.as_str().to_owned(),
-                    deployment_evidence: evidence.deployment.as_str().to_owned(),
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let operation_authorization_evidence = PermissionClass::ALL
-            .iter()
-            .map(|class| {
-                let evidence = class.evidence();
-
-                OperationAuthorizationEvidenceExport {
-                    permission_class: class.as_str().to_owned(),
-                    model_evidence: evidence.model.as_str().to_owned(),
-                    compiler_evidence: evidence.compiler.as_str().to_owned(),
-                    deployment_evidence: evidence.deployment.as_str().to_owned(),
-                }
-            })
-            .collect::<Vec<_>>();
+        let operation_authorization_evidence =
+            operation_authorization_evidence_rows(PermissionClass::ALL.iter().copied());
 
         Self {
             target_network: architecture.document.target_network.to_owned(),
@@ -1085,6 +1063,60 @@ impl ArchitectureExport {
             operation_authorization_evidence,
         }
     }
+}
+
+/// Canonical input-authorization evidence rows, sorted by stable
+/// discriminant.
+///
+/// The explicit sort keeps the exported array independent of the
+/// iteration (enum declaration) order, so the canonicalization claim
+/// does not rest on `ALL` staying code-ordered.
+pub(crate) fn input_authorization_evidence_rows(
+    authorizations: impl IntoIterator<Item = InputAuthorization>,
+) -> Vec<AuthorizationEvidenceExport> {
+    let mut rows = authorizations
+        .into_iter()
+        .map(|authorization| {
+            let evidence = authorization.evidence();
+
+            (
+                authorization.code(),
+                AuthorizationEvidenceExport {
+                    input_authorization: authorization.as_str().to_owned(),
+                    model_evidence: evidence.model.as_str().to_owned(),
+                    compiler_evidence: evidence.compiler.as_str().to_owned(),
+                    deployment_evidence: evidence.deployment.as_str().to_owned(),
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    rows.sort_by_key(|(code, _)| *code);
+    rows.into_iter().map(|(_, row)| row).collect()
+}
+
+/// Canonical operation-authorization evidence rows, sorted by stable
+/// discriminant.
+pub(crate) fn operation_authorization_evidence_rows(
+    classes: impl IntoIterator<Item = PermissionClass>,
+) -> Vec<OperationAuthorizationEvidenceExport> {
+    let mut rows = classes
+        .into_iter()
+        .map(|class| {
+            let evidence = class.evidence();
+
+            (
+                class.code(),
+                OperationAuthorizationEvidenceExport {
+                    permission_class: class.as_str().to_owned(),
+                    model_evidence: evidence.model.as_str().to_owned(),
+                    compiler_evidence: evidence.compiler.as_str().to_owned(),
+                    deployment_evidence: evidence.deployment.as_str().to_owned(),
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    rows.sort_by_key(|(code, _)| *code);
+    rows.into_iter().map(|(_, row)| row).collect()
 }
 
 fn sorted_ids<T: Copy>(values: &[T], name: fn(T) -> &'static str) -> Vec<String> {

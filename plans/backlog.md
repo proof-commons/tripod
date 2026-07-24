@@ -306,7 +306,7 @@ The Phase-1 tag remains unchanged.
 | `F3-005` | P2 | **DONE** | The stable realization projection includes raw order-sensitive graph declaration vectors. |
 | `F3-006` | P2 | **DONE** | Realization derivation does not fully validate operation, relation, expression, and proof-alternative ownership. |
 | `F3-007` | P3 | **DONE** | Layer-0 duplicate-label diagnostics do not name both mint locations. |
-| `F3-008` | P3 | **TODO** | Authorization-evidence export arrays depend on enum declaration order rather than explicit canonical sorting. |
+| `F3-008` | P3 | **DONE** | Authorization-evidence export arrays depend on enum declaration order rather than explicit canonical sorting. |
 | `F3-009` | P3 | **TODO** | Conditional LaTeX flattening ignores the `IfFileExists` probe path when selecting the branch. |
 | `F3-010` | P3 | **TODO** | The empty-stamp contract conflicts with `touch_stamp` preserving pre-existing stamp bytes. |
 
@@ -1159,7 +1159,7 @@ diagnostic identifies both canonical repository-relative locations.
 ### F3-008 — Canonically sort authorization-evidence exports
 
 **Priority:** P3
-**Status:** TODO
+**Status:** DONE
 **Owner:** `architecture`
 **Primary files:**
 
@@ -1200,10 +1200,33 @@ should remain unchanged.
 
 #### Exit
 
-- [ ] sorting is explicit;
-- [ ] permutation test passes;
-- [ ] generated artifacts remain current;
-- [ ] architecture and workspace gates pass cleanly.
+- [x] sorting is explicit;
+- [x] permutation test passes;
+- [x] generated artifacts remain current;
+- [x] architecture and workspace gates pass cleanly.
+
+#### Evidence · DONE
+
+- F3-008 closure commit. Both evidence tables are now built by
+  dedicated helpers (input_authorization_evidence_rows,
+  operation_authorization_evidence_rows) that construct a temporary
+  (code, row) pair per entry, sort by the stable u16 discriminant,
+  and drop the key before emission — the exported arrays no longer
+  inherit enum declaration order through the ALL slices, so the
+  canonicalization claim no longer rests on the ids.rs do-not-reorder
+  policy alone.
+- Regression: forward and reversed ALL iteration produce equal row
+  vectors for both tables, and the manifest export equals the
+  canonical helper output exactly. The existing expected-value,
+  canonical-byte, and hash-pin tests continue to cover the semantic
+  and presentation hashes.
+- The previous source order was already code-ordered, so exported
+  bytes, hashes, and every generated artifact are byte-unchanged —
+  confirmed by the check-generated Meson lane over the committed
+  publications.
+- Verified: fmt, clippy -D warnings, architecture suite (145) and
+  meson test check-generated green under the nightly SDK toolchain.
+  Complete gates run at the end of the F3 series.
 
 ---
 

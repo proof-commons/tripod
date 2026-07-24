@@ -564,3 +564,26 @@ fn anchor_set_hash_matches_the_published_recipe() {
 
     assert_eq!(canonical::hex(&digest), expected);
 }
+
+#[test]
+fn authorization_evidence_rows_are_declaration_order_independent() {
+    // F3-008: the exported evidence tables sort by stable
+    // discriminant, so reversing the source iteration must not move
+    // one row, and the manifest arrays must equal the canonical
+    // helper output exactly.
+    let forward =
+        export::input_authorization_evidence_rows(InputAuthorization::ALL.iter().copied());
+    let reversed =
+        export::input_authorization_evidence_rows(InputAuthorization::ALL.iter().rev().copied());
+    assert_eq!(forward, reversed);
+
+    let forward_classes =
+        export::operation_authorization_evidence_rows(PermissionClass::ALL.iter().copied());
+    let reversed_classes =
+        export::operation_authorization_evidence_rows(PermissionClass::ALL.iter().rev().copied());
+    assert_eq!(forward_classes, reversed_classes);
+
+    let exported = ArchitectureExport::from_architecture(&ARCHITECTURE);
+    assert_eq!(exported.input_authorization_evidence, forward);
+    assert_eq!(exported.operation_authorization_evidence, forward_classes);
+}
