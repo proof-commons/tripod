@@ -1101,6 +1101,13 @@ pub struct BaseArgs {
 /// fresh success stamp appears, and the build graph keeps the target
 /// dirty. A failing command must not call this at all.
 ///
+/// This strict rule governs only checker `--stamp` outputs, whose
+/// mtime is a freshness oracle. `build_always_stale` build-dir markers
+/// (the generator and cargo-lane wrappers, publication mirrors) are a
+/// distinct class: they are never consulted for freshness, so they use
+/// plain shell `touch` by design and deliberately do not route here
+/// (reviewed as F4-003 — not a policy bypass).
+///
 /// # Errors
 ///
 /// Returns the underlying I/O error, or an `InvalidData` error for an

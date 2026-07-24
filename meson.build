@@ -394,6 +394,10 @@ alias_target('lint', labels_stamp, generated_stamp, plans_stamp, forbidden_text_
 # generator succeeds (ADR-014 generator-stamp rule). On-demand targets
 # are always stale so an explicit repair request reruns the generator
 # even when the stamp is newer than a corrupted committed publication.
+# This stamp is an always-stale marker, not a freshness oracle, so plain
+# shell `touch` is correct here — it is deliberately outside the strict
+# empty-stamp refusal that governs checker `--stamp` outputs in
+# cli_common::touch_stamp (reviewed as F4-003).
 # ---------------------------------------------------------------------------
 generator_wrap = [
   sh, '-c',
@@ -496,7 +500,9 @@ stamp_probe = ['-c', 'test -f "$1"', 'sh']
 # are deliberately always-stale: Meson does not model Cargo's complete input
 # graph here, so the command must run and let Cargo decide what is fresh. Without
 # this, an old cargo-*.ok stamp could satisfy `meson test` after Rust sources,
-# manifests, or Cargo's own dependency graph changed.
+# manifests, or Cargo's own dependency graph changed. Like generator_wrap, the
+# cargo-*.ok stamp is an always-stale marker, so plain shell `touch` is correct
+# and stays outside cli_common::touch_stamp's strict empty-stamp rule (F4-003).
 cargo_quiet_stamp_wrap = [
   sh, '-c',
   'stamp="$1"; log="$2"; shift 2; if CARGO_TERM_PROGRESS_WHEN=never "$@" > "$log" 2>&1; then touch "$stamp"; else cat "$log" >&2; exit 1; fi',
