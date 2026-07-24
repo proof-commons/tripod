@@ -304,7 +304,7 @@ The Phase-1 tag remains unchanged.
 | `F3-003` | P1 | **DONE** | Strict flattener confinement can be bypassed through a symlinked ancestor directory. |
 | `F3-004` | P2 | **DONE** | `check-plans` accepts an empty argument census and falls back to discovery as authority. |
 | `F3-005` | P2 | **DONE** | The stable realization projection includes raw order-sensitive graph declaration vectors. |
-| `F3-006` | P2 | **TODO** | Realization derivation does not fully validate operation, relation, expression, and proof-alternative ownership. |
+| `F3-006` | P2 | **DONE** | Realization derivation does not fully validate operation, relation, expression, and proof-alternative ownership. |
 | `F3-007` | P3 | **TODO** | Layer-0 duplicate-label diagnostics do not name both mint locations. |
 | `F3-008` | P3 | **TODO** | Authorization-evidence export arrays depend on enum declaration order rather than explicit canonical sorting. |
 | `F3-009` | P3 | **TODO** | Conditional LaTeX flattening ignores the `IfFileExists` probe path when selecting the branch. |
@@ -942,7 +942,7 @@ realization identity exists.
 ### F3-006 — Validate realization ownership and proof bindings
 
 **Priority:** P2
-**Status:** TODO
+**Status:** DONE
 **Owners:** `realization`, future `compiler`
 **Blocks:** proof planning and relation census
 **Primary files:**
@@ -1040,11 +1040,55 @@ future compiler boundary:      safer
 
 #### Exit
 
-- [ ] all ownership relationships are validated generically;
-- [ ] legitimate cross-operation lifecycle semantics remain explicit;
-- [ ] focused mutation tests cover each relation;
-- [ ] compiler relation/proof census has a trustworthy source;
-- [ ] realization, model conformance, and workspace gates pass.
+- [x] all ownership relationships are validated generically;
+- [x] legitimate cross-operation lifecycle semantics remain explicit;
+- [x] focused mutation tests cover each relation;
+- [x] compiler relation/proof census has a trustworthy source;
+- [x] realization, model conformance, and workspace gates pass.
+
+#### Evidence · DONE
+
+- F3-006 closure commit. A generic per-operation ownership pass
+  (validate_operation_ownership) runs inside the shared assembly path
+  before any graph is built, so every constructed realization —
+  derive and fixtures alike — validates: the declaration's own
+  operation identity against the requested map key; every expression
+  identity, expression operand, and fact payload; every relation
+  identity; both endpoints of every relation dependency; every proof
+  alternative against the exact relation carrying it (binding, not
+  merely operation ownership); every constructibility node and edge
+  endpoint including fact payloads; and every disclosure node, edge
+  endpoint, and seed including the relations and operations named by
+  seed reasons. No invariant rests on helper-constructor correctness
+  any more.
+- Focused typed errors, none collapsed into
+  UnsupportedOperationDeclaration:
+  OperationDeclarationIdentityMismatch, ForeignExpressionOwnership,
+  ForeignRelationOwnership, ForeignRelationDependency,
+  ForeignProofAlternativeBinding, ForeignConstructibilityOwnership,
+  ForeignDisclosureOwnership.
+- Deliberate cross-operation meanings stay valid because they are
+  typed payloads, not owners: a lifecycle RequiredExit (and the
+  LifecycleExit relation subject) names its exit operation as
+  semantic content while the declaring relation stays operation-
+  owned, and the architecture-owned BoundValue fact has no owning
+  operation. A positive regression pins the compact-ASH Clear exit
+  deriving under the validator.
+- Mutation regressions (each asserting its exact typed error):
+  compact-ASH declaration returned under the live-transfer key; a
+  live-transfer relation inside the compact-ASH declaration; a proof
+  alternative bound to a different relation of the same operation; a
+  foreign-identity expression; an operation-owned expression whose
+  fact payload reads another operation's signers; a relation
+  dependency naming a foreign prerequisite; a foreign
+  constructibility operation node; a disclosure seed naming a
+  foreign relation.
+- Architecture identities, pilot behavior, and generated artifacts
+  are unchanged; accepted malformed values are strictly narrower.
+- Verified: fmt, clippy -D warnings (workspace, all targets),
+  realization suite (135 unit + 5 public-API + 4 doctests) and model
+  suite (287 + conformance) green under the nightly SDK toolchain.
+  Complete gates run at the end of the F3 series.
 
 ---
 

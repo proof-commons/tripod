@@ -212,6 +212,10 @@ pub(crate) fn assemble_scoped_realization(
     scope: RealizationScope,
     operations: BTreeMap<OperationId, OperationRealization>,
 ) -> Result<ScopedRealizationSpec, RealizationError> {
+    for (operation, declaration) in &operations {
+        crate::validate::validate_operation_ownership(*operation, declaration)?;
+    }
+
     let expression_declarations = operations
         .values()
         .flat_map(|operation| operation.expressions.iter().cloned())

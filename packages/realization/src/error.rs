@@ -186,6 +186,60 @@ pub enum RealizationError {
     #[error("operation {0} is declared more than once")]
     DuplicateOperationDeclaration(OperationId),
 
+    /// A declaration was returned for a different operation than
+    /// requested.
+    #[error("declaration for operation {requested} identifies itself as {declared}")]
+    OperationDeclarationIdentityMismatch {
+        requested: OperationId,
+        declared: OperationId,
+    },
+
+    /// An operation declared an expression owned by another operation.
+    #[error("operation {operation} declares foreign expression {expression:?}")]
+    ForeignExpressionOwnership {
+        operation: OperationId,
+        expression: ExprId,
+    },
+
+    /// An operation declared a relation owned by another operation.
+    #[error("operation {operation} declares foreign relation {relation:?}")]
+    ForeignRelationOwnership {
+        operation: OperationId,
+        relation: RelationId,
+    },
+
+    /// A relation dependency named a relation owned by another
+    /// operation.
+    #[error("operation {operation} declares a dependency on foreign relation {relation:?}")]
+    ForeignRelationDependency {
+        operation: OperationId,
+        relation: RelationId,
+    },
+
+    /// A proof alternative points at a relation other than the one
+    /// carrying it.
+    #[error("relation {relation:?} carries a proof alternative for {foreign:?}")]
+    ForeignProofAlternativeBinding {
+        relation: RelationId,
+        foreign: RelationId,
+    },
+
+    /// An operation declared a constructibility node or edge endpoint
+    /// owned by another operation.
+    #[error("operation {operation} declares foreign constructibility node {node:?}")]
+    ForeignConstructibilityOwnership {
+        operation: OperationId,
+        node: ConstructibilityNodeId,
+    },
+
+    /// An operation declared a disclosure node, edge endpoint, or seed
+    /// owned by another operation.
+    #[error("operation {operation} declares foreign disclosure node {node:?}")]
+    ForeignDisclosureOwnership {
+        operation: OperationId,
+        node: DisclosureNodeId,
+    },
+
     /// An architecture operation needed by realization is absent.
     #[error("architecture operation {0} is missing")]
     MissingArchitectureOperation(OperationId),

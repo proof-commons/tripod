@@ -591,3 +591,225 @@ fn live_error(field: ArchitectureMismatchField) -> RealizationError {
 fn mismatch_live(field: ArchitectureMismatchField) -> Result<(), RealizationError> {
     Err(live_error(field))
 }
+
+/// Generic per-operation ownership validation (F3-006).
+///
+/// Runs before graph assembly so a mistyped declaration fails with a
+/// focused ownership error rather than a graph-shaped one, and so no
+/// invariant rests on helper-constructor correctness. Checked per
+/// operation: the declaration's own identity, expression IDs and
+/// operands, relation IDs, relation-dependency endpoints, proof
+/// alternative bindings, constructibility nodes and edge endpoints,
+/// and disclosure nodes, edge endpoints, and seeds.
+///
+/// Deliberate cross-operation meanings stay valid because they are
+/// typed payloads, not owners: a lifecycle `RequiredExit` (and the
+/// `LifecycleExit` relation subject) names its exit operation as
+/// semantic content while the declaring relation remains owned by the
+/// declaring operation, and an architecture-owned `BoundValue` fact
+/// has no owning operation at all.
+pub fn validate_operation_ownership(
+    requested: OperationId,
+    declaration: &crate::OperationRealization,
+) -> Result<(), RealizationError> {
+    if declaration.operation != requested {
+        return Err(RealizationError::OperationDeclarationIdentityMismatch {
+            requested,
+            declared: declaration.operation,
+        });
+    }
+
+    for expression in &declaration.expressions {
+        ensure_expression_owner(requested, &expression.id)?;
+        for operand in expression_operand_ids(&expression.node) {
+            ensure_expression_owner(requested, operand)?;
+        }
+        if let ExpressionNode::Fact(fact) = &expression.node
+            && fact_owner(fact).is_some_and(|owner| owner != requested)
+        {
+            return Err(RealizationError::ForeignExpressionOwnership {
+                operation: requested,
+                expression: crate::ExprId::fact(fact.clone()),
+            });
+        }
+    }
+
+    for relation in &declaration.relations {
+        if relation.id.operation() != requested {
+            return Err(RealizationError::ForeignRelationOwnership {
+                operation: requested,
+                relation: relation.id.clone(),
+            });
+        }
+        for alternative in &relation.proof_alternatives {
+            if alternative.relation() != &relation.id {
+                return Err(RealizationError::ForeignProofAlternativeBinding {
+                    relation: relation.id.clone(),
+                    foreign: alternative.relation().clone(),
+                });
+            }
+        }
+    }
+
+    for dependency in &declaration.relation_dependencies {
+        for endpoint in [&dependency.prerequisite, &dependency.dependent] {
+            if endpoint.operation() != requested {
+                return Err(RealizationError::ForeignRelationDependency {
+                    operation: requested,
+                    relation: endpoint.clone(),
+                });
+            }
+        }
+    }
+
+    for node in &declaration.constructibility_nodes {
+        ensure_constructibility_owner(requested, &node.id)?;
+    }
+    for edge in &declaration.constructibility_edges {
+        ensure_constructibility_owner(requested, &edge.source)?;
+        ensure_constructibility_owner(requested, &edge.target)?;
+    }
+
+    for node in &declaration.disclosure_nodes {
+        ensure_disclosure_owner(requested, &node.id())?;
+    }
+    for edge in &declaration.disclosure_edges {
+        ensure_disclosure_owner(requested, &edge.source)?;
+        ensure_disclosure_owner(requested, &edge.target)?;
+    }
+    for seed in &declaration.disclosure_seeds {
+        ensure_disclosure_owner(requested, &seed.node)?;
+        for relation in seed_reason_relations(&seed.reason) {
+            if relation.operation() != requested {
+                return Err(RealizationError::ForeignDisclosureOwnership {
+                    operation: requested,
+                    node: crate::DisclosureNodeId::Relation(relation.clone()),
+                });
+            }
+        }
+        if let crate::DisclosureReason::PermissionlessConstructibility { operation, .. } =
+            &seed.reason
+            && *operation != requested
+        {
+            return Err(RealizationError::ForeignDisclosureOwnership {
+                operation: requested,
+                node: seed.node.clone(),
+            });
+        }
+    }
+
+    Ok(())
+}
+
+/// Operation owning one primitive fact, if any.
+///
+/// `BoundValue` is architecture-owned and belongs to no operation.
+fn fact_owner(fact: &FactId) -> Option<OperationId> {
+    match fact {
+        FactId::FamilyCount { operation, .. }
+        | FactId::FamilyAmount { operation, .. }
+        | FactId::InputOwners { operation, .. }
+        | FactId::Signers { operation }
+        | FactId::ProjectionPresent { operation, .. }
+        | FactId::FamilyRecognized { operation, .. }
+        | FactId::SponsorIsolated { operation }
+        | FactId::ProtocolSecretUsed { operation } => Some(*operation),
+        FactId::BoundValue { .. } => None,
+    }
+}
+
+fn expression_owner(id: &crate::ExprId) -> Option<OperationId> {
+    match id {
+        crate::ExprId::Fact(fact) => fact_owner(fact),
+        crate::ExprId::Relation { relation, .. } => Some(relation.operation()),
+    }
+}
+
+fn ensure_expression_owner(
+    requested: OperationId,
+    id: &crate::ExprId,
+) -> Result<(), RealizationError> {
+    if expression_owner(id).is_some_and(|owner| owner != requested) {
+        return Err(RealizationError::ForeignExpressionOwnership {
+            operation: requested,
+            expression: id.clone(),
+        });
+    }
+    Ok(())
+}
+
+fn expression_operand_ids(node: &ExpressionNode) -> Vec<&crate::ExprId> {
+    match node {
+        ExpressionNode::Fact(_)
+        | ExpressionNode::Bool(_)
+        | ExpressionNode::Count(_)
+        | ExpressionNode::Amount(_) => Vec::new(),
+        ExpressionNode::CheckedSum { terms, .. } | ExpressionNode::All { terms } => {
+            terms.iter().collect()
+        }
+        ExpressionNode::Equal { left, right } | ExpressionNode::LessOrEqual { left, right } => {
+            vec![left, right]
+        }
+        ExpressionNode::OwnerSubset {
+            required,
+            presented,
+        } => vec![required, presented],
+    }
+}
+
+fn ensure_constructibility_owner(
+    requested: OperationId,
+    node: &ConstructibilityNodeId,
+) -> Result<(), RealizationError> {
+    let owner = match node {
+        ConstructibilityNodeId::Operation(operation)
+        | ConstructibilityNodeId::Fact { operation, .. }
+        | ConstructibilityNodeId::Witness { operation, .. } => *operation,
+    };
+    if owner != requested {
+        return Err(RealizationError::ForeignConstructibilityOwnership {
+            operation: requested,
+            node: node.clone(),
+        });
+    }
+    // A constructibility fact payload must agree with its declared
+    // operation envelope.
+    if let ConstructibilityNodeId::Fact { fact, .. } = node
+        && fact_owner(fact).is_some_and(|owner| owner != requested)
+    {
+        return Err(RealizationError::ForeignConstructibilityOwnership {
+            operation: requested,
+            node: node.clone(),
+        });
+    }
+    Ok(())
+}
+
+fn ensure_disclosure_owner(
+    requested: OperationId,
+    node: &crate::DisclosureNodeId,
+) -> Result<(), RealizationError> {
+    let owner = match node {
+        crate::DisclosureNodeId::Fact(fact) => fact_owner(fact),
+        crate::DisclosureNodeId::Relation(relation) => Some(relation.operation()),
+    };
+    if owner.is_some_and(|owner| owner != requested) {
+        return Err(RealizationError::ForeignDisclosureOwnership {
+            operation: requested,
+            node: node.clone(),
+        });
+    }
+    Ok(())
+}
+
+/// Relations named inside one disclosure-seed reason.
+fn seed_reason_relations(reason: &crate::DisclosureReason) -> Vec<&crate::RelationId> {
+    match reason {
+        crate::DisclosureReason::PermissionlessConstructibility { relation, .. }
+        | crate::DisclosureReason::TargetSafety { relation } => vec![relation],
+        crate::DisclosureReason::PublicState
+        | crate::DisclosureReason::PublicEvent
+        | crate::DisclosureReason::PublicInterface
+        | crate::DisclosureReason::DeploymentPolicy { .. } => Vec::new(),
+    }
+}

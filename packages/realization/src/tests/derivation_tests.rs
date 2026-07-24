@@ -1,7 +1,12 @@
+use std::collections::BTreeMap;
+
 use architecture::{ARCHITECTURE, OperationId};
 
 use crate::{
-    ArchitectureBinding, OperationRealization, RealizationError, RealizationScope, derive,
+    ArchitectureBinding, ConstructibilityNode, ConstructibilityNodeId, DisclosureNodeId,
+    DisclosureReason, DisclosureSeed, ExprId, ExpressionDeclaration, ExpressionNode,
+    ExpressionRole, FactId, LifecycleNodeId, OperationRealization, RealizationError,
+    RealizationScope, RelationDependencyDeclaration, RelationEdge, SemanticType, derive,
     derive::assemble_scoped_realization, project_scoped_realization,
 };
 
@@ -129,6 +134,245 @@ fn declaration_order_permutations_preserve_the_complete_projection() {
             "reversing {family} moved the stable projection",
         );
     }
+}
+
+// --- F3-006 generic ownership validation: a mistyped declaration
+// must fail with a focused typed ownership error before graph
+// assembly, so no semantic invariant rests on helper-constructor
+// correctness. Each mutation rebuilds through the shared assembly
+// path. ---
+
+fn phase1_operations() -> BTreeMap<OperationId, OperationRealization> {
+    derive(&ARCHITECTURE, RealizationScope::phase1_pilots())
+        .unwrap()
+        .operations
+}
+
+fn assemble_phase1(
+    operations: BTreeMap<OperationId, OperationRealization>,
+) -> Result<crate::ScopedRealizationSpec, RealizationError> {
+    assemble_scoped_realization(
+        &ARCHITECTURE,
+        ArchitectureBinding::from_architecture(&ARCHITECTURE).unwrap(),
+        RealizationScope::phase1_pilots(),
+        operations,
+    )
+}
+
+#[test]
+fn declaration_returned_for_the_wrong_operation_is_rejected() {
+    let mut operations = phase1_operations();
+    let compact = operations.remove(&OperationId::CompactAsh).unwrap();
+    // The compact-ASH declaration comes back under the live-transfer
+    // key, as if derive_operation returned the wrong declaration.
+    let live = operations.insert(OperationId::TransferLive, compact);
+    assert!(live.is_some());
+
+    let error = assemble_scoped_realization(
+        &ARCHITECTURE,
+        ArchitectureBinding::from_architecture(&ARCHITECTURE).unwrap(),
+        RealizationScope::from_operations([OperationId::TransferLive]).unwrap(),
+        operations,
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error,
+        RealizationError::OperationDeclarationIdentityMismatch {
+            requested: OperationId::TransferLive,
+            declared: OperationId::CompactAsh,
+        },
+    );
+}
+
+#[test]
+fn foreign_relation_in_an_operation_declaration_is_rejected() {
+    let mut operations = phase1_operations();
+    let foreign = operations[&OperationId::TransferLive].relations[0].clone();
+    let foreign_id = foreign.id.clone();
+    operations
+        .get_mut(&OperationId::CompactAsh)
+        .unwrap()
+        .relations
+        .push(foreign);
+
+    let error = assemble_phase1(operations).unwrap_err();
+    assert_eq!(
+        error,
+        RealizationError::ForeignRelationOwnership {
+            operation: OperationId::CompactAsh,
+            relation: foreign_id,
+        },
+    );
+}
+
+#[test]
+fn proof_alternative_bound_to_another_relation_is_rejected() {
+    let mut operations = phase1_operations();
+    let compact = operations.get_mut(&OperationId::CompactAsh).unwrap();
+    let foreign_owner = compact.relations[1].id.clone();
+    let carrying = &mut compact.relations[0];
+    let carrying_id = carrying.id.clone();
+    // The alternative names a different relation of the same
+    // operation: binding, not just operation ownership, is checked.
+    let stray = carrying.proof_alternatives.iter().next().unwrap().proof();
+    carrying
+        .proof_alternatives
+        .insert(crate::ProofAlternativeId::new(foreign_owner.clone(), stray));
+
+    let error = assemble_phase1(operations).unwrap_err();
+    assert_eq!(
+        error,
+        RealizationError::ForeignProofAlternativeBinding {
+            relation: carrying_id,
+            foreign: foreign_owner,
+        },
+    );
+}
+
+#[test]
+fn foreign_expression_identity_is_rejected() {
+    let mut operations = phase1_operations();
+    // Neither pilot declares standing expressions, so the foreign
+    // expression is constructed: its identity is owned by a
+    // live-transfer relation while compact ASH declares it.
+    let foreign_relation = operations[&OperationId::TransferLive].relations[0]
+        .id
+        .clone();
+    let foreign_id = ExprId::relation(foreign_relation, ExpressionRole::Condition);
+    operations
+        .get_mut(&OperationId::CompactAsh)
+        .unwrap()
+        .expressions
+        .push(ExpressionDeclaration {
+            id: foreign_id.clone(),
+            ty: SemanticType::Bool,
+            node: ExpressionNode::Bool(true),
+        });
+
+    let error = assemble_phase1(operations).unwrap_err();
+    assert_eq!(
+        error,
+        RealizationError::ForeignExpressionOwnership {
+            operation: OperationId::CompactAsh,
+            expression: foreign_id,
+        },
+    );
+}
+
+#[test]
+fn expression_reading_another_operations_fact_is_rejected() {
+    let mut operations = phase1_operations();
+    let compact = operations.get_mut(&OperationId::CompactAsh).unwrap();
+    let owned_relation = compact.relations[0].id.clone();
+    let foreign_fact = FactId::Signers {
+        operation: OperationId::TransferLive,
+    };
+    // The expression identity is owned by compact ASH; only its fact
+    // payload reaches across operations.
+    compact.expressions.push(ExpressionDeclaration {
+        id: ExprId::relation(owned_relation, ExpressionRole::Condition),
+        ty: SemanticType::OwnerSet,
+        node: ExpressionNode::Fact(foreign_fact.clone()),
+    });
+
+    let error = assemble_phase1(operations).unwrap_err();
+    assert_eq!(
+        error,
+        RealizationError::ForeignExpressionOwnership {
+            operation: OperationId::CompactAsh,
+            expression: ExprId::fact(foreign_fact),
+        },
+    );
+}
+
+#[test]
+fn relation_dependency_on_a_foreign_relation_is_rejected() {
+    let mut operations = phase1_operations();
+    let foreign = operations[&OperationId::TransferLive].relations[0]
+        .id
+        .clone();
+    let compact = operations.get_mut(&OperationId::CompactAsh).unwrap();
+    let owned = compact.relations[0].id.clone();
+    compact
+        .relation_dependencies
+        .push(RelationDependencyDeclaration {
+            prerequisite: foreign.clone(),
+            dependent: owned,
+            edge: RelationEdge::RecognitionBeforeCardinality,
+        });
+
+    let error = assemble_phase1(operations).unwrap_err();
+    assert_eq!(
+        error,
+        RealizationError::ForeignRelationDependency {
+            operation: OperationId::CompactAsh,
+            relation: foreign,
+        },
+    );
+}
+
+#[test]
+fn foreign_constructibility_node_is_rejected() {
+    let mut operations = phase1_operations();
+    let node = ConstructibilityNodeId::Operation(OperationId::TransferLive);
+    operations
+        .get_mut(&OperationId::CompactAsh)
+        .unwrap()
+        .constructibility_nodes
+        .push(ConstructibilityNode { id: node.clone() });
+
+    let error = assemble_phase1(operations).unwrap_err();
+    assert_eq!(
+        error,
+        RealizationError::ForeignConstructibilityOwnership {
+            operation: OperationId::CompactAsh,
+            node,
+        },
+    );
+}
+
+#[test]
+fn disclosure_seed_naming_a_foreign_relation_is_rejected() {
+    let mut operations = phase1_operations();
+    let foreign = operations[&OperationId::TransferLive].relations[0]
+        .id
+        .clone();
+    operations
+        .get_mut(&OperationId::CompactAsh)
+        .unwrap()
+        .disclosure_seeds
+        .push(DisclosureSeed {
+            node: DisclosureNodeId::Relation(foreign.clone()),
+            reason: DisclosureReason::PublicInterface,
+        });
+
+    let error = assemble_phase1(operations).unwrap_err();
+    assert_eq!(
+        error,
+        RealizationError::ForeignDisclosureOwnership {
+            operation: OperationId::CompactAsh,
+            node: DisclosureNodeId::Relation(foreign),
+        },
+    );
+}
+
+#[test]
+fn cross_operation_lifecycle_exits_remain_valid_typed_payloads() {
+    // A RequiredExit names its exit operation as semantic content.
+    // Compact ASH declares a Clear exit and live transfer declares
+    // Burn and Redeem exits; ownership validation must keep deriving
+    // them, because the declaring relation stays operation-owned.
+    let realization = derive(&ARCHITECTURE, RealizationScope::phase1_pilots()).unwrap();
+
+    let mut compact_exits = realization.operations[&OperationId::CompactAsh]
+        .lifecycle_nodes
+        .iter()
+        .filter_map(|node| match &node.id {
+            LifecycleNodeId::RequiredExit { operation, .. } => Some(*operation),
+            LifecycleNodeId::Representation { .. } => None,
+        });
+    assert!(compact_exits.any(|operation| operation == OperationId::Clear));
 }
 
 #[test]
