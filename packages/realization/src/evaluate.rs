@@ -683,8 +683,14 @@ fn observed_object_shape_holds(object: ObjectId, observed: &ObservedObject) -> b
         ObjectId::ReceiptLive
         | ObjectId::ReceiptTimeLocked
         | ObjectId::DepositRequest
-        | ObjectId::DepositEntitlement
-        | ObjectId::PlainLbtc => !observed.value.is_zero() && observed.owner.is_some(),
+        | ObjectId::DepositEntitlement => !observed.value.is_zero() && observed.owner.is_some(),
+        // Sponsor-value opacity (F2-006): ordinary sponsor L-BTC
+        // is authenticated by asset, family, and owner — never by its
+        // amount. A zero-valued PLAIN_LBTC member is an ordinary
+        // sponsor object like any other; it cannot satisfy the anchor,
+        // which is recognized by its own declared family below, not by
+        // testing whether an ordinary output happens to be zero.
+        ObjectId::PlainLbtc => observed.owner.is_some(),
         ObjectId::DistributionVault | ObjectId::Ash => {
             !observed.value.is_zero() && observed.owner.is_none()
         }
@@ -749,10 +755,12 @@ fn sponsor_is_isolated(observation: &OperationObservation) -> Result<bool, Reali
         }
     }
 
+    // Opacity must not become omission: every ordinary sponsor member
+    // — zero-valued ones included — is claimed exactly once by the
+    // sponsor region. Membership is decided by the declared family,
+    // never by the amount.
     for object in &observation.objects {
-        if object.kind == ObservedObjectKind::Declared(ObjectId::PlainLbtc)
-            && !object.value.is_zero()
-        {
+        if object.kind == ObservedObjectKind::Declared(ObjectId::PlainLbtc) {
             let used = match object.reference.side {
                 ObservedSide::Input => used_sources.contains(&object.reference),
                 ObservedSide::Output => used_destinations.contains(&object.reference),

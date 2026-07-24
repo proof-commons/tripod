@@ -257,3 +257,86 @@ fn analysis_from_reason_map_by_id(
         retained_private,
     }
 }
+
+// Sponsor-value opacity read-set guard (F2-006): a PLAIN_LBTC
+// family amount is sponsor-local data. Its absence from every semantic
+// graph is enforced structurally at derivation time, not by
+// convention.
+
+#[test]
+fn pilot_read_sets_contain_no_sponsor_amount() {
+    use architecture::{ObjectId, OperationId};
+
+    let realization = derive(
+        &architecture::ARCHITECTURE,
+        RealizationScope::from_operations([OperationId::CompactAsh, OperationId::TransferLive])
+            .unwrap(),
+    )
+    .expect("both pilots derive");
+
+    let is_sponsor_amount = |fact: &FactId| {
+        matches!(
+            fact,
+            FactId::FamilyAmount {
+                object: ObjectId::PlainLbtc,
+                ..
+            }
+        )
+    };
+
+    assert!(
+        !realization
+            .disclosure_graph
+            .node_weights()
+            .any(|node| matches!(node, DisclosureNode::Fact { id, .. } if is_sponsor_amount(id)))
+    );
+    assert!(
+        !realization
+            .declassification
+            .required_public
+            .keys()
+            .chain(realization.declassification.newly_disclosed.keys())
+            .chain(realization.declassification.retained_private.iter())
+            .any(is_sponsor_amount)
+    );
+    assert!(
+        !realization
+            .constructibility_node_by_id
+            .keys()
+            .any(|node| matches!(
+                node,
+                crate::ConstructibilityNodeId::Fact { fact, .. } if is_sponsor_amount(fact)
+            ))
+    );
+    assert!(!realization.expression_graph.node_weights().any(
+        |declaration| matches!(&declaration.node, crate::ExpressionNode::Fact(fact) if is_sponsor_amount(fact))
+    ));
+}
+
+#[test]
+fn a_sponsor_amount_read_is_rejected_structurally() {
+    use architecture::{ObjectId, OperationId};
+
+    let mut realization = derive(
+        &architecture::ARCHITECTURE,
+        RealizationScope::from_operations([OperationId::CompactAsh]).unwrap(),
+    )
+    .expect("pilot derives");
+
+    // Inject the forbidden fact directly into the disclosure graph: a
+    // hypothetical backend that models the sponsor input amount — even
+    // as a private fact — violates the opacity read-set.
+    realization.disclosure_graph.add_node(DisclosureNode::Fact {
+        id: FactId::FamilyAmount {
+            operation: OperationId::CompactAsh,
+            side: TransactionSide::Input,
+            object: ObjectId::PlainLbtc,
+        },
+        initial_visibility: InitialVisibility::Private,
+    });
+
+    assert_eq!(
+        crate::validate::validate_scoped_realization(&architecture::ARCHITECTURE, &realization),
+        Err(RealizationError::SponsorValueRead),
+    );
+}

@@ -173,6 +173,11 @@ pub enum RealizationError {
     #[error("expression {expression:?} has too many operands")]
     TooManyExpressionOperands { expression: ExprId },
 
+    /// A declaration consumed an ordinary sponsor L-BTC amount, which
+    /// sponsor-value opacity removes from the protocol read-set.
+    #[error("sponsor-value opacity violated: a declaration reads a PLAIN_LBTC family amount")]
+    SponsorValueRead,
+
     /// A scoped operation has no realization declaration in this tranche.
     #[error("operation {0} has no realization declaration")]
     UnsupportedOperationDeclaration(OperationId),

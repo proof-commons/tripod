@@ -9,7 +9,8 @@ use architecture::{
 };
 
 use crate::{
-    ArchitectureMismatchField, ConstructibilityAuthorization, RealizationError, RepresentationMode,
+    ArchitectureMismatchField, ConstructibilityAuthorization, ConstructibilityNodeId,
+    DisclosureNode, ExpressionNode, FactId, RealizationError, RepresentationMode,
     ScopedRealizationSpec, require_lifecycle_exit, validate_constructibility,
 };
 
@@ -57,6 +58,63 @@ pub fn validate_scoped_realization(
     }
 
     validate_pilot_lifecycle(realization)?;
+
+    validate_sponsor_value_opacity(realization)?;
+
+    Ok(())
+}
+
+/// Sponsor-value opacity (F2-006): an ordinary sponsor L-BTC
+/// amount — individual or aggregate — is sponsor-local data, never a
+/// protocol-readable fact.
+///
+/// The structural read-set guard: no expression, disclosure node,
+/// declassification entry, or constructibility fact may name a
+/// `PLAIN_LBTC` family amount, on either side. Sponsor safety is
+/// discharged by asset authentication, family recognition, exact
+/// membership, owner authorization, isolation, and conservation — a
+/// backend must not add an amount read merely because its target
+/// exposes an introspection primitive.
+fn validate_sponsor_value_opacity(
+    realization: &ScopedRealizationSpec,
+) -> Result<(), RealizationError> {
+    fn is_sponsor_amount(fact: &FactId) -> bool {
+        matches!(
+            fact,
+            FactId::FamilyAmount {
+                object: ObjectId::PlainLbtc,
+                ..
+            }
+        )
+    }
+
+    let expression_read = realization
+        .expression_graph
+        .node_weights()
+        .any(|declaration| {
+            matches!(&declaration.node, ExpressionNode::Fact(fact) if is_sponsor_amount(fact))
+        });
+
+    let disclosure_read = realization
+        .disclosure_graph
+        .node_weights()
+        .any(|node| matches!(node, DisclosureNode::Fact { id, .. } if is_sponsor_amount(id)));
+
+    let constructibility_read = realization.constructibility_node_by_id.keys().any(
+        |node| matches!(node, ConstructibilityNodeId::Fact { fact, .. } if is_sponsor_amount(fact)),
+    );
+
+    let declassification = &realization.declassification;
+    let declassification_read = declassification
+        .required_public
+        .keys()
+        .chain(declassification.newly_disclosed.keys())
+        .chain(declassification.retained_private.iter())
+        .any(is_sponsor_amount);
+
+    if expression_read || disclosure_read || constructibility_read || declassification_read {
+        return Err(RealizationError::SponsorValueRead);
+    }
 
     Ok(())
 }

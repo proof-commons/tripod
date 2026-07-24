@@ -565,8 +565,83 @@ fn valid_sponsored_compact_ash_conforms() {
     );
 }
 
+// Sponsor-value opacity (F2-006): a sponsor amount is never a
+// protocol-readable fact, so a zero-valued PLAIN_LBTC member is an
+// ordinary sponsor object. What remains load-bearing is the role
+// structure — family recognition, owner authorization, exact
+// membership, and conservation — never the amount itself.
+
+/// A fully zero sponsor sidecar: one zero-valued signed input, one
+/// zero-valued change output, fee zero, exactly claimed.
+fn zero_sidecar_observation() -> OperationObservation {
+    let mut observation = valid_observation();
+    let sponsor_input = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 2,
+    };
+    let sponsor_change = ObservedObjectRef {
+        side: ObservedSide::Output,
+        ordinal: 1,
+    };
+
+    observation
+        .objects
+        .push(lbtc_owned(ObservedSide::Input, 2, 0, CAROL));
+    observation
+        .objects
+        .push(lbtc_owned(ObservedSide::Output, 1, 0, CAROL));
+    observation.open_flows.push(ObservedOpenFlow {
+        kind: architecture::OpenFlowKind::FeeSponsor,
+        sources: vec![sponsor_input],
+        destinations: vec![sponsor_change],
+        fee: ProtocolAmount::ZERO,
+    });
+    observation.sponsor_signers.insert(CAROL);
+
+    observation
+}
+
 #[test]
-fn zero_value_plain_lbtc_sponsor_input_fails_recognition() {
+fn zero_sponsor_sidecar_is_accepted() {
+    let report = evaluate(&zero_sidecar_observation());
+
+    assert!(
+        report.is_conformant(),
+        "failed relations: {:?}",
+        report.failed_relations().collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn mixed_zero_and_positive_sponsor_members_are_accepted() {
+    let mut observation = valid_sponsored_observation();
+
+    // A second, zero-valued signed sponsor input joins the existing
+    // 10 → 7 + 3 envelope; the balance is unchanged and every member
+    // is claimed.
+    let zero_input = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 3,
+    };
+    observation
+        .objects
+        .push(lbtc_owned(ObservedSide::Input, 3, 0, CAROL));
+    observation.open_flows[0].sources.push(zero_input);
+
+    let report = evaluate(&observation);
+
+    assert!(
+        report.is_conformant(),
+        "failed relations: {:?}",
+        report.failed_relations().collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn zeroed_sponsor_input_is_recognized_but_fails_conservation() {
+    // Zeroing a claimed sponsor input no longer fails recognition —
+    // the amount is not a recognition operand — but the envelope stops
+    // balancing, so sponsor isolation reports the defect.
     let mut observation = valid_sponsored_observation();
 
     observation
@@ -580,11 +655,12 @@ fn zero_value_plain_lbtc_sponsor_input_fails_recognition() {
         .value = ProtocolAmount::ZERO;
 
     let report = evaluate(&observation);
-    assert!(failed(&report, &sponsor_input_recognition()));
+    assert!(!failed(&report, &sponsor_input_recognition()));
+    assert!(failed(&report, &sponsor()));
 }
 
 #[test]
-fn zero_value_plain_lbtc_sponsor_change_fails_recognition() {
+fn zeroed_sponsor_change_is_recognized_but_fails_conservation() {
     let mut observation = valid_sponsored_observation();
 
     observation
@@ -598,11 +674,50 @@ fn zero_value_plain_lbtc_sponsor_change_fails_recognition() {
         .value = ProtocolAmount::ZERO;
 
     let report = evaluate(&observation);
-    assert!(failed(&report, &sponsor_output_recognition()));
+    assert!(!failed(&report, &sponsor_output_recognition()));
+    assert!(failed(&report, &sponsor()));
 }
 
 #[test]
-fn zero_value_unclaimed_plain_lbtc_fails_recognition() {
+fn zero_sponsor_input_without_signature_fails_isolation() {
+    let mut observation = zero_sidecar_observation();
+
+    // A zero-valued input still consumes an outpoint: its owner must
+    // authorize the transaction like any other sponsor.
+    observation.sponsor_signers.clear();
+
+    let report = evaluate(&observation);
+    assert!(failed(&report, &sponsor()));
+}
+
+#[test]
+fn unclaimed_zero_sponsor_members_fail_isolation() {
+    // Opacity is not omission: an owned zero-valued sponsor member
+    // outside every sponsor flow fails exact membership.
+    for side in [ObservedSide::Input, ObservedSide::Output] {
+        let mut observation = valid_observation();
+        let ordinal = match side {
+            ObservedSide::Input => 2,
+            ObservedSide::Output => 1,
+        };
+        observation
+            .objects
+            .push(lbtc_owned(side, ordinal, 0, CAROL));
+        observation.sponsor_signers.insert(CAROL);
+
+        let report = evaluate(&observation);
+        assert!(
+            failed(&report, &sponsor()),
+            "unclaimed zero sponsor member on {side:?} must fail isolation"
+        );
+    }
+}
+
+#[test]
+fn zero_value_ownerless_plain_lbtc_still_fails_recognition() {
+    // Value zero does not turn an ordinary output into an anchor: an
+    // ownerless PLAIN_LBTC is malformed whatever its amount, and the
+    // anchor is a different declared family entirely.
     let mut observation = valid_observation();
     observation
         .objects
@@ -610,6 +725,118 @@ fn zero_value_unclaimed_plain_lbtc_fails_recognition() {
 
     let report = evaluate(&observation);
     assert!(failed(&report, &sponsor_input_recognition()));
+}
+
+#[test]
+fn declared_anchor_fails_the_pilot_family_closure() {
+    // The converse anchor-identity direction: a declared CPFP_ANCHOR
+    // is recognized structurally and rejected here because the pilot's
+    // family closure has no anchor slot — not because of its value.
+    let mut observation = valid_observation();
+    observation.objects.push(crate::ObservedObject {
+        reference: ObservedObjectRef {
+            side: ObservedSide::Output,
+            ordinal: 1,
+        },
+        kind: ObservedObjectKind::Declared(ObjectId::CpfpAnchor),
+        asset: ObservedAsset::Declared(AssetId::Lbtc),
+        value: ProtocolAmount::ZERO,
+        owner: None,
+        representation: RepresentationMode::Explicit,
+    });
+
+    let report = evaluate(&observation);
+    assert!(!report.is_conformant());
+}
+
+#[test]
+fn balanced_theft_is_rejected_by_the_protocol_relation() {
+    // Protocol value short by one, sponsor change high by one: the
+    // whole transaction still conserves and every sponsor amount is
+    // positive, so positivity would never catch it. The pinned
+    // protocol relation does.
+    let mut observation = valid_sponsored_observation();
+
+    let stolen = observation
+        .objects
+        .iter_mut()
+        .find(|object| {
+            object.reference.side == ObservedSide::Output
+                && object.kind == ObservedObjectKind::Declared(ObjectId::Ash)
+        })
+        .expect("fixture has the ASH output");
+    stolen.value = ProtocolAmount::new(stolen.value.get() - 1).unwrap();
+
+    let sponsor_change = observation
+        .objects
+        .iter_mut()
+        .find(|object| {
+            object.reference.side == ObservedSide::Output
+                && object.kind == ObservedObjectKind::Declared(ObjectId::PlainLbtc)
+        })
+        .expect("fixture has sponsor change");
+    sponsor_change.value = ProtocolAmount::new(sponsor_change.value.get() + 1).unwrap();
+
+    let report = evaluate(&observation);
+    assert!(failed(&report, &canonical_delta_policy()));
+}
+
+#[test]
+fn sponsor_shapes_do_not_interfere_with_protocol_verdicts() {
+    // Noninterference: an otherwise identical transition with no
+    // sponsor, a positive sponsor envelope, a mixed envelope, or a
+    // zero sidecar must produce identical verdicts on every relation
+    // that is not sponsor-local.
+    let sponsor_free = |relation: &crate::RelationId| {
+        !matches!(
+            relation.subject(),
+            RelationSubject::ObjectFamily {
+                object: ObjectId::PlainLbtc,
+                ..
+            } | RelationSubject::Sponsor
+        )
+    };
+
+    let mut mixed = valid_sponsored_observation();
+    let zero_input = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 3,
+    };
+    mixed
+        .objects
+        .push(lbtc_owned(ObservedSide::Input, 3, 0, CAROL));
+    mixed.open_flows[0].sources.push(zero_input);
+
+    let shapes = [
+        ("no sponsor", valid_observation()),
+        ("positive sponsor", valid_sponsored_observation()),
+        ("mixed sponsor", mixed),
+        ("zero sidecar", zero_sidecar_observation()),
+    ];
+
+    let baseline: Vec<_> = evaluate(&shapes[0].1)
+        .verdicts
+        .iter()
+        .filter(|verdict| sponsor_free(&verdict.relation))
+        .cloned()
+        .collect();
+
+    for (name, observation) in &shapes {
+        let report = evaluate(observation);
+        assert!(
+            report.is_conformant(),
+            "shape {name} failed: {:?}",
+            report.failed_relations().collect::<Vec<_>>()
+        );
+
+        let projected: Vec<_> = report
+            .verdicts
+            .iter()
+            .filter(|verdict| sponsor_free(&verdict.relation))
+            .cloned()
+            .collect();
+        assert_eq!(projected, baseline, "shape {name} moved a protocol verdict");
+    }
 }
 
 #[test]

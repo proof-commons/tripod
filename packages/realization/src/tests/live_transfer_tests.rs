@@ -478,8 +478,75 @@ fn sponsor_change_without_owner_fails_recognition() {
     assert!(failed(&report, &sponsor_output_recognition()));
 }
 
+// Sponsor-value opacity (F2-006), mirroring the compact-ASH
+// battery: the amount of an ordinary sponsor member is never a
+// recognition operand; role structure and conservation carry the load.
+
+/// A fully zero sponsor sidecar on the live transfer: one zero-valued
+/// signed input, one zero-valued change output, fee zero, claimed.
+fn zero_sidecar_observation() -> OperationObservation {
+    let mut observation = valid_split_observation();
+    let sponsor_input = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 1,
+    };
+    let sponsor_change = ObservedObjectRef {
+        side: ObservedSide::Output,
+        ordinal: 2,
+    };
+
+    observation
+        .objects
+        .push(lbtc_owned(ObservedSide::Input, 1, 0, CAROL));
+    observation
+        .objects
+        .push(lbtc_owned(ObservedSide::Output, 2, 0, CAROL));
+    observation.open_flows.push(ObservedOpenFlow {
+        kind: architecture::OpenFlowKind::FeeSponsor,
+        sources: vec![sponsor_input],
+        destinations: vec![sponsor_change],
+        fee: ProtocolAmount::ZERO,
+    });
+    observation.sponsor_signers.insert(CAROL);
+
+    observation
+}
+
 #[test]
-fn zero_value_plain_lbtc_sponsor_input_fails_recognition() {
+fn zero_sponsor_sidecar_is_accepted() {
+    let report = evaluate(&zero_sidecar_observation());
+
+    assert!(
+        report.is_conformant(),
+        "failed relations: {:?}",
+        report.failed_relations().collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn mixed_zero_and_positive_sponsor_members_are_accepted() {
+    let mut observation = valid_sponsored_observation();
+
+    let zero_input = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 3,
+    };
+    observation
+        .objects
+        .push(lbtc_owned(ObservedSide::Input, 3, 0, CAROL));
+    observation.open_flows[0].sources.push(zero_input);
+
+    let report = evaluate(&observation);
+
+    assert!(
+        report.is_conformant(),
+        "failed relations: {:?}",
+        report.failed_relations().collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn zeroed_sponsor_input_is_recognized_but_fails_conservation() {
     let mut observation = valid_sponsored_observation();
 
     observation
@@ -493,11 +560,12 @@ fn zero_value_plain_lbtc_sponsor_input_fails_recognition() {
         .value = ProtocolAmount::ZERO;
 
     let report = evaluate(&observation);
-    assert!(failed(&report, &sponsor_input_recognition()));
+    assert!(!failed(&report, &sponsor_input_recognition()));
+    assert!(failed(&report, &sponsor()));
 }
 
 #[test]
-fn zero_value_plain_lbtc_sponsor_change_fails_recognition() {
+fn zeroed_sponsor_change_is_recognized_but_fails_conservation() {
     let mut observation = valid_sponsored_observation();
 
     observation
@@ -511,11 +579,38 @@ fn zero_value_plain_lbtc_sponsor_change_fails_recognition() {
         .value = ProtocolAmount::ZERO;
 
     let report = evaluate(&observation);
-    assert!(failed(&report, &sponsor_output_recognition()));
+    assert!(!failed(&report, &sponsor_output_recognition()));
+    assert!(failed(&report, &sponsor()));
 }
 
 #[test]
-fn zero_value_unclaimed_plain_lbtc_fails_recognition() {
+fn zero_sponsor_input_without_signature_fails_isolation() {
+    let mut observation = zero_sidecar_observation();
+
+    observation.sponsor_signers.clear();
+
+    let report = evaluate(&observation);
+    assert!(failed(&report, &sponsor()));
+}
+
+#[test]
+fn unclaimed_zero_sponsor_member_fails_isolation() {
+    // Opacity is not omission: an owned zero-valued sponsor member
+    // outside every sponsor flow fails exact membership.
+    let mut observation = valid_split_observation();
+    observation
+        .objects
+        .push(lbtc_owned(ObservedSide::Input, 1, 0, CAROL));
+    observation.sponsor_signers.insert(CAROL);
+
+    let report = evaluate(&observation);
+    assert!(failed(&report, &sponsor()));
+}
+
+#[test]
+fn zero_value_ownerless_plain_lbtc_still_fails_recognition() {
+    // Value zero does not turn an ordinary object into an anchor: an
+    // ownerless PLAIN_LBTC is malformed whatever its amount.
     let mut observation = valid_split_observation();
     observation.objects.push(ObservedObject {
         reference: ObservedObjectRef {

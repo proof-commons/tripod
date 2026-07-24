@@ -854,6 +854,16 @@ fn validate_exact_open_flow_partition(
             }
         }
 
+        // Canonical-construction discipline, not a protocol predicate:
+        // the reference model is the first-party constructor and never
+        // emits a useless explicit zero sponsor output, so it rejects
+        // one here. Under sponsor-value opacity (v13d, F2-006) the
+        // target-independent semantic layer accepts a zero-valued
+        // ordinary sponsor member whose role structure is exact; this
+        // model/realization difference is intentional and recorded in
+        // D005. The anchor's zero value is its declared semantic role
+        // and is recognized by family, never by testing an ordinary
+        // output for zero.
         if output.asset == Asset::Lbtc
             && output.value.is_zero()
             && !matches!(output.meta, Meta::CpfpAnchor)
