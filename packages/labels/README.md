@@ -28,6 +28,11 @@ specification register, realization register, and the derived model-label JSON.
 source labels, imported citations, the architecture-to-document weld, the
 pinned attestation anchor set, and generated-publication freshness.
 
+`check-plans` is non-writing and emits one JSON report on stdout. It checks
+plan-tree structure and hygiene over `adr/` and `plans/`: census agreement,
+README ownership indexing, headings, links, drafting-scaffold and placeholder
+markers, phase-gate consistency, and the Markdown weight budget.
+
 `generate-label-registers` writes only:
 
 - `plans/labels/specification.md`; and

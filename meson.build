@@ -29,7 +29,6 @@ cargo = find_program('cargo', required: true)
 cargo_manifest = meson.project_source_root() / 'Cargo.toml'
 cargo_bin_sync = find_program('scripts/cargo-bin-sync.sh')
 sh = find_program('sh')
-python = find_program('python3')
 
 # Git is used by the census audit and passed to document subprojects
 # that derive build-time provenance metadata from the selected source
@@ -228,6 +227,17 @@ generate_registers_bin = custom_target(
   build_always_stale: true,
 )
 
+check_plans_bin = custom_target(
+  'cargo-check-plans',
+  output: 'check-plans-bin',
+  command: [
+    cargo_bin_sync, cargo, cargo_manifest,
+    'tripod-labels', 'check-plans', '@OUTPUT@',
+  ],
+  console: true,
+  build_always_stale: true,
+)
+
 check_forbidden_text_bin = custom_target(
   'cargo-check-forbidden-text',
   output: 'check-forbidden-text-bin',
@@ -336,16 +346,21 @@ foreach f : adr_files + plan_files + doc_files
 endforeach
 plans_lane_files += specification_register_file + realization_register_file
 plans_lane_paths += [specification_register_path, realization_register_path]
+plans_census_args = []
+foreach p : plans_lane_paths
+  plans_census_args += ['--subject', p]
+endforeach
 
 plans_stamp = custom_target(
   'plans-check',
-  input: plans_lane_files + [files('scripts/check_plans.py')],
-  output: 'plans.ok',
-  command: [
-    python, files('scripts/check_plans.py'),
+  input: plans_lane_files,
+  output: ['plans.ok', 'plans-check.json'],
+  command: [check_plans_bin,
     '--repository-root', meson.project_source_root(),
-    '--stamp', '@OUTPUT@',
-  ] + plans_lane_paths,
+  ] + plans_census_args + [
+    '--report', '@OUTPUT1@',
+    '--stamp', '@OUTPUT0@',
+  ],
   build_by_default: true,
   console: true,
 )
@@ -567,7 +582,7 @@ test(
 test(
   'plans-check',
   sh,
-  args: stamp_probe + [plans_stamp.full_path()],
+  args: stamp_probe + [plans_stamp[0].full_path()],
   depends: plans_stamp,
   suite: 'documentation',
   timeout: 60,

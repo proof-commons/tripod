@@ -1,0 +1,611 @@
+//! Plan-tree structure and hygiene checks (the `plans-check` lane).
+//!
+//! Non-semantic documentation checks over `adr/` and `plans/`: census
+//! reconciliation, README ownership indexing, heading/link/scaffolding
+//! hygiene, phase-gate consistency, and the Markdown weight budget.
+//!
+//! Subject files arrive by argument from the build system (ADR-014);
+//! the checker re-discovers them on disk and hard-fails on any
+//! disagreement, so a stale census cannot silently pass. This module
+//! replaced the retired `scripts/check_plans.py`, which ran outside
+//! the ADR-010 command-line contract.
+
+use std::{
+    collections::BTreeSet,
+    fs,
+    path::{Path, PathBuf},
+    sync::LazyLock,
+};
+
+use anyhow::Context;
+use serde::Serialize;
+
+pub const PLANS_REPORT_SCHEMA: u32 = 1;
+
+const HARD_CAP_BYTES: u64 = 768 * 1024;
+const SOFT_TARGET_BYTES: u64 = 520 * 1024;
+
+/// Generated register publications carry no per-file weight threshold.
+const GENERATED_REGISTERS: [&str; 2] = [
+    "plans/labels/specification.md",
+    "plans/labels/realization.md",
+];
+
+/// Paths deleted from the tree; a surviving textual reference is stale.
+const OLD_PATHS: [&str; 8] = [
+    "plans/toolchain-architecture.md",
+    "plans/decisions/001-typed-rust-is-normative.md",
+    "plans/decisions/002-target-independent-realization-layer.md",
+    "plans/decisions/003-multiple-backends-tapscript-first.md",
+    "plans/decisions/004-translation-validation-over-compiler-trust.md",
+    "plans/decisions/005-value-parametric-asset-rigid.md",
+    "plans/decisions/006-canonical-transaction-layout-abi.md",
+    "plans/research/state-object-constructor.md",
+];
+
+/// Leftover drafting-session narration that must not be committed.
+const SCAFFOLDING: [&str; 3] = [
+    "Below is a complete draft",
+    "The next file should be",
+    "Notes for applying this file",
+];
+
+/// Plans are prose; claiming they are machine input overclaims their
+/// authority.
+const PROHIBITED_MACHINE_INPUT: [&str; 3] = [
+    "Machine-consumed by the toolchain: yes",
+    "plans are compiler input",
+    "this plan is normative protocol input",
+];
+
+/// Retired source-identity phrasing that must not reappear in plans.
+const PROHIBITED_SOURCE_IDENTITY: [&str; 4] = [
+    "source revision is target identity",
+    "exact Elements revision is protocol identity",
+    "deployment release pins the Elements source revision",
+    "target identity binds the upstream implementation commit",
+];
+
+const PLACEHOLDERS: [&str; 4] = ["example.invalid", "TODO_URL", "INSERT_HASH", "TBD_PATH"];
+
+static LINK: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\[[^\]]*\]\(([^)#\s]+)(?:#[^)\s]+)?\)").expect("static link pattern")
+});
+static FILE_SCAFFOLD: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?m)^## File \d+").expect("static scaffold pattern"));
+static CONFIDENCE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)(confidence\s+\d{1,3}%|\d{1,3}%\s+confident)")
+        .expect("static confidence pattern")
+});
+static CURRENT_GATE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?m)^> \*\*Current gate:\*\* Phase (\d+)").expect("static gate pattern")
+});
+static ACTIVE_STATUS: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?m)^> \*\*Status:\*\* Active").expect("static status pattern")
+});
+
+#[derive(Debug, Serialize)]
+pub struct PlansReport {
+    pub schema: u32,
+    pub files_checked: usize,
+    pub adr_bytes: u64,
+    pub plans_bytes: u64,
+    pub combined_bytes: u64,
+    pub hard_cap_bytes: u64,
+    pub soft_target_bytes: u64,
+    pub soft_target_exceeded: bool,
+    pub warnings: usize,
+    pub valid: bool,
+}
+
+#[derive(Debug)]
+pub struct PlansOutcome {
+    pub report: PlansReport,
+    pub failures: Vec<String>,
+    pub warnings: Vec<String>,
+}
+
+/// Run every plan-tree check under `root` against the declared census
+/// `subjects` (repository-relative or absolute paths).
+///
+/// Returns `Err` only for environmental faults (an unreadable file or
+/// directory); every tree defect is a failure entry in the outcome.
+pub fn check_plans(root: &Path, subjects: &[PathBuf]) -> anyhow::Result<PlansOutcome> {
+    let root = root
+        .canonicalize()
+        .with_context(|| format!("resolving repository root {}", root.display()))?;
+    let mut failures = Vec::new();
+    let mut warnings = Vec::new();
+
+    let files = markdown_files(&root)?;
+    verify_census(&root, subjects, &files, &mut failures);
+    verify_ownership(&root, &mut failures)?;
+    for path in &files {
+        check_file(&root, path, &mut failures, &mut warnings)?;
+    }
+    verify_phase_gate(&root, &mut failures)?;
+
+    let (adr_bytes, plans_bytes) = tree_bytes(&root, &files)?;
+    let combined_bytes = adr_bytes + plans_bytes;
+    if combined_bytes > HARD_CAP_BYTES {
+        failures.push(format!(
+            "weight: combined Markdown {combined_bytes} exceeds hard cap {HARD_CAP_BYTES}"
+        ));
+    }
+
+    let report = PlansReport {
+        schema: PLANS_REPORT_SCHEMA,
+        files_checked: files.len(),
+        adr_bytes,
+        plans_bytes,
+        combined_bytes,
+        hard_cap_bytes: HARD_CAP_BYTES,
+        soft_target_bytes: SOFT_TARGET_BYTES,
+        soft_target_exceeded: combined_bytes > SOFT_TARGET_BYTES,
+        warnings: warnings.len(),
+        valid: failures.is_empty(),
+    };
+    Ok(PlansOutcome {
+        report,
+        failures,
+        warnings,
+    })
+}
+
+/// Every Markdown file under `adr/` and `plans/`, sorted.
+fn markdown_files(root: &Path) -> anyhow::Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    for tree in ["adr", "plans"] {
+        collect_markdown(&root.join(tree), &mut files)?;
+    }
+    files.sort();
+    Ok(files)
+}
+
+fn collect_markdown(directory: &Path, files: &mut Vec<PathBuf>) -> anyhow::Result<()> {
+    for entry in read_dir_sorted(directory)? {
+        if entry.is_dir() {
+            collect_markdown(&entry, files)?;
+        } else if entry.extension().is_some_and(|extension| extension == "md") {
+            files.push(entry);
+        }
+    }
+    Ok(())
+}
+
+fn read_dir_sorted(directory: &Path) -> anyhow::Result<Vec<PathBuf>> {
+    let mut entries = Vec::new();
+    let listing = fs::read_dir(directory)
+        .with_context(|| format!("listing directory {}", directory.display()))?;
+    for entry in listing {
+        entries.push(
+            entry
+                .with_context(|| format!("listing directory {}", directory.display()))?
+                .path(),
+        );
+    }
+    entries.sort();
+    Ok(entries)
+}
+
+/// The declared census must equal the on-disk discovery (ADR-014).
+fn verify_census(root: &Path, subjects: &[PathBuf], files: &[PathBuf], failures: &mut Vec<String>) {
+    if subjects.is_empty() {
+        return;
+    }
+    let declared: BTreeSet<PathBuf> = subjects
+        .iter()
+        .map(|subject| {
+            if subject.is_absolute() {
+                subject.clone()
+            } else {
+                root.join(subject)
+            }
+        })
+        .collect();
+    let discovered: BTreeSet<PathBuf> = files.iter().cloned().collect();
+    for missing in declared.difference(&discovered) {
+        failures.push(format!(
+            "census: declared subject absent on disk: {}",
+            missing.display()
+        ));
+    }
+    for extra in discovered.difference(&declared) {
+        failures.push(format!(
+            "census: file outside the build census (rerun meson setup): {}",
+            extra.display()
+        ));
+    }
+}
+
+/// Every directory owns a README.md indexing each Markdown child and
+/// each subdirectory.
+fn verify_ownership(root: &Path, failures: &mut Vec<String>) -> anyhow::Result<()> {
+    let mut directories = Vec::new();
+    for tree in ["adr", "plans"] {
+        collect_directories(&root.join(tree), &mut directories)?;
+    }
+    directories.sort();
+    for directory in directories {
+        let readme = directory.join("README.md");
+        let relative_directory = relative(root, &directory);
+        if !readme.is_file() {
+            failures.push(format!("ownership: {relative_directory} has no README.md"));
+            continue;
+        }
+        let contents = read_text(&readme)?;
+        for child in read_dir_sorted(&directory)? {
+            let Some(name) = child.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if name == "README.md" {
+                continue;
+            }
+            let indexed = if child.is_dir() {
+                contents.contains(&format!("{name}/README.md"))
+            } else if child.extension().is_some_and(|extension| extension == "md") {
+                contents.contains(name)
+            } else {
+                true
+            };
+            if !indexed {
+                failures.push(format!(
+                    "ownership: {} not indexed in {}",
+                    relative(root, &child),
+                    relative(root, &readme)
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn collect_directories(directory: &Path, directories: &mut Vec<PathBuf>) -> anyhow::Result<()> {
+    directories.push(directory.to_path_buf());
+    for entry in read_dir_sorted(directory)? {
+        if entry.is_dir() {
+            collect_directories(&entry, directories)?;
+        }
+    }
+    Ok(())
+}
+
+/// Structure and hygiene checks for one Markdown file.
+fn check_file(
+    root: &Path,
+    path: &Path,
+    failures: &mut Vec<String>,
+    warnings: &mut Vec<String>,
+) -> anyhow::Result<()> {
+    let relative_path = relative(root, path);
+    let text = read_text(path)?;
+
+    if !text.lines().next().unwrap_or_default().starts_with("# ") {
+        failures.push(format!(
+            "heading: {relative_path} does not start with a top-level heading"
+        ));
+    }
+    for capture in LINK.captures_iter(&text) {
+        let target = &capture[1];
+        if target.starts_with("http://")
+            || target.starts_with("https://")
+            || target.starts_with("mailto:")
+        {
+            continue;
+        }
+        let destination = path.parent().unwrap_or(root).join(target);
+        if !destination.exists() {
+            failures.push(format!("broken link: {relative_path} -> {target}"));
+        }
+    }
+    for marker in SCAFFOLDING {
+        if text.contains(marker) {
+            failures.push(format!("draft scaffolding: {relative_path}: {marker}"));
+        }
+    }
+    if FILE_SCAFFOLD.is_match(&text) {
+        failures.push(format!("draft scaffolding: {relative_path}: ## File N"));
+    }
+    if PLACEHOLDERS.iter().any(|marker| text.contains(marker)) {
+        failures.push(format!("placeholder data: {relative_path}"));
+    }
+    if CONFIDENCE.is_match(&text) {
+        failures.push(format!("confidence percentage: {relative_path}"));
+    }
+    if OLD_PATHS.iter().any(|old| text.contains(old)) {
+        failures.push(format!("deleted path reference: {relative_path}"));
+    }
+    if PROHIBITED_MACHINE_INPUT
+        .iter()
+        .any(|marker| text.contains(marker))
+    {
+        failures.push(format!("machine-input overclaim: {relative_path}"));
+    }
+    if relative_path.starts_with("plans/")
+        && PROHIBITED_SOURCE_IDENTITY
+            .iter()
+            .any(|marker| text.contains(marker))
+    {
+        failures.push(format!("source-identity drift: {relative_path}"));
+    }
+    if let Some(threshold) = warn_threshold(&relative_path) {
+        let size = file_bytes(path)?;
+        if size > threshold {
+            warnings.push(format!(
+                "weight warning: {relative_path} is {size} bytes (threshold {threshold})"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Per-file weight threshold by tree position; `None` means unbounded.
+fn warn_threshold(relative_path: &str) -> Option<u64> {
+    if GENERATED_REGISTERS.contains(&relative_path) {
+        return None;
+    }
+    let mut parts = relative_path.split('/');
+    let tree = parts.next().unwrap_or_default();
+    let group = parts.next();
+    if relative_path.ends_with("/README.md") || relative_path == "README.md" {
+        return Some(16 * 1024);
+    }
+    if tree == "adr" {
+        return Some(14 * 1024);
+    }
+    match group {
+        Some("decisions") => Some(12 * 1024),
+        Some("packages") => Some(24 * 1024),
+        Some("phases") => Some(16 * 1024),
+        Some("research") => Some(32 * 1024),
+        Some("reference") => Some(40 * 1024),
+        _ => None,
+    }
+}
+
+/// The backlog names one current phase gate, and exactly one phase card
+/// is Active — the one the gate points to.
+fn verify_phase_gate(root: &Path, failures: &mut Vec<String>) -> anyhow::Result<()> {
+    let backlog = read_text(&root.join("plans/backlog.md"))?;
+    let Some(gate) = CURRENT_GATE.captures(&backlog) else {
+        failures.push("phase: backlog declares no current gate".to_owned());
+        return Ok(());
+    };
+    let prefix = format!("{:0>2}-", &gate[1]);
+    let phases = root.join("plans/phases");
+    let mut gate_cards = Vec::new();
+    let mut active_cards = 0_usize;
+    for entry in read_dir_sorted(&phases)? {
+        let Some(name) = entry.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if entry.extension().is_none_or(|extension| extension != "md") {
+            continue;
+        }
+        let numbered = name.len() > 3
+            && name.as_bytes()[..2].iter().all(u8::is_ascii_digit)
+            && name.as_bytes()[2] == b'-';
+        if !numbered {
+            continue;
+        }
+        let active = ACTIVE_STATUS.is_match(&read_text(&entry)?);
+        if active {
+            active_cards += 1;
+        }
+        if name.starts_with(&prefix) {
+            gate_cards.push(active);
+        }
+    }
+    if gate_cards.len() != 1 || gate_cards != [true] {
+        failures
+            .push("phase: backlog current gate does not point to one active phase card".to_owned());
+    }
+    if active_cards != 1 {
+        failures.push("phase: exactly one phase card must be Active".to_owned());
+    }
+    Ok(())
+}
+
+/// Total Markdown bytes for the `adr/` and `plans/` trees.
+fn tree_bytes(root: &Path, files: &[PathBuf]) -> anyhow::Result<(u64, u64)> {
+    let mut adr_bytes = 0_u64;
+    let mut plans_bytes = 0_u64;
+    for path in files {
+        let size = file_bytes(path)?;
+        if path.strip_prefix(root).is_ok_and(|relative_path| {
+            relative_path
+                .components()
+                .next()
+                .is_some_and(|component| component.as_os_str() == "adr")
+        }) {
+            adr_bytes += size;
+        } else {
+            plans_bytes += size;
+        }
+    }
+    Ok((adr_bytes, plans_bytes))
+}
+
+fn file_bytes(path: &Path) -> anyhow::Result<u64> {
+    Ok(fs::metadata(path)
+        .with_context(|| format!("reading metadata for {}", path.display()))?
+        .len())
+}
+
+fn read_text(path: &Path) -> anyhow::Result<String> {
+    fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))
+}
+
+/// Repository-relative display path with `/` separators.
+fn relative(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+
+    /// A minimal valid tree: indexed READMEs, one gate, one Active card.
+    fn fixture() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        fs::create_dir_all(root.join("adr")).expect("adr");
+        fs::create_dir_all(root.join("plans/phases")).expect("phases");
+        fs::write(root.join("adr/README.md"), "# ADRs\n").expect("adr readme");
+        fs::write(
+            root.join("plans/README.md"),
+            "# Plans\n\nbacklog.md phases/README.md\n",
+        )
+        .expect("plans readme");
+        fs::write(
+            root.join("plans/phases/README.md"),
+            "# Phases\n\n01-pilot.md\n",
+        )
+        .expect("phases readme");
+        fs::write(
+            root.join("plans/backlog.md"),
+            "# Backlog\n\n> **Current gate:** Phase 1\n",
+        )
+        .expect("backlog");
+        fs::write(
+            root.join("plans/phases/01-pilot.md"),
+            "# Pilot\n\n> **Status:** Active\n",
+        )
+        .expect("card");
+        dir
+    }
+
+    fn subjects(root: &Path) -> Vec<PathBuf> {
+        markdown_files(&root.canonicalize().expect("canonical root")).expect("discovery")
+    }
+
+    #[test]
+    fn valid_fixture_tree_passes() {
+        let dir = fixture();
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+        assert_eq!(outcome.failures, Vec::<String>::new());
+        assert!(outcome.report.valid);
+        assert_eq!(outcome.report.files_checked, 5);
+        assert!(outcome.report.combined_bytes > 0);
+    }
+
+    #[test]
+    fn census_disagreement_fails_both_ways() {
+        let dir = fixture();
+        let mut declared = subjects(dir.path());
+        declared.pop();
+        declared.push(dir.path().join("plans/ghost.md"));
+        let outcome = check_plans(dir.path(), &declared).expect("check runs");
+        assert!(
+            outcome
+                .failures
+                .iter()
+                .any(|failure| failure.contains("declared subject absent on disk"))
+        );
+        assert!(
+            outcome
+                .failures
+                .iter()
+                .any(|failure| failure.contains("file outside the build census"))
+        );
+        assert!(!outcome.report.valid);
+    }
+
+    #[test]
+    fn unindexed_file_and_missing_readme_fail_ownership() {
+        let dir = fixture();
+        fs::write(dir.path().join("plans/orphan.md"), "# Orphan\n").expect("orphan");
+        fs::create_dir(dir.path().join("plans/rogue")).expect("rogue dir");
+        let outcome = check_plans(dir.path(), &[]).expect("check runs");
+        assert!(
+            outcome
+                .failures
+                .iter()
+                .any(|failure| failure.contains("ownership: plans/orphan.md not indexed"))
+        );
+        assert!(
+            outcome
+                .failures
+                .iter()
+                .any(|failure| failure.contains("ownership: plans/rogue has no README.md"))
+        );
+    }
+
+    #[test]
+    fn structure_hygiene_defects_are_reported() {
+        let dir = fixture();
+        fs::write(
+            dir.path().join("adr/README.md"),
+            "not a heading\n\n[gone](missing.md)\n\nBelow is a complete draft\n\nTODO_URL\n\n95% confident\n",
+        )
+        .expect("defective readme");
+        let outcome = check_plans(dir.path(), &[]).expect("check runs");
+        let all = outcome.failures.join("\n");
+        assert!(all.contains("heading: adr/README.md"));
+        assert!(all.contains("broken link: adr/README.md -> missing.md"));
+        assert!(all.contains("draft scaffolding: adr/README.md"));
+        assert!(all.contains("placeholder data: adr/README.md"));
+        assert!(all.contains("confidence percentage: adr/README.md"));
+    }
+
+    #[test]
+    fn phase_gate_requires_one_active_card() {
+        let dir = fixture();
+        fs::write(
+            dir.path().join("plans/phases/01-pilot.md"),
+            "# Pilot\n\n> **Status:** Complete\n",
+        )
+        .expect("retired card");
+        let outcome = check_plans(dir.path(), &[]).expect("check runs");
+        assert!(
+            outcome
+                .failures
+                .iter()
+                .any(|failure| failure.contains("does not point to one active phase card"))
+        );
+        assert!(
+            outcome
+                .failures
+                .iter()
+                .any(|failure| failure.contains("exactly one phase card must be Active"))
+        );
+    }
+
+    #[test]
+    fn weight_thresholds_follow_tree_position() {
+        assert_eq!(warn_threshold("plans/labels/specification.md"), None);
+        assert_eq!(warn_threshold("adr/README.md"), Some(16 * 1024));
+        assert_eq!(warn_threshold("adr/010-x.md"), Some(14 * 1024));
+        assert_eq!(warn_threshold("plans/decisions/x.md"), Some(12 * 1024));
+        assert_eq!(
+            warn_threshold("plans/packages/errors/x.md"),
+            Some(24 * 1024)
+        );
+        assert_eq!(warn_threshold("plans/research/x.md"), Some(32 * 1024));
+        assert_eq!(warn_threshold("plans/backlog.md"), None);
+    }
+
+    #[test]
+    fn oversize_file_warns_without_failing() {
+        let dir = fixture();
+        let mut heavy = String::from("# Heavy\n\n");
+        heavy.push_str(&"x".repeat(15 * 1024));
+        fs::write(dir.path().join("adr/001-heavy.md"), heavy).expect("heavy adr");
+        fs::write(dir.path().join("adr/README.md"), "# ADRs\n\n001-heavy.md\n")
+            .expect("adr readme");
+        let outcome = check_plans(dir.path(), &[]).expect("check runs");
+        assert!(outcome.report.valid, "{:?}", outcome.failures);
+        assert!(
+            outcome
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("weight warning: adr/001-heavy.md"))
+        );
+        assert_eq!(outcome.report.warnings, outcome.warnings.len());
+    }
+}
