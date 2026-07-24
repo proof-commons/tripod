@@ -8,6 +8,7 @@ adr_record_files = files(
   '013-global-label-graph.md',
   '014-meson-lint-census-and-stamps.md',
   '015-public-data-and-execution-trust.md',
+  '016-semantic-identities-and-evidence-binding.md',
 )
 
 # Non-numbered documentation in this directory (DOC owner).
