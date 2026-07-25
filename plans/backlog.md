@@ -360,7 +360,7 @@ section 4.1 inventory reinterprets no existing digest.
 ### I1-002 — Complete the current identity inventory · `task:identity:inventory`
 
 **Priority:** P1
-**Status:** TODO
+**Status:** DONE
 **Depends on:** I1-001
 
 Update [the identity register](registers/identities.md) so every current digest
@@ -391,10 +391,41 @@ Required decisions:
 
 Exit:
 
-- [ ] every current digest has one classified purpose;
-- [ ] no digest has two incompatible meanings;
-- [ ] dormant and provisional identities are visibly non-release-ready;
-- [ ] the register remains planning-only.
+- [x] every current digest has one classified purpose;
+- [x] no digest has two incompatible meanings;
+- [x] dormant and provisional identities are visibly non-release-ready;
+- [x] the register remains planning-only.
+
+#### Resolution (2026-07-25)
+
+The register now inventories nine identity-bearing mechanisms, each with the
+eleven required fields, against the sources rather than against this backlog:
+Git object IDs; document identity; paper instance identity; the Layer-0
+anchor-set hash; the architecture semantic hash; the architecture behavioural
+hash; generated-file exact comparison; the deployment-profile hash; and the raw
+profile artifact and report hash fields.
+
+Classification outcome: three active (anchor-set, semantic, behavioural), three
+publication-only (Git object IDs, document identity, instance identity), one
+active but deliberately digest-free (generated-file comparison), one dormant
+(deployment-profile hash, consumed only by architecture tests), and one
+provisional (raw profile hash fields, whose recipes and typed roles are
+undefined). Nothing was removed: every entry has a present or explicitly
+deferred consumer.
+
+Two boundaries are recorded that the previous table left implicit. The document
+and instance identities answer different provenance questions — declared input
+set against paper-subtree state — so neither substitutes for the other. The
+generated-file check is byte equality, strictly stronger than a digest over the
+same bytes, so adding a hash beside it would mint a redundant identity with no
+consumer.
+
+The forward-looking ownership rows are retained but separated from the current
+inventory and marked unminted, with activation deferred to I1-003. Petgraph
+indices moved out of the identity table into an explicit local-handle rule.
+
+Source: `plans/registers/identities.md`. The register remains planning-only and
+is not toolchain input.
 
 ### I1-003 — Define the future immediate-edge identity DAG · `task:identity:future-dag`
 
