@@ -464,13 +464,13 @@ fn harvest_file(path: &Path, source: &str, owner: &LabelOwner, result: &mut Rust
             }
             continue;
         }
-        if segment.kind.is_documentation() {
-            if let Some(open) = fence_open(&segment.text) {
-                fence = Some(open);
-                fence_line = segment.line;
-                fence_block = segment.block;
-                continue;
-            }
+        if segment.kind.is_documentation()
+            && let Some(open) = fence_open(&segment.text)
+        {
+            fence = Some(open);
+            fence_line = segment.line;
+            fence_block = segment.block;
+            continue;
         }
         harvest_segment(path, &segment, owner, result);
     }
