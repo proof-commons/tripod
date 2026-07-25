@@ -231,7 +231,7 @@ Executable model:                     implemented
 Typed realization pilots:             implemented
 Phase-1 gate:                          historical tagged evidence
 F3 remediation:                       recorded closed historically
-Identity/digest architecture:         adopted (ADR-016; I1-001 done)
+Identity/digest architecture:         adopted; inventory and future DAG recorded
 Static-review findings:               all resolved (F4 register closed)
 Phase-2 dependency review:            complete (Petgraph; P2-002/C1-004)
 Phase-2 compiler package:             absent
@@ -300,7 +300,11 @@ Semantic identities compare canonical meanings. Artifact digests compare exact
 bytes. Report identities bind evidence roles to exact subjects. None of these
 mechanisms substitutes for another.
 
-New identity-bearing work is frozen until I1-001 through I1-003 close.
+I1-001 through I1-003 are closed, so the identity freeze is lifted. New
+identity-bearing work is admitted only under
+(`[ADR016-rule:identity:admission]`), against the activation conditions the
+register records. I1-004 through I1-006 remain parked or blocked on their own
+consumers.
 
 ### 4.1 Current digest inventory · `tbl:backlog:digest-inventory`
 
@@ -430,7 +434,7 @@ is not toolchain input.
 ### I1-003 — Define the future immediate-edge identity DAG · `task:identity:future-dag`
 
 **Priority:** P1
-**Status:** TODO
+**Status:** DONE
 **Depends on:** I1-001 and I1-002
 **Blocks:** public compiler identity and downstream identity fields
 
@@ -463,10 +467,43 @@ boundary.
 
 Exit:
 
-- [ ] every proposed identity has a named activation phase and consumer;
-- [ ] every edge states its assurance and non-claims;
-- [ ] no speculative hash field enters compiler core;
-- [ ] migration rules are defined before publication.
+- [x] every proposed identity has a named activation phase and consumer;
+- [x] every edge states its assurance and non-claims;
+- [x] no speculative hash field enters compiler core;
+- [x] migration rules are defined before publication.
+
+#### Resolution (2026-07-25)
+
+The identity register now carries the DAG. Each of the eight links records an
+activation phase, the immediate consumer whose existence is the activation
+condition, the immediate edges it binds, its assurance, its non-claims, and
+whether any child receives its own identity.
+
+The activation conditions are boundary conditions, not dates: an activation
+phase is permission, and reaching it without the named consumer does not
+activate the identity. On that reading the realization identity does not
+activate in Phase 2, because the compiler consumes realization as an in-process
+typed value rather than as external bytes, and the compiler plan identity
+activates only on a real cross-process cache, published artifact, or separately
+versioned backend consumer.
+
+The projection exclusions are stated once as an activation rule rather than
+repeated per edge, and cover graph indices, source order, paths, line numbers,
+solver variable numbers, matrix positions, traversal order, thread schedules,
+temporary paths, and floating working values.
+
+Two consequences are recorded explicitly. A field reserved in compiler core for
+a future digest is itself a speculative identity, so Phase 2 ships none and
+typed comparison remains the boundary. The linked bundle is where semantic
+identity and artifact digest meet, and the two remain separate entries with
+neither substituting for the other.
+
+Migration is fixed before any publication: every identity carries a recipe
+identifier from its first publication, and any change of projection, encoding,
+domain separator, algorithm, included fields, or exclusion rules mints a new
+recipe identifier rather than redefining the published one.
+
+Source: `plans/registers/identities.md`.
 
 ### I1-004 — Define typed evidence envelopes · `task:identity:evidence-envelopes`
 
@@ -1617,7 +1654,8 @@ Current blockers are:
 
 ```text
 Identity architecture:
-    I1-002 through I1-003 incomplete
+    I1-001 through I1-003 closed; inventory and future DAG recorded
+    I1-004 through I1-006 parked or blocked on their own consumers
 
 Realization validation:
     F4-001 and F4-002 closed; predicate and lifecycle-edge shape validated
@@ -1632,6 +1670,10 @@ Dependency review:
 Compiler:
     package absent
     relation/proof/disclosure/lifecycle/placement/coverage analysis absent
+
+The remaining blockers are the compiler itself and the complete gate run
+that precedes it. Every preparatory identity, finding, and dependency
+task is closed.
 ```
 
 Until (`gate:backlog:phase2`) passes:

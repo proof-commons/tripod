@@ -259,13 +259,154 @@ graph-holding package. They are not semantic identity, not publication
 identity, and not evidence identity, and they must never enter a canonical
 projection — see (`[ADR016-rule:identity:classes]`).
 
-## 5. Ownership boundary for identities not yet minted · `sec:identities:future`
+## 5. Future immediate-edge identity DAG · `sec:identities:future`
 
-These identities do not exist. The table fixes ownership and boundary only;
-activation points, immediate consumers, and per-edge assurance are defined by
-the future identity DAG task under
-(`[ADR016-rule:identity:immediate-edges]`). No row below may be minted before a
-real consumer exists.
+None of the identities in this section exists. This section fixes, for each,
+the phase that may activate it, the immediate consumer whose existence is the
+activation condition, the immediate edges it binds, its assurance, and what it
+does not claim. The chain is:
+
+```text
+ArchitectureSemanticId
+    → RealizationId
+    → CompilerPlanId
+    → TargetPlanId
+    → LinkedBundleId
+    → TransactionAbiId
+    → DeploymentProfileId
+    → ReleaseManifestId
+```
+
+### 5.1 Activation rules · `rule:identities:activation`
+
+- No identity below is minted before a real consumer exists. An activation
+  phase is permission, not a schedule: reaching the phase without the named
+  consumer does not activate the identity.
+- A parent binds only its immediate identity dependencies, under
+  (`[ADR016-rule:identity:immediate-edges]`). Transitive upstream identities
+  are never repeated as an all-to-all mesh. A human-readable manifest may
+  display the complete chain; authoritative validation follows immediate typed
+  edges only.
+- A child receives its own identity only when it is separately consumed,
+  transported, cached, signed, versioned, or published. Otherwise the parent
+  includes the canonical typed child value directly.
+- No canonical projection contains a Petgraph index, source order, path, line
+  number, solver variable number, matrix position, traversal order, thread
+  schedule, temporary path, or floating working value.
+- Every identity carries an explicit recipe identifier from its first
+  publication, and any later change of projection, encoding, domain separator,
+  algorithm, included fields, or exclusion rules mints a new recipe identifier
+  under (`[ADR016-rule:identity:migration]`) rather than redefining the old
+  one.
+
+### 5.2 Edges
+
+**ArchitectureSemanticId** — the chain root, and the one link that is already
+active; see the current inventory above. It binds no upstream identity.
+
+**RealizationId**
+
+- **Activation phase:** not Phase 2. Activated only when a validated scoped
+  realization crosses a process, cache, or publication boundary — that is, when
+  a consumer receives realization as external bytes rather than as an
+  in-process typed value.
+- **Immediate consumer:** the compiler, and only in that transported form.
+- **Binds:** the architecture semantic identity, plus the canonical projection
+  of the scoped realization.
+- **Assurance:** canonical-projection equality. The scoped realization is
+  already ownership-validated at derivation, so the identity compares meaning
+  that validation has already accepted.
+- **Non-claims:** not architecture identity, not semantic correctness, and no
+  target meaning whatsoever.
+- **Child identities:** none. Per-operation realizations have no independent
+  lifecycle, so the parent carries their canonical typed values directly.
+
+**CompilerPlanId**
+
+- **Activation phase:** Phase 2 at the earliest, and only on a real boundary —
+  an analysis result cached across processes, published as an artifact, or
+  consumed by a separately versioned backend.
+- **Immediate consumer:** the target or backend package.
+- **Binds:** the realization identity where one exists, otherwise the
+  architecture semantic identity together with the typed realization value, and
+  the compiler configuration identity.
+- **Assurance:** canonical analysis-projection equality.
+- **Non-claims:** it does not attest that the analysis is correct, does not
+  identify a linked bundle, and carries no target-specific detail.
+- **Child identities:** none while the relation DAG, proof plan, disclosure and
+  source analysis, lifecycle analysis, placement and layout requirements, and
+  coverage requirements are consumed only as parts of one plan.
+
+**TargetPlanId**
+
+- **Activation phase:** Phase 3, when a target-specific lowering plan is
+  transported or cached separately from the compiler plan.
+- **Immediate consumer:** the backend, and the linker through it.
+- **Binds:** the compiler plan identity, the target-definition identity, and
+  the backend configuration identity.
+- **Non-claims:** no deployment-instance meaning and no bytes.
+
+**LinkedBundleId**
+
+- **Activation phase:** the linker phase, when linked bundles are distributed,
+  cached, or referenced by an ABI.
+- **Immediate consumer:** the transaction ABI, the deployment profile, and the
+  release manifest.
+- **Binds:** the target plan identity, and the relocatable bundle identity
+  where the linker consumes relocatable bundles separately.
+- **Assurance:** this is where semantic identity and artifact digest meet. The
+  distributed bytes additionally carry an artifact digest with role, canonical
+  path, schema, algorithm, and byte digest; the two are separate entries and
+  neither substitutes for the other.
+- **Non-claims:** not deployment readiness, and not calibration.
+
+**TransactionAbiId**
+
+- **Activation phase:** the transaction phase, when external construction
+  consumes the ABI.
+- **Immediate consumer:** external constructors, the deployment profile, and
+  the release manifest.
+- **Binds:** the linked bundle identity.
+- **Non-claims:** not semantic realization. An ABI is a construction contract,
+  not a meaning.
+
+**DeploymentProfileId**
+
+- **Activation phase:** the release phase. The value already exists and is
+  dormant; activation is additionally blocked because schema 2 cannot bind a
+  bundle or an ABI, which the profile migration task must repair first.
+- **Immediate consumer:** the release manifest.
+- **Binds:** the linked bundle identity, the transaction ABI identity, and
+  typed evidence references — not raw report digests.
+- **Non-claims:** not release identity, and not evidence of independence.
+
+**ReleaseManifestId**
+
+- **Activation phase:** the release package, as the sole aggregate release
+  root.
+- **Immediate consumer:** release distribution and, if signing is introduced,
+  the signer.
+- **Binds:** the deployment profile identity, required evidence references,
+  distributed artifact rows with their byte digests, release policy, the
+  explicit source revision, and the explicit release date.
+- **Assurance:** if release signing is introduced, this identity is the signing
+  root. Internal fields and intermediate objects are not signed separately
+  unless they carry an independent operational authority boundary.
+- **Non-claims:** not protocol denotation. Two matching manifests do not
+  demonstrate independent implementation, evidence independence, or
+  correctness.
+
+### 5.3 Phase-2 consequence · `rule:identities:phase2`
+
+Phase 2 proceeds without minting a public realization or compiler identity. No
+speculative hash field enters compiler core: where no persistent cross-process
+consumer exists, typed comparison remains the boundary, and a field reserved
+for a future digest is itself a speculative identity.
+
+### 5.4 Ownership boundary · `tbl:identities:boundary`
+
+Ownership and boundary for every unminted identity, including those outside the
+chain above.
 
 | Identity | Owner | Binds | Does not replace |
 |---|---|---|---|
