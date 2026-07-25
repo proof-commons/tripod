@@ -1195,6 +1195,121 @@ fn doc_owner_mints_resolve_and_are_importable() {
 }
 
 #[test]
+fn malformed_owner_qualified_plan_tokens_fail_exhaustively() {
+    // Every bracket-free owner-qualified form a planning author can
+    // write, in one file, so the diagnostic set and its order are
+    // pinned together: a valid local mint and a valid import stay
+    // silent, a known owner without brackets and every unknown or
+    // malformed owner fail closed, and ordinary inline code, a
+    // double-backtick example, and a fenced example stay out.
+    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let root = directory.path();
+    fs::write(
+        root.join("plans/tokens.md"),
+        concat!(
+            "# Tokens\n",
+            "`rule:fixture:local`\n",
+            "Valid import (`[A-def:model:known]`).\n",
+            "No brackets (`A-def:model:known`).\n",
+            "Short ADR owner (`ADR01-rule:fixture:local`).\n",
+            "Mistyped owner (`PLN-rule:fixture:local`).\n",
+            "Unknown owner (`UNKNOWN-rule:fixture:local`).\n",
+            "Malformed local label (`ADR013-rule:Bad`).\n",
+            "Ordinary code `UTF-8`, `SHA-256`, and `--stamp`.\n",
+            "Example ``ADR01-rule:fixture:local``.\n",
+            "```text\n",
+            "ADR01-rule:fixture:local\n",
+            "```\n",
+        ),
+    )
+    .expect("plan token fixture");
+
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(root));
+
+    let reported: Vec<_> = labels
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.path == "plans/tokens.md")
+        .map(|diagnostic| (diagnostic.code, diagnostic.line))
+        .collect();
+    assert_eq!(
+        reported,
+        vec![
+            (LabelErrorCode::InvalidImportedCitationForm, 4),
+            (LabelErrorCode::UnknownOwner, 5),
+            (LabelErrorCode::UnknownOwner, 6),
+            (LabelErrorCode::UnknownOwner, 7),
+            (LabelErrorCode::UnknownOwner, 8),
+        ],
+        "{:#?}",
+        labels.diagnostics,
+    );
+}
+
+#[test]
+fn malformed_owner_qualified_doc_token_fails_closed() {
+    // The guard belongs to the shared Markdown-owner harvest, so the
+    // DOC owner fails the same way the PLAN owner does.
+    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let root = directory.path();
+    fs::write(
+        root.join("README.md"),
+        "# Repository\n`sec:readme:versions`\nCite (`PLN-sec:readme:versions`).\n",
+    )
+    .expect("repository README");
+
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(root));
+
+    assert!(
+        labels.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == LabelErrorCode::UnknownOwner
+                && diagnostic.path == "README.md"
+                && diagnostic.line == 3
+        }),
+        "{:#?}",
+        labels.diagnostics,
+    );
+}
+
+#[test]
+fn malformed_owner_qualified_adr_tokens_fail_closed() {
+    // The ADR owner shares the bracket-free classifier, so a known
+    // owner written without brackets and an unknown owner prefix fail
+    // there exactly as they do for PLAN and DOC.
+    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let root = directory.path();
+    fs::write(
+        root.join("adr/012-fixture.md"),
+        concat!(
+            "# ADR\n",
+            "`rule:fixture:local`\n",
+            "No brackets (`A-def:model:known`).\n",
+            "Mistyped owner (`PLN-rule:fixture:local`).\n",
+            "Ordinary code `UTF-8`.\n",
+        ),
+    )
+    .expect("ADR token fixture");
+
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(root));
+
+    let reported: Vec<_> = labels
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.path == "adr/012-fixture.md")
+        .map(|diagnostic| (diagnostic.code, diagnostic.line))
+        .collect();
+    assert_eq!(
+        reported,
+        vec![
+            (LabelErrorCode::InvalidImportedCitationForm, 3),
+            (LabelErrorCode::UnknownOwner, 4),
+        ],
+        "{:#?}",
+        labels.diagnostics,
+    );
+}
+
+#[test]
 fn register_generation_ignores_unrelated_adr_defects() {
     let directory = fixture_root("# Realization\n`sec:fixture`\n");
     let root = directory.path();

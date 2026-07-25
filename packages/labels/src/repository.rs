@@ -563,6 +563,9 @@ fn harvest_adrs(paths: &RepositoryCensus, result: &mut RepositoryLabels) {
                 }
                 continue;
             }
+            if diagnose_bracket_free_owner_token(&span.content, &span.location, result) {
+                continue;
+            }
             let Ok(label) = Label::parse(span.content.trim(), LabelShape::Adr) else {
                 continue;
             };
@@ -681,12 +684,7 @@ fn harvest_markdown_owner(
             }
             continue;
         }
-        if looks_imported(&span.content) {
-            result.diagnostics.push(LabelDiagnostic::error(
-                LabelErrorCode::InvalidImportedCitationForm,
-                &span.location,
-                "imported citation must use square brackets",
-            ));
+        if diagnose_bracket_free_owner_token(&span.content, &span.location, result) {
             continue;
         }
         let Ok(label) = Label::parse(span.content.trim(), LabelShape::Planning) else {
@@ -1189,6 +1187,62 @@ fn looks_owner_qualified(value: &str) -> bool {
         && prefix
             .chars()
             .all(|character| character.is_ascii_uppercase() || character.is_ascii_digit())
+}
+
+/// Classify a bracket-free inline-code token against the owner
+/// registry before local parsing is attempted, and report it when it
+/// can only be a broken cross-owner citation: a token naming a known
+/// owner had to use square brackets, and a token carrying an owner
+/// prefix whose owner is unknown — or whose local label is malformed —
+/// names nothing at all. Either way it fails closed instead of decaying
+/// into ordinary inline code (ADR-013 owner registry).
+///
+/// No valid local label reaches either arm: every label segment is
+/// lowercase, so the segment preceding a token's first hyphen can never
+/// pass the uppercase owner-prefix test. Returns whether the token was
+/// consumed by a diagnostic.
+fn diagnose_bracket_free_owner_token(
+    token: &str,
+    location: &SourceLocation,
+    result: &mut RepositoryLabels,
+) -> bool {
+    let token = token.trim();
+    if looks_imported(token) {
+        result.diagnostics.push(LabelDiagnostic::error(
+            LabelErrorCode::InvalidImportedCitationForm,
+            location,
+            "imported citation must use square brackets",
+        ));
+        return true;
+    }
+    if looks_owner_qualified_label(token) {
+        result.diagnostics.push(LabelDiagnostic::error(
+            LabelErrorCode::UnknownOwner,
+            location,
+            format!("unknown or malformed owner-qualified label in {token:?}"),
+        ));
+        return true;
+    }
+    false
+}
+
+/// A bracket-free token is owner-qualified *and label-like* when an
+/// uppercase or numeric owner prefix precedes a colon-bearing remainder
+/// built from label characters. The remainder test stays lenient on
+/// purpose — a wrong owner and a wrong local label must both fail
+/// closed — while ordinary hyphenated inline code (`UTF-8`, `SHA-256`,
+/// `--stamp`) carries no colon and remains nonparticipating.
+fn looks_owner_qualified_label(value: &str) -> bool {
+    if !looks_owner_qualified(value) {
+        return false;
+    }
+    let Some((_prefix, local)) = value.split_once('-') else {
+        return false;
+    };
+    local.contains(':')
+        && local.chars().all(|character| {
+            character.is_ascii_alphanumeric() || character == '-' || character == ':'
+        })
 }
 
 #[derive(Clone, Debug)]

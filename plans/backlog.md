@@ -232,6 +232,7 @@ Typed realization pilots:             implemented
 Phase-1 gate:                          historical tagged evidence
 F3 remediation:                       recorded closed historically
 Identity/digest architecture:         adopted (ADR-016; I1-001 done)
+Static-review findings:               all resolved (F4 register closed)
 Phase-2 dependency review:            complete (Petgraph; P2-002/C1-004)
 Phase-2 compiler package:             absent
 Target/backend/linker/transaction:     absent
@@ -509,7 +510,8 @@ not reproduced execution results.
 | `F4-001` | P1 | DONE | Expression-predicate relations are not cross-validated against the expression graph during realization derivation. |
 | `F4-002` | P1 | DONE | Lifecycle edges and paths lack generic semantic-shape validation. |
 | `F4-003` | P2 | DROPPED | The strict empty-stamp rule is bypassed by shell-produced generator and publication stamps. |
-| `F4-004` | P2 | TODO | Unknown or malformed bracket-free owner-qualified PLAN/DOC labels may be silently ignored. |
+| `F4-004` | P2 | DONE | Unknown or malformed bracket-free owner-qualified PLAN/DOC labels may be silently ignored. |
+| `F4-005` | P2 | DONE | The ADR owner shares the bracket-free owner-token hole and lacks the known-owner check entirely. |
 
 ### F4-001 — Validate relation-to-expression binding · `task:findings:predicate-binding`
 
@@ -742,7 +744,7 @@ Cover checker, generator, and mirror stamps under:
 ### F4-004 — Reject malformed owner-qualified PLAN/DOC tokens · `task:findings:owner-token`
 
 **Priority:** P2
-**Status:** TODO
+**Status:** DONE
 **Owner:** `labels`
 **Policy:** ADR-013
 
@@ -781,10 +783,102 @@ Outside fenced and double-backtick examples:
 
 #### Exit
 
-- [ ] finding reproduced or disproved;
-- [ ] malformed cross-owner forms fail closed;
-- [ ] registers remain current;
-- [ ] label, plan, census, and complete gates pass.
+- [x] finding reproduced or disproved;
+- [x] malformed cross-owner forms fail closed;
+- [x] registers remain current;
+- [x] label, plan, census, and complete gates pass.
+
+#### Resolution (2026-07-25)
+
+Reproduced CONFIRMED, then fixed. Reproduction: with the fix reverted, a plan
+file carrying a short ADR owner width, a mistyped known owner, an unknown
+uppercase owner, and a known owner with a malformed local label produced one
+diagnostic — the bracket-free known-owner case already caught by
+`looks_imported`. The other four fell through the planning-shape parse and were
+discarded as ordinary inline code.
+
+Fix: `harvest_markdown_owner` now classifies every bracket-free token through a
+shared `diagnose_bracket_free_owner_token` before local parsing is attempted. A
+token naming a known owner reports `InvalidImportedCitationForm`; a token whose
+uppercase or numeric owner prefix precedes a colon-bearing label-like remainder,
+but which names no known owner or carries a malformed local label, reports
+`UnknownOwner`. The label-like test is what keeps ordinary hyphenated inline
+code out: a token with no colon in its remainder never participates. No valid
+local label can reach either arm, because every label segment is lowercase and
+the segment before a token's first hyphen therefore fails the owner-prefix test.
+
+Source: `packages/labels/src/repository.rs` (shared classifier plus
+`looks_owner_qualified_label`). Tests (`packages/labels/src/tests.rs`): one
+exhaustive PLAN fixture pinning the diagnostic set and its order across a valid
+local mint, a valid import, a bracket-free known owner, a short ADR width, a
+mistyped owner, an unknown owner, a malformed local label, ordinary inline code,
+a double-backtick example, and a fenced example; plus a DOC fixture proving the
+shared harvest behaves identically for both Markdown owners.
+
+### F4-005 — Reject malformed owner-qualified ADR tokens · `task:findings:adr-owner-token`
+
+**Priority:** P2
+**Status:** DONE
+**Lane:** current static-review remediation
+**Owner:** `labels`
+**Policy:** ADR-013
+**Depends on:** F4-004
+**Assurance:** focused unit tests plus the complete label and census gates
+**Identity and schema impact:** none; diagnostics only, no digest or register
+schema change
+**Dependency impact:** none
+
+#### Basis
+
+Found while reproducing F4-004, not by the supplied static review. The ADR
+harvest shares the finding and is strictly weaker: it recognizes bracketed
+imports and local ADR-shaped labels, but has no bracket-free known-owner check
+at all, so both a known owner written without brackets and an unknown or
+malformed owner-qualified token were silently discarded.
+
+Entered as its own identifier under the split rule rather than widened into
+F4-004, because F4-004's static basis, required tests, and exit name the PLAN
+and DOC owners only.
+
+#### Required implementation
+
+The ADR owner applies the same bracket-free classifier as PLAN and DOC, with
+its own ADR local-label shape unchanged.
+
+#### Required tests
+
+- known owner without brackets in an ADR;
+- mistyped known owner in an ADR;
+- valid local ADR label unaffected;
+- ordinary inline code nonparticipating;
+- deterministic diagnostic ordering.
+
+#### Verification
+
+```text
+cargo test -p tripod-labels
+meson test -C build
+```
+
+#### Exit
+
+- [x] finding reproduced;
+- [x] malformed cross-owner forms fail closed for the ADR owner;
+- [x] registers remain current;
+- [x] label, plan, census, and complete gates pass.
+
+#### Resolution (2026-07-25)
+
+Reproduced CONFIRMED by fixture probe: an ADR containing a bracket-free
+`A-` citation and a mistyped `PLN-` owner produced no diagnostic at all.
+
+Fix: `harvest_adrs` calls the same `diagnose_bracket_free_owner_token` on the
+same terms as the Markdown owners. One classifier now serves every Markdown
+owner, so a future owner cannot reintroduce the hole by omission.
+
+Source: `packages/labels/src/repository.rs`. Test
+(`packages/labels/src/tests.rs`): an ADR fixture pinning both diagnostics and
+their order alongside an unaffected local mint and ordinary inline code.
 
 ---
 
@@ -1498,7 +1592,8 @@ Realization validation:
     F4-001 and F4-002 closed; predicate and lifecycle-edge shape validated
 
 Build/documentation correctness:
-    F4-003 dropped (reproduced false); F4-004 open static finding
+    F4-003 dropped (reproduced false); F4-004 and F4-005 closed
+    every current static-review finding is resolved
 
 Dependency review:
     P2-002 / C1-004 complete (Petgraph reviewed; features trimmed)
@@ -1593,7 +1688,7 @@ Execute in this order unless new evidence changes dependencies:
 3. Define future immediate identity edges and activation points.
 4. Reproduce F4-001 through F4-004.
 5. Close F4-001 and F4-002 before freezing compiler input APIs.
-6. Close F4-004 (F4-003 dropped as reproduced-false).
+6. Close F4-004 and F4-005 (F4-003 dropped as reproduced-false).
 7. Complete the Petgraph dependency and lockfile review.
 8. Run and record the complete current repository gate.
 9. Create tripod-compiler.
