@@ -357,7 +357,7 @@ Exit:
 
 **Evidence (2026-07-24):** ADR-016 added at
 [016-semantic-identities-and-evidence-binding.md](../adr/016-semantic-identities-and-evidence-binding.md),
-wired into `adr/meson.build` and `adr/README.md`. Verified via the SDK build:
+wired into `adr/meson.build` and `adr/README.md`. Verified via a local build:
 census-audit `valid:true` (declared 274 = subjects 274, no `missing_from_census`
 or `not_tracked`); check-labels `valid:true` (adr_labels 101, all imported
 citations resolve); check-plans reports a valid documentation tree. Planning
@@ -1769,7 +1769,7 @@ is never protocol, semantic, or release identity.
 safe core API is used, so a future substitution would touch construction and
 traversal call sites, not identity.
 
-**Verification (SDK build, tree `6dac0b5` + this change):** `cargo fmt --check`
+**Verification (local build, tree `6dac0b5` + this change):** `cargo fmt --check`
 clean; `cargo clippy --workspace --all-targets --locked -D warnings` clean;
 `cargo test --workspace --locked` and `--release --locked` all pass, 0 failed;
 `meson test -C build` 10/10 OK (including census-audit, labels-check,
