@@ -1,6 +1,6 @@
 # Research Question: Lifetime Attestation and Floor Bounds · `q:attestation:floor-bounds`
 
-> **Status:** Analysis accepted; normative correction and permanent regressions pending
+> **Status:** Analysis accepted; regressions landed; normative correction pending
 > **Blocks:** Layer-0 containment and seigniorage claims, the SP5 capacity export, and every importing-layer cost projection derived from them
 > **Affected packages:** `papers/attestation`, model, realization
 > **Depends on:** the burn-settlement convention (`q:attestation:burn-settlement`), resolved below
@@ -222,56 +222,70 @@ already depends on, and that *would* move the anchor set.
 
 ## Remaining analysis · `sec:attestation-floor-bounds:analysis`
 
-The bounds question is answered. What remains before the normative correction
-lands:
+The bounds question is answered and the regressions are landed. What remains
+before the normative correction lands:
 
 1. Restate the calibration coupling in (`[A-rem:model:calibration]`), which
    currently couples ζ and f through the withdrawn envelope.
-2. Decide where the permanent regressions live. These are Layer-0 real-valued
-   claims; the realization model crate is integer-domained and cites Layer 0
-   once, in a constants comment, so it is not their natural owner.
-3. Record how the realization's integer domain and its clear clamp interact
+2. Record how the realization's integer domain and its clear clamp interact
    with the negative lifetime result: a deployment maximum exists but depends
    on atomic-unit scale and current reserve, and is not a scale-independent
    protocol bound.
 
 ## Vectors · `sec:attestation-floor-bounds:vectors`
 
-Required permanent regressions:
-
-1. SP5 at D = 0 — the bound is approached and never exceeded.
-2. The floor-ceiling certificate — a valid pre-maturity state with φ above
-   1/(1-ζ).
-3. The lifetime-envelope certificate — atomic batches exceed fD/(1-ζ).
-4. Potential monotonicity under burn.
-5. Potential non-increase under redemption.
-6. Potential increase bound under deposit.
-7. Generated valid pre-maturity traces satisfying the boxed inequality.
-
-**Exactness rule.** The logarithmic inequality must not be certified with raw
-`f64`. The split is by content, not by convenience:
+**Landed** in `packages/model/src/tests/specification_bound_tests.rs`, five tests,
+green under both profiles.
 
 ```text
-exact rational, no logarithm needed
-    the two certificates (2, 3)
-    T - cY invariance under deposit
-    ΔA ≤ xΩ/Y from settlement pinning and the ratchet
-    α ≤ 1 for a floor-preserving redemption
-    the deposit derivative sign r(c-u)/[u(u+cr)]
+no_fixed_bootstrap_floor_ceiling
+    burn the whole genesis live class      φ reaches the genesis factor exactly
+    deposit 1_000_000 and cycle            Ω=2_000_000 Y_L=250_000 Y_T=750_000
+    burn 100_000 of the new live           Ω=2_000_000 Y=900_000, φ=20/9 > 2
+    asserted still Maturity::Unannounced
 
-requires a certified logarithm bound
-    SP5 attainment (1) and the end-to-end trace inequality (7)
+post_maturity_floor_passes_any_fixed_multiple_of_the_genesis_factor
+settlement_pinned_credit_never_exceeds_the_settling_floor
+deposits_never_reduce_the_time_locked_slack
+live_burns_increase_the_time_locked_slack
 ```
 
-The first implementation prefers symbolic transition lemmas and uses floating
-evaluation only for illustrative vectors. Where a logarithm must be bounded,
-use rational interval enclosures with a stated error bound, never a bare `f64`
-comparison. `num-bigint` is already a workspace dependency; exact rational
-comparison by cross-multiplication needs no new dependency, and adding one
-would require its own ADR-011 entry.
+The first reproduces the hand-derived certificate exactly, in the shipping
+model rather than an abstract re-implementation, so it establishes the stronger
+fact that the implemented system reaches the state the withdrawn claim forbade.
 
-Ownership is unresolved — see the remaining-analysis section. These are
-Layer-0 real-valued claims, and the realization model crate is integer-domained.
+**Exactness.** No logarithm is certified anywhere, because none needs to be.
+The split is by content:
+
+```text
+protocol-specific, exact integer or rational
+    both certificates
+    ΔA ≤ xΩ/Y from settlement pinning and the ratchet
+    T - cY never decreasing across deposits, burns, and redemptions
+
+calculus, not ours to test
+    -ln(1-s) ≥ s
+    the deposit maximization via the sign of r(c-u)/[u(u+cr)]
+
+not testable at all
+    tightness — a supremum approached by arbitrarily fine interleaving
+    is not witnessed by any finite trace
+```
+
+The analytic facts are true independently of this protocol and are proved once
+in the paper; asserting them in a test suite would exercise an arithmetic
+library, not the attestation contract. Because a potential argument proves *local*
+steps and derives the global bound as a corollary, generated traces need only
+the per-step rational facts — the boxed inequality is then a theorem, not a
+runtime assertion. An earlier revision of this note demanded certified
+logarithm enclosures for items it labelled 1 and 7; that requirement was an
+error and is withdrawn.
+
+**Ownership** is resolved: the model crate. `AttestationTerm` already carries
+`(aggregate_burn_amount, omega, y)` per clear in `BigUint`, and `try_reduce`
+sums them into an `ExactRational`, so attestation totals compare exactly by
+cross-multiplication with no new dependency. `PoolState` is the Attestation state
+tuple. These are claims about transitions, and the model owns transitions.
 
 ## Acceptance · `gate:attestation-floor-bounds:accept`
 
