@@ -110,12 +110,36 @@
 //!   `TxBuilder` and the staging/commit machinery cannot be reached
 //!   from outside, so every *declared-operation* path does flow
 //!   through the operation constructors.
-//! - **Evidence rule.** A world is *model-valid evidence* only when it
-//!   was produced by [`genesis`](fn@genesis::genesis) followed by a
-//!   chain of successful [`execute`] calls. Any other world — direct construction, public
-//!   field mutation, raw `apply` on corrupted state — is corruption
-//!   evidence for fault/differential testing and must be labeled as
-//!   such by the harness that produced it.
+//! - **Evidence rule.** A world is *model-valid evidence* only when
+//!   every *protocol* state change in it was produced by
+//!   [`genesis`](fn@genesis::genesis) followed by a chain of
+//!   successful [`execute`] calls. Any other protocol change — direct
+//!   construction, public field mutation, raw `apply` on corrupted
+//!   state — is corruption evidence for fault/differential testing and
+//!   must be labeled as such by the harness that produced it.
+//!
+//!   The rule governs protocol transitions, not the environment they
+//!   run in (S4). Two things evolve a world without the protocol
+//!   acting: block age advancing, and externally funded open objects
+//!   arriving. Both are *substrate* facts. The chain moves time and
+//!   third parties send coins whether or not this protocol does
+//!   anything, so neither carries a transition certificate — there was
+//!   no transition to certify, and recording one would assert that the
+//!   protocol did something it did not.
+//!
+//!   Consequently the model must be safe under *arbitrary* substrate
+//!   movement, not merely under the movement a test happens to script:
+//!   no invariant may depend on how far time advanced, in what order
+//!   external funds arrived, or on that history being final. A
+//!   reorganization can rewrite substrate history, and the model must
+//!   survive it. That is tractable here because no operation reveals
+//!   private data as a condition of acting, so a reorg changes which
+//!   history is current without having disclosed anything that cannot
+//!   be undone.
+//!
+//!   A harness may therefore advance block age or inject an externally
+//!   funded open object without invalidating the evidence, and must
+//!   still route every protocol operation through [`execute`].
 //!
 //! The generated `generated/declassification.json` is likewise a
 //! **provisional, derivative publication** (see [`artifacts`]): the

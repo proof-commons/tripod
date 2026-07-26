@@ -1196,7 +1196,7 @@ Identifiers are this repository's, numbered to match the review's own ordering.
 | `S1` | P1 | DONE | Whether SP4's equality survives settlement-pinned clearing: it does not; a lower bound does. |
 | `S2` | P1 | DONE | Disclosure-graph relation IDs are not welded to the declared relation census. |
 | `S3` | P1 | DONE | Sponsor-value opacity is enforced in fact graphs but bypassed by the sponsor-isolation evaluator. |
-| `S4` | P2 | TODO | The model's evidence rule cannot express open-object injection or block-age advance. |
+| `S4` | P2 | DONE | The model's evidence rule cannot express open-object injection or block-age advance. |
 | `S5` | P2 | DONE | Stable realization projections carry an incidental Petgraph topological order. |
 | `S6` | P2 | DONE | Duplicate rows in the Realization index are silently accepted. |
 | `S7` | P3 | DONE | ADR-017 and backlog task statuses are internally stale. |
@@ -1328,7 +1328,7 @@ the target work that decides what an observation carries.
 ### S4 — Model evidence provenance cannot express environment steps · `task:review:environment-steps`
 
 **Priority:** P2
-**Status:** TODO
+**Status:** DONE
 **Owner:** `model`
 
 #### Basis (confirmed 2026-07-26)
@@ -1355,9 +1355,37 @@ preserve model-valid evidence. If environment steps stay outside history they
 need their own typed provenance log, or an explicit statement of why they are
 trusted environmental inputs rather than protocol transitions.
 
-The exit test is an external public-API path from genesis through validated
-funding, request creation, admission, a validated cadence advance, and a cycle,
-with no direct field mutation.
+#### Resolution (2026-07-26)
+
+Decided the same way as S3: environment evolution belongs to the substrate, so
+the rule is corrected rather than a typed environment-step API built.
+
+Block age advancing and externally funded open objects arriving are substrate
+facts. The chain moves time and third parties send coins whether or not this
+protocol acts, so neither carries a transition certificate — there was no
+transition to certify, and recording one would assert the protocol did
+something it did not. Building an `EnvironmentStep` transition type would have
+encoded the opposite claim.
+
+The evidence rule now governs *protocol* state changes: every one must come
+from genesis followed by successful `execute` calls, while the environment they
+run in is substrate-supplied. A harness may advance block age or inject an
+externally funded open object without invalidating the evidence, and must still
+route every protocol operation through `execute`.
+
+The rule additionally states the obligation this creates. Safety must hold
+under arbitrary substrate movement, not merely the movement a test scripts: no
+invariant may depend on how far time advanced, in what order external funds
+arrived, or on that history being final. A reorganization can rewrite substrate
+history and the model must survive it — which is tractable here because no
+operation reveals private data as a condition of acting, so a reorg changes
+which history is current without having disclosed anything irreversible.
+
+Source: `packages/model/src/lib.rs`. Tests
+(`packages/model/tests/public_api.rs`, as an external consumer): substrate time
+movement appends no certificate and leaves invariants clean, a protocol
+operation over the advanced environment is the only certified change, and
+invariants hold across substrate movement from zero to `u32::MAX` blocks.
 
 ### S5 — Stable projections carry an incidental topological order · `task:review:canonical-toposort`
 

@@ -186,3 +186,65 @@ fn public_operation_api_executes_transitions() {
         BranchKind::AnnounceMaturity,
     );
 }
+
+// --- S4: the evidence rule governs protocol transitions, not the
+// environment they run in. Block age advancing is a substrate fact:
+// the chain moves time whether or not this protocol acts. This test
+// shows an external consumer evolving the environment and then
+// performing a protocol operation, with every protocol change going
+// through `execute` and the resulting world still invariant-clean. ---
+
+#[test]
+fn substrate_time_advance_leaves_protocol_evidence_intact() {
+    let mut advanced = genesis_world();
+    let before = advanced.history.transitions.len();
+
+    // The substrate moves time. No protocol transition occurred, so no
+    // certificate is appended — asserting one would claim the protocol
+    // did something it did not.
+    advanced.pace_age_blocks += 144;
+
+    assert_eq!(
+        advanced.history.transitions.len(),
+        before,
+        "environment movement must not forge a protocol certificate",
+    );
+    check_invariant(&advanced).expect("invariants hold across substrate time movement");
+
+    // A protocol operation over the advanced environment still goes
+    // through the sealed transition API and does append a certificate.
+    let announce = AnnounceMaturity {
+        maturity_cycle: advanced.constants.min_maturity_lead,
+        signers: std::iter::once(OPERATOR_KEY).collect(),
+        fee_envelope: FeeEnvelope::default(),
+    };
+    let next = execute(
+        &advanced,
+        &announce,
+        CanonicalOrder {
+            height: 0,
+            tx_index: 1,
+        },
+    )
+    .unwrap();
+
+    check_invariant(&next).unwrap();
+    assert_eq!(
+        next.history.transitions.len(),
+        before + 1,
+        "the protocol operation is the only certified change",
+    );
+}
+
+#[test]
+fn invariants_do_not_depend_on_how_far_the_substrate_moved() {
+    // Safety must hold under arbitrary substrate movement, not merely
+    // the movement a test scripts. A reorg can rewrite substrate
+    // history; nothing here may depend on a particular depth.
+    for blocks in [0_u64, 1, 144, 10_000, u64::from(u32::MAX)] {
+        let mut world = genesis_world();
+        world.pace_age_blocks += blocks;
+        check_invariant(&world)
+            .unwrap_or_else(|error| panic!("invariants broke after {blocks} blocks: {error:?}"));
+    }
+}
