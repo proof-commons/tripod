@@ -1,0 +1,28 @@
+[package]
+name = "tripod-compiler"
+description = "Target-independent compilation analysis of a validated contract realization"
+
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[lib]
+name = "compiler"
+
+# `realization` is the intended first-party dependency. The package
+# contract admits a direct `architecture` dependency only when the
+# compiler's public types name architecture-owned IDs and ownership
+# would otherwise be obscured — which is the case here: the public
+# error vocabulary names operations, realization does not re-export
+# `OperationId`, and minting a compiler-local operation identifier
+# would duplicate an architecture-owned ID rather than cite it.
+[dependencies]
+architecture = { workspace = true }
+realization = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

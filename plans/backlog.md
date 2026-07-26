@@ -234,7 +234,7 @@ F3 remediation:                       recorded closed historically
 Identity/digest architecture:         adopted; inventory and future DAG recorded
 Static-review findings:               all resolved (F4 register closed)
 Phase-2 dependency review:            complete (Petgraph; P2-002/C1-004)
-Phase-2 compiler package:             absent
+Phase-2 compiler package:             created; analysis absent
 Target/backend/linker/transaction:     absent
 Independent deployment evidence:      absent
 Production deployment:                absent
@@ -958,7 +958,7 @@ their order alongside an unaffected local mint and ordinary inline code.
 |---|---:|---|---|
 | `P2-001` | P1 | DONE | Immutable, canonical, ownership-validated realization boundary |
 | `P2-002` | P2 | DONE | Concrete Petgraph dependency and lockfile review |
-| `P2-003` | P1 | BLOCKED | Create `tripod-compiler` |
+| `P2-003` | P1 | DONE | Create `tripod-compiler` |
 | `P2-004` | P1 | BLOCKED | Bind architecture, realization, policy, and explicit scope |
 | `P2-005` | P1 | BLOCKED | Canonical relation DAG over direct Petgraph |
 | `P2-006` | P1 | BLOCKED | Checked constant folding preserving failure semantics |
@@ -1113,7 +1113,7 @@ check-generated, plans-check). Clean tree after commit.
 ### P2-003 — Create the compiler crate · `task:phase2:create-compiler`
 
 **Priority:** P1
-**Status:** BLOCKED on I1-002, I1-003, F4-001, and F4-002
+**Status:** DONE
 **Package contract:** [compiler.md](packages/compiler.md)
 
 Create:
@@ -1145,6 +1145,36 @@ The crate must:
   input;
 - mint no public compiler digest before a real consumer exists and I1-003
   permits it.
+
+#### Resolution (2026-07-26)
+
+`packages/compiler` exists as `tripod-compiler`, library `compiler`,
+inheriting workspace metadata and lints, forbidding unsafe code, and joined to
+both the Cargo workspace and the Meson census. The census weld refused the
+first run until the new files were tracked, which is the ADR-014 behaviour
+working rather than an obstacle.
+
+The crate carries its boundary and its error root only. Input binding and every
+analysis stage belong to P2-004 and later, and nothing partial is exposed in
+the meantime, so no value this crate produces today can be mistaken for a
+completed analysis. It mints no public compiler digest: under I1-003 an
+analysis identity activates only on a real cross-process, cached, or published
+consumer, and a field reserved for a future digest would itself be speculative.
+
+`CompileError` is `non_exhaustive` and carries only the five input-boundary
+failures, each exercised by the public-API integration test. Later stages
+extend the vocabulary without a breaking change and without this crate guessing
+their shapes now.
+
+The package contract admits a direct `architecture` dependency only where the
+compiler's public types name architecture-owned IDs and ownership would
+otherwise be obscured. That condition holds: the error vocabulary names
+operations, realization does not re-export `OperationId`, and a compiler-local
+operation identifier would duplicate an architecture-owned ID rather than cite
+it. The dependency is taken on that stated ground and recorded in the manifest.
+
+Source: `packages/compiler`. Verified under both toolchains, plus
+`meson test -C build` 10/10.
 
 ### P2-004 — Bind input and scope · `task:phase2:bind-input`
 
@@ -1668,7 +1698,7 @@ Dependency review:
     P2-002 / C1-004 complete (Petgraph reviewed; features trimmed)
 
 Compiler:
-    package absent
+    package created (P2-003); boundary and error root only
     relation/proof/disclosure/lifecycle/placement/coverage analysis absent
 ```
 

@@ -4,6 +4,7 @@ members = [
     "packages/architecture",
     "packages/artifacts",
     "packages/cli-common",
+    "packages/compiler",
     "packages/document-stamps",
     "packages/execwrap",
     "packages/flatten-latex-main",
@@ -24,6 +25,7 @@ version = "0.2.0-dev"
 architecture = { package = "tripod-architecture", path = "packages/architecture" }
 artifacts = { package = "tripod-artifacts", path = "packages/artifacts" }
 cli-common = { path = "packages/cli-common" }
+compiler = { package = "tripod-compiler", path = "packages/compiler" }
 execwrap = { path = "packages/execwrap" }
 flatten-latex-main = { path = "packages/flatten-latex-main" }
 labels = { package = "tripod-labels", path = "packages/labels" }
