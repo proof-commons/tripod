@@ -1247,9 +1247,49 @@ regions with different individual denominations but the same sponsor-erased
 projection must produce identical non-resource observations and relation
 verdicts, with the amounts never reaching the evaluator.
 
-Not attempted as a local repair: the correct fix removes a field from a typed
-observation consumed by the model adapter and the pilots, and a partial change
-would leave the guard exactly as misleading as it is now.
+#### Attempt and finding (2026-07-26)
+
+Implementation was attempted and reverted. It is recorded because the attempt
+produced the decisive evidence.
+
+v13d states what discharges sponsor conservation: role is authenticated by the
+protocol — asset, family, exact membership, source and destination uniqueness,
+disjointness, owner authorization, at-most-one envelope — while conservation is
+authenticated "through the substrate's exact value or commitment relation". The
+trap box adds that once the payout and reserve successor are pinned by their own
+relations, sponsor conservation follows as the residual, and that a positivity
+read "detects nothing the exact protocol relations do not already pin, and it
+costs a value read the protocol has no right to".
+
+Read straight, that says the isolation relation should check role structure and
+stop. Making it value-blind on that reading failed four tests, all from the
+F2-006 remediation and all named for the property they pin: a zeroed sponsor
+input or change is *recognized* — recognition was made value-blind then — but
+*fails conservation*. The earlier work deliberately split the two, keeping
+conservation as a value-reading check.
+
+So the fork is real and it is not resolved by v13d alone:
+
+1. **Conservation is a target obligation.** The realization checks role only.
+   Its read-set assertion becomes true without qualification. Cost: the
+   realization no longer detects a sponsor imbalance in the transparent model,
+   because no substrate exists there to detect it; the four F2-006 tests are
+   rewritten, and the model oracle gets weaker in a way that must be argued
+   safe.
+2. **The realization stands in for the substrate.** Conservation stays a value
+   read, deliberately, because the model has no commitment relation to appeal
+   to. Then the structural read-set claim must be narrowed to say what is
+   actually true — no sponsor amount is a protocol *operand*, while the
+   residual conservation check reads them — and the guard's advertised scope is
+   corrected rather than the code.
+
+The prior remediation chose 2 implicitly. Choosing 1 now would overturn a
+deliberate decision on the strength of a document that does not address the
+model-oracle case, so it is left to an explicit decision rather than taken
+unilaterally.
+
+Whichever is chosen, the review's core observation stands and must be answered:
+today the guard advertises a boundary the evaluator does not hold.
 
 ### S4 — Model evidence provenance cannot express environment steps · `task:review:environment-steps`
 
