@@ -735,22 +735,24 @@ fn sponsor_is_isolated(observation: &OperationObservation) -> Result<bool, Reali
             return Ok(false);
         }
 
-        let Some(source_total) =
-            flow_total(observation, flow, ObservedSide::Input, &mut used_sources)?
-        else {
+        // Role structure only (S3). Sponsor conservation is the
+        // substrate's: Elements validates that every transaction's
+        // inputs and outputs balance, so re-deriving that here would
+        // duplicate the base layer's own job while reading exactly the
+        // amounts sponsor erasure removes from the protocol read-set.
+        // This layer concerns itself only with the proofs that bear on
+        // its own security — and the trap box is explicit that a
+        // sponsor value read detects nothing the exact protocol
+        // relations do not already pin.
+        if !flow_role_is_exact(observation, flow, ObservedSide::Input, &mut used_sources)? {
             return Ok(false);
-        };
-        let Some(destination_total) = flow_total(
+        }
+        if !flow_role_is_exact(
             observation,
             flow,
             ObservedSide::Output,
             &mut used_destinations,
-        )?
-        else {
-            return Ok(false);
-        };
-
-        if source_total != destination_total.checked_add(flow.fee)? {
+        )? {
             return Ok(false);
         }
     }
@@ -775,21 +777,31 @@ fn sponsor_is_isolated(observation: &OperationObservation) -> Result<bool, Reali
     Ok(true)
 }
 
-fn flow_total(
+/// Validate one side of a sponsor flow as *role structure*: exact
+/// membership, source and destination uniqueness, declared family and
+/// asset, and owner authorization on the input side.
+///
+/// Deliberately value-blind. Sponsor conservation belongs to the
+/// substrate — Elements validates that a transaction balances — so
+/// this layer authenticates only what bears on its own security. The
+/// observation still carries amounts, because removing the field is a
+/// separate change to a published type, but no sponsor amount is read
+/// here; the structural read-set assertion of sponsor erasure
+/// therefore holds on this path as well as in the fact graphs.
+fn flow_role_is_exact(
     observation: &OperationObservation,
     flow: &ObservedOpenFlow,
     side: ObservedSide,
     used: &mut BTreeSet<ObservedObjectRef>,
-) -> Result<Option<ProtocolAmount>, RealizationError> {
+) -> Result<bool, RealizationError> {
     let refs = match side {
         ObservedSide::Input => &flow.sources,
         ObservedSide::Output => &flow.destinations,
     };
-    let mut total = ProtocolAmount::ZERO;
 
     for reference in refs {
         if !used.insert(*reference) {
-            return Ok(None);
+            return Ok(false);
         }
 
         let object = observation
@@ -800,23 +812,21 @@ fn flow_total(
             || object.kind != ObservedObjectKind::Declared(ObjectId::PlainLbtc)
             || object.asset != ObservedAsset::Declared(AssetId::Lbtc)
         {
-            return Ok(None);
+            return Ok(false);
         }
 
         if side == ObservedSide::Input {
             let Some(owner) = object.owner else {
-                return Ok(None);
+                return Ok(false);
             };
 
             if !observation.sponsor_signers.contains(&owner) {
-                return Ok(None);
+                return Ok(false);
             }
         }
-
-        total = total.checked_add(object.value)?;
     }
 
-    Ok(Some(total))
+    Ok(true)
 }
 
 fn root_policy_holds(

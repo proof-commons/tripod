@@ -72,9 +72,19 @@ pub fn validate_scoped_realization(
 /// declassification entry, or constructibility fact may name a
 /// `PLAIN_LBTC` family amount, on either side. Sponsor safety is
 /// discharged by asset authentication, family recognition, exact
-/// membership, owner authorization, isolation, and conservation — a
-/// backend must not add an amount read merely because its target
-/// exposes an introspection primitive.
+/// membership, owner authorization, and isolation — a backend must not
+/// add an amount read merely because its target exposes an
+/// introspection primitive.
+///
+/// Conservation is deliberately absent from that list (S3). It is the
+/// substrate's: Elements validates that a transaction's inputs and
+/// outputs balance, so this layer neither re-derives it nor reads the
+/// amounts it would need to. The guard covers four declaration paths;
+/// the sponsor-isolation evaluator is the fifth surface that could
+/// reach these amounts, and it is value-blind for the same reason —
+/// see `flow_role_is_exact`. A guard that covered only the
+/// declaration paths would advertise a boundary the evaluator did not
+/// hold.
 fn validate_sponsor_value_opacity(
     realization: &ScopedRealizationSpec,
 ) -> Result<(), RealizationError> {

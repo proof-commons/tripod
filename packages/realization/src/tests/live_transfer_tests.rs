@@ -545,8 +545,15 @@ fn mixed_zero_and_positive_sponsor_members_are_accepted() {
     );
 }
 
+// S3: sponsor conservation belongs to the substrate. Elements
+// validates that a transaction's inputs and outputs balance, so this
+// layer does not re-derive it — and doing so cost a read of exactly
+// the amounts sponsor erasure removes from the protocol read-set.
+// Zeroing a sponsor amount is therefore recognized AND isolated: the
+// role structure is exact, and any imbalance is the base layer's to
+// reject. Previously these two cases asserted the opposite.
 #[test]
-fn zeroed_sponsor_input_is_recognized_but_fails_conservation() {
+fn zeroed_sponsor_input_is_recognized_and_isolation_stays_value_blind() {
     let mut observation = valid_sponsored_observation();
 
     observation
@@ -561,11 +568,14 @@ fn zeroed_sponsor_input_is_recognized_but_fails_conservation() {
 
     let report = evaluate(&observation);
     assert!(!failed(&report, &sponsor_input_recognition()));
-    assert!(failed(&report, &sponsor()));
+    assert!(
+        !failed(&report, &sponsor()),
+        "a zeroed sponsor amount is exact role structure; conservation is the substrate's",
+    );
 }
 
 #[test]
-fn zeroed_sponsor_change_is_recognized_but_fails_conservation() {
+fn zeroed_sponsor_change_is_recognized_and_isolation_stays_value_blind() {
     let mut observation = valid_sponsored_observation();
 
     observation
@@ -580,7 +590,10 @@ fn zeroed_sponsor_change_is_recognized_but_fails_conservation() {
 
     let report = evaluate(&observation);
     assert!(!failed(&report, &sponsor_output_recognition()));
-    assert!(failed(&report, &sponsor()));
+    assert!(
+        !failed(&report, &sponsor()),
+        "a zeroed sponsor amount is exact role structure; conservation is the substrate's",
+    );
 }
 
 #[test]

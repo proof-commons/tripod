@@ -637,8 +637,15 @@ fn mixed_zero_and_positive_sponsor_members_are_accepted() {
     );
 }
 
+// S3: sponsor conservation belongs to the substrate. Elements
+// validates that a transaction's inputs and outputs balance, so this
+// layer does not re-derive it — and doing so cost a read of exactly
+// the amounts sponsor erasure removes from the protocol read-set.
+// Zeroing a sponsor amount is therefore recognized AND isolated: the
+// role structure is exact, and any imbalance is the base layer's to
+// reject. Previously these two cases asserted the opposite.
 #[test]
-fn zeroed_sponsor_input_is_recognized_but_fails_conservation() {
+fn zeroed_sponsor_input_is_recognized_and_isolation_stays_value_blind() {
     // Zeroing a claimed sponsor input no longer fails recognition —
     // the amount is not a recognition operand — but the envelope stops
     // balancing, so sponsor isolation reports the defect.
@@ -656,11 +663,14 @@ fn zeroed_sponsor_input_is_recognized_but_fails_conservation() {
 
     let report = evaluate(&observation);
     assert!(!failed(&report, &sponsor_input_recognition()));
-    assert!(failed(&report, &sponsor()));
+    assert!(
+        !failed(&report, &sponsor()),
+        "a zeroed sponsor amount is exact role structure; conservation is the substrate's",
+    );
 }
 
 #[test]
-fn zeroed_sponsor_change_is_recognized_but_fails_conservation() {
+fn zeroed_sponsor_change_is_recognized_and_isolation_stays_value_blind() {
     let mut observation = valid_sponsored_observation();
 
     observation
@@ -675,7 +685,10 @@ fn zeroed_sponsor_change_is_recognized_but_fails_conservation() {
 
     let report = evaluate(&observation);
     assert!(!failed(&report, &sponsor_output_recognition()));
-    assert!(failed(&report, &sponsor()));
+    assert!(
+        !failed(&report, &sponsor()),
+        "a zeroed sponsor amount is exact role structure; conservation is the substrate's",
+    );
 }
 
 #[test]
@@ -1449,4 +1462,50 @@ fn compact_ash_weld_rejects_every_field_mutation() {
             "mutation case {name}",
         );
     }
+}
+
+#[test]
+fn sponsor_denominations_do_not_reach_any_protocol_verdict() {
+    // S3, the deciding test: two sponsor regions with the same role
+    // structure but different individual denominations must produce
+    // identical protocol verdicts. Sponsor amounts are not protocol
+    // operands, and since conservation is the substrate's, no protocol
+    // relation reads them at all.
+    let mut coarse = valid_sponsored_observation();
+    let mut fine = valid_sponsored_observation();
+
+    for (observation, input, change) in [
+        (
+            &mut coarse,
+            ProtocolAmount::new(9_000).unwrap(),
+            ProtocolAmount::new(4_000).unwrap(),
+        ),
+        (
+            &mut fine,
+            ProtocolAmount::new(11).unwrap(),
+            ProtocolAmount::new(7).unwrap(),
+        ),
+    ] {
+        for object in &mut observation.objects {
+            if object.kind != ObservedObjectKind::Declared(ObjectId::PlainLbtc) {
+                continue;
+            }
+            object.value = match object.reference.side {
+                ObservedSide::Input => input,
+                ObservedSide::Output => change,
+            };
+        }
+    }
+
+    let coarse_report = evaluate(&coarse);
+    let fine_report = evaluate(&fine);
+
+    assert_eq!(
+        coarse_report, fine_report,
+        "sponsor denominations reached a protocol verdict",
+    );
+    assert!(
+        !failed(&coarse_report, &sponsor()),
+        "exact sponsor role structure is isolated regardless of denomination",
+    );
 }

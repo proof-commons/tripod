@@ -1195,7 +1195,7 @@ Identifiers are this repository's, numbered to match the review's own ordering.
 |---|---:|---|---|
 | `S1` | P1 | DONE | Whether SP4's equality survives settlement-pinned clearing: it does not; a lower bound does. |
 | `S2` | P1 | DONE | Disclosure-graph relation IDs are not welded to the declared relation census. |
-| `S3` | P1 | TODO | Sponsor-value opacity is enforced in fact graphs but bypassed by the sponsor-isolation evaluator. |
+| `S3` | P1 | DONE | Sponsor-value opacity is enforced in fact graphs but bypassed by the sponsor-isolation evaluator. |
 | `S4` | P2 | TODO | The model's evidence rule cannot express open-object injection or block-age advance. |
 | `S5` | P2 | DONE | Stable realization projections carry an incidental Petgraph topological order. |
 | `S6` | P2 | DONE | Duplicate rows in the Realization index are silently accepted. |
@@ -1208,7 +1208,7 @@ repairs, and each states its chosen design before it is implemented.
 ### S3 — Sponsor opacity is bypassed by the isolation evaluator · `task:review:sponsor-erasure`
 
 **Priority:** P1
-**Status:** TODO
+**Status:** DONE
 **Owner:** `realization`
 **Policy:** D005, v13d sponsor erasure
 **Blocks:** compiler proof alternatives for sponsor isolation
@@ -1288,8 +1288,42 @@ deliberate decision on the strength of a document that does not address the
 model-oracle case, so it is left to an explicit decision rather than taken
 unilaterally.
 
-Whichever is chosen, the review's core observation stands and must be answered:
-today the guard advertises a boundary the evaluator does not hold.
+#### Resolution (2026-07-26)
+
+Decided: conservation is the substrate's. The substrate here is the Elements
+chain itself, which already validates that every transaction's inputs and
+outputs are well formed. This layer concerns itself only with the proofs that
+bear on its own security, and re-deriving base-layer conservation both
+duplicated that work and cost a read of exactly the amounts sponsor erasure
+removes from the protocol read-set. The trap box already said the read detects
+nothing the exact protocol relations do not pin.
+
+The isolation evaluator now validates role structure alone —
+`flow_role_is_exact` replaces `flow_total`: exact membership, source and
+destination uniqueness, declared family and asset, and owner authorization on
+the input side. No sponsor amount is read on any path.
+
+The four F2-006 tests that asserted a zeroed sponsor amount fails conservation
+now assert the corrected boundary and say why: exact role structure is
+isolated, and an imbalance is the base layer's to reject. They were rewritten
+rather than deleted so the change of position is visible where the old one was
+recorded. Everything protective is unchanged and still tested: an unsigned
+sponsor input, an unclaimed member, a second envelope, and a foreign family all
+still fail isolation.
+
+The deciding test the review asked for is added: two sponsor regions with the
+same role structure but different individual denominations produce identical
+protocol verdicts.
+
+The opacity guard's own documentation claimed a boundary it did not hold. It
+now names conservation as the substrate's, and names the evaluator as the fifth
+surface — covered by the same rule rather than by the four declaration paths
+alone.
+
+Not done, and not required by this finding: removing the amount field from the
+observation type. No protocol path reads it now, so the field is unused rather
+than dangerous; deleting it is a change to a published type and belongs with
+the target work that decides what an observation carries.
 
 ### S4 — Model evidence provenance cannot express environment steps · `task:review:environment-steps`
 
