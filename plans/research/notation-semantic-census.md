@@ -22,10 +22,10 @@ The duplication that prompted this note is real. One concept is described in
 seven unwelded places: the macro comment, the prose definition, the theorem
 statement, the verification row, the symbol-index row, the collision-register
 row, and the purity grep. Nothing checks that they agree, and the floor-ceiling
-drift is what that permitted — a correctly scoped proposition
-(`[A-prop:containment:floor-ceiling]`) coexisting with four restatements that
-dropped its scope, one of them a verification invariant asserting a false
-general claim, with every gate green.
+drift is what that permitted — a correctly scoped proposition coexisting with
+four restatements that dropped its scope, one of them a verification invariant
+asserting a false general claim, with every gate green. That proposition has
+since been removed and replaced by separately scoped claims.
 
 That observation stands. What does not stand is the inference that the repair
 is a second vocabulary registry.
@@ -146,8 +146,8 @@ One rule survives from this note as a genuine constraint on the correction:
 
 > A stable semantic label must never silently change meaning.
 
-`thm:seigniorage:lifetime-envelope` denotes *a finite lifetime envelope exists*.
-Withdrawing that theorem retires the label; the negative result gets a new one.
+The lifetime-envelope anchor denoted *a finite lifetime envelope exists*.
+Withdrawing that theorem removes the label; the negative result gets a new one.
 Reusing the key would preserve navigation while reversing semantics, which is
 strictly worse than a broken link because nothing would report it.
 

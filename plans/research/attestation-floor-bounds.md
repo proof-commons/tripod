@@ -5,12 +5,14 @@
 > **Affected packages:** `papers/attestation`, model, realization
 > **Depends on:** the burn-settlement convention (`q:attestation:burn-settlement`), resolved below
 > **Decisions:** settlement-pinned batch valuation adopted; SP5 retained and generalized
-> **Imports:** (`[A-prop:containment:floor-ceiling]`),
-> (`[A-eq:containment:floor-ceiling]`),
+> **Imports:** (`[A-prop:containment:time-locked-standing-bound]`),
+> (`[A-cor:containment:pre-deposit-floor-factor]`),
+> (`[A-prop:containment:no-fixed-bootstrap-floor-ceiling]`),
+> (`[A-thm:containment:pre-maturity-deposit-capacity]`),
 > (`[A-prop:interface:bootstrap-capacity]`),
 > (`[A-eq:containment:max-attestation]`),
-> (`[A-thm:seigniorage:lifetime-envelope]`),
-> (`[A-eq:seigniorage:lifetime]`),
+> (`[A-thm:seigniorage:no-finite-lifetime-envelope]`),
+> (`[A-def:operations:settlement-pinned-valuation]`),
 > (`[A-thm:seigniorage:bootstrapping-bound]`),
 > (`[A-prop:containment:seigniorage-suppression]`),
 > (`[A-def:model:ratefloor]`),
