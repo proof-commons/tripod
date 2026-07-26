@@ -136,15 +136,39 @@ struct FileSpec {
 
 /// Filesystem identity of a redirection target.
 ///
-/// Used to detect aliased paths naming the same file — `a.log` vs
-/// `./a.log`, symlinks (dangling ones included), hard links,
-/// symlinked parent directories — before anything is truncated.
-/// Lexical path equality alone would let two routes truncate and
-/// interleave writes into one file with no I/O call ever failing.
+/// This is the **sole** package-local exception to lexical output-role
+/// comparison (`[ADR017-rule:path:local-checks]`), which requires the
+/// exception to state four things:
 ///
-/// This is a preflight guard against configuration mistakes, not a
-/// security boundary: a window remains between the identity check
-/// and the later open (time-of-check/time-of-use).
+/// **The exact hazard.** Two redirection routes resolving to one file
+/// are opened independently, each with truncation, and then written
+/// concurrently by the wrapper as the child produces output. The
+/// result is one log with interleaved and partially overwritten
+/// bytes, and no I/O call fails at any point. The damage is done to
+/// the operation's own output, not to repository state.
+///
+/// **The additional check.** Each target is resolved to a filesystem
+/// identity before anything is opened: device and inode for an
+/// existing file (so symlinks and hard links collapse), and resolved
+/// parent directory plus file name for one that does not exist yet.
+/// A dangling symlink resolves to its ultimate target, because
+/// creating the file would follow the link.
+///
+/// **Why lexical uniqueness is insufficient here.** Lexical
+/// comparison catches `a.log` against `./a.log`, but not two names
+/// hard-linked to one file, nor two paths beneath a symlinked
+/// directory, nor a dangling link and the name it points at. Those
+/// all produce the interleaving above, and unlike an ordinary output
+/// role — which the caller controls end to end — these paths are
+/// routinely assembled by build glue where such aliases arise by
+/// accident.
+///
+/// **The remaining host race.** None of this closes a
+/// time-of-check/time-of-use window: the host may replace or remount
+/// any of these paths between the check and the open. This is a
+/// preflight guard against configuration mistakes and nothing more.
+/// It is a package-local correctness measure, never a
+/// repository-wide filesystem security claim.
 #[derive(Debug, PartialEq, Eq)]
 enum FileIdentity {
     /// The target exists: device and inode numbers (symlinks

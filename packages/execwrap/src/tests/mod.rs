@@ -7,6 +7,7 @@
 //! | `collect_file_specs_rejects_ambiguous_routing`      | conflicting paths are an error          |
 //! | `aliased_redirection_paths_are_rejected`            | `a.log` vs `./a.log` conflict           |
 //! | `symlink_and_hardlink_aliases_are_rejected`         | link aliases resolve to one identity    |
+//! | `two_routes_to_one_log_are_refused_because_they_would_interleave` | the documented ADR-017 local exception |
 //! | `parent_symlink_alias_is_rejected`                  | symlinked parent dirs resolve           |
 //! | `symlinked_ancestor_with_missing_directories_is_rejected` | pending suffixes share identity   |
 //! | `parent_dir_through_missing_component_still_resolves_symlinks` | `..` re-enters resolution    |
@@ -118,6 +119,44 @@ fn symlink_and_hardlink_aliases_are_rejected() {
 
     // Preflight only stats: the existing target is untouched.
     assert_eq!(std::fs::read(&target).expect("read target"), b"keep");
+}
+
+#[test]
+fn two_routes_to_one_log_are_refused_because_they_would_interleave() {
+    // ADR-017 records this package as the sole local exception to
+    // lexical output-role comparison, and the hazard is what justifies
+    // it: two routes resolving to one file are opened independently,
+    // each truncating, then written concurrently as the child produces
+    // output. The log ends up interleaved and partially overwritten
+    // while every I/O call succeeds.
+    //
+    // Lexical comparison cannot see this pair — the two names differ
+    // in every component and neither is a `.`/`..` spelling of the
+    // other — so refusing it needs the resolved identity.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let stdout_log = dir.path().join("stdout.log");
+    std::fs::write(&stdout_log, b"previous run").expect("write log");
+    let stderr_log = dir.path().join("stderr.log");
+    std::fs::hard_link(&stdout_log, &stderr_log).expect("hard link");
+
+    let interleaving = RoutingConfig {
+        redirect_output: Some(stdout_log.clone()),
+        redirect_error: Some(stderr_log),
+        ..RoutingConfig::default()
+    };
+
+    assert!(matches!(
+        super::preflight_routing(&interleaving),
+        Err(ExecError::AmbiguousRedirection { .. }),
+    ));
+
+    // The refusal precedes truncation, so the previous log survives.
+    // Nothing here closes a host race: the check only precedes the
+    // open, it does not hold the path still.
+    assert_eq!(
+        std::fs::read(&stdout_log).expect("read log"),
+        b"previous run"
+    );
 }
 
 #[test]

@@ -1552,8 +1552,8 @@ logic; none weakens a constraint on source-derived paths.
 | `A17-001` | P1 | DONE | Census audit consumes Git modes and rejects symlinks and gitlinks |
 | `A17-002` | P1 | DONE | Shared destination identity becomes lexical |
 | `A17-003` | P1 | DONE | Flattener drops ancestor alias analysis, keeps source-derived confinement |
-| `A17-004` | P2 | TODO | `execwrap` role uniqueness is simplified or documented as the sole exception |
-| `A17-005` | P2 | TODO | Removal of preflight race claims from prose and diagnostics |
+| `A17-004` | P2 | DONE | `execwrap` role uniqueness is simplified or documented as the sole exception |
+| `A17-005` | P2 | DONE | Removal of preflight race claims from prose and diagnostics |
 
 ### A17-001 — Central tracked-entry mode audit · `task:path:census-modes`
 
@@ -1730,6 +1730,32 @@ remaining host race, and why lexical role uniqueness is insufficient. A
 retained exception is a package-local correctness measure and never a
 repository-wide filesystem security claim.
 
+#### Resolution (2026-07-26) — retained as the documented exception
+
+Retained, not simplified. ADR-017 names this exact hazard when it admits a
+package-local check, and the hazard is real: two redirection routes resolving
+to one file are opened independently, each truncating, then written
+concurrently as the child produces output, so the log ends up interleaved and
+partially overwritten while every I/O call succeeds. The damage is to the
+operation's own output, not to repository state.
+
+Lexical comparison is insufficient here in a way it is not for ordinary output
+roles: it catches one name spelled two ways, but not two names hard-linked to
+one file, two paths beneath a symlinked directory, or a dangling link and the
+name it points at. Redirection paths are routinely assembled by build glue,
+where those aliases arise by accident rather than by a caller's choice.
+
+The four required disclosures — exact hazard, additional check, why lexical is
+insufficient, and the remaining host race — are documented on `FileIdentity`
+itself, where a reader meets the code. No behaviour changed; the exception is
+now stated instead of implied.
+
+Source: `packages/execwrap/src/lib.rs`. Test:
+`two_routes_to_one_log_are_refused_because_they_would_interleave` in
+`packages/execwrap/src/tests/mod.rs` names the concurrent-writer hazard rather
+than filesystem aliasing in general, and asserts that the refusal precedes
+truncation while claiming nothing about the host race.
+
 ### A17-005 — Remove preflight race claims · `task:path:race-claims`
 
 **Lane:** ADR-017 implementation
@@ -1751,6 +1777,23 @@ mechanically detectable
 Atomic staging and compare-if-changed remain required and remain honestly
 described: they are correctness properties of an honest writer, not protection
 against a host replacing a path before, during, or after publication.
+
+#### Resolution (2026-07-26)
+
+The sweep found the claims concentrated in the two loci this series already
+touched, and both were rewritten as part of their own tasks rather than left
+for a separate pass. The flattener's module doc no longer claims symlink-free
+path confinement and now states the boundary and the race explicitly;
+`cli-common` no longer describes canonicalized-entry identity.
+
+Remaining occurrences of the vocabulary were checked and are correct as they
+stand: ADR-015 and ADR-017 state the non-claims deliberately, `execwrap`
+documents its retained exception including the residual window, and the
+flattener's symlink diagnostic still describes behaviour it really has —
+a symlinked allowlist entry is refused as a file-type role check.
+
+No first-party comment, diagnostic, README, or plan now describes a preflight
+path check as closing a host-level race.
 
 ---
 
