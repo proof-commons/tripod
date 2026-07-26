@@ -1,7 +1,7 @@
 # Research Question: Lifetime Attestation and Floor Bounds · `q:attestation:floor-bounds`
 
-> **Status:** Analysis accepted; regressions landed; normative correction pending
-> **Blocks:** Layer-0 containment and seigniorage claims, the SP5 capacity export, and every importing-layer cost projection derived from them
+> **Status:** Resolved — analysis accepted, regressions landed
+> **Blocks:** Attestation containment and seigniorage claims, the SP5 capacity export, and every importing-layer cost projection derived from them
 > **Affected packages:** `papers/attestation`, model, realization
 > **Depends on:** the burn-settlement convention (`q:attestation:burn-settlement`), resolved below
 > **Decisions:** settlement-pinned batch valuation adopted; SP5 retained and generalized
@@ -224,12 +224,11 @@ already depends on, and that *would* move the anchor set.
 
 ## Remaining analysis · `sec:attestation-floor-bounds:analysis`
 
-The bounds question is answered and the regressions are landed. What remains
-before the normative correction lands:
+The bounds question is answered, the regressions are landed, and the correction
+is published. The calibration coupling now cites only surviving bounds. One
+item remains open:
 
-1. Restate the calibration coupling in (`[A-rem:model:calibration]`), which
-   currently couples ζ and f through the withdrawn envelope.
-2. Record how the realization's integer domain and its clear clamp interact
+1. Record how the realization's integer domain and its clear clamp interact
    with the negative lifetime result: a deployment maximum exists but depends
    on atomic-unit scale and current reserve, and is not a scale-independent
    protocol bound.
@@ -320,8 +319,8 @@ Reject a candidate if:
 
 ## Result · `sec:attestation-floor-bounds:result`
 
-Accepted. The analysis is settled; the normative correction and the permanent
-regressions are not yet landed.
+Accepted and published. The analysis is settled, the regressions are landed,
+and Attestation v0.6.0 carries the corrected statements.
 
 ```text
 1. Burn valuation is settlement-pinned and batch-linear:

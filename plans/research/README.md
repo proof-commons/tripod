@@ -17,7 +17,7 @@ Research notes do not define production policy.
 | [wide-arithmetic.md](wide-arithmetic.md) | Prototype and measurement required | Redemption, settlement, and cycle arithmetic. |
 | [public-declassification.md](public-declassification.md) | Open; prototype required | Confidential-to-public lifecycle paths. |
 | [settlement-layout.md](settlement-layout.md) | Open; prototype required | Settlement ABI and calibrated batch size. |
-| [attestation-floor-bounds.md](attestation-floor-bounds.md) | Analysis accepted; regressions landed; correction pending | Attestation containment and seigniorage claims, and the SP5 capacity export. |
+| [attestation-floor-bounds.md](attestation-floor-bounds.md) | Resolved | Attestation containment and seigniorage claims, and the SP5 capacity export. |
 | [notation-semantic-census.md](notation-semantic-census.md) | Resolved — over-scoped; the existing label graph is sufficient | Nothing further; surviving work is attestation label minting and editorial repair. |
 
 ## Note form · `rule:research:form`
