@@ -76,6 +76,7 @@ path.
 | `C1` | Compiler/linker algorithm and dependency preparation |
 | `A17` | ADR-017 path-scope and host-filesystem-trust implementation |
 | `R` | Path-scope-revision static review findings |
+| `S` | Semantic-boundary static review findings |
 
 Task identifiers are permanent and never reused.
 
@@ -171,7 +172,7 @@ current tree.
 
 | Package or area | Current source state |
 |---|---|
-| Layer 0 | Published specification, version `0.5.1` |
+| Layer 0 | Published specification, version `0.5.2` |
 | Realization document | Realization with final architecture appendix |
 | `architecture` | Typed architecture, validation, semantic/behavioural identities, deployment-profile scaffolding |
 | `model` | Executable state machine, invariant checker, property/corruption suites, indexer and accounting projections |
@@ -189,7 +190,7 @@ current tree.
 
 | Identity | Current value |
 |---|---|
-| Layer-0 version | `0.5.1` |
+| Layer-0 version | `0.5.2` |
 | Realization version | tracked compiler-line binding |
 | Architecture schema | `17` |
 | Architecture semantic algorithm | `sha256-canonical-json-v2` |
@@ -1178,6 +1179,75 @@ substantive analysis deliverable open.
 The card states the distinction explicitly — the package existing is not the
 compiler existing — because that is precisely the claim a reader is most likely
 to overstate while the crate holds only an error vocabulary.
+
+### 5.3 Semantic-boundary review · `tbl:backlog:findings-s`
+
+A third static review, of the snapshot after the R series. It executed no
+Cargo, Meson, TeX, advisory, or reproducibility lane. It reports no static path
+by which the implemented model accepts an unauthorized transfer, issuance,
+burn, redemption, or state transition; its findings are a Layer-0 statement
+that is stronger than the realization guarantees, two missing welds at the
+realization boundary, and status drift.
+
+Identifiers are this repository's, numbered to match the review's own ordering.
+
+| ID | Priority | Status | Finding |
+|---|---:|---|---|
+| `S1` | P1 | DONE | Whether SP4's equality survives settlement-pinned clearing: it does not; a lower bound does. |
+| `S2` | P1 | TODO | Disclosure-graph relation IDs are not welded to the declared relation census. |
+| `S3` | P1 | TODO | Sponsor-value opacity is enforced in fact graphs but bypassed by the sponsor-isolation evaluator. |
+| `S4` | P2 | TODO | The model's evidence rule cannot express open-object injection or block-age advance. |
+| `S5` | P2 | TODO | Stable realization projections carry an incidental Petgraph topological order. |
+| `S6` | P2 | TODO | Duplicate rows in the Realization index are silently accepted. |
+| `S7` | P3 | TODO | ADR-017 and backlog task statuses are internally stale. |
+
+Execution order follows the review's own repair order: S1, S2, S3, S4, S5, S6,
+S7. S3 and S4 are design changes to a published boundary rather than local
+repairs, and each states its chosen design before it is implemented.
+
+### S1 — SP4 is a lower bound, not an equality · `task:review:sp4-bound`
+
+**Priority:** P1
+**Status:** DONE
+**Owner:** Layer 0
+**Identity impact:** Layer-0 patch release; architecture semantic hash moves
+
+#### Basis
+
+SP4 stated that reaching an attestation of `M` required destroying receipt
+redeemable for exactly `M` reserve units at the instant of destruction. Under
+settlement-pinned clearing a burn is credited at the floor committed by the
+most recent settlement event, while the receipt it destroys is redeemable at
+the burn-instant floor. The floor is globally non-decreasing and the settlement
+event precedes the burn, so the credited amount is at most the destroyed value
+and may be strictly less.
+
+The rest of the layer already said so: the conservative-valuation proposition
+states the increment is an upper bound on destroyed value, and burn-order
+reduction 2 notes that a sparser event family widens the lag and is
+conservative.
+
+#### Resolution (2026-07-26)
+
+SP4 now claims a lower bound: reaching `M` required destroying receipt whose
+burn-instant redeemable value was at least `M` reserve units, with equality
+exactly when each burn settles at its own burn-instant floor.
+
+The proof separates the two quantities explicitly — credited value at the
+committed floor, destroyed value at the burn-instant floor — derives the
+inequality from floor non-decrease, and works the review's numeric case: a burn
+of 100 units credited at a settled floor of 1 destroys receipt redeemable for
+110 once the burn-instant floor has reached 1.1. It records where the shortfall
+goes: to the remaining holders as floor, never to the burner as attestation.
+
+This weakens no guarantee. The inequality runs in the conservative direction,
+which is the direction the importing layer already relies on.
+
+Treated as a Layer-0 patch: version `0.5.2`, anchor keys unchanged, no
+realization-major change. The architecture semantic hash moves with the pinned
+Layer-0 version and is re-pinned here and in the embedded manifest appendix;
+the behavioural hash is unchanged, which is the correct outcome for a patch and
+is what the versioning gate confirms.
 
 ---
 
