@@ -16,6 +16,22 @@
 #  10. meson contract   test-meson-mock.sh (mocked TeX; skipped without meson/ninja)
 #  11. clean tree       staged, unstaged, and untracked nonignored paths
 #
+# Result vocabulary. A skipped check is neither failure nor success, so
+# this script distinguishes two passing outcomes and never calls the
+# second one green:
+#
+#   CI green    every lane ran and passed
+#   CI partial  every lane that ran passed; one or more were skipped
+#
+# Lane 10 is skippable only for local convenience — it is the sole
+# check of the hand-managed ADR-014 census, Meson command wiring,
+# report/stamp edges, generator and publication repair, no-op restat
+# behaviour, and render-failure propagation. Set CI_REQUIRE_MESON=1 to
+# make a skip a hard failure; protected-branch and release runs must.
+# Lane 7 is skippable by ADR-011, which defines the advisory lane as
+# externally provisioned; a skip there is still reported, never
+# silently passed.
+#
 # The checker lanes receive their subjects by argument (ADR-014). The
 # census_args function below derives role-tagged argv from git
 # ls-files; the meson build derives the same census from hand-managed
@@ -95,11 +111,16 @@ cargo run --locked -p tripod-labels --bin check-labels -- \
   --repository-root . \
   $(census_args labels) > /dev/null
 
+# Skipped lanes are accumulated rather than forgotten: the final
+# result names them, so a reduced run cannot be read as a complete one.
+skipped_lanes=""
+
 echo "==> lane 7/11: cargo audit" >&2
 if command -v cargo-audit > /dev/null 2>&1; then
   cargo audit
 else
   echo "WARNING: cargo-audit is not installed; advisory lane SKIPPED" >&2
+  skipped_lanes="$skipped_lanes advisories"
 fi
 
 echo "==> lane 8/11: plan-tree checks" >&2
@@ -120,6 +141,11 @@ if command -v meson > /dev/null 2>&1 && command -v ninja > /dev/null 2>&1; then
   sh scripts/test-meson-mock.sh .
 else
   echo "WARNING: meson/ninja not installed; mocked Meson contract lane SKIPPED" >&2
+  if [ "${CI_REQUIRE_MESON:-0}" = "1" ]; then
+    echo "ERROR: CI_REQUIRE_MESON=1 and meson/ninja are unavailable" >&2
+    exit 1
+  fi
+  skipped_lanes="$skipped_lanes meson-contract"
 fi
 
 echo "==> lane 11/11: clean working tree" >&2
@@ -131,4 +157,9 @@ if [ -n "$tree_status" ]; then
   exit 1
 fi
 
-echo "==> CI green" >&2
+if [ -n "$skipped_lanes" ]; then
+  echo "==> CI partial: every lane that ran passed; skipped:$skipped_lanes" >&2
+  echo "    a skipped lane is neither failure nor success; this is not a green run" >&2
+else
+  echo "==> CI green" >&2
+fi

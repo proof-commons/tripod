@@ -967,7 +967,7 @@ output-path finding as over-scoped.
 | `R1` | P1 | DONE | Filesystem checks exceed the intended trust boundary while the central Git-mode invariant is unenforced. |
 | `R2` | P1 | DONE | ADR-016 is marked Proposed while the repository treats it as adopted policy. |
 | `R3` | P1 | DONE | D007 requires a full Petgraph feature surface, contradicting Cargo and the completed dependency review. |
-| `R4` | P2 | TODO | `scripts/ci.sh` reports `CI green` after skipping the mocked Meson contract lane. |
+| `R4` | P2 | DONE | `scripts/ci.sh` reports `CI green` after skipping the mocked Meson contract lane. |
 | `R5` | P2 | TODO | The documented document-identity recipe says declared order; the implementation sorts by canonical path. |
 | `R6` | P2 | TODO | Several planning documents still describe the compiler package as merely planned. |
 
@@ -1079,6 +1079,38 @@ that optional features have named consumers.
 
 The decisions index no longer describes D007 as full-featured Petgraph, and the
 dependency table records `rayon` as removed and deferred.
+
+### R4 — CI reported green after skipping a required lane · `task:review:ci-partial`
+
+**Priority:** P2
+**Status:** DONE
+**Owner:** `scripts/ci.sh`
+
+#### Basis
+
+The mocked Meson contract lane was skipped when Meson or Ninja was absent, and
+the script then printed an unqualified success line regardless. That lane is
+the only check of the hand-managed census, Meson command wiring, report and
+stamp edges, generator and publication repair, no-op restat behaviour, and
+render-failure propagation, and unlike the advisory lane nothing defined it as
+optional for a canonical result.
+
+#### Resolution (2026-07-26)
+
+The script now distinguishes two passing outcomes and never conflates them: a
+green run means every lane ran and passed, and a partial run means every lane
+that ran passed while one or more were skipped. Skipped lanes are accumulated
+and named in the final line, so a reduced run cannot be misread as a complete
+one.
+
+`CI_REQUIRE_MESON=1` turns a Meson skip into a hard failure, for
+protected-branch and release runs. The advisory lane keeps its documented
+optionality but is now named in the partial result rather than passing
+silently.
+
+Verified both paths: with Meson and Ninja present the script prints the green
+line, and with them hidden it exits zero printing the partial line naming the
+skipped lane.
 
 ---
 
