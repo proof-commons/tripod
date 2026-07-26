@@ -1670,11 +1670,48 @@ Dependency review:
 Compiler:
     package absent
     relation/proof/disclosure/lifecycle/placement/coverage analysis absent
-
-The remaining blockers are the compiler itself and the complete gate run
-that precedes it. Every preparatory identity, finding, and dependency
-task is closed.
 ```
+
+Every preparatory identity, finding, and dependency task is closed, and the
+complete gate has been run and recorded below. The sole remaining blocker is
+the compiler itself.
+
+### 11.1 Recorded complete gate run · `rem:backlog:gate-run`
+
+Run on 2026-07-26 against `db03dc2`, on a tree reporting no staged, unstaged,
+or untracked nonignored paths. This records one execution; it does not make any
+later tree green.
+
+| Lane | Result |
+|---|---|
+| `cargo fmt --all --check`, MSRV 1.88.0 and stable 1.97.1 | clean |
+| `cargo clippy --workspace --all-targets --locked -D warnings`, both toolchains | clean |
+| `cargo test --workspace --locked`, both toolchains | 37 suites, 865 tests, 0 failed |
+| `cargo test --workspace --release --locked`, both toolchains | 37 suites, 865 tests, 0 failed |
+| `scripts/ci.sh` | 11 of 11 lanes pass |
+| `meson compile -C build` and `meson test -C build --print-errorlogs` | 10 of 10 pass |
+| `scripts/check-plans.sh` and `meson compile -C build lint` | pass |
+| `git diff --check`, staged and unstaged | clean |
+| `cargo tree --locked -e features`, `cargo metadata --locked` | resolve against the committed lockfile; 148 locked packages |
+| `cargo audit` | SKIPPED — not installed in this environment |
+| `git status --porcelain=v1 --untracked-files=all` | empty |
+
+The advisory lane is recorded as skipped, never as passed. No advisory
+statement may be made from this run.
+
+Two defects were found by running the gate rather than by review, and both were
+fixed before the recorded run. The Meson lane exposed nothing new; the Rust
+lanes did. Current-stable clippy rejected a nested conditional in the labels
+crate that both nightly and the declared MSRV accept, which means the stable
+lane had not been exercised recently and the repository's clippy cleanliness
+was toolchain-dependent. Separately, the clean-tree lane correctly refused the
+run while that fix was still uncommitted.
+
+Byte reproducibility remains a separate release check rather than a gate lane,
+but it was run alongside this one: two independent clean build directories
+rendered a byte-identical PDF. Its reused-build epoch probe skipped itself
+because the worktree carried this uncommitted record, so that sub-check is
+recorded as skipped, not passed.
 
 Until (`gate:backlog:phase2`) passes:
 
@@ -1763,7 +1800,8 @@ Execute in this order unless new evidence changes dependencies:
 5. Close F4-001 and F4-002 before freezing compiler input APIs.
 6. Close F4-004 and F4-005 (F4-003 dropped as reproduced-false).
 7. Complete the Petgraph dependency and lockfile review.
-8. Run and record the complete current repository gate.
+8. Run and record the complete current repository gate. DONE; see the recorded
+   gate run in (`gate:backlog:current`).
 9. Create tripod-compiler.
 10. Implement relation DAG and checked folding.
 11. Implement exact proof, disclosure, source, constructibility, and lifecycle analysis.
