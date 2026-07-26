@@ -1387,7 +1387,11 @@ fn census_audit_welds_declared_lists_to_the_tracked_set() {
         "papers/attestation/macros.tex",
         "papers/attestation/main.tex",
         "papers/attestation/references.bib",
-    ];
+    ]
+    .map(|path| crate::census::TrackedEntry {
+        mode: "100644",
+        path,
+    });
 
     // Complete census: categorical exclusions and the explicit
     // same-typed exclusion cover everything undeclared.
@@ -1414,6 +1418,84 @@ fn census_audit_welds_declared_lists_to_the_tracked_set() {
         vec!["papers/attestation/main.tex".to_owned()]
     );
     assert_eq!(report.not_tracked, vec!["plans/ghost.md".to_owned()]);
+}
+
+#[test]
+fn tracked_listing_parses_modes_and_refuses_malformed_records() {
+    use crate::census::{TrackedEntry, parse_tracked_listing};
+
+    let listing = concat!(
+        "100644 aaaa 0\tadr/010-fixture.md\u{0}",
+        "100755 bbbb 0\tscripts/ci.sh\u{0}",
+    );
+    assert_eq!(
+        parse_tracked_listing(listing).expect("well-formed listing"),
+        vec![
+            TrackedEntry {
+                mode: "100644",
+                path: "adr/010-fixture.md",
+            },
+            TrackedEntry {
+                mode: "100755",
+                path: "scripts/ci.sh",
+            },
+        ]
+    );
+
+    // A record without a tab separator is an error, never a skipped
+    // entry: dropping one would silently remove exactly the tracked
+    // symlink this audit exists to catch.
+    let error = parse_tracked_listing("100644 aaaa 0 adr/010-fixture.md\u{0}")
+        .expect_err("a record without a path separator fails");
+    assert!(error.contains("no path separator"), "{error}");
+}
+
+#[test]
+fn census_audit_rejects_tracked_symlinks_and_gitlinks() {
+    use crate::census::{TrackedEntry, TrackedModeDefect};
+
+    let pattern = regex::Regex::new("^(archive|vendor)/").expect("valid exclusion pattern");
+    let report = crate::census::audit_census(
+        [
+            TrackedEntry {
+                mode: "100644",
+                path: "adr/010-fixture.md",
+            },
+            TrackedEntry {
+                mode: "120000",
+                path: "plans/alias.md",
+            },
+            // Categorically excluded from lint subjects, yet still
+            // bound by the repository-shape rule: lint exclusion is
+            // not an exemption.
+            TrackedEntry {
+                mode: "160000",
+                path: "archive/vendored",
+            },
+        ],
+        ["adr/010-fixture.md", "plans/alias.md"],
+        [],
+        &pattern,
+    );
+
+    assert!(!report.valid, "{report:?}");
+    assert_eq!(
+        report.disallowed_modes,
+        vec![
+            TrackedModeDefect {
+                path: "archive/vendored".to_owned(),
+                mode: "160000".to_owned(),
+            },
+            TrackedModeDefect {
+                path: "plans/alias.md".to_owned(),
+                mode: "120000".to_owned(),
+            },
+        ]
+    );
+    assert!(
+        report.missing_from_census.is_empty() && report.not_tracked.is_empty(),
+        "the census itself agrees; only repository shape fails: {report:?}"
+    );
 }
 
 #[test]

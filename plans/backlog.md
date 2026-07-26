@@ -1549,7 +1549,7 @@ logic; none weakens a constraint on source-derived paths.
 
 | ID | Priority | Status | Deliverable |
 |---|---:|---|---|
-| `A17-001` | P1 | TODO | Census audit consumes Git modes and rejects symlinks and gitlinks |
+| `A17-001` | P1 | DONE | Census audit consumes Git modes and rejects symlinks and gitlinks |
 | `A17-002` | P1 | TODO | Shared destination identity becomes lexical |
 | `A17-003` | P1 | TODO | Flattener drops ancestor alias analysis, keeps source-derived confinement |
 | `A17-004` | P2 | TODO | `execwrap` role uniqueness is simplified or documented as the sole exception |
@@ -1579,6 +1579,30 @@ digest changes
 
 The mode listing is the single owner of repository shape. It replaces, and is
 not added alongside, per-tool alias analysis.
+
+#### Resolution (2026-07-26)
+
+The audit now invokes `git ls-files --stage -z` and parses each record into a
+mode and a path. `CensusAuditReport` gains a `disallowed_modes` defect list and
+its schema moves to 2; the audit is invalid when that list is nonempty, and the
+binary reports each defect with both the path and the rejected mode.
+
+The mode check runs over the complete tracked set before exclusions are
+applied, so a lint-excluded path is still bound by the repository-shape rule.
+A malformed listing record is an error rather than a skipped entry: silently
+dropping one would discard exactly the tracked symlink the audit exists to
+catch.
+
+Evidence on the real tree: 342 tracked entries, every mode `100644` or
+`100755`, no defects — the invariant the record states already holds, and is
+now enforced rather than assumed.
+
+Source: `packages/labels/src/census.rs`,
+`packages/labels/src/bin/census-audit.rs`. Tests: listing-parse and
+mode-rejection unit tests in `packages/labels/src/tests.rs`, plus an
+end-to-end wiring test in `packages/labels/tests/subprocess_contract.rs` that
+drives the binary with a symlink-bearing listing and asserts the failure names
+the path and mode, with no success stamp published.
 
 ### A17-002 — Lexical destination identity · `task:path:lexical-destinations`
 

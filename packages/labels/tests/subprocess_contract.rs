@@ -386,4 +386,58 @@ mod pty {
             "build mode must not emit a tty_refusal record",
         );
     }
+
+    /// A fake git emitting one mode-bearing record for a tracked
+    /// symlink. Using a stub keeps the wiring test independent of the
+    /// host git's symlink handling; the parsing and policy are unit
+    /// tested separately.
+    fn symlink_git(dir: &std::path::Path) -> std::path::PathBuf {
+        let script = dir.join("symlink-git.sh");
+        let mut file = File::create(&script).expect("create fake git");
+        writeln!(file, "#!/bin/sh").unwrap();
+        writeln!(file, r"printf '120000 aaaa 0\tplans/alias.md\0'").unwrap();
+        let mut perms = file.metadata().unwrap().permissions();
+        perms.set_mode(0o755);
+        file.set_permissions(perms).unwrap();
+        script
+    }
+
+    #[test]
+    fn census_audit_fails_on_a_tracked_symlink_naming_path_and_mode() {
+        // ADR-017: repository shape has one central owner. The audit
+        // rejects a non-blob entry even when the declared census
+        // agrees, and names both the path and the rejected mode.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let git = symlink_git(dir.path());
+        let report = dir.path().join("census.json");
+        let stamp = dir.path().join("census.stamp");
+
+        let output = census_audit()
+            .args([
+                "--repository-root",
+                dir.path().to_str().unwrap(),
+                "--git",
+                git.to_str().unwrap(),
+                "--exclude-pattern",
+                "^$",
+                "--report",
+                report.to_str().unwrap(),
+                "--stamp",
+                stamp.to_str().unwrap(),
+                "plans/alias.md",
+            ])
+            .output()
+            .expect("census-audit runs");
+
+        assert_eq!(output.status.code(), Some(1), "a non-blob entry fails");
+        assert!(!stamp.exists(), "a failed audit leaves no success stamp");
+
+        let stderr = String::from_utf8(output.stderr).expect("utf-8 diagnostics");
+        let record = stderr
+            .lines()
+            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+            .find(|value| value["fields"]["mode"] == "120000")
+            .expect("one mode-defect record");
+        assert_eq!(record["fields"]["path"], "plans/alias.md");
+    }
 }

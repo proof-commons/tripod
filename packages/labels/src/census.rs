@@ -202,7 +202,67 @@ impl RepositoryCensus {
 }
 
 /// Schema version for the `census-audit` stdout report.
-pub const CENSUS_AUDIT_SCHEMA: u32 = 1;
+pub const CENSUS_AUDIT_SCHEMA: u32 = 2;
+
+/// The only Git modes the tracked repository may contain: an ordinary
+/// blob and an executable blob (ADR-017 repository shape). A symlink
+/// (`120000`) or gitlink (`160000`) fails the audit.
+pub const ALLOWED_TRACKED_MODES: [&str; 2] = ["100644", "100755"];
+
+/// One entry of the mode-bearing tracked-file listing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TrackedEntry<'a> {
+    /// The Git mode as printed by the listing, e.g. `100644`.
+    pub mode: &'a str,
+    /// The repository-relative path.
+    pub path: &'a str,
+}
+
+impl TrackedEntry<'_> {
+    /// Whether this entry is an ordinary tracked blob.
+    #[must_use]
+    pub fn mode_is_allowed(&self) -> bool {
+        ALLOWED_TRACKED_MODES.contains(&self.mode)
+    }
+}
+
+/// One tracked entry whose Git mode is not an ordinary blob.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+pub struct TrackedModeDefect {
+    /// The repository-relative path.
+    pub path: String,
+    /// The rejected Git mode.
+    pub mode: String,
+}
+
+/// Parse a NUL-separated `git ls-files --stage -z` listing.
+///
+/// Each record is `<mode> <object> <stage>\t<path>`. A malformed
+/// record is an error rather than a skipped entry: silently dropping
+/// one would remove exactly the tracked symlink this audit exists to
+/// catch.
+///
+/// # Errors
+///
+/// Returns the offending record when it carries no tab separator or no
+/// mode field.
+pub fn parse_tracked_listing(listing: &str) -> Result<Vec<TrackedEntry<'_>>, String> {
+    listing
+        .split('\0')
+        .filter(|record| !record.is_empty())
+        .map(|record| {
+            let (metadata, path) = record.split_once('\t').ok_or_else(|| {
+                format!("tracked listing record has no path separator: {record:?}")
+            })?;
+            let mode = metadata
+                .split(' ')
+                .next()
+                .filter(|mode| !mode.is_empty())
+                .ok_or_else(|| format!("tracked listing record has no mode: {record:?}"))?;
+            Ok(TrackedEntry { mode, path })
+        })
+        .collect()
+}
 
 /// Result of auditing the hand-managed build census against the
 /// tracked file set (ADR-014).
@@ -222,7 +282,14 @@ pub struct CensusAuditReport {
     /// Declared files that are not tracked subjects: stale list
     /// entries, or files that were never `git add`ed.
     pub not_tracked: Vec<String>,
-    /// True when the declared census and the tracked subjects agree.
+    /// Tracked entries whose Git mode is not an ordinary blob —
+    /// symlinks and gitlinks (ADR-017). This covers the complete
+    /// tracked set, including paths excluded from lint subjects: lint
+    /// exclusion does not exempt a path from the repository-shape
+    /// rule.
+    pub disallowed_modes: Vec<TrackedModeDefect>,
+    /// True when the declared census and the tracked subjects agree
+    /// and every tracked entry is an ordinary blob.
     pub valid: bool,
 }
 
@@ -232,8 +299,14 @@ pub struct CensusAuditReport {
 /// pattern matches it or it appears in the explicit per-directory
 /// exclusion list. The declared census must equal the subject set
 /// exactly; both directions of disagreement are reported.
+///
+/// Repository shape is audited over the complete tracked set rather
+/// than over subjects: this is the single central owner of the rule
+/// that the repository carries no tracked symlink, gitlink, or
+/// submodule (ADR-014 tracked-entry modes), so first-party tools do
+/// not repeat alias analysis for build-supplied repository paths.
 pub fn audit_census<'a>(
-    tracked: impl IntoIterator<Item = &'a str>,
+    tracked: impl IntoIterator<Item = TrackedEntry<'a>>,
     declared: impl IntoIterator<Item = &'a str>,
     excluded: impl IntoIterator<Item = &'a str>,
     exclude_pattern: &regex::Regex,
@@ -241,11 +314,22 @@ pub fn audit_census<'a>(
     let excluded: BTreeSet<&str> = excluded.into_iter().collect();
     let declared: BTreeSet<&str> = declared.into_iter().collect();
     let mut tracked_count = 0;
+    let mut disallowed_modes = Vec::new();
     let subjects: BTreeSet<&str> = tracked
         .into_iter()
-        .inspect(|_| tracked_count += 1)
+        .inspect(|entry| {
+            tracked_count += 1;
+            if !entry.mode_is_allowed() {
+                disallowed_modes.push(TrackedModeDefect {
+                    path: entry.path.to_owned(),
+                    mode: entry.mode.to_owned(),
+                });
+            }
+        })
+        .map(|entry| entry.path)
         .filter(|path| !exclude_pattern.is_match(path) && !excluded.contains(path))
         .collect();
+    disallowed_modes.sort();
     let missing_from_census: Vec<String> = subjects
         .difference(&declared)
         .map(ToString::to_string)
@@ -254,7 +338,8 @@ pub fn audit_census<'a>(
         .difference(&subjects)
         .map(ToString::to_string)
         .collect();
-    let valid = missing_from_census.is_empty() && not_tracked.is_empty();
+    let valid =
+        missing_from_census.is_empty() && not_tracked.is_empty() && disallowed_modes.is_empty();
     CensusAuditReport {
         schema: CENSUS_AUDIT_SCHEMA,
         tracked: tracked_count,
@@ -262,6 +347,7 @@ pub fn audit_census<'a>(
         declared: declared.len(),
         missing_from_census,
         not_tracked,
+        disallowed_modes,
         valid,
     }
 }

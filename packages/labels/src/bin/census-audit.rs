@@ -66,10 +66,13 @@ fn audit(args: &Args) -> anyhow::Result<labels::census::CensusAuditReport> {
     let pattern =
         regex::Regex::new(&args.exclude_pattern).context("compiling the exclusion pattern")?;
 
+    // The listing carries Git modes, so this one call answers both
+    // census membership and repository shape (ADR-014 tracked-entry
+    // modes). No other first-party tool re-derives either fact.
     let listing = std::process::Command::new(&args.git)
         .arg("-C")
         .arg(&args.repository_root)
-        .args(["ls-files", "-z"])
+        .args(["ls-files", "--stage", "-z"])
         .output()
         .context("invoking git ls-files")?;
     if !listing.status.success() {
@@ -85,9 +88,12 @@ fn audit(args: &Args) -> anyhow::Result<labels::census::CensusAuditReport> {
         anyhow::bail!("git ls-files failed");
     }
     let tracked = String::from_utf8(listing.stdout).context("decoding git ls-files output")?;
+    let entries = labels::census::parse_tracked_listing(&tracked)
+        .map_err(|error| anyhow::anyhow!("{error}"))
+        .context("parsing the mode-bearing tracked-file listing")?;
 
     let report = audit_census(
-        tracked.split('\0').filter(|path| !path.is_empty()),
+        entries,
         args.declared.iter().map(String::as_str),
         args.excluded.iter().map(String::as_str),
         &pattern,
@@ -107,5 +113,15 @@ fn audit(args: &Args) -> anyhow::Result<labels::census::CensusAuditReport> {
             "declared census entry is not a tracked lint subject; git add it or drop the list entry",
         );
     }
-    anyhow::bail!("the hand-managed build census disagrees with git ls-files");
+    for defect in &report.disallowed_modes {
+        tracing::error!(
+            path = %defect.path,
+            mode = %defect.mode,
+            "tracked entry is not an ordinary blob; the repository carries no symlinks, gitlinks, or submodules",
+        );
+    }
+    if report.disallowed_modes.is_empty() {
+        anyhow::bail!("the hand-managed build census disagrees with git ls-files");
+    }
+    anyhow::bail!("the tracked repository contains an entry that is not an ordinary blob");
 }
