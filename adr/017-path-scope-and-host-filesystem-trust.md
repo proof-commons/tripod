@@ -1,6 +1,7 @@
 # ADR-017: Path Scope and Host Filesystem Trust
 
-**Status:** Decided; implementation required in the same series
+**Status:** Decided and implemented; the A17 series discharged the verification
+gate below
 **Scope:** First-party repository inputs, build inputs and outputs,
 source-derived references, explicit path arguments, reports, stamps, generated
 publications, and publication mirrors

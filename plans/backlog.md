@@ -2,7 +2,7 @@
 
 > **Status:** ACTIVE
 > **Current gate:** Phase 2 — target-independent compiler analysis
-> **Current condition:** Adopt the identity-and-digest architecture, complete the current dependency review, reproduce and close the realization-boundary findings, then create the compiler package. No new semantic, report, bundle, ABI, deployment, or release digest may be introduced before its producer, consumer, decision, assurance class, stale condition, and migration rule are explicit.
+> **Current condition:** The identity-and-digest architecture is adopted, the dependency review is complete, the current static-review findings are closed, and the compiler package exists as a boundary and error root only. The next executable task is P2-004: bind architecture, realization, policy, and explicit scope. No new semantic, report, bundle, ABI, deployment, or release digest may be introduced before its producer, consumer, decision, assurance class, stale condition, and migration rule are explicit.
 > **Next gate:** Phase 3 — Elements target and foundational prototypes
 > **Authority:** Current execution queue only. Normative specifications, typed architecture, implemented ADRs, accepted decisions, package contracts, research results, phase cards, and the roadmap take precedence.
 
@@ -1199,11 +1199,45 @@ Identifiers are this repository's, numbered to match the review's own ordering.
 | `S4` | P2 | TODO | The model's evidence rule cannot express open-object injection or block-age advance. |
 | `S5` | P2 | TODO | Stable realization projections carry an incidental Petgraph topological order. |
 | `S6` | P2 | TODO | Duplicate rows in the Realization index are silently accepted. |
-| `S7` | P3 | TODO | ADR-017 and backlog task statuses are internally stale. |
+| `S7` | P3 | DONE | ADR-017 and backlog task statuses are internally stale. |
 
 Execution order follows the review's own repair order: S1, S2, S3, S4, S5, S6,
 S7. S3 and S4 are design changes to a published boundary rather than local
 repairs, and each states its chosen design before it is implemented.
+
+### S7 — Policy and task statuses were internally stale · `task:review:status-drift`
+
+**Priority:** P3
+**Status:** DONE
+**Owner:** ADR-017, `adr/README.md`, this backlog, `labels`
+
+#### Basis
+
+Four contradictions, all of them self-inflicted bookkeeping rather than
+disputed fact: ADR-017 still required implementation while the A17 series was
+complete; five A17 task sections kept `TODO` headers under a summary table
+already reading `DONE`; the top-level current condition still asked for work
+that later sections recorded as finished; and P2-004 was `BLOCKED` with no
+remaining blocker named.
+
+#### Resolution (2026-07-26)
+
+ADR-017 is now decided and implemented, with `adr/README.md` matching. Its
+verification gate was checked item by item before the status changed: the mode
+census, the lexical output roles, the retained source-derived confinement, the
+documented `execwrap` exception, the removed race claims, and the passing
+gates.
+
+The five A17 sections carry `DONE`, the current condition names P2-004 as the
+next executable task, and P2-004 is `TODO`.
+
+The lasting repair is mechanical rather than editorial. `check-plans` gained
+`verify_task_status_agreement`, which welds every summary-table status to its
+own task section's `**Status:**` line and fails on disagreement. Only IDs
+present in both places are compared, so a table without sections and prose
+mentioning an ID are both unaffected. This is the check that would have caught
+the A17 drift the day it appeared; a fixture test pins both directions —
+disagreement reported, agreement silent.
 
 ### S2 — Disclosure relations were not welded to the census · `task:review:disclosure-weld`
 
@@ -1299,7 +1333,7 @@ is what the versioning gate confirms.
 | `P2-001` | P1 | DONE | Immutable, canonical, ownership-validated realization boundary |
 | `P2-002` | P2 | DONE | Concrete Petgraph dependency and lockfile review |
 | `P2-003` | P1 | DONE | Create `tripod-compiler` |
-| `P2-004` | P1 | BLOCKED | Bind architecture, realization, policy, and explicit scope |
+| `P2-004` | P1 | TODO | Bind architecture, realization, policy, and explicit scope |
 | `P2-005` | P1 | BLOCKED | Canonical relation DAG over direct Petgraph |
 | `P2-006` | P1 | BLOCKED | Checked constant folding preserving failure semantics |
 | `P2-007` | P1 | BLOCKED | Exact proof-alternative and target-requirement planning |
@@ -1898,7 +1932,7 @@ logic; none weakens a constraint on source-derived paths.
 
 **Lane:** ADR-017 implementation
 **Priority:** P1
-**Status:** TODO
+**Status:** DONE
 **Depends on:** nothing
 **Owner:** `labels` (`census-audit`), Meson
 **Policy:** (`[ADR014-rule:build:tracked-entry-modes]`)
@@ -1947,7 +1981,7 @@ the path and mode, with no success stamp published.
 
 **Lane:** ADR-017 implementation
 **Priority:** P1
-**Status:** TODO
+**Status:** DONE
 **Depends on:** A17-001
 **Owner:** `cli-common`
 **Policy:** (`[ADR017-rule:path:output-roles]`)
@@ -1999,7 +2033,7 @@ Source: `packages/cli-common/src/lib.rs`,
 
 **Lane:** ADR-017 implementation
 **Priority:** P1
-**Status:** TODO
+**Status:** DONE
 **Depends on:** A17-002
 **Owner:** `flatten-latex-main`
 **Policy:** (`[ADR017-rule:path:derived-references]`)
@@ -2048,7 +2082,7 @@ Source: `packages/flatten-latex-main/src/lib.rs` and its tests.
 
 **Lane:** ADR-017 implementation
 **Priority:** P2
-**Status:** TODO
+**Status:** DONE
 **Depends on:** A17-002
 **Owner:** `execwrap`
 **Policy:** (`[ADR017-rule:path:local-checks]`)
@@ -2099,7 +2133,7 @@ truncation while claiming nothing about the host race.
 
 **Lane:** ADR-017 implementation
 **Priority:** P2
-**Status:** TODO
+**Status:** DONE
 **Depends on:** A17-001 through A17-004
 **Owner:** every first-party package, plans, and ADR prose
 **Policy:** (`[ADR017-rule:path:toctou]`)

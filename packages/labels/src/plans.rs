@@ -11,7 +11,7 @@
 //! the ADR-010 command-line contract.
 
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
     sync::LazyLock,
@@ -83,6 +83,9 @@ static CURRENT_GATE: LazyLock<regex::Regex> = LazyLock::new(|| {
 static ACTIVE_STATUS: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(r"(?m)^> \*\*Status:\*\* Active").expect("static status pattern")
 });
+static TASK_HEADING: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"^`?([A-Z][A-Z0-9]*-?[0-9]+)`? ").expect("static task heading")
+});
 
 #[derive(Debug, Serialize)]
 pub struct PlansReport {
@@ -124,6 +127,7 @@ pub fn check_plans(root: &Path, subjects: &[PathBuf]) -> anyhow::Result<PlansOut
         check_file(&root, path, &mut failures, &mut warnings)?;
     }
     verify_phase_gate(&root, &mut failures)?;
+    verify_task_status_agreement(&root, &mut failures)?;
 
     let (adr_bytes, plans_bytes) = tree_bytes(&root, &files)?;
     let combined_bytes = adr_bytes + plans_bytes;
@@ -408,6 +412,81 @@ fn verify_phase_gate(root: &Path, failures: &mut Vec<String>) -> anyhow::Result<
     Ok(())
 }
 
+/// Weld each backlog summary-table status to its own task section
+/// (S7).
+///
+/// The registers carry a status twice: once in a summary table row and
+/// once in the task's own `**Status:**` line. Nothing kept them equal,
+/// and they drifted — five closed tasks kept `TODO` headers under a
+/// table that already said `DONE`. A reader following the register to
+/// the task got the stale answer.
+///
+/// A task ID is a backticked cell in a row whose later cells include a
+/// status word; its section is `### <ID> —`. Only IDs appearing in both
+/// places are compared, so a table without task sections, or prose
+/// mentioning an ID, is not forced into the check.
+fn verify_task_status_agreement(root: &Path, failures: &mut Vec<String>) -> anyhow::Result<()> {
+    const STATUSES: [&str; 7] = [
+        "TODO",
+        "DONE",
+        "BLOCKED",
+        "PARKED",
+        "DROPPED",
+        "HISTORICAL",
+        "IN PROGRESS",
+    ];
+
+    let backlog = read_text(&root.join("plans/backlog.md"))?;
+
+    let mut table: BTreeMap<String, String> = BTreeMap::new();
+    let mut sections: BTreeMap<String, String> = BTreeMap::new();
+    let mut current: Option<String> = None;
+
+    for line in backlog.lines() {
+        if let Some(rest) = line.strip_prefix("### ") {
+            current = TASK_HEADING
+                .captures(rest)
+                .map(|capture| capture[1].to_owned());
+            continue;
+        }
+        if let Some(id) = &current
+            && let Some(rest) = line.strip_prefix("**Status:** ")
+            && let Some(status) = STATUSES.iter().find(|status| rest.starts_with(**status))
+        {
+            sections
+                .entry(id.clone())
+                .or_insert_with(|| (*status).to_owned());
+            continue;
+        }
+        if !line.starts_with("| `") {
+            continue;
+        }
+        let cells = line.split('|').map(str::trim).collect::<Vec<_>>();
+        let Some(id) = cells
+            .iter()
+            .find_map(|cell| cell.strip_prefix('`').and_then(|c| c.strip_suffix('`')))
+        else {
+            continue;
+        };
+        if let Some(status) = cells.iter().find(|cell| STATUSES.contains(&(**cell))) {
+            table.insert(id.to_owned(), (*status).to_owned());
+        }
+    }
+
+    for (id, row_status) in &table {
+        let Some(section_status) = sections.get(id) else {
+            continue;
+        };
+        if row_status != section_status {
+            failures.push(format!(
+                "status: task {id} is {row_status} in its summary table but \
+                 {section_status} in its own section"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Total Markdown bytes for the `adr/` and `plans/` trees.
 fn tree_bytes(root: &Path, files: &[PathBuf]) -> anyhow::Result<(u64, u64)> {
     let mut adr_bytes = 0_u64;
@@ -494,6 +573,47 @@ mod tests {
         assert!(outcome.report.valid);
         assert_eq!(outcome.report.files_checked, 5);
         assert!(outcome.report.combined_bytes > 0);
+    }
+
+    #[test]
+    fn task_status_drift_between_table_and_section_fails() {
+        // S7: the registers state each status twice. This is the check
+        // that keeps the two equal — five closed A17 tasks once kept
+        // TODO headers under a table already reading DONE.
+        let dir = fixture();
+        fs::write(
+            dir.path().join("plans/backlog.md"),
+            concat!(
+                "# Backlog\n\n> **Current gate:** Phase 1\n\n",
+                "| ID | Status | Deliverable |\n",
+                "|---|---|---|\n",
+                "| `X1-001` | DONE | Agrees |\n",
+                "| `X1-002` | DONE | Drifts |\n\n",
+                "### X1-001 — Agrees\n\n**Status:** DONE\n\n",
+                "### X1-002 — Drifts\n\n**Status:** TODO\n",
+            ),
+        )
+        .expect("backlog");
+
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+
+        assert!(
+            outcome
+                .failures
+                .iter()
+                .any(|failure| failure.contains("task X1-002") && failure.contains("DONE")),
+            "{:#?}",
+            outcome.failures,
+        );
+        assert!(
+            !outcome
+                .failures
+                .iter()
+                .any(|failure| failure.contains("task X1-001")),
+            "an agreeing task must not be reported: {:#?}",
+            outcome.failures,
+        );
+        assert!(!outcome.report.valid);
     }
 
     #[test]
