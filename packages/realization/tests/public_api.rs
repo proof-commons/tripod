@@ -177,7 +177,7 @@ fn ash(side: ObservedSide, ordinal: u32, value: u64) -> ObservedObject {
         reference: ObservedObjectRef { side, ordinal },
         kind: ObservedObjectKind::Declared(ObjectId::Ash),
         asset: ObservedAsset::Declared(AssetId::U),
-        value: ProtocolAmount::new(value).unwrap(),
+        value: realization::ObservedValue::Protocol(ProtocolAmount::new(value).unwrap()),
         owner: None,
         representation: RepresentationMode::Explicit,
     }

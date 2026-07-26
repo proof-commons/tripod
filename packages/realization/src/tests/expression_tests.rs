@@ -454,7 +454,7 @@ fn receipt_observation(output_values: &[u64]) -> crate::OperationObservation {
         },
         kind: crate::ObservedObjectKind::Declared(ObjectId::ReceiptLive),
         asset: crate::ObservedAsset::Declared(AssetId::U),
-        value: ProtocolAmount::new(100).unwrap(),
+        value: crate::ObservedValue::Protocol(ProtocolAmount::new(100).unwrap()),
         owner: Some(alice),
         representation: crate::RepresentationMode::Explicit,
     }];
@@ -467,7 +467,7 @@ fn receipt_observation(output_values: &[u64]) -> crate::OperationObservation {
             },
             kind: crate::ObservedObjectKind::Declared(ObjectId::ReceiptLive),
             asset: crate::ObservedAsset::Declared(AssetId::U),
-            value: ProtocolAmount::new(*value).unwrap(),
+            value: crate::ObservedValue::Protocol(ProtocolAmount::new(*value).unwrap()),
             owner: Some(alice),
             representation: crate::RepresentationMode::Explicit,
         });

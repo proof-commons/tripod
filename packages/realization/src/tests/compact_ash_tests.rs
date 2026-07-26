@@ -31,29 +31,33 @@ fn ash(side: ObservedSide, ordinal: u32, value: u64) -> ObservedObject {
         reference: ObservedObjectRef { side, ordinal },
         kind: ObservedObjectKind::Declared(ObjectId::Ash),
         asset: ObservedAsset::Declared(AssetId::U),
-        value: ProtocolAmount::new(value).unwrap(),
+        value: crate::ObservedValue::Protocol(ProtocolAmount::new(value).unwrap()),
         owner: None,
         representation: RepresentationMode::Explicit,
     }
 }
 
-fn lbtc_owned(side: ObservedSide, ordinal: u32, value: u64, owner: OwnerId) -> ObservedObject {
+/// A sponsor member. It carries no amount: sponsor values are erased
+/// by the protocol projection (S3), so a fixture cannot express one
+/// even in order to test that it is ignored.
+fn lbtc_owned(side: ObservedSide, ordinal: u32, owner: OwnerId) -> ObservedObject {
     ObservedObject {
         reference: ObservedObjectRef { side, ordinal },
         kind: ObservedObjectKind::Declared(ObjectId::PlainLbtc),
         asset: ObservedAsset::Declared(AssetId::Lbtc),
-        value: ProtocolAmount::new(value).unwrap(),
+        value: crate::ObservedValue::SponsorOpaque,
         owner: Some(owner),
         representation: RepresentationMode::Explicit,
     }
 }
 
-fn unclaimed_lbtc(side: ObservedSide, ordinal: u32, value: u64) -> ObservedObject {
+/// A sponsor member deliberately left out of the sponsor flow.
+fn unclaimed_lbtc(side: ObservedSide, ordinal: u32) -> ObservedObject {
     ObservedObject {
         reference: ObservedObjectRef { side, ordinal },
         kind: ObservedObjectKind::Declared(ObjectId::PlainLbtc),
         asset: ObservedAsset::Declared(AssetId::Lbtc),
-        value: ProtocolAmount::new(value).unwrap(),
+        value: crate::ObservedValue::SponsorOpaque,
         owner: None,
         representation: RepresentationMode::Explicit,
     }
@@ -115,10 +119,10 @@ fn valid_sponsored_observation() -> OperationObservation {
 
     observation
         .objects
-        .push(lbtc_owned(ObservedSide::Input, 2, 10, CAROL));
+        .push(lbtc_owned(ObservedSide::Input, 2, CAROL));
     observation
         .objects
-        .push(lbtc_owned(ObservedSide::Output, 1, 7, CAROL));
+        .push(lbtc_owned(ObservedSide::Output, 1, CAROL));
     observation.open_flows.push(ObservedOpenFlow {
         kind: architecture::OpenFlowKind::FeeSponsor,
         sources: vec![sponsor_input],
@@ -342,7 +346,7 @@ fn compact_ash_canonical_delta_amount_mutation_fails() {
 
     // Break the flow arithmetic: the destination value no longer sums to
     // the sources.
-    observation.objects[2].value = ProtocolAmount::new(99).unwrap();
+    observation.objects[2].value = crate::ObservedValue::Protocol(ProtocolAmount::new(99).unwrap());
 
     let report = evaluate(&observation);
 
@@ -356,7 +360,7 @@ fn compact_ash_canonical_delta_amount_mutation_fails() {
 fn zero_value_ash_input_fails_recognition() {
     let mut observation = valid_observation();
 
-    observation.objects[0].value = ProtocolAmount::ZERO;
+    observation.objects[0].value = crate::ObservedValue::Protocol(ProtocolAmount::ZERO);
 
     let report = evaluate(&observation);
 
@@ -367,7 +371,7 @@ fn zero_value_ash_input_fails_recognition() {
 fn zero_value_ash_output_fails_recognition() {
     let mut observation = valid_observation();
 
-    observation.objects[2].value = ProtocolAmount::ZERO;
+    observation.objects[2].value = crate::ObservedValue::Protocol(ProtocolAmount::ZERO);
 
     let report = evaluate(&observation);
 
@@ -533,7 +537,7 @@ fn an_unwitnessed_distribution_vault_output_fails_partition_membership() {
         },
         kind: ObservedObjectKind::Declared(ObjectId::DistributionVault),
         asset: ObservedAsset::Declared(AssetId::U),
-        value: ProtocolAmount::new(5).unwrap(),
+        value: crate::ObservedValue::Protocol(ProtocolAmount::new(5).unwrap()),
         owner: None,
         representation: RepresentationMode::Explicit,
     });
@@ -548,7 +552,7 @@ fn zero_amount_ownerless_lateral_delta_fails_policy() {
 
     // A movement flow whose destination total is zero fails the
     // movement-kind rule.
-    observation.objects[2].value = ProtocolAmount::ZERO;
+    observation.objects[2].value = crate::ObservedValue::Protocol(ProtocolAmount::ZERO);
 
     let report = evaluate(&observation);
     assert!(failed(&report, &canonical_delta_policy()));
@@ -586,10 +590,10 @@ fn zero_sidecar_observation() -> OperationObservation {
 
     observation
         .objects
-        .push(lbtc_owned(ObservedSide::Input, 2, 0, CAROL));
+        .push(lbtc_owned(ObservedSide::Input, 2, CAROL));
     observation
         .objects
-        .push(lbtc_owned(ObservedSide::Output, 1, 0, CAROL));
+        .push(lbtc_owned(ObservedSide::Output, 1, CAROL));
     observation.open_flows.push(ObservedOpenFlow {
         kind: architecture::OpenFlowKind::FeeSponsor,
         sources: vec![sponsor_input],
@@ -625,7 +629,7 @@ fn mixed_zero_and_positive_sponsor_members_are_accepted() {
     };
     observation
         .objects
-        .push(lbtc_owned(ObservedSide::Input, 3, 0, CAROL));
+        .push(lbtc_owned(ObservedSide::Input, 3, CAROL));
     observation.open_flows[0].sources.push(zero_input);
 
     let report = evaluate(&observation);
@@ -645,10 +649,12 @@ fn mixed_zero_and_positive_sponsor_members_are_accepted() {
 // role structure is exact, and any imbalance is the base layer's to
 // reject. Previously these two cases asserted the opposite.
 #[test]
-fn zeroed_sponsor_input_is_recognized_and_isolation_stays_value_blind() {
-    // Zeroing a claimed sponsor input no longer fails recognition —
-    // the amount is not a recognition operand — but the envelope stops
-    // balancing, so sponsor isolation reports the defect.
+fn a_sponsor_input_carrying_a_protocol_amount_fails_recognition() {
+    // S3: sponsor amounts are erased at the projection boundary, so a
+    // sponsor member has no amount to zero — the earlier version of
+    // this test set one. An observation that smuggles a readable
+    // amount into a sponsor object is malformed, and recognition says
+    // so rather than quietly accepting it.
     let mut observation = valid_sponsored_observation();
 
     observation
@@ -658,19 +664,22 @@ fn zeroed_sponsor_input_is_recognized_and_isolation_stays_value_blind() {
             object.reference.side == ObservedSide::Input
                 && object.kind == ObservedObjectKind::Declared(ObjectId::PlainLbtc)
         })
-        .expect("fixture has a sponsor input")
-        .value = ProtocolAmount::ZERO;
+        .expect("fixture has a sponsor member")
+        .value = crate::ObservedValue::Protocol(ProtocolAmount::ZERO);
 
-    let report = evaluate(&observation);
-    assert!(!failed(&report, &sponsor_input_recognition()));
-    assert!(
-        !failed(&report, &sponsor()),
-        "a zeroed sponsor amount is exact role structure; conservation is the substrate's",
-    );
+    assert!(failed(
+        &evaluate(&observation),
+        &sponsor_input_recognition()
+    ));
 }
 
 #[test]
-fn zeroed_sponsor_change_is_recognized_and_isolation_stays_value_blind() {
+fn a_sponsor_output_carrying_a_protocol_amount_fails_recognition() {
+    // S3: sponsor amounts are erased at the projection boundary, so a
+    // sponsor member has no amount to zero — the earlier version of
+    // this test set one. An observation that smuggles a readable
+    // amount into a sponsor object is malformed, and recognition says
+    // so rather than quietly accepting it.
     let mut observation = valid_sponsored_observation();
 
     observation
@@ -680,15 +689,13 @@ fn zeroed_sponsor_change_is_recognized_and_isolation_stays_value_blind() {
             object.reference.side == ObservedSide::Output
                 && object.kind == ObservedObjectKind::Declared(ObjectId::PlainLbtc)
         })
-        .expect("fixture has sponsor change")
-        .value = ProtocolAmount::ZERO;
+        .expect("fixture has a sponsor member")
+        .value = crate::ObservedValue::Protocol(ProtocolAmount::ZERO);
 
-    let report = evaluate(&observation);
-    assert!(!failed(&report, &sponsor_output_recognition()));
-    assert!(
-        !failed(&report, &sponsor()),
-        "a zeroed sponsor amount is exact role structure; conservation is the substrate's",
-    );
+    assert!(failed(
+        &evaluate(&observation),
+        &sponsor_output_recognition()
+    ));
 }
 
 #[test]
@@ -713,9 +720,7 @@ fn unclaimed_zero_sponsor_members_fail_isolation() {
             ObservedSide::Input => 2,
             ObservedSide::Output => 1,
         };
-        observation
-            .objects
-            .push(lbtc_owned(side, ordinal, 0, CAROL));
+        observation.objects.push(lbtc_owned(side, ordinal, CAROL));
         observation.sponsor_signers.insert(CAROL);
 
         let report = evaluate(&observation);
@@ -734,7 +739,7 @@ fn zero_value_ownerless_plain_lbtc_still_fails_recognition() {
     let mut observation = valid_observation();
     observation
         .objects
-        .push(unclaimed_lbtc(ObservedSide::Input, 2, 0));
+        .push(unclaimed_lbtc(ObservedSide::Input, 2));
 
     let report = evaluate(&observation);
     assert!(failed(&report, &sponsor_input_recognition()));
@@ -753,7 +758,7 @@ fn declared_anchor_fails_the_pilot_family_closure() {
         },
         kind: ObservedObjectKind::Declared(ObjectId::CpfpAnchor),
         asset: ObservedAsset::Declared(AssetId::Lbtc),
-        value: ProtocolAmount::ZERO,
+        value: crate::ObservedValue::Protocol(ProtocolAmount::ZERO),
         owner: None,
         representation: RepresentationMode::Explicit,
     });
@@ -770,6 +775,12 @@ fn balanced_theft_is_rejected_by_the_protocol_relation() {
     // protocol relation does.
     let mut observation = valid_sponsored_observation();
 
+    // The theft: one unit is taken from the protocol output. The
+    // matching enlargement of sponsor change, which made the whole
+    // transaction still balance, can no longer be written at all —
+    // sponsor objects carry no amount (S3). That is the point: the
+    // vector is rejected because the protocol relation pins the
+    // canonical delta, never because sponsor arithmetic was inspected.
     let stolen = observation
         .objects
         .iter_mut()
@@ -778,17 +789,11 @@ fn balanced_theft_is_rejected_by_the_protocol_relation() {
                 && object.kind == ObservedObjectKind::Declared(ObjectId::Ash)
         })
         .expect("fixture has the ASH output");
-    stolen.value = ProtocolAmount::new(stolen.value.get() - 1).unwrap();
-
-    let sponsor_change = observation
-        .objects
-        .iter_mut()
-        .find(|object| {
-            object.reference.side == ObservedSide::Output
-                && object.kind == ObservedObjectKind::Declared(ObjectId::PlainLbtc)
-        })
-        .expect("fixture has sponsor change");
-    sponsor_change.value = ProtocolAmount::new(sponsor_change.value.get() + 1).unwrap();
+    let taken = stolen
+        .value
+        .protocol()
+        .expect("a protocol output carries a readable amount");
+    stolen.value = crate::ObservedValue::Protocol(ProtocolAmount::new(taken.get() - 1).unwrap());
 
     let report = evaluate(&observation);
     assert!(failed(&report, &canonical_delta_policy()));
@@ -817,7 +822,7 @@ fn sponsor_shapes_do_not_interfere_with_protocol_verdicts() {
     };
     mixed
         .objects
-        .push(lbtc_owned(ObservedSide::Input, 3, 0, CAROL));
+        .push(lbtc_owned(ObservedSide::Input, 3, CAROL));
     mixed.open_flows[0].sources.push(zero_input);
 
     let shapes = [
@@ -857,7 +862,7 @@ fn ownerless_plain_lbtc_fails_recognition() {
     let mut observation = valid_observation();
     observation
         .objects
-        .push(unclaimed_lbtc(ObservedSide::Input, 2, 10));
+        .push(unclaimed_lbtc(ObservedSide::Input, 2));
 
     let report = evaluate(&observation);
     assert!(failed(&report, &sponsor_input_recognition()));
@@ -908,7 +913,10 @@ fn relation_cases() -> Vec<RelationCase> {
         ),
         (
             "wrong output amount",
-            Box::new(|observation| observation.objects[2].value = ProtocolAmount::new(99).unwrap()),
+            Box::new(|observation| {
+                observation.objects[2].value =
+                    crate::ObservedValue::Protocol(ProtocolAmount::new(99).unwrap());
+            }),
             conservation(),
         ),
         (
@@ -1066,7 +1074,7 @@ fn sponsor_cases() -> Vec<SponsorCase> {
             Box::new(|observation| {
                 observation
                     .objects
-                    .push(unclaimed_lbtc(ObservedSide::Input, 2, 10));
+                    .push(unclaimed_lbtc(ObservedSide::Input, 2));
             }),
         ),
         (
@@ -1074,10 +1082,10 @@ fn sponsor_cases() -> Vec<SponsorCase> {
             Box::new(move |observation| {
                 observation
                     .objects
-                    .push(unclaimed_lbtc(ObservedSide::Input, 2, 10));
+                    .push(unclaimed_lbtc(ObservedSide::Input, 2));
                 observation
                     .objects
-                    .push(lbtc_owned(ObservedSide::Input, 3, 1, CAROL));
+                    .push(lbtc_owned(ObservedSide::Input, 3, CAROL));
                 observation.open_flows.push(ObservedOpenFlow {
                     kind: architecture::OpenFlowKind::FeeSponsor,
                     sources: vec![
@@ -1097,10 +1105,10 @@ fn sponsor_cases() -> Vec<SponsorCase> {
             Box::new(move |observation| {
                 observation
                     .objects
-                    .push(unclaimed_lbtc(ObservedSide::Input, 2, 10));
+                    .push(unclaimed_lbtc(ObservedSide::Input, 2));
                 observation
                     .objects
-                    .push(lbtc_owned(ObservedSide::Output, 1, 6, CAROL));
+                    .push(lbtc_owned(ObservedSide::Output, 1, CAROL));
                 observation.open_flows.push(ObservedOpenFlow {
                     kind: architecture::OpenFlowKind::FeeSponsor,
                     sources: vec![source],
@@ -1465,47 +1473,26 @@ fn compact_ash_weld_rejects_every_field_mutation() {
 }
 
 #[test]
-fn sponsor_denominations_do_not_reach_any_protocol_verdict() {
-    // S3, the deciding test: two sponsor regions with the same role
-    // structure but different individual denominations must produce
-    // identical protocol verdicts. Sponsor amounts are not protocol
-    // operands, and since conservation is the substrate's, no protocol
-    // relation reads them at all.
-    let mut coarse = valid_sponsored_observation();
-    let mut fine = valid_sponsored_observation();
+fn sponsor_objects_carry_no_protocol_amount() {
+    // S3, the deciding property, now structural rather than tested by
+    // comparison: a sponsor member has no readable amount at all, so
+    // there is no denomination for a protocol verdict to depend on.
+    // The earlier version of this test built two regions with
+    // different denominations and compared verdicts; it can no longer
+    // be written, which is a stronger result than its passing was.
+    let observation = valid_sponsored_observation();
 
-    for (observation, input, change) in [
-        (
-            &mut coarse,
-            ProtocolAmount::new(9_000).unwrap(),
-            ProtocolAmount::new(4_000).unwrap(),
-        ),
-        (
-            &mut fine,
-            ProtocolAmount::new(11).unwrap(),
-            ProtocolAmount::new(7).unwrap(),
-        ),
-    ] {
-        for object in &mut observation.objects {
-            if object.kind != ObservedObjectKind::Declared(ObjectId::PlainLbtc) {
-                continue;
-            }
-            object.value = match object.reference.side {
-                ObservedSide::Input => input,
-                ObservedSide::Output => change,
-            };
-        }
+    let sponsors = observation
+        .objects
+        .iter()
+        .filter(|object| object.kind == ObservedObjectKind::Declared(ObjectId::PlainLbtc))
+        .collect::<Vec<_>>();
+
+    assert!(!sponsors.is_empty(), "fixture has sponsor members");
+    for sponsor in sponsors {
+        assert_eq!(sponsor.value, crate::ObservedValue::SponsorOpaque);
+        assert_eq!(sponsor.value.protocol(), None);
     }
 
-    let coarse_report = evaluate(&coarse);
-    let fine_report = evaluate(&fine);
-
-    assert_eq!(
-        coarse_report, fine_report,
-        "sponsor denominations reached a protocol verdict",
-    );
-    assert!(
-        !failed(&coarse_report, &sponsor()),
-        "exact sponsor role structure is isolated regardless of denomination",
-    );
+    assert!(!failed(&evaluate(&observation), &sponsor()));
 }

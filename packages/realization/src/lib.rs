@@ -99,7 +99,7 @@ pub(crate) use lifecycle::{build_lifecycle_graph, project_lifecycle_graph};
 pub use observation::{
     ObservedAsset, ObservedCanonicalFlow, ObservedCanonicalPartition, ObservedDestructionLeg,
     ObservedIssuance, ObservedObject, ObservedObjectKind, ObservedObjectRef, ObservedOpenFlow,
-    ObservedRootEffect, ObservedSide, OperationObservation, validate_observation,
+    ObservedRootEffect, ObservedSide, ObservedValue, OperationObservation, validate_observation,
 };
 pub use operation::{OperationRealization, OperationRealizationProjection};
 pub use relation::{

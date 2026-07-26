@@ -1320,10 +1320,40 @@ now names conservation as the substrate's, and names the evaluator as the fifth
 surface — covered by the same rule rather than by the four declaration paths
 alone.
 
-Not done, and not required by this finding: removing the amount field from the
-observation type. No protocol path reads it now, so the field is unused rather
-than dangerous; deleting it is a change to a published type and belongs with
-the target work that decides what an observation carries.
+#### Structural erasure (2026-07-26)
+
+Completed in the same series rather than deferred. Making the evaluator
+value-blind stopped the read; removing the amount stops it being expressible.
+
+`ObservedObject::value` is now `ObservedValue`, which is either a readable
+`Protocol` amount or `SponsorOpaque`. Protocol amounts stay exact and readable
+— conservation of *protocol* value is this layer's own obligation — while
+ordinary sponsor L-BTC carries none. There is deliberately no defaulting
+accessor: reading requires handling the erased case, because silently treating
+an erased value as zero would reintroduce the very read the type removes.
+
+The model adapter is the erasure point. The transparent model knows every
+sponsor amount and drops it on the way out, so the value never crosses the
+boundary rather than crossing it and being guarded afterwards.
+
+Recognition now requires the pairing in both directions: a sponsor object must
+be erased, and an observation that smuggles a readable amount into one fails
+recognition instead of passing unnoticed.
+
+Three test families changed shape, each in the direction of a stronger result:
+
+- the four zeroed-sponsor cases became "a sponsor member carrying a protocol
+  amount fails recognition", because there is no longer an amount to zero;
+- the denominations comparison became "sponsor objects carry no protocol
+  amount". The old test built two regions and compared verdicts; it can no
+  longer be written, which proves more than its passing did;
+- the balanced-theft regression now takes a unit from the protocol output and
+  cannot make the sponsor side absorb it. The vector is still rejected, by the
+  relation that pins the canonical delta — which is exactly the reason v13d
+  gives for the value read being unnecessary.
+
+The sponsor fixture helpers no longer accept an amount parameter, so a test
+cannot express a sponsor value even in order to assert it is ignored.
 
 ### S4 — Model evidence provenance cannot express environment steps · `task:review:environment-steps`
 

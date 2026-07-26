@@ -144,7 +144,8 @@ fn compact_ash_observation_mutations_are_load_bearing() {
         .iter_mut()
         .find(|object| object.reference.side == realization::ObservedSide::Output)
         .unwrap()
-        .value = realization::ProtocolAmount::new(99).unwrap();
+        .value =
+        realization::ObservedValue::Protocol(realization::ProtocolAmount::new(99).unwrap());
     assert!(failed(&evaluate(&wrong_amount), &compact_conservation()));
 
     let mut burn_projection = observation;
@@ -303,7 +304,7 @@ fn live_transfer_observation_mutations_are_load_bearing() {
         .iter_mut()
         .find(|object| object.reference.side == realization::ObservedSide::Output)
         .unwrap()
-        .value = realization::ProtocolAmount::new(1).unwrap();
+        .value = realization::ObservedValue::Protocol(realization::ProtocolAmount::new(1).unwrap());
     assert!(failed(&evaluate(&wrong_amount), &live_conservation()));
 
     let mut wrong_representation = observation;

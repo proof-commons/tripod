@@ -9,8 +9,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use realization::{
     Count, ObservedAsset, ObservedCanonicalFlow, ObservedCanonicalPartition,
     ObservedDestructionLeg, ObservedIssuance, ObservedObject, ObservedObjectKind,
-    ObservedObjectRef, ObservedOpenFlow, ObservedRootEffect, ObservedSide, OperationObservation,
-    OwnerId, ProtocolAmount, RepresentationMode,
+    ObservedObjectRef, ObservedOpenFlow, ObservedRootEffect, ObservedSide, ObservedValue,
+    OperationObservation, OwnerId, ProtocolAmount, RepresentationMode,
 };
 
 use crate::{
@@ -259,11 +259,24 @@ fn observe_utxo(
     utxo: &Utxo,
     representation: RepresentationMode,
 ) -> Result<ObservedObject, ConformanceProjectionError> {
+    let kind = observed_object_kind(utxo);
+
+    // This adapter is the erasure point (S3). The transparent model
+    // knows every sponsor amount; the realization projection must not.
+    // Ordinary sponsor L-BTC is therefore erased here, on the way out
+    // of the model, rather than carried across the boundary and then
+    // guarded against — a value that never crosses cannot be read.
+    let value = if kind == ObservedObjectKind::Declared(architecture::ObjectId::PlainLbtc) {
+        ObservedValue::SponsorOpaque
+    } else {
+        ObservedValue::Protocol(observed_amount(utxo.value)?)
+    };
+
     Ok(ObservedObject {
         reference,
-        kind: observed_object_kind(utxo),
+        kind,
         asset: observed_asset(utxo.asset),
-        value: observed_amount(utxo.value)?,
+        value,
         owner: observed_owner(utxo),
         representation,
     })

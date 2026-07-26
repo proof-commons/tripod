@@ -43,9 +43,59 @@ pub struct ObservedObject {
     pub reference: ObservedObjectRef,
     pub kind: ObservedObjectKind,
     pub asset: ObservedAsset,
-    pub value: ProtocolAmount,
+    pub value: ObservedValue,
     pub owner: Option<OwnerId>,
     pub representation: RepresentationMode,
+}
+
+/// The amount an observed object carries, if the protocol may read it.
+///
+/// Sponsor erasure is structural here rather than advisory (S3). An
+/// ordinary sponsor L-BTC amount is sponsor-local data: its security
+/// role is exact membership, owner authorization, isolation, and
+/// substrate-enforced conservation, none of which is an amount. The
+/// projection therefore does not carry one, so no protocol relation
+/// can read what is not present, and a future backend cannot add a
+/// read merely because its target exposes an introspection primitive.
+///
+/// Protocol object amounts remain exact and readable: conservation of
+/// *protocol* value is this layer's own obligation, unlike sponsor
+/// conservation, which belongs to the substrate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ObservedValue {
+    /// A protocol-owned amount, and an operand of protocol relations.
+    Protocol(ProtocolAmount),
+    /// A sponsor-local amount, erased by the protocol projection. The
+    /// amount exists on chain; it is not this layer's to read.
+    SponsorOpaque,
+}
+
+impl ObservedValue {
+    /// The protocol amount, or `None` when the value is sponsor-local.
+    ///
+    /// Callers must handle the erased case explicitly; there is
+    /// deliberately no defaulting accessor, because silently reading a
+    /// sponsor amount as zero would reintroduce exactly the read this
+    /// type removes.
+    #[must_use]
+    pub const fn protocol(self) -> Option<ProtocolAmount> {
+        match self {
+            Self::Protocol(amount) => Some(amount),
+            Self::SponsorOpaque => None,
+        }
+    }
+
+    /// Whether this is a readable protocol amount equal to `amount`.
+    #[must_use]
+    pub fn is(self, amount: ProtocolAmount) -> bool {
+        self.protocol() == Some(amount)
+    }
+
+    /// Whether this is a readable protocol amount of zero.
+    #[must_use]
+    pub fn is_zero(self) -> bool {
+        self.is(ProtocolAmount::ZERO)
+    }
 }
 
 /// One observed issuance: an authority mints `amount` of `asset` into

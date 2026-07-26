@@ -12,8 +12,9 @@ use petgraph::{
 use crate::{
     CardinalityMaximum, ConstructibilityClass, Count, EvaluatedExpressions, ExpectedCanonicalDelta,
     ExprId, FactId, ObservedAsset, ObservedObject, ObservedObjectKind, ObservedObjectRef,
-    ObservedOpenFlow, ObservedSide, OperationObservation, ProtocolAmount, RealizationError,
-    Relation, RelationDeclaration, RelationEdge, RelationId, SemanticValue, TransactionSide,
+    ObservedOpenFlow, ObservedSide, ObservedValue, OperationObservation, ProtocolAmount,
+    RealizationError, Relation, RelationDeclaration, RelationEdge, RelationId, SemanticValue,
+    TransactionSide,
     expression::{DependencyEdge, ExpressionDeclaration, FactValues},
 };
 
@@ -389,10 +390,18 @@ fn derive_fact(
             Ok(SemanticValue::Count(count))
         }
         FactId::FamilyAmount { side, object, .. } => {
-            let total = ProtocolAmount::checked_sum(
-                declared_objects(observation, observed_side(*side), *object)
-                    .map(|observed| observed.value),
-            )?;
+            // The opacity guard forbids a PLAIN_LBTC family amount
+            // from being declared at all, so every object reaching
+            // here must carry a readable protocol amount. An erased
+            // one is a malformed observation, never a zero.
+            let mut amounts = Vec::new();
+            for observed in declared_objects(observation, observed_side(*side), *object) {
+                let Some(amount) = observed.value.protocol() else {
+                    return Err(RealizationError::SponsorValueRead);
+                };
+                amounts.push(amount);
+            }
+            let total = ProtocolAmount::checked_sum(amounts)?;
 
             Ok(SemanticValue::Amount(total))
         }
@@ -597,7 +606,13 @@ fn sum_partition_side(
             return Ok(None);
         }
 
-        total = total.checked_add(object.value)?;
+        // A sponsor-erased value cannot participate in a protocol
+        // total. Reaching one here means a sponsor object was routed
+        // into a protocol flow, which is a defect rather than a zero.
+        let Some(amount) = object.value.protocol() else {
+            return Ok(None);
+        };
+        total = total.checked_add(amount)?;
     }
 
     Ok(Some(total))
@@ -677,22 +692,39 @@ fn observed_object_shape_holds(object: ObjectId, observed: &ObservedObject) -> b
         | ObjectId::EntitlementAuthority
         | ObjectId::DistributionAuthority
         | ObjectId::DistributionControl => {
-            observed.value == ProtocolAmount::ONE && observed.owner.is_none()
+            observed.value.is(ProtocolAmount::ONE) && observed.owner.is_none()
         }
         ObjectId::Resv => observed.owner.is_none(),
         ObjectId::ReceiptLive
         | ObjectId::ReceiptTimeLocked
         | ObjectId::DepositRequest
-        | ObjectId::DepositEntitlement => !observed.value.is_zero() && observed.owner.is_some(),
+        | ObjectId::DepositEntitlement => {
+            observed
+                .value
+                .protocol()
+                .is_some_and(|amount| !amount.is_zero())
+                && observed.owner.is_some()
+        }
         // Sponsor-value opacity (F2-006): ordinary sponsor L-BTC
         // is authenticated by asset, family, and owner — never by its
         // amount. A zero-valued PLAIN_LBTC member is an ordinary
         // sponsor object like any other; it cannot satisfy the anchor,
         // which is recognized by its own declared family below, not by
         // testing whether an ordinary output happens to be zero.
-        ObjectId::PlainLbtc => observed.owner.is_some(),
+        // Sponsor-value opacity (F2-006, S3): ordinary sponsor
+        // L-BTC is authenticated by asset, family, and owner — never
+        // by its amount, which the projection does not carry at all.
+        // Requiring erasure here makes an observation that smuggles a
+        // sponsor amount fail recognition rather than pass unnoticed.
+        ObjectId::PlainLbtc => {
+            observed.owner.is_some() && observed.value == ObservedValue::SponsorOpaque
+        }
         ObjectId::DistributionVault | ObjectId::Ash => {
-            !observed.value.is_zero() && observed.owner.is_none()
+            observed
+                .value
+                .protocol()
+                .is_some_and(|amount| !amount.is_zero())
+                && observed.owner.is_none()
         }
         ObjectId::CpfpAnchor => observed.value.is_zero() && observed.owner.is_none(),
     }
@@ -713,17 +745,21 @@ fn sum_selected_amounts(
     asset: AssetId,
     objects: &BTreeSet<ObjectId>,
 ) -> Result<ProtocolAmount, RealizationError> {
-    ProtocolAmount::checked_sum(
-        observation
-            .objects
-            .iter()
-            .filter(|observed| {
-                observed.reference.side == side
-                    && observed.asset == ObservedAsset::Declared(asset)
-                    && matches!(observed.kind, ObservedObjectKind::Declared(kind) if objects.contains(&kind))
-            })
-            .map(|observed| observed.value),
-    )
+    // Selection is by declared protocol object kind, so every match
+    // carries a readable amount; a sponsor-erased value here means a
+    // sponsor object was selected as a protocol one.
+    let mut amounts = Vec::new();
+    for observed in observation.objects.iter().filter(|observed| {
+        observed.reference.side == side
+            && observed.asset == ObservedAsset::Declared(asset)
+            && matches!(observed.kind, ObservedObjectKind::Declared(kind) if objects.contains(&kind))
+    }) {
+        let Some(amount) = observed.value.protocol() else {
+            return Err(RealizationError::SponsorValueRead);
+        };
+        amounts.push(amount);
+    }
+    ProtocolAmount::checked_sum(amounts)
 }
 
 fn sponsor_is_isolated(observation: &OperationObservation) -> Result<bool, RealizationError> {
