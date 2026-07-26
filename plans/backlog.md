@@ -168,11 +168,27 @@ run as part of this static review. Therefore:
 The earlier F3 review basis remains historical and must not be described as the
 current tree.
 
+A fourth static review, of the Layer-0 macro system and symbol index, reported
+eight notation defects. Verification found one of them to be a mathematical
+defect rather than a notational one: the redemption-rate floor ceiling was the
+genesis value of a dynamic bound, and a published theorem rested on treating it
+as a constant. Both resulting questions are owned by
+[research/](research/README.md) — (`q:attestation:floor-bounds`), whose analysis
+is accepted and whose regressions are landed, and
+(`q:notation:semantic-census`), resolved as over-scoped because the existing ADR-013 label graph is sufficient
+once Layer-0 labels are precise.
+
+Unlike the F4 basis above, that series ran its gates: workspace tests in debug
+and release, clippy, fmt, check-generated, check-labels, check-forbidden-text,
+check-plans, census-audit, and the full Meson document lane including the
+LaTeX build. Layer 0 is now version `0.6.0`, with four anchors removed as a
+deliberate breaking change.
+
 ### 2.2 Implemented packages · `tbl:backlog:implemented`
 
 | Package or area | Current source state |
 |---|---|
-| Layer 0 | Published specification, version `0.5.2` |
+| Layer 0 | Published specification, version `0.6.0` |
 | Realization document | Realization with final architecture appendix |
 | `architecture` | Typed architecture, validation, semantic/behavioural identities, deployment-profile scaffolding |
 | `model` | Executable state machine, invariant checker, property/corruption suites, indexer and accounting projections |
@@ -190,7 +206,7 @@ current tree.
 
 | Identity | Current value |
 |---|---|
-| Layer-0 version | `0.5.2` |
+| Layer-0 version | `0.6.0` |
 | Realization version | tracked compiler-line binding |
 | Architecture schema | `17` |
 | Architecture semantic algorithm | `sha256-canonical-json-v2` |

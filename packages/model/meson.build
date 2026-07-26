@@ -67,6 +67,7 @@ model_source_files = files(
   'src/tests/indexer_conformance_tests.rs',
   'src/tests/indexer_order_tests.rs',
   'src/tests/kernel_tests.rs',
+  'src/tests/specification_bound_tests.rs',
   'src/tests/mod.rs',
   'src/tests/no_accumulator_tests.rs',
   'src/tests/open_asset_immunity_tests.rs',
