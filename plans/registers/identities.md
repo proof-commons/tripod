@@ -61,9 +61,15 @@ migration rule, non-claims, and status.
 - **Stale condition:** any change to an input's repository-relative path, Git
   mode, or bytes. Membership comes from the build's declared input set, so an
   input silently dropped from that set is a census defect, not a stale digest.
-- **Recipe:** SHA-256 over the domain string followed by the framed path,
-  framed Git mode, and framed bytes of each input in declared order; the first
-  sixteen bytes, printed in lowercase `8-4-4-4-12` grouping.
+- **Recipe:** validate and deduplicate the publication inputs, sort them by
+  canonical repository-relative path, then hash the domain separator
+  `tripod/document-inputs/v1` followed by a NUL byte, and for each
+  input in that sorted order its length-framed repository-relative path,
+  length-framed Git mode, and length-framed committed blob bytes. Take the
+  first 128 bits and render them in lowercase `8-4-4-4-12` grouping without
+  rewriting any bit as a version or variant field. Sorting is what makes the
+  identity independent of argument order; a repeated path is refused rather
+  than hashed twice.
 - **Migration:** changing the domain string, the framing, or the input-set
   definition produces a different identity, and must be recorded as a
   replacement rather than a redefinition of the published one.
@@ -84,8 +90,13 @@ migration rule, non-claims, and status.
   printed with the same grouping as the document identity.
 - **Stale condition:** any change under the paper subtree, including changes to
   files outside the declared input set.
-- **Recipe:** resolve the paper subtree path against the revision, peel it to
-  the tree object, take the leading 128 bits of that object name.
+- **Recipe:** resolve the paper subtree path against the revision to its tree
+  object name, take the leading 32 hex characters, then re-resolve that prefix
+  peeled to a tree and require it to equal the full object name. Render the
+  prefix in the same `8-4-4-4-12` grouping as the document identity. The
+  round-trip is part of the recipe, not a convenience: an ambiguous prefix or a
+  unique non-tree object is a hard failure rather than a silently truncated
+  identity.
 - **Migration:** follows Git's object hash.
 - **Non-claims:** it is not the document identity and must not be substituted
   for it — the two answer deliberately different questions, subtree state

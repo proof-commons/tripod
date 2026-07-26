@@ -968,7 +968,7 @@ output-path finding as over-scoped.
 | `R2` | P1 | DONE | ADR-016 is marked Proposed while the repository treats it as adopted policy. |
 | `R3` | P1 | DONE | D007 requires a full Petgraph feature surface, contradicting Cargo and the completed dependency review. |
 | `R4` | P2 | DONE | `scripts/ci.sh` reports `CI green` after skipping the mocked Meson contract lane. |
-| `R5` | P2 | TODO | The documented document-identity recipe says declared order; the implementation sorts by canonical path. |
+| `R5` | P2 | DONE | The documented document-identity recipe says declared order; the implementation sorts by canonical path. |
 | `R6` | P2 | TODO | Several planning documents still describe the compiler package as merely planned. |
 
 ### R1 — Path handling exceeds the assurance boundary · `task:review:path-scope`
@@ -1111,6 +1111,41 @@ silently.
 Verified both paths: with Meson and Ninja present the script prints the green
 line, and with them hidden it exits zero printing the partial line naming the
 skipped lane.
+
+### R5 — The document-identity recipe was documented wrongly · `task:review:document-recipe`
+
+**Priority:** P2
+**Status:** DONE
+**Owner:** `plans/registers/identities.md`
+
+#### Basis
+
+The register said the document identity hashes each input in declared order.
+The implementation sorts validated inputs by canonical repository-relative path
+before hashing and refuses a repeated path, and its tests establish
+argument-order independence. The implementation is sound; the register was
+wrong, and it was wrong in the one place ADR-016 requires exactness — a recipe.
+
+The defect was introduced by I1-002, which wrote the inventory from the
+producing sources but paraphrased this step instead of reading the sort.
+
+#### Resolution (2026-07-26)
+
+The document-identity recipe now states validation and deduplication, the sort
+by canonical repository-relative path, the domain separator by name including
+its trailing NUL, the length-framed path, Git mode, and committed blob bytes
+per input in sorted order, the 128-bit truncation, and the grouping without
+version or variant bit rewriting. It records that sorting is what makes the
+identity independent of argument order.
+
+The instance-identity recipe was checked at the same time and was also
+incomplete: it omitted the prefix round-trip, in which the truncated 32
+hex characters are re-resolved peeled to a tree and required to equal the full
+object name, so an ambiguous prefix or a unique non-tree object fails hard
+rather than yielding a silently truncated identity. That step is now recorded.
+
+The remaining seven inventory entries were re-read against their sources; no
+further recipe mismatch was found.
 
 ---
 
