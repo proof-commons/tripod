@@ -162,6 +162,18 @@ impl ScopedRealizationSpec {
 /// canonical operation-owned facts. Source declaration order never
 /// reaches this value, so two realizations with permuted set-like
 /// declaration collections project equal.
+///
+/// Evaluation order is deliberately absent (S5). The spec carries a
+/// topological order because the evaluator needs *a* valid schedule,
+/// but among mutually independent nodes no unique topological order
+/// exists: the one chosen is an artifact of how the graph library
+/// walks local indices, not a property of the relations. Publishing it
+/// here would put a traversal artifact into a value intended for
+/// stable comparison and future identity, and would make an unrelated
+/// independent node — or a graph-library change — move the projection
+/// without changing a single relation. A consumer that genuinely needs
+/// a schedule should derive one from the projected graph under its own
+/// stated rule.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScopedRealizationProjection {
     pub architecture: ArchitectureBinding,
@@ -173,8 +185,6 @@ pub struct ScopedRealizationProjection {
     pub lifecycle: LifecycleGraphProjection,
     pub disclosure: DisclosureGraphProjection,
     pub declassification: DeclassificationAnalysis,
-    pub expression_evaluation_order: Vec<ExprId>,
-    pub relation_evaluation_order: Vec<RelationId>,
 }
 
 /// Derive one target-independent realization from architecture and scope.
@@ -330,7 +340,5 @@ pub fn project_scoped_realization(
         lifecycle: project_lifecycle_graph(&realization.lifecycle_graph),
         disclosure: project_disclosure_graph(&realization.disclosure_graph),
         declassification: realization.declassification.clone(),
-        expression_evaluation_order: realization.expression_evaluation_order.clone(),
-        relation_evaluation_order: realization.relation_evaluation_order.clone(),
     }
 }

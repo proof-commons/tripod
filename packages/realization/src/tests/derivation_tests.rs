@@ -463,3 +463,50 @@ fn declared_disclosure_relations_still_derive() {
     // disclosure declarations.
     assemble_phase1(phase1_operations()).expect("phase-1 pilots derive unchanged");
 }
+
+// --- S5: evaluation order is a valid schedule, not a canonical fact.
+// The spec keeps one because the evaluator needs it; the projection
+// must not, because among independent nodes the chosen order is an
+// artifact of graph traversal rather than a property of the
+// relations. ---
+
+#[test]
+fn evaluation_order_is_absent_from_the_stable_projection() {
+    let realization = derive(&ARCHITECTURE, RealizationScope::phase1_pilots()).unwrap();
+    let projection = project_scoped_realization(&realization);
+
+    // The spec still schedules evaluation; the projection does not
+    // publish that schedule. Asserted through the debug rendering
+    // because absence of a field cannot be named directly.
+    assert!(
+        !format!("{projection:?}").contains("evaluation_order"),
+        "the stable projection must not publish a traversal order",
+    );
+    assert!(
+        !realization.relation_evaluation_order.is_empty(),
+        "the spec must still carry a schedule for the evaluator",
+    );
+}
+
+#[test]
+fn a_different_valid_schedule_leaves_the_projection_equal() {
+    // Reversing declaration order permutes graph insertion, which is
+    // exactly what can hand the toposort a different — equally valid —
+    // schedule among independent nodes. The projection must not move,
+    // and the relation and expression graphs must still be equal as
+    // graphs.
+    let baseline = derive(&ARCHITECTURE, RealizationScope::phase1_pilots()).unwrap();
+
+    let mut operations = baseline.operations.clone();
+    for declaration in operations.values_mut() {
+        declaration.relations.reverse();
+        declaration.expressions.reverse();
+    }
+    let permuted = assemble_phase1(operations).expect("permuted rebuild");
+
+    assert_eq!(
+        project_scoped_realization(&baseline),
+        project_scoped_realization(&permuted),
+        "a different valid schedule moved the stable projection",
+    );
+}

@@ -1197,7 +1197,7 @@ Identifiers are this repository's, numbered to match the review's own ordering.
 | `S2` | P1 | DONE | Disclosure-graph relation IDs are not welded to the declared relation census. |
 | `S3` | P1 | TODO | Sponsor-value opacity is enforced in fact graphs but bypassed by the sponsor-isolation evaluator. |
 | `S4` | P2 | TODO | The model's evidence rule cannot express open-object injection or block-age advance. |
-| `S5` | P2 | TODO | Stable realization projections carry an incidental Petgraph topological order. |
+| `S5` | P2 | DONE | Stable realization projections carry an incidental Petgraph topological order. |
 | `S6` | P2 | DONE | Duplicate rows in the Realization index are silently accepted. |
 | `S7` | P3 | DONE | ADR-017 and backlog task statuses are internally stale. |
 
@@ -1288,7 +1288,7 @@ with no direct field mutation.
 ### S5 — Stable projections carry an incidental topological order · `task:review:canonical-toposort`
 
 **Priority:** P2
-**Status:** TODO
+**Status:** DONE
 **Owner:** `realization`
 **Policy:** D007 identity and canonical construction, ADR-016 immediate edges
 
@@ -1318,6 +1318,24 @@ Tests must cover unrelated independent-node insertion, disconnected operation
 graphs, insertion permutation, and equal node and edge projections under a
 deliberately different valid schedule — distinguishing local evaluator
 scheduling from identity-bearing projection.
+
+#### Resolution (2026-07-26)
+
+Removal, not canonicalization. The consumers were checked first rather than
+assumed: the evaluator reads the schedule from the spec, and nothing reads it
+from the projection. Under the admission rule a field with no consumer is not
+carried, so the projection drops both orders and the spec keeps them for the
+evaluator that genuinely needs a schedule.
+
+This is the stronger of the two options offered. A canonical order would still
+be a thing to compute, test, and never accidentally change; not publishing one
+cannot drift. If a consumer later needs a schedule it can derive one from the
+projected graph under its own stated rule, which is where that decision
+belongs.
+
+Tests: the projection publishes no traversal order while the spec still carries
+one, and permuting declaration order — the case that can hand the toposort a
+different but equally valid schedule — leaves the projection equal.
 
 ### S6 — Duplicate index rows were silently accepted · `task:review:index-uniqueness`
 
