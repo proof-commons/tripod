@@ -41,12 +41,10 @@ The selected release is:
 petgraph 0.8.3
 ```
 
-It is workspace-owned, exact-version pinned, and enabled with its complete
-selected feature surface.
+It is workspace-owned and exact-version pinned.
 
-The workspace uses Petgraph's default features and explicitly enables every
-optional public feature selected for this release, including serialization,
-parallel support, DOT parsing, and graph generation.
+Optional features are enabled only for a named current consumer; see
+(`rule:graph:features`).
 
 A package directly depending on Petgraph names the workspace dependency:
 
@@ -157,20 +155,45 @@ algorithm itself is project-specific, such as proof-plan search, placement,
 package-merge, or typed carrier coverage. It must not reimplement graph storage
 or ordinary graph traversal.
 
-## Full feature surface · `rule:graph:features`
+## Feature surface · `rule:graph:features`
 
-The workspace enables the complete selected Petgraph feature surface so all
-first-party graph packages share one dependency configuration.
+An optional feature is enabled only for a named current consumer. A feature is
+not carried to advertise intent, to anticipate a future need, or to keep one
+maximal configuration for its own sake: an unused feature is unreviewed
+dependency surface, and enabling it states a capability the repository does not
+exercise.
 
-Feature availability does not change semantic authority:
+The reviewed surface for this release is:
 
-- `serde-1` does not make Petgraph serialization a canonical publication;
-- `rayon` does not authorize nondeterministic identity-bearing output;
-- `dot_parser` does not make DOT a semantic input;
-- `generate` and `unstable` do not make unstable APIs release contracts.
+```text
+serde-1     enabled — narrow reviewed exception, below
+rayon       not enabled
+dot_parser  not enabled
+unstable    not enabled
+generate    not enabled
+```
 
-A package uses only the facilities required by its typed implementation, but
-the workspace resolves one full-featured Petgraph dependency.
+`dot_parser` additionally pulled GPL-2.0-or-later crates into the first-party build graph, which ADR-011's dependency rule does not admit without a separate policy decision, and `rayon` added nondeterministic parallelism with no consumer. Neither is enabled, so neither trade-off is taken.
+
+Feature availability never changes semantic authority. Enabling a feature
+grants no license to serialize a Petgraph container as a canonical
+publication, to emit nondeterministic identity-bearing output, to treat DOT as
+a semantic input, or to treat an unstable API as a release contract.
+
+### `serde-1` as a narrow reviewed exception
+
+`serde-1` is retained ahead of a production consumer, deliberately and as the
+single exception to the rule above. Its scope is fixed:
+
+- noncanonical diagnostics and internal caches only;
+- never a semantic, publication, or release input;
+- guarded by an explicit test in the labels package, so removing the feature
+  breaks a named test rather than silently changing behaviour;
+- removed if no diagnostic serializer materializes and the guard test becomes
+  its only justification.
+
+Every other optional feature returns under the ordinary rule: a named consumer
+first, then the feature.
 
 ## Serialization · `rule:graph:serialization`
 
@@ -194,7 +217,9 @@ under an owned schema and canonical ordering.
 
 ## Parallelism · `rule:graph:parallelism`
 
-Parallel Petgraph facilities may be used for independent work.
+Parallel Petgraph facilities are not enabled. Enabling them requires a measured
+need and evidence that identity-bearing results are unchanged; the conditions
+below govern any such future use.
 
 Any identity-bearing or canonical result must remain identical across:
 
@@ -267,7 +292,8 @@ This decision does not authorize:
 
 The decision is implemented when:
 
-- `petgraph` is workspace-owned at the reviewed release and features;
+- `petgraph` is workspace-owned at the reviewed release, with optional
+  features limited to those having a named current consumer;
 - every graph-owning first-party package depends on it directly;
 - no first-party graph wrapper or alternate graph container exists;
 - realization expression and relation graphs use Petgraph directly;

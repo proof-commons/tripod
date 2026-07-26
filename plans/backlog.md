@@ -966,7 +966,7 @@ output-path finding as over-scoped.
 |---|---:|---|---|
 | `R1` | P1 | DONE | Filesystem checks exceed the intended trust boundary while the central Git-mode invariant is unenforced. |
 | `R2` | P1 | DONE | ADR-016 is marked Proposed while the repository treats it as adopted policy. |
-| `R3` | P1 | TODO | D007 requires a full Petgraph feature surface, contradicting Cargo and the completed dependency review. |
+| `R3` | P1 | DONE | D007 requires a full Petgraph feature surface, contradicting Cargo and the completed dependency review. |
 | `R4` | P2 | TODO | `scripts/ci.sh` reports `CI green` after skipping the mocked Meson contract lane. |
 | `R5` | P2 | TODO | The documented document-identity recipe says declared order; the implementation sorts by canonical path. |
 | `R6` | P2 | TODO | Several planning documents still describe the compiler package as merely planned. |
@@ -1036,6 +1036,49 @@ deployment-profile and report design are not implemented — without leaving the
 authoritative record weaker than the policy it governs.
 
 `adr/README.md` carries the same status in the same change.
+
+### R3 — D007 contradicted the reviewed Petgraph policy · `task:review:d007-features`
+
+**Priority:** P1
+**Status:** DONE
+**Owner:** D007, `plans/decisions/README.md`, this backlog
+
+#### Basis
+
+D007's feature rule required the workspace to enable the complete selected
+feature surface, naming serialization, parallel support, DOT parsing, and graph
+generation. The manifest enables `serde-1` alone, and the P2-002 review removed
+the other four because none had a first-party consumer, `dot_parser` pulled
+GPL-2.0-or-later crates into this MIT/Apache workspace, and `rayon` added
+nondeterministic parallelism.
+
+D007 is an accepted decision cited by active package contracts, so its text
+directed a future maintainer to restore precisely the configuration the later
+review rejected. The dependency table here compounded it by still listing
+`rayon` as selected through Petgraph.
+
+#### Resolution (2026-07-26)
+
+The feature rule is rewritten from a maximal-surface rule to a
+consumer-driven one: an optional feature is enabled only for a named current
+consumer, and is not carried to advertise intent or anticipate a future need.
+The rule now states the reviewed per-feature outcome explicitly, records why
+`dot_parser` and `rayon` are refused, and keeps the original point that feature
+availability never confers semantic authority.
+
+`serde-1` is retained as the single narrow exception, with its scope fixed in
+the record: noncanonical diagnostics and caches only, never semantic or release
+input, guarded by a named test, and removed if no diagnostic serializer
+materializes. This preserves the decision already taken when the features were
+trimmed, rather than reopening it.
+
+The dependency rule no longer claims a complete feature surface, the
+parallelism rule states that parallel facilities are not enabled and sets the
+conditions for any future use, and the verification gate now checks
+that optional features have named consumers.
+
+The decisions index no longer describes D007 as full-featured Petgraph, and the
+dependency table records `rayon` as removed and deferred.
 
 ---
 
@@ -1595,7 +1638,7 @@ Required Phase-2 oracles:
 | SAT/LP/MILP solver | Deferred | Large exact planning problems only after measured need |
 | `salsa` | Deferred | Incremental compiler queries |
 | `egg` | Deferred | Equality saturation |
-| `rayon` | Selected through Petgraph | Independent work only; never semantic ordering |
+| `rayon` | Removed (P2-002); deferred | Would need a measured need and evidence that identity-bearing results are unchanged |
 
 ### 8.2 Dependency-entry rule · `rule:backlog:dependency-entry`
 
