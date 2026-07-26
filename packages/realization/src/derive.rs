@@ -268,6 +268,21 @@ pub(crate) fn assemble_scoped_realization(
         .values()
         .flat_map(|operation| operation.disclosure_seeds.iter().cloned())
         .collect::<Vec<_>>();
+    // Weld the disclosure graph to the relation census before any
+    // disclosure conclusion is drawn. Ownership validation runs per
+    // operation and cannot see this: a phantom relation carries the
+    // right operation, so it passes ownership while naming a relation
+    // the semantic graph never declared. Without this check a
+    // declassification requirement could be derived for a relation
+    // that does not exist, and the compiler-input boundary would carry
+    // a requirement its own relation census cannot support.
+    crate::validate::validate_disclosure_relation_census(
+        &disclosure_nodes,
+        &disclosure_edges,
+        &disclosure_seeds,
+        &relation_node_by_id,
+    )?;
+
     let (disclosure_graph, disclosure_node_by_id) =
         build_disclosure_graph(disclosure_nodes, disclosure_edges)?;
     let declassification =

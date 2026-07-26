@@ -1194,7 +1194,7 @@ Identifiers are this repository's, numbered to match the review's own ordering.
 | ID | Priority | Status | Finding |
 |---|---:|---|---|
 | `S1` | P1 | DONE | Whether SP4's equality survives settlement-pinned clearing: it does not; a lower bound does. |
-| `S2` | P1 | TODO | Disclosure-graph relation IDs are not welded to the declared relation census. |
+| `S2` | P1 | DONE | Disclosure-graph relation IDs are not welded to the declared relation census. |
 | `S3` | P1 | TODO | Sponsor-value opacity is enforced in fact graphs but bypassed by the sponsor-isolation evaluator. |
 | `S4` | P2 | TODO | The model's evidence rule cannot express open-object injection or block-age advance. |
 | `S5` | P2 | TODO | Stable realization projections carry an incidental Petgraph topological order. |
@@ -1204,6 +1204,45 @@ Identifiers are this repository's, numbered to match the review's own ordering.
 Execution order follows the review's own repair order: S1, S2, S3, S4, S5, S6,
 S7. S3 and S4 are design changes to a published boundary rather than local
 repairs, and each states its chosen design before it is implemented.
+
+### S2 — Disclosure relations were not welded to the census · `task:review:disclosure-weld`
+
+**Priority:** P1
+**Status:** DONE
+**Owner:** `realization`
+**Blocks:** trusted compiler-input boundary
+
+#### Basis
+
+The relation graph and the disclosure graph are assembled independently.
+Ownership validation proved only that a named disclosure relation *would* belong
+to the declaring operation; nothing proved it existed. A same-operation phantom
+relation therefore passed ownership, formed a locally well-formed disclosure
+graph, and could carry a fact to required-public through fixed-point analysis
+with no semantic relation owning the requirement.
+
+The same gap applied to relations named inside a disclosure reason —
+permissionless constructibility and target safety — whose operation was checked
+but whose existence was not.
+
+#### Resolution (2026-07-26)
+
+`validate_disclosure_relation_census` runs during assembly once both graphs
+exist, before any disclosure conclusion is drawn, and requires every relation
+reachable from a disclosure node, an edge endpoint, or a seed reason to resolve
+in the relation census. The new error is `UnknownDisclosureRelation`.
+
+Reasons are checked in their own right rather than through the seeded node,
+because a reason may name a relation the graph never mentions — that case is
+invisible to a node-only sweep and is the one the review specifically called
+out.
+
+Source: `packages/realization/src/validate.rs`,
+`packages/realization/src/derive.rs`, `packages/realization/src/error.rs`.
+Tests (`packages/realization/src/tests/derivation_tests.rs`): a phantom
+relation introduced as a disclosure node, the same phantom hidden in a seed
+reason behind an ordinary node, and a regression proving the pilots' own
+relation-bearing disclosure declarations still derive.
 
 ### S1 — SP4 is a lower bound, not an equality · `task:review:sp4-bound`
 

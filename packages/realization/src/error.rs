@@ -265,6 +265,14 @@ pub enum RealizationError {
         node: DisclosureNodeId,
     },
 
+    /// A disclosure node, edge endpoint, or seed reason named a
+    /// relation that the operation never declared, so a declassification
+    /// requirement would rest on a relation absent from the semantic
+    /// census. Ownership validation alone cannot catch this: the
+    /// phantom relation carries the right operation.
+    #[error("disclosure names relation {relation:?}, which is not declared")]
+    UnknownDisclosureRelation { relation: RelationId },
+
     /// An architecture operation needed by realization is absent.
     #[error("architecture operation {0} is missing")]
     MissingArchitectureOperation(OperationId),

@@ -851,6 +851,63 @@ fn ensure_disclosure_owner(
     Ok(())
 }
 
+/// Weld every relation named by the disclosure declarations to the
+/// relation census (S2).
+///
+/// Ownership validation runs per operation and proves only that a
+/// named relation *would* belong to the declaring operation. It cannot
+/// prove the relation exists, because the two graphs are assembled
+/// independently. A same-operation phantom relation therefore passed
+/// ownership, formed a locally well-formed disclosure graph, and could
+/// carry a fact to required-public through fixed-point analysis with no
+/// semantic relation owning the requirement.
+///
+/// Every relation reachable from a disclosure node, an edge endpoint,
+/// or a seed reason must resolve in the relation census.
+pub fn validate_disclosure_relation_census(
+    nodes: &[crate::DisclosureNode],
+    edges: &[crate::DisclosureDependencyDeclaration],
+    seeds: &[crate::DisclosureSeed],
+    relation_node_by_id: &std::collections::BTreeMap<
+        crate::RelationId,
+        petgraph::graph::NodeIndex<u32>,
+    >,
+) -> Result<(), RealizationError> {
+    let check = |id: &crate::DisclosureNodeId| -> Result<(), RealizationError> {
+        let crate::DisclosureNodeId::Relation(relation) = id else {
+            return Ok(());
+        };
+        if relation_node_by_id.contains_key(relation) {
+            return Ok(());
+        }
+        Err(RealizationError::UnknownDisclosureRelation {
+            relation: relation.clone(),
+        })
+    };
+
+    for node in nodes {
+        check(&node.id())?;
+    }
+    for edge in edges {
+        check(&edge.source)?;
+        check(&edge.target)?;
+    }
+    for seed in seeds {
+        check(&seed.node)?;
+        // A reason may name a relation the graph never mentions, so
+        // reasons are checked in their own right rather than through
+        // the seeded node.
+        for relation in seed_reason_relations(&seed.reason) {
+            if !relation_node_by_id.contains_key(relation) {
+                return Err(RealizationError::UnknownDisclosureRelation {
+                    relation: relation.clone(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Relations named inside one disclosure-seed reason.
 fn seed_reason_relations(reason: &crate::DisclosureReason) -> Vec<&crate::RelationId> {
     match reason {

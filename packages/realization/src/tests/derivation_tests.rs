@@ -388,3 +388,78 @@ fn undeclared_burn_scope_rejects_for_now() {
         RealizationError::UnsupportedOperationDeclaration(OperationId::Burn),
     );
 }
+
+// --- S2 disclosure/relation weld: ownership validation proves only
+// that a named relation WOULD belong to the declaring operation. These
+// mutations name a relation that carries the right operation but was
+// never declared, so ownership passes and only the census weld can
+// reject them. ---
+
+/// A relation key owned by compact ASH that the pilot never declares.
+fn phantom_relation() -> crate::RelationId {
+    crate::RelationId::new(
+        OperationId::CompactAsh,
+        crate::RelationKind::Conservation,
+        crate::RelationSubject::ObjectFamily {
+            side: crate::TransactionSide::Input,
+            object: architecture::ObjectId::PlainLbtc,
+        },
+    )
+}
+
+#[test]
+fn phantom_disclosure_relation_node_is_rejected() {
+    let mut operations = phase1_operations();
+    let relation = phantom_relation();
+    assert!(
+        !operations[&OperationId::CompactAsh]
+            .relations
+            .iter()
+            .any(|declared| declared.id == relation),
+        "the fixture relation must genuinely be undeclared"
+    );
+
+    operations
+        .get_mut(&OperationId::CompactAsh)
+        .unwrap()
+        .disclosure_nodes
+        .push(crate::DisclosureNode::Relation {
+            id: relation.clone(),
+        });
+
+    let error = assemble_phase1(operations).unwrap_err();
+    assert_eq!(
+        error,
+        RealizationError::UnknownDisclosureRelation { relation },
+    );
+}
+
+#[test]
+fn phantom_relation_in_a_disclosure_seed_reason_is_rejected() {
+    // The seed's node may be perfectly ordinary; the phantom hides in
+    // the reason, which the graph never mentions.
+    let mut operations = phase1_operations();
+    let relation = phantom_relation();
+    let declaration = operations.get_mut(&OperationId::CompactAsh).unwrap();
+    let node = declaration.disclosure_nodes[0].id();
+
+    declaration.disclosure_seeds.push(crate::DisclosureSeed {
+        node,
+        reason: crate::DisclosureReason::TargetSafety {
+            relation: relation.clone(),
+        },
+    });
+
+    let error = assemble_phase1(operations).unwrap_err();
+    assert_eq!(
+        error,
+        RealizationError::UnknownDisclosureRelation { relation },
+    );
+}
+
+#[test]
+fn declared_disclosure_relations_still_derive() {
+    // The weld must not reject the pilots' own relation-bearing
+    // disclosure declarations.
+    assemble_phase1(phase1_operations()).expect("phase-1 pilots derive unchanged");
+}
