@@ -1550,7 +1550,7 @@ logic; none weakens a constraint on source-derived paths.
 | ID | Priority | Status | Deliverable |
 |---|---:|---|---|
 | `A17-001` | P1 | DONE | Census audit consumes Git modes and rejects symlinks and gitlinks |
-| `A17-002` | P1 | TODO | Shared destination identity becomes lexical |
+| `A17-002` | P1 | DONE | Shared destination identity becomes lexical |
 | `A17-003` | P1 | TODO | Flattener drops ancestor alias analysis, keeps source-derived confinement |
 | `A17-004` | P2 | TODO | `execwrap` role uniqueness is simplified or documented as the sole exception |
 | `A17-005` | P2 | TODO | Removal of preflight race claims from prose and diagnostics |
@@ -1628,6 +1628,33 @@ absolute, and removes `.` and `..` components without touching the filesystem.
 Generic hard-link and symlink-parent tests are removed rather than relaxed: a
 hard link is not semantic identity, and first-party outputs are identified by
 role, path, schema, and bytes.
+
+#### Resolution (2026-07-26)
+
+`DestinationIdentity` is now one lexically normalized absolute path.
+`destination_identity` resolves a relative path against the process working
+directory, then removes `.` and resolves `..` without consulting the
+filesystem; `..` cannot escape a root because popping a root leaves it in
+place. `ensure_distinct_outputs` compares those paths for equality.
+
+Removed: `entry_identity`'s deepest-existing-ancestor canonicalization and
+`existing_file_identity`'s device/inode probe, along with the `aliases` helper
+that combined them.
+
+The two alias tests were not deleted. They now assert the opposite outcome and
+say why: hard-linked destinations and symlinked parent directories are
+lexically distinct and pass, because detecting some aliases while the host may
+replace or remount a path at any moment establishes no boundary. Recording the
+decision as a passing test keeps a future reader from restoring the check as a
+supposed fix. A third test pins the case that still matters — one destination
+named both relatively and absolutely.
+
+Note on a check that stays: `document-stamps` continues to read Git modes for
+its declared publication-input set. That is not filesystem alias analysis; the
+mode is an input to its own digest recipe.
+
+Source: `packages/cli-common/src/lib.rs`,
+`packages/cli-common/src/tests/mod.rs`.
 
 ### A17-003 — Flattener source-derived confinement only · `task:path:flattener`
 

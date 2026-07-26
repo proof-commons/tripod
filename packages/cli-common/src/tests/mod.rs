@@ -782,35 +782,52 @@ fn lexical_alias_spellings_are_aliased() {
     );
 }
 
+#[test]
+fn relative_and_absolute_spellings_of_one_destination_are_aliased() {
+    // A relative role path resolves against the process working
+    // directory, its documented base, so the two spellings collide.
+    let cwd = std::env::current_dir().expect("working directory");
+    let relative = std::path::Path::new("./out");
+
+    crate::ensure_distinct_outputs(&[("first", relative), ("second", &cwd.join("out"))])
+        .expect_err("one destination named two ways");
+}
+
+// ADR-017: role uniqueness is lexical. Host-level aliasing is not
+// detected, because detecting some aliases while a host may replace or
+// remount a path at any moment establishes no boundary. These two
+// cases record that as the decided behaviour rather than an oversight.
+
 #[cfg(unix)]
 #[test]
-fn existing_hard_link_aliases_are_aliased() {
+fn hard_linked_destinations_are_not_treated_as_one_role() {
     let dir = tempfile::tempdir().expect("tempdir");
     let first = dir.path().join("first-name");
     std::fs::write(&first, b"content").expect("write");
     let second = dir.path().join("second-name");
     std::fs::hard_link(&first, &second).expect("hard link");
 
+    // A hard link is not semantic identity; first-party outputs are
+    // identified by role, path, schema, and bytes. Callers must not
+    // alias distinct roles this way.
     crate::ensure_distinct_outputs(&[("first", &first), ("second", &second)])
-        .expect_err("hard-link alias");
+        .expect("lexically distinct paths pass; the caller owns hard-link aliasing");
 }
 
 #[cfg(unix)]
 #[test]
-fn symlinked_parent_directories_are_aliased() {
+fn symlinked_parent_directories_are_not_resolved() {
     let dir = tempfile::tempdir().expect("tempdir");
     let real = dir.path().join("real");
     std::fs::create_dir(&real).expect("mkdir");
     let linked = dir.path().join("linked");
     std::os::unix::fs::symlink(&real, &linked).expect("symlink");
 
-    // Neither pending destination exists yet; the aliased ancestor is
-    // what folds them onto one directory entry.
     crate::ensure_distinct_outputs(&[
         ("first", &real.join("out")),
         ("second", &linked.join("out")),
     ])
-    .expect_err("symlinked-parent alias");
+    .expect("no symlink resolution; the host owns what these paths resolve to");
 }
 
 #[test]

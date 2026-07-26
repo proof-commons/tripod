@@ -1169,89 +1169,50 @@ pub struct CheckOutputArgs {
 
 /// Identity of one output destination for role-uniqueness validation.
 ///
-/// Combines the canonicalized directory entry a publishing rename would
-/// replace with the filesystem identity of any file already at the
-/// destination, so existing hard-link aliases are recognized. A
-/// correctness guard against configuration mistakes — not a
-/// malicious-filesystem sandbox.
+/// One lexically normalized absolute path
+/// (`[ADR017-rule:path:output-roles]`). Deliberately *not* filesystem
+/// canonicalization, symlink resolution, device/inode comparison,
+/// hard-link detection, or mount identity: those establish no boundary
+/// the repository can hold, because the host may replace or remount a
+/// path at any time.
+///
+/// This is a correctness guard against configuration mistakes — two
+/// roles spelled differently for one destination. Callers must not
+/// alias distinct output roles through symlinks, hard links, mounts,
+/// or namespaces; a hard link is not semantic identity, and
+/// first-party outputs are identified by role, path, schema, and
+/// bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DestinationIdentity {
-    entry: std::path::PathBuf,
-    file: Option<(u64, u64)>,
-}
-
-impl DestinationIdentity {
-    fn aliases(&self, other: &Self) -> bool {
-        self.entry == other.entry
-            || matches!(
-                (self.file, other.file),
-                (Some(first), Some(second)) if first == second
-            )
-    }
-}
+pub struct DestinationIdentity(std::path::PathBuf);
 
 /// Compute the destination identity of a possibly not-yet-existing path.
 ///
-/// The deepest existing ancestor is canonicalized (so lexical `.`/`..`
-/// spellings and symlinked parent directories agree); the pending
-/// components below it cannot be symlinks — they do not exist — and
-/// fold lexically.
+/// A relative path is resolved against the process working directory,
+/// its documented base. Normalization then removes `.` components and
+/// resolves `..` components without consulting the filesystem, so the
+/// result is defined for a destination that does not exist yet and is
+/// unaffected by what the host has mounted beneath it.
 #[must_use]
 pub fn destination_identity(path: &std::path::Path) -> DestinationIdentity {
-    DestinationIdentity {
-        entry: entry_identity(path),
-        file: existing_file_identity(path),
-    }
-}
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir().unwrap_or_default().join(path)
+    };
 
-fn existing_file_identity(path: &std::path::Path) -> Option<(u64, u64)> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        let metadata = std::fs::symlink_metadata(path).ok()?;
-        metadata
-            .file_type()
-            .is_file()
-            .then(|| (metadata.dev(), metadata.ino()))
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-        None
-    }
-}
-
-fn entry_identity(path: &std::path::Path) -> std::path::PathBuf {
-    let mut pending: Vec<std::ffi::OsString> = Vec::new();
-    let mut existing = path.to_path_buf();
-    loop {
-        let probe = if existing.as_os_str().is_empty() {
-            std::path::Path::new(".")
-        } else {
-            existing.as_path()
-        };
-        if let Ok(canonical) = probe.canonicalize() {
-            let mut entry = canonical;
-            for component in pending.iter().rev() {
-                if component == "." {
-                    continue;
-                }
-                if component == ".." {
-                    entry.pop();
-                    continue;
-                }
-                entry.push(component);
+    let mut normalized = std::path::PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            // `pop` on a root leaves the root in place, so a `..`
+            // chain cannot escape above it.
+            std::path::Component::ParentDir => {
+                normalized.pop();
             }
-            return entry;
+            other => normalized.push(other),
         }
-        let Some(name) = existing.file_name().map(ToOwned::to_owned) else {
-            // A root or `..`-terminated prefix that cannot be
-            // canonicalized: fall back to the lexical path.
-            return path.to_path_buf();
-        };
-        pending.push(name);
-        existing.pop();
     }
+    DestinationIdentity(normalized)
 }
 
 /// Two output roles named one destination.
@@ -1262,9 +1223,15 @@ pub struct AliasedOutputs {
     pub second: String,
 }
 
-/// Reject aliased destinations among a command's output roles before
-/// any semantic work or file mutation: a multi-output command must
-/// never exit success with one role's bytes overwriting another's.
+/// Reject duplicated destinations among a command's output roles
+/// before any semantic work or file mutation: a multi-output command
+/// must never exit success with one role's bytes overwriting
+/// another's.
+///
+/// The comparison is lexical. It catches two roles naming one
+/// destination — including through `.` and `..` spellings — and makes
+/// no claim about host-level aliasing or about the destination staying
+/// put afterwards.
 ///
 /// # Errors
 ///
@@ -1277,7 +1244,7 @@ pub fn ensure_distinct_outputs(roles: &[(&str, &std::path::Path)]) -> Result<(),
 
     for (index, (first, _)) in roles.iter().enumerate() {
         for (offset, (second, _)) in roles.iter().enumerate().skip(index + 1) {
-            if identities[index].aliases(&identities[offset]) {
+            if identities[index] == identities[offset] {
                 return Err(AliasedOutputs {
                     first: (*first).to_owned(),
                     second: (*second).to_owned(),
