@@ -1551,7 +1551,7 @@ logic; none weakens a constraint on source-derived paths.
 |---|---:|---|---|
 | `A17-001` | P1 | DONE | Census audit consumes Git modes and rejects symlinks and gitlinks |
 | `A17-002` | P1 | DONE | Shared destination identity becomes lexical |
-| `A17-003` | P1 | TODO | Flattener drops ancestor alias analysis, keeps source-derived confinement |
+| `A17-003` | P1 | DONE | Flattener drops ancestor alias analysis, keeps source-derived confinement |
 | `A17-004` | P2 | TODO | `execwrap` role uniqueness is simplified or documented as the sole exception |
 | `A17-005` | P2 | TODO | Removal of preflight race claims from prose and diagnostics |
 
@@ -1679,6 +1679,31 @@ whose ancestor is a symlink no longer fails
 An allowlist constrains what source text may select. It does not authenticate
 the host filesystem beneath a supplied entry, and the code must no longer imply
 that it does.
+
+#### Resolution (2026-07-26)
+
+Removed: the ancestor-by-ancestor `symlink_metadata` walk in
+`ensure_regular_file`, and the device/inode `IncludeFrame` identity used for
+cycle detection.
+
+Retained unchanged: allowlist resolution by trailing-component match with no
+filesystem lookup, absolute-reference rejection, `..` rejection, ambiguity
+rejection, cycle detection, atomic staged output, and the regular-file check on
+the final component — which stays as a file-type role check, since inlining a
+directory or device is a caller error worth naming.
+
+Cycle detection is now by allowlist path, and that is not a weakening. Every
+frame below the entry point is an entry of a finite allowlist, so an unbounded
+chain must repeat a path; the hard-link alias case closes one frame later than
+an inode comparison did, and its test still passes unchanged.
+
+The three ancestor-rejection tests were replaced rather than deleted. Two now
+assert acceptance and say why — a supplied path's ancestors are the host's
+business — and a third pins what still fails closed: a reference naming no
+allowlist entry stays unreachable even when a symlinked directory sits inside
+the paper tree, because resolution never touches the filesystem.
+
+Source: `packages/flatten-latex-main/src/lib.rs` and its tests.
 
 ### A17-004 — `execwrap` role uniqueness · `task:path:execwrap-roles`
 

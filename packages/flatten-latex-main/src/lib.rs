@@ -37,17 +37,16 @@ pub struct FlattenOptions {
 ///
 /// Because a reference can only ever name a file already on `allowed_files`, an
 /// absolute include (`\input{/etc/passwd}`) and a parent-directory escape
-/// (`\input{../../secret}`) cannot be read or published (ADR-015). Strict
-/// regular-file confinement: `main_file` and every entry of `allowed_files`
-/// must be an existing regular file reached through a symlink-free path —
-/// a symlink in any component, the file itself (including an allowlisted
-/// one) or any ancestor directory, is rejected before anything is read or
-/// staged, so allowlisting a path never authorizes its resolved target.
-/// The check is check-then-open: a filesystem racing the flattener between
-/// validation and open can still swap a validated path, which is inside
-/// the ADR-015 trust boundary (the flattener defends against configuration
-/// mistakes, not a malicious concurrent filesystem). `main_file` is the
-/// trusted entry point and need not appear in `allowed_files`.
+/// (`\input{../../secret}`) cannot be read or published: the allowlist is what
+/// confines the paths source text may select (`[ADR017-rule:path:derived-references]`).
+///
+/// The allowlist entries themselves are caller-granted capabilities. Each is
+/// validated as an existing regular file before anything is read or staged,
+/// but that is a role check, not a filesystem boundary: beneath a supplied
+/// entry the host owns what the path resolves to, and the flattener neither
+/// walks ancestors for aliases nor claims to close a
+/// time-of-check/time-of-use race (`[ADR017-rule:path:toctou]`). `main_file`
+/// is the trusted entry point and need not appear in `allowed_files`.
 ///
 /// The output is **reproducible** (same inputs, byte-identical output —
 /// no timestamps) and **atomic** (written to a uniquely named temporary
@@ -108,48 +107,32 @@ pub fn flatten(
     Ok(())
 }
 
-/// Strict regular-file confinement (ADR-015): the flattener reads only
-/// regular files reached through symlink-free paths. `symlink_metadata`
-/// never follows the component it names, so the final file and every
-/// ancestor directory are each judged by their own file type, not by
-/// what they point at. Checking only the final component would leave a
-/// hole: opening `parent/file.tex` follows a symlinked `parent` to an
-/// off-list directory even when `file.tex` itself is a regular file.
+/// File-type validation of a supplied path: the flattener inlines a
+/// regular file, so a directory, device, or socket is a caller error
+/// reported before anything is read.
+///
+/// This is a role check, not a filesystem boundary
+/// (`[ADR017-rule:path:explicit-paths]`). The allowlist is what
+/// confines *what source text may select*; beneath a supplied entry
+/// the host owns what the path resolves to. The ancestor-by-ancestor
+/// symlink walk this function once performed has been removed: it
+/// could not see bind mounts, FUSE aliases, or a replacement between
+/// the check and the open, so it bought complexity rather than a
+/// boundary. Nothing here closes a time-of-check/time-of-use race.
 fn ensure_regular_file(path: &Path, role: &str) -> Result<()> {
     let metadata = std::fs::symlink_metadata(path)
         .with_context(|| format!("inspecting {role} {}", path.display()))?;
 
     if metadata.file_type().is_symlink() {
         bail!(
-            "{role} {} is a symbolic link; the flattener reads only regular files \
-             named on its fixed list, and never a link's resolved target",
+            "{role} {} is a symbolic link; the flattener inlines regular files named \
+             on its fixed list, and never a link's resolved target",
             path.display(),
         );
     }
 
     if !metadata.file_type().is_file() {
         bail!("{role} {} is not a regular file", path.display());
-    }
-
-    let mut prefix = PathBuf::new();
-    for component in path.components() {
-        prefix.push(component);
-        if prefix == path {
-            break;
-        }
-
-        let ancestor = std::fs::symlink_metadata(&prefix)
-            .with_context(|| format!("inspecting {role} {}", path.display()))?;
-
-        if ancestor.file_type().is_symlink() {
-            bail!(
-                "{role} {} passes through the symbolic link {}; the flattener reads \
-                 only regular files reached through symlink-free paths, and never a \
-                 link's resolved target",
-                path.display(),
-                prefix.display(),
-            );
-        }
     }
 
     Ok(())
@@ -291,37 +274,12 @@ fn path_ends_with_components(path: &Path, wanted: &[OsString]) -> bool {
         .all(|(have, want)| *have == want.as_os_str())
 }
 
-/// One entry on the active include chain: the path as given plus its
-/// filesystem identity, so two allowlist aliases of one file (e.g.
-/// hard links — symlinks are rejected up front) still close a cycle.
-struct IncludeFrame {
-    path: PathBuf,
-    identity: Option<(u64, u64)>,
-}
-
-/// Filesystem identity (device, inode) of a validated regular file.
-/// Identity is advisory for cycle detection only; a lookup failure
-/// falls back to component-path equality rather than aborting.
-fn file_identity(path: &Path) -> Option<(u64, u64)> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        let metadata = std::fs::metadata(path).ok()?;
-        Some((metadata.dev(), metadata.ino()))
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-        None
-    }
-}
-
 /// Recursive flatten state: the fixed allowlist of inlineable files, options,
 /// and the active include chain used for cycle detection.
 struct FlattenContext<'a> {
     allowed: &'a [PathBuf],
     options: &'a FlattenOptions,
-    include_stack: Vec<IncludeFrame>,
+    include_stack: Vec<PathBuf>,
 }
 
 impl FlattenContext<'_> {
@@ -331,34 +289,24 @@ impl FlattenContext<'_> {
         writer: &mut W,
         is_main: bool,
     ) -> Result<()> {
-        // Cycle detection over the resolved file identities on the
-        // active include chain. Every included file is an entry on the
-        // caller's allowlist and the entry point is opened by its given
-        // path; entries are compared by filesystem identity where
-        // available so distinct allowlist aliases of one regular file
-        // (hard links) cannot re-enter, with component-path equality as
-        // the fallback.
-        let frame = IncludeFrame {
-            path: file_path.to_path_buf(),
-            identity: file_identity(file_path),
-        };
-        let re_enters =
-            self.include_stack
-                .iter()
-                .any(|entry| match (entry.identity, frame.identity) {
-                    (Some(existing), Some(candidate)) => existing == candidate,
-                    _ => entry.path == frame.path,
-                });
-        if re_enters {
+        // Cycle detection over the active include chain, by path.
+        // Every reference resolves to an entry of the caller's fixed
+        // allowlist, so every frame below the entry point is one of a
+        // finite set of paths: an unbounded chain must repeat a path,
+        // and comparing paths therefore terminates every cycle. The
+        // former device/inode comparison detected nothing this does
+        // not (`[ADR017-rule:path:output-roles]`).
+        let frame = file_path.to_path_buf();
+        if self.include_stack.contains(&frame) {
             let chain = self
                 .include_stack
                 .iter()
-                .map(|entry| entry.path.display().to_string())
+                .map(|entry| entry.display().to_string())
                 .collect::<Vec<_>>()
                 .join(" -> ");
             bail!(
                 "include cycle detected: {} re-enters via {chain}",
-                frame.path.display(),
+                frame.display(),
             );
         }
         self.include_stack.push(frame);
