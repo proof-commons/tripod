@@ -178,6 +178,48 @@ their real scopes. They remain recorded because a future decision to want a
 finite lifetime bound must change an operation; the log identity forecloses
 obtaining one by restatement.
 
+## Semantic map · `tbl:attestation-floor-bounds:semantic-map`
+
+Each surviving claim gets one precise Attestation home before any prose is
+rewritten. The bundling of five distinct facts under one informal "floor
+ceiling" is what allowed the scope error; separating them is the repair. Names
+below are indicative — the separation is what matters, not the spelling.
+
+The import column is measured against the realization body, not estimated.
+
+| Semantic fact | Home | Label | Imported by R13 |
+|---|---|---|---|
+| floor definition φ = Ω/Y | model definition | existing (`[A-def:model:ratefloor]`) | yes, 4 citations |
+| pre-maturity standing bound φ ≤ Ω/Y_T | containment proposition | new | no |
+| genesis factor 1/(1-ζ), before external deposits | corollary | new | no |
+| pre-deposit capacity guarantee | interface proposition | existing (`[A-prop:interface:bootstrap-capacity]`), meaning intact | yes, 4 citations |
+| exact pre-deposit capacity formula | containment equation | existing (`[A-eq:containment:max-attestation]`) | no |
+| deposit-dependent pre-maturity capacity | new theorem | new; must not reuse the SP5 label | no |
+| no fixed bootstrapping floor ceiling | negative proposition or limitation | new | no |
+| immediate fee burning A_op = fζD | seigniorage theorem | existing (`[A-thm:seigniorage:bootstrapping-bound]`), condition stated explicitly | no |
+| no finite lifetime operator envelope | new theorem or limitation | new; the old label is retired, not reversed | no |
+| settlement-pinned burn valuation | operations or interface rule | new | not yet, but R13 implements it |
+
+Two consequences follow from the import column.
+
+**The anchor set does not move.** R13 imports none of the containment or
+seigniorage anchors, and the two anchors it does import here — the floor
+definition and the pre-deposit capacity proposition — keep both their keys and
+their meanings, since SP5 survives as the D = 0 corollary. Minting new
+labels does not change a consumer's anchor-set hash; only a change to the
+consumer's own distinct import set does. So the identity refresh is expected to
+be limited to the specification register and whatever the Attestation version bump itself
+touches.
+
+**The defect never propagated.** The false envelope and the mis-scoped ceiling
+were never imported downstream, so this is an Attestation-internal correction rather
+than a cross-layer one.
+
+The settlement-pinned valuation row is the one to watch: the realization
+implements that rule but does not currently import a label for it, because
+Attestation does not offer one. Minting it would let R13 cite the premise it
+already depends on, and that *would* move the anchor set.
+
 ## Remaining analysis · `sec:attestation-floor-bounds:analysis`
 
 The bounds question is answered. What remains before the normative correction
@@ -337,10 +379,12 @@ moves. The version bump deserves deliberate review rather than a silent edit:
 executable transition behavior is unchanged, but a materially false theorem is
 being withdrawn, which argues for a visible pre-1.0 correction release. Expect
 the architecture semantic hash to move and the behavioural hash to stay stable
-if no behavioural array changes.
+if no behavioural array changes. Per the semantic map, the
+anchor-set hash is expected to be unaffected, because no anchor R13 imports is
+renamed or reinterpreted.
 
-The notation-side repair is owned separately by
-(`q:notation:semantic-census`), which is what allowed one corrected proposition
-to coexist with four uncorrected restatements of it. That note's scope-marker
-weld exists precisely to stop the corrected scope from drifting again, so the
-two questions land together rather than the maths alone.
+(`q:notation:semantic-census`) is resolved as over-scoped: no notation census
+is built. Its surviving contribution is the label lifecycle rule this series
+must obey — the withdrawn envelope's label is retired, never repurposed to mean
+its own negation — and a focused editorial task for the macro comments and
+symbol index, which are presentation and stay that way.
