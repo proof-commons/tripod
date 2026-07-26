@@ -91,17 +91,44 @@ Only tracked files are lint subjects, which aligns the lint gate with
 the clean-tree law (`[ADR011-rule:toolchain:clean-tree]`): what CI
 validates is exactly what the repository records.
 
+## Tracked entry modes · `rule:build:tracked-entry-modes`
+
+The repository contains no tracked symlinks, gitlinks, or submodules.
+
+The census audit reads the complete tracked entry census, including Git modes,
+and accepts only ordinary blobs:
+
+```text
+100644
+100755
+```
+
+This check applies to every tracked entry, including paths categorically
+excluded from lint subjects. Lint exclusion does not exempt a path from the
+repository-shape rule.
+
+Git and this audit are the single owners of tracked repository shape.
+Individual checkers, generators, and publication tools trust build-supplied
+repository paths and do not repeat ancestor-symlink, hard-link, mount, or
+device/inode analysis.
+
+The rule establishes the shape of committed repository entries. It does not
+protect against a host replacing or remounting the worktree after Git is
+queried; that boundary is owned by
+(`[ADR015-rule:security:filesystem-paths]`).
+
 ## Census staleness is a hard failure · `rule:build:census-verification`
 
 The hand-managed lists are audited, never trusted, from two
 independent directions:
 
 1. A cheap always-stale audit target runs a first-party binary that
-   invokes `git ls-files` itself — the build passes the git program,
-   the declared census, and the exclusions — so the weld is fresh on
-   every build. A tracked subject missing from its directory's list,
-   or a declared file no longer tracked, fails the build naming the
-   paths.
+   invokes a mode-bearing tracked-file listing equivalent to
+   `git ls-files --stage -z`. The build passes the Git program,
+   declared census, and exclusions, so the weld is fresh on every
+   build. The audit rejects a tracked subject missing from its
+   directory list, a declared file no longer tracked, and every
+   tracked entry whose mode is not `100644` or `100755`.
 2. The discovery walk of (`[ADR013-rule:labels:census]`) survives
    inside each checker as a verifier, not a source: the checker
    re-discovers its subjects on disk and hard-fails when the argument
@@ -260,6 +287,10 @@ ADR-014 is implemented when:
   target's arguments;
 - a file added, removed, or renamed without updating its directory's
   list fails the census audit with a diagnostic naming the paths;
+- the complete tracked set contains only ordinary `100644` and `100755` blobs;
+  tracked symlinks and gitlinks fail the census audit;
+- no first-party checker or generator repeats filesystem-alias analysis for
+  build-supplied repository subjects;
 - a second `ninja` invocation on an unchanged tree runs no incremental
   lint or generator command; the always-fresh repository audits
   (`census-audit`, `forbidden-text-check`) may run, but write

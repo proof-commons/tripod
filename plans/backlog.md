@@ -74,6 +74,7 @@ path.
 | `I1` | Identity, digest, evidence-binding, and release-root architecture |
 | `P2` | Phase-2 compiler implementation |
 | `C1` | Compiler/linker algorithm and dependency preparation |
+| `A17` | ADR-017 path-scope and host-filesystem-trust implementation |
 
 Task identifiers are permanent and never reused.
 
@@ -1526,9 +1527,160 @@ Unused dependencies are not added to advertise intent.
 
 ---
 
-## 9. Mathematical and algorithmic laws · `sec:backlog:algorithm-laws`
+## 9. Path scope and host filesystem trust · `sec:backlog:path-scope`
 
-### 9.1 Exactness · `rule:backlog:exactness`
+The immediate policy owner is
+[ADR-017](../adr/017-path-scope-and-host-filesystem-trust.md), which is
+Decided with implementation required in the same series. ADR-014 and ADR-015
+were edited directly so the three records agree; ADR-017 supersedes neither.
+
+The governing boundary is:
+
+> The repository validates repository shape, semantic path derivation, lexical
+> role separation, and publication bytes. The host owns what paths resolve to
+> and whether they are swapped.
+
+This series simplifies rather than extends. Each task removes a check that
+claimed a boundary the repository cannot hold, or moves that check to its
+single central owner. Every task is a net reduction in first-party filesystem
+logic; none weakens a constraint on source-derived paths.
+
+### 9.1 Summary · `tbl:backlog:path-scope`
+
+| ID | Priority | Status | Deliverable |
+|---|---:|---|---|
+| `A17-001` | P1 | TODO | Census audit consumes Git modes and rejects symlinks and gitlinks |
+| `A17-002` | P1 | TODO | Shared destination identity becomes lexical |
+| `A17-003` | P1 | TODO | Flattener drops ancestor alias analysis, keeps source-derived confinement |
+| `A17-004` | P2 | TODO | `execwrap` role uniqueness is simplified or documented as the sole exception |
+| `A17-005` | P2 | TODO | Removal of preflight race claims from prose and diagnostics |
+
+### A17-001 — Central tracked-entry mode audit · `task:path:census-modes`
+
+**Lane:** ADR-017 implementation
+**Priority:** P1
+**Status:** TODO
+**Depends on:** nothing
+**Owner:** `labels` (`census-audit`), Meson
+**Policy:** (`[ADR014-rule:build:tracked-entry-modes]`)
+**Concrete output:** the audit reads a mode-bearing tracked-file listing and
+fails on any entry whose mode is not `100644` or `100755`, including paths
+excluded from lint subjects
+**Assurance:** focused unit tests plus the census-audit lane on the real tree
+**Affected files:** `packages/labels/src/census.rs`,
+`packages/labels/src/bin/census-audit.rs`, `meson.build`
+**Focused exit test:** a fixture repository carrying a tracked symlink fails
+the audit naming the path and its mode
+**Verification:** `cargo test -p tripod-labels` and
+`meson test -C build`
+**Identity and schema impact:** the audit report gains a mode-defect class; no
+digest changes
+**Dependency impact:** none
+
+The mode listing is the single owner of repository shape. It replaces, and is
+not added alongside, per-tool alias analysis.
+
+### A17-002 — Lexical destination identity · `task:path:lexical-destinations`
+
+**Lane:** ADR-017 implementation
+**Priority:** P1
+**Status:** TODO
+**Depends on:** A17-001
+**Owner:** `cli-common`
+**Policy:** (`[ADR017-rule:path:output-roles]`)
+**Concrete output:** shared output-role validation compares lexically
+normalized absolute paths only — no canonicalization, symlink resolution,
+device/inode comparison, hard-link detection, or mount identity
+**Assurance:** focused unit tests over the normalization rules
+**Affected files:** `packages/cli-common/src/lib.rs` and its tests
+**Focused exit test:** two roles naming one path through `.` and `..`
+components collide; two roles aliased only by a hard link do not
+**Verification:** `cargo test -p cli-common` and `meson test -C build`
+**Identity and schema impact:** none
+**Dependency impact:** none
+
+Normalization resolves a relative path against its documented base, makes it
+absolute, and removes `.` and `..` components without touching the filesystem.
+Generic hard-link and symlink-parent tests are removed rather than relaxed: a
+hard link is not semantic identity, and first-party outputs are identified by
+role, path, schema, and bytes.
+
+### A17-003 — Flattener source-derived confinement only · `task:path:flattener`
+
+**Lane:** ADR-017 implementation
+**Priority:** P1
+**Status:** TODO
+**Depends on:** A17-002
+**Owner:** `flatten-latex-main`
+**Policy:** (`[ADR017-rule:path:derived-references]`)
+**Concrete output:** the ancestor-by-ancestor symlink walk is removed; allowlist
+resolution, absolute-path rejection, parent-traversal rejection, ambiguity
+rejection, cycle detection, and atomic output all remain
+**Assurance:** the existing focused suite, less the removed alias cases
+**Affected files:** `packages/flatten-latex-main/src/lib.rs` and its tests
+**Focused exit test:** an include naming an absolute path, a `..` segment, an
+undeclared member, or a cycle still fails closed; a supplied allowlist entry
+whose ancestor is a symlink no longer fails
+**Verification:** `cargo test -p flatten-latex-main` and `meson test -C build`
+**Identity and schema impact:** none
+**Dependency impact:** none
+
+An allowlist constrains what source text may select. It does not authenticate
+the host filesystem beneath a supplied entry, and the code must no longer imply
+that it does.
+
+### A17-004 — `execwrap` role uniqueness · `task:path:execwrap-roles`
+
+**Lane:** ADR-017 implementation
+**Priority:** P2
+**Status:** TODO
+**Depends on:** A17-002
+**Owner:** `execwrap`
+**Policy:** (`[ADR017-rule:path:local-checks]`)
+**Concrete output:** either the wrapper reduces to lexical role uniqueness, or
+its concurrent-writer alias check is retained as the sole documented local
+exception
+**Assurance:** the existing subprocess-contract suite
+**Affected files:** `packages/execwrap/src/lib.rs`,
+`packages/execwrap/src/writer.rs`, and their tests
+**Focused exit test:** the chosen behaviour is pinned by a test that names the
+concurrent-writer hazard rather than filesystem aliasing in general
+**Verification:** `cargo test -p execwrap` and `meson test -C build`
+**Identity and schema impact:** none
+**Dependency impact:** none
+
+Retention requires documenting the exact hazard, the additional check, the
+remaining host race, and why lexical role uniqueness is insufficient. A
+retained exception is a package-local correctness measure and never a
+repository-wide filesystem security claim.
+
+### A17-005 — Remove preflight race claims · `task:path:race-claims`
+
+**Lane:** ADR-017 implementation
+**Priority:** P2
+**Status:** TODO
+**Depends on:** A17-001 through A17-004
+**Owner:** every first-party package, plans, and ADR prose
+**Policy:** (`[ADR017-rule:path:toctou]`)
+**Concrete output:** no comment, diagnostic, README, or plan describes a
+preflight path check as closing a host-level race
+**Assurance:** review sweep plus the forbidden-text lane where a phrase is
+mechanically detectable
+**Affected files:** wherever the sweep finds a claim
+**Focused exit test:** the sweep is recorded with the phrases it changed
+**Verification:** `meson test -C build` and the complete gate
+**Identity and schema impact:** none
+**Dependency impact:** none
+
+Atomic staging and compare-if-changed remain required and remain honestly
+described: they are correctness properties of an honest writer, not protection
+against a host replacing a path before, during, or after publication.
+
+---
+
+## 10. Mathematical and algorithmic laws · `sec:backlog:algorithm-laws`
+
+### 10.1 Exactness · `rule:backlog:exactness`
 
 Semantic, conservation, authorization, identity, calibration, and release
 claims use:
@@ -1542,7 +1694,7 @@ claims use:
 
 A floating residual is diagnostic evidence, not exact equality.
 
-### 9.2 Identity · `rule:backlog:identity`
+### 10.2 Identity · `rule:backlog:identity`
 
 Always distinguish:
 
@@ -1572,7 +1724,7 @@ Never use as semantic identity:
 A canonical projection excludes incidental declaration order where order is not
 semantic.
 
-### 9.3 Complexity failure · `rule:backlog:complexity`
+### 10.3 Complexity failure · `rule:backlog:complexity`
 
 An analysis exceeding its explicit budget returns a typed complexity error.
 
@@ -1588,9 +1740,9 @@ It must not:
 
 ---
 
-## 10. Verification matrix · `sec:backlog:verification`
+## 11. Verification matrix · `sec:backlog:verification`
 
-### 10.1 Focused commands · `tbl:backlog:focused-tests`
+### 11.1 Focused commands · `tbl:backlog:focused-tests`
 
 | Area | Command |
 |---|---|
@@ -1605,7 +1757,7 @@ It must not:
 
 Focused filters supplement but never replace full package and workspace runs.
 
-### 10.2 Complete Rust gate
+### 11.2 Complete Rust gate
 
 Run under the declared MSRV and current stable:
 
@@ -1617,7 +1769,7 @@ cargo test --workspace --release --locked
 scripts/ci.sh
 ```
 
-### 10.3 Meson and document gate
+### 11.3 Meson and document gate
 
 Use the canonical build directory:
 
@@ -1634,7 +1786,7 @@ Byte reproducibility remains a separate release/manual check:
 scripts/check-document-reproducibility.sh
 ```
 
-### 10.4 Documentation and census
+### 11.4 Documentation and census
 
 ```sh
 scripts/check-plans.sh
@@ -1645,7 +1797,7 @@ git diff --cached --check
 
 Every newly tracked subject joins its nearest `meson.build` census.
 
-### 10.5 Dependency and advisory evidence
+### 11.5 Dependency and advisory evidence
 
 ```sh
 cargo tree -e features
@@ -1655,7 +1807,7 @@ cargo audit
 
 A missing advisory tool is recorded as skipped, never passed.
 
-### 10.6 Clean repository
+### 11.6 Clean repository
 
 The final check is:
 
@@ -1665,7 +1817,7 @@ git status --porcelain=v1 --untracked-files=all
 
 It must be empty.
 
-### 10.7 Execution trust
+### 11.7 Execution trust
 
 Repository source, tests, Meson definitions, scripts, TeX, and `.latexmkrc` are
 executable.
@@ -1676,7 +1828,7 @@ malicious-code containment boundary.
 
 ---
 
-## 11. Phase-2 gate · `gate:backlog:current`
+## 12. Phase-2 gate · `gate:backlog:current`
 
 The current gate is **not passed**.
 
@@ -1706,7 +1858,7 @@ Every preparatory identity, finding, and dependency task is closed, and the
 complete gate has been run and recorded below. The sole remaining blocker is
 the compiler itself.
 
-### 11.1 Recorded complete gate run · `rem:backlog:gate-run`
+### 12.1 Recorded complete gate run · `rem:backlog:gate-run`
 
 Run on 2026-07-26 against `db03dc2`, on a tree reporting no staged, unstaged,
 or untracked nonignored paths. This records one execution; it does not make any
@@ -1762,9 +1914,9 @@ Until (`gate:backlog:phase2`) passes:
 
 ---
 
-## 12. Backlog hygiene · `sec:backlog:hygiene`
+## 13. Backlog hygiene · `sec:backlog:hygiene`
 
-### 12.1 Adding work · `rule:backlog:add`
+### 13.1 Adding work · `rule:backlog:add`
 
 A new task states:
 
@@ -1782,7 +1934,7 @@ A new task states:
 A new digest additionally satisfies
 (`[ADR016-rule:identity:admission]`).
 
-### 12.2 Splitting work · `rule:backlog:split`
+### 13.2 Splitting work · `rule:backlog:split`
 
 Split a task when it:
 
@@ -1793,7 +1945,7 @@ Split a task when it:
 - combines independent security consequences;
 - contains one part that can complete while another remains research-blocked.
 
-### 12.3 Dropping or parking work · `rule:backlog:drop`
+### 13.3 Dropping or parking work · `rule:backlog:drop`
 
 A dropped or parked task records:
 
@@ -1806,7 +1958,7 @@ A dropped or parked task records:
 “No present consumer” is sufficient reason to park an identity, report digest,
 dependency, or publication.
 
-### 12.4 Retention · `rule:backlog:retention`
+### 13.4 Retention · `rule:backlog:retention`
 
 After a phase baseline:
 
@@ -1818,7 +1970,7 @@ After a phase baseline:
 
 ---
 
-## 13. Execution order · `sec:backlog:order`
+## 14. Execution order · `sec:backlog:order`
 
 Execute in this order unless new evidence changes dependencies:
 
@@ -1846,6 +1998,6 @@ typed-boundary or correctness repair.
 
 ---
 
-## 14. One-line backlog · `rem:backlog:one-line`
+## 15. One-line backlog · `rem:backlog:one-line`
 
 > Adopt one consumer-driven identity architecture; close the remaining realization, lifecycle, stamp, and label-boundary findings; finish the Petgraph review; then build the Phase-2 compiler as an exact, deterministic, target-independent analysis without speculative hashes, target details, weakened relations, or ambiguous evidence.

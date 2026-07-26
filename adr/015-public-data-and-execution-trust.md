@@ -178,6 +178,39 @@ An untrusted contribution environment receives no production secrets,
 production signing authority, deployment credentials, repository write
 authority, or release authority.
 
+## Filesystem and path trust · `rule:security:filesystem-paths`
+
+The canonical repository has two path roots:
+
+```text
+repository root R
+canonical build root B = R/build
+```
+
+The tracked repository contains ordinary files only; tracked symlinks,
+gitlinks, and submodules are prohibited and audited centrally by ADR-014.
+
+Within `R` and `B`, first-party tools protect semantic path derivation, census
+membership, obvious lexical output-role collisions, and honest byte
+publication. They trust the host to preserve what those paths resolve to.
+
+An explicit path outside `R` or `B` is a caller-granted host filesystem
+capability. Its containment, aliasing, permissions, persistence, mount
+behavior, and pathname integrity are not repository claims.
+
+The repository does not defend against time-of-check/time-of-use races,
+symlink replacement, hard-link creation, ancestor replacement, bind mounts,
+hostile FUSE behavior, inode reuse, mount changes, or concurrent filesystem
+mutation. It does not compare device/inode identity as a generic security
+control.
+
+A path derived from parsed source remains constrained to an explicit allowlist
+or declared root. That control limits what source content may select; it does
+not authenticate the host filesystem beneath the selected path.
+
+These are correctness and reproducibility rules, not a sandbox. A hostile or
+untrusted filesystem belongs to the external execution environment.
+
 ## Build write boundary · `rule:security:build-writes`
 
 Non-writing is a correctness and reproducibility property, not a malicious-code
@@ -336,7 +369,9 @@ This policy does not claim that:
 - model authorization proves cryptographic signing;
 - architecture finality implies deployment readiness;
 - a core dump can be made public through heuristic scrubbing;
-- current packages are suitable for production key custody.
+- current packages are suitable for production key custody;
+- path validation prevents host-level aliasing or time-of-check/time-of-use
+  replacement.
 
 ## Verification · `gate:security:verification`
 
@@ -352,5 +387,10 @@ This policy is implemented for the current repository when:
 - untrusted CI receives no production credentials or release authority;
 - crash artifacts are not automatically published by repository-controlled CI;
 - ordinary checks remain non-writing with respect to tracked source;
+- tracked symlinks and gitlinks are rejected centrally;
+- source-derived references remain allowlist- or root-constrained;
+- explicit paths outside the repository and build roots are documented as host
+  capabilities;
+- first-party tools make no hostile-filesystem or TOCTOU containment claim;
 - future secret-bearing interfaces cannot enter without a separate review;
 - repository and build checks remain green and clean.

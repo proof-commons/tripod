@@ -9,6 +9,7 @@ adr_record_files = files(
   '014-meson-lint-census-and-stamps.md',
   '015-public-data-and-execution-trust.md',
   '016-semantic-identities-and-evidence-binding.md',
+  '017-path-scope-and-host-filesystem-trust.md',
 )
 
 # Non-numbered documentation in this directory (DOC owner).
