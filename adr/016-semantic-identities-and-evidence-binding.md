@@ -1,6 +1,8 @@
 # ADR-016: Semantic Identities, Artifact Digests, and Evidence Binding
 
-**Status:** Proposed
+**Status:** Decided and implemented for current identity policy; the
+evidence-envelope, profile-migration, and release-root portions activate
+with their named consumers
 **Scope:** First-party semantic identities, provenance identities, generated
 and release artifacts, evidence reports, deployment profiles, and future
 release authentication

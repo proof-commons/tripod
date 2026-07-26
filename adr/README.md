@@ -29,7 +29,7 @@ repository itself.
 | [ADR-013](013-global-label-graph.md) | Decided and implemented | Owner-aware global label graph across Markdown and Rust sources. |
 | [ADR-014](014-meson-lint-census-and-stamps.md) | Decided and implemented | Build-system-owned lint census, argument-passed inputs, and stamp-file dependency edges. |
 | [ADR-015](015-public-data-and-execution-trust.md) | Decided and implemented | Public-data interfaces, untrusted execution, crash artifacts, and future secret boundaries. |
-| [ADR-016](016-semantic-identities-and-evidence-binding.md) | Proposed | Admission, ownership, flow, consumption, and assurance meaning of semantic identities, artifact digests, provenance identities, evidence reports, and release roots. |
+| [ADR-016](016-semantic-identities-and-evidence-binding.md) | Decided and implemented for current identity policy; evidence, profile-migration, and release-root portions activate with their consumers | Admission, ownership, flow, consumption, and assurance meaning of semantic identities, artifact digests, provenance identities, evidence reports, and release roots. |
 | [ADR-017](017-path-scope-and-host-filesystem-trust.md) | Decided; implementation required in the same series | Repository/build path scope, central prohibition of symlinks and submodules, source-derived reference confinement, lexical output roles, and the host filesystem/TOCTOU boundary. |
 
 ## Numbering · `rule:adr:numbering`

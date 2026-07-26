@@ -965,7 +965,7 @@ output-path finding as over-scoped.
 | ID | Priority | Status | Finding |
 |---|---:|---|---|
 | `R1` | P1 | DONE | Filesystem checks exceed the intended trust boundary while the central Git-mode invariant is unenforced. |
-| `R2` | P1 | TODO | ADR-016 is marked Proposed while the repository treats it as adopted policy. |
+| `R2` | P1 | DONE | ADR-016 is marked Proposed while the repository treats it as adopted policy. |
 | `R3` | P1 | TODO | D007 requires a full Petgraph feature surface, contradicting Cargo and the completed dependency review. |
 | `R4` | P2 | TODO | `scripts/ci.sh` reports `CI green` after skipping the mocked Meson contract lane. |
 | `R5` | P2 | TODO | The documented document-identity recipe says declared order; the implementation sorts by canonical path. |
@@ -1007,6 +1007,35 @@ One point is recorded as a difference rather than a gap. The review suggests
 removing the tests that asserted the generic alias guarantees. They were
 instead rewritten to assert the new behaviour and state why, because a deleted
 test leaves the next reader free to restore the check as a supposed fix.
+
+### R2 — ADR-016 status contradicted its use · `task:review:adr016-status`
+
+**Priority:** P1
+**Status:** DONE
+**Owner:** ADR-016, `adr/README.md`
+
+#### Basis
+
+The record carried `Proposed` while the backlog recorded the identity
+architecture as adopted, closed I1-001, lifted the identity freeze, and
+governed new digests by the record's own admission rule; the identity register
+named it the active policy owner. Under the repository's authority order an
+implemented ADR outranks planning prose, so a planning document cannot make a
+proposed record current policy. The contradiction mattered because this record
+governs whether future compiler, target, report, bundle, ABI, deployment, and
+release identities may be introduced at all.
+
+#### Resolution (2026-07-26)
+
+The content was already adopted, so the status was stale rather than the plans
+overclaiming. ADR-016 now reads: decided and implemented for current identity
+policy, with the evidence-envelope, profile-migration, and release-root
+portions activating with their named consumers. That phrasing keeps the
+distinction the original `Proposed` was reaching for — parts of the
+deployment-profile and report design are not implemented — without leaving the
+authoritative record weaker than the policy it governs.
+
+`adr/README.md` carries the same status in the same change.
 
 ---
 
