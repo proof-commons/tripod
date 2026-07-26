@@ -75,6 +75,7 @@ path.
 | `P2` | Phase-2 compiler implementation |
 | `C1` | Compiler/linker algorithm and dependency preparation |
 | `A17` | ADR-017 path-scope and host-filesystem-trust implementation |
+| `R` | Path-scope-revision static review findings |
 
 Task identifiers are permanent and never reused.
 
@@ -948,6 +949,64 @@ owner, so a future owner cannot reintroduce the hole by omission.
 Source: `packages/labels/src/repository.rs`. Test
 (`packages/labels/src/tests.rs`): an ADR fixture pinning both diagnostics and
 their order alongside an unaffected local mint and ordinary inline code.
+
+### 5.2 Path-scope-revision review · `tbl:backlog:findings-r`
+
+A second static review of the tree at the compiler-crate commit, taken before
+the ADR-017 series landed. Its identifiers are the reviewer's own and are
+retained verbatim.
+
+The review excluded the lockfile and licence files, so it verifies no locked
+resolution, advisory status, checksum, provenance, licence compatibility, or
+execution result. It reports no clear static defect permitting an invalid
+protocol transition in the implemented model, and reclassifies its predecessor's
+output-path finding as over-scoped.
+
+| ID | Priority | Status | Finding |
+|---|---:|---|---|
+| `R1` | P1 | DONE | Filesystem checks exceed the intended trust boundary while the central Git-mode invariant is unenforced. |
+| `R2` | P1 | TODO | ADR-016 is marked Proposed while the repository treats it as adopted policy. |
+| `R3` | P1 | TODO | D007 requires a full Petgraph feature surface, contradicting Cargo and the completed dependency review. |
+| `R4` | P2 | TODO | `scripts/ci.sh` reports `CI green` after skipping the mocked Meson contract lane. |
+| `R5` | P2 | TODO | The documented document-identity recipe says declared order; the implementation sorts by canonical path. |
+| `R6` | P2 | TODO | Several planning documents still describe the compiler package as merely planned. |
+
+### R1 — Path handling exceeds the assurance boundary · `task:review:path-scope`
+
+**Priority:** P1
+**Status:** DONE
+**Owner:** `labels`, `cli-common`, `flatten-latex-main`, `execwrap`, ADR-014,
+ADR-015
+**Policy:** ADR-017
+
+#### Resolution — closed before the review was received
+
+This finding was already remediated by the A17 series, which landed after the
+reviewed commit. Every recommendation is satisfied, and the mapping is exact:
+
+- central mode audit consuming a mode-bearing listing and rejecting any mode
+  other than `100644` or `100755`, over the complete tracked set including
+  lint-excluded paths — A17-001;
+- generic destination identity reduced to lexical normalization, with
+  device/inode and hard-link comparison removed — A17-002;
+- flattener ancestor walk removed while allowlist resolution, absolute and
+  parent-traversal rejection, ambiguity rejection, cycle detection, strict
+  bibliography handling, and atomic staging all remain — A17-003;
+- `execwrap` retained as an operation-specific check with its hazard and
+  residual host race documented, explicitly not repository-wide policy —
+  A17-004;
+- ADR-014 and ADR-015 edited directly to own tracked modes and the
+  repository/build-root boundary, with ADR-017 coordinating rather than
+  superseding — the ADR-017 landing commit.
+
+The review's independent finding that the supplied tree contains no symlink,
+gitlink, or submodule agrees with the audit's own evidence on the current tree:
+342 tracked entries, every mode `100644` or `100755`.
+
+One point is recorded as a difference rather than a gap. The review suggests
+removing the tests that asserted the generic alias guarantees. They were
+instead rewritten to assert the new behaviour and state why, because a deleted
+test leaves the next reader free to restore the check as a supposed fix.
 
 ---
 
