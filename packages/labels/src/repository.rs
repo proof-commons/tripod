@@ -844,7 +844,20 @@ fn harvest_attestation_citations(
         }
 
         if in_index {
-            index_names.insert(imported.label.as_str().to_owned());
+            // Occurrences, not only membership: a set silently
+            // collapses a repeated row, and the documented contract is
+            // one row per distinct anchor (S6).
+            if !index_names.insert(imported.label.as_str().to_owned()) {
+                result.diagnostics.push(LabelDiagnostic::error(
+                    LabelErrorCode::AttestationIndexStale,
+                    &span.location,
+                    format!(
+                        "the upward-citation index repeats attestation anchor {:?}; \
+                         the index presents one row per distinct anchor",
+                        imported.label.as_str()
+                    ),
+                ));
+            }
         } else {
             result
                 .attestation_anchor_names

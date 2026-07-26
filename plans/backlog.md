@@ -1198,12 +1198,39 @@ Identifiers are this repository's, numbered to match the review's own ordering.
 | `S3` | P1 | TODO | Sponsor-value opacity is enforced in fact graphs but bypassed by the sponsor-isolation evaluator. |
 | `S4` | P2 | TODO | The model's evidence rule cannot express open-object injection or block-age advance. |
 | `S5` | P2 | TODO | Stable realization projections carry an incidental Petgraph topological order. |
-| `S6` | P2 | TODO | Duplicate rows in the Realization index are silently accepted. |
+| `S6` | P2 | DONE | Duplicate rows in the Realization index are silently accepted. |
 | `S7` | P3 | DONE | ADR-017 and backlog task statuses are internally stale. |
 
 Execution order follows the review's own repair order: S1, S2, S3, S4, S5, S6,
 S7. S3 and S4 are design changes to a published boundary rather than local
 repairs, and each states its chosen design before it is implemented.
+
+### S6 — Duplicate index rows were silently accepted · `task:review:index-uniqueness`
+
+**Priority:** P2
+**Status:** DONE
+**Owner:** `labels`
+
+#### Basis
+
+The §17 upward-citation index anchors were collected into a `BTreeSet` and
+compared to the body citation set. A repeated index row collapsed into that
+set, so an index listing one anchor twice still matched whenever its distinct
+set equalled the body's. The realization document states one row per distinct
+anchor; the checker did not establish the uniqueness it advertised. The
+committed table happened to be correct, so nothing was wrong in the tree — only
+unproven.
+
+#### Resolution (2026-07-26)
+
+Insertion is now checked: a row whose anchor is already present reports a stale
+index naming the repeated anchor and the offending line. The `BTreeSet` is
+retained unchanged for the anchor-set hash, which deliberately identifies the
+distinct set and must not become occurrence-sensitive.
+
+Tests cover the four cases the review named: a duplicate row is rejected;
+repeated body citations served by one row remain valid; an index-only anchor is
+stale; a body-only anchor is stale.
 
 ### S7 — Policy and task statuses were internally stale · `task:review:status-drift`
 

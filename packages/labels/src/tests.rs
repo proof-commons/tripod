@@ -1516,3 +1516,90 @@ fn register_generation_rejects_aliased_outputs() {
     ));
     assert!(!shared.exists(), "nothing may be written on alias failure");
 }
+
+#[test]
+fn duplicate_attestation_index_row_is_rejected() {
+    // S6: the index anchors were stored in a set, so a repeated row
+    // collapsed and still matched the body set. The documented
+    // contract is one row per distinct anchor.
+    let directory = fixture_root(concat!(
+        "# Realization\n",
+        "`sec:fixture`\n",
+        "Body cite (`[A-def:model:known]`).\n",
+        "## §17 Upward-citation index · `sec:realization:anchors`\n",
+        "| `[A-def:model:known]` | (`sec:fixture`) |\n",
+        "| `[A-def:model:known]` | (`sec:fixture`) |\n",
+    ));
+
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
+
+    assert!(
+        labels.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == LabelErrorCode::AttestationIndexStale
+                && diagnostic.message.contains("repeats attestation anchor")
+                && diagnostic.line == 6
+        }),
+        "{:#?}",
+        labels.diagnostics,
+    );
+}
+
+#[test]
+fn repeated_body_citation_needs_only_one_index_row() {
+    // The index presents the distinct anchor set, so two body cites of
+    // one anchor are served by a single row. This is the case the
+    // duplicate check must not break.
+    let directory = fixture_root(concat!(
+        "# Realization\n",
+        "`sec:fixture`\n",
+        "First (`[A-def:model:known]`).\n",
+        "Second (`[A-def:model:known]`).\n",
+        "## §17 Upward-citation index · `sec:realization:anchors`\n",
+        "| `[A-def:model:known]` | (`sec:fixture`) |\n",
+    ));
+
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
+
+    assert!(
+        !labels
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == LabelErrorCode::AttestationIndexStale),
+        "{:#?}",
+        labels.diagnostics,
+    );
+}
+
+#[test]
+fn index_only_and_body_only_anchors_both_stale_the_index() {
+    // An index row with no body cite, and a body cite with no index
+    // row, are each a stale index in their own direction.
+    let index_only = fixture_root(concat!(
+        "# Realization\n",
+        "`sec:fixture`\n",
+        "## §17 Upward-citation index · `sec:realization:anchors`\n",
+        "| `[A-def:model:known]` | (`sec:fixture`) |\n",
+    ));
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(index_only.path()));
+    assert!(
+        labels
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == LabelErrorCode::AttestationIndexStale)
+    );
+
+    let body_only = fixture_root(concat!(
+        "# Realization\n",
+        "`sec:fixture`\n",
+        "Body cite (`[A-def:model:known]`).\n",
+        "## §17 Upward-citation index · `sec:realization:anchors`\n",
+        "| (`sec:fixture`) |\n",
+    ));
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(body_only.path()));
+    assert!(
+        labels
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == LabelErrorCode::AttestationIndexStale)
+    );
+}
