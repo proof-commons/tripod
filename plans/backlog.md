@@ -1205,6 +1205,120 @@ Execution order follows the review's own repair order: S1, S2, S3, S4, S5, S6,
 S7. S3 and S4 are design changes to a published boundary rather than local
 repairs, and each states its chosen design before it is implemented.
 
+### S3 — Sponsor opacity is bypassed by the isolation evaluator · `task:review:sponsor-erasure`
+
+**Priority:** P1
+**Status:** TODO
+**Owner:** `realization`
+**Policy:** D005, v13d sponsor erasure
+**Blocks:** compiler proof alternatives for sponsor isolation
+
+#### Basis (confirmed 2026-07-26)
+
+`validate_sponsor_value_opacity` rejects a `PLAIN_LBTC` family amount in
+expressions, disclosure nodes, declassification, and constructibility. The
+sponsor-isolation relation bypasses all four: its evaluator calls `flow_total`,
+which reads and aggregates `ObservedObject.value` directly for every
+`PLAIN_LBTC` source and destination. Every observed object carries an exact
+amount unconditionally, including a private-committed sponsor object, so the
+observation format cannot represent the sponsor-erased projection v13d
+describes — membership and authorization known, exact balance verdict known,
+individual amounts erased.
+
+The structural read-set guard is therefore narrower than advertised: the
+forbidden fact type is absent while the same semantic data is read by another
+path. The risk is not a broken invariant today but a compiler that infers
+sponsor isolation requires exact sponsor amounts, contrary to the intended
+residual proof through target-wide conservation and protocol-flow cancellation.
+
+#### Required design decision
+
+The review offers three routes; they are not exclusive. The one this repository
+should take is a typed sponsor-region balance observation carrying exact
+membership, the owner-authorization verdict, protocol/sponsor disjointness, and
+an authenticated conservation verdict, with no individual amount fields — with
+exact amounts confined to the transparent model adapter, which derives the
+verdict and erases the amounts before constructing the realization observation.
+
+This changes a published observation boundary and must state, before
+implementation, what the compiler may assume about sponsor isolation and which
+proof alternatives it may name. The required test is the review's: two sponsor
+regions with different individual denominations but the same sponsor-erased
+projection must produce identical non-resource observations and relation
+verdicts, with the amounts never reaching the evaluator.
+
+Not attempted as a local repair: the correct fix removes a field from a typed
+observation consumed by the model adapter and the pilots, and a partial change
+would leave the guard exactly as misleading as it is now.
+
+### S4 — Model evidence provenance cannot express environment steps · `task:review:environment-steps`
+
+**Priority:** P2
+**Status:** TODO
+**Owner:** `model`
+
+#### Basis (confirmed 2026-07-26)
+
+The crate contract says a world is model-valid evidence only when produced by
+genesis followed by a chain of successful `execute` calls. Two necessary forms
+of evolution sit outside that chain: open-object injection, which is not a
+sealed transition and appends no certificate, and block-age advancement, which
+mutates cadence state directly with no validated API and no history entry.
+
+Consequently requests and sponsor funds are commonly introduced outside
+`execute`, a cycle generally cannot become cadence-valid through `execute`
+alone, property traces mutate cadence directly, and many positive fixtures do
+not satisfy the evidence rule as written. No invalid transition follows; the
+classification is simply not true of the model's own fixtures.
+
+#### Required design decision
+
+Either introduce a typed environment-step API covering canonical block-age
+advancement, externally funded open-object creation, and possibly canonical
+checkpoint movement, or broaden the evidence rule to genesis plus validated
+environment steps plus successful executes — defining exactly which steps
+preserve model-valid evidence. If environment steps stay outside history they
+need their own typed provenance log, or an explicit statement of why they are
+trusted environmental inputs rather than protocol transitions.
+
+The exit test is an external public-API path from genesis through validated
+funding, request creation, admission, a validated cadence advance, and a cycle,
+with no direct field mutation.
+
+### S5 — Stable projections carry an incidental topological order · `task:review:canonical-toposort`
+
+**Priority:** P2
+**Status:** TODO
+**Owner:** `realization`
+**Policy:** D007 identity and canonical construction, ADR-016 immediate edges
+
+#### Basis (confirmed 2026-07-26)
+
+`ScopedRealizationProjection` publishes `expression_evaluation_order` and
+`relation_evaluation_order`, both taken directly from Petgraph's `toposort`.
+Insertion is stable-key sorted so repeated derivation is deterministic today,
+but among independent nodes no unique topological order exists: the chosen one
+is a traversal artifact of the local graph. The repository's own rule keeps
+traversal order and local graph handles out of stable projections and future
+identity, so this is a rule the projection currently breaks.
+
+It also creates migration sensitivity — adding an unrelated independent node or
+changing Petgraph's traversal could move the projected order without changing
+the graph relation.
+
+#### Required implementation
+
+Either omit evaluation order from the stable projection and recompute it as
+local execution metadata, or compute a project-owned canonical order — Kahn's
+algorithm taking the least stable key from an ordered ready set. Petgraph
+remains the storage, cycle-detection, SCC, and reachability substrate; only the
+mathematically unordered result is normalized.
+
+Tests must cover unrelated independent-node insertion, disconnected operation
+graphs, insertion permutation, and equal node and edge projections under a
+deliberately different valid schedule — distinguishing local evaluator
+scheduling from identity-bearing projection.
+
 ### S6 — Duplicate index rows were silently accepted · `task:review:index-uniqueness`
 
 **Priority:** P2
