@@ -26,9 +26,10 @@ and evidence obligation before target emission starts.
 
 ## Deliverables · `sec:phase2:deliverables`
 
-### Crate
+### Crate — complete
 
-Create:
+Created, with the crate boundary, workspace and census membership, typed error
+root, and public-API test in place:
 
 ```text
 packages/compiler
@@ -41,6 +42,13 @@ Direct first-party dependency:
 ```text
 realization
 ```
+
+A direct `architecture` dependency was additionally taken on the contract's
+stated exception, because the public error vocabulary names operations and
+realization does not re-export `OperationId`.
+
+The package existing is not the compiler existing. Every deliverable below
+remains open.
 
 ### Relation DAG
 

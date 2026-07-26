@@ -1,6 +1,6 @@
 # Target-Independent Compiler · `pkg:compiler:contract`
 
-> **Status:** Planned
+> **Status:** Active — crate boundary and typed error root implemented; input binding and analysis not implemented
 > **Phase:** [Phase 2](../phases/02-compiler.md)
 > **Package:** `tripod-compiler`
 > **Library:** `compiler`

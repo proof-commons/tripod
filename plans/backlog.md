@@ -969,7 +969,7 @@ output-path finding as over-scoped.
 | `R3` | P1 | DONE | D007 requires a full Petgraph feature surface, contradicting Cargo and the completed dependency review. |
 | `R4` | P2 | DONE | `scripts/ci.sh` reports `CI green` after skipping the mocked Meson contract lane. |
 | `R5` | P2 | DONE | The documented document-identity recipe says declared order; the implementation sorts by canonical path. |
-| `R6` | P2 | TODO | Several planning documents still describe the compiler package as merely planned. |
+| `R6` | P2 | DONE | Several planning documents still describe the compiler package as merely planned. |
 
 ### R1 — Path handling exceeds the assurance boundary · `task:review:path-scope`
 
@@ -1108,9 +1108,15 @@ protected-branch and release runs. The advisory lane keeps its documented
 optionality but is now named in the partial result rather than passing
 silently.
 
-Verified both paths: with Meson and Ninja present the script prints the green
-line, and with them hidden it exits zero printing the partial line naming the
-skipped lane.
+Verified, with the gap stated. In an environment carrying Meson and Ninja but
+no `cargo-audit`, the script exited zero and printed the partial line naming
+the advisory lane. In an environment without Meson, `CI_REQUIRE_MESON=1` failed
+the run with an explicit error and exit 1.
+
+The unqualified green line remains unobserved here: no available environment
+carries both Meson and `cargo-audit`, so every local run legitimately reports
+partial. That is the correct outcome for these environments, and it is recorded
+as unobserved rather than assumed.
 
 ### R5 — The document-identity recipe was documented wrongly · `task:review:document-recipe`
 
@@ -1146,6 +1152,32 @@ rather than yielding a silently truncated identity. That step is now recorded.
 
 The remaining seven inventory entries were re-read against their sources; no
 further recipe mismatch was found.
+
+### R6 — Compiler status drifted across planning documents · `task:review:compiler-status`
+
+**Priority:** P2
+**Status:** DONE
+**Owner:** `plans/packages/README.md`, `plans/packages/compiler.md`,
+`plans/phases/02-compiler.md`
+
+#### Basis
+
+P2-003 closed and the crate exists, but the package index, the package
+contract, and the Phase-2 card still described the compiler as Planned and
+listed crate creation as an open deliverable. The crate README was already
+accurate.
+
+#### Resolution (2026-07-26)
+
+One status now appears in every document: active, with the crate boundary and
+typed error root implemented and input binding and analysis not implemented.
+The Phase-2 card marks crate creation complete, records the architecture
+dependency taken on the contract's stated exception, and leaves every
+substantive analysis deliverable open.
+
+The card states the distinction explicitly — the package existing is not the
+compiler existing — because that is precisely the claim a reader is most likely
+to overstate while the crate holds only an error vocabulary.
 
 ---
 
