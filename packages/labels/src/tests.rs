@@ -1499,6 +1499,69 @@ fn census_audit_rejects_tracked_symlinks_and_gitlinks() {
 }
 
 #[test]
+fn register_generation_repairs_mixed_state_and_preserves_mtimes() {
+    // T3: a prior partial publication (one stale register) is repaired
+    // without rewriting the already-current member.
+    let directory =
+        fixture_root("# Realization\n`sec:fixture`\nBody cite (`[A-def:model:known]`).\n");
+    let paths = RepositoryCensus::discover(directory.path());
+    let output = tempfile::tempdir().expect("temporary output root");
+    let specification_output = output.path().join("specification.md");
+    let realization_output = output.path().join("realization.md");
+
+    generate_registers(&paths, &specification_output, &realization_output)
+        .expect("first register generation");
+    let specification_mtime = fs::metadata(&specification_output)
+        .expect("attestation metadata")
+        .modified()
+        .expect("attestation mtime");
+    fs::write(&realization_output, b"mixed prior generation").expect("corrupt one register");
+
+    generate_registers(&paths, &specification_output, &realization_output)
+        .expect("repair register generation");
+
+    assert_ne!(
+        fs::read(&realization_output).expect("repaired register"),
+        b"mixed prior generation"
+    );
+    assert_eq!(
+        fs::metadata(&specification_output)
+            .expect("attestation metadata")
+            .modified()
+            .expect("attestation mtime"),
+        specification_mtime,
+        "the current register must not be rewritten during repair",
+    );
+}
+
+#[test]
+fn register_generation_staging_failure_leaves_the_other_register_unchanged() {
+    // T3: the realization destination's parent is a regular file, so
+    // its staging fails; the specification register must keep its old bytes.
+    let directory =
+        fixture_root("# Realization\n`sec:fixture`\nBody cite (`[A-def:model:known]`).\n");
+    let paths = RepositoryCensus::discover(directory.path());
+    let output = tempfile::tempdir().expect("temporary output root");
+    let specification_output = output.path().join("specification.md");
+    fs::write(&specification_output, b"previous generation").expect("seed attestation");
+    let blocker = output.path().join("blocker");
+    fs::write(&blocker, b"file").expect("seed blocker");
+    let realization_output = blocker.join("realization.md");
+
+    let error = generate_registers(&paths, &specification_output, &realization_output)
+        .expect_err("staging into a file parent must fail");
+    assert!(matches!(
+        error,
+        crate::repository::GenerateError::Publication(_)
+    ));
+    assert_eq!(
+        fs::read(&specification_output).expect("attestation register"),
+        b"previous generation",
+        "no final destination may change when a later member fails staging",
+    );
+}
+
+#[test]
 fn register_generation_rejects_aliased_outputs() {
     // F2-005: the two registers are distinct assets; one destination
     // serving both roles must fail before derivation or writing.

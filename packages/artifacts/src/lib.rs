@@ -229,19 +229,5 @@ pub fn check(dir: &Path, census: &labels::RepositoryCensus) -> anyhow::Result<Ch
 /// # Errors
 ///
 /// Returns the underlying I/O error.
-pub fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let directory = path.parent().unwrap_or_else(|| Path::new("."));
-
-    let mut staged = tempfile::Builder::new()
-        .prefix(".artifact-staged-")
-        .tempfile_in(directory)?;
-
-    std::io::Write::write_all(&mut staged, bytes)?;
-    staged.as_file().sync_all()?;
-    staged.persist(path).map_err(|error| error.error)?;
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests;

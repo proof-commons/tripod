@@ -68,6 +68,14 @@ pub enum BatchPublicationError {
 ///
 /// Results are returned in input order; callers wanting deterministic
 /// publication order sort their asset list before calling.
+///
+/// # Errors
+///
+/// [`BatchPublicationError::AliasedOutputs`] before any filesystem
+/// effect when two roles share one destination;
+/// [`BatchPublicationError::Stage`] with every final destination
+/// untouched; [`BatchPublicationError::Publish`] when a final rename
+/// fails after staging (earlier members may already be published).
 pub fn publish_batch(
     assets: &[PublicationAsset<'_>],
 ) -> Result<Vec<PublicationResult>, BatchPublicationError> {

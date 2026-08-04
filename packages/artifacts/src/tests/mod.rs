@@ -8,6 +8,20 @@ mod weld_tests;
 
 use crate::{ARTIFACT_NAMES, ArtifactFreshness, check, expected_artifacts};
 
+/// Publish one artifact through the shared batch path (the only
+/// remaining writer since the T3 migration).
+fn publish_one(
+    path: &std::path::Path,
+    bytes: &[u8],
+) -> Result<(), cli_common::BatchPublicationError> {
+    cli_common::publish_batch(&[cli_common::PublicationAsset {
+        role: "artifact",
+        path,
+        bytes,
+    }])
+    .map(|_| ())
+}
+
 /// A minimal synthetic repository providing the scoped label census
 /// the model-label derivation needs.
 fn fixture_census() -> (tempfile::TempDir, labels::RepositoryCensus) {
@@ -129,12 +143,14 @@ fn concurrent_same_stem_writes_do_not_collide() {
         let toml_path = &toml_path;
         scope.spawn(move || {
             for _ in 0..200 {
-                crate::atomic_write(json_path, b"json-bytes").expect("json write");
+                publish_one(json_path, b"json-bytes-fresh").expect("json write");
+                publish_one(json_path, b"json-bytes").expect("json write");
             }
         });
         scope.spawn(move || {
             for _ in 0..200 {
-                crate::atomic_write(toml_path, b"toml-bytes").expect("toml write");
+                publish_one(toml_path, b"toml-bytes-fresh").expect("toml write");
+                publish_one(toml_path, b"toml-bytes").expect("toml write");
             }
         });
     });
@@ -188,7 +204,7 @@ fn failed_write_leaves_the_original_target_intact() {
         return;
     }
 
-    let result = crate::atomic_write(&target, b"replacement");
+    let result = publish_one(&target, b"replacement");
 
     std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
     std::fs::set_permissions(dir.path(), permissions).expect("restore permissions");

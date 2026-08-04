@@ -71,13 +71,29 @@ fn main() -> ExitCode {
 
         std::fs::create_dir_all(&output)?;
 
-        for artifact in artifacts::expected_artifacts(&census)? {
-            let path = output.join(artifact.name);
-            artifacts::atomic_write(&path, &artifact.bytes)?;
+        // Batch publication (T3): derive and stage every artifact
+        // before the first final path changes, so a failed generation
+        // cannot leave the generated directory in mixed generations.
+        let artifacts = artifacts::expected_artifacts(&census)?;
+        let paths = artifacts
+            .iter()
+            .map(|artifact| output.join(artifact.name))
+            .collect::<Vec<_>>();
+        let assets = artifacts
+            .iter()
+            .zip(&paths)
+            .map(|(artifact, path)| cli_common::PublicationAsset {
+                role: artifact.name,
+                path,
+                bytes: &artifact.bytes,
+            })
+            .collect::<Vec<_>>();
+
+        for result in cli_common::publish_batch(&assets)? {
             tracing::info!(
-                path = %path.display(),
-                bytes = artifact.bytes.len(),
-                "artifact written",
+                path = %result.path.display(),
+                changed = result.changed,
+                "artifact published",
             );
         }
 

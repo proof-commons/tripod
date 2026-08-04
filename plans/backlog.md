@@ -392,7 +392,7 @@ no public realization or compiler digest without a real consumer.
 |---|---:|---|---|
 | `T1` | P1 | DONE | Model-to-realization conformance observations are not bound to the request that produced the successor. |
 | `T2` | P1 | DONE | Sponsor isolation can pass without typed substrate-conservation evidence. |
-| `T3` | P2 | TODO | Multi-output generators publish one final path at a time and can leave mixed generations after failure. |
+| `T3` | P2 | DONE | Multi-output generators publish one final path at a time and can leave mixed generations after failure. |
 | `T4` | P2 | DONE | The global model invariant does not re-check architecture-derived runtime-bound minima. |
 | `T5` | P2 | DONE | The backlog’s current architecture semantic hash was stale. |
 
@@ -685,7 +685,7 @@ repository gate for this batch is recorded once at the remediation gate.
 ### T3 — Batch-stage multi-output generated publications · `task:review:batch-publication`
 
 **Priority:** P2
-**Status:** TODO
+**Status:** DONE
 **Owners:** `artifacts`, `labels`, shared publication infrastructure if justified
 **Policy:** (`[ADR017-rule:path:publication]`)
 **Blocks:** Phase-2 clean publication gate
@@ -758,12 +758,43 @@ meson test -C build --print-errorlogs
 
 #### Exit
 
-- [ ] finding reproduced or disproved;
-- [ ] all changed members stage before any final publication;
-- [ ] unchanged members are compare-if-changed;
-- [ ] focused failure and repair tests pass;
-- [ ] mocked Meson generation/repair behavior passes;
-- [ ] complete required gates pass and the tree is clean.
+- [x] finding reproduced or disproved;
+- [x] all changed members stage before any final publication;
+- [x] unchanged members are compare-if-changed;
+- [x] focused failure and repair tests pass;
+- [x] mocked Meson generation/repair behavior passes;
+- [ ] complete required gates pass and the tree is clean (recorded once at
+      the batch remediation gate).
+
+#### Evidence
+
+Confirmed 2026-08-04 from source: both generators derived bytes first but
+published destinations sequentially through per-file staging, and both
+rewrote unchanged destinations.
+
+Repair: cli-common owns a narrow batch publication helper (module
+publication, function publish_batch) implementing validate (role-distinct
+destinations via ensure_distinct_outputs, parents created), compare
+(identical destinations are left untouched, bytes and mtimes preserved),
+stage (every changed member written and synced to a sibling temporary),
+then publish (renames only). A staging failure changes no final
+destination and drops every temporary; the residual multi-rename window
+is documented per ADR-017 and a subsequent run repairs a partial set.
+The artifacts generate-all binary and the labels register generator both
+publish through the helper; the artifacts crate's private atomic_write
+was removed rather than left as a competing writer, with its concurrency
+and failed-persist safety tests ported to the batch path.
+
+Focused evidence: seven helper tests (alias refusal before any write,
+mtime preservation, changed-only rewrite, staging failure leaves
+destinations and no temporaries, late-rename failure reported and
+repaired, mixed-generation repair, parent creation), two labels tests
+(mixed-state repair preserving the current register's mtime; staging
+failure leaves the other register unchanged), the ported artifacts
+collision/failure tests, and the mocked Meson contract (generate-all now
+logs changed=false on a current tree; injected failure still blocks
+publish). check-generated remains non-writing. Workspace clippy
+-D warnings green; full gate at the batch remediation gate.
 
 ### T4 — Weld runtime-bound conformance into the global invariant · `task:review:invariant-bound-conformance`
 

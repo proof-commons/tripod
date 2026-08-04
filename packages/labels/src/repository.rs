@@ -1,7 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -1267,6 +1266,8 @@ pub struct GeneratedRegister {
 pub enum GenerateError {
     #[error("aliased register outputs: {0}")]
     AliasedOutputs(#[from] cli_common::AliasedOutputs),
+    #[error("register publication failed: {0}")]
+    Publication(#[from] cli_common::BatchPublicationError),
     #[error("label source validation failed")]
     Validation(Vec<LabelDiagnostic>),
     #[error("I/O failure: {0}")]
@@ -1315,15 +1316,30 @@ pub fn generate_registers(
             render::realization_register(&labels.registries.realization),
         ),
     ];
-    let mut written = Vec::new();
-    for (path, contents) in outputs {
-        write(&path, contents.as_bytes())?;
-        written.push(GeneratedRegister {
-            path,
+    // Batch publication (T3): both registers stage before either
+    // final path changes, so a failed generation cannot leave the two
+    // registers in mixed generations.
+    let assets = [
+        cli_common::PublicationAsset {
+            role: "specification-register-output",
+            path: &outputs[0].0,
+            bytes: outputs[0].1.as_bytes(),
+        },
+        cli_common::PublicationAsset {
+            role: "realization-register-output",
+            path: &outputs[1].0,
+            bytes: outputs[1].1.as_bytes(),
+        },
+    ];
+    cli_common::publish_batch(&assets)?;
+
+    Ok(outputs
+        .iter()
+        .map(|(path, contents)| GeneratedRegister {
+            path: path.clone(),
             bytes: contents.len(),
-        });
-    }
-    Ok(written)
+        })
+        .collect())
 }
 pub fn model_labels_json(paths: &RepositoryCensus) -> Result<String, GenerateError> {
     let labels = derive_model_sources(paths);
@@ -1394,17 +1410,4 @@ const fn scoped_citation_participates(citation: &LabelCitation) -> bool {
         citation.target.owner,
         LabelOwner::Attestation | LabelOwner::Realization | LabelOwner::Model
     )
-}
-fn write(path: &Path, bytes: &[u8]) -> Result<(), std::io::Error> {
-    let directory = path.parent().unwrap_or_else(|| Path::new("."));
-    fs::create_dir_all(directory)?;
-    let mut staged = tempfile::Builder::new()
-        .prefix(".labels-staged-")
-        .tempfile_in(directory)?;
-    staged.write_all(bytes)?;
-    staged.as_file().sync_all()?;
-    staged
-        .persist(path)
-        .map(|_| ())
-        .map_err(|error| error.error)
 }
