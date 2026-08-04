@@ -21,6 +21,12 @@ use thiserror::Error;
 pub enum CompileError {
     /// The realization was built against a realization schema this
     /// compiler does not support.
+    ///
+    /// Reserved: the typed realization currently exposes no schema
+    /// value the binder can observe, so no code path constructs this
+    /// today. It exists so the failure has a stable home when a
+    /// realization schema is introduced; it is not implemented
+    /// evidence.
     #[error("unsupported realization schema {schema}")]
     UnsupportedRealizationSchema {
         /// The schema version carried by the offered realization.
@@ -54,4 +60,8 @@ pub enum CompileError {
         /// The repeated operation.
         operation: OperationId,
     },
+
+    /// The requested compilation scope names no operation at all.
+    #[error("requested compilation scope is empty")]
+    EmptyCompilationScope,
 }

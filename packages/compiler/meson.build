@@ -4,6 +4,7 @@
 # into its role group.
 compiler_source_files = files(
   'src/error.rs',
+  'src/input.rs',
   'src/lib.rs',
 )
 

@@ -1,0 +1,154 @@
+//! The immutable typed compiler input boundary (P2-004).
+//!
+//! [`bind_input`] is the only way to obtain a [`BoundCompilerInput`]:
+//! it re-runs the realization owner's validation, requires the
+//! realization's architecture binding to equal the requested
+//! architecture, and requires every compiler-scope operation to be
+//! declared by the realization. The bound value is immutable and
+//! read-only; no partial analyzed program, plan, or digest is exposed
+//! here.
+
+use architecture::{Architecture, OperationId};
+use realization::{ArchitectureBinding, RealizationError, ScopedRealizationSpec};
+
+use crate::CompileError;
+
+/// Explicit, canonical compiler operation scope.
+///
+/// Distinct from the realization's own scope: the compiler may analyze
+/// a subset of what the realization declares, but never more.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompilationScope {
+    operations: Vec<OperationId>,
+}
+
+impl CompilationScope {
+    /// Construct a nonempty scope in stable architecture-code order.
+    ///
+    /// # Errors
+    ///
+    /// [`CompileError::EmptyCompilationScope`] for an empty scope;
+    /// [`CompileError::DuplicateScopeOperation`] for a repeated member
+    /// (scope is a set — a duplicate is a caller defect, never
+    /// silently normalized away).
+    pub fn from_operations(
+        operations: impl IntoIterator<Item = OperationId>,
+    ) -> Result<Self, CompileError> {
+        let mut operations = operations.into_iter().collect::<Vec<_>>();
+
+        operations.sort_by_key(|operation| operation.code());
+
+        if operations.is_empty() {
+            return Err(CompileError::EmptyCompilationScope);
+        }
+
+        if let Some(duplicate) = operations
+            .windows(2)
+            .find_map(|pair| (pair[0] == pair[1]).then_some(pair[0]))
+        {
+            return Err(CompileError::DuplicateScopeOperation {
+                operation: duplicate,
+            });
+        }
+
+        Ok(Self { operations })
+    }
+
+    /// Operations in stable architecture-code order.
+    #[must_use]
+    pub fn operations(&self) -> &[OperationId] {
+        &self.operations
+    }
+}
+
+/// Typed analysis policy.
+///
+/// Only the reviewed policy exists; a future policy requires its own
+/// reviewed semantics rather than a placeholder configuration field.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AnalysisPolicy {
+    /// Preserve every in-scope realization relation, never weaken an
+    /// unsupported relation, retain explicit external evidence
+    /// requirements, and fail rather than emit a partial plan.
+    Strict,
+}
+
+/// One immutable validated compiler input.
+///
+/// Fields are private; there is no mutable accessor, no public
+/// constructor besides [`bind_input`], no serializer, and no digest.
+#[derive(Clone, Debug)]
+pub struct BoundCompilerInput {
+    realization: ScopedRealizationSpec,
+    scope: CompilationScope,
+    policy: AnalysisPolicy,
+}
+
+impl BoundCompilerInput {
+    /// The validated realization this compilation analyzes.
+    #[must_use]
+    pub const fn realization(&self) -> &ScopedRealizationSpec {
+        &self.realization
+    }
+
+    /// The explicit compiler operation scope.
+    #[must_use]
+    pub const fn scope(&self) -> &CompilationScope {
+        &self.scope
+    }
+
+    /// The analysis policy in force.
+    #[must_use]
+    pub const fn policy(&self) -> AnalysisPolicy {
+        self.policy
+    }
+
+    /// The architecture identity both sides of this binding share.
+    #[must_use]
+    pub fn architecture_binding(&self) -> &ArchitectureBinding {
+        self.realization.architecture()
+    }
+}
+
+/// Validate and bind one compiler input.
+///
+/// # Errors
+///
+/// [`CompileError::ArchitectureBindingMismatch`] when the realization
+/// binds a different architecture identity than `architecture`;
+/// [`CompileError::InvalidRealization`] when the realization fails its
+/// owner's re-run validation; [`CompileError::IncompleteRealizationScope`]
+/// when the compiler scope names an operation the realization does not
+/// declare.
+pub fn bind_input(
+    architecture: &Architecture,
+    realization: ScopedRealizationSpec,
+    scope: CompilationScope,
+    policy: AnalysisPolicy,
+) -> Result<BoundCompilerInput, CompileError> {
+    // The owner validates; the compiler never trusts a handed value.
+    realization
+        .validate_against(architecture)
+        .map_err(|error| match error {
+            RealizationError::ArchitectureBindingMismatch => {
+                CompileError::ArchitectureBindingMismatch
+            }
+            _ => CompileError::InvalidRealization,
+        })?;
+
+    // The realization's explicit partial scope is retained honestly:
+    // compiler scope must be a subset, never a completion of it.
+    for operation in scope.operations() {
+        if realization.operation(*operation).is_none() {
+            return Err(CompileError::IncompleteRealizationScope {
+                operation: *operation,
+            });
+        }
+    }
+
+    Ok(BoundCompilerInput {
+        realization,
+        scope,
+        policy,
+    })
+}

@@ -85,6 +85,30 @@ pub struct ScopedRealizationSpec {
 }
 
 impl ScopedRealizationSpec {
+    /// Re-validate this realization against `architecture` as its owner.
+    ///
+    /// A downstream consumer (the compiler input binder) calls this
+    /// instead of trusting the value it was handed: the supplied
+    /// architecture is validated, the expected [`ArchitectureBinding`]
+    /// is re-derived and must equal the binding this realization
+    /// carries, and the complete scoped-realization validation is
+    /// re-run.
+    ///
+    /// # Errors
+    ///
+    /// [`RealizationError::ArchitectureBindingMismatch`] when the
+    /// realization binds a different architecture identity; otherwise
+    /// any owner-validation failure.
+    pub fn validate_against(&self, architecture: &Architecture) -> Result<(), RealizationError> {
+        let expected = ArchitectureBinding::from_architecture(architecture)?;
+
+        if expected != self.architecture {
+            return Err(RealizationError::ArchitectureBindingMismatch);
+        }
+
+        crate::validate::validate_scoped_realization(architecture, self)
+    }
+
     /// Return the pinned architecture identity this realization binds.
     #[must_use]
     pub fn architecture(&self) -> &ArchitectureBinding {

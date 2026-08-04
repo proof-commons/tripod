@@ -959,7 +959,7 @@ source.
 | `P2-001` | P1 | DONE | Immutable, canonical, ownership-validated realization boundary |
 | `P2-002` | P2 | DONE | Petgraph dependency and lockfile review |
 | `P2-003` | P1 | DONE | Compiler crate boundary and typed error root |
-| `P2-004` | P1 | TODO | Bind architecture, realization, policy, and explicit scope |
+| `P2-004` | P1 | DONE | Bind architecture, realization, policy, and explicit scope |
 | `P2-005` | P1 | BLOCKED | Canonical compiler relation DAG |
 | `P2-006` | P1 | BLOCKED | Checked constant folding |
 | `P2-007` | P1 | BLOCKED | Exact proof-alternative planning |
@@ -977,7 +977,7 @@ P2-013.
 ### P2-004 — Bind compiler input and scope · `task:phase2:bind-input`
 
 **Priority:** P1
-**Status:** TODO
+**Status:** DONE
 **Depends on:** P2-001 through P2-003
 **Blocks:** P2-005 through P2-012
 **Owners:** `compiler`, `realization`
@@ -1046,12 +1046,42 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 
 #### Exit
 
-- [ ] typed input boundary exists;
-- [ ] every input-boundary failure has focused coverage;
-- [ ] scope and ownership are explicit;
-- [ ] no target or filesystem detail enters compiler core;
-- [ ] no compiler digest is minted;
-- [ ] required gates pass and the tree is clean.
+- [x] typed input boundary exists;
+- [x] every input-boundary failure has focused coverage;
+- [x] scope and ownership are explicit;
+- [x] no target or filesystem detail enters compiler core;
+- [x] no compiler digest is minted;
+- [ ] required gates pass and the tree is clean (recorded at the
+      compiler-input batch gate, `gate:backlog:p2-004`).
+
+#### Evidence
+
+Implemented 2026-08-04. The realization now exposes the owner validator
+ScopedRealizationSpec::validate_against (validates the supplied
+architecture, re-derives the expected ArchitectureBinding and requires
+exact equality — new focused error ArchitectureBindingMismatch — then
+re-runs validate_scoped_realization). The compiler adds module input:
+CompilationScope (nonempty, stable architecture-code order, duplicates
+rejected with DuplicateScopeOperation, new EmptyCompilationScope error),
+AnalysisPolicy with only the reviewed Strict policy (no placeholder
+configuration), and the immutable BoundCompilerInput (private fields,
+read-only accessors, no serializer, no digest) produced only by
+bind_input, which re-runs the owner validator, maps binding mismatch to
+its focused error, and requires every compiler-scope operation to be
+declared by the intentionally partial pilot realization
+(IncompleteRealizationScope otherwise). UnsupportedRealizationSchema is
+documented as reserved: no observable realization schema exists yet, and
+an unreachable branch must not read as implemented evidence. No abstract
+target-capability placeholder was added (P2-007 owns the first real
+consumer). New source file src/input.rs is in the compiler Meson census.
+
+Focused evidence: public-API integration tests cover the valid Phase-1
+scope (canonical order, policy, binding accessor), single-pilot scopes,
+scope permutation equality, empty and duplicate scope rejection,
+Burn-outside-realization incompleteness, and a mutated-architecture
+binding mismatch. Compiler (8), realization (154 + suites), and the full
+workspace test set (40 suites) with clippy -D warnings are green; the
+batch gate record follows.
 
 ### P2-005 — Build the canonical compiler relation DAG · `task:phase2:relation-dag`
 

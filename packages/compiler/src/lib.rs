@@ -27,7 +27,8 @@
 //!
 //! # State
 //!
-//! This is the crate boundary only. Input binding, the canonical
+//! The crate boundary and the validated input boundary ([`bind_input`]
+//! and [`BoundCompilerInput`], P2-004) are implemented. The canonical
 //! relation graph, constant folding, proof planning, disclosure and
 //! fact-source analysis, constructibility, lifecycle, placement,
 //! layout, and coverage requirements are separate deliverables and are
@@ -38,5 +39,7 @@
 #![forbid(unsafe_code)]
 
 pub mod error;
+pub mod input;
 
 pub use error::CompileError;
+pub use input::{AnalysisPolicy, BoundCompilerInput, CompilationScope, bind_input};
