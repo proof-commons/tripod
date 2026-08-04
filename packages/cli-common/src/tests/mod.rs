@@ -861,3 +861,193 @@ fn build_mode_rejects_aliased_report_and_stamp() {
         "nothing may be published on alias failure"
     );
 }
+
+// --- T3: batch-staged publication ---
+
+mod publication {
+    use std::path::Path;
+
+    use crate::{BatchPublicationError, PublicationAsset, publish_batch};
+
+    fn asset<'a>(role: &'a str, path: &'a Path, bytes: &'a [u8]) -> PublicationAsset<'a> {
+        PublicationAsset { role, path, bytes }
+    }
+
+    fn staged_leftovers(directory: &Path) -> Vec<String> {
+        std::fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with(".publication-staged-"))
+            .collect()
+    }
+
+    #[test]
+    fn aliased_outputs_fail_before_any_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out.txt");
+
+        let error = publish_batch(&[asset("first", &path, b"a"), asset("second", &path, b"b")])
+            .unwrap_err();
+
+        assert!(matches!(error, BatchPublicationError::AliasedOutputs(_)));
+        assert!(!path.exists());
+        assert_eq!(staged_leftovers(dir.path()), [] as [std::string::String; 0]);
+    }
+
+    #[test]
+    fn unchanged_destinations_keep_bytes_and_mtimes() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first.txt");
+        let second = dir.path().join("second.txt");
+        std::fs::write(&first, b"one").unwrap();
+        std::fs::write(&second, b"two").unwrap();
+        let first_mtime = std::fs::metadata(&first).unwrap().modified().unwrap();
+        let second_mtime = std::fs::metadata(&second).unwrap().modified().unwrap();
+
+        let results = publish_batch(&[
+            asset("first", &first, b"one"),
+            asset("second", &second, b"two"),
+        ])
+        .unwrap();
+
+        assert!(results.iter().all(|result| !result.changed));
+        assert_eq!(
+            std::fs::metadata(&first).unwrap().modified().unwrap(),
+            first_mtime
+        );
+        assert_eq!(
+            std::fs::metadata(&second).unwrap().modified().unwrap(),
+            second_mtime
+        );
+    }
+
+    #[test]
+    fn only_the_changed_member_is_rewritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let current = dir.path().join("current.txt");
+        let stale = dir.path().join("stale.txt");
+        std::fs::write(&current, b"kept").unwrap();
+        std::fs::write(&stale, b"old").unwrap();
+        let kept_mtime = std::fs::metadata(&current).unwrap().modified().unwrap();
+
+        let results = publish_batch(&[
+            asset("current", &current, b"kept"),
+            asset("stale", &stale, b"new"),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            results
+                .iter()
+                .map(|result| result.changed)
+                .collect::<Vec<_>>(),
+            [false, true]
+        );
+        assert_eq!(std::fs::read(&stale).unwrap(), b"new");
+        assert_eq!(
+            std::fs::metadata(&current).unwrap().modified().unwrap(),
+            kept_mtime
+        );
+    }
+
+    #[test]
+    fn a_staging_failure_changes_no_final_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first.txt");
+        std::fs::write(&first, b"old").unwrap();
+        // The second output's parent is a regular file, so directory
+        // creation (and therefore staging) must fail.
+        let blocker = dir.path().join("blocker");
+        std::fs::write(&blocker, b"file").unwrap();
+        let second = blocker.join("second.txt");
+
+        let error = publish_batch(&[
+            asset("first", &first, b"new"),
+            asset("second", &second, b"payload"),
+        ])
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            BatchPublicationError::Stage { ref role, .. } if role == "second"
+        ));
+        assert_eq!(std::fs::read(&first).unwrap(), b"old");
+        assert_eq!(staged_leftovers(dir.path()), [] as [std::string::String; 0]);
+    }
+
+    #[test]
+    fn a_late_publish_failure_is_reported_and_repairable() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("first.txt");
+        // A directory occupying the second destination defeats the
+        // final rename only — staging succeeds, so the first member is
+        // already published: exactly the documented residual window.
+        let second = dir.path().join("second.txt");
+        std::fs::create_dir(&second).unwrap();
+
+        let error = publish_batch(&[
+            asset("first", &first, b"one"),
+            asset("second", &second, b"two"),
+        ])
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            BatchPublicationError::Publish { ref role, .. } if role == "second"
+        ));
+        assert_eq!(std::fs::read(&first).unwrap(), b"one");
+
+        // A subsequent successful run repairs the complete set.
+        std::fs::remove_dir(&second).unwrap();
+        let results = publish_batch(&[
+            asset("first", &first, b"one"),
+            asset("second", &second, b"two"),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            results
+                .iter()
+                .map(|result| result.changed)
+                .collect::<Vec<_>>(),
+            [false, true]
+        );
+        assert_eq!(std::fs::read(&second).unwrap(), b"two");
+        assert_eq!(staged_leftovers(dir.path()), [] as [std::string::String; 0]);
+    }
+
+    #[test]
+    fn a_prior_mixed_generation_is_repaired() {
+        let dir = tempfile::tempdir().unwrap();
+        let fresh = dir.path().join("fresh.txt");
+        let stale = dir.path().join("stale.txt");
+        std::fs::write(&fresh, b"generation-2").unwrap();
+        std::fs::write(&stale, b"generation-1").unwrap();
+
+        let results = publish_batch(&[
+            asset("fresh", &fresh, b"generation-2"),
+            asset("stale", &stale, b"generation-2"),
+        ])
+        .unwrap();
+
+        assert_eq!(
+            results
+                .iter()
+                .map(|result| result.changed)
+                .collect::<Vec<_>>(),
+            [false, true]
+        );
+        assert_eq!(std::fs::read(&stale).unwrap(), b"generation-2");
+    }
+
+    #[test]
+    fn missing_destinations_and_parents_are_created() {
+        let dir = tempfile::tempdir().unwrap();
+        let nested = dir.path().join("deep").join("out.txt");
+
+        let results = publish_batch(&[asset("out", &nested, b"data")]).unwrap();
+
+        assert!(results[0].changed);
+        assert_eq!(std::fs::read(&nested).unwrap(), b"data");
+    }
+}

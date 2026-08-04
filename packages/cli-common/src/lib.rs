@@ -21,6 +21,10 @@ use clap::{CommandFactory, Parser};
 use serde::{Deserialize, Serialize};
 use tracing_subscriber::fmt::MakeWriter;
 
+mod publication;
+
+pub use publication::{BatchPublicationError, PublicationAsset, PublicationResult, publish_batch};
+
 #[cfg(test)]
 mod tests;
 
