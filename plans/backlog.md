@@ -519,7 +519,7 @@ cargo test --workspace --locked
 - [x] both pilot adapters have focused mismatch tests;
 - [x] model execution remains independent of realization evaluation;
 - [x] complete required gates pass and the tree is clean (see the batch
-      remediation gate record, `gate:backlog:t1-t4-remediation`).
+      remediation gate record in section 2.3).
 
 #### Evidence
 
@@ -666,7 +666,7 @@ cargo test --workspace --locked
 - [x] role isolation and conservation evidence remain separate;
 - [x] compiler-facing proof alternatives cannot infer an exact sponsor-value read;
 - [x] complete required gates pass and the tree is clean (see the batch
-      remediation gate record, `gate:backlog:t1-t4-remediation`).
+      remediation gate record in section 2.3).
 
 #### Evidence
 
@@ -784,7 +784,7 @@ meson test -C build --print-errorlogs
 - [x] focused failure and repair tests pass;
 - [x] mocked Meson generation/repair behavior passes;
 - [x] complete required gates pass and the tree is clean (see the batch
-      remediation gate record, `gate:backlog:t1-t4-remediation`).
+      remediation gate record in section 2.3).
 
 #### Evidence
 
@@ -897,7 +897,7 @@ cargo test --workspace --locked
 - [x] every architecture bound has minimum-minus-one and exact-minimum coverage;
 - [x] no duplicate model-owned minimum table is introduced;
 - [x] complete required gates pass and the tree is clean (see the batch
-      remediation gate record, `gate:backlog:t1-t4-remediation`).
+      remediation gate record in section 2.3).
 
 #### Evidence
 
@@ -1052,7 +1052,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 - [x] no target or filesystem detail enters compiler core;
 - [x] no compiler digest is minted;
 - [ ] required gates pass and the tree is clean (recorded at the
-      compiler-input batch gate, `gate:backlog:p2-004`).
+      compiler-input batch gate record in section 2.4).
 
 #### Evidence
 
