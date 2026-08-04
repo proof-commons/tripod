@@ -801,6 +801,14 @@ pub fn check_invariant(world: &World) -> Result<(), InvariantError> {
         .validate()
         .map_err(|_| InvariantError::Domains)?;
 
+    // Genesis and the global invariant share one bound authority: a
+    // nonzero finite bound below its architecture-derived minimum
+    // (e.g. ash_batch_max = 1 against compact-ash's minimum of two)
+    // makes a declared operation unconstructible and is a domain
+    // violation of the world, not only a genesis rejection.
+    crate::manifest::validate_bound_conformance(&world.constants)
+        .map_err(|_| InvariantError::Domains)?;
+
     let y = state.y().map_err(|_| InvariantError::Domains)?;
 
     // 𝗜₂ — domains and active-backing cap: in addition to the < 2^51

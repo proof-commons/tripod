@@ -100,3 +100,51 @@ fn genesis_rejects_ash_batch_max_below_the_compact_ash_minimum() {
 
     assert_eq!(result, Err(Guard::BadConstant));
 }
+
+// --- T4: the global invariant welds the same bound authority. ---
+
+/// The named regression from the static review: `ash_batch_max = 1` is
+/// nonzero (so `Constants::validate` accepts it) yet makes compact-ash
+/// unconstructible. A publicly mutated world carrying it must fail the
+/// global invariant, not only genesis.
+#[test]
+fn ash_batch_max_of_one_fails_the_global_invariant() {
+    let mut world = test_fixtures::world();
+    world.constants.ash_batch_max = 1;
+
+    assert!(world.constants.validate().is_ok());
+    assert!(validate_bound_conformance(&world.constants).is_err());
+    assert_eq!(check_invariant(&world), Err(InvariantError::Domains));
+}
+
+/// For every declared bound with a nonzero derived minimum:
+/// minimum-minus-one fails the global invariant; the exact minimum
+/// passes when the rest of the fixture is valid.
+#[test]
+fn global_invariant_enforces_every_architecture_bound_minimum() {
+    for bound in ARCHITECTURE.bounds {
+        let minimum = usize::try_from(manifest_minimum_for_bound(&ARCHITECTURE, bound.id)).unwrap();
+
+        if minimum == 0 {
+            continue;
+        }
+
+        let mut below = test_fixtures::world();
+        set_bound(&mut below.constants, bound.id, minimum - 1);
+        assert_eq!(
+            check_invariant(&below),
+            Err(InvariantError::Domains),
+            "bound {:?} below its manifest minimum must fail the invariant",
+            bound.id,
+        );
+
+        let mut exact = test_fixtures::world();
+        set_bound(&mut exact.constants, bound.id, minimum);
+        assert_eq!(
+            check_invariant(&exact),
+            Ok(()),
+            "bound {:?} at its manifest minimum must pass the invariant",
+            bound.id,
+        );
+    }
+}

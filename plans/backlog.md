@@ -393,7 +393,7 @@ no public realization or compiler digest without a real consumer.
 | `T1` | P1 | DONE | Model-to-realization conformance observations are not bound to the request that produced the successor. |
 | `T2` | P1 | DONE | Sponsor isolation can pass without typed substrate-conservation evidence. |
 | `T3` | P2 | TODO | Multi-output generators publish one final path at a time and can leave mixed generations after failure. |
-| `T4` | P2 | TODO | The global model invariant does not re-check architecture-derived runtime-bound minima. |
+| `T4` | P2 | DONE | The global model invariant does not re-check architecture-derived runtime-bound minima. |
 | `T5` | P2 | DONE | The backlog’s current architecture semantic hash was stale. |
 
 All T1–T4 entries are static-review findings. Reproduction is the first step;
@@ -768,7 +768,7 @@ meson test -C build --print-errorlogs
 ### T4 — Weld runtime-bound conformance into the global invariant · `task:review:invariant-bound-conformance`
 
 **Priority:** P2
-**Status:** TODO
+**Status:** DONE
 **Owner:** `model`
 **Blocks:** complete model-validity claim used by Phase 2
 **Identity impact:** none
@@ -841,11 +841,32 @@ cargo test --workspace --locked
 
 #### Exit
 
-- [ ] finding reproduced or disproved;
-- [ ] genesis and `check_invariant` use one bound-conformance authority;
-- [ ] every architecture bound has minimum-minus-one and exact-minimum coverage;
-- [ ] no duplicate model-owned minimum table is introduced;
-- [ ] complete required gates pass and the tree is clean.
+- [x] finding reproduced or disproved;
+- [x] genesis and `check_invariant` use one bound-conformance authority;
+- [x] every architecture bound has minimum-minus-one and exact-minimum coverage;
+- [x] no duplicate model-owned minimum table is introduced;
+- [ ] complete required gates pass and the tree is clean (recorded once at
+      the batch remediation gate).
+
+#### Evidence
+
+Reproduced 2026-08-04: two focused tests failed against the unrepaired
+invariant — a world mutated to the named regression ash_batch_max = 1
+passed Constants::validate and check_invariant while
+validate_bound_conformance rejected it, and the per-bound sweep showed the
+same gap for every bound with a nonzero derived minimum.
+
+Repair: check_invariant now calls the shared authority
+validate_bound_conformance immediately after Constants::validate, mapped
+to the existing Domains clause (no new welded failure vocabulary, per the
+review's recommendation). Minima remain derived through
+architecture::manifest_minimum_for_bound; no model-owned minimum table
+exists. The reproduction tests are the permanent regressions:
+minimum-minus-one fails and the exact minimum passes for every declared
+bound, and ash_batch_max = 1 is the named case. Model crate suites
+(301 unit, 7 public API, 3 doctests) are green; genesis rejection and
+deployment-calibration tests are unchanged. Full gate at the batch
+remediation gate.
 
 ### T5 — Correct stale current identity in planning · `task:review:backlog-identity-drift`
 
