@@ -60,6 +60,7 @@ struct Ids {
     conservation: RelationId,
     sponsor: RelationId,
     sponsor_multiplicity: RelationId,
+    substrate_conservation: RelationId,
     open_flow_policy: RelationId,
     canonical_delta_policy: RelationId,
     roots: RelationId,
@@ -99,6 +100,12 @@ impl Ids {
             sponsor_multiplicity: id(
                 RelationKind::SponsorEnvelopeMultiplicity,
                 RelationSubject::Sponsor,
+            ),
+            substrate_conservation: id(
+                RelationKind::SubstrateConservation,
+                RelationSubject::Asset {
+                    asset: AssetId::Lbtc,
+                },
             ),
             open_flow_policy: id(
                 RelationKind::OpenFlowPolicy,
@@ -262,6 +269,13 @@ fn relation_declarations(ids: &Ids) -> Vec<RelationDeclaration> {
             ids.sponsor.clone(),
             Relation::SponsorIsolation,
             [ProofKind::ManifestShape],
+        ),
+        declaration(
+            ids.substrate_conservation.clone(),
+            Relation::SubstrateConservation {
+                asset: AssetId::Lbtc,
+            },
+            [ProofKind::SubstrateConservation],
         ),
         declaration(
             ids.sponsor_multiplicity.clone(),
@@ -436,6 +450,11 @@ fn relation_dependencies(ids: &Ids) -> Vec<RelationDependencyDeclaration> {
             &ids.sponsor,
             &ids.constructibility,
             RelationEdge::SponsorBeforeConstructibility,
+        ),
+        dep(
+            &ids.sponsor,
+            &ids.substrate_conservation,
+            RelationEdge::SponsorBeforeOperation,
         ),
         dep(
             &ids.conservation,

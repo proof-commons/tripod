@@ -18,13 +18,36 @@ use crate::{
     expression::{DependencyEdge, ExpressionDeclaration, FactValues},
 };
 
+/// Typed premise the realization evaluator cannot establish itself.
+///
+/// Carrying the requirement in the report keeps the missing proof
+/// visible: a runtime pass over the sponsor-erased observation is not
+/// evidence that the substrate accepted whole-transaction value
+/// conservation. The model kernel or the target discharges it.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ExternalEvidenceRequirement {
+    SubstrateConservation {
+        operation: architecture::OperationId,
+        asset: AssetId,
+    },
+}
+
 /// Result class for one realization relation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RelationStatus {
     Passed,
-    Failed { reason: RelationFailure },
-    Blocked { prerequisites: Vec<RelationId> },
+    Failed {
+        reason: RelationFailure,
+    },
+    Blocked {
+        prerequisites: Vec<RelationId>,
+    },
     StaticallyValidated,
+    /// The relation is well-formed but only external evidence can
+    /// discharge it; it never becomes `Passed` at this boundary.
+    EvidenceRequired {
+        requirement: ExternalEvidenceRequirement,
+    },
 }
 
 /// Focused runtime failure class.
@@ -63,14 +86,49 @@ pub struct ConformanceReport {
 }
 
 impl ConformanceReport {
+    /// No semantic relation failed or was blocked.
+    ///
+    /// This does **not** imply external evidence completion: a report
+    /// can be conformant while still carrying `EvidenceRequired`
+    /// relations whose proof obligation belongs to the model kernel or
+    /// the target. Use [`Self::is_evidence_complete`] for that claim.
     #[must_use]
     pub fn is_conformant(&self) -> bool {
         self.verdicts.iter().all(|verdict| {
             matches!(
                 verdict.status,
-                RelationStatus::Passed | RelationStatus::StaticallyValidated
+                RelationStatus::Passed
+                    | RelationStatus::StaticallyValidated
+                    | RelationStatus::EvidenceRequired { .. }
             )
         })
+    }
+
+    /// True when any relation failed or was blocked.
+    #[must_use]
+    pub fn has_semantic_failure(&self) -> bool {
+        self.verdicts.iter().any(|verdict| {
+            matches!(
+                verdict.status,
+                RelationStatus::Failed { .. } | RelationStatus::Blocked { .. }
+            )
+        })
+    }
+
+    /// True when no relation still requires external evidence.
+    #[must_use]
+    pub fn is_evidence_complete(&self) -> bool {
+        self.required_external_evidence().next().is_none()
+    }
+
+    /// Every external-evidence requirement this report still carries.
+    pub fn required_external_evidence(&self) -> impl Iterator<Item = &ExternalEvidenceRequirement> {
+        self.verdicts
+            .iter()
+            .filter_map(|verdict| match &verdict.status {
+                RelationStatus::EvidenceRequired { requirement } => Some(requirement),
+                _ => None,
+            })
     }
 
     pub fn failed_relations(&self) -> impl Iterator<Item = &RelationId> {
@@ -129,12 +187,13 @@ pub(crate) fn evaluate_operation(
             .filter_map(|edge| {
                 let prerequisite = &relation_graph[edge.source()].id;
 
+                // Everything except an established prerequisite blocks
+                // its dependents — including an undischarged external
+                // premise: nothing downstream may build on evidence
+                // this boundary has not seen.
                 match status_by_relation.get(prerequisite) {
                     Some(RelationStatus::Passed | RelationStatus::StaticallyValidated) => None,
-                    Some(RelationStatus::Failed { .. } | RelationStatus::Blocked { .. }) => {
-                        Some(prerequisite.clone())
-                    }
-                    None => Some(prerequisite.clone()),
+                    _ => Some(prerequisite.clone()),
                 }
             })
             .collect::<Vec<_>>();
@@ -142,7 +201,12 @@ pub(crate) fn evaluate_operation(
         blocking.dedup();
 
         let status = if blocking.is_empty() {
-            evaluate_relation(&declaration.relation, &observation, evaluated.as_ref())?
+            evaluate_relation(
+                &declaration.id,
+                &declaration.relation,
+                &observation,
+                evaluated.as_ref(),
+            )?
         } else {
             RelationStatus::Blocked {
                 prerequisites: blocking,
@@ -165,11 +229,18 @@ pub(crate) fn evaluate_operation(
 
 #[allow(clippy::too_many_lines)]
 fn evaluate_relation(
+    id: &RelationId,
     relation: &Relation,
     observation: &OperationObservation,
     evaluated: Option<&EvaluatedExpressions>,
 ) -> Result<RelationStatus, RealizationError> {
     match relation {
+        Relation::SubstrateConservation { asset } => Ok(RelationStatus::EvidenceRequired {
+            requirement: ExternalEvidenceRequirement::SubstrateConservation {
+                operation: id.operation(),
+                asset: *asset,
+            },
+        }),
         Relation::Cardinality {
             side,
             object,

@@ -119,6 +119,7 @@ fn compact_ash_model_transition_satisfies_realization() {
     };
     let execution = execute_bound(&world, transition, next_order(&world)).unwrap();
     let observation = observe_compact_ash(&execution).unwrap();
+    let observation = observation.observation().clone();
     let report = evaluate(&observation);
 
     assert!(
@@ -137,6 +138,7 @@ fn compact_ash_observation_mutations_are_load_bearing() {
     };
     let execution = execute_bound(&world, transition, next_order(&world)).unwrap();
     let observation = observe_compact_ash(&execution).unwrap();
+    let observation = observation.observation().clone();
 
     let mut wrong_amount = observation.clone();
     wrong_amount
@@ -203,6 +205,7 @@ fn live_transfer_split_satisfies_realization() {
     };
     let execution = execute_bound(&world, transition, next_order(&world)).unwrap();
     let observation = observe_live_transfer(&execution).unwrap();
+    let observation = observation.observation().clone();
     let report = evaluate(&observation);
 
     assert!(
@@ -259,6 +262,7 @@ fn live_transfer_merge_satisfies_realization() {
     };
     let execution = execute_bound(&split, transition, next_order(&split)).unwrap();
     let observation = observe_live_transfer(&execution).unwrap();
+    let observation = observation.observation().clone();
     let report = evaluate(&observation);
 
     assert!(
@@ -284,6 +288,7 @@ fn live_transfer_observation_mutations_are_load_bearing() {
     };
     let execution = execute_bound(&world, transition, next_order(&world)).unwrap();
     let observation = observe_live_transfer(&execution).unwrap();
+    let observation = observation.observation().clone();
 
     let mut missing_signer = observation.clone();
     missing_signer.protocol_signers.clear();
@@ -428,4 +433,78 @@ fn phase1_declassification_matches_model_owned_pilot_rows() {
 
         assert_eq!(row.declassifies, [] as [std::string::String; 0]);
     }
+}
+
+#[test]
+fn bound_execution_discharges_the_model_substrate_premise() {
+    let world = world_with_two_ash();
+    let transition = CompactAsh {
+        ash_inputs: find_ash(&world),
+        fee_envelope: FeeEnvelope::default(),
+    };
+    let execution = execute_bound(&world, transition, next_order(&world)).unwrap();
+    let observation = observe_compact_ash(&execution).unwrap();
+    let report = evaluate(observation.observation());
+
+    // The realization evaluator itself never passes the premise…
+    assert!(!report.is_evidence_complete());
+    assert!(!report.has_semantic_failure());
+    assert_eq!(
+        report
+            .required_external_evidence()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![
+            realization::ExternalEvidenceRequirement::SubstrateConservation {
+                operation: architecture::OperationId::CompactAsh,
+                asset: architecture::AssetId::Lbtc,
+            }
+        ],
+    );
+
+    // …while the bound model execution establishes exactly the
+    // model-side copy of it.
+    assert!(unresolved_model_evidence(&report, &observation).is_empty());
+}
+
+#[test]
+fn live_transfer_bound_execution_discharges_the_model_substrate_premise() {
+    let world = test_fixtures::world();
+    let request = genesis_live_transfer(&world, ALICE);
+    let execution = execute_bound(&world, request, next_order(&world)).unwrap();
+    let observation = observe_live_transfer(&execution).unwrap();
+    let report = evaluate(observation.observation());
+
+    assert!(!report.has_semantic_failure());
+    assert!(!report.is_evidence_complete());
+    assert!(unresolved_model_evidence(&report, &observation).is_empty());
+}
+
+#[test]
+fn model_evidence_is_operation_scoped() {
+    // Evidence established for one pilot must not discharge the other
+    // pilot's requirement.
+    let live_world = test_fixtures::world();
+    let live_request = genesis_live_transfer(&live_world, ALICE);
+    let live_execution = execute_bound(&live_world, live_request, next_order(&live_world)).unwrap();
+    let live_observation = observe_live_transfer(&live_execution).unwrap();
+
+    let ash_world = world_with_two_ash();
+    let ash_transition = CompactAsh {
+        ash_inputs: find_ash(&ash_world),
+        fee_envelope: FeeEnvelope::default(),
+    };
+    let ash_execution = execute_bound(&ash_world, ash_transition, next_order(&ash_world)).unwrap();
+    let ash_report = evaluate(observe_compact_ash(&ash_execution).unwrap().observation());
+
+    let unresolved = unresolved_model_evidence(&ash_report, &live_observation);
+    assert_eq!(
+        unresolved.into_iter().collect::<Vec<_>>(),
+        vec![
+            realization::ExternalEvidenceRequirement::SubstrateConservation {
+                operation: architecture::OperationId::CompactAsh,
+                asset: architecture::AssetId::Lbtc,
+            }
+        ],
+    );
 }

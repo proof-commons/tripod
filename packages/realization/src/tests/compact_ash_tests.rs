@@ -273,6 +273,84 @@ fn sponsor_multiplicity() -> RelationId {
     )
 }
 
+fn substrate_conservation() -> RelationId {
+    relation_id(
+        RelationKind::SubstrateConservation,
+        RelationSubject::Asset {
+            asset: AssetId::Lbtc,
+        },
+    )
+}
+
+// --- T2: the substrate-conservation premise is typed, never passed. ---
+//
+// The former "sponsor imbalance" fixture was really a role-structure
+// failure (an unowned source); value imbalance itself is invisible to
+// the sponsor-erased evaluator by design. These tests pin the honest
+// shape of that claim: a caller-authored observation can pass sponsor
+// role isolation, but the whole-transaction value equation stays an
+// explicit external-evidence requirement.
+
+#[test]
+fn substrate_conservation_is_evidence_required_never_passed() {
+    for observation in [valid_observation(), valid_sponsored_observation()] {
+        let report = evaluate(&observation);
+        let verdict = report.verdict(&substrate_conservation()).unwrap();
+
+        assert!(matches!(
+            verdict.status,
+            RelationStatus::EvidenceRequired {
+                requirement: crate::ExternalEvidenceRequirement::SubstrateConservation {
+                    operation: OperationId::CompactAsh,
+                    asset: AssetId::Lbtc,
+                },
+            }
+        ));
+        assert!(!report.has_semantic_failure());
+        assert!(!report.is_evidence_complete());
+        assert!(report.is_conformant());
+    }
+}
+
+#[test]
+fn an_empty_sponsor_flow_with_nonzero_fee_cannot_appear_fully_proven() {
+    // The malformed shape from the static review: one fee-sponsor flow,
+    // zero sources, zero destinations, nonzero fee. Role isolation has
+    // nothing to reject structurally — the report must therefore still
+    // carry the undischarged conservation requirement rather than
+    // claiming the transaction proven.
+    let mut observation = valid_observation();
+    observation.open_flows.push(ObservedOpenFlow {
+        kind: architecture::OpenFlowKind::FeeSponsor,
+        sources: Vec::new(),
+        destinations: Vec::new(),
+        fee: ProtocolAmount::new(7).unwrap(),
+    });
+
+    let report = evaluate(&observation);
+
+    assert!(!failed(&report, &sponsor()));
+    assert!(!report.is_evidence_complete());
+    assert!(matches!(
+        report.verdict(&substrate_conservation()).unwrap().status,
+        RelationStatus::EvidenceRequired { .. }
+    ));
+}
+
+#[test]
+fn failed_sponsor_isolation_blocks_the_conservation_requirement() {
+    let mut observation = valid_sponsored_observation();
+    observation.sponsor_signers.clear();
+
+    let report = evaluate(&observation);
+
+    assert!(failed(&report, &sponsor()));
+    assert!(matches!(
+        report.verdict(&substrate_conservation()).unwrap().status,
+        RelationStatus::Blocked { .. }
+    ));
+}
+
 #[test]
 fn two_sponsor_envelopes_fail_multiplicity() {
     let mut observation = valid_sponsored_observation();
@@ -1101,7 +1179,7 @@ fn sponsor_cases() -> Vec<SponsorCase> {
             }),
         ),
         (
-            "sponsor imbalance",
+            "unowned sponsor source",
             Box::new(move |observation| {
                 observation
                     .objects

@@ -45,22 +45,68 @@ pub enum ConformanceProjectionError {
     BoundOutOfDomain,
 }
 
+/// A realization observation plus the external premises the model side
+/// establishes for it.
+///
+/// Producible only by the conformance adapters from a bound execution
+/// ([`ExecutedTransition`]), whose invariant-wrapped replay ran the
+/// model kernel's exact conservation checks on the exact transition
+/// being observed. The established set is therefore **model-side
+/// evidence only** — never target, deployment, or independent
+/// evidence; a target discharges its copy of the premise separately
+/// through the later evidence envelope.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModelConformanceObservation {
+    observation: OperationObservation,
+    established_evidence: BTreeSet<realization::ExternalEvidenceRequirement>,
+}
+
+impl ModelConformanceObservation {
+    pub fn observation(&self) -> &OperationObservation {
+        &self.observation
+    }
+
+    pub fn established_evidence(
+        &self,
+    ) -> impl Iterator<Item = &realization::ExternalEvidenceRequirement> {
+        self.established_evidence.iter()
+    }
+}
+
+/// External-evidence requirements of `report` that `observation`'s
+/// model-side evidence does not discharge.
+///
+/// The model pilot harnesses require this to be empty; each entry left
+/// is a premise only target evidence can close.
+pub fn unresolved_model_evidence(
+    report: &realization::ConformanceReport,
+    observation: &ModelConformanceObservation,
+) -> BTreeSet<realization::ExternalEvidenceRequirement> {
+    report
+        .required_external_evidence()
+        .filter(|requirement| !observation.established_evidence.contains(requirement))
+        .cloned()
+        .collect()
+}
+
 pub fn observe_compact_ash(
     execution: &ExecutedTransition<CompactAsh>,
-) -> Result<OperationObservation, ConformanceProjectionError> {
-    observe_transition(
+) -> Result<ModelConformanceObservation, ConformanceProjectionError> {
+    let observation = observe_transition(
         execution.before(),
         execution.after(),
         BranchKind::CompactAsh,
         BTreeSet::new(),
         owner_ids(&execution.request().fee_envelope.signers),
         RepresentationMode::Explicit,
-    )
+    )?;
+
+    Ok(bind_model_evidence(observation))
 }
 
 pub fn observe_live_transfer(
     execution: &ExecutedTransition<TransferReceipts>,
-) -> Result<OperationObservation, ConformanceProjectionError> {
+) -> Result<ModelConformanceObservation, ConformanceProjectionError> {
     let request = execution.request();
 
     if request.class != ReceiptClass::Live {
@@ -70,14 +116,33 @@ pub fn observe_live_transfer(
         });
     }
 
-    observe_transition(
+    let observation = observe_transition(
         execution.before(),
         execution.after(),
         BranchKind::TransferLive,
         owner_ids(&request.signers),
         owner_ids(&request.fee_envelope.signers),
         RepresentationMode::Explicit,
-    )
+    )?;
+
+    Ok(bind_model_evidence(observation))
+}
+
+/// The bound execution's kernel run validated open-asset conservation
+/// on the complete transaction, so the model-side substrate premise is
+/// established for exactly this operation and L-BTC.
+fn bind_model_evidence(observation: OperationObservation) -> ModelConformanceObservation {
+    let established_evidence = BTreeSet::from([
+        realization::ExternalEvidenceRequirement::SubstrateConservation {
+            operation: observation.operation,
+            asset: architecture::AssetId::Lbtc,
+        },
+    ]);
+
+    ModelConformanceObservation {
+        observation,
+        established_evidence,
+    }
 }
 
 fn observe_transition(

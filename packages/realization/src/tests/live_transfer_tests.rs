@@ -1294,3 +1294,32 @@ fn a_draft_valid_quantity_write_is_still_rejected_by_the_weld() {
 
     weld_rejects(&mutated, crate::ArchitectureMismatchField::Writes);
 }
+
+// --- T2: the substrate-conservation premise is typed, never passed. ---
+
+#[test]
+fn live_transfer_substrate_conservation_is_evidence_required_never_passed() {
+    for observation in [valid_split_observation(), valid_sponsored_observation()] {
+        let report = evaluate(&observation);
+        let verdict = report
+            .verdict(&relation_id(
+                RelationKind::SubstrateConservation,
+                RelationSubject::Asset {
+                    asset: AssetId::Lbtc,
+                },
+            ))
+            .unwrap();
+
+        assert!(matches!(
+            verdict.status,
+            RelationStatus::EvidenceRequired {
+                requirement: crate::ExternalEvidenceRequirement::SubstrateConservation {
+                    operation: OperationId::TransferLive,
+                    asset: AssetId::Lbtc,
+                },
+            }
+        ));
+        assert!(!report.has_semantic_failure());
+        assert!(!report.is_evidence_complete());
+    }
+}

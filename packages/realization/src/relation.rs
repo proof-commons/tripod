@@ -96,6 +96,15 @@ pub enum Relation {
     ExpressionPredicate {
         expression: ExprId,
     },
+    /// Exact whole-transaction substrate conservation for one asset.
+    ///
+    /// The sponsor-erased evaluator cannot establish the underlying
+    /// value equation, so this relation never evaluates to `Passed`:
+    /// it evaluates to an explicit external-evidence requirement that
+    /// the model kernel or the target must discharge.
+    SubstrateConservation {
+        asset: AssetId,
+    },
 }
 
 /// Why one relation depends on another.

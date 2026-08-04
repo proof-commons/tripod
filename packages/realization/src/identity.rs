@@ -94,6 +94,7 @@ pub enum RelationKind {
     Constructibility,
     Lifecycle,
     Representation,
+    SubstrateConservation,
 }
 
 /// Typed subject distinguishing relations of one family.
@@ -241,6 +242,16 @@ pub enum ProofKind {
     SignerMembership,
     ManifestShape,
     PublicConstructibility,
+    /// Exact whole-transaction substrate value conservation.
+    ///
+    /// Not `PublicArithmetic`: the realization boundary has erased the
+    /// sponsor values a public computation would need. Not
+    /// `ConfidentialConservation` either: explicit and confidential
+    /// L-BTC both rely on target-wide substrate conservation while
+    /// their target mechanisms differ. The compiler maps this abstract
+    /// requirement to model-kernel exact conservation for model
+    /// evidence or to a reviewed exact target proof.
+    SubstrateConservation,
 }
 
 /// Stable proof-alternative key.

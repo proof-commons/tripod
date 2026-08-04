@@ -74,7 +74,10 @@ pub use error::{ArchitectureMismatchField, RealizationError};
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use evaluate::evaluate_operation;
-pub use evaluate::{ConformanceReport, RelationFailure, RelationStatus, RelationVerdict};
+pub use evaluate::{
+    ConformanceReport, ExternalEvidenceRequirement, RelationFailure, RelationStatus,
+    RelationVerdict,
+};
 pub use expression::{
     DependencyEdge, EvaluatedExpressions, ExpressionDeclaration, ExpressionDependencyProjection,
     ExpressionGraphProjection, ExpressionNode, FactValues,

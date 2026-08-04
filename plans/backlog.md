@@ -391,7 +391,7 @@ no public realization or compiler digest without a real consumer.
 | ID | Priority | Status | Finding |
 |---|---:|---|---|
 | `T1` | P1 | DONE | Model-to-realization conformance observations are not bound to the request that produced the successor. |
-| `T2` | P1 | TODO | Sponsor isolation can pass without typed substrate-conservation evidence. |
+| `T2` | P1 | DONE | Sponsor isolation can pass without typed substrate-conservation evidence. |
 | `T3` | P2 | TODO | Multi-output generators publish one final path at a time and can leave mixed generations after failure. |
 | `T4` | P2 | TODO | The global model invariant does not re-check architecture-derived runtime-bound minima. |
 | `T5` | P2 | DONE | The backlog’s current architecture semantic hash was stale. |
@@ -531,7 +531,7 @@ remediation gate, per the verification cadence.
 ### T2 — Make substrate conservation explicit at the sponsor-erased boundary · `task:review:sponsor-balance-evidence`
 
 **Priority:** P1
-**Status:** TODO
+**Status:** DONE
 **Owners:** `realization`, model conformance adapter
 **Blocks:** compiler proof/source planning for sponsor isolation
 **Policy:** v13d sponsor erasure and D005
@@ -640,12 +640,47 @@ cargo test --workspace --locked
 
 #### Exit
 
-- [ ] finding reproduced or disproved;
-- [ ] the substrate-conservation premise is typed;
-- [ ] no individual sponsor amount crosses the realization boundary;
-- [ ] role isolation and conservation evidence remain separate;
-- [ ] compiler-facing proof alternatives cannot infer an exact sponsor-value read;
-- [ ] complete required gates pass and the tree is clean.
+- [x] finding reproduced or disproved;
+- [x] the substrate-conservation premise is typed;
+- [x] no individual sponsor amount crosses the realization boundary;
+- [x] role isolation and conservation evidence remain separate;
+- [x] compiler-facing proof alternatives cannot infer an exact sponsor-value read;
+- [ ] complete required gates pass and the tree is clean (recorded once at
+      the batch remediation gate).
+
+#### Evidence
+
+Reproduced 2026-08-04: a caller-authored observation with one fee-sponsor
+open flow of zero sources, zero destinations, and a nonzero fee passed
+sponsor role isolation with no typed indication that whole-transaction
+conservation had been established anywhere.
+
+Repair (split relation and status, the reviewed option B): both pilots now
+declare a substrate-conservation relation for L-BTC with the new proof
+family SubstrateConservation (deliberately neither PublicArithmetic, whose
+operands are erased, nor ConfidentialConservation, which is one target
+mechanism). The evaluator maps it to the new status EvidenceRequired
+carrying a typed ExternalEvidenceRequirement; it never evaluates to Passed
+at this boundary. Sponsor role isolation remains a separate runtime
+relation and now blocks the conservation requirement when it fails. Report
+helpers required_external_evidence, has_semantic_failure, and
+is_evidence_complete make the distinction queryable; is_conformant is
+documented as not implying evidence completion.
+
+Model side: the conformance adapters return ModelConformanceObservation,
+producible only from a T1 bound execution whose kernel run validated
+open-asset conservation on the exact observed transition; its established
+set discharges only the model-side copy of the premise for the exact
+operation, checked by unresolved_model_evidence. It is model evidence
+only, never target or deployment evidence. Sponsor values remain
+structurally erased; no new amount field or digest was introduced.
+
+The former sponsor-imbalance fixture was renamed to the role-structure
+failure it actually exercises (an unowned source), and typed-premise tests
+replaced the value claim: the review's empty-flow shape now demonstrably
+retains EvidenceRequired, for both pilots. Realization (154), model (299
+unit, 7 public API), and workspace clippy -D warnings are green; the full
+repository gate for this batch is recorded once at the remediation gate.
 
 ### T3 — Batch-stage multi-output generated publications · `task:review:batch-publication`
 
