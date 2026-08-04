@@ -202,6 +202,29 @@ earlier tree. It must not be reported as evidence for the current checkout;
 only the batch remediation gate record below speaks for the reviewed
 repairs.
 
+### 2.3 Batch remediation gate · `gate:backlog:t1-t4-remediation`
+
+Recorded 2026-08-04 on the tree carrying the T1–T4 repairs and the T5
+correction (branch review-t1-t5-remediation, after commit "plans: refresh
+current identities and close reviewed findings"), via the nightly-SDK
+toolchain:
+
+- scripts/ci.sh: every lane ran and passed — fmt, clippy (-D warnings),
+  debug and release workspace tests, check-generated, check-labels,
+  plan-tree checks, forbidden text, mocked Meson contract, clean working
+  tree. The advisory lane was SKIPPED (cargo-audit not installed;
+  advisory per ADR-011), so the run is partial-green, not green. A first
+  invocation failed transiently in the mocked-Meson lane against stale
+  build/mocks state; the recorded run passed the lane from a clean mock
+  root.
+- meson compile: success, including the real document build.
+- meson test: 10 of 10 suites passed.
+- Document byte reproducibility
+  (scripts/check-document-reproducibility.sh): **deferred** — not run for
+  this batch. T3 changed publication machinery, not expected paper bytes;
+  the mocked Meson contract covered the publication graph.
+- Final clean-tree check: empty status.
+
 ---
 
 ### The verification harness's two standing hazards · `rem:backlog:verification-harness`
@@ -495,8 +518,8 @@ cargo test --workspace --locked
 - [x] request/successor binding is structural or explicitly replay-validated;
 - [x] both pilot adapters have focused mismatch tests;
 - [x] model execution remains independent of realization evaluation;
-- [ ] complete required gates pass and the tree is clean (recorded once at
-      the batch remediation gate).
+- [x] complete required gates pass and the tree is clean (see the batch
+      remediation gate record, `gate:backlog:t1-t4-remediation`).
 
 #### Evidence
 
@@ -642,8 +665,8 @@ cargo test --workspace --locked
 - [x] no individual sponsor amount crosses the realization boundary;
 - [x] role isolation and conservation evidence remain separate;
 - [x] compiler-facing proof alternatives cannot infer an exact sponsor-value read;
-- [ ] complete required gates pass and the tree is clean (recorded once at
-      the batch remediation gate).
+- [x] complete required gates pass and the tree is clean (see the batch
+      remediation gate record, `gate:backlog:t1-t4-remediation`).
 
 #### Evidence
 
@@ -760,8 +783,8 @@ meson test -C build --print-errorlogs
 - [x] unchanged members are compare-if-changed;
 - [x] focused failure and repair tests pass;
 - [x] mocked Meson generation/repair behavior passes;
-- [ ] complete required gates pass and the tree is clean (recorded once at
-      the batch remediation gate).
+- [x] complete required gates pass and the tree is clean (see the batch
+      remediation gate record, `gate:backlog:t1-t4-remediation`).
 
 #### Evidence
 
@@ -873,8 +896,8 @@ cargo test --workspace --locked
 - [x] genesis and `check_invariant` use one bound-conformance authority;
 - [x] every architecture bound has minimum-minus-one and exact-minimum coverage;
 - [x] no duplicate model-owned minimum table is introduced;
-- [ ] complete required gates pass and the tree is clean (recorded once at
-      the batch remediation gate).
+- [x] complete required gates pass and the tree is clean (see the batch
+      remediation gate record, `gate:backlog:t1-t4-remediation`).
 
 #### Evidence
 
