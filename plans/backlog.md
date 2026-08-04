@@ -2,7 +2,7 @@
 
 > **Status:** ACTIVE
 > **Current gate:** Phase 2 — target-independent compiler analysis
-> **Current condition:** Phase 1 is historical tagged evidence. The compiler crate exists only as a package boundary and typed error root; input binding and compiler analysis are not implemented. A static review of tree identified four open findings that require reproduction and repair. The next correctness work is T1–T4; the next compiler task remains P2-004.
+> **Current condition:** Phase 1 is historical tagged evidence. The compiler crate exists only as a package boundary and typed error root; input binding and compiler analysis are not implemented. The static-review findings T1–T4 (first reported against historical tree and confirmed still present by a follow-up static review of) are reproduced and repaired with focused evidence recorded per finding; the batch remediation gate record closes their final exit item. The next compiler task is P2-004.
 > **Next gate:** Phase 3 — Elements target and foundational prototypes
 > **Authority:** Current execution queue only. The specification, the realization document, typed architecture, implemented ADRs, accepted decisions, package contracts, phase cards, and accepted research results take precedence.
 
@@ -143,24 +143,27 @@ No named consumer means no digest. No distinct decision means no digest.
 
 ### 2.1 Static review basis · `tbl:backlog:review-basis`
 
-This rewrite incorporates a static review of the supplied repository tree:
+Two static reviews inform the current findings, both historical evidence
+about their exact trees, not claims about the current checkout:
 
 ```text
-reviewed tree:
+initial reviewed tree (historical):
    
 
-selected files:
-    342
-
-selected-file bytes:
-    3,682,109
+follow-up reviewed tree (historical):
+    (post v0.6.1 zref migration)
 
 submodules:
     none
 
-tracked symlinks observed in supplied tree:
+tracked symlinks observed in supplied trees:
     none
 ```
+
+The follow-up review confirmed T1–T4 remained open in source and found the
+recurrence of the T5 identity drift corrected below. Volatile selection
+metadata (file and byte counts) is deliberately not restated here; it
+belongs to a generated review receipt if it is ever needed.
 
 The supplied content excluded:
 
@@ -195,8 +198,9 @@ Those tags are immutable evidence for their exact commits. They do not establish
 that the current checkout passes.
 
 The latest complete gate narrative retained by the prior backlog was for an
-earlier tree. It must not be reported as evidence for
-`e383bfd6b30f6eb3295b94806c650cd1f8d92410`.
+earlier tree. It must not be reported as evidence for the current checkout;
+only the batch remediation gate record below speaks for the reviewed
+repairs.
 
 ---
 
@@ -250,7 +254,7 @@ A domain separator is hashed input that identifies a recipe, and the product's n
 
 | Area | Current source state |
 |---|---|
-| Layer 0 | Published specification, version `0.6.0` |
+| Layer 0 | Published specification, version `0.6.1` |
 | Realization document | Realization with final architecture appendix |
 | `architecture` | Typed architecture, validation, semantic/behavioural hashes, deployment-profile scaffolding |
 | `model` | Executable state machine, invariants, property/corruption suites, indexer and accounting projections |
@@ -268,27 +272,20 @@ A domain separator is hashed input that identifies a recipe, and the product's n
 
 ### 3.2 Current published identities · `tbl:backlog:identities`
 
-The current values below are transcribed from the typed/generated architecture
-publication in the reviewed tree:
+Exact hash and version values are deliberately **not** duplicated here:
+twice now a hand-transcribed copy in this file has drifted from the
+generated publication (the original T5 correction itself went stale at the
+v0.6.1 release). Read each identity from its authority:
 
-| Identity | Current value |
+| Identity | Authority |
 |---|---|
-| Layer-0 version | `0.6.0` |
-| Realization version | tracked compiler-line binding |
-| Architecture schema | `17` |
-| Architecture semantic algorithm | `sha256-canonical-json-v2` |
-| Architecture semantic hash | |
-| Architecture behavioural algorithm | `sha256-canonical-json-behavioural-v3` |
-| Architecture behavioural hash | |
-| Layer-0 anchor-set hash | |
-| Attestation wire schema | `13` |
-| Deployment-profile schema | `2` |
-| Cargo workspace version | `0.1.0` |
-| Meson project version | `0.0.1` |
+| Layer-0 version | `papers/attestation/main.tex` and `sections/00_title.tex` |
+| Architecture schema, semantic/behavioural algorithm and hashes, anchor-set hash | `packages/model/generated/architecture.json`, checked against the typed architecture by `check-generated` |
+| Realization version | `docs/attestation/realization.md` masthead |
+| Attestation wire and deployment-profile schemas | typed `architecture` crate constants |
 
-The authoritative homes are the typed architecture and its checked generated
-publications. This table is informational and must be updated or removed if it
-drifts again.
+The generated architecture publication is authoritative; planning prose
+must not become a competing identity source.
 
 Architecture finality does not imply:
 
@@ -910,19 +907,23 @@ remediation gate.
 
 #### Resolution
 
-The previous backlog reported an obsolete architecture semantic hash.
+The previous backlog reported an obsolete architecture semantic hash. The
+first correction replaced the stale values with then-current ones — and
+those went stale in turn at the v0.6.1 zref migration, which the
+follow-up static review caught: the backlog still claimed Layer-0
+version 0.6.0 and the pre-correction semantic hash while every
+authoritative home already carried the v0.6.1 values.
 
-This rewrite updates the informational current-state table to the value carried
-consistently by:
-
-- the typed architecture derivation;
-- `packages/model/generated/architecture.json`;
-- `packages/model/generated/architecture.toml`;
-- the Realization masthead and appendix weld.
-
-The generated architecture publication remains authoritative. This planning
-table must be updated or removed if it drifts again; planning prose must not
-become a competing identity source.
+Manually duplicated current digests drift repeatedly, so the 2026-08-04
+correction removes the duplication instead of refreshing it: the current
+identities section now names each value's authoritative home (the
+generated architecture publication, checked by check-generated, the
+paper source, and the realization masthead) and carries no exact hash or
+version values of its own. Volatile review-selection byte counts were
+removed on the same ground, and the stale review-basis tree is now
+explicitly historical. The generated architecture publication remains
+authoritative; planning prose must not become a competing identity
+source.
 
 ---
 
