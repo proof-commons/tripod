@@ -2,7 +2,7 @@
 
 > **Status:** ACTIVE
 > **Current gate:** Phase 2 — target-independent compiler analysis
-> **Current condition:** Phase 1 is historical tagged evidence. The compiler crate exists only as a package boundary and typed error root; input binding and compiler analysis are not implemented. The static-review findings T1–T4 (first reported against historical tree and confirmed still present by a follow-up static review of) are reproduced and repaired with focused evidence recorded per finding; the batch remediation gate record closes their final exit item. The next compiler task is P2-004.
+> **Current condition:** Phase 1 is historical tagged evidence. The static-review findings T1–T4 are reproduced, repaired, and closed against the batch remediation gate record in section 2.3; the T5 identity drift is corrected by removing duplicated values. The compiler crate now implements the P2-004 validated input boundary, closed against the compiler-input batch gate record in section 2.4; no further analysis stage exists yet. The next compiler work is C1-005 and P2-005 relation-DAG construction.
 > **Next gate:** Phase 3 — Elements target and foundational prototypes
 > **Authority:** Current execution queue only. The specification, the realization document, typed architecture, implemented ADRs, accepted decisions, package contracts, phase cards, and accepted research results take precedence.
 
@@ -223,6 +223,22 @@ toolchain:
   (scripts/check-document-reproducibility.sh): **deferred** — not run for
   this batch. T3 changed publication machinery, not expected paper bytes;
   the mocked Meson contract covered the publication graph.
+- Final clean-tree check: empty status.
+
+### 2.4 Compiler-input batch gate · `gate:backlog:p2-004`
+
+Recorded 2026-08-04 on the tree carrying the P2-004 compiler input
+boundary (branch review-t1-t5-remediation, after commit "plans: cite gate
+records by section, not backticked labels"), via the nightly-SDK
+toolchain:
+
+- scripts/ci.sh: every lane ran and passed; the advisory lane was
+  SKIPPED (cargo-audit not installed; advisory per ADR-011), so the run
+  is partial-green, not green.
+- meson compile: success, including the real document build.
+- meson test: 10 of 10 suites passed.
+- Document byte reproducibility: **deferred** — unchanged paper inputs;
+  not run for this batch.
 - Final clean-tree check: empty status.
 
 ---
@@ -1051,8 +1067,8 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 - [x] scope and ownership are explicit;
 - [x] no target or filesystem detail enters compiler core;
 - [x] no compiler digest is minted;
-- [ ] required gates pass and the tree is clean (recorded at the
-      compiler-input batch gate record in section 2.4).
+- [x] required gates pass and the tree is clean (see the compiler-input
+      batch gate record in section 2.4).
 
 #### Evidence
 
