@@ -117,8 +117,8 @@ fn compact_ash_model_transition_satisfies_realization() {
         ash_inputs: find_ash(&world),
         fee_envelope: FeeEnvelope::default(),
     };
-    let after = apply_checked(&world, &transition, next_order(&world));
-    let observation = observe_compact_ash(&world, &transition, &after).unwrap();
+    let execution = execute_bound(&world, transition, next_order(&world)).unwrap();
+    let observation = observe_compact_ash(&execution).unwrap();
     let report = evaluate(&observation);
 
     assert!(
@@ -135,8 +135,8 @@ fn compact_ash_observation_mutations_are_load_bearing() {
         ash_inputs: find_ash(&world),
         fee_envelope: FeeEnvelope::default(),
     };
-    let after = transition.apply(&world, next_order(&world)).unwrap();
-    let observation = observe_compact_ash(&world, &transition, &after).unwrap();
+    let execution = execute_bound(&world, transition, next_order(&world)).unwrap();
+    let observation = observe_compact_ash(&execution).unwrap();
 
     let mut wrong_amount = observation.clone();
     wrong_amount
@@ -159,7 +159,7 @@ fn compact_ash_observation_mutations_are_load_bearing() {
 }
 
 #[test]
-fn compact_ash_observation_requires_exact_one_transition_extension() {
+fn compact_ash_binding_requires_exact_one_transition_extension() {
     let world = world_with_two_ash();
     let transition = CompactAsh {
         ash_inputs: find_ash(&world),
@@ -173,8 +173,8 @@ fn compact_ash_observation_requires_exact_one_transition_extension() {
         .push(after.history.transitions.last().unwrap().clone());
 
     assert_eq!(
-        observe_compact_ash(&world, &transition, &not_one),
-        Err(ConformanceProjectionError::NotOneTransitionExtension),
+        bind_execution(&world, transition, &not_one).unwrap_err(),
+        ExecutionBindingError::InvalidSuccessorExtension,
     );
 }
 
@@ -201,8 +201,8 @@ fn live_transfer_split_satisfies_realization() {
         signers: signers(&[GENESIS_OWNER]),
         fee_envelope: FeeEnvelope::default(),
     };
-    let after = apply_checked(&world, &transition, next_order(&world));
-    let observation = observe_live_transfer(&world, &transition, &after).unwrap();
+    let execution = execute_bound(&world, transition, next_order(&world)).unwrap();
+    let observation = observe_live_transfer(&execution).unwrap();
     let report = evaluate(&observation);
 
     assert!(
@@ -257,8 +257,8 @@ fn live_transfer_merge_satisfies_realization() {
         signers: signers(&[ALICE, BOB]),
         fee_envelope: FeeEnvelope::default(),
     };
-    let after = apply_checked(&split, &transition, next_order(&split));
-    let observation = observe_live_transfer(&split, &transition, &after).unwrap();
+    let execution = execute_bound(&split, transition, next_order(&split)).unwrap();
+    let observation = observe_live_transfer(&execution).unwrap();
     let report = evaluate(&observation);
 
     assert!(
@@ -282,8 +282,8 @@ fn live_transfer_observation_mutations_are_load_bearing() {
         signers: signers(&[GENESIS_OWNER]),
         fee_envelope: FeeEnvelope::default(),
     };
-    let after = transition.apply(&world, next_order(&world)).unwrap();
-    let observation = observe_live_transfer(&world, &transition, &after).unwrap();
+    let execution = execute_bound(&world, transition, next_order(&world)).unwrap();
+    let observation = observe_live_transfer(&execution).unwrap();
 
     let mut missing_signer = observation.clone();
     missing_signer.protocol_signers.clear();
@@ -318,6 +318,89 @@ fn live_transfer_observation_mutations_are_load_bearing() {
         &evaluate(&wrong_representation),
         &live_representation()
     ));
+}
+
+fn genesis_live_transfer(world: &World, owner: OwnerKey) -> TransferReceipts {
+    let input = find_receipts(world, GENESIS_OWNER, ReceiptClass::Live)[0];
+
+    TransferReceipts {
+        class: ReceiptClass::Live,
+        inputs: vec![input],
+        outputs: vec![ReceiptDestination {
+            owner,
+            value: world.utxo(input).unwrap().value,
+        }],
+        signers: signers(&[GENESIS_OWNER]),
+        fee_envelope: FeeEnvelope::default(),
+    }
+}
+
+#[test]
+fn binding_accepts_the_exact_executed_live_transfer() {
+    let world = test_fixtures::world();
+    let request = genesis_live_transfer(&world, ALICE);
+    let after = apply_checked(&world, &request, next_order(&world));
+    let bound = bind_execution(&world, request, &after).unwrap();
+
+    assert_eq!(bound.after(), &after);
+    assert_eq!(bound.certificate().branch, BranchKind::TransferLive);
+    assert!(observe_live_transfer(&bound).is_ok());
+}
+
+#[test]
+fn binding_rejects_a_successor_from_another_live_transfer() {
+    // T1: certificate from the executed request, authorization data from a
+    // different same-branch request. Before binding, this hybrid projected
+    // and reported conformant.
+    let world = test_fixtures::world();
+    let executed = genesis_live_transfer(&world, ALICE);
+    let unrelated = genesis_live_transfer(&world, BOB);
+    assert_ne!(executed, unrelated);
+
+    let after = apply_checked(&world, &executed, next_order(&world));
+
+    assert_eq!(
+        bind_execution(&world, unrelated, &after).unwrap_err(),
+        ExecutionBindingError::RequestBindingMismatch,
+    );
+}
+
+#[test]
+fn binding_rejects_mutated_live_transfer_requests() {
+    let world = test_fixtures::world();
+    let executed = genesis_live_transfer(&world, ALICE);
+    let after = apply_checked(&world, &executed, next_order(&world));
+
+    let mut wrong_amount = executed.clone();
+    wrong_amount.outputs[0].value = sat(1);
+    let mut wrong_signers = executed.clone();
+    wrong_signers.signers = signers(&[ALICE]);
+    let mut wrong_inputs = executed;
+    wrong_inputs.inputs.clear();
+
+    for request in [wrong_amount, wrong_signers, wrong_inputs] {
+        assert_eq!(
+            bind_execution(&world, request, &after).unwrap_err(),
+            ExecutionBindingError::RequestBindingMismatch,
+        );
+    }
+}
+
+#[test]
+fn binding_rejects_a_successor_from_another_compact_ash() {
+    let world = world_with_two_ash();
+    let executed = CompactAsh {
+        ash_inputs: find_ash(&world),
+        fee_envelope: FeeEnvelope::default(),
+    };
+    let after = apply_checked(&world, &executed, next_order(&world));
+
+    let mut short = executed;
+    short.ash_inputs.pop();
+    assert_eq!(
+        bind_execution(&world, short, &after).unwrap_err(),
+        ExecutionBindingError::RequestBindingMismatch,
+    );
 }
 
 #[test]

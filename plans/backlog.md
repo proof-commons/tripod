@@ -390,7 +390,7 @@ no public realization or compiler digest without a real consumer.
 
 | ID | Priority | Status | Finding |
 |---|---:|---|---|
-| `T1` | P1 | TODO | Model-to-realization conformance observations are not bound to the request that produced the successor. |
+| `T1` | P1 | DONE | Model-to-realization conformance observations are not bound to the request that produced the successor. |
 | `T2` | P1 | TODO | Sponsor isolation can pass without typed substrate-conservation evidence. |
 | `T3` | P2 | TODO | Multi-output generators publish one final path at a time and can leave mixed generations after failure. |
 | `T4` | P2 | TODO | The global model invariant does not re-check architecture-derived runtime-bound minima. |
@@ -402,7 +402,7 @@ their descriptions are not execution evidence.
 ### T1 — Bind conformance observations to executed requests · `task:review:conformance-binding`
 
 **Priority:** P1
-**Status:** TODO
+**Status:** DONE
 **Owners:** `model`, `realization` conformance boundary
 **Blocks:** trusted model/realization evidence for P2-012 and Phase-2 exit
 **Identity impact:** none unless a persistent conformance report is later added
@@ -494,11 +494,39 @@ cargo test --workspace --locked
 
 #### Exit
 
-- [ ] finding reproduced or disproved;
-- [ ] request/successor binding is structural or explicitly replay-validated;
-- [ ] both pilot adapters have focused mismatch tests;
-- [ ] model execution remains independent of realization evaluation;
-- [ ] complete required gates pass and the tree is clean.
+- [x] finding reproduced or disproved;
+- [x] request/successor binding is structural or explicitly replay-validated;
+- [x] both pilot adapters have focused mismatch tests;
+- [x] model execution remains independent of realization evaluation;
+- [ ] complete required gates pass and the tree is clean (recorded once at
+      the batch remediation gate).
+
+#### Evidence
+
+Reproduced 2026-08-04: a temporary test executed one live transfer and
+projected the observation with a different same-branch request; the hybrid
+observation was accepted and reported conformant.
+
+Repair: the model now owns an opaque bound execution. The struct
+ExecutedTransition holds private predecessor, request, and successor;
+construction is only through execute_bound (invariant-wrapped execution that
+retains the binding) or bind_execution (deterministic replay: the successor
+must extend the predecessor by exactly one certificate, the request is
+re-executed at that certificate's order, and the replayed world must equal the
+supplied successor completely, else RequestBindingMismatch). Both conformance
+adapters now consume the bound execution, so request-side signer and sponsor
+evidence necessarily comes from the request that produced the successor.
+Replay uses model execution only; realization evaluation is never consulted.
+
+Focused evidence: mismatch tests for both pilots (different inputs, outputs,
+signer set, and successor-from-another-request all fail with
+RequestBindingMismatch; the exact executed request binds and projects), a
+public-API test exercising execute_bound, bind_execution, the accessors, and
+into_world from outside the crate, and a compile-fail doctest showing external
+assembly from independent parts is unconstructible. Model crate tests
+(296 unit, 7 public API, 3 doctests) and workspace clippy -D warnings are
+green. The full repository gate for this batch is recorded once at the
+remediation gate, per the verification cadence.
 
 ### T2 — Make substrate conservation explicit at the sponsor-erased boundary · `task:review:sponsor-balance-evidence`
 

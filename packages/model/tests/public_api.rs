@@ -248,3 +248,41 @@ fn invariants_do_not_depend_on_how_far_the_substrate_moved() {
             .unwrap_or_else(|error| panic!("invariants broke after {blocks} blocks: {error:?}"));
     }
 }
+
+/// T1: the bound-execution API is sufficient from outside the crate —
+/// execute, read every component, project a conformance observation,
+/// and consume the binding into the successor world. The complementary
+/// negative guarantee (private fields; no external assembly of an
+/// `ExecutedTransition` from independent parts) is a `compile_fail`
+/// doctest on the type itself.
+#[test]
+fn bound_execution_is_publicly_usable_and_opaque() {
+    let world = genesis_world();
+
+    let announce = AnnounceMaturity {
+        maturity_cycle: world.constants.min_maturity_lead,
+        signers: std::iter::once(OPERATOR_KEY).collect(),
+        fee_envelope: FeeEnvelope::default(),
+    };
+    let order = CanonicalOrder {
+        height: 0,
+        tx_index: 1,
+    };
+
+    let bound = execute_bound(&world, announce.clone(), order).unwrap();
+
+    assert_eq!(bound.before(), &world);
+    assert_eq!(bound.request(), &announce);
+    assert_eq!(bound.certificate().order, order);
+    assert_eq!(bound.certificate().branch, BranchKind::AnnounceMaturity);
+
+    let replayed = bind_execution(&world, announce, bound.after()).unwrap();
+    assert_eq!(&replayed, &bound);
+
+    let successor = bound.into_world();
+    check_invariant(&successor).unwrap();
+    assert_eq!(
+        successor.history.transitions.len(),
+        world.history.transitions.len() + 1,
+    );
+}

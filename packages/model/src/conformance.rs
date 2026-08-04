@@ -14,8 +14,8 @@ use realization::{
 };
 
 use crate::{
-    Asset, BranchKind, CompactAsh, Meta, OutPoint, ReceiptClass, RootEdge, Sat, SignerSet, Tag,
-    TransferReceipts, TransitionCertificate, Utxo, World,
+    Asset, BranchKind, CompactAsh, ExecutedTransition, Meta, OutPoint, ReceiptClass, RootEdge, Sat,
+    SignerSet, Tag, TransferReceipts, TransitionCertificate, Utxo, World,
 };
 
 /// Failure while projecting a model transition into realization facts.
@@ -46,25 +46,23 @@ pub enum ConformanceProjectionError {
 }
 
 pub fn observe_compact_ash(
-    before: &World,
-    request: &CompactAsh,
-    after: &World,
+    execution: &ExecutedTransition<CompactAsh>,
 ) -> Result<OperationObservation, ConformanceProjectionError> {
     observe_transition(
-        before,
-        after,
+        execution.before(),
+        execution.after(),
         BranchKind::CompactAsh,
         BTreeSet::new(),
-        owner_ids(&request.fee_envelope.signers),
+        owner_ids(&execution.request().fee_envelope.signers),
         RepresentationMode::Explicit,
     )
 }
 
 pub fn observe_live_transfer(
-    before: &World,
-    request: &TransferReceipts,
-    after: &World,
+    execution: &ExecutedTransition<TransferReceipts>,
 ) -> Result<OperationObservation, ConformanceProjectionError> {
+    let request = execution.request();
+
     if request.class != ReceiptClass::Live {
         return Err(ConformanceProjectionError::WrongBranch {
             expected: BranchKind::TransferLive,
@@ -73,8 +71,8 @@ pub fn observe_live_transfer(
     }
 
     observe_transition(
-        before,
-        after,
+        execution.before(),
+        execution.after(),
         BranchKind::TransferLive,
         owner_ids(&request.signers),
         owner_ids(&request.fee_envelope.signers),

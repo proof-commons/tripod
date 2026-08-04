@@ -293,5 +293,7 @@ pub use scalar::{
 };
 pub use shape::{ObjectKind, ShapePolicy};
 pub use signer::{SignerSet, require_signer};
-pub use transition::{Transition, execute};
+pub use transition::{
+    ExecutedTransition, ExecutionBindingError, Transition, bind_execution, execute, execute_bound,
+};
 pub use world::{ExternalBudget, RootCursor, Wallets, World};
