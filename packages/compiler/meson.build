@@ -30,6 +30,7 @@ compiler_source_files = files(
   'src/tests/lifecycle_tests.rs',
   'src/tests/mod.rs',
   'src/tests/oracle_tests.rs',
+  'src/tests/placement_oracle_tests.rs',
   'src/tests/placement_tests.rs',
   'src/tests/proof_tests.rs',
   'src/tests/relation_tests.rs',
