@@ -52,7 +52,7 @@ fn every_pilot_relation_is_classified_exactly_once() {
             .source;
 
         match &declaration.relation {
-            Relation::LifecycleExit { .. } => assert_eq!(
+            Relation::LifecycleExit { .. } | Relation::Representation { .. } => assert_eq!(
                 obligation.class,
                 RelationObligationClass::StaticallyValidated,
                 "{:?}",
@@ -391,4 +391,169 @@ fn an_unexpected_external_evidence_alternative_is_rejected() {
         classify_obligations(&relations).unwrap_err(),
         CompileError::InvalidExternalEvidenceProofAlternatives { relation },
     );
+}
+
+// --- T7: representation is a static mode constraint (§7-8) ---
+
+#[test]
+fn representation_relations_carry_no_proof_variable() {
+    for operation in [OperationId::CompactAsh, OperationId::TransferLive] {
+        let input = bound_input(&[operation]);
+        let relations = build_relation_analysis(&input).expect("relations");
+        let obligations = classify_obligations(&relations).expect("classify");
+
+        let representations = obligations
+            .iter()
+            .filter(|obligation| obligation.relation.kind() == RelationKind::Representation)
+            .collect::<Vec<_>>();
+
+        assert!(!representations.is_empty(), "{operation:?}");
+
+        for obligation in &representations {
+            assert_eq!(
+                obligation.class,
+                RelationObligationClass::StaticallyValidated,
+                "{:?}",
+                obligation.relation,
+            );
+        }
+
+        // No candidate selects a proof for the mode constraint.
+        let plans =
+            enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).expect("plans");
+
+        for candidate in &plans.candidates {
+            for obligation in &representations {
+                assert!(
+                    !candidate.proofs.contains_key(&obligation.relation),
+                    "{:?}",
+                    obligation.relation,
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn live_transfer_conservation_agrees_with_every_selected_mode() {
+    let input = bound_input(&[OperationId::TransferLive]);
+    let plans = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).expect("plans");
+    let live_choice = RepresentationChoiceId {
+        operation: OperationId::TransferLive,
+        object: ObjectId::ReceiptLive,
+    };
+
+    assert!(!plans.candidates.is_empty());
+
+    for candidate in &plans.candidates {
+        let (conservation, alternative) = candidate
+            .proofs
+            .iter()
+            .find(|(relation, _)| relation.kind() == RelationKind::Conservation)
+            .expect("live conservation is proof-required");
+
+        let expected = match candidate.representations[&live_choice] {
+            RepresentationMode::Explicit => ProofKind::PublicArithmetic,
+            RepresentationMode::PrivateCommitted => ProofKind::ConfidentialConservation,
+            other @ RepresentationMode::PublicCommitted => {
+                panic!("live transfer never selects {other:?}")
+            }
+        };
+        assert_eq!(alternative.proof(), expected);
+
+        // Capabilities and source rows follow the selected proof, and
+        // the opposite capability appears only if another selected
+        // proof legitimately requires it.
+        let (present, absent) = match expected {
+            ProofKind::PublicArithmetic => (
+                RequiredCapability::ExactPublicAmountArithmetic,
+                RequiredCapability::ConfidentialValueConservation,
+            ),
+            _ => (
+                RequiredCapability::ConfidentialValueConservation,
+                RequiredCapability::ExactPublicAmountArithmetic,
+            ),
+        };
+        assert!(candidate.required_capabilities.contains(&present));
+
+        let otherwise_required = candidate
+            .proofs
+            .iter()
+            .filter(|(relation, _)| *relation != conservation)
+            .any(|(relation, other)| {
+                crate::source::proof_capabilities(&declaration_of(&input, relation), other.proof())
+                    .contains(&absent)
+            });
+        assert_eq!(
+            candidate.required_capabilities.contains(&absent),
+            otherwise_required,
+        );
+
+        let expected_source = match expected {
+            ProofKind::PublicArithmetic => RequiredSourceKind::AuthenticatedConsensusValue,
+            _ => RequiredSourceKind::AuthenticatedCommitmentRelation,
+        };
+        let amount_rows = candidate
+            .source_requirements
+            .iter()
+            .filter(|row| {
+                row.operand.relation() == conservation
+                    && matches!(row.operand.role(), OperandRole::ObjectFamilyAmount { .. })
+            })
+            .collect::<Vec<_>>();
+
+        assert!(!amount_rows.is_empty());
+        for row in amount_rows {
+            assert_eq!(row.source, expected_source);
+            assert_ne!(row.source, RequiredSourceKind::AuthenticatedFamilyCensus);
+        }
+    }
+}
+
+#[test]
+fn compact_ash_keeps_both_modes_under_public_arithmetic() {
+    let input = bound_input(&[OperationId::CompactAsh]);
+    let plans = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).expect("plans");
+    let ash_choice = RepresentationChoiceId {
+        operation: OperationId::CompactAsh,
+        object: ObjectId::Ash,
+    };
+
+    let mut modes = BTreeSet::new();
+
+    for candidate in &plans.candidates {
+        let alternative = candidate
+            .proofs
+            .iter()
+            .find(|(relation, _)| relation.kind() == RelationKind::Conservation)
+            .map(|(_, alternative)| alternative.proof())
+            .expect("ash conservation is proof-required");
+
+        // Compact ASH declares only public arithmetic, and both of its
+        // approved modes remain compatible with it.
+        assert_eq!(alternative, ProofKind::PublicArithmetic);
+        modes.insert(candidate.representations[&ash_choice]);
+    }
+
+    assert_eq!(
+        modes,
+        BTreeSet::from([
+            RepresentationMode::Explicit,
+            RepresentationMode::PublicCommitted,
+        ]),
+    );
+}
+
+fn declaration_of(
+    input: &crate::BoundCompilerInput,
+    relation: &realization::RelationId,
+) -> realization::RelationDeclaration {
+    build_relation_analysis(input)
+        .expect("relations")
+        .project()
+        .nodes
+        .into_iter()
+        .map(|node| node.source)
+        .find(|declaration| declaration.id == *relation)
+        .expect("relation exists")
 }

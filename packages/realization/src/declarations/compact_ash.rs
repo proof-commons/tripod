@@ -339,7 +339,11 @@ fn relation_declarations(ids: &Ids) -> Vec<RelationDeclaration> {
             },
             [ProofKind::PublicConstructibility],
         ),
-        declaration(
+        // A mode constraint, not a second arithmetic proof: the
+        // conservation relation owns how value preservation is proved,
+        // and an independent proof alternative here could contradict
+        // the mode this relation admits.
+        relation_only(
             ids.representation.clone(),
             Relation::Representation {
                 object: ObjectId::Ash,
@@ -348,7 +352,6 @@ fn relation_declarations(ids: &Ids) -> Vec<RelationDeclaration> {
                     RepresentationMode::PublicCommitted,
                 ]),
             },
-            [ProofKind::PublicConstructibility],
         ),
         relation_only(
             ids.compact_lifecycle.clone(),

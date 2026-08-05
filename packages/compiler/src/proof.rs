@@ -115,7 +115,13 @@ pub fn classify_obligations(
         let operands = relation_operands(declaration)?;
 
         let class = match &declaration.relation {
-            Relation::LifecycleExit { .. } => RelationObligationClass::StaticallyValidated,
+            // A representation relation constrains which mode the
+            // compiler may select; the mode itself remains a decision
+            // variable derived from the relation's allowed set, and no
+            // arithmetic proof variable is created for the constraint.
+            Relation::LifecycleExit { .. } | Relation::Representation { .. } => {
+                RelationObligationClass::StaticallyValidated
+            }
 
             Relation::SubstrateConservation { asset } => {
                 // The realization approves exactly one proof class for
