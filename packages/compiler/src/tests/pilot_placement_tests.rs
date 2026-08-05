@@ -396,12 +396,104 @@ fn no_unconditional_relation_is_placed_on_the_optional_sponsor_region() {
         }
     }
 
-    // The restriction above is not vacuous: live transfer really does
-    // place its own sponsor relations inside the sponsor region. Compact
-    // ASH contributes none, because it declares no sponsor cardinality
-    // relation, so the sponsor family is not one of its declared input
-    // families and offers no member-anchored carrier at all.
+    // The restriction above is not vacuous: both pilots really do place
+    // their own sponsor relations inside the sponsor region. Compact ASH
+    // joined live transfer here once its sponsor cardinality relations
+    // were declared (Guide-6 §4), which is what makes the sponsor family
+    // one of its declared input families and offers a member-anchored
+    // carrier at all.
     assert!(sponsor_carriers > 0);
+}
+
+#[test]
+fn sponsor_family_cardinality_is_vacuous_unsponsored_and_active_when_sponsored() {
+    // Both pilots now own the architecture's sponsor cardinalities, and
+    // an optional family is never dropped from a case: it is stated
+    // vacuous in the sponsorless case and active in the sponsored one.
+    for analysis in pilots() {
+        let operation = analysis.operation();
+
+        for side in [TransactionSide::Input, TransactionSide::Output] {
+            let relation = RelationId::new(
+                operation,
+                RelationKind::Cardinality,
+                realization::RelationSubject::ObjectFamily {
+                    side,
+                    object: ObjectId::PlainLbtc,
+                },
+            );
+
+            assert!(
+                analysis.relation_ids().contains(&relation),
+                "{operation:?} declares {side:?} sponsor cardinality",
+            );
+
+            let mut observed = BTreeMap::new();
+
+            for plan in analysis.plans().filter(|plan| plan.relation == relation) {
+                assert_eq!(plan.activation, ActivationCondition::WhenSponsorPresent);
+
+                let expected = match plan.case.sponsor {
+                    SponsorCase::Absent => RelationActivity::Vacuous,
+                    SponsorCase::Present => RelationActivity::Active,
+                };
+
+                assert_eq!(plan.activity, expected, "{operation:?} {side:?}");
+
+                if plan.case.sponsor == SponsorCase::Absent {
+                    assert!(plan.runtime_requirements.is_empty());
+                } else {
+                    assert_eq!(plan.runtime_requirements.len(), 1);
+                }
+
+                observed.insert(plan.case.sponsor, plan.activity);
+            }
+
+            assert_eq!(
+                observed.keys().copied().collect::<BTreeSet<_>>(),
+                BTreeSet::from([SponsorCase::Absent, SponsorCase::Present]),
+                "{operation:?} {side:?}",
+            );
+        }
+    }
+}
+
+#[test]
+fn sponsor_cardinality_operands_name_counts_and_bounds_but_no_amount() {
+    // The repaired relations must expose the sponsor family's *census*,
+    // never its value: a sponsor amount operand here would breach the
+    // erasure boundary the whole pipeline maintains.
+    for analysis in pilots() {
+        let operation = analysis.operation();
+
+        for side in [TransactionSide::Input, TransactionSide::Output] {
+            let relation = RelationId::new(
+                operation,
+                RelationKind::Cardinality,
+                realization::RelationSubject::ObjectFamily {
+                    side,
+                    object: ObjectId::PlainLbtc,
+                },
+            );
+            let declaration = analysis
+                .relations
+                .graph
+                .node_weights()
+                .find(|node| node.source.id == relation)
+                .expect("sponsor cardinality is in scope")
+                .source
+                .clone();
+            let operands = crate::source::relation_operands(&declaration).expect("operands");
+
+            assert!(!operands.is_empty());
+            for operand in &operands {
+                assert!(
+                    !crate::source::is_sponsor_amount_operand(operand.role()),
+                    "{operand:?}",
+                );
+            }
+        }
+    }
 }
 
 // --- §16.4 local owner authorization ---
