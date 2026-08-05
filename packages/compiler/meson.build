@@ -3,6 +3,7 @@
 # audit fails the build. The parent meson.build accumulates this list
 # into its role group.
 compiler_source_files = files(
+  'src/capability.rs',
   'src/error.rs',
   'src/expression.rs',
   'src/fold.rs',
@@ -10,10 +11,12 @@ compiler_source_files = files(
   'src/input.rs',
   'src/lib.rs',
   'src/relation.rs',
+  'src/source.rs',
   'src/tests/expression_tests.rs',
   'src/tests/fold_tests.rs',
   'src/tests/mod.rs',
   'src/tests/relation_tests.rs',
+  'src/tests/source_tests.rs',
 )
 
 # Crate documentation (DOC owner).

@@ -252,4 +252,38 @@ pub enum CompileError {
         /// The absent operand.
         operand: realization::ExprId,
     },
+
+    /// A relation operand derived no authenticatable source row.
+    #[error("relation {relation:?} operand {operand:?} has no source requirement")]
+    MissingSourceRequirement {
+        /// The relation being planned.
+        relation: realization::RelationId,
+        /// The sourceless operand.
+        operand: crate::source::OperandId,
+    },
+
+    /// A source row failed authentication classification.
+    #[error("relation {relation:?} operand {operand:?} has no authenticated source")]
+    UnauthenticatedSourceRequirement {
+        /// The relation being planned.
+        relation: realization::RelationId,
+        /// The unauthenticated operand.
+        operand: crate::source::OperandId,
+    },
+
+    /// A witness-bearing source has no constructibility counterpart.
+    #[error("relation {relation:?} operand {operand:?} mismatches constructibility")]
+    SourceConstructibilityMismatch {
+        /// The relation being planned.
+        relation: realization::RelationId,
+        /// The mismatched operand.
+        operand: crate::source::OperandId,
+    },
+
+    /// An individual sponsor amount reached compiler analysis.
+    ///
+    /// Sponsor erasure means the value is structurally absent, not
+    /// merely secret; any occurrence is a defect, never data.
+    #[error("compiler analysis attempted to read an erased sponsor value")]
+    SponsorValueRead,
 }

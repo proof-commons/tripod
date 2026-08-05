@@ -38,17 +38,20 @@
 
 #![forbid(unsafe_code)]
 
+mod capability;
 pub mod error;
 mod expression;
 mod fold;
 mod foundation;
 pub mod input;
 mod relation;
+mod source;
 
 pub use error::CompileError;
 pub use expression::ExpressionCycleComponent;
 pub use input::{AnalysisPolicy, BoundCompilerInput, CompilationScope, bind_input};
 pub use relation::RelationCycleComponent;
+pub use source::OperandId;
 
 #[cfg(test)]
 mod tests;

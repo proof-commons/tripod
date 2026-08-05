@@ -7,6 +7,7 @@
 mod expression_tests;
 mod fold_tests;
 mod relation_tests;
+mod source_tests;
 
 use architecture::OperationId;
 
