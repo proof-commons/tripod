@@ -241,6 +241,27 @@ toolchain:
   not run for this batch.
 - Final clean-tree check: empty status.
 
+### 2.5 Compiler graph and folding batch gate · `gate:backlog:guide2`
+
+Recorded 2026-08-05 on the tree carrying C1-005, P2-005, and P2-006
+(branch guide2-compiler-foundation, after commit "plans: record compiler
+graph and folding completion"), via the nightly-SDK toolchain:
+
+- scripts/ci.sh: every lane ran and passed; the advisory lane was
+  SKIPPED (cargo-audit not installed; advisory per ADR-011), so the run
+  is partial-green, not green.
+- meson compile: success, including the real document build.
+- meson test: 10 of 10 suites passed.
+- git diff --check: clean.
+- Dependency review: the compiler's direct petgraph dependency resolves
+  no new package version; the feature surface remains default plus the
+  workspace's serde-1 only (no rayon, no generation features). The
+  lockfile change is the two workspace-internal dependency edges
+  (petgraph, dev-only proptest).
+- Document byte reproducibility: **deferred** — unchanged paper inputs;
+  not run for this batch.
+- Final clean-tree check: empty status.
+
 ---
 
 ### The verification harness's two standing hazards · `rem:backlog:verification-harness`
