@@ -472,4 +472,31 @@ pub enum CompileError {
         /// Derived cases absent from the requirement, sorted.
         unexpected: Vec<crate::case::ExecutionCaseId>,
     },
+
+    /// One relation was planned twice in the same execution case.
+    #[error("relation {relation:?} is planned twice in case {case:?}")]
+    DuplicateRelationCasePlan {
+        /// The twice-planned relation.
+        relation: realization::RelationId,
+        /// The case carrying both plans.
+        case: crate::case::ExecutionCaseId,
+    },
+
+    /// The relation-case census is not exactly every in-scope relation
+    /// crossed with every applicable execution case.
+    ///
+    /// A vacuous, compiler-static, structural, or externally evidenced
+    /// disposition is stated explicitly; it is never a reason for a
+    /// relation to leave the census.
+    #[error(
+        "relation-case census mismatch: {} missing, {} unexpected",
+        missing.len(),
+        unexpected.len()
+    )]
+    RelationCaseCensusMismatch {
+        /// Required relation-case pairs absent from the analysis.
+        missing: Vec<crate::placement::RelationCaseKey>,
+        /// Analyzed pairs absent from the requirement.
+        unexpected: Vec<crate::placement::RelationCaseKey>,
+    },
 }
