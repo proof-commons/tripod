@@ -70,8 +70,14 @@ use crate::{
         CarrierEligibility, CarrierQuantification, CarrierRole, EligibleCarrier,
         is_sponsor_region_carrier, relation_case_eligibility,
     },
-    case::{ExecutionCase, ExecutionCaseId, SponsorCase, execution_cases, is_sponsor_object},
-    layout::{LayoutRequirement, layout_requirements, selected_carrier_requirements},
+    case::{
+        ExecutionCase, ExecutionCaseId, SponsorCase, case_census, execution_cases,
+        is_sponsor_object, validate_case_census,
+    },
+    layout::{
+        LayoutRequirement, layout_requirements, selected_carrier_requirements,
+        validate_layout_census,
+    },
     proof::ProofPlanCandidate,
     relation::CompilerRelationAnalysis,
     source::SourceRequirement,
@@ -1063,6 +1069,195 @@ pub fn place_proof_plan(
         feasible_placements: placements.candidates,
         layout_requirements: requirements,
     })
+}
+
+/// The complete placement analysis of one feasible proof-plan set.
+///
+/// One entry per offered proof-plan candidate, in the canonical order of
+/// the typed plan values themselves. There is no plan index, plan
+/// number, or plan digest here: the offered order is not observed, and
+/// two analyses of the same plan set are equal rather than merely
+/// similar.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlacedProofPlans {
+    pub placed: Vec<PlacedProofPlanCandidate>,
+}
+
+/// The stable projection of one placed proof-plan candidate.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlacedProofPlanProjection {
+    pub execution_cases: BTreeSet<ExecutionCaseId>,
+    pub relation_case_plans: BTreeMap<RelationCaseKey, RelationCasePlan>,
+    pub feasible_placements: BTreeSet<PlacementCandidateProjection>,
+    pub layout_requirements: BTreeSet<LayoutRequirement>,
+}
+
+/// The stable projection of a complete placed plan set.
+///
+/// Keyed by the complete typed proof plan, so the key is the same
+/// boundary the analysis itself uses. Search order, vector position, and
+/// candidate counts cannot reach a comparison of two projections.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlacedAnalysisProjection {
+    pub plans: BTreeMap<ProofPlanCandidate, PlacedProofPlanProjection>,
+}
+
+impl PlacedProofPlanCandidate {
+    /// This placed candidate's stable projection.
+    #[must_use]
+    pub fn project(&self) -> PlacedProofPlanProjection {
+        PlacedProofPlanProjection {
+            execution_cases: self
+                .execution_cases
+                .iter()
+                .map(|case| case.id.clone())
+                .collect(),
+            relation_case_plans: self
+                .relation_case_plans
+                .iter()
+                .map(|plan| {
+                    (
+                        RelationCaseKey {
+                            relation: plan.relation.clone(),
+                            case: plan.case.clone(),
+                        },
+                        plan.clone(),
+                    )
+                })
+                .collect(),
+            feasible_placements: self
+                .feasible_placements
+                .iter()
+                .map(PlacementCandidate::project)
+                .collect(),
+            layout_requirements: self.layout_requirements.iter().cloned().collect(),
+        }
+    }
+}
+
+impl PlacedProofPlans {
+    /// The semantic execution-case census across the whole plan set.
+    ///
+    /// A set rather than a count of candidates: two plans that fixed the
+    /// same representations share their case identities, and the census
+    /// counts cases.
+    #[must_use]
+    pub fn execution_case_census(&self) -> BTreeSet<ExecutionCaseId> {
+        self.placed
+            .iter()
+            .flat_map(|entry| entry.execution_cases.iter().map(|case| case.id.clone()))
+            .collect()
+    }
+
+    /// This analysis's stable projection.
+    #[must_use]
+    pub fn project(&self) -> PlacedAnalysisProjection {
+        PlacedAnalysisProjection {
+            plans: self
+                .placed
+                .iter()
+                .map(|entry| (entry.proof_plan.clone(), entry.project()))
+                .collect(),
+        }
+    }
+}
+
+/// Place every feasible proof-plan candidate of one analysis.
+///
+/// Placement is plan-specific — a candidate selecting a private
+/// committed representation with a confidential conservation proof has
+/// different source and layout requirements from one selecting explicit
+/// values with public arithmetic — so every candidate is placed on its
+/// own terms rather than once for a merged plan. The result is the
+/// complete collection: no candidate is dropped, none is preferred, and
+/// nothing is weighted.
+///
+/// # Errors
+///
+/// Any failure of [`place_proof_plan`] for any candidate, or of
+/// [`validate_placed_proof_plans`] on the assembled collection.
+pub fn place_feasible_proof_plans(
+    relations: &CompilerRelationAnalysis,
+    candidates: &[ProofPlanCandidate],
+    limits: PlacementSearchLimits,
+) -> Result<PlacedProofPlans, CompileError> {
+    let mut placed = Vec::with_capacity(candidates.len());
+
+    for candidate in candidates {
+        placed.push(place_proof_plan(relations, candidate, limits)?);
+    }
+
+    placed.sort_by(|left, right| left.proof_plan.cmp(&right.proof_plan));
+
+    let analysis = PlacedProofPlans { placed };
+
+    validate_placed_proof_plans(relations, candidates, &analysis)?;
+    Ok(analysis)
+}
+
+/// Validate one complete placed plan set.
+///
+/// Every stage is re-checked over the assembled value rather than
+/// trusted because the assembler produced it: each candidate's case
+/// census, its relation-case census, every one of its feasible
+/// placements against the hard constraints, and its layout census. The
+/// set-level properties are that no plan is placed twice and that the
+/// union of the per-candidate cases is exactly the semantic case census
+/// the relations and the offered candidates require, so a dropped
+/// candidate cannot pass as a complete analysis.
+///
+/// # Errors
+///
+/// [`CompileError::DuplicatePlacedProofPlan`] when one typed plan is
+/// placed twice; [`CompileError::ExecutionCaseCensusMismatch`] when the
+/// union of the placed cases differs from the required census; any
+/// failure of [`crate::case::validate_case_census`],
+/// [`validate_relation_case_census`],
+/// [`crate::carrier::relation_case_eligibility`], [`validate_placement`],
+/// or [`crate::layout::validate_layout_census`].
+pub fn validate_placed_proof_plans(
+    relations: &CompilerRelationAnalysis,
+    candidates: &[ProofPlanCandidate],
+    analysis: &PlacedProofPlans,
+) -> Result<(), CompileError> {
+    let mut seen = BTreeSet::new();
+
+    for entry in &analysis.placed {
+        if !seen.insert(entry.proof_plan.clone()) {
+            return Err(CompileError::DuplicatePlacedProofPlan);
+        }
+
+        validate_case_census(relations, &entry.proof_plan, &entry.execution_cases)?;
+        validate_relation_case_census(
+            relations,
+            &entry.execution_cases,
+            &entry.relation_case_plans,
+        )?;
+
+        let eligibility = relation_case_eligibility(relations, &entry.relation_case_plans)?;
+
+        for placement in &entry.feasible_placements {
+            validate_placement(&entry.relation_case_plans, &eligibility, placement)?;
+        }
+
+        validate_layout_census(
+            &entry.relation_case_plans,
+            &eligibility,
+            &entry.layout_requirements,
+        )?;
+    }
+
+    let derived = analysis.execution_case_census();
+    let expected = case_census(relations, candidates)?;
+
+    if derived != expected {
+        return Err(CompileError::ExecutionCaseCensusMismatch {
+            missing: expected.difference(&derived).cloned().collect(),
+            unexpected: derived.difference(&expected).cloned().collect(),
+        });
+    }
+
+    Ok(())
 }
 
 /// One retained carrier set of one obligation, with what it depends on.
