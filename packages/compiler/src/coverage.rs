@@ -48,11 +48,13 @@ use crate::{
     capability::RequiredCapability,
     carrier::{CarrierEligibility, relation_case_eligibility},
     case::ExecutionCaseId,
+    coverage_graph::{CoverageGraphProjection, resolve_coverage_dependencies},
     layout::{LayoutRequirement, names_sponsor_amount, selected_carrier_requirements},
     placement::{
-        PlacedCarrier, PlacedProofPlanCandidate, PlacementCandidate, RelationActivity,
-        RelationCaseKey, RelationCasePlan,
+        PlacedCarrier, PlacedProofPlanCandidate, PlacedProofPlans, PlacementCandidate,
+        RelationActivity, RelationCaseKey, RelationCasePlan,
     },
+    proof::ProofPlanCandidate,
     relation::CompilerRelationAnalysis,
     source::{OperandId, SourceRequirement, is_sponsor_amount_operand, relation_operands},
 };
@@ -1075,21 +1077,63 @@ pub fn bind_carrier_coverage(
     }
 }
 
+/// The eligible carriers of each relation-case, indexed by key.
+///
+/// The placement product is scanned once per assignment, so a linear
+/// search here would be quadratic in a scope whose placements number in
+/// the tens of thousands.
+fn eligibility_index(
+    eligibility: &[CarrierEligibility],
+) -> BTreeMap<RelationCaseKey, &CarrierEligibility> {
+    eligibility
+        .iter()
+        .map(|entry| {
+            (
+                RelationCaseKey {
+                    relation: entry.relation.clone(),
+                    case: entry.case.clone(),
+                },
+                entry,
+            )
+        })
+        .collect()
+}
+
+/// One assignment as it appears in the placement product.
+///
+/// Borrowed rather than owned so the repeat filter allocates nothing:
+/// the same per-relation assignment recurs in every whole-transaction
+/// placement that chose it, which is exactly what the compression
+/// exists to collapse.
+type AssignmentRef<'a> = (&'a RelationId, &'a ExecutionCaseId, &'a [PlacedCarrier]);
+
 /// The deduplicated assignment alternatives of every relation-case.
+///
+/// One relation-case assignment recurs once per combined placement that
+/// selected it — 216 placements of one pilot plan repeat a handful of
+/// distinct assignments — so each distinct assignment is expanded once
+/// and every repeat is skipped before any layout dependency is derived.
 fn carrier_alternatives(
     eligibility: &[CarrierEligibility],
     placements: &[PlacementCandidate],
 ) -> BTreeMap<RelationCaseKey, BTreeSet<CarrierAssignmentAlternative>> {
+    let index = eligibility_index(eligibility);
     let mut alternatives: BTreeMap<RelationCaseKey, BTreeSet<CarrierAssignmentAlternative>> =
         BTreeMap::new();
+    let mut seen: BTreeSet<AssignmentRef<'_>> = BTreeSet::new();
 
     for placement in placements {
         for assignment in &placement.assignments {
+            if !seen.insert((
+                &assignment.relation,
+                &assignment.case,
+                assignment.carriers.as_slice(),
+            )) {
+                continue;
+            }
+
             let key = assignment.key();
-            let Some(carriers) = eligibility
-                .iter()
-                .find(|entry| entry.relation == key.relation && entry.case == key.case)
-            else {
+            let Some(carriers) = index.get(&key) else {
                 continue;
             };
 
@@ -1417,14 +1461,25 @@ pub fn validate_placement_coverage(
     // Every selectable assignment is covered, with exactly the layout
     // requirements that assignment depends on: recomputed from the
     // placement rather than trusted because the compression produced
-    // it.
+    // it. A repeat of an assignment already checked is skipped rather
+    // than recomputed — the same inputs cannot reach a different
+    // verdict, and the product repeats each distinct assignment once
+    // per placement that chose it.
+    let index = eligibility_index(eligibility);
+    let mut checked: BTreeSet<AssignmentRef<'_>> = BTreeSet::new();
+
     for placement in placements {
         for assignment in &placement.assignments {
+            if !checked.insert((
+                &assignment.relation,
+                &assignment.case,
+                assignment.carriers.as_slice(),
+            )) {
+                continue;
+            }
+
             let key = assignment.key();
-            let Some(carriers) = eligibility
-                .iter()
-                .find(|entry| entry.relation == key.relation && entry.case == key.case)
-            else {
+            let Some(carriers) = index.get(&key) else {
                 continue;
             };
             let required = assignment_alternative(carriers, &assignment.carriers);
@@ -1567,7 +1622,7 @@ pub fn validate_representation_coverage(
 ///
 /// Set- and map-shaped by construction, so no vector position or
 /// derivation order can reach a comparison.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RelationCoverageProjection {
     pub activity: RelationActivity,
     pub boundaries: BTreeSet<CoverageBoundary>,
@@ -1620,4 +1675,249 @@ impl PlanCoverageAnalysis {
                 .collect(),
         }
     }
+}
+
+/// The stable projection of one operation's coverage.
+///
+/// The unit the factorization argument is made in: an operation's
+/// coverage is a complete value on its own, so two scopes can be
+/// compared operation by operation without either side ever building a
+/// cross-operation product to compare.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct OperationCoverageProjection {
+    pub operation: OperationId,
+    pub cases: BTreeSet<ExecutionCaseId>,
+    pub requirements: BTreeMap<RelationCaseKey, RelationCoverageProjection>,
+}
+
+impl OperationCoverageAnalysis {
+    /// This operation's stable projection.
+    #[must_use]
+    pub fn project(&self) -> OperationCoverageProjection {
+        OperationCoverageProjection {
+            operation: self.operation,
+            cases: self.cases.clone(),
+            requirements: self
+                .requirements
+                .iter()
+                .map(|(key, plan)| (key.clone(), plan.project()))
+                .collect(),
+        }
+    }
+}
+
+// --- Guide-6 Wave 5: scope-level coverage (§11, §15, §16) ---
+
+/// One proof plan's coverage together with its resolved dependencies.
+///
+/// The graph travels as its stable projection rather than as the graph
+/// itself: the Petgraph handles are a local artifact of how the graph
+/// was built, and an analysis that carried them could compare equal to
+/// itself and unequal to an identical analysis built in another order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlanCoverage {
+    pub coverage: PlanCoverageAnalysis,
+    pub dependencies: CoverageGraphProjection,
+}
+
+/// The coverage of a complete feasible proof-plan set.
+///
+/// Keyed by the complete typed proof plan, matching the placement
+/// analysis it consumes: until an admitted plan identity exists, the
+/// typed value is the only honest outer key, and a vector position or
+/// candidate number would make two equal analyses compare unequal.
+///
+/// Nothing here is a cross-operation product. Each plan's coverage stays
+/// stored per operation, so a two-operation scope carries two operation
+/// analyses rather than one analysis over paired cases.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScopeCoverageAnalysis {
+    pub plans: BTreeMap<ProofPlanCandidate, PlanCoverage>,
+}
+
+/// The stable projection of one scope's coverage.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlanCoverageProjection {
+    pub coverage: CoverageProjection,
+    pub dependencies: CoverageGraphProjection,
+}
+
+/// The stable projection of a complete scope coverage analysis.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScopeCoverageProjection {
+    pub plans: BTreeMap<ProofPlanCandidate, PlanCoverageProjection>,
+}
+
+impl PlanCoverage {
+    /// This plan's stable projection.
+    #[must_use]
+    pub fn project(&self) -> PlanCoverageProjection {
+        PlanCoverageProjection {
+            coverage: self.coverage.project(),
+            dependencies: self.dependencies.clone(),
+        }
+    }
+}
+
+impl ScopeCoverageAnalysis {
+    /// This scope's stable projection.
+    #[must_use]
+    pub fn project(&self) -> ScopeCoverageProjection {
+        ScopeCoverageProjection {
+            plans: self
+                .plans
+                .iter()
+                .map(|(plan, coverage)| (plan.clone(), coverage.project()))
+                .collect(),
+        }
+    }
+
+    /// Every plan's coverage analysis, in stable plan order.
+    pub fn analyses(&self) -> impl Iterator<Item = &PlanCoverageAnalysis> {
+        self.plans.values().map(|entry| &entry.coverage)
+    }
+
+    /// The distinct per-operation coverage projections of one operation.
+    ///
+    /// A set of factors, never a product: two scopes agree on an
+    /// operation when they state the same factors for it, and the
+    /// comparison neither pairs plans across scopes nor multiplies one
+    /// operation's coverage by another's.
+    #[must_use]
+    pub fn operation_projections(
+        &self,
+        operation: OperationId,
+    ) -> BTreeSet<OperationCoverageProjection> {
+        self.analyses()
+            .filter_map(|analysis| analysis.operations.get(&operation))
+            .map(OperationCoverageAnalysis::project)
+            .collect()
+    }
+
+    /// Every execution case this scope covers.
+    #[must_use]
+    pub fn cases(&self) -> BTreeSet<ExecutionCaseId> {
+        self.analyses()
+            .flat_map(|analysis| analysis.operations.values())
+            .flat_map(|operation| operation.cases.iter().cloned())
+            .collect()
+    }
+}
+
+/// Analyze the coverage of a complete placed proof-plan set.
+///
+/// Every feasible plan runs the whole way through: relation-case
+/// coverage, the carrier obligations compressed out of its feasible
+/// placements, the accepted projections of each boundary, and the typed
+/// dependency graph whose descendant closures bind the collateral of
+/// every runtime negative. The plan-set censuses — the conditional
+/// triplet and the representation census — are then validated over the
+/// assembled collection, because neither is a property any single plan
+/// can satisfy alone.
+///
+/// # Errors
+///
+/// [`CompileError::DuplicatePlacedProofPlan`] when one proof plan is
+/// placed twice; [`CompileError::CoverageCensusMismatch`] when a plan's
+/// coverage scope differs from its relations crossed with its cases;
+/// [`CompileError::ExecutionCaseCensusMismatch`] when the covered cases
+/// differ from the placed case census; any failure of
+/// [`analyze_placed_coverage`],
+/// [`crate::coverage_graph::resolve_coverage_dependencies`],
+/// [`validate_conditional_coverage`], or
+/// [`validate_representation_coverage`].
+pub fn analyze_scope_coverage(
+    relations: &CompilerRelationAnalysis,
+    placed: &PlacedProofPlans,
+) -> Result<ScopeCoverageAnalysis, CompileError> {
+    let mut plans: BTreeMap<ProofPlanCandidate, PlanCoverage> = BTreeMap::new();
+
+    for entry in &placed.placed {
+        let mut coverage = analyze_placed_coverage(relations, entry)?;
+        let graph = resolve_coverage_dependencies(&mut coverage, relations)?;
+
+        validate_plan_coverage_scope(relations, entry, &coverage)?;
+
+        let plan = PlanCoverage {
+            coverage,
+            dependencies: graph.project(),
+        };
+
+        if plans.insert(entry.proof_plan.clone(), plan).is_some() {
+            return Err(CompileError::DuplicatePlacedProofPlan);
+        }
+    }
+
+    let analysis = ScopeCoverageAnalysis { plans };
+
+    validate_scope_coverage(relations, placed, &analysis)?;
+    Ok(analysis)
+}
+
+/// Validate one plan's coverage scope against its relations and cases
+/// (§11.1).
+///
+/// The expected scope is derived from the relation analysis and the
+/// plan's own execution cases rather than from the relation-case plans
+/// the coverage was built from: a stage that dropped a relation before
+/// coverage ever saw it would otherwise agree with the coverage that
+/// inherited the gap.
+fn validate_plan_coverage_scope(
+    relations: &CompilerRelationAnalysis,
+    placed: &PlacedProofPlanCandidate,
+    coverage: &PlanCoverageAnalysis,
+) -> Result<(), CompileError> {
+    let expected = relations
+        .graph
+        .node_weights()
+        .flat_map(|node| {
+            placed
+                .execution_cases
+                .iter()
+                .filter(move |case| case.id.operation == node.source.id.operation())
+                .map(move |case| RelationCaseKey {
+                    relation: node.source.id.clone(),
+                    case: case.id.clone(),
+                })
+        })
+        .collect::<BTreeSet<_>>();
+    let covered = coverage.keys();
+
+    if covered == expected {
+        return Ok(());
+    }
+
+    Err(CompileError::CoverageCensusMismatch {
+        missing: expected.difference(&covered).cloned().collect(),
+        unexpected: covered.difference(&expected).cloned().collect(),
+    })
+}
+
+/// Validate the censuses only the complete plan set can carry.
+///
+/// # Errors
+///
+/// [`CompileError::ExecutionCaseCensusMismatch`] when the covered cases
+/// differ from the placed case census; any failure of
+/// [`validate_conditional_coverage`] or
+/// [`validate_representation_coverage`].
+pub fn validate_scope_coverage(
+    relations: &CompilerRelationAnalysis,
+    placed: &PlacedProofPlans,
+    analysis: &ScopeCoverageAnalysis,
+) -> Result<(), CompileError> {
+    let expected = placed.execution_case_census();
+    let covered = analysis.cases();
+
+    if covered != expected {
+        return Err(CompileError::ExecutionCaseCensusMismatch {
+            missing: expected.difference(&covered).cloned().collect(),
+            unexpected: covered.difference(&expected).cloned().collect(),
+        });
+    }
+
+    let per_plan = analysis.analyses().cloned().collect::<Vec<_>>();
+
+    validate_conditional_coverage(&per_plan)?;
+    validate_representation_coverage(relations, &per_plan)
 }
