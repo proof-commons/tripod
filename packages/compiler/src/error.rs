@@ -15,6 +15,8 @@
 use architecture::OperationId;
 use thiserror::Error;
 
+use crate::relation::RelationCycleComponent;
+
 /// A typed compilation failure.
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 #[non_exhaustive]
@@ -64,4 +66,154 @@ pub enum CompileError {
     /// The requested compilation scope names no operation at all.
     #[error("requested compilation scope is empty")]
     EmptyCompilationScope,
+
+    /// One relation ID occurred more than once in the scoped source.
+    #[error("relation {relation:?} occurs more than once in the scoped source")]
+    DuplicateRelation {
+        /// The repeated realization-owned relation.
+        relation: realization::RelationId,
+    },
+
+    /// A dependency edge names a relation absent from the scoped graph.
+    #[error("relation dependency endpoint {relation:?} is absent from the scoped graph")]
+    UnknownRelationDependencyEndpoint {
+        /// The missing stable relation ID (never a graph index).
+        relation: realization::RelationId,
+    },
+
+    /// One identical dependency declaration occurred more than once.
+    #[error("relation dependency {prerequisite:?} -> {dependent:?} is declared more than once")]
+    DuplicateRelationDependency {
+        /// The prerequisite relation.
+        prerequisite: realization::RelationId,
+        /// The dependent relation.
+        dependent: realization::RelationId,
+        /// The repeated edge kind.
+        edge: realization::RelationEdge,
+    },
+
+    /// A source dependency crosses the requested compiler boundary.
+    ///
+    /// A crossing is rejected, never silently dropped: an explicit
+    /// import design may later admit operation-independent
+    /// dependencies, but no crossing is accepted implicitly.
+    #[error(
+        "relation dependency {prerequisite:?} -> {dependent:?} escapes the requested compiler scope"
+    )]
+    RelationDependencyEscapesScope {
+        /// The prerequisite relation.
+        prerequisite: realization::RelationId,
+        /// The dependent relation.
+        dependent: realization::RelationId,
+    },
+
+    /// The scoped relation dependencies contain a cycle.
+    #[error("relation dependencies contain {} cyclic component(s)", components.len())]
+    RelationDependencyCycle {
+        /// Canonically ordered cyclic components in stable IDs.
+        components: Vec<RelationCycleComponent>,
+    },
+
+    /// The graph census does not equal the expected scoped census.
+    #[error(
+        "relation census mismatch: {} missing, {} unexpected",
+        missing.len(),
+        unexpected.len()
+    )]
+    RelationCensusMismatch {
+        /// Expected relations absent from the graph, sorted.
+        missing: Vec<realization::RelationId>,
+        /// Graph relations absent from the expectation, sorted.
+        unexpected: Vec<realization::RelationId>,
+    },
+
+    /// A proof alternative names a relation other than its owner.
+    #[error("proof alternative on {relation:?} is bound to {alternative_relation:?}")]
+    ForeignProofAlternative {
+        /// The relation carrying the alternative.
+        relation: realization::RelationId,
+        /// The relation the alternative actually names.
+        alternative_relation: realization::RelationId,
+    },
+
+    /// One expression ID occurred more than once in the scoped source.
+    #[error("expression {expression:?} occurs more than once in the scoped source")]
+    DuplicateExpression {
+        /// The repeated realization-owned expression.
+        expression: realization::ExprId,
+    },
+
+    /// One identical expression dependency occurred more than once.
+    #[error("expression dependency {dependency:?} -> {consumer:?} is declared more than once")]
+    DuplicateExpressionDependency {
+        /// The dependency expression.
+        dependency: realization::ExprId,
+        /// The consuming expression.
+        consumer: realization::ExprId,
+    },
+
+    /// A dependency edge names an expression absent from the source.
+    #[error("expression dependency endpoint {expression:?} is absent from the scoped source")]
+    UnknownExpressionDependencyEndpoint {
+        /// The missing stable expression ID (never a graph index).
+        expression: realization::ExprId,
+    },
+
+    /// An in-scope expression depends on another operation's expression.
+    #[error("expression dependency {dependency:?} of {consumer:?} escapes the compiler scope")]
+    ExpressionDependencyEscapesScope {
+        /// The out-of-scope dependency.
+        dependency: realization::ExprId,
+        /// The in-scope consumer.
+        consumer: realization::ExprId,
+    },
+
+    /// The scoped expression dependencies contain a cycle.
+    #[error("expression dependencies contain {} cyclic component(s)", components.len())]
+    ExpressionDependencyCycle {
+        /// Canonically ordered cyclic components in stable IDs.
+        components: Vec<crate::expression::ExpressionCycleComponent>,
+    },
+
+    /// The graph census does not equal the expected scoped closure.
+    #[error(
+        "expression census mismatch: {} missing, {} unexpected",
+        missing.len(),
+        unexpected.len()
+    )]
+    ExpressionCensusMismatch {
+        /// Expected expressions absent from the graph, sorted.
+        missing: Vec<realization::ExprId>,
+        /// Graph expressions absent from the expectation, sorted.
+        unexpected: Vec<realization::ExprId>,
+    },
+
+    /// A relation predicate names an expression absent from the graph.
+    #[error("relation {relation:?} names unknown predicate expression {expression:?}")]
+    UnknownPredicateExpression {
+        /// The relation carrying the predicate.
+        relation: realization::RelationId,
+        /// The missing predicate expression.
+        expression: realization::ExprId,
+    },
+
+    /// A relation predicate expression is not boolean.
+    #[error("predicate expression {expression:?} of {relation:?} has type {actual:?}")]
+    NonBooleanPredicateExpression {
+        /// The relation carrying the predicate.
+        relation: realization::RelationId,
+        /// The predicate expression.
+        expression: realization::ExprId,
+        /// The expression's actual semantic type.
+        actual: realization::SemanticType,
+    },
+
+    /// A relation predicate belongs to another operation.
+    #[error("predicate expression {expression:?} of {relation:?} belongs to another operation")]
+    PredicateExpressionOutsideScope {
+        /// The relation carrying the predicate.
+        relation: realization::RelationId,
+        /// The foreign predicate expression.
+        expression: realization::ExprId,
+    },
 }

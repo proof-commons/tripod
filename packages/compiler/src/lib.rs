@@ -39,7 +39,15 @@
 #![forbid(unsafe_code)]
 
 pub mod error;
+mod expression;
+mod foundation;
 pub mod input;
+mod relation;
 
 pub use error::CompileError;
+pub use expression::ExpressionCycleComponent;
 pub use input::{AnalysisPolicy, BoundCompilerInput, CompilationScope, bind_input};
+pub use relation::RelationCycleComponent;
+
+#[cfg(test)]
+mod tests;

@@ -21,8 +21,12 @@ name = "compiler"
 # would duplicate an architecture-owned ID rather than cite it.
 [dependencies]
 architecture = { workspace = true }
+petgraph = { workspace = true }
 realization = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
 
 [lints]
 workspace = true
