@@ -9,12 +9,20 @@ mod disclosure_tests;
 mod expression_tests;
 mod fold_tests;
 mod lifecycle_tests;
+mod proof_tests;
 mod relation_tests;
 mod source_tests;
 
 use architecture::OperationId;
 
-use crate::{AnalysisPolicy, BoundCompilerInput, CompilationScope, bind_input};
+use crate::{AnalysisPolicy, BoundCompilerInput, CompilationScope, ProofSearchLimits, bind_input};
+
+pub const fn test_policy() -> AnalysisPolicy {
+    AnalysisPolicy::strict(ProofSearchLimits::new(
+        std::num::NonZeroU64::new(1_000_000).expect("nonzero"),
+        std::num::NonZeroU64::new(10_000).expect("nonzero"),
+    ))
+}
 
 pub fn phase1_realization() -> realization::ScopedRealizationSpec {
     realization::derive(
@@ -29,7 +37,7 @@ pub fn bound_input(operations: &[OperationId]) -> BoundCompilerInput {
         &architecture::ARCHITECTURE,
         phase1_realization(),
         CompilationScope::from_operations(operations.iter().copied()).expect("scope"),
-        AnalysisPolicy::Strict,
+        test_policy(),
     )
     .expect("bind input")
 }

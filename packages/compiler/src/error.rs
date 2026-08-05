@@ -401,4 +401,38 @@ pub enum CompileError {
         /// The unexpectedly disclosed fact.
         fact: realization::FactId,
     },
+
+    /// A runtime relation declares no approved proof alternative.
+    #[error("relation {relation:?} has no proof alternative")]
+    MissingProofAlternative {
+        /// The alternativeless relation.
+        relation: realization::RelationId,
+    },
+
+    /// No complete assignment satisfies every hard constraint.
+    ///
+    /// Compiler planning failure under the supplied capability and
+    /// constructibility policy — never target evidence.
+    #[error("no feasible proof plan; {} relation(s) blocked", blocked_relations.len())]
+    NoFeasibleProofPlan {
+        /// The blocking relations, canonically sorted.
+        blocked_relations: Vec<realization::RelationId>,
+    },
+
+    /// The exact search exceeded its explicit state limit.
+    ///
+    /// No partial result is returned: neither infeasibility nor
+    /// optimality is claimed on exhaustion.
+    #[error("proof search exceeded {maximum} states")]
+    ProofSearchStateLimitExceeded {
+        /// The configured maximum.
+        maximum: u64,
+    },
+
+    /// The exact search exceeded its explicit candidate limit.
+    #[error("proof search exceeded {maximum} candidates")]
+    ProofCandidateLimitExceeded {
+        /// The configured maximum.
+        maximum: u64,
+    },
 }

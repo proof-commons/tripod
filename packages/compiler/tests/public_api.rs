@@ -60,7 +60,14 @@ fn the_error_root_is_a_standard_error() {
 
 // --- P2-004: the validated input boundary ---
 
-use compiler::{AnalysisPolicy, CompilationScope, bind_input};
+use compiler::{AnalysisPolicy, CompilationScope, ProofSearchLimits, bind_input};
+
+const fn test_policy() -> AnalysisPolicy {
+    AnalysisPolicy::strict(ProofSearchLimits::new(
+        std::num::NonZeroU64::new(1_000_000).expect("nonzero"),
+        std::num::NonZeroU64::new(10_000).expect("nonzero"),
+    ))
+}
 
 fn phase1_realization() -> realization::ScopedRealizationSpec {
     realization::derive(
@@ -82,7 +89,7 @@ fn phase1_realization_binds_with_explicit_scope() {
         &architecture::ARCHITECTURE,
         realization,
         scope,
-        AnalysisPolicy::Strict,
+        test_policy(),
     )
     .unwrap();
 
@@ -91,7 +98,7 @@ fn phase1_realization_binds_with_explicit_scope() {
         [OperationId::TransferLive, OperationId::CompactAsh],
         "scope is canonical stable-code order",
     );
-    assert_eq!(bound.policy(), AnalysisPolicy::Strict);
+    assert_eq!(bound.policy(), test_policy());
     assert_eq!(bound.architecture_binding(), &expected_binding);
     assert!(
         bound
@@ -109,7 +116,7 @@ fn single_pilot_scopes_bind_and_permutations_are_equal() {
             &architecture::ARCHITECTURE,
             phase1_realization(),
             scope,
-            AnalysisPolicy::Strict,
+            test_policy(),
         )
         .unwrap();
     }
@@ -149,7 +156,7 @@ fn scope_outside_the_realization_is_incomplete() {
             &architecture::ARCHITECTURE,
             phase1_realization(),
             scope,
-            AnalysisPolicy::Strict,
+            test_policy(),
         )
         .unwrap_err(),
         CompileError::IncompleteRealizationScope {
@@ -166,13 +173,7 @@ fn a_different_architecture_semantic_body_is_a_binding_mismatch() {
     let scope = CompilationScope::from_operations([OperationId::CompactAsh]).unwrap();
 
     assert_eq!(
-        bind_input(
-            &mutated,
-            phase1_realization(),
-            scope,
-            AnalysisPolicy::Strict,
-        )
-        .unwrap_err(),
+        bind_input(&mutated, phase1_realization(), scope, test_policy(),).unwrap_err(),
         CompileError::ArchitectureBindingMismatch,
     );
 }

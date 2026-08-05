@@ -13,6 +13,7 @@ compiler_source_files = files(
   'src/input.rs',
   'src/lib.rs',
   'src/lifecycle.rs',
+  'src/proof.rs',
   'src/relation.rs',
   'src/source.rs',
   'src/tests/constructibility_tests.rs',
@@ -21,6 +22,7 @@ compiler_source_files = files(
   'src/tests/fold_tests.rs',
   'src/tests/lifecycle_tests.rs',
   'src/tests/mod.rs',
+  'src/tests/proof_tests.rs',
   'src/tests/relation_tests.rs',
   'src/tests/source_tests.rs',
 )

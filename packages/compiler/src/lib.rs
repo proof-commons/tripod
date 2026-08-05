@@ -47,12 +47,15 @@ mod fold;
 mod foundation;
 pub mod input;
 mod lifecycle;
+mod proof;
 mod relation;
 mod source;
 
 pub use error::CompileError;
 pub use expression::ExpressionCycleComponent;
-pub use input::{AnalysisPolicy, BoundCompilerInput, CompilationScope, bind_input};
+pub use input::{
+    AnalysisPolicy, BoundCompilerInput, CompilationScope, ProofSearchLimits, bind_input,
+};
 pub use relation::RelationCycleComponent;
 pub use source::OperandId;
 

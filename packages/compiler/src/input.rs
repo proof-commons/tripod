@@ -61,16 +61,50 @@ impl CompilationScope {
     }
 }
 
+/// Explicit work limits for the exact proof-plan search.
+///
+/// Compiler configuration with an explicit constructor — no ambient
+/// default exists for release-sensitive analysis, and no configuration
+/// identity is minted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProofSearchLimits {
+    pub maximum_states: std::num::NonZeroU64,
+    pub maximum_candidates: std::num::NonZeroU64,
+}
+
+impl ProofSearchLimits {
+    #[must_use]
+    pub const fn new(
+        maximum_states: std::num::NonZeroU64,
+        maximum_candidates: std::num::NonZeroU64,
+    ) -> Self {
+        Self {
+            maximum_states,
+            maximum_candidates,
+        }
+    }
+}
+
 /// Typed analysis policy.
 ///
-/// Only the reviewed policy exists; a future policy requires its own
-/// reviewed semantics rather than a placeholder configuration field.
+/// The strict semantics are the only reviewed policy: preserve every
+/// in-scope realization relation, never weaken an unsupported
+/// relation, retain explicit external evidence requirements, and fail
+/// rather than emit a partial plan. The search limits are the policy's
+/// one real configuration consumer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AnalysisPolicy {
-    /// Preserve every in-scope realization relation, never weaken an
-    /// unsupported relation, retain explicit external evidence
-    /// requirements, and fail rather than emit a partial plan.
-    Strict,
+pub struct AnalysisPolicy {
+    pub proof_search_limits: ProofSearchLimits,
+}
+
+impl AnalysisPolicy {
+    /// The strict policy with explicit search limits.
+    #[must_use]
+    pub const fn strict(proof_search_limits: ProofSearchLimits) -> Self {
+        Self {
+            proof_search_limits,
+        }
+    }
 }
 
 /// One immutable validated compiler input.
