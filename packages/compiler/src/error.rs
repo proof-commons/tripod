@@ -617,4 +617,13 @@ pub enum CompileError {
         /// The configured maximum.
         maximum: u64,
     },
+
+    /// One proof-plan candidate was placed more than once.
+    ///
+    /// The variant names no plan: until an admitted plan identity
+    /// exists, a plan may not be referred to by vector position, search
+    /// order, candidate number, or digest, and the complete typed plan
+    /// value is too large to be a diagnostic field.
+    #[error("a proof-plan candidate was placed more than once")]
+    DuplicatePlacedProofPlan,
 }
