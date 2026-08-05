@@ -8,6 +8,7 @@ mod carrier_tests;
 mod case_tests;
 mod constructibility_tests;
 mod coverage_graph_tests;
+mod coverage_oracle_tests;
 mod coverage_tests;
 mod disclosure_tests;
 mod expression_tests;
