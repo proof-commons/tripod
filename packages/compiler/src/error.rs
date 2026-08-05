@@ -618,6 +618,84 @@ pub enum CompileError {
         maximum: u64,
     },
 
+    /// One coverage requirement identity occurs more than once.
+    ///
+    /// A repeated identity means one obligation would be stated twice
+    /// and answered once, so it is a defect rather than a value to
+    /// deduplicate silently.
+    #[error("coverage requirement {requirement:?} occurs more than once")]
+    DuplicateCoverageRequirement {
+        /// The repeated requirement identity.
+        requirement: crate::coverage::CoverageRequirementId,
+    },
+
+    /// The covered relation-cases are not exactly the planned ones.
+    ///
+    /// No relation may leave the coverage census because it is
+    /// inactive, compiler-static, backend-structural, or externally
+    /// evidenced: those are dispositions coverage states, never reasons
+    /// to omit a relation.
+    #[error(
+        "coverage census mismatch: {} missing, {} unexpected",
+        missing.len(),
+        unexpected.len()
+    )]
+    CoverageCensusMismatch {
+        /// Planned relation-cases absent from the coverage, sorted.
+        missing: Vec<crate::placement::RelationCaseKey>,
+        /// Covered relation-cases absent from the plans, sorted.
+        unexpected: Vec<crate::placement::RelationCaseKey>,
+    },
+
+    /// An active relation-case states no positive coverage at one of
+    /// its own evidence boundaries.
+    #[error("relation {relation:?} has no positive coverage at {boundary:?} in case {case:?}")]
+    MissingPositiveCoverage {
+        /// The uncovered relation.
+        relation: realization::RelationId,
+        /// The case carrying the gap.
+        case: crate::case::ExecutionCaseId,
+        /// The boundary with no positive requirement.
+        boundary: crate::coverage::CoverageBoundary,
+    },
+
+    /// An active relation-case states no negative coverage at one of
+    /// its own evidence boundaries.
+    ///
+    /// A relation with no required rejection is a relation no evidence
+    /// package can distinguish from an unenforced one.
+    #[error("relation {relation:?} has no negative coverage at {boundary:?} in case {case:?}")]
+    MissingNegativeCoverage {
+        /// The uncovered relation.
+        relation: realization::RelationId,
+        /// The case carrying the gap.
+        case: crate::case::ExecutionCaseId,
+        /// The boundary with no negative requirement.
+        boundary: crate::coverage::CoverageBoundary,
+    },
+
+    /// An inactive relation-case states no inactive-valid coverage.
+    #[error("relation {relation:?} has no inactive-valid coverage in case {case:?}")]
+    MissingInactiveCoverage {
+        /// The inactive relation.
+        relation: realization::RelationId,
+        /// The case in which it never activates.
+        case: crate::case::ExecutionCaseId,
+    },
+
+    /// An inactive relation-case demands a focused rejection.
+    ///
+    /// A target rejecting a mutation of a relation the case never
+    /// activates proves nothing about that relation, so the
+    /// requirement would be evidence of the wrong thing.
+    #[error("inactive relation {relation:?} demands a rejection in case {case:?}")]
+    UnexpectedCoverageRejection {
+        /// The inactive relation.
+        relation: realization::RelationId,
+        /// The case in which it never activates.
+        case: crate::case::ExecutionCaseId,
+    },
+
     /// One proof-plan candidate was placed more than once.
     ///
     /// The variant names no plan: until an admitted plan identity
