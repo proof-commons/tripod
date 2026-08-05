@@ -29,3 +29,42 @@ pub fn bound_input(operations: &[OperationId]) -> BoundCompilerInput {
     )
     .expect("bind input")
 }
+
+// --- foundation aggregate (Guide-2 Tranche F) ---
+
+#[test]
+fn repeated_foundation_analysis_is_equal() {
+    for scope in [
+        vec![OperationId::CompactAsh],
+        vec![OperationId::TransferLive],
+        vec![OperationId::CompactAsh, OperationId::TransferLive],
+    ] {
+        let input = bound_input(&scope);
+        let first = crate::foundation::analyze_foundation(&input)
+            .expect("first analysis")
+            .project();
+        let second = crate::foundation::analyze_foundation(&input)
+            .expect("second analysis")
+            .project();
+
+        assert_eq!(first, second, "scope {scope:?}");
+    }
+}
+
+#[test]
+fn foundation_projection_equals_its_component_projections() {
+    let input = bound_input(&[OperationId::CompactAsh, OperationId::TransferLive]);
+    let foundation = crate::foundation::analyze_foundation(&input).expect("analysis");
+    let projection = foundation.project();
+
+    assert_eq!(projection.relations, foundation.relations.project());
+    assert_eq!(projection.expressions, foundation.expressions.project());
+
+    // The pilots declare no expressions, so the folded projection is
+    // empty — and every relation in compiler scope is represented.
+    assert!(projection.expressions.nodes.is_empty());
+    assert_eq!(
+        projection.relations.nodes.len(),
+        input.realization().project().relations.nodes.len(),
+    );
+}
