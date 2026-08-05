@@ -7,6 +7,7 @@
 mod carrier_tests;
 mod case_tests;
 mod constructibility_tests;
+mod coverage_tests;
 mod disclosure_tests;
 mod expression_tests;
 mod fold_tests;

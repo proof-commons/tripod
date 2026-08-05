@@ -68,6 +68,7 @@ mod capability;
 mod carrier;
 mod case;
 mod constructibility;
+mod coverage;
 mod disclosure;
 pub mod error;
 mod expression;
