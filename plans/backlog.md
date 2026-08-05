@@ -2,21 +2,23 @@
 
 > **Status:** ACTIVE
 > **Current gate:** Phase 2 — target-independent compiler analysis
-> **Current condition:** Phase 1 is historical tagged evidence. The static-review findings T1–T4 are reproduced, repaired, and closed against the batch remediation gate record in section 2.3; the T5 identity drift is corrected by removing duplicated values. The compiler crate implements the P2-004 validated input boundary (gate record in section 2.4) and, per the Guide-2 batch, the C1-005/P2-005 canonical scoped relation and expression DAGs plus P2-006 conservative checked constant folding, all crate-private until P2-012 exposes a complete analyzed program. The Guide-3 batch adds C1-008/P2-007 exact proof planning, P2-008 source/constructibility/disclosure analysis, and P2-009 representation lifecycle analysis, oracle-checked and equally crate-private. The next compiler work is C1-009/P2-010 execution-case placement and layout.
+> **Current condition:** Phase 1 remains historical tagged evidence. Compiler input binding, scoped relation/expression analysis, checked constant folding, source and constructibility analysis, disclosure analysis, representation lifecycle analysis, and exact proof-plan enumeration are implemented internally. The current static review found two proof-planning correctness defects, T6 and T7, that must close before placement, coverage, or pilot analysis can rely on the feasible-plan set. Documentation findings T8 and T9 must close before the Phase-2 documentation gate.
 > **Next gate:** Phase 3 — Elements target and foundational prototypes
 > **Authority:** Current execution queue only. The specification, the realization document, typed architecture, implemented ADRs, accepted decisions, package contracts, phase cards, and accepted research results take precedence.
 
 This file contains only:
 
 - the current repository and readiness state;
-- compact historical milestones and closed task families;
-- the current static-review findings;
+- the latest static-review basis and open findings;
+- compact historical milestones and gate records;
 - the active Phase-2 compiler queue;
 - immediate algorithm preparation;
+- dependency posture;
 - verification and clean-tree requirements.
 
 Detailed historical implementation narratives belong to Git history, annotated
-tags, phase cards, ADRs, and accepted decisions—not to the active backlog.
+tags, phase cards, ADRs, accepted decisions, and focused evidence records—not
+to the active backlog.
 
 ---
 
@@ -27,7 +29,7 @@ tags, phase cards, ADRs, and accepted decisions—not to the active backlog.
 This backlog sequences work. It is not protocol, realization, compiler, target,
 ABI, evidence, deployment, or release input.
 
-When this file disagrees with an owning artifact:
+When artifacts disagree:
 
 | Subject | Owner |
 |---|---|
@@ -48,16 +50,15 @@ A lower owner never overrides an upper owner on the upper owner’s subject.
 
 | Status | Meaning |
 |---|---|
-| **TODO** | Ready when named dependencies are complete. |
+| **TODO** | Ready when its named dependencies are complete. |
 | **IN PROGRESS** | Actively being implemented, reviewed, or verified. |
-| **BLOCKED** | A named dependency prevents safe progress. |
-| **PARKED** | Deliberately inactive until a concrete consumer exists. |
+| **BLOCKED** | A named dependency or correctness defect prevents safe progress. |
+| **PARKED** | Deliberately inactive until a concrete consumer or measured need exists. |
 | **DONE** | Implementation, focused evidence, required gates, documentation, and clean-tree evidence are recorded. |
 | **DROPPED** | Deliberately not implemented; rationale and replacement are recorded. |
-| **SUPERSEDED** | Replaced by a named task, ADR, decision, or package contract. |
 | **HISTORICAL** | Immutable evidence about an earlier revision; not a claim about the current checkout. |
 
-Code resembling the intended result is not sufficient for `DONE`.
+Code resembling an intended result is not sufficient for `DONE`.
 
 A static-review finding remains open until one of these occurs:
 
@@ -75,7 +76,7 @@ reported path.
 |---|---|
 | **P0** | Can manufacture false release, deployment, provenance, or semantic evidence. |
 | **P1** | Trusted semantic/evidence boundary defect or active phase blocker. |
-| **P2** | Required correctness, determinism, publication, or identity work before phase exit. |
+| **P2** | Required correctness, determinism, publication, identity, or documentation work before phase exit. |
 | **P3** | Maintainability or evidence-quality work required by the active gate. |
 | **POST** | Later-phase work that does not block the current gate. |
 
@@ -141,145 +142,154 @@ No named consumer means no digest. No distinct decision means no digest.
 
 ## 2. Review basis and current evidence · `sec:backlog:review-basis`
 
-### 2.1 Static review basis · `tbl:backlog:review-basis`
+### 2.1 Latest static review · `tbl:backlog:review-basis`
 
-Two static reviews inform the current findings, both historical evidence
-about their exact trees, not claims about the current checkout:
+The current review was performed statically over the supplied subtree report:
 
 ```text
-initial reviewed tree (historical):
+tree:
    
 
-follow-up reviewed tree (historical):
-    (post v0.6.1 zref migration)
+selected files:
+    343
 
-submodules:
+selected bytes:
+    3,645,852
+
+submodules reported:
     none
 
-tracked symlinks observed in supplied trees:
+tracked symbolic links reported:
     none
 ```
 
-The follow-up review confirmed T1–T4 remained open in source and found the
-recurrence of the T5 identity drift corrected below. Volatile selection
-metadata (file and byte counts) is deliberately not restated here; it
-belongs to a generated review receipt if it is ever needed.
-
-The supplied content excluded:
+The supplied report excluded:
 
 ```text
 Cargo.lock
 LICENSE-CODE
 LICENSE-DOCS
 archive/
+docs/attestation/human.md
+packages/document-stamps/
+packages/execwrap/
+packages/flatten-latex-main/
 ```
 
-No Cargo, Meson, TeX, advisory, target-execution, or reproducibility command was
-run as part of that review. Therefore:
+No Cargo, Meson, TeX, target-execution, advisory, or reproducibility command was
+run as part of this review.
 
-- T1–T4 are static findings until reproduced;
+Therefore:
+
+- T6–T9 are static findings until reproduced;
 - this review makes no current green-build claim;
-- dependency checksums and resolved features were not independently verified;
+- the excluded packages received no content review in this pass;
+- lockfile checksums and resolved features were not independently verified;
 - advisory status was not checked;
 - licence compatibility was not independently checked;
 - historical gate records remain historical evidence only.
 
-### 2.2 Historical gate evidence · `gate:backlog:phase1`
+### 2.2 Earlier review basis
 
-The repository records:
+The repository retains two earlier reviewed trees as historical context:
 
 ```text
+initial reviewed tree:
+   
 
-Phase-1 realization foundation:
-    phase1-realization-foundation-v1
+follow-up reviewed tree:
+   
 ```
 
-Those tags are immutable evidence for their exact commits. They do not establish
-that the current checkout passes.
+Those reviews and their findings are evidence about their exact trees. They are
+not current-checkout execution evidence.
 
-The latest complete gate narrative retained by the prior backlog was for an
-earlier tree. It must not be reported as evidence for the current checkout;
-only the batch remediation gate record below speaks for the reviewed
-repairs.
+### 2.3 Historical Phase-1 gate · `gate:backlog:phase1`
 
-### 2.3 Batch remediation gate · `gate:backlog:t1-t4-remediation`
+The repository records the Phase-1 evidence tag:
 
-Recorded 2026-08-04 on the tree carrying the T1–T4 repairs and the T5
-correction (branch review-t1-t5-remediation, after commit "plans: refresh
-current identities and close reviewed findings"), via the nightly-SDK
-toolchain:
+```text
+phase1-realization-foundation-v1
+```
 
-- scripts/ci.sh: every lane ran and passed — fmt, clippy (-D warnings),
-  debug and release workspace tests, check-generated, check-labels,
-  plan-tree checks, forbidden text, mocked Meson contract, clean working
-  tree. The advisory lane was SKIPPED (cargo-audit not installed;
-  advisory per ADR-011), so the run is partial-green, not green. A first
-  invocation failed transiently in the mocked-Meson lane against stale
-  build/mocks state; the recorded run passed the lane from a clean mock
-  root.
-- meson compile: success, including the real document build.
-- meson test: 10 of 10 suites passed.
-- Document byte reproducibility
-  (scripts/check-document-reproducibility.sh): **deferred** — not run for
-  this batch. T3 changed publication machinery, not expected paper bytes;
-  the mocked Meson contract covered the publication graph.
-- Final clean-tree check: empty status.
+The tag is the immutable evidence record for its exact commit. Its existence
+does not establish that the current checkout passes.
 
-### 2.4 Compiler-input batch gate · `gate:backlog:p2-004`
+### 2.4 Historical T1–T5 remediation gate · `gate:backlog:t1-t4-remediation`
 
-Recorded 2026-08-04 on the tree carrying the P2-004 compiler input
-boundary (branch review-t1-t5-remediation, after commit "plans: cite gate
-records by section, not backticked labels"), via the nightly-SDK
-toolchain:
+The repository records a completed remediation batch for T1–T5. Its recorded
+result was:
 
-- scripts/ci.sh: every lane ran and passed; the advisory lane was
-  SKIPPED (cargo-audit not installed; advisory per ADR-011), so the run
-  is partial-green, not green.
-- meson compile: success, including the real document build.
-- meson test: 10 of 10 suites passed.
-- Document byte reproducibility: **deferred** — unchanged paper inputs;
-  not run for this batch.
-- Final clean-tree check: empty status.
+- `scripts/ci.sh`: every available lane passed;
+- `cargo-audit`: skipped because unavailable, so the run was partial-green;
+- real Meson compile: passed;
+- Meson tests: passed;
+- document byte reproducibility: deferred;
+- final clean-tree check: empty.
 
-### 2.5 Compiler graph and folding batch gate · `gate:backlog:guide2`
+This is historical evidence for the remediation tree, not a current-tree gate.
 
-Recorded 2026-08-05 on the tree carrying C1-005, P2-005, and P2-006
-(branch guide2-compiler-foundation, after commit "plans: record compiler
-graph and folding completion"), via the nightly-SDK toolchain:
+### 2.5 Historical compiler-input gate · `gate:backlog:p2-004`
 
-- scripts/ci.sh: every lane ran and passed; the advisory lane was
-  SKIPPED (cargo-audit not installed; advisory per ADR-011), so the run
-  is partial-green, not green.
-- meson compile: success, including the real document build.
-- meson test: 10 of 10 suites passed.
-- git diff --check: clean.
-- Dependency review: the compiler's direct petgraph dependency resolves
-  no new package version; the feature surface remains default plus the
-  workspace's serde-1 only (no rayon, no generation features). The
-  lockfile change is the two workspace-internal dependency edges
-  (petgraph, dev-only proptest).
-- Document byte reproducibility: **deferred** — unchanged paper inputs;
-  not run for this batch.
-- Final clean-tree check: empty status.
+The repository records a completed P2-004 compiler-input batch:
 
-### 2.6 Proof-planning batch gate · `gate:backlog:guide3`
+- typed owner revalidation;
+- explicit canonical compiler scope;
+- strict analysis policy;
+- immutable bound compiler input;
+- focused public-API tests;
+- available CI and Meson lanes passed;
+- advisory lane skipped where unavailable;
+- document byte reproducibility deferred because paper inputs were unchanged;
+- final clean-tree check empty.
 
-Recorded 2026-08-05 on the tree carrying C1-008, P2-007, P2-008, and
-P2-009 (branch guide3-proof-planning, after commit "plans: record proof,
-constructibility, disclosure, and lifecycle completion"), via the
-nightly-SDK toolchain:
+### 2.6 Historical Guide-2 gate · `gate:backlog:guide2`
 
-- scripts/ci.sh: every lane ran and passed; the advisory lane was
-  SKIPPED (cargo-audit not installed; advisory per ADR-011), so the run
-  is partial-green, not green.
-- meson compile: success, including the real document build.
-- meson test: 10 of 10 suites passed.
-- git diff --check: clean.
-- Dependency review: no new dependency; the compiler feature scan finds
-  no rayon, generation, or unstable petgraph feature.
-- Document byte reproducibility: **deferred** — unchanged paper inputs;
-  not run for this batch.
-- Final clean-tree check: empty status.
+The repository records a completed Guide-2 batch for:
+
+```text
+C1-005
+P2-005
+P2-006
+```
+
+The batch covered:
+
+- scoped relation DAG;
+- scoped expression DAG;
+- predicate binding;
+- checked constant folding;
+- independent folding oracle;
+- declaration-permutation determinism;
+- dependency review for the compiler’s Petgraph edge.
+
+The latest static review did not find a defect in these components.
+
+### 2.7 Historical Guide-3 gate · `gate:backlog:guide3`
+
+The repository records a completed Guide-3 batch for:
+
+```text
+C1-008
+P2-007
+P2-008
+P2-009
+```
+
+The batch covered:
+
+- relation-obligation classification;
+- exact proof-plan enumeration;
+- source requirements;
+- constructibility;
+- disclosure;
+- representation lifecycle;
+- independent exhaustive planning oracle.
+
+The latest static review found T6 and T7 in this area. The historical gate
+remains evidence that its recorded commands passed; it is not evidence that the
+tested assertions were complete. P2-007 and C1-008 are therefore reopened as
+blocked correctness work.
 
 ---
 
@@ -333,38 +343,41 @@ A domain separator is hashed input that identifies a recipe, and the product's n
 
 | Area | Current source state |
 |---|---|
-| Layer 0 | Published specification, version `0.6.1` |
-| Realization document | Realization with final architecture appendix |
+| Specification | Released *Attestation* paper, version owned by the paper source |
+| Realization document | Attestation Realization with final architecture appendix and tracked version binding |
 | `architecture` | Typed architecture, validation, semantic/behavioural hashes, deployment-profile scaffolding |
 | `model` | Executable state machine, invariants, property/corruption suites, indexer and accounting projections |
 | `realization` | Target-independent typed semantics for compact ASH and live receipt transfer |
-| `compiler` | Package boundary and typed error root only |
+| `compiler` input | Owner-revalidated architecture/realization binding, explicit scope, strict policy |
+| `compiler` graphs | Scoped relation and expression DAGs with stable typed projections |
+| `compiler` folding | Conservative checked constant folding with independent oracle |
+| `compiler` source analysis | Typed operands, authenticatable source requirements, sponsor-value read rejection |
+| `compiler` constructibility | Authorization-case analysis and source/constructibility weld |
+| `compiler` disclosure | Inherited and added disclosure with typed reasons |
+| `compiler` lifecycle | Representation choices and required-exit analysis |
+| `compiler` proof search | Exact deterministic feasible-plan enumeration, but correctness is reopened by T6 and T7 |
 | `artifacts` | Generated-publication derivation, writer/checker, realization-document weld |
 | `labels` | Owner-aware Markdown/Rust label graph, census, plan checks, register rendering |
-| `cli-common` | ADR-010 streams, diagnostics, checker report/stamp publication |
-| `document-stamps` | Git-derived deterministic paper metadata |
-| `execwrap` | Child process byte routing and build-local mock TeX helper |
-| `flatten-latex-main` | Deterministic allowlist-based LaTeX flattening |
-| Meson | Explicit source census, stamp-backed check targets, mocked document graph |
+| `cli-common` | ADR-010 streams, diagnostics, checker report/stamp publication, batch publication |
+| Meson | Explicit source census, stamp-backed checks, mocked document graph |
 | Security policy | Public-data interfaces and external execution-environment boundary |
-| Path policy | Central tracked-mode audit, lexical generic output roles, explicit host-filesystem non-claims |
+| Path policy | Central tracked-mode audit, lexical output roles, explicit host-filesystem non-claims |
 
 ### 3.2 Current published identities · `tbl:backlog:identities`
 
-Exact hash and version values are deliberately **not** duplicated here:
-twice now a hand-transcribed copy in this file has drifted from the
-generated publication (the original T5 correction itself went stale at the
-v0.6.1 release). Read each identity from its authority:
+Exact hash and version values are deliberately not duplicated here. Read each
+identity from its authority:
 
 | Identity | Authority |
 |---|---|
-| Layer-0 version | `papers/attestation/main.tex` and `sections/00_title.tex` |
-| Architecture schema, semantic/behavioural algorithm and hashes, anchor-set hash | `packages/model/generated/architecture.json`, checked against the typed architecture by `check-generated` |
-| Realization version | `docs/attestation/realization.md` masthead |
-| Attestation wire and deployment-profile schemas | typed `architecture` crate constants |
+| Specification version | `papers/attestation/main.tex` and `sections/00_title.tex` |
+| Architecture schema, semantic/behavioural algorithms and hashes, anchor-set hash | `packages/model/generated/architecture.json`, checked against typed architecture |
+| Realization version (tracked binding) | `docs/attestation/realization.md` masthead |
+| Attestation wire schema | typed model/architecture constants |
+| Deployment-profile schema | typed architecture constants |
 
-The generated architecture publication is authoritative; planning prose
-must not become a competing identity source.
+The generated architecture publication is authoritative. Planning prose must
+not become a competing identity source.
 
 Architecture finality does not imply:
 
@@ -378,11 +391,13 @@ Architecture finality does not imply:
 ### 3.3 Not implemented · `tbl:backlog:not-implemented`
 
 ```text
-compiler input binding
-compiler relation analysis
-compiler proof planning
-compiler disclosure/source analysis
-compiler lifecycle/placement/coverage analysis
+compiler execution-case placement
+compiler target-independent layout requirements
+compiler relation-indexed coverage requirements
+complete pilot analyzed-program value
+public complete compiler-analysis API
+compiler-plan identity
+target capability adapter backed by a real target package
 
 tripod-target-elements
 tripod-tapscript
@@ -405,12 +420,16 @@ Realization contract:              published
 Typed architecture:                final and pinned
 Executable model:                  implemented
 Typed realization pilots:          implemented
-Compiler package:                  boundary and error root only
-Compiler analysis:                 absent
+Compiler input/graph/folding:       implemented internally
+Compiler source/disclosure/lifecycle:
+                                    implemented internally
+Compiler exact planning:            implemented but correctness reopened by T6/T7
+Compiler placement/layout/coverage: absent
+Complete analyzed pilots:           absent
 Target/backend/linker/ABI:         absent
 Independent deployment evidence:   absent
 Production deployment:             absent
-Current-tree complete gate:        not established by this review
+Current-tree complete gate:        not established by the latest review
 ```
 
 Current packages are public-data tools. They do not legitimately accept private
@@ -421,16 +440,13 @@ credentials, or production authority.
 
 ## 4. Compact historical record · `sec:backlog:history`
 
-Permanent task IDs remain recorded here without retaining their implementation
-diaries.
-
 ### 4.1 Completed phases · `tbl:backlog:completed-phases`
 
 | Phase | Status | Durable record |
 |---|---|---|
 | Phase 0 | HISTORICAL | the recorded baseline and identities on [the Phase-0 card](phases/00-baseline.md) |
 | Phase 1 | HISTORICAL | the completion evidence on [the Phase-1 card](phases/01-realization.md), and the gate record in [the backlog archive](history/backlog-history.md) §2.3 |
-| Phase 2 | Active | current backlog and phase card |
+| Phase 2 | Active | current backlog and Phase-2 card |
 
 ### 4.2 Historical finding families · `tbl:backlog:historical-findings`
 
@@ -439,10 +455,15 @@ diaries.
 | `F1` | HISTORICAL | Phase-1 remediation |
 | `F2` | HISTORICAL | Post-Phase-1 boundary remediation |
 | `F3-001`–`F3-010` | HISTORICAL | Meson, publication, projection, ownership, and stamp remediation |
-| `F4-001`–`F4-005` | DONE or DROPPED | Predicate/lifecycle/labels findings; F4-003 reproduced false and dropped |
+| `F4-001`–`F4-005` | DONE or DROPPED | Predicate, lifecycle, and labels findings |
 | `A17-001`–`A17-005` | DONE | ADR-017 implementation |
 | `R1`–`R6` | DONE | Path, ADR status, dependency, CI, recipe, and compiler-status review |
 | `S1`–`S7` | DONE | Semantic-boundary review and status weld |
+| `T1` | DONE | Bound conformance observations to executed requests |
+| `T2` | DONE | Typed substrate-conservation evidence requirement |
+| `T3` | DONE | Batch-staged multi-output publication |
+| `T4` | DONE | Runtime-bound conformance in the global invariant |
+| `T5` | DONE | Removed duplicated volatile identities from planning prose |
 
 ### 4.3 Identity work · `tbl:backlog:identity-work`
 
@@ -466,543 +487,467 @@ no public realization or compiler digest without a real consumer.
 
 | ID | Priority | Status | Finding |
 |---|---:|---|---|
-| `T1` | P1 | DONE | Model-to-realization conformance observations are not bound to the request that produced the successor. |
-| `T2` | P1 | DONE | Sponsor isolation can pass without typed substrate-conservation evidence. |
-| `T3` | P2 | DONE | Multi-output generators publish one final path at a time and can leave mixed generations after failure. |
-| `T4` | P2 | DONE | The global model invariant does not re-check architecture-derived runtime-bound minima. |
-| `T5` | P2 | DONE | The backlog’s current architecture semantic hash was stale. |
+| `T6` | P1 | TODO | External-evidence relations bypass abstract capability validation during proof planning. |
+| `T7` | P1 | TODO | Representation-relation proof choices are not constrained by the selected representation mode. |
+| `T8` | P2 | TODO | Current-phase declarations disagree and the plan checker does not detect all copies. |
+| `T9` | P2 | TODO | Compiler status documentation materially understates implemented internal analysis. |
 
-All T1–T4 entries are static-review findings. Reproduction is the first step;
-their descriptions are not execution evidence.
+T6 and T7 block P2-007 acceptance, C1-008 acceptance, P2-010, P2-011, and
+P2-012.
 
-### T1 — Bind conformance observations to executed requests · `task:review:conformance-binding`
+T8 and T9 do not change semantics, but they block a trustworthy Phase-2
+documentation and planning gate.
+
+### T6 — Validate capabilities for external-evidence obligations · `task:review:external-evidence-capability`
 
 **Priority:** P1
-**Status:** DONE
-**Owners:** `model`, `realization` conformance boundary
-**Blocks:** trusted model/realization evidence for P2-012 and Phase-2 exit
-**Identity impact:** none unless a persistent conformance report is later added
-**Schema impact:** possible typed execution-result API change
+**Status:** TODO
+**Owners:** `compiler::proof`, `compiler::source`, capability planning
+**Blocks:** C1-008, P2-007, P2-010 through P2-013
+**Identity impact:** none; no compiler-plan identity exists
+**Schema impact:** internal obligation/candidate representation may change
 **Dependency impact:** none
 
 #### Static basis
 
-The pilot adapters receive independent values:
+`classify_obligations` classifies `SubstrateConservation` as:
 
-```rust
-before
-request
-after
+```text
+ExternalEvidence
 ```
 
-They validate that `after` extends `before` by one certificate of the expected
-branch. They do not validate that `request` is the request that produced
-`after`.
+rather than:
 
-For live transfer, signer evidence is taken from the supplied request while
-consumed/created objects and canonical flows are taken from the certificate in
-`after`. The adapter does not compare:
+```text
+ProofRequired
+```
 
-- request receipt inputs with consumed live-receipt inputs;
-- requested destinations with created owner/value outputs;
-- request sponsor inputs with sponsor-flow sources;
-- sponsor change and fee with the observed sponsor flow;
-- the supplied signer sets with the request actually executed.
+Only proof-required obligations enter the proof-variable search. Candidate
+capabilities are accumulated only from selected proof variables.
 
-Compact ASH has the same binding issue for ASH inputs and sponsor evidence.
+The source layer correctly maps:
 
-A caller can therefore construct a hybrid conformance observation from one
-executed transition and another request of the same branch.
+```text
+ProofKind::SubstrateConservation
+    → WholeTransactionValueConservation
+```
 
-This does not appear to weaken model transition acceptance, because model
-execution happens first. It can, however, produce false conformance evidence or
-mask a harness-wiring defect.
+but that mapping is not reached by production plan enumeration for the
+external-evidence relation.
+
+The candidate therefore retains:
+
+```text
+external_evidence:
+    SubstrateConservation
+```
+
+without necessarily retaining:
+
+```text
+required_capabilities:
+    WholeTransactionValueConservation
+```
+
+`CapabilityView::Available` cannot reject a target view that lacks the omitted
+capability.
+
+The independent test oracle repeats the same classification shape, so equality
+between production and oracle does not detect this omission.
 
 #### Required implementation
 
-Preferred design:
+Preserve the separation:
 
 ```text
-execute request
-    ↓
-typed execution result binding
-    predecessor
-    request
-    successor
-    certificate
-    ↓
-conformance projection
+capability support
+≠
+evidence completion
 ```
 
-The conformance adapter should consume one bound execution result rather than
-three independently supplied values.
+A relation may remain externally evidenced while still requiring a target
+capability.
 
-A smaller acceptable first repair is deterministic request replay:
+Acceptable implementation shape:
 
-1. execute the supplied request against `before` at the certificate order;
-2. require the resulting world to equal `after`;
-3. fail with a focused `RequestBindingMismatch` before projection.
+```rust
+ExternalEvidence {
+    requirement: ExternalEvidenceRequirement,
+    required_capabilities: BTreeSet<RequiredCapability>,
+}
+```
 
-The replay is a binding check only. Realization conformance must still evaluate
-independently from model transition acceptance.
+or an equivalent typed representation.
+
+Planning must:
+
+1. retain the realization-approved proof class for the external relation;
+2. derive its required abstract capabilities;
+3. apply the capability view;
+4. add those capabilities to each feasible candidate;
+5. retain the external evidence requirement unresolved;
+6. avoid converting the premise into a runtime `Passed` relation.
+
+No external evidence digest or report identity is added in this repair.
 
 #### Required tests
 
 For compact ASH and live transfer:
 
-- matching request and successor succeed;
-- different input list fails;
-- different output destinations fail;
-- different protocol signer set fails;
-- different sponsor input list fails;
-- different sponsor signer set fails;
-- different sponsor fee/change fails;
-- successor from another same-branch request fails;
-- focused error is deterministic under declaration ordering.
+- a capability view containing every pilot capability except
+  `WholeTransactionValueConservation` produces `NoFeasibleProofPlan`;
+- adding that capability permits otherwise feasible plans;
+- every candidate carrying substrate-conservation evidence also carries the
+  whole-transaction-conservation capability;
+- external evidence remains unresolved after capability validation;
+- sponsor values remain erased;
+- source requirements do not invent an exact sponsor amount.
+
+The independent oracle must derive the capability requirement independently of
+the production classification helper.
 
 #### Verification
 
 ```sh
-cargo test --locked -p tripod-model realization_conformance
+cargo test --locked -p tripod-compiler proof
+cargo test --locked -p tripod-compiler oracle
 cargo test --locked -p tripod-realization
 cargo test --workspace --locked
 ```
 
 #### Exit
 
-- [x] finding reproduced or disproved;
-- [x] request/successor binding is structural or explicitly replay-validated;
-- [x] both pilot adapters have focused mismatch tests;
-- [x] model execution remains independent of realization evaluation;
-- [x] complete required gates pass and the tree is clean (see the batch
-      remediation gate record in section 2.3).
+- [ ] finding reproduced or disproved;
+- [ ] external-evidence capabilities are retained;
+- [ ] capability absence fails closed;
+- [ ] evidence completion remains a separate claim;
+- [ ] both pilots have focused regressions;
+- [ ] independent oracle does not repeat the production omission;
+- [ ] full batch gate passes and the tree is clean.
 
-#### Evidence
-
-Reproduced 2026-08-04: a temporary test executed one live transfer and
-projected the observation with a different same-branch request; the hybrid
-observation was accepted and reported conformant.
-
-Repair: the model now owns an opaque bound execution. The struct
-ExecutedTransition holds private predecessor, request, and successor;
-construction is only through execute_bound (invariant-wrapped execution that
-retains the binding) or bind_execution (deterministic replay: the successor
-must extend the predecessor by exactly one certificate, the request is
-re-executed at that certificate's order, and the replayed world must equal the
-supplied successor completely, else RequestBindingMismatch). Both conformance
-adapters now consume the bound execution, so request-side signer and sponsor
-evidence necessarily comes from the request that produced the successor.
-Replay uses model execution only; realization evaluation is never consulted.
-
-Focused evidence: mismatch tests for both pilots (different inputs, outputs,
-signer set, and successor-from-another-request all fail with
-RequestBindingMismatch; the exact executed request binds and projects), a
-public-API test exercising execute_bound, bind_execution, the accessors, and
-into_world from outside the crate, and a compile-fail doctest showing external
-assembly from independent parts is unconstructible. Model crate tests
-(296 unit, 7 public API, 3 doctests) and workspace clippy -D warnings are
-green. The full repository gate for this batch is recorded once at the
-remediation gate, per the verification cadence.
-
-### T2 — Make substrate conservation explicit at the sponsor-erased boundary · `task:review:sponsor-balance-evidence`
+### T7 — Constrain every representation-sensitive proof choice · `task:review:representation-proof-compatibility`
 
 **Priority:** P1
-**Status:** DONE
-**Owners:** `realization`, model conformance adapter
-**Blocks:** compiler proof/source planning for sponsor isolation
-**Policy:** v13d sponsor erasure and D005
-**Identity impact:** none until persistent evidence envelopes exist
-**Schema impact:** likely observation or relation-status change
+**Status:** TODO
+**Owners:** `compiler::proof`, `compiler::lifecycle`, `compiler::source`
+**Blocks:** C1-008, P2-007, P2-010 through P2-013
+**Identity impact:** none
+**Schema impact:** internal proof-plan feasibility rules may change
 **Dependency impact:** none
 
 #### Static basis
 
-The sponsor-erased observation correctly omits individual sponsor amounts:
-
-```rust
-ObservedValue::SponsorOpaque
-```
-
-The sponsor-isolation evaluator checks:
-
-- exact sponsor member references;
-- declared sponsor family and L-BTC asset;
-- source/destination uniqueness;
-- input-owner authorization;
-- at-most-one envelope.
-
-It does not check sponsor balance, and `OperationObservation` carries no typed
-verdict that the enclosing model or target transaction passed substrate
-conservation.
-
-The realization document’s sponsor-erasure projection says the retained
-projection includes a balance verdict. The current Rust observation retains the
-role structure but not that verdict.
-
-A caller-authored observation can therefore receive `Passed` for sponsor
-isolation even though no typed premise states that target-wide conservation
-held. The design decision that conservation belongs to Elements is valid; the
-missing part is evidence that the premise was actually established.
-
-#### Required design
-
-Do not reintroduce individual sponsor amounts.
-
-Choose one typed boundary before implementation. Acceptable forms include:
-
-```rust
-enum SubstrateConservationEvidence {
-    ModelKernelAccepted {
-        transition: ModelTransitionIdentity,
-    },
-    TargetExecutionAccepted {
-        target: TargetIdentity,
-        transaction: TransactionIdentity,
-        report: EvidenceReference,
-    },
-}
-```
-
-or a validated observation typestate:
+Live transfer declares proof alternatives for both:
 
 ```text
-OperationObservation
-    → structural validation
-    → bind accepted model/target execution
-    → ValidatedOperationObservation
-    → realization evaluation
+amount-conservation relation:
+    public arithmetic
+    confidential conservation
+
+representation relation:
+    public arithmetic
+    confidential conservation
 ```
 
-A second acceptable design is to split the relation:
+The exact search creates a representation choice:
 
 ```text
-sponsor role isolation:
-    runtime Passed/Failed
-
-sponsor conservation:
-    externally required / assumption-backed / target-evidenced
+explicit
+private committed
 ```
 
-Whichever design is selected must make these claims distinct:
+`representation_conflict` checks proof/mode compatibility only for
+`AmountConservation`.
 
-1. sponsor role structure is valid;
-2. sponsor owners authorized their inputs;
-3. substrate conservation accepted the complete transaction.
+It does not check the selected proof carried by the `Representation` relation
+itself.
 
-A standalone caller-authored observation must not receive an unconditional
-runtime pass for claim 3.
+A candidate can therefore contain:
+
+```text
+selected mode:
+    private committed
+
+conservation proof:
+    confidential conservation
+
+representation-relation proof:
+    public arithmetic
+```
+
+The conservation pairing is valid, but the representation relation’s own proof
+is incompatible with the selected mode.
+
+The reverse contradictory pairing can also survive.
+
+Additionally, a `Representation` relation currently derives a family-census
+operand rather than an exact amount operand. Selecting `PublicArithmetic` for
+that relation can therefore add an exact-public-arithmetic capability without a
+matching exact amount source.
+
+#### Required implementation
+
+Apply proof/representation compatibility to every relation whose selected proof
+depends on the chosen representation.
+
+At minimum:
+
+```text
+AmountConservation touching the selected object
+Representation naming the selected object
+```
+
+must both pass:
+
+```rust
+proof_supports_representation(proof, mode)
+```
+
+Prefer a typed derivation from relation operands or relation metadata over an
+ever-growing ad hoc match.
+
+Also decide whether the representation relation should select an arithmetic
+proof at all. If its semantic job is only:
+
+```text
+selected mode ∈ realization-approved modes
+```
+
+then it may be more accurate to classify it statically after mode selection,
+leaving the value proof on conservation.
+
+Whichever design is selected must preserve:
+
+- realization-approved alternatives only;
+- exact source/capability consistency;
+- no silent proof invention;
+- no weakening of the selected representation;
+- deterministic candidate ordering.
 
 #### Required tests
 
-- valid role structure without substrate evidence does not obtain an
-  unconditional conservation pass;
-- accepted model execution discharges the model-side premise;
-- future target evidence must bind exact target and transaction identities;
-- different sponsor denominations with one sponsor-erased projection produce
-  equal protocol-semantic verdicts;
-- unsigned sponsor input still fails;
-- duplicate sponsor reference still fails;
-- unclaimed sponsor member still fails;
-- foreign family in the sponsor region still fails;
-- second sponsor envelope still fails.
+For every returned live-transfer candidate:
+
+- private committed has no public-arithmetic proof on any
+  representation-sensitive relation;
+- explicit has no confidential-only proof on a relation that explicit values
+  cannot discharge;
+- conservation relation and representation relation are both inspected;
+- every selected capability has a matching source or a documented
+  source-independent role;
+- invalid pairings are absent from production and independent-oracle sets;
+- equal typed inputs still produce equal candidate sets.
 
 #### Verification
 
 ```sh
-cargo test --locked -p tripod-realization
-cargo test --locked -p tripod-model realization_conformance
+cargo test --locked -p tripod-compiler lifecycle
+cargo test --locked -p tripod-compiler proof
+cargo test --locked -p tripod-compiler oracle
 cargo test --workspace --locked
 ```
 
 #### Exit
 
-- [x] finding reproduced or disproved;
-- [x] the substrate-conservation premise is typed;
-- [x] no individual sponsor amount crosses the realization boundary;
-- [x] role isolation and conservation evidence remain separate;
-- [x] compiler-facing proof alternatives cannot infer an exact sponsor-value read;
-- [x] complete required gates pass and the tree is clean (see the batch
-      remediation gate record in section 2.3).
+- [ ] finding reproduced or disproved;
+- [ ] all representation-sensitive proof choices are constrained;
+- [ ] proof capabilities and source requirements agree;
+- [ ] invalid public/private pairings are absent;
+- [ ] independent oracle covers both relation classes;
+- [ ] full batch gate passes and the tree is clean.
 
-#### Evidence
-
-Reproduced 2026-08-04: a caller-authored observation with one fee-sponsor
-open flow of zero sources, zero destinations, and a nonzero fee passed
-sponsor role isolation with no typed indication that whole-transaction
-conservation had been established anywhere.
-
-Repair (split relation and status, the reviewed option B): both pilots now
-declare a substrate-conservation relation for L-BTC with the new proof
-family SubstrateConservation (deliberately neither PublicArithmetic, whose
-operands are erased, nor ConfidentialConservation, which is one target
-mechanism). The evaluator maps it to the new status EvidenceRequired
-carrying a typed ExternalEvidenceRequirement; it never evaluates to Passed
-at this boundary. Sponsor role isolation remains a separate runtime
-relation and now blocks the conservation requirement when it fails. Report
-helpers required_external_evidence, has_semantic_failure, and
-is_evidence_complete make the distinction queryable; is_conformant is
-documented as not implying evidence completion.
-
-Model side: the conformance adapters return ModelConformanceObservation,
-producible only from a T1 bound execution whose kernel run validated
-open-asset conservation on the exact observed transition; its established
-set discharges only the model-side copy of the premise for the exact
-operation, checked by unresolved_model_evidence. It is model evidence
-only, never target or deployment evidence. Sponsor values remain
-structurally erased; no new amount field or digest was introduced.
-
-The former sponsor-imbalance fixture was renamed to the role-structure
-failure it actually exercises (an unowned source), and typed-premise tests
-replaced the value claim: the review's empty-flow shape now demonstrably
-retains EvidenceRequired, for both pilots. Realization (154), model (299
-unit, 7 public API), and workspace clippy -D warnings are green; the full
-repository gate for this batch is recorded once at the remediation gate.
-
-### T3 — Batch-stage multi-output generated publications · `task:review:batch-publication`
+### T8 — Weld every current-phase declaration · `task:review:phase-declaration-drift`
 
 **Priority:** P2
-**Status:** DONE
-**Owners:** `artifacts`, `labels`, shared publication infrastructure if justified
-**Policy:** (`[ADR017-rule:path:publication]`)
-**Blocks:** Phase-2 clean publication gate
+**Status:** TODO
+**Owners:** `plans`, `labels::plans`
+**Blocks:** Phase-2 documentation gate
+**Identity impact:** none
+**Schema impact:** plan-check report may gain a focused phase diagnostic
+**Dependency impact:** none
+
+#### Static basis
+
+The supplied tree contains contradictory current-phase declarations:
+
+```text
+plans/README.md:
+    Phase 1 - typed realization foundation
+
+plans/backlog.md:
+    Phase 2 - target-independent compiler analysis
+
+plans/roadmap.md:
+    Phase 2 - target-independent compiler analysis
+
+plans/phases/02-compiler.md:
+    Active
+```
+
+The plan checker compares only:
+
+```text
+backlog current gate
+↔
+exactly one active numbered phase card
+```
+
+It does not validate the current-phase declarations in:
+
+- `plans/README.md`;
+- `plans/roadmap.md`.
+
+This contradicts the planning gate’s own requirement that current phase
+declarations agree.
+
+#### Required implementation
+
+Prefer one canonical current-phase declaration and make other planning entry
+points link to it.
+
+If repetition remains, extend the checker to compare:
+
+```text
+backlog current gate
+roadmap current phase
+plans README current phase
+exactly one active phase card
+```
+
+The checker should emit a focused diagnostic naming:
+
+- stale path;
+- declared phase;
+- expected phase.
+
+Avoid a broad free-form prose parser. A small fixed declaration shape is
+sufficient.
+
+#### Required tests
+
+- all four declarations agree;
+- plans README stale;
+- roadmap stale;
+- backlog stale;
+- two active cards;
+- no active card;
+- malformed current-phase declaration;
+- phase values remain deterministic under file traversal order.
+
+#### Verification
+
+```sh
+cargo test --locked -p tripod-labels plans
+scripts/check-plans.sh
+meson compile -C build lint
+```
+
+#### Exit
+
+- [ ] `plans/README.md` names Phase 2 or ceases to duplicate the value;
+- [ ] roadmap, backlog, and active card agree;
+- [ ] the checker detects each stale copy;
+- [ ] focused tests pass;
+- [ ] documentation census and labels pass;
+- [ ] the tree is clean.
+
+### T9 — Refresh compiler status documentation · `task:review:compiler-status-drift`
+
+**Priority:** P2
+**Status:** TODO
+**Owners:** `compiler` Rustdoc, compiler package contract, Phase-2 planning
+**Blocks:** Phase-2 documentation gate
 **Identity impact:** none
 **Schema impact:** none
 **Dependency impact:** none
 
 #### Static basis
 
-`generate-all` derives all expected artifact bytes in memory, then atomically
-publishes each destination in sequence.
+Current source implements internally:
 
-`generate_registers` similarly publishes the two register files one at a time.
+- input binding;
+- relation and expression DAGs;
+- checked constant folding;
+- proof-obligation classification;
+- exact feasible-plan enumeration;
+- source requirements;
+- constructibility;
+- disclosure;
+- representation lifecycle.
 
-Each individual file rename is atomic, but the publication set is not staged
-before the first final path changes. If staging or publishing a later member
-fails:
+`packages/compiler/README.md` and the Phase-2 card substantially reflect this.
 
-- earlier members may contain new bytes;
-- later members may remain old;
-- the command exits failure with a mixed-generation set.
-
-Both writers also rewrite unchanged outputs rather than preserving them
-compare-if-changed.
-
-The checkers should detect the mixed state on the next run, so this is not
-silent semantic acceptance. It remains an honest-tool publication defect and
-can leave a failed explicit generation command with a dirty tracked tree.
-
-#### Required implementation
-
-Provide a batch-publication path that:
-
-1. receives every output role and destination explicitly;
-2. validates lexical role uniqueness before staging;
-3. computes all bytes before mutation;
-4. compares every destination with expected bytes;
-5. stages every changed member in its destination directory;
-6. flushes all staged files;
-7. publishes final renames only after all staging succeeds;
-8. preserves unchanged destination mtimes;
-9. documents that separate final renames are not one filesystem transaction;
-10. repairs any prior partial state on the next successful invocation.
-
-A shared helper is justified only if both generators use the same stable
-contract. Do not introduce a general publication crate for planning
-convenience alone.
-
-#### Required tests
-
-For artifacts and label registers:
-
-- output 1 unchanged when staging output 2 fails;
-- all outputs unchanged when staging the final member fails;
-- unchanged rerun preserves mtimes;
-- prior mixed-generation state is repaired;
-- aliased role paths fail before staging;
-- failed generation leaves no staged files;
-- concurrent successful invocations produce complete individual files;
-- checker remains non-writing.
-
-#### Verification
-
-```sh
-cargo test --locked -p tripod-artifacts
-cargo test --locked -p tripod-labels
-scripts/test-meson-mock.sh .
-meson test -C build --print-errorlogs
-```
-
-#### Exit
-
-- [x] finding reproduced or disproved;
-- [x] all changed members stage before any final publication;
-- [x] unchanged members are compare-if-changed;
-- [x] focused failure and repair tests pass;
-- [x] mocked Meson generation/repair behavior passes;
-- [x] complete required gates pass and the tree is clean (see the batch
-      remediation gate record in section 2.3).
-
-#### Evidence
-
-Confirmed 2026-08-04 from source: both generators derived bytes first but
-published destinations sequentially through per-file staging, and both
-rewrote unchanged destinations.
-
-Repair: cli-common owns a narrow batch publication helper (module
-publication, function publish_batch) implementing validate (role-distinct
-destinations via ensure_distinct_outputs, parents created), compare
-(identical destinations are left untouched, bytes and mtimes preserved),
-stage (every changed member written and synced to a sibling temporary),
-then publish (renames only). A staging failure changes no final
-destination and drops every temporary; the residual multi-rename window
-is documented per ADR-017 and a subsequent run repairs a partial set.
-The artifacts generate-all binary and the labels register generator both
-publish through the helper; the artifacts crate's private atomic_write
-was removed rather than left as a competing writer, with its concurrency
-and failed-persist safety tests ported to the batch path.
-
-Focused evidence: seven helper tests (alias refusal before any write,
-mtime preservation, changed-only rewrite, staging failure leaves
-destinations and no temporaries, late-rename failure reported and
-repaired, mixed-generation repair, parent creation), two labels tests
-(mixed-state repair preserving the current register's mtime; staging
-failure leaves the other register unchanged), the ported artifacts
-collision/failure tests, and the mocked Meson contract (generate-all now
-logs changed=false on a current tree; injected failure still blocks
-publish). check-generated remains non-writing. Workspace clippy
--D warnings green; full gate at the batch remediation gate.
-
-### T4 — Weld runtime-bound conformance into the global invariant · `task:review:invariant-bound-conformance`
-
-**Priority:** P2
-**Status:** DONE
-**Owner:** `model`
-**Blocks:** complete model-validity claim used by Phase 2
-**Identity impact:** none
-**Schema impact:** possibly one focused invariant-error variant
-**Dependency impact:** none
-
-#### Static basis
-
-`genesis` performs:
-
-```rust
-constants.validate()?;
-validate_bound_conformance(&constants)?;
-```
-
-The global `check_invariant` performs only `constants.validate()`.
-
-`Constants::validate` requires finite bounds to be nonzero, but it does not
-enforce architecture-derived cardinality minima. For example:
+The following remain stale:
 
 ```text
-ash_batch_max = 1
+packages/compiler/src/lib.rs
+plans/packages/compiler.md
 ```
 
-is nonzero but makes `compact-ash`, whose minimum is two ASH inputs,
-unconstructible. `validate_bound_conformance` rejects it; `check_invariant`
-does not.
+They still say that input binding or major implemented analysis stages are not
+implemented.
 
-Normal transitions do not mutate constants, so a world produced by valid
-genesis and valid operations should preserve the stronger property. However,
-`World` is intentionally publicly mutable for audit and corruption fixtures.
-The global invariant is expected to detect such corruption, and currently has a
-weaker notion of valid constants than genesis.
+This backlog previously repeated the same stale claim in several sections.
+This consolidated revision corrects the backlog copy, but the package Rustdoc
+and package contract remain to be updated.
 
 #### Required implementation
 
-Make `check_invariant` enforce the same architecture-derived runtime-bound
-minimum relation as genesis.
+Update `packages/compiler/src/lib.rs` to distinguish:
 
-Preferred form:
-
-```rust
-validate_bound_conformance(&world.constants)
-    .map_err(|_| InvariantError::...)
+```text
+implemented internal analysis stages
 ```
 
-A dedicated `BoundConformance` reason is acceptable if it maps to the existing
-domains invariant clause. Reusing `Domains` is also acceptable if the focused
-diagnostic remains clear.
+from:
 
-Do not duplicate cardinality minima in model constants. The typed architecture
-remains the owner.
+```text
+not yet exposed complete analyzed program
+```
 
-#### Required tests
+Update `plans/packages/compiler.md`:
 
-- mutate each bound to one below its architecture-derived minimum;
-- require the invariant to fail;
-- set each bound to the exact minimum;
-- require the invariant to pass where the rest of the fixture is valid;
-- preserve the existing genesis rejection tests;
-- preserve profile/runtime bound-conformance tests.
+- status header;
+- implemented milestones;
+- current open work;
+- identity statement;
+- pilot and exit-gate status.
+
+Keep these statements explicit:
+
+- analysis structures remain crate-private;
+- no complete analyzed program is exposed;
+- placement, layout, coverage, and complete pilot analysis remain absent;
+- no compiler-plan digest exists;
+- typed comparison remains the boundary.
+
+Do not add volatile test counts or current hash values.
+
+#### Required tests and checks
+
+- Rustdoc and public-API tests continue to pass;
+- package plan labels remain valid;
+- current phase declarations agree after T8;
+- documentation checker passes;
+- no package documentation claims target or deployment readiness.
 
 #### Verification
 
 ```sh
-cargo test --locked -p tripod-model bound_conformance
-cargo test --locked -p tripod-architecture
-cargo test --workspace --locked
+cargo test --locked -p tripod-compiler
+cargo doc --locked -p tripod-compiler --no-deps
+scripts/check-plans.sh
+meson compile -C build lint
 ```
 
 #### Exit
 
-- [x] finding reproduced or disproved;
-- [x] genesis and `check_invariant` use one bound-conformance authority;
-- [x] every architecture bound has minimum-minus-one and exact-minimum coverage;
-- [x] no duplicate model-owned minimum table is introduced;
-- [x] complete required gates pass and the tree is clean (see the batch
-      remediation gate record in section 2.3).
-
-#### Evidence
-
-Reproduced 2026-08-04: two focused tests failed against the unrepaired
-invariant — a world mutated to the named regression ash_batch_max = 1
-passed Constants::validate and check_invariant while
-validate_bound_conformance rejected it, and the per-bound sweep showed the
-same gap for every bound with a nonzero derived minimum.
-
-Repair: check_invariant now calls the shared authority
-validate_bound_conformance immediately after Constants::validate, mapped
-to the existing Domains clause (no new welded failure vocabulary, per the
-review's recommendation). Minima remain derived through
-architecture::manifest_minimum_for_bound; no model-owned minimum table
-exists. The reproduction tests are the permanent regressions:
-minimum-minus-one fails and the exact minimum passes for every declared
-bound, and ash_batch_max = 1 is the named case. Model crate suites
-(301 unit, 7 public API, 3 doctests) are green; genesis rejection and
-deployment-calibration tests are unchanged. Full gate at the batch
-remediation gate.
-
-### T5 — Correct stale current identity in planning · `task:review:backlog-identity-drift`
-
-**Priority:** P2
-**Status:** DONE
-**Owner:** this backlog
-**Identity impact:** none; planning text only
-**Schema impact:** none
-**Dependency impact:** none
-
-#### Resolution
-
-The previous backlog reported an obsolete architecture semantic hash. The
-first correction replaced the stale values with then-current ones — and
-those went stale in turn at the v0.6.1 zref migration, which the
-follow-up static review caught: the backlog still claimed Layer-0
-version 0.6.0 and the pre-correction semantic hash while every
-authoritative home already carried the v0.6.1 values.
-
-Manually duplicated current digests drift repeatedly, so the 2026-08-04
-correction removes the duplication instead of refreshing it: the current
-identities section now names each value's authoritative home (the
-generated architecture publication, checked by check-generated, the
-paper source, and the realization masthead) and carries no exact hash or
-version values of its own. Volatile review-selection byte counts were
-removed on the same ground, and the stale review-basis tree is now
-explicitly historical. The generated architecture publication remains
-authoritative; planning prose must not become a competing identity
-source.
+- [ ] crate Rustdoc matches implemented source;
+- [ ] package contract matches implemented source;
+- [ ] absent placement/layout/coverage work remains explicit;
+- [ ] no new identity is advertised;
+- [ ] documentation checks pass;
+- [ ] the tree is clean.
 
 ---
 
@@ -1016,9 +961,9 @@ source.
 | `P2-002` | P2 | DONE | Petgraph dependency and lockfile review |
 | `P2-003` | P1 | DONE | Compiler crate boundary and typed error root |
 | `P2-004` | P1 | DONE | Bind architecture, realization, policy, and explicit scope |
-| `P2-005` | P1 | DONE | Canonical compiler relation DAG |
+| `P2-005` | P1 | DONE | Canonical compiler relation and expression DAGs |
 | `P2-006` | P1 | DONE | Checked constant folding |
-| `P2-007` | P1 | DONE | Exact proof-alternative planning |
+| `P2-007` | P1 | BLOCKED | Exact proof planning; acceptance reopened by T6 and T7 |
 | `P2-008` | P1 | DONE | Disclosure, source, and constructibility analysis |
 | `P2-009` | P1 | DONE | Representation lifecycle analysis |
 | `P2-010` | P1 | BLOCKED | Execution-case placement and layout requirements |
@@ -1026,357 +971,56 @@ source.
 | `P2-012` | P1 | BLOCKED | Compact-ASH and live-transfer analyzed pilots |
 | `P2-013` | Gate | BLOCKED | Complete Phase-2 evidence and exit |
 
-T1 and T2 may be repaired in parallel with P2-004, but must close before
-P2-012 can establish trusted pilot evidence. T3 and T4 must close before
-P2-013.
+### 6.2 Completed foundation
 
-### P2-004 — Bind compiler input and scope · `task:phase2:bind-input`
-
-**Priority:** P1
-**Status:** DONE
-**Depends on:** P2-001 through P2-003
-**Blocks:** P2-005 through P2-012
-**Owners:** `compiler`, `realization`
-**Identity impact:** no public compiler digest
-**Dependency impact:** no new dependency expected
-
-#### Deliverable
-
-Define one immutable compiler input boundary containing:
-
-- architecture binding inherited from the validated realization;
-- canonical realization projection;
-- explicit operation scope;
-- typed analysis policy;
-- optional abstract target capabilities;
-- no concrete target package, target bytes, deployment profile, or report.
-
-The compiler must revalidate owner-controlled input rather than trust that a
-caller previously did so.
-
-#### Required behavior
-
-Reject:
-
-- unsupported realization schema;
-- invalid realization;
-- architecture-binding mismatch;
-- operation absent from realization scope;
-- duplicate scope member;
-- policy inconsistent with the declared scope;
-- target-specific or generated-publication input.
-
-The existing `CompileError` input-boundary variants should be used or refined
-rather than replaced by string errors.
-
-#### API constraints
-
-- consume typed values only;
-- no filesystem or environment reads;
-- no generated JSON/TOML/Markdown input;
-- no model source or callback input;
-- no target opcode, stack position, tapleaf, transaction slot, or bytecode;
-- no speculative identity field.
-
-Typed comparison remains the boundary until a real cross-process, cached, or
-published consumer activates a compiler-plan identity under ADR-016.
-
-#### Required tests
-
-- valid Phase-1 scope;
-- duplicate scope;
-- missing operation;
-- architecture mismatch;
-- invalid or unsupported realization;
-- operation-scope permutation;
-- no generated-file parser or path API in the public surface;
-- external public-API integration test.
-
-#### Verification
-
-```sh
-cargo test --locked -p tripod-compiler
-cargo test --locked -p tripod-realization
-cargo clippy --workspace --all-targets --locked -- -D warnings
-```
-
-#### Exit
-
-- [x] typed input boundary exists;
-- [x] every input-boundary failure has focused coverage;
-- [x] scope and ownership are explicit;
-- [x] no target or filesystem detail enters compiler core;
-- [x] no compiler digest is minted;
-- [x] required gates pass and the tree is clean (see the compiler-input
-      batch gate record in section 2.4).
-
-#### Evidence
-
-Implemented 2026-08-04. The realization now exposes the owner validator
-ScopedRealizationSpec::validate_against (validates the supplied
-architecture, re-derives the expected ArchitectureBinding and requires
-exact equality — new focused error ArchitectureBindingMismatch — then
-re-runs validate_scoped_realization). The compiler adds module input:
-CompilationScope (nonempty, stable architecture-code order, duplicates
-rejected with DuplicateScopeOperation, new EmptyCompilationScope error),
-AnalysisPolicy with only the reviewed Strict policy (no placeholder
-configuration), and the immutable BoundCompilerInput (private fields,
-read-only accessors, no serializer, no digest) produced only by
-bind_input, which re-runs the owner validator, maps binding mismatch to
-its focused error, and requires every compiler-scope operation to be
-declared by the intentionally partial pilot realization
-(IncompleteRealizationScope otherwise). UnsupportedRealizationSchema is
-documented as reserved: no observable realization schema exists yet, and
-an unreachable branch must not read as implemented evidence. No abstract
-target-capability placeholder was added (P2-007 owns the first real
-consumer). New source file src/input.rs is in the compiler Meson census.
-
-Focused evidence: public-API integration tests cover the valid Phase-1
-scope (canonical order, policy, binding accessor), single-pilot scopes,
-scope permutation equality, empty and duplicate scope rejection,
-Burn-outside-realization incompleteness, and a mutated-architecture
-binding mismatch. Compiler (8), realization (154 + suites), and the full
-workspace test set (40 suites) with clippy -D warnings are green; the
-batch gate record follows.
-
-### P2-005 — Build the canonical compiler relation DAG · `task:phase2:relation-dag`
-
-**Priority:** P1
-**Status:** DONE
-**Depends on:** P2-004 and C1-005
-**Blocks:** P2-006 through P2-012
-
-Use a compiler-owned direct Petgraph graph with:
+The following are implemented internally and remain subject to their package
+tests and owner validation:
 
 ```text
-typed stable keys
-typed node and edge weights
-stable-key → NodeIndex metadata
-canonical stable-key projection
+P2-001  realization boundary
+P2-002  Petgraph review
+P2-003  compiler crate and error root
+P2-004  compiler input binding
+P2-005  relation/expression DAGs
+P2-006  checked constant folding
+P2-008  source, constructibility, and disclosure analysis
+P2-009  representation lifecycle
 ```
 
-Requirements:
+No complete analyzed-program public API is exposed yet. This is deliberate:
+partial analyses must not be mistaken for a completed compiler result.
 
-- compiler relation census equals realization scope;
-- every source relation retains operation ownership and provenance;
-- duplicate IDs reject;
-- unknown endpoints reject;
-- unsupported cycles reject with canonical SCC diagnostics;
-- Petgraph indices remain local handles;
-- insertion permutations produce equal typed projections;
-- standard topology, SCC, and reachability use Petgraph.
-
-#### Evidence
-
-Implemented 2026-08-05 with C1-005. The compiler depends on the
-workspace-owned petgraph directly (lockfile gains only the dependency
-edges; feature surface reviewed — default plus serde-1 only, no rayon or
-generation features) and builds two crate-private canonical analyses from
-the typed realization projection of the validated input. The relation DAG
-selects by explicit compiler scope, revalidates proof-alternative
-ownership, rejects duplicates, unknown endpoints, cross-scope dependency
-escape in both directions, and cycles with SCC diagnostics translated to
-sorted stable IDs, and requires exact census equality; the T2
-substrate-conservation relation survives by focused test. The scoped
-expression graph retains realization expression IDs, closes the in-scope
-seed over operation-independent ancestors only, fails closed on foreign
-dependencies, and validates every relation predicate binding (presence,
-boolean type, ownership). Petgraph indices and the topological schedule
-never enter stable projections; proptest permutation properties pin
-insertion-order independence, and repeated foundation analysis is equal.
-Focused compiler tests (31 unit, 8 public API), realization tests,
-workspace debug tests, and clippy -D warnings are green; the Guide-2
-batch gate record in section 2.5 closes the gate item.
-
-### P2-006 — Implement checked constant folding · `task:phase2:constant-folding`
+### P2-007 — Repair and reaccept exact proof planning · `task:phase2:proof-planning`
 
 **Priority:** P1
-**Status:** DONE
-**Depends on:** P2-005
-**Blocks:** P2-007 and P2-012
+**Status:** BLOCKED
+**Depends on:** T6, T7, P2-005, P2-006
+**Blocks:** P2-010 through P2-013
 
-Initial legal folds:
+The exact search implementation exists, but its feasible set is not accepted
+until T6 and T7 close.
 
-- typed literals;
-- boolean identities;
-- exact count and amount operations;
-- statically known activation;
-- explicitly set-like canonical ordering;
-- structural sharing retaining complete provenance.
+Reacceptance requires:
 
-Do not:
+1. every in-scope relation classified exactly once;
+2. every approved proof alternative retained or rejected for a typed reason;
+3. external-evidence capabilities validated;
+4. proof/representation compatibility applied completely;
+5. capability and source requirements consistent;
+6. hard constraints applied before objective or candidate retention;
+7. exact feasible set compared with an independently derived exhaustive oracle;
+8. no partial result on complexity exhaustion;
+9. deterministic candidate ordering and equality under declaration
+   permutations.
 
-- reassociate checked arithmetic;
-- move or combine floor operations;
-- change overflow or underflow behavior;
-- reorder named failure conditions;
-- remove relation ownership;
-- change disclosure or witness requirements.
-
-Compare every folded result with a non-folded evaluator.
-
-#### Evidence
-
-Implemented 2026-08-05. Folding is conservative and closed-only: typed
-literals, checked count and protocol-amount sums, equality, ordered
-comparison, conjunction, and owner subset fold only when every operand is
-already a folded constant, through the checked domain arithmetic. Facts —
-architecture bound values included — never fold, and no algebraic
-identity over unknown operands is applied: a false conjunct with an
-unknown term stays unfolded, and a false conjunct with an overflowing
-constant dependency fails with the focused typed overflow error instead
-of short-circuiting. Amount-domain exit and integer overflow are
-distinguished, the offending total is named where it exists, and every
-source node, ID, and dependency edge remains as provenance beside the
-folded value. No underflow error variant was added: no subtraction
-expression exists, and an unreachable variant must not read as
-implemented evidence. A deliberately simple independent non-folding
-reference oracle agrees with the fold on generated constant DAGs
-(value, failure class, and unfolded-unknown alike), repeated folding is
-equal, and declaration permutations preserve the folded projection.
-Gates as recorded for P2-005 and in the section 2.5 batch gate record.
-
-### P2-007 — Implement exact proof planning · `task:phase2:proof-planning`
-
-**Priority:** P1
-**Status:** DONE
-**Depends on:** P2-005, P2-006, C1-008
-**Blocks:** P2-008 through P2-012
-
-For each relation:
-
-1. enumerate realization-approved alternatives;
-2. reject missing capabilities;
-3. reject unauthenticated sources;
-4. reject unavailable witnesses;
-5. reject permissionless owner/operator secrets;
-6. reject representation failures;
-7. reject lifecycle failures;
-8. reject disclosure failures;
-9. retain the exact feasible set or Pareto frontier;
-10. select canonically only under explicit policy.
-
-Pilot planning uses deterministic exact enumeration or branch-and-bound.
-
-Complexity exhaustion returns a typed error and never:
-
-- drops a relation;
-- weakens authorization;
-- silently increases disclosure;
-- removes a lifecycle exit;
-- selects the best partial result;
-- claims optimality.
-
-### P2-008 — Derive disclosure, sources, and constructibility · `task:phase2:constructibility`
-
-**Priority:** P1
-**Status:** DONE
-**Depends on:** P2-007 and closure of T2
-**Blocks:** P2-010 through P2-012
-
-Every relation operand records an authenticatable source class.
-
-Permissionless cases require public facts or constructor-local sponsor
-capabilities only.
-
-Disclosure reasons remain separate:
-
-```text
-semantic public state or event
-permissionless constructibility
-target safety
-deployment policy
-```
-
-Sponsor-value opacity remains structural:
-
-- individual sponsor amounts are not protocol facts;
-- sponsor role isolation and substrate conservation evidence are distinct;
-- compiler analysis must not infer an exact sponsor-value read.
-
-### P2-009 — Analyze representation lifecycle · `task:phase2:lifecycle`
-
-**Priority:** P1
-**Status:** DONE
-**Depends on:** P2-007
-**Blocks:** P2-010 through P2-012
-
-For every supported representation, record paths to required exits.
-
-At minimum:
-
-```text
-live receipt:
-    transfer
-    burn
-    redeem
-
-ASH:
-    compact
-    clear
-```
-
-A pilot may be semantically valid in current scope while lifecycle-incomplete
-for deployment. That distinction remains typed and explicit.
-
-#### Guide-3 evidence (C1-008, P2-007, P2-008, P2-009)
-
-Implemented 2026-08-05 as one reviewed batch; evidence is shared because
-the analyses weld together.
-
-Realization consumption API: the scoped realization derives and exposes
-each operation's constructibility authorization cases once at assembly
-(typed OperationOutsideScope refusal), and the availability predicate is
-the owner-defined ConstructibilityAuthorization discharge rule — no
-consumer duplicates it.
-
-P2-008: every relation derives an exhaustive typed operand census (a new
-relation variant breaks the derivation at compile time) and, per approved
-proof alternative, one canonical authenticated source row per operand.
-Public arithmetic takes exact consensus values; confidential conservation
-takes commitment relations and never exact public amounts; owner
-authorization takes the exact input-owner witness; permissionless
-authorization requires nothing private; sponsor witnesses stay
-sponsor-local, sponsor-activated, and welded to an optional
-constructibility subtree. A sponsor amount is a structural
-SponsorValueRead error wherever it appears — operand, disclosure, or
-retained-private fact. Constructibility is revalidated compiler-side per
-authorization case with stable-ID diagnostic paths; disclosure inherits
-the realization declassification unchanged and every compiler addition
-carries a typed representation/proof reason (explicit live transfer
-records its amount disclosure; private-committed retains it; compact ASH
-adds nothing).
-
-P2-009: representation variables come from the exact representation
-relations; the rebuilt lifecycle graph requires every supported mode to
-reach every required exit (missing path fails), with in-scope and
-declared-outside-scope exits distinguished — the pilots are semantically
-analyzable and deliberately not deployment-lifecycle complete.
-Proof/representation compatibility is exact (public arithmetic rejects
-private-committed values; confidential conservation rejects explicit).
-
-C1-008/P2-007: every relation is classified exactly once (proof-required
-with sorted approved alternatives, statically validated lifecycle exits,
-or retained external evidence — T2 substrate conservation survives every
-plan). The deterministic depth-first exact search enumerates the complete
-feasible set under explicit ProofSearchLimits (now the AnalysisPolicy's
-real configuration consumer), prunes only on hard constraints, returns no
-partial result on exhaustion, and distinguishes exhaustion from the typed
-NoFeasibleProofPlan. Both live-transfer strategy families are retained
-and the invalid private/public-arithmetic pairing never appears. An
-independent iterative Cartesian oracle equals production on every pilot
-scope and sixteen random capability views, and the greedy first-choice
-counterexample is pinned. CapabilityView is analysis input, never target
-identity; no compiler-plan identity was minted — typed comparison remains
-the boundary. Compiler suites (60 unit, 8 public API), realization
-(156 + public API), and full workspace tests with clippy -D warnings are
-green; the Guide-3 batch gate record in section 2.6 closes the gates.
+The search retains the exact feasible set; it does not silently select one
+candidate under an unstated target policy.
 
 ### P2-010 — Derive execution-case placement and layout requirements · `task:phase2:placement`
 
 **Priority:** P1
 **Status:** BLOCKED
-**Depends on:** P2-008, P2-009, C1-009
+**Depends on:** accepted P2-007, P2-008, P2-009, C1-009
 **Blocks:** P2-011 and P2-012
 
 Classify relations as:
@@ -1401,11 +1045,24 @@ Every active required case must have a possible semantic carrier.
 Compiler core does not assign concrete tapscript input indexes, stack
 positions, tapleaves, or transaction slots.
 
+Required output includes:
+
+- stable placement requirement IDs;
+- relation provenance;
+- active case set;
+- eligible semantic carriers;
+- required fact/source sets;
+- deliberate duplication policy;
+- typed failure for no possible carrier;
+- complexity limits and diagnostic search report.
+
+No target bytes or concrete target positions enter this stage.
+
 ### P2-011 — Derive relation-indexed coverage requirements · `task:phase2:coverage`
 
 **Priority:** P1
 **Status:** BLOCKED
-**Depends on:** P2-010
+**Depends on:** P2-010, C1-010, C1-013
 **Blocks:** P2-012
 
 Require exact equality among:
@@ -1432,11 +1089,13 @@ Conditional relations additionally receive:
 - active valid case;
 - active invalid case.
 
+A broad operation test does not substitute for relation coverage.
+
 ### P2-012 — Analyze both pilots end to end · `task:phase2:pilots`
 
 **Priority:** P1
 **Status:** BLOCKED
-**Depends on:** T1, T2, P2-005 through P2-011
+**Depends on:** T6, T7, P2-005 through P2-011
 **Blocks:** P2-013
 
 #### Compact ASH
@@ -1448,12 +1107,13 @@ Analyze:
 - ownerless `U` conservation;
 - exact canonical delta;
 - sponsor multiplicity and role isolation;
-- substrate conservation premise;
+- substrate-conservation capability and evidence premise;
 - no roots;
 - transition-certificate projection only;
 - public constructibility;
 - explicit/public representation;
-- compact and clear lifecycle.
+- compact and clear lifecycle;
+- placement and coverage in sponsorless and sponsored cases.
 
 #### Live transfer
 
@@ -1466,33 +1126,41 @@ Analyze:
 - explicit closed `U`;
 - destination-family closure;
 - sponsor multiplicity and role isolation;
-- substrate conservation premise;
+- substrate-conservation capability and evidence premise;
 - no roots;
 - transition-certificate projection only;
 - explicit/private-committed alternatives;
-- transfer, burn, and redemption lifecycle.
+- transfer, burn, and redemption lifecycle;
+- representation-sensitive proof compatibility;
+- placement and coverage in explicit/private and sponsorless/sponsored cases.
 
 Repeated analysis from equal typed inputs must produce equal stable projections.
+
+The complete analyzed value must not claim deployment lifecycle completeness:
+the pilots retain future target and operation obligations.
 
 ### P2-013 — Phase-2 evidence and exit · `gate:backlog:phase2`
 
 **Priority:** Gate
 **Status:** BLOCKED
-**Depends on:** T1–T4, P2-004 through P2-012, C1-005, C1-008, C1-009,
-C1-010, C1-013
+**Depends on:** T6–T9, P2-004 through P2-012, C1-005, C1-008,
+C1-009, C1-010, C1-013
 
 Phase 2 exits only when:
 
-- current review findings are closed or formally refuted;
-- compiler input binding is complete;
+- T6–T9 are closed or formally refuted;
+- compiler input binding remains complete;
 - relation census exactly equals realization scope;
 - every relation has proof, source, constructibility, lifecycle, placement,
   layout, target-requirement, and coverage information;
+- external-evidence capabilities fail closed when unavailable;
+- proof/representation compatibility is complete;
 - unsupported capabilities fail without semantic weakening;
 - no concrete target detail enters compiler core;
 - compact ASH and live transfer analyze deterministically;
 - independent small-instance oracles agree;
 - current required repository gates pass;
+- documentation status and current-phase declarations agree;
 - the final tree is clean.
 
 Phase completion does not itself justify a persistent compiler digest.
@@ -1512,60 +1180,54 @@ Phase completion does not itself justify a persistent compiler digest.
 | `C1-005` | DONE | Canonical direct-Petgraph compiler graph prototype |
 | `C1-006` | PARKED | Exact keyed linear systems until a consumer exists |
 | `C1-007` | PARKED | Certified numerical analysis until a consumer exists |
-| `C1-008` | DONE | Exact proof-plan search |
+| `C1-008` | BLOCKED | Exact proof-plan search; reaccept after T6/T7 |
 | `C1-009` | TODO | Execution-case-aware placement |
 | `C1-010` | TODO | Typed symbol resolution and SCC policy |
 | `C1-011` | BLOCKED | Structured relocation; linker phase |
 | `C1-012` | BLOCKED | Deterministic bounded-depth target tree; linker phase |
-| `C1-013` | TODO | Independent small-instance oracles |
+| `C1-013` | TODO | Independent small-instance placement and coverage oracles |
 | `C1-014` | BLOCKED | Preparation review and Phase-2 handoff |
 
-### 7.2 C1-005 — Canonical Petgraph construction
+### 7.2 C1-008 — Proof-plan search reacceptance
 
-Implement:
+The current search remains exact in shape but is not accepted until:
 
-- typed nodes and edges;
-- stable semantic keys;
-- canonical insertion;
-- stable-key/local-index metadata;
-- Petgraph topology, SCC, and reachability;
-- canonical stable-key projection;
-- deterministic diagnostics.
+- external-evidence capability requirements are retained;
+- representation-sensitive proofs are checked against selected modes;
+- candidate capabilities and sources agree;
+- the independent oracle derives those rules independently;
+- infeasibility and complexity exhaustion remain distinct;
+- no partial result is returned.
 
-Test:
-
-- node and edge insertion permutations;
-- duplicate keys and edges;
-- unknown endpoints;
-- self-loops;
-- disconnected graphs;
-- deep chains;
-- SCCs;
-- attempted publication of local graph indices.
-
-### 7.3 C1-008 — Exact proof-plan search
-
-Implement an exact pilot planner and compare every generated small case with
-exhaustive enumeration.
-
-Required adversarial cases:
-
-- cheapest local alternatives form an invalid global plan;
-- sharing changes the optimum;
-- lifecycle-safe plan differs from the cheapest immediate plan;
-- equal-cost plans require stable-key tie-breaking;
-- no feasible plan;
-- complexity budget exhausted.
-
-### 7.4 C1-009 — Execution-case-aware placement
+### 7.3 C1-009 — Execution-case-aware placement
 
 Enumerate required execution cases and eligible carriers.
 
+For relation \(r\):
+
+\[
+\operatorname{requiredCases}(r)
+\subseteq
+\bigcup_{c\text{ carries }r}\operatorname{executedCases}(c)
+\]
+
 A relation carried somewhere but absent from one active case remains uncovered.
 
-Compare production search with exhaustive carrier-subset enumeration.
+Compare production search with exhaustive carrier-subset enumeration on small
+instances.
 
-### 7.5 C1-010 — Typed symbols and SCC policy
+Required adversarial cases:
+
+- relation available only in sponsorless case;
+- relation available only in sponsored case;
+- global relation assigned only to local carrier;
+- unconditional relation assigned only to optional carrier;
+- representation-specific carrier missing;
+- duplicated carrier with conflicting fact requirements;
+- equal-cost carrier sets requiring stable-key tie-breaking;
+- placement-state budget exhaustion.
+
+### 7.4 C1-010 — Typed symbols and SCC policy
 
 Use two-pass typed resolution:
 
@@ -1577,7 +1239,10 @@ Normalize SCC members by stable key.
 SCC membership does not authorize a semantic cycle. Every accepted cycle
 requires an explicit typed resolution strategy.
 
-### 7.6 C1-013 — Independent algorithm oracles
+This work prepares linker policy but must not pull linker or target types into
+compiler core.
+
+### 7.5 C1-013 — Independent algorithm oracles
 
 | Production analysis | Independent oracle |
 |---|---|
@@ -1585,11 +1250,15 @@ requires an explicit typed resolution strategy.
 | SCC | mutual-reachability equivalence |
 | expression interning | non-interned evaluator |
 | dependency closure | repeated complete scan |
-| proof selection | exhaustive candidate enumeration |
+| proof selection | exhaustive candidate enumeration with independently derived hard constraints |
 | placement | exhaustive carrier subsets |
 | relation census | direct set equality |
 | constant folding | non-folded evaluator |
 | stable projection | declaration-order permutation |
+| coverage | direct relation × case matrix equality |
+
+The proof-selection oracle must not call the same obligation-classification or
+compatibility helper as production for the property it is meant to verify.
 
 ---
 
@@ -1603,6 +1272,7 @@ requires an explicit typed resolution strategy.
 | `num-bigint` | Existing | Exact arbitrary-size integers |
 | `num-integer` | Existing | Exact integer helpers |
 | `num-traits` | Existing | Numeric traits |
+| `proptest` | Existing | Property and independent-oracle testing |
 | `num-rational` | Deferred | Future exact-rational consumer |
 | `faer` | Deferred | Future certified numerical diagnostics |
 | `fixedbitset` | Deferred | Dense local coverage sets if measured |
@@ -1611,6 +1281,9 @@ requires an explicit typed resolution strategy.
 | `salsa` | Deferred | Incremental compiler queries |
 | `egg` | Deferred | Equality saturation |
 | `rayon` | Removed and deferred | Requires measured need and schedule-independent results |
+
+The latest static review excluded `Cargo.lock`; no lockfile claim is made by
+that review.
 
 ### 8.2 Dependency-entry rule · `rule:backlog:dependency-entry`
 
@@ -1692,6 +1365,8 @@ It must not:
 Keep separate:
 
 - typed validation;
+- capability availability;
+- witness/source availability;
 - model execution;
 - realization conformance;
 - compiler completeness;
@@ -1704,7 +1379,23 @@ Keep separate:
 - calibration;
 - release validation.
 
-A report from one class never silently satisfies another.
+A report or status from one class never silently satisfies another.
+
+In particular:
+
+```text
+target capability exists
+≠
+required evidence was produced
+
+sponsor role structure is valid
+≠
+substrate conservation was evidenced
+
+model relation is conformant
+≠
+deployment is ready
+```
 
 ---
 
@@ -1729,16 +1420,19 @@ the relevant documentation and census checks.
 
 | Area | Command |
 |---|---|
-| architecture/profile | `cargo test --locked -p tripod-architecture` |
-| realization | `cargo test --locked -p tripod-realization` |
-| model conformance | `cargo test --locked -p tripod-model realization_conformance` |
-| model bounds | `cargo test --locked -p tripod-model bound_conformance` |
-| artifacts | `cargo test --locked -p tripod-artifacts` |
-| labels/plans | `cargo test --locked -p tripod-labels` |
-| checker report/stamps | `cargo test --locked -p cli-common` |
-| document stamps | `cargo test --locked -p tripod-document-stamps` |
-| flattener | `cargo test --locked -p flatten-latex-main` |
-| process wrapper | `cargo test --locked -p execwrap` |
+| architecture/profile | `cargo test -p tripod-architecture` |
+| realization | `cargo test -p tripod-realization` |
+| compiler | `cargo test -p tripod-compiler` |
+| compiler planning | `cargo test -p tripod-compiler proof` |
+| compiler oracle | `cargo test -p tripod-compiler oracle` |
+| model conformance | `cargo test -p tripod-model realization_conformance` |
+| model bounds | `cargo test -p tripod-model bound_conformance` |
+| artifacts | `cargo test -p tripod-artifacts` |
+| labels/plans | `cargo test -p tripod-labels` |
+| checker report/stamps | `cargo test -p cli-common` |
+| document stamps | `cargo test -p tripod-document-stamps` |
+| flattener | `cargo test -p flatten-latex-main` |
+| process wrapper | `cargo test -p execwrap` |
 | mocked Meson graph | `scripts/test-meson-mock.sh .` |
 
 Focused filters supplement but never replace complete package and workspace
@@ -1756,7 +1450,13 @@ meson test -C build --print-errorlogs
 
 The canonical build directory is `build/`.
 
-Use `meson setup build` only if `build/` does not exist.
+Use:
+
+```sh
+meson setup build
+```
+
+only if `build/` does not exist.
 
 For a complete release-oriented result, additionally run the required MSRV and
 stable lanes and the separate byte-reproducibility check:
@@ -1801,9 +1501,9 @@ It must be empty.
 Repository source, tests, Cargo manifests, Meson definitions, scripts, TeX,
 and `.latexmkrc` are executable.
 
-Untrusted contributions run only in an externally established, credential-free
-isolated environment under ADR-015. A clean-tree result is a correctness check,
-not malicious-code containment.
+Untrusted contributions run only in an externally established,
+credential-free isolated environment under ADR-015. A clean-tree result is a
+correctness check, not malicious-code containment.
 
 ---
 
@@ -1814,31 +1514,30 @@ The Phase-2 gate is **not passed**.
 Current blockers are:
 
 ```text
-Static review:
-    T1 request/successor conformance binding
-    T2 typed sponsor substrate-conservation premise
-    T3 batch-staged multi-output publication
-    T4 invariant/runtime-bound conformance
+Compiler correctness:
+    T6 external-evidence capability validation
+    T7 complete proof/representation compatibility
+    P2-007 / C1-008 reacceptance after T6 and T7
 
-Compiler:
-    P2-004 input binding not implemented
-    relation DAG not implemented
-    constant folding not implemented
-    proof planning not implemented
-    disclosure/source/constructibility analysis not implemented
-    lifecycle analysis not implemented
-    placement/layout analysis not implemented
-    coverage analysis not implemented
-    pilot analysis not implemented
+Compiler remaining work:
+    C1-009 / P2-010 execution-case placement and layout
+    C1-010 typed symbol/SCC policy
+    C1-013 independent placement and coverage oracles
+    P2-011 relation-indexed coverage
+    P2-012 complete analyzed pilots
+
+Documentation:
+    T8 current-phase declaration weld
+    T9 compiler implementation-status refresh
 
 Evidence:
-    no current-tree complete gate record for the reviewed tree
+    no fresh complete current-tree gate record after T6–T9
 ```
 
 Until (`gate:backlog:phase2`) passes:
 
 - Phase 1 remains historical tagged evidence;
-- no compiler public analysis API is frozen;
+- no compiler public complete-analysis API is frozen;
 - no public realization/compiler digest is minted without a real consumer;
 - target-specific fields remain forbidden in realization and compiler core;
 - no stable linker or transaction ABI exists;
@@ -1846,8 +1545,8 @@ Until (`gate:backlog:phase2`) passes:
 - no draft bound becomes deployment calibration;
 - no raw report digest is treated as evidence identity without typed role and
   subject binding;
-- no self-consistent model checkpoint is described as independent target-chain
-  evidence;
+- no self-consistent model checkpoint is described as independent
+  target-chain evidence;
 - no architecture, model, realization, hash, build, or test success is
   described as deployment readiness;
 - no current checkout is described as green without a fresh complete execution
@@ -1860,22 +1559,19 @@ Until (`gate:backlog:phase2`) passes:
 Execute in this order unless reproduction changes dependencies:
 
 ```text
-1. Reproduce T1 and T2.
-2. Decide and implement the T2 typed substrate-evidence boundary.
-3. Bind conformance observations to executed requests under T1.
-4. Reproduce and close T4.
-5. Reproduce and close T3.
-6. Implement P2-004 compiler input binding.
-7. Implement C1-005 and P2-005 relation DAG construction.
-8. Implement P2-006 checked constant folding.
-9. Implement C1-008 and P2-007 exact proof planning.
-10. Implement P2-008 and P2-009 source, disclosure, constructibility,
-    and lifecycle analysis.
-11. Implement C1-009/C1-010 and P2-010/P2-011 placement, layout,
-    SCC, and coverage requirements.
-12. Analyze compact ASH and live transfer end to end.
-13. Run and record the complete Phase-2 gate.
-14. Begin Phase-3 target work only after Phase-2 exit.
+1. Reproduce T6 with a capability view lacking whole-transaction conservation.
+2. Repair T6 while keeping capability support and evidence completion separate.
+3. Reproduce T7 by enumerating representation-relation proof/mode pairings.
+4. Repair T7 and independently verify the complete feasible set.
+5. Reaccept C1-008 and P2-007.
+6. Close T8 by selecting or checking one canonical current-phase declaration.
+7. Close T9 by updating compiler Rustdoc and package-plan status.
+8. Implement C1-009 and P2-010 placement/layout requirements.
+9. Implement C1-010 and P2-011 coverage requirements.
+10. Implement C1-013 independent placement and coverage oracles.
+11. Analyze compact ASH and live transfer end to end under P2-012.
+12. Run and record the complete Phase-2 gate.
+13. Begin Phase-3 target work only after Phase-2 exit.
 ```
 
 No new hash, target prototype, report field, or publication may defer a current
@@ -1941,4 +1637,4 @@ After a phase or remediation series:
 
 ## 14. One-line backlog · `rem:backlog:one-line`
 
-> Repair the four newly reviewed evidence, invariant, and publication boundaries; then build the Phase-2 compiler as an exact, deterministic, target-independent analysis with complete relation preservation, explicit constructibility and lifecycle, no speculative identities, and no ambiguous evidence.
+> Repair the two reopened proof-planning correctness boundaries and the two documentation-weld defects; then complete Phase-2 placement, layout, relation-indexed coverage, and deterministic analyzed pilots without adding target detail, speculative identities, or ambiguous evidence.
