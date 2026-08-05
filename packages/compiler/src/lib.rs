@@ -61,6 +61,7 @@
 #![forbid(unsafe_code)]
 
 mod capability;
+mod carrier;
 mod case;
 mod constructibility;
 mod disclosure;

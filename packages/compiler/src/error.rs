@@ -499,4 +499,41 @@ pub enum CompileError {
         /// Analyzed pairs absent from the requirement.
         unexpected: Vec<crate::placement::RelationCaseKey>,
     },
+
+    /// The operation has no input family a typed cardinality minimum
+    /// guarantees is present, so no coordinator anchor exists.
+    ///
+    /// A global coordinator is never conjured from nowhere: without a
+    /// mandatory input family the operation's transaction-global
+    /// relations have no carrier, and inventing one would claim
+    /// enforcement no structure supports.
+    #[error("operation {operation:?} has no mandatory input family to anchor a coordinator")]
+    MissingCanonicalCoordinator {
+        /// The operation without a coordinator anchor.
+        operation: OperationId,
+    },
+
+    /// Every candidate carrier of an unconditionally active relation is
+    /// anchored in a family that may be absent.
+    ///
+    /// The optional sponsor family is the pilots' instance: it may
+    /// carry its own conditional relations, never an unconditional one
+    /// on its own.
+    #[error("unconditional relation {relation:?} has only optional carriers in case {case:?}")]
+    UnconditionalRelationOnOptionalCarrier {
+        /// The unconditionally active relation.
+        relation: realization::RelationId,
+        /// The case in which every candidate is optional.
+        case: crate::case::ExecutionCaseId,
+    },
+
+    /// No candidate carrier can receive every active source row of an
+    /// active runtime relation.
+    #[error("relation {relation:?} has no eligible carrier in case {case:?}")]
+    NoEligibleCarrier {
+        /// The uncarried relation.
+        relation: realization::RelationId,
+        /// The case in which no carrier is eligible.
+        case: crate::case::ExecutionCaseId,
+    },
 }
