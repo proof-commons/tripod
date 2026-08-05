@@ -29,6 +29,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use architecture::{ObjectId, OpenFlowKind, OperationId};
+use proptest::prelude::*;
 use realization::{
     CardinalityMaximum, ConstructibilityClass, ExternalEvidenceRequirement, Relation,
     RelationDeclaration, RelationId, RelationKind, RelationSubject, RepresentationMode,
@@ -2141,6 +2142,509 @@ fn repeated_analysis_agrees_with_the_oracle_identically() {
 
             assert_eq!(&again, coverage, "{:?}", pilot.operation);
             assert_eq!(again.project(), expected, "{:?}", pilot.operation);
+        }
+    }
+}
+
+// --- adversarial synthetic instances and property tests (§12.6) ---
+
+/// One synthetic relation shape.
+///
+/// Chosen to span the axes coverage branches on: every discharge
+/// boundary, both cardinality edges, conditional and unconditional
+/// activation, and the hybrid relations that state two boundaries at
+/// once. A pilot instance exercises what the pilots happen to declare;
+/// these exercise combinations no validated realization assembles.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Shape {
+    ProtocolCardinality,
+    SponsorCardinality,
+    ProtocolRecognition,
+    SponsorRecognition,
+    Conservation,
+    OwnerAuthorization,
+    Permissionless,
+    Constructibility,
+    Representation,
+    Lifecycle,
+    Substrate,
+}
+
+const SHAPES: [Shape; 11] = [
+    Shape::ProtocolCardinality,
+    Shape::SponsorCardinality,
+    Shape::ProtocolRecognition,
+    Shape::SponsorRecognition,
+    Shape::Conservation,
+    Shape::OwnerAuthorization,
+    Shape::Permissionless,
+    Shape::Constructibility,
+    Shape::Representation,
+    Shape::Lifecycle,
+    Shape::Substrate,
+];
+
+/// The synthetic operation. One operation throughout: a coverage
+/// dependency crossing two of them is rejected outright, and the §12.5
+/// cross-operation case covers that on its own.
+const SYNTHETIC: OperationId = OperationId::TransferLive;
+
+#[allow(clippy::too_many_lines)]
+fn shape_declaration(shape: Shape) -> RelationDeclaration {
+    use architecture::AssetId;
+    use realization::{Count, ObservedSide};
+
+    let family = |kind, side, object| {
+        RelationId::new(
+            SYNTHETIC,
+            kind,
+            RelationSubject::ObjectFamily { side, object },
+        )
+    };
+    let (id, relation) = match shape {
+        Shape::ProtocolCardinality => (
+            family(
+                RelationKind::Cardinality,
+                TransactionSide::Input,
+                ObjectId::ReceiptLive,
+            ),
+            Relation::Cardinality {
+                side: ObservedSide::Input,
+                object: ObjectId::ReceiptLive,
+                minimum: Count::ONE,
+                maximum: CardinalityMaximum::Exact(Count::new(4)),
+            },
+        ),
+
+        // Minimum zero and an architecture-owned ceiling: no
+        // below-minimum class, and the maximum cited by its bound.
+        Shape::SponsorCardinality => (
+            family(
+                RelationKind::Cardinality,
+                TransactionSide::Input,
+                ObjectId::PlainLbtc,
+            ),
+            Relation::Cardinality {
+                side: ObservedSide::Input,
+                object: ObjectId::PlainLbtc,
+                minimum: Count::ZERO,
+                maximum: CardinalityMaximum::Bound(architecture::BoundId::FeeSponsorInputMax),
+            },
+        ),
+
+        Shape::ProtocolRecognition => (
+            family(
+                RelationKind::Recognition,
+                TransactionSide::Input,
+                ObjectId::ReceiptLive,
+            ),
+            Relation::Recognition {
+                side: ObservedSide::Input,
+                object: ObjectId::ReceiptLive,
+                asset: AssetId::U,
+            },
+        ),
+
+        Shape::SponsorRecognition => (
+            family(
+                RelationKind::Recognition,
+                TransactionSide::Input,
+                ObjectId::PlainLbtc,
+            ),
+            Relation::Recognition {
+                side: ObservedSide::Input,
+                object: ObjectId::PlainLbtc,
+                asset: AssetId::Lbtc,
+            },
+        ),
+
+        Shape::Conservation => (
+            RelationId::new(
+                SYNTHETIC,
+                RelationKind::Conservation,
+                RelationSubject::Asset { asset: AssetId::U },
+            ),
+            Relation::AmountConservation {
+                asset: AssetId::U,
+                input_objects: BTreeSet::from([ObjectId::ReceiptLive]),
+                output_objects: BTreeSet::from([ObjectId::ReceiptLive]),
+            },
+        ),
+
+        Shape::OwnerAuthorization => (
+            family(
+                RelationKind::Authorization,
+                TransactionSide::Input,
+                ObjectId::ReceiptLive,
+            ),
+            Relation::OwnerAuthorization {
+                object: ObjectId::ReceiptLive,
+            },
+        ),
+
+        Shape::Permissionless => (
+            RelationId::new(
+                SYNTHETIC,
+                RelationKind::Authorization,
+                RelationSubject::Operation,
+            ),
+            Relation::PermissionlessAuthorization,
+        ),
+
+        Shape::Constructibility => (
+            RelationId::new(
+                SYNTHETIC,
+                RelationKind::Constructibility,
+                RelationSubject::Operation,
+            ),
+            Relation::Constructibility {
+                class: ConstructibilityClass::PublicPermissionless,
+            },
+        ),
+
+        Shape::Representation => (
+            RelationId::new(
+                SYNTHETIC,
+                RelationKind::Representation,
+                RelationSubject::Representation {
+                    object: ObjectId::ReceiptLive,
+                },
+            ),
+            Relation::Representation {
+                object: ObjectId::ReceiptLive,
+                allowed: BTreeSet::from([
+                    RepresentationMode::Explicit,
+                    RepresentationMode::PrivateCommitted,
+                ]),
+            },
+        ),
+
+        Shape::Lifecycle => (
+            RelationId::new(
+                SYNTHETIC,
+                RelationKind::Lifecycle,
+                RelationSubject::LifecycleExit {
+                    object: ObjectId::ReceiptLive,
+                    exit: SYNTHETIC,
+                },
+            ),
+            Relation::LifecycleExit {
+                object: ObjectId::ReceiptLive,
+                exit: SYNTHETIC,
+            },
+        ),
+
+        Shape::Substrate => (
+            RelationId::new(
+                SYNTHETIC,
+                RelationKind::SubstrateConservation,
+                RelationSubject::Asset {
+                    asset: AssetId::Lbtc,
+                },
+            ),
+            Relation::SubstrateConservation {
+                asset: AssetId::Lbtc,
+            },
+        ),
+    };
+
+    RelationDeclaration {
+        id,
+        relation,
+        proof_alternatives: BTreeSet::new(),
+    }
+}
+
+/// A synthetic relation analysis over chosen shapes and dependencies.
+///
+/// Assembled directly rather than derived, so an instance can carry a
+/// shape combination — and, for the cycle property, a dependency cycle —
+/// that a validated realization never produces.
+fn synthetic_relations(
+    shapes: &BTreeSet<Shape>,
+    edges: &[(usize, usize)],
+) -> CompilerRelationAnalysis {
+    let declarations = shapes
+        .iter()
+        .map(|shape| shape_declaration(*shape))
+        .collect::<Vec<_>>();
+    let mut graph = petgraph::graph::DiGraph::new();
+    let mut node_by_id = BTreeMap::new();
+    let mut indices = Vec::new();
+
+    for declaration in &declarations {
+        let id = AnalysisNodeId::SourceRelation(declaration.id.clone());
+        let index = graph.add_node(crate::relation::CompilerRelationNode {
+            id: id.clone(),
+            source: declaration.clone(),
+        });
+
+        node_by_id.insert(id, index);
+        indices.push(index);
+    }
+
+    for (source, target) in edges {
+        graph.add_edge(
+            indices[*source],
+            indices[*target],
+            crate::relation::CompilerRelationEdge::SourceDependency(
+                realization::RelationEdge::RecognitionBeforeCardinality,
+            ),
+        );
+    }
+
+    CompilerRelationAnalysis {
+        graph,
+        node_by_id: node_by_id.clone(),
+        evaluation_order: node_by_id.into_keys().collect(),
+    }
+}
+
+/// One synthetic execution case.
+fn synthetic_execution_case(
+    sponsor: SponsorCase,
+    representation: RepresentationMode,
+) -> crate::case::ExecutionCase {
+    crate::case::ExecutionCase {
+        id: ExecutionCaseId {
+            operation: SYNTHETIC,
+            sponsor,
+            representations: BTreeMap::from([(ObjectId::ReceiptLive, representation)]),
+        },
+        // No routed source rows: the placement stage is not the subject
+        // here, and coverage states its census without them.
+        active_sources: Vec::new(),
+    }
+}
+
+/// The relation-case prerequisite edges and activities of one synthetic
+/// coverage analysis, as the closure and component oracles read them.
+fn synthetic_dependencies(
+    relations: &CompilerRelationAnalysis,
+    coverage: &PlanCoverageAnalysis,
+) -> (Vec<CoverageNodeId>, Vec<CoverageDependency>) {
+    let census = coverage.keys();
+    let nodes = census
+        .iter()
+        .map(|key| CoverageNodeId::RelationCase(key.clone()))
+        .collect::<Vec<_>>();
+    let edges = oracle_prerequisites(relations, &census)
+        .into_iter()
+        .map(|(source, target)| CoverageDependency {
+            source: CoverageNodeId::RelationCase(source),
+            target: CoverageNodeId::RelationCase(target),
+            edge: CoverageEdge::RelationPrerequisite,
+        })
+        .collect::<Vec<_>>();
+
+    (nodes, edges)
+}
+
+/// Production and the oracle agree on one synthetic instance.
+fn agree_on_synthetic(
+    shapes: &BTreeSet<Shape>,
+    cases: &[crate::case::ExecutionCase],
+    edges: &[(usize, usize)],
+) -> CompilerRelationAnalysis {
+    let relations = synthetic_relations(shapes, edges);
+    let plans = classify_relation_cases(&relations, cases).expect("classification");
+    let production = analyze_plan_coverage(&relations, &plans).expect("coverage");
+    let declarations = oracle_declarations(&relations);
+    let case_ids = cases.iter().map(|case| case.id.clone()).collect();
+    let expected = oracle_projection(&declarations, &case_ids, None);
+
+    agree(SYNTHETIC, &production.project(), &expected);
+    relations
+}
+
+#[test]
+fn a_synthetic_instance_of_every_boundary_agrees_with_the_oracle() {
+    let shapes = SHAPES.into_iter().collect::<BTreeSet<_>>();
+    let cases = vec![
+        synthetic_execution_case(SponsorCase::Absent, RepresentationMode::Explicit),
+        synthetic_execution_case(SponsorCase::Present, RepresentationMode::Explicit),
+        synthetic_execution_case(SponsorCase::Present, RepresentationMode::PrivateCommitted),
+    ];
+
+    agree_on_synthetic(&shapes, &cases, &[]);
+}
+
+#[test]
+fn a_synthetic_cycle_is_rejected_and_the_oracle_finds_the_same_components() {
+    let shapes = BTreeSet::from([
+        Shape::ProtocolCardinality,
+        Shape::ProtocolRecognition,
+        Shape::Conservation,
+    ]);
+    let cases = vec![synthetic_execution_case(
+        SponsorCase::Absent,
+        RepresentationMode::Explicit,
+    )];
+    // A three-relation cycle no validated realization admits.
+    let relations = synthetic_relations(&shapes, &[(0, 1), (1, 2), (2, 0)]);
+    let plans = classify_relation_cases(&relations, &cases).expect("classification");
+    let coverage = analyze_plan_coverage(&relations, &plans).expect("coverage");
+
+    let Err(CompileError::CoverageDependencyCycle { components }) =
+        analyze_coverage_dependencies(&coverage, &relations)
+    else {
+        panic!("a coverage cycle is rejected");
+    };
+    let (nodes, edges) = synthetic_dependencies(&relations, &coverage);
+
+    assert_eq!(components, oracle_components(&nodes, &edges));
+    assert_eq!(components.len(), 1);
+    assert_eq!(components[0].members.len(), 3);
+}
+
+/// One to eight distinct relation shapes.
+fn shape_sets() -> impl Strategy<Value = BTreeSet<Shape>> {
+    proptest::collection::btree_set(proptest::sample::select(SHAPES.to_vec()), 1..=8)
+}
+
+/// One to four distinct execution cases.
+fn case_sets() -> impl Strategy<Value = Vec<crate::case::ExecutionCase>> {
+    proptest::collection::btree_set(
+        proptest::sample::select(vec![
+            (SponsorCase::Absent, RepresentationMode::Explicit),
+            (SponsorCase::Present, RepresentationMode::Explicit),
+            (SponsorCase::Absent, RepresentationMode::PrivateCommitted),
+            (SponsorCase::Present, RepresentationMode::PrivateCommitted),
+        ]),
+        1..=4,
+    )
+    .prop_map(|selected| {
+        selected
+            .into_iter()
+            .map(|(sponsor, representation)| synthetic_execution_case(sponsor, representation))
+            .collect()
+    })
+}
+
+/// Strictly forward dependency edges over `count` relations, and
+/// therefore acyclic by construction.
+fn forward_edges(count: usize) -> Vec<(usize, usize)> {
+    (0..count)
+        .flat_map(|source| ((source + 1)..count).map(move |target| (source, target)))
+        .take(4)
+        .collect()
+}
+
+/// The counterexample the coverage-oracle property search shrank to,
+/// written down as its inputs.
+///
+/// It used to be kept as a generator seed in the regression file beside
+/// this suite. A seed replays a case only by asking the same random
+/// number generator for it again: it states nothing a reader can read,
+/// and it is exactly the kind of value that could be swapped for
+/// another without any check noticing. The inputs it shrank to are
+/// small and nameable, so they are named here, and the property above
+/// keeps searching for new ones.
+#[test]
+fn the_shrunken_single_conservation_instance_agrees_with_the_oracle() {
+    let shapes = BTreeSet::from([Shape::Conservation]);
+    let cases = vec![synthetic_execution_case(
+        SponsorCase::Absent,
+        RepresentationMode::PrivateCommitted,
+    )];
+
+    agree_on_synthetic(&shapes, &cases, &[]);
+
+    let edges = forward_edges(shapes.len());
+    let relations = agree_on_synthetic(&shapes, &cases, &edges);
+    let plans = classify_relation_cases(&relations, &cases).expect("classification");
+    let mut coverage = analyze_plan_coverage(&relations, &plans).expect("coverage");
+
+    resolve_coverage_dependencies(&mut coverage, &relations).expect("resolution");
+
+    let census = coverage.keys();
+    let pairs = oracle_prerequisites(&relations, &census);
+    let activity = oracle_activities(&oracle_declarations(&relations), &census);
+
+    for plan in coverage.plans() {
+        let expected = oracle_closure(&pairs, &activity, &plan.key());
+
+        for requirement in &plan.negative {
+            if requirement.collateral.policy
+                == CollateralPolicy::RequireIntendedAndDependencyClosure
+            {
+                assert_eq!(requirement.collateral.dependency_closure, expected);
+            }
+        }
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+
+    /// Bounded generated instances: the production coverage projection
+    /// equals the oracle projection, exactly.
+    #[test]
+    fn generated_instances_agree_with_the_oracle(
+        shapes in shape_sets(),
+        cases in case_sets(),
+    ) {
+        agree_on_synthetic(&shapes, &cases, &[]);
+    }
+
+    /// Bounded acyclic dependency graphs: coverage resolves, and every
+    /// claimed collateral closure equals the repeated-scan fixpoint.
+    #[test]
+    fn generated_acyclic_dependencies_agree_with_the_closure_oracle(
+        shapes in shape_sets(),
+        cases in case_sets(),
+    ) {
+        let edges = forward_edges(shapes.len());
+        let relations = agree_on_synthetic(&shapes, &cases, &edges);
+        let plans = classify_relation_cases(&relations, &cases).expect("classification");
+        let mut coverage = analyze_plan_coverage(&relations, &plans).expect("coverage");
+
+        resolve_coverage_dependencies(&mut coverage, &relations).expect("resolution");
+
+        let census = coverage.keys();
+        let pairs = oracle_prerequisites(&relations, &census);
+        let activity = oracle_activities(&oracle_declarations(&relations), &census);
+
+        for plan in coverage.plans() {
+            let expected = oracle_closure(&pairs, &activity, &plan.key());
+
+            for requirement in &plan.negative {
+                if requirement.collateral.policy
+                    == CollateralPolicy::RequireIntendedAndDependencyClosure
+                {
+                    prop_assert_eq!(&requirement.collateral.dependency_closure, &expected);
+                }
+            }
+        }
+    }
+
+    /// A generated cycle is rejected by production with canonical
+    /// components, and the mutual-reachability oracle finds the same
+    /// ones.
+    #[test]
+    fn generated_cyclic_dependencies_are_rejected_by_both(
+        shapes in proptest::collection::btree_set(
+            proptest::sample::select(SHAPES.to_vec()),
+            2..=6,
+        ),
+        cases in case_sets(),
+    ) {
+        let count = shapes.len();
+        let mut edges = (0..count - 1)
+            .map(|source| (source, source + 1))
+            .collect::<Vec<_>>();
+        edges.push((count - 1, 0));
+
+        let relations = synthetic_relations(&shapes, &edges);
+        let plans = classify_relation_cases(&relations, &cases).expect("classification");
+        let coverage = analyze_plan_coverage(&relations, &plans).expect("coverage");
+        let (nodes, oracle_edges) = synthetic_dependencies(&relations, &coverage);
+
+        match analyze_coverage_dependencies(&coverage, &relations) {
+            Err(CompileError::CoverageDependencyCycle { components }) => {
+                prop_assert_eq!(components, oracle_components(&nodes, &oracle_edges));
+            }
+            other => prop_assert!(false, "a coverage cycle must be rejected: {:?}", other),
         }
     }
 }
