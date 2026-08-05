@@ -76,9 +76,11 @@ representation lifecycle with explicit future exits, and deterministic
 exact feasible-plan enumeration checked against an independent
 exhaustive oracle. No compiler-plan identity was minted.
 
-Every deliverable below remains open.
+The five requirement sections that follow record what those delivered analyses
+must satisfy. They are implemented as crate-private stages, not as a public
+analyzed program.
 
-### Proof alternatives
+### Proof alternatives — requirement of the delivered analysis
 
 Represent semantic proof alternatives separately from target implementation
 patterns.
@@ -94,7 +96,7 @@ live transfer conservation:
     confidential transaction conservation
 ```
 
-### Disclosure analysis
+### Disclosure analysis — requirement of the delivered analysis
 
 Separate:
 
@@ -104,13 +106,13 @@ Separate:
 
 Every disclosure has typed reason and provenance.
 
-### Fact-source analysis
+### Fact-source analysis — requirement of the delivered analysis
 
 Every operand has an authenticatable source requirement.
 
 Unauthenticated metadata is not a source.
 
-### Constructibility
+### Constructibility — requirement of the delivered analysis
 
 Check both:
 
@@ -121,7 +123,7 @@ witness can be obtained by the authorized constructor
 
 Compact ASH must require no owner/operator secret.
 
-### Lifecycle
+### Lifecycle — requirement of the delivered analysis
 
 Track required exits for supported representations.
 
@@ -135,6 +137,9 @@ redeem
 
 Pilot support may remain lifecycle-incomplete for later target operations, but
 that status must be explicit.
+
+Every deliverable below remains open, as does the complete pilot analyzed
+program and its public boundary.
 
 ### Placement requirements
 

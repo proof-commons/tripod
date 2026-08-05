@@ -28,13 +28,36 @@
 //! # State
 //!
 //! The crate boundary and the validated input boundary ([`bind_input`]
-//! and [`BoundCompilerInput`], P2-004) are implemented. The canonical
-//! relation graph, constant folding, proof planning, disclosure and
-//! fact-source analysis, constructibility, lifecycle, placement,
-//! layout, and coverage requirements are separate deliverables and are
-//! not implemented here. No partial analysis is exposed in the
-//! meantime, so nothing in this crate can be mistaken for a completed
-//! one.
+//! and [`BoundCompilerInput`], P2-004) are the public surface.
+//!
+//! These internal analysis stages are implemented:
+//!
+//! - validated typed input binding;
+//! - canonical scoped relation DAG;
+//! - canonical scoped expression DAG;
+//! - checked constant folding;
+//! - proof-obligation classification;
+//! - exact feasible-plan enumeration;
+//! - source requirements;
+//! - constructibility analysis;
+//! - disclosure analysis;
+//! - representation lifecycle analysis;
+//! - an independent exhaustive proof-search oracle.
+//!
+//! Every stage above the input boundary is crate-private. The
+//! following remain absent:
+//!
+//! - an accepted proof-planning result until the T6/T7 repairs close;
+//! - execution-case placement;
+//! - concrete target-independent layout requirements;
+//! - relation-indexed coverage requirements;
+//! - a complete pilot analyzed program;
+//! - a public complete-analysis result;
+//! - a compiler-plan identity;
+//! - target program emission.
+//!
+//! No public value produced by the crate today can be mistaken for a
+//! completed compiler analysis.
 
 #![forbid(unsafe_code)]
 

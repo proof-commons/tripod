@@ -1,6 +1,8 @@
 # Target-Independent Compiler · `pkg:compiler:contract`
 
-> **Status:** Active — crate boundary and typed error root implemented; input binding and analysis not implemented
+> **Status:** Active — input, graph, folding, source, constructibility, disclosure,
+> lifecycle, and exact proof-planning foundations implemented internally;
+> placement, layout, coverage, and complete analyzed pilots remain open
 > **Phase:** [Phase 2](../phases/02-compiler.md)
 > **Package:** `tripod-compiler`
 > **Library:** `compiler`
@@ -96,6 +98,12 @@ The core analyzed value contains:
 
 A later target-selected plan may bind an abstract target capability identity
 and deterministic proof choices.
+
+That complete analyzed value is planned, not published. The relation and
+expression graphs, folding, proof-obligation classification, feasible-plan
+enumeration, source requirements, constructibility, disclosure, and lifecycle
+analyses exist today as crate-private stages; only the validated input boundary
+and the typed error root are public.
 
 > Illustrative boundary; names and exact fields are not frozen.
 
@@ -287,18 +295,22 @@ Those are separate reports under D004.
 
 ## Milestones · `tbl:compiler:milestones`
 
-| Label | Deliverable |
-|---|---|
-| `milestone:compiler:crate` | Crate and schemas |
-| `milestone:compiler:relations` | Relation DAG |
-| `milestone:compiler:folding` | Checked constant folding |
-| `milestone:compiler:proofs` | Proof alternatives |
-| `milestone:compiler:disclosure` | Disclosure analysis |
-| `milestone:compiler:sources` | Fact-source and constructibility analysis |
-| `milestone:compiler:lifecycle` | Lifecycle graph |
-| `milestone:compiler:placement` | Placement/layout requirements |
-| `milestone:compiler:coverage` | Coverage requirements |
-| `milestone:compiler:pilots` | Complete pilot analyses |
+| Label | Deliverable | State |
+|---|---|---|
+| `milestone:compiler:crate` | Crate and schemas | Implemented internally |
+| `milestone:compiler:relations` | Relation DAG | Implemented internally |
+| `milestone:compiler:folding` | Checked constant folding | Implemented internally |
+| `milestone:compiler:proofs` | Proof alternatives | Implemented internally |
+| `milestone:compiler:disclosure` | Disclosure analysis | Implemented internally |
+| `milestone:compiler:sources` | Fact-source and constructibility analysis | Implemented internally |
+| `milestone:compiler:lifecycle` | Lifecycle graph | Implemented internally |
+| `milestone:compiler:placement` | Placement/layout requirements | Open |
+| `milestone:compiler:coverage` | Coverage requirements | Open |
+| `milestone:compiler:pilots` | Complete pilot analyses | Open |
+
+Implemented internally means the analysis exists as a crate-private stage with
+focused and oracle-checked coverage. No public API is frozen and no stable
+analysis identity is minted.
 
 ## Exit gate · `gate:compiler:exit`
 
@@ -320,8 +332,19 @@ See [`errors/compiler.md`](errors/compiler.md).
 
 ## Open questions · `sec:compiler:open`
 
-- Where does generic target-capability matching live without a cycle?
-- Does target planning return one selected proof plan or a canonical feasible set?
-- How does one shared analysis node retain several source relation identities?
-- How is pilot-valid but lifecycle-incomplete represented?
-- How general may placement requirements become before target evidence exists?
+- How is an execution case modelled as a semantic carrier without naming a
+  concrete target position?
+- How general may placement requirements become before target evidence exists,
+  and what bounds the placement search?
+- Which layout requirements are genuinely target-independent, and which only
+  look so because one target is in view?
+- How are coverage cases generated per relation without duplicating the
+  proof-planning search?
+- Where is the public boundary of a complete analysis result, given that every
+  stage above input binding is crate-private today?
+- Who owns the abstract target capability adapter, so generic capability
+  matching introduces no dependency cycle?
+- Which real cross-process, cached, or published consumer must appear before an
+  analysis identity is activated?
+- Does target planning select one canonical plan from the exact feasible set,
+  and under which stated objective?
