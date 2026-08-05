@@ -48,12 +48,15 @@
 //! - abstract carrier roles and carrier eligibility;
 //! - exact feasible placement enumeration with explicit limits;
 //! - target-independent layout requirements;
-//! - an independent exhaustive placement oracle.
+//! - an independent exhaustive placement oracle;
+//! - relation-indexed coverage requirements with typed mutation classes;
+//! - typed coverage dependencies with two-pass symbol resolution and a
+//!   forbidden-cycle SCC policy;
+//! - an independent relation-by-case coverage oracle.
 //!
 //! Every stage above the input boundary is crate-private. The
 //! following remain absent:
 //!
-//! - relation-indexed coverage requirements;
 //! - a complete pilot analyzed program;
 //! - a public complete-analysis result;
 //! - a compiler-plan identity;

@@ -1,8 +1,9 @@
 # Target-Independent Compiler · `pkg:compiler:contract`
 
 > **Status:** Active — input, graph, folding, source, constructibility, disclosure,
-> lifecycle, exact proof-planning, execution-case placement, and layout-requirement
-> foundations implemented internally; coverage and complete analyzed pilots remain open
+> lifecycle, exact proof-planning, execution-case placement, layout-requirement,
+> and relation-indexed coverage foundations implemented internally; the complete
+> analyzed pilots remain open
 > **Phase:** [Phase 2](../phases/02-compiler.md)
 > **Package:** `tripod-compiler`
 > **Library:** `compiler`
@@ -305,7 +306,7 @@ Those are separate reports under D004.
 | `milestone:compiler:sources` | Fact-source and constructibility analysis | Implemented internally |
 | `milestone:compiler:lifecycle` | Lifecycle graph | Implemented internally |
 | `milestone:compiler:placement` | Placement/layout requirements | Implemented internally |
-| `milestone:compiler:coverage` | Coverage requirements | Open |
+| `milestone:compiler:coverage` | Coverage requirements | Implemented internally |
 | `milestone:compiler:pilots` | Complete pilot analyses | Open |
 
 Implemented internally means the analysis exists as a crate-private stage with
@@ -335,8 +336,6 @@ See [`errors/compiler.md`](errors/compiler.md).
 - Should multi-operation placement remain the exact product across
   operations, or be stored per operation before the analyzed-program value
   assembles it?
-- How are coverage cases generated per relation without duplicating the
-  proof-planning search?
 - Where is the public boundary of a complete analysis result, given that every
   stage above input binding is crate-private today?
 - Who owns the abstract target capability adapter, so generic capability

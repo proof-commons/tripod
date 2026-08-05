@@ -161,10 +161,7 @@ Record:
 - sponsor isolation;
 - witness availability requirements.
 
-Every deliverable below remains open, as does the complete pilot analyzed
-program and its public boundary.
-
-### Coverage requirements
+### Coverage requirements — requirement of the delivered analysis
 
 For every relation, derive:
 
@@ -174,6 +171,8 @@ For every relation, derive:
 - representation cases;
 - carrier requirement;
 - accepted semantic projection checks.
+
+The complete pilot analyzed program and its public boundary remain open.
 
 ## Pilot analysis · `sec:phase2:pilots`
 

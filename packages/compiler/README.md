@@ -44,11 +44,15 @@ expression DAGs (C1-005/P2-005); conservative checked constant folding
 enumeration under explicit search limits, authenticatable source
 requirements, authorization-case constructibility analysis, plan-specific
 disclosure analysis, and representation lifecycle analysis
-(C1-008/P2-007/P2-008/P2-009), oracle-checked.
+(C1-008/P2-007/P2-008/P2-009), oracle-checked; typed execution cases,
+relation discharge classification, carrier eligibility, exact feasible
+placement, and target-independent layout requirements (C1-009/P2-010);
+relation-indexed coverage requirements, typed coverage dependencies with a
+forbidden-cycle SCC policy, and independent placement and coverage oracles
+(P2-011/C1-010/C1-013).
 
-Not implemented: target capability adapter, placement, concrete layout,
-carrier assignment, relation-indexed coverage, and the complete pilot
-analyzed program. The analysis structures are crate-private, no complete
+Not implemented: target capability adapter, concrete target layout, and the
+complete pilot analyzed program. The analysis structures are crate-private, no complete
 analyzed program is exposed, and no compiler-plan identity exists — typed
 comparison remains the boundary. No public value this crate produces today
 can be mistaken for a completed analysis.
