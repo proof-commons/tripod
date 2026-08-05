@@ -262,6 +262,25 @@ graph and folding completion"), via the nightly-SDK toolchain:
   not run for this batch.
 - Final clean-tree check: empty status.
 
+### 2.6 Proof-planning batch gate · `gate:backlog:guide3`
+
+Recorded 2026-08-05 on the tree carrying C1-008, P2-007, P2-008, and
+P2-009 (branch guide3-proof-planning, after commit "plans: record proof,
+constructibility, disclosure, and lifecycle completion"), via the
+nightly-SDK toolchain:
+
+- scripts/ci.sh: every lane ran and passed; the advisory lane was
+  SKIPPED (cargo-audit not installed; advisory per ADR-011), so the run
+  is partial-green, not green.
+- meson compile: success, including the real document build.
+- meson test: 10 of 10 suites passed.
+- git diff --check: clean.
+- Dependency review: no new dependency; the compiler feature scan finds
+  no rayon, generation, or unstable petgraph feature.
+- Document byte reproducibility: **deferred** — unchanged paper inputs;
+  not run for this batch.
+- Final clean-tree check: empty status.
+
 ---
 
 ### The verification harness's two standing hazards · `rem:backlog:verification-harness`
