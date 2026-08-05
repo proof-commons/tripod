@@ -2,7 +2,7 @@
 
 > **Status:** ACTIVE
 > **Current gate:** Phase 2 — target-independent compiler analysis
-> **Current condition:** Phase 1 remains historical tagged evidence. Compiler input binding, scoped relation/expression analysis, checked constant folding, source and constructibility analysis, disclosure analysis, representation lifecycle analysis, and exact proof-plan enumeration are implemented internally. The static-review findings T6–T9 are closed and exact proof planning is reaccepted; the Guide-4 gate record is in §2.8. The next work is C1-009 / P2-010 execution-case placement and target-independent layout requirements.
+> **Current condition:** Phase 1 remains historical tagged evidence. Compiler input binding, scoped relation/expression analysis, checked constant folding, source and constructibility analysis, disclosure analysis, representation lifecycle analysis, exact proof-plan enumeration, typed execution cases, relation discharge classification, carrier eligibility, exact feasible placement, and target-independent layout requirements are implemented internally; the Guide-5 gate record is in §2.9. The next work is P2-011 relation-indexed coverage requirements, with C1-010 symbol/SCC policy and the C1-013 coverage oracle as its preparation.
 > **Next gate:** Phase 3 — Elements target and foundational prototypes
 > **Authority:** Current execution queue only. The specification, the realization document, typed architecture, implemented ADRs, accepted decisions, package contracts, phase cards, and accepted research results take precedence.
 
@@ -327,6 +327,61 @@ Identity impact of the batch: the architecture identity, generated
 architecture publications, public schema, and dependency graph are unchanged;
 no realization public identity or compiler-plan identity exists.
 
+### 2.9 Guide-5 placement gate · `gate:backlog:guide5`
+
+The repository records a completed Guide-5 batch for:
+
+```text
+C1-009
+P2-010
+```
+
+The batch delivered, all crate-private:
+
+- typed execution cases derived per feasible proof plan (representation
+  fixed by the plan; sponsor absent/present the only expansion; four
+  semantic cases per pilot across the plan set);
+- relation discharge classification on independent axes (boundary, scope,
+  activation, multiplicity) with an exhaustive per-variant match;
+- abstract carrier roles with input-family coordinator anchors, quantified
+  every-member roles, and availability-based eligibility;
+- target-independent layout requirements citing relation IDs as semantic
+  owners;
+- exact feasible placement enumeration with explicit typed limits, no
+  partial results, and inclusion-minimal candidate retention;
+- an independent exhaustive placement oracle restating every hard
+  predicate, agreeing with production on every pilot scope and fifteen
+  adversarial synthetic cases;
+- end-to-end pilot analysis: two feasible plans per pilot, four cases per
+  pilot, 36 feasible placements per compact-ASH plan and 216 per
+  live-transfer plan, with the combined scope proven to be the exact
+  product of its operations.
+
+Findings recorded for later work:
+
+- multi-operation placement factorizes as a product across operations;
+  the analyzed-program work should consider per-operation storage;
+- compact ASH declares sponsor recognition without a sponsor cardinality
+  relation, so its sponsor family is bounded by no cardinality census;
+  live transfer declares both. This is a realization-level asymmetry, not
+  a compiler defect.
+
+Its recorded result, on the tree ending at the placement documentation
+commit:
+
+- `scripts/ci.sh`: every available lane passed; `cargo-audit` skipped
+  because unavailable, so the run was partial-green;
+- real Meson compile and test: 10/10 passed, including check-generated,
+  labels, plans, census, and the reproducibility stamps;
+- document byte reproducibility: deferred because paper inputs were
+  unchanged;
+- final clean-tree check: empty.
+
+Identity impact of the batch: the architecture identity, generated
+architecture publications, public schema, and dependency graph are
+unchanged; no compiler-plan identity was minted; placement limits are an
+explicit parameter, not public policy.
+
 ---
 
 ### The verification harness's two standing hazards · `rem:backlog:verification-harness`
@@ -392,6 +447,7 @@ A domain separator is hashed input that identifies a recipe, and the product's n
 | `compiler` disclosure | Inherited and added disclosure with typed reasons |
 | `compiler` lifecycle | Representation choices and required-exit analysis |
 | `compiler` proof search | Exact deterministic feasible-plan enumeration; fixed external-evidence requirements retained, representation modes static; reaccepted in §2.8 |
+| `compiler` placement | Typed execution cases, discharge classification, carrier eligibility, exact feasible placement sets, layout requirements, independent placement oracle; gate record §2.9 |
 | `artifacts` | Generated-publication derivation, writer/checker, realization-document weld |
 | `labels` | Owner-aware Markdown/Rust label graph, census, plan checks, register rendering |
 | `cli-common` | ADR-010 streams, diagnostics, checker report/stamp publication, batch publication |
@@ -427,8 +483,6 @@ Architecture finality does not imply:
 ### 3.3 Not implemented · `tbl:backlog:not-implemented`
 
 ```text
-compiler execution-case placement
-compiler target-independent layout requirements
 compiler relation-indexed coverage requirements
 complete pilot analyzed-program value
 public complete compiler-analysis API
@@ -460,7 +514,8 @@ Compiler input/graph/folding:       implemented internally
 Compiler source/disclosure/lifecycle:
                                     implemented internally
 Compiler exact planning:            implemented and reaccepted
-Compiler placement/layout/coverage: absent
+Compiler placement/layout:          implemented internally, section 2.9
+Compiler coverage:                  absent
 Complete analyzed pilots:           absent
 Target/backend/linker/ABI:         absent
 Independent deployment evidence:   absent
@@ -642,8 +697,8 @@ plans check all passed.
 | `P2-007` | P1 | DONE | Exact proof planning; reaccepted after T6 and T7 closed, gate record §2.8 |
 | `P2-008` | P1 | DONE | Disclosure, source, and constructibility analysis |
 | `P2-009` | P1 | DONE | Representation lifecycle analysis |
-| `P2-010` | P1 | TODO | Execution-case placement and layout requirements |
-| `P2-011` | P1 | BLOCKED | Relation-indexed coverage requirements |
+| `P2-010` | P1 | DONE | Execution-case placement and layout requirements; gate record §2.9 |
+| `P2-011` | P1 | TODO | Relation-indexed coverage requirements |
 | `P2-012` | P1 | BLOCKED | Compact-ASH and live-transfer analyzed pilots |
 | `P2-013` | Gate | BLOCKED | Complete Phase-2 evidence and exit |
 
@@ -662,6 +717,7 @@ P2-006  checked constant folding
 P2-007  exact proof planning, reaccepted
 P2-008  source, constructibility, and disclosure analysis
 P2-009  representation lifecycle
+P2-010  execution-case placement and layout requirements
 ```
 
 No complete analyzed-program public API is exposed yet. This is deliberate:
@@ -695,49 +751,27 @@ candidate under an unstated target policy.
 ### P2-010 — Derive execution-case placement and layout requirements · `task:phase2:placement`
 
 **Priority:** P1
-**Status:** TODO
+**Status:** DONE
 **Depends on:** accepted P2-007, P2-008, P2-009, C1-009
 **Blocks:** P2-011 and P2-012
 
-Classify relations as:
+Delivered in the Guide-5 batch; the gate record and evidence are in §2.9.
 
-- local;
-- transaction-global;
-- conditional;
-- deliberately duplicated.
-
-Model finite execution cases where applicable:
-
-```text
-sponsorless / sponsored
-explicit / confidential
-continuing / terminal
-empty / nonempty
-pre-maturity / conversion / post-maturity
-```
-
-Every active required case must have a possible semantic carrier.
-
-Compiler core does not assign concrete tapscript input indexes, stack
-positions, tapleaves, or transaction slots.
-
-Required output includes:
-
-- stable placement requirement IDs;
-- relation provenance;
-- active case set;
-- eligible semantic carriers;
-- required fact/source sets;
-- deliberate duplication policy;
-- typed failure for no possible carrier;
-- complexity limits and diagnostic search report.
-
-No target bytes or concrete target positions enter this stage.
+Relations are classified per execution case on independent axes — discharge
+boundary, semantic scope, activation, and carrier multiplicity — rather than
+one local/global/conditional/duplicated category. Execution cases expand only
+the sponsor dimension; the representation is fixed by each feasible proof
+plan. Every active runtime relation case has an eligible abstract carrier;
+carrier eligibility, exact feasible placement sets, and target-independent
+layout requirements are validated against an independent exhaustive oracle.
+Complexity limits are explicit typed parameters and exhaustion returns no
+partial result. No target bytes or concrete target positions enter this
+stage.
 
 ### P2-011 — Derive relation-indexed coverage requirements · `task:phase2:coverage`
 
 **Priority:** P1
-**Status:** BLOCKED
+**Status:** TODO
 **Depends on:** P2-010, C1-010, C1-013
 **Blocks:** P2-012
 
@@ -857,11 +891,11 @@ Phase completion does not itself justify a persistent compiler digest.
 | `C1-006` | PARKED | Exact keyed linear systems until a consumer exists |
 | `C1-007` | PARKED | Certified numerical analysis until a consumer exists |
 | `C1-008` | DONE | Exact proof-plan search; reaccepted after T6/T7, gate record §2.8 |
-| `C1-009` | TODO | Execution-case-aware placement |
+| `C1-009` | DONE | Execution-case-aware placement; gate record §2.9 |
 | `C1-010` | TODO | Typed symbol resolution and SCC policy |
 | `C1-011` | BLOCKED | Structured relocation; linker phase |
 | `C1-012` | BLOCKED | Deterministic bounded-depth target tree; linker phase |
-| `C1-013` | TODO | Independent small-instance placement and coverage oracles |
+| `C1-013` | TODO | Independent small-instance oracles; placement oracle delivered in §2.9, coverage oracle open |
 | `C1-014` | BLOCKED | Preparation review and Phase-2 handoff |
 
 ### 7.2 C1-008 — Proof-plan search reacceptance
@@ -878,31 +912,13 @@ establishes each former condition:
 
 ### 7.3 C1-009 — Execution-case-aware placement
 
-Enumerate required execution cases and eligible carriers.
-
-For relation \(r\):
-
-\[
-\operatorname{requiredCases}(r)
-\subseteq
-\bigcup_{c\text{ carries }r}\operatorname{executedCases}(c)
-\]
-
-A relation carried somewhere but absent from one active case remains uncovered.
-
-Compare production search with exhaustive carrier-subset enumeration on small
-instances.
-
-Required adversarial cases:
-
-- relation available only in sponsorless case;
-- relation available only in sponsored case;
-- global relation assigned only to local carrier;
-- unconditional relation assigned only to optional carrier;
-- representation-specific carrier missing;
-- duplicated carrier with conflicting fact requirements;
-- equal-cost carrier sets requiring stable-key tie-breaking;
-- placement-state budget exhaustion.
+Delivered in the Guide-5 batch with P2-010; the gate record is in §2.9.
+Every active relation case is covered by an eligible carrier, production
+search is compared with an independent exhaustive assignment oracle on
+small instances and both pilot scopes, and the adversarial case list —
+optional-carrier defects, global-on-local defects, source unavailability,
+duplicate enforcement, permutation equality, and both budget exhaustions —
+is retained as focused regressions.
 
 ### 7.4 C1-010 — Typed symbols and SCC policy
 
@@ -1192,9 +1208,8 @@ Current blockers are:
 
 ```text
 Compiler remaining work:
-    C1-009 / P2-010 execution-case placement and layout
     C1-010 typed symbol/SCC policy
-    C1-013 independent placement and coverage oracles
+    C1-013 remaining coverage oracle
     P2-011 relation-indexed coverage
     P2-012 complete analyzed pilots
 ```
@@ -1224,13 +1239,12 @@ Until (`gate:backlog:phase2`) passes:
 Execute in this order unless reproduction changes dependencies:
 
 ```text
-1. Implement C1-009 and P2-010 placement/layout requirements.
-2. Implement C1-010 typed symbol resolution and SCC policy.
-3. Implement C1-013 independent placement and coverage oracles.
-4. Implement P2-011 relation-indexed coverage requirements.
-5. Analyze compact ASH and live transfer end to end under P2-012.
-6. Run and record the complete Phase-2 gate.
-7. Begin Phase-3 target work only after Phase-2 exit.
+1. Implement C1-010 typed symbol resolution and SCC policy.
+2. Implement P2-011 relation-indexed coverage requirements with the
+   remaining C1-013 coverage oracle.
+3. Analyze compact ASH and live transfer end to end under P2-012.
+4. Run and record the complete Phase-2 gate.
+5. Begin Phase-3 target work only after Phase-2 exit.
 ```
 
 No new hash, target prototype, report field, or publication may defer a current
@@ -1296,4 +1310,4 @@ After a phase or remediation series:
 
 ## 14. One-line backlog · `rem:backlog:one-line`
 
-> Complete Phase-2 execution-case placement, layout, relation-indexed coverage, independent oracles, and deterministic analyzed pilots on the reaccepted exact proof-plan set, without adding target detail, speculative identities, or ambiguous evidence.
+> Complete Phase-2 relation-indexed coverage and the deterministic analyzed pilots on the delivered placement and layout foundation, without adding target detail, speculative identities, or ambiguous evidence.
