@@ -47,29 +47,26 @@ A direct `architecture` dependency was additionally taken on the contract's
 stated exception, because the public error vocabulary names operations and
 realization does not re-export `OperationId`.
 
-The package existing is not the compiler existing. Every deliverable below
-remains open.
+The package existing is not the compiler existing.
 
-### Relation DAG
+### Input binding — complete
 
-Build a canonical analyzed relation DAG that:
+The validated immutable input boundary (P2-004): explicit canonical scope,
+the strict analysis policy, owner revalidation, and the bound input value.
 
-- preserves every realization relation ID;
-- records source provenance;
-- validates dependencies;
-- supports structural sharing without losing operation ownership;
-- rejects missing, duplicate, or cyclic unsupported nodes.
+### Relation DAG — complete
 
-### Constant folding
+Delivered under C1-005/P2-005 as a crate-private analysis (with the scoped
+expression graph and predicate-binding validation); the stable projection
+remains internal until the P2-012 analyzed program.
 
-Implement conservative checked folding for:
+### Checked constant folding — complete
 
-- constants;
-- boolean identities;
-- statically known activation;
-- domain-safe arithmetic.
+Delivered under P2-006: closed-constant folds only, checked arithmetic,
+failure-preserving conjunction, an independent reference oracle, and
+permutation-stable folded projections.
 
-Folding must preserve fail-closed behavior and provenance.
+Every deliverable below remains open.
 
 ### Proof alternatives
 

@@ -38,7 +38,10 @@ typed comparison is the boundary.
 
 ## State
 
-This is the crate boundary only: the error root and the public-API surface.
-Input binding and every analysis stage are separate deliverables and are not
-implemented here. Nothing partial is exposed in the meantime, so no value this
-crate produces today can be mistaken for a completed analysis.
+The crate implements typed input binding (P2-004), exact scoped relation and
+expression graph construction (C1-005/P2-005), and conservative checked
+constant folding (P2-006). The analysis structures are crate-private: proof
+planning, source/disclosure analysis, lifecycle, placement, layout, coverage,
+and the pilot analyzed program remain unimplemented, and no complete analyzed
+program is exposed. No public value this crate produces today can be mistaken
+for a completed analysis.

@@ -2,7 +2,7 @@
 
 > **Status:** ACTIVE
 > **Current gate:** Phase 2 — target-independent compiler analysis
-> **Current condition:** Phase 1 is historical tagged evidence. The static-review findings T1–T4 are reproduced, repaired, and closed against the batch remediation gate record in section 2.3; the T5 identity drift is corrected by removing duplicated values. The compiler crate now implements the P2-004 validated input boundary, closed against the compiler-input batch gate record in section 2.4; no further analysis stage exists yet. The next compiler work is C1-005 and P2-005 relation-DAG construction.
+> **Current condition:** Phase 1 is historical tagged evidence. The static-review findings T1–T4 are reproduced, repaired, and closed against the batch remediation gate record in section 2.3; the T5 identity drift is corrected by removing duplicated values. The compiler crate implements the P2-004 validated input boundary (gate record in section 2.4) and, per the Guide-2 batch, the C1-005/P2-005 canonical scoped relation and expression DAGs plus P2-006 conservative checked constant folding, all crate-private until P2-012 exposes a complete analyzed program. The next compiler work is C1-008/P2-007 exact proof planning.
 > **Next gate:** Phase 3 — Elements target and foundational prototypes
 > **Authority:** Current execution queue only. The specification, the realization document, typed architecture, implemented ADRs, accepted decisions, package contracts, phase cards, and accepted research results take precedence.
 
@@ -976,8 +976,8 @@ source.
 | `P2-002` | P2 | DONE | Petgraph dependency and lockfile review |
 | `P2-003` | P1 | DONE | Compiler crate boundary and typed error root |
 | `P2-004` | P1 | DONE | Bind architecture, realization, policy, and explicit scope |
-| `P2-005` | P1 | BLOCKED | Canonical compiler relation DAG |
-| `P2-006` | P1 | BLOCKED | Checked constant folding |
+| `P2-005` | P1 | DONE | Canonical compiler relation DAG |
+| `P2-006` | P1 | DONE | Checked constant folding |
 | `P2-007` | P1 | BLOCKED | Exact proof-alternative planning |
 | `P2-008` | P1 | BLOCKED | Disclosure, source, and constructibility analysis |
 | `P2-009` | P1 | BLOCKED | Representation lifecycle analysis |
@@ -1102,7 +1102,7 @@ batch gate record follows.
 ### P2-005 — Build the canonical compiler relation DAG · `task:phase2:relation-dag`
 
 **Priority:** P1
-**Status:** BLOCKED
+**Status:** DONE
 **Depends on:** P2-004 and C1-005
 **Blocks:** P2-006 through P2-012
 
@@ -1126,10 +1126,32 @@ Requirements:
 - insertion permutations produce equal typed projections;
 - standard topology, SCC, and reachability use Petgraph.
 
+#### Evidence
+
+Implemented 2026-08-05 with C1-005. The compiler depends on the
+workspace-owned petgraph directly (lockfile gains only the dependency
+edges; feature surface reviewed — default plus serde-1 only, no rayon or
+generation features) and builds two crate-private canonical analyses from
+the typed realization projection of the validated input. The relation DAG
+selects by explicit compiler scope, revalidates proof-alternative
+ownership, rejects duplicates, unknown endpoints, cross-scope dependency
+escape in both directions, and cycles with SCC diagnostics translated to
+sorted stable IDs, and requires exact census equality; the T2
+substrate-conservation relation survives by focused test. The scoped
+expression graph retains realization expression IDs, closes the in-scope
+seed over operation-independent ancestors only, fails closed on foreign
+dependencies, and validates every relation predicate binding (presence,
+boolean type, ownership). Petgraph indices and the topological schedule
+never enter stable projections; proptest permutation properties pin
+insertion-order independence, and repeated foundation analysis is equal.
+Focused compiler tests (31 unit, 8 public API), realization tests,
+workspace debug tests, and clippy -D warnings are green; the Guide-2
+batch gate record in section 2.5 closes the gate item.
+
 ### P2-006 — Implement checked constant folding · `task:phase2:constant-folding`
 
 **Priority:** P1
-**Status:** BLOCKED
+**Status:** DONE
 **Depends on:** P2-005
 **Blocks:** P2-007 and P2-012
 
@@ -1152,6 +1174,27 @@ Do not:
 - change disclosure or witness requirements.
 
 Compare every folded result with a non-folded evaluator.
+
+#### Evidence
+
+Implemented 2026-08-05. Folding is conservative and closed-only: typed
+literals, checked count and protocol-amount sums, equality, ordered
+comparison, conjunction, and owner subset fold only when every operand is
+already a folded constant, through the checked domain arithmetic. Facts —
+architecture bound values included — never fold, and no algebraic
+identity over unknown operands is applied: a false conjunct with an
+unknown term stays unfolded, and a false conjunct with an overflowing
+constant dependency fails with the focused typed overflow error instead
+of short-circuiting. Amount-domain exit and integer overflow are
+distinguished, the offending total is named where it exists, and every
+source node, ID, and dependency edge remains as provenance beside the
+folded value. No underflow error variant was added: no subtraction
+expression exists, and an unreachable variant must not read as
+implemented evidence. A deliberately simple independent non-folding
+reference oracle agrees with the fold on generated constant DAGs
+(value, failure class, and unfolded-unknown alike), repeated folding is
+equal, and declaration permutations preserve the folded projection.
+Gates as recorded for P2-005 and in the section 2.5 batch gate record.
 
 ### P2-007 — Implement exact proof planning · `task:phase2:proof-planning`
 
@@ -1373,7 +1416,7 @@ Phase completion does not itself justify a persistent compiler digest.
 | `C1-002` | DONE | Direct Petgraph decision |
 | `C1-003` | DONE | Exact/certified mathematics decision |
 | `C1-004` | DONE | Petgraph dependency review |
-| `C1-005` | TODO | Canonical direct-Petgraph compiler graph prototype |
+| `C1-005` | DONE | Canonical direct-Petgraph compiler graph prototype |
 | `C1-006` | PARKED | Exact keyed linear systems until a consumer exists |
 | `C1-007` | PARKED | Certified numerical analysis until a consumer exists |
 | `C1-008` | TODO | Exact proof-plan search |
