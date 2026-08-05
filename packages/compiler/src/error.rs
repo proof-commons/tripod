@@ -768,6 +768,64 @@ pub enum CompileError {
         representation: realization::RepresentationMode,
     },
 
+    /// A coverage dependency names a symbol the definition census does
+    /// not define.
+    ///
+    /// The two-pass resolution completes the census first, so an
+    /// unresolved reference is a missing definition rather than a
+    /// forward reference the order happened to reach early.
+    #[error("coverage dependency names undefined symbol {symbol:?}")]
+    UnknownCoverageSymbol {
+        /// The unresolved coverage symbol.
+        symbol: crate::coverage_graph::CoverageNodeId,
+    },
+
+    /// The same typed coverage dependency is declared twice.
+    ///
+    /// One dependency stated twice would be counted twice by anything
+    /// that walks the edges, so it is a defect rather than a value to
+    /// deduplicate silently.
+    ///
+    /// The endpoints are boxed: a coverage symbol is a complete typed
+    /// value, and two of them inline would make every fallible
+    /// compiler result carry that width.
+    #[error(
+        "coverage dependency {prerequisite:?} -> {dependent:?} ({edge:?}) is declared more than once"
+    )]
+    DuplicateCoverageDependency {
+        /// The prerequisite symbol.
+        prerequisite: Box<crate::coverage_graph::CoverageNodeId>,
+        /// The dependent symbol.
+        dependent: Box<crate::coverage_graph::CoverageNodeId>,
+        /// The repeated edge role.
+        edge: crate::coverage_graph::CoverageEdge,
+    },
+
+    /// The coverage dependencies contain a cycle.
+    ///
+    /// Coverage cycles are forbidden: an accepted cycle would need a
+    /// typed resolution strategy that does not exist, and finding a
+    /// strongly connected component never authorizes one.
+    #[error("coverage dependency cycle in {} component(s)", components.len())]
+    CoverageDependencyCycle {
+        /// Canonically normalized cyclic components.
+        components: Vec<crate::coverage_graph::CoverageCycleComponent>,
+    },
+
+    /// A coverage dependency crosses two operations.
+    ///
+    /// Coverage is stored and validated per operation, so a dependency
+    /// spanning two of them is a claim neither operation's analysis
+    /// owns. The endpoints are boxed for the same reason as
+    /// [`Self::DuplicateCoverageDependency`].
+    #[error("coverage dependency {prerequisite:?} -> {dependent:?} crosses two operations")]
+    CrossOperationCoverageDependency {
+        /// The prerequisite symbol.
+        prerequisite: Box<crate::coverage_graph::CoverageNodeId>,
+        /// The dependent symbol.
+        dependent: Box<crate::coverage_graph::CoverageNodeId>,
+    },
+
     /// One proof-plan candidate was placed more than once.
     ///
     /// The variant names no plan: until an admitted plan identity
