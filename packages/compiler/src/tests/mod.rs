@@ -10,6 +10,7 @@ mod constructibility_tests;
 mod disclosure_tests;
 mod expression_tests;
 mod fold_tests;
+mod layout_tests;
 mod lifecycle_tests;
 mod oracle_tests;
 mod placement_tests;

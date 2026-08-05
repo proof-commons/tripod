@@ -536,4 +536,18 @@ pub enum CompileError {
         /// The case in which no carrier is eligible.
         case: crate::case::ExecutionCaseId,
     },
+
+    /// A carrier dependency or structural obligation has no layout
+    /// requirement.
+    ///
+    /// A carrier that cannot see its operands does not discharge its
+    /// relation, so an unrouted source is a defect rather than an
+    /// omission a backend may fill in later by assumption.
+    #[error("relation {relation:?} lacks a layout requirement in case {case:?}")]
+    MissingLayoutRequirement {
+        /// The relation whose dependency is unstated.
+        relation: realization::RelationId,
+        /// The case carrying the unstated dependency.
+        case: crate::case::ExecutionCaseId,
+    },
 }
