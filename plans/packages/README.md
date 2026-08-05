@@ -46,7 +46,7 @@ its realization dependency is for post-execution conformance projection.
 |---|---|---|
 | [realization.md](realization.md) | Active | Target-independent semantic declaration. |
 | [labels.md](labels.md) | Active | Repository-wide documentation label registries and checks. |
-| [compiler.md](compiler.md) | Active — boundary and error root only | Relation, proof, disclosure, lifecycle, placement, and layout analysis. |
+| [compiler.md](compiler.md) | Active — analysis foundations internal; placement, layout, coverage open | Relation, proof, disclosure, lifecycle, placement, and layout analysis. |
 | [target-elements.md](target-elements.md) | Planned | Typed Liquid/Elements compatibility contract. |
 | [tapscript.md](tapscript.md) | Planned | First production target backend. |
 | [simplicity.md](simplicity.md) | Parked | Future second backend. |
