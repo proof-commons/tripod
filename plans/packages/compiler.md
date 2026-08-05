@@ -1,8 +1,8 @@
 # Target-Independent Compiler · `pkg:compiler:contract`
 
 > **Status:** Active — input, graph, folding, source, constructibility, disclosure,
-> lifecycle, and exact proof-planning foundations implemented internally;
-> placement, layout, coverage, and complete analyzed pilots remain open
+> lifecycle, exact proof-planning, execution-case placement, and layout-requirement
+> foundations implemented internally; coverage and complete analyzed pilots remain open
 > **Phase:** [Phase 2](../phases/02-compiler.md)
 > **Package:** `tripod-compiler`
 > **Library:** `compiler`
@@ -304,7 +304,7 @@ Those are separate reports under D004.
 | `milestone:compiler:disclosure` | Disclosure analysis | Implemented internally |
 | `milestone:compiler:sources` | Fact-source and constructibility analysis | Implemented internally |
 | `milestone:compiler:lifecycle` | Lifecycle graph | Implemented internally |
-| `milestone:compiler:placement` | Placement/layout requirements | Open |
+| `milestone:compiler:placement` | Placement/layout requirements | Implemented internally |
 | `milestone:compiler:coverage` | Coverage requirements | Open |
 | `milestone:compiler:pilots` | Complete pilot analyses | Open |
 
@@ -332,12 +332,9 @@ See [`errors/compiler.md`](errors/compiler.md).
 
 ## Open questions · `sec:compiler:open`
 
-- How is an execution case modelled as a semantic carrier without naming a
-  concrete target position?
-- How general may placement requirements become before target evidence exists,
-  and what bounds the placement search?
-- Which layout requirements are genuinely target-independent, and which only
-  look so because one target is in view?
+- Should multi-operation placement remain the exact product across
+  operations, or be stored per operation before the analyzed-program value
+  assembles it?
 - How are coverage cases generated per relation without duplicating the
   proof-planning search?
 - Where is the public boundary of a complete analysis result, given that every

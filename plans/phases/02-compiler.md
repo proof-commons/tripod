@@ -138,21 +138,19 @@ redeem
 Pilot support may remain lifecycle-incomplete for later target operations, but
 that status must be explicit.
 
-Every deliverable below remains open, as does the complete pilot analyzed
-program and its public boundary.
+### Placement requirements — requirement of the delivered analysis
 
-### Placement requirements
+Classify each relation per execution case on independent axes:
 
-Classify each relation as:
+- discharge boundary;
+- semantic scope;
+- activation;
+- carrier multiplicity.
 
-- local;
-- transaction-global;
-- conditional;
-- duplicated.
+Produce semantic carrier requirements and exact feasible placement sets
+without concrete target indexes.
 
-Produce semantic carrier requirements without concrete target indexes.
-
-### Layout requirements
+### Layout requirements — requirement of the delivered analysis
 
 Record:
 
@@ -162,6 +160,9 @@ Record:
 - optional family conditions;
 - sponsor isolation;
 - witness availability requirements.
+
+Every deliverable below remains open, as does the complete pilot analyzed
+program and its public boundary.
 
 ### Coverage requirements
 
