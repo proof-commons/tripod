@@ -77,8 +77,17 @@ static CONFIDENCE: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(r"(?i)(confidence\s+\d{1,3}%|\d{1,3}%\s+confident)")
         .expect("static confidence pattern")
 });
+/// Deliberately loose: the token after `Phase` is captured whatever it
+/// is, so a malformed declaration fails explicitly instead of reading
+/// as an absent one.
 static CURRENT_GATE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"(?m)^> \*\*Current gate:\*\* Phase (\d+)").expect("static gate pattern")
+    regex::Regex::new(r"(?m)^> \*\*Current gate:\*\* Phase\b[ \t]*(\S*)")
+        .expect("static gate pattern")
+});
+/// The fixed current-phase declaration form used by `plans/README.md`
+/// and `plans/roadmap.md`.
+static CURRENT_PHASE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?m)^Current: Phase\b[ \t]*(\S*)").expect("static phase pattern")
 });
 static ACTIVE_STATUS: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(r"(?m)^> \*\*Status:\*\* Active").expect("static status pattern")
@@ -369,19 +378,22 @@ fn warn_threshold(relative_path: &str) -> Option<u64> {
     }
 }
 
-/// The backlog names one current phase gate, and exactly one phase card
-/// is Active — the one the gate points to.
-fn verify_phase_gate(root: &Path, failures: &mut Vec<String>) -> anyhow::Result<()> {
-    let backlog = read_text(&root.join("plans/backlog.md"))?;
-    let Some(gate) = CURRENT_GATE.captures(&backlog) else {
-        failures.push("phase: backlog declares no current gate".to_owned());
-        return Ok(());
+/// The numbered phase cards on disk, and which of them are Active.
+struct PhaseCards {
+    numbered: BTreeSet<u32>,
+    active: Vec<u32>,
+}
+
+/// Read `plans/phases`, collecting every `NN-`-prefixed card.
+///
+/// Entries are visited in sorted order, so the collected values do not
+/// depend on directory traversal order.
+fn phase_cards(root: &Path) -> anyhow::Result<PhaseCards> {
+    let mut cards = PhaseCards {
+        numbered: BTreeSet::new(),
+        active: Vec::new(),
     };
-    let prefix = format!("{:0>2}-", &gate[1]);
-    let phases = root.join("plans/phases");
-    let mut gate_cards = Vec::new();
-    let mut active_cards = 0_usize;
-    for entry in read_dir_sorted(&phases)? {
+    for entry in read_dir_sorted(&root.join("plans/phases"))? {
         let Some(name) = entry.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
@@ -394,21 +406,122 @@ fn verify_phase_gate(root: &Path, failures: &mut Vec<String>) -> anyhow::Result<
         if !numbered {
             continue;
         }
-        let active = ACTIVE_STATUS.is_match(&read_text(&entry)?);
-        if active {
-            active_cards += 1;
+        let Ok(number) = name[..2].parse::<u32>() else {
+            continue;
+        };
+        cards.numbered.insert(number);
+        if ACTIVE_STATUS.is_match(&read_text(&entry)?) {
+            cards.active.push(number);
         }
-        if name.starts_with(&prefix) {
-            gate_cards.push(active);
+    }
+    cards.active.sort_unstable();
+    Ok(cards)
+}
+
+/// The numeric phase `pattern` declares in `text`.
+///
+/// A missing declaration and an unparsable one are distinct explicit
+/// failures: a weld that skips what it cannot read is not a weld.
+fn declared_phase(
+    text: &str,
+    pattern: &regex::Regex,
+    file: &str,
+    subject: &str,
+    failures: &mut Vec<String>,
+) -> Option<u32> {
+    let Some(capture) = pattern.captures(text) else {
+        failures.push(format!("phase: {file} declares no {subject}"));
+        return None;
+    };
+    let declared = capture[1].trim();
+    if let Ok(phase) = declared.parse::<u32>() {
+        return Some(phase);
+    }
+    failures.push(format!(
+        "phase: {file} declares a malformed {subject}: \"{declared}\""
+    ));
+    None
+}
+
+/// Weld every current-phase declaration in the planning tree (T8).
+///
+/// The backlog gate, the roadmap status, the plans README, and the one
+/// Active numbered phase card each state the current phase. Only the
+/// gate was ever checked, so `plans/README.md` sat a whole phase behind
+/// the rest of the tree without any lane noticing. All four are
+/// normalized to the numeric phase and compared.
+///
+/// The single Active card is the reference when there is exactly one,
+/// because a card is structural rather than prose; when the Active set
+/// is not a singleton that is itself reported and the backlog gate
+/// becomes the reference for the two prose declarations.
+fn verify_phase_gate(root: &Path, failures: &mut Vec<String>) -> anyhow::Result<()> {
+    let mut phase_failures = Vec::new();
+
+    let backlog = read_text(&root.join("plans/backlog.md"))?;
+    let gate = declared_phase(
+        &backlog,
+        &CURRENT_GATE,
+        "plans/backlog.md",
+        "current gate",
+        &mut phase_failures,
+    );
+    let readme = read_text(&root.join("plans/README.md"))?;
+    let readme_phase = declared_phase(
+        &readme,
+        &CURRENT_PHASE,
+        "plans/README.md",
+        "current phase",
+        &mut phase_failures,
+    );
+    let roadmap = read_text(&root.join("plans/roadmap.md"))?;
+    let roadmap_phase = declared_phase(
+        &roadmap,
+        &CURRENT_PHASE,
+        "plans/roadmap.md",
+        "current phase",
+        &mut phase_failures,
+    );
+
+    let cards = phase_cards(root)?;
+    let mut compared = vec![
+        ("plans/README.md", readme_phase),
+        ("plans/roadmap.md", roadmap_phase),
+    ];
+    let reference = if let [card] = cards.active.as_slice() {
+        compared.push(("plans/backlog.md", gate));
+        Some((*card, "the active phase card"))
+    } else {
+        phase_failures.push(format!(
+            "phase: exactly one phase card must be Active, found {}",
+            cards.active.len()
+        ));
+        gate.map(|phase| (phase, "the backlog current gate"))
+    };
+
+    if let Some((expected, source)) = reference {
+        for (file, declared) in compared {
+            let Some(declared) = declared else {
+                continue;
+            };
+            if declared != expected {
+                phase_failures.push(format!(
+                    "phase: {file} declares Phase {declared} but {source} is Phase {expected}"
+                ));
+            }
         }
     }
-    if gate_cards.len() != 1 || gate_cards != [true] {
-        failures
-            .push("phase: backlog current gate does not point to one active phase card".to_owned());
+
+    if let Some(gate) = gate
+        && !cards.numbered.contains(&gate)
+    {
+        phase_failures.push(format!(
+            "phase: backlog current gate Phase {gate} has no phase card"
+        ));
     }
-    if active_cards != 1 {
-        failures.push("phase: exactly one phase card must be Active".to_owned());
-    }
+
+    phase_failures.sort();
+    failures.append(&mut phase_failures);
     Ok(())
 }
 
@@ -531,7 +644,8 @@ mod tests {
 
     use super::*;
 
-    /// A minimal valid tree: indexed READMEs, one gate, one Active card.
+    /// A minimal valid tree: indexed READMEs, four agreeing Phase 2
+    /// declarations, one Active card.
     fn fixture() -> tempfile::TempDir {
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
@@ -540,25 +654,40 @@ mod tests {
         fs::write(root.join("adr/README.md"), "# ADRs\n").expect("adr readme");
         fs::write(
             root.join("plans/README.md"),
-            "# Plans\n\nbacklog.md phases/README.md\n",
+            "# Plans\n\nbacklog.md roadmap.md phases/README.md\n\nCurrent: Phase 2 - pilot\n",
         )
         .expect("plans readme");
         fs::write(
+            root.join("plans/roadmap.md"),
+            "# Roadmap\n\nCurrent: Phase 2 - pilot\n",
+        )
+        .expect("roadmap");
+        fs::write(
             root.join("plans/phases/README.md"),
-            "# Phases\n\n01-pilot.md\n",
+            "# Phases\n\n02-pilot.md\n",
         )
         .expect("phases readme");
         fs::write(
             root.join("plans/backlog.md"),
-            "# Backlog\n\n> **Current gate:** Phase 1\n",
+            "# Backlog\n\n> **Current gate:** Phase 2\n",
         )
         .expect("backlog");
         fs::write(
-            root.join("plans/phases/01-pilot.md"),
+            root.join("plans/phases/02-pilot.md"),
             "# Pilot\n\n> **Status:** Active\n",
         )
         .expect("card");
         dir
+    }
+
+    /// Every `phase:` diagnostic the tree reports, in reported order.
+    fn phase_failures(outcome: &PlansOutcome) -> Vec<String> {
+        outcome
+            .failures
+            .iter()
+            .filter(|failure| failure.starts_with("phase: "))
+            .cloned()
+            .collect()
     }
 
     fn subjects(root: &Path) -> Vec<PathBuf> {
@@ -571,7 +700,7 @@ mod tests {
         let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
         assert_eq!(outcome.failures, Vec::<String>::new());
         assert!(outcome.report.valid);
-        assert_eq!(outcome.report.files_checked, 5);
+        assert_eq!(outcome.report.files_checked, 6);
         assert!(outcome.report.combined_bytes > 0);
     }
 
@@ -584,7 +713,7 @@ mod tests {
         fs::write(
             dir.path().join("plans/backlog.md"),
             concat!(
-                "# Backlog\n\n> **Current gate:** Phase 1\n\n",
+                "# Backlog\n\n> **Current gate:** Phase 2\n\n",
                 "| ID | Status | Deliverable |\n",
                 "|---|---|---|\n",
                 "| `X1-001` | DONE | Agrees |\n",
@@ -652,7 +781,7 @@ mod tests {
             .iter()
             .filter(|failure| failure.contains("file outside the build census"))
             .count();
-        assert_eq!(census_failures, 5, "{:?}", outcome.failures);
+        assert_eq!(census_failures, 6, "{:?}", outcome.failures);
     }
 
     #[test]
@@ -708,26 +837,197 @@ mod tests {
     }
 
     #[test]
-    fn phase_gate_requires_one_active_card() {
+    fn agreeing_phase_declarations_pass() {
+        // T8: backlog gate, roadmap, plans README, and the one Active
+        // card all say Phase 2 in the fixture.
+        let dir = fixture();
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+        assert_eq!(phase_failures(&outcome), Vec::<String>::new());
+    }
+
+    #[test]
+    fn stale_plans_readme_phase_fails() {
+        // The finding itself: plans/README.md sat on Phase 1 while the
+        // rest of the tree had moved to Phase 2, and nothing looked.
         let dir = fixture();
         fs::write(
-            dir.path().join("plans/phases/01-pilot.md"),
+            dir.path().join("plans/README.md"),
+            "# Plans\n\nbacklog.md roadmap.md phases/README.md\n\nCurrent: Phase 1 - stale\n",
+        )
+        .expect("stale readme");
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+        assert_eq!(
+            phase_failures(&outcome),
+            vec![
+                "phase: plans/README.md declares Phase 1 but the active phase card is Phase 2"
+                    .to_owned()
+            ],
+        );
+        assert!(!outcome.report.valid);
+    }
+
+    #[test]
+    fn stale_roadmap_phase_fails() {
+        let dir = fixture();
+        fs::write(
+            dir.path().join("plans/roadmap.md"),
+            "# Roadmap\n\nCurrent: Phase 3 - ahead\n",
+        )
+        .expect("stale roadmap");
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+        assert_eq!(
+            phase_failures(&outcome),
+            vec![
+                "phase: plans/roadmap.md declares Phase 3 but the active phase card is Phase 2"
+                    .to_owned()
+            ],
+        );
+    }
+
+    #[test]
+    fn stale_backlog_gate_fails() {
+        // The gate is compared too, not merely used as the reference:
+        // a card is structural, the gate is prose.
+        let dir = fixture();
+        fs::write(
+            dir.path().join("plans/backlog.md"),
+            "# Backlog\n\n> **Current gate:** Phase 1\n",
+        )
+        .expect("stale gate");
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+        assert!(
+            phase_failures(&outcome).contains(
+                &"phase: plans/backlog.md declares Phase 1 but the active phase card is Phase 2"
+                    .to_owned()
+            ),
+            "{:#?}",
+            outcome.failures,
+        );
+    }
+
+    #[test]
+    fn no_active_phase_card_fails() {
+        let dir = fixture();
+        fs::write(
+            dir.path().join("plans/phases/02-pilot.md"),
             "# Pilot\n\n> **Status:** Complete\n",
         )
         .expect("retired card");
         let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
-        assert!(
-            outcome
-                .failures
-                .iter()
-                .any(|failure| failure.contains("does not point to one active phase card"))
+        assert_eq!(
+            phase_failures(&outcome),
+            vec!["phase: exactly one phase card must be Active, found 0".to_owned()],
         );
-        assert!(
-            outcome
-                .failures
-                .iter()
-                .any(|failure| failure.contains("exactly one phase card must be Active"))
+    }
+
+    #[test]
+    fn two_active_phase_cards_fail() {
+        let dir = fixture();
+        fs::write(
+            dir.path().join("plans/phases/03-second.md"),
+            "# Second\n\n> **Status:** Active\n",
+        )
+        .expect("second card");
+        fs::write(
+            dir.path().join("plans/phases/README.md"),
+            "# Phases\n\n02-pilot.md 03-second.md\n",
+        )
+        .expect("phases readme");
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+        assert_eq!(
+            phase_failures(&outcome),
+            vec!["phase: exactly one phase card must be Active, found 2".to_owned()],
         );
+    }
+
+    #[test]
+    fn malformed_current_phase_declaration_fails() {
+        let dir = fixture();
+        fs::write(
+            dir.path().join("plans/roadmap.md"),
+            "# Roadmap\n\nCurrent: Phase two - words\n",
+        )
+        .expect("malformed roadmap");
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+        assert_eq!(
+            phase_failures(&outcome),
+            vec!["phase: plans/roadmap.md declares a malformed current phase: \"two\"".to_owned()],
+        );
+        assert!(!outcome.report.valid);
+    }
+
+    #[test]
+    fn missing_current_phase_declaration_fails() {
+        let dir = fixture();
+        fs::write(
+            dir.path().join("plans/roadmap.md"),
+            "# Roadmap\n\nNothing.\n",
+        )
+        .expect("silent roadmap");
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+        assert_eq!(
+            phase_failures(&outcome),
+            vec!["phase: plans/roadmap.md declares no current phase".to_owned()],
+        );
+    }
+
+    #[test]
+    fn current_gate_without_a_phase_card_fails() {
+        let dir = fixture();
+        for (path, text) in [
+            (
+                "plans/backlog.md",
+                "# Backlog\n\n> **Current gate:** Phase 7\n",
+            ),
+            (
+                "plans/README.md",
+                "# Plans\n\nbacklog.md roadmap.md phases/README.md\n\nCurrent: Phase 7 - absent\n",
+            ),
+            (
+                "plans/roadmap.md",
+                "# Roadmap\n\nCurrent: Phase 7 - absent\n",
+            ),
+        ] {
+            fs::write(dir.path().join(path), text).expect("phase 7 declaration");
+        }
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+        assert!(
+            phase_failures(&outcome)
+                .contains(&"phase: backlog current gate Phase 7 has no phase card".to_owned()),
+            "{:#?}",
+            outcome.failures,
+        );
+    }
+
+    #[test]
+    fn phase_diagnostics_do_not_depend_on_traversal_order() {
+        // Diagnostics are sorted before they join the failure list, so
+        // two trees differing only in the order their cards were
+        // written report the same defects in the same order.
+        let mut reports = Vec::new();
+        for order in [
+            ["03-second.md", "02-pilot.md"],
+            ["02-pilot.md", "03-second.md"],
+        ] {
+            let dir = fixture();
+            fs::remove_file(dir.path().join("plans/phases/02-pilot.md")).expect("clear card");
+            for name in order {
+                fs::write(
+                    dir.path().join("plans/phases").join(name),
+                    "# Card\n\n> **Status:** Active\n",
+                )
+                .expect("card");
+            }
+            fs::write(
+                dir.path().join("plans/phases/README.md"),
+                "# Phases\n\n02-pilot.md 03-second.md\n",
+            )
+            .expect("phases readme");
+            let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+            reports.push(phase_failures(&outcome));
+        }
+        assert_eq!(reports[0], reports[1]);
+        assert!(!reports[0].is_empty());
     }
 
     #[test]

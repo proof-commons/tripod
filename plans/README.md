@@ -28,7 +28,7 @@ A lower row never overrides an upper owner on that owner's subject.
 ## Current phase · `phase:plans:current`
 
 ```text
-Phase 1 - typed realization foundation
+Current: Phase 2 - target-independent compiler analysis
 ```
 
 Current work is indexed by [the backlog](backlog.md). Long-term ordering is
