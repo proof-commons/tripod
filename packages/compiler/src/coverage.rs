@@ -1161,10 +1161,13 @@ pub fn bind_projection_coverage(analysis: &mut PlanCoverageAnalysis, plans: &[Re
             let derived = plan
                 .boundaries
                 .iter()
-                .filter_map(|boundary| projection_requirement(key, plan, source, *boundary))
+                .filter_map(|boundary| {
+                    projection_requirement(key, plan, source, *boundary)
+                        .map(|requirement| (boundary_role(plan, *boundary), requirement))
+                })
                 .collect::<Vec<_>>();
 
-            for requirement in derived {
+            for (role, requirement) in derived {
                 plan.positive.push(PositiveCoverageRequirement {
                     id: CoverageRequirementId {
                         relation: key.relation.clone(),
@@ -1172,7 +1175,7 @@ pub fn bind_projection_coverage(analysis: &mut PlanCoverageAnalysis, plans: &[Re
                         boundary: requirement.boundary,
                         purpose: CoveragePurpose::AcceptedProjection,
                     },
-                    role: EvidenceRole::TargetExecution,
+                    role,
                     representation: None,
                     operands: requirement.operands.clone(),
                 });
@@ -1226,13 +1229,37 @@ fn projection_subject(
     }
 }
 
-/// The operand census one boundary's positive coverage already states.
-fn boundary_operands(plan: &RelationCoveragePlan, boundary: CoverageBoundary) -> Vec<OperandId> {
+/// The positive requirement that answers one boundary, if it has one.
+fn boundary_answer(
+    plan: &RelationCoveragePlan,
+    boundary: CoverageBoundary,
+) -> Option<&PositiveCoverageRequirement> {
     plan.positive
         .iter()
         .find(|requirement| requirement.id.boundary == boundary)
+}
+
+/// The operand census one boundary's positive coverage already states.
+fn boundary_operands(plan: &RelationCoveragePlan, boundary: CoverageBoundary) -> Vec<OperandId> {
+    boundary_answer(plan, boundary)
         .map(|requirement| requirement.operands.clone())
         .unwrap_or_default()
+}
+
+/// Who answers one boundary's accepted projection.
+///
+/// The same evidence role that answers the boundary's acceptance, never
+/// a fixed target execution: a compiler-static selection result, an
+/// emitted structural fact, and an external report are not target
+/// executions, and claiming one would report an obligation no target
+/// evaluates as one it did. Where an external boundary names several
+/// reports the comparison covers all of them and the role names the
+/// first; the role of a boundary with no positive requirement at all is
+/// unreachable, because such a boundary states no projection either.
+fn boundary_role(plan: &RelationCoveragePlan, boundary: CoverageBoundary) -> EvidenceRole {
+    boundary_answer(plan, boundary).map_or(EvidenceRole::TargetExecution, |requirement| {
+        requirement.role.clone()
+    })
 }
 
 /// The active source rows one boundary's projection covers.

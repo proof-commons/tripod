@@ -1526,6 +1526,59 @@ fn each_boundary_projects_its_own_subject() {
 }
 
 #[test]
+fn an_accepted_projection_is_answered_by_the_evidence_role_of_its_boundary() {
+    // A projection comparison is answered by whatever answers the
+    // boundary: a compiler-static selection result, an emitted
+    // structural fact, or a typed report. Claiming target execution for
+    // one of those would report an obligation no target evaluates as one
+    // it did.
+    for pilot in placed_pilots() {
+        let mut checked = BTreeSet::new();
+
+        for plan in pilot.plans() {
+            for requirement in &plan.positive {
+                if requirement.id.purpose != CoveragePurpose::AcceptedProjection {
+                    continue;
+                }
+
+                checked.insert(requirement.id.boundary);
+
+                match requirement.id.boundary {
+                    CoverageBoundary::CompilerStatic => {
+                        assert_eq!(requirement.role, EvidenceRole::CompilerAnalysisResult);
+                    }
+                    CoverageBoundary::BackendStructural => {
+                        assert_eq!(requirement.role, EvidenceRole::EmittedStructure);
+                    }
+                    CoverageBoundary::RuntimeCarrier => {
+                        assert_eq!(requirement.role, EvidenceRole::TargetExecution);
+                    }
+                    CoverageBoundary::ExternalEvidence => {
+                        assert!(matches!(
+                            &requirement.role,
+                            EvidenceRole::ExternalReport { requirement: subject, .. }
+                                if plan.external_evidence.contains(subject)
+                        ));
+                    }
+                }
+            }
+        }
+
+        assert_eq!(
+            checked,
+            BTreeSet::from([
+                CoverageBoundary::CompilerStatic,
+                CoverageBoundary::BackendStructural,
+                CoverageBoundary::RuntimeCarrier,
+                CoverageBoundary::ExternalEvidence,
+            ]),
+            "{:?}",
+            pilot.operation,
+        );
+    }
+}
+
+#[test]
 fn a_runtime_projection_carries_the_source_rows_its_carrier_receives() {
     for pilot in placed_pilots() {
         let mut compared = 0_usize;
