@@ -44,6 +44,12 @@ use crate::{
 };
 
 /// How one relation is discharged.
+///
+/// An externally evidenced relation is not a proof variable, but it is
+/// still planned: it carries the realization-approved proof class it
+/// will be discharged under, together with the capabilities and source
+/// rows that class fixes. Those requirements are not optional, so they
+/// bind before the search rather than inside it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RelationObligationClass {
     ProofRequired {
@@ -52,6 +58,9 @@ pub enum RelationObligationClass {
     StaticallyValidated,
     ExternalEvidence {
         requirement: realization::ExternalEvidenceRequirement,
+        proof: ProofAlternativeId,
+        required_capabilities: BTreeSet<RequiredCapability>,
+        source_requirements: Vec<SourceRequirement>,
     },
 }
 
@@ -106,14 +115,40 @@ pub fn classify_obligations(
         let operands = relation_operands(declaration)?;
 
         let class = match &declaration.relation {
-            Relation::LifecycleExit { .. } => RelationObligationClass::StaticallyValidated,
+            // A representation relation constrains which mode the
+            // compiler may select; the mode itself remains a decision
+            // variable derived from the relation's allowed set, and no
+            // arithmetic proof variable is created for the constraint.
+            Relation::LifecycleExit { .. } | Relation::Representation { .. } => {
+                RelationObligationClass::StaticallyValidated
+            }
 
             Relation::SubstrateConservation { asset } => {
+                // The realization approves exactly one proof class for
+                // this relation. The compiler validates that invariant
+                // rather than manufacturing the class or taking an
+                // arbitrary first element.
+                let approved = ProofAlternativeId::new(
+                    declaration.id.clone(),
+                    realization::ProofKind::SubstrateConservation,
+                );
+
+                if declaration.proof_alternatives.len() != 1
+                    || !declaration.proof_alternatives.contains(&approved)
+                {
+                    return Err(CompileError::InvalidExternalEvidenceProofAlternatives {
+                        relation: declaration.id.clone(),
+                    });
+                }
+
                 RelationObligationClass::ExternalEvidence {
                     requirement: realization::ExternalEvidenceRequirement::SubstrateConservation {
                         operation: declaration.id.operation(),
                         asset: *asset,
                     },
+                    required_capabilities: proof_capabilities(declaration, approved.proof()),
+                    source_requirements: derive_source_requirements(declaration, approved.proof())?,
+                    proof: approved,
                 }
             }
 
@@ -173,18 +208,44 @@ pub fn enumerate_feasible_plans(
             _ => None,
         })
         .collect::<Vec<_>>();
-    let external_evidence = obligations
-        .iter()
-        .filter_map(|obligation| match &obligation.class {
-            RelationObligationClass::ExternalEvidence { requirement } => Some(requirement.clone()),
-            _ => None,
-        })
-        .collect::<BTreeSet<_>>();
+    // External evidence fixes requirements no search choice can trade
+    // away: they are collected and filtered before any assignment.
+    let mut external_evidence = BTreeSet::new();
+    let mut fixed_required_capabilities = BTreeSet::new();
+    let mut fixed_source_requirements = Vec::new();
+    let mut blocked = Vec::new();
+
+    for obligation in &obligations {
+        let RelationObligationClass::ExternalEvidence {
+            requirement,
+            required_capabilities,
+            source_requirements,
+            ..
+        } = &obligation.class
+        else {
+            continue;
+        };
+
+        validate_source_constructibility(
+            &constructibility,
+            &obligation.relation,
+            source_requirements,
+        )?;
+
+        if !view.supports(required_capabilities) {
+            blocked.push(obligation.relation.clone());
+        }
+
+        external_evidence.insert(requirement.clone());
+        fixed_required_capabilities.extend(required_capabilities.iter().copied());
+        fixed_source_requirements.extend(source_requirements.iter().cloned());
+    }
+
+    fixed_source_requirements.sort();
+    fixed_source_requirements.dedup();
 
     // Prepass: a relation whose every alternative fails the local
     // (representation-independent) filters is blocked.
-    let mut blocked = Vec::new();
-
     for (relation, alternatives) in &proof_variables {
         let declaration = &declarations[relation];
         let locally_feasible = alternatives.iter().any(|alternative| {
@@ -214,6 +275,8 @@ pub fn enumerate_feasible_plans(
         lifecycle: &lifecycle,
         proof_variables: &proof_variables,
         external_evidence: &external_evidence,
+        fixed_required_capabilities: &fixed_required_capabilities,
+        fixed_source_requirements: &fixed_source_requirements,
         limits,
         search: &mut search,
         candidates: &mut candidates,
@@ -251,6 +314,8 @@ struct SearchState<'a> {
     lifecycle: &'a CompilerLifecycleAnalysis,
     proof_variables: &'a [(RelationId, Vec<ProofAlternativeId>)],
     external_evidence: &'a BTreeSet<realization::ExternalEvidenceRequirement>,
+    fixed_required_capabilities: &'a BTreeSet<RequiredCapability>,
+    fixed_source_requirements: &'a [SourceRequirement],
     limits: crate::input::ProofSearchLimits,
     search: &'a mut ProofSearchReport,
     candidates: &'a mut Vec<ProofPlanCandidate>,
@@ -379,9 +444,10 @@ fn complete(
     proofs: BTreeMap<RelationId, ProofAlternativeId>,
     representations: BTreeMap<RepresentationChoiceId, RepresentationMode>,
 ) -> Result<(), CompileError> {
-    // Derive per-candidate capabilities and sources.
-    let mut required_capabilities = BTreeSet::new();
-    let mut source_requirements = Vec::new();
+    // Derive per-candidate capabilities and sources, beginning with
+    // the fixed external-evidence requirements every candidate carries.
+    let mut required_capabilities = state.fixed_required_capabilities.clone();
+    let mut source_requirements = state.fixed_source_requirements.to_vec();
 
     for (relation, alternative) in &proofs {
         let declaration = &state.declarations[relation];

@@ -325,7 +325,11 @@ fn relation_declarations(ids: &Ids) -> Vec<RelationDeclaration> {
             },
             [ProofKind::SignerMembership],
         ),
-        declaration(
+        // A mode constraint, not a second arithmetic proof: the
+        // conservation relation owns how value preservation is proved,
+        // and an independent proof alternative here could contradict
+        // the mode this relation admits.
+        relation_only(
             ids.representation.clone(),
             Relation::Representation {
                 object: ObjectId::ReceiptLive,
@@ -334,10 +338,6 @@ fn relation_declarations(ids: &Ids) -> Vec<RelationDeclaration> {
                     RepresentationMode::PrivateCommitted,
                 ]),
             },
-            [
-                ProofKind::PublicArithmetic,
-                ProofKind::ConfidentialConservation,
-            ],
         ),
         relation_only(
             ids.transfer_exit.clone(),

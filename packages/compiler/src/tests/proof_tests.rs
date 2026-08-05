@@ -1,6 +1,6 @@
 //! Obligation classification and exact-search tests (Guide-3 §17.6, §15).
 
-use std::num::NonZeroU64;
+use std::{collections::BTreeSet, num::NonZeroU64};
 
 use architecture::{ObjectId, OperationId};
 use realization::{ProofKind, Relation, RelationKind, RepresentationMode};
@@ -12,6 +12,7 @@ use crate::{
     lifecycle::RepresentationChoiceId,
     proof::{RelationObligationClass, classify_obligations, enumerate_feasible_plans},
     relation::build_relation_analysis,
+    source::{OperandRole, RequiredSourceKind},
 };
 
 fn limited_input(
@@ -51,7 +52,7 @@ fn every_pilot_relation_is_classified_exactly_once() {
             .source;
 
         match &declaration.relation {
-            Relation::LifecycleExit { .. } => assert_eq!(
+            Relation::LifecycleExit { .. } | Relation::Representation { .. } => assert_eq!(
                 obligation.class,
                 RelationObligationClass::StaticallyValidated,
                 "{:?}",
@@ -219,4 +220,340 @@ fn capability_requirements_are_published_per_candidate() {
         assert!(!candidate.source_requirements.is_empty());
         assert!(candidate.source_requirements.is_sorted());
     }
+}
+
+// --- T6: external evidence fixes capabilities and sources (§4-5) ---
+
+/// Every current capability except whole-transaction conservation.
+fn capabilities_without_whole_transaction() -> BTreeSet<RequiredCapability> {
+    BTreeSet::from([
+        RequiredCapability::AuthenticatedObjectRecognition,
+        RequiredCapability::AuthenticatedFamilyCardinality,
+        RequiredCapability::AuthenticatedCanonicalPartition,
+        RequiredCapability::AuthenticatedOpenFlowPartition,
+        RequiredCapability::AuthenticatedRootEffects,
+        RequiredCapability::AuthenticatedProjectionSet,
+        RequiredCapability::ExactPublicAmountArithmetic,
+        RequiredCapability::ConfidentialValueConservation,
+        RequiredCapability::OwnerAuthorization,
+        RequiredCapability::OperatorAuthorization,
+        RequiredCapability::RefundAuthorization,
+        RequiredCapability::PublicConstructibility,
+    ])
+}
+
+fn substrate_conservation_relation(input: &crate::BoundCompilerInput) -> realization::RelationId {
+    let relations = build_relation_analysis(input).expect("relations");
+    relations
+        .project()
+        .nodes
+        .into_iter()
+        .map(|node| node.source.id)
+        .find(|relation| relation.kind() == RelationKind::SubstrateConservation)
+        .expect("pilot declares substrate conservation")
+}
+
+#[test]
+fn a_missing_whole_transaction_capability_blocks_substrate_conservation() {
+    for operation in [OperationId::CompactAsh, OperationId::TransferLive] {
+        let input = bound_input(&[operation]);
+        let error = enumerate_feasible_plans(
+            &input,
+            &CapabilityView::Available(capabilities_without_whole_transaction()),
+        )
+        .unwrap_err();
+
+        let CompileError::NoFeasibleProofPlan { blocked_relations } = error else {
+            panic!("{operation:?} must be infeasible without whole-transaction conservation");
+        };
+
+        assert!(
+            blocked_relations.contains(&substrate_conservation_relation(&input)),
+            "{operation:?} must name the substrate-conservation relation",
+        );
+        assert!(blocked_relations.is_sorted());
+    }
+}
+
+#[test]
+fn adding_the_whole_transaction_capability_restores_feasibility() {
+    for operation in [OperationId::CompactAsh, OperationId::TransferLive] {
+        let input = bound_input(&[operation]);
+        let mut available = capabilities_without_whole_transaction();
+        available.insert(RequiredCapability::WholeTransactionValueConservation);
+
+        let plans = enumerate_feasible_plans(&input, &CapabilityView::Available(available))
+            .expect("feasible with the whole-transaction capability");
+
+        assert!(!plans.candidates.is_empty(), "{operation:?}");
+    }
+}
+
+#[test]
+fn external_evidence_carries_its_capability_and_source_into_every_candidate() {
+    let input = bound_input(&[OperationId::CompactAsh, OperationId::TransferLive]);
+    let plans = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).expect("plans");
+
+    assert!(!plans.candidates.is_empty());
+
+    for candidate in &plans.candidates {
+        // The evidence requirement itself is retained unresolved…
+        assert!(
+            candidate
+                .external_evidence
+                .iter()
+                .any(|requirement| matches!(
+                    requirement,
+                    realization::ExternalEvidenceRequirement::SubstrateConservation { .. }
+                ))
+        );
+
+        // …its capability now reaches the plan…
+        assert!(
+            candidate
+                .required_capabilities
+                .contains(&RequiredCapability::WholeTransactionValueConservation),
+        );
+
+        // …and so does its typed external source row.
+        assert!(candidate.source_requirements.iter().any(|row| {
+            row.source == RequiredSourceKind::ExternalEvidence
+                && matches!(row.operand.role(), OperandRole::ExternalEvidence { .. })
+        }));
+    }
+}
+
+#[test]
+fn fixed_external_requirements_name_no_sponsor_amount() {
+    let input = bound_input(&[OperationId::TransferLive]);
+    let relations = build_relation_analysis(&input).expect("relations");
+    let obligations = classify_obligations(&relations).expect("classify");
+
+    let mut seen = false;
+
+    for obligation in &obligations {
+        let RelationObligationClass::ExternalEvidence {
+            source_requirements,
+            required_capabilities,
+            proof,
+            ..
+        } = &obligation.class
+        else {
+            continue;
+        };
+
+        seen = true;
+        assert_eq!(proof.proof(), ProofKind::SubstrateConservation);
+        assert_eq!(
+            *required_capabilities,
+            BTreeSet::from([RequiredCapability::WholeTransactionValueConservation]),
+        );
+
+        for row in source_requirements {
+            // Sponsor erasure is structural: no fixed row may name a
+            // sponsor amount, and none is rewritten into exact public
+            // sponsor arithmetic.
+            assert!(!crate::source::is_sponsor_amount_operand(
+                row.operand.role()
+            ));
+            assert!(!matches!(
+                row.operand.role(),
+                OperandRole::ObjectFamilyAmount { .. }
+            ));
+            assert_ne!(row.source, RequiredSourceKind::AuthenticatedConsensusValue);
+        }
+    }
+
+    assert!(seen, "live transfer declares external evidence");
+}
+
+#[test]
+fn an_unexpected_external_evidence_alternative_is_rejected() {
+    let input = bound_input(&[OperationId::CompactAsh]);
+    let mut relations = build_relation_analysis(&input).expect("relations");
+    let node = relations
+        .graph
+        .node_weights_mut()
+        .find(|node| node.source.id.kind() == RelationKind::SubstrateConservation)
+        .expect("substrate conservation");
+    let relation = node.source.id.clone();
+
+    // A second alternative the realization never approved: the
+    // compiler refuses rather than picking one.
+    node.source
+        .proof_alternatives
+        .insert(realization::ProofAlternativeId::new(
+            relation.clone(),
+            ProofKind::PublicArithmetic,
+        ));
+
+    assert_eq!(
+        classify_obligations(&relations).unwrap_err(),
+        CompileError::InvalidExternalEvidenceProofAlternatives { relation },
+    );
+}
+
+// --- T7: representation is a static mode constraint (§7-8) ---
+
+#[test]
+fn representation_relations_carry_no_proof_variable() {
+    for operation in [OperationId::CompactAsh, OperationId::TransferLive] {
+        let input = bound_input(&[operation]);
+        let relations = build_relation_analysis(&input).expect("relations");
+        let obligations = classify_obligations(&relations).expect("classify");
+
+        let representations = obligations
+            .iter()
+            .filter(|obligation| obligation.relation.kind() == RelationKind::Representation)
+            .collect::<Vec<_>>();
+
+        assert!(!representations.is_empty(), "{operation:?}");
+
+        for obligation in &representations {
+            assert_eq!(
+                obligation.class,
+                RelationObligationClass::StaticallyValidated,
+                "{:?}",
+                obligation.relation,
+            );
+        }
+
+        // No candidate selects a proof for the mode constraint.
+        let plans =
+            enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).expect("plans");
+
+        for candidate in &plans.candidates {
+            for obligation in &representations {
+                assert!(
+                    !candidate.proofs.contains_key(&obligation.relation),
+                    "{:?}",
+                    obligation.relation,
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn live_transfer_conservation_agrees_with_every_selected_mode() {
+    let input = bound_input(&[OperationId::TransferLive]);
+    let plans = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).expect("plans");
+    let live_choice = RepresentationChoiceId {
+        operation: OperationId::TransferLive,
+        object: ObjectId::ReceiptLive,
+    };
+
+    assert!(!plans.candidates.is_empty());
+
+    for candidate in &plans.candidates {
+        let (conservation, alternative) = candidate
+            .proofs
+            .iter()
+            .find(|(relation, _)| relation.kind() == RelationKind::Conservation)
+            .expect("live conservation is proof-required");
+
+        let expected = match candidate.representations[&live_choice] {
+            RepresentationMode::Explicit => ProofKind::PublicArithmetic,
+            RepresentationMode::PrivateCommitted => ProofKind::ConfidentialConservation,
+            other @ RepresentationMode::PublicCommitted => {
+                panic!("live transfer never selects {other:?}")
+            }
+        };
+        assert_eq!(alternative.proof(), expected);
+
+        // Capabilities and source rows follow the selected proof, and
+        // the opposite capability appears only if another selected
+        // proof legitimately requires it.
+        let (present, absent) = match expected {
+            ProofKind::PublicArithmetic => (
+                RequiredCapability::ExactPublicAmountArithmetic,
+                RequiredCapability::ConfidentialValueConservation,
+            ),
+            _ => (
+                RequiredCapability::ConfidentialValueConservation,
+                RequiredCapability::ExactPublicAmountArithmetic,
+            ),
+        };
+        assert!(candidate.required_capabilities.contains(&present));
+
+        let otherwise_required = candidate
+            .proofs
+            .iter()
+            .filter(|(relation, _)| *relation != conservation)
+            .any(|(relation, other)| {
+                crate::source::proof_capabilities(&declaration_of(&input, relation), other.proof())
+                    .contains(&absent)
+            });
+        assert_eq!(
+            candidate.required_capabilities.contains(&absent),
+            otherwise_required,
+        );
+
+        let expected_source = match expected {
+            ProofKind::PublicArithmetic => RequiredSourceKind::AuthenticatedConsensusValue,
+            _ => RequiredSourceKind::AuthenticatedCommitmentRelation,
+        };
+        let amount_rows = candidate
+            .source_requirements
+            .iter()
+            .filter(|row| {
+                row.operand.relation() == conservation
+                    && matches!(row.operand.role(), OperandRole::ObjectFamilyAmount { .. })
+            })
+            .collect::<Vec<_>>();
+
+        assert!(!amount_rows.is_empty());
+        for row in amount_rows {
+            assert_eq!(row.source, expected_source);
+            assert_ne!(row.source, RequiredSourceKind::AuthenticatedFamilyCensus);
+        }
+    }
+}
+
+#[test]
+fn compact_ash_keeps_both_modes_under_public_arithmetic() {
+    let input = bound_input(&[OperationId::CompactAsh]);
+    let plans = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).expect("plans");
+    let ash_choice = RepresentationChoiceId {
+        operation: OperationId::CompactAsh,
+        object: ObjectId::Ash,
+    };
+
+    let mut modes = BTreeSet::new();
+
+    for candidate in &plans.candidates {
+        let alternative = candidate
+            .proofs
+            .iter()
+            .find(|(relation, _)| relation.kind() == RelationKind::Conservation)
+            .map(|(_, alternative)| alternative.proof())
+            .expect("ash conservation is proof-required");
+
+        // Compact ASH declares only public arithmetic, and both of its
+        // approved modes remain compatible with it.
+        assert_eq!(alternative, ProofKind::PublicArithmetic);
+        modes.insert(candidate.representations[&ash_choice]);
+    }
+
+    assert_eq!(
+        modes,
+        BTreeSet::from([
+            RepresentationMode::Explicit,
+            RepresentationMode::PublicCommitted,
+        ]),
+    );
+}
+
+fn declaration_of(
+    input: &crate::BoundCompilerInput,
+    relation: &realization::RelationId,
+) -> realization::RelationDeclaration {
+    build_relation_analysis(input)
+        .expect("relations")
+        .project()
+        .nodes
+        .into_iter()
+        .map(|node| node.source)
+        .find(|declaration| declaration.id == *relation)
+        .expect("relation exists")
 }
