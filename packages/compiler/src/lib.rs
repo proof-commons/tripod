@@ -61,6 +61,7 @@
 #![forbid(unsafe_code)]
 
 mod capability;
+mod case;
 mod constructibility;
 mod disclosure;
 pub mod error;
@@ -69,6 +70,7 @@ mod fold;
 mod foundation;
 pub mod input;
 mod lifecycle;
+mod placement;
 mod proof;
 mod relation;
 mod source;
