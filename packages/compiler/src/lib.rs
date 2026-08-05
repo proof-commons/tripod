@@ -47,7 +47,6 @@
 //! Every stage above the input boundary is crate-private. The
 //! following remain absent:
 //!
-//! - an accepted proof-planning result until the T6/T7 repairs close;
 //! - execution-case placement;
 //! - concrete target-independent layout requirements;
 //! - relation-indexed coverage requirements;
