@@ -5,6 +5,7 @@
 //! realization could never carry, through the crate-private builders.
 
 mod expression_tests;
+mod fold_tests;
 mod relation_tests;
 
 use architecture::OperationId;

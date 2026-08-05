@@ -216,4 +216,40 @@ pub enum CompileError {
         /// The foreign predicate expression.
         expression: realization::ExprId,
     },
+
+    /// Constant folding met operands of incompatible semantic types.
+    #[error("constant fold of {expression:?} expected {expected:?}, found {actual:?}")]
+    ConstantFoldTypeMismatch {
+        /// The expression being folded.
+        expression: realization::ExprId,
+        /// The expected semantic type.
+        expected: realization::SemanticType,
+        /// The actual semantic type met.
+        actual: realization::SemanticType,
+    },
+
+    /// A closed checked sum overflowed its integer domain.
+    #[error("constant fold of {expression:?} overflowed")]
+    ConstantFoldOverflow {
+        /// The overflowing expression.
+        expression: realization::ExprId,
+    },
+
+    /// A closed checked amount sum left the protocol-amount domain.
+    #[error("constant fold of {expression:?} produced out-of-domain amount {value}")]
+    ConstantFoldAmountOutOfDomain {
+        /// The out-of-domain expression.
+        expression: realization::ExprId,
+        /// The offending total.
+        value: u64,
+    },
+
+    /// Folding met an operand absent from the analysis graph.
+    #[error("constant fold of {expression:?} is missing operand {operand:?}")]
+    ConstantFoldMissingOperand {
+        /// The expression being folded.
+        expression: realization::ExprId,
+        /// The absent operand.
+        operand: realization::ExprId,
+    },
 }

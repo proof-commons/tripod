@@ -5,11 +5,13 @@
 compiler_source_files = files(
   'src/error.rs',
   'src/expression.rs',
+  'src/fold.rs',
   'src/foundation.rs',
   'src/input.rs',
   'src/lib.rs',
   'src/relation.rs',
   'src/tests/expression_tests.rs',
+  'src/tests/fold_tests.rs',
   'src/tests/mod.rs',
   'src/tests/relation_tests.rs',
 )

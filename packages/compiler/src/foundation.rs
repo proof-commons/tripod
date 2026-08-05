@@ -53,9 +53,10 @@ pub fn analyze_foundation(
     input: &BoundCompilerInput,
 ) -> Result<CompilerAnalysisFoundation, CompileError> {
     let relations = build_relation_analysis(input)?;
-    let expressions = build_expression_analysis(input)?;
+    let mut expressions = build_expression_analysis(input)?;
 
     validate_predicate_bindings(&relations, &expressions)?;
+    crate::fold::fold_expressions(&mut expressions)?;
 
     Ok(CompilerAnalysisFoundation {
         relations,

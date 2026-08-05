@@ -40,6 +40,7 @@
 
 pub mod error;
 mod expression;
+mod fold;
 mod foundation;
 pub mod input;
 mod relation;
