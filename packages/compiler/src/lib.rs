@@ -45,6 +45,7 @@ mod expression;
 mod fold;
 mod foundation;
 pub mod input;
+mod lifecycle;
 mod relation;
 mod source;
 

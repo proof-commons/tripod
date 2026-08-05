@@ -358,4 +358,24 @@ pub enum CompileError {
         /// A stable-ID escape path.
         path: Vec<realization::ConstructibilityNodeId>,
     },
+
+    /// An in-scope lifecycle exit has no representation variable.
+    #[error("no representation choice for {object:?} of {operation:?}")]
+    MissingRepresentationChoice {
+        /// The operation owning the lifecycle relation.
+        operation: OperationId,
+        /// The object without a representation relation.
+        object: architecture::ObjectId,
+    },
+
+    /// A supported representation cannot reach a required exit.
+    #[error("{object:?} under {representation:?} cannot reach exit {exit:?}")]
+    MissingLifecyclePath {
+        /// The lifecycle object.
+        object: architecture::ObjectId,
+        /// The representation without the path.
+        representation: realization::RepresentationMode,
+        /// The unreachable required exit.
+        exit: OperationId,
+    },
 }

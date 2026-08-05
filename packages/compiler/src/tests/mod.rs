@@ -7,6 +7,7 @@
 mod constructibility_tests;
 mod expression_tests;
 mod fold_tests;
+mod lifecycle_tests;
 mod relation_tests;
 mod source_tests;
 
