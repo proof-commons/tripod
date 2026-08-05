@@ -61,6 +61,7 @@
 #![forbid(unsafe_code)]
 
 mod capability;
+mod case;
 mod constructibility;
 mod disclosure;
 pub mod error;

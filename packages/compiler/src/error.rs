@@ -447,4 +447,29 @@ pub enum CompileError {
         /// The configured maximum.
         maximum: u64,
     },
+
+    /// One execution-case identity occurred more than once.
+    ///
+    /// Cases are a semantic equivalence class census: a repeated
+    /// identity means one class would be planned twice, so it is a
+    /// defect rather than a value to deduplicate silently.
+    #[error("execution case {case:?} occurs more than once")]
+    DuplicateExecutionCase {
+        /// The repeated case identity.
+        case: crate::case::ExecutionCaseId,
+    },
+
+    /// The derived case census does not equal the census the relations
+    /// and the selected proof plan require.
+    #[error(
+        "execution case census mismatch: {} missing, {} unexpected",
+        missing.len(),
+        unexpected.len()
+    )]
+    ExecutionCaseCensusMismatch {
+        /// Required cases absent from the derivation, sorted.
+        missing: Vec<crate::case::ExecutionCaseId>,
+        /// Derived cases absent from the requirement, sorted.
+        unexpected: Vec<crate::case::ExecutionCaseId>,
+    },
 }
