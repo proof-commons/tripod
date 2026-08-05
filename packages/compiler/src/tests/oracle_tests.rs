@@ -20,11 +20,12 @@ use crate::{
     constructibility::{build_constructibility_analysis, validate_source_constructibility},
     disclosure::{derive_disclosure, validate_disclosure},
     lifecycle::{RepresentationChoiceId, build_lifecycle_analysis, proof_supports_representation},
-    proof::{
-        ProofPlanCandidate, RelationObligationClass, classify_obligations, enumerate_feasible_plans,
-    },
+    proof::{ProofPlanCandidate, enumerate_feasible_plans},
     relation::build_relation_analysis,
-    source::{derive_source_requirements, proof_capabilities},
+    source::{
+        OperandId, OperandRole, RequiredSourceKind, RequirementActivation, SourceRequirement,
+        derive_source_requirements, proof_capabilities,
+    },
 };
 
 /// Complete Cartesian enumeration with complete-assignment validation.
@@ -40,7 +41,6 @@ fn oracle_enumerate(
     let relations = build_relation_analysis(input)?;
     let constructibility = build_constructibility_analysis(input)?;
     let lifecycle = build_lifecycle_analysis(input, &relations)?;
-    let obligations = classify_obligations(&relations)?;
 
     let declarations = relations
         .graph
@@ -48,32 +48,66 @@ fn oracle_enumerate(
         .map(|node| (node.source.id.clone(), node.source.clone()))
         .collect::<BTreeMap<_, _>>();
 
+    // Variables and fixed requirements are derived here, not read back
+    // from production obligation classification: the properties under
+    // review must be stated twice to be checked once.
     let mut proof_variables: Vec<(RelationId, Vec<ProofAlternativeId>)> = Vec::new();
     let mut external_evidence = BTreeSet::new();
     let mut fixed_capabilities = BTreeSet::new();
     let mut fixed_sources = Vec::new();
 
-    for obligation in &obligations {
-        match &obligation.class {
-            RelationObligationClass::ProofRequired { alternatives } => {
-                proof_variables.push((obligation.relation.clone(), alternatives.clone()));
-            }
-            RelationObligationClass::ExternalEvidence {
-                requirement,
-                required_capabilities,
-                source_requirements,
-                ..
-            } => {
+    for (relation, declaration) in &declarations {
+        match &declaration.relation {
+            // Externally evidenced: never a proof variable, but its
+            // approved class fixes a capability and a typed source row
+            // that no assignment can trade away.
+            Relation::SubstrateConservation { asset } => {
+                let requirement = realization::ExternalEvidenceRequirement::SubstrateConservation {
+                    operation: relation.operation(),
+                    asset: *asset,
+                };
+
                 external_evidence.insert(requirement.clone());
-                fixed_capabilities.extend(required_capabilities.iter().copied());
-                fixed_sources.extend(source_requirements.iter().cloned());
+                fixed_capabilities.insert(RequiredCapability::WholeTransactionValueConservation);
+                fixed_sources.push(SourceRequirement {
+                    operand: OperandId::new(
+                        relation.clone(),
+                        OperandRole::ExternalEvidence { requirement },
+                    ),
+                    source: RequiredSourceKind::ExternalEvidence,
+                    availability: realization::AvailabilityClass::Public,
+                    activation: RequirementActivation::Always,
+                });
             }
-            RelationObligationClass::StaticallyValidated => {}
+
+            // Mode constraints and lifecycle exits are static: the mode
+            // is a representation variable, never a proof variable.
+            Relation::Representation { .. } | Relation::LifecycleExit { .. } => {}
+
+            _ => proof_variables.push((
+                relation.clone(),
+                declaration.proof_alternatives.iter().cloned().collect(),
+            )),
         }
     }
 
+    fixed_sources.sort();
+    fixed_sources.dedup();
+
     if !view.supports(&fixed_capabilities) {
         return Ok(Vec::new());
+    }
+
+    for row in &fixed_sources {
+        if validate_source_constructibility(
+            &constructibility,
+            row.operand.relation(),
+            std::slice::from_ref(row),
+        )
+        .is_err()
+        {
+            return Ok(Vec::new());
+        }
     }
 
     // Odometer over proofs then representations.
@@ -228,6 +262,126 @@ fn production_search_equals_the_oracle_on_every_pilot_scope() {
     }
 }
 
+/// Every current capability the oracle regressions may withhold.
+fn every_capability() -> BTreeSet<RequiredCapability> {
+    BTreeSet::from([
+        RequiredCapability::AuthenticatedObjectRecognition,
+        RequiredCapability::AuthenticatedFamilyCardinality,
+        RequiredCapability::AuthenticatedCanonicalPartition,
+        RequiredCapability::AuthenticatedOpenFlowPartition,
+        RequiredCapability::AuthenticatedRootEffects,
+        RequiredCapability::AuthenticatedProjectionSet,
+        RequiredCapability::ExactPublicAmountArithmetic,
+        RequiredCapability::ConfidentialValueConservation,
+        RequiredCapability::OwnerAuthorization,
+        RequiredCapability::OperatorAuthorization,
+        RequiredCapability::RefundAuthorization,
+        RequiredCapability::PublicConstructibility,
+        RequiredCapability::WholeTransactionValueConservation,
+    ])
+}
+
+#[test]
+fn the_oracle_independently_blocks_a_missing_whole_transaction_capability() {
+    let mut available = every_capability();
+    available.remove(&RequiredCapability::WholeTransactionValueConservation);
+    let view = CapabilityView::Available(available);
+
+    for scope in [
+        vec![OperationId::CompactAsh],
+        vec![OperationId::TransferLive],
+        vec![OperationId::CompactAsh, OperationId::TransferLive],
+    ] {
+        let input = bound_input(&scope);
+
+        // The oracle derives the fixed capability itself, so it agrees
+        // that nothing is feasible…
+        assert!(
+            oracle_enumerate(&input, &view).expect("oracle").is_empty(),
+            "scope {scope:?}",
+        );
+
+        // …and production reports the typed planning failure.
+        assert!(matches!(
+            enumerate_feasible_plans(&input, &view),
+            Err(CompileError::NoFeasibleProofPlan { .. }),
+        ));
+
+        // Restoring the capability restores agreement.
+        let view = CapabilityView::Available(every_capability());
+        let production = enumerate_feasible_plans(&input, &view).expect("plans");
+        let oracle = oracle_enumerate(&input, &view).expect("oracle");
+
+        assert!(!oracle.is_empty());
+        assert_eq!(production.candidates, oracle, "scope {scope:?}");
+    }
+}
+
+#[test]
+fn the_oracle_creates_no_proof_variable_for_a_representation_relation() {
+    let input = bound_input(&[OperationId::CompactAsh, OperationId::TransferLive]);
+    let oracle = oracle_enumerate(&input, &CapabilityView::Unconstrained).expect("oracle");
+
+    assert!(!oracle.is_empty());
+
+    for candidate in &oracle {
+        assert!(
+            candidate
+                .proofs
+                .keys()
+                .all(|relation| relation.kind() != realization::RelationKind::Representation),
+        );
+
+        // The fixed external requirement is nonetheless attached.
+        assert!(!candidate.external_evidence.is_empty());
+        assert!(
+            candidate
+                .required_capabilities
+                .contains(&RequiredCapability::WholeTransactionValueConservation),
+        );
+    }
+}
+
+#[test]
+fn the_oracle_pairs_each_live_mode_with_exactly_one_conservation_proof() {
+    let input = bound_input(&[OperationId::TransferLive]);
+    let oracle = oracle_enumerate(&input, &CapabilityView::Unconstrained).expect("oracle");
+    let live_choice = RepresentationChoiceId {
+        operation: OperationId::TransferLive,
+        object: ObjectId::ReceiptLive,
+    };
+
+    let mut explicit = 0_usize;
+    let mut private = 0_usize;
+
+    for candidate in &oracle {
+        let conservation = candidate
+            .proofs
+            .iter()
+            .find(|(relation, _)| relation.kind() == realization::RelationKind::Conservation)
+            .map(|(_, alternative)| alternative.proof())
+            .expect("live conservation is proof-required");
+
+        match candidate.representations[&live_choice] {
+            RepresentationMode::Explicit => {
+                assert_eq!(conservation, ProofKind::PublicArithmetic);
+                explicit += 1;
+            }
+            RepresentationMode::PrivateCommitted => {
+                assert_eq!(conservation, ProofKind::ConfidentialConservation);
+                private += 1;
+            }
+            other @ RepresentationMode::PublicCommitted => {
+                panic!("live transfer never selects {other:?}")
+            }
+        }
+    }
+
+    // Both strategies survive, and the invalid pairings never do.
+    assert_eq!(explicit, 1);
+    assert_eq!(private, 1);
+}
+
 #[test]
 fn greedy_first_choice_selection_is_globally_invalid() {
     // Per-relation first choice picks public arithmetic for live
@@ -288,10 +442,12 @@ proptest! {
                 Just(RequiredCapability::ExactPublicAmountArithmetic),
                 Just(RequiredCapability::ConfidentialValueConservation),
                 Just(RequiredCapability::OwnerAuthorization),
+                Just(RequiredCapability::OperatorAuthorization),
+                Just(RequiredCapability::RefundAuthorization),
                 Just(RequiredCapability::PublicConstructibility),
                 Just(RequiredCapability::WholeTransactionValueConservation),
             ],
-            0..11,
+            0..13,
         ),
     ) {
         let input = bound_input(&[OperationId::CompactAsh, OperationId::TransferLive]);
