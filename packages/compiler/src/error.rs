@@ -378,4 +378,27 @@ pub enum CompileError {
         /// The unreachable required exit.
         exit: OperationId,
     },
+
+    /// An added disclosure carries no typed reason.
+    #[error("disclosure of {fact:?} has no typed reason")]
+    MissingDisclosureReason {
+        /// The reasonless disclosed fact.
+        fact: realization::FactId,
+    },
+
+    /// A permissionless operation requires a private fact.
+    #[error("permissionless {operation:?} requires private fact {fact:?}")]
+    PermissionlessPrivateFact {
+        /// The permissionless operation.
+        operation: OperationId,
+        /// The private fact.
+        fact: realization::FactId,
+    },
+
+    /// A fact was disclosed with no proof or representation cause.
+    #[error("unexpected disclosure of {fact:?}")]
+    UnexpectedDisclosure {
+        /// The unexpectedly disclosed fact.
+        fact: realization::FactId,
+    },
 }

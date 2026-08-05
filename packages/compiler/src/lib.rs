@@ -40,6 +40,7 @@
 
 mod capability;
 mod constructibility;
+mod disclosure;
 pub mod error;
 mod expression;
 mod fold;

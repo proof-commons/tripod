@@ -5,6 +5,7 @@
 compiler_source_files = files(
   'src/capability.rs',
   'src/constructibility.rs',
+  'src/disclosure.rs',
   'src/error.rs',
   'src/expression.rs',
   'src/fold.rs',
@@ -15,6 +16,7 @@ compiler_source_files = files(
   'src/relation.rs',
   'src/source.rs',
   'src/tests/constructibility_tests.rs',
+  'src/tests/disclosure_tests.rs',
   'src/tests/expression_tests.rs',
   'src/tests/fold_tests.rs',
   'src/tests/lifecycle_tests.rs',
