@@ -66,6 +66,16 @@ Delivered under P2-006: closed-constant folds only, checked arithmetic,
 failure-preserving conjunction, an independent reference oracle, and
 permutation-stable folded projections.
 
+### Proof planning, sources, constructibility, disclosure, lifecycle — complete
+
+Delivered under C1-008/P2-007/P2-008/P2-009 as crate-private analyses:
+relation obligations (proof-required, static, external evidence), typed
+operands with authenticated source requirements, authorization-case
+constructibility, plan-specific disclosure with typed reasons,
+representation lifecycle with explicit future exits, and deterministic
+exact feasible-plan enumeration checked against an independent
+exhaustive oracle. No compiler-plan identity was minted.
+
 Every deliverable below remains open.
 
 ### Proof alternatives

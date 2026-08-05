@@ -38,10 +38,17 @@ typed comparison is the boundary.
 
 ## State
 
-The crate implements typed input binding (P2-004), exact scoped relation and
-expression graph construction (C1-005/P2-005), and conservative checked
-constant folding (P2-006). The analysis structures are crate-private: proof
-planning, source/disclosure analysis, lifecycle, placement, layout, coverage,
-and the pilot analyzed program remain unimplemented, and no complete analyzed
-program is exposed. No public value this crate produces today can be mistaken
-for a completed analysis.
+Implemented: typed input binding (P2-004); exact scoped relation and
+expression DAGs (C1-005/P2-005); conservative checked constant folding
+(P2-006); proof-obligation classification, exact feasible proof-plan
+enumeration under explicit search limits, authenticatable source
+requirements, authorization-case constructibility analysis, plan-specific
+disclosure analysis, and representation lifecycle analysis
+(C1-008/P2-007/P2-008/P2-009), oracle-checked.
+
+Not implemented: target capability adapter, placement, concrete layout,
+carrier assignment, relation-indexed coverage, and the complete pilot
+analyzed program. The analysis structures are crate-private, no complete
+analyzed program is exposed, and no compiler-plan identity exists — typed
+comparison remains the boundary. No public value this crate produces today
+can be mistaken for a completed analysis.

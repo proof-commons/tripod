@@ -2,7 +2,7 @@
 
 > **Status:** ACTIVE
 > **Current gate:** Phase 2 — target-independent compiler analysis
-> **Current condition:** Phase 1 is historical tagged evidence. The static-review findings T1–T4 are reproduced, repaired, and closed against the batch remediation gate record in section 2.3; the T5 identity drift is corrected by removing duplicated values. The compiler crate implements the P2-004 validated input boundary (gate record in section 2.4) and, per the Guide-2 batch, the C1-005/P2-005 canonical scoped relation and expression DAGs plus P2-006 conservative checked constant folding, all crate-private until P2-012 exposes a complete analyzed program. The next compiler work is C1-008/P2-007 exact proof planning.
+> **Current condition:** Phase 1 is historical tagged evidence. The static-review findings T1–T4 are reproduced, repaired, and closed against the batch remediation gate record in section 2.3; the T5 identity drift is corrected by removing duplicated values. The compiler crate implements the P2-004 validated input boundary (gate record in section 2.4) and, per the Guide-2 batch, the C1-005/P2-005 canonical scoped relation and expression DAGs plus P2-006 conservative checked constant folding, all crate-private until P2-012 exposes a complete analyzed program. The Guide-3 batch adds C1-008/P2-007 exact proof planning, P2-008 source/constructibility/disclosure analysis, and P2-009 representation lifecycle analysis, oracle-checked and equally crate-private. The next compiler work is C1-009/P2-010 execution-case placement and layout.
 > **Next gate:** Phase 3 — Elements target and foundational prototypes
 > **Authority:** Current execution queue only. The specification, the realization document, typed architecture, implemented ADRs, accepted decisions, package contracts, phase cards, and accepted research results take precedence.
 
@@ -999,9 +999,9 @@ source.
 | `P2-004` | P1 | DONE | Bind architecture, realization, policy, and explicit scope |
 | `P2-005` | P1 | DONE | Canonical compiler relation DAG |
 | `P2-006` | P1 | DONE | Checked constant folding |
-| `P2-007` | P1 | BLOCKED | Exact proof-alternative planning |
-| `P2-008` | P1 | BLOCKED | Disclosure, source, and constructibility analysis |
-| `P2-009` | P1 | BLOCKED | Representation lifecycle analysis |
+| `P2-007` | P1 | DONE | Exact proof-alternative planning |
+| `P2-008` | P1 | DONE | Disclosure, source, and constructibility analysis |
+| `P2-009` | P1 | DONE | Representation lifecycle analysis |
 | `P2-010` | P1 | BLOCKED | Execution-case placement and layout requirements |
 | `P2-011` | P1 | BLOCKED | Relation-indexed coverage requirements |
 | `P2-012` | P1 | BLOCKED | Compact-ASH and live-transfer analyzed pilots |
@@ -1220,7 +1220,7 @@ Gates as recorded for P2-005 and in the section 2.5 batch gate record.
 ### P2-007 — Implement exact proof planning · `task:phase2:proof-planning`
 
 **Priority:** P1
-**Status:** BLOCKED
+**Status:** DONE
 **Depends on:** P2-005, P2-006, C1-008
 **Blocks:** P2-008 through P2-012
 
@@ -1251,7 +1251,7 @@ Complexity exhaustion returns a typed error and never:
 ### P2-008 — Derive disclosure, sources, and constructibility · `task:phase2:constructibility`
 
 **Priority:** P1
-**Status:** BLOCKED
+**Status:** DONE
 **Depends on:** P2-007 and closure of T2
 **Blocks:** P2-010 through P2-012
 
@@ -1278,7 +1278,7 @@ Sponsor-value opacity remains structural:
 ### P2-009 — Analyze representation lifecycle · `task:phase2:lifecycle`
 
 **Priority:** P1
-**Status:** BLOCKED
+**Status:** DONE
 **Depends on:** P2-007
 **Blocks:** P2-010 through P2-012
 
@@ -1299,6 +1299,59 @@ ASH:
 
 A pilot may be semantically valid in current scope while lifecycle-incomplete
 for deployment. That distinction remains typed and explicit.
+
+#### Guide-3 evidence (C1-008, P2-007, P2-008, P2-009)
+
+Implemented 2026-08-05 as one reviewed batch; evidence is shared because
+the analyses weld together.
+
+Realization consumption API: the scoped realization derives and exposes
+each operation's constructibility authorization cases once at assembly
+(typed OperationOutsideScope refusal), and the availability predicate is
+the owner-defined ConstructibilityAuthorization discharge rule — no
+consumer duplicates it.
+
+P2-008: every relation derives an exhaustive typed operand census (a new
+relation variant breaks the derivation at compile time) and, per approved
+proof alternative, one canonical authenticated source row per operand.
+Public arithmetic takes exact consensus values; confidential conservation
+takes commitment relations and never exact public amounts; owner
+authorization takes the exact input-owner witness; permissionless
+authorization requires nothing private; sponsor witnesses stay
+sponsor-local, sponsor-activated, and welded to an optional
+constructibility subtree. A sponsor amount is a structural
+SponsorValueRead error wherever it appears — operand, disclosure, or
+retained-private fact. Constructibility is revalidated compiler-side per
+authorization case with stable-ID diagnostic paths; disclosure inherits
+the realization declassification unchanged and every compiler addition
+carries a typed representation/proof reason (explicit live transfer
+records its amount disclosure; private-committed retains it; compact ASH
+adds nothing).
+
+P2-009: representation variables come from the exact representation
+relations; the rebuilt lifecycle graph requires every supported mode to
+reach every required exit (missing path fails), with in-scope and
+declared-outside-scope exits distinguished — the pilots are semantically
+analyzable and deliberately not deployment-lifecycle complete.
+Proof/representation compatibility is exact (public arithmetic rejects
+private-committed values; confidential conservation rejects explicit).
+
+C1-008/P2-007: every relation is classified exactly once (proof-required
+with sorted approved alternatives, statically validated lifecycle exits,
+or retained external evidence — T2 substrate conservation survives every
+plan). The deterministic depth-first exact search enumerates the complete
+feasible set under explicit ProofSearchLimits (now the AnalysisPolicy's
+real configuration consumer), prunes only on hard constraints, returns no
+partial result on exhaustion, and distinguishes exhaustion from the typed
+NoFeasibleProofPlan. Both live-transfer strategy families are retained
+and the invalid private/public-arithmetic pairing never appears. An
+independent iterative Cartesian oracle equals production on every pilot
+scope and sixteen random capability views, and the greedy first-choice
+counterexample is pinned. CapabilityView is analysis input, never target
+identity; no compiler-plan identity was minted — typed comparison remains
+the boundary. Compiler suites (60 unit, 8 public API), realization
+(156 + public API), and full workspace tests with clippy -D warnings are
+green; the Guide-3 batch gate record in section 2.6 closes the gates.
 
 ### P2-010 — Derive execution-case placement and layout requirements · `task:phase2:placement`
 
@@ -1440,7 +1493,7 @@ Phase completion does not itself justify a persistent compiler digest.
 | `C1-005` | DONE | Canonical direct-Petgraph compiler graph prototype |
 | `C1-006` | PARKED | Exact keyed linear systems until a consumer exists |
 | `C1-007` | PARKED | Certified numerical analysis until a consumer exists |
-| `C1-008` | TODO | Exact proof-plan search |
+| `C1-008` | DONE | Exact proof-plan search |
 | `C1-009` | TODO | Execution-case-aware placement |
 | `C1-010` | TODO | Typed symbol resolution and SCC policy |
 | `C1-011` | BLOCKED | Structured relocation; linker phase |
