@@ -550,4 +550,71 @@ pub enum CompileError {
         /// The case carrying the unstated dependency.
         case: crate::case::ExecutionCaseId,
     },
+
+    /// The carried relation-cases are not exactly the relation-cases
+    /// whose plan states a runtime requirement.
+    ///
+    /// A relation-case never disappears from the census because it is
+    /// vacuous, and a compiler-static, backend-structural, or externally
+    /// evidenced relation-case never enters it: a runtime carrier for
+    /// one of those would report an unfinished obligation as target
+    /// execution.
+    #[error(
+        "placement census mismatch: {} missing, {} unexpected",
+        missing.len(),
+        unexpected.len()
+    )]
+    PlacementCensusMismatch {
+        /// Runtime relation-cases absent from the placement, sorted.
+        missing: Vec<crate::placement::RelationCaseKey>,
+        /// Placed relation-cases absent from the requirement, sorted.
+        unexpected: Vec<crate::placement::RelationCaseKey>,
+    },
+
+    /// Every eligible carrier of a family- or transaction-global
+    /// relation is a local one.
+    ///
+    /// A per-member role observes one member, so it cannot establish a
+    /// property of a complete family or of the whole transaction; a
+    /// global relation may not hide on a local-only carrier.
+    #[error("global relation {relation:?} has only local carriers in case {case:?}")]
+    GlobalRelationHasOnlyLocalCarrier {
+        /// The global relation.
+        relation: realization::RelationId,
+        /// The case in which every eligible carrier is local.
+        case: crate::case::ExecutionCaseId,
+    },
+
+    /// A placement assigned a carrier the obligation does not permit.
+    ///
+    /// The carrier is ineligible, is a non-runtime role, cannot
+    /// discharge the obligation's semantic scope or multiplicity, or is
+    /// an optional sponsor carrier of an unconditional relation.
+    #[error("relation {relation:?} may not be placed on {carrier:?} in case {case:?}")]
+    UnpermittedCarrierPlacement {
+        /// The relation being placed.
+        relation: realization::RelationId,
+        /// The case carrying the placement.
+        case: crate::case::ExecutionCaseId,
+        /// The impermissible carrier role.
+        carrier: crate::carrier::CarrierRole,
+    },
+
+    /// The exact placement search exceeded its explicit state limit.
+    ///
+    /// No partial result is returned: a truncated search proves neither
+    /// that the retained placements are complete nor that the remaining
+    /// ones are infeasible.
+    #[error("placement search exceeded {maximum} states")]
+    PlacementSearchStateLimitExceeded {
+        /// The configured maximum.
+        maximum: u64,
+    },
+
+    /// The exact placement search exceeded its explicit candidate limit.
+    #[error("placement search exceeded {maximum} candidates")]
+    PlacementCandidateLimitExceeded {
+        /// The configured maximum.
+        maximum: u64,
+    },
 }

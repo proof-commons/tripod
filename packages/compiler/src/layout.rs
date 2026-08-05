@@ -267,6 +267,23 @@ pub const fn names_sponsor_amount(requirement: &LayoutRequirement) -> bool {
     }
 }
 
+/// The layout requirements one *selected* carrier depends on.
+///
+/// The exact placement search records these against the placement that
+/// selected the carrier, while the operation-wide census above is their
+/// union over every *eligible* carrier. Both read the same derivation,
+/// so a placement can never depend on a requirement the census omits.
+#[must_use]
+pub fn selected_carrier_requirements(
+    analysis: &CarrierEligibility,
+    entry: &EligibleCarrier,
+) -> BTreeSet<LayoutRequirement> {
+    let mut requirements = BTreeSet::new();
+
+    carrier_requirements(analysis, entry, &mut requirements);
+    requirements
+}
+
 /// What one eligible carrier depends on.
 fn carrier_requirements(
     analysis: &CarrierEligibility,

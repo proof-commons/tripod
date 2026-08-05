@@ -9,11 +9,15 @@ use super::bound_input;
 use crate::{
     CompileError,
     capability::CapabilityView,
+    carrier::{CarrierQuantification, CarrierRole, relation_case_eligibility},
     case::{ExecutionCase, SponsorCase, execution_cases},
+    layout::LayoutRequirement,
     placement::{
         ActivationCondition, BackendStructuralRequirement, CarrierMultiplicity,
-        CompilerStaticRequirement, DischargeBoundary, RelationActivity, RelationCasePlan,
-        SemanticScope, classify_relation_cases, validate_relation_case_census,
+        CompilerStaticRequirement, DischargeBoundary, PlacedCarrier, PlacedProofPlanCandidate,
+        PlacementSearchLimits, RelationActivity, RelationCasePlan, SemanticScope,
+        classify_relation_cases, enumerate_feasible_placements, place_proof_plan,
+        validate_relation_case_census,
     },
     proof::enumerate_feasible_plans,
     relation::{CompilerRelationAnalysis, build_relation_analysis},
@@ -576,4 +580,273 @@ fn repeated_classification_is_equal() {
 
         assert_eq!(pilot.plans, second);
     }
+}
+
+// --- exact placement search over the pilots (§10) ---
+
+/// Generous pilot limits: the search must complete, so a limit that
+/// truncated it would hide a defect rather than bound one.
+fn placement_limits() -> PlacementSearchLimits {
+    PlacementSearchLimits::new(
+        std::num::NonZeroU64::new(1_000_000).expect("nonzero"),
+        std::num::NonZeroU64::new(100_000).expect("nonzero"),
+    )
+}
+
+fn placed(operation: OperationId) -> PlacedProofPlanCandidate {
+    let input = bound_input(&[operation]);
+    let relations = build_relation_analysis(&input).expect("relations");
+    let plans = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).expect("plans");
+    let candidate = plans.candidates.first().expect("a feasible candidate");
+
+    place_proof_plan(&relations, candidate, placement_limits()).expect("placement")
+}
+
+#[test]
+fn every_pilot_plan_has_a_complete_feasible_placement_set() {
+    for operation in [OperationId::CompactAsh, OperationId::TransferLive] {
+        let placed = placed(operation);
+
+        assert!(!placed.feasible_placements.is_empty(), "{operation:?}");
+
+        // Canonical order, no duplicate placement, and no weighting: the
+        // whole feasible set survives side by side.
+        let mut canonical = placed.feasible_placements.clone();
+        canonical.sort();
+        canonical.dedup();
+
+        assert_eq!(canonical, placed.feasible_placements, "{operation:?}");
+    }
+}
+
+#[test]
+fn every_placement_carries_exactly_the_active_runtime_relation_cases() {
+    for operation in [OperationId::CompactAsh, OperationId::TransferLive] {
+        let placed = placed(operation);
+        let required = placed
+            .relation_case_plans
+            .iter()
+            .filter(|plan| !plan.runtime_requirements.is_empty())
+            .map(|plan| (plan.relation.clone(), plan.case.clone()))
+            .collect::<BTreeSet<_>>();
+
+        assert!(!required.is_empty());
+
+        for placement in &placed.feasible_placements {
+            let carried = placement
+                .assignments
+                .iter()
+                .map(|assignment| (assignment.relation.clone(), assignment.case.clone()))
+                .collect::<BTreeSet<_>>();
+
+            assert_eq!(carried, required, "{operation:?}");
+        }
+    }
+}
+
+#[test]
+fn no_placement_carries_a_static_structural_or_external_relation_case() {
+    for operation in [OperationId::CompactAsh, OperationId::TransferLive] {
+        let placed = placed(operation);
+        let non_runtime = placed
+            .relation_case_plans
+            .iter()
+            .filter(|plan| plan.runtime_requirements.is_empty())
+            .map(|plan| (plan.relation.clone(), plan.case.clone()))
+            .collect::<BTreeSet<_>>();
+
+        // The pilots really do declare such relation-cases — the static,
+        // structural, external, and vacuous dispositions — so the
+        // assertion below is not vacuous itself.
+        assert!(!non_runtime.is_empty());
+
+        for placement in &placed.feasible_placements {
+            for assignment in &placement.assignments {
+                assert!(
+                    !non_runtime.contains(&(assignment.relation.clone(), assignment.case.clone())),
+                    "{:?} in {operation:?}",
+                    assignment.relation,
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn live_owner_authorization_is_placed_only_per_member() {
+    let placed = placed(OperationId::TransferLive);
+    let relation = family(
+        OperationId::TransferLive,
+        RelationKind::Authorization,
+        TransactionSide::Input,
+        ObjectId::ReceiptLive,
+    );
+
+    for placement in &placed.feasible_placements {
+        let assignment = placement
+            .assignments
+            .iter()
+            .find(|assignment| assignment.relation == relation)
+            .expect("owner authorization is placed");
+
+        assert_eq!(
+            assignment.carriers,
+            vec![PlacedCarrier {
+                carrier: CarrierRole::EveryInputFamilyMember {
+                    object: ObjectId::ReceiptLive,
+                },
+                quantification: CarrierQuantification::PerMember,
+            }],
+        );
+    }
+}
+
+#[test]
+fn no_global_relation_is_ever_placed_on_a_member_role() {
+    for operation in [OperationId::CompactAsh, OperationId::TransferLive] {
+        let placed = placed(operation);
+
+        for placement in &placed.feasible_placements {
+            for assignment in &placement.assignments {
+                let plan = placed
+                    .relation_case_plans
+                    .iter()
+                    .find(|plan| {
+                        plan.relation == assignment.relation && plan.case == assignment.case
+                    })
+                    .expect("every placed relation-case is planned");
+                let scope = plan.runtime_requirements[0].scope;
+
+                if matches!(scope, SemanticScope::MemberLocal { .. }) {
+                    continue;
+                }
+
+                for carrier in &assignment.carriers {
+                    assert!(
+                        !matches!(carrier.carrier, CarrierRole::EveryInputFamilyMember { .. }),
+                        "{:?} in {operation:?}",
+                        assignment.relation,
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_complete_family_proof_placement_states_the_census_it_relies_on() {
+    for (operation, object) in [
+        (OperationId::CompactAsh, ObjectId::Ash),
+        (OperationId::TransferLive, ObjectId::ReceiptLive),
+    ] {
+        let placed = placed(operation);
+        let relation = family(
+            operation,
+            RelationKind::Recognition,
+            TransactionSide::Input,
+            object,
+        );
+        let mut proofs = 0_usize;
+
+        for placement in &placed.feasible_placements {
+            let assignment = placement
+                .assignments
+                .iter()
+                .find(|assignment| assignment.relation == relation)
+                .expect("input recognition is placed");
+
+            if assignment.carriers[0].quantification != CarrierQuantification::CompleteFamilyProof {
+                continue;
+            }
+
+            proofs += 1;
+
+            assert!(placement.layout_requirements.contains(
+                &LayoutRequirement::AuthenticateFamilyCensus {
+                    relation: relation.clone(),
+                    side: TransactionSide::Input,
+                    object,
+                }
+            ),);
+        }
+
+        assert!(proofs > 0, "{operation:?}");
+    }
+}
+
+#[test]
+fn every_placement_layout_dependency_is_within_the_operation_census() {
+    for operation in [OperationId::CompactAsh, OperationId::TransferLive] {
+        let placed = placed(operation);
+        let census = placed.layout_requirements.iter().collect::<BTreeSet<_>>();
+
+        for placement in &placed.feasible_placements {
+            for requirement in &placement.layout_requirements {
+                assert!(census.contains(requirement), "{operation:?}");
+            }
+        }
+    }
+}
+
+/// One pilot's relation-case plans and eligible carrier sets.
+fn carried(
+    operation: OperationId,
+) -> (
+    Vec<RelationCasePlan>,
+    Vec<crate::carrier::CarrierEligibility>,
+) {
+    let input = bound_input(&[operation]);
+    let relations = build_relation_analysis(&input).expect("relations");
+    let candidates = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained)
+        .expect("plans")
+        .candidates;
+    let candidate = candidates.first().expect("a feasible candidate");
+    let cases = execution_cases(&relations, candidate).expect("cases");
+    let plans = classify_relation_cases(&relations, &cases).expect("classification");
+    let eligibility = relation_case_eligibility(&relations, &plans).expect("eligibility");
+
+    (plans, eligibility)
+}
+
+#[test]
+fn repeated_placement_search_is_equal_and_projects_equally() {
+    for operation in [OperationId::CompactAsh, OperationId::TransferLive] {
+        let (plans, eligibility) = carried(operation);
+        let first = enumerate_feasible_placements(&plans, &eligibility, placement_limits())
+            .expect("first search");
+        let second = enumerate_feasible_placements(&plans, &eligibility, placement_limits())
+            .expect("second search");
+
+        assert_eq!(first, second, "{operation:?}");
+        assert_eq!(first.project(), second.project(), "{operation:?}");
+        assert_eq!(
+            first.project().candidates.len(),
+            first.candidates.len(),
+            "{operation:?}",
+        );
+    }
+}
+
+#[test]
+fn placement_exhaustion_returns_no_partial_result() {
+    let (plans, eligibility) = carried(OperationId::CompactAsh);
+    let one = std::num::NonZeroU64::new(1).expect("nonzero");
+    let generous = std::num::NonZeroU64::new(1_000_000).expect("nonzero");
+
+    assert_eq!(
+        enumerate_feasible_placements(
+            &plans,
+            &eligibility,
+            PlacementSearchLimits::new(one, generous),
+        ),
+        Err(CompileError::PlacementSearchStateLimitExceeded { maximum: 1 }),
+    );
+    assert_eq!(
+        enumerate_feasible_placements(
+            &plans,
+            &eligibility,
+            PlacementSearchLimits::new(generous, one),
+        ),
+        Err(CompileError::PlacementCandidateLimitExceeded { maximum: 1 }),
+    );
 }
