@@ -4,6 +4,7 @@
 //! coverage; negative coverage uses synthetic declarations a validated
 //! realization could never carry, through the crate-private builders.
 
+mod constructibility_tests;
 mod expression_tests;
 mod fold_tests;
 mod relation_tests;

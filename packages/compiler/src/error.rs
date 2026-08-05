@@ -286,4 +286,76 @@ pub enum CompileError {
     /// merely secret; any occurrence is a defect, never data.
     #[error("compiler analysis attempted to read an erased sponsor value")]
     SponsorValueRead,
+
+    /// One constructibility node occurred more than once.
+    #[error("constructibility node {node:?} occurs more than once")]
+    DuplicateConstructibilityNode {
+        /// The repeated node.
+        node: realization::ConstructibilityNodeId,
+    },
+
+    /// One constructibility dependency occurred more than once.
+    #[error("constructibility dependency at {node:?} is declared more than once")]
+    DuplicateConstructibilityDependency {
+        /// The dependency's source node.
+        node: realization::ConstructibilityNodeId,
+    },
+
+    /// A constructibility edge names an absent node.
+    #[error("constructibility node {node:?} is absent from the scoped graph")]
+    UnknownConstructibilityNode {
+        /// The missing stable node ID (never a graph index).
+        node: realization::ConstructibilityNodeId,
+    },
+
+    /// The scoped constructibility dependencies contain a cycle.
+    #[error("constructibility dependencies contain {} cyclic component(s)", components.len())]
+    ConstructibilityCycle {
+        /// Canonically ordered cyclic components in stable IDs.
+        components: Vec<Vec<realization::ConstructibilityNodeId>>,
+    },
+
+    /// A constructibility dependency crosses operations.
+    #[error("constructibility node {node:?} crosses into operation {operation:?}")]
+    ConstructibilityCrossOperationDependency {
+        /// The operation being analyzed.
+        operation: OperationId,
+        /// The foreign node.
+        node: realization::ConstructibilityNodeId,
+    },
+
+    /// A permissionless case depends on a private availability.
+    #[error("permissionless {operation:?} requires private node {node:?}")]
+    PermissionlessPrivateDependency {
+        /// The permissionless operation.
+        operation: OperationId,
+        /// The private dependency.
+        node: realization::ConstructibilityNodeId,
+        /// A stable-ID path to the operation.
+        path: Vec<realization::ConstructibilityNodeId>,
+    },
+
+    /// A required witness is unavailable under an authorization case.
+    #[error("witness {node:?} of {operation:?} is unavailable under its authorization")]
+    ConstructibilityWitnessUnavailable {
+        /// The operation being analyzed.
+        operation: OperationId,
+        /// The authorization case that cannot discharge the witness.
+        authorization: realization::ConstructibilityAuthorization,
+        /// The unavailable dependency.
+        node: realization::ConstructibilityNodeId,
+        /// A stable-ID path to the operation.
+        path: Vec<realization::ConstructibilityNodeId>,
+    },
+
+    /// A sponsor-local dependency escaped its optional sponsor subtree.
+    #[error("sponsor-local node {node:?} of {operation:?} escapes its optional subtree")]
+    SponsorDependencyEscaped {
+        /// The operation being analyzed.
+        operation: OperationId,
+        /// The escaping sponsor-local node.
+        node: realization::ConstructibilityNodeId,
+        /// A stable-ID escape path.
+        path: Vec<realization::ConstructibilityNodeId>,
+    },
 }

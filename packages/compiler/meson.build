@@ -4,6 +4,7 @@
 # into its role group.
 compiler_source_files = files(
   'src/capability.rs',
+  'src/constructibility.rs',
   'src/error.rs',
   'src/expression.rs',
   'src/fold.rs',
@@ -12,6 +13,7 @@ compiler_source_files = files(
   'src/lib.rs',
   'src/relation.rs',
   'src/source.rs',
+  'src/tests/constructibility_tests.rs',
   'src/tests/expression_tests.rs',
   'src/tests/fold_tests.rs',
   'src/tests/mod.rs',

@@ -39,6 +39,7 @@
 #![forbid(unsafe_code)]
 
 mod capability;
+mod constructibility;
 pub mod error;
 mod expression;
 mod fold;
