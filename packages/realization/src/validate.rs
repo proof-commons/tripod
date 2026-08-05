@@ -57,11 +57,128 @@ pub fn validate_scoped_realization(
         }
     }
 
+    validate_architecture_family_relations(architecture, realization)?;
+
     validate_pilot_lifecycle(realization)?;
 
     validate_sponsor_value_opacity(realization)?;
 
     Ok(())
+}
+
+/// Every architecture-declared object family carries its semantic
+/// relations (Guide-6 §4.4).
+///
+/// The architecture owns each family's side, cardinality bounds, and
+/// asset; realization is what exposes them as the relations compiler
+/// analysis consumes. Without this rule a family could keep its
+/// recognition relation and silently lose its cardinality relation —
+/// exactly the compact-ASH sponsor asymmetry — leaving architecture
+/// facts owned by no relation while every other check still passed.
+///
+/// The expected census is derived from the typed operation row, never
+/// from the operation's name: each declared input and output family
+/// yields one expected cardinality relation and one expected
+/// recognition relation, and the declared relation must equal it
+/// exactly. A transposed side, a wrong bound, or a wrong recognized
+/// asset therefore fails here rather than reaching the compiler.
+fn validate_architecture_family_relations(
+    architecture: &Architecture,
+    realization: &ScopedRealizationSpec,
+) -> Result<(), RealizationError> {
+    for operation_id in realization.scope.operations() {
+        let operation = architecture.operation(*operation_id).ok_or(
+            RealizationError::MissingArchitectureOperation(*operation_id),
+        )?;
+        let declaration = realization
+            .operations
+            .get(operation_id)
+            .ok_or(RealizationError::OperationOutsideScope(*operation_id))?;
+
+        for (id, expected) in expected_family_relations(architecture, operation)? {
+            let declared = declaration
+                .relations
+                .iter()
+                .find(|declared| declared.id == id)
+                .ok_or_else(|| RealizationError::MissingArchitectureRelation {
+                    operation: *operation_id,
+                    kind: id.kind(),
+                    subject: id.subject().clone(),
+                })?;
+
+            if declared.relation != expected {
+                return Err(RealizationError::ArchitectureRelationMismatch { relation: id });
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// The cardinality and recognition relations one architecture
+/// operation row requires, in canonical order.
+fn expected_family_relations(
+    architecture: &Architecture,
+    operation: &architecture::OperationSpec,
+) -> Result<Vec<(crate::RelationId, Relation)>, RealizationError> {
+    let inputs = operation.inputs.iter().map(|input| {
+        (
+            crate::TransactionSide::Input,
+            input.object,
+            input.minimum,
+            input.maximum,
+        )
+    });
+    let outputs = operation.outputs.iter().map(|output| {
+        (
+            crate::TransactionSide::Output,
+            output.object,
+            output.minimum,
+            output.maximum,
+        )
+    });
+    let mut expected = Vec::new();
+
+    for (side, object, minimum, maximum) in inputs.chain(outputs) {
+        let asset = architecture
+            .object(object)
+            .ok_or(RealizationError::MissingArchitectureObject(object))?
+            .asset;
+        let subject = crate::RelationSubject::ObjectFamily { side, object };
+        let observed = match side {
+            crate::TransactionSide::Input => crate::ObservedSide::Input,
+            crate::TransactionSide::Output => crate::ObservedSide::Output,
+        };
+
+        expected.push((
+            crate::RelationId::new(
+                operation.id,
+                crate::RelationKind::Cardinality,
+                subject.clone(),
+            ),
+            Relation::Cardinality {
+                side: observed,
+                object,
+                minimum: crate::Count::new(u64::from(minimum)),
+                maximum: match maximum {
+                    MaxCount::Exact(exact) => {
+                        crate::CardinalityMaximum::Exact(crate::Count::new(u64::from(exact)))
+                    }
+                    MaxCount::Bound(bound) => crate::CardinalityMaximum::Bound(bound),
+                },
+            },
+        ));
+        expected.push((
+            crate::RelationId::new(operation.id, crate::RelationKind::Recognition, subject),
+            Relation::Recognition {
+                side: observed,
+                object,
+                asset,
+            },
+        ));
+    }
+
+    Ok(expected)
 }
 
 /// Sponsor-value opacity (F2-006): an ordinary sponsor L-BTC

@@ -5,7 +5,8 @@ use crate::{
     ConstructibilityAuthorization, ConstructibilityDependencyDeclaration, ConstructibilityNodeId,
     DisclosureDependencyDeclaration, DisclosureNodeId, ExprId, FactId,
     LifecycleDependencyDeclaration, LifecycleNodeId, ObservedObjectRef,
-    RelationDependencyDeclaration, RelationId, RepresentationMode, SemanticType,
+    RelationDependencyDeclaration, RelationId, RelationKind, RelationSubject, RepresentationMode,
+    SemanticType,
 };
 
 /// Architecture field whose declared shape no longer matches a realization weld.
@@ -292,6 +293,30 @@ pub enum RealizationError {
         operation: OperationId,
         field: ArchitectureMismatchField,
     },
+
+    /// An architecture-declared object family has no realization
+    /// relation of the required kind.
+    ///
+    /// The architecture owns the family's cardinality bounds and its
+    /// asset, and realization is what exposes them as the semantic
+    /// relations compiler analysis consumes: an unexposed family would
+    /// leave those architecture facts owned by no relation at all.
+    #[error("operation {operation} declares no {kind:?} relation for subject {subject:?}")]
+    MissingArchitectureRelation {
+        operation: OperationId,
+        kind: RelationKind,
+        subject: RelationSubject,
+    },
+
+    /// A realization relation disagrees with the architecture row that
+    /// owns its values.
+    #[error("relation {relation:?} disagrees with its architecture object family")]
+    ArchitectureRelationMismatch { relation: RelationId },
+
+    /// An object family named by an architecture operation row has no
+    /// object specification.
+    #[error("architecture object {0:?} is missing")]
+    MissingArchitectureObject(ObjectId),
 
     /// One relation ID was declared more than once.
     #[error("relation {0:?} is declared more than once")]

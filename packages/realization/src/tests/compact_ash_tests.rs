@@ -1574,3 +1574,343 @@ fn sponsor_objects_carry_no_protocol_amount() {
 
     assert!(!failed(&evaluate(&observation), &sponsor()));
 }
+
+// --- Guide-6 §4: compact-ASH sponsor cardinality.
+//
+// The architecture declares the sponsor family's input and output
+// cardinalities for compact ASH exactly as it does for live transfer.
+// Realization used to expose only sponsor *recognition*, so those
+// architecture facts were owned by no relation and no carrier analysis
+// could see the sponsor family at all. The relations below make the
+// existing architecture semantics explicit; the typed census rule that
+// follows keeps the two sides welded. ---
+
+fn sponsor_input_cardinality() -> RelationId {
+    relation_id(
+        RelationKind::Cardinality,
+        RelationSubject::ObjectFamily {
+            side: TransactionSide::Input,
+            object: ObjectId::PlainLbtc,
+        },
+    )
+}
+
+fn sponsor_output_cardinality() -> RelationId {
+    relation_id(
+        RelationKind::Cardinality,
+        RelationSubject::ObjectFamily {
+            side: TransactionSide::Output,
+            object: ObjectId::PlainLbtc,
+        },
+    )
+}
+
+fn compact_relation(id: &RelationId) -> crate::Relation {
+    pilot_realization()
+        .relation(id)
+        .unwrap_or_else(|| panic!("{id:?} is declared"))
+        .relation
+        .clone()
+}
+
+#[test]
+fn compact_ash_declares_sponsor_input_cardinality() {
+    assert_eq!(
+        compact_relation(&sponsor_input_cardinality()),
+        crate::Relation::Cardinality {
+            side: ObservedSide::Input,
+            object: ObjectId::PlainLbtc,
+            minimum: Count::ZERO,
+            maximum: crate::CardinalityMaximum::Bound(BoundId::FeeSponsorInputMax),
+        },
+    );
+}
+
+#[test]
+fn compact_ash_declares_sponsor_output_cardinality() {
+    assert_eq!(
+        compact_relation(&sponsor_output_cardinality()),
+        crate::Relation::Cardinality {
+            side: ObservedSide::Output,
+            object: ObjectId::PlainLbtc,
+            minimum: Count::ZERO,
+            maximum: crate::CardinalityMaximum::Exact(Count::ONE),
+        },
+    );
+}
+
+#[test]
+fn compact_ash_sponsor_input_maximum_is_the_architecture_bound() {
+    let crate::Relation::Cardinality { maximum, .. } =
+        compact_relation(&sponsor_input_cardinality())
+    else {
+        panic!("sponsor input cardinality is a cardinality relation");
+    };
+
+    assert_eq!(
+        maximum,
+        crate::CardinalityMaximum::Bound(BoundId::FeeSponsorInputMax),
+    );
+}
+
+#[test]
+fn compact_ash_sponsor_output_maximum_is_exactly_one() {
+    let crate::Relation::Cardinality { maximum, .. } =
+        compact_relation(&sponsor_output_cardinality())
+    else {
+        panic!("sponsor output cardinality is a cardinality relation");
+    };
+
+    assert_eq!(maximum, crate::CardinalityMaximum::Exact(Count::ONE));
+}
+
+#[test]
+fn compact_ash_sponsor_cardinality_depends_on_sponsor_recognition() {
+    let realization = pilot_realization();
+    let declared = realization.operations[&OperationId::CompactAsh]
+        .relation_dependencies
+        .iter()
+        .map(|dependency| {
+            (
+                dependency.prerequisite.clone(),
+                dependency.dependent.clone(),
+                dependency.edge,
+            )
+        })
+        .collect::<BTreeSet<_>>();
+
+    for (recognition, cardinality) in [
+        (sponsor_input_recognition(), sponsor_input_cardinality()),
+        (sponsor_output_recognition(), sponsor_output_cardinality()),
+    ] {
+        assert!(
+            declared.contains(&(
+                recognition.clone(),
+                cardinality.clone(),
+                crate::RelationEdge::RecognitionBeforeCardinality,
+            )),
+            "{recognition:?} must precede {cardinality:?}",
+        );
+    }
+}
+
+#[test]
+fn no_compact_ash_relation_names_a_sponsor_amount() {
+    // The repair exposes sponsor *counts* and family recognition. A
+    // sponsor amount operand would breach the erasure boundary the rest
+    // of the realization maintains, so no relation may carry one.
+    let realization = pilot_realization();
+
+    for declaration in realization.relations() {
+        match &declaration.relation {
+            crate::Relation::AmountConservation {
+                input_objects,
+                output_objects,
+                ..
+            } => {
+                assert!(!input_objects.contains(&ObjectId::PlainLbtc));
+                assert!(!output_objects.contains(&ObjectId::PlainLbtc));
+            }
+            crate::Relation::Cardinality { .. }
+            | crate::Relation::Recognition { .. }
+            | crate::Relation::AllowedObjectFamilies { .. }
+            | crate::Relation::OwnerAuthorization { .. }
+            | crate::Relation::PermissionlessAuthorization
+            | crate::Relation::SponsorIsolation
+            | crate::Relation::SponsorEnvelopeMultiplicity { .. }
+            | crate::Relation::RootPolicy { .. }
+            | crate::Relation::ProjectionPolicy { .. }
+            | crate::Relation::CanonicalDeltaPolicy { .. }
+            | crate::Relation::OpenFlowPolicy { .. }
+            | crate::Relation::Constructibility { .. }
+            | crate::Relation::Representation { .. }
+            | crate::Relation::LifecycleExit { .. }
+            | crate::Relation::ExpressionPredicate { .. }
+            | crate::Relation::SubstrateConservation { .. } => {}
+        }
+    }
+}
+
+/// Reassemble the compact-ASH scope after one declaration mutation.
+fn reassembled(
+    mutate: impl FnOnce(&mut crate::OperationRealization),
+) -> Result<crate::ScopedRealizationSpec, crate::RealizationError> {
+    let mut operations = derive(&ARCHITECTURE, compact_scope()).unwrap().operations;
+
+    mutate(operations.get_mut(&OperationId::CompactAsh).unwrap());
+
+    crate::derive::assemble_scoped_realization(
+        &ARCHITECTURE,
+        crate::ArchitectureBinding::from_architecture(&ARCHITECTURE).unwrap(),
+        compact_scope(),
+        operations,
+    )
+}
+
+/// Drop one relation and every dependency edge that named it.
+fn without_relation(operation: &mut crate::OperationRealization, id: &RelationId) {
+    operation.relations.retain(|relation| &relation.id != id);
+    operation
+        .relation_dependencies
+        .retain(|dependency| &dependency.prerequisite != id && &dependency.dependent != id);
+}
+
+/// Replace one relation's declared payload, keeping its stable ID.
+fn with_relation(
+    operation: &mut crate::OperationRealization,
+    id: &RelationId,
+    replacement: &crate::Relation,
+) {
+    for relation in &mut operation.relations {
+        if &relation.id == id {
+            relation.relation = replacement.clone();
+        }
+    }
+}
+
+#[test]
+fn missing_sponsor_input_cardinality_fails_derivation() {
+    let error = reassembled(|operation| without_relation(operation, &sponsor_input_cardinality()))
+        .unwrap_err();
+
+    assert_eq!(
+        error,
+        crate::RealizationError::MissingArchitectureRelation {
+            operation: OperationId::CompactAsh,
+            kind: RelationKind::Cardinality,
+            subject: RelationSubject::ObjectFamily {
+                side: TransactionSide::Input,
+                object: ObjectId::PlainLbtc,
+            },
+        },
+    );
+}
+
+#[test]
+fn missing_sponsor_output_cardinality_fails_derivation() {
+    let error = reassembled(|operation| without_relation(operation, &sponsor_output_cardinality()))
+        .unwrap_err();
+
+    assert_eq!(
+        error,
+        crate::RealizationError::MissingArchitectureRelation {
+            operation: OperationId::CompactAsh,
+            kind: RelationKind::Cardinality,
+            subject: RelationSubject::ObjectFamily {
+                side: TransactionSide::Output,
+                object: ObjectId::PlainLbtc,
+            },
+        },
+    );
+}
+
+#[test]
+fn missing_sponsor_recognition_fails_derivation() {
+    let error = reassembled(|operation| without_relation(operation, &sponsor_input_recognition()))
+        .unwrap_err();
+
+    assert_eq!(
+        error,
+        crate::RealizationError::MissingArchitectureRelation {
+            operation: OperationId::CompactAsh,
+            kind: RelationKind::Recognition,
+            subject: RelationSubject::ObjectFamily {
+                side: TransactionSide::Input,
+                object: ObjectId::PlainLbtc,
+            },
+        },
+    );
+}
+
+#[test]
+fn transposed_sponsor_cardinality_sides_fail_derivation() {
+    // Each ID keeps its subject while the payloads swap: the input
+    // relation now carries the output bounds and vice versa. Nothing
+    // else in the census can see this, because both relations still
+    // exist and both bounds still appear somewhere.
+    let input = compact_relation(&sponsor_input_cardinality());
+    let output = compact_relation(&sponsor_output_cardinality());
+    let error = reassembled(|operation| {
+        with_relation(operation, &sponsor_input_cardinality(), &output);
+        with_relation(operation, &sponsor_output_cardinality(), &input);
+    })
+    .unwrap_err();
+
+    assert_eq!(
+        error,
+        crate::RealizationError::ArchitectureRelationMismatch {
+            relation: sponsor_input_cardinality(),
+        },
+    );
+}
+
+#[test]
+fn a_wrong_sponsor_input_bound_fails_derivation() {
+    let error = reassembled(|operation| {
+        with_relation(
+            operation,
+            &sponsor_input_cardinality(),
+            &crate::Relation::Cardinality {
+                side: ObservedSide::Input,
+                object: ObjectId::PlainLbtc,
+                minimum: Count::ZERO,
+                maximum: crate::CardinalityMaximum::Bound(BoundId::AshBatchMax),
+            },
+        );
+    })
+    .unwrap_err();
+
+    assert_eq!(
+        error,
+        crate::RealizationError::ArchitectureRelationMismatch {
+            relation: sponsor_input_cardinality(),
+        },
+    );
+}
+
+#[test]
+fn a_wrong_sponsor_output_maximum_fails_derivation() {
+    let error = reassembled(|operation| {
+        with_relation(
+            operation,
+            &sponsor_output_cardinality(),
+            &crate::Relation::Cardinality {
+                side: ObservedSide::Output,
+                object: ObjectId::PlainLbtc,
+                minimum: Count::ZERO,
+                maximum: crate::CardinalityMaximum::Exact(Count::new(2)),
+            },
+        );
+    })
+    .unwrap_err();
+
+    assert_eq!(
+        error,
+        crate::RealizationError::ArchitectureRelationMismatch {
+            relation: sponsor_output_cardinality(),
+        },
+    );
+}
+
+#[test]
+fn a_wrong_recognized_sponsor_asset_fails_derivation() {
+    let error = reassembled(|operation| {
+        with_relation(
+            operation,
+            &sponsor_input_recognition(),
+            &crate::Relation::Recognition {
+                side: ObservedSide::Input,
+                object: ObjectId::PlainLbtc,
+                asset: AssetId::U,
+            },
+        );
+    })
+    .unwrap_err();
+
+    assert_eq!(
+        error,
+        crate::RealizationError::ArchitectureRelationMismatch {
+            relation: sponsor_input_recognition(),
+        },
+    );
+}

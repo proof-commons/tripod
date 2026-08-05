@@ -48,6 +48,8 @@ pub fn derive(architecture: &Architecture) -> Result<OperationRealization, Reali
 struct Ids {
     input_cardinality: RelationId,
     output_cardinality: RelationId,
+    sponsor_input_cardinality: RelationId,
+    sponsor_output_cardinality: RelationId,
     input_recognition: RelationId,
     output_recognition: RelationId,
     sponsor_input_recognition: RelationId,
@@ -72,47 +74,25 @@ struct Ids {
 impl Ids {
     fn new() -> Self {
         Self {
-            input_cardinality: relation_id(
+            input_cardinality: ash_family(RelationKind::Cardinality, TransactionSide::Input),
+            output_cardinality: ash_family(RelationKind::Cardinality, TransactionSide::Output),
+            sponsor_input_cardinality: sponsor_family(
                 RelationKind::Cardinality,
-                RelationSubject::ObjectFamily {
-                    side: TransactionSide::Input,
-                    object: ObjectId::Ash,
-                },
+                TransactionSide::Input,
             ),
-            output_cardinality: relation_id(
+            sponsor_output_cardinality: sponsor_family(
                 RelationKind::Cardinality,
-                RelationSubject::ObjectFamily {
-                    side: TransactionSide::Output,
-                    object: ObjectId::Ash,
-                },
+                TransactionSide::Output,
             ),
-            input_recognition: relation_id(
+            input_recognition: ash_family(RelationKind::Recognition, TransactionSide::Input),
+            output_recognition: ash_family(RelationKind::Recognition, TransactionSide::Output),
+            sponsor_input_recognition: sponsor_family(
                 RelationKind::Recognition,
-                RelationSubject::ObjectFamily {
-                    side: TransactionSide::Input,
-                    object: ObjectId::Ash,
-                },
+                TransactionSide::Input,
             ),
-            output_recognition: relation_id(
+            sponsor_output_recognition: sponsor_family(
                 RelationKind::Recognition,
-                RelationSubject::ObjectFamily {
-                    side: TransactionSide::Output,
-                    object: ObjectId::Ash,
-                },
-            ),
-            sponsor_input_recognition: relation_id(
-                RelationKind::Recognition,
-                RelationSubject::ObjectFamily {
-                    side: TransactionSide::Input,
-                    object: ObjectId::PlainLbtc,
-                },
-            ),
-            sponsor_output_recognition: relation_id(
-                RelationKind::Recognition,
-                RelationSubject::ObjectFamily {
-                    side: TransactionSide::Output,
-                    object: ObjectId::PlainLbtc,
-                },
+                TransactionSide::Output,
             ),
             conservation: relation_id(
                 RelationKind::Conservation,
@@ -211,6 +191,26 @@ fn relation_declarations(ids: &Ids) -> Vec<RelationDeclaration> {
                 side: crate::ObservedSide::Output,
                 object: ObjectId::Ash,
                 minimum: Count::ONE,
+                maximum: CardinalityMaximum::Exact(Count::ONE),
+            },
+            [ProofKind::ManifestShape],
+        ),
+        declaration(
+            ids.sponsor_input_cardinality.clone(),
+            Relation::Cardinality {
+                side: crate::ObservedSide::Input,
+                object: ObjectId::PlainLbtc,
+                minimum: Count::ZERO,
+                maximum: CardinalityMaximum::Bound(BoundId::FeeSponsorInputMax),
+            },
+            [ProofKind::ManifestShape],
+        ),
+        declaration(
+            ids.sponsor_output_cardinality.clone(),
+            Relation::Cardinality {
+                side: crate::ObservedSide::Output,
+                object: ObjectId::PlainLbtc,
+                minimum: Count::ZERO,
                 maximum: CardinalityMaximum::Exact(Count::ONE),
             },
             [ProofKind::ManifestShape],
@@ -381,6 +381,16 @@ fn relation_dependencies(ids: &Ids) -> Vec<RelationDependencyDeclaration> {
         dep(
             &ids.output_recognition,
             &ids.output_cardinality,
+            RelationEdge::RecognitionBeforeCardinality,
+        ),
+        dep(
+            &ids.sponsor_input_recognition,
+            &ids.sponsor_input_cardinality,
+            RelationEdge::RecognitionBeforeCardinality,
+        ),
+        dep(
+            &ids.sponsor_output_recognition,
+            &ids.sponsor_output_cardinality,
             RelationEdge::RecognitionBeforeCardinality,
         ),
         dep(
@@ -651,6 +661,28 @@ fn disclosure_declarations(
 
 fn relation_id(kind: RelationKind, subject: RelationSubject) -> RelationId {
     RelationId::new(OperationId::CompactAsh, kind, subject)
+}
+
+/// One relation of the compacted ASH object family.
+fn ash_family(kind: RelationKind, side: TransactionSide) -> RelationId {
+    relation_id(
+        kind,
+        RelationSubject::ObjectFamily {
+            side,
+            object: ObjectId::Ash,
+        },
+    )
+}
+
+/// One relation of the optional sponsor object family.
+fn sponsor_family(kind: RelationKind, side: TransactionSide) -> RelationId {
+    relation_id(
+        kind,
+        RelationSubject::ObjectFamily {
+            side,
+            object: ObjectId::PlainLbtc,
+        },
+    )
 }
 
 fn lifecycle(exit: OperationId) -> RelationId {
