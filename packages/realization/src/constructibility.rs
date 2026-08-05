@@ -42,6 +42,22 @@ pub enum ConstructibilityAuthorization {
     CadencePermissionless,
 }
 
+impl ConstructibilityAuthorization {
+    /// Whether this authorization case can discharge a dependency of
+    /// the given availability class.
+    ///
+    /// `Public` is always dischargeable. `SponsorLocal` is
+    /// dischargeable here because sponsor confinement — the rule that
+    /// a sponsor-local dependency lives only in an optional
+    /// sponsor-only subtree — is validated separately; availability is
+    /// not the confinement check. Every private class must be named by
+    /// the case.
+    #[must_use]
+    pub fn discharges(&self, availability: AvailabilityClass) -> bool {
+        availability_allowed(availability, self)
+    }
+}
+
 /// Witness role distinct from target witness encoding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum WitnessRole {

@@ -6,12 +6,13 @@ use architecture::{Architecture, OperationId};
 use petgraph::graph::{DiGraph, NodeIndex};
 
 use crate::{
-    ArchitectureBinding, ConstructibilityEdge, ConstructibilityGraphProjection,
-    ConstructibilityNode, ConstructibilityNodeId, DeclassificationAnalysis, DependencyEdge,
-    DisclosureEdge, DisclosureGraphProjection, DisclosureNode, ExprId, ExpressionDeclaration,
-    LifecycleEdge, LifecycleGraphProjection, LifecycleNode, LifecycleNodeId, OperationObservation,
-    OperationRealization, OperationRealizationProjection, RealizationError, RealizationScope,
-    RelationDeclaration, RelationEdge, RelationGraphProjection, RelationId,
+    ArchitectureBinding, ConstructibilityAuthorization, ConstructibilityEdge,
+    ConstructibilityGraphProjection, ConstructibilityNode, ConstructibilityNodeId,
+    DeclassificationAnalysis, DependencyEdge, DisclosureEdge, DisclosureGraphProjection,
+    DisclosureNode, ExprId, ExpressionDeclaration, LifecycleEdge, LifecycleGraphProjection,
+    LifecycleNode, LifecycleNodeId, OperationObservation, OperationRealization,
+    OperationRealizationProjection, RealizationError, RealizationScope, RelationDeclaration,
+    RelationEdge, RelationGraphProjection, RelationId,
     constructibility::{build_constructibility_graph, project_constructibility_graph},
     declarations,
     declassification::{analyze_disclosure, build_disclosure_graph, project_disclosure_graph},
@@ -82,6 +83,7 @@ pub struct ScopedRealizationSpec {
     pub(crate) lifecycle_node_by_id: BTreeMap<LifecycleNodeId, NodeIndex<u32>>,
     pub(crate) disclosure_graph: DiGraph<DisclosureNode, DisclosureEdge, u32>,
     pub(crate) declassification: DeclassificationAnalysis,
+    pub(crate) authorizations: BTreeMap<OperationId, Vec<ConstructibilityAuthorization>>,
 }
 
 impl ScopedRealizationSpec {
@@ -113,6 +115,28 @@ impl ScopedRealizationSpec {
     #[must_use]
     pub fn architecture(&self) -> &ArchitectureBinding {
         &self.architecture
+    }
+
+    /// Authorization cases under which one scoped operation can be
+    /// constructed, in canonical derivation order.
+    ///
+    /// This is the owner-derived case set a compiler consumer checks
+    /// witness availability against; it is derived once at assembly
+    /// from the typed architecture operation row, never re-derived
+    /// from names or documentation.
+    ///
+    /// # Errors
+    ///
+    /// [`RealizationError::OperationOutsideScope`] when `operation` is
+    /// not part of this realization's scope.
+    pub fn constructibility_authorizations(
+        &self,
+        operation: OperationId,
+    ) -> Result<&[ConstructibilityAuthorization], RealizationError> {
+        self.authorizations
+            .get(&operation)
+            .map(Vec::as_slice)
+            .ok_or(RealizationError::OperationOutsideScope(operation))
     }
 
     /// Return the explicit operation scope this realization covers.
@@ -322,6 +346,19 @@ pub(crate) fn assemble_scoped_realization(
     let declassification =
         analyze_disclosure(&disclosure_graph, &disclosure_node_by_id, &disclosure_seeds)?;
 
+    let mut authorizations = BTreeMap::new();
+
+    for operation in operations.keys() {
+        let row = architecture
+            .operation(*operation)
+            .ok_or(RealizationError::OperationOutsideArchitecture(*operation))?;
+
+        authorizations.insert(
+            *operation,
+            crate::validate::constructibility_authorizations(row)?,
+        );
+    }
+
     let result = ScopedRealizationSpec {
         architecture: binding,
         scope,
@@ -338,6 +375,7 @@ pub(crate) fn assemble_scoped_realization(
         lifecycle_node_by_id,
         disclosure_graph,
         declassification,
+        authorizations,
     };
 
     crate::validate::validate_scoped_realization(architecture, &result)?;

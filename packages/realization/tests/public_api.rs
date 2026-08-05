@@ -182,3 +182,69 @@ fn ash(side: ObservedSide, ordinal: u32, value: u64) -> ObservedObject {
         representation: RepresentationMode::Explicit,
     }
 }
+
+// --- Guide 3: compiler-consumption constructibility API ---
+
+#[test]
+fn pilot_constructibility_authorizations_derive_from_the_owner() {
+    let spec = realization::derive(
+        &architecture::ARCHITECTURE,
+        realization::RealizationScope::phase1_pilots(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        spec.constructibility_authorizations(architecture::OperationId::CompactAsh)
+            .unwrap(),
+        &[realization::ConstructibilityAuthorization::Permissionless],
+    );
+
+    let transfer = spec
+        .constructibility_authorizations(architecture::OperationId::TransferLive)
+        .unwrap();
+    assert_eq!(transfer.len(), 1);
+    assert!(matches!(
+        &transfer[0],
+        realization::ConstructibilityAuthorization::InputOwners { objects }
+            if objects.contains(&architecture::ObjectId::ReceiptLive)
+    ));
+
+    // Outside the pilot scope: a typed refusal, never a silent default.
+    assert!(matches!(
+        spec.constructibility_authorizations(architecture::OperationId::Burn),
+        Err(realization::RealizationError::OperationOutsideScope(
+            architecture::OperationId::Burn
+        )),
+    ));
+}
+
+#[test]
+fn authorization_discharge_semantics_are_owner_defined() {
+    use architecture::ObjectId;
+    use realization::{AvailabilityClass, ConstructibilityAuthorization as Auth};
+
+    let permissionless = Auth::Permissionless;
+    let owners = Auth::InputOwners {
+        objects: std::iter::once(ObjectId::ReceiptLive).collect(),
+    };
+
+    // Public is always dischargeable; sponsor-local availability is
+    // dischargeable here because confinement is a separate rule.
+    for case in [&permissionless, &owners] {
+        assert!(case.discharges(AvailabilityClass::Public));
+        assert!(case.discharges(AvailabilityClass::SponsorLocal));
+    }
+
+    // Private classes must be named by the case.
+    assert!(owners.discharges(AvailabilityClass::InputOwners {
+        object: ObjectId::ReceiptLive,
+    }));
+    assert!(!owners.discharges(AvailabilityClass::InputOwners {
+        object: ObjectId::ReceiptTimeLocked,
+    }));
+    assert!(!owners.discharges(AvailabilityClass::Operator));
+    assert!(!permissionless.discharges(AvailabilityClass::InputOwners {
+        object: ObjectId::ReceiptLive,
+    }));
+    assert!(!permissionless.discharges(AvailabilityClass::Operator));
+}

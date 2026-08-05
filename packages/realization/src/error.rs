@@ -59,6 +59,10 @@ pub enum RealizationError {
     #[error("operation {0} is outside the supplied architecture")]
     OperationOutsideArchitecture(OperationId),
 
+    /// A requested operation is not part of this realization's scope.
+    #[error("operation {0} is outside the realization scope")]
+    OperationOutsideScope(OperationId),
+
     /// A realization's architecture binding does not equal the binding
     /// derived from the supplied architecture.
     #[error("realization architecture binding does not match the supplied architecture")]
