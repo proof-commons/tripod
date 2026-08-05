@@ -2,7 +2,7 @@
 
 > **Status:** ACTIVE
 > **Current gate:** Phase 2 — target-independent compiler analysis
-> **Current condition:** Phase 1 remains historical tagged evidence. Compiler input binding, scoped relation/expression analysis, checked constant folding, source and constructibility analysis, disclosure analysis, representation lifecycle analysis, and exact proof-plan enumeration are implemented internally. The current static review found two proof-planning correctness defects, T6 and T7, that must close before placement, coverage, or pilot analysis can rely on the feasible-plan set. Documentation findings T8 and T9 must close before the Phase-2 documentation gate.
+> **Current condition:** Phase 1 remains historical tagged evidence. Compiler input binding, scoped relation/expression analysis, checked constant folding, source and constructibility analysis, disclosure analysis, representation lifecycle analysis, and exact proof-plan enumeration are implemented internally. The static-review findings T6–T9 are closed and exact proof planning is reaccepted; the Guide-4 gate record is in §2.8. The next work is C1-009 / P2-010 execution-case placement and target-independent layout requirements.
 > **Next gate:** Phase 3 — Elements target and foundational prototypes
 > **Authority:** Current execution queue only. The specification, the realization document, typed architecture, implemented ADRs, accepted decisions, package contracts, phase cards, and accepted research results take precedence.
 
@@ -288,8 +288,44 @@ The batch covered:
 
 The latest static review found T6 and T7 in this area. The historical gate
 remains evidence that its recorded commands passed; it is not evidence that the
-tested assertions were complete. P2-007 and C1-008 are therefore reopened as
-blocked correctness work.
+tested assertions were complete. P2-007 and C1-008 were therefore reopened as
+blocked correctness work and closed again by the Guide-4 batch in §2.8.
+
+### 2.8 Guide-4 reacceptance gate · `gate:backlog:guide4`
+
+The repository records a completed Guide-4 batch for:
+
+```text
+T6
+T7
+T8
+T9
+C1-008
+P2-007
+```
+
+The batch covered:
+
+- external-evidence capability retention and fixed-requirement filtering;
+- representation relations as static mode constraints;
+- an oracle that derives fixed evidence requirements independently;
+- the current-phase declaration weld across all four planning entry points;
+- accurate compiler implementation-status documentation.
+
+Its recorded result, on the tree ending at the crate-state reconciliation
+commit:
+
+- `scripts/ci.sh`: every available lane passed; `cargo-audit` skipped because
+  unavailable, so the run was partial-green;
+- real Meson compile and test: 10/10 passed, including check-generated
+  (architecture publications byte-identical), labels, plans, census, and the
+  reproducibility stamps;
+- document byte reproducibility: deferred because paper inputs were unchanged;
+- final clean-tree check: empty.
+
+Identity impact of the batch: the architecture identity, generated
+architecture publications, public schema, and dependency graph are unchanged;
+no realization public identity or compiler-plan identity exists.
 
 ---
 
@@ -355,7 +391,7 @@ A domain separator is hashed input that identifies a recipe, and the product's n
 | `compiler` constructibility | Authorization-case analysis and source/constructibility weld |
 | `compiler` disclosure | Inherited and added disclosure with typed reasons |
 | `compiler` lifecycle | Representation choices and required-exit analysis |
-| `compiler` proof search | Exact deterministic feasible-plan enumeration, but correctness is reopened by T6 and T7 |
+| `compiler` proof search | Exact deterministic feasible-plan enumeration; fixed external-evidence requirements retained, representation modes static; reaccepted in §2.8 |
 | `artifacts` | Generated-publication derivation, writer/checker, realization-document weld |
 | `labels` | Owner-aware Markdown/Rust label graph, census, plan checks, register rendering |
 | `cli-common` | ADR-010 streams, diagnostics, checker report/stamp publication, batch publication |
@@ -423,13 +459,13 @@ Typed realization pilots:          implemented
 Compiler input/graph/folding:       implemented internally
 Compiler source/disclosure/lifecycle:
                                     implemented internally
-Compiler exact planning:            implemented but correctness reopened by T6/T7
+Compiler exact planning:            implemented and reaccepted
 Compiler placement/layout/coverage: absent
 Complete analyzed pilots:           absent
 Target/backend/linker/ABI:         absent
 Independent deployment evidence:   absent
 Production deployment:             absent
-Current-tree complete gate:        not established by the latest review
+Current-tree complete gate:        recorded for the Guide-4 tree, section 2.8
 ```
 
 Current packages are public-data tools. They do not legitimately accept private
@@ -487,467 +523,107 @@ no public realization or compiler digest without a real consumer.
 
 | ID | Priority | Status | Finding |
 |---|---:|---|---|
-| `T6` | P1 | TODO | External-evidence relations bypass abstract capability validation during proof planning. |
-| `T7` | P1 | TODO | Representation-relation proof choices are not constrained by the selected representation mode. |
-| `T8` | P2 | TODO | Current-phase declarations disagree and the plan checker does not detect all copies. |
-| `T9` | P2 | TODO | Compiler status documentation materially understates implemented internal analysis. |
+| `T6` | P1 | DONE | External-evidence relations bypassed abstract capability validation during proof planning. |
+| `T7` | P1 | DONE | Representation-relation proof choices were not constrained by the selected representation mode. |
+| `T8` | P2 | DONE | Current-phase declarations disagreed and the plan checker did not detect all copies. |
+| `T9` | P2 | DONE | Compiler status documentation materially understated implemented internal analysis. |
 
-T6 and T7 block P2-007 acceptance, C1-008 acceptance, P2-010, P2-011, and
-P2-012.
-
-T8 and T9 do not change semantics, but they block a trustworthy Phase-2
-documentation and planning gate.
+All four findings were reproduced or directly corrected, repaired, and
+verified in the Guide-4 batch; the gate record is in §2.8. Their evidence
+records follow. Implementation detail beyond these records belongs to Git
+history.
 
 ### T6 — Validate capabilities for external-evidence obligations · `task:review:external-evidence-capability`
 
 **Priority:** P1
-**Status:** TODO
-**Owners:** `compiler::proof`, `compiler::source`, capability planning
-**Blocks:** C1-008, P2-007, P2-010 through P2-013
-**Identity impact:** none; no compiler-plan identity exists
-**Schema impact:** internal obligation/candidate representation may change
-**Dependency impact:** none
+**Status:** DONE
 
-#### Static basis
+Reproduction: with every capability available except whole-transaction value
+conservation, production planning returned feasible plans for both pilots
+(two compact-ASH and four live-transfer candidates) that carried the
+substrate-conservation evidence requirement while omitting the conservation
+capability entirely.
 
-`classify_obligations` classifies `SubstrateConservation` as:
+Repair: the external-evidence obligation class now retains its approved proof
+alternative, required capabilities, and source requirements. Classification
+validates that the realization approves exactly one substrate-conservation
+alternative, with a typed error for any other shape. Enumeration tests the
+fixed capability set against the capability view before the search begins and
+seeds every candidate from the fixed requirements. The evidence requirement
+remains unresolved, and no sponsor amount enters any fixed requirement.
 
-```text
-ExternalEvidence
-```
+Focused tests, in the compiler proof suite:
 
-rather than:
-
-```text
-ProofRequired
-```
-
-Only proof-required obligations enter the proof-variable search. Candidate
-capabilities are accumulated only from selected proof variables.
-
-The source layer correctly maps:
-
-```text
-ProofKind::SubstrateConservation
-    → WholeTransactionValueConservation
-```
-
-but that mapping is not reached by production plan enumeration for the
-external-evidence relation.
-
-The candidate therefore retains:
-
-```text
-external_evidence:
-    SubstrateConservation
-```
-
-without necessarily retaining:
-
-```text
-required_capabilities:
-    WholeTransactionValueConservation
-```
-
-`CapabilityView::Available` cannot reject a target view that lacks the omitted
-capability.
-
-The independent test oracle repeats the same classification shape, so equality
-between production and oracle does not detect this omission.
-
-#### Required implementation
-
-Preserve the separation:
-
-```text
-capability support
-≠
-evidence completion
-```
-
-A relation may remain externally evidenced while still requiring a target
-capability.
-
-Acceptable implementation shape:
-
-```rust
-ExternalEvidence {
-    requirement: ExternalEvidenceRequirement,
-    required_capabilities: BTreeSet<RequiredCapability>,
-}
-```
-
-or an equivalent typed representation.
-
-Planning must:
-
-1. retain the realization-approved proof class for the external relation;
-2. derive its required abstract capabilities;
-3. apply the capability view;
-4. add those capabilities to each feasible candidate;
-5. retain the external evidence requirement unresolved;
-6. avoid converting the premise into a runtime `Passed` relation.
-
-No external evidence digest or report identity is added in this repair.
-
-#### Required tests
-
-For compact ASH and live transfer:
-
-- a capability view containing every pilot capability except
-  `WholeTransactionValueConservation` produces `NoFeasibleProofPlan`;
-- adding that capability permits otherwise feasible plans;
-- every candidate carrying substrate-conservation evidence also carries the
-  whole-transaction-conservation capability;
-- external evidence remains unresolved after capability validation;
-- sponsor values remain erased;
-- source requirements do not invent an exact sponsor amount.
-
-The independent oracle must derive the capability requirement independently of
-the production classification helper.
-
-#### Verification
-
-```sh
-cargo test --locked -p tripod-compiler proof
-cargo test --locked -p tripod-compiler oracle
-cargo test --locked -p tripod-realization
-cargo test --workspace --locked
-```
-
-#### Exit
-
-- [ ] finding reproduced or disproved;
-- [ ] external-evidence capabilities are retained;
-- [ ] capability absence fails closed;
-- [ ] evidence completion remains a separate claim;
-- [ ] both pilots have focused regressions;
-- [ ] independent oracle does not repeat the production omission;
-- [ ] full batch gate passes and the tree is clean.
+- `a_missing_whole_transaction_capability_blocks_substrate_conservation`
+- `adding_the_whole_transaction_capability_restores_feasibility`
+- `external_evidence_carries_its_capability_and_source_into_every_candidate`
+- `fixed_external_requirements_name_no_sponsor_amount`
+- `an_unexpected_external_evidence_alternative_is_rejected`
 
 ### T7 — Constrain every representation-sensitive proof choice · `task:review:representation-proof-compatibility`
 
 **Priority:** P1
-**Status:** TODO
-**Owners:** `compiler::proof`, `compiler::lifecycle`, `compiler::source`
-**Blocks:** C1-008, P2-007, P2-010 through P2-013
-**Identity impact:** none
-**Schema impact:** internal proof-plan feasibility rules may change
-**Dependency impact:** none
+**Status:** DONE
 
-#### Static basis
+Reproduction: unconstrained live-transfer planning returned four candidates,
+two of which paired a selected mode with a contradictory arithmetic proof on
+the representation relation itself (private committed with public arithmetic,
+and explicit with confidential conservation).
 
-Live transfer declares proof alternatives for both:
+Repair: representation relations are declared relation-only in both pilot
+declarations, with the approved mode sets unchanged, and the compiler
+classifies them as statically validated alongside lifecycle exits. The
+conservation relation keeps exact proof/mode compatibility. Live transfer now
+yields exactly one candidate per approved mode, and the selected mode remains
+in each candidate's representations for later placement and backend work.
 
-```text
-amount-conservation relation:
-    public arithmetic
-    confidential conservation
+Focused tests, in the compiler proof suite:
 
-representation relation:
-    public arithmetic
-    confidential conservation
-```
+- `representation_relations_carry_no_proof_variable`
+- `live_transfer_conservation_agrees_with_every_selected_mode`
+- `compact_ash_keeps_both_modes_under_public_arithmetic`
+- `every_pilot_relation_is_classified_exactly_once`, extended
 
-The exact search creates a representation choice:
-
-```text
-explicit
-private committed
-```
-
-`representation_conflict` checks proof/mode compatibility only for
-`AmountConservation`.
-
-It does not check the selected proof carried by the `Representation` relation
-itself.
-
-A candidate can therefore contain:
-
-```text
-selected mode:
-    private committed
-
-conservation proof:
-    confidential conservation
-
-representation-relation proof:
-    public arithmetic
-```
-
-The conservation pairing is valid, but the representation relation’s own proof
-is incompatible with the selected mode.
-
-The reverse contradictory pairing can also survive.
-
-Additionally, a `Representation` relation currently derives a family-census
-operand rather than an exact amount operand. Selecting `PublicArithmetic` for
-that relation can therefore add an exact-public-arithmetic capability without a
-matching exact amount source.
-
-#### Required implementation
-
-Apply proof/representation compatibility to every relation whose selected proof
-depends on the chosen representation.
-
-At minimum:
-
-```text
-AmountConservation touching the selected object
-Representation naming the selected object
-```
-
-must both pass:
-
-```rust
-proof_supports_representation(proof, mode)
-```
-
-Prefer a typed derivation from relation operands or relation metadata over an
-ever-growing ad hoc match.
-
-Also decide whether the representation relation should select an arithmetic
-proof at all. If its semantic job is only:
-
-```text
-selected mode ∈ realization-approved modes
-```
-
-then it may be more accurate to classify it statically after mode selection,
-leaving the value proof on conservation.
-
-Whichever design is selected must preserve:
-
-- realization-approved alternatives only;
-- exact source/capability consistency;
-- no silent proof invention;
-- no weakening of the selected representation;
-- deterministic candidate ordering.
-
-#### Required tests
-
-For every returned live-transfer candidate:
-
-- private committed has no public-arithmetic proof on any
-  representation-sensitive relation;
-- explicit has no confidential-only proof on a relation that explicit values
-  cannot discharge;
-- conservation relation and representation relation are both inspected;
-- every selected capability has a matching source or a documented
-  source-independent role;
-- invalid pairings are absent from production and independent-oracle sets;
-- equal typed inputs still produce equal candidate sets.
-
-#### Verification
-
-```sh
-cargo test --locked -p tripod-compiler lifecycle
-cargo test --locked -p tripod-compiler proof
-cargo test --locked -p tripod-compiler oracle
-cargo test --workspace --locked
-```
-
-#### Exit
-
-- [ ] finding reproduced or disproved;
-- [ ] all representation-sensitive proof choices are constrained;
-- [ ] proof capabilities and source requirements agree;
-- [ ] invalid public/private pairings are absent;
-- [ ] independent oracle covers both relation classes;
-- [ ] full batch gate passes and the tree is clean.
+The independent oracle no longer calls production obligation classification.
+It derives the substrate-conservation capability and its typed external
+source row itself, creates no proof variable for representation relations,
+and validates fixed requirements before enumeration. New oracle regressions
+cover the missing whole-transaction capability across all scopes, one
+candidate per live mode, and random capability views over all thirteen
+capabilities, while still distinguishing infeasibility from unexpected
+errors.
 
 ### T8 — Weld every current-phase declaration · `task:review:phase-declaration-drift`
 
 **Priority:** P2
-**Status:** TODO
-**Owners:** `plans`, `labels::plans`
-**Blocks:** Phase-2 documentation gate
-**Identity impact:** none
-**Schema impact:** plan-check report may gain a focused phase diagnostic
-**Dependency impact:** none
+**Status:** DONE
 
-#### Static basis
+Repair: the plans README declares Phase 2 in the fixed declaration form. The
+plan checker now compares the backlog current gate, the roadmap current
+phase, the plans README current phase, and exactly one active numbered phase
+card, normalized to the numeric phase. Diagnostics are order-stable and name
+the stale file, the observed phase, and the expected phase; malformed or
+missing declarations fail explicitly.
 
-The supplied tree contains contradictory current-phase declarations:
-
-```text
-plans/README.md:
-    Phase 1 - typed realization foundation
-
-plans/backlog.md:
-    Phase 2 - target-independent compiler analysis
-
-plans/roadmap.md:
-    Phase 2 - target-independent compiler analysis
-
-plans/phases/02-compiler.md:
-    Active
-```
-
-The plan checker compares only:
-
-```text
-backlog current gate
-↔
-exactly one active numbered phase card
-```
-
-It does not validate the current-phase declarations in:
-
-- `plans/README.md`;
-- `plans/roadmap.md`.
-
-This contradicts the planning gate’s own requirement that current phase
-declarations agree.
-
-#### Required implementation
-
-Prefer one canonical current-phase declaration and make other planning entry
-points link to it.
-
-If repetition remains, extend the checker to compare:
-
-```text
-backlog current gate
-roadmap current phase
-plans README current phase
-exactly one active phase card
-```
-
-The checker should emit a focused diagnostic naming:
-
-- stale path;
-- declared phase;
-- expected phase.
-
-Avoid a broad free-form prose parser. A small fixed declaration shape is
-sufficient.
-
-#### Required tests
-
-- all four declarations agree;
-- plans README stale;
-- roadmap stale;
-- backlog stale;
-- two active cards;
-- no active card;
-- malformed current-phase declaration;
-- phase values remain deterministic under file traversal order.
-
-#### Verification
-
-```sh
-cargo test --locked -p tripod-labels plans
-scripts/check-plans.sh
-meson compile -C build lint
-```
-
-#### Exit
-
-- [ ] `plans/README.md` names Phase 2 or ceases to duplicate the value;
-- [ ] roadmap, backlog, and active card agree;
-- [ ] the checker detects each stale copy;
-- [ ] focused tests pass;
-- [ ] documentation census and labels pass;
-- [ ] the tree is clean.
+Focused tests: ten phase-weld tests in the labels plans module covering
+agreement, each stale copy, zero and two active cards, malformed and missing
+declarations, a gate without a phase card, and traversal-order independence.
 
 ### T9 — Refresh compiler status documentation · `task:review:compiler-status-drift`
 
 **Priority:** P2
-**Status:** TODO
-**Owners:** `compiler` Rustdoc, compiler package contract, Phase-2 planning
-**Blocks:** Phase-2 documentation gate
-**Identity impact:** none
-**Schema impact:** none
-**Dependency impact:** none
+**Status:** DONE
 
-#### Static basis
+Repair: the compiler crate Rustdoc lists the implemented internal stages and
+the remaining absent work, and keeps the boundary statement that no public
+value can be mistaken for a completed analysis. The compiler package
+contract and the packages index carry an accurate status and milestone
+states, and the phase card separates delivered-analysis requirements from
+the open placement, coverage, and pilot deliverables. The stale-phrase sweep
+found two current-state matches; both were corrected.
 
-Current source implements internally:
-
-- input binding;
-- relation and expression DAGs;
-- checked constant folding;
-- proof-obligation classification;
-- exact feasible-plan enumeration;
-- source requirements;
-- constructibility;
-- disclosure;
-- representation lifecycle.
-
-`packages/compiler/README.md` and the Phase-2 card substantially reflect this.
-
-The following remain stale:
-
-```text
-packages/compiler/src/lib.rs
-plans/packages/compiler.md
-```
-
-They still say that input binding or major implemented analysis stages are not
-implemented.
-
-This backlog previously repeated the same stale claim in several sections.
-This consolidated revision corrects the backlog copy, but the package Rustdoc
-and package contract remain to be updated.
-
-#### Required implementation
-
-Update `packages/compiler/src/lib.rs` to distinguish:
-
-```text
-implemented internal analysis stages
-```
-
-from:
-
-```text
-not yet exposed complete analyzed program
-```
-
-Update `plans/packages/compiler.md`:
-
-- status header;
-- implemented milestones;
-- current open work;
-- identity statement;
-- pilot and exit-gate status.
-
-Keep these statements explicit:
-
-- analysis structures remain crate-private;
-- no complete analyzed program is exposed;
-- placement, layout, coverage, and complete pilot analysis remain absent;
-- no compiler-plan digest exists;
-- typed comparison remains the boundary.
-
-Do not add volatile test counts or current hash values.
-
-#### Required tests and checks
-
-- Rustdoc and public-API tests continue to pass;
-- package plan labels remain valid;
-- current phase declarations agree after T8;
-- documentation checker passes;
-- no package documentation claims target or deployment readiness.
-
-#### Verification
-
-```sh
-cargo test --locked -p tripod-compiler
-cargo doc --locked -p tripod-compiler --no-deps
-scripts/check-plans.sh
-meson compile -C build lint
-```
-
-#### Exit
-
-- [ ] crate Rustdoc matches implemented source;
-- [ ] package contract matches implemented source;
-- [ ] absent placement/layout/coverage work remains explicit;
-- [ ] no new identity is advertised;
-- [ ] documentation checks pass;
-- [ ] the tree is clean.
+Verification: compiler package tests, a warning-free Rustdoc build, and the
+plans check all passed.
 
 ---
 
@@ -963,10 +639,10 @@ meson compile -C build lint
 | `P2-004` | P1 | DONE | Bind architecture, realization, policy, and explicit scope |
 | `P2-005` | P1 | DONE | Canonical compiler relation and expression DAGs |
 | `P2-006` | P1 | DONE | Checked constant folding |
-| `P2-007` | P1 | BLOCKED | Exact proof planning; acceptance reopened by T6 and T7 |
+| `P2-007` | P1 | DONE | Exact proof planning; reaccepted after T6 and T7 closed, gate record §2.8 |
 | `P2-008` | P1 | DONE | Disclosure, source, and constructibility analysis |
 | `P2-009` | P1 | DONE | Representation lifecycle analysis |
-| `P2-010` | P1 | BLOCKED | Execution-case placement and layout requirements |
+| `P2-010` | P1 | TODO | Execution-case placement and layout requirements |
 | `P2-011` | P1 | BLOCKED | Relation-indexed coverage requirements |
 | `P2-012` | P1 | BLOCKED | Compact-ASH and live-transfer analyzed pilots |
 | `P2-013` | Gate | BLOCKED | Complete Phase-2 evidence and exit |
@@ -983,6 +659,7 @@ P2-003  compiler crate and error root
 P2-004  compiler input binding
 P2-005  relation/expression DAGs
 P2-006  checked constant folding
+P2-007  exact proof planning, reaccepted
 P2-008  source, constructibility, and disclosure analysis
 P2-009  representation lifecycle
 ```
@@ -993,14 +670,13 @@ partial analyses must not be mistaken for a completed compiler result.
 ### P2-007 — Repair and reaccept exact proof planning · `task:phase2:proof-planning`
 
 **Priority:** P1
-**Status:** BLOCKED
+**Status:** DONE
 **Depends on:** T6, T7, P2-005, P2-006
 **Blocks:** P2-010 through P2-013
 
-The exact search implementation exists, but its feasible set is not accepted
-until T6 and T7 close.
+Reaccepted after T6 and T7 closed; the gate record is in §2.8.
 
-Reacceptance requires:
+Reacceptance required, and the recorded evidence establishes:
 
 1. every in-scope relation classified exactly once;
 2. every approved proof alternative retained or rejected for a typed reason;
@@ -1019,7 +695,7 @@ candidate under an unstated target policy.
 ### P2-010 — Derive execution-case placement and layout requirements · `task:phase2:placement`
 
 **Priority:** P1
-**Status:** BLOCKED
+**Status:** TODO
 **Depends on:** accepted P2-007, P2-008, P2-009, C1-009
 **Blocks:** P2-011 and P2-012
 
@@ -1180,7 +856,7 @@ Phase completion does not itself justify a persistent compiler digest.
 | `C1-005` | DONE | Canonical direct-Petgraph compiler graph prototype |
 | `C1-006` | PARKED | Exact keyed linear systems until a consumer exists |
 | `C1-007` | PARKED | Certified numerical analysis until a consumer exists |
-| `C1-008` | BLOCKED | Exact proof-plan search; reaccept after T6/T7 |
+| `C1-008` | DONE | Exact proof-plan search; reaccepted after T6/T7, gate record §2.8 |
 | `C1-009` | TODO | Execution-case-aware placement |
 | `C1-010` | TODO | Typed symbol resolution and SCC policy |
 | `C1-011` | BLOCKED | Structured relocation; linker phase |
@@ -1190,7 +866,8 @@ Phase completion does not itself justify a persistent compiler digest.
 
 ### 7.2 C1-008 — Proof-plan search reacceptance
 
-The current search remains exact in shape but is not accepted until:
+Reaccepted in the Guide-4 batch, gate record §2.8. The recorded evidence
+establishes each former condition:
 
 - external-evidence capability requirements are retained;
 - representation-sensitive proofs are checked against selected modes;
@@ -1514,24 +1191,12 @@ The Phase-2 gate is **not passed**.
 Current blockers are:
 
 ```text
-Compiler correctness:
-    T6 external-evidence capability validation
-    T7 complete proof/representation compatibility
-    P2-007 / C1-008 reacceptance after T6 and T7
-
 Compiler remaining work:
     C1-009 / P2-010 execution-case placement and layout
     C1-010 typed symbol/SCC policy
     C1-013 independent placement and coverage oracles
     P2-011 relation-indexed coverage
     P2-012 complete analyzed pilots
-
-Documentation:
-    T8 current-phase declaration weld
-    T9 compiler implementation-status refresh
-
-Evidence:
-    no fresh complete current-tree gate record after T6–T9
 ```
 
 Until (`gate:backlog:phase2`) passes:
@@ -1559,19 +1224,13 @@ Until (`gate:backlog:phase2`) passes:
 Execute in this order unless reproduction changes dependencies:
 
 ```text
-1. Reproduce T6 with a capability view lacking whole-transaction conservation.
-2. Repair T6 while keeping capability support and evidence completion separate.
-3. Reproduce T7 by enumerating representation-relation proof/mode pairings.
-4. Repair T7 and independently verify the complete feasible set.
-5. Reaccept C1-008 and P2-007.
-6. Close T8 by selecting or checking one canonical current-phase declaration.
-7. Close T9 by updating compiler Rustdoc and package-plan status.
-8. Implement C1-009 and P2-010 placement/layout requirements.
-9. Implement C1-010 and P2-011 coverage requirements.
-10. Implement C1-013 independent placement and coverage oracles.
-11. Analyze compact ASH and live transfer end to end under P2-012.
-12. Run and record the complete Phase-2 gate.
-13. Begin Phase-3 target work only after Phase-2 exit.
+1. Implement C1-009 and P2-010 placement/layout requirements.
+2. Implement C1-010 typed symbol resolution and SCC policy.
+3. Implement C1-013 independent placement and coverage oracles.
+4. Implement P2-011 relation-indexed coverage requirements.
+5. Analyze compact ASH and live transfer end to end under P2-012.
+6. Run and record the complete Phase-2 gate.
+7. Begin Phase-3 target work only after Phase-2 exit.
 ```
 
 No new hash, target prototype, report field, or publication may defer a current
@@ -1637,4 +1296,4 @@ After a phase or remediation series:
 
 ## 14. One-line backlog · `rem:backlog:one-line`
 
-> Repair the two reopened proof-planning correctness boundaries and the two documentation-weld defects; then complete Phase-2 placement, layout, relation-indexed coverage, and deterministic analyzed pilots without adding target detail, speculative identities, or ambiguous evidence.
+> Complete Phase-2 execution-case placement, layout, relation-indexed coverage, independent oracles, and deterministic analyzed pilots on the reaccepted exact proof-plan set, without adding target detail, speculative identities, or ambiguous evidence.
