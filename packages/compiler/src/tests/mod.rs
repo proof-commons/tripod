@@ -16,6 +16,7 @@ mod fold_tests;
 mod layout_tests;
 mod lifecycle_tests;
 mod oracle_tests;
+mod pilot_coverage_tests;
 mod pilot_placement_tests;
 mod placement_oracle_tests;
 mod placement_tests;
