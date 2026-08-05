@@ -50,17 +50,30 @@ fn oracle_enumerate(
 
     let mut proof_variables: Vec<(RelationId, Vec<ProofAlternativeId>)> = Vec::new();
     let mut external_evidence = BTreeSet::new();
+    let mut fixed_capabilities = BTreeSet::new();
+    let mut fixed_sources = Vec::new();
 
     for obligation in &obligations {
         match &obligation.class {
             RelationObligationClass::ProofRequired { alternatives } => {
                 proof_variables.push((obligation.relation.clone(), alternatives.clone()));
             }
-            RelationObligationClass::ExternalEvidence { requirement } => {
+            RelationObligationClass::ExternalEvidence {
+                requirement,
+                required_capabilities,
+                source_requirements,
+                ..
+            } => {
                 external_evidence.insert(requirement.clone());
+                fixed_capabilities.extend(required_capabilities.iter().copied());
+                fixed_sources.extend(source_requirements.iter().cloned());
             }
             RelationObligationClass::StaticallyValidated => {}
         }
+    }
+
+    if !view.supports(&fixed_capabilities) {
+        return Ok(Vec::new());
     }
 
     // Odometer over proofs then representations.
@@ -100,8 +113,8 @@ fn oracle_enumerate(
 
         // Validate the complete assignment.
         let mut valid = true;
-        let mut required_capabilities = BTreeSet::new();
-        let mut source_requirements = Vec::new();
+        let mut required_capabilities = fixed_capabilities.clone();
+        let mut source_requirements = fixed_sources.clone();
 
         for (relation, alternative) in &proofs {
             let declaration = &declarations[relation];

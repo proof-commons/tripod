@@ -409,6 +409,18 @@ pub enum CompileError {
         relation: realization::RelationId,
     },
 
+    /// An externally evidenced relation does not declare exactly its
+    /// one realization-approved proof class.
+    ///
+    /// The defect is an extra, missing, or wrong alternative, so the
+    /// compiler refuses to plan the relation rather than manufacturing
+    /// the class or selecting an arbitrary member of the set.
+    #[error("external-evidence relation {relation:?} has unexpected proof alternatives")]
+    InvalidExternalEvidenceProofAlternatives {
+        /// The externally evidenced relation.
+        relation: realization::RelationId,
+    },
+
     /// No complete assignment satisfies every hard constraint.
     ///
     /// Compiler planning failure under the supplied capability and
