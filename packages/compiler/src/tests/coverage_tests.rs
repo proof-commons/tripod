@@ -20,16 +20,25 @@ use super::bound_input;
 use crate::{
     CompileError,
     capability::{CapabilityView, RequiredCapability},
+    carrier::{CarrierQuantification, CarrierRole, relation_case_eligibility},
     case::SponsorCase,
     coverage::{
-        CardinalityCeiling, CollateralPolicy, CollateralRequirement, CoverageBoundary,
-        CoveragePurpose, CoverageRequirementId, EvidenceRole, NegativeCoverageRequirement,
-        PlanCoverageAnalysis, RelationCoveragePlan, RelationMutation, analyze_plan_coverage,
-        bind_dependency_collateral, relation_mutations, validate_coverage_census,
+        CardinalityCeiling, CarrierAssignmentAlternative, CarrierCoverageRequirement,
+        CollateralPolicy, CollateralRequirement, CoverageBoundary, CoveragePurpose,
+        CoverageRequirementId, EvidenceRole, NegativeCoverageRequirement, PlanCoverageAnalysis,
+        PositiveCoverageRequirement, ProjectionSubject, RelationCoveragePlan, RelationMutation,
+        analyze_placed_coverage, analyze_plan_coverage, bind_dependency_collateral,
+        coverage_names_sponsor_value, relation_mutations, validate_conditional_coverage,
+        validate_coverage_census, validate_placement_coverage, validate_representation_coverage,
     },
-    placement::{RelationActivity, RelationCaseKey, RelationCasePlan, classify_relation_cases},
+    layout::LayoutRequirement,
+    placement::{
+        PlacedCarrier, PlacedProofPlanCandidate, PlacementSearchLimits, RelationActivity,
+        RelationCaseKey, RelationCasePlan, classify_relation_cases, place_feasible_proof_plans,
+    },
     proof::{ProofPlanCandidate, enumerate_feasible_plans},
     relation::CompilerRelationAnalysis,
+    source::{OperandId, OperandRole},
 };
 
 /// One pilot's coverage across its complete feasible plan set.
@@ -1025,6 +1034,723 @@ fn every_feasible_proof_plan_is_covered() {
 
         for (_, coverage) in &pilot.analyzed {
             assert!(!coverage.operations.is_empty());
+        }
+    }
+}
+
+// --- Tranches F and G: carriers, layout, and projections ---
+
+/// One pilot placed end to end, with the coverage of each placed plan.
+struct Placed {
+    operation: OperationId,
+    relations: CompilerRelationAnalysis,
+    candidates: Vec<PlacedProofPlanCandidate>,
+    coverage: Vec<PlanCoverageAnalysis>,
+}
+
+/// Generous limits: a truncated pilot search would hide a defect
+/// rather than bound one.
+fn limits() -> PlacementSearchLimits {
+    PlacementSearchLimits::new(
+        std::num::NonZeroU64::new(10_000_000).expect("nonzero"),
+        std::num::NonZeroU64::new(1_000_000).expect("nonzero"),
+    )
+}
+
+fn place(operation: OperationId) -> Placed {
+    let input = bound_input(&[operation]);
+    let relations = crate::relation::build_relation_analysis(&input).expect("relations");
+    let candidates = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained)
+        .expect("feasible plans")
+        .candidates;
+    let placed = place_feasible_proof_plans(&relations, &candidates, limits())
+        .expect("placement analysis")
+        .placed;
+    let coverage = placed
+        .iter()
+        .map(|entry| analyze_placed_coverage(&relations, entry).expect("placed coverage"))
+        .collect();
+
+    Placed {
+        operation,
+        relations,
+        candidates: placed,
+        coverage,
+    }
+}
+
+fn placed_pilots() -> [Placed; 2] {
+    [
+        place(OperationId::CompactAsh),
+        place(OperationId::TransferLive),
+    ]
+}
+
+impl Placed {
+    fn plans(&self) -> impl Iterator<Item = &RelationCoveragePlan> {
+        self.coverage.iter().flat_map(PlanCoverageAnalysis::plans)
+    }
+
+    fn pairs(&self) -> impl Iterator<Item = (&PlacedProofPlanCandidate, &PlanCoverageAnalysis)> {
+        self.candidates.iter().zip(self.coverage.iter())
+    }
+}
+
+// --- §9.2 exact assignment alternatives ---
+
+#[test]
+fn carrier_coverage_compresses_the_feasible_placement_product() {
+    for pilot in placed_pilots() {
+        for (entry, coverage) in pilot.pairs() {
+            // The plan really does have a large combined placement set:
+            // compression is only meaningful because it is.
+            assert!(
+                entry.feasible_placements.len() > 100,
+                "{:?} placed {} times",
+                pilot.operation,
+                entry.feasible_placements.len(),
+            );
+
+            // The alternatives recomputed by a raw scan over every
+            // feasible placement, independently of the compression.
+            let mut raw: BTreeMap<RelationCaseKey, BTreeSet<BTreeSet<PlacedCarrier>>> =
+                BTreeMap::new();
+
+            for placement in &entry.feasible_placements {
+                for assignment in &placement.assignments {
+                    raw.entry(assignment.key())
+                        .or_default()
+                        .insert(assignment.carriers.iter().cloned().collect());
+                }
+            }
+
+            let compressed = coverage
+                .plans()
+                .filter_map(|plan| {
+                    plan.carrier.as_ref().map(|carrier| {
+                        (
+                            plan.key(),
+                            carrier
+                                .allowed_assignments
+                                .iter()
+                                .map(|alternative| alternative.carriers.clone())
+                                .collect::<BTreeSet<_>>(),
+                        )
+                    })
+                })
+                .collect::<BTreeMap<_, _>>();
+
+            assert_eq!(compressed, raw, "{:?}", pilot.operation);
+
+            // Every relation-case admits a handful of alternatives, not
+            // a share of the combined product. Measured on the pilots:
+            // 216 feasible placements compress to 39 alternatives over
+            // 30 carried relation-cases for compact ASH, and to 41 over
+            // 32 for live transfer, with no relation-case offering more
+            // than three.
+            let widest = raw
+                .values()
+                .map(BTreeSet::len)
+                .max()
+                .expect("a carried relation-case");
+            let total = raw.values().map(BTreeSet::len).sum::<usize>();
+
+            assert!(
+                widest <= 4,
+                "{:?} widest relation-case has {widest} alternatives",
+                pilot.operation,
+            );
+            assert!(
+                total < entry.feasible_placements.len(),
+                "{:?} kept {total} alternatives",
+                pilot.operation,
+            );
+        }
+    }
+}
+
+#[test]
+fn carrier_coverage_preserves_multiplicity() {
+    // An every-member obligation stays quantified: a per-member role
+    // and a complete-family proof are distinct alternatives, and
+    // neither is deduplicated into the other.
+    let pilot = place(OperationId::TransferLive);
+    let owner = pilot
+        .plans()
+        .find(|plan| plan.relation.kind() == RelationKind::Authorization)
+        .expect("live transfer authorizes owners")
+        .relation
+        .clone();
+    let mut owners = 0_usize;
+    let mut recognitions = 0_usize;
+
+    for plan in pilot.plans() {
+        let Some(carrier) = &plan.carrier else {
+            continue;
+        };
+
+        if plan.relation == owner {
+            owners += 1;
+
+            // Owner authorization admits the per-member role only: no
+            // coordinator may stand in for every owner.
+            for alternative in &carrier.allowed_assignments {
+                assert_eq!(
+                    alternative.carriers,
+                    BTreeSet::from([PlacedCarrier {
+                        carrier: CarrierRole::EveryInputFamilyMember {
+                            object: ObjectId::ReceiptLive,
+                        },
+                        quantification: CarrierQuantification::PerMember,
+                    }]),
+                );
+            }
+        }
+
+        let quantifications = carrier
+            .allowed_assignments
+            .iter()
+            .flat_map(|alternative| alternative.carriers.iter())
+            .map(|placed| placed.quantification)
+            .collect::<BTreeSet<_>>();
+
+        if quantifications.contains(&CarrierQuantification::CompleteFamilyProof) {
+            recognitions += 1;
+            assert!(
+                quantifications.contains(&CarrierQuantification::PerMember),
+                "{:?} lost its per-member alternative",
+                plan.relation,
+            );
+        }
+    }
+
+    assert!(owners > 0);
+    // Input recognition is the obligation a complete-family proof may
+    // discharge, and it kept both alternatives.
+    assert!(recognitions > 0);
+}
+
+// --- §9.4 no runtime carrier for a non-runtime relation ---
+
+#[test]
+fn only_active_runtime_relation_cases_carry_a_carrier_requirement() {
+    for pilot in placed_pilots() {
+        let mut carried = 0_usize;
+        let mut uncarried = 0_usize;
+
+        for plan in pilot.plans() {
+            let runtime = plan.activity == RelationActivity::Active
+                && plan.boundaries.contains(&CoverageBoundary::RuntimeCarrier);
+
+            if runtime {
+                carried += 1;
+                assert!(plan.carrier.is_some(), "{:?}", plan.relation);
+            } else {
+                uncarried += 1;
+                assert!(plan.carrier.is_none(), "{:?}", plan.relation);
+            }
+        }
+
+        assert!(carried > 0, "{:?}", pilot.operation);
+        assert!(uncarried > 0, "{:?}", pilot.operation);
+    }
+}
+
+/// One placed pilot plan with everything a placement validation needs.
+fn placed_case() -> (
+    PlacedProofPlanCandidate,
+    CompilerRelationAnalysis,
+    PlanCoverageAnalysis,
+) {
+    let pilot = place(OperationId::CompactAsh);
+    let entry = pilot.candidates.first().expect("a placed plan").clone();
+    let coverage = pilot.coverage.first().expect("its coverage").clone();
+
+    (entry, pilot.relations, coverage)
+}
+
+fn revalidate(
+    entry: &PlacedProofPlanCandidate,
+    relations: &CompilerRelationAnalysis,
+    coverage: &PlanCoverageAnalysis,
+) -> Result<(), CompileError> {
+    let eligibility =
+        relation_case_eligibility(relations, &entry.relation_case_plans).expect("eligibility");
+
+    validate_placement_coverage(
+        &eligibility,
+        &entry.feasible_placements,
+        &entry.layout_requirements,
+        coverage,
+    )
+}
+
+#[test]
+fn a_non_runtime_relation_case_with_a_runtime_carrier_is_rejected() {
+    let (entry, relations, mut coverage) = placed_case();
+    let key = key_where(&coverage, |plan| plan.carrier.is_none());
+
+    plan_mut(&mut coverage, &key).carrier = Some(CarrierCoverageRequirement {
+        relation_case: key.clone(),
+        allowed_assignments: BTreeSet::from([CarrierAssignmentAlternative {
+            carriers: BTreeSet::from([PlacedCarrier {
+                carrier: CarrierRole::OperationGlobal {
+                    operation: OperationId::CompactAsh,
+                    anchor: ObjectId::Ash,
+                },
+                quantification: CarrierQuantification::Single,
+            }]),
+            layout: BTreeSet::new(),
+        }]),
+    });
+
+    assert_eq!(
+        revalidate(&entry, &relations, &coverage),
+        Err(CompileError::UnexpectedRuntimeCarrierCoverage {
+            relation: key.relation,
+            case: key.case,
+        }),
+    );
+}
+
+#[test]
+fn an_active_runtime_relation_case_without_a_carrier_is_rejected() {
+    let (entry, relations, mut coverage) = placed_case();
+    let key = key_where(&coverage, |plan| plan.carrier.is_some());
+
+    plan_mut(&mut coverage, &key).carrier = None;
+
+    assert_eq!(
+        revalidate(&entry, &relations, &coverage),
+        Err(CompileError::MissingCarrierCoverage {
+            relation: key.relation,
+            case: key.case,
+        }),
+    );
+}
+
+#[test]
+fn an_active_runtime_relation_case_without_a_projection_is_rejected() {
+    let (entry, relations, mut coverage) = placed_case();
+    let key = key_where(&coverage, |plan| plan.carrier.is_some());
+
+    plan_mut(&mut coverage, &key)
+        .projections
+        .remove(&CoverageBoundary::RuntimeCarrier);
+
+    assert_eq!(
+        revalidate(&entry, &relations, &coverage),
+        Err(CompileError::MissingProjectionCoverage {
+            relation: key.relation,
+            case: key.case,
+        }),
+    );
+}
+
+// --- §11.3 layout binding ---
+
+#[test]
+fn every_selected_assignment_layout_dependency_is_referenced_by_coverage() {
+    for pilot in placed_pilots() {
+        for (entry, coverage) in pilot.pairs() {
+            let stated = entry.layout_requirements.iter().collect::<BTreeSet<_>>();
+            let mut referenced = 0_usize;
+
+            for plan in coverage.plans() {
+                let Some(carrier) = &plan.carrier else {
+                    continue;
+                };
+
+                for alternative in &carrier.allowed_assignments {
+                    for requirement in &alternative.layout {
+                        referenced += 1;
+                        // Coverage references only what the plan's own
+                        // census states.
+                        assert!(stated.contains(requirement), "{requirement:?}");
+                    }
+                }
+            }
+
+            assert!(referenced > 0, "{:?}", pilot.operation);
+
+            // And every placement's own dependency is covered.
+            for placement in &entry.feasible_placements {
+                for assignment in &placement.assignments {
+                    let plan = coverage
+                        .plan(&assignment.key())
+                        .expect("the placed relation-case is covered");
+                    let carrier = plan.carrier.as_ref().expect("it is carried");
+                    let carriers = assignment.carriers.iter().cloned().collect::<BTreeSet<_>>();
+
+                    assert!(
+                        carrier
+                            .allowed_assignments
+                            .iter()
+                            .any(|alternative| alternative.carriers == carriers),
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn an_unexpected_layout_reference_is_rejected() {
+    let (entry, relations, mut coverage) = placed_case();
+    let key = key_where(&coverage, |plan| plan.carrier.is_some());
+    let unexpected = LayoutRequirement::SecretFreeOperationPath {
+        relation: key.relation.clone(),
+        case: key.case.clone(),
+    };
+
+    assert!(!entry.layout_requirements.contains(&unexpected));
+
+    let carrier = plan_mut(&mut coverage, &key)
+        .carrier
+        .as_mut()
+        .expect("a carried relation-case");
+    let mut alternative = carrier
+        .allowed_assignments
+        .iter()
+        .next()
+        .expect("an alternative")
+        .clone();
+
+    alternative.layout.insert(unexpected);
+    carrier.allowed_assignments.insert(alternative);
+
+    assert_eq!(
+        revalidate(&entry, &relations, &coverage),
+        Err(CompileError::UnexpectedCoverageLayoutRequirement {
+            relation: key.relation,
+            case: key.case,
+        }),
+    );
+}
+
+#[test]
+fn a_dropped_assignment_alternative_is_rejected() {
+    let (entry, relations, mut coverage) = placed_case();
+    let key = key_where(&coverage, |plan| {
+        plan.carrier
+            .as_ref()
+            .is_some_and(|carrier| carrier.allowed_assignments.len() > 1)
+    });
+    let carrier = plan_mut(&mut coverage, &key)
+        .carrier
+        .as_mut()
+        .expect("a carried relation-case");
+    let dropped = carrier
+        .allowed_assignments
+        .iter()
+        .next()
+        .expect("an alternative")
+        .clone();
+
+    carrier.allowed_assignments.remove(&dropped);
+
+    assert_eq!(
+        revalidate(&entry, &relations, &coverage),
+        Err(CompileError::MissingCoverageLayoutRequirement {
+            relation: key.relation,
+            case: key.case,
+        }),
+    );
+}
+
+// --- §10 accepted semantic projections ---
+
+#[test]
+fn each_boundary_projects_its_own_subject() {
+    for pilot in placed_pilots() {
+        let mut seen = BTreeSet::new();
+
+        for plan in pilot.plans() {
+            for (boundary, requirement) in &plan.projections {
+                assert_eq!(requirement.boundary, *boundary);
+                assert_eq!(requirement.relation, plan.relation);
+                assert_eq!(requirement.case, plan.case);
+                seen.insert(*boundary);
+
+                match boundary {
+                    CoverageBoundary::RuntimeCarrier => {
+                        assert_eq!(
+                            requirement.subject,
+                            ProjectionSubject::RuntimeRelationVerdict
+                        );
+                        assert!(requirement.compare_relation_verdict);
+                        assert!(!requirement.operands.is_empty(), "{:?}", plan.relation);
+                    }
+                    CoverageBoundary::CompilerStatic => {
+                        assert_eq!(
+                            requirement.subject,
+                            ProjectionSubject::CompilerSelectionResult,
+                        );
+                        assert!(!requirement.compare_relation_verdict);
+                        assert!(requirement.sources.is_empty());
+                    }
+                    CoverageBoundary::BackendStructural => {
+                        assert_eq!(
+                            requirement.subject,
+                            ProjectionSubject::EmittedStructuralFact
+                        );
+                        assert!(!requirement.compare_relation_verdict);
+                        assert!(requirement.sources.is_empty());
+                    }
+                    CoverageBoundary::ExternalEvidence => {
+                        assert_eq!(
+                            requirement.subject,
+                            ProjectionSubject::ExternalReportSubjects {
+                                requirements: plan.external_evidence.clone(),
+                            },
+                        );
+                        assert!(!requirement.compare_relation_verdict);
+                    }
+                }
+            }
+        }
+
+        // Every boundary the pilots use really does project.
+        assert_eq!(
+            seen,
+            BTreeSet::from([
+                CoverageBoundary::CompilerStatic,
+                CoverageBoundary::BackendStructural,
+                CoverageBoundary::RuntimeCarrier,
+                CoverageBoundary::ExternalEvidence,
+            ]),
+            "{:?}",
+            pilot.operation,
+        );
+    }
+}
+
+#[test]
+fn a_runtime_projection_carries_the_source_rows_its_carrier_receives() {
+    for pilot in placed_pilots() {
+        let mut compared = 0_usize;
+
+        for plan in pilot.plans() {
+            let Some(requirement) = plan.projections.get(&CoverageBoundary::RuntimeCarrier) else {
+                continue;
+            };
+
+            if requirement.sources.is_empty() {
+                continue;
+            }
+
+            compared += 1;
+
+            // Canonical and free of duplicates.
+            let mut canonical = requirement.sources.clone();
+            canonical.sort();
+            canonical.dedup();
+            assert_eq!(canonical, requirement.sources);
+
+            // Every row belongs to the relation being projected.
+            for source in &requirement.sources {
+                assert_eq!(source.operand.relation(), &plan.relation);
+            }
+        }
+
+        assert!(compared > 0, "{:?}", pilot.operation);
+    }
+}
+
+#[test]
+fn an_inactive_relation_case_projects_nothing() {
+    for pilot in placed_pilots() {
+        let mut inactive = 0_usize;
+
+        for plan in pilot.plans() {
+            if plan.activity != RelationActivity::Vacuous {
+                continue;
+            }
+
+            inactive += 1;
+            assert!(plan.projections.is_empty(), "{:?}", plan.relation);
+            assert!(plan.carrier.is_none());
+        }
+
+        assert!(inactive > 0, "{:?}", pilot.operation);
+    }
+}
+
+// --- §10.2 / §15.3 sponsor opacity ---
+
+#[test]
+fn no_pilot_coverage_names_an_erased_sponsor_value() {
+    for pilot in placed_pilots() {
+        for coverage in &pilot.coverage {
+            assert!(
+                !coverage_names_sponsor_value(coverage),
+                "{:?}",
+                pilot.operation
+            );
+        }
+
+        // The guard is not vacuous: the sponsor family is present in
+        // coverage as membership, isolation, and multiplicity.
+        let sponsor = pilot
+            .plans()
+            .filter(|plan| {
+                matches!(
+                    plan.relation.subject(),
+                    RelationSubject::ObjectFamily {
+                        object: ObjectId::PlainLbtc,
+                        ..
+                    } | RelationSubject::Sponsor,
+                )
+            })
+            .count();
+        assert!(sponsor > 0, "{:?}", pilot.operation);
+    }
+}
+
+#[test]
+fn a_sponsor_amount_operand_in_coverage_is_rejected() {
+    let (entry, relations, mut coverage) = placed_case();
+    let key = key_where(&coverage, |plan| plan.carrier.is_some());
+    let sponsor_amount = OperandId::new(
+        key.relation.clone(),
+        OperandRole::ObjectFamilyAmount {
+            side: TransactionSide::Input,
+            object: ObjectId::PlainLbtc,
+        },
+    );
+
+    plan_mut(&mut coverage, &key)
+        .positive
+        .push(PositiveCoverageRequirement {
+            id: CoverageRequirementId {
+                relation: key.relation.clone(),
+                case: key.case.clone(),
+                boundary: CoverageBoundary::RuntimeCarrier,
+                purpose: CoveragePurpose::AcceptedProjection,
+            },
+            role: EvidenceRole::TargetExecution,
+            representation: None,
+            operands: vec![sponsor_amount],
+        });
+
+    assert!(coverage_names_sponsor_value(&coverage));
+    assert_eq!(
+        revalidate(&entry, &relations, &coverage),
+        Err(CompileError::SponsorValueRead),
+    );
+}
+
+// --- §11.5 / §11.6 plan-set censuses ---
+
+#[test]
+fn the_conditional_triplet_holds_across_the_complete_case_set() {
+    for pilot in placed_pilots() {
+        validate_conditional_coverage(&pilot.coverage).expect("conditional coverage");
+    }
+}
+
+#[test]
+fn a_conditional_relation_with_no_active_case_is_rejected() {
+    let pilot = place(OperationId::CompactAsh);
+    let mut coverage = pilot.coverage;
+
+    // Drop every sponsored case, leaving the sponsor relations inactive
+    // everywhere: the triplet is then incomplete.
+    for analysis in &mut coverage {
+        for operation in analysis.operations.values_mut() {
+            operation
+                .requirements
+                .retain(|key, _| key.case.sponsor == SponsorCase::Absent);
+        }
+    }
+
+    assert!(matches!(
+        validate_conditional_coverage(&coverage),
+        Err(CompileError::MissingPositiveCoverage { .. }),
+    ));
+}
+
+#[test]
+fn the_representation_census_is_covered_across_the_complete_plan_set() {
+    for pilot in placed_pilots() {
+        validate_representation_coverage(&pilot.relations, &pilot.coverage)
+            .expect("representation census");
+
+        // Both modes of the pilot really are covered, one per plan.
+        let modes = pilot
+            .plans()
+            .filter(|plan| plan.relation.kind() == RelationKind::Representation)
+            .flat_map(|plan| plan.positive.iter())
+            .filter_map(|requirement| requirement.representation)
+            .collect::<BTreeSet<_>>();
+        let expected = match pilot.operation {
+            OperationId::TransferLive => BTreeSet::from([
+                RepresentationMode::Explicit,
+                RepresentationMode::PrivateCommitted,
+            ]),
+            _ => BTreeSet::from([
+                RepresentationMode::Explicit,
+                RepresentationMode::PublicCommitted,
+            ]),
+        };
+
+        assert_eq!(modes, expected, "{:?}", pilot.operation);
+    }
+}
+
+#[test]
+fn a_representation_mode_omitted_from_the_plan_set_is_rejected() {
+    let pilot = place(OperationId::CompactAsh);
+    let single = vec![pilot.coverage.first().expect("a plan").clone()];
+
+    assert!(matches!(
+        validate_representation_coverage(&pilot.relations, &single),
+        Err(CompileError::MissingRepresentationCoverage { .. }),
+    ));
+}
+
+// --- §16 stable projection and determinism ---
+
+#[test]
+fn repeated_placed_coverage_is_equal_and_projects_equally() {
+    for pilot in placed_pilots() {
+        for (entry, coverage) in pilot.pairs() {
+            let again = analyze_placed_coverage(&pilot.relations, entry).expect("second analysis");
+
+            assert_eq!(&again, coverage, "{:?}", pilot.operation);
+            assert_eq!(again.project(), coverage.project());
+        }
+    }
+}
+
+#[test]
+fn a_permuted_placement_order_is_covered_equally() {
+    for pilot in placed_pilots() {
+        for (entry, coverage) in pilot.pairs() {
+            let mut permuted = entry.clone();
+
+            permuted.feasible_placements.reverse();
+            permuted.relation_case_plans.reverse();
+
+            let again =
+                analyze_placed_coverage(&pilot.relations, &permuted).expect("permuted analysis");
+
+            assert_eq!(&again, coverage, "{:?}", pilot.operation);
+            assert_eq!(again.project(), coverage.project());
+        }
+    }
+}
+
+#[test]
+fn the_projection_excludes_the_combined_placement_product() {
+    for pilot in placed_pilots() {
+        for (entry, coverage) in pilot.pairs() {
+            let projection = coverage.project();
+
+            // One projected entry per relation-case, however many
+            // whole-transaction placements the plan admits.
+            assert_eq!(projection.requirements.len(), coverage.keys().len());
+            assert!(projection.requirements.len() < entry.feasible_placements.len());
         }
     }
 }

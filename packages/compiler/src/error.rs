@@ -696,6 +696,78 @@ pub enum CompileError {
         case: crate::case::ExecutionCaseId,
     },
 
+    /// An active runtime relation-case states no carrier obligation.
+    #[error("relation {relation:?} has no carrier coverage in case {case:?}")]
+    MissingCarrierCoverage {
+        /// The uncarried relation.
+        relation: realization::RelationId,
+        /// The case carrying the gap.
+        case: crate::case::ExecutionCaseId,
+    },
+
+    /// A relation-case that no carrier executes states one anyway.
+    ///
+    /// A compiler-static, backend-structural, externally evidenced, or
+    /// inactive relation-case with a runtime carrier requirement would
+    /// report an unfinished obligation as target execution.
+    #[error("relation {relation:?} may not require a runtime carrier in case {case:?}")]
+    UnexpectedRuntimeCarrierCoverage {
+        /// The relation no carrier executes.
+        relation: realization::RelationId,
+        /// The case carrying the impermissible requirement.
+        case: crate::case::ExecutionCaseId,
+    },
+
+    /// Runtime-target acceptance is claimed with no accepted semantic
+    /// projection to compare.
+    ///
+    /// A report that says "accepted" without naming what was accepted
+    /// cannot distinguish a relation that held from one that was never
+    /// evaluated.
+    #[error("relation {relation:?} has no accepted projection in case {case:?}")]
+    MissingProjectionCoverage {
+        /// The relation with no projection comparison.
+        relation: realization::RelationId,
+        /// The case carrying the gap.
+        case: crate::case::ExecutionCaseId,
+    },
+
+    /// A selectable carrier assignment is uncovered, or its layout
+    /// dependencies are.
+    #[error("relation {relation:?} has an uncovered assignment in case {case:?}")]
+    MissingCoverageLayoutRequirement {
+        /// The relation whose assignment is uncovered.
+        relation: realization::RelationId,
+        /// The case carrying the uncovered assignment.
+        case: crate::case::ExecutionCaseId,
+    },
+
+    /// Coverage references a layout requirement the plan does not
+    /// state.
+    ///
+    /// Coverage requires what the *selected* assignment depends on; a
+    /// reference outside the plan's own census is a dependency nothing
+    /// derived.
+    #[error("relation {relation:?} references an unstated layout requirement in case {case:?}")]
+    UnexpectedCoverageLayoutRequirement {
+        /// The over-referencing relation.
+        relation: realization::RelationId,
+        /// The case carrying the reference.
+        case: crate::case::ExecutionCaseId,
+    },
+
+    /// An allowed representation mode is covered by no plan in the set.
+    ///
+    /// Each candidate fixes one mode, so the mode census is a property
+    /// of the complete feasible plan set rather than of any one plan.
+    #[error("relation {relation:?} has no coverage for representation {representation:?}")]
+    MissingRepresentationCoverage {
+        /// The representation relation.
+        relation: realization::RelationId,
+        /// The uncovered mode.
+        representation: realization::RepresentationMode,
+    },
+
     /// One proof-plan candidate was placed more than once.
     ///
     /// The variant names no plan: until an admitted plan identity

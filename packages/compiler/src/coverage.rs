@@ -46,10 +46,15 @@ use realization::{
 use crate::{
     CompileError,
     capability::RequiredCapability,
+    carrier::{CarrierEligibility, relation_case_eligibility},
     case::ExecutionCaseId,
-    placement::{RelationActivity, RelationCaseKey, RelationCasePlan},
+    layout::{LayoutRequirement, names_sponsor_amount, selected_carrier_requirements},
+    placement::{
+        PlacedCarrier, PlacedProofPlanCandidate, PlacementCandidate, RelationActivity,
+        RelationCaseKey, RelationCasePlan,
+    },
     relation::CompilerRelationAnalysis,
-    source::{OperandId, relation_operands},
+    source::{OperandId, SourceRequirement, is_sponsor_amount_operand, relation_operands},
 };
 
 /// Where one coverage requirement is answered.
@@ -128,7 +133,7 @@ pub enum CoveragePurpose {
     /// One focused mutation is rejected.
     FocusedReject(RelationMutation),
     /// One selected carrier executes the relation.
-    CarrierExecution(crate::placement::PlacedCarrier),
+    CarrierExecution(PlacedCarrier),
     /// The accepted semantic projection is compared, not only the
     /// verdict.
     AcceptedProjection,
@@ -246,6 +251,76 @@ pub struct NegativeCoverageRequirement {
     pub collateral: CollateralRequirement,
 }
 
+/// One carrier assignment a later target plan may select.
+///
+/// The layout dependencies travel with the alternative rather than with
+/// the relation: coverage requires what the *selected* assignment
+/// depends on, not the union over every eligible carrier, and a plan
+/// that selects a coordinator must not inherit the obligations of the
+/// per-member alternative it declined.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct CarrierAssignmentAlternative {
+    /// Non-empty; the multiplicity travels inside each placed carrier.
+    pub carriers: BTreeSet<PlacedCarrier>,
+    pub layout: BTreeSet<LayoutRequirement>,
+}
+
+/// The carrier obligation of one active runtime relation-case.
+///
+/// Deliberately not bound to the combined placement product: the
+/// alternatives are compressed per relation-case, so a plan with
+/// hundreds of feasible whole-transaction placements still states the
+/// handful of assignments this one relation actually admits. A later
+/// target plan selects one alternative; every carrier in it must be
+/// reachable and execute; no carrier outside any alternative may claim
+/// discharge; and no evidence is required for the alternatives that
+/// were not selected.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CarrierCoverageRequirement {
+    pub relation_case: RelationCaseKey,
+    /// Canonical, deduplicated, and non-empty.
+    pub allowed_assignments: BTreeSet<CarrierAssignmentAlternative>,
+}
+
+/// What one accepted-projection requirement compares.
+///
+/// Not every boundary compares a target execution: a compiler-static
+/// relation compares the compiler's own selection or validation result,
+/// a structural relation compares a fact of the emitted bundle, and an
+/// external relation compares an evidence role and subject. Calling any
+/// of those "target execution" would claim evidence nobody produced.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ProjectionSubject {
+    /// The relation's runtime verdict and its public operands.
+    RuntimeRelationVerdict,
+    /// The compiler's selection or validation result.
+    CompilerSelectionResult,
+    /// One structural fact of the emitted bundle or ABI.
+    EmittedStructuralFact,
+    /// The evidence role and exact subjects of the external reports.
+    ExternalReportSubjects {
+        requirements: BTreeSet<ExternalEvidenceRequirement>,
+    },
+}
+
+/// The accepted semantic projection one boundary must compare.
+///
+/// Facts, not only verdicts: a report that says "accepted" without
+/// naming what was accepted cannot distinguish a relation that held
+/// from one that was never evaluated.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SemanticProjectionRequirement {
+    pub relation: RelationId,
+    pub case: ExecutionCaseId,
+    pub boundary: CoverageBoundary,
+    pub subject: ProjectionSubject,
+    /// Canonically sorted; never an erased sponsor amount.
+    pub operands: Vec<OperandId>,
+    /// The active source rows the comparison covers.
+    pub sources: Vec<SourceRequirement>,
+    pub compare_relation_verdict: bool,
+}
+
 /// One relation's complete coverage contract in one execution case.
 ///
 /// Hybrid relations are first class: a representation relation states a
@@ -262,6 +337,15 @@ pub struct RelationCoveragePlan {
     pub positive: Vec<PositiveCoverageRequirement>,
     /// Canonically sorted and free of duplicates.
     pub negative: Vec<NegativeCoverageRequirement>,
+    /// Present exactly for an active runtime-carried relation-case.
+    pub carrier: Option<CarrierCoverageRequirement>,
+    /// The accepted projection comparison of each applicable boundary.
+    ///
+    /// A map rather than the single value of the Guide-6 sketch: §10.3
+    /// asks for a boundary-specific comparison, and a hybrid relation
+    /// compares a compiler selection result and a structural fact that
+    /// are not the same claim.
+    pub projections: BTreeMap<CoverageBoundary, SemanticProjectionRequirement>,
     pub external_evidence: BTreeSet<ExternalEvidenceRequirement>,
 }
 
@@ -429,6 +513,11 @@ pub fn derive_relation_coverage(
         boundaries: plan.boundaries.clone(),
         positive,
         negative,
+        // The carrier obligation and the accepted projections are bound
+        // from the plan's feasible placements, which this per-relation
+        // derivation does not see.
+        carrier: None,
+        projections: BTreeMap::new(),
         external_evidence: plan.external_evidence.clone(),
     })
 }
@@ -901,4 +990,607 @@ fn declared_relation<'a>(
         .node_weights()
         .find(|node| &node.source.id == relation)
         .map(|node| &node.source)
+}
+
+// --- Tranche F: carrier coverage requirements (Guide-6 §9) ---
+
+/// Analyze the complete coverage of one placed proof-plan candidate.
+///
+/// The per-relation contract, plus the carrier obligation compressed
+/// out of the plan's feasible placements and the accepted projection of
+/// each applicable boundary.
+///
+/// # Errors
+///
+/// Any failure of [`analyze_plan_coverage`],
+/// [`crate::carrier::relation_case_eligibility`],
+/// [`validate_coverage_census`], or [`validate_placement_coverage`].
+pub fn analyze_placed_coverage(
+    relations: &CompilerRelationAnalysis,
+    placed: &PlacedProofPlanCandidate,
+) -> Result<PlanCoverageAnalysis, CompileError> {
+    let mut analysis = analyze_plan_coverage(relations, &placed.relation_case_plans)?;
+    let eligibility = relation_case_eligibility(relations, &placed.relation_case_plans)?;
+
+    bind_carrier_coverage(&mut analysis, &eligibility, &placed.feasible_placements);
+    bind_projection_coverage(&mut analysis, &placed.relation_case_plans);
+
+    validate_coverage_census(&placed.relation_case_plans, &analysis)?;
+    validate_placement_coverage(
+        &eligibility,
+        &placed.feasible_placements,
+        &placed.layout_requirements,
+        &analysis,
+    )?;
+
+    Ok(analysis)
+}
+
+/// Bind the compressed carrier obligation of every runtime
+/// relation-case.
+///
+/// The compression is the point: one per-relation assignment appears in
+/// every feasible whole-transaction placement that chose it, and
+/// coverage retains it once. The multiplicity survives compression
+/// because it travels inside each placed carrier — a per-member role
+/// and a complete-family proof are different alternatives, never one
+/// deduplicated into the other.
+pub fn bind_carrier_coverage(
+    analysis: &mut PlanCoverageAnalysis,
+    eligibility: &[CarrierEligibility],
+    placements: &[PlacementCandidate],
+) {
+    let alternatives = carrier_alternatives(eligibility, placements);
+
+    for operation in analysis.operations.values_mut() {
+        for (key, plan) in &mut operation.requirements {
+            let Some(assignments) = alternatives.get(key) else {
+                continue;
+            };
+
+            for carrier in assignments
+                .iter()
+                .flat_map(|alternative| alternative.carriers.iter())
+            {
+                plan.positive.push(PositiveCoverageRequirement {
+                    id: CoverageRequirementId {
+                        relation: key.relation.clone(),
+                        case: key.case.clone(),
+                        boundary: CoverageBoundary::RuntimeCarrier,
+                        purpose: CoveragePurpose::CarrierExecution(carrier.clone()),
+                    },
+                    role: EvidenceRole::TargetExecution,
+                    representation: None,
+                    operands: Vec::new(),
+                });
+            }
+
+            plan.positive.sort();
+            plan.positive.dedup();
+            plan.carrier = Some(CarrierCoverageRequirement {
+                relation_case: key.clone(),
+                allowed_assignments: assignments.clone(),
+            });
+        }
+    }
+}
+
+/// The deduplicated assignment alternatives of every relation-case.
+fn carrier_alternatives(
+    eligibility: &[CarrierEligibility],
+    placements: &[PlacementCandidate],
+) -> BTreeMap<RelationCaseKey, BTreeSet<CarrierAssignmentAlternative>> {
+    let mut alternatives: BTreeMap<RelationCaseKey, BTreeSet<CarrierAssignmentAlternative>> =
+        BTreeMap::new();
+
+    for placement in placements {
+        for assignment in &placement.assignments {
+            let key = assignment.key();
+            let Some(carriers) = eligibility
+                .iter()
+                .find(|entry| entry.relation == key.relation && entry.case == key.case)
+            else {
+                continue;
+            };
+
+            alternatives
+                .entry(key)
+                .or_default()
+                .insert(assignment_alternative(carriers, &assignment.carriers));
+        }
+    }
+
+    alternatives
+}
+
+/// One placed assignment with the layout requirements it depends on.
+fn assignment_alternative(
+    carriers: &CarrierEligibility,
+    placed: &[PlacedCarrier],
+) -> CarrierAssignmentAlternative {
+    let mut layout = BTreeSet::new();
+
+    for carrier in placed {
+        let entry = carriers.eligible.iter().find(|entry| {
+            entry.carrier == carrier.carrier && entry.quantification == carrier.quantification
+        });
+
+        if let Some(entry) = entry {
+            layout.extend(selected_carrier_requirements(carriers, entry));
+        }
+    }
+
+    CarrierAssignmentAlternative {
+        carriers: placed.iter().cloned().collect(),
+        layout,
+    }
+}
+
+// --- Tranche G: accepted semantic projections (Guide-6 §10) ---
+
+/// Bind the accepted projection of every active relation-case.
+///
+/// One projection per applicable boundary, because the comparison
+/// differs by boundary: a runtime relation compares its verdict and its
+/// public operands, a compiler-static one compares the compiler's own
+/// selection result, a structural one compares an emitted fact, and an
+/// external one compares an evidence role and subject.
+pub fn bind_projection_coverage(analysis: &mut PlanCoverageAnalysis, plans: &[RelationCasePlan]) {
+    let sources = plans
+        .iter()
+        .map(|plan| {
+            (
+                RelationCaseKey {
+                    relation: plan.relation.clone(),
+                    case: plan.case.clone(),
+                },
+                plan,
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    for operation in analysis.operations.values_mut() {
+        for (key, plan) in &mut operation.requirements {
+            if plan.activity != RelationActivity::Active {
+                continue;
+            }
+
+            let Some(source) = sources.get(key) else {
+                continue;
+            };
+            let derived = plan
+                .boundaries
+                .iter()
+                .filter_map(|boundary| projection_requirement(key, plan, source, *boundary))
+                .collect::<Vec<_>>();
+
+            for requirement in derived {
+                plan.positive.push(PositiveCoverageRequirement {
+                    id: CoverageRequirementId {
+                        relation: key.relation.clone(),
+                        case: key.case.clone(),
+                        boundary: requirement.boundary,
+                        purpose: CoveragePurpose::AcceptedProjection,
+                    },
+                    role: EvidenceRole::TargetExecution,
+                    representation: None,
+                    operands: requirement.operands.clone(),
+                });
+                plan.projections.insert(requirement.boundary, requirement);
+            }
+
+            plan.positive.sort();
+            plan.positive.dedup();
+        }
+    }
+}
+
+/// One boundary's accepted projection requirement, if it has one.
+fn projection_requirement(
+    key: &RelationCaseKey,
+    plan: &RelationCoveragePlan,
+    source: &RelationCasePlan,
+    boundary: CoverageBoundary,
+) -> Option<SemanticProjectionRequirement> {
+    let subject = projection_subject(boundary, plan)?;
+
+    Some(SemanticProjectionRequirement {
+        relation: key.relation.clone(),
+        case: key.case.clone(),
+        boundary,
+        compare_relation_verdict: subject == ProjectionSubject::RuntimeRelationVerdict,
+        subject,
+        operands: boundary_operands(plan, boundary),
+        sources: boundary_sources(source, boundary),
+    })
+}
+
+/// What one boundary's accepted projection compares.
+fn projection_subject(
+    boundary: CoverageBoundary,
+    plan: &RelationCoveragePlan,
+) -> Option<ProjectionSubject> {
+    match boundary {
+        CoverageBoundary::RuntimeCarrier => Some(ProjectionSubject::RuntimeRelationVerdict),
+        CoverageBoundary::CompilerStatic => Some(ProjectionSubject::CompilerSelectionResult),
+        CoverageBoundary::BackendStructural => Some(ProjectionSubject::EmittedStructuralFact),
+        CoverageBoundary::ExternalEvidence => {
+            if plan.external_evidence.is_empty() {
+                None
+            } else {
+                Some(ProjectionSubject::ExternalReportSubjects {
+                    requirements: plan.external_evidence.clone(),
+                })
+            }
+        }
+    }
+}
+
+/// The operand census one boundary's positive coverage already states.
+fn boundary_operands(plan: &RelationCoveragePlan, boundary: CoverageBoundary) -> Vec<OperandId> {
+    plan.positive
+        .iter()
+        .find(|requirement| requirement.id.boundary == boundary)
+        .map(|requirement| requirement.operands.clone())
+        .unwrap_or_default()
+}
+
+/// The active source rows one boundary's projection covers.
+///
+/// Only the runtime boundary has carrier-routed sources: a
+/// compiler-static, structural, or external obligation is not answered
+/// by a fact routed to a carrier, and listing rows there would imply a
+/// routing nothing performs.
+fn boundary_sources(plan: &RelationCasePlan, boundary: CoverageBoundary) -> Vec<SourceRequirement> {
+    if boundary != CoverageBoundary::RuntimeCarrier {
+        return Vec::new();
+    }
+
+    let mut sources = plan
+        .runtime_requirements
+        .iter()
+        .flat_map(|requirement| requirement.sources.iter().cloned())
+        .collect::<Vec<_>>();
+
+    sources.sort();
+    sources.dedup();
+    sources
+}
+
+/// True for a coverage analysis that names an erased sponsor value.
+///
+/// The coverage-specific traversal of §10.2: sponsor family membership,
+/// owner authorization, disjointness, and envelope multiplicity all
+/// remain expressible, and the individual amount does not — not as an
+/// operand, not as a projected source row, and not through a layout
+/// requirement a carrier alternative depends on.
+#[must_use]
+pub fn coverage_names_sponsor_value(analysis: &PlanCoverageAnalysis) -> bool {
+    analysis.plans().any(|plan| {
+        let stated = plan
+            .positive
+            .iter()
+            .flat_map(|requirement| requirement.operands.iter())
+            .chain(
+                plan.projections
+                    .values()
+                    .flat_map(|requirement| requirement.operands.iter()),
+            )
+            .any(|operand| is_sponsor_amount_operand(operand.role()));
+        let projected = plan
+            .projections
+            .values()
+            .flat_map(|requirement| requirement.sources.iter())
+            .any(|source| is_sponsor_amount_operand(source.operand.role()));
+        let routed = plan
+            .carrier
+            .iter()
+            .flat_map(|carrier| carrier.allowed_assignments.iter())
+            .flat_map(|alternative| alternative.layout.iter())
+            .any(names_sponsor_amount);
+
+        stated || projected || routed
+    })
+}
+
+/// Reject a coverage analysis that names an erased sponsor value.
+///
+/// # Errors
+///
+/// [`CompileError::SponsorValueRead`] on any occurrence.
+pub fn validate_sponsor_erasure(analysis: &PlanCoverageAnalysis) -> Result<(), CompileError> {
+    if coverage_names_sponsor_value(analysis) {
+        return Err(CompileError::SponsorValueRead);
+    }
+
+    Ok(())
+}
+
+// --- Tranche H: placement, layout, and plan-set censuses ---
+
+/// Validate the placement, layout, and projection coverage of one plan.
+///
+/// # Errors
+///
+/// [`CompileError::MissingCarrierCoverage`] when an active runtime
+/// relation-case has no carrier obligation;
+/// [`CompileError::UnexpectedRuntimeCarrierCoverage`] when a
+/// compiler-static, backend-structural, external, or inactive
+/// relation-case has one; [`CompileError::MissingProjectionCoverage`]
+/// when runtime-target acceptance is claimed with no accepted
+/// projection; [`CompileError::MissingCoverageLayoutRequirement`] when
+/// a selectable assignment or its layout dependencies are unreferenced;
+/// [`CompileError::UnexpectedCoverageLayoutRequirement`] when coverage
+/// references a layout requirement the plan's census does not state;
+/// [`CompileError::SponsorValueRead`] on any erased sponsor value.
+pub fn validate_placement_coverage(
+    eligibility: &[CarrierEligibility],
+    placements: &[PlacementCandidate],
+    layout: &[LayoutRequirement],
+    analysis: &PlanCoverageAnalysis,
+) -> Result<(), CompileError> {
+    let carried = eligibility
+        .iter()
+        .map(|entry| RelationCaseKey {
+            relation: entry.relation.clone(),
+            case: entry.case.clone(),
+        })
+        .collect::<BTreeSet<_>>();
+    let stated = layout.iter().collect::<BTreeSet<_>>();
+
+    for plan in analysis.plans() {
+        let key = plan.key();
+        let runtime = plan.activity == RelationActivity::Active
+            && plan.boundaries.contains(&CoverageBoundary::RuntimeCarrier)
+            && carried.contains(&key);
+
+        match (&plan.carrier, runtime) {
+            (Some(_), false) => {
+                return Err(CompileError::UnexpectedRuntimeCarrierCoverage {
+                    relation: key.relation,
+                    case: key.case,
+                });
+            }
+            (None, true) => {
+                return Err(CompileError::MissingCarrierCoverage {
+                    relation: key.relation,
+                    case: key.case,
+                });
+            }
+            _ => {}
+        }
+
+        if runtime
+            && !plan
+                .projections
+                .contains_key(&CoverageBoundary::RuntimeCarrier)
+        {
+            return Err(CompileError::MissingProjectionCoverage {
+                relation: key.relation,
+                case: key.case,
+            });
+        }
+
+        for alternative in plan
+            .carrier
+            .iter()
+            .flat_map(|carrier| carrier.allowed_assignments.iter())
+        {
+            for requirement in &alternative.layout {
+                if !stated.contains(requirement) {
+                    return Err(CompileError::UnexpectedCoverageLayoutRequirement {
+                        relation: key.relation.clone(),
+                        case: key.case,
+                    });
+                }
+            }
+        }
+    }
+
+    // Every selectable assignment is covered, with exactly the layout
+    // requirements that assignment depends on: recomputed from the
+    // placement rather than trusted because the compression produced
+    // it.
+    for placement in placements {
+        for assignment in &placement.assignments {
+            let key = assignment.key();
+            let Some(carriers) = eligibility
+                .iter()
+                .find(|entry| entry.relation == key.relation && entry.case == key.case)
+            else {
+                continue;
+            };
+            let required = assignment_alternative(carriers, &assignment.carriers);
+            let covered = analysis
+                .plan(&key)
+                .and_then(|plan| plan.carrier.as_ref())
+                .ok_or_else(|| CompileError::MissingCarrierCoverage {
+                    relation: key.relation.clone(),
+                    case: key.case.clone(),
+                })?;
+
+            if !covered.allowed_assignments.contains(&required) {
+                return Err(CompileError::MissingCoverageLayoutRequirement {
+                    relation: key.relation,
+                    case: key.case,
+                });
+            }
+        }
+    }
+
+    validate_sponsor_erasure(analysis)
+}
+
+/// Validate the conditional coverage triplet across a plan set.
+///
+/// A relation inactive in one case and active in another must carry all
+/// three rows somewhere in the complete case set: inactive valid,
+/// active valid, and active invalid. Two of the three would leave a
+/// conditional relation provable only in whichever branch happens to be
+/// convenient.
+///
+/// # Errors
+///
+/// [`CompileError::MissingPositiveCoverage`] or
+/// [`CompileError::MissingNegativeCoverage`] when a conditional
+/// relation lacks its active rows.
+pub fn validate_conditional_coverage(
+    analyses: &[PlanCoverageAnalysis],
+) -> Result<(), CompileError> {
+    let mut inactive: BTreeMap<RelationId, ExecutionCaseId> = BTreeMap::new();
+    let mut accepted = BTreeSet::new();
+    let mut rejected = BTreeSet::new();
+
+    for analysis in analyses {
+        for plan in analysis.plans() {
+            match plan.activity {
+                RelationActivity::Vacuous => {
+                    inactive.insert(plan.relation.clone(), plan.case.clone());
+                }
+                RelationActivity::Active => {
+                    if plan
+                        .positive
+                        .iter()
+                        .any(|requirement| requirement.id.purpose == CoveragePurpose::ActiveAccept)
+                    {
+                        accepted.insert(plan.relation.clone());
+                    }
+
+                    if !plan.negative.is_empty() {
+                        rejected.insert(plan.relation.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    for (relation, case) in inactive {
+        if !accepted.contains(&relation) {
+            return Err(CompileError::MissingPositiveCoverage {
+                relation,
+                case,
+                boundary: CoverageBoundary::RuntimeCarrier,
+            });
+        }
+
+        if !rejected.contains(&relation) {
+            return Err(CompileError::MissingNegativeCoverage {
+                relation,
+                case,
+                boundary: CoverageBoundary::RuntimeCarrier,
+            });
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate the representation census across a complete plan set.
+///
+/// Each proof-plan candidate fixes one mode, so representation coverage
+/// is distributed across the plan set rather than crossed inside one
+/// plan: a case fixing two modes at once would be a world no plan
+/// admits.
+///
+/// # Errors
+///
+/// [`CompileError::MissingRepresentationCoverage`] when an allowed mode
+/// of a representation relation is covered by no plan in the set.
+pub fn validate_representation_coverage(
+    relations: &CompilerRelationAnalysis,
+    analyses: &[PlanCoverageAnalysis],
+) -> Result<(), CompileError> {
+    let mut covered: BTreeMap<RelationId, BTreeSet<RepresentationMode>> = BTreeMap::new();
+
+    for analysis in analyses {
+        for plan in analysis.plans() {
+            for requirement in &plan.positive {
+                if let Some(representation) = requirement.representation {
+                    covered
+                        .entry(plan.relation.clone())
+                        .or_default()
+                        .insert(representation);
+                }
+            }
+        }
+    }
+
+    for node in relations.graph.node_weights() {
+        let Relation::Representation { allowed, .. } = &node.source.relation else {
+            continue;
+        };
+        let seen = covered.get(&node.source.id).cloned().unwrap_or_default();
+
+        for representation in allowed {
+            if !seen.contains(representation) {
+                return Err(CompileError::MissingRepresentationCoverage {
+                    relation: node.source.id.clone(),
+                    representation: *representation,
+                });
+            }
+        }
+    }
+
+    Ok(())
+}
+
+// --- §16 stable projection ---
+
+/// The stable projection of one relation-case coverage plan.
+///
+/// Set- and map-shaped by construction, so no vector position or
+/// derivation order can reach a comparison.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RelationCoverageProjection {
+    pub activity: RelationActivity,
+    pub boundaries: BTreeSet<CoverageBoundary>,
+    pub positive: BTreeSet<PositiveCoverageRequirement>,
+    pub negative: BTreeSet<NegativeCoverageRequirement>,
+    pub carrier: BTreeSet<CarrierAssignmentAlternative>,
+    pub projections: BTreeMap<CoverageBoundary, SemanticProjectionRequirement>,
+    pub external_evidence: BTreeSet<ExternalEvidenceRequirement>,
+}
+
+/// The stable projection of one plan's coverage analysis.
+///
+/// Typed semantic values only. Petgraph indices, search-state counts,
+/// the combined placement product order, target program identities,
+/// target positions, timestamps, paths, and digests are all absent —
+/// the last of these because the crate mints none.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CoverageProjection {
+    pub requirements: BTreeMap<RelationCaseKey, RelationCoverageProjection>,
+}
+
+impl RelationCoveragePlan {
+    /// This plan's stable projection.
+    #[must_use]
+    pub fn project(&self) -> RelationCoverageProjection {
+        RelationCoverageProjection {
+            activity: self.activity,
+            boundaries: self.boundaries.clone(),
+            positive: self.positive.iter().cloned().collect(),
+            negative: self.negative.iter().cloned().collect(),
+            carrier: self
+                .carrier
+                .iter()
+                .flat_map(|carrier| carrier.allowed_assignments.iter().cloned())
+                .collect(),
+            projections: self.projections.clone(),
+            external_evidence: self.external_evidence.clone(),
+        }
+    }
+}
+
+impl PlanCoverageAnalysis {
+    /// This analysis's stable projection.
+    #[must_use]
+    pub fn project(&self) -> CoverageProjection {
+        CoverageProjection {
+            requirements: self
+                .plans()
+                .map(|plan| (plan.key(), plan.project()))
+                .collect(),
+        }
+    }
 }
