@@ -386,7 +386,22 @@ forbidden_text_stamp = custom_target(
   console: true,
 )
 
-alias_target('lint', labels_stamp, generated_stamp, plans_stamp, forbidden_text_stamp)
+# The census audit is part of the lint alias: it is the single owner of
+# the tracked-entry mode rule, and it covers the complete tracked set
+# rather than the lint subject slice, so a request to lint the
+# repository that skipped it would leave tracked symlinks and gitlinks
+# under categorically excluded paths unaudited (ADR-014). Membership
+# here is what makes `meson compile -C build lint` — and therefore the
+# mocked contract lane of scripts/ci.sh — actually run the audit; an
+# explicit Ninja target never pulls in unrelated build_by_default ones.
+alias_target(
+  'lint',
+  census_audit,
+  labels_stamp,
+  generated_stamp,
+  plans_stamp,
+  forbidden_text_stamp,
+)
 
 # ---------------------------------------------------------------------------
 # Generators: committed in-tree publications cannot be declared
