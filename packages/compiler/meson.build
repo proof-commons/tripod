@@ -3,6 +3,7 @@
 # audit fails the build. The parent meson.build accumulates this list
 # into its role group.
 compiler_source_files = files(
+  'src/analyzed_operation.rs',
   'src/capability.rs',
   'src/carrier.rs',
   'src/case.rs',
@@ -23,6 +24,7 @@ compiler_source_files = files(
   'src/relation.rs',
   'src/requirement.rs',
   'src/source.rs',
+  'src/tests/analyzed_operation_tests.rs',
   'src/tests/carrier_tests.rs',
   'src/tests/case_tests.rs',
   'src/tests/constructibility_tests.rs',

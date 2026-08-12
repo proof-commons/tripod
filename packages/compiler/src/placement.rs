@@ -164,7 +164,7 @@ pub enum CarrierMultiplicity {
 }
 
 /// A property the compiler validates directly from typed input.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CompilerStaticRequirement {
     /// The selected mode is a member of the relation's allowed set.
     RepresentationSelection {
@@ -180,7 +180,7 @@ pub enum CompilerStaticRequirement {
 
 /// An obligation on a future emitted bundle or ABI that is not an
 /// ordinary runtime predicate.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BackendStructuralRequirement {
     /// The selected representation must be encoded and authenticated.
     EncodeAndAuthenticateRepresentation {
