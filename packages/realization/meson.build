@@ -29,6 +29,7 @@ realization_source_files = files(
   'src/tests/lifecycle_tests.rs',
   'src/tests/live_transfer_tests.rs',
   'src/tests/mod.rs',
+  'src/tests/open_flow_tests.rs',
   'src/tests/property_graph_tests.rs',
   'src/tests/root_policy_tests.rs',
   'src/tests/type_tests.rs',

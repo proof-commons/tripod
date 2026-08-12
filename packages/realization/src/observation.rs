@@ -203,7 +203,48 @@ pub struct OperationObservation {
 }
 
 impl OperationObservation {
-    /// Validate local reference consistency and canonicalize repeated collections.
+    /// Validate local reference consistency and canonicalize repeated
+    /// collections.
+    ///
+    /// # The open-flow boundary (SR2-07)
+    ///
+    /// Normalization establishes *reference structure*; relation
+    /// evaluation establishes operation-specific role semantics. So
+    /// this function requires that an open-flow source is an input
+    /// reference and a destination an output reference, that no
+    /// reference is claimed by two open flows, and that no CPFP anchor
+    /// joins an open flow — the same three facts the canonical
+    /// partition already has to satisfy, and all three properties of
+    /// how the observation refers to its own objects rather than
+    /// judgements about the transaction.
+    ///
+    /// Anchor exclusion belongs here because it is family-structural
+    /// and kind-independent: the model kernel rejects an anchor as an
+    /// open-flow source or destination unconditionally, whatever the
+    /// flow kind, since the anchor family's whole purpose is to stand
+    /// outside the open-value partition.
+    ///
+    /// Complete L-BTC partitioning deliberately does *not* belong here,
+    /// and stays with the relations:
+    ///
+    /// - it is operation-specific. The kernel's completeness rule runs
+    ///   against the branch's admitted open-flow kinds; this function
+    ///   holds no architecture and cannot know which kinds the observed
+    ///   operation admits, or whether it has an open-value region at
+    ///   all;
+    /// - it is already owned. For the current pilots the claimant is
+    ///   the fee-sponsor region, and `SponsorIsolation` requires exact
+    ///   membership alongside the family, asset, and owner-authorization
+    ///   facts about those same members. Absorbing completeness here
+    ///   would make that relation partly vacuous and quietly remove a
+    ///   semantic obligation from the relation census the compiler
+    ///   consumes;
+    /// - it would destroy the verdict. An unclaimed sponsor member is a
+    ///   real transaction breaking a real rule, and must be *evaluable*
+    ///   and reported as a sponsor-isolation failure. Rejecting it here
+    ///   would return a malformed-observation error instead, which says
+    ///   the observation could not be read rather than that the
+    ///   operation does not conform.
     pub fn validate_and_normalize(mut self) -> Result<Self, RealizationError> {
         self.objects.sort_by_key(|object| object.reference);
 
@@ -279,20 +320,17 @@ impl OperationObservation {
 
         validate_partition_reference_layout(&self.canonical_partition)?;
 
-        for flow in &mut self.open_flows {
-            flow.sources.sort();
-            flow.destinations.sort();
+        // The CPFP anchor family stands outside every open-value
+        // partition, for every flow kind, so it is collected once here
+        // rather than decided per operation.
+        let anchors = self
+            .objects
+            .iter()
+            .filter(|object| object.kind == ObservedObjectKind::Declared(ObjectId::CpfpAnchor))
+            .map(|object| object.reference)
+            .collect::<BTreeSet<_>>();
 
-            if has_duplicates(&flow.sources) || has_duplicates(&flow.destinations) {
-                return Err(RealizationError::DuplicateObservedReference);
-            }
-
-            for reference in flow.sources.iter().chain(&flow.destinations) {
-                if !known.contains(reference) {
-                    return Err(RealizationError::UnknownObservedObject(*reference));
-                }
-            }
-        }
+        normalize_open_flows(&mut self.open_flows, &known, &anchors)?;
 
         self.open_flows.sort_by(|left, right| {
             (
@@ -355,6 +393,54 @@ fn check_reference(
 
     if !known.contains(&reference) {
         return Err(RealizationError::UnknownObservedObject(reference));
+    }
+
+    Ok(())
+}
+
+/// The open-flow reference structure (SR2-07): canonical order within
+/// each flow, exact sides, no reference claimed by two flows, and no
+/// CPFP anchor inside any of them.
+///
+/// See the boundary note on
+/// [`OperationObservation::validate_and_normalize`] for why complete
+/// partitioning is deliberately not established here.
+fn normalize_open_flows(
+    open_flows: &mut [ObservedOpenFlow],
+    known: &BTreeSet<ObservedObjectRef>,
+    anchors: &BTreeSet<ObservedObjectRef>,
+) -> Result<(), RealizationError> {
+    let mut claimed_sources = BTreeSet::new();
+    let mut claimed_destinations = BTreeSet::new();
+
+    for flow in open_flows {
+        flow.sources.sort();
+        flow.destinations.sort();
+
+        if has_duplicates(&flow.sources) || has_duplicates(&flow.destinations) {
+            return Err(RealizationError::DuplicateObservedReference);
+        }
+
+        for (references, side, claimed) in [
+            (&flow.sources, ObservedSide::Input, &mut claimed_sources),
+            (
+                &flow.destinations,
+                ObservedSide::Output,
+                &mut claimed_destinations,
+            ),
+        ] {
+            for reference in references {
+                check_reference(*reference, side, known)?;
+
+                if anchors.contains(reference) {
+                    return Err(RealizationError::AnchorInObservedOpenFlow(*reference));
+                }
+
+                if !claimed.insert(*reference) {
+                    return Err(RealizationError::ObservedOpenFlowOverlap(*reference));
+                }
+            }
+        }
     }
 
     Ok(())

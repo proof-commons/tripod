@@ -5,6 +5,7 @@ mod disclosure_tests;
 mod expression_tests;
 mod lifecycle_tests;
 mod live_transfer_tests;
+mod open_flow_tests;
 mod property_graph_tests;
 mod root_policy_tests;
 mod type_tests;

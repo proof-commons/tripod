@@ -369,6 +369,18 @@ pub enum RealizationError {
     #[error("observed canonical delta partition overlaps")]
     ObservedCanonicalPartitionOverlap,
 
+    /// Two open flows claim one object reference (SR2-07).
+    #[error("observed reference {0:?} is claimed by two open flows")]
+    ObservedOpenFlowOverlap(ObservedObjectRef),
+
+    /// A CPFP anchor was claimed by an open flow (SR2-07).
+    ///
+    /// The anchor family exists precisely to stand outside the
+    /// open-value partition, so this is a malformed reference rather
+    /// than an operation-specific policy question.
+    #[error("observed CPFP anchor {0:?} cannot join an open flow")]
+    AnchorInObservedOpenFlow(ObservedObjectRef),
+
     #[error("constructibility node {0:?} is declared more than once")]
     DuplicateConstructibilityNode(ConstructibilityNodeId),
 
