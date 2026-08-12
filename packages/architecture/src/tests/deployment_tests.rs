@@ -2,6 +2,7 @@
 //! final profile must validate, and every missing or mismatched field
 //! must be rejected.
 
+use crate::deployment::unchecked_deployment_profile_hash;
 use crate::*;
 
 /// A final, pinned architecture for release testing.
@@ -715,20 +716,86 @@ fn final_architecture_alone_is_not_deployment_ready() {
     assert!(validate_deployment_release(&architecture, &profile).is_err());
 }
 
+/// Requiring validation is a precondition on the API, not a change to
+/// the canonical projection: the identity of an already-valid profile
+/// is exactly what the unrestricted projection yields for it. The
+/// expected value derives from that projection rather than from a
+/// pinned literal, so the test states the invariant it means — a
+/// literal restates whatever the projection currently computes, and
+/// any change to what the profile commits to only re-pins it.
+#[test]
+fn validated_profile_keeps_its_pre_restriction_identity() {
+    let architecture = release_architecture();
+    let profile = release_profile(&architecture);
+
+    let validated = validate_deployment_profile(&architecture, &profile).unwrap();
+
+    // The wrapper hashes the profile it carries and nothing else.
+    assert_eq!(
+        deployment_profile_hash(&validated).unwrap(),
+        unchecked_deployment_profile_hash(&profile).unwrap(),
+    );
+
+    // The hex form carries the same identity through the same
+    // encoding, so the public string is not a second projection.
+    assert_eq!(
+        deployment_profile_hash_hex(&validated).unwrap(),
+        canonical::hex(&unchecked_deployment_profile_hash(&profile).unwrap()),
+    );
+
+    // The wrapper reports the pair it was validated as.
+    assert_eq!(validated.profile(), &profile);
+    assert_eq!(
+        validated.architecture().document.realization_version,
+        architecture.document.realization_version,
+    );
+}
+
+/// A profile that fails release validation has no identity: the only
+/// constructor of the hashable wrapper is validation, so each of these
+/// rejections is also an identity refusal.
+#[test]
+fn invalid_profiles_cannot_reach_hashing() {
+    let architecture = release_architecture();
+
+    let mut draft = release_profile(&architecture);
+    draft.status = PublicationStatus::Draft;
+    let errors = validate_deployment_profile(&architecture, &draft).unwrap_err();
+    assert!(errors.contains(&DeploymentError::ProfileNotFinal));
+
+    let mut mis_bound = release_profile(&architecture);
+    mis_bound.architecture_semantic_hash = [0x5A; 32];
+    let errors = validate_deployment_profile(&architecture, &mis_bound).unwrap_err();
+    assert!(errors.contains(&DeploymentError::ArchitectureHashMismatch));
+
+    let mut uncalibrated = release_profile(&architecture);
+    uncalibrated.calibrated_bounds.clear();
+    uncalibrated.dependency_evidence.clear();
+    assert!(validate_deployment_profile(&architecture, &uncalibrated).is_err());
+
+    // The canonical bytes still exist for these profiles — the point is
+    // that only the crate-private projection can produce them.
+    assert_ne!(
+        unchecked_deployment_profile_hash(&draft).unwrap(),
+        unchecked_deployment_profile_hash(&mis_bound).unwrap(),
+    );
+}
+
 #[test]
 fn deployment_profile_hash_is_stable_and_domain_separated() {
     let architecture = release_architecture();
     let profile = release_profile(&architecture);
+    let validated = validate_deployment_profile(&architecture, &profile).unwrap();
 
     assert_eq!(
-        deployment_profile_hash(&profile).unwrap(),
-        deployment_profile_hash(&profile).unwrap(),
+        deployment_profile_hash(&validated).unwrap(),
+        deployment_profile_hash(&validated).unwrap(),
     );
 
     // The profile hash is not the architecture hash: the domains are
     // separated even when the profile embeds the architecture hash.
     assert_ne!(
-        deployment_profile_hash(&profile).unwrap(),
+        deployment_profile_hash(&validated).unwrap(),
         semantic_hash(&architecture).unwrap(),
     );
 
@@ -747,8 +814,8 @@ fn deployment_profile_hash_changes_with_content() {
     modified.genesis_id = [0xC3; 32];
 
     assert_ne!(
-        deployment_profile_hash(&profile).unwrap(),
-        deployment_profile_hash(&modified).unwrap(),
+        unchecked_deployment_profile_hash(&profile).unwrap(),
+        unchecked_deployment_profile_hash(&modified).unwrap(),
     );
 }
 
@@ -765,8 +832,8 @@ fn profile_hash_changes_when_calibration_bundle_binding_changes() {
     modified.calibrated_bounds[0].script_bundle_hash = [0xF4; 32];
 
     assert_ne!(
-        deployment_profile_hash(&profile).unwrap(),
-        deployment_profile_hash(&modified).unwrap(),
+        unchecked_deployment_profile_hash(&profile).unwrap(),
+        unchecked_deployment_profile_hash(&modified).unwrap(),
     );
 }
 
@@ -781,8 +848,8 @@ fn profile_hash_changes_when_event_report_changes() {
         .independent_event_projection_report_hash = [0xF1; 32];
 
     assert_ne!(
-        deployment_profile_hash(&profile).unwrap(),
-        deployment_profile_hash(&modified).unwrap(),
+        unchecked_deployment_profile_hash(&profile).unwrap(),
+        unchecked_deployment_profile_hash(&modified).unwrap(),
     );
 }
 
@@ -797,8 +864,8 @@ fn profile_hash_changes_when_query_report_changes() {
         .independent_attestation_query_report_hash = [0xF2; 32];
 
     assert_ne!(
-        deployment_profile_hash(&profile).unwrap(),
-        deployment_profile_hash(&modified).unwrap(),
+        unchecked_deployment_profile_hash(&profile).unwrap(),
+        unchecked_deployment_profile_hash(&modified).unwrap(),
     );
 }
 
@@ -813,7 +880,7 @@ fn profile_hash_changes_when_accounting_report_changes() {
         .independent_receipt_accounting_report_hash = [0xF3; 32];
 
     assert_ne!(
-        deployment_profile_hash(&profile).unwrap(),
-        deployment_profile_hash(&modified).unwrap(),
+        unchecked_deployment_profile_hash(&profile).unwrap(),
+        unchecked_deployment_profile_hash(&modified).unwrap(),
     );
 }

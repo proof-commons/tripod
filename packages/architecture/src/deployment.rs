@@ -14,6 +14,14 @@
 //! The profile has its own canonical hash under a domain-separated
 //! algorithm identifier; the architecture hash algorithm is never
 //! reused for profile bytes.
+//!
+//! Validation precedes identity (ADR-016). The profile hash is defined
+//! only over a [`ValidatedDeploymentProfile`], which
+//! [`validate_deployment_profile`] alone constructs, so "hashable"
+//! cannot be mistaken for "valid" once a release consumer appears. The
+//! unchecked canonical projection stays crate-private for mutation
+//! tests. The identity remains dormant: no consumer, publication, or
+//! generated artifact carries a deployment-profile hash today.
 
 use core::fmt;
 
@@ -736,9 +744,74 @@ fn profile_value(profile: &DeploymentProfile) -> Value {
     ])
 }
 
-/// Canonical semantic hash of a deployment profile, domain-separated
-/// from the architecture manifest hash.
-pub fn deployment_profile_hash(profile: &DeploymentProfile) -> Result<[u8; 32], serde_json::Error> {
+/// A deployment profile that has passed release validation.
+///
+/// The wrapper is the type-level record of the identity rule stated in
+/// ADR-016: a complete typed object is validated first, then projected
+/// canonically, and only then does it bear an identity. Because the
+/// only constructor is [`validate_deployment_profile`], holding one of
+/// these is proof that [`validate_deployment_release`] accepted the
+/// profile against the architecture it binds, so no caller can mint a
+/// canonical profile identity for a draft, mis-bound, uncalibrated, or
+/// otherwise unreleasable profile.
+///
+/// The identity itself remains dormant: nothing in the workspace
+/// consumes a profile hash or publishes one.
+#[derive(Clone, Copy, Debug)]
+pub struct ValidatedDeploymentProfile<'a> {
+    architecture: &'a Architecture,
+    profile: &'a DeploymentProfile,
+}
+
+impl<'a> ValidatedDeploymentProfile<'a> {
+    /// The architecture the profile was validated against.
+    pub const fn architecture(&self) -> &'a Architecture {
+        self.architecture
+    }
+
+    /// The validated profile.
+    pub const fn profile(&self) -> &'a DeploymentProfile {
+        self.profile
+    }
+}
+
+/// Validate a deployment release and carry the verdict in the type.
+///
+/// This is the sole entry to profile identity: the returned wrapper is
+/// the only value [`deployment_profile_hash`] accepts.
+pub fn validate_deployment_profile<'a>(
+    architecture: &'a Architecture,
+    profile: &'a DeploymentProfile,
+) -> Result<ValidatedDeploymentProfile<'a>, Vec<DeploymentError>> {
+    validate_deployment_release(architecture, profile)?;
+
+    Ok(ValidatedDeploymentProfile {
+        architecture,
+        profile,
+    })
+}
+
+/// Canonical semantic hash of a validated deployment profile,
+/// domain-separated from the architecture manifest hash.
+///
+/// Validation precedes identity: the argument type is reachable only
+/// through [`validate_deployment_profile`], so an invalid profile has
+/// no hash under this API.
+pub fn deployment_profile_hash(
+    validated: &ValidatedDeploymentProfile<'_>,
+) -> Result<[u8; 32], serde_json::Error> {
+    unchecked_deployment_profile_hash(validated.profile)
+}
+
+/// Canonical profile bytes without the validation precondition.
+///
+/// Crate-private on purpose: mutation tests need to observe which
+/// fields the canonical projection commits to, including on profiles
+/// that deliberately fail release validation. No public caller can
+/// reach a profile identity without validating first.
+pub(crate) fn unchecked_deployment_profile_hash(
+    profile: &DeploymentProfile,
+) -> Result<[u8; 32], serde_json::Error> {
     let canonical = canonicalize_json(profile_value(profile));
 
     let bytes = serde_json::to_vec(&canonical)?;
@@ -758,7 +831,7 @@ pub fn deployment_profile_hash(profile: &DeploymentProfile) -> Result<[u8; 32], 
 
 /// Hex form of [`deployment_profile_hash`].
 pub fn deployment_profile_hash_hex(
-    profile: &DeploymentProfile,
+    validated: &ValidatedDeploymentProfile<'_>,
 ) -> Result<String, serde_json::Error> {
-    Ok(hex(&deployment_profile_hash(profile)?))
+    Ok(hex(&deployment_profile_hash(validated)?))
 }
