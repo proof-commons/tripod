@@ -28,6 +28,7 @@ compiler_source_files = files(
   'src/source.rs',
   'src/tests/analyzed_corruption_tests.rs',
   'src/tests/analyzed_operation_tests.rs',
+  'src/tests/analyzed_program_oracle_tests.rs',
   'src/tests/analyzed_program_tests.rs',
   'src/tests/carrier_tests.rs',
   'src/tests/case_tests.rs',

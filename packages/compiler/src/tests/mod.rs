@@ -6,6 +6,7 @@
 
 mod analyzed_corruption_tests;
 mod analyzed_operation_tests;
+mod analyzed_program_oracle_tests;
 mod analyzed_program_tests;
 mod carrier_tests;
 mod case_tests;
