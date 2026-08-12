@@ -33,7 +33,8 @@ use crate::{
     placement::{
         ActivationCondition, DischargeBoundary, PlacedCarrier, PlacedProofPlanCandidate,
         PlacedProofPlans, PlacementCandidate, PlacementSearchLimits, RelationActivity,
-        RelationCasePlan, classify_relation_cases, place_feasible_proof_plans, validate_placement,
+        RelationCasePlan, classify_relation_cases, place_feasible_proof_plans,
+        validate_placed_proof_plans, validate_placement,
     },
     proof::{ProofPlanCandidate, enumerate_feasible_plans},
     relation::{CompilerRelationAnalysis, build_relation_analysis, build_relation_graph},
@@ -778,6 +779,103 @@ fn a_duplicate_proof_plan_candidate_is_rejected() {
     assert_eq!(
         place_feasible_proof_plans(&relations, &[candidate.clone(), candidate], limits()),
         Err(CompileError::DuplicatePlacedProofPlan),
+    );
+}
+
+/// Two plans of one operation differing only in one selected proof.
+///
+/// Synthetic on purpose. The pilots' surviving proof choices correlate
+/// with different representation modes, so a real pilot pair that shares
+/// a representation map and differs only in a proof does not exist yet;
+/// the second plan here is a typed value the proof search would prune,
+/// not a candidate it emits. That is exactly the point: the plan-set
+/// comparison must hold for any offered set, and the shape it has to
+/// catch is the one whose case identities are indistinguishable. The
+/// pair is built from a real candidate by exchanging one relation's
+/// approved alternative for another approved alternative of the same
+/// relation, leaving every other field — representations included —
+/// untouched.
+fn plans_differing_only_in_one_proof(
+    relations: &CompilerRelationAnalysis,
+    candidates: &[ProofPlanCandidate],
+) -> [ProofPlanCandidate; 2] {
+    let candidate = candidates.first().expect("a feasible candidate").clone();
+    let (relation, alternative) = relations
+        .graph
+        .node_weights()
+        .filter(|node| candidate.proofs.contains_key(&node.source.id))
+        .find_map(|node| {
+            node.source
+                .proof_alternatives
+                .iter()
+                .find(|alternative| candidate.proofs[&node.source.id] != **alternative)
+                .map(|alternative| (node.source.id.clone(), alternative.clone()))
+        })
+        .expect("a planned relation with a second approved alternative");
+
+    let mut alternate = candidate.clone();
+    alternate.proofs.insert(relation, alternative);
+
+    assert_ne!(alternate, candidate);
+    assert_eq!(alternate.representations, candidate.representations);
+
+    [candidate, alternate]
+}
+
+#[test]
+fn a_dropped_proof_plan_is_rejected_though_the_case_census_is_unchanged() {
+    let (relations, candidates) = planned(&[OperationId::TransferLive]);
+    let pair = plans_differing_only_in_one_proof(&relations, &candidates);
+    let analysis =
+        place_feasible_proof_plans(&relations, &pair, limits()).expect("both plans place");
+
+    assert_eq!(analysis.placed.len(), 2);
+
+    let mut short = analysis.clone();
+    let dropped = short.placed.remove(0);
+
+    // The two plans fixed the same representations, so they carry the
+    // same execution-case identities: the case census cannot see the
+    // dropped plan, and the plan-set comparison is what does.
+    assert_eq!(
+        short.execution_case_census(),
+        analysis.execution_case_census(),
+    );
+    assert_eq!(
+        crate::case::case_census(&relations, &pair).expect("case census"),
+        short.execution_case_census(),
+    );
+    assert_eq!(
+        dropped
+            .execution_cases
+            .iter()
+            .map(|case| case.id.clone())
+            .collect::<BTreeSet<_>>(),
+        short.execution_case_census(),
+    );
+
+    assert_eq!(
+        validate_placed_proof_plans(&relations, &pair, &short),
+        Err(CompileError::PlacedProofPlanCensusMismatch {
+            missing: 1,
+            unexpected: 0,
+        }),
+    );
+}
+
+#[test]
+fn a_plan_placed_but_never_offered_is_rejected() {
+    let (relations, candidates) = planned(&[OperationId::TransferLive]);
+    let pair = plans_differing_only_in_one_proof(&relations, &candidates);
+    let analysis =
+        place_feasible_proof_plans(&relations, &pair, limits()).expect("both plans place");
+
+    assert_eq!(
+        validate_placed_proof_plans(&relations, &pair[..1], &analysis),
+        Err(CompileError::PlacedProofPlanCensusMismatch {
+            missing: 0,
+            unexpected: 1,
+        }),
     );
 }
 

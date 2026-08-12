@@ -119,11 +119,20 @@ pub enum RequiredSourceKind {
 }
 
 /// When one source requirement is active.
+///
+/// A representation condition names the object it belongs to as well as
+/// the mode. An execution case fixes a mode per object, so a condition
+/// carrying a mode alone would be answered by any object that happened
+/// to select it — a requirement about one object family would activate
+/// because an unrelated family was committed the same way.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RequirementActivation {
     Always,
     WhenSponsorPresent,
-    WhenRepresentation(RepresentationMode),
+    WhenRepresentation {
+        object: architecture::ObjectId,
+        mode: RepresentationMode,
+    },
 }
 
 /// One canonical source-requirement row.

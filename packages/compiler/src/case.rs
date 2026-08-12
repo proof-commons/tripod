@@ -225,15 +225,16 @@ pub fn case_census(
 /// Whether one source-requirement row is active in one case.
 ///
 /// A sponsor-local row exists only where the sponsor region exists; a
-/// representation-conditional row exists only under the mode the case
-/// fixed.
+/// representation-conditional row exists only where the case fixed that
+/// mode *for the row's own object*, never because some other object
+/// family selected the same mode.
 #[must_use]
 pub fn is_active(case: &ExecutionCaseId, requirement: &SourceRequirement) -> bool {
     match requirement.activation {
         RequirementActivation::Always => true,
         RequirementActivation::WhenSponsorPresent => case.sponsor == SponsorCase::Present,
-        RequirementActivation::WhenRepresentation(mode) => {
-            case.representations.values().any(|value| *value == mode)
+        RequirementActivation::WhenRepresentation { object, mode } => {
+            case.representations.get(&object) == Some(&mode)
         }
     }
 }

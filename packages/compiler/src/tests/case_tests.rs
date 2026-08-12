@@ -11,12 +11,12 @@ use crate::{
     capability::CapabilityView,
     case::{
         ExecutionCaseId, SponsorCase, case_census, derive_execution_cases, execution_cases,
-        sponsor_cases, validate_case_census,
+        is_active, sponsor_cases, validate_case_census,
     },
     lifecycle::RepresentationChoiceId,
     proof::{ProofPlanCandidate, enumerate_feasible_plans},
     relation::{CompilerRelationAnalysis, build_relation_analysis},
-    source::RequiredSourceKind,
+    source::{RequiredSourceKind, RequirementActivation},
 };
 
 fn analysis(operations: &[OperationId]) -> (CompilerRelationAnalysis, Vec<ProofPlanCandidate>) {
@@ -183,6 +183,53 @@ fn active_sources_belong_to_the_case_operation_only() {
             assert_eq!(row.operand.relation().operation(), case.id.operation);
         }
     }
+}
+
+/// One case fixing two object families' representations independently.
+///
+/// Synthetic: each pilot decides one representation today, so no derived
+/// case can distinguish an object-keyed condition from a mode-only one.
+/// A second independently represented family is exactly the shape that
+/// makes the distinction observable.
+fn two_object_case() -> ExecutionCaseId {
+    ExecutionCaseId {
+        operation: OperationId::TransferLive,
+        sponsor: SponsorCase::Absent,
+        representations: BTreeMap::from([
+            (ObjectId::Ash, RepresentationMode::Explicit),
+            (ObjectId::ReceiptLive, RepresentationMode::PrivateCommitted),
+        ]),
+    }
+}
+
+#[test]
+fn a_representation_conditional_row_reads_its_own_objects_mode() {
+    let (relations, candidates) = analysis(&[OperationId::TransferLive]);
+    let candidate = candidates.first().expect("a feasible candidate");
+    let cases = execution_cases(&relations, candidate).expect("cases");
+    let row = cases
+        .first()
+        .expect("a case")
+        .active_sources
+        .first()
+        .expect("an active row")
+        .clone();
+
+    let conditional = |object: ObjectId| {
+        let mut row = row.clone();
+        row.activation = RequirementActivation::WhenRepresentation {
+            object,
+            mode: RepresentationMode::PrivateCommitted,
+        };
+        row
+    };
+    let case = two_object_case();
+
+    // The mode belongs to the receipt family. A row conditioned on the
+    // ash family being privately committed is inactive here, even though
+    // *some* family is.
+    assert!(!is_active(&case, &conditional(ObjectId::Ash)));
+    assert!(is_active(&case, &conditional(ObjectId::ReceiptLive)));
 }
 
 // --- census validation (§15) ---
