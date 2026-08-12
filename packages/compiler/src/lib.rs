@@ -69,6 +69,7 @@
 
 mod analyzed;
 mod analyzed_operation;
+mod analyzed_validate;
 mod capability;
 mod carrier;
 mod case;
