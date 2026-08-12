@@ -148,11 +148,44 @@ pub struct ObservedOpenFlow {
     pub fee: ProtocolAmount,
 }
 
-/// Root use derived from a transition certificate.
+/// What actually happened to one root in one observed operation.
+///
+/// This is an *event*, not a policy. `architecture::RootUse` describes
+/// what an operation is *allowed* to do to a root; an operation either
+/// succeeds a root or terminates it, and "forbidden" is not something
+/// that can be observed — it is the absence of any effect. Encoding an
+/// actual effect in the policy enum made a
+/// `RootUse::SuccessionOrTermination` policy accept only whichever
+/// single value the adapter happened to choose, so ordinary
+/// (non-sealing) redemption would have failed conformance against a
+/// policy that explicitly permits succession.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ObservedRootEffectKind {
+    Succession,
+    Termination,
+}
+
+impl ObservedRootEffectKind {
+    /// Whether one root-use policy admits this actual effect.
+    ///
+    /// `Forbidden` admits no effect at all; the absence of an effect is
+    /// checked by the caller, because no value of this type can express
+    /// it.
+    #[must_use]
+    pub const fn permitted_by(self, policy: RootUse) -> bool {
+        match policy {
+            RootUse::Forbidden => false,
+            RootUse::Succession => matches!(self, Self::Succession),
+            RootUse::SuccessionOrTermination => true,
+        }
+    }
+}
+
+/// One actual root effect derived from a transition certificate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ObservedRootEffect {
     pub root: RootId,
-    pub use_kind: RootUse,
+    pub effect: ObservedRootEffectKind,
 }
 
 /// Complete primitive observation of one operation.
