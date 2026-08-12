@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// Semantic constructibility class for one operation.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ConstructibilityClass {
     PublicPermissionless,
     OwnersOf { object: ObjectId },

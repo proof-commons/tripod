@@ -995,4 +995,82 @@ pub enum CompileError {
         /// Carried rows nothing requires.
         unexpected: Vec<crate::lifecycle::LifecycleRequirement>,
     },
+
+    /// An operation factor was requested for an operation carrying no
+    /// in-scope relation.
+    ///
+    /// An empty factor is not a valid answer: it would report an
+    /// operation as analyzed while stating nothing about it.
+    #[error("operation {operation:?} carries no in-scope relation to analyze")]
+    AnalyzedOperationOutOfScope {
+        /// The operation with no in-scope relation.
+        operation: OperationId,
+    },
+
+    /// One operation factor carries a value another operation owns.
+    ///
+    /// The factorization theorem holds only while every case,
+    /// relation-case, carrier, layout requirement, and coverage symbol
+    /// of a factor is operation-owned; one foreign value makes the
+    /// factor a claim about a scope it does not analyze.
+    #[error("operation factor {operation:?} carries a value owned by {found:?}")]
+    ForeignOperationFactor {
+        /// The factor's own operation.
+        operation: OperationId,
+        /// The operation the carried value belongs to.
+        found: OperationId,
+    },
+
+    /// The analyzed operation factors are not exactly the scope
+    /// operations.
+    #[error(
+        "analyzed operation census mismatch: {} missing, {} unexpected",
+        missing.len(),
+        unexpected.len()
+    )]
+    AnalyzedOperationCensusMismatch {
+        /// Scope operations with no factor.
+        missing: Vec<OperationId>,
+        /// Factors for operations outside the scope.
+        unexpected: Vec<OperationId>,
+    },
+
+    /// One relation-case requirement bundle breaks its disposition's
+    /// retention rules.
+    #[error("relation-case {relation:?}/{case:?} requirements are invalid: {defect:?}")]
+    InvalidRelationCaseRequirements {
+        /// The owning relation.
+        relation: realization::RelationId,
+        /// The owning execution case.
+        case: crate::case::ExecutionCaseId,
+        /// The typed retention rule the bundle breaks.
+        defect: crate::analyzed_operation::RelationCaseDefect,
+    },
+
+    /// A relation dependency crosses two operations.
+    ///
+    /// Distinct from [`Self::CrossOperationCoverageDependency`]: that
+    /// one rejects a dependency between two coverage symbols, this one
+    /// rejects the relation edge that would produce it, so the defect is
+    /// named where it originates rather than only where it surfaces.
+    #[error("relation dependency {prerequisite:?} -> {dependent:?} crosses two operations")]
+    CrossOperationRelationDependency {
+        /// The prerequisite relation.
+        prerequisite: realization::RelationId,
+        /// The dependent relation.
+        dependent: realization::RelationId,
+    },
+
+    /// One operation factor's execution cases do not agree with the
+    /// global proof plan they were analyzed under.
+    ///
+    /// Placement may not change a proof selection: the plan is fixed
+    /// globally before any operation is analyzed, and a factor whose
+    /// cases fix a different representation would be analyzing a plan
+    /// nothing offered.
+    #[error("operation factor {operation:?} does not match its global proof plan")]
+    AnalyzedOperationProofPlanMismatch {
+        /// The disagreeing factor's operation.
+        operation: OperationId,
+    },
 }
