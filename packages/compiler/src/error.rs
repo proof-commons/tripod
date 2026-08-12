@@ -600,6 +600,54 @@ pub enum CompileError {
         carrier: crate::carrier::CarrierRole,
     },
 
+    /// One placement assigned the same carrier role twice to one
+    /// obligation.
+    ///
+    /// A repeated entry is a defect rather than a value to normalize
+    /// away: a stable projection collapses it into a set, so a raw
+    /// invalid assignment and a valid one would project identically and
+    /// duplication policy would stop being enforceable.
+    #[error("relation {relation:?} places carrier {carrier:?} twice in case {case:?}")]
+    DuplicatePlacedCarrier {
+        /// The relation whose assignment repeats a carrier.
+        relation: realization::RelationId,
+        /// The case carrying the repeated assignment.
+        case: crate::case::ExecutionCaseId,
+        /// The twice-assigned carrier role.
+        carrier: crate::carrier::CarrierRole,
+    },
+
+    /// One placement assigned a carrier set that is not one exact
+    /// retained option of the obligation.
+    ///
+    /// Enumeration and validation describe the same candidate language:
+    /// an exactly-one, every-member, or at-least-one obligation carries
+    /// one inclusion-minimal choice, and a deliberate-duplication
+    /// obligation carries exactly the complete admitted set. A superset
+    /// is neither more enforcement nor a second valid answer.
+    #[error("relation {relation:?} has a noncanonical carrier assignment in case {case:?}")]
+    NonCanonicalCarrierAssignment {
+        /// The relation whose assignment is not a retained option.
+        relation: realization::RelationId,
+        /// The case carrying the noncanonical assignment.
+        case: crate::case::ExecutionCaseId,
+    },
+
+    /// A placement states a layout requirement no carrier it selected
+    /// depends on.
+    ///
+    /// Placement-local layout is exactly what the selected carriers
+    /// need. A surplus, repeated, or foreign requirement would record an
+    /// obligation against a future backend that this placement never
+    /// justified, so it is rejected rather than tolerated as harmless
+    /// extra structure.
+    #[error("placement states {} unrelated layout requirement(s)", unexpected.len())]
+    UnexpectedLayoutRequirement {
+        /// The stated requirements no selected carrier depends on,
+        /// sorted.
+        unexpected: Vec<crate::layout::LayoutRequirement>,
+    },
+
     /// The exact placement search exceeded its explicit state limit.
     ///
     /// No partial result is returned: a truncated search proves neither

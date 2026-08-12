@@ -1329,3 +1329,269 @@ fn a_placement_omitting_a_layout_dependency_is_rejected() {
         Err(CompileError::MissingLayoutRequirement { .. }),
     ));
 }
+
+// --- the exact candidate language (§3.4) ---
+//
+// Enumeration retains one inclusion-minimal option per obligation, so a
+// validator that accepted supersets, duplicates, or surplus layout would
+// describe a wider language than the search can produce — and a later
+// stage could not delegate exactness to it.
+
+/// One feasible placement of the two-obligation instance.
+fn one_placement(
+    plans: &[RelationCasePlan],
+    eligibility: &[CarrierEligibility],
+) -> PlacementCandidate {
+    enumerate_feasible_placements(plans, eligibility, limits())
+        .expect("placements")
+        .candidates
+        .swap_remove(0)
+}
+
+/// The mutable assignment of one relation inside one placement.
+fn assignment_of<'a>(
+    placement: &'a mut PlacementCandidate,
+    relation: &RelationId,
+) -> &'a mut PlacementAssignment {
+    placement
+        .assignments
+        .iter_mut()
+        .find(|assignment| &assignment.relation == relation)
+        .expect("the relation is placed")
+}
+
+#[test]
+fn a_placement_repeating_a_carrier_is_rejected() {
+    let obligations = mandatory_family_and_coordinator();
+    let (plans, eligibility) = instance(&obligations);
+    let mut placement = one_placement(&plans, &eligibility);
+    let repeated = placement.assignments[0].carriers[0].clone();
+
+    placement.assignments[0].carriers.push(repeated.clone());
+
+    assert_eq!(
+        validate_placement(&plans, &eligibility, &placement),
+        Err(CompileError::DuplicatePlacedCarrier {
+            relation: placement.assignments[0].relation.clone(),
+            case: placement.assignments[0].case.clone(),
+            carrier: repeated.carrier,
+        }),
+    );
+}
+
+#[test]
+fn an_every_member_obligation_may_not_select_both_quantified_alternatives() {
+    let obligations = mandatory_family_and_coordinator();
+    let (plans, eligibility) = instance(&obligations);
+    let recognition = family_relation(RelationKind::Recognition, ObjectId::ReceiptLive);
+    let mut placement = one_placement(&plans, &eligibility);
+
+    // The per-member role and the complete-family proof each discharge
+    // the obligation alone, so selecting both is a superset of two
+    // retained options rather than a third one.
+    let assignment = assignment_of(&mut placement, &recognition);
+    assignment.carriers = vec![
+        PlacedCarrier {
+            carrier: member(ObjectId::ReceiptLive),
+            quantification: CarrierQuantification::PerMember,
+        },
+        PlacedCarrier {
+            carrier: global(ObjectId::ReceiptLive),
+            quantification: CarrierQuantification::CompleteFamilyProof,
+        },
+    ];
+    assignment.carriers.sort();
+
+    let case = assignment.case.clone();
+
+    assert_eq!(
+        validate_placement(&plans, &eligibility, &placement),
+        Err(CompileError::NonCanonicalCarrierAssignment {
+            relation: recognition,
+            case,
+        }),
+    );
+}
+
+#[test]
+fn an_exactly_one_obligation_may_not_select_two_admissible_carriers() {
+    let conservation = relation(
+        RelationKind::Conservation,
+        RelationSubject::Asset { asset: AssetId::U },
+    );
+    let obligations = vec![Obligation::new(
+        conservation.clone(),
+        SemanticScope::TransactionGlobal,
+        CarrierMultiplicity::ExactlyOne,
+        vec![
+            eligible(
+                global(ObjectId::ReceiptLive),
+                CarrierQuantification::Single,
+                Vec::new(),
+            ),
+            eligible(
+                global(ObjectId::Ash),
+                CarrierQuantification::Single,
+                Vec::new(),
+            ),
+        ],
+    )];
+    let (plans, eligibility) = instance(&obligations);
+    let mut placement = one_placement(&plans, &eligibility);
+
+    // Both anchors are admissible one at a time; neither is a second
+    // carrier of the other.
+    let assignment = assignment_of(&mut placement, &conservation);
+    assignment.carriers = vec![
+        PlacedCarrier {
+            carrier: global(ObjectId::Ash),
+            quantification: CarrierQuantification::Single,
+        },
+        PlacedCarrier {
+            carrier: global(ObjectId::ReceiptLive),
+            quantification: CarrierQuantification::Single,
+        },
+    ];
+    assignment.carriers.sort();
+
+    let case = assignment.case.clone();
+
+    assert_eq!(
+        validate_placement(&plans, &eligibility, &placement),
+        Err(CompileError::NonCanonicalCarrierAssignment {
+            relation: conservation,
+            case,
+        }),
+    );
+}
+
+#[test]
+fn an_at_least_one_obligation_may_not_carry_a_redundant_second_carrier() {
+    let policy = relation(RelationKind::ProjectionPolicy, RelationSubject::Operation);
+    let obligations = vec![Obligation::new(
+        policy.clone(),
+        SemanticScope::TransactionGlobal,
+        CarrierMultiplicity::AtLeastOne,
+        vec![
+            eligible(
+                global(ObjectId::ReceiptLive),
+                CarrierQuantification::Single,
+                Vec::new(),
+            ),
+            eligible(
+                global(ObjectId::Ash),
+                CarrierQuantification::Single,
+                Vec::new(),
+            ),
+        ],
+    )];
+    let (plans, eligibility) = instance(&obligations);
+    let placements = agree(&plans, &eligibility);
+
+    // At-least-one retains the inclusion-minimal singletons, so the two
+    // carriers are two placements rather than one doubled assignment.
+    assert_eq!(placements.len(), 2);
+
+    let mut placement = one_placement(&plans, &eligibility);
+    let assignment = assignment_of(&mut placement, &policy);
+    assignment.carriers = vec![
+        PlacedCarrier {
+            carrier: global(ObjectId::Ash),
+            quantification: CarrierQuantification::Single,
+        },
+        PlacedCarrier {
+            carrier: global(ObjectId::ReceiptLive),
+            quantification: CarrierQuantification::Single,
+        },
+    ];
+    assignment.carriers.sort();
+
+    let case = assignment.case.clone();
+
+    assert_eq!(
+        validate_placement(&plans, &eligibility, &placement),
+        Err(CompileError::NonCanonicalCarrierAssignment {
+            relation: policy,
+            case,
+        }),
+    );
+}
+
+#[test]
+fn a_placement_stating_an_unrelated_layout_requirement_is_rejected() {
+    let obligations = mandatory_family_and_coordinator();
+    let (plans, eligibility) = instance(&obligations);
+    let mut placement = one_placement(&plans, &eligibility);
+
+    // No carrier this placement selected depends on the sponsor region
+    // being isolated, so stating it would record an obligation against a
+    // future backend that nothing here justified.
+    let unrelated = LayoutRequirement::IsolateSponsorRegion {
+        relation: family_relation(RelationKind::Recognition, ObjectId::PlainLbtc),
+        case: case(SponsorCase::Present),
+    };
+
+    placement.layout_requirements.push(unrelated.clone());
+    placement.layout_requirements.sort();
+
+    assert_eq!(
+        validate_placement(&plans, &eligibility, &placement),
+        Err(CompileError::UnexpectedLayoutRequirement {
+            unexpected: vec![unrelated],
+        }),
+    );
+}
+
+#[test]
+fn a_placement_repeating_a_layout_requirement_is_rejected() {
+    let obligations = mandatory_family_and_coordinator();
+    let (plans, eligibility) = instance(&obligations);
+    let mut placement = enumerate_feasible_placements(&plans, &eligibility, limits())
+        .expect("placements")
+        .candidates
+        .into_iter()
+        .find(|placement| !placement.layout_requirements.is_empty())
+        .expect("a placement with a layout dependency");
+    let repeated = placement.layout_requirements[0].clone();
+
+    placement.layout_requirements.push(repeated.clone());
+    placement.layout_requirements.sort();
+
+    assert_eq!(
+        validate_placement(&plans, &eligibility, &placement),
+        Err(CompileError::UnexpectedLayoutRequirement {
+            unexpected: vec![repeated],
+        }),
+    );
+}
+
+#[test]
+fn a_placement_stating_another_relation_cases_layout_requirement_is_rejected() {
+    let obligations = mandatory_family_and_coordinator();
+    let (plans, eligibility) = instance(&obligations);
+    let mut placement = one_placement(&plans, &eligibility);
+
+    // The requirement is a real dependency of the *other* obligation's
+    // eligible carrier, and it belongs to the operation-wide census
+    // rather than to a placement that did not select that carrier.
+    let foreign = eligibility
+        .iter()
+        .flat_map(|analysis| {
+            analysis
+                .eligible
+                .iter()
+                .flat_map(move |entry| oracle_layout(analysis, entry))
+        })
+        .find(|requirement| !placement.layout_requirements.contains(requirement))
+        .expect("some eligible carrier depends on a requirement this placement omits");
+
+    placement.layout_requirements.push(foreign.clone());
+    placement.layout_requirements.sort();
+
+    assert_eq!(
+        validate_placement(&plans, &eligibility, &placement),
+        Err(CompileError::UnexpectedLayoutRequirement {
+            unexpected: vec![foreign],
+        }),
+    );
+}

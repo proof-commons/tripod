@@ -912,7 +912,11 @@ pub fn enumerate_feasible_placements(
 /// Restating the constraints over the assembled value catches a
 /// generator that satisfied them option by option and still produced an
 /// inconsistent whole, and lets a placement built elsewhere be checked
-/// without trusting how it was built.
+/// without trusting how it was built. The minimality policy of §10.3 is
+/// restated here rather than delegated to [`retained_options`]: a
+/// validator that called the enumerator's own helper could only agree
+/// with it, and the property being checked is precisely that the
+/// enumerator's output is inside the candidate language.
 ///
 /// # Errors
 ///
@@ -922,8 +926,13 @@ pub fn enumerate_feasible_placements(
 /// carrier is not eligible, is a non-runtime role, cannot discharge the
 /// obligation's semantic scope, cannot discharge its multiplicity, or is
 /// an optional sponsor carrier of an unconditional relation;
+/// [`CompileError::DuplicatePlacedCarrier`] when one assignment repeats
+/// a carrier role; [`CompileError::NonCanonicalCarrierAssignment`] when
+/// a carrier set is not one exact retained option of its obligation;
 /// [`CompileError::MissingLayoutRequirement`] when a selected carrier
-/// depends on a layout requirement the placement does not state.
+/// depends on a layout requirement the placement does not state;
+/// [`CompileError::UnexpectedLayoutRequirement`] when the placement
+/// states one no selected carrier depends on.
 pub fn validate_placement(
     plans: &[RelationCasePlan],
     eligibility: &[CarrierEligibility],
@@ -951,90 +960,162 @@ pub fn validate_placement(
         });
     }
 
-    let stated = placement
-        .layout_requirements
-        .iter()
-        .collect::<BTreeSet<_>>();
+    // A repeated layout requirement is surplus for the same reason an
+    // unrelated one is: the placement states an obligation twice and
+    // justifies it once.
+    let mut stated = BTreeSet::new();
+    let mut surplus = BTreeSet::new();
 
-    for assignment in &placement.assignments {
-        let key = assignment.key();
-        let analysis = eligibility
-            .iter()
-            .find(|analysis| analysis.relation == key.relation && analysis.case == key.case)
-            .ok_or_else(|| CompileError::PlacementCensusMismatch {
-                missing: vec![key.clone()],
-                unexpected: Vec::new(),
-            })?;
-        let plan = plans
-            .iter()
-            .find(|plan| plan.relation == key.relation && plan.case == key.case)
-            .ok_or_else(|| CompileError::PlacementCensusMismatch {
-                missing: vec![key.clone()],
-                unexpected: Vec::new(),
-            })?;
-
-        let admissible = admissible_carriers(plan, analysis);
-        let unpermitted = |carrier: &CarrierRole| CompileError::UnpermittedCarrierPlacement {
-            relation: key.relation.clone(),
-            case: key.case.clone(),
-            carrier: carrier.clone(),
-        };
-
-        if assignment.carriers.is_empty() {
-            return Err(CompileError::NoEligibleCarrier {
-                relation: key.relation.clone(),
-                case: key.case.clone(),
-            });
-        }
-
-        for placed in &assignment.carriers {
-            let entry = admissible
-                .iter()
-                .find(|entry| entry.carrier == placed.carrier)
-                .ok_or_else(|| unpermitted(&placed.carrier))?;
-
-            if entry.quantification != placed.quantification {
-                return Err(unpermitted(&placed.carrier));
-            }
-
-            for requirement in selected_carrier_requirements(analysis, entry) {
-                if !stated.contains(&requirement) {
-                    return Err(CompileError::MissingLayoutRequirement {
-                        relation: key.relation.clone(),
-                        case: key.case.clone(),
-                    });
-                }
-            }
-        }
-
-        // Multiplicity is a property of the whole assignment, not of any
-        // one carrier: exactly-one admits no second carrier, and
-        // deliberate duplication admits nothing less than the complete
-        // admissible set that the duplication policy names.
-        let satisfied = match analysis.multiplicity {
-            CarrierMultiplicity::ExactlyOne => assignment.carriers.len() == 1,
-            CarrierMultiplicity::EveryMember | CarrierMultiplicity::AtLeastOne => true,
-            CarrierMultiplicity::DeliberateDuplication => {
-                let selected = assignment
-                    .carriers
-                    .iter()
-                    .map(|placed| &placed.carrier)
-                    .collect::<BTreeSet<_>>();
-
-                selected
-                    == admissible
-                        .iter()
-                        .map(|entry| &entry.carrier)
-                        .collect::<BTreeSet<_>>()
-            }
-        };
-
-        if !satisfied {
-            return Err(unpermitted(&assignment.carriers[0].carrier));
+    for requirement in &placement.layout_requirements {
+        if !stated.insert(requirement.clone()) {
+            surplus.insert(requirement.clone());
         }
     }
 
+    let mut depended = BTreeSet::new();
+
+    for assignment in &placement.assignments {
+        depended.extend(validate_assignment(
+            plans,
+            eligibility,
+            assignment,
+            &stated,
+        )?);
+    }
+
+    // Exact placement-local layout: every requirement the selected
+    // carriers depend on is stated, and nothing else is. A requirement
+    // of an unselected carrier or of another relation-case belongs to
+    // the operation-wide census, not to this placement.
+    surplus.extend(
+        stated
+            .into_iter()
+            .filter(|requirement| !depended.contains(requirement)),
+    );
+
+    if !surplus.is_empty() {
+        return Err(CompileError::UnexpectedLayoutRequirement {
+            unexpected: surplus.into_iter().collect(),
+        });
+    }
+
     Ok(())
+}
+
+/// Validate one assignment and return the layout it depends on.
+///
+/// The obligation's own plan and eligible carrier set are looked up
+/// again here rather than passed in pre-paired, so a caller cannot hand
+/// this check a mismatched pair.
+///
+/// # Errors
+///
+/// The typed reason this assignment is not one exact retained option of
+/// its obligation, or lacks a layout requirement one of its selected
+/// carriers depends on.
+fn validate_assignment(
+    plans: &[RelationCasePlan],
+    eligibility: &[CarrierEligibility],
+    assignment: &PlacementAssignment,
+    stated: &BTreeSet<LayoutRequirement>,
+) -> Result<BTreeSet<LayoutRequirement>, CompileError> {
+    let key = assignment.key();
+    let census = || CompileError::PlacementCensusMismatch {
+        missing: vec![key.clone()],
+        unexpected: Vec::new(),
+    };
+    let analysis = eligibility
+        .iter()
+        .find(|analysis| analysis.relation == key.relation && analysis.case == key.case)
+        .ok_or_else(census)?;
+    let plan = plans
+        .iter()
+        .find(|plan| plan.relation == key.relation && plan.case == key.case)
+        .ok_or_else(census)?;
+
+    let admissible = admissible_carriers(plan, analysis);
+    let unpermitted = |carrier: &CarrierRole| CompileError::UnpermittedCarrierPlacement {
+        relation: key.relation.clone(),
+        case: key.case.clone(),
+        carrier: carrier.clone(),
+    };
+
+    if assignment.carriers.is_empty() {
+        return Err(CompileError::NoEligibleCarrier {
+            relation: key.relation.clone(),
+            case: key.case.clone(),
+        });
+    }
+
+    // A repeated carrier role would vanish into the stable set
+    // projection, so a raw invalid assignment and a valid one would
+    // become indistinguishable downstream.
+    let mut selected = BTreeSet::new();
+
+    for placed in &assignment.carriers {
+        if !selected.insert(&placed.carrier) {
+            return Err(CompileError::DuplicatePlacedCarrier {
+                relation: key.relation.clone(),
+                case: key.case.clone(),
+                carrier: placed.carrier.clone(),
+            });
+        }
+    }
+
+    // Minimality is a property of the whole assignment, not of any one
+    // carrier, and it is the same policy §10.3 enumerates: an
+    // exactly-one obligation carries one carrier; an every-member
+    // obligation carries exactly one quantified alternative, since a
+    // per-member role and a complete-family proof each discharge it
+    // alone; an at-least-one obligation carries the accepted
+    // inclusion-minimal singleton; and only deliberate duplication
+    // carries more than one carrier — exactly the complete admitted set
+    // the policy names, never a smaller or a larger one.
+    let canonical = match analysis.multiplicity {
+        CarrierMultiplicity::ExactlyOne
+        | CarrierMultiplicity::EveryMember
+        | CarrierMultiplicity::AtLeastOne => assignment.carriers.len() == 1,
+        CarrierMultiplicity::DeliberateDuplication => {
+            selected
+                == admissible
+                    .iter()
+                    .map(|entry| &entry.carrier)
+                    .collect::<BTreeSet<_>>()
+        }
+    };
+
+    if !canonical {
+        return Err(CompileError::NonCanonicalCarrierAssignment {
+            relation: key.relation.clone(),
+            case: key.case.clone(),
+        });
+    }
+
+    let mut depended = BTreeSet::new();
+
+    for placed in &assignment.carriers {
+        let entry = admissible
+            .iter()
+            .find(|entry| entry.carrier == placed.carrier)
+            .ok_or_else(|| unpermitted(&placed.carrier))?;
+
+        if entry.quantification != placed.quantification {
+            return Err(unpermitted(&placed.carrier));
+        }
+
+        for requirement in selected_carrier_requirements(analysis, entry) {
+            if !stated.contains(&requirement) {
+                return Err(CompileError::MissingLayoutRequirement {
+                    relation: key.relation.clone(),
+                    case: key.case.clone(),
+                });
+            }
+
+            depended.insert(requirement);
+        }
+    }
+
+    Ok(depended)
 }
 
 /// Place one complete proof-plan candidate.
