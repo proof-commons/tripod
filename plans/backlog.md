@@ -144,60 +144,61 @@ No named consumer means no digest. No distinct decision means no digest.
 
 ### 2.1 Latest static review · `tbl:backlog:review-basis`
 
-The current review was performed statically over the supplied subtree report:
+The current review is the two-pass static review performed over the supplied
+concatenation of the tree:
 
 ```text
 tree:
    
 
 selected files:
-    343
+    291
 
 selected bytes:
-    3,645,852
-
-submodules reported:
-    none
-
-tracked symbolic links reported:
-    none
+    approximately 3.5 MiB
 ```
 
-The supplied report excluded:
+The supplied report excluded, among other things:
 
 ```text
 Cargo.lock
-LICENSE-CODE
-LICENSE-DOCS
+LICENSE-CODE and licence files
 archive/
 docs/attestation/human.md
 packages/document-stamps/
 packages/execwrap/
 packages/flatten-latex-main/
+packages/model/generated/architecture.json
+architecture/model/realization unit-test directories
 ```
 
-No Cargo, Meson, TeX, target-execution, advisory, or reproducibility command was
-run as part of this review.
+No Cargo, Meson, TeX, target-execution, advisory, or reproducibility command
+was run as part of this review.
 
 Therefore:
 
-- T6–T9 are static findings until reproduced;
-- this review makes no current green-build claim;
-- the excluded packages received no content review in this pass;
+- the review makes no current green-build claim;
+- the excluded packages and test directories received no content review;
 - lockfile checksums and resolved features were not independently verified;
 - advisory status was not checked;
 - licence compatibility was not independently checked;
 - historical gate records remain historical evidence only.
 
+Its findings are recorded in §5.2; the review found no obvious currently
+reachable invalid model transition in the implemented pilot surface.
+
 ### 2.2 Earlier review basis
 
-The repository retains two earlier reviewed trees as historical context:
+The repository retains three earlier reviewed trees as historical context:
 
 ```text
 initial reviewed tree:
    
 
 follow-up reviewed tree:
+   
+
+proof-planning reviewed tree:
    
 ```
 
@@ -657,7 +658,31 @@ no public realization or compiler digest without a real consumer.
 All four findings were reproduced or directly corrected, repaired, and
 verified in the Guide-4 batch; the gate record is in §2.8. Their evidence
 records follow. Implementation detail beyond these records belongs to Git
-history.
+history. The later two-pass review recorded in §2.1 opened the SR2 findings
+in §5.2.
+
+### 5.2 Second-review findings · `tbl:backlog:findings-sr2`
+
+| ID | Severity | Status | Finding |
+|---|---|---|---|
+| `SR2-01` | High | DONE | CI could report green without the tracked-entry mode audit; lint alias and mocked contract omitted census-audit. |
+| `SR2-02` | Medium | DONE | Root-use policy was reused as the observed root effect, rejecting valid succession under succession-or-termination. |
+| `SR2-03` | Medium | DONE | Lifecycle relations and lifecycle graph declarations were not bidirectionally welded. |
+| `SR2-04` | Medium | DONE | Placement validation accepted noncanonical, duplicate, and surplus-layout assignments. |
+| `SR2-05` | Medium | DONE | Placed proof-plan validation did not compare the exact offered and placed sets. |
+| `SR2-06` | Medium | DONE | Public deployment-profile hashing accepted unvalidated profiles; hashing now requires the validated wrapper and the identity stays dormant. |
+| `SR2-07` | Medium | DONE | Open-flow observation normalization did not enforce reference sides, cross-flow uniqueness, or anchor exclusion. |
+| `SR2-08` | Low | DONE | Representation-conditional activation was keyed by mode only; it is now keyed by object and mode. |
+| `SR2-09` | Low | TODO | Coverage shape validation is weaker than derivation; resolved by the analyzed-program validator under P2-012, which compares exact independently re-derived coverage projections. |
+| `SR2-10` | Low | DONE | Compiler package-index status and review provenance had drifted; both reconciled. |
+| `SR2-H1` | Hardening | PARKED | Tempfile publication can replace generated files with owner-only permissions; activate with the next publication-tooling batch. |
+| `SR2-H2` | Hardening | PARKED | Dirty-tree document-reproducibility probe skips with exit 0; the phase-exit gate runs on a clean tree, so activate with release-gate hardening. |
+
+The DONE rows were repaired in the Guide-7 preflight wave with focused tests
+and the working debug lane; the batch full gate is recorded with the Guide-7
+exit record. Open-flow complete partitioning deliberately remains a
+sponsor-isolation relation verdict rather than observation parsing, so an
+unclaimed member stays an evaluable semantic failure.
 
 ### T6 — Validate capabilities for external-evidence obligations · `task:review:external-evidence-capability`
 
