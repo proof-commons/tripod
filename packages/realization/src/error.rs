@@ -477,6 +477,22 @@ pub enum RealizationError {
         target_node: LifecycleNodeId,
     },
 
+    /// A lifecycle graph node no semantic relation declares (SR2-03).
+    ///
+    /// The lifecycle graph must be exactly what the `Representation`
+    /// and `LifecycleExit` relations say it is. An orphan node is the
+    /// residue of a lifecycle relation that was dropped while its graph
+    /// path survived — the coherent omission that let a semantic
+    /// obligation leave the relation census unnoticed.
+    #[error("lifecycle node {0:?} is declared by no semantic relation")]
+    UndeclaredLifecycleNode(LifecycleNodeId),
+
+    /// A declared required exit that no allowed representation can
+    /// reach, because the object carries no representation relation
+    /// (SR2-03).
+    #[error("lifecycle exit {object:?} -> {exit} has no allowed representation")]
+    LifecycleExitWithoutRepresentation { object: ObjectId, exit: OperationId },
+
     #[error("disclosure node {0:?} is declared more than once")]
     DuplicateDisclosureNode(DisclosureNodeId),
 
