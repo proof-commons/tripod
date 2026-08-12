@@ -3,8 +3,8 @@
 **Status:** Decided and implemented
 **Scope:** Every first-party checker and generator command, their Meson
 wiring, the file census they consume, and the unit-test fixture policy
-**Amends:** the census-discovery mechanism of
-(`[ADR013-rule:labels:census]`); the checker command-line surface under
+**Amends:** the carrier-discovery mechanism of
+(`[ADR013-judg:labels:minting]`); the checker command-line surface under
 ADR-010
 
 ---
@@ -129,7 +129,7 @@ independent directions:
    build. The audit rejects a tracked subject missing from its
    directory list, a declared file no longer tracked, and every
    tracked entry whose mode is not `100644` or `100755`.
-2. The discovery walk of (`[ADR013-rule:labels:census]`) survives
+2. The carrier discovery walk of (`[ADR013-judg:labels:minting]`) survives
    inside each checker as a verifier, not a source: the checker
    re-discovers its subjects on disk and hard-fails when the argument
    census and reality disagree.
@@ -180,7 +180,7 @@ incremental over the same census slices.
 
 Generated files remain publications, never semantic inputs
 (`[ADR011-rule:toolchain:generated]`), and remain nonparticipating in
-the label graph (`[ADR013-rule:labels:generated-nonparticipation]`).
+the label graph (`[ADR013-judg:labels:participation]`).
 
 ## Publications gate on lints · `rule:build:publication-gating`
 
@@ -246,7 +246,7 @@ materialises.
 `meson setup` time makes the census a wholesale-regenerated snapshot:
 invisible in review, semantically flat, silently stale the moment a
 file lands, and repaired only by a manual reconfigure. The allowlist
-concern of (`[ADR013-rule:labels:census]`) is answered not by
+concern of (`[ADR013-judg:labels:minting]`) is answered not by
 discovery but by the audit of
 (`rule:build:census-verification`): the lists are explicit, yet a
 missed file is a build failure, never a silent omission.
