@@ -1282,15 +1282,24 @@ pub fn place_feasible_proof_plans(
 /// trusted because the assembler produced it: each candidate's case
 /// census, its relation-case census, every one of its feasible
 /// placements against the hard constraints, and its layout census. The
-/// set-level properties are that no plan is placed twice and that the
-/// union of the per-candidate cases is exactly the semantic case census
-/// the relations and the offered candidates require, so a dropped
-/// candidate cannot pass as a complete analysis.
+/// set-level properties are that no plan is placed twice, that the
+/// placed plans are exactly the offered plans, and that the union of the
+/// per-candidate cases is exactly the semantic case census the relations
+/// and the offered candidates require.
+///
+/// The plan-set comparison is the primary one, and the case census does
+/// not subsume it: representation choices reach case identity but proof
+/// choices do not, so two plans differing only in a selected proof share
+/// their case identities, and dropping one would leave the union intact.
+/// The comparison is over complete typed plan values, which is the same
+/// boundary the analysis itself is keyed by.
 ///
 /// # Errors
 ///
 /// [`CompileError::DuplicatePlacedProofPlan`] when one typed plan is
-/// placed twice; [`CompileError::ExecutionCaseCensusMismatch`] when the
+/// placed twice; [`CompileError::PlacedProofPlanCensusMismatch`] when
+/// the placed plan set differs from the offered one;
+/// [`CompileError::ExecutionCaseCensusMismatch`] when the
 /// union of the placed cases differs from the required census; any
 /// failure of [`crate::case::validate_case_census`],
 /// [`validate_relation_case_census`],
@@ -1301,13 +1310,24 @@ pub fn validate_placed_proof_plans(
     candidates: &[ProofPlanCandidate],
     analysis: &PlacedProofPlans,
 ) -> Result<(), CompileError> {
-    let mut seen = BTreeSet::new();
+    let mut placed = BTreeSet::new();
 
     for entry in &analysis.placed {
-        if !seen.insert(entry.proof_plan.clone()) {
+        if !placed.insert(entry.proof_plan.clone()) {
             return Err(CompileError::DuplicatePlacedProofPlan);
         }
+    }
 
+    let offered = candidates.iter().cloned().collect::<BTreeSet<_>>();
+
+    if placed != offered {
+        return Err(CompileError::PlacedProofPlanCensusMismatch {
+            missing: offered.difference(&placed).count(),
+            unexpected: placed.difference(&offered).count(),
+        });
+    }
+
+    for entry in &analysis.placed {
         validate_case_census(relations, &entry.proof_plan, &entry.execution_cases)?;
         validate_relation_case_census(
             relations,

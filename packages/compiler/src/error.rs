@@ -882,4 +882,23 @@ pub enum CompileError {
     /// value is too large to be a diagnostic field.
     #[error("a proof-plan candidate was placed more than once")]
     DuplicatePlacedProofPlan,
+
+    /// The placed proof-plan set is not exactly the offered set.
+    ///
+    /// Execution-case union equality is too weak to prove this: two
+    /// plans may select different proofs while fixing the same
+    /// representations, so their case identities coincide and dropping
+    /// one leaves the union untouched.
+    ///
+    /// The counts are the diagnostic because the alternative is not: a
+    /// complete typed plan is too large to carry here, and a digest,
+    /// vector position, or candidate number would name a plan by
+    /// something that is not its identity.
+    #[error("placed proof-plan census mismatch: {missing} missing, {unexpected} unexpected")]
+    PlacedProofPlanCensusMismatch {
+        /// Offered plans absent from the placed set.
+        missing: usize,
+        /// Placed plans absent from the offered set.
+        unexpected: usize,
+    },
 }
