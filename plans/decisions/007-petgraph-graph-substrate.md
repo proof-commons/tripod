@@ -5,7 +5,7 @@
 > **Depends on:** (`dec:source:typed-rust`)
 > **Imports:** (`[ADR011-rule:toolchain:dependencies]`),
 > (`[ADR011-rule:toolchain:reproducibility]`),
-> (`[ADR013-rule:labels:global-resolution]`)
+> (`[ADR013-inv:labels:total-resolution]`)
 > **Supersedes:** every planned or provisional first-party graph container,
 > graph wrapper, adjacency-map implementation, and alternate graph substrate
 

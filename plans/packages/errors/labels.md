@@ -24,6 +24,6 @@ A stale publication is a validation diagnostic, not I/O. Check mode reports it
 without writing; generation may repair owned publications only after source
 relationships validate. Every owner's duplicate mints and unresolved citations
 fail — planning and documentation labels included, under
-(`[ADR013-rule:labels:global-resolution]`) — and a `AttestationIndexStale`
+(`[ADR013-inv:labels:total-resolution]`) — and a `AttestationIndexStale`
 diagnostic means the committed upward-citation index no longer presents
 exactly the body's anchor set.

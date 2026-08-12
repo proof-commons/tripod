@@ -18,7 +18,7 @@ It owns Attestation LaTeX, realization Markdown, ADR, first-party crate Rust,
 and planning imported labels, plus the two generated upstream planning registers.
 
 Plan-local labels remain non-normative; under
-(`[ADR013-rule:labels:global-resolution]`) they are linted for one mint
+(`[ADR013-inv:labels:total-resolution]`) they are linted for one mint
 per label and complete citation resolution.
 
 ## Inputs · `sec:labels-package:inputs`
