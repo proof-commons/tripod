@@ -52,14 +52,18 @@
 //! - relation-indexed coverage requirements with typed mutation classes;
 //! - typed coverage dependencies with two-pass symbol resolution and a
 //!   forbidden-cycle SCC policy;
-//! - an independent relation-by-case coverage oracle.
+//! - an independent relation-by-case coverage oracle;
+//! - relation-indexed requirement bundles with exact aggregate closure;
+//! - complete scoped analyzed programs for the pilot scope, factorized
+//!   per operation, with a corruption-resistant assembly validator and
+//!   an independent assembly census oracle.
 //!
 //! Every stage above the input boundary is crate-private. The
 //! following remain absent:
 //!
-//! - a complete pilot analyzed program;
 //! - a public complete-analysis result;
 //! - a compiler-plan identity;
+//! - a target capability adapter;
 //! - target program emission.
 //!
 //! No public value produced by the crate today can be mistaken for a

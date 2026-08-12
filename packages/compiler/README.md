@@ -49,10 +49,13 @@ relation discharge classification, carrier eligibility, exact feasible
 placement, and target-independent layout requirements (C1-009/P2-010);
 relation-indexed coverage requirements, typed coverage dependencies with a
 forbidden-cycle SCC policy, and independent placement and coverage oracles
-(P2-011/C1-010/C1-013).
+(P2-011/C1-010/C1-013); relation-indexed requirement bundles with exact
+aggregate closure and complete scoped analyzed programs for the pilot scope,
+factorized per operation, with a corruption-resistant assembly validator and
+an independent assembly census oracle (P2-012).
 
-Not implemented: target capability adapter, concrete target layout, and the
-complete pilot analyzed program. The analysis structures are crate-private, no complete
-analyzed program is exposed, and no compiler-plan identity exists — typed
-comparison remains the boundary. No public value this crate produces today
-can be mistaken for a completed analysis.
+Not implemented: target capability adapter, concrete target layout, and
+target program emission. The analysis structures are crate-private, no
+complete analyzed program is exposed publicly, and no compiler-plan identity
+exists — typed comparison remains the boundary. No public value this crate
+produces today can be mistaken for a completed analysis.

@@ -2,8 +2,9 @@
 
 > **Status:** Active — input, graph, folding, source, constructibility, disclosure,
 > lifecycle, exact proof-planning, execution-case placement, layout-requirement,
-> and relation-indexed coverage foundations implemented internally; the complete
-> analyzed pilots remain open
+> relation-indexed coverage, and complete scoped analyzed-pilot foundations
+> implemented internally; no public complete-analysis result is exposed and no
+> compiler identity exists
 > **Phase:** [Phase 2](../phases/02-compiler.md)
 > **Package:** `tripod-compiler`
 > **Library:** `compiler`
@@ -307,7 +308,7 @@ Those are separate reports under D004.
 | `milestone:compiler:lifecycle` | Lifecycle graph | Implemented internally |
 | `milestone:compiler:placement` | Placement/layout requirements | Implemented internally |
 | `milestone:compiler:coverage` | Coverage requirements | Implemented internally |
-| `milestone:compiler:pilots` | Complete pilot analyses | Open |
+| `milestone:compiler:pilots` | Complete pilot analyses | Implemented internally |
 
 Implemented internally means the analysis exists as a crate-private stage with
 focused and oracle-checked coverage. No public API is frozen and no stable

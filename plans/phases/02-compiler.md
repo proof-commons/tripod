@@ -172,7 +172,9 @@ For every relation, derive:
 - carrier requirement;
 - accepted semantic projection checks.
 
-The complete pilot analyzed program and its public boundary remain open.
+The complete scoped pilot analyzed programs are implemented internally; no
+public complete-analysis boundary is exposed. The Phase-2 exit gate remains
+the recorded evidence surface below.
 
 ## Pilot analysis · `sec:phase2:pilots`
 
