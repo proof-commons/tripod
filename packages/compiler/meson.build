@@ -21,6 +21,7 @@ compiler_source_files = files(
   'src/placement.rs',
   'src/proof.rs',
   'src/relation.rs',
+  'src/requirement.rs',
   'src/source.rs',
   'src/tests/carrier_tests.rs',
   'src/tests/case_tests.rs',
@@ -41,6 +42,7 @@ compiler_source_files = files(
   'src/tests/placement_tests.rs',
   'src/tests/proof_tests.rs',
   'src/tests/relation_tests.rs',
+  'src/tests/requirement_tests.rs',
   'src/tests/source_tests.rs',
 )
 

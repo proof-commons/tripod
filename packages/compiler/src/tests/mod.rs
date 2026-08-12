@@ -22,6 +22,7 @@ mod placement_oracle_tests;
 mod placement_tests;
 mod proof_tests;
 mod relation_tests;
+mod requirement_tests;
 mod source_tests;
 
 use architecture::OperationId;

@@ -84,6 +84,7 @@ mod lifecycle;
 mod placement;
 mod proof;
 mod relation;
+mod requirement;
 mod source;
 
 pub use error::CompileError;

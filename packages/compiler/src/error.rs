@@ -901,4 +901,98 @@ pub enum CompileError {
         /// Placed plans absent from the offered set.
         unexpected: usize,
     },
+
+    /// A proof-required relation carries no selected proof.
+    #[error("relation {relation:?} is proof-required but no proof was selected")]
+    MissingSelectedProof {
+        /// The relation left undecided.
+        relation: realization::RelationId,
+    },
+
+    /// A selected proof is not one of the relation's realization-approved
+    /// alternatives. The compiler validates approval rather than
+    /// trusting the assignment it was handed.
+    #[error("the proof selected for relation {relation:?} is not realization-approved")]
+    UnapprovedSelectedProof {
+        /// The relation whose decision is unapproved.
+        relation: realization::RelationId,
+    },
+
+    /// A relation needing no proof variable carries a selected proof.
+    ///
+    /// A statically validated or externally evidenced relation is not a
+    /// search variable; a proof assigned to one would claim a runtime
+    /// discharge the classification denies.
+    #[error("relation {relation:?} needs no proof but carries a selected one")]
+    UnexpectedSelectedProof {
+        /// The relation carrying the unexpected decision.
+        relation: realization::RelationId,
+    },
+
+    /// Relation-owned capabilities do not union to the candidate's
+    /// aggregate.
+    ///
+    /// `relation` names the owner of a capability the aggregate omits.
+    /// It is `None` for the opposite direction — an aggregate capability
+    /// no relation owns — because having no owner to name is precisely
+    /// the defect being reported.
+    #[error("capability closure mismatch for {relation:?}: {capability:?}")]
+    AnalyzedCapabilityClosureMismatch {
+        /// The owning relation, or `None` for an unowned aggregate item.
+        relation: Option<realization::RelationId>,
+        /// The capability the two views disagree about.
+        capability: crate::capability::RequiredCapability,
+    },
+
+    /// Relation-owned source rows do not union to the candidate's
+    /// aggregate. `relation` is `None` for an aggregate row no relation
+    /// owns.
+    #[error("source closure mismatch for {relation:?}: {operand:?}")]
+    AnalyzedSourceClosureMismatch {
+        /// The owning relation, or `None` for an unowned aggregate row.
+        relation: Option<realization::RelationId>,
+        /// The operand of the row the two views disagree about.
+        operand: crate::source::OperandId,
+    },
+
+    /// Relation-owned external evidence does not union to the
+    /// candidate's aggregate. `relation` is `None` for an aggregate
+    /// requirement no relation owns.
+    #[error("evidence closure mismatch for {relation:?}: {requirement:?}")]
+    AnalyzedEvidenceClosureMismatch {
+        /// The owning relation, or `None` for an unowned aggregate item.
+        relation: Option<realization::RelationId>,
+        /// The evidence requirement the two views disagree about.
+        requirement: realization::ExternalEvidenceRequirement,
+    },
+
+    /// The candidate's disclosure analysis is not the analysis its own
+    /// representation decisions imply.
+    ///
+    /// The variant carries no analysis: a complete disclosure value is
+    /// too large for a diagnostic, and naming one differing fact would
+    /// suggest the rest agreed.
+    #[error("the candidate disclosure analysis does not match its representation decisions")]
+    AnalyzedDisclosureClosureMismatch,
+
+    /// One relation requires an exact public value the candidate's
+    /// disclosure analysis retains private.
+    #[error("relation {relation:?} requires fact {fact:?}, which is retained private")]
+    AnalyzedRequirementFactUnavailable {
+        /// The relation making the demand.
+        relation: realization::RelationId,
+        /// The fact the disclosure analysis does not publish.
+        fact: realization::FactId,
+    },
+
+    /// The candidate's lifecycle rows are not exactly the rows its
+    /// selected representations require, or a row has no owning
+    /// in-scope lifecycle-exit relation.
+    #[error("lifecycle closure mismatch: {missing:?} missing, {unexpected:?} unexpected")]
+    AnalyzedLifecycleClosureMismatch {
+        /// Required rows the candidate does not carry.
+        missing: Vec<crate::lifecycle::LifecycleRequirement>,
+        /// Carried rows nothing requires.
+        unexpected: Vec<crate::lifecycle::LifecycleRequirement>,
+    },
 }
