@@ -31,11 +31,6 @@
 //! Whole-transaction conservation stays external evidence and receives
 //! no layout requirement at all.
 
-// The analysis stages have no non-test consumer until the P2-012
-// analyzed program; unit tests exercise them until then. Remove with
-// the first real consumer.
-#![allow(dead_code)]
-
 use std::collections::BTreeSet;
 
 use architecture::{ObjectId, OperationId};

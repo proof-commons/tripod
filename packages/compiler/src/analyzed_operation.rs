@@ -31,10 +31,9 @@
 //! target program, and an inactive relation-case is present in the
 //! census with its vacuity stated rather than omitted.
 
-// The analysis stages have no non-test consumer until the P2-012
-// analyzed program; unit tests exercise them until then. Remove with
-// the first real consumer.
-#![allow(dead_code)]
+// One item-level allowance remains: `analyze_operation`, the variant
+// that discards the placement search report. The canonical path keeps
+// the report, so only a caller that does not want it uses this one.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -300,6 +299,7 @@ pub fn validate_operation_placements(
 /// [`crate::coverage::analyze_placed_coverage`],
 /// [`crate::coverage_graph::resolve_coverage_dependencies`],
 /// [`relation_case_requirements`], or [`validate_analyzed_operation`].
+#[allow(dead_code)]
 pub fn analyze_operation(
     relations: &CompilerRelationAnalysis,
     requirements: &BTreeMap<RelationId, RelationRequirements>,

@@ -28,10 +28,11 @@
 //! implicit, so a later stage cannot mistake it for an ordinary single
 //! carrier standing in for every member.
 
-// The analysis stages have no non-test consumer until the P2-012
-// analyzed program; unit tests exercise them until then. Remove with
-// the first real consumer.
-#![allow(dead_code)]
+// The item-level allowances below are declared carrier vocabulary the
+// two pilots do not exercise, and query helpers over eligibility that
+// the analysis does not need to ask. Deleting them would narrow the
+// typed model to the pilots rather than to what the realization
+// declares.
 
 use std::collections::BTreeSet;
 
@@ -134,6 +135,7 @@ pub struct EligibleCarrier {
 impl EligibleCarrier {
     /// The source rows this carrier can only receive through layout.
     #[must_use]
+    #[allow(dead_code)]
     pub fn layout_provided(&self) -> Vec<&SourceRouting> {
         self.routings
             .iter()
@@ -144,6 +146,7 @@ impl EligibleCarrier {
     /// Whether any source row of this carrier is confined to the
     /// optional sponsor region.
     #[must_use]
+    #[allow(dead_code)]
     pub fn confines_sponsor_region(&self) -> bool {
         self.routings
             .iter()
@@ -237,12 +240,14 @@ pub fn coordinator_carriers(
 
 /// The carrier role a backend-structural obligation belongs to.
 #[must_use]
+#[allow(dead_code)]
 pub const fn structural_carrier(operation: OperationId) -> CarrierRole {
     CarrierRole::BackendStructural { operation }
 }
 
 /// The carrier role one external-evidence requirement belongs to.
 #[must_use]
+#[allow(dead_code)]
 pub const fn external_carrier(requirement: ExternalEvidenceRequirement) -> CarrierRole {
     CarrierRole::ExternalEvidence { requirement }
 }

@@ -19,10 +19,9 @@
 //! expanding on them would inflate the census without adding semantic
 //! content. Coverage vectors for those shapes belong to a later stage.
 
-// The analysis stages have no non-test consumer until the P2-012
-// analyzed program; unit tests exercise them until then. Remove with
-// the first real consumer.
-#![allow(dead_code)]
+// One item-level allowance remains: `case_census` aggregates cases
+// across a whole scope, and the factorized analysis derives cases per
+// operation instead (§9.4).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -207,6 +206,7 @@ pub fn execution_cases(
 /// # Errors
 ///
 /// Any failure of [`validate_case_census`] for any candidate.
+#[allow(dead_code)]
 pub fn case_census(
     relations: &CompilerRelationAnalysis,
     candidates: &[ProofPlanCandidate],

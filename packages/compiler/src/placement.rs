@@ -48,10 +48,14 @@
 //! add storage and index metadata whose only effect is to leak a
 //! `NodeIndex` into a stage that must never observe one.
 
-// The analysis stages have no non-test consumer until the P2-012
-// analyzed program; unit tests exercise them until then. Remove with
-// the first real consumer.
-#![allow(dead_code)]
+// The item-level allowances below are of three kinds: declared
+// placement vocabulary the two pilots do not exercise, the stable
+// projections (§12) that nothing inside the analysis builds, and the
+// global cross-operation placement stack. The last is the important
+// one — §9.6 and §20.2 forbid the canonical path from enumerating the
+// product across operations, so the global enumerator is *expected* to
+// have no production caller and is retained for the manual phase-exit
+// comparison against the factors.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -116,6 +120,7 @@ pub enum SemanticScope {
     /// Every family on one transaction side.
     TransactionSideGlobal { side: TransactionSide },
     /// One object family across both sides.
+    #[allow(dead_code)]
     ObjectFamilyGlobal { object: ObjectId },
     /// The whole operation.
     TransactionGlobal,
@@ -134,6 +139,7 @@ pub enum SemanticScope {
 pub enum ActivationCondition {
     Always,
     WhenSponsorPresent,
+    #[allow(dead_code)]
     WhenRepresentation {
         object: ObjectId,
         mode: RepresentationMode,
@@ -159,7 +165,9 @@ pub enum RelationActivity {
 pub enum CarrierMultiplicity {
     ExactlyOne,
     EveryMember,
+    #[allow(dead_code)]
     AtLeastOne,
+    #[allow(dead_code)]
     DeliberateDuplication,
 }
 
@@ -680,6 +688,7 @@ pub struct PlacementSearchLimits {
 
 impl PlacementSearchLimits {
     #[must_use]
+    #[allow(dead_code)]
     pub const fn new(maximum_states: NonZeroU64, maximum_candidates: NonZeroU64) -> Self {
         Self {
             maximum_states,
@@ -743,6 +752,7 @@ pub struct PlacementCandidateProjection {
 /// limits are excluded too — they can only turn a complete result into a
 /// typed failure, never change which placements are feasible.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
 pub struct PlacementProjection {
     pub candidates: BTreeSet<PlacementCandidateProjection>,
 }
@@ -770,6 +780,7 @@ impl PlacementCandidate {
 impl FeasiblePlacements {
     /// This feasible set's stable projection.
     #[must_use]
+    #[allow(dead_code)]
     pub fn project(&self) -> PlacementProjection {
         PlacementProjection {
             candidates: self
@@ -1151,6 +1162,7 @@ fn validate_assignment(
 /// [`crate::carrier::relation_case_eligibility`],
 /// [`crate::layout::layout_requirements`], or
 /// [`enumerate_feasible_placements`].
+#[allow(dead_code)]
 pub fn place_proof_plan(
     relations: &CompilerRelationAnalysis,
     candidate: &ProofPlanCandidate,
@@ -1179,12 +1191,14 @@ pub fn place_proof_plan(
 /// two analyses of the same plan set are equal rather than merely
 /// similar.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
 pub struct PlacedProofPlans {
     pub placed: Vec<PlacedProofPlanCandidate>,
 }
 
 /// The stable projection of one placed proof-plan candidate.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
 pub struct PlacedProofPlanProjection {
     pub execution_cases: BTreeSet<ExecutionCaseId>,
     pub relation_case_plans: BTreeMap<RelationCaseKey, RelationCasePlan>,
@@ -1198,6 +1212,7 @@ pub struct PlacedProofPlanProjection {
 /// boundary the analysis itself uses. Search order, vector position, and
 /// candidate counts cannot reach a comparison of two projections.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
 pub struct PlacedAnalysisProjection {
     pub plans: BTreeMap<ProofPlanCandidate, PlacedProofPlanProjection>,
 }
@@ -1205,6 +1220,7 @@ pub struct PlacedAnalysisProjection {
 impl PlacedProofPlanCandidate {
     /// This placed candidate's stable projection.
     #[must_use]
+    #[allow(dead_code)]
     pub fn project(&self) -> PlacedProofPlanProjection {
         PlacedProofPlanProjection {
             execution_cases: self
@@ -1242,6 +1258,7 @@ impl PlacedProofPlans {
     /// same representations share their case identities, and the census
     /// counts cases.
     #[must_use]
+    #[allow(dead_code)]
     pub fn execution_case_census(&self) -> BTreeSet<ExecutionCaseId> {
         self.placed
             .iter()
@@ -1251,6 +1268,7 @@ impl PlacedProofPlans {
 
     /// This analysis's stable projection.
     #[must_use]
+    #[allow(dead_code)]
     pub fn project(&self) -> PlacedAnalysisProjection {
         PlacedAnalysisProjection {
             plans: self
@@ -1276,6 +1294,7 @@ impl PlacedProofPlans {
 ///
 /// Any failure of [`place_proof_plan`] for any candidate, or of
 /// [`validate_placed_proof_plans`] on the assembled collection.
+#[allow(dead_code)]
 pub fn place_feasible_proof_plans(
     relations: &CompilerRelationAnalysis,
     candidates: &[ProofPlanCandidate],
@@ -1324,6 +1343,7 @@ pub fn place_feasible_proof_plans(
 /// [`validate_relation_case_census`],
 /// [`crate::carrier::relation_case_eligibility`], [`validate_placement`],
 /// or [`crate::layout::validate_layout_census`].
+#[allow(dead_code)]
 pub fn validate_placed_proof_plans(
     relations: &CompilerRelationAnalysis,
     candidates: &[ProofPlanCandidate],

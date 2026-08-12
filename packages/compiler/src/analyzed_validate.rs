@@ -27,10 +27,9 @@
 //! without weakening anything: no corruption of a program can reach the
 //! value it is compared against.
 
-// The complete validator has no non-test consumer until the pilot
-// acceptance analyses consume it; unit tests exercise it until then.
-// Remove with the first real consumer.
-#![allow(dead_code)]
+// One item-level allowance remains, on the crate-private root of the
+// complete validator, for the reason given in `crate::analyzed`: §26.1
+// exposes no public API that could call it until Phase 3.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -330,6 +329,12 @@ fn operation_obligations(
 ///
 /// Any failure of [`derive_expectations`] or
 /// [`validate_against_expectations`].
+// The second crate-private root, for the same reason as
+// [`crate::analyzed::analyze_scoped_program`]: the complete validator
+// is reachable from the assembler's own step 12 and from the pilot
+// acceptance analyses, and from no public API until Phase 3 gives it
+// one.
+#[allow(dead_code)]
 pub fn validate_scoped_analyzed_program(
     input: &BoundCompilerInput,
     limits: PlacementSearchLimits,

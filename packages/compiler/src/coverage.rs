@@ -30,10 +30,11 @@
 //! mutation is a semantic class, not a mutated world: this stage
 //! mutates nothing and constructs no target transaction.
 
-// The analysis stages have no non-test consumer until the P2-012
-// analyzed program; unit tests exercise them until then. Remove with
-// the first real consumer.
-#![allow(dead_code)]
+// The item-level allowances below are the scope-wide coverage stack
+// and its projections. The canonical path analyzes coverage per
+// operation (§10.1) and never aggregates across the scope, so the
+// scope-wide analysis is retained for the independent oracles and the
+// phase-exit product comparison rather than called in production.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1516,6 +1517,7 @@ pub fn validate_placement_coverage(
 /// [`CompileError::MissingPositiveCoverage`] or
 /// [`CompileError::MissingNegativeCoverage`] when a conditional
 /// relation lacks its active rows.
+#[allow(dead_code)]
 pub fn validate_conditional_coverage(
     analyses: &[PlanCoverageAnalysis],
 ) -> Result<(), CompileError> {
@@ -1578,6 +1580,7 @@ pub fn validate_conditional_coverage(
 ///
 /// [`CompileError::MissingRepresentationCoverage`] when an allowed mode
 /// of a representation relation is covered by no plan in the set.
+#[allow(dead_code)]
 pub fn validate_representation_coverage(
     relations: &CompilerRelationAnalysis,
     analyses: &[PlanCoverageAnalysis],
@@ -1640,6 +1643,7 @@ pub struct RelationCoverageProjection {
 /// target positions, timestamps, paths, and digests are all absent —
 /// the last of these because the crate mints none.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
 pub struct CoverageProjection {
     pub requirements: BTreeMap<RelationCaseKey, RelationCoverageProjection>,
 }
@@ -1667,6 +1671,7 @@ impl RelationCoveragePlan {
 impl PlanCoverageAnalysis {
     /// This analysis's stable projection.
     #[must_use]
+    #[allow(dead_code)]
     pub fn project(&self) -> CoverageProjection {
         CoverageProjection {
             requirements: self
@@ -1715,6 +1720,7 @@ impl OperationCoverageAnalysis {
 /// was built, and an analysis that carried them could compare equal to
 /// itself and unequal to an identical analysis built in another order.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
 pub struct PlanCoverage {
     pub coverage: PlanCoverageAnalysis,
     pub dependencies: CoverageGraphProjection,
@@ -1731,12 +1737,14 @@ pub struct PlanCoverage {
 /// stored per operation, so a two-operation scope carries two operation
 /// analyses rather than one analysis over paired cases.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
 pub struct ScopeCoverageAnalysis {
     pub plans: BTreeMap<ProofPlanCandidate, PlanCoverage>,
 }
 
 /// The stable projection of one scope's coverage.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
 pub struct PlanCoverageProjection {
     pub coverage: CoverageProjection,
     pub dependencies: CoverageGraphProjection,
@@ -1744,6 +1752,7 @@ pub struct PlanCoverageProjection {
 
 /// The stable projection of a complete scope coverage analysis.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
 pub struct ScopeCoverageProjection {
     pub plans: BTreeMap<ProofPlanCandidate, PlanCoverageProjection>,
 }
@@ -1751,6 +1760,7 @@ pub struct ScopeCoverageProjection {
 impl PlanCoverage {
     /// This plan's stable projection.
     #[must_use]
+    #[allow(dead_code)]
     pub fn project(&self) -> PlanCoverageProjection {
         PlanCoverageProjection {
             coverage: self.coverage.project(),
@@ -1762,6 +1772,7 @@ impl PlanCoverage {
 impl ScopeCoverageAnalysis {
     /// This scope's stable projection.
     #[must_use]
+    #[allow(dead_code)]
     pub fn project(&self) -> ScopeCoverageProjection {
         ScopeCoverageProjection {
             plans: self
@@ -1773,6 +1784,7 @@ impl ScopeCoverageAnalysis {
     }
 
     /// Every plan's coverage analysis, in stable plan order.
+    #[allow(dead_code)]
     pub fn analyses(&self) -> impl Iterator<Item = &PlanCoverageAnalysis> {
         self.plans.values().map(|entry| &entry.coverage)
     }
@@ -1784,6 +1796,7 @@ impl ScopeCoverageAnalysis {
     /// comparison neither pairs plans across scopes nor multiplies one
     /// operation's coverage by another's.
     #[must_use]
+    #[allow(dead_code)]
     pub fn operation_projections(
         &self,
         operation: OperationId,
@@ -1796,6 +1809,7 @@ impl ScopeCoverageAnalysis {
 
     /// Every execution case this scope covers.
     #[must_use]
+    #[allow(dead_code)]
     pub fn cases(&self) -> BTreeSet<ExecutionCaseId> {
         self.analyses()
             .flat_map(|analysis| analysis.operations.values())
@@ -1826,6 +1840,7 @@ impl ScopeCoverageAnalysis {
 /// [`crate::coverage_graph::resolve_coverage_dependencies`],
 /// [`validate_conditional_coverage`], or
 /// [`validate_representation_coverage`].
+#[allow(dead_code)]
 pub fn analyze_scope_coverage(
     relations: &CompilerRelationAnalysis,
     placed: &PlacedProofPlans,
@@ -1862,6 +1877,7 @@ pub fn analyze_scope_coverage(
 /// the coverage was built from: a stage that dropped a relation before
 /// coverage ever saw it would otherwise agree with the coverage that
 /// inherited the gap.
+#[allow(dead_code)]
 fn validate_plan_coverage_scope(
     relations: &CompilerRelationAnalysis,
     placed: &PlacedProofPlanCandidate,
@@ -1901,6 +1917,7 @@ fn validate_plan_coverage_scope(
 /// differ from the placed case census; any failure of
 /// [`validate_conditional_coverage`] or
 /// [`validate_representation_coverage`].
+#[allow(dead_code)]
 pub fn validate_scope_coverage(
     relations: &CompilerRelationAnalysis,
     placed: &PlacedProofPlans,

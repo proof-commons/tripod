@@ -7,10 +7,10 @@
 //! is not hashed, and a real target-definition identity binds only
 //! after a target package exists.
 
-// The analysis stages have no non-test consumer until the P2-012
-// analyzed program; unit tests exercise them until then. Remove with
-// the first real consumer.
-#![allow(dead_code)]
+// One item-level allowance remains: `CapabilityView::Available` is the
+// pruning view, and the canonical Phase-2 analysis is deliberately
+// unconstrained (§6.4). The variant exists so fail-closed pruning can
+// be exercised before a target exists to constrain anything.
 
 use std::collections::BTreeSet;
 
@@ -47,6 +47,7 @@ pub enum CapabilityView {
     Unconstrained,
 
     /// Keep only alternatives whose requirements are contained here.
+    #[allow(dead_code)]
     Available(BTreeSet<RequiredCapability>),
 }
 

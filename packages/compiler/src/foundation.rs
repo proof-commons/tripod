@@ -6,11 +6,6 @@
 //! partial compiler analysis, and no partial analyzed program is
 //! exposed before the complete pilot result exists under P2-012.
 
-// The analysis stages have no non-test consumer until proof
-// planning (P2-007) and the P2-012 analyzed program; unit tests
-// exercise them until then. Remove with the first real consumer.
-#![allow(dead_code)]
-
 use crate::{
     CompileError,
     expression::{
