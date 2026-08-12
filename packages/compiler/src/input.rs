@@ -116,6 +116,7 @@ pub struct BoundCompilerInput {
     realization: ScopedRealizationSpec,
     scope: CompilationScope,
     policy: AnalysisPolicy,
+    architecture_operations: std::collections::BTreeSet<OperationId>,
 }
 
 impl BoundCompilerInput {
@@ -141,6 +142,19 @@ impl BoundCompilerInput {
     #[must_use]
     pub fn architecture_binding(&self) -> &ArchitectureBinding {
         self.realization.architecture()
+    }
+
+    /// The complete operation census of the validated architecture.
+    ///
+    /// Captured here, from the typed architecture the binder validated,
+    /// because the architecture binding is an identity rather than a
+    /// census: an analyzed program that must state which architecture
+    /// operations lie outside its compiler scope needs the whole set,
+    /// and deriving it from source files or planning prose instead
+    /// would be a guess about the model rather than a reading of it.
+    #[must_use]
+    pub const fn architecture_operations(&self) -> &std::collections::BTreeSet<OperationId> {
+        &self.architecture_operations
     }
 }
 
@@ -184,5 +198,10 @@ pub fn bind_input(
         realization,
         scope,
         policy,
+        architecture_operations: architecture
+            .operations
+            .iter()
+            .map(|operation| operation.id)
+            .collect(),
     })
 }

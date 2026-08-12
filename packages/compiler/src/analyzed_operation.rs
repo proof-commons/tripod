@@ -307,7 +307,28 @@ pub fn analyze_operation(
     operation: OperationId,
     limits: PlacementSearchLimits,
 ) -> Result<AnalyzedOperation, CompileError> {
+    Ok(analyze_operation_reported(relations, requirements, candidate, operation, limits)?.0)
+}
+
+/// Analyze one operation and retain its placement search report.
+///
+/// The report is diagnostic provenance rather than analysis: it is
+/// returned beside the factor instead of inside it, so a consumer that
+/// records limits and state counts can do so without those counts ever
+/// entering a value intended for stable comparison.
+///
+/// # Errors
+///
+/// Any failure of [`analyze_operation`].
+pub fn analyze_operation_reported(
+    relations: &CompilerRelationAnalysis,
+    requirements: &BTreeMap<RelationId, RelationRequirements>,
+    candidate: &ProofPlanCandidate,
+    operation: OperationId,
+    limits: PlacementSearchLimits,
+) -> Result<(AnalyzedOperation, PlacementSearchReport), CompileError> {
     let placement = analyze_operation_placements(relations, candidate, operation, limits)?;
+    let search = placement.search;
 
     // The operation-local placed value exists only to reuse the exact
     // coverage stage, which is already per-operation inside. It carries
@@ -365,7 +386,7 @@ pub fn analyze_operation(
     };
 
     validate_analyzed_operation(relations, candidate, &analyzed)?;
-    Ok(analyzed)
+    Ok((analyzed, search))
 }
 
 /// Analyze every operation of one scope under one fixed plan.
@@ -383,17 +404,46 @@ pub fn analyze_candidate_operations(
     candidate: &ProofPlanCandidate,
     limits: PlacementSearchLimits,
 ) -> Result<BTreeMap<OperationId, AnalyzedOperation>, CompileError> {
+    Ok(analyze_candidate_operations_reported(relations, requirements, candidate, limits)?.0)
+}
+
+/// One scope's operation factors beside their placement search
+/// reports.
+///
+/// The two travel as a pair rather than as one value: the factors are
+/// the analysis, the reports are provenance about how it was found, and
+/// a type joining them permanently would put search counts inside the
+/// value the analyzed program compares.
+pub type ReportedOperationAnalyses = (
+    BTreeMap<OperationId, AnalyzedOperation>,
+    BTreeMap<OperationId, PlacementSearchReport>,
+);
+
+/// Analyze every operation of one scope and retain their placement
+/// search reports.
+///
+/// # Errors
+///
+/// Any failure of [`analyze_candidate_operations`].
+pub fn analyze_candidate_operations_reported(
+    relations: &CompilerRelationAnalysis,
+    requirements: &BTreeMap<RelationId, RelationRequirements>,
+    candidate: &ProofPlanCandidate,
+    limits: PlacementSearchLimits,
+) -> Result<ReportedOperationAnalyses, CompileError> {
     let mut factors = BTreeMap::new();
+    let mut reports = BTreeMap::new();
 
     for operation in case_operations(relations) {
-        factors.insert(
-            operation,
-            analyze_operation(relations, requirements, candidate, operation, limits)?,
-        );
+        let (analyzed, search) =
+            analyze_operation_reported(relations, requirements, candidate, operation, limits)?;
+
+        factors.insert(operation, analyzed);
+        reports.insert(operation, search);
     }
 
     validate_operation_factorization(relations, candidate, &factors)?;
-    Ok(factors)
+    Ok((factors, reports))
 }
 
 /// Build one operation's relation-case requirement bundles (§8).
