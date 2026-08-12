@@ -985,7 +985,25 @@ fn the_combined_pilot_scope_is_analyzed_deterministically() {
     );
 }
 
+/// The combined two-pilot placement product, materialized in full.
+///
+/// Demoted to the manual lane under Guide-7 §20.3, which permits it only
+/// once equivalent signal exists. It does: each operation factor is
+/// checked for exactness against the independent whole-plan route, the
+/// synthetic two-operation product is compared exhaustively in
+/// `analyzed_operation_tests`, cross-operation independence is checked
+/// structurally, and the real pilot product remains available through
+/// `analyzed_program_oracle_tests`. Materializing 216 × 216 placements
+/// per plan is what the production analyzed value deliberately never
+/// does, and the ordinary suite should not do it either.
+///
+/// ```sh
+/// cargo test -p tripod-compiler \
+///   the_combined_scope_placement_set_is_the_product_of_its_operations \
+///   -- --ignored --nocapture
+/// ```
 #[test]
+#[ignore = "phase-exit regression; run with -- --ignored"]
 fn the_combined_scope_placement_set_is_the_product_of_its_operations() {
     let combined = analyze(&[OperationId::CompactAsh, OperationId::TransferLive]);
     let factors = pilots();
