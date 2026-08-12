@@ -5,6 +5,7 @@
 compiler_source_files = files(
   'src/analyzed.rs',
   'src/analyzed_operation.rs',
+  'src/analyzed_validate.rs',
   'src/capability.rs',
   'src/carrier.rs',
   'src/case.rs',
@@ -25,6 +26,7 @@ compiler_source_files = files(
   'src/relation.rs',
   'src/requirement.rs',
   'src/source.rs',
+  'src/tests/analyzed_corruption_tests.rs',
   'src/tests/analyzed_operation_tests.rs',
   'src/tests/analyzed_program_tests.rs',
   'src/tests/carrier_tests.rs',

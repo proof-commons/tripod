@@ -1098,4 +1098,161 @@ pub enum CompileError {
         /// Operations the status names that are not outside the scope.
         unexpected: Vec<OperationId>,
     },
+
+    /// The analyzed program's retained typed source is not the source it
+    /// was analyzed from.
+    ///
+    /// The whole analysis is a claim about one exact source, so a
+    /// retained binding that drifted from it would describe an analysis
+    /// nobody performed. The defect names which of the three retained
+    /// components disagrees; the components themselves are far too large
+    /// for a diagnostic.
+    #[error("the analyzed source binding is not the input's: {defect:?}")]
+    AnalyzedSourceBindingMismatch {
+        /// The retained component that disagrees.
+        defect: crate::analyzed_validate::AnalyzedSourceDefect,
+    },
+
+    /// The analyzed foundation is not the foundation its input and its
+    /// own retained source imply.
+    #[error("the analyzed foundation census is not the re-derived one: {defect:?}")]
+    AnalyzedFoundationMismatch {
+        /// The census that disagrees.
+        defect: crate::analyzed_validate::AnalyzedFoundationDefect,
+    },
+
+    /// The analyzed proof-plan map is not the exact feasible set.
+    ///
+    /// Counted rather than named: a complete typed plan is too large for
+    /// a diagnostic, and a census defect is a statement about how many
+    /// plans are wrong rather than about any one plan's contents.
+    #[error("proof-plan census mismatch: {missing} missing, {unexpected} unexpected")]
+    AnalyzedProofPlanCensusMismatch {
+        /// Feasible plans the map does not carry.
+        missing: usize,
+        /// Carried plans the exact search does not offer.
+        unexpected: usize,
+    },
+
+    /// One analyzed plan's retained plan is not the plan it is keyed by.
+    ///
+    /// The key is the analysis's only plan identity. A retained field
+    /// disagreeing with it would let one entry be read two ways, which
+    /// is also the only shape a duplicated plan can take in a map keyed
+    /// by the complete typed plan.
+    #[error("an analyzed proof plan does not match the plan it is keyed by")]
+    AnalyzedProofPlanKeyMismatch,
+
+    /// One plan's relation requirements are not exactly one bundle per
+    /// compiler relation.
+    #[error(
+        "relation requirement census mismatch: {} missing, {} unexpected",
+        missing.len(),
+        unexpected.len()
+    )]
+    AnalyzedRelationRequirementCensusMismatch {
+        /// Compiler relations with no requirement bundle.
+        missing: Vec<realization::RelationId>,
+        /// Bundles for relations the compiler analysis does not carry.
+        unexpected: Vec<realization::RelationId>,
+    },
+
+    /// One relation's proof disposition is not the disposition its
+    /// obligation class and the plan's own decision imply.
+    ///
+    /// Covers a static relation that acquired a proof, an external
+    /// relation that lost its approved class, and a selected proof
+    /// replaced after the search: each states a discharge the
+    /// realization did not approve for that relation.
+    #[error("relation {relation:?} carries the wrong proof disposition")]
+    AnalyzedProofDispositionMismatch {
+        /// The relation whose disposition disagrees.
+        relation: realization::RelationId,
+    },
+
+    /// One relation's requirement bundle is not the re-derived bundle,
+    /// in a component with no closure error of its own.
+    #[error("relation {relation:?} carries a requirement bundle that was not derived")]
+    AnalyzedRelationRequirementMismatch {
+        /// The relation whose bundle disagrees.
+        relation: realization::RelationId,
+    },
+
+    /// One operation factor's feasible placements are not the exact
+    /// re-derived set.
+    #[error("placement factor {operation:?} mismatch: {missing} missing, {unexpected} unexpected")]
+    AnalyzedPlacementFactorMismatch {
+        /// The factor's operation.
+        operation: OperationId,
+        /// Feasible placements the factor does not carry.
+        missing: usize,
+        /// Carried placements the exact search does not offer.
+        unexpected: usize,
+    },
+
+    /// One operation factor's layout census is not the re-derived one.
+    #[error("layout census mismatch for operation {operation:?}")]
+    AnalyzedLayoutCensusMismatch {
+        /// The factor's operation.
+        operation: OperationId,
+    },
+
+    /// One relation-case requirement bundle is not the bundle its
+    /// relation, case, and plan imply.
+    ///
+    /// Distinct from [`Self::InvalidRelationCaseRequirements`]: that one
+    /// reports a bundle breaking its own disposition's retention rules,
+    /// this one reports a bundle that is internally consistent and still
+    /// not the one anything derived.
+    #[error("relation-case {relation:?}/{case:?} in {operation:?} was not derived: {defect:?}")]
+    AnalyzedRelationCaseMismatch {
+        /// The factor's operation.
+        operation: OperationId,
+        /// The owning relation.
+        relation: realization::RelationId,
+        /// The owning execution case.
+        case: crate::case::ExecutionCaseId,
+        /// The bundle component that disagrees.
+        defect: crate::analyzed_validate::AnalyzedRelationCaseDefect,
+    },
+
+    /// One operation factor's coverage is not the independently
+    /// re-derived coverage.
+    ///
+    /// Both directions are defects: an extra requirement states a demand
+    /// nothing derived, exactly as a missing one drops a demand
+    /// something did.
+    #[error("coverage mismatch in {operation:?} for {relation:?}/{case:?}: {defect:?}")]
+    AnalyzedCoverageCensusMismatch {
+        /// The factor's operation.
+        operation: OperationId,
+        /// The owning relation, where the defect names one.
+        relation: Option<realization::RelationId>,
+        /// The owning execution case, where the defect names one.
+        case: Option<crate::case::ExecutionCaseId>,
+        /// The typed coverage rule the projection breaks.
+        defect: crate::analyzed_validate::AnalyzedCoverageDefect,
+    },
+
+    /// One plan's stated lifecycle completeness is not the completeness
+    /// its own retained rows imply.
+    ///
+    /// The variant names no row: the rows themselves are reported by
+    /// [`Self::AnalyzedLifecycleClosureMismatch`], and the defect here
+    /// is the summary claim rather than any single obligation.
+    #[error("the stated lifecycle completeness is not the one the plan's rows imply")]
+    AnalyzedLifecycleStatusMismatch,
+
+    /// One operation factor stores a member of the combined placement
+    /// product.
+    ///
+    /// The analyzed program stores the factors of a product it never
+    /// materializes. A stored placement naming two operations' obligations
+    /// is a member of that product, which is both exponentially large and
+    /// carries nothing the factors do not.
+    #[error("placement factor {operation:?} stores a combined placement product member")]
+    UnexpectedCombinedPlacementProduct {
+        /// The factor's operation.
+        operation: OperationId,
+    },
 }
