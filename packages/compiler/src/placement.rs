@@ -125,11 +125,19 @@ pub enum SemanticScope {
 ///
 /// A case-independent property of the relation. The per-case resolution
 /// of it is [`RelationActivity`].
+///
+/// A representation condition names its object as well as its mode, for
+/// the same reason [`crate::source::RequirementActivation`] does: a
+/// representation choice for one object must never activate a condition
+/// belonging to another.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ActivationCondition {
     Always,
     WhenSponsorPresent,
-    WhenRepresentation(RepresentationMode),
+    WhenRepresentation {
+        object: ObjectId,
+        mode: RepresentationMode,
+    },
 }
 
 /// Whether one relation is active in one execution case.
@@ -566,14 +574,25 @@ const fn family_activation(object: ObjectId) -> ActivationCondition {
     }
 }
 
-fn resolve_activity(activation: ActivationCondition, case: &ExecutionCaseId) -> RelationActivity {
+/// Resolve one relation's activation in one case.
+///
+/// Reachable from outside the module — the module itself is private, so
+/// this stays inside the crate — because the census tests must exercise
+/// activation conditions no pilot relation currently constructs: the
+/// classification matrix produces only the unconditional and
+/// sponsor-conditional forms today, and a representation-conditional
+/// relation would otherwise be untestable.
+pub fn resolve_activity(
+    activation: ActivationCondition,
+    case: &ExecutionCaseId,
+) -> RelationActivity {
     let active = match activation {
         ActivationCondition::Always => true,
         ActivationCondition::WhenSponsorPresent => case.sponsor == SponsorCase::Present,
-        // A representation-conditional relation is active only under
-        // the mode the plan already selected for the case.
-        ActivationCondition::WhenRepresentation(mode) => {
-            case.representations.values().any(|value| *value == mode)
+        // A representation-conditional relation is active only where
+        // the plan selected that mode for the condition's own object.
+        ActivationCondition::WhenRepresentation { object, mode } => {
+            case.representations.get(&object) == Some(&mode)
         }
     };
 

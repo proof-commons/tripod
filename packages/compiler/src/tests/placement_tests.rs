@@ -3,7 +3,9 @@
 use std::collections::BTreeSet;
 
 use architecture::{AssetId, ObjectId, OperationId};
-use realization::{Relation, RelationId, RelationKind, RelationSubject, TransactionSide};
+use realization::{
+    Relation, RelationId, RelationKind, RelationSubject, RepresentationMode, TransactionSide,
+};
 
 use super::bound_input;
 use crate::{
@@ -16,7 +18,7 @@ use crate::{
         ActivationCondition, BackendStructuralRequirement, CarrierMultiplicity,
         CompilerStaticRequirement, DischargeBoundary, PlacedCarrier, PlacedProofPlanCandidate,
         PlacementSearchLimits, RelationActivity, RelationCasePlan, SemanticScope,
-        classify_relation_cases, enumerate_feasible_placements, place_proof_plan,
+        classify_relation_cases, enumerate_feasible_placements, place_proof_plan, resolve_activity,
         validate_relation_case_census,
     },
     proof::enumerate_feasible_plans,
@@ -353,6 +355,36 @@ fn sponsor_isolation_stays_active_without_a_sponsor_region() {
         assert_eq!(plan.activity, RelationActivity::Active);
         assert_eq!(plan.runtime_requirements.len(), 1);
     }
+}
+
+#[test]
+fn a_representation_conditional_relation_reads_its_own_objects_mode() {
+    // Synthetic: the classification matrix produces only unconditional
+    // and sponsor-conditional relations today, so this condition is
+    // resolved directly. The property it fixes is the one a second
+    // independently represented object family would otherwise break —
+    // one family's mode activating another family's relation.
+    let case = crate::case::ExecutionCaseId {
+        operation: OperationId::TransferLive,
+        sponsor: SponsorCase::Absent,
+        representations: std::collections::BTreeMap::from([
+            (ObjectId::Ash, RepresentationMode::Explicit),
+            (ObjectId::ReceiptLive, RepresentationMode::PrivateCommitted),
+        ]),
+    };
+    let conditional = |object| ActivationCondition::WhenRepresentation {
+        object,
+        mode: RepresentationMode::PrivateCommitted,
+    };
+
+    assert_eq!(
+        resolve_activity(conditional(ObjectId::Ash), &case),
+        RelationActivity::Vacuous,
+    );
+    assert_eq!(
+        resolve_activity(conditional(ObjectId::ReceiptLive), &case),
+        RelationActivity::Active,
+    );
 }
 
 // --- live transfer classification matrix (§9.2) ---
