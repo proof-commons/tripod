@@ -21,8 +21,45 @@ mock_root="$repository_root/build/mocks"
 build="$mock_root/meson"
 rm -rf "$mock_root"
 
+# The census audit takes the git program from the build definition, so
+# a machine file is enough to put a passthrough wrapper in front of it.
+# The wrapper is byte-identical to git in every respect until
+# MOCK_GIT_TRACKED_SYMLINK is exported, when the tracked-entry listing
+# gains one fabricated symlink record. That is the mutation the
+# tracked-mode regression below needs: it perturbs what the production
+# audit edge reads, not the audit binary and not the real repository.
+real_git="$(command -v git)"
+mkdir -p "$mock_root/bin"
+mock_git="$mock_root/bin/git"
+cat > "$mock_git" <<MOCK_GIT
+#!/bin/sh
+# Passthrough git for the mocked Meson contract (see test-meson-mock.sh).
+set -eu
+inject=no
+if [ "\${MOCK_GIT_TRACKED_SYMLINK:-0}" = "1" ]; then
+  for arg in "\$@"; do
+    if [ "\$arg" = "ls-files" ]; then
+      inject=yes
+    fi
+  done
+fi
+if [ "\$inject" = "no" ]; then
+  exec $real_git "\$@"
+fi
+$real_git "\$@"
+printf '120000 0000000000000000000000000000000000000000 0\tscripts/mock-tracked-symlink\0'
+MOCK_GIT
+chmod +x "$mock_git"
+
+native_file="$mock_root/mock-git.ini"
+cat > "$native_file" <<NATIVE_FILE
+[binaries]
+git = '$mock_git'
+NATIVE_FILE
+
 echo "==> configuring mocked Meson build (no TeX toolchain)" >&2
 meson setup "$build" "$repository_root" \
+  --native-file "$native_file" \
   -Dmock_mode=true \
   -Dpublication_archive_root="$mock_root/archive" \
   -Dartifact_generation_output_dir="$mock_root/generated" \
@@ -102,6 +139,40 @@ printf '{"corrupted":true}\n' > "$artifact"
 meson compile -C "$build" generate-artifacts >/dev/null
 cmp -s "$artifact" "$mock_root/expected.json" \
   || { echo "generated artifact not repaired" >&2; exit 1; }
+
+echo "==> lint runs the complete tracked-entry audit" >&2
+# ADR-014: census-audit is the only complete check of tracked entry
+# modes, and it is the lint alias that has to carry it — an explicit
+# Ninja target does not build unrelated build_by_default targets, so a
+# lane that compiles only `attestation` and `generate-artifacts` never
+# executes the audit. Removing both outputs first makes their presence
+# afterwards proof that the `lint` edge ran, rather than proof that
+# some earlier default build happened to leave them behind.
+census_stamp="$build/census.ok"
+census_report="$build/census-audit.json"
+rm -f "$census_stamp" "$census_report"
+meson compile -C "$build" lint >/dev/null
+test -f "$census_stamp" || { echo "lint did not run the census audit" >&2; exit 1; }
+test -f "$census_report" || { echo "census audit published no report" >&2; exit 1; }
+grep -q '"valid"[[:space:]]*:[[:space:]]*true' "$census_report" \
+  || { echo "census audit report does not report a valid census" >&2; exit 1; }
+
+echo "==> the audit edge rejects a tracked symlink" >&2
+# Graph-level regression: the subprocess tests already prove the binary
+# rejects mode 120000, so what is proven here is that the production
+# Meson edge feeds the real tracked listing to that binary and fails
+# the build on its verdict. The fabricated entry sits under scripts/,
+# which the categorical exclusion pattern removes from lint subjects —
+# lint exclusion must not exempt a path from the repository-shape rule.
+if MOCK_GIT_TRACKED_SYMLINK=1 meson compile -C "$build" census-audit >/dev/null 2>&1; then
+  echo "the census audit edge accepted a tracked symlink" >&2
+  exit 1
+fi
+# The audit is always stale, so an unmutated rerun must recover: a
+# failing audit must not be a latched build state.
+meson compile -C "$build" census-audit >/dev/null
+grep -q '"valid"[[:space:]]*:[[:space:]]*true' "$census_report" \
+  || { echo "census audit did not recover after the mutation" >&2; exit 1; }
 
 echo "==> failure propagation (injected mock latexmk failure blocks publish)" >&2
 # mock_fail_child is a paper-subproject option, hence the qualified name.

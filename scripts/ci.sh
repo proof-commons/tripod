@@ -135,7 +135,10 @@ cargo run --locked -p tripod-labels --bin check-forbidden-text -- \
 # Mocked Meson contract: exercises the real Meson graph with the TeX
 # toolchain simulated (execwrap --mock-child), so it needs meson+ninja but
 # no TeX. Skipped loudly where meson/ninja are absent, preserving this
-# script's "runs without a TeX toolchain" contract.
+# script's "runs without a TeX toolchain" contract. This is also the
+# only lane that runs census-audit — the complete tracked-entry mode
+# audit — so a skipped lane 10 leaves repository shape unchecked and
+# the run is reported as partial rather than green.
 echo "==> lane 10/11: mocked Meson contract" >&2
 if command -v meson > /dev/null 2>&1 && command -v ninja > /dev/null 2>&1; then
   sh scripts/test-meson-mock.sh .
