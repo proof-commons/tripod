@@ -87,7 +87,7 @@ fn realization_version_tracks_the_compiler_line() {
 /// The derivation itself: patch-blind, prerelease carried verbatim.
 #[test]
 fn tracked_version_derivation_is_patch_blind() {
-    assert_eq!(spec::tracked_realization_version("0.2.0-dev"), "0.2.0-dev");
+    assert_eq!(spec::tracked_realization_version("0.3.0-dev"), "0.3.0-dev");
     assert_eq!(spec::tracked_realization_version("0.6.0-dev"), "0.6.0-dev");
     assert_eq!(spec::tracked_realization_version("1.2.3"), "1.2.0");
     assert!(spec::realization_version_well_formed("0.6.0-dev"));

@@ -39,7 +39,7 @@ The order is intentional:
 ## Status · `phase:roadmap:current`
 
 ```text
-Current: Phase 2 - target-independent compiler analysis
+Current: Phase 3 - Elements target and foundational prototypes
 ```
 
 ## Phase index · `tbl:roadmap:phases`

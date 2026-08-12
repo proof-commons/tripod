@@ -11,8 +11,8 @@ card owns its entry conditions, deliverables, evidence, and exit gate.
 |---|---|---|
 | [00-baseline.md](00-baseline.md) | Complete | Reproducible compiler-era baseline. |
 | [01-realization.md](01-realization.md) | Complete | Typed realization pilots. |
-| [02-compiler.md](02-compiler.md) | Active | Target-independent compiler analysis. |
-| [03-target-foundation.md](03-target-foundation.md) | Planned | Typed target and foundational prototypes. |
+| [02-compiler.md](02-compiler.md) | Complete | Target-independent compiler analysis. |
+| [03-target-foundation.md](03-target-foundation.md) | Active | Typed target and foundational prototypes. |
 | [04-compact-ash.md](04-compact-ash.md) | Planned | First complete backend operation. |
 | [05-live-transfer.md](05-live-transfer.md) | Planned | Owner authorization and value-representation evidence. |
 | [06-state-and-maturity.md](06-state-and-maturity.md) | Planned | STATE constructor and maturity announcement. |

@@ -1,9 +1,9 @@
 # Tripod Implementation Backlog
 
 > **Status:** ACTIVE
-> **Current gate:** Phase 2 — target-independent compiler analysis
-> **Current condition:** Phase 1 remains historical tagged evidence. Every Phase-2 compiler analysis stage short of the complete analyzed program is implemented internally: input binding, relation/expression graphs, folding, proof planning, sources, constructibility, disclosure, lifecycle, execution cases, discharge classification, carrier eligibility, exact placement, layout requirements, relation-indexed coverage, and typed coverage dependencies, each with an independent oracle; the Guide-6 gate record is in §2.10. The next work is P2-012 complete analyzed pilots, then the P2-013 Phase-2 exit gate.
-> **Next gate:** Phase 3 — Elements target and foundational prototypes
+> **Current gate:** Phase 3 — Elements target and foundational prototypes
+> **Current condition:** Phases 1 and 2 are complete. The target-independent compiler constructs one deterministic, validated scoped analyzed program for the complete pilot scope, factorized per operation, with relation-owned requirements, a corruption-resistant assembly validator, and independent assembly oracles; the Phase-2 exit gate record is in §2.11, including passed document reproducibility. The next work is the Guide-8 typed Elements target contract and capability-adapter foundation.
+> **Next gate:** Phase 4 — compact-ash end-to-end pipeline
 > **Authority:** Current execution queue only. The specification, the realization document, typed architecture, implemented ADRs, accepted decisions, package contracts, phase cards, and accepted research results take precedence.
 
 This file contains only:
@@ -454,6 +454,85 @@ unchanged; the realization relation census expanded internally to match
 architecture cardinalities; no realization or compiler identity exists or
 was minted; no new dependency entered.
 
+### 2.11 Guide-7 Phase-2 exit gate · `gate:backlog:guide7`
+
+The repository records the completed Guide-7 batch for:
+
+```text
+P2-012
+P2-013
+C1-014
+```
+
+together with the second-review preflight repairs recorded in §5.2.
+
+The batch delivered, all crate-private:
+
+- relation-indexed requirement bundles whose capability, source, and
+  evidence unions equal the candidate aggregates exactly in both
+  directions;
+- factorized operation analysis: cases, relation-case requirement
+  bundles, carrier eligibility, placements, layout, coverage, and the
+  coverage dependency graph derived per operation, with the existing
+  exact search reused unchanged on the operation-restricted census;
+- one scoped analyzed program per scope, binding its exact typed source,
+  reporting partial architecture scope with the eleven out-of-scope
+  operations derived from the architecture census, explicit lifecycle
+  incompleteness, and unresolved external evidence, with the execution
+  report excluded from the stable semantic projection;
+- a corruption-resistant assembly validator rechecking all thirteen
+  closure families against fresh component re-derivation, with
+  sixty-four corruption mutations each rejected for a focused typed
+  reason; coverage closure is exact in both directions, resolving SR2-09;
+- an independent assembly census oracle restating every expected census
+  without the production expectation derivation, a requirement-union
+  oracle, and a two-level factorization oracle;
+- end-to-end pilot acceptance: the acceptance relation lists are the
+  censuses, rejected proof/mode pairings are absent, and the absence of
+  a compiler identity is enforced by two compile-time locks;
+- the combined-scope product regressions demoted to explicit phase-exit
+  lanes after replacement signal landed, taking the ordinary compiler
+  suite from minutes to seconds.
+
+Measured pilot results: 23 and 24 relations, 46 and 48 relation-cases,
+216 placements and 69 layout requirements per operation factor, coverage
+graphs of 344/365 and 362/489 nodes/edges, 4 combined plans storing 432
+placements while denoting the never-materialized 46,656-member product,
+2 unresolved substrate-conservation obligations, 3 outstanding lifecycle
+exits, 11 of 13 architecture operations outside scope.
+
+Phase-2 exit evidence, on the final batch tree:
+
+- declared MSRV lane, rustc 1.88.0: `scripts/ci.sh` — every available
+  lane passed; advisories and the Meson contract skipped in that
+  environment;
+- current stable lane, rustc 1.97.1: same result, after repairing four
+  new stable-toolchain pedantic findings;
+- nightly lane with `CI_REQUIRE_MESON=1`: every available lane passed
+  including the mocked Meson contract and its census-audit edge;
+  advisories skipped;
+- real Meson compile and test: 10/10 passed;
+- the three explicit product regressions: factor sizes 216 × 216,
+  product 46,656, exact set equality against the retired global
+  enumeration;
+- document byte reproducibility: PASSED — fresh and reused builds
+  produce identical PDF bytes, and the reused build refreshes the
+  source epoch;
+- `cargo-audit`: SKIPPED, tool unavailable; the run is partial in the
+  advisory dimension only;
+- dependency evidence: `Cargo.toml` and `Cargo.lock` unchanged;
+- final clean-tree check: empty.
+
+One transient test failure during a deliberately concurrent triple-lane
+run did not reproduce in isolation and the affected lane was rerun
+uncontended and passed; the recorded results are the uncontended runs.
+
+Identity impact of the batch: Layer-0 version, architecture schema and
+hashes, and generated publications unchanged; no realization or compiler
+identity exists or was minted; no compiler publication was added; the
+deployment-profile identity remains dormant behind validation; no new
+dependency entered.
+
 ---
 
 ### The verification harness's two standing hazards · `rem:backlog:verification-harness`
@@ -521,6 +600,7 @@ A domain separator is hashed input that identifies a recipe, and the product's n
 | `compiler` proof search | Exact deterministic feasible-plan enumeration; fixed external-evidence requirements retained, representation modes static; reaccepted in §2.8 |
 | `compiler` placement | Typed execution cases, discharge classification, carrier eligibility, exact feasible placement sets, layout requirements, independent placement oracle; gate record §2.9 |
 | `compiler` coverage | Relation-indexed coverage requirements, typed mutation catalogue, coverage dependency graph with forbidden-cycle SCC policy, independent coverage oracle; gate record §2.10 |
+| `compiler` analyzed program | Relation-indexed requirement bundles, factorized operation analysis, scoped analyzed programs with a corruption-resistant validator and independent assembly oracles; gate record §2.11 |
 | `artifacts` | Generated-publication derivation, writer/checker, realization-document weld |
 | `labels` | Owner-aware Markdown/Rust label graph, census, plan checks, register rendering |
 | `cli-common` | ADR-010 streams, diagnostics, checker report/stamp publication, batch publication |
@@ -556,7 +636,6 @@ Architecture finality does not imply:
 ### 3.3 Not implemented · `tbl:backlog:not-implemented`
 
 ```text
-complete pilot analyzed-program value
 public complete compiler-analysis API
 compiler-plan identity
 target capability adapter backed by a real target package
@@ -588,11 +667,11 @@ Compiler source/disclosure/lifecycle:
 Compiler exact planning:            implemented and reaccepted
 Compiler placement/layout:          implemented internally, section 2.9
 Compiler coverage:                  implemented internally, section 2.10
-Complete analyzed pilots:           absent
+Complete analyzed pilots:           implemented internally, section 2.11
 Target/backend/linker/ABI:         absent
 Independent deployment evidence:   absent
 Production deployment:             absent
-Current-tree complete gate:        recorded for the Guide-4 tree, section 2.8
+Phase-2 exit gate:                 passed and recorded, section 2.11
 ```
 
 Current packages are public-data tools. They do not legitimately accept private
@@ -609,7 +688,8 @@ credentials, or production authority.
 |---|---|---|
 | Phase 0 | HISTORICAL | the recorded baseline and identities on [the Phase-0 card](phases/00-baseline.md) |
 | Phase 1 | HISTORICAL | the completion evidence on [the Phase-1 card](phases/01-realization.md), and the gate record in [the backlog archive](history/backlog-history.md) §2.3 |
-| Phase 2 | Active | current backlog and Phase-2 card |
+| Phase 2 | HISTORICAL | Guide-4 through Guide-7 gate records, §2.8–§2.11 |
+| Phase 3 | Active | current backlog and Phase-3 card |
 
 ### 4.2 Historical finding families · `tbl:backlog:historical-findings`
 
@@ -673,7 +753,7 @@ in §5.2.
 | `SR2-06` | Medium | DONE | Public deployment-profile hashing accepted unvalidated profiles; hashing now requires the validated wrapper and the identity stays dormant. |
 | `SR2-07` | Medium | DONE | Open-flow observation normalization did not enforce reference sides, cross-flow uniqueness, or anchor exclusion. |
 | `SR2-08` | Low | DONE | Representation-conditional activation was keyed by mode only; it is now keyed by object and mode. |
-| `SR2-09` | Low | TODO | Coverage shape validation is weaker than derivation; resolved by the analyzed-program validator under P2-012, which compares exact independently re-derived coverage projections. |
+| `SR2-09` | Low | DONE | Coverage shape validation was weaker than derivation; the analyzed-program validator compares exact independently re-derived coverage projections in both directions, gate record §2.11. |
 | `SR2-10` | Low | DONE | Compiler package-index status and review provenance had drifted; both reconciled. |
 | `SR2-H1` | Hardening | PARKED | Tempfile publication can replace generated files with owner-only permissions; activate with the next publication-tooling batch. |
 | `SR2-H2` | Hardening | PARKED | Dirty-tree document-reproducibility probe skips with exit 0; the phase-exit gate runs on a clean tree, so activate with release-gate hardening. |
@@ -795,8 +875,8 @@ plans check all passed.
 | `P2-009` | P1 | DONE | Representation lifecycle analysis |
 | `P2-010` | P1 | DONE | Execution-case placement and layout requirements; gate record §2.9 |
 | `P2-011` | P1 | DONE | Relation-indexed coverage requirements; gate record §2.10 |
-| `P2-012` | P1 | TODO | Compact-ASH and live-transfer analyzed pilots |
-| `P2-013` | Gate | BLOCKED | Complete Phase-2 evidence and exit |
+| `P2-012` | P1 | DONE | Compact-ASH and live-transfer analyzed pilots; gate record §2.11 |
+| `P2-013` | Gate | DONE | Complete Phase-2 evidence and exit; gate record §2.11 |
 
 ### 6.2 Completed foundation
 
@@ -887,76 +967,39 @@ set. A broad operation test does not substitute for relation coverage.
 ### P2-012 — Analyze both pilots end to end · `task:phase2:pilots`
 
 **Priority:** P1
-**Status:** TODO
+**Status:** DONE
 **Depends on:** T6, T7, P2-005 through P2-011
 **Blocks:** P2-013
 
-#### Compact ASH
+Delivered in the Guide-7 batch; the gate record and evidence are in §2.11.
 
-Analyze:
-
-- cardinality and recognition;
-- permissionless authorization;
-- ownerless `U` conservation;
-- exact canonical delta;
-- sponsor multiplicity and role isolation;
-- substrate-conservation capability and evidence premise;
-- no roots;
-- transition-certificate projection only;
-- public constructibility;
-- explicit/public representation;
-- compact and clear lifecycle;
-- placement and coverage in sponsorless and sponsored cases.
-
-#### Live transfer
-
-Analyze:
-
-- input/output cardinality;
-- live receipt recognition and closure;
-- all-owner authorization;
-- exact aggregate `U` conservation alternatives;
-- explicit closed `U`;
-- destination-family closure;
-- sponsor multiplicity and role isolation;
-- substrate-conservation capability and evidence premise;
-- no roots;
-- transition-certificate projection only;
-- explicit/private-committed alternatives;
-- transfer, burn, and redemption lifecycle;
-- representation-sensitive proof compatibility;
-- placement and coverage in explicit/private and sponsorless/sponsored cases.
-
-Repeated analysis from equal typed inputs must produce equal stable projections.
-
-The complete analyzed value must not claim deployment lifecycle completeness:
-the pilots retain future target and operation obligations.
+Both pilots analyze end to end into one validated scoped analyzed program
+per scope: the acceptance relation lists are the exact relation censuses,
+every requirement in the acceptance matrices holds, rejected proof and
+representation pairings are absent from the plan set, repeated analysis
+from equal typed inputs produces equal stable projections, and the
+combined two-pilot scope stores per-operation factors whose product
+equals the retired global enumeration exactly. The analyzed value claims
+no deployment lifecycle completeness: the pilots retain their future
+target and operation obligations explicitly.
 
 ### P2-013 — Phase-2 evidence and exit · `gate:backlog:phase2`
 
 **Priority:** Gate
-**Status:** BLOCKED
+**Status:** DONE
 **Depends on:** T6–T9, P2-004 through P2-012, C1-005, C1-008,
 C1-009, C1-010, C1-013
 
-Phase 2 exits only when:
+Passed; the complete exit evidence is the Guide-7 gate record in §2.11,
+including the declared-MSRV and current-stable lanes, the meson-required
+CI run, the explicit product regressions, and passed document byte
+reproducibility. Every exit condition held: findings closed, censuses
+exact, capabilities failing closed, deterministic pilot analysis,
+independent oracles agreeing, gates recorded, current-phase declarations
+moving together, and a clean final tree.
 
-- T6–T9 are closed or formally refuted;
-- compiler input binding remains complete;
-- relation census exactly equals realization scope;
-- every relation has proof, source, constructibility, lifecycle, placement,
-  layout, target-requirement, and coverage information;
-- external-evidence capabilities fail closed when unavailable;
-- proof/representation compatibility is complete;
-- unsupported capabilities fail without semantic weakening;
-- no concrete target detail enters compiler core;
-- compact ASH and live transfer analyze deterministically;
-- independent small-instance oracles agree;
-- current required repository gates pass;
-- documentation status and current-phase declarations agree;
-- the final tree is clean.
-
-Phase completion does not itself justify a persistent compiler digest.
+Phase completion does not itself justify a persistent compiler digest;
+none was minted.
 
 ---
 
@@ -979,7 +1022,7 @@ Phase completion does not itself justify a persistent compiler digest.
 | `C1-011` | BLOCKED | Structured relocation; linker phase |
 | `C1-012` | BLOCKED | Deterministic bounded-depth target tree; linker phase |
 | `C1-013` | DONE | Independent small-instance oracles; placement oracle §2.9, coverage/collateral/SCC oracles §2.10 |
-| `C1-014` | BLOCKED | Preparation review and Phase-2 handoff |
+| `C1-014` | DONE | Preparation review and Phase-2 handoff; gate record §2.11 |
 
 ### 7.2 C1-008 — Proof-plan search reacceptance
 
@@ -1286,19 +1329,21 @@ correctness check, not malicious-code containment.
 
 ## 11. Current gate · `gate:backlog:current`
 
-The Phase-2 gate is **not passed**.
+The Phase-2 gate is **passed**; the record is §2.11. The current gate is
+Phase 3 — Elements target and foundational prototypes.
 
 Current blockers are:
 
 ```text
-Compiler remaining work:
-    P2-012 complete analyzed pilots
-    P2-013 Phase-2 evidence and exit
+Phase-3 work:
+    Guide-8 typed Elements target contract
+    capability-adapter foundation
+    smallest reviewed compiler target-requirement public boundary
 ```
 
-Until (`gate:backlog:phase2`) passes:
+Standing rules that survive the phase exit:
 
-- Phase 1 remains historical tagged evidence;
+- Phases 1 and 2 remain evidence about their recorded trees;
 - no compiler public complete-analysis API is frozen;
 - no public realization/compiler digest is minted without a real consumer;
 - target-specific fields remain forbidden in realization and compiler core;
@@ -1321,9 +1366,13 @@ Until (`gate:backlog:phase2`) passes:
 Execute in this order unless reproduction changes dependencies:
 
 ```text
-1. Analyze compact ASH and live transfer end to end under P2-012.
-2. Run and record the complete Phase-2 gate.
-3. Begin Phase-3 target work only after Phase-2 exit.
+1. Charter Guide 8: the typed Elements target contract, the
+   capability-adapter foundation, and the smallest reviewed compiler
+   target-requirement public boundary.
+2. Keep target types out of compiler core; the target packages consume
+   the analyzed boundary, never the reverse.
+3. Mint no target hash and claim no production activation without a real
+   consumer and reviewed evidence.
 ```
 
 No new hash, target prototype, report field, or publication may defer a current
@@ -1389,4 +1438,4 @@ After a phase or remediation series:
 
 ## 14. One-line backlog · `rem:backlog:one-line`
 
-> Assemble the complete deterministic analyzed pilots on the delivered proof, placement, layout, and coverage foundation, then run the Phase-2 exit gate, without adding target detail, speculative identities, or ambiguous evidence.
+> Replace informal Elements assumptions with one validated typed target contract and a capability adapter consuming the analyzed compiler boundary, without forcing target types into compiler core, minting speculative identities, or claiming production activation.

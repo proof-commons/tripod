@@ -1,6 +1,6 @@
 # Phase 3 — Elements Target and Foundational Prototypes · `phase:roadmap:target-foundation`
 
-> **Status:** Planned; prototype-driven
+> **Status:** Active; prototype-driven
 > **Entry:** (`gate:phase2:exit`)
 > **Packages:** [`target-elements`](../packages/target-elements.md),
 > [`tapscript`](../packages/tapscript.md)
