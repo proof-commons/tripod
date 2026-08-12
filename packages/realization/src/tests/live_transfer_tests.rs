@@ -6,10 +6,10 @@ use architecture::{
 
 use crate::{
     Count, ObservedAsset, ObservedCanonicalFlow, ObservedCanonicalPartition, ObservedObject,
-    ObservedObjectKind, ObservedObjectRef, ObservedOpenFlow, ObservedRootEffect, ObservedSide,
-    OperationObservation, OwnerId, ProtocolAmount, RealizationScope, RelationId, RelationKind,
-    RelationStatus, RelationSubject, RepresentationMode, TransactionSide, derive,
-    evaluate_operation,
+    ObservedObjectKind, ObservedObjectRef, ObservedOpenFlow, ObservedRootEffect,
+    ObservedRootEffectKind, ObservedSide, OperationObservation, OwnerId, ProtocolAmount,
+    RealizationScope, RelationId, RelationKind, RelationStatus, RelationSubject,
+    RepresentationMode, TransactionSide, derive, evaluate_operation,
 };
 
 type ObservationMutation = Box<dyn Fn(&mut OperationObservation)>;
@@ -867,7 +867,7 @@ fn relation_cases() -> Vec<RelationCase> {
             Box::new(|observation| {
                 observation.root_effects.push(ObservedRootEffect {
                     root: RootId::State,
-                    use_kind: RootUse::Succession,
+                    effect: ObservedRootEffectKind::Succession,
                 });
             }),
             roots(),

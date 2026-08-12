@@ -9,8 +9,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use realization::{
     Count, ObservedAsset, ObservedCanonicalFlow, ObservedCanonicalPartition,
     ObservedDestructionLeg, ObservedIssuance, ObservedObject, ObservedObjectKind,
-    ObservedObjectRef, ObservedOpenFlow, ObservedRootEffect, ObservedSide, ObservedValue,
-    OperationObservation, OwnerId, ProtocolAmount, RepresentationMode,
+    ObservedObjectRef, ObservedOpenFlow, ObservedRootEffect, ObservedRootEffectKind, ObservedSide,
+    ObservedValue, OperationObservation, OwnerId, ProtocolAmount, RepresentationMode,
 };
 
 use crate::{
@@ -522,12 +522,16 @@ fn observe_root_effects(certificate: &TransitionCertificate) -> Vec<ObservedRoot
         let Some(edge) = edge else {
             continue;
         };
-        let use_kind = match edge {
-            RootEdge::Succ { .. } => architecture::RootUse::Succession,
-            RootEdge::Term { .. } => architecture::RootUse::SuccessionOrTermination,
+        // The certificate records what happened, so the projection is
+        // an effect, never a policy: a terminating edge is a
+        // termination, not the `SuccessionOrTermination` policy that
+        // happens to permit one.
+        let effect = match edge {
+            RootEdge::Succ { .. } => ObservedRootEffectKind::Succession,
+            RootEdge::Term { .. } => ObservedRootEffectKind::Termination,
         };
 
-        effects.push(ObservedRootEffect { root, use_kind });
+        effects.push(ObservedRootEffect { root, effect });
     }
 
     effects.sort_by_key(|effect| effect.root.code());

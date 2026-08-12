@@ -59,6 +59,8 @@ pub fn validate_scoped_realization(
 
     validate_architecture_family_relations(architecture, realization)?;
 
+    validate_lifecycle_relation_weld(realization)?;
+
     validate_pilot_lifecycle(realization)?;
 
     validate_sponsor_value_opacity(realization)?;
@@ -301,6 +303,171 @@ fn input_owner_objects(operation: &architecture::OperationSpec) -> BTreeSet<Obje
         .collect()
 }
 
+/// The lifecycle declarations one relation census requires.
+///
+/// Keyed by object, because a lifecycle statement is always about one
+/// object family: the representations it may take, and the operations
+/// it is required to be able to exit through.
+#[derive(Debug, Default)]
+struct LifecycleCensus {
+    representations: std::collections::BTreeMap<ObjectId, BTreeSet<RepresentationMode>>,
+    exits: std::collections::BTreeMap<ObjectId, BTreeSet<OperationId>>,
+}
+
+/// Weld the lifecycle graph to the lifecycle relations in both
+/// directions (SR2-03).
+///
+/// The realization states each object's lifecycle twice: as semantic
+/// relations (`Representation`, `LifecycleExit`) that the compiler's
+/// relation census and coverage analysis consume, and as a lifecycle
+/// graph of representation and required-exit nodes. Nothing previously
+/// tied the two together generically, so a *coherent* omission — drop a
+/// `LifecycleExit` relation and its relation dependency, keep the graph
+/// path — validated: relation ownership passed, graph construction
+/// passed, the hard-coded pilot reachability check still found its
+/// path, and the compiler simply never saw the missing obligation.
+///
+/// The expected census is derived from the relation declarations
+/// themselves, never from an operation's name, mirroring the
+/// architecture family-relation rule above. Exact closure is:
+///
+/// - every graph node is declared by some relation;
+/// - every relation-declared representation and exit has its node;
+/// - every declared exit is reachable from every allowed
+///   representation of the same object.
+///
+/// Exact *edge* equality follows rather than needing its own check: a
+/// graph edge is shape-validated to run representation -> required-exit
+/// within one object, duplicates are rejected at construction, and node
+/// equality pins both endpoint sets — so the edge set is bounded by the
+/// complete per-object product this function requires to be present.
+fn validate_lifecycle_relation_weld(
+    realization: &ScopedRealizationSpec,
+) -> Result<(), RealizationError> {
+    let census = lifecycle_census(realization);
+
+    // Direction one: no lifecycle node outlives the relation that
+    // declares it.
+    for node in realization.lifecycle_node_by_id.keys() {
+        let declared = match node {
+            crate::LifecycleNodeId::Representation { object, mode } => census
+                .representations
+                .get(object)
+                .is_some_and(|modes| modes.contains(mode)),
+            crate::LifecycleNodeId::RequiredExit { object, operation } => census
+                .exits
+                .get(object)
+                .is_some_and(|exits| exits.contains(operation)),
+        };
+
+        if !declared {
+            return Err(RealizationError::UndeclaredLifecycleNode(node.clone()));
+        }
+    }
+
+    // Direction two: every relation-declared representation and exit
+    // has its node, and every declared exit is reachable from every
+    // allowed representation of that object.
+    for (object, exits) in &census.exits {
+        let modes = census.representations.get(object);
+
+        for exit in exits {
+            if !realization.lifecycle_node_by_id.contains_key(
+                &crate::LifecycleNodeId::RequiredExit {
+                    object: *object,
+                    operation: *exit,
+                },
+            ) {
+                return Err(RealizationError::MissingLifecycleExitNode {
+                    object: *object,
+                    exit: *exit,
+                });
+            }
+
+            // A required exit nothing may reach is not a weaker
+            // obligation, it is an incoherent one.
+            let Some(modes) = modes.filter(|modes| !modes.is_empty()) else {
+                return Err(RealizationError::LifecycleExitWithoutRepresentation {
+                    object: *object,
+                    exit: *exit,
+                });
+            };
+
+            for mode in modes {
+                require_lifecycle_exit(
+                    &realization.lifecycle_graph,
+                    &realization.lifecycle_node_by_id,
+                    *object,
+                    *mode,
+                    *exit,
+                )?;
+            }
+        }
+    }
+
+    for (object, modes) in &census.representations {
+        for mode in modes {
+            if !realization.lifecycle_node_by_id.contains_key(
+                &crate::LifecycleNodeId::Representation {
+                    object: *object,
+                    mode: *mode,
+                },
+            ) {
+                return Err(RealizationError::MissingLifecycleRepresentation {
+                    object: *object,
+                    mode: *mode,
+                });
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// The lifecycle statements the scoped relation declarations make.
+///
+/// Two operations may each declare part of one object's lifecycle, so
+/// the census unions their statements rather than assuming a single
+/// declaring operation.
+fn lifecycle_census(realization: &ScopedRealizationSpec) -> LifecycleCensus {
+    let mut census = LifecycleCensus::default();
+
+    for declaration in realization.operations.values() {
+        for relation in &declaration.relations {
+            match &relation.relation {
+                Relation::Representation { object, allowed } => {
+                    census
+                        .representations
+                        .entry(*object)
+                        .or_default()
+                        .extend(allowed.iter().copied());
+                }
+                Relation::LifecycleExit { object, exit } => {
+                    census.exits.entry(*object).or_default().insert(*exit);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    census
+}
+
+/// Pin the two Phase-2 pilots' own lifecycle content.
+///
+/// This is deliberately *not* subsumed by the generic weld above, and
+/// is now narrowed to that one job. The weld proves the graph and the
+/// relations agree; it cannot prove they agree on the right thing,
+/// because a coherent removal of both a `LifecycleExit` relation and
+/// its graph path leaves a smaller but perfectly closed lifecycle. This
+/// assertion is what pins the expected pilot content, so ASH keeps its
+/// `CLEAR` exit and a live receipt keeps its burn and redeem exits
+/// under both of their admitted representations.
+///
+/// It probes through `require_lifecycle_exit` rather than reading the
+/// relations directly so that it states the pilot obligation in
+/// lifecycle terms; the weld is what makes a passing probe evidence
+/// about the relation census too.
 fn validate_pilot_lifecycle(realization: &ScopedRealizationSpec) -> Result<(), RealizationError> {
     if realization.scope.contains(OperationId::CompactAsh) {
         for mode in [

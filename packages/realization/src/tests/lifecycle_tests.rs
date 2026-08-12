@@ -1,9 +1,252 @@
-use architecture::{ObjectId, OperationId};
+use architecture::{ARCHITECTURE, ObjectId, OperationId};
 
 use crate::{
     LifecycleDependencyDeclaration, LifecycleEdge, LifecycleNode, LifecycleNodeId,
-    RealizationError, RepresentationMode, build_lifecycle_graph, derive, require_lifecycle_exit,
+    RealizationError, RealizationScope, Relation, RepresentationMode, ScopedRealizationSpec,
+    build_lifecycle_graph, derive, require_lifecycle_exit,
 };
+
+// --- Lifecycle relation/graph weld (SR2-03) ----------------------
+//
+// The lifecycle is stated twice — as `Representation` and
+// `LifecycleExit` relations, and as a graph of representation and
+// required-exit nodes — so each mutation below breaks the agreement in
+// one direction and must be caught by a focused typed error rather
+// than surviving because the other statement still looks well formed.
+
+/// The compact-ASH pilot alone, derived and therefore valid.
+fn compact_pilot() -> ScopedRealizationSpec {
+    derive(
+        &ARCHITECTURE,
+        RealizationScope::from_operations([OperationId::CompactAsh]).unwrap(),
+    )
+    .expect("the compact-ASH pilot derives")
+}
+
+fn validated(realization: &ScopedRealizationSpec) -> Result<(), RealizationError> {
+    crate::validate::validate_scoped_realization(&ARCHITECTURE, realization)
+}
+
+fn ash_representation(mode: RepresentationMode) -> LifecycleNodeId {
+    LifecycleNodeId::Representation {
+        object: ObjectId::Ash,
+        mode,
+    }
+}
+
+fn ash_exit(operation: OperationId) -> LifecycleNodeId {
+    LifecycleNodeId::RequiredExit {
+        object: ObjectId::Ash,
+        operation,
+    }
+}
+
+/// Add a node to the lifecycle graph and its index, as a tampered
+/// declaration set would have produced.
+fn add_lifecycle_node(realization: &mut ScopedRealizationSpec, id: LifecycleNodeId) {
+    let index = realization
+        .lifecycle_graph
+        .add_node(LifecycleNode { id: id.clone() });
+    realization.lifecycle_node_by_id.insert(id, index);
+}
+
+#[test]
+fn the_derived_pilots_satisfy_the_lifecycle_weld() {
+    // The positive direction, and the reason no separate "no extra
+    // edges" check is needed: the graph carries exactly the complete
+    // per-object product of allowed representations and declared
+    // exits.
+    let realization = derive(&ARCHITECTURE, RealizationScope::phase1_pilots()).unwrap();
+
+    validated(&realization).unwrap();
+
+    assert_eq!(
+        realization.lifecycle_graph.edge_count(),
+        2 * 2 + 2 * 3,
+        "ASH has two representations and two exits; a live receipt two and three",
+    );
+}
+
+#[test]
+fn a_dropped_lifecycle_relation_cannot_hide_behind_its_graph_path() {
+    // The finding's own scenario: drop the `CLEAR` lifecycle relation
+    // and its dependency, leave the graph intact. Every earlier check
+    // still passes, and the compiler's relation census would simply
+    // never see the obligation.
+    let mut realization = compact_pilot();
+    let declaration = realization
+        .operations
+        .get_mut(&OperationId::CompactAsh)
+        .unwrap();
+
+    let dropped = declaration
+        .relations
+        .iter()
+        .find(|relation| {
+            matches!(
+                relation.relation,
+                Relation::LifecycleExit {
+                    exit: OperationId::Clear,
+                    ..
+                }
+            )
+        })
+        .expect("the pilot declares a CLEAR lifecycle exit")
+        .id
+        .clone();
+
+    declaration
+        .relations
+        .retain(|relation| relation.id != dropped);
+    declaration
+        .relation_dependencies
+        .retain(|dependency| dependency.prerequisite != dropped && dependency.dependent != dropped);
+
+    assert_eq!(
+        validated(&realization),
+        Err(RealizationError::UndeclaredLifecycleNode(ash_exit(
+            OperationId::Clear
+        ))),
+    );
+}
+
+#[test]
+fn an_extra_graph_exit_is_rejected() {
+    let mut realization = compact_pilot();
+
+    add_lifecycle_node(&mut realization, ash_exit(OperationId::Burn));
+
+    assert_eq!(
+        validated(&realization),
+        Err(RealizationError::UndeclaredLifecycleNode(ash_exit(
+            OperationId::Burn
+        ))),
+    );
+}
+
+#[test]
+fn an_extra_graph_representation_is_rejected() {
+    let mut realization = compact_pilot();
+
+    add_lifecycle_node(
+        &mut realization,
+        ash_representation(RepresentationMode::PrivateCommitted),
+    );
+
+    assert_eq!(
+        validated(&realization),
+        Err(RealizationError::UndeclaredLifecycleNode(
+            ash_representation(RepresentationMode::PrivateCommitted)
+        )),
+    );
+}
+
+#[test]
+fn a_representation_declared_only_by_relation_is_rejected() {
+    let mut realization = compact_pilot();
+
+    for relation in &mut realization
+        .operations
+        .get_mut(&OperationId::CompactAsh)
+        .unwrap()
+        .relations
+    {
+        if let Relation::Representation { allowed, .. } = &mut relation.relation {
+            allowed.insert(RepresentationMode::PrivateCommitted);
+        }
+    }
+
+    assert_eq!(
+        validated(&realization),
+        Err(RealizationError::MissingLifecycleRepresentation {
+            object: ObjectId::Ash,
+            mode: RepresentationMode::PrivateCommitted,
+        }),
+    );
+}
+
+#[test]
+fn an_allowed_representation_reaching_an_undeclared_exit_is_rejected() {
+    // The edge is the mutation, but the exit it lands on is what no
+    // relation declares, so the weld names that node.
+    let mut realization = compact_pilot();
+    let exit = ash_exit(OperationId::Redeem);
+
+    add_lifecycle_node(&mut realization, exit.clone());
+
+    let source =
+        realization.lifecycle_node_by_id[&ash_representation(RepresentationMode::Explicit)];
+    let target = realization.lifecycle_node_by_id[&exit];
+    realization
+        .lifecycle_graph
+        .add_edge(source, target, LifecycleEdge::RequiresExit);
+
+    assert_eq!(
+        validated(&realization),
+        Err(RealizationError::UndeclaredLifecycleNode(exit)),
+    );
+}
+
+#[test]
+fn a_missing_required_edge_is_rejected_with_both_nodes_present() {
+    let mut realization = compact_pilot();
+    let source =
+        realization.lifecycle_node_by_id[&ash_representation(RepresentationMode::Explicit)];
+    let target = realization.lifecycle_node_by_id[&ash_exit(OperationId::Clear)];
+    let edge = realization
+        .lifecycle_graph
+        .find_edge(source, target)
+        .expect("the pilot declares this exit path");
+
+    realization.lifecycle_graph.remove_edge(edge);
+
+    assert_eq!(
+        validated(&realization),
+        Err(RealizationError::MissingLifecyclePath {
+            object: ObjectId::Ash,
+            mode: RepresentationMode::Explicit,
+            exit: OperationId::Clear,
+        }),
+    );
+}
+
+#[test]
+fn a_required_exit_no_representation_can_reach_is_rejected() {
+    // Coherently removing the representation relation *and* its graph
+    // nodes leaves a closed but incoherent lifecycle: exits nothing may
+    // ever reach.
+    let mut realization = compact_pilot();
+
+    realization
+        .operations
+        .get_mut(&OperationId::CompactAsh)
+        .unwrap()
+        .relations
+        .retain(|relation| !matches!(relation.relation, Relation::Representation { .. }));
+
+    let (graph, nodes, _) = build_lifecycle_graph(
+        [
+            LifecycleNode {
+                id: ash_exit(OperationId::CompactAsh),
+            },
+            LifecycleNode {
+                id: ash_exit(OperationId::Clear),
+            },
+        ],
+        Vec::<LifecycleDependencyDeclaration>::new(),
+    )
+    .unwrap();
+    realization.lifecycle_graph = graph;
+    realization.lifecycle_node_by_id = nodes;
+
+    assert_eq!(
+        validated(&realization),
+        Err(RealizationError::LifecycleExitWithoutRepresentation {
+            object: ObjectId::Ash,
+            exit: OperationId::CompactAsh,
+        }),
+    );
+}
 
 #[test]
 fn phase1_lifecycle_paths_exist_for_supported_representations() {

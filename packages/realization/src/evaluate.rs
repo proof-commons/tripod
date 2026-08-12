@@ -936,7 +936,14 @@ fn flow_role_is_exact(
     Ok(true)
 }
 
-fn root_policy_holds(
+/// Check each root's *actual* effect against its declared policy.
+///
+/// The policy is a set of admitted effects, not a value to compare
+/// against: `Succession` admits a succession, `SuccessionOrTermination`
+/// admits either, and `Forbidden` admits none. A policy that is not
+/// `Forbidden` still *requires* an effect, so a missing succession
+/// fails exactly as it did before.
+pub(crate) fn root_policy_holds(
     expected: &BTreeMap<RootId, RootUse>,
     observation: &OperationObservation,
 ) -> bool {
@@ -945,17 +952,20 @@ fn root_policy_holds(
             .root_effects
             .iter()
             .filter(|effect| effect.root == *root)
-            .map(|effect| effect.use_kind)
+            .map(|effect| effect.effect)
             .collect::<Vec<_>>();
 
         if actual.len() > 1 {
             return false;
         }
 
-        let actual = actual.first().copied().unwrap_or(RootUse::Forbidden);
-        let expected = expected.get(root).copied().unwrap_or(RootUse::Forbidden);
+        let policy = expected.get(root).copied().unwrap_or(RootUse::Forbidden);
+        let holds = actual.first().map_or_else(
+            || policy == RootUse::Forbidden,
+            |effect| effect.permitted_by(policy),
+        );
 
-        if actual != expected {
+        if !holds {
             return false;
         }
     }
