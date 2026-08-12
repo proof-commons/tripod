@@ -14,10 +14,9 @@
 //! excluded from the stable projection for the same reason the
 //! realization excludes it.
 
-// The analysis stages have no non-test consumer until proof
-// planning (P2-007) and the P2-012 analyzed program; unit tests
-// exercise them until then. Remove with the first real consumer.
-#![allow(dead_code)]
+// The item-level allowances below cover the Petgraph index map and the
+// evaluation order, retained beside the graph as diagnostic structure
+// the canonical analysis does not read.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -92,7 +91,9 @@ pub struct RelationCycleComponent {
 #[derive(Debug)]
 pub struct CompilerRelationAnalysis {
     pub graph: DiGraph<CompilerRelationNode, CompilerRelationEdge, u32>,
+    #[allow(dead_code)]
     pub node_by_id: BTreeMap<AnalysisNodeId, NodeIndex<u32>>,
+    #[allow(dead_code)]
     pub evaluation_order: Vec<AnalysisNodeId>,
 }
 

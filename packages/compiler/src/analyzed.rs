@@ -25,10 +25,13 @@
 //! from the stable projection: a larger sufficient limit must change
 //! the report and leave the projection untouched.
 
-// The analyzed program has no non-test consumer until the complete
-// validator and the pilot acceptance analyses consume it; unit tests
-// exercise it until then. Remove with the first real consumer.
-#![allow(dead_code)]
+// Two item-level allowances remain. The stable projection (§12) is
+// built by nothing inside the analysis, because the assembly stores
+// the values themselves and §26.1 exposes no API that projects them;
+// and `analyze_scoped_program` is the crate-private root of the whole
+// pipeline, which by the same ruling has no non-test caller until a
+// target package becomes the first honest consumer. Everything between
+// those two is reached from the root and carries no allowance.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -156,6 +159,7 @@ pub struct ScopedAnalyzedProgram {
 /// exactly once, and a second copy inside the value would be a place
 /// for two answers to the same question to disagree.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
 pub struct AnalyzedProofPlanProjection {
     pub relation_requirements: BTreeMap<RelationId, RelationRequirements>,
     pub operations: BTreeMap<OperationId, AnalyzedOperation>,
@@ -174,6 +178,7 @@ pub struct AnalyzedProofPlanProjection {
 /// holds the architecture identity, the *projected* realization, and
 /// the explicit scope, none of which carry order, handles, or counts.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
 pub struct ScopedAnalyzedProgramProjection {
     pub source: AnalyzedSource,
     pub foundation: CompilerAnalysisFoundationProjection,
@@ -184,6 +189,7 @@ pub struct ScopedAnalyzedProgramProjection {
 
 impl AnalyzedProofPlan {
     #[must_use]
+    #[allow(dead_code)]
     pub fn project(&self) -> AnalyzedProofPlanProjection {
         AnalyzedProofPlanProjection {
             relation_requirements: self.relation_requirements.clone(),
@@ -195,6 +201,7 @@ impl AnalyzedProofPlan {
 
 impl ScopedAnalyzedProgram {
     #[must_use]
+    #[allow(dead_code)]
     pub fn project(&self) -> ScopedAnalyzedProgramProjection {
         ScopedAnalyzedProgramProjection {
             source: self.source.clone(),
@@ -229,6 +236,12 @@ impl ScopedAnalyzedProgram {
 /// [`validate_assembly_closure`];
 /// [`CompileError::DuplicateAnalyzedProofPlan`] when the exact search
 /// offers one typed plan twice.
+// The crate-private root of the whole analysis. Guide-7 §26.1 keeps
+// the complete analyzed program unexposed until a target package is
+// the first honest consumer, so in a non-test build this entry point
+// has no caller — everything it reaches does, which is why the
+// allowance belongs here and nowhere below it.
+#[allow(dead_code)]
 pub fn analyze_scoped_program(
     input: &BoundCompilerInput,
     placement_limits: PlacementSearchLimits,

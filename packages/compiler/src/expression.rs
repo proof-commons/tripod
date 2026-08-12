@@ -12,11 +12,6 @@
 //! it transitively requires — and nothing else. A dependency on an
 //! expression owned by an out-of-scope operation fails closed.
 
-// The analysis stages have no non-test consumer until proof
-// planning (P2-007) and the P2-012 analyzed program; unit tests
-// exercise them until then. Remove with the first real consumer.
-#![allow(dead_code)]
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use petgraph::{

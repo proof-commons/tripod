@@ -12,11 +12,6 @@
 //! partial result. Search-state counts live in a diagnostic report,
 //! never in a candidate.
 
-// The analysis stages have no non-test consumer until the P2-012
-// analyzed program; unit tests exercise them until then. Remove with
-// the first real consumer.
-#![allow(dead_code)]
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use realization::{

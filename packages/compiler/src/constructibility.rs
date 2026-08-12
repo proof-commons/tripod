@@ -9,10 +9,9 @@
 //! requirements are then cross-checked against the graph so a proof
 //! can never assume a witness constructibility does not provide.
 
-// The analysis stages have no non-test consumer until the P2-012
-// analyzed program; unit tests exercise them until then. Remove with
-// the first real consumer.
-#![allow(dead_code)]
+// One item-level allowance remains: the Petgraph storage is retained
+// beside the derived analysis rather than read by it. The analysis
+// answers its questions from the resolved maps.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -53,6 +52,7 @@ pub struct OperationConstructibilityAnalysis {
 /// Internal compiler constructibility analysis.
 #[derive(Debug)]
 pub struct CompilerConstructibilityAnalysis {
+    #[allow(dead_code)]
     pub graph: DiGraph<ConstructibilityNode, ConstructibilityEdge, u32>,
     pub node_by_id: BTreeMap<ConstructibilityNodeId, NodeIndex<u32>>,
     pub operations: Vec<OperationConstructibilityAnalysis>,

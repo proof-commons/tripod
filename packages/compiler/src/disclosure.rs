@@ -7,10 +7,9 @@
 //! rejected everywhere — inherited, added, or retained-private:
 //! sponsor erasure means the fact is absent, not merely secret.
 
-// The analysis stages have no non-test consumer until the P2-012
-// analyzed program; unit tests exercise them until then. Remove with
-// the first real consumer.
-#![allow(dead_code)]
+// One item-level allowance remains: `ProofRequirement` is a declared
+// disclosure reason the two pilots never produce, because no pilot
+// proof publishes a fact its representation had kept private.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -21,6 +20,7 @@ use crate::{CompileError, lifecycle::RepresentationChoiceId};
 /// Why the compiler added one disclosure.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CompilerDisclosureReason {
+    #[allow(dead_code)]
     ProofRequirement {
         relation: realization::RelationId,
         proof: realization::ProofAlternativeId,

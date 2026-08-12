@@ -15,11 +15,6 @@
 //! result is derived analysis attached beside the source, never a
 //! replacement for it.
 
-// The analysis stages have no non-test consumer until proof
-// planning (P2-007) and the P2-012 analyzed program; unit tests
-// exercise them until then. Remove with the first real consumer.
-#![allow(dead_code)]
-
 use std::collections::BTreeMap;
 
 use realization::{Count, ExprId, ExpressionNode, ProtocolAmount, SemanticType, SemanticValue};

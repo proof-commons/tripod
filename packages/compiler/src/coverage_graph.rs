@@ -27,10 +27,8 @@
 //! strategy that does not exist, so the SCC analysis exists to reject,
 //! and there is no generic allowed-cycle escape to reach for.
 
-// The analysis stages have no non-test consumer until the P2-012
-// analyzed program; unit tests exercise them until then. Remove with
-// the first real consumer.
-#![allow(dead_code)]
+// One item-level allowance remains, on an emptiness query the
+// dependency resolution does not need to ask.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -242,6 +240,7 @@ impl CoverageDefinitionCensus {
     }
 
     #[must_use]
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }

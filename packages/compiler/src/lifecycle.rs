@@ -10,10 +10,10 @@
 //! scope from deployment-lifecycle-complete — the pilots satisfy the
 //! first and deliberately fail the second.
 
-// The analysis stages have no non-test consumer until the P2-012
-// analyzed program; unit tests exercise them until then. Remove with
-// the first real consumer.
-#![allow(dead_code)]
+// The item-level allowances below cover the Petgraph storage, which is
+// retained beside the derived requirements rather than read by them,
+// and a deployment-completeness query the analysis does not ask: the
+// analyzed program states lifecycle completeness per plan (§5.4).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -60,7 +60,9 @@ pub struct LifecycleRequirement {
 /// Internal lifecycle analysis.
 #[derive(Debug)]
 pub struct CompilerLifecycleAnalysis {
+    #[allow(dead_code)]
     pub graph: DiGraph<LifecycleNode, LifecycleEdge, u32>,
+    #[allow(dead_code)]
     pub node_by_id: BTreeMap<LifecycleNodeId, NodeIndex<u32>>,
     pub choices: Vec<RepresentationChoice>,
     pub requirements: Vec<LifecycleRequirement>,
@@ -70,6 +72,7 @@ impl CompilerLifecycleAnalysis {
     /// True when every requirement's exit is available in scope: the
     /// deployment-lifecycle-complete claim, expected false for pilots.
     #[must_use]
+    #[allow(dead_code)]
     pub fn is_deployment_complete(&self) -> bool {
         self.requirements
             .iter()
