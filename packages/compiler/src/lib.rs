@@ -67,6 +67,7 @@
 
 #![forbid(unsafe_code)]
 
+mod analyzed;
 mod analyzed_operation;
 mod capability;
 mod carrier;

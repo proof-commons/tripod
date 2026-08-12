@@ -1073,4 +1073,29 @@ pub enum CompileError {
         /// The disagreeing factor's operation.
         operation: OperationId,
     },
+
+    /// Two analyzed proof plans carry the same typed plan.
+    ///
+    /// The complete typed plan is the analyzed program's only plan
+    /// identity, so two entries claiming it would make the analysis of
+    /// one plan depend on which entry a reader happened to consult.
+    /// The variant names no plan: a complete typed plan is too large
+    /// for a diagnostic, and the defect is the repetition rather than
+    /// any property of the plan repeated.
+    #[error("two analyzed proof plans carry the same typed plan")]
+    DuplicateAnalyzedProofPlan,
+
+    /// The stated architecture-scope status is not the status the
+    /// validated architecture census and the compiler scope imply.
+    ///
+    /// A partial analysis must name exactly the operations it does not
+    /// analyze. Claiming architecture completeness, or naming the wrong
+    /// remainder, would misstate the reach of the whole result.
+    #[error("architecture-scope status mismatch: {} missing, {} unexpected", missing.len(), unexpected.len())]
+    AnalyzedArchitectureScopeStatusMismatch {
+        /// Out-of-scope architecture operations the status omits.
+        missing: Vec<OperationId>,
+        /// Operations the status names that are not outside the scope.
+        unexpected: Vec<OperationId>,
+    },
 }

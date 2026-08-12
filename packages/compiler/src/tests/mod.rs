@@ -5,6 +5,7 @@
 //! realization could never carry, through the crate-private builders.
 
 mod analyzed_operation_tests;
+mod analyzed_program_tests;
 mod carrier_tests;
 mod case_tests;
 mod constructibility_tests;
