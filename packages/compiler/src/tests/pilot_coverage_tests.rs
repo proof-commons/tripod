@@ -1339,7 +1339,24 @@ fn a_permuted_relation_case_plan_order_is_covered_equally() {
 
 // --- the combined two-pilot scope ---
 
+/// The combined two-pilot coverage analysis over the full placement
+/// product.
+///
+/// Demoted to the manual lane under Guide-7 §20.3. The replacement
+/// signal is in place: `analyzed_program_oracle_tests` restates the
+/// relation-case and coverage censuses independently per operation,
+/// compares each placement factor with the independent whole-plan route,
+/// and proves structurally that no coverage key, carrier, layout
+/// requirement, or dependency edge crosses an operation — all without
+/// covering the 46,656 combined placements per plan this test analyzes.
+///
+/// ```sh
+/// cargo test -p tripod-compiler \
+///   the_combined_pilot_scope_coverage_factorizes_per_operation \
+///   -- --ignored --nocapture
+/// ```
 #[test]
+#[ignore = "phase-exit regression; run with -- --ignored"]
 fn the_combined_pilot_scope_coverage_factorizes_per_operation() {
     let operations = [OperationId::CompactAsh, OperationId::TransferLive];
     let combined = analyze(&operations);
