@@ -179,9 +179,9 @@ fn reference_evaluate(
             }
 
             match ty {
-                SemanticType::Count => u64::try_from(total)
-                    .map(|value| Value(SemanticValue::Count(Count::new(value))))
-                    .unwrap_or(Failure),
+                SemanticType::Count => u64::try_from(total).map_or(Failure, |value| {
+                    Value(SemanticValue::Count(Count::new(value)))
+                }),
                 SemanticType::Amount => {
                     if total < u128::from(PROTOCOL_AMOUNT_LIMIT_EXCLUSIVE) {
                         Value(SemanticValue::Amount(

@@ -299,18 +299,18 @@ fn carrier_requirements(
     // admissible only as a proof about the complete authenticated
     // family, so the completeness it relies on is stated rather than
     // assumed.
-    if entry.quantification == CarrierQuantification::CompleteFamilyProof {
-        if let SemanticScope::MemberLocal { side, object } = analysis.scope {
-            requirements.insert(LayoutRequirement::AuthenticateFamilyCensus {
-                relation: relation.clone(),
-                side,
-                object,
-            });
-            requirements.insert(LayoutRequirement::CompleteAndDisjointFamilies {
-                relation: relation.clone(),
-                side,
-            });
-        }
+    if entry.quantification == CarrierQuantification::CompleteFamilyProof
+        && let SemanticScope::MemberLocal { side, object } = analysis.scope
+    {
+        requirements.insert(LayoutRequirement::AuthenticateFamilyCensus {
+            relation: relation.clone(),
+            side,
+            object,
+        });
+        requirements.insert(LayoutRequirement::CompleteAndDisjointFamilies {
+            relation: relation.clone(),
+            side,
+        });
     }
 
     for routing in &entry.routings {

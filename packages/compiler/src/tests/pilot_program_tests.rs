@@ -1225,7 +1225,7 @@ fn every_pilot_factor_is_exactly_its_measured_census() {
             for requirements in factor.relation_cases.values() {
                 for alternative in &requirements.carrier_assignments {
                     for layout in &alternative.layout {
-                        assert!(factor.layout_requirements.contains(layout), "{operation:?}",);
+                        assert!(factor.layout_requirements.contains(layout), "{operation:?}");
                     }
                 }
             }

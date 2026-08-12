@@ -847,13 +847,13 @@ pub fn validate_operation_factorization(
         // Condition 3: no carrier spans operations.
         for placement in &analyzed.feasible_placements {
             for carrier in placement.assignments.values().flatten() {
-                if let Some(carried) = carrier_operation(&carrier.carrier) {
-                    if carried != *operation {
-                        return Err(CompileError::ForeignOperationFactor {
-                            operation: *operation,
-                            found: carried,
-                        });
-                    }
+                if let Some(carried) = carrier_operation(&carrier.carrier)
+                    && carried != *operation
+                {
+                    return Err(CompileError::ForeignOperationFactor {
+                        operation: *operation,
+                        found: carried,
+                    });
                 }
             }
         }
