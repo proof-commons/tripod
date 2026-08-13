@@ -23,7 +23,10 @@ use tracing_subscriber::fmt::MakeWriter;
 
 mod publication;
 
-pub use publication::{BatchPublicationError, PublicationAsset, PublicationResult, publish_batch};
+pub use publication::{
+    BatchPublicationError, PublicationAsset, PublicationMode, PublicationResult, publish_batch,
+    set_publication_mode,
+};
 
 #[cfg(test)]
 mod tests;
@@ -1328,7 +1331,9 @@ pub fn finish_check_command<T: serde::Serialize>(
 /// skipping the write when the current contents already match.
 ///
 /// The report is staged in a sibling temp file and atomically renamed,
-/// so a partial write never leaves a truncated report. The
+/// so a partial write never leaves a truncated report. The staged file
+/// carries the public publication mode before the rename, so a report
+/// does not inherit the owner-only mode of the temporary. The
 /// compare-if-changed skip keeps ninja `restat` from cascading rebuilds
 /// on unchanged results.
 fn write_json_report_if_changed<T: serde::Serialize>(
@@ -1350,6 +1355,7 @@ fn write_json_report_if_changed<T: serde::Serialize>(
         .tempfile_in(directory)?;
     staged.write_all(&bytes)?;
     staged.as_file().sync_all()?;
+    publication::set_publication_mode(staged.as_file(), publication::PublicationMode::Public)?;
     staged.persist(path).map_err(|error| error.error)?;
     Ok(())
 }

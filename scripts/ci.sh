@@ -33,11 +33,12 @@
 # silently passed.
 #
 # The checker lanes receive their subjects by argument (ADR-014). The
-# census_args function below derives role-tagged argv from git
-# ls-files; the meson build derives the same census from hand-managed
-# per-directory lists, and the census-audit target welds the two.
-# Paths in this repository never contain whitespace, so the unquoted
-# expansions are deliberate.
+# census_args function in scripts/census-args.sh derives role-tagged
+# argv from git ls-files; the meson build derives the same census from
+# hand-managed per-directory lists, and the census-audit target welds
+# the two. That argv is shell-quoted and re-parsed into positional
+# parameters rather than expanded unquoted, and a preflight audit
+# refuses tracked paths outside the safe argv grammar (SR3-05).
 #
 # The Meson/LaTeX document lanes are separate because they need a TeX
 # toolchain:
@@ -55,36 +56,14 @@ set -eu
 
 cd "$(dirname "$0")/.."
 
-# census_args <labels|scoped>: role-tagged checker argv. The exclusion
-# cases mirror the meson census: categorical non-subjects first, then
-# the same-typed exclusions declared in per-directory meson.build
-# lists (macros_attestation.tex, execwrap integration tests).
-census_args() {
-  git ls-files | LC_ALL=C sort | while IFS= read -r path; do
-    case "$path" in
-      .* | */.* | archive/* | scripts/*) continue ;;
-      papers/attestation/macros_attestation.tex) continue ;;
-      papers/attestation/stamps.tex.in) continue ;;
-      packages/execwrap/tests/*) continue ;;
-      papers/attestation/main.tex) printf ' --attestation-main %s' "$path" ;;
-      papers/attestation/sections/*.tex) printf ' --attestation-section %s' "$path" ;;
-      docs/attestation/realization.md) printf ' --realization %s' "$path" ;;
-      packages/model/src/*.rs) printf ' --model-source %s' "$path" ;;
-      *)
-        [ "$1" = labels ] || continue
-        case "$path" in
-          plans/labels/specification.md) printf ' --specification-register %s' "$path" ;;
-          plans/labels/realization.md) printf ' --realization-register %s' "$path" ;;
-          packages/model/generated/model_labels.json) printf ' --model-labels-json %s' "$path" ;;
-          plans/*.md) printf ' --plan %s' "$path" ;;
-          adr/[0-9][0-9][0-9]*.md) printf ' --adr %s' "$path" ;;
-          packages/*/src/*.rs) printf ' --crate-source %s' "$path" ;;
-          *.md) printf ' --doc %s' "$path" ;;
-        esac
-        ;;
-    esac
-  done
-}
+# shellcheck source=scripts/census-args.sh
+. ./scripts/census-args.sh
+
+# Preflight, not a lane: the checker lanes below cannot carry a tracked
+# path that leaves the safe argv grammar, so the run stops before any
+# lane rather than reporting a census the checkers never received.
+echo "==> preflight: tracked-path argv grammar audit" >&2
+audit_tracked_paths
 
 echo "==> lane 1/11: cargo fmt" >&2
 cargo fmt --all --check
@@ -99,17 +78,19 @@ echo "==> lane 4/11: cargo test (release)" >&2
 cargo test --workspace --release --locked
 
 echo "==> lane 5/11: check-generated" >&2
-# shellcheck disable=SC2046
+scoped_census="$(derive_census 'scoped census' census_args scoped)"
+eval "set -- $scoped_census"
 cargo run --locked -p tripod-artifacts --bin check-generated -- \
   --repository-root . \
   --generated-dir packages/model/generated \
-  $(census_args scoped) > /dev/null
+  "$@" > /dev/null
 
 echo "==> lane 6/11: check-labels" >&2
-# shellcheck disable=SC2046
+label_census="$(derive_census 'label census' census_args labels)"
+eval "set -- $label_census"
 cargo run --locked -p tripod-labels --bin check-labels -- \
   --repository-root . \
-  $(census_args labels) > /dev/null
+  "$@" > /dev/null
 
 # Skipped lanes are accumulated rather than forgotten: the final
 # result names them, so a reduced run cannot be read as a complete one.
@@ -154,8 +135,7 @@ fi
 echo "==> lane 11/11: clean working tree" >&2
 tree_status="$(git status --porcelain=v1 --untracked-files=all)"
 if [ -n "$tree_status" ]; then
-  printf '%s
-' "$tree_status" >&2
+  printf '%s\n' "$tree_status" >&2
   echo "ERROR: repository contains staged, unstaged, or untracked nonignored changes" >&2
   exit 1
 fi

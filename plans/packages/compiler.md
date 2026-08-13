@@ -236,6 +236,10 @@ It does not assign concrete tapscript input indexes.
 
 An unconditional relation with no possible carrier fails analysis.
 
+Multi-operation placement is stored as per-operation factors. The exact
+cross-operation product is never materialized; Guide 7 decided and
+implemented that, so it is no longer an open question.
+
 ## Layout requirements · `rule:compiler:layout`
 
 Compiler core derives requirements such as:
@@ -334,9 +338,6 @@ See [`errors/compiler.md`](errors/compiler.md).
 
 ## Open questions · `sec:compiler:open`
 
-- Should multi-operation placement remain the exact product across
-  operations, or be stored per operation before the analyzed-program value
-  assembles it?
 - Where is the public boundary of a complete analysis result, given that every
   stage above input binding is crate-private today?
 - Who owns the abstract target capability adapter, so generic capability
