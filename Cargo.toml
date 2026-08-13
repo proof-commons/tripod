@@ -11,6 +11,7 @@ members = [
     "packages/labels",
     "packages/model",
     "packages/realization",
+    "packages/target-elements",
 ]
 
 [workspace.package]
@@ -31,6 +32,7 @@ flatten-latex-main = { path = "packages/flatten-latex-main" }
 labels = { package = "tripod-labels", path = "packages/labels" }
 model = { package = "tripod-model", path = "packages/model" }
 realization = { package = "tripod-realization", path = "packages/realization" }
+target-elements = { package = "tripod-target-elements", path = "packages/target-elements" }
 
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

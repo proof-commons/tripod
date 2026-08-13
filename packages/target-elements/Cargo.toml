@@ -1,0 +1,25 @@
+[package]
+name = "tripod-target-elements"
+description = "Typed reviewed Elements tapscript target compatibility contract"
+
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[lib]
+name = "target_elements"
+
+# No dependencies, first-party or third-party. The package states
+# reviewed target facts as typed standard-library declarations: it
+# serializes nothing, hashes nothing, and parses nothing, so neither a
+# serialization, hashing, nor Elements transaction library has a
+# present consumer here. Its own error root is hand-written rather than
+# derived, which keeps even `thiserror` out. Adding any dependency
+# requires ADR-011 review with a real consumer.
+[dependencies]
+
+[lints]
+workspace = true
