@@ -26,6 +26,9 @@ pub enum LabelErrorCode {
     GeneratedRegisterMissing,
     GeneratedRegisterStale,
     CensusStale,
+    /// A census traversal could not read a directory or an entry, so
+    /// the discovered membership of its group is unknown.
+    CensusUnreadable,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]

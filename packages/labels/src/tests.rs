@@ -439,6 +439,115 @@ fn unreadable_adr_is_an_io_diagnostic() {
     }));
 }
 
+/// Make `path` unreadable, returning `false` when the process can read
+/// it anyway — running as root, or on a filesystem without permission
+/// enforcement — so the caller can skip rather than assert falsely.
+#[cfg(unix)]
+fn make_unreadable(path: &Path) -> bool {
+    fs::set_permissions(path, fs::Permissions::from_mode(0o0)).expect("remove permissions");
+    if fs::read_dir(path).is_ok() {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("restore permissions");
+        return false;
+    }
+    true
+}
+
+#[cfg(unix)]
+#[test]
+fn unreadable_subject_directory_fails_an_empty_declared_group() {
+    // The hole this closes: an unreadable directory used to discover
+    // as an empty group, so an empty declared group agreed with it and
+    // verification passed while subjects sat outside the label graph.
+    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let root = directory.path();
+    let adr_dir = root.join("adr");
+    fs::write(
+        adr_dir.join("012-hidden.md"),
+        "# ADR\n`rule:hidden:label`\n",
+    )
+    .expect("ADR source");
+    if !make_unreadable(&adr_dir) {
+        return;
+    }
+
+    let declared = RepositoryCensus {
+        root: root.to_path_buf(),
+        ..RepositoryCensus::default()
+    };
+    let diagnostics = declared.verify(&[CensusGroup::Adr]);
+
+    fs::set_permissions(&adr_dir, fs::Permissions::from_mode(0o755))
+        .expect("restore ADR directory");
+
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == LabelErrorCode::CensusUnreadable && diagnostic.path == "adr"
+        }),
+        "{diagnostics:#?}",
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn one_unreadable_entry_is_reported_beside_the_readable_ones() {
+    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let root = directory.path();
+    fs::write(root.join("plans/first.md"), "# First\n").expect("plan source");
+    fs::write(root.join("plans/second.md"), "# Second\n").expect("plan source");
+    let closed = root.join("plans/closed");
+    fs::create_dir_all(&closed).expect("nested plan directory");
+    fs::write(closed.join("third.md"), "# Third\n").expect("plan source");
+    if !make_unreadable(&closed) {
+        return;
+    }
+
+    let census = RepositoryCensus::discover(root);
+
+    fs::set_permissions(&closed, fs::Permissions::from_mode(0o755))
+        .expect("restore plan directory");
+
+    // The readable siblings are still discovered.
+    let names: Vec<_> = census
+        .plans
+        .iter()
+        .filter_map(|path| path.file_name().and_then(|name| name.to_str()))
+        .collect();
+    assert_eq!(names, vec!["first.md", "second.md"]);
+
+    let failures = census
+        .traversal
+        .get(&CensusGroup::Plan)
+        .expect("plan traversal record");
+    assert_eq!(failures.len(), 1, "{failures:#?}");
+    assert_eq!(failures[0].code, LabelErrorCode::CensusUnreadable);
+    assert_eq!(failures[0].path, "plans/closed");
+}
+
+#[test]
+fn absent_and_empty_directories_are_equally_clean_empty_groups() {
+    // Policy: a directory that is absent and a directory that is
+    // present but empty both yield an empty group with no traversal
+    // diagnostic. Only a directory that exists and cannot be read is a
+    // failure — an empty group is knowledge, an unreadable one is not.
+    let absent = fixture_root("# Realization\n`sec:fixture`\n");
+    fs::remove_dir_all(absent.path().join("adr")).expect("remove ADR directory");
+    let empty = fixture_root("# Realization\n`sec:fixture`\n");
+
+    for root in [absent.path(), empty.path()] {
+        let census = RepositoryCensus::discover(root);
+        assert!(census.adrs.is_empty());
+        assert!(
+            census
+                .traversal
+                .get(&CensusGroup::Adr)
+                .is_some_and(Vec::is_empty),
+            "{:#?}",
+            census.traversal,
+        );
+        assert!(census.verify(&[CensusGroup::Adr]).is_empty());
+    }
+}
+
 // Whole-repository validity is the job of the Meson-driven
 // `check-labels` target (ADR-014): unit tests never discover the live
 // checkout, so register generation is exercised on synthetic fixtures
