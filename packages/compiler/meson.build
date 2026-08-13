@@ -28,6 +28,7 @@ compiler_source_files = files(
   'src/search_counter.rs',
   'src/source.rs',
   'src/sponsor_region.rs',
+  'src/target.rs',
   'src/tests/analyzed_corruption_tests.rs',
   'src/tests/analyzed_operation_tests.rs',
   'src/tests/analyzed_program_oracle_tests.rs',
@@ -54,6 +55,7 @@ compiler_source_files = files(
   'src/tests/relation_tests.rs',
   'src/tests/requirement_tests.rs',
   'src/tests/source_tests.rs',
+  'src/tests/target_tests.rs',
 )
 
 # Crate documentation (DOC owner).

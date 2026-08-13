@@ -1308,4 +1308,27 @@ pub enum CompileError {
         /// The disagreeing component.
         defect: crate::analyzed_validate::AnalyzedExecutionReportDefect,
     },
+
+    /// The abstract capability census repeats a member, orders one
+    /// noncanonically, or omits one the analysis requires.
+    ///
+    /// The census constant published at the target boundary is a
+    /// contract a downstream adapter matches exhaustively. A census
+    /// that disagrees with its own type — by listing a member twice, by
+    /// listing members out of the type's canonical order, or by
+    /// omitting a member an analysis actually requires — would hand
+    /// that adapter a set it cannot classify completely.
+    #[error("capability census defect at {capability:?}")]
+    NoncanonicalCapabilityCensus {
+        /// The repeated, misordered, or uncensused capability.
+        capability: crate::capability::RequiredCapability,
+    },
+
+    /// The external-evidence role census repeats a member, orders one
+    /// noncanonically, or omits one the analysis requires.
+    #[error("evidence role census defect at {role:?}")]
+    NoncanonicalEvidenceRoleCensus {
+        /// The repeated, misordered, or uncensused role.
+        role: crate::target::ExternalEvidenceRole,
+    },
 }

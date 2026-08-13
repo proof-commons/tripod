@@ -693,13 +693,16 @@ pub struct PlacementCandidate {
 /// is minted.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PlacementSearchLimits {
+    /// The most search states one operation's placement search may
+    /// visit before the analysis fails as too complex.
     pub maximum_states: NonZeroU64,
+    /// The most complete candidate assignments it may consider.
     pub maximum_candidates: NonZeroU64,
 }
 
 impl PlacementSearchLimits {
+    /// States both limits explicitly.
     #[must_use]
-    #[allow(dead_code)]
     pub const fn new(maximum_states: NonZeroU64, maximum_candidates: NonZeroU64) -> Self {
         Self {
             maximum_states,
