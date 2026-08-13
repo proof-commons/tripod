@@ -849,6 +849,27 @@ pub enum CompileError {
         edge: crate::coverage_graph::CoverageEdge,
     },
 
+    /// One coverage dependency joins node classes its edge variant is
+    /// not defined over.
+    ///
+    /// The typed edge vocabulary fixes the source and target classes of
+    /// every variant, so this is what a reversed dependency looks like:
+    /// the endpoints are individually valid symbols and the pair is one
+    /// the edge cannot express. Direction is prerequisite → dependent
+    /// throughout the graph, and an edge pointing the other way would
+    /// otherwise be stored as a different but equally plausible graph.
+    #[error(
+        "coverage dependency {prerequisite:?} -> {dependent:?} ({edge:?}) joins the wrong node classes"
+    )]
+    CoverageDependencyEndpointClass {
+        /// The declared source symbol.
+        prerequisite: Box<crate::coverage_graph::CoverageNodeId>,
+        /// The declared target symbol.
+        dependent: Box<crate::coverage_graph::CoverageNodeId>,
+        /// The edge role whose endpoint classes were broken.
+        edge: crate::coverage_graph::CoverageEdge,
+    },
+
     /// The coverage dependencies contain a cycle.
     ///
     /// Coverage cycles are forbidden: an accepted cycle would need a
@@ -1254,5 +1275,37 @@ pub enum CompileError {
     UnexpectedCombinedPlacementProduct {
         /// The factor's operation.
         operation: OperationId,
+    },
+
+    /// One scope operation's ordinary-L-BTC region cannot be decided
+    /// from its declared open flows.
+    ///
+    /// Sponsor erasure is keyed to the fee-sponsor flow role, and the
+    /// architecture uses the ordinary-L-BTC family for protocol flows
+    /// too. When an operation declares a protocol flow that can claim
+    /// that family, deciding whether a given reference is erased needs
+    /// per-reference flow membership the declarations do not carry.
+    /// Both available answers are wrong — an opaque payout discards a
+    /// protocol relation, a readable sponsor region breaks erasure — so
+    /// the analysis refuses rather than choosing one.
+    #[error(
+        "operation {operation:?} claims ordinary L-BTC in a protocol flow; its sponsor region is undecidable"
+    )]
+    UndecidableSponsorRegion {
+        /// The operation whose region is undecidable.
+        operation: OperationId,
+    },
+
+    /// The stored execution report is not the one the same analysis
+    /// produces.
+    ///
+    /// The report is excluded from semantic identity, so no analysis is
+    /// distinguished by it. It is still a typed account of the limits
+    /// the analysis ran under and the work each search did, and an
+    /// account nothing checks is one nothing supports.
+    #[error("the stored execution report disagrees with the re-derived one ({defect:?})")]
+    AnalyzedExecutionReportMismatch {
+        /// The disagreeing component.
+        defect: crate::analyzed_validate::AnalyzedExecutionReportDefect,
     },
 }

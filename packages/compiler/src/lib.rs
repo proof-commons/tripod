@@ -92,7 +92,9 @@ mod placement;
 mod proof;
 mod relation;
 mod requirement;
+mod search_counter;
 mod source;
+mod sponsor_region;
 
 pub use error::CompileError;
 pub use expression::ExpressionCycleComponent;

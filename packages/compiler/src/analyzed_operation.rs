@@ -31,9 +31,11 @@
 //! target program, and an inactive relation-case is present in the
 //! census with its vacuity stated rather than omitted.
 
-// One item-level allowance remains: `analyze_operation`, the variant
-// that discards the placement search report. The canonical path keeps
-// the report, so only a caller that does not want it uses this one.
+// Two item-level allowances remain, and they are the same allowance
+// twice: `analyze_operation` and `analyze_candidate_operations` are the
+// variants that discard the placement search report. Both production
+// callers — the assembler and the complete validator's re-derivation —
+// keep the report, so only a caller that does not want it uses these.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -398,6 +400,12 @@ pub fn analyze_operation_reported(
 ///
 /// Any failure of [`analyze_operation`] for any operation, or of
 /// [`validate_operation_factorization`] on the assembled factors.
+// Both production callers — the assembler and the complete validator's
+// re-derivation — want the placement search reports, so both take the
+// reported form and this projection of it has test callers only. It is
+// kept because a test that only asserts about factors should not have
+// to name and discard a report it does not read.
+#[allow(dead_code)]
 pub fn analyze_candidate_operations(
     relations: &CompilerRelationAnalysis,
     requirements: &BTreeMap<RelationId, RelationRequirements>,

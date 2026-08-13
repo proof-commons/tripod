@@ -44,13 +44,14 @@ use realization::{
 
 use crate::{
     CompileError,
-    case::{ExecutionCaseId, SponsorCase, is_sponsor_object},
+    case::{ExecutionCaseId, SponsorCase, is_sponsor_region_family},
     placement::{
         ActivationCondition, CarrierMultiplicity, RelationCasePlan, RuntimePlacementRequirement,
         SemanticScope,
     },
     relation::CompilerRelationAnalysis,
     source::{OperandId, OperandRole, RequiredSourceKind, SourceRequirement},
+    sponsor_region::{GATED_ORDINARY_LBTC_ROLE, OrdinaryLbtcRole},
 };
 
 /// An abstract semantic enforcement role.
@@ -253,11 +254,21 @@ pub const fn external_carrier(requirement: ExternalEvidenceRequirement) -> Carri
 }
 
 /// Whether one carrier lies inside the optional sponsor region.
+///
+/// The operation's ordinary-L-BTC role decides this, not the object
+/// family alone: the same family carries protocol references in
+/// operations whose declared flows claim it, and a protocol-region
+/// carrier is not optional.
 #[must_use]
-pub const fn is_sponsor_region_carrier(carrier: &CarrierRole) -> bool {
+pub const fn is_sponsor_region_carrier(
+    carrier: &CarrierRole,
+    ordinary_lbtc: OrdinaryLbtcRole,
+) -> bool {
     match carrier {
         CarrierRole::EveryInputFamilyMember { object }
-        | CarrierRole::InputFamilyCoordinator { object } => is_sponsor_object(*object),
+        | CarrierRole::InputFamilyCoordinator { object } => {
+            is_sponsor_region_family(*object, ordinary_lbtc)
+        }
         CarrierRole::OperationGlobal { .. }
         | CarrierRole::BackendStructural { .. }
         | CarrierRole::ExternalEvidence { .. } => false,
@@ -498,13 +509,15 @@ fn carrier_availability(
                 return None;
             }
 
-            Some(if is_sponsor_region_carrier(carrier) {
-                CarrierAvailability::Intrinsic
-            } else {
-                // The protocol coordinator learns that the region is
-                // authorized, never the sponsor's exact value.
-                CarrierAvailability::SponsorRegionConfined
-            })
+            Some(
+                if is_sponsor_region_carrier(carrier, GATED_ORDINARY_LBTC_ROLE) {
+                    CarrierAvailability::Intrinsic
+                } else {
+                    // The protocol coordinator learns that the region is
+                    // authorized, never the sponsor's exact value.
+                    CarrierAvailability::SponsorRegionConfined
+                },
+            )
         }
 
         AvailabilityClass::Operator

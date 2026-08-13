@@ -41,13 +41,18 @@ pub struct CompilerDisclosureAnalysis {
     pub retained_private: BTreeSet<FactId>,
 }
 
-/// True for the erased sponsor family's amount fact.
+/// True for the erased sponsor region's amount fact.
+///
+/// Family-based for the same reason, and under the same precondition, as
+/// [`crate::source::is_sponsor_amount_operand`]: the scope gate refuses
+/// every operation in which ordinary L-BTC is protocol-claimed, so
+/// within an accepted analysis this family is the sponsor region.
 #[must_use]
 pub const fn is_sponsor_amount(fact: &FactId) -> bool {
     matches!(
         fact,
         FactId::FamilyAmount {
-            object: architecture::ObjectId::PlainLbtc,
+            object: crate::sponsor_region::ORDINARY_LBTC,
             ..
         }
     )

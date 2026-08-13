@@ -43,6 +43,7 @@ use realization::{
 use crate::{
     CompileError,
     analyzed_operation::{AnalyzedOperation, analyze_candidate_operations_reported},
+    analyzed_validate::validate_scoped_analyzed_program,
     capability::CapabilityView,
     constructibility::build_constructibility_analysis,
     foundation::{CompilerAnalysisFoundationProjection, analyze_foundation},
@@ -233,7 +234,7 @@ impl ScopedAnalyzedProgram {
 /// [`build_constructibility_analysis`], [`build_lifecycle_analysis`],
 /// [`enumerate_feasible_plans`], [`relation_requirements`],
 /// [`analyze_candidate_operations_reported`], or
-/// [`validate_assembly_closure`];
+/// [`validate_scoped_analyzed_program`];
 /// [`CompileError::DuplicateAnalyzedProofPlan`] when the exact search
 /// offers one typed plan twice.
 // The crate-private root of the whole analysis. Guide-7 §26.1 keeps
@@ -326,7 +327,19 @@ pub fn analyze_scoped_program(
 
     // 12: the assembled value is validated, not trusted because this
     // function produced it.
-    validate_assembly_closure(input, &program)?;
+    //
+    // The complete validator, not the narrow closure check. The narrow
+    // check tests architecture-scope status and evidence closure; the
+    // complete one independently re-derives source, foundation, proof
+    // plans, relation requirements, operation factors, placements,
+    // coverage, lifecycle, sponsor opacity, and the execution report,
+    // and it delegates to the narrow check itself. Running only the
+    // narrow check here meant the production constructor did not
+    // perform the corruption-resistant assembly validation this package
+    // documents — a defect in the joins between component stages would
+    // be caught by whichever test called the full validator, and not by
+    // the analysis entry point.
+    validate_scoped_analyzed_program(input, placement_limits, &program)?;
 
     // 13.
     Ok(program)
@@ -545,7 +558,7 @@ fn evidence_owner(
 /// Saturating rather than wrapping: an implausible overflow should
 /// leave a diagnostic count pinned at its maximum, never wrap around to
 /// a small number that reads as little work done.
-const fn accumulate(
+pub const fn accumulate(
     total: PlacementSearchReport,
     report: PlacementSearchReport,
 ) -> PlacementSearchReport {

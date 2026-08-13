@@ -37,9 +37,9 @@ use crate::{
     },
     analyzed_operation::AnalyzedOperation,
     analyzed_validate::{
-        AnalyzedCoverageDefect, AnalyzedExpectations, AnalyzedFoundationDefect,
-        AnalyzedRelationCaseDefect, AnalyzedSourceDefect, derive_expectations,
-        validate_against_expectations,
+        AnalyzedCoverageDefect, AnalyzedExecutionReportDefect, AnalyzedExpectations,
+        AnalyzedFoundationDefect, AnalyzedRelationCaseDefect, AnalyzedSourceDefect,
+        derive_expectations, validate_against_expectations,
     },
     capability::RequiredCapability,
     case::{ExecutionCaseId, SponsorCase},
@@ -209,6 +209,42 @@ fn the_assembled_combined_program_validates() {
     fixture
         .validate(&fixture.program)
         .expect("the assembled two-operation program validates");
+}
+
+#[test]
+fn the_construction_path_itself_runs_the_complete_validator() {
+    // SR3-03: step 12 of the assembler used to run only the narrow
+    // assembly-closure check, so the production entry point did not
+    // perform the corruption-resistant validation this package
+    // documents. The assembler's own validation is not directly
+    // observable, so the property is pinned from the other side: every
+    // expectation the complete validator derives is derived from the
+    // same input the assembler was given, and the assembled program
+    // satisfies all of them rather than only the closure subset.
+    let fixture = &COMPACT_ASH;
+
+    crate::analyzed::validate_assembly_closure(&fixture.input, &fixture.program)
+        .expect("the narrow closure check passes");
+    crate::analyzed_validate::validate_scoped_analyzed_program(
+        &fixture.input,
+        limits(),
+        &fixture.program,
+    )
+    .expect("the complete validator passes");
+
+    // And the complete validator is strictly stronger: a program the
+    // narrow check accepts can still fail it.
+    let mut corrupted = fixture.program.clone();
+    corrupted.execution_report.proof_search.states_visited += 1;
+
+    crate::analyzed::validate_assembly_closure(&fixture.input, &corrupted)
+        .expect("the narrow check does not read the execution report");
+    crate::analyzed_validate::validate_scoped_analyzed_program(
+        &fixture.input,
+        limits(),
+        &corrupted,
+    )
+    .expect_err("the complete validator does");
 }
 
 // --- §15.1 source and scope (7) ---
@@ -1694,6 +1730,199 @@ fn a_cross_operation_coverage_edge_is_rejected() {
         error,
         CompileError::CrossOperationCoverageDependency { .. },
     ));
+}
+
+// --- SR3-03: the execution report is authenticated, not asserted ---
+
+#[test]
+fn a_rewritten_proof_search_count_is_rejected() {
+    let error = COMPACT_ASH.corrupt(|program| {
+        program.execution_report.proof_search.states_visited += 1;
+    });
+
+    assert_eq!(
+        error,
+        CompileError::AnalyzedExecutionReportMismatch {
+            defect: AnalyzedExecutionReportDefect::ProofSearch,
+        },
+    );
+}
+
+#[test]
+fn a_rewritten_placement_search_count_is_rejected() {
+    let error = COMPACT_ASH.corrupt(|program| {
+        let report = program
+            .execution_report
+            .operation_placement_search
+            .get_mut(&OperationId::CompactAsh)
+            .expect("the pilot placement report");
+
+        report.complete_assignments += 1;
+    });
+
+    assert_eq!(
+        error,
+        CompileError::AnalyzedExecutionReportMismatch {
+            defect: AnalyzedExecutionReportDefect::PlacementSearch,
+        },
+    );
+}
+
+#[test]
+fn a_misreported_proof_search_limit_is_rejected() {
+    let error = COMPACT_ASH.corrupt(|program| {
+        let limits = &mut program.execution_report.proof_search_limits;
+
+        *limits = crate::ProofSearchLimits::new(
+            std::num::NonZeroU64::new(limits.maximum_states.get() + 1).expect("nonzero"),
+            limits.maximum_candidates,
+        );
+    });
+
+    assert_eq!(
+        error,
+        CompileError::AnalyzedExecutionReportMismatch {
+            defect: AnalyzedExecutionReportDefect::ProofSearchLimits,
+        },
+    );
+}
+
+#[test]
+fn a_misreported_placement_search_limit_is_rejected() {
+    let error = COMPACT_ASH.corrupt(|program| {
+        let limits = &mut program.execution_report.placement_search_limits;
+
+        *limits = PlacementSearchLimits::new(
+            std::num::NonZeroU64::new(limits.maximum_states.get() + 1).expect("nonzero"),
+            limits.maximum_candidates,
+        );
+    });
+
+    assert_eq!(
+        error,
+        CompileError::AnalyzedExecutionReportMismatch {
+            defect: AnalyzedExecutionReportDefect::PlacementSearchLimits,
+        },
+    );
+}
+
+// --- S2-04: the coverage graph projection is an exact canonical census ---
+
+#[test]
+fn a_duplicated_coverage_dependency_node_is_rejected() {
+    let error = COMPACT_ASH.corrupt(|program| {
+        let graph = &mut ash_factor_mut(program).coverage_dependencies;
+        let repeated = graph.nodes.first().expect("a coverage symbol").clone();
+
+        graph.nodes.insert(0, repeated);
+    });
+
+    assert_eq!(
+        coverage_defect(&error),
+        AnalyzedCoverageDefect::DuplicateDependencyNode,
+    );
+}
+
+#[test]
+fn a_duplicated_coverage_dependency_edge_is_rejected() {
+    let error = COMPACT_ASH.corrupt(|program| {
+        let graph = &mut ash_factor_mut(program).coverage_dependencies;
+        let repeated = graph.edges.first().expect("a dependency edge").clone();
+
+        graph.edges.insert(0, repeated);
+    });
+
+    assert_eq!(
+        coverage_defect(&error),
+        AnalyzedCoverageDefect::DuplicateDependencyEdge,
+    );
+}
+
+#[test]
+fn an_out_of_order_coverage_dependency_node_is_rejected() {
+    let error = COMPACT_ASH.corrupt(|program| {
+        let graph = &mut ash_factor_mut(program).coverage_dependencies;
+
+        assert!(graph.nodes.len() > 1, "the pilot graph defines symbols");
+        graph.nodes.swap(0, 1);
+    });
+
+    assert_eq!(
+        coverage_defect(&error),
+        AnalyzedCoverageDefect::NoncanonicalDependencyNodeOrder,
+    );
+}
+
+#[test]
+fn an_out_of_order_coverage_dependency_edge_is_rejected() {
+    let error = COMPACT_ASH.corrupt(|program| {
+        let graph = &mut ash_factor_mut(program).coverage_dependencies;
+
+        assert!(graph.edges.len() > 1, "the pilot graph declares edges");
+        graph.edges.swap(0, 1);
+    });
+
+    assert_eq!(
+        coverage_defect(&error),
+        AnalyzedCoverageDefect::NoncanonicalDependencyEdgeOrder,
+    );
+}
+
+#[test]
+fn a_duplicated_node_replacing_a_dropped_one_is_rejected() {
+    // Length-preserving corruption: the vector still carries as many
+    // entries as the re-derived census, so only a comparison that
+    // reads repetition rather than membership alone catches it.
+    let error = COMPACT_ASH.corrupt(|program| {
+        let graph = &mut ash_factor_mut(program).coverage_dependencies;
+
+        assert!(graph.nodes.len() > 1, "the pilot graph defines symbols");
+        graph.nodes[1] = graph.nodes[0].clone();
+    });
+
+    assert_eq!(
+        coverage_defect(&error),
+        AnalyzedCoverageDefect::MissingDependencyNode,
+        "the dropped symbol is the more informative diagnostic",
+    );
+}
+
+#[test]
+fn a_duplicated_edge_replacing_a_dropped_one_is_rejected() {
+    let error = COMPACT_ASH.corrupt(|program| {
+        let graph = &mut ash_factor_mut(program).coverage_dependencies;
+
+        assert!(graph.edges.len() > 1, "the pilot graph declares edges");
+        graph.edges[1] = graph.edges[0].clone();
+    });
+
+    assert_eq!(
+        coverage_defect(&error),
+        AnalyzedCoverageDefect::MissingDependencyEdge,
+    );
+}
+
+#[test]
+fn a_repeated_self_edge_is_rejected() {
+    let error = COMPACT_ASH.corrupt(|program| {
+        let graph = &mut ash_factor_mut(program).coverage_dependencies;
+        let node = graph.nodes.first().expect("a coverage symbol").id.clone();
+        let loop_edge = CoverageDependency {
+            source: node.clone(),
+            target: node,
+            edge: CoverageEdge::RelationPrerequisite,
+        };
+
+        graph.edges.push(loop_edge.clone());
+        graph.edges.push(loop_edge);
+    });
+
+    // Neither repetition of a self-edge is derivable, so the census
+    // rejects it before any order or duplication rule applies.
+    assert_eq!(
+        coverage_defect(&error),
+        AnalyzedCoverageDefect::UnexpectedDependencyEdge,
+    );
 }
 
 // --- §15.7 lifecycle (6) ---

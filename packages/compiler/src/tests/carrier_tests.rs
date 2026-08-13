@@ -130,7 +130,10 @@ fn no_unconditional_relation_is_carried_by_the_optional_sponsor_family() {
 
             for entry in &analysis.eligible {
                 assert!(
-                    !crate::carrier::is_sponsor_region_carrier(&entry.carrier),
+                    !crate::carrier::is_sponsor_region_carrier(
+                        &entry.carrier,
+                        crate::sponsor_region::GATED_ORDINARY_LBTC_ROLE,
+                    ),
                     "{:?} in {:?}",
                     analysis.relation,
                     analysis.case,

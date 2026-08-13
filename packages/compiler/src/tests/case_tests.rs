@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use architecture::{ObjectId, OperationId};
+use architecture::{ObjectId, OpenFlowKind, OperationId};
 use realization::RepresentationMode;
 
 use super::bound_input;
@@ -11,12 +11,13 @@ use crate::{
     capability::CapabilityView,
     case::{
         ExecutionCaseId, SponsorCase, case_census, derive_execution_cases, execution_cases,
-        is_active, sponsor_cases, validate_case_census,
+        is_active, is_sponsor_region_family, sponsor_cases, validate_case_census,
     },
     lifecycle::RepresentationChoiceId,
     proof::{ProofPlanCandidate, enumerate_feasible_plans},
     relation::{CompilerRelationAnalysis, build_relation_analysis},
     source::{RequiredSourceKind, RequirementActivation},
+    sponsor_region::{OrdinaryLbtcRole, ordinary_lbtc_role, validate_decidable_sponsor_regions},
 };
 
 fn analysis(operations: &[OperationId]) -> (CompilerRelationAnalysis, Vec<ProofPlanCandidate>) {
@@ -322,4 +323,137 @@ fn repeated_case_derivation_is_equal() {
     let second = case_census(&relations, &permuted).expect("permuted census");
 
     assert_eq!(first, second);
+}
+
+// --- S2-01: sponsor identity is a flow role, not an object family ---
+
+#[test]
+fn both_pilots_use_ordinary_lbtc_only_as_the_fee_sponsor_region() {
+    // The invariance evidence for this change: the pilots declare fee
+    // sponsorship and no protocol flow that could claim ordinary L-BTC,
+    // so the corrected rule reduces exactly to the family test it
+    // replaces and every pilot analysis is unchanged.
+    for operation in [OperationId::CompactAsh, OperationId::TransferLive] {
+        let (relations, _) = analysis(&[operation]);
+
+        assert_eq!(
+            ordinary_lbtc_role(&relations, operation),
+            OrdinaryLbtcRole::SponsorRegion,
+            "{operation:?}",
+        );
+        assert!(is_sponsor_region_family(
+            ObjectId::PlainLbtc,
+            ordinary_lbtc_role(&relations, operation),
+        ));
+    }
+}
+
+#[test]
+fn a_protocol_claimed_ordinary_lbtc_family_is_not_a_sponsor_region() {
+    // The defect S2-01 names, stated directly: the same family in an
+    // operation whose flows claim it for the protocol is not the
+    // optional sponsor region, so no relation over it may be made
+    // sponsor-conditional and no amount over it may be erased.
+    assert!(!is_sponsor_region_family(
+        ObjectId::PlainLbtc,
+        OrdinaryLbtcRole::ProtocolClaimed,
+    ));
+    assert!(!OrdinaryLbtcRole::ProtocolClaimed.is_sponsor_region());
+
+    // Silence is read as erasure, which is safe only because the
+    // protocol-claimed case is refused rather than resolved.
+    assert!(OrdinaryLbtcRole::Absent.is_sponsor_region());
+    assert!(OrdinaryLbtcRole::SponsorRegion.is_sponsor_region());
+
+    // No other family is ever the sponsor region, whatever the role.
+    for role in [
+        OrdinaryLbtcRole::Absent,
+        OrdinaryLbtcRole::SponsorRegion,
+        OrdinaryLbtcRole::ProtocolClaimed,
+    ] {
+        assert!(!is_sponsor_region_family(ObjectId::ReceiptLive, role));
+    }
+}
+
+#[test]
+fn an_operation_claiming_ordinary_lbtc_for_the_protocol_is_refused() {
+    // An operation whose declared open flows include one that can hold
+    // a protocol L-BTC amount cannot have its sponsor region decided
+    // from the declarations the compiler is given, so binding a scope
+    // containing it is a typed refusal rather than a guess.
+    let (relations, _) = analysis(&[OperationId::CompactAsh]);
+
+    let protocol_claiming = [
+        OpenFlowKind::RequestCreation,
+        OpenFlowKind::RequestRefund,
+        OpenFlowKind::DepositAdmission,
+        OpenFlowKind::Redemption,
+    ];
+
+    for flow in protocol_claiming {
+        let synthetic = relations_declaring_open_flows(&[flow, OpenFlowKind::FeeSponsor]);
+
+        assert_eq!(
+            ordinary_lbtc_role(&synthetic, OperationId::CompactAsh),
+            OrdinaryLbtcRole::ProtocolClaimed,
+            "{flow:?}",
+        );
+        assert_eq!(
+            validate_decidable_sponsor_regions(&synthetic, &[OperationId::CompactAsh]),
+            Err(CompileError::UndecidableSponsorRegion {
+                operation: OperationId::CompactAsh,
+            }),
+            "{flow:?}",
+        );
+    }
+
+    // The reserve carry moves the reserve asset; its ordinary-L-BTC
+    // change is generic sponsor change, so it claims nothing.
+    let carry =
+        relations_declaring_open_flows(&[OpenFlowKind::ReserveCarry, OpenFlowKind::FeeSponsor]);
+
+    assert_eq!(
+        ordinary_lbtc_role(&carry, OperationId::CompactAsh),
+        OrdinaryLbtcRole::SponsorRegion,
+    );
+    assert_eq!(
+        validate_decidable_sponsor_regions(&carry, &[OperationId::CompactAsh]),
+        Ok(()),
+    );
+
+    // And the real pilot scope passes the gate.
+    assert_eq!(
+        validate_decidable_sponsor_regions(&relations, &[OperationId::CompactAsh]),
+        Ok(()),
+    );
+}
+
+/// One pilot relation analysis with its open-flow policy replaced.
+fn relations_declaring_open_flows(allowed: &[OpenFlowKind]) -> CompilerRelationAnalysis {
+    let input = bound_input(&[OperationId::CompactAsh]);
+    let source = input.realization().project();
+
+    let nodes = source
+        .relations
+        .nodes
+        .iter()
+        .map(|node| {
+            let mut node = node.clone();
+
+            if matches!(node.relation, realization::Relation::OpenFlowPolicy { .. }) {
+                node.relation = realization::Relation::OpenFlowPolicy {
+                    allowed: allowed.iter().copied().collect(),
+                };
+            }
+
+            node
+        })
+        .collect::<Vec<_>>();
+
+    crate::relation::build_relation_graph(
+        input.scope().operations(),
+        &nodes,
+        &source.relations.edges,
+    )
+    .expect("the synthetic relation graph builds")
 }
