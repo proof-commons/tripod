@@ -52,16 +52,31 @@ Implemented:
 
 - the crate boundary and its no-dependency rule;
 - the typed error root;
-- the target-contract version and its supported census.
+- the target-contract version and its supported census;
+- the tapscript execution domain and the validated leaf version;
+- the reviewed primitive registry, with complete operand, result, failure,
+  and resource contracts for every admitted primitive;
+- the encoding and evidence-requirement keys those primitives name;
+- the target validator, which reports every defect rather than the first;
+- the stable semantic projection.
 
 Not implemented, and not claimed:
 
-- the reviewed opcode registry and its stack and failure contracts;
-- the encoding registry;
+- the encoding specification registry;
 - authorization, timelock, confidential-value, and issuance contracts;
 - consensus and policy resource interfaces;
-- the capability and evidence-requirement registries;
+- capability contracts and evidence-requirement contents;
 - the development deployment binding.
+
+## Failure behavior is part of every primitive contract
+
+A primitive described only by what it does when it succeeds is an incomplete
+contract, because the reviewed target does not fail uniformly. Some primitives
+abort evaluation; the signature primitives consume their operands and push a
+false when the offered signature is empty; and the fixed-width arithmetic
+primitives leave their operands in place and push a false *above* them on
+overflow, so the failing path leaves a deeper stack than the succeeding one. All
+three shapes are typed separately and none may be collapsed into the others.
 
 Target-native deployment evidence has not been produced, and production target
 support is not claimed.

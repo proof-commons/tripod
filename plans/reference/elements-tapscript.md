@@ -404,6 +404,100 @@ For every backend-used primitive, the target contract should expose:
 
 The backend consumes those typed values, not this document.
 
+## Review provenance record · `tbl:elements-ref:review-record`
+
+This section records the source review that produced the typed contract in
+`tripod-target-elements`. Everything in it is review provenance: it
+supports a human reader checking the transcription, and it is deliberately
+absent from the typed contract and from that contract's stable projection. A
+node at a different revision implementing the same reviewed semantics satisfies
+the same typed contract.
+
+No package parses this file.
+
+| Field | Value |
+|---|---|
+| upstream repository | Elements (Liquid) node implementation |
+| revision consulted | `6f43e3ffe7308589f3cbaaec9115ce7456b1bf99` |
+| upstream licence | The MIT License (MIT), compatible with this workspace |
+| review date | 2026-08-13 |
+| typed by | `packages/target-elements/src/opcode.rs` |
+
+### Source locations consulted · `tbl:elements-ref:review-sources`
+
+| Location | Facts taken from it |
+|---|---|
+| `src/script/script.h` | opcode byte declarations; script-number width and minimality rules; script element, operation, stack, and script size bounds; the per-check validation weight constant and offset |
+| `src/script/script.cpp` | the opcode-success classification, which excludes every reviewed extension byte; witness-program recognition |
+| `src/script/interpreter.h` | the tapscript leaf version and leaf mask; control-block sizes; the script verification flags |
+| `src/script/interpreter.cpp` | the evaluation case blocks for every reviewed primitive; the domain gate; the introspection push helpers; the signature and curve check helpers; the validation weight accounting; the relative-timelock check |
+| `src/primitives/confidential.h` | asset, value, and nonce prefix bytes and serialized widths; the big-endian storage of an explicit amount |
+| `src/primitives/transaction.h` | the outpoint issuance and peg-in flag bits; the sequence disable flag, type flag, mask, and granularity |
+| `src/consensus/consensus.h`, `src/policy/policy.h` | block weight and witness scale factor; the standard transaction weight bound |
+| `src/crypto/sha256.cpp` | the streaming hash state serialization and its maximum message length |
+| `src/serialize.h` | the size bound the current-input-index primitive checks against |
+
+### Upstream tests consulted · `tbl:elements-ref:review-tests`
+
+| Test | Use |
+|---|---|
+| `test/functional/feature_tapscript_opcodes.py` | the behavioural reference for the introspection, arithmetic, and conversion primitives; confirms the outpoint flag bytes, the split payload and prefix pushes, the little-endian explicit amount, and the rejection of a negative widening input |
+| `test/functional/test_framework/script.py` | the opcode constants used by the functional tests |
+
+No upstream C++ unit test in `src/test/` exercises the reviewed extension
+primitives. The functional test above is the only upstream behavioural source,
+which is itself a reason the typed contract states evidence requirements rather
+than claiming verification.
+
+### Claims accepted into the typed contract · `tbl:elements-ref:review-accepted`
+
+- the tapscript leaf version is target-specific and is not the corresponding
+  upstream Bitcoin value;
+- every reviewed extension primitive is gated to the tapscript domain by a
+  negative test against the pre-tapscript signature versions, with no separate
+  feature flag and no discouragement flag;
+- the reviewed extension bytes are deliberately excluded from opcode-success
+  treatment;
+- the reviewed domain enforces no per-script operation budget and no script
+  size bound, so both are stated as zero cost rather than omitted;
+- asset and value introspection push the payload and the prefix as two separate
+  stack items, payload first; nonce introspection pushes one item with its
+  prefix inline;
+- an explicit amount is stored big-endian in the transaction field and reaches
+  the stack little-endian;
+- fixed-width arithmetic that overflows, and division by zero, leave both
+  operands in place and push a false above them rather than aborting;
+- fixed-width comparison always consumes both operands and pushes exactly one
+  item, so its false is an answer rather than a failure flag;
+- the narrowing conversion aborts when its result exceeds the script-number
+  range, while the widening conversion reads its operand unsigned;
+- signature verification distinguishes an empty signature, which consumes the
+  operands and pushes a false, from an invalid one, which aborts;
+- the curve-check primitives consume three operands and push nothing;
+- the relative-timelock primitive inspects its operand in place, pushing and
+  popping nothing, and requires a minimum transaction version;
+- the per-check validation budget is charged only by the signature and curve
+  primitives.
+
+### Claims left unresolved · `tbl:elements-ref:review-unresolved`
+
+| Claim | Why it is unresolved |
+|---|---|
+| transaction version and locktime introspection context | these two primitives carry no context-availability guard, and the behaviour of a context-less checker was not established from source |
+| null asset introspection | the push helper asserts rather than raising a script error, so the source defines no consensus behaviour for the case |
+| message length constraints on stack-message signature verification | the interpreter imposes none; whether the verification routine does was not established |
+| whole-transaction confidential value conservation | reviewed as an external consensus claim, not as a script primitive; no typed primitive establishes it |
+| commitment equality | no reviewed script primitive establishes it |
+| authenticated opening | low-level curve and hash primitives exist, which does not constitute an opening proof |
+
+### Target-native tests still required · `rule:elements-ref:review-required-tests`
+
+Every evidence requirement named by the typed contract is unresolved. No
+target-native test has been run against any node, no deployment evidence has
+been produced, and production target support is not claimed. The typed static
+contract states what such a test would have to demonstrate; it does not stand in
+for having demonstrated it.
+
 ## Updating · `rule:elements-ref:update`
 
 Update this reference when:

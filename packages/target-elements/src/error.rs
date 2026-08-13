@@ -16,6 +16,8 @@
 
 use core::fmt;
 
+use crate::opcode::{FailureCause, OpcodeId};
+
 /// A typed target-contract failure.
 ///
 /// Validation of a target definition reports *all* diagnostics rather
@@ -33,6 +35,63 @@ pub enum TargetError {
         /// The unsupported version number that was offered.
         offered: u32,
     },
+
+    /// A leaf version was offered that this package has not reviewed.
+    /// A leaf version selects the semantics of everything executed
+    /// beneath it, so an unreviewed byte describes semantics this
+    /// contract cannot speak for.
+    UnreviewedLeafVersion {
+        /// The unreviewed leaf version byte that was offered.
+        offered: u8,
+    },
+
+    /// A reviewed primitive identity has no contract in the registry.
+    MissingOpcodeContract(OpcodeId),
+
+    /// A registry entry claims one identity while being filed under
+    /// another, which makes the key the registry is indexed by a lie.
+    OpcodeIdMismatch {
+        /// The identity the entry is filed under.
+        key: OpcodeId,
+        /// The identity the entry claims.
+        declared: OpcodeId,
+    },
+
+    /// Two registry entries claim the same target byte. One of them
+    /// would be unreachable, and which one is not determinable from
+    /// the contract.
+    DuplicateOpcodeCode(u8),
+
+    /// A primitive declares no execution domain, or declares none that
+    /// includes the domain the contract describes.
+    UnsupportedOpcodeExecutionDomain(OpcodeId),
+
+    /// A primitive's operand or result widths are incoherent, so the
+    /// contract describes no admissible stack shape.
+    InvalidOpcodeStackContract(OpcodeId),
+
+    /// A primitive declares no failure behavior at all. Every reviewed
+    /// primitive can fail, so an empty failure contract is an
+    /// incomplete transcription.
+    MissingOpcodeFailureContract(OpcodeId),
+
+    /// A primitive declares one failure cause with two different
+    /// effects, so the contract does not say what the target does.
+    ContradictoryFailureCause {
+        /// The primitive carrying the contradiction.
+        opcode: OpcodeId,
+        /// The cause declared twice.
+        cause: FailureCause,
+    },
+
+    /// A primitive declares no resource cost where the target requires
+    /// a positive one.
+    MissingOpcodeResourceCost(OpcodeId),
+
+    /// A primitive names no evidence requirement, so its semantics
+    /// rest on this crate's assertion alone and no deployment is ever
+    /// asked to demonstrate them.
+    MissingOpcodeEvidence(OpcodeId),
 }
 
 impl fmt::Display for TargetError {
@@ -40,6 +99,39 @@ impl fmt::Display for TargetError {
         match self {
             Self::UnsupportedTargetContractVersion { offered } => {
                 write!(f, "unsupported target contract version {offered}")
+            }
+            Self::UnreviewedLeafVersion { offered } => {
+                write!(f, "unreviewed leaf version {offered:#04x}")
+            }
+            Self::MissingOpcodeContract(id) => {
+                write!(f, "reviewed opcode {id:?} has no contract")
+            }
+            Self::OpcodeIdMismatch { key, declared } => {
+                write!(f, "opcode entry {key:?} declares identity {declared:?}")
+            }
+            Self::DuplicateOpcodeCode(code) => {
+                write!(f, "two opcodes claim target byte {code:#04x}")
+            }
+            Self::UnsupportedOpcodeExecutionDomain(id) => {
+                write!(f, "opcode {id:?} declares no usable execution domain")
+            }
+            Self::InvalidOpcodeStackContract(id) => {
+                write!(f, "opcode {id:?} has an incoherent stack contract")
+            }
+            Self::MissingOpcodeFailureContract(id) => {
+                write!(f, "opcode {id:?} declares no failure behavior")
+            }
+            Self::ContradictoryFailureCause { opcode, cause } => {
+                write!(
+                    f,
+                    "opcode {opcode:?} gives failure cause {cause:?} two different effects"
+                )
+            }
+            Self::MissingOpcodeResourceCost(id) => {
+                write!(f, "opcode {id:?} declares no resource cost")
+            }
+            Self::MissingOpcodeEvidence(id) => {
+                write!(f, "opcode {id:?} names no evidence requirement")
             }
         }
     }

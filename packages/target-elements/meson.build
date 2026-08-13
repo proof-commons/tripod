@@ -4,10 +4,16 @@
 # list into its role group.
 target_elements_source_files = files(
   'src/definition.rs',
+  'src/encoding.rs',
   'src/error.rs',
+  'src/evidence.rs',
   'src/lib.rs',
+  'src/opcode.rs',
   'src/tests/definition_tests.rs',
   'src/tests/mod.rs',
+  'src/tests/mutation_tests.rs',
+  'src/tests/opcode_tests.rs',
+  'src/tests/permutation_tests.rs',
 )
 
 # Crate documentation (DOC owner).

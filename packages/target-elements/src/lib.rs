@@ -47,23 +47,42 @@
 //!
 //! # State
 //!
-//! Implemented: the crate boundary, the typed error root, and the
-//! target-contract version.
+//! Implemented: the crate boundary, the typed error root, the
+//! target-contract version, the tapscript execution domain and leaf
+//! version, the reviewed primitive registry with complete stack,
+//! failure, and resource contracts, the encoding and
+//! evidence-requirement keys those primitives name, the target
+//! validator, and the stable semantic projection.
 //!
-//! Not implemented, and not claimed: the reviewed opcode registry, the
-//! encoding registry, authorization and timelock contracts,
-//! confidential-value and issuance contracts, resource interfaces, the
-//! capability and evidence registries, and the development deployment
-//! binding. No value produced by this crate today can be mistaken for
-//! a target compatibility answer.
+//! Not implemented, and not claimed: the encoding specification
+//! registry, authorization and timelock contracts, confidential-value
+//! and issuance contracts, resource interfaces, capability contracts,
+//! evidence-requirement contents, and the development deployment
+//! binding.
+//!
+//! Every evidence requirement this crate names is unresolved. No
+//! target-native deployment evidence has been produced, and production
+//! target support is not claimed.
 
 #![forbid(unsafe_code)]
 
 pub mod definition;
+pub mod encoding;
 pub mod error;
+pub mod evidence;
+pub mod opcode;
 
-pub use definition::TargetContractVersion;
+pub use definition::{
+    TargetContractVersion, TargetDefinition, TargetProjection, ValidatedTargetDefinition,
+    reviewed_elements_tapscript, validate_target_definition,
+};
+pub use encoding::{ByteOrder, EncodingClass, PayloadWidth};
 pub use error::TargetError;
+pub use evidence::TargetEvidenceRequirementId;
+pub use opcode::{
+    ExecutionDomain, FailureCause, FailureContract, FailureEffect, FailureOutcome, LeafVersion,
+    OpcodeId, OpcodeResourceCost, OpcodeSpec, StackContract, StackValueType,
+};
 
 #[cfg(test)]
 mod tests;
