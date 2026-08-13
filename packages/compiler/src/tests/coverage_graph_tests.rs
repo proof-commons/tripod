@@ -24,8 +24,9 @@ use crate::{
     },
     coverage_graph::{
         CoverageDefinitionCensus, CoverageDependency, CoverageDependencyGraph, CoverageEdge,
-        CoverageNode, CoverageNodeId, analyze_coverage_dependencies, build_coverage_graph,
-        coverage_definition_census, derive_coverage_dependencies, resolve_coverage_dependencies,
+        CoverageEdgeClass, CoverageNode, CoverageNodeId, analyze_coverage_dependencies,
+        build_coverage_graph, coverage_definition_census, derive_coverage_dependencies,
+        resolve_coverage_dependencies,
     },
     placement::{
         PlacementSearchLimits, RelationActivity, RelationCaseKey, classify_relation_cases,
@@ -787,5 +788,138 @@ fn a_cross_operation_relation_edge_is_rejected_in_derivation() {
         derived
             .iter()
             .all(|dependency| dependency.edge != CoverageEdge::RelationPrerequisite),
+    );
+}
+
+// --- S2-03: one settled orientation, enforced per edge ---
+
+#[test]
+fn every_derived_dependency_joins_its_declared_endpoint_classes() {
+    for pilot in pilots() {
+        for (_, graph) in pilot.graphs() {
+            let projection = graph.project();
+
+            assert!(!projection.edges.is_empty(), "{:?}", pilot.operation);
+
+            for dependency in &projection.edges {
+                let (source, target) = dependency.edge.endpoint_classes();
+
+                assert_eq!(
+                    (dependency.source.class(), dependency.target.class()),
+                    (source, target),
+                    "{:?} {dependency:?}",
+                    pilot.operation,
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_reversed_dependency_is_rejected_rather_than_stored() {
+    let mut reversed_variants = BTreeSet::new();
+
+    for pilot in pilots() {
+        for analysis in &pilot.coverage {
+            let census = coverage_definition_census(analysis).expect("census");
+            let edges = derive_coverage_dependencies(
+                analysis,
+                &census,
+                &pilot.source_relation_dependencies(),
+            )
+            .expect("dependencies");
+
+            for dependency in &edges {
+                if dependency.edge.class() == CoverageEdgeClass::Prerequisite {
+                    // Both endpoints are relation-cases, so the endpoint
+                    // rule cannot see the reversal; the re-derived
+                    // census is what catches that one.
+                    continue;
+                }
+
+                let reversed = CoverageDependency {
+                    source: dependency.target.clone(),
+                    target: dependency.source.clone(),
+                    edge: dependency.edge,
+                };
+
+                assert_eq!(
+                    build_coverage_graph(&census, std::slice::from_ref(&reversed))
+                        .expect_err("a reversed dependency is rejected"),
+                    CompileError::CoverageDependencyEndpointClass {
+                        prerequisite: Box::new(dependency.target.clone()),
+                        dependent: Box::new(dependency.source.clone()),
+                        edge: dependency.edge,
+                    },
+                    "{:?}",
+                    pilot.operation,
+                );
+
+                reversed_variants.insert(dependency.edge);
+            }
+        }
+    }
+
+    // The pilots must actually exercise every ownership variant, or the
+    // test above passes by never reaching one.
+    assert_eq!(
+        reversed_variants,
+        BTreeSet::from([
+            CoverageEdge::CarrierEnablesRelation,
+            CoverageEdge::LayoutEnablesCarrier,
+            CoverageEdge::ProjectionEnablesRelation,
+            CoverageEdge::EvidenceEnablesRelation,
+        ]),
+    );
+}
+
+#[test]
+fn a_reversed_collateral_claim_is_rejected() {
+    // Collateral edges are attached from the closure rather than
+    // derived, so they are exercised on a synthetic census.
+    let key = synthetic_key(OperationId::CompactAsh, RelationKind::Recognition);
+    let requirement = CoverageNodeId::Requirement(crate::coverage::CoverageRequirementId {
+        relation: key.relation.clone(),
+        case: key.case.clone(),
+        boundary: crate::placement::DischargeBoundary::RuntimeCarrier,
+        purpose: crate::coverage::CoveragePurpose::StructuralPresence,
+    });
+    let relation_case = CoverageNodeId::RelationCase(key.clone());
+
+    let census = synthetic_census(&[
+        synthetic_node(&key, RelationActivity::Active),
+        CoverageNode {
+            id: requirement.clone(),
+            activity: None,
+        },
+    ]);
+
+    // The declared orientation is accepted.
+    build_coverage_graph(
+        &census,
+        &[CoverageDependency {
+            source: requirement.clone(),
+            target: relation_case.clone(),
+            edge: CoverageEdge::DependencyCollateral,
+        }],
+    )
+    .expect("a claim from the requirement to the relation-case");
+
+    // Its reversal is not.
+    assert_eq!(
+        build_coverage_graph(
+            &census,
+            &[CoverageDependency {
+                source: relation_case.clone(),
+                target: requirement.clone(),
+                edge: CoverageEdge::DependencyCollateral,
+            }],
+        )
+        .expect_err("a reversed claim is rejected"),
+        CompileError::CoverageDependencyEndpointClass {
+            prerequisite: Box::new(relation_case),
+            dependent: Box::new(requirement),
+            edge: CoverageEdge::DependencyCollateral,
+        },
     );
 }

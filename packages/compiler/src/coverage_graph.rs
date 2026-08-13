@@ -15,6 +15,32 @@
 //! vocabularies are the semantics, and a reusable container would let a
 //! future caller insert an edge this vocabulary cannot express.
 //!
+//! # Orientation
+//!
+//! Direction is prerequisite → dependent for every edge: the source is
+//! what must be in place, the target is what it enables. One graph
+//! documenting one orientation while emitting several is not a graph
+//! anything generic can read — a topological order, an ancestor or
+//! descendant query, or a "what must exist before this relation is
+//! discharged?" traversal would each mean something different depending
+//! on which edge it happened to cross.
+//!
+//! | Edge | Source | Target | Class |
+//! |---|---|---|---|
+//! | relation prerequisite | relation-case | relation-case | prerequisite |
+//! | carrier enables relation | carrier | relation-case | ownership |
+//! | layout enables carrier | layout | carrier | ownership |
+//! | projection enables relation | requirement | relation-case | ownership |
+//! | evidence enables relation | external evidence | relation-case | ownership |
+//! | dependency collateral | requirement | relation-case | collateral |
+//!
+//! The classes are the second half of the settlement. A shared
+//! orientation makes the graph traversable; it does not make every edge
+//! mean the same thing, and the closure below depends on the difference.
+//! Each variant's admissible endpoint classes are declared with it and
+//! checked when the edge is inserted, so a reversed dependency is a
+//! typed rejection rather than a different but equally plausible graph.
+//!
 //! Dependency collateral is the strict active-descendant closure of the
 //! intended relation, taken within one operation and one execution case.
 //! A mutation of a relation really does block the relations that depend
@@ -100,6 +126,18 @@ impl CoverageNodeId {
         }
     }
 
+    /// Which kind of symbol this is.
+    #[must_use]
+    pub const fn class(&self) -> CoverageNodeClass {
+        match self {
+            Self::RelationCase(_) => CoverageNodeClass::RelationCase,
+            Self::Requirement(_) => CoverageNodeClass::Requirement,
+            Self::Carrier { .. } => CoverageNodeClass::Carrier,
+            Self::Layout(_) => CoverageNodeClass::Layout,
+            Self::ExternalEvidence(_) => CoverageNodeClass::ExternalEvidence,
+        }
+    }
+
     /// The relation-case this symbol belongs to, where it names one.
     #[must_use]
     pub const fn relation_case(&self) -> Option<&RelationCaseKey> {
@@ -128,22 +166,125 @@ const fn layout_operation(requirement: &LayoutRequirement) -> OperationId {
 
 /// Why one coverage symbol depends on another.
 ///
-/// Direction is prerequisite → dependent throughout, matching the
-/// realization relation edges these are derived from.
+/// Direction is prerequisite → dependent for every variant: the source
+/// is what must be in place, the target is what it enables. The module
+/// documentation carries the full table and the reason the orientation
+/// is uniform rather than per-variant.
+///
+/// The variant names state the direction rather than leaving it to the
+/// field names. A variant called `RequiresCarrier` reads naturally in
+/// both directions, which is how the previous vocabulary managed to
+/// document one orientation while emitting another.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CoverageEdge {
     /// The source relation-case must hold before the target one can.
     RelationPrerequisite,
-    /// The relation-case requires the carrier to execute.
-    RequiresCarrier,
-    /// The carrier depends on the layout obligation.
-    RequiresLayout,
-    /// The relation-case requires the accepted projection comparison.
-    RequiresProjection,
-    /// The relation-case requires the external report.
-    RequiresExternalEvidence,
-    /// The negative requirement claims the dependent becomes blocked.
+    /// The source carrier discharges the target relation-case.
+    CarrierEnablesRelation,
+    /// The source layout obligation makes the target carrier usable.
+    LayoutEnablesCarrier,
+    /// The source accepted-projection comparison discharges the target
+    /// relation-case.
+    ProjectionEnablesRelation,
+    /// The source external report discharges the target relation-case.
+    EvidenceEnablesRelation,
+    /// The source negative requirement claims the target relation-case
+    /// becomes blocked.
+    ///
+    /// A claim rather than a prerequisite, and the one variant whose
+    /// reading is not "the target needs the source". It shares the
+    /// orientation because it is derived from the prerequisite closure
+    /// and points the same way that closure travels; see
+    /// [`CoverageEdgeClass`].
     DependencyCollateral,
+}
+
+/// What one typed coverage edge asserts.
+///
+/// Two edges may share an orientation and still mean different things.
+/// Keeping the vocabulary separate is what lets the traversals ask for
+/// the edges whose meaning they actually depend on, rather than
+/// filtering on a variant list that has to be revisited whenever the
+/// vocabulary grows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CoverageEdgeClass {
+    /// One relation-case must hold before another can.
+    ///
+    /// The only class carrying dependency-closure semantics: a relation
+    /// blocks a relation, and nothing else blocks a relation.
+    Prerequisite,
+    /// One symbol is a requirement discharging another.
+    Ownership,
+    /// One negative requirement claims another symbol becomes blocked.
+    Collateral,
+}
+
+/// Which kind of symbol one coverage node is.
+///
+/// Extracted from the identity so an edge's endpoints can be checked
+/// against the classes the edge is defined over, without the check
+/// having to match on every identity variant itself.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CoverageNodeClass {
+    RelationCase,
+    Requirement,
+    Carrier,
+    Layout,
+    ExternalEvidence,
+}
+
+impl CoverageEdge {
+    /// What this edge asserts.
+    #[must_use]
+    pub const fn class(self) -> CoverageEdgeClass {
+        match self {
+            Self::RelationPrerequisite => CoverageEdgeClass::Prerequisite,
+            Self::CarrierEnablesRelation
+            | Self::LayoutEnablesCarrier
+            | Self::ProjectionEnablesRelation
+            | Self::EvidenceEnablesRelation => CoverageEdgeClass::Ownership,
+            Self::DependencyCollateral => CoverageEdgeClass::Collateral,
+        }
+    }
+
+    /// The node classes this edge is defined over, source then target.
+    ///
+    /// An edge vocabulary that fixes its endpoint classes is what makes
+    /// a reversed dependency a typed rejection rather than a silently
+    /// different graph: every variant except
+    /// [`Self::RelationPrerequisite`] joins two *different* classes, so
+    /// swapping its endpoints produces a pair no variant admits.
+    ///
+    /// A reversed relation prerequisite joins the same two classes and
+    /// so cannot be caught here. It is caught where it must be — by
+    /// comparison against the independently re-derived census, which is
+    /// the only check that can know which of two relation-cases came
+    /// first.
+    #[must_use]
+    pub const fn endpoint_classes(self) -> (CoverageNodeClass, CoverageNodeClass) {
+        match self {
+            Self::RelationPrerequisite => (
+                CoverageNodeClass::RelationCase,
+                CoverageNodeClass::RelationCase,
+            ),
+            Self::CarrierEnablesRelation => {
+                (CoverageNodeClass::Carrier, CoverageNodeClass::RelationCase)
+            }
+            Self::LayoutEnablesCarrier => (CoverageNodeClass::Layout, CoverageNodeClass::Carrier),
+            Self::EvidenceEnablesRelation => (
+                CoverageNodeClass::ExternalEvidence,
+                CoverageNodeClass::RelationCase,
+            ),
+            // Same endpoint classes, different assertions: one
+            // requirement discharges its relation-case, the other claims
+            // a relation-case becomes blocked. [`Self::class`] is what
+            // tells those apart; the endpoint rule is not asked to.
+            Self::ProjectionEnablesRelation | Self::DependencyCollateral => (
+                CoverageNodeClass::Requirement,
+                CoverageNodeClass::RelationCase,
+            ),
+        }
+    }
 }
 
 /// One coverage symbol as stored in the graph.
@@ -412,9 +553,9 @@ pub fn derive_coverage_dependencies(
                 };
 
                 dependencies.insert(CoverageDependency {
-                    source: relation_case.clone(),
-                    target: node.clone(),
-                    edge: CoverageEdge::RequiresCarrier,
+                    source: node.clone(),
+                    target: relation_case.clone(),
+                    edge: CoverageEdge::CarrierEnablesRelation,
                 });
 
                 // The layout obligations travel with the alternative
@@ -422,9 +563,9 @@ pub fn derive_coverage_dependencies(
                 // every eligible one.
                 for requirement in &alternative.layout {
                     dependencies.insert(CoverageDependency {
-                        source: node.clone(),
-                        target: CoverageNodeId::Layout(requirement.clone()),
-                        edge: CoverageEdge::RequiresLayout,
+                        source: CoverageNodeId::Layout(requirement.clone()),
+                        target: node.clone(),
+                        edge: CoverageEdge::LayoutEnablesCarrier,
                     });
                 }
             }
@@ -432,22 +573,22 @@ pub fn derive_coverage_dependencies(
 
         for boundary in plan.projections.keys() {
             dependencies.insert(CoverageDependency {
-                source: relation_case.clone(),
-                target: CoverageNodeId::Requirement(CoverageRequirementId {
+                source: CoverageNodeId::Requirement(CoverageRequirementId {
                     relation: key.relation.clone(),
                     case: key.case.clone(),
                     boundary: *boundary,
                     purpose: CoveragePurpose::AcceptedProjection,
                 }),
-                edge: CoverageEdge::RequiresProjection,
+                target: relation_case.clone(),
+                edge: CoverageEdge::ProjectionEnablesRelation,
             });
         }
 
         for requirement in &plan.external_evidence {
             dependencies.insert(CoverageDependency {
-                source: relation_case.clone(),
-                target: CoverageNodeId::ExternalEvidence(requirement.clone()),
-                edge: CoverageEdge::RequiresExternalEvidence,
+                source: CoverageNodeId::ExternalEvidence(requirement.clone()),
+                target: relation_case.clone(),
+                edge: CoverageEdge::EvidenceEnablesRelation,
             });
         }
     }
@@ -521,7 +662,10 @@ impl CoverageDependencyGraph {
     /// [`CompileError::CrossOperationCoverageDependency`] when the
     /// endpoints belong to two operations;
     /// [`CompileError::DuplicateCoverageDependency`] when the same
-    /// typed dependency is declared twice.
+    /// typed dependency is declared twice;
+    /// [`CompileError::CoverageDependencyEndpointClass`] when an edge
+    /// joins node classes its variant is not defined over — which is
+    /// what a reversed dependency looks like.
     fn add_dependencies(
         &mut self,
         dependencies: &[CoverageDependency],
@@ -529,6 +673,18 @@ impl CoverageDependencyGraph {
         for dependency in dependencies {
             let source = self.resolve(&dependency.source)?;
             let target = self.resolve(&dependency.target)?;
+
+            let (expected_source, expected_target) = dependency.edge.endpoint_classes();
+
+            if dependency.source.class() != expected_source
+                || dependency.target.class() != expected_target
+            {
+                return Err(CompileError::CoverageDependencyEndpointClass {
+                    prerequisite: Box::new(dependency.source.clone()),
+                    dependent: Box::new(dependency.target.clone()),
+                    edge: dependency.edge,
+                });
+            }
 
             if dependency.source.operation() != dependency.target.operation() {
                 return Err(CompileError::CrossOperationCoverageDependency {

@@ -849,6 +849,27 @@ pub enum CompileError {
         edge: crate::coverage_graph::CoverageEdge,
     },
 
+    /// One coverage dependency joins node classes its edge variant is
+    /// not defined over.
+    ///
+    /// The typed edge vocabulary fixes the source and target classes of
+    /// every variant, so this is what a reversed dependency looks like:
+    /// the endpoints are individually valid symbols and the pair is one
+    /// the edge cannot express. Direction is prerequisite → dependent
+    /// throughout the graph, and an edge pointing the other way would
+    /// otherwise be stored as a different but equally plausible graph.
+    #[error(
+        "coverage dependency {prerequisite:?} -> {dependent:?} ({edge:?}) joins the wrong node classes"
+    )]
+    CoverageDependencyEndpointClass {
+        /// The declared source symbol.
+        prerequisite: Box<crate::coverage_graph::CoverageNodeId>,
+        /// The declared target symbol.
+        dependent: Box<crate::coverage_graph::CoverageNodeId>,
+        /// The edge role whose endpoint classes were broken.
+        edge: crate::coverage_graph::CoverageEdge,
+    },
+
     /// The coverage dependencies contain a cycle.
     ///
     /// Coverage cycles are forbidden: an accepted cycle would need a
