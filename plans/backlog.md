@@ -538,6 +538,58 @@ identity exists or was minted; no compiler publication was added; the
 deployment-profile identity remains dormant behind validation; no new
 dependency entered.
 
+### 2.12 Guide-8 target foundation gate · `gate:backlog:guide8`
+
+The Guide-8 batch delivered the third-review preflight (§5.3, all fifteen
+rows), the `tripod-target-elements` crate, the minimal public
+compiler target-requirement boundary, and the `tripod-tapscript`
+capability adapter. Starting revision 085ef25; batch branch merged
+fast-forward after this record.
+
+Preflight: sponsor erasure is fee-sponsor-flow-role based with two-point
+overlap rejection and a kernel balanced-theft regression; the compiler
+refuses protocol-claimed ordinary-L-BTC scopes with a typed error and both
+pilot analyzed projections were verified byte-identical; the complete
+analyzed-program validator runs on the construction path with the execution
+report validated; projections compare exactly and duplicate-sensitively;
+the coverage graph uses one enabler-toward-dependent orientation with
+endpoint classes checked on insertion; exact-search counters are checked
+before increment.
+
+Target foundation: 38 opcodes reviewed against upstream Elements source
+with review provenance recorded in the target reference and excluded from
+the semantic projection; the tapscript leaf version is the reviewed 0xc4;
+arithmetic failure retains operands and pushes false; asset and value
+introspection push payload and prefix separately; 27 encoding classes,
+37 capabilities, and 20 evidence requirements validate with mutation and
+permutation coverage; sighash dimensions are recorded unreviewed and
+commitment equality and authenticated opening remain unsupported; the
+development binding rejects production, zero identifiers, and version
+mismatch and carries no credential field. The compiler exposes
+RequiredCapability with a complete census and a read-only requirement set
+constructible only from fully validated analysis; the adapter classifies
+all thirteen capabilities exhaustively with an independent oracle, the
+authorization rows block on the unreviewed sighash dimensions, and the
+complete-backend-pattern claim is unconstructible by type.
+
+Gate evidence, all on the merged batch tree: ci.sh eleven lanes green
+under the pinned SDK toolchain with the advisory lane RUNNING through an
+isolated cargo-audit shim (149 crates scanned, no advisories) and the
+mocked Meson contract required; canonical meson compile and test 10/10;
+the workspace suite green across 46 test binaries; document byte
+reproducibility not required this batch because no paper input changed
+(the one-line realization-document correction is covered by the label and
+weld lanes). Toolchain note: the SDK extension bundles clippy 0.1.88
+against a 1.99-nightly cargo, and the current upstream clippy 0.1.99 adds
+an assert-is-empty lint; its machine-applicable rewrites were adopted, and
+roughly ninety non-machine-applicable test assertion sites remain OPEN as
+drift work for when the lint reaches a supported gate toolchain.
+
+Identity impact: Layer-0 version, architecture schema and hashes, and
+generated publications unchanged; no target, deployment, compiler, or
+report digest minted; Cargo.lock gained exactly the two first-party
+package stanzas; no third-party dependency entered.
+
 ---
 
 ### The verification harness's two standing hazards · `rem:backlog:verification-harness`
