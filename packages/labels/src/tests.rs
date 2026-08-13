@@ -192,6 +192,53 @@ fn fenced_blocks_require_at_most_three_leading_spaces() {
 }
 
 #[test]
+fn blockquoted_fence_is_rejected_rather_than_silently_scanned() {
+    // The accepted grammar carries top-level fences only. A fence
+    // behind a container marker is rejected, so a label-shaped token
+    // inside it can never participate silently.
+    let scan = scan_markdown(
+        Path::new("fixture.md"),
+        "> ```text\n> `sec:quoted`\n> ```\n",
+    );
+    let nested: Vec<_> = scan
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == LabelErrorCode::NestedMarkdownFence)
+        .map(|diagnostic| (diagnostic.line, diagnostic.column))
+        .collect();
+    assert_eq!(nested, vec![(1, 3), (3, 3)], "{:#?}", scan.diagnostics);
+}
+
+#[test]
+fn list_item_and_indented_fences_are_rejected() {
+    for source in [
+        "- ```text\n`sec:listed`\n",
+        "1. ```text\n`sec:ordered`\n",
+        "    ```text\n`sec:indented`\n",
+    ] {
+        let scan = scan_markdown(Path::new("fixture.md"), source);
+        assert!(
+            scan.diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == LabelErrorCode::NestedMarkdownFence),
+            "{source:?} {:#?}",
+            scan.diagnostics,
+        );
+    }
+}
+
+#[test]
+fn top_level_fences_and_ordinary_containers_are_not_nested_fences() {
+    let scan = scan_markdown(
+        Path::new("fixture.md"),
+        "> quoted prose\n- listed prose\n   ```text\n`sec:fenced`\n   ```\n`sec:visible`\n",
+    );
+    assert!(scan.diagnostics.is_empty(), "{:#?}", scan.diagnostics);
+    assert_eq!(scan.code_spans.len(), 1);
+    assert_eq!(scan.code_spans[0].content, "sec:visible");
+}
+
+#[test]
 fn fence_close_must_match_the_opening_delimiter_length() {
     let scan = scan_markdown(
         Path::new("fixture.md"),
@@ -1034,6 +1081,24 @@ fn rust_scanner_ignores_tilde_fenced_examples_and_rejects_asymmetric_parens() {
         harvest
             .registry
             .contains(&Label::parse("def:fixture:plain", LabelShape::Model).expect("valid label"))
+    );
+}
+
+#[test]
+fn rust_container_nested_documentation_fence_is_rejected() {
+    let harvest = rust_fixture_harvest(concat!(
+        "//! > ```text\n",
+        "//! > ´def:fixture:quoted´\n",
+        "//! > ```\n",
+    ));
+
+    assert!(
+        harvest
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == LabelErrorCode::NestedMarkdownFence),
+        "{:#?}",
+        harvest.diagnostics,
     );
 }
 

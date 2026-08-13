@@ -8,7 +8,9 @@ use crate::{
     RepositoryCensus,
     diagnostic::{LabelDiagnostic, LabelErrorCode},
     label::{Label, LabelShape},
-    markdown::{InlineCodeContext, classify, fence_close, fence_open},
+    markdown::{
+        InlineCodeContext, classify, fence_close, fence_open, nested_fence, nested_fence_diagnostic,
+    },
     owner::{ImportedLabel, LabelOwner},
     registry::{LabelMint, LabelRegistry},
     repository::{CitationClass, CitationOrigin, LabelCitation},
@@ -471,6 +473,18 @@ fn harvest_file(path: &Path, source: &str, owner: &LabelOwner, result: &mut Rust
             fence_line = segment.line;
             fence_block = segment.block;
             continue;
+        }
+        // A container-nested fence is outside the accepted grammar in
+        // documentation comments too, so its content would be
+        // harvested as ordinary comment text.
+        if segment.kind.is_documentation()
+            && let Some(column) = nested_fence(&segment.text)
+        {
+            result.diagnostics.push(nested_fence_diagnostic(
+                path,
+                segment.line,
+                segment.column + column - 1,
+            ));
         }
         harvest_segment(path, &segment, owner, result);
     }

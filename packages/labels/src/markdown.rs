@@ -76,6 +76,10 @@ pub fn scan_markdown(path: &Path, source: &str) -> MarkdownScan {
             fence = Some((marker, length, line));
             continue;
         }
+        if let Some(column) = nested_fence(raw) {
+            scan.diagnostics
+                .push(nested_fence_diagnostic(path, line, column));
+        }
         if let Some(title) = heading(raw) {
             home = Some(title);
         }
@@ -89,6 +93,78 @@ pub fn scan_markdown(path: &Path, source: &str) -> MarkdownScan {
         ));
     }
     scan
+}
+
+/// Detect a fence the top-level recognizer cannot see, returning the
+/// one-based column of its marker run.
+///
+/// The accepted Markdown grammar recognizes fences with at most three
+/// leading spaces (ADR-013 fenced material). A fence hidden behind a
+/// blockquote marker, a list bullet, or deeper indentation is outside
+/// that grammar, so its content would be scanned as ordinary prose.
+/// Rather than grow a container parser, the repository rejects such a
+/// fence: a label-shaped token inside one can then never participate
+/// silently, because the document carrying it fails.
+pub(crate) fn nested_fence(line: &str) -> Option<usize> {
+    if fence_open(line).is_some() {
+        return None;
+    }
+    let bytes = line.as_bytes();
+    let mut offset = 0;
+    let mut contained = false;
+    loop {
+        let indent = offset;
+        while bytes.get(offset) == Some(&b' ') {
+            offset += 1;
+        }
+        // Indentation deeper than a top-level fence is itself a
+        // container: a list continuation or an indented block.
+        if offset - indent > 3 {
+            contained = true;
+        }
+        match bytes.get(offset) {
+            Some(b'>') => {
+                offset += 1;
+                contained = true;
+            }
+            Some(b'-' | b'*' | b'+') if bytes.get(offset + 1) == Some(&b' ') => {
+                offset += 2;
+                contained = true;
+            }
+            Some(digit) if digit.is_ascii_digit() => {
+                let mut end = offset;
+                while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+                    end += 1;
+                }
+                if !matches!(bytes.get(end), Some(b'.' | b')')) || bytes.get(end + 1) != Some(&b' ')
+                {
+                    break;
+                }
+                offset = end + 2;
+                contained = true;
+            }
+            _ => break,
+        }
+    }
+    if !contained {
+        return None;
+    }
+    let rest = &line[offset..];
+    let marker = rest.chars().next()?;
+    if !matches!(marker, '`' | '~') {
+        return None;
+    }
+    let length = rest.chars().take_while(|value| *value == marker).count();
+    (length >= 3).then(|| line[..offset].chars().count() + 1)
+}
+
+pub(crate) fn nested_fence_diagnostic(path: &Path, line: usize, column: usize) -> LabelDiagnostic {
+    LabelDiagnostic::error(
+        LabelErrorCode::NestedMarkdownFence,
+        &SourceLocation::new(path, line, column),
+        "fenced block inside a blockquote, list item, or indented container is outside the \
+         accepted Markdown grammar; move it to the top level",
+    )
 }
 
 pub(crate) fn fence_open(line: &str) -> Option<(char, usize)> {

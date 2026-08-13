@@ -7,6 +7,9 @@ use crate::source::SourceLocation;
 pub enum LabelErrorCode {
     Io,
     UnclosedMarkdownFence,
+    /// A fence hidden behind a blockquote, list, or indentation
+    /// container, which the accepted Markdown grammar does not carry.
+    NestedMarkdownFence,
     UnclosedInlineCode,
     AsymmetricCitation,
     /// An attempted citation adjacent to a parenthesis whose group is
