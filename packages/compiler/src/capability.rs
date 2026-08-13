@@ -35,6 +35,34 @@ pub enum RequiredCapability {
     WholeTransactionValueConservation,
 }
 
+impl RequiredCapability {
+    /// The complete census of abstract capabilities, in the type's own
+    /// canonical order (Guide-8 §15.2).
+    ///
+    /// A census constant rather than a derived iteration, because the
+    /// property a downstream adapter needs is that *this list* and the
+    /// enum agree: the projection boundary re-checks the constant
+    /// against the type's ordering on every use, so a member added to
+    /// the enum and forgotten here fails at the boundary, and a member
+    /// listed twice fails there too. The order is a stable census
+    /// order; it ranks nothing.
+    pub const ALL: &'static [Self] = &[
+        Self::AuthenticatedObjectRecognition,
+        Self::AuthenticatedFamilyCardinality,
+        Self::AuthenticatedCanonicalPartition,
+        Self::AuthenticatedOpenFlowPartition,
+        Self::AuthenticatedRootEffects,
+        Self::AuthenticatedProjectionSet,
+        Self::ExactPublicAmountArithmetic,
+        Self::ConfidentialValueConservation,
+        Self::OwnerAuthorization,
+        Self::OperatorAuthorization,
+        Self::RefundAuthorization,
+        Self::PublicConstructibility,
+        Self::WholeTransactionValueConservation,
+    ];
+}
+
 /// Optional planning filter over abstract capabilities.
 ///
 /// Production Guide-3 analysis uses [`CapabilityView::Unconstrained`]

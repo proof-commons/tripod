@@ -237,12 +237,9 @@ impl ScopedAnalyzedProgram {
 /// [`validate_scoped_analyzed_program`];
 /// [`CompileError::DuplicateAnalyzedProofPlan`] when the exact search
 /// offers one typed plan twice.
-// The crate-private root of the whole analysis. Guide-7 §26.1 keeps
-// the complete analyzed program unexposed until a target package is
-// the first honest consumer, so in a non-test build this entry point
-// has no caller — everything it reaches does, which is why the
-// allowance belongs here and nowhere below it.
-#[allow(dead_code)]
+// The crate-private root of the whole analysis. The analyzed program
+// itself remains unexposed; its Guide-8 consumer is the target
+// requirement projection, which is now this function's non-test caller.
 pub fn analyze_scoped_program(
     input: &BoundCompilerInput,
     placement_limits: PlacementSearchLimits,

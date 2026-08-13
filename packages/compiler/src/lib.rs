@@ -27,8 +27,12 @@
 //!
 //! # State
 //!
-//! The crate boundary and the validated input boundary ([`bind_input`]
-//! and [`BoundCompilerInput`], P2-004) are the public surface.
+//! The crate boundary, the validated input boundary ([`bind_input`]
+//! and [`BoundCompilerInput`], P2-004), and the abstract target
+//! requirement boundary ([`target`], Guide-8 §15) are the public
+//! surface. The last of those publishes what an analysis requires of
+//! some target — abstract capabilities and external-evidence roles —
+//! and nothing about how the analysis reached them.
 //!
 //! These internal analysis stages are implemented:
 //!
@@ -56,14 +60,18 @@
 //! - relation-indexed requirement bundles with exact aggregate closure;
 //! - complete scoped analyzed programs for the pilot scope, factorized
 //!   per operation, with a corruption-resistant assembly validator and
-//!   an independent assembly census oracle.
+//!   an independent assembly census oracle;
+//! - the abstract target requirement projection, derivable only from a
+//!   completely validated analyzed program.
 //!
-//! Every stage above the input boundary is crate-private. The
-//! following remain absent:
+//! Every stage above the input boundary is crate-private, and the
+//! target boundary publishes a projection of the result rather than the
+//! result. The following remain absent:
 //!
 //! - a public complete-analysis result;
 //! - a compiler-plan identity;
 //! - a target capability adapter;
+//! - any target-specific type;
 //! - target program emission.
 //!
 //! No public value produced by the crate today can be mistaken for a
@@ -95,6 +103,7 @@ mod requirement;
 mod search_counter;
 mod source;
 mod sponsor_region;
+pub mod target;
 
 pub use error::CompileError;
 pub use expression::ExpressionCycleComponent;

@@ -177,3 +177,137 @@ fn a_different_architecture_semantic_body_is_a_binding_mismatch() {
         CompileError::ArchitectureBindingMismatch,
     );
 }
+
+// --- Guide-8 §15 and §20.4: the abstract target requirement boundary ---
+
+use std::collections::BTreeSet;
+
+use compiler::target::{
+    ExternalEvidenceRole, PlacementSearchLimits, RequiredCapability, TargetRequirementSet,
+    analyze_target_requirements,
+};
+
+/// Generous limits: a truncated pilot search would hide a defect rather
+/// than bound one.
+const fn placement_limits() -> PlacementSearchLimits {
+    PlacementSearchLimits::new(
+        std::num::NonZeroU64::new(10_000_000).expect("nonzero"),
+        std::num::NonZeroU64::new(1_000_000).expect("nonzero"),
+    )
+}
+
+fn pilot_requirements() -> TargetRequirementSet {
+    let scope =
+        CompilationScope::from_operations([OperationId::CompactAsh, OperationId::TransferLive])
+            .expect("pilot scope");
+    let input = bind_input(
+        &architecture::ARCHITECTURE,
+        phase1_realization(),
+        scope,
+        test_policy(),
+    )
+    .expect("bind input");
+
+    analyze_target_requirements(&input, placement_limits()).expect("pilot requirements")
+}
+
+#[test]
+fn every_required_capability_is_publicly_nameable() {
+    // Written out rather than folded over the census: this test is the
+    // external statement that each variant is reachable by name from
+    // outside the crate, and a loop over the census would state
+    // nothing.
+    let named = [
+        RequiredCapability::AuthenticatedObjectRecognition,
+        RequiredCapability::AuthenticatedFamilyCardinality,
+        RequiredCapability::AuthenticatedCanonicalPartition,
+        RequiredCapability::AuthenticatedOpenFlowPartition,
+        RequiredCapability::AuthenticatedRootEffects,
+        RequiredCapability::AuthenticatedProjectionSet,
+        RequiredCapability::ExactPublicAmountArithmetic,
+        RequiredCapability::ConfidentialValueConservation,
+        RequiredCapability::OwnerAuthorization,
+        RequiredCapability::OperatorAuthorization,
+        RequiredCapability::RefundAuthorization,
+        RequiredCapability::PublicConstructibility,
+        RequiredCapability::WholeTransactionValueConservation,
+    ];
+
+    assert_eq!(RequiredCapability::ALL, named);
+    assert_eq!(named.iter().collect::<BTreeSet<_>>().len(), named.len());
+    assert!(named.windows(2).all(|pair| pair[0] < pair[1]));
+}
+
+#[test]
+fn every_evidence_role_is_publicly_nameable() {
+    assert_eq!(
+        ExternalEvidenceRole::ALL,
+        [ExternalEvidenceRole::SubstrateConservation],
+    );
+}
+
+#[test]
+fn target_requirements_come_only_from_a_completed_analysis() {
+    // There is no public constructor, no `Default`, and no builder:
+    // this call is the only route to the type, and it runs the complete
+    // analysis and its independent validator before returning.
+    let requirements = pilot_requirements();
+    let capabilities = requirements.capabilities().collect::<Vec<_>>();
+
+    assert_ne!(
+        capabilities,
+        [] as [compiler::target::RequiredCapability; 0]
+    );
+    assert!(
+        capabilities.windows(2).all(|pair| pair[0] < pair[1]),
+        "the published census is canonically ordered, so no member repeats",
+    );
+    assert!(
+        capabilities
+            .iter()
+            .all(|capability| RequiredCapability::ALL.contains(capability)),
+        "no published capability is outside the census the adapter matches on",
+    );
+
+    let evidence = requirements.external_evidence().collect::<Vec<_>>();
+
+    assert_eq!(evidence, [ExternalEvidenceRole::SubstrateConservation]);
+}
+
+#[test]
+fn a_rejected_analysis_yields_no_requirements() {
+    // The projection is not reachable around a failing analysis: an
+    // input the analysis rejects produces a typed error, never an empty
+    // or partial requirement set.
+    let scope = CompilationScope::from_operations([OperationId::CompactAsh]).expect("scope");
+    let mut mutated = architecture::ARCHITECTURE;
+    mutated.document.specification.version = "0.0.0-target-boundary-test";
+
+    assert_eq!(
+        bind_input(&mutated, phase1_realization(), scope, test_policy())
+            .expect_err("a mismatched binding never binds"),
+        CompileError::ArchitectureBindingMismatch,
+    );
+}
+
+#[test]
+fn the_public_boundary_is_deterministic_and_target_free() {
+    assert_eq!(pilot_requirements(), pilot_requirements());
+
+    // The target package is not a dependency of this test target, so no
+    // target-specific type can appear in a compiler signature this test
+    // names: the absence is enforced by the package graph rather than
+    // asserted here. What is asserted is that the boundary's whole
+    // vocabulary is the two abstract censuses above, and that it mints
+    // no analysis identity to go with them.
+    let requirements = pilot_requirements();
+    let capabilities = requirements.capabilities().collect::<BTreeSet<_>>();
+    let evidence = requirements.external_evidence().collect::<BTreeSet<_>>();
+
+    assert!(!capabilities.is_empty() && !evidence.is_empty());
+    assert_eq!(
+        format!("{requirements:?}").matches("digest").count(),
+        0,
+        "the boundary publishes no identity, and nothing named like one",
+    );
+}

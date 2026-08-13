@@ -29,6 +29,7 @@ mod proof_tests;
 mod relation_tests;
 mod requirement_tests;
 mod source_tests;
+mod target_tests;
 
 use architecture::OperationId;
 
