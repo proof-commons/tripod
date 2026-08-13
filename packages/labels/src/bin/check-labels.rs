@@ -80,6 +80,9 @@ impl Args {
             specification_register: resolve(&self.specification_register),
             realization_register: resolve(&self.realization_register),
             model_labels_json: resolve(&self.model_labels_json),
+            // A build-argument census records no traversal of its
+            // own; `verify` supplies the discovered one.
+            traversal: std::collections::BTreeMap::new(),
         })
     }
 }

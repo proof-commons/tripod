@@ -15,12 +15,13 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs,
+    fmt::Display,
+    fs, io,
     path::{Path, PathBuf},
 };
 
 use crate::{
-    diagnostic::{LabelDiagnostic, LabelErrorCode},
+    diagnostic::{LabelDiagnostic, LabelErrorCode, sort_diagnostics},
     source::{SourceLocation, relative_to},
 };
 
@@ -51,11 +52,20 @@ pub struct RepositoryCensus {
     pub specification_register: PathBuf,
     pub realization_register: PathBuf,
     pub model_labels_json: PathBuf,
+    /// Traversal failures recorded while discovering this census,
+    /// keyed by the group whose walk failed.
+    ///
+    /// A build-argument census carries none: only
+    /// [`RepositoryCensus::discover`] fills this. An unreadable tree
+    /// must never become an empty carrier, so
+    /// [`RepositoryCensus::verify`] reports these before comparing
+    /// declared and discovered members (ADR-014).
+    pub traversal: BTreeMap<CensusGroup, Vec<LabelDiagnostic>>,
 }
 
 /// Census groups, for scoped verification: an unrelated group's
 /// staleness must not block a scoped derivation (ADR-013).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CensusGroup {
     Attestation,
     Realization,
@@ -102,43 +112,56 @@ impl RepositoryCensus {
             ..Self::default()
         };
         let root = census.root.clone();
-        census.attestation_sections = files_with_extension(&paper.join("sections"), "tex");
 
-        for path in markdown_files(&root.join("adr")) {
+        let mut walk = Walk::new(&root);
+        census.attestation_sections =
+            files_with_extension(&paper.join("sections"), "tex", &mut walk);
+        census
+            .traversal
+            .insert(CensusGroup::Attestation, walk.finish());
+
+        let mut walk = Walk::new(&root);
+        for path in markdown_files(&root.join("adr"), &mut walk) {
             if adr_number(&path).is_some() {
                 census.adrs.push(path);
             }
         }
+        census.traversal.insert(CensusGroup::Adr, walk.finish());
 
-        census.plans = markdown_files(&root.join("plans"))
+        let mut walk = Walk::new(&root);
+        census.plans = markdown_files(&root.join("plans"), &mut walk)
             .into_iter()
             .filter(|path| {
                 *path != census.specification_register && *path != census.realization_register
             })
             .collect();
+        census.traversal.insert(CensusGroup::Plan, walk.finish());
 
+        let mut walk = Walk::new(&root);
         let mut docs = Vec::new();
-        walk_docs(&census, &root, &mut docs);
+        walk_docs(&census, &root, &mut docs, &mut walk);
         docs.sort();
         census.docs = docs;
+        census.traversal.insert(CensusGroup::Doc, walk.finish());
 
-        census.model_sources = rust_files(&root.join("packages/model/src"));
+        let mut walk = Walk::new(&root);
+        census.model_sources = rust_files(&root.join("packages/model/src"), &mut walk);
+        census.traversal.insert(CensusGroup::Model, walk.finish());
 
-        if let Ok(entries) = fs::read_dir(root.join("packages")) {
-            for entry in entries.filter_map(Result::ok) {
-                let path = entry.path();
-                let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-                    continue;
-                };
-                let source = path.join("src");
-                if name == "model" || !source.is_dir() {
-                    continue;
-                }
-                census
-                    .crate_sources
-                    .insert(name.to_owned(), rust_files(&source));
+        let mut walk = Walk::new(&root);
+        for entry in walk.entries(&root.join("packages")) {
+            let Some(name) = entry.path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            let source = entry.path.join("src");
+            if name == "model" || !entry.is_dir || !source.is_dir() {
+                continue;
             }
+            census
+                .crate_sources
+                .insert(name.to_owned(), rust_files(&source, &mut walk));
         }
+        census.traversal.insert(CensusGroup::Crates, walk.finish());
 
         census
     }
@@ -151,6 +174,20 @@ impl RepositoryCensus {
         let discovered = Self::discover(&self.root);
         let mut diagnostics = Vec::new();
         for group in groups {
+            // An unreadable tree must never become an empty carrier:
+            // a group whose walk failed is reported before its
+            // membership is compared, because a directory that could
+            // not be read may hide any number of subjects (ADR-014).
+            // A census that was itself discovered carries the same
+            // failures as the fresh walk, so identical records are
+            // reported once.
+            for source in [self, &discovered] {
+                for failure in source.traversal.get(group).into_iter().flatten() {
+                    if !diagnostics.contains(failure) {
+                        diagnostics.push(failure.clone());
+                    }
+                }
+            }
             let (declared, found): (Vec<&Path>, Vec<&Path>) = match group {
                 CensusGroup::Attestation => (
                     std::iter::once(self.attestation_main.as_path())
@@ -436,66 +473,156 @@ fn adr_number(path: &Path) -> Option<u16> {
         .and_then(|number| number.parse::<u16>().ok())
 }
 
-fn files_with_extension(directory: &Path, extension: &str) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    if let Ok(entries) = fs::read_dir(directory) {
-        for entry in entries.filter_map(Result::ok) {
-            let path = entry.path();
-            if path.extension().is_some_and(|found| found == extension) {
-                files.push(path);
-            }
+/// One directory entry of a census walk, classified by following
+/// symbolic links exactly as the previous `is_dir` test did.
+struct Entry {
+    path: PathBuf,
+    is_dir: bool,
+}
+
+/// Failure-recording traversal for one census group.
+///
+/// Every unreadable directory and every unreadable entry becomes a
+/// [`LabelErrorCode::CensusUnreadable`] diagnostic naming the path.
+/// Nothing is dropped silently: a suppressed failure would let an
+/// unreadable subject tree agree with an empty declared group and pass
+/// verification (ADR-014).
+struct Walk<'a> {
+    root: &'a Path,
+    diagnostics: Vec<LabelDiagnostic>,
+}
+
+impl<'a> Walk<'a> {
+    const fn new(root: &'a Path) -> Self {
+        Self {
+            root,
+            diagnostics: Vec::new(),
         }
     }
+
+    /// Read one directory, sorted, recording failures.
+    ///
+    /// An absent directory is an empty group rather than a failure:
+    /// the declared census disagreement already names a removed
+    /// subject. Every other error kind — permissions above all — is a
+    /// diagnostic, because the directory may hold subjects that cannot
+    /// be seen.
+    fn entries(&mut self, directory: &Path) -> Vec<Entry> {
+        let mut entries = Vec::new();
+        let iterator = match fs::read_dir(directory) {
+            Ok(iterator) => iterator,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return entries,
+            Err(error) => {
+                self.unreadable(directory, &error);
+                return entries;
+            }
+        };
+        for entry in iterator {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(error) => {
+                    self.unreadable(directory, &error);
+                    continue;
+                }
+            };
+            let path = entry.path();
+            match fs::metadata(&path) {
+                Ok(metadata) => entries.push(Entry {
+                    is_dir: metadata.is_dir(),
+                    path,
+                }),
+                Err(error) => self.unreadable(&path, &error),
+            }
+        }
+        entries.sort_by(|left, right| left.path.cmp(&right.path));
+        entries
+    }
+
+    fn unreadable(&mut self, path: &Path, error: &dyn Display) {
+        self.diagnostics.push(LabelDiagnostic::error(
+            LabelErrorCode::CensusUnreadable,
+            &SourceLocation::new(relative_to(self.root, path), 1, 1),
+            format!("census traversal could not read this path: {error}"),
+        ));
+    }
+
+    /// The recorded failures in a deterministic order.
+    fn finish(self) -> Vec<LabelDiagnostic> {
+        let mut diagnostics = self.diagnostics;
+        sort_diagnostics(&mut diagnostics);
+        diagnostics
+    }
+}
+
+fn files_with_extension(directory: &Path, extension: &str, walk: &mut Walk<'_>) -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = walk
+        .entries(directory)
+        .into_iter()
+        .filter(|entry| {
+            entry
+                .path
+                .extension()
+                .is_some_and(|found| found == extension)
+        })
+        .map(|entry| entry.path)
+        .collect();
     files.sort();
     files
 }
 
-fn markdown_files(directory: &Path) -> Vec<PathBuf> {
+fn markdown_files(directory: &Path, walk: &mut Walk<'_>) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    collect_by_extension(directory, "md", &mut files);
+    collect_by_extension(directory, "md", &mut files, walk);
     files.sort();
     files
 }
 
-fn rust_files(directory: &Path) -> Vec<PathBuf> {
+fn rust_files(directory: &Path, walk: &mut Walk<'_>) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    collect_by_extension(directory, "rs", &mut files);
+    collect_by_extension(directory, "rs", &mut files, walk);
     files.sort();
     files
 }
 
-fn collect_by_extension(directory: &Path, extension: &str, files: &mut Vec<PathBuf>) {
-    let Ok(entries) = fs::read_dir(directory) else {
-        return;
-    };
-    for entry in entries.filter_map(Result::ok) {
-        let path = entry.path();
-        if path.is_dir() {
-            collect_by_extension(&path, extension, files);
-        } else if path.extension().is_some_and(|found| found == extension) {
-            files.push(path);
+fn collect_by_extension(
+    directory: &Path,
+    extension: &str,
+    files: &mut Vec<PathBuf>,
+    walk: &mut Walk<'_>,
+) {
+    for entry in walk.entries(directory) {
+        if entry.is_dir {
+            collect_by_extension(&entry.path, extension, files, walk);
+        } else if entry
+            .path
+            .extension()
+            .is_some_and(|found| found == extension)
+        {
+            files.push(entry.path);
         }
     }
 }
 
 /// Discover every authored Markdown file outside the trees owned
 /// elsewhere: the `DOC` owner census (ADR-013).
-fn walk_docs(census: &RepositoryCensus, directory: &Path, output: &mut Vec<PathBuf>) {
-    let Ok(entries) = fs::read_dir(directory) else {
-        return;
-    };
+fn walk_docs(
+    census: &RepositoryCensus,
+    directory: &Path,
+    output: &mut Vec<PathBuf>,
+    walk: &mut Walk<'_>,
+) {
     let adr_dir = census.root_join_adr();
     let plans_dir = census.root_join_plans();
-    for entry in entries.filter_map(Result::ok) {
-        let path = entry.path();
+    for entry in walk.entries(directory) {
+        let path = entry.path;
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        if path.is_dir() {
+        if entry.is_dir {
             if name.starts_with('.') || EXCLUDED_CENSUS_DIRS.contains(&name) || path == plans_dir {
                 continue;
             }
-            walk_docs(census, &path, output);
+            walk_docs(census, &path, output, walk);
         } else if path.extension().is_some_and(|extension| extension == "md") {
             // Files with their own owner: the realization document and
             // numbered ADRs.

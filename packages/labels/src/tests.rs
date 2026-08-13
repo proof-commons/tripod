@@ -77,12 +77,87 @@ fn one_sided_label_parenthesis_is_asymmetric() {
 }
 
 #[test]
-fn labels_in_mixed_parenthetical_prose_remain_bare() {
+fn malformed_citation_group_with_trailing_prose_is_not_bare() {
+    // The close parenthesis arrives only after prose, so the exact
+    // citation grammar fails. The occurrence is an attempted citation
+    // and must be diagnosed rather than demoted to a mint.
     let scan = scan_markdown(
         Path::new("fixture.md"),
         "See (`sec:fixture`, ordinary supporting prose).\n",
     );
+    assert_eq!(
+        scan.code_spans[0].context,
+        InlineCodeContext::MalformedGroup
+    );
+}
+
+#[test]
+fn malformed_citation_group_with_leading_prose_is_not_bare() {
+    let scan = scan_markdown(Path::new("fixture.md"), "(see `sec:fixture`)\n");
+    assert_eq!(
+        scan.code_spans[0].context,
+        InlineCodeContext::MalformedGroup
+    );
+}
+
+#[test]
+fn multiple_citation_groups_on_one_line_are_each_parenthesized() {
+    let scan = scan_markdown(
+        Path::new("fixture.md"),
+        "Both (`sec:first`) and (`sec:second`, `sec:third`) cite.\n",
+    );
+    assert!(scan.diagnostics.is_empty());
+    assert_eq!(scan.code_spans.len(), 3);
+    assert!(
+        scan.code_spans
+            .iter()
+            .all(|span| span.context == InlineCodeContext::Parenthesized)
+    );
+}
+
+#[test]
+fn nested_parentheses_around_a_citation_group_stay_a_citation() {
+    let scan = scan_markdown(Path::new("fixture.md"), "Aside ((`sec:fixture`)) here.\n");
+    assert_eq!(scan.code_spans[0].context, InlineCodeContext::Parenthesized);
+}
+
+#[test]
+fn unrelated_parentheses_elsewhere_never_change_a_bare_mint() {
+    // A parenthesis before and after the occurrence, neither adjacent
+    // to it: the occurrence is an ordinary mint, and the far
+    // parentheses neither promote nor demote it.
+    let scan = scan_markdown(
+        Path::new("fixture.md"),
+        "Prose (an aside) `sec:fixture` more (another aside).\n",
+    );
     assert_eq!(scan.code_spans[0].context, InlineCodeContext::Bare);
+}
+
+#[test]
+fn a_malformed_citation_never_becomes_the_only_mint_of_a_label() {
+    // The label appears exactly once in the document, inside a
+    // malformed citation group. Before this rule the later close
+    // parenthesis suppressed the diagnostic and the occurrence minted
+    // the label, silently moving its conceptual home.
+    let directory = fixture_root("# Realization\nSee (`sec:fixture`, supporting prose).\n");
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
+
+    assert!(
+        labels
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == LabelErrorCode::MalformedCitationGroup),
+        "{:#?}",
+        labels.diagnostics,
+    );
+    assert!(
+        !labels
+            .registries
+            .realization
+            .labels()
+            .any(|label| label.as_str() == "sec:fixture"),
+        "malformed citation minted the label it cites",
+    );
 }
 
 #[test]
@@ -114,6 +189,53 @@ fn fenced_blocks_require_at_most_three_leading_spaces() {
             .iter()
             .any(|diagnostic| diagnostic.code == LabelErrorCode::UnclosedMarkdownFence)
     );
+}
+
+#[test]
+fn blockquoted_fence_is_rejected_rather_than_silently_scanned() {
+    // The accepted grammar carries top-level fences only. A fence
+    // behind a container marker is rejected, so a label-shaped token
+    // inside it can never participate silently.
+    let scan = scan_markdown(
+        Path::new("fixture.md"),
+        "> ```text\n> `sec:quoted`\n> ```\n",
+    );
+    let nested: Vec<_> = scan
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == LabelErrorCode::NestedMarkdownFence)
+        .map(|diagnostic| (diagnostic.line, diagnostic.column))
+        .collect();
+    assert_eq!(nested, vec![(1, 3), (3, 3)], "{:#?}", scan.diagnostics);
+}
+
+#[test]
+fn list_item_and_indented_fences_are_rejected() {
+    for source in [
+        "- ```text\n`sec:listed`\n",
+        "1. ```text\n`sec:ordered`\n",
+        "    ```text\n`sec:indented`\n",
+    ] {
+        let scan = scan_markdown(Path::new("fixture.md"), source);
+        assert!(
+            scan.diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == LabelErrorCode::NestedMarkdownFence),
+            "{source:?} {:#?}",
+            scan.diagnostics,
+        );
+    }
+}
+
+#[test]
+fn top_level_fences_and_ordinary_containers_are_not_nested_fences() {
+    let scan = scan_markdown(
+        Path::new("fixture.md"),
+        "> quoted prose\n- listed prose\n   ```text\n`sec:fenced`\n   ```\n`sec:visible`\n",
+    );
+    assert!(scan.diagnostics.is_empty(), "{:#?}", scan.diagnostics);
+    assert_eq!(scan.code_spans.len(), 1);
+    assert_eq!(scan.code_spans[0].content, "sec:visible");
 }
 
 #[test]
@@ -362,6 +484,149 @@ fn unreadable_adr_is_an_io_diagnostic() {
     assert!(labels.diagnostics.iter().any(|diagnostic| {
         diagnostic.code == LabelErrorCode::Io && diagnostic.path == "adr/012-unreadable.md"
     }));
+}
+
+/// Make `path` unreadable, returning `false` when the process can read
+/// it anyway — running as root, or on a filesystem without permission
+/// enforcement — so the caller can skip rather than assert falsely.
+#[cfg(unix)]
+fn make_unreadable(path: &Path) -> bool {
+    fs::set_permissions(path, fs::Permissions::from_mode(0o0)).expect("remove permissions");
+    if fs::read_dir(path).is_ok() {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("restore permissions");
+        return false;
+    }
+    true
+}
+
+#[cfg(unix)]
+#[test]
+fn unreadable_subject_directory_fails_an_empty_declared_group() {
+    // The hole this closes: an unreadable directory used to discover
+    // as an empty group, so an empty declared group agreed with it and
+    // verification passed while subjects sat outside the label graph.
+    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let root = directory.path();
+    let adr_dir = root.join("adr");
+    fs::write(
+        adr_dir.join("012-hidden.md"),
+        "# ADR\n`rule:hidden:label`\n",
+    )
+    .expect("ADR source");
+    if !make_unreadable(&adr_dir) {
+        return;
+    }
+
+    let declared = RepositoryCensus {
+        root: root.to_path_buf(),
+        ..RepositoryCensus::default()
+    };
+    let diagnostics = declared.verify(&[CensusGroup::Adr]);
+
+    fs::set_permissions(&adr_dir, fs::Permissions::from_mode(0o755))
+        .expect("restore ADR directory");
+
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == LabelErrorCode::CensusUnreadable && diagnostic.path == "adr"
+        }),
+        "{diagnostics:#?}",
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn one_unreadable_entry_is_reported_beside_the_readable_ones() {
+    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let root = directory.path();
+    fs::write(root.join("plans/first.md"), "# First\n").expect("plan source");
+    fs::write(root.join("plans/second.md"), "# Second\n").expect("plan source");
+    let closed = root.join("plans/closed");
+    fs::create_dir_all(&closed).expect("nested plan directory");
+    fs::write(closed.join("third.md"), "# Third\n").expect("plan source");
+    if !make_unreadable(&closed) {
+        return;
+    }
+
+    let census = RepositoryCensus::discover(root);
+
+    fs::set_permissions(&closed, fs::Permissions::from_mode(0o755))
+        .expect("restore plan directory");
+
+    // The readable siblings are still discovered.
+    let names: Vec<_> = census
+        .plans
+        .iter()
+        .filter_map(|path| path.file_name().and_then(|name| name.to_str()))
+        .collect();
+    assert_eq!(names, vec!["first.md", "second.md"]);
+
+    let failures = census
+        .traversal
+        .get(&CensusGroup::Plan)
+        .expect("plan traversal record");
+    assert_eq!(failures.len(), 1, "{failures:#?}");
+    assert_eq!(failures[0].code, LabelErrorCode::CensusUnreadable);
+    assert_eq!(failures[0].path, "plans/closed");
+}
+
+#[cfg(unix)]
+#[test]
+fn scoped_model_derivation_refuses_an_unreadable_scoped_directory() {
+    // Scoped generation runs without the full repository audit, so it
+    // is exactly where a suppressed traversal failure would pass.
+    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let root = directory.path();
+    let sources = root.join("packages/model/src");
+    fs::write(sources.join("fixture.rs"), "// ´def:fixture:hidden´\n").expect("model source");
+    if !make_unreadable(&sources) {
+        return;
+    }
+
+    let declared = RepositoryCensus {
+        root: root.to_path_buf(),
+        ..RepositoryCensus::default()
+    };
+    let error = model_labels_json(&declared).expect_err("unreadable model sources must fail");
+
+    fs::set_permissions(&sources, fs::Permissions::from_mode(0o755))
+        .expect("restore model source directory");
+
+    let crate::repository::GenerateError::Validation(diagnostics) = error else {
+        panic!("expected a validation failure");
+    };
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == LabelErrorCode::CensusUnreadable
+                && diagnostic.path == "packages/model/src"
+        }),
+        "{diagnostics:#?}",
+    );
+}
+
+#[test]
+fn absent_and_empty_directories_are_equally_clean_empty_groups() {
+    // Policy: a directory that is absent and a directory that is
+    // present but empty both yield an empty group with no traversal
+    // diagnostic. Only a directory that exists and cannot be read is a
+    // failure — an empty group is knowledge, an unreadable one is not.
+    let absent = fixture_root("# Realization\n`sec:fixture`\n");
+    fs::remove_dir_all(absent.path().join("adr")).expect("remove ADR directory");
+    let empty = fixture_root("# Realization\n`sec:fixture`\n");
+
+    for root in [absent.path(), empty.path()] {
+        let census = RepositoryCensus::discover(root);
+        assert!(census.adrs.is_empty());
+        assert!(
+            census
+                .traversal
+                .get(&CensusGroup::Adr)
+                .is_some_and(Vec::is_empty),
+            "{:#?}",
+            census.traversal,
+        );
+        assert!(census.verify(&[CensusGroup::Adr]).is_empty());
+    }
 }
 
 // Whole-repository validity is the job of the Meson-driven
@@ -850,6 +1115,77 @@ fn rust_scanner_ignores_tilde_fenced_examples_and_rejects_asymmetric_parens() {
         harvest
             .registry
             .contains(&Label::parse("def:fixture:plain", LabelShape::Model).expect("valid label"))
+    );
+}
+
+#[test]
+fn rust_container_nested_documentation_fence_is_rejected() {
+    let harvest = rust_fixture_harvest(concat!(
+        "//! > ```text\n",
+        "//! > ´def:fixture:quoted´\n",
+        "//! > ```\n",
+    ));
+
+    assert!(
+        harvest
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == LabelErrorCode::NestedMarkdownFence),
+        "{:#?}",
+        harvest.diagnostics,
+    );
+}
+
+#[test]
+fn rust_malformed_citation_groups_are_diagnosed_not_minted() {
+    let harvest = rust_fixture_harvest(concat!(
+        "// intended cite (´def:fixture:prose´ with trailing prose)\n",
+        "// trailing close (see ´def:fixture:leading´)\n",
+        "// unrelated (aside) ´def:fixture:mint´ more (aside)\n",
+        "// groups (´def:fixture:first´) and (´def:fixture:second´)\n",
+        "// nested ((´def:fixture:nested´))\n",
+    ));
+
+    let minted: Vec<_> = harvest.registry.labels().map(ToString::to_string).collect();
+    assert_eq!(
+        minted,
+        vec!["def:fixture:mint".to_owned()],
+        "{:#?}",
+        harvest.diagnostics,
+    );
+
+    let defects: Vec<_> = harvest
+        .diagnostics
+        .iter()
+        .map(|diagnostic| (diagnostic.line, diagnostic.code))
+        .collect();
+    assert_eq!(
+        defects,
+        vec![
+            (1, LabelErrorCode::MalformedCitationGroup),
+            (2, LabelErrorCode::MalformedCitationGroup),
+        ],
+        "{:#?}",
+        harvest.diagnostics,
+    );
+
+    // The three well-formed groups became citations, not mints.
+    assert_eq!(harvest.citations.len(), 3);
+}
+
+#[test]
+fn rust_malformed_citation_never_becomes_the_only_mint_of_a_label() {
+    let harvest = rust_fixture_harvest("// only occurrence (´def:fixture:home´ and prose)\n");
+
+    assert!(harvest.registry.labels().next().is_none());
+    assert!(harvest.citations.is_empty());
+    assert!(
+        harvest
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == LabelErrorCode::MalformedCitationGroup),
+        "{:#?}",
+        harvest.diagnostics,
     );
 }
 

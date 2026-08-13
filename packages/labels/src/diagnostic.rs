@@ -7,8 +7,14 @@ use crate::source::SourceLocation;
 pub enum LabelErrorCode {
     Io,
     UnclosedMarkdownFence,
+    /// A fence hidden behind a blockquote, list, or indentation
+    /// container, which the accepted Markdown grammar does not carry.
+    NestedMarkdownFence,
     UnclosedInlineCode,
     AsymmetricCitation,
+    /// An attempted citation adjacent to a parenthesis whose group is
+    /// not the exact parenthesized-citation grammar.
+    MalformedCitationGroup,
     DuplicateMint,
     MissingMint,
     UnknownOwner,
@@ -23,6 +29,9 @@ pub enum LabelErrorCode {
     GeneratedRegisterMissing,
     GeneratedRegisterStale,
     CensusStale,
+    /// A census traversal could not read a directory or an entry, so
+    /// the discovered membership of its group is unknown.
+    CensusUnreadable,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
