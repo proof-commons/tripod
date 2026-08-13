@@ -1,6 +1,9 @@
 # Elements Target Contract · `pkg:target-elements:contract`
 
-> **Status:** Planned
+> **Status:** Active — typed static contract, reviewed primitive registry,
+> encoding/authorization/CT/issuance/resource contracts, evidence-requirement
+> registry, and development deployment binding implemented; target-native
+> evidence absent and production support not claimed
 > **Phase:** [Phase 3](../phases/03-target-foundation.md)
 > **Package:** `tripod-target-elements`
 > **Library:** `target_elements`
@@ -281,8 +284,12 @@ See [`errors/target-elements.md`](errors/target-elements.md).
 
 ## Open questions · `sec:target-elements:open`
 
-- Which Rust Elements library/version provides transaction and encoding types?
-- Where does the compiler-target capability adapter live?
+Resolved by the Guide-8 foundation: the compiler-target capability adapter
+lives in `tapscript`, and the static contract needs no Elements library —
+it is typed standard-library declarations reviewed against upstream source.
+
+- Which Rust Elements library/version, if any, provides transaction and
+  encoding types once target-native execution begins?
 - Are consensus and policy separate sub-identities?
 - What exactly is the initial-witness push policy scope?
 - Which sighash profile is selected?

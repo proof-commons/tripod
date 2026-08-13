@@ -1,6 +1,8 @@
 # Elements Tapscript Backend · `pkg:tapscript:contract`
 
-> **Status:** Planned; prototype-dependent
+> **Status:** Active — package boundary and the exhaustive compiler-to-target
+> capability adapter implemented; instruction core, stack scheduling, backend
+> proof patterns, and constructors not implemented and prototype-dependent
 > **Phases:** [Phase 3](../phases/03-target-foundation.md) onward
 > **Package:** `tripod-tapscript`
 > **Library:** `tapscript`

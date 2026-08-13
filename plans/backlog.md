@@ -641,12 +641,12 @@ Architecture finality does not imply:
 ### 3.3 Not implemented · `tbl:backlog:not-implemented`
 
 ```text
-public complete compiler-analysis API
+public complete compiler-analysis API beyond the target-requirement boundary
 compiler-plan identity
-target capability adapter backed by a real target package
+target-native primitive evidence
+typed tapscript instruction core
+backend proof patterns
 
-tripod-target-elements
-tripod-tapscript
 tripod-linker
 tripod-transaction
 tripod-vectors
@@ -673,7 +673,12 @@ Compiler exact planning:            implemented and reaccepted
 Compiler placement/layout:          implemented internally, section 2.9
 Compiler coverage:                  implemented internally, section 2.10
 Complete analyzed pilots:           implemented internally, section 2.11
-Target/backend/linker/ABI:         absent
+Compiler target-requirement boundary:
+                                    public and validated, section 2.12
+Typed Elements target contract:     implemented, section 2.12
+Capability adapter:                 implemented, section 2.12
+Target-native evidence:            absent
+Backend patterns/linker/ABI:       absent
 Independent deployment evidence:   absent
 Production deployment:             absent
 Phase-2 exit gate:                 passed and recorded, section 2.11
@@ -1367,13 +1372,26 @@ correctness check, not malicious-code containment.
 The Phase-2 gate is **passed**; the record is §2.11. The current gate is
 Phase 3 — Elements target and foundational prototypes.
 
+The Guide-8 target foundation is complete; the gate record is §2.12. The
+Phase-3 task state is:
+
+| ID | Status | Task |
+|---|---|---|
+| `T3-001` | DONE | Typed target package boundary |
+| `T3-002` | DONE | Reviewed initial target definition |
+| `T3-003` | DONE | Encoding and opcode contracts |
+| `T3-004` | DONE | Development deployment binding |
+| `T3-005` | DONE | Compiler capability adapter |
+| `T3-006` | TODO | Target-native primitive conformance |
+| `T3-007` | TODO | Typed tapscript instruction foundation |
+
 Current blockers are:
 
 ```text
 Phase-3 work:
-    Guide-8 typed Elements target contract
-    capability-adapter foundation
-    smallest reviewed compiler target-requirement public boundary
+    Guide-9 target-native primitive conformance
+    typed tapscript instruction core
+    STATE, wide-arithmetic, and declassification prototypes
 ```
 
 Standing rules that survive the phase exit:
@@ -1401,9 +1419,9 @@ Standing rules that survive the phase exit:
 Execute in this order unless reproduction changes dependencies:
 
 ```text
-1. Charter Guide 8: the typed Elements target contract, the
-   capability-adapter foundation, and the smallest reviewed compiler
-   target-requirement public boundary.
+1. Charter Guide 9: target-native primitive conformance against an
+   explicitly bound secretless development target, and the typed
+   tapscript instruction core.
 2. Keep target types out of compiler core; the target packages consume
    the analyzed boundary, never the reverse.
 3. Mint no target hash and claim no production activation without a real
@@ -1473,4 +1491,4 @@ After a phase or remediation series:
 
 ## 14. One-line backlog · `rem:backlog:one-line`
 
-> Replace informal Elements assumptions with one validated typed target contract and a capability adapter consuming the analyzed compiler boundary, without forcing target types into compiler core, minting speculative identities, or claiming production activation.
+> Prove the reviewed typed target contract against a real development target and build the typed instruction core, without emitting operations, completing backend patterns, minting speculative identities, or claiming production activation.
