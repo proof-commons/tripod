@@ -204,6 +204,16 @@ fn expected_family_relations(
 /// see `flow_role_is_exact`. A guard that covered only the
 /// declaration paths would advertise a boundary the evaluator did not
 /// hold.
+///
+/// The guard is family-shaped while sponsorship itself is a flow role
+/// (S2-01), and that gap is deliberate: `FactId::FamilyAmount` names an
+/// operation, a side, and a family, so no declarable fact can name the
+/// sponsor region more narrowly than "ordinary L-BTC". Forbidding the
+/// whole family is the conservative reading — it can only refuse a
+/// protocol-role amount some later operation wants, never admit a
+/// sponsor one. When the fact vocabulary gains a flow-keyed amount,
+/// this guard narrows to the fee-sponsor region and protocol-role
+/// L-BTC amounts become declarable under their own flow.
 fn validate_sponsor_value_opacity(
     realization: &ScopedRealizationSpec,
 ) -> Result<(), RealizationError> {

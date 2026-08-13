@@ -283,7 +283,7 @@ fn evaluate_relation(
         } => status(
             declared_objects(observation, *side, *object).all(|observed| {
                 observed.asset == ObservedAsset::Declared(*asset)
-                    && observed_object_shape_holds(*object, observed)
+                    && observed_object_shape_holds(observation, *object, observed)
             }),
             RelationFailure::ObjectRecognition,
         ),
@@ -497,7 +497,7 @@ fn derive_fact(
                 .is_some_and(|spec| {
                     declared_objects(observation, observed_side(*side), *object).all(|observed| {
                         observed.asset == ObservedAsset::Declared(spec.asset)
-                            && observed_object_shape_holds(*object, observed)
+                            && observed_object_shape_holds(observation, *object, observed)
                     })
                 });
 
@@ -756,7 +756,19 @@ fn declared_objects(
     })
 }
 
-fn observed_object_shape_holds(object: ObjectId, observed: &ObservedObject) -> bool {
+/// Whether one observed object has the shape its declared family
+/// requires.
+///
+/// Ordinary L-BTC is the one family whose required shape depends on
+/// *where* the reference sits (S2-01): the fee-sponsor region carries
+/// no readable amount, and a protocol open flow carries one. The whole
+/// observation is therefore in scope, because the region is a property
+/// of the open flows rather than of the object.
+fn observed_object_shape_holds(
+    observation: &OperationObservation,
+    object: ObjectId,
+    observed: &ObservedObject,
+) -> bool {
     match object {
         ObjectId::State
         | ObjectId::Pace
@@ -776,19 +788,36 @@ fn observed_object_shape_holds(object: ObjectId, observed: &ObservedObject) -> b
                 .is_some_and(|amount| !amount.is_zero())
                 && observed.owner.is_some()
         }
-        // Sponsor-value opacity (F2-006): ordinary sponsor L-BTC
-        // is authenticated by asset, family, and owner — never by its
-        // amount. A zero-valued PLAIN_LBTC member is an ordinary
-        // sponsor object like any other; it cannot satisfy the anchor,
-        // which is recognized by its own declared family below, not by
-        // testing whether an ordinary output happens to be zero.
-        // Sponsor-value opacity (F2-006, S3): ordinary sponsor
-        // L-BTC is authenticated by asset, family, and owner — never
-        // by its amount, which the projection does not carry at all.
-        // Requiring erasure here makes an observation that smuggles a
-        // sponsor amount fail recognition rather than pass unnoticed.
+        // Sponsor-value opacity (F2-006, S3): a sponsor-region
+        // L-BTC member is authenticated by asset, family, owner, and
+        // exact membership — never by its amount, which the projection
+        // does not carry at all. Requiring erasure here makes an
+        // observation that smuggles a sponsor amount fail recognition
+        // rather than pass unnoticed. A zero-valued sponsor member is
+        // an ordinary member like any other; it cannot satisfy the
+        // anchor, which is recognized by its own declared family
+        // below, not by testing an ordinary output for zero.
+        //
+        // In a protocol open flow the same family is protocol value
+        // (S2-01) — request funding, refund, admission reward,
+        // redemption payout — and its owning relation has to be able
+        // to read it, so an erased amount there is the malformed case
+        // instead.
+        //
+        // A reference claimed by no flow at all is neither, and this
+        // relation says nothing about its value: exact membership is
+        // sponsor isolation's obligation, and an unclaimed ordinary
+        // L-BTC member fails there. Duplicating the verdict here would
+        // only move the reason.
         ObjectId::PlainLbtc => {
-            observed.owner.is_some() && observed.value == ObservedValue::SponsorOpaque
+            observed.owner.is_some()
+                && match observation.flow_role(observed.reference) {
+                    crate::ObservedFlowRole::Sponsor => {
+                        observed.value == ObservedValue::SponsorOpaque
+                    }
+                    crate::ObservedFlowRole::Protocol(_) => observed.value.protocol().is_some(),
+                    crate::ObservedFlowRole::Unclaimed => true,
+                }
         }
         ObjectId::DistributionVault | ObjectId::Ash => {
             observed
@@ -818,7 +847,10 @@ fn sum_selected_amounts(
 ) -> Result<ProtocolAmount, RealizationError> {
     // Selection is by declared protocol object kind, so every match
     // carries a readable amount; a sponsor-erased value here means a
-    // sponsor object was selected as a protocol one.
+    // reference from the fee-sponsor region was selected as protocol
+    // value. That is a malformed observation, never a zero — reading
+    // an erased sponsor amount as zero is exactly the read the
+    // projection removes.
     let mut amounts = Vec::new();
     for observed in observation.objects.iter().filter(|observed| {
         observed.reference.side == side
@@ -837,11 +869,17 @@ fn sponsor_is_isolated(observation: &OperationObservation) -> Result<bool, Reali
     let mut used_sources = BTreeSet::new();
     let mut used_destinations = BTreeSet::new();
 
-    for flow in &observation.open_flows {
-        if flow.kind != architecture::OpenFlowKind::FeeSponsor {
-            return Ok(false);
-        }
-
+    // The sponsor region is exactly the fee-sponsor flows (S2-01).
+    // Which flow kinds an operation may declare at all is
+    // `OpenFlowPolicy`'s judgement, and the relation graph orders it
+    // before this one, so a protocol flow observed where the manifest
+    // forbids it is already rejected under its own name rather than
+    // reported as a sponsor-isolation failure.
+    for flow in observation
+        .open_flows
+        .iter()
+        .filter(|flow| flow.kind == architecture::OpenFlowKind::FeeSponsor)
+    {
         // Role structure only (S3). Sponsor conservation is the
         // substrate's: Elements validates that every transaction's
         // inputs and outputs balance, so re-deriving that here would
@@ -864,37 +902,41 @@ fn sponsor_is_isolated(observation: &OperationObservation) -> Result<bool, Reali
         }
     }
 
-    // Opacity must not become omission: every ordinary sponsor member
-    // — zero-valued ones included — is claimed exactly once by the
-    // sponsor region. Membership is decided by the declared family,
-    // never by the amount.
+    // Opacity must not become omission: every ordinary L-BTC member —
+    // zero-valued ones included — is claimed exactly once, by the
+    // sponsor region or by a protocol open flow. Membership is decided
+    // by the declared family, never by the amount; which region claims
+    // it is decided by the flow, never by the family (S2-01).
     for object in &observation.objects {
-        if object.kind == ObservedObjectKind::Declared(ObjectId::PlainLbtc) {
-            let used = match object.reference.side {
-                ObservedSide::Input => used_sources.contains(&object.reference),
-                ObservedSide::Output => used_destinations.contains(&object.reference),
-            };
+        if object.kind != ObservedObjectKind::Declared(ObjectId::PlainLbtc) {
+            continue;
+        }
 
-            if !used {
-                return Ok(false);
-            }
+        let in_sponsor_region = match object.reference.side {
+            ObservedSide::Input => used_sources.contains(&object.reference),
+            ObservedSide::Output => used_destinations.contains(&object.reference),
+        };
+
+        if !in_sponsor_region
+            && observation.flow_role(object.reference) == crate::ObservedFlowRole::Unclaimed
+        {
+            return Ok(false);
         }
     }
 
     Ok(true)
 }
 
-/// Validate one side of a sponsor flow as *role structure*: exact
+/// Validate one side of a fee-sponsor flow as *role structure*: exact
 /// membership, source and destination uniqueness, declared family and
-/// asset, and owner authorization on the input side.
+/// asset, erasure, and owner authorization on the input side.
 ///
 /// Deliberately value-blind. Sponsor conservation belongs to the
 /// substrate — Elements validates that a transaction balances — so
 /// this layer authenticates only what bears on its own security. The
-/// observation still carries amounts, because removing the field is a
-/// separate change to a published type, but no sponsor amount is read
-/// here; the structural read-set assertion of sponsor erasure
-/// therefore holds on this path as well as in the fact graphs.
+/// one thing checked about the value is that there is none: a member
+/// of this region carrying a readable amount is a projection that
+/// failed to erase, and rejecting it reads no amount.
 fn flow_role_is_exact(
     observation: &OperationObservation,
     flow: &ObservedOpenFlow,
@@ -918,6 +960,7 @@ fn flow_role_is_exact(
         if object.reference.side != side
             || object.kind != ObservedObjectKind::Declared(ObjectId::PlainLbtc)
             || object.asset != ObservedAsset::Declared(AssetId::Lbtc)
+            || object.value != ObservedValue::SponsorOpaque
         {
             return Ok(false);
         }

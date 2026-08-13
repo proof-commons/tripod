@@ -98,6 +98,25 @@ impl ObservedValue {
     }
 }
 
+/// The transaction region one observed reference belongs to.
+///
+/// Sponsorship is a *flow role*, never an object family (S2-01). The
+/// `PLAIN_LBTC` family carries the generic fee-sponsor region and also
+/// carries protocol-role value — request funding, refund, admission
+/// reward, redemption payout — so only exact fee-sponsor membership may
+/// decide whether an amount is erased.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ObservedFlowRole {
+    /// Claimed by the exact fee-sponsor region.
+    Sponsor,
+    /// Claimed by a protocol open flow of this kind.
+    Protocol(OpenFlowKind),
+    /// Claimed by no open flow. This is the ordinary case for objects
+    /// outside the open-value partition — closed-asset objects and the
+    /// CPFP anchor — and an isolation failure for ordinary L-BTC.
+    Unclaimed,
+}
+
 /// One observed issuance: an authority mints `amount` of `asset` into
 /// the destination objects.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -364,6 +383,33 @@ impl OperationObservation {
         self.objects
             .iter()
             .find(|object| object.reference == reference)
+    }
+
+    /// The open-flow region that claims one reference.
+    ///
+    /// Normalization has already established that no reference is
+    /// claimed by two open flows, so the first claimant is the only
+    /// one. An unnormalized observation with an overlap resolves to
+    /// its first flow in declaration order and still fails isolation,
+    /// which is why erasure decisions never rest on this alone.
+    #[must_use]
+    pub fn flow_role(&self, reference: ObservedObjectRef) -> ObservedFlowRole {
+        for flow in &self.open_flows {
+            let claimed = match reference.side {
+                ObservedSide::Input => flow.sources.contains(&reference),
+                ObservedSide::Output => flow.destinations.contains(&reference),
+            };
+
+            if claimed {
+                return if flow.kind == OpenFlowKind::FeeSponsor {
+                    ObservedFlowRole::Sponsor
+                } else {
+                    ObservedFlowRole::Protocol(flow.kind)
+                };
+            }
+        }
+
+        ObservedFlowRole::Unclaimed
     }
 
     /// Declared objects on one side and in one family.
