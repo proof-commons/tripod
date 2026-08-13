@@ -3,7 +3,13 @@
 # audit fails the build. The parent meson.build accumulates this list
 # into its role group.
 tapscript_source_files = files(
+  'src/capability.rs',
+  'src/error.rs',
   'src/lib.rs',
+  'src/tests/census_tests.rs',
+  'src/tests/mapping_tests.rs',
+  'src/tests/mod.rs',
+  'src/tests/non_weakening_tests.rs',
 )
 
 # Crate documentation (DOC owner).

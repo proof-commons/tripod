@@ -29,12 +29,12 @@ publication exists to hand them.
 
 ```text
 package boundary
+compiler-to-target capability adapter
 ```
 
 ## Not implemented
 
 ```text
-compiler-to-target capability adapter
 target program type
 instruction builder
 stack scheduler

@@ -21,15 +21,32 @@
 //!
 //! # State
 //!
-//! Implemented: the package boundary.
+//! Implemented: the package boundary and the capability adapter — a
+//! multi-state assessment of each compiler capability against one
+//! validated target and development binding, with exact census equality
+//! against the analysis that published the requirements.
 //!
-//! Not implemented: the capability adapter, and beyond it every backend
-//! deliverable — target program type, instruction builder, stack
-//! scheduler, backend proof patterns, constructors, and the relocatable
-//! bundle.
+//! Not implemented: the target program type, the instruction builder,
+//! the stack scheduler, backend proof patterns, constructors, and the
+//! relocatable bundle.
 //!
 //! Not claimed: anything about a real node. No target program has been
-//! emitted, no transaction has been built, and every evidence
-//! requirement the target contract names remains unresolved.
+//! emitted, no transaction has been built, every evidence requirement
+//! the target contract names remains unresolved, and no complete
+//! backend proof pattern exists — the last of those is enforced by an
+//! uninhabited pattern identity rather than by convention.
 
 #![forbid(unsafe_code)]
+
+pub mod capability;
+pub mod error;
+
+pub use capability::{
+    AssessmentDisposition, AssessmentProjection, BackendFoundationRequirement, BackendPatternId,
+    CapabilityAssessment, CapabilityAssessmentSet, UnsupportedReason, assess_capability,
+    assess_complete_census, assess_requirements,
+};
+pub use error::TapscriptError;
+
+#[cfg(test)]
+mod tests;
