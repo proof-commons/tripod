@@ -99,6 +99,11 @@ git clone --local . "$reuse_root/repo" > /dev/null
 cd "$reuse_root/repo"
 git config user.email reproducibility@example.invalid
 git config user.name "Reproducibility Probe"
+# The probe commit is a throwaway inside a temporary clone, and the
+# gate must not depend on the developer's signing setup: an inherited
+# commit.gpgsign made the probe fail with git's exit 128 wherever gpg
+# could not run unattended.
+git config commit.gpgsign false
 
 meson setup reuse-build > /dev/null
 
