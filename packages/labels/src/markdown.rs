@@ -5,12 +5,47 @@ use crate::{
     source::SourceLocation,
 };
 
+/// How one delimited span sits relative to the parenthesized-citation
+/// grammar (ADR-013).
+///
+/// Only [`Self::Bare`] mints. The two failure contexts are diagnosed by
+/// the harvesting layer: a span adjacent to a parenthesis is an
+/// attempted citation, and an attempted citation must never fall back
+/// to a mint.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InlineCodeContext {
     Bare,
     Parenthesized,
+    /// A parenthesis is adjacent on exactly one side and no candidate
+    /// partner exists on the line: a dropped parenthesis.
     Asymmetric,
+    /// A parenthesis is adjacent, and a partner exists, but the group
+    /// content is not the exact citation grammar — typically prose
+    /// inside the group.
+    MalformedGroup,
 }
+impl InlineCodeContext {
+    /// The diagnostic owed by a failed citation attempt, naming
+    /// `subject` (for example `label citation`).
+    ///
+    /// Returns `None` for the two well-formed contexts.
+    pub(crate) fn defect(self, subject: &str) -> Option<(LabelErrorCode, String)> {
+        match self {
+            Self::Bare | Self::Parenthesized => None,
+            Self::Asymmetric => Some((
+                LabelErrorCode::AsymmetricCitation,
+                format!("{subject} has an unmatched parenthesis"),
+            )),
+            Self::MalformedGroup => Some((
+                LabelErrorCode::MalformedCitationGroup,
+                format!(
+                    "{subject} is adjacent to a parenthesis but is not a parenthesized citation group"
+                ),
+            )),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct InlineCodeSpan {
     pub content: String,
@@ -138,21 +173,42 @@ fn scan_line(
         cursor = after;
     }
     for (index, (start, after)) in ranges.iter().copied().enumerate() {
-        scan.code_spans[first_span + index].context = context(line, start, after, &ranges);
+        scan.code_spans[first_span + index].context = classify(line, start, after, &ranges);
     }
 }
-fn context(line: &str, start: usize, after: usize, ranges: &[(usize, usize)]) -> InlineCodeContext {
+
+/// Classify one delimited span by parsing its immediate syntactic
+/// group.
+///
+/// `start` and `after` bound the span including its delimiters, and
+/// `ranges` holds every delimited span on the line in order. The
+/// citation grammar is exact: a parenthesized group whose content is
+/// delimited spans separated only by whitespace or commas. When the
+/// grammar fails but a parenthesis is adjacent, the occurrence is an
+/// attempted citation and is diagnosed — the presence of an unrelated
+/// parenthesis elsewhere on the line never demotes it to a mint.
+pub(crate) fn classify(
+    line: &str,
+    start: usize,
+    after: usize,
+    ranges: &[(usize, usize)],
+) -> InlineCodeContext {
     if is_parenthesized_group(line, start, after, ranges) {
         return InlineCodeContext::Parenthesized;
     }
     let open = line[..start].trim_end().ends_with('(');
     let close = line[after..].trim_start().starts_with(')');
-    if (open && !close && !line[after..].contains(')'))
-        || (close && !open && !line[..start].contains('('))
-    {
-        InlineCodeContext::Asymmetric
-    } else {
-        InlineCodeContext::Bare
+    match (open, close) {
+        // No adjacent parenthesis: an ordinary occurrence, whatever
+        // else the line contains.
+        (false, false) => InlineCodeContext::Bare,
+        // One adjacent parenthesis with no candidate partner anywhere
+        // on the line: the partner was dropped.
+        (true, false) if !line[after..].contains(')') => InlineCodeContext::Asymmetric,
+        (false, true) if !line[..start].contains('(') => InlineCodeContext::Asymmetric,
+        // An adjacent parenthesis with a partner on the line, yet the
+        // group is not the exact grammar.
+        _ => InlineCodeContext::MalformedGroup,
     }
 }
 fn is_parenthesized_group(

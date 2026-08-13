@@ -8,7 +8,7 @@ use crate::{
     RepositoryCensus,
     diagnostic::{LabelDiagnostic, LabelErrorCode},
     label::{Label, LabelShape},
-    markdown::{fence_close, fence_open},
+    markdown::{InlineCodeContext, classify, fence_close, fence_open},
     owner::{ImportedLabel, LabelOwner},
     registry::{LabelMint, LabelRegistry},
     repository::{CitationClass, CitationOrigin, LabelCitation},
@@ -490,43 +490,44 @@ fn harvest_segment(
     result: &mut RustHarvest,
 ) {
     let line = &segment.text;
+    // Acute spans pair left to right, exactly as the Markdown scanner
+    // pairs backtick delimiters, so both parsers can hand the same
+    // range list to one classifier.
+    let mut ranges = Vec::new();
     let mut opening = None;
     for (offset, character) in line.char_indices() {
         if character != '\u{b4}' {
             continue;
         }
-        if let Some(start) = opening.take() {
-            let location = SourceLocation::new(
-                path,
-                segment.line,
-                segment.column + line[..start].chars().count(),
-            );
-            let after = &line[offset + character.len_utf8()..];
-            let open = line[..start].ends_with('(');
-            let close = after.starts_with(')');
-            // One-sided parentheses are a citation typo, mirroring the
-            // Markdown scanner: silently treating the span as a bare
-            // mint would let a dangling citation self-satisfy.
-            if (open && !close && !after.contains(')'))
-                || (close && !open && !line[..start].contains('('))
-            {
-                result.diagnostics.push(LabelDiagnostic::error(
-                    LabelErrorCode::AsymmetricCitation,
-                    &location,
-                    "label citation has an unmatched parenthesis",
-                ));
-                continue;
-            }
-            harvest_label(
-                &line[start + character.len_utf8()..offset],
-                location,
-                open && close,
-                owner,
-                result,
-            );
-        } else {
-            opening = Some(offset);
+        match opening.take() {
+            Some(start) => ranges.push((start, offset + character.len_utf8())),
+            None => opening = Some(offset),
         }
+    }
+    for (start, after) in ranges.iter().copied() {
+        let location = SourceLocation::new(
+            path,
+            segment.line,
+            segment.column + line[..start].chars().count(),
+        );
+        // Classification parses the immediate syntactic group. An
+        // attempted citation whose group is malformed is diagnosed,
+        // never demoted to a bare mint: a dangling citation must not
+        // be able to self-satisfy by minting the label it cites.
+        let context = classify(line, start, after, &ranges);
+        if let Some((code, message)) = context.defect("label citation") {
+            result
+                .diagnostics
+                .push(LabelDiagnostic::error(code, &location, message));
+            continue;
+        }
+        harvest_label(
+            &line[start + '\u{b4}'.len_utf8()..after - '\u{b4}'.len_utf8()],
+            location,
+            context == InlineCodeContext::Parenthesized,
+            owner,
+            result,
+        );
     }
     if let Some(offset) = opening {
         result.diagnostics.push(LabelDiagnostic::error(

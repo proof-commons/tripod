@@ -9,6 +9,9 @@ pub enum LabelErrorCode {
     UnclosedMarkdownFence,
     UnclosedInlineCode,
     AsymmetricCitation,
+    /// An attempted citation adjacent to a parenthesis whose group is
+    /// not the exact parenthesized-citation grammar.
+    MalformedCitationGroup,
     DuplicateMint,
     MissingMint,
     UnknownOwner,

@@ -77,12 +77,87 @@ fn one_sided_label_parenthesis_is_asymmetric() {
 }
 
 #[test]
-fn labels_in_mixed_parenthetical_prose_remain_bare() {
+fn malformed_citation_group_with_trailing_prose_is_not_bare() {
+    // The close parenthesis arrives only after prose, so the exact
+    // citation grammar fails. The occurrence is an attempted citation
+    // and must be diagnosed rather than demoted to a mint.
     let scan = scan_markdown(
         Path::new("fixture.md"),
         "See (`sec:fixture`, ordinary supporting prose).\n",
     );
+    assert_eq!(
+        scan.code_spans[0].context,
+        InlineCodeContext::MalformedGroup
+    );
+}
+
+#[test]
+fn malformed_citation_group_with_leading_prose_is_not_bare() {
+    let scan = scan_markdown(Path::new("fixture.md"), "(see `sec:fixture`)\n");
+    assert_eq!(
+        scan.code_spans[0].context,
+        InlineCodeContext::MalformedGroup
+    );
+}
+
+#[test]
+fn multiple_citation_groups_on_one_line_are_each_parenthesized() {
+    let scan = scan_markdown(
+        Path::new("fixture.md"),
+        "Both (`sec:first`) and (`sec:second`, `sec:third`) cite.\n",
+    );
+    assert!(scan.diagnostics.is_empty());
+    assert_eq!(scan.code_spans.len(), 3);
+    assert!(
+        scan.code_spans
+            .iter()
+            .all(|span| span.context == InlineCodeContext::Parenthesized)
+    );
+}
+
+#[test]
+fn nested_parentheses_around_a_citation_group_stay_a_citation() {
+    let scan = scan_markdown(Path::new("fixture.md"), "Aside ((`sec:fixture`)) here.\n");
+    assert_eq!(scan.code_spans[0].context, InlineCodeContext::Parenthesized);
+}
+
+#[test]
+fn unrelated_parentheses_elsewhere_never_change_a_bare_mint() {
+    // A parenthesis before and after the occurrence, neither adjacent
+    // to it: the occurrence is an ordinary mint, and the far
+    // parentheses neither promote nor demote it.
+    let scan = scan_markdown(
+        Path::new("fixture.md"),
+        "Prose (an aside) `sec:fixture` more (another aside).\n",
+    );
     assert_eq!(scan.code_spans[0].context, InlineCodeContext::Bare);
+}
+
+#[test]
+fn a_malformed_citation_never_becomes_the_only_mint_of_a_label() {
+    // The label appears exactly once in the document, inside a
+    // malformed citation group. Before this rule the later close
+    // parenthesis suppressed the diagnostic and the occurrence minted
+    // the label, silently moving its conceptual home.
+    let directory = fixture_root("# Realization\nSee (`sec:fixture`, supporting prose).\n");
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
+
+    assert!(
+        labels
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == LabelErrorCode::MalformedCitationGroup),
+        "{:#?}",
+        labels.diagnostics,
+    );
+    assert!(
+        !labels
+            .registries
+            .realization
+            .labels()
+            .any(|label| label.as_str() == "sec:fixture"),
+        "malformed citation minted the label it cites",
+    );
 }
 
 #[test]
@@ -850,6 +925,59 @@ fn rust_scanner_ignores_tilde_fenced_examples_and_rejects_asymmetric_parens() {
         harvest
             .registry
             .contains(&Label::parse("def:fixture:plain", LabelShape::Model).expect("valid label"))
+    );
+}
+
+#[test]
+fn rust_malformed_citation_groups_are_diagnosed_not_minted() {
+    let harvest = rust_fixture_harvest(concat!(
+        "// intended cite (´def:fixture:prose´ with trailing prose)\n",
+        "// trailing close (see ´def:fixture:leading´)\n",
+        "// unrelated (aside) ´def:fixture:mint´ more (aside)\n",
+        "// groups (´def:fixture:first´) and (´def:fixture:second´)\n",
+        "// nested ((´def:fixture:nested´))\n",
+    ));
+
+    let minted: Vec<_> = harvest.registry.labels().map(ToString::to_string).collect();
+    assert_eq!(
+        minted,
+        vec!["def:fixture:mint".to_owned()],
+        "{:#?}",
+        harvest.diagnostics,
+    );
+
+    let defects: Vec<_> = harvest
+        .diagnostics
+        .iter()
+        .map(|diagnostic| (diagnostic.line, diagnostic.code))
+        .collect();
+    assert_eq!(
+        defects,
+        vec![
+            (1, LabelErrorCode::MalformedCitationGroup),
+            (2, LabelErrorCode::MalformedCitationGroup),
+        ],
+        "{:#?}",
+        harvest.diagnostics,
+    );
+
+    // The three well-formed groups became citations, not mints.
+    assert_eq!(harvest.citations.len(), 3);
+}
+
+#[test]
+fn rust_malformed_citation_never_becomes_the_only_mint_of_a_label() {
+    let harvest = rust_fixture_harvest("// only occurrence (´def:fixture:home´ and prose)\n");
+
+    assert!(harvest.registry.labels().next().is_none());
+    assert!(harvest.citations.is_empty());
+    assert!(
+        harvest
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == LabelErrorCode::MalformedCitationGroup),
+        "{:#?}",
+        harvest.diagnostics,
     );
 }
 

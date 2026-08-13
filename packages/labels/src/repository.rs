@@ -257,11 +257,9 @@ fn harvest_realization(paths: &RepositoryCensus, result: &mut RepositoryLabels) 
             InlineCodeContext::Parenthesized => {
                 result.push_same_owner_citation(LabelOwner::Realization, label, span.location);
             }
-            InlineCodeContext::Asymmetric => result.diagnostics.push(LabelDiagnostic::error(
-                LabelErrorCode::AsymmetricCitation,
-                &span.location,
-                "label citation has an unmatched parenthesis",
-            )),
+            InlineCodeContext::Asymmetric | InlineCodeContext::MalformedGroup => {
+                push_citation_defect(span.context, "label citation", &span.location, result);
+            }
         }
     }
     resolve_status_tag_refs(pin_refs, clause_refs, result);
@@ -454,12 +452,8 @@ fn harvest_realization_import(
 ) {
     match span.context {
         InlineCodeContext::Parenthesized => {}
-        InlineCodeContext::Asymmetric => {
-            result.diagnostics.push(LabelDiagnostic::error(
-                LabelErrorCode::AsymmetricCitation,
-                &span.location,
-                "imported citation has an unmatched parenthesis",
-            ));
+        InlineCodeContext::Asymmetric | InlineCodeContext::MalformedGroup => {
+            push_citation_defect(span.context, "imported citation", &span.location, result);
             return;
         }
         InlineCodeContext::Bare => {
@@ -553,7 +547,12 @@ fn harvest_adrs(paths: &RepositoryCensus, result: &mut RepositoryLabels) {
             if let Some(token) = square(&span.content) {
                 if span.context == InlineCodeContext::Parenthesized {
                     import(token, &span.location, LabelOwner::Adr(number), result);
-                } else {
+                } else if !push_citation_defect(
+                    span.context,
+                    "imported citation",
+                    &span.location,
+                    result,
+                ) {
                     result.diagnostics.push(LabelDiagnostic::error(
                         LabelErrorCode::InvalidImportedCitationForm,
                         &span.location,
@@ -585,11 +584,9 @@ fn harvest_adrs(paths: &RepositoryCensus, result: &mut RepositoryLabels) {
                 InlineCodeContext::Parenthesized => {
                     result.push_same_owner_citation(LabelOwner::Adr(number), label, span.location);
                 }
-                InlineCodeContext::Asymmetric => result.diagnostics.push(LabelDiagnostic::error(
-                    LabelErrorCode::AsymmetricCitation,
-                    &span.location,
-                    "label citation has an unmatched parenthesis",
-                )),
+                InlineCodeContext::Asymmetric | InlineCodeContext::MalformedGroup => {
+                    push_citation_defect(span.context, "label citation", &span.location, result);
+                }
             }
         }
         result.registries.adrs.insert(number, registry);
@@ -674,7 +671,12 @@ fn harvest_markdown_owner(
         if let Some(token) = square(&span.content) {
             if span.context == InlineCodeContext::Parenthesized {
                 import(token, &span.location, owner.owner(), result);
-            } else {
+            } else if !push_citation_defect(
+                span.context,
+                "imported citation",
+                &span.location,
+                result,
+            ) {
                 result.diagnostics.push(LabelDiagnostic::error(
                     LabelErrorCode::InvalidImportedCitationForm,
                     &span.location,
@@ -711,14 +713,31 @@ fn harvest_markdown_owner(
                     result.push_same_owner_citation(LabelOwner::Doc, label, span.location);
                 }
             },
-            InlineCodeContext::Asymmetric => result.diagnostics.push(LabelDiagnostic::error(
-                LabelErrorCode::AsymmetricCitation,
-                &span.location,
-                "label citation has an unmatched parenthesis",
-            )),
+            InlineCodeContext::Asymmetric | InlineCodeContext::MalformedGroup => {
+                push_citation_defect(span.context, "label citation", &span.location, result);
+            }
         }
     }
 }
+/// Record the diagnostic owed by a failed citation attempt.
+///
+/// Returns whether a diagnostic was pushed, so callers can keep their
+/// well-formed paths distinct from the two citation-defect contexts.
+fn push_citation_defect(
+    context: InlineCodeContext,
+    subject: &str,
+    location: &SourceLocation,
+    result: &mut RepositoryLabels,
+) -> bool {
+    let Some((code, message)) = context.defect(subject) else {
+        return false;
+    };
+    result
+        .diagnostics
+        .push(LabelDiagnostic::error(code, location, message));
+    true
+}
+
 fn import(
     token: &str,
     location: &SourceLocation,
@@ -794,12 +813,8 @@ fn harvest_attestation_citations(
         if !in_index {
             match span.context {
                 InlineCodeContext::Parenthesized => {}
-                InlineCodeContext::Asymmetric => {
-                    result.diagnostics.push(LabelDiagnostic::error(
-                        LabelErrorCode::AsymmetricCitation,
-                        &span.location,
-                        "label citation has an unmatched parenthesis",
-                    ));
+                InlineCodeContext::Asymmetric | InlineCodeContext::MalformedGroup => {
+                    push_citation_defect(span.context, "label citation", &span.location, result);
                     continue;
                 }
                 InlineCodeContext::Bare => {
