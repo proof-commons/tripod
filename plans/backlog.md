@@ -144,32 +144,31 @@ No named consumer means no digest. No distinct decision means no digest.
 
 ### 2.1 Latest static review · `tbl:backlog:review-basis`
 
-The current review is the two-pass static review performed over the supplied
-concatenation of the tree:
+The current review is the third static review, performed in two independent
+passes over the supplied concatenation of the tree:
 
 ```text
 tree:
    
 
 selected files:
-    291
+    267
 
 selected bytes:
-    approximately 3.5 MiB
+    approximately 3.23 MiB
 ```
 
 The supplied report excluded, among other things:
 
 ```text
 Cargo.lock
-LICENSE-CODE and licence files
-archive/
+licence files
 docs/attestation/human.md
 packages/document-stamps/
 packages/execwrap/
 packages/flatten-latex-main/
 packages/model/generated/architecture.json
-architecture/model/realization unit-test directories
+most unit and integration test directories
 ```
 
 No Cargo, Meson, TeX, target-execution, advisory, or reproducibility command
@@ -184,12 +183,15 @@ Therefore:
 - licence compatibility was not independently checked;
 - historical gate records remain historical evidence only.
 
-Its findings are recorded in §5.2; the review found no obvious currently
-reachable invalid model transition in the implemented pilot surface.
+Its findings are recorded in §5.3; the review found no obvious currently
+reachable unauthorized issuance, reserve-drain, closed-asset inflation, or
+recipient-redirection path in the selected implementation source, and its
+most consequential finding is the object-family versus flow-role sponsor
+abstraction that Phase-3 expansion must correct first.
 
 ### 2.2 Earlier review basis
 
-The repository retains three earlier reviewed trees as historical context:
+The repository retains four earlier reviewed trees as historical context:
 
 ```text
 initial reviewed tree:
@@ -199,6 +201,9 @@ follow-up reviewed tree:
    
 
 proof-planning reviewed tree:
+   
+
+second-review tree:
    
 ```
 
@@ -755,14 +760,44 @@ in §5.2.
 | `SR2-08` | Low | DONE | Representation-conditional activation was keyed by mode only; it is now keyed by object and mode. |
 | `SR2-09` | Low | DONE | Coverage shape validation was weaker than derivation; the analyzed-program validator compares exact independently re-derived coverage projections in both directions, gate record §2.11. |
 | `SR2-10` | Low | DONE | Compiler package-index status and review provenance had drifted; both reconciled. |
-| `SR2-H1` | Hardening | PARKED | Tempfile publication can replace generated files with owner-only permissions; activate with the next publication-tooling batch. |
-| `SR2-H2` | Hardening | PARKED | Dirty-tree document-reproducibility probe skips with exit 0; the phase-exit gate runs on a clean tree, so activate with release-gate hardening. |
+| `SR2-H1` | Hardening | TODO | Tempfile publication can replace generated files with owner-only permissions; activated by the third review as SR3-04, scheduled in the Guide-8 preflight wave. |
+| `SR2-H2` | Hardening | TODO | Dirty-tree document-reproducibility probe skips with exit 0; activated by the third review as SR3-06, scheduled in the Guide-8 preflight wave. |
 
 The DONE rows were repaired in the Guide-7 preflight wave with focused tests
 and the working debug lane; the batch full gate is recorded with the Guide-7
 exit record. Open-flow complete partitioning deliberately remains a
 sponsor-isolation relation verdict rather than observation parsing, so an
-unclaimed member stays an evaluable semantic failure.
+unclaimed member stays an evaluable semantic failure. The two hardening rows
+were parked with explicit activation conditions; the third review re-raised
+both, which satisfies those conditions, so they are active again and tracked
+with the §5.3 register.
+
+### 5.3 Third-review findings · `tbl:backlog:findings-sr3`
+
+The third static review reported two passes over the tree recorded in §2.1.
+First-pass findings carry SR3 identifiers; second-pass findings retain the
+review's S2 identifiers.
+
+| ID | Severity | Status | Finding |
+|---|---|---|---|
+| `SR3-01` | High | TODO | A malformed same-owner citation whose one-sided parenthesis test is suppressed by an unrelated parenthesis elsewhere on the line falls back to a bare occurrence and silently mints the label. |
+| `SR3-02` | Medium | TODO | Census filesystem traversal suppresses read-dir and entry errors, so an unreadable tree with an empty declared group can verify as an empty census. |
+| `SR3-03` | Medium | TODO | The complete analyzed-program validator is not on the production construction path; the constructor runs only the narrow assembly-closure check. |
+| `SR3-04` | Medium | TODO | Atomic publication staging leaves published public files with owner-only tempfile permissions; supersedes the parked SR2-H1. |
+| `SR3-05` | Medium | TODO | Git-derived checker census arguments are expanded unquoted, so an unusual tracked path can split or alter checker argv. |
+| `SR3-06` | Medium | TODO | The document-reproducibility gate exits 0 after skipping its reused-build epoch probe on a dirty tree; supersedes the parked SR2-H2. |
+| `SR3-07` | Low | TODO | Proof-search rejection statistics count source and constructibility failures as capability rejections. |
+| `SR3-08` | Low | TODO | The package index still says complete analyzed pilots are open, contradicting the recorded Guide-7 state. |
+| `S2-01` | High | TODO | Sponsor erasure is keyed to the ordinary L-BTC object family instead of fee-sponsor flow membership, erasing protocol-role amounts that future operations must read. |
+| `S2-03` | Medium | TODO | The coverage dependency graph mixes opposite edge orientations against its documented prerequisite-to-dependent convention. |
+| `S2-04` | Medium | TODO | Analyzed-program coverage-graph validation compares sets rather than exact projections, silently accepting duplicated nodes and edges. |
+| `S2-05` | Low | TODO | Exact-search counters use unchecked addition and can overflow instead of returning the promised typed complexity failure. |
+| `S2-06` | Low | TODO | The paper subproject declares C as a project language with no C target, requiring an undocumented compiler. |
+| `S2-07` | Low | TODO | Compiler planning status remains stale and a resolved factorization question is still listed as open, although the drift finding was marked closed. |
+
+The Guide-8 preflight wave owns SR3-01 through SR3-08 and S2-01 through
+S2-07; the Guide-8 exit gate requires the boundary-relevant rows closed
+before the compiler target-requirement boundary becomes public.
 
 ### T6 — Validate capabilities for external-evidence obligations · `task:review:external-evidence-capability`
 
