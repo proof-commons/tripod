@@ -570,6 +570,40 @@ fn one_unreadable_entry_is_reported_beside_the_readable_ones() {
     assert_eq!(failures[0].path, "plans/closed");
 }
 
+#[cfg(unix)]
+#[test]
+fn scoped_model_derivation_refuses_an_unreadable_scoped_directory() {
+    // Scoped generation runs without the full repository audit, so it
+    // is exactly where a suppressed traversal failure would pass.
+    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let root = directory.path();
+    let sources = root.join("packages/model/src");
+    fs::write(sources.join("fixture.rs"), "// ´def:fixture:hidden´\n").expect("model source");
+    if !make_unreadable(&sources) {
+        return;
+    }
+
+    let declared = RepositoryCensus {
+        root: root.to_path_buf(),
+        ..RepositoryCensus::default()
+    };
+    let error = model_labels_json(&declared).expect_err("unreadable model sources must fail");
+
+    fs::set_permissions(&sources, fs::Permissions::from_mode(0o755))
+        .expect("restore model source directory");
+
+    let crate::repository::GenerateError::Validation(diagnostics) = error else {
+        panic!("expected a validation failure");
+    };
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == LabelErrorCode::CensusUnreadable
+                && diagnostic.path == "packages/model/src"
+        }),
+        "{diagnostics:#?}",
+    );
+}
+
 #[test]
 fn absent_and_empty_directories_are_equally_clean_empty_groups() {
     // Policy: a directory that is absent and a directory that is

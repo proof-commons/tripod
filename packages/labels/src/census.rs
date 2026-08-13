@@ -178,9 +178,14 @@ impl RepositoryCensus {
             // a group whose walk failed is reported before its
             // membership is compared, because a directory that could
             // not be read may hide any number of subjects (ADR-014).
+            // A census that was itself discovered carries the same
+            // failures as the fresh walk, so identical records are
+            // reported once.
             for source in [self, &discovered] {
-                if let Some(failures) = source.traversal.get(group) {
-                    diagnostics.extend(failures.iter().cloned());
+                for failure in source.traversal.get(group).into_iter().flatten() {
+                    if !diagnostics.contains(failure) {
+                        diagnostics.push(failure.clone());
+                    }
                 }
             }
             let (declared, found): (Vec<&Path>, Vec<&Path>) = match group {
