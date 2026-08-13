@@ -160,6 +160,75 @@ pub enum AnalyzedCoverageDefect {
     MissingDependencyEdge,
     /// A stored typed dependency is not re-derived.
     UnexpectedDependencyEdge,
+    /// The stored graph carries one coverage symbol more than once.
+    DuplicateDependencyNode,
+    /// The stored graph carries one typed dependency more than once.
+    DuplicateDependencyEdge,
+    /// The stored coverage symbols are not in canonical order.
+    NoncanonicalDependencyNodeOrder,
+    /// The stored typed dependencies are not in canonical order.
+    NoncanonicalDependencyEdgeOrder,
+}
+
+/// Which exactness rule one stable projection vector broke.
+///
+/// Separated from the caller's own defect vocabulary so the same
+/// exactness rules can be restated over any canonical vector while each
+/// caller keeps naming the census it validates.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CanonicalCensusDefect {
+    /// A re-derived member is absent from the stored vector.
+    Missing,
+    /// A stored member was not re-derived.
+    Unexpected,
+    /// The stored vector carries one member more than once.
+    Duplicate,
+    /// The stored vector is not in canonical ascending order.
+    Order,
+}
+
+/// Validate one stable projection vector against its re-derived census.
+///
+/// A canonical projection vector is strictly ascending: sorted, and
+/// carrying every member exactly once. Comparing the two as sets is
+/// therefore not the whole check — a set erases both repetition and
+/// order, so a corrupted `[n, n]` compares equal to a derived `[n]`,
+/// and a duplicate paired with an omission passes while even preserving
+/// the vector's length. The exact-census property this projection
+/// claims has to be checked as the vector it claims to be.
+fn validate_canonical_census<T: Ord>(
+    stored: &[T],
+    required: &[T],
+) -> Result<(), CanonicalCensusDefect> {
+    let carried = stored.iter().collect::<BTreeSet<_>>();
+    let expected = required.iter().collect::<BTreeSet<_>>();
+
+    // Membership first: a changed census is the more informative
+    // diagnostic when both a member and its repetition are wrong.
+    if expected.difference(&carried).next().is_some() {
+        return Err(CanonicalCensusDefect::Missing);
+    }
+
+    if carried.difference(&expected).next().is_some() {
+        return Err(CanonicalCensusDefect::Unexpected);
+    }
+
+    if stored.len() != carried.len() {
+        return Err(CanonicalCensusDefect::Duplicate);
+    }
+
+    if !stored.is_sorted() {
+        return Err(CanonicalCensusDefect::Order);
+    }
+
+    if stored != required {
+        // Contents and repetition already agree, so only order can
+        // differ — unless the re-derived census is itself noncanonical,
+        // which this backstop refuses rather than accepts.
+        return Err(CanonicalCensusDefect::Order);
+    }
+
+    Ok(())
 }
 
 /// Which component of one relation-case bundle disagrees with the
@@ -1097,27 +1166,23 @@ fn validate_coverage_graph(
         defect,
     };
 
-    let carried = stored.nodes.iter().collect::<BTreeSet<_>>();
-    let expected = required.nodes.iter().collect::<BTreeSet<_>>();
+    validate_canonical_census(&stored.nodes, &required.nodes).map_err(|census| {
+        defect(match census {
+            CanonicalCensusDefect::Missing => AnalyzedCoverageDefect::MissingDependencyNode,
+            CanonicalCensusDefect::Unexpected => AnalyzedCoverageDefect::UnexpectedDependencyNode,
+            CanonicalCensusDefect::Duplicate => AnalyzedCoverageDefect::DuplicateDependencyNode,
+            CanonicalCensusDefect::Order => AnalyzedCoverageDefect::NoncanonicalDependencyNodeOrder,
+        })
+    })?;
 
-    if expected.difference(&carried).next().is_some() {
-        return Err(defect(AnalyzedCoverageDefect::MissingDependencyNode));
-    }
-
-    if carried.difference(&expected).next().is_some() {
-        return Err(defect(AnalyzedCoverageDefect::UnexpectedDependencyNode));
-    }
-
-    let carried = stored.edges.iter().collect::<BTreeSet<_>>();
-    let expected = required.edges.iter().collect::<BTreeSet<_>>();
-
-    if expected.difference(&carried).next().is_some() {
-        return Err(defect(AnalyzedCoverageDefect::MissingDependencyEdge));
-    }
-
-    if carried.difference(&expected).next().is_some() {
-        return Err(defect(AnalyzedCoverageDefect::UnexpectedDependencyEdge));
-    }
+    validate_canonical_census(&stored.edges, &required.edges).map_err(|census| {
+        defect(match census {
+            CanonicalCensusDefect::Missing => AnalyzedCoverageDefect::MissingDependencyEdge,
+            CanonicalCensusDefect::Unexpected => AnalyzedCoverageDefect::UnexpectedDependencyEdge,
+            CanonicalCensusDefect::Duplicate => AnalyzedCoverageDefect::DuplicateDependencyEdge,
+            CanonicalCensusDefect::Order => AnalyzedCoverageDefect::NoncanonicalDependencyEdgeOrder,
+        })
+    })?;
 
     Ok(())
 }

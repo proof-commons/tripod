@@ -1696,6 +1696,125 @@ fn a_cross_operation_coverage_edge_is_rejected() {
     ));
 }
 
+// --- S2-04: the coverage graph projection is an exact canonical census ---
+
+#[test]
+fn a_duplicated_coverage_dependency_node_is_rejected() {
+    let error = COMPACT_ASH.corrupt(|program| {
+        let graph = &mut ash_factor_mut(program).coverage_dependencies;
+        let repeated = graph.nodes.first().expect("a coverage symbol").clone();
+
+        graph.nodes.insert(0, repeated);
+    });
+
+    assert_eq!(
+        coverage_defect(&error),
+        AnalyzedCoverageDefect::DuplicateDependencyNode,
+    );
+}
+
+#[test]
+fn a_duplicated_coverage_dependency_edge_is_rejected() {
+    let error = COMPACT_ASH.corrupt(|program| {
+        let graph = &mut ash_factor_mut(program).coverage_dependencies;
+        let repeated = graph.edges.first().expect("a dependency edge").clone();
+
+        graph.edges.insert(0, repeated);
+    });
+
+    assert_eq!(
+        coverage_defect(&error),
+        AnalyzedCoverageDefect::DuplicateDependencyEdge,
+    );
+}
+
+#[test]
+fn an_out_of_order_coverage_dependency_node_is_rejected() {
+    let error = COMPACT_ASH.corrupt(|program| {
+        let graph = &mut ash_factor_mut(program).coverage_dependencies;
+
+        assert!(graph.nodes.len() > 1, "the pilot graph defines symbols");
+        graph.nodes.swap(0, 1);
+    });
+
+    assert_eq!(
+        coverage_defect(&error),
+        AnalyzedCoverageDefect::NoncanonicalDependencyNodeOrder,
+    );
+}
+
+#[test]
+fn an_out_of_order_coverage_dependency_edge_is_rejected() {
+    let error = COMPACT_ASH.corrupt(|program| {
+        let graph = &mut ash_factor_mut(program).coverage_dependencies;
+
+        assert!(graph.edges.len() > 1, "the pilot graph declares edges");
+        graph.edges.swap(0, 1);
+    });
+
+    assert_eq!(
+        coverage_defect(&error),
+        AnalyzedCoverageDefect::NoncanonicalDependencyEdgeOrder,
+    );
+}
+
+#[test]
+fn a_duplicated_node_replacing_a_dropped_one_is_rejected() {
+    // Length-preserving corruption: the vector still carries as many
+    // entries as the re-derived census, so only a comparison that
+    // reads repetition rather than membership alone catches it.
+    let error = COMPACT_ASH.corrupt(|program| {
+        let graph = &mut ash_factor_mut(program).coverage_dependencies;
+
+        assert!(graph.nodes.len() > 1, "the pilot graph defines symbols");
+        graph.nodes[1] = graph.nodes[0].clone();
+    });
+
+    assert_eq!(
+        coverage_defect(&error),
+        AnalyzedCoverageDefect::MissingDependencyNode,
+        "the dropped symbol is the more informative diagnostic",
+    );
+}
+
+#[test]
+fn a_duplicated_edge_replacing_a_dropped_one_is_rejected() {
+    let error = COMPACT_ASH.corrupt(|program| {
+        let graph = &mut ash_factor_mut(program).coverage_dependencies;
+
+        assert!(graph.edges.len() > 1, "the pilot graph declares edges");
+        graph.edges[1] = graph.edges[0].clone();
+    });
+
+    assert_eq!(
+        coverage_defect(&error),
+        AnalyzedCoverageDefect::MissingDependencyEdge,
+    );
+}
+
+#[test]
+fn a_repeated_self_edge_is_rejected() {
+    let error = COMPACT_ASH.corrupt(|program| {
+        let graph = &mut ash_factor_mut(program).coverage_dependencies;
+        let node = graph.nodes.first().expect("a coverage symbol").id.clone();
+        let loop_edge = CoverageDependency {
+            source: node.clone(),
+            target: node,
+            edge: CoverageEdge::RelationPrerequisite,
+        };
+
+        graph.edges.push(loop_edge.clone());
+        graph.edges.push(loop_edge);
+    });
+
+    // Neither repetition of a self-edge is derivable, so the census
+    // rejects it before any order or duplication rule applies.
+    assert_eq!(
+        coverage_defect(&error),
+        AnalyzedCoverageDefect::UnexpectedDependencyEdge,
+    );
+}
+
 // --- §15.7 lifecycle (6) ---
 
 #[test]
