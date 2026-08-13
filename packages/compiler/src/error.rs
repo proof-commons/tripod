@@ -1255,4 +1255,17 @@ pub enum CompileError {
         /// The factor's operation.
         operation: OperationId,
     },
+
+    /// The stored execution report is not the one the same analysis
+    /// produces.
+    ///
+    /// The report is excluded from semantic identity, so no analysis is
+    /// distinguished by it. It is still a typed account of the limits
+    /// the analysis ran under and the work each search did, and an
+    /// account nothing checks is one nothing supports.
+    #[error("the stored execution report disagrees with the re-derived one ({defect:?})")]
+    AnalyzedExecutionReportMismatch {
+        /// The disagreeing component.
+        defect: crate::analyzed_validate::AnalyzedExecutionReportDefect,
+    },
 }

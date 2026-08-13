@@ -37,9 +37,9 @@ use crate::{
     },
     analyzed_operation::AnalyzedOperation,
     analyzed_validate::{
-        AnalyzedCoverageDefect, AnalyzedExpectations, AnalyzedFoundationDefect,
-        AnalyzedRelationCaseDefect, AnalyzedSourceDefect, derive_expectations,
-        validate_against_expectations,
+        AnalyzedCoverageDefect, AnalyzedExecutionReportDefect, AnalyzedExpectations,
+        AnalyzedFoundationDefect, AnalyzedRelationCaseDefect, AnalyzedSourceDefect,
+        derive_expectations, validate_against_expectations,
     },
     capability::RequiredCapability,
     case::{ExecutionCaseId, SponsorCase},
@@ -209,6 +209,42 @@ fn the_assembled_combined_program_validates() {
     fixture
         .validate(&fixture.program)
         .expect("the assembled two-operation program validates");
+}
+
+#[test]
+fn the_construction_path_itself_runs_the_complete_validator() {
+    // SR3-03: step 12 of the assembler used to run only the narrow
+    // assembly-closure check, so the production entry point did not
+    // perform the corruption-resistant validation this package
+    // documents. The assembler's own validation is not directly
+    // observable, so the property is pinned from the other side: every
+    // expectation the complete validator derives is derived from the
+    // same input the assembler was given, and the assembled program
+    // satisfies all of them rather than only the closure subset.
+    let fixture = &COMPACT_ASH;
+
+    crate::analyzed::validate_assembly_closure(&fixture.input, &fixture.program)
+        .expect("the narrow closure check passes");
+    crate::analyzed_validate::validate_scoped_analyzed_program(
+        &fixture.input,
+        limits(),
+        &fixture.program,
+    )
+    .expect("the complete validator passes");
+
+    // And the complete validator is strictly stronger: a program the
+    // narrow check accepts can still fail it.
+    let mut corrupted = fixture.program.clone();
+    corrupted.execution_report.proof_search.states_visited += 1;
+
+    crate::analyzed::validate_assembly_closure(&fixture.input, &corrupted)
+        .expect("the narrow check does not read the execution report");
+    crate::analyzed_validate::validate_scoped_analyzed_program(
+        &fixture.input,
+        limits(),
+        &corrupted,
+    )
+    .expect_err("the complete validator does");
 }
 
 // --- §15.1 source and scope (7) ---
@@ -1694,6 +1730,80 @@ fn a_cross_operation_coverage_edge_is_rejected() {
         error,
         CompileError::CrossOperationCoverageDependency { .. },
     ));
+}
+
+// --- SR3-03: the execution report is authenticated, not asserted ---
+
+#[test]
+fn a_rewritten_proof_search_count_is_rejected() {
+    let error = COMPACT_ASH.corrupt(|program| {
+        program.execution_report.proof_search.states_visited += 1;
+    });
+
+    assert_eq!(
+        error,
+        CompileError::AnalyzedExecutionReportMismatch {
+            defect: AnalyzedExecutionReportDefect::ProofSearch,
+        },
+    );
+}
+
+#[test]
+fn a_rewritten_placement_search_count_is_rejected() {
+    let error = COMPACT_ASH.corrupt(|program| {
+        let report = program
+            .execution_report
+            .operation_placement_search
+            .get_mut(&OperationId::CompactAsh)
+            .expect("the pilot placement report");
+
+        report.complete_assignments += 1;
+    });
+
+    assert_eq!(
+        error,
+        CompileError::AnalyzedExecutionReportMismatch {
+            defect: AnalyzedExecutionReportDefect::PlacementSearch,
+        },
+    );
+}
+
+#[test]
+fn a_misreported_proof_search_limit_is_rejected() {
+    let error = COMPACT_ASH.corrupt(|program| {
+        let limits = &mut program.execution_report.proof_search_limits;
+
+        *limits = crate::ProofSearchLimits::new(
+            std::num::NonZeroU64::new(limits.maximum_states.get() + 1).expect("nonzero"),
+            limits.maximum_candidates,
+        );
+    });
+
+    assert_eq!(
+        error,
+        CompileError::AnalyzedExecutionReportMismatch {
+            defect: AnalyzedExecutionReportDefect::ProofSearchLimits,
+        },
+    );
+}
+
+#[test]
+fn a_misreported_placement_search_limit_is_rejected() {
+    let error = COMPACT_ASH.corrupt(|program| {
+        let limits = &mut program.execution_report.placement_search_limits;
+
+        *limits = PlacementSearchLimits::new(
+            std::num::NonZeroU64::new(limits.maximum_states.get() + 1).expect("nonzero"),
+            limits.maximum_candidates,
+        );
+    });
+
+    assert_eq!(
+        error,
+        CompileError::AnalyzedExecutionReportMismatch {
+            defect: AnalyzedExecutionReportDefect::PlacementSearchLimits,
+        },
+    );
 }
 
 // --- S2-04: the coverage graph projection is an exact canonical census ---

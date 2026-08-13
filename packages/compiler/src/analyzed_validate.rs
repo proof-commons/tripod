@@ -27,9 +27,11 @@
 //! without weakening anything: no corruption of a program can reach the
 //! value it is compared against.
 
-// One item-level allowance remains, on the crate-private root of the
-// complete validator, for the reason given in `crate::analyzed`: §26.1
-// exposes no public API that could call it until Phase 3.
+// No item-level allowance remains here. The complete validator's own
+// root used to carry one, because nothing but tests called it; it is
+// now step 12 of `crate::analyzed::analyze_scoped_program`, so the
+// production construction path reaches it and the allowance would be
+// false.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -39,12 +41,13 @@ use realization::RelationId;
 use crate::{
     CompileError,
     analyzed::{
-        AnalyzedProofPlan, AnalyzedSource, ArchitectureScopeStatus, ScopedAnalyzedProgram,
-        architecture_scope_status, lifecycle_completeness, revalidate_input,
-        validate_assembly_closure,
+        AnalysisExecutionReport, AnalyzedProofPlan, AnalyzedSource, ArchitectureScopeStatus,
+        ScopedAnalyzedProgram, accumulate, architecture_scope_status, lifecycle_completeness,
+        revalidate_input, validate_assembly_closure,
     },
     analyzed_operation::{
-        AnalyzedOperation, operation_execution_cases, validate_operation_factorization,
+        AnalyzedOperation, analyze_candidate_operations_reported, operation_execution_cases,
+        validate_operation_factorization,
     },
     capability::CapabilityView,
     carrier::{CarrierEligibility, relation_case_eligibility},
@@ -61,8 +64,8 @@ use crate::{
     lifecycle::{CompilerLifecycleAnalysis, build_lifecycle_analysis},
     placement::{
         PlacementAssignment, PlacementCandidate, PlacementCandidateProjection,
-        PlacementSearchLimits, RelationCaseKey, RelationCasePlan, classify_relation_cases,
-        validate_placement,
+        PlacementSearchLimits, PlacementSearchReport, RelationCaseKey, RelationCasePlan,
+        classify_relation_cases, validate_placement,
     },
     proof::{ProofPlanCandidate, enumerate_feasible_plans},
     relation::CompilerRelationAnalysis,
@@ -168,6 +171,21 @@ pub enum AnalyzedCoverageDefect {
     NoncanonicalDependencyNodeOrder,
     /// The stored typed dependencies are not in canonical order.
     NoncanonicalDependencyEdgeOrder,
+}
+
+/// Which component of the stored execution report disagrees.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum AnalyzedExecutionReportDefect {
+    /// The reported proof-search limits are not the input's policy.
+    ProofSearchLimits,
+    /// The reported placement-search limits are not the ones the
+    /// analysis was asked for.
+    PlacementSearchLimits,
+    /// The reported proof-search counts are not the re-derived ones.
+    ProofSearch,
+    /// The reported per-operation placement counts are not the
+    /// re-derived ones.
+    PlacementSearch,
 }
 
 /// Which exactness rule one stable projection vector broke.
@@ -285,6 +303,16 @@ pub struct AnalyzedExpectations {
     pub relation_census: BTreeSet<RelationId>,
     pub plans: BTreeMap<ProofPlanCandidate, AnalyzedProofPlan>,
     pub obligations: BTreeMap<(ProofPlanCandidate, OperationId), OperationObligations>,
+    /// The execution report the same searches produce when re-run.
+    ///
+    /// A search report is diagnostic provenance rather than semantic
+    /// identity, and it is excluded from the stable projection. That is
+    /// a reason to keep it out of comparisons of meaning, not a reason
+    /// to leave it unauthenticated: it is a typed account of how the
+    /// analysis was performed, and the same deterministic searches that
+    /// produce the analysis produce the counts as a byproduct. So it is
+    /// re-derived here and checked, at no additional search cost.
+    pub execution_report: AnalysisExecutionReport,
 }
 
 /// Re-derive everything one analyzed program claims (§13).
@@ -316,6 +344,7 @@ pub fn derive_expectations(
 
     let mut plans = BTreeMap::new();
     let mut obligations = BTreeMap::new();
+    let mut placement_search: BTreeMap<OperationId, PlacementSearchReport> = BTreeMap::new();
 
     for candidate in &feasible.candidates {
         let requirements = relation_requirements(
@@ -325,12 +354,17 @@ pub fn derive_expectations(
             &lifecycle,
             candidate,
         )?;
-        let operations = crate::analyzed_operation::analyze_candidate_operations(
+        let (operations, reports) = analyze_candidate_operations_reported(
             &foundation.relations,
             &requirements,
             candidate,
             limits,
         )?;
+
+        for (operation, report) in reports {
+            let entry = placement_search.entry(operation).or_default();
+            *entry = accumulate(*entry, report);
+        }
 
         for operation in operations.keys() {
             obligations.insert(
@@ -372,6 +406,12 @@ pub fn derive_expectations(
         lifecycle,
         plans,
         obligations,
+        execution_report: AnalysisExecutionReport {
+            proof_search_limits: input.policy().proof_search_limits,
+            placement_search_limits: limits,
+            proof_search: feasible.search,
+            operation_placement_search: placement_search,
+        },
     })
 }
 
@@ -398,12 +438,6 @@ fn operation_obligations(
 ///
 /// Any failure of [`derive_expectations`] or
 /// [`validate_against_expectations`].
-// The second crate-private root, for the same reason as
-// [`crate::analyzed::analyze_scoped_program`]: the complete validator
-// is reachable from the assembler's own step 12 and from the pilot
-// acceptance analyses, and from no public API until Phase 3 gives it
-// one.
-#[allow(dead_code)]
 pub fn validate_scoped_analyzed_program(
     input: &BoundCompilerInput,
     limits: PlacementSearchLimits,
@@ -443,7 +477,46 @@ pub fn validate_against_expectations(
         validate_analyzed_plan(expected, key, analyzed)?;
     }
 
+    validate_execution_report(expected, program)?;
+
     validate_assembly_closure(input, program)
+}
+
+/// Validate the stored execution report against the re-derived one.
+///
+/// The report is excluded from semantic identity, which is a statement
+/// about what may distinguish two analyses — not a licence for the
+/// report to say anything at all. It claims two things a caller can act
+/// on: the limits the analysis actually ran under, and how much work
+/// each search did. Both are re-derived deterministically from the same
+/// input and the same limits, so both are checked.
+///
+/// # Errors
+///
+/// [`CompileError::AnalyzedExecutionReportMismatch`] naming the
+/// component that disagrees.
+fn validate_execution_report(
+    expected: &AnalyzedExpectations,
+    program: &ScopedAnalyzedProgram,
+) -> Result<(), CompileError> {
+    let stored = &program.execution_report;
+    let required = &expected.execution_report;
+
+    let defect = if stored.proof_search_limits != required.proof_search_limits {
+        Some(AnalyzedExecutionReportDefect::ProofSearchLimits)
+    } else if stored.placement_search_limits != required.placement_search_limits {
+        Some(AnalyzedExecutionReportDefect::PlacementSearchLimits)
+    } else if stored.proof_search != required.proof_search {
+        Some(AnalyzedExecutionReportDefect::ProofSearch)
+    } else if stored.operation_placement_search != required.operation_placement_search {
+        Some(AnalyzedExecutionReportDefect::PlacementSearch)
+    } else {
+        None
+    };
+
+    defect.map_or(Ok(()), |defect| {
+        Err(CompileError::AnalyzedExecutionReportMismatch { defect })
+    })
 }
 
 // --- §13.1 source validation ---

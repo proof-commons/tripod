@@ -398,6 +398,12 @@ pub fn analyze_operation_reported(
 ///
 /// Any failure of [`analyze_operation`] for any operation, or of
 /// [`validate_operation_factorization`] on the assembled factors.
+// Both production callers — the assembler and the complete validator's
+// re-derivation — want the placement search reports, so both take the
+// reported form and this projection of it has test callers only. It is
+// kept because a test that only asserts about factors should not have
+// to name and discard a report it does not read.
+#[allow(dead_code)]
 pub fn analyze_candidate_operations(
     relations: &CompilerRelationAnalysis,
     requirements: &BTreeMap<RelationId, RelationRequirements>,
