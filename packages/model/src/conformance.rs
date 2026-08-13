@@ -43,6 +43,7 @@ pub enum ConformanceProjectionError {
     InvalidObservation(realization::RealizationError),
     AmountOutOfDomain,
     BoundOutOfDomain,
+    SponsorProtocolRegionOverlap(u64),
 }
 
 /// A realization observation plus the external premises the model side
@@ -163,6 +164,8 @@ fn observe_transition(
         });
     }
 
+    let sponsor_region = sponsor_region(certificate)?;
+
     let mut objects = Vec::new();
     let mut reference_by_outpoint = BTreeMap::new();
 
@@ -178,7 +181,12 @@ fn observe_transition(
             .get(outpoint)
             .ok_or(ConformanceProjectionError::MissingConsumedObject(*outpoint))?;
 
-        objects.push(observe_utxo(reference, utxo, representation)?);
+        objects.push(observe_utxo(
+            reference,
+            utxo,
+            representation,
+            sponsor_region.contains(outpoint),
+        )?);
         reference_by_outpoint.insert(*outpoint, reference);
     }
 
@@ -194,7 +202,12 @@ fn observe_transition(
             .get(outpoint)
             .ok_or(ConformanceProjectionError::MissingCreatedObject(*outpoint))?;
 
-        objects.push(observe_utxo(reference, utxo, representation)?);
+        objects.push(observe_utxo(
+            reference,
+            utxo,
+            representation,
+            sponsor_region.contains(outpoint),
+        )?);
         reference_by_outpoint.insert(*outpoint, reference);
     }
 
@@ -317,19 +330,65 @@ fn validate_certificate_membership(
     Ok(())
 }
 
+/// The exact fee-sponsor region of one certificate: every outpoint
+/// claimed by a fee-sponsor open flow, on either side.
+///
+/// The region is a *flow role*, never an object family (S2-01).
+/// `PLAIN_LBTC` is one architecture family that the fee-sponsor region
+/// happens to use; the same family also carries protocol-role value —
+/// request funding, refund, admission reward, redemption payout — whose
+/// amounts the owning protocol relation must be able to read. Deriving
+/// the region here, before any value is projected, is what keeps the
+/// two apart.
+///
+/// Overlap is rejected rather than assumed away: the kernel already
+/// partitions open flows, but this projection is the erasure point, and
+/// a reference that were both sponsor and protocol would have to be
+/// erased and readable at once.
+pub(crate) fn sponsor_region(
+    certificate: &TransitionCertificate,
+) -> Result<BTreeSet<OutPoint>, ConformanceProjectionError> {
+    let region = |sponsor: bool| {
+        certificate
+            .open_flows
+            .iter()
+            .filter(move |flow| (flow.kind == crate::OpenFlowKind::FeeSponsor) == sponsor)
+            .flat_map(|flow| flow.source_inputs.iter().chain(&flow.destination_outputs))
+            .copied()
+            .collect::<BTreeSet<OutPoint>>()
+    };
+
+    let sponsor = region(true);
+    let protocol = region(false);
+
+    if let Some(outpoint) = sponsor.intersection(&protocol).next() {
+        return Err(ConformanceProjectionError::SponsorProtocolRegionOverlap(
+            *outpoint,
+        ));
+    }
+
+    Ok(sponsor)
+}
+
 fn observe_utxo(
     reference: ObservedObjectRef,
     utxo: &Utxo,
     representation: RepresentationMode,
+    in_sponsor_region: bool,
 ) -> Result<ObservedObject, ConformanceProjectionError> {
     let kind = observed_object_kind(utxo);
 
     // This adapter is the erasure point (S3). The transparent model
     // knows every sponsor amount; the realization projection must not.
-    // Ordinary sponsor L-BTC is therefore erased here, on the way out
-    // of the model, rather than carried across the boundary and then
-    // guarded against — a value that never crosses cannot be read.
-    let value = if kind == ObservedObjectKind::Declared(architecture::ObjectId::PlainLbtc) {
+    // Sponsor L-BTC is therefore erased here, on the way out of the
+    // model, rather than carried across the boundary and then guarded
+    // against — a value that never crosses cannot be read.
+    //
+    // Erasure follows the fee-sponsor *flow role* (S2-01), not the
+    // `PLAIN_LBTC` family: an ordinary L-BTC reference claimed by a
+    // protocol open flow keeps its readable protocol amount, because
+    // its owning relation is the thing that has to check it.
+    let value = if in_sponsor_region {
         ObservedValue::SponsorOpaque
     } else {
         ObservedValue::Protocol(observed_amount(utxo.value)?)

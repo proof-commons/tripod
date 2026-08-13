@@ -179,6 +179,73 @@ fn a_destination_may_not_be_claimed_by_two_open_flows() {
     );
 }
 
+/// A protocol open flow of `kind` over the same reference shapes.
+fn protocol_flow(
+    kind: architecture::OpenFlowKind,
+    sources: Vec<ObservedObjectRef>,
+    destinations: Vec<ObservedObjectRef>,
+) -> ObservedOpenFlow {
+    ObservedOpenFlow {
+        kind,
+        sources,
+        destinations,
+        fee: ProtocolAmount::ZERO,
+    }
+}
+
+#[test]
+fn a_reference_may_not_be_claimed_by_both_regions() {
+    // S2-01: the sponsor region is exactly the fee-sponsor membership,
+    // so a reference cannot be sponsor and protocol at once. It would
+    // have to be erased and readable in the same projection.
+    let mut observed = observation();
+    observed.open_flows[0].sources = vec![input(2)];
+    observed.open_flows.push(protocol_flow(
+        architecture::OpenFlowKind::Redemption,
+        vec![input(2)],
+        Vec::new(),
+    ));
+
+    rejects(
+        observed,
+        RealizationError::ObservedOpenFlowOverlap(input(2)),
+    );
+}
+
+#[test]
+fn the_flow_role_of_a_reference_is_its_claiming_flow() {
+    // Object family does not determine role (F.1). The same ordinary
+    // L-BTC family resolves to whichever region claims it, and to no
+    // region at all when nothing does.
+    let mut observed = observation();
+    observed.open_flows[0].sources = vec![input(2)];
+    observed.open_flows[0].destinations = vec![output(1)];
+    observed.open_flows.push(protocol_flow(
+        architecture::OpenFlowKind::Redemption,
+        vec![input(3)],
+        Vec::new(),
+    ));
+
+    let normalized = validate_observation(observed).expect("disjoint regions normalize");
+
+    assert_eq!(
+        normalized.flow_role(input(2)),
+        crate::ObservedFlowRole::Sponsor
+    );
+    assert_eq!(
+        normalized.flow_role(output(1)),
+        crate::ObservedFlowRole::Sponsor
+    );
+    assert_eq!(
+        normalized.flow_role(input(3)),
+        crate::ObservedFlowRole::Protocol(architecture::OpenFlowKind::Redemption),
+    );
+    assert_eq!(
+        normalized.flow_role(output(2)),
+        crate::ObservedFlowRole::Unclaimed,
+    );
+}
+
 #[test]
 fn a_cpfp_anchor_may_not_be_an_open_flow_source() {
     let mut observed = observation();

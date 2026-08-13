@@ -1892,6 +1892,188 @@ fn a_wrong_sponsor_output_maximum_fails_derivation() {
     );
 }
 
+// --- S2-01: recognition of ordinary L-BTC follows the flow role. ---
+//
+// `PLAIN_LBTC` is an object family; sponsorship is a transaction
+// region. Compact ASH uses the family only for the generic fee-sponsor
+// region, so these observations are synthetic: they place the same
+// family in a protocol open flow to pin that erasure is decided by the
+// claiming flow and not by the family. The operation itself still
+// rejects them, under `OpenFlowPolicy` — the relation that owns which
+// flow kinds compact ASH may declare.
+
+/// An ordinary L-BTC member carrying a readable protocol amount, as a
+/// protocol open flow requires.
+fn lbtc_protocol(side: ObservedSide, ordinal: u32, owner: OwnerId, value: u64) -> ObservedObject {
+    ObservedObject {
+        reference: ObservedObjectRef { side, ordinal },
+        kind: ObservedObjectKind::Declared(ObjectId::PlainLbtc),
+        asset: ObservedAsset::Declared(AssetId::Lbtc),
+        value: crate::ObservedValue::Protocol(ProtocolAmount::new(value).unwrap()),
+        owner: Some(owner),
+        representation: RepresentationMode::Explicit,
+    }
+}
+
+/// The sponsored fixture with its open flow re-roled as a protocol
+/// redemption, so its ordinary L-BTC members sit in the protocol
+/// region instead of the sponsor one.
+fn protocol_role_observation() -> OperationObservation {
+    let mut observation = valid_sponsored_observation();
+    observation.open_flows[0].kind = architecture::OpenFlowKind::Redemption;
+
+    observation
+}
+
+#[test]
+fn protocol_role_ordinary_lbtc_keeps_its_amount() {
+    let mut observation = protocol_role_observation();
+    observation
+        .objects
+        .retain(|object| object.kind != ObservedObjectKind::Declared(ObjectId::PlainLbtc));
+    observation
+        .objects
+        .push(lbtc_protocol(ObservedSide::Input, 2, CAROL, 30));
+    observation
+        .objects
+        .push(lbtc_protocol(ObservedSide::Output, 1, CAROL, 27));
+
+    let report = evaluate(&observation);
+
+    assert!(
+        !failed(&report, &sponsor_input_recognition()),
+        "a protocol-role L-BTC input keeps a readable amount"
+    );
+    assert!(
+        !failed(&report, &sponsor_output_recognition()),
+        "a protocol-role L-BTC output keeps a readable amount"
+    );
+
+    // The amount is genuinely available to a relation, not merely
+    // tolerated: nothing erased it on the way through.
+    for object in &observation.objects {
+        if object.kind == ObservedObjectKind::Declared(ObjectId::PlainLbtc) {
+            assert!(object.value.protocol().is_some());
+        }
+    }
+
+    // Compact ASH still rejects the observation, because it declares no
+    // redemption flow — under the relation that owns flow kinds.
+    assert!(failed(&report, &open_flow_policy()));
+    assert!(!report.is_conformant());
+}
+
+#[test]
+fn an_erased_amount_in_a_protocol_flow_fails_recognition() {
+    // The contrast that makes the rule role-based rather than
+    // permissive: the same references, still ordinary L-BTC, still
+    // owned — but erased where a protocol relation would have to read
+    // them.
+    let report = evaluate(&protocol_role_observation());
+
+    assert!(failed(&report, &sponsor_input_recognition()));
+    assert!(failed(&report, &sponsor_output_recognition()));
+}
+
+#[test]
+fn a_readable_amount_in_the_sponsor_region_still_fails_recognition() {
+    // The mirror case, and the one that must never regress: inside the
+    // exact fee-sponsor region an amount is not merely unread, it is
+    // absent, so an observation that smuggles one back in is malformed.
+    for side in [ObservedSide::Input, ObservedSide::Output] {
+        let mut observation = valid_sponsored_observation();
+        let ordinal = match side {
+            ObservedSide::Input => 2,
+            ObservedSide::Output => 1,
+        };
+        observation
+            .objects
+            .retain(|object| object.reference != ObservedObjectRef { side, ordinal });
+        observation
+            .objects
+            .push(lbtc_protocol(side, ordinal, CAROL, 7));
+
+        let report = evaluate(&observation);
+        let recognition = match side {
+            ObservedSide::Input => sponsor_input_recognition(),
+            ObservedSide::Output => sponsor_output_recognition(),
+        };
+
+        assert!(
+            failed(&report, &recognition),
+            "a readable amount on the {side:?} side of the sponsor region must fail recognition"
+        );
+        assert!(failed(&report, &sponsor()));
+    }
+}
+
+#[test]
+fn protocol_role_ordinary_lbtc_does_not_make_the_operation_sponsored() {
+    // Sponsor presence is the presence of a fee-sponsor flow, never the
+    // existence of an ordinary L-BTC object (F.4). The realization
+    // layer expresses that through the flow role and the sponsor
+    // envelope count; the compiler's activation dimension is the other
+    // half of the same rule.
+    let observation = protocol_role_observation();
+
+    assert_eq!(
+        observation
+            .open_flows
+            .iter()
+            .filter(|flow| flow.kind == architecture::OpenFlowKind::FeeSponsor)
+            .count(),
+        0,
+        "the re-roled fixture declares no sponsor region"
+    );
+
+    for object in &observation.objects {
+        if object.kind == ObservedObjectKind::Declared(ObjectId::PlainLbtc) {
+            assert_eq!(
+                observation.flow_role(object.reference),
+                crate::ObservedFlowRole::Protocol(architecture::OpenFlowKind::Redemption),
+            );
+        }
+    }
+}
+
+#[test]
+fn no_sponsor_amount_reaches_a_stable_projection_or_evidence_field() {
+    // The structural read-set claim, asserted positively rather than
+    // only through the guard that rejects a violation: no declarable
+    // fact in the derived pilot names an ordinary L-BTC amount, so no
+    // stable projection, disclosure node, or evidence field can carry
+    // one.
+    let realization = pilot_realization();
+    let sponsor_amount = |fact: &crate::FactId| {
+        matches!(
+            fact,
+            crate::FactId::FamilyAmount {
+                object: ObjectId::PlainLbtc,
+                ..
+            }
+        )
+    };
+
+    assert!(realization.expression_graph.node_weights().all(
+        |declaration| !matches!(&declaration.node, crate::ExpressionNode::Fact(fact) if sponsor_amount(fact))
+    ));
+    assert!(
+        realization.disclosure_graph.node_weights().all(
+            |node| !matches!(node, crate::DisclosureNode::Fact { id, .. } if sponsor_amount(id))
+        )
+    );
+
+    let declassification = &realization.declassification;
+    assert!(
+        !declassification
+            .required_public
+            .keys()
+            .chain(declassification.newly_disclosed.keys())
+            .chain(declassification.retained_private.iter())
+            .any(sponsor_amount)
+    );
+}
+
 #[test]
 fn a_wrong_recognized_sponsor_asset_fails_derivation() {
     let error = reassembled(|operation| {
