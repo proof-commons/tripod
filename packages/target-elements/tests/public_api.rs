@@ -8,8 +8,9 @@
 use std::collections::BTreeMap;
 
 use target_elements::{
-    ExecutionDomain, LeafVersion, OpcodeId, TargetContractVersion, TargetDefinition, TargetError,
-    reviewed_elements_tapscript, validate_target_definition,
+    ElementsCapability, EncodingClass, ExecutionDomain, LeafVersion, OpcodeId,
+    TargetContractVersion, TargetDefinition, TargetDefinitionParts, TargetError,
+    TargetEvidenceRequirementId, reviewed_elements_tapscript, validate_target_definition,
 };
 
 #[test]
@@ -55,17 +56,25 @@ fn an_external_consumer_cannot_skip_validation() {
     // The wrapper has no public constructor, so an empty registry
     // cannot be smuggled past the validator by building the wrapper
     // directly. The only route is the validator, which refuses.
-    let empty = TargetDefinition::new(
-        TargetContractVersion::V1,
-        ExecutionDomain::Tapscript,
-        LeafVersion::TAPSCRIPT,
-        BTreeMap::new(),
-    );
-    let errors = validate_target_definition(empty).expect_err("an empty registry is incomplete");
-    assert_eq!(
-        errors.len(),
-        OpcodeId::ALL.len(),
-        "every missing primitive is reported, not just the first"
+    let reviewed = reviewed_elements_tapscript().expect("the reviewed contract validates");
+    let source = reviewed.definition();
+    let stripped = TargetDefinition::new(TargetDefinitionParts {
+        version: source.version(),
+        execution_domain: source.execution_domain(),
+        leaf_version: source.leaf_version(),
+        opcodes: BTreeMap::new(),
+        encodings: source.encodings().clone(),
+        authorization: source.authorization().clone(),
+        confidential_values: source.confidential_values().clone(),
+        issuance: source.issuance().clone(),
+        resources: source.resources().clone(),
+        capabilities: source.capabilities().clone(),
+        evidence_requirements: source.evidence_requirements().clone(),
+    });
+    let errors = validate_target_definition(stripped).expect_err("an empty registry is incomplete");
+    assert!(
+        errors.len() > OpcodeId::ALL.len(),
+        "every missing primitive is reported, and so is every capability that named one"
     );
 }
 
@@ -93,4 +102,16 @@ fn the_public_surface_carries_no_identity_and_no_protocol_vocabulary() {
     // import list, and none can: the crate depends on no first-party
     // package and so has no way to name one.
     let _: fn() -> Result<_, Vec<TargetError>> = reviewed_elements_tapscript;
+
+    // Each registry is complete against its own census.
+    let definition = first.definition();
+    assert_eq!(definition.encodings().len(), EncodingClass::ALL.len());
+    assert_eq!(
+        definition.capabilities().len(),
+        ElementsCapability::ALL.len()
+    );
+    assert_eq!(
+        definition.evidence_requirements().len(),
+        TargetEvidenceRequirementId::ALL.len()
+    );
 }

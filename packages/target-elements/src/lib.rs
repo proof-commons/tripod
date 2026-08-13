@@ -50,14 +50,15 @@
 //! Implemented: the crate boundary, the typed error root, the
 //! target-contract version, the tapscript execution domain and leaf
 //! version, the reviewed primitive registry with complete stack,
-//! failure, and resource contracts, the encoding and
-//! evidence-requirement keys those primitives name, the target
-//! validator, and the stable semantic projection.
+//! failure, and resource contracts, the target validator, the stable
+//! semantic projection,
+//! the field-specific encoding registry, signature and sighash and
+//! relative-timelock dimensions, confidential-value and issuance
+//! capability descriptions, separate consensus and policy resource
+//! interfaces, the capability registry with an acyclic prerequisite
+//! relation, and the evidence-requirement registry.
 //!
-//! Not implemented, and not claimed: the encoding specification
-//! registry, authorization and timelock contracts, confidential-value
-//! and issuance contracts, resource interfaces, capability contracts,
-//! evidence-requirement contents, and the development deployment
+//! Not implemented, and not claimed: the development deployment
 //! binding.
 //!
 //! Every evidence requirement this crate names is unresolved. No
@@ -66,22 +67,49 @@
 
 #![forbid(unsafe_code)]
 
+pub mod authorization;
+pub mod capability;
+pub mod confidential;
 pub mod definition;
 pub mod encoding;
 pub mod error;
 pub mod evidence;
+pub mod evidence_registry;
 pub mod opcode;
+pub mod resource;
 
-pub use definition::{
-    TargetContractVersion, TargetDefinition, TargetProjection, ValidatedTargetDefinition,
-    reviewed_elements_tapscript, validate_target_definition,
+pub use authorization::{
+    AuthorizationContract, RelativeTimelockContract, SequenceFieldLayout, SighashCapability,
+    SighashDimension, SignaturePrimitiveContract, TimelockMode, UnknownPublicKeyTypeRule,
 };
-pub use encoding::{ByteOrder, EncodingClass, PayloadWidth};
+pub use capability::{
+    CapabilityContract, ElementsCapability, StaticCapabilityStatus, prerequisite_cycle_residual,
+};
+pub use confidential::{
+    ConfidentialCapabilityState, ConfidentialValueCapability, ConfidentialValueContract,
+    IssuanceContract, IssuanceField,
+};
+pub use definition::{
+    TargetContractVersion, TargetDefinition, TargetDefinitionParts, TargetProjection,
+    ValidatedTargetDefinition, reviewed_elements_tapscript, validate_target_definition,
+};
+pub use encoding::{
+    ByteOrder, CanonicalEncodingRule, EncodingClass, EncodingDomain, EncodingSpec, PayloadWidth,
+    UnknownPrefixRule,
+};
 pub use error::TargetError;
 pub use evidence::TargetEvidenceRequirementId;
+pub use evidence_registry::{
+    EvidenceClaimClass, EvidenceStaleCondition, RequiredEvidenceEnvironment,
+    TargetEvidenceRequirement, TargetEvidenceSubject,
+};
 pub use opcode::{
     ExecutionDomain, FailureCause, FailureContract, FailureEffect, FailureOutcome, LeafVersion,
     OpcodeId, OpcodeResourceCost, OpcodeSpec, StackContract, StackValueType,
+};
+pub use resource::{
+    ConsensusResourceLimits, PolicyResourceLimits, ResourceBound, ResourceContract,
+    ResourceDimension,
 };
 
 #[cfg(test)]

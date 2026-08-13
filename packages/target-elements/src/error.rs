@@ -16,7 +16,13 @@
 
 use core::fmt;
 
+use crate::authorization::SighashDimension;
+use crate::capability::ElementsCapability;
+use crate::confidential::ConfidentialValueCapability;
+use crate::encoding::EncodingClass;
+use crate::evidence::TargetEvidenceRequirementId;
 use crate::opcode::{FailureCause, OpcodeId};
+use crate::resource::ResourceDimension;
 
 /// A typed target-contract failure.
 ///
@@ -92,9 +98,147 @@ pub enum TargetError {
     /// rest on this crate's assertion alone and no deployment is ever
     /// asked to demonstrate them.
     MissingOpcodeEvidence(OpcodeId),
+
+    /// An encoding key has no specification in the registry.
+    MissingEncodingSpec(EncodingClass),
+
+    /// An encoding entry claims one identity while filed under
+    /// another.
+    EncodingClassMismatch {
+        /// The identity the entry is filed under.
+        key: EncodingClass,
+        /// The identity the entry claims.
+        declared: EncodingClass,
+    },
+
+    /// Two encodings in one field group claim the same prefix byte, so
+    /// a decoder cannot tell their forms apart.
+    DuplicateEncodingPrefix {
+        /// The encoding whose prefix collides.
+        class: EncodingClass,
+        /// The contested prefix byte.
+        prefix: u8,
+    },
+
+    /// An encoding's admissible widths are incoherent, so it describes
+    /// no representable value.
+    InvalidEncodingWidth(EncodingClass),
+
+    /// An encoding carries a number but states no byte order, so its
+    /// bytes do not determine a value.
+    MissingByteOrder(EncodingClass),
+
+    /// An encoding carries opaque bytes but states a byte order,
+    /// claiming a numeric interpretation the field does not have.
+    SpuriousByteOrder(EncodingClass),
+
+    /// An encoding names no evidence requirement.
+    MissingEncodingEvidence(EncodingClass),
+
+    /// A sighash dimension is recorded as both reviewed and
+    /// unreviewed.
+    ContradictorySighashDimension(SighashDimension),
+
+    /// A sighash dimension is recorded neither way, so the contract is
+    /// silent about whether the review reached it.
+    UnclassifiedSighashDimension(SighashDimension),
+
+    /// The sequence disable, mode, and value fields share bits, so a
+    /// decoder cannot separate them.
+    OverlappingSequenceFields,
+
+    /// The relative-timelock contract declares no mode at all.
+    MissingTimelockMode,
+
+    /// A confidential-value claim is left unclassified.
+    UnclassifiedConfidentialCapability(ConfidentialValueCapability),
+
+    /// A required consensus resource dimension is absent, so the
+    /// contract simply fails to say what the target enforces.
+    MissingResourceDimension(ResourceDimension),
+
+    /// A resource bound forbids a resource the target requires.
+    InvalidResourceContract(ResourceDimension),
+
+    /// A policy bound is looser than the consensus bound it sits
+    /// under, describing a state that cannot exist.
+    PolicyLooserThanConsensus(ResourceDimension),
+
+    /// A capability key has no contract in the registry.
+    MissingCapabilityContract(ElementsCapability),
+
+    /// A capability entry claims one identity while filed under
+    /// another.
+    CapabilityIdMismatch {
+        /// The identity the entry is filed under.
+        key: ElementsCapability,
+        /// The identity the entry claims.
+        declared: ElementsCapability,
+    },
+
+    /// A capability requires a capability the contract does not
+    /// declare.
+    UnknownCapabilityPrerequisite(ElementsCapability),
+
+    /// A capability is built from a primitive the contract does not
+    /// declare.
+    CapabilityNamesUnknownOpcode {
+        /// The capability naming it.
+        capability: ElementsCapability,
+        /// The primitive that is absent.
+        opcode: OpcodeId,
+    },
+
+    /// A capability depends on an encoding the contract does not
+    /// declare.
+    CapabilityNamesUnknownEncoding {
+        /// The capability naming it.
+        capability: ElementsCapability,
+        /// The encoding that is absent.
+        encoding: EncodingClass,
+    },
+
+    /// A capability names no evidence requirement.
+    MissingCapabilityEvidence(ElementsCapability),
+
+    /// Capabilities require each other in a cycle, so no order in
+    /// which they could be established exists.
+    ///
+    /// The members are every capability on a cycle or depending on
+    /// one, which is the complete set a reviewer must look at.
+    CapabilityDependencyCycle {
+        /// The capabilities that cannot be ordered.
+        members: Vec<ElementsCapability>,
+    },
+
+    /// Something names an evidence requirement the registry does not
+    /// declare.
+    UnknownEvidenceRequirement(TargetEvidenceRequirementId),
+
+    /// An evidence requirement claims one identity while filed under
+    /// another.
+    EvidenceRequirementIdMismatch {
+        /// The identity the entry is filed under.
+        key: TargetEvidenceRequirementId,
+        /// The identity the entry claims.
+        declared: TargetEvidenceRequirementId,
+    },
+
+    /// An evidence requirement states no condition under which
+    /// evidence for it goes stale, so a report for it would never
+    /// expire.
+    MissingStaleCondition(TargetEvidenceRequirementId),
 }
 
 impl fmt::Display for TargetError {
+    // One exhaustive match over the whole vocabulary. Its length
+    // measures how many distinct failures the validators report, not
+    // how complicated the function is: every arm is a single `write!`
+    // and there is no branching beyond the match itself. Splitting it
+    // into groups would need either a catch-all arm, which silently
+    // swallows a new variant's message, or three passes over the same
+    // value, which is worse to read than the list.
+    #[expect(clippy::too_many_lines, reason = "one arm per reported failure")]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnsupportedTargetContractVersion { offered } => {
@@ -132,6 +276,93 @@ impl fmt::Display for TargetError {
             }
             Self::MissingOpcodeEvidence(id) => {
                 write!(f, "opcode {id:?} names no evidence requirement")
+            }
+            Self::MissingEncodingSpec(class) => {
+                write!(f, "encoding {class:?} has no specification")
+            }
+            Self::EncodingClassMismatch { key, declared } => {
+                write!(f, "encoding entry {key:?} declares identity {declared:?}")
+            }
+            Self::DuplicateEncodingPrefix { class, prefix } => {
+                write!(
+                    f,
+                    "encoding {class:?} reclaims prefix {prefix:#04x} within its field group"
+                )
+            }
+            Self::InvalidEncodingWidth(class) => {
+                write!(f, "encoding {class:?} has an incoherent width")
+            }
+            Self::MissingByteOrder(class) => {
+                write!(f, "numeric encoding {class:?} states no byte order")
+            }
+            Self::SpuriousByteOrder(class) => {
+                write!(f, "opaque encoding {class:?} states a byte order")
+            }
+            Self::MissingEncodingEvidence(class) => {
+                write!(f, "encoding {class:?} names no evidence requirement")
+            }
+            Self::ContradictorySighashDimension(dimension) => {
+                write!(f, "sighash dimension {dimension:?} is classified twice")
+            }
+            Self::UnclassifiedSighashDimension(dimension) => {
+                write!(f, "sighash dimension {dimension:?} is not classified")
+            }
+            Self::OverlappingSequenceFields => {
+                write!(f, "the sequence flag and value fields share bits")
+            }
+            Self::MissingTimelockMode => {
+                write!(f, "the relative-timelock contract declares no mode")
+            }
+            Self::UnclassifiedConfidentialCapability(claim) => {
+                write!(f, "confidential-value claim {claim:?} is not classified")
+            }
+            Self::MissingResourceDimension(dimension) => {
+                write!(f, "consensus dimension {dimension:?} is absent")
+            }
+            Self::InvalidResourceContract(dimension) => {
+                write!(f, "dimension {dimension:?} carries an impossible bound")
+            }
+            Self::PolicyLooserThanConsensus(dimension) => {
+                write!(f, "policy is looser than consensus on {dimension:?}")
+            }
+            Self::MissingCapabilityContract(capability) => {
+                write!(f, "capability {capability:?} has no contract")
+            }
+            Self::CapabilityIdMismatch { key, declared } => {
+                write!(f, "capability entry {key:?} declares identity {declared:?}")
+            }
+            Self::UnknownCapabilityPrerequisite(capability) => {
+                write!(f, "prerequisite {capability:?} is not declared")
+            }
+            Self::CapabilityNamesUnknownOpcode { capability, opcode } => {
+                write!(
+                    f,
+                    "capability {capability:?} names unknown opcode {opcode:?}"
+                )
+            }
+            Self::CapabilityNamesUnknownEncoding {
+                capability,
+                encoding,
+            } => {
+                write!(
+                    f,
+                    "capability {capability:?} names unknown encoding {encoding:?}"
+                )
+            }
+            Self::MissingCapabilityEvidence(capability) => {
+                write!(f, "capability {capability:?} names no evidence requirement")
+            }
+            Self::CapabilityDependencyCycle { members } => {
+                write!(f, "capabilities require each other in a cycle: {members:?}")
+            }
+            Self::UnknownEvidenceRequirement(id) => {
+                write!(f, "evidence requirement {id:?} is not declared")
+            }
+            Self::EvidenceRequirementIdMismatch { key, declared } => {
+                write!(f, "evidence entry {key:?} declares identity {declared:?}")
+            }
+            Self::MissingStaleCondition(id) => {
+                write!(f, "evidence requirement {id:?} never goes stale")
             }
         }
     }

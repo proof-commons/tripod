@@ -56,17 +56,34 @@ Implemented:
 - the tapscript execution domain and the validated leaf version;
 - the reviewed primitive registry, with complete operand, result, failure,
   and resource contracts for every admitted primitive;
-- the encoding and evidence-requirement keys those primitives name;
+- the field-specific encoding registry, with asset and value as independent
+  axes and no global byte order;
+- signature, sighash, and relative-timelock dimensions;
+- confidential-value and issuance capability descriptions;
+- separate consensus and policy resource interfaces;
+- the capability registry with an acyclic prerequisite relation;
+- the evidence-requirement registry;
 - the target validator, which reports every defect rather than the first;
 - the stable semantic projection.
 
 Not implemented, and not claimed:
 
-- the encoding specification registry;
-- authorization, timelock, confidential-value, and issuance contracts;
-- consensus and policy resource interfaces;
-- capability contracts and evidence-requirement contents;
 - the development deployment binding.
+
+## Support is not a boolean
+
+A capability is `Reviewed`, `Incomplete`, or `Unsupported`, and none of the
+three means deployment-evidenced. `Reviewed` means the typed static contract was
+checked against upstream source; it does not mean a node was ever asked.
+
+Three capabilities are deliberately not `Reviewed`. The sighash dimensions are
+`Incomplete` because the review reached the signature primitives but not the
+sighash construction, and every sighash dimension is recorded as unreviewed
+rather than guessed. Whole-transaction value conservation is `Incomplete`
+because it is a claim about the target's own consensus rules that no script
+primitive demonstrates. Authenticated value opening is `Unsupported`, and it
+must stay that way until a complete tested pattern exists: the low-level curve
+and hash primitives being present is not an opening proof.
 
 ## Failure behavior is part of every primitive contract
 

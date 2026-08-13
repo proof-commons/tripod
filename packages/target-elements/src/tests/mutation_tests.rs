@@ -9,14 +9,14 @@ use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
 
 use crate::definition::{
-    TargetContractVersion, TargetDefinition, reviewed_elements_tapscript,
+    TargetContractVersion, TargetDefinition, TargetDefinitionParts, reviewed_elements_tapscript,
     validate_target_definition,
 };
 use crate::encoding::ByteOrder;
 use crate::error::TargetError;
 use crate::opcode::{
-    ExecutionDomain, FailureCause, FailureContract, FailureEffect, FailureOutcome, LeafVersion,
-    OpcodeId, OpcodeResourceCost, OpcodeSpec, StackContract, StackValueType,
+    FailureCause, FailureContract, FailureEffect, FailureOutcome, LeafVersion, OpcodeId,
+    OpcodeResourceCost, OpcodeSpec, StackContract, StackValueType,
 };
 
 /// The reviewed registry, as a mutable starting point.
@@ -28,14 +28,32 @@ fn registry() -> BTreeMap<OpcodeId, OpcodeSpec> {
         .clone()
 }
 
+/// The reviewed contract's parts, as a mutable starting point.
+///
+/// Every mutation test damages exactly one field of this and leaves
+/// the rest reviewed, so a rejection can only be attributed to the
+/// damage.
+fn parts() -> TargetDefinitionParts {
+    let reviewed = reviewed_elements_tapscript().expect("the reviewed contract validates");
+    let source = reviewed.definition();
+    TargetDefinitionParts {
+        version: source.version(),
+        execution_domain: source.execution_domain(),
+        leaf_version: source.leaf_version(),
+        opcodes: source.opcodes().clone(),
+        encodings: source.encodings().clone(),
+        authorization: source.authorization().clone(),
+        confidential_values: source.confidential_values().clone(),
+        issuance: source.issuance().clone(),
+        resources: source.resources().clone(),
+        capabilities: source.capabilities().clone(),
+        evidence_requirements: source.evidence_requirements().clone(),
+    }
+}
+
 /// Assembles a contract from a possibly damaged registry.
 fn definition(opcodes: BTreeMap<OpcodeId, OpcodeSpec>) -> TargetDefinition {
-    TargetDefinition::new(
-        TargetContractVersion::V1,
-        ExecutionDomain::Tapscript,
-        LeafVersion::TAPSCRIPT,
-        opcodes,
-    )
+    TargetDefinition::new(TargetDefinitionParts { opcodes, ..parts() })
 }
 
 /// Runs the validator and requires it to reject.

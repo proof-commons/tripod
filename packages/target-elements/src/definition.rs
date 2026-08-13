@@ -22,9 +22,19 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::encoding::EncodingClass;
+use crate::authorization::{AuthorizationContract, reviewed_authorization};
+use crate::capability::{
+    CapabilityContract, ElementsCapability, prerequisite_cycle_residual, reviewed_capabilities,
+};
+use crate::confidential::{
+    ConfidentialValueContract, IssuanceContract, reviewed_confidential_values, reviewed_issuance,
+};
+use crate::encoding::{EncodingClass, EncodingSpec, reviewed_encodings};
 use crate::error::TargetError;
+use crate::evidence::TargetEvidenceRequirementId;
+use crate::evidence_registry::{TargetEvidenceRequirement, reviewed_evidence_requirements};
 use crate::opcode::{ExecutionDomain, LeafVersion, OpcodeId, OpcodeSpec, reviewed_opcodes};
+use crate::resource::{ResourceContract, reviewed_resources};
 
 /// The revision of the typed target compatibility contract.
 ///
@@ -76,6 +86,45 @@ pub struct TargetDefinition {
     execution_domain: ExecutionDomain,
     leaf_version: LeafVersion,
     opcodes: BTreeMap<OpcodeId, OpcodeSpec>,
+    encodings: BTreeMap<EncodingClass, EncodingSpec>,
+    authorization: AuthorizationContract,
+    confidential_values: ConfidentialValueContract,
+    issuance: IssuanceContract,
+    resources: ResourceContract,
+    capabilities: BTreeMap<ElementsCapability, CapabilityContract>,
+    evidence_requirements: BTreeMap<TargetEvidenceRequirementId, TargetEvidenceRequirement>,
+}
+
+/// The parts of a target definition, gathered for construction.
+///
+/// A struct rather than a long parameter list: eleven positional
+/// arguments of which several are maps would make a transposition
+/// silent, and the whole point of this type model is that a
+/// transposition should be loud.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TargetDefinitionParts {
+    /// The contract revision.
+    pub version: TargetContractVersion,
+    /// The domain the contract describes.
+    pub execution_domain: ExecutionDomain,
+    /// The leaf version the contract requires.
+    pub leaf_version: LeafVersion,
+    /// The reviewed primitive registry.
+    pub opcodes: BTreeMap<OpcodeId, OpcodeSpec>,
+    /// The reviewed encoding registry.
+    pub encodings: BTreeMap<EncodingClass, EncodingSpec>,
+    /// Signature, sighash, and timelock dimensions.
+    pub authorization: AuthorizationContract,
+    /// Confidential-value capabilities.
+    pub confidential_values: ConfidentialValueContract,
+    /// Issuance and reissuance facts.
+    pub issuance: IssuanceContract,
+    /// Consensus and policy resource interfaces.
+    pub resources: ResourceContract,
+    /// The capability registry.
+    pub capabilities: BTreeMap<ElementsCapability, CapabilityContract>,
+    /// The evidence-requirement registry.
+    pub evidence_requirements: BTreeMap<TargetEvidenceRequirementId, TargetEvidenceRequirement>,
 }
 
 impl TargetDefinition {
@@ -84,17 +133,19 @@ impl TargetDefinition {
     /// The value this returns carries no guarantee whatever. It is an
     /// input to the validator, and nothing downstream accepts it.
     #[must_use]
-    pub const fn new(
-        version: TargetContractVersion,
-        execution_domain: ExecutionDomain,
-        leaf_version: LeafVersion,
-        opcodes: BTreeMap<OpcodeId, OpcodeSpec>,
-    ) -> Self {
+    pub fn new(parts: TargetDefinitionParts) -> Self {
         Self {
-            version,
-            execution_domain,
-            leaf_version,
-            opcodes,
+            version: parts.version,
+            execution_domain: parts.execution_domain,
+            leaf_version: parts.leaf_version,
+            opcodes: parts.opcodes,
+            encodings: parts.encodings,
+            authorization: parts.authorization,
+            confidential_values: parts.confidential_values,
+            issuance: parts.issuance,
+            resources: parts.resources,
+            capabilities: parts.capabilities,
+            evidence_requirements: parts.evidence_requirements,
         }
     }
 
@@ -120,6 +171,50 @@ impl TargetDefinition {
     #[must_use]
     pub const fn opcodes(&self) -> &BTreeMap<OpcodeId, OpcodeSpec> {
         &self.opcodes
+    }
+
+    /// The reviewed encoding registry.
+    #[must_use]
+    pub const fn encodings(&self) -> &BTreeMap<EncodingClass, EncodingSpec> {
+        &self.encodings
+    }
+
+    /// Signature, sighash, and timelock dimensions.
+    #[must_use]
+    pub const fn authorization(&self) -> &AuthorizationContract {
+        &self.authorization
+    }
+
+    /// Confidential-value capabilities.
+    #[must_use]
+    pub const fn confidential_values(&self) -> &ConfidentialValueContract {
+        &self.confidential_values
+    }
+
+    /// Issuance and reissuance facts.
+    #[must_use]
+    pub const fn issuance(&self) -> &IssuanceContract {
+        &self.issuance
+    }
+
+    /// Consensus and policy resource interfaces.
+    #[must_use]
+    pub const fn resources(&self) -> &ResourceContract {
+        &self.resources
+    }
+
+    /// The capability registry.
+    #[must_use]
+    pub const fn capabilities(&self) -> &BTreeMap<ElementsCapability, CapabilityContract> {
+        &self.capabilities
+    }
+
+    /// The evidence-requirement registry.
+    #[must_use]
+    pub const fn evidence_requirements(
+        &self,
+    ) -> &BTreeMap<TargetEvidenceRequirementId, TargetEvidenceRequirement> {
+        &self.evidence_requirements
     }
 }
 
@@ -149,6 +244,18 @@ impl ValidatedTargetDefinition {
             execution_domain: self.definition.execution_domain,
             leaf_version: self.definition.leaf_version,
             opcodes: self.definition.opcodes.values().cloned().collect(),
+            encodings: self.definition.encodings.values().cloned().collect(),
+            authorization: self.definition.authorization.clone(),
+            confidential_values: self.definition.confidential_values.clone(),
+            issuance: self.definition.issuance.clone(),
+            resources: self.definition.resources.clone(),
+            capabilities: self.definition.capabilities.values().cloned().collect(),
+            evidence_requirements: self
+                .definition
+                .evidence_requirements
+                .values()
+                .cloned()
+                .collect(),
         }
     }
 }
@@ -175,6 +282,13 @@ pub struct TargetProjection {
     execution_domain: ExecutionDomain,
     leaf_version: LeafVersion,
     opcodes: Vec<OpcodeSpec>,
+    encodings: Vec<EncodingSpec>,
+    authorization: AuthorizationContract,
+    confidential_values: ConfidentialValueContract,
+    issuance: IssuanceContract,
+    resources: ResourceContract,
+    capabilities: Vec<CapabilityContract>,
+    evidence_requirements: Vec<TargetEvidenceRequirement>,
 }
 
 impl TargetProjection {
@@ -201,6 +315,48 @@ impl TargetProjection {
     pub fn opcodes(&self) -> &[OpcodeSpec] {
         &self.opcodes
     }
+
+    /// The encoding contracts, in stable identity order.
+    #[must_use]
+    pub fn encodings(&self) -> &[EncodingSpec] {
+        &self.encodings
+    }
+
+    /// Signature, sighash, and timelock dimensions.
+    #[must_use]
+    pub const fn authorization(&self) -> &AuthorizationContract {
+        &self.authorization
+    }
+
+    /// Confidential-value capabilities.
+    #[must_use]
+    pub const fn confidential_values(&self) -> &ConfidentialValueContract {
+        &self.confidential_values
+    }
+
+    /// Issuance and reissuance facts.
+    #[must_use]
+    pub const fn issuance(&self) -> &IssuanceContract {
+        &self.issuance
+    }
+
+    /// Consensus and policy resource interfaces.
+    #[must_use]
+    pub const fn resources(&self) -> &ResourceContract {
+        &self.resources
+    }
+
+    /// The capability contracts, in stable identity order.
+    #[must_use]
+    pub fn capabilities(&self) -> &[CapabilityContract] {
+        &self.capabilities
+    }
+
+    /// The evidence requirements, in stable identity order.
+    #[must_use]
+    pub fn evidence_requirements(&self) -> &[TargetEvidenceRequirement] {
+        &self.evidence_requirements
+    }
 }
 
 /// Validates an offered contract, reporting every defect found.
@@ -224,6 +380,12 @@ pub fn validate_target_definition(
     let mut errors = Vec::new();
 
     validate_opcodes(&definition, &mut errors);
+    validate_encodings(&definition, &mut errors);
+    validate_authorization(&definition, &mut errors);
+    validate_confidential_and_issuance(&definition, &mut errors);
+    validate_resources(&definition, &mut errors);
+    validate_capabilities(&definition, &mut errors);
+    validate_evidence(&definition, &mut errors);
 
     if errors.is_empty() {
         Ok(ValidatedTargetDefinition { definition })
@@ -309,12 +471,19 @@ fn validate_opcodes(definition: &TargetDefinition, errors: &mut Vec<TargetError>
 /// transcription mistake fails the build rather than reaching a
 /// consumer.
 pub fn reviewed_elements_tapscript() -> Result<ValidatedTargetDefinition, Vec<TargetError>> {
-    validate_target_definition(TargetDefinition::new(
-        TargetContractVersion::V1,
-        ExecutionDomain::Tapscript,
-        LeafVersion::TAPSCRIPT,
-        reviewed_opcodes(),
-    ))
+    validate_target_definition(TargetDefinition::new(TargetDefinitionParts {
+        version: TargetContractVersion::V1,
+        execution_domain: ExecutionDomain::Tapscript,
+        leaf_version: LeafVersion::TAPSCRIPT,
+        opcodes: reviewed_opcodes(),
+        encodings: reviewed_encodings(),
+        authorization: reviewed_authorization(),
+        confidential_values: reviewed_confidential_values(),
+        issuance: reviewed_issuance(),
+        resources: reviewed_resources(),
+        capabilities: reviewed_capabilities(),
+        evidence_requirements: reviewed_evidence_requirements(),
+    }))
 }
 
 /// The encoding keys the reviewed primitive registry actually depends
@@ -351,4 +520,236 @@ pub fn encoding_dependencies(definition: &TargetDefinition) -> BTreeSet<Encoding
         }
     }
     classes
+}
+
+/// Checks the encoding registry.
+fn validate_encodings(definition: &TargetDefinition, errors: &mut Vec<TargetError>) {
+    for class in EncodingClass::ALL {
+        if !definition.encodings.contains_key(class) {
+            errors.push(TargetError::MissingEncodingSpec(*class));
+        }
+    }
+
+    // Prefixes are checked per domain rather than globally. The same
+    // byte means "explicit" in the asset, value, and nonce domains
+    // alike, so a global uniqueness check would reject a correct
+    // contract.
+    let mut claimed: BTreeMap<(crate::encoding::EncodingDomain, u8), EncodingClass> =
+        BTreeMap::new();
+
+    for (key, spec) in &definition.encodings {
+        if spec.class() != *key {
+            errors.push(TargetError::EncodingClassMismatch {
+                key: *key,
+                declared: spec.class(),
+            });
+        }
+
+        if !spec.payload().is_coherent() {
+            errors.push(TargetError::InvalidEncodingWidth(*key));
+        }
+
+        // A numeric payload without an order does not determine a
+        // value; a non-numeric one carrying an order claims an
+        // interpretation the field does not have.
+        if spec.is_numeric() && spec.byte_order().is_none() {
+            errors.push(TargetError::MissingByteOrder(*key));
+        }
+        if !spec.is_numeric() && spec.byte_order().is_some() {
+            errors.push(TargetError::SpuriousByteOrder(*key));
+        }
+
+        if spec.evidence().is_empty() {
+            errors.push(TargetError::MissingEncodingEvidence(*key));
+        }
+
+        for prefix in spec.prefixes() {
+            if claimed.insert((spec.domain(), *prefix), *key).is_some() {
+                errors.push(TargetError::DuplicateEncodingPrefix {
+                    class: *key,
+                    prefix: *prefix,
+                });
+            }
+        }
+    }
+
+    // Every encoding a primitive names must exist.
+    for class in encoding_dependencies(definition) {
+        if !definition.encodings.contains_key(&class) {
+            errors.push(TargetError::MissingEncodingSpec(class));
+        }
+    }
+}
+
+/// Checks the authorization contract.
+fn validate_authorization(definition: &TargetDefinition, errors: &mut Vec<TargetError>) {
+    let sighash = definition.authorization.sighash();
+
+    if let Some(dimension) = sighash.contradictory() {
+        errors.push(TargetError::ContradictorySighashDimension(dimension));
+    }
+    if let Some(dimension) = sighash.unclassified() {
+        errors.push(TargetError::UnclassifiedSighashDimension(dimension));
+    }
+
+    let timelock = definition.authorization.relative_timelock();
+    if timelock.has_overlapping_fields() {
+        errors.push(TargetError::OverlappingSequenceFields);
+    }
+    if timelock.modes().is_empty() {
+        errors.push(TargetError::MissingTimelockMode);
+    }
+
+    for encoding in [
+        definition.authorization.signature().public_key_encoding(),
+        definition.authorization.signature().signature_encoding(),
+    ] {
+        if !definition.encodings.contains_key(&encoding) {
+            errors.push(TargetError::MissingEncodingSpec(encoding));
+        }
+    }
+}
+
+/// Checks the confidential-value and issuance contracts.
+fn validate_confidential_and_issuance(
+    definition: &TargetDefinition,
+    errors: &mut Vec<TargetError>,
+) {
+    if let Some(claim) = definition.confidential_values.unclassified() {
+        errors.push(TargetError::UnclassifiedConfidentialCapability(claim));
+    }
+
+    for encoding in definition.confidential_values.participating_encodings() {
+        if !definition.encodings.contains_key(encoding) {
+            errors.push(TargetError::MissingEncodingSpec(*encoding));
+        }
+    }
+
+    let issuance = &definition.issuance;
+    if !definition.opcodes.contains_key(&issuance.introspection()) {
+        errors.push(TargetError::MissingOpcodeContract(issuance.introspection()));
+    }
+    if !definition.encodings.contains_key(&issuance.absent_marker()) {
+        errors.push(TargetError::MissingEncodingSpec(issuance.absent_marker()));
+    }
+}
+
+/// Checks the resource contract.
+fn validate_resources(definition: &TargetDefinition, errors: &mut Vec<TargetError>) {
+    let resources = &definition.resources;
+
+    if let Some(dimension) = resources.missing_consensus_dimension() {
+        errors.push(TargetError::MissingResourceDimension(dimension));
+    }
+    if let Some(dimension) = resources.zero_bound() {
+        errors.push(TargetError::InvalidResourceContract(dimension));
+    }
+    if let Some(dimension) = resources.policy_looser_than_consensus() {
+        errors.push(TargetError::PolicyLooserThanConsensus(dimension));
+    }
+    if resources.consensus().witness_scale_factor() == 0 {
+        errors.push(TargetError::InvalidResourceContract(
+            crate::resource::ResourceDimension::TransactionWeight,
+        ));
+    }
+}
+
+/// Checks the capability registry and its prerequisite structure.
+fn validate_capabilities(definition: &TargetDefinition, errors: &mut Vec<TargetError>) {
+    for capability in ElementsCapability::ALL {
+        if !definition.capabilities.contains_key(capability) {
+            errors.push(TargetError::MissingCapabilityContract(*capability));
+        }
+    }
+
+    for (key, contract) in &definition.capabilities {
+        if contract.capability() != *key {
+            errors.push(TargetError::CapabilityIdMismatch {
+                key: *key,
+                declared: contract.capability(),
+            });
+        }
+
+        for prerequisite in contract.prerequisites() {
+            if !definition.capabilities.contains_key(prerequisite) {
+                errors.push(TargetError::UnknownCapabilityPrerequisite(*prerequisite));
+            }
+        }
+
+        for opcode in contract.opcodes() {
+            if !definition.opcodes.contains_key(opcode) {
+                errors.push(TargetError::CapabilityNamesUnknownOpcode {
+                    capability: *key,
+                    opcode: *opcode,
+                });
+            }
+        }
+
+        for encoding in contract.encodings() {
+            if !definition.encodings.contains_key(encoding) {
+                errors.push(TargetError::CapabilityNamesUnknownEncoding {
+                    capability: *key,
+                    encoding: *encoding,
+                });
+            }
+        }
+
+        // Every capability maps to evidence, without exception. A
+        // capability whose claim nothing is ever asked to demonstrate
+        // rests on this crate's assertion alone, and there is no
+        // capability here whose claim is purely type-level: even that
+        // the execution domain exists is something a node must show.
+        if contract.evidence().is_empty() {
+            errors.push(TargetError::MissingCapabilityEvidence(*key));
+        }
+    }
+
+    let residual = prerequisite_cycle_residual(&definition.capabilities);
+    if !residual.is_empty() {
+        errors.push(TargetError::CapabilityDependencyCycle { members: residual });
+    }
+}
+
+/// Checks that every named evidence requirement resolves.
+fn validate_evidence(definition: &TargetDefinition, errors: &mut Vec<TargetError>) {
+    for id in TargetEvidenceRequirementId::ALL {
+        if !definition.evidence_requirements.contains_key(id) {
+            errors.push(TargetError::UnknownEvidenceRequirement(*id));
+        }
+    }
+
+    for (key, requirement) in &definition.evidence_requirements {
+        if requirement.id() != *key {
+            errors.push(TargetError::EvidenceRequirementIdMismatch {
+                key: *key,
+                declared: requirement.id(),
+            });
+        }
+        if requirement.stale_on().is_empty() {
+            errors.push(TargetError::MissingStaleCondition(*key));
+        }
+    }
+
+    let named = definition
+        .opcodes
+        .values()
+        .flat_map(|spec| spec.evidence().iter().copied())
+        .chain(
+            definition
+                .encodings
+                .values()
+                .flat_map(|spec| spec.evidence().iter().copied()),
+        )
+        .chain(
+            definition
+                .capabilities
+                .values()
+                .flat_map(|contract| contract.evidence().iter().copied()),
+        );
+
+    for id in named {
+        if !definition.evidence_requirements.contains_key(&id) {
+            errors.push(TargetError::UnknownEvidenceRequirement(id));
+        }
+    }
 }

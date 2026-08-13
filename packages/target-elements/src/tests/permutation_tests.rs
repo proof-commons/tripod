@@ -10,10 +10,29 @@
 use std::collections::BTreeMap;
 
 use crate::definition::{
-    TargetContractVersion, TargetDefinition, reviewed_elements_tapscript,
+    TargetDefinition, TargetDefinitionParts, reviewed_elements_tapscript,
     validate_target_definition,
 };
-use crate::opcode::{ExecutionDomain, LeafVersion, OpcodeId, OpcodeSpec};
+use crate::opcode::{OpcodeId, OpcodeSpec};
+
+/// The reviewed contract's parts.
+fn reviewed_parts() -> TargetDefinitionParts {
+    let reviewed = reviewed_elements_tapscript().expect("the reviewed contract validates");
+    let source = reviewed.definition();
+    TargetDefinitionParts {
+        version: source.version(),
+        execution_domain: source.execution_domain(),
+        leaf_version: source.leaf_version(),
+        opcodes: source.opcodes().clone(),
+        encodings: source.encodings().clone(),
+        authorization: source.authorization().clone(),
+        confidential_values: source.confidential_values().clone(),
+        issuance: source.issuance().clone(),
+        resources: source.resources().clone(),
+        capabilities: source.capabilities().clone(),
+        evidence_requirements: source.evidence_requirements().clone(),
+    }
+}
 
 /// Rebuilds the registry, inserting entries in the given order.
 fn registry_in_order(order: &[OpcodeId]) -> BTreeMap<OpcodeId, OpcodeSpec> {
@@ -57,12 +76,10 @@ fn the_projection_survives_declaration_permutation() {
 
     for stride in [1_usize, 3, 5, 7, 11, 13, 17] {
         let order = strided_order(stride);
-        let definition = TargetDefinition::new(
-            TargetContractVersion::V1,
-            ExecutionDomain::Tapscript,
-            LeafVersion::TAPSCRIPT,
-            registry_in_order(&order),
-        );
+        let definition = TargetDefinition::new(TargetDefinitionParts {
+            opcodes: registry_in_order(&order),
+            ..reviewed_parts()
+        });
         let validated =
             validate_target_definition(definition).expect("a permutation is still valid");
         assert_eq!(
@@ -82,12 +99,10 @@ fn the_projection_survives_reverse_declaration() {
     let mut order: Vec<OpcodeId> = OpcodeId::ALL.to_vec();
     order.reverse();
 
-    let definition = TargetDefinition::new(
-        TargetContractVersion::V1,
-        ExecutionDomain::Tapscript,
-        LeafVersion::TAPSCRIPT,
-        registry_in_order(&order),
-    );
+    let definition = TargetDefinition::new(TargetDefinitionParts {
+        opcodes: registry_in_order(&order),
+        ..reviewed_parts()
+    });
     let validated = validate_target_definition(definition).expect("a permutation is still valid");
     assert_eq!(validated.projection(), expected);
 }
