@@ -1277,6 +1277,25 @@ pub enum CompileError {
         operation: OperationId,
     },
 
+    /// One scope operation's ordinary-L-BTC region cannot be decided
+    /// from its declared open flows.
+    ///
+    /// Sponsor erasure is keyed to the fee-sponsor flow role, and the
+    /// architecture uses the ordinary-L-BTC family for protocol flows
+    /// too. When an operation declares a protocol flow that can claim
+    /// that family, deciding whether a given reference is erased needs
+    /// per-reference flow membership the declarations do not carry.
+    /// Both available answers are wrong — an opaque payout discards a
+    /// protocol relation, a readable sponsor region breaks erasure — so
+    /// the analysis refuses rather than choosing one.
+    #[error(
+        "operation {operation:?} claims ordinary L-BTC in a protocol flow; its sponsor region is undecidable"
+    )]
+    UndecidableSponsorRegion {
+        /// The operation whose region is undecidable.
+        operation: OperationId,
+    },
+
     /// The stored execution report is not the one the same analysis
     /// produces.
     ///

@@ -34,6 +34,7 @@ use crate::{
     proof::ProofPlanCandidate,
     relation::CompilerRelationAnalysis,
     source::{RequirementActivation, SourceRequirement},
+    sponsor_region::{ORDINARY_LBTC, OrdinaryLbtcRole},
 };
 
 /// Whether the optional sponsor region exists in this case.
@@ -68,14 +69,18 @@ pub struct ExecutionCase {
     pub active_sources: Vec<SourceRequirement>,
 }
 
-/// True for the erased optional sponsor family.
+/// Whether one object family is the erased sponsor region *here*.
 ///
-/// The sponsor family is the one optional family the pilots admit; the
-/// same object is what [`crate::source`] treats as sponsor-activated,
-/// so both stages agree on one typed test rather than two.
+/// Both halves of the question are needed and neither is sufficient.
+/// The family must be the one the architecture uses for open L-BTC
+/// flows, and the operation must be one whose declared flows put that
+/// family in the sponsor region rather than a protocol one. Testing the
+/// family alone was the S2-01 defect: it made a mandatory owner-funded
+/// input look like an optional sponsor region, and a formula-bound
+/// payout look like an amount no relation may read.
 #[must_use]
-pub const fn is_sponsor_object(object: ObjectId) -> bool {
-    matches!(object, ObjectId::PlainLbtc)
+pub const fn is_sponsor_region_family(object: ObjectId, ordinary_lbtc: OrdinaryLbtcRole) -> bool {
+    matches!(object, ORDINARY_LBTC) && ordinary_lbtc.is_sponsor_region()
 }
 
 /// The sponsor cases one operation admits, from its typed open-flow

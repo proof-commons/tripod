@@ -26,7 +26,9 @@ use petgraph::{
     visit::EdgeRef,
 };
 
-use crate::{CompileError, input::BoundCompilerInput};
+use crate::{
+    CompileError, input::BoundCompilerInput, sponsor_region::validate_decidable_sponsor_regions,
+};
 
 /// Stable identity of one compiler analysis node.
 ///
@@ -131,12 +133,23 @@ pub fn build_relation_analysis(
     input: &BoundCompilerInput,
 ) -> Result<CompilerRelationAnalysis, CompileError> {
     let source = input.realization().project();
-
-    build_relation_graph(
+    let analysis = build_relation_graph(
         input.scope().operations(),
         &source.relations.nodes,
         &source.relations.edges,
-    )
+    )?;
+
+    // The single choke point every analysis path passes through, which
+    // is why the sponsor-region gate sits here. Stages below this one
+    // ask whether an ordinary-L-BTC reference is erased; for an
+    // operation whose protocol flows claim that family the declarations
+    // do not answer, and the answer is not one to guess. Refusing the
+    // scope here is what makes "ordinary L-BTC is the sponsor region" a
+    // property of every analysis the compiler accepts rather than an
+    // assumption those stages quietly rest on.
+    validate_decidable_sponsor_regions(&analysis, input.scope().operations())?;
+
+    Ok(analysis)
 }
 
 /// Build one scoped relation graph from explicit source declarations.

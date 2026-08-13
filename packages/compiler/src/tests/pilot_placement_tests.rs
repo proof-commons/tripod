@@ -28,7 +28,7 @@ use crate::{
         CarrierEligibility, CarrierQuantification, CarrierRole, coordinator_anchors,
         is_sponsor_region_carrier, relation_case_eligibility,
     },
-    case::{ExecutionCaseId, SponsorCase, is_sponsor_object},
+    case::{ExecutionCaseId, SponsorCase, is_sponsor_region_family},
     layout::{LayoutRequirement, layout_requirements, names_sponsor_amount},
     placement::{
         ActivationCondition, DischargeBoundary, PlacedCarrier, PlacedProofPlanCandidate,
@@ -38,6 +38,7 @@ use crate::{
     },
     proof::{ProofPlanCandidate, enumerate_feasible_plans},
     relation::{CompilerRelationAnalysis, build_relation_analysis, build_relation_graph},
+    sponsor_region::GATED_ORDINARY_LBTC_ROLE,
 };
 
 /// Generous limits: the pilot searches must run to completion, so a
@@ -359,7 +360,7 @@ fn each_pilot_anchors_its_coordinator_in_its_own_input_family() {
 
                     coordinators += 1;
                     assert_eq!(anchor, object, "{operation:?}");
-                    assert!(!is_sponsor_object(anchor));
+                    assert!(!is_sponsor_region_family(anchor, GATED_ORDINARY_LBTC_ROLE));
                 }
             }
         }
@@ -380,7 +381,7 @@ fn no_unconditional_relation_is_placed_on_the_optional_sponsor_region() {
                 let plan = plan_of(entry, &assignment.relation, &assignment.case);
 
                 for placed in &assignment.carriers {
-                    if !is_sponsor_region_carrier(&placed.carrier) {
+                    if !is_sponsor_region_carrier(&placed.carrier, GATED_ORDINARY_LBTC_ROLE) {
                         continue;
                     }
 

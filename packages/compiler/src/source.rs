@@ -139,13 +139,22 @@ pub struct SourceRequirement {
     pub activation: RequirementActivation,
 }
 
-/// True for the erased sponsor family's amount: structurally absent
+/// True for the erased sponsor region's amount: structurally absent
 /// from the compiler, never an allowable private fact.
+///
+/// Tests the object family alone, which is sound only because
+/// [`crate::sponsor_region::validate_decidable_sponsor_regions`] refuses
+/// every scope in which ordinary L-BTC is claimed by a protocol flow.
+/// Inside an accepted analysis the family and the sponsor region
+/// coincide, so this is the erased region and not merely a family that
+/// sometimes holds it. Lifting that gate means giving this predicate the
+/// operation's role, because a protocol-region L-BTC amount is a readable
+/// amount that protocol relations are entitled to require.
 pub const fn is_sponsor_amount_operand(role: &OperandRole) -> bool {
     matches!(
         role,
         OperandRole::ObjectFamilyAmount {
-            object: architecture::ObjectId::PlainLbtc,
+            object: crate::sponsor_region::ORDINARY_LBTC,
             ..
         }
     )
@@ -371,8 +380,13 @@ fn operand_source(
 ) -> (RequiredSourceKind, AvailabilityClass, RequirementActivation) {
     use RequiredSourceKind as Kind;
 
+    // Sponsor-conditional because the family *is* the sponsor region
+    // here, not because of the family itself: the scope gate refuses
+    // every operation whose protocol flows claim ordinary L-BTC, and a
+    // mandatory owner-funded input in such an operation would not be
+    // conditional on a sponsor region existing.
     let sponsor_family = |object: architecture::ObjectId| {
-        if object == architecture::ObjectId::PlainLbtc {
+        if object == crate::sponsor_region::ORDINARY_LBTC {
             RequirementActivation::WhenSponsorPresent
         } else {
             RequirementActivation::Always

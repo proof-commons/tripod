@@ -27,6 +27,7 @@ compiler_source_files = files(
   'src/requirement.rs',
   'src/search_counter.rs',
   'src/source.rs',
+  'src/sponsor_region.rs',
   'src/tests/analyzed_corruption_tests.rs',
   'src/tests/analyzed_operation_tests.rs',
   'src/tests/analyzed_program_oracle_tests.rs',

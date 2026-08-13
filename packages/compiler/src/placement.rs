@@ -76,7 +76,7 @@ use crate::{
     },
     case::{
         ExecutionCase, ExecutionCaseId, SponsorCase, case_census, execution_cases,
-        is_sponsor_object, validate_case_census,
+        is_sponsor_region_family, validate_case_census,
     },
     layout::{
         LayoutRequirement, layout_requirements, selected_carrier_requirements,
@@ -86,6 +86,7 @@ use crate::{
     relation::CompilerRelationAnalysis,
     search_counter::{admit_search_state, record_search_event},
     source::SourceRequirement,
+    sponsor_region::{GATED_ORDINARY_LBTC_ROLE, OrdinaryLbtcRole, ordinary_lbtc_role},
 };
 
 /// Where one requirement of a relation is discharged.
@@ -264,9 +265,10 @@ struct RelationDischarge {
 pub fn classify_relation_case(
     declaration: &RelationDeclaration,
     case: &ExecutionCase,
+    ordinary_lbtc: OrdinaryLbtcRole,
 ) -> Result<RelationCasePlan, CompileError> {
     let operation = declaration.id.operation();
-    let discharge = classify_discharge(&declaration.relation);
+    let discharge = classify_discharge(&declaration.relation, ordinary_lbtc);
     let activity = resolve_activity(discharge.activation, &case.id);
 
     let mut compiler_requirements = Vec::new();
@@ -375,14 +377,19 @@ pub fn classify_relation_cases(
     cases: &[ExecutionCase],
 ) -> Result<Vec<RelationCasePlan>, CompileError> {
     let mut plans = Vec::new();
+    let mut roles: BTreeMap<OperationId, OrdinaryLbtcRole> = BTreeMap::new();
 
     for case in cases {
+        let ordinary_lbtc = *roles
+            .entry(case.id.operation)
+            .or_insert_with(|| ordinary_lbtc_role(relations, case.id.operation));
+
         for node in relations.graph.node_weights() {
             if node.source.id.operation() != case.id.operation {
                 continue;
             }
 
-            plans.push(classify_relation_case(&node.source, case)?);
+            plans.push(classify_relation_case(&node.source, case, ordinary_lbtc)?);
         }
     }
 
@@ -461,7 +468,7 @@ pub fn validate_relation_case_census(
 /// lifecycle, and constructibility leave the runtime boundary
 /// entirely; substrate conservation is external evidence and gets no
 /// runtime carrier at all.
-fn classify_discharge(relation: &Relation) -> RelationDischarge {
+fn classify_discharge(relation: &Relation, ordinary_lbtc: OrdinaryLbtcRole) -> RelationDischarge {
     use CarrierMultiplicity as Multiplicity;
     use DischargeBoundary as Boundary;
 
@@ -478,12 +485,12 @@ fn classify_discharge(relation: &Relation) -> RelationDischarge {
                 object: *object,
             },
             Multiplicity::ExactlyOne,
-            family_activation(*object),
+            family_activation(*object, ordinary_lbtc),
         ),
 
         Relation::Recognition { side, object, .. } => {
             let side = observed_to_transaction(*side);
-            let activation = family_activation(*object);
+            let activation = family_activation(*object, ordinary_lbtc);
 
             match side {
                 // Every authenticated input member carries its own
@@ -575,8 +582,11 @@ fn classify_discharge(relation: &Relation) -> RelationDischarge {
 
 /// Relations over the optional sponsor family exist only where that
 /// family does.
-const fn family_activation(object: ObjectId) -> ActivationCondition {
-    if is_sponsor_object(object) {
+const fn family_activation(
+    object: ObjectId,
+    ordinary_lbtc: OrdinaryLbtcRole,
+) -> ActivationCondition {
+    if is_sponsor_region_family(object, ordinary_lbtc) {
         ActivationCondition::WhenSponsorPresent
     } else {
         ActivationCondition::Always
@@ -1564,7 +1574,9 @@ fn admissible_carriers<'a>(
         // An optional sponsor carrier may carry its own conditional
         // relations; it may never be the carrier of a relation that
         // holds whether or not the sponsor region exists.
-        .filter(|entry| !(unconditional && is_sponsor_region_carrier(&entry.carrier)))
+        .filter(|entry| {
+            !(unconditional && is_sponsor_region_carrier(&entry.carrier, GATED_ORDINARY_LBTC_ROLE))
+        })
         .collect()
 }
 
@@ -1655,7 +1667,7 @@ fn no_admissible_carrier(plan: &RelationCasePlan, analysis: &CarrierEligibility)
         && analysis
             .eligible
             .iter()
-            .all(|entry| is_sponsor_region_carrier(&entry.carrier))
+            .all(|entry| is_sponsor_region_carrier(&entry.carrier, GATED_ORDINARY_LBTC_ROLE))
     {
         return CompileError::UnconditionalRelationOnOptionalCarrier { relation, case };
     }
