@@ -135,8 +135,7 @@ fi
 echo "==> lane 11/11: clean working tree" >&2
 tree_status="$(git status --porcelain=v1 --untracked-files=all)"
 if [ -n "$tree_status" ]; then
-  printf '%s
-' "$tree_status" >&2
+  printf '%s\n' "$tree_status" >&2
   echo "ERROR: repository contains staged, unstaged, or untracked nonignored changes" >&2
   exit 1
 fi

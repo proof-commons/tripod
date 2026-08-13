@@ -1,15 +1,63 @@
 #!/bin/sh
-# Document-reproducibility gate (B0-006 / ADR-011): the same source
-# must render a byte-identical PDF in two independent clean build
-# directories. All TeX date material derives from a build-time
-# SOURCE_DATE_EPOCH artifact with FORCE_SOURCE_DATE=1; hyperxmp date
-# keys and the instance id are pinned in main.tex.
+# Document-reproducibility gate (B0-006 / ADR-011). Two checks:
+#
+#   1. clean-build determinism — the same source renders a
+#      byte-identical PDF in two independent clean build directories;
+#   2. reused-build source epoch — a reused build directory refreshes
+#      the source epoch, so its PDF matches a fresh build at the same
+#      revision.
+#
+# All TeX date material derives from a build-time SOURCE_DATE_EPOCH
+# artifact with FORCE_SOURCE_DATE=1; hyperxmp date keys and the
+# instance id are pinned in main.tex.
+#
+# Check 2 clones the worktree at HEAD, so it can only speak for a clean
+# worktree. Exit 0 therefore means *both* advertised checks ran and
+# passed; a dirty worktree is refused rather than silently reduced to
+# check 1 (SR3-06). Automation must not read a reduced run as a pass.
+#
+# Usage: check-document-reproducibility.sh [--allow-partial]
+#
+#   --allow-partial   run check 1 only in a dirty worktree and report
+#                     the distinct partial status instead of failing.
+#                     In a clean worktree it changes nothing.
+#
+# Exit codes:
+#
+#   0  complete: every advertised check ran and passed
+#   1  failure: an advertised check failed, or the worktree is dirty
+#      without --allow-partial
+#   2  usage error
+#   3  partial: --allow-partial in a dirty worktree; check 1 passed and
+#      check 2 did not run. Never a pass.
 #
 # Requires meson, ninja, and the TeX toolchain (xelatex, biber,
-# latexmk) on PATH. Exits nonzero when the two PDFs differ.
+# latexmk) on PATH.
 set -eu
 
+allow_partial=0
+for argument in "$@"; do
+  case "$argument" in
+    --allow-partial) allow_partial=1 ;;
+    *)
+      echo "usage: $(basename "$0") [--allow-partial]" >&2
+      exit 2
+      ;;
+  esac
+done
+
 cd "$(dirname "$0")/.."
+
+# Decided before the expensive builds: a run that cannot complete must
+# say so immediately, not after two document renders.
+tree_status="$(git status --porcelain=v1 --untracked-files=all)"
+if [ -n "$tree_status" ] && [ "$allow_partial" -eq 0 ]; then
+  printf '%s\n' "$tree_status" >&2
+  echo "ERROR: the reused-build epoch probe needs a clean worktree, so this" >&2
+  echo "       gate cannot complete here; commit or stash, or rerun with" >&2
+  echo "       --allow-partial to accept the partial status (exit 3)" >&2
+  exit 1
+fi
 
 first=$(mktemp -d "${TMPDIR:-/tmp}/repro-a-XXXXXX")
 second=$(mktemp -d "${TMPDIR:-/tmp}/repro-b-XXXXXX")
@@ -35,12 +83,11 @@ fi
 
 echo "==> document build is reproducible" >&2
 
-tree_status="$(git status --porcelain=v1 --untracked-files=all)"
 if [ -n "$tree_status" ]; then
-  echo "==> skipping reused-build epoch probe in dirty worktree" >&2
-  printf '%s
-' "$tree_status" >&2
-  exit 0
+  printf '%s\n' "$tree_status" >&2
+  echo "==> PARTIAL: clean-build determinism passed; the reused-build epoch" >&2
+  echo "    probe did not run in this dirty worktree. This is not a pass." >&2
+  exit 3
 fi
 
 reuse_root=$(mktemp -d "${TMPDIR:-/tmp}/repro-reuse-XXXXXX")
@@ -77,3 +124,4 @@ if ! cmp -s "$reuse_pdf" "$fresh_pdf"; then
 fi
 
 echo "==> reused build directory refreshes source epoch" >&2
+echo "==> document reproducibility complete: both checks ran and passed" >&2
