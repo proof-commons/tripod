@@ -8,9 +8,10 @@
 use std::collections::BTreeMap;
 
 use target_elements::{
-    ElementsCapability, EncodingClass, ExecutionDomain, LeafVersion, OpcodeId,
-    TargetContractVersion, TargetDefinition, TargetDefinitionParts, TargetError,
-    TargetEvidenceRequirementId, reviewed_elements_tapscript, validate_target_definition,
+    ActivationDeclaration, DeploymentEnvironment, DevelopmentDeploymentBinding, ElementsCapability,
+    EncodingClass, ExecutionDomain, LeafVersion, OpcodeId, TargetContractVersion, TargetDefinition,
+    TargetDefinitionParts, TargetError, TargetEvidenceRequirementId, bind_development_target,
+    reviewed_elements_tapscript, validate_development_binding, validate_target_definition,
 };
 
 #[test]
@@ -113,5 +114,57 @@ fn the_public_surface_carries_no_identity_and_no_protocol_vocabulary() {
     assert_eq!(
         definition.evidence_requirements().len(),
         TargetEvidenceRequirementId::ALL.len()
+    );
+}
+
+#[test]
+fn an_external_consumer_can_bind_a_development_instance_and_only_that() {
+    let definition = reviewed_elements_tapscript().expect("the reviewed contract validates");
+
+    let activation = ActivationDeclaration::new(
+        true,
+        LeafVersion::TAPSCRIPT,
+        [ElementsCapability::TapscriptExecution],
+    );
+    let development = DevelopmentDeploymentBinding::new(
+        TargetContractVersion::V1,
+        DeploymentEnvironment::Development,
+        [0x11; 32],
+        [0x22; 32],
+        activation.clone(),
+        None,
+    );
+    let bound = validate_development_binding(&definition, development)
+        .expect("a well-formed development binding is accepted");
+
+    // A production binding is nameable and is refused. There is no
+    // public function in this crate that returns a validated one, and
+    // no way to upgrade the development binding above into one.
+    let production = DevelopmentDeploymentBinding::new(
+        TargetContractVersion::V1,
+        DeploymentEnvironment::Production,
+        [0x11; 32],
+        [0x22; 32],
+        activation,
+        None,
+    );
+    assert_eq!(
+        validate_development_binding(&definition, production),
+        Err(TargetError::ProductionBindingUnsupported)
+    );
+
+    let combined =
+        bind_development_target(definition, bound).expect("the contract and binding agree");
+
+    // The combination proves typed self-consistency and nothing more.
+    // Every evidence requirement the contract names is still a
+    // requirement, and there is no field anywhere in this value that
+    // could record otherwise.
+    assert!(
+        !combined
+            .definition()
+            .definition()
+            .evidence_requirements()
+            .is_empty()
     );
 }

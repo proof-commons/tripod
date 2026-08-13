@@ -228,6 +228,45 @@ pub enum TargetError {
     /// evidence for it goes stale, so a report for it would never
     /// expire.
     MissingStaleCondition(TargetEvidenceRequirementId),
+
+    /// A binding named the production environment. There is no
+    /// production evidence boundary, so there is no production
+    /// binding.
+    ProductionBindingUnsupported,
+
+    /// A binding carried an all-zero network identifier, which is the
+    /// shape of an uninitialized buffer rather than of a network.
+    ZeroNetworkId,
+
+    /// A binding carried an all-zero genesis identifier.
+    ZeroGenesisId,
+
+    /// A binding was stated against a different contract revision than
+    /// the definition it was checked against.
+    TargetDeploymentVersionMismatch,
+
+    /// A binding declared a leaf version the contract does not
+    /// require, so the two describe different execution semantics.
+    ActivationLeafVersionMismatch,
+
+    /// A binding expects the execution domain to be inactive while
+    /// declaring capabilities that exist only inside it.
+    InconsistentActivationDeclaration,
+
+    /// A binding declares that it intends to rely on a capability the
+    /// contract marks unsupported. A deployment cannot make available
+    /// what no reviewed mechanism provides, so this is a caller
+    /// mistake rather than an environment to go and check.
+    UnsupportedRequiredCapability(ElementsCapability),
+
+    /// A resource override names a dimension the target does not
+    /// bound, so there is nothing for it to narrow.
+    UnknownOverrideDimension(ResourceDimension),
+
+    /// A resource override is looser than the target's own bound. A
+    /// deployment may narrow what the target permits; it cannot widen
+    /// it.
+    IncompatibleResourceOverride(ResourceDimension),
 }
 
 impl fmt::Display for TargetError {
@@ -363,6 +402,32 @@ impl fmt::Display for TargetError {
             }
             Self::MissingStaleCondition(id) => {
                 write!(f, "evidence requirement {id:?} never goes stale")
+            }
+            Self::ProductionBindingUnsupported => {
+                write!(f, "no production deployment binding exists")
+            }
+            Self::ZeroNetworkId => write!(f, "the network identifier is all zero"),
+            Self::ZeroGenesisId => write!(f, "the genesis identifier is all zero"),
+            Self::TargetDeploymentVersionMismatch => {
+                write!(f, "the contract and the binding name different revisions")
+            }
+            Self::ActivationLeafVersionMismatch => {
+                write!(f, "the declared leaf version is not the contract's")
+            }
+            Self::InconsistentActivationDeclaration => {
+                write!(
+                    f,
+                    "capabilities are required while the execution domain is expected inactive"
+                )
+            }
+            Self::UnsupportedRequiredCapability(capability) => {
+                write!(f, "required capability {capability:?} is unsupported")
+            }
+            Self::UnknownOverrideDimension(dimension) => {
+                write!(f, "override names unbounded dimension {dimension:?}")
+            }
+            Self::IncompatibleResourceOverride(dimension) => {
+                write!(f, "override widens dimension {dimension:?}")
             }
         }
     }

@@ -2,6 +2,7 @@
 
 mod capability_tests;
 mod definition_tests;
+mod deployment_tests;
 mod encoding_tests;
 mod mutation_tests;
 mod opcode_tests;

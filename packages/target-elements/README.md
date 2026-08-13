@@ -66,9 +66,30 @@ Implemented:
 - the target validator, which reports every defect rather than the first;
 - the stable semantic projection.
 
-Not implemented, and not claimed:
+- the development deployment binding, its validation, and its combination
+  with the contract.
 
-- the development deployment binding.
+## A deployment instance is not the target contract
+
+The contract describes a compatibility surface; a binding names one network the
+project intends to exercise it against. A binding never mutates the contract, so
+the contract does not change when the network does.
+
+`DeploymentEnvironment::Production` is nameable so that validation can refuse
+it. No function in this crate returns a validated production binding, and a
+development binding cannot be upgraded into one. An `ActivationDeclaration` is
+typed input stating what a caller intends to test against — not a report, and
+not an observation.
+
+The binding carries no endpoint, username, password, cookie path, bearer token,
+key, or wallet path, and none may be added. A future runner that must talk to a
+node needs its own security design.
+
+Binding a contract to a deployment proves only that the static contract is
+internally valid, that the declaration is internally valid, and that the two
+agree. It does not prove that the execution domain is active anywhere, that any
+node behaves as described, that the network exists, or that anything is ready to
+deploy.
 
 ## Support is not a boolean
 

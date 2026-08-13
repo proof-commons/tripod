@@ -58,8 +58,12 @@
 //! interfaces, the capability registry with an acyclic prerequisite
 //! relation, and the evidence-requirement registry.
 //!
-//! Not implemented, and not claimed: the development deployment
-//! binding.
+//! and the development deployment binding with its validated
+//! combination.
+//!
+//! Not claimed: any target-native evidence whatever. Every evidence
+//! requirement this crate names is unresolved, no node has been asked
+//! anything, and there is no production deployment binding.
 //!
 //! Every evidence requirement this crate names is unresolved. No
 //! target-native deployment evidence has been produced, and production
@@ -71,6 +75,7 @@ pub mod authorization;
 pub mod capability;
 pub mod confidential;
 pub mod definition;
+pub mod deployment;
 pub mod encoding;
 pub mod error;
 pub mod evidence;
@@ -92,6 +97,12 @@ pub use confidential::{
 pub use definition::{
     TargetContractVersion, TargetDefinition, TargetDefinitionParts, TargetProjection,
     ValidatedTargetDefinition, reviewed_elements_tapscript, validate_target_definition,
+};
+pub use deployment::{
+    ActivationDeclaration, DeploymentEnvironment, DeploymentProjection,
+    DevelopmentDeploymentBinding, DevelopmentResourceOverrides, ElementsTarget,
+    ValidatedDevelopmentBinding, bind_development_target, overridable_dimensions,
+    validate_development_binding,
 };
 pub use encoding::{
     ByteOrder, CanonicalEncodingRule, EncodingClass, EncodingDomain, EncodingSpec, PayloadWidth,
