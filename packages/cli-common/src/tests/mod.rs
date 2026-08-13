@@ -714,6 +714,41 @@ fn build_mode_leaves_an_unchanged_report_untouched_on_rerun() {
     assert_eq!(mtime, old, "an unchanged report must not be rewritten");
 }
 
+// SR3-04: the staged report is owner-only until publication sets the
+// intended mode, so a check report must arrive publicly readable and
+// stay that way across an unchanged rerun.
+#[cfg(unix)]
+#[test]
+fn build_mode_publishes_a_publicly_readable_report() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let report = dir.path().join("report.json");
+    let output = crate::CheckOutputArgs {
+        report: Some(report.clone()),
+        stamp: Some(dir.path().join("suite.ok")),
+    };
+    let mode = |path: &std::path::Path| {
+        std::fs::metadata(path)
+            .expect("metadata")
+            .permissions()
+            .mode()
+            & 0o777
+    };
+
+    crate::finish_check_command("demo", &output, &serde_json::json!({"valid": true}))
+        .expect("absent destination");
+    assert_eq!(mode(&report), 0o644, "a new report must be public");
+
+    crate::finish_check_command("demo", &output, &serde_json::json!({"valid": false}))
+        .expect("changed destination");
+    assert_eq!(mode(&report), 0o644, "a rewritten report stays public");
+
+    crate::finish_check_command("demo", &output, &serde_json::json!({"valid": false}))
+        .expect("unchanged destination");
+    assert_eq!(mode(&report), 0o644, "an unchanged report stays public");
+}
+
 #[test]
 fn a_half_specified_output_mode_is_invalid() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -1038,6 +1073,91 @@ mod publication {
             [false, true]
         );
         assert_eq!(std::fs::read(&stale).unwrap(), b"generation-2");
+    }
+
+    // --- SR3-04: published files carry the intended mode ---
+    //
+    // Staging creates an owner-only temporary, so without an explicit
+    // mode the renamed publication would become 0o600. Git records only
+    // the executable bit, so nothing downstream would notice.
+
+    #[cfg(unix)]
+    fn mode_of(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn publication_modes_name_their_octal_contract() {
+        use crate::PublicationMode;
+
+        assert_eq!(PublicationMode::Public.octal(), 0o644);
+        assert_eq!(PublicationMode::Executable.octal(), 0o755);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_absent_destination_is_published_publicly_readable() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("out.txt");
+
+        let results = publish_batch(&[asset("out", &out, b"data")]).unwrap();
+
+        assert!(results[0].changed);
+        assert_eq!(mode_of(&out), 0o644, "a new publication must be public");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_changed_public_destination_stays_publicly_readable() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("out.txt");
+        std::fs::write(&out, b"old").unwrap();
+        std::fs::set_permissions(&out, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        let results = publish_batch(&[asset("out", &out, b"new")]).unwrap();
+
+        assert!(results[0].changed);
+        assert_eq!(std::fs::read(&out).unwrap(), b"new");
+        assert_eq!(
+            mode_of(&out),
+            0o644,
+            "republishing must not narrow an existing public destination"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unchanged_public_destination_keeps_its_mode() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("out.txt");
+        std::fs::write(&out, b"same").unwrap();
+        std::fs::set_permissions(&out, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        let results = publish_batch(&[asset("out", &out, b"same")]).unwrap();
+
+        assert!(!results[0].changed);
+        assert_eq!(mode_of(&out), 0o644);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_executable_publication_mode_is_applied_to_a_staged_file() {
+        use crate::{PublicationMode, set_publication_mode};
+
+        let dir = tempfile::tempdir().unwrap();
+        let staged = dir.path().join("tool");
+        let file = std::fs::File::create(&staged).unwrap();
+
+        set_publication_mode(&file, PublicationMode::Executable).unwrap();
+        drop(file);
+
+        assert_eq!(mode_of(&staged), 0o755);
     }
 
     #[test]

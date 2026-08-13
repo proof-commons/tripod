@@ -12,11 +12,71 @@
 //! command fails in that case, and a subsequent successful invocation
 //! repairs the complete set (ADR-017 — no stronger atomicity is
 //! claimed).
+//!
+//! Staged temporaries are created owner-only (`0o600`), so every
+//! staging path sets the intended final mode with
+//! [`set_publication_mode`] *before* the rename; otherwise a public
+//! report, generated artifact, PDF mirror, or flattened source would
+//! silently become unreadable to other users, and Git — which records
+//! only the executable bit — would not notice. Unchanged destinations
+//! are deliberately left completely untouched, so this repairs the
+//! mode of every member it actually republishes, not of a destination
+//! that already carries the expected bytes.
 
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
 use crate::AliasedOutputs;
+
+/// Intended final permission class of a published file.
+///
+/// Publication stages into an owner-only temporary, so the class is
+/// applied explicitly rather than inherited from the umask.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PublicationMode {
+    /// Public data: reports, generated text and data, PDF mirrors, and
+    /// flattened source.
+    Public,
+    /// A published executable.
+    Executable,
+}
+
+impl PublicationMode {
+    /// The Unix mode this publication class carries.
+    #[must_use]
+    pub const fn octal(self) -> u32 {
+        match self {
+            Self::Public => 0o644,
+            Self::Executable => 0o755,
+        }
+    }
+}
+
+/// Set the intended publication mode on a staged file before it is
+/// renamed into its final destination.
+///
+/// The mode is set exactly, not masked by the process umask: a
+/// publication's readability is a property of the publication, not of
+/// the environment that happened to produce it.
+///
+/// # Errors
+///
+/// Propagates the underlying `fchmod` failure.
+pub fn set_publication_mode(file: &std::fs::File, mode: PublicationMode) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        file.set_permissions(std::fs::Permissions::from_mode(mode.octal()))
+    }
+
+    // Non-Unix hosts have no equivalent of these bits; the publication
+    // discipline is otherwise unchanged.
+    #[cfg(not(unix))]
+    {
+        let _ = (file, mode);
+        Ok(())
+    }
+}
 
 /// One output of a multi-output generation command.
 pub struct PublicationAsset<'a> {
@@ -117,6 +177,7 @@ pub fn publish_batch(
             .write_all(asset.bytes)
             .and_then(|()| temporary.flush())
             .and_then(|()| temporary.as_file().sync_all())
+            .and_then(|()| set_publication_mode(temporary.as_file(), PublicationMode::Public))
             .map_err(|error| stage_error(asset.role, error))?;
 
         staged.push(Some(temporary));
