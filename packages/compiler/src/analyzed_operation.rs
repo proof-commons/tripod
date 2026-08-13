@@ -31,9 +31,11 @@
 //! target program, and an inactive relation-case is present in the
 //! census with its vacuity stated rather than omitted.
 
-// One item-level allowance remains: `analyze_operation`, the variant
-// that discards the placement search report. The canonical path keeps
-// the report, so only a caller that does not want it uses this one.
+// Two item-level allowances remain, and they are the same allowance
+// twice: `analyze_operation` and `analyze_candidate_operations` are the
+// variants that discard the placement search report. Both production
+// callers — the assembler and the complete validator's re-derivation —
+// keep the report, so only a caller that does not want it uses these.
 
 use std::collections::{BTreeMap, BTreeSet};
 
