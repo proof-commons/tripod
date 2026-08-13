@@ -1,0 +1,32 @@
+[package]
+name = "tripod-tapscript"
+description = "Adapter from compiler-owned abstract target requirements to Elements target obligations"
+
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[lib]
+name = "tapscript"
+
+# Exactly the two first-party packages the adapter joins, and nothing
+# else. `architecture`, `realization`, and `model` are deliberately
+# absent: an assessment names compiler-owned abstract capabilities and
+# target-owned primitives, and the compiler already projects the
+# architecture-owned facts it is willing to publish, so citing those
+# packages directly here would reach around that projection rather than
+# consume it. `linker`, `transaction`, `vectors`, `release`, and
+# `artifacts` are absent because no target program, bundle, or
+# publication exists to hand them. No third-party dependency has a
+# consumer: the crate serializes nothing, hashes nothing, parses
+# nothing, and its error root is hand-written, which keeps even
+# `thiserror` out.
+[dependencies]
+compiler = { workspace = true }
+target-elements = { workspace = true }
+
+[lints]
+workspace = true
