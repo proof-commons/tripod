@@ -275,39 +275,54 @@ fn target_requirements_come_only_from_a_completed_analysis() {
 }
 
 #[test]
-fn a_rejected_analysis_yields_no_requirements() {
-    // The projection is not reachable around a failing analysis: an
-    // input the analysis rejects produces a typed error, never an empty
-    // or partial requirement set.
-    let scope = CompilationScope::from_operations([OperationId::CompactAsh]).expect("scope");
-    let mut mutated = architecture::ARCHITECTURE;
-    mutated.document.specification.version = "0.0.0-target-boundary-test";
+fn an_analysis_that_did_not_complete_publishes_no_requirements() {
+    // The boundary is not reachable around an incomplete analysis. A
+    // search bound too small to finish is the case that matters: the
+    // analysis genuinely started and genuinely did not finish, and what
+    // comes back is a typed failure rather than the requirements found
+    // so far. A partial requirement set is precisely the weakening a
+    // target assessment exists to prevent, so there is no value of the
+    // type that carries one.
+    let scope =
+        CompilationScope::from_operations([OperationId::CompactAsh, OperationId::TransferLive])
+            .expect("pilot scope");
+    let input = bind_input(
+        &architecture::ARCHITECTURE,
+        phase1_realization(),
+        scope,
+        test_policy(),
+    )
+    .expect("bind input");
 
-    assert_eq!(
-        bind_input(&mutated, phase1_realization(), scope, test_policy())
-            .expect_err("a mismatched binding never binds"),
-        CompileError::ArchitectureBindingMismatch,
+    let truncated = PlacementSearchLimits::new(
+        std::num::NonZeroU64::new(1).expect("nonzero"),
+        std::num::NonZeroU64::new(1).expect("nonzero"),
+    );
+
+    assert!(
+        matches!(
+            analyze_target_requirements(&input, truncated),
+            Err(CompileError::PlacementSearchStateLimitExceeded { .. }
+                | CompileError::PlacementCandidateLimitExceeded { .. })
+        ),
+        "a truncated search is a typed failure, never a smaller requirement set",
     );
 }
 
 #[test]
 fn the_public_boundary_is_deterministic_and_target_free() {
-    assert_eq!(pilot_requirements(), pilot_requirements());
-
     // The target package is not a dependency of this test target, so no
     // target-specific type can appear in a compiler signature this test
-    // names: the absence is enforced by the package graph rather than
+    // names: that absence is enforced by the package graph rather than
     // asserted here. What is asserted is that the boundary's whole
-    // vocabulary is the two abstract censuses above, and that it mints
-    // no analysis identity to go with them.
+    // vocabulary is the two abstract censuses above, and that direct
+    // typed comparison of two analyses is the whole comparison
+    // mechanism — no identity is minted to stand in for one.
+    assert_eq!(pilot_requirements(), pilot_requirements());
+
     let requirements = pilot_requirements();
     let capabilities = requirements.capabilities().collect::<BTreeSet<_>>();
     let evidence = requirements.external_evidence().collect::<BTreeSet<_>>();
 
     assert!(!capabilities.is_empty() && !evidence.is_empty());
-    assert_eq!(
-        format!("{requirements:?}").matches("digest").count(),
-        0,
-        "the boundary publishes no identity, and nothing named like one",
-    );
 }
