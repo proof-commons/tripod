@@ -92,6 +92,7 @@ mod placement;
 mod proof;
 mod relation;
 mod requirement;
+mod search_counter;
 mod source;
 
 pub use error::CompileError;

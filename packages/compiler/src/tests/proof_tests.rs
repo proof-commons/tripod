@@ -9,8 +9,12 @@ use super::{bound_input, phase1_realization};
 use crate::{
     AnalysisPolicy, CompilationScope, CompileError, ProofSearchLimits, bind_input,
     capability::{CapabilityView, RequiredCapability},
+    constructibility::build_constructibility_analysis,
     lifecycle::RepresentationChoiceId,
-    proof::{RelationObligationClass, classify_obligations, enumerate_feasible_plans},
+    proof::{
+        LocalProofRejection, ProofSearchReport, RelationObligationClass, classify_obligations,
+        enumerate_feasible_plans, locally_feasible,
+    },
     relation::build_relation_analysis,
     source::{OperandRole, RequiredSourceKind},
 };
@@ -556,4 +560,169 @@ fn declaration_of(
         .map(|node| node.source)
         .find(|declaration| declaration.id == *relation)
         .expect("relation exists")
+}
+
+// --- S2-05/SR3-07: exact-search budgets and typed rejection causes ---
+
+#[test]
+fn a_single_state_budget_refuses_a_search_that_needs_more() {
+    let input = limited_input(&[OperationId::CompactAsh], 1, 10_000);
+
+    assert!(matches!(
+        enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).unwrap_err(),
+        CompileError::ProofSearchStateLimitExceeded { maximum: 1 },
+    ));
+}
+
+#[test]
+fn the_state_budget_counts_every_visited_state_and_its_boundary_is_exact() {
+    let generous = limited_input(&[OperationId::CompactAsh], 1_000_000, 10_000);
+    let visited = enumerate_feasible_plans(&generous, &CapabilityView::Unconstrained)
+        .expect("plans")
+        .search
+        .states_visited;
+
+    assert!(
+        visited > 1,
+        "the pilot search visits more than the root state",
+    );
+
+    // Inclusive rule: a budget of exactly the visited count completes,
+    // so the last permitted state is the one that finishes the search
+    // rather than the one that is refused.
+    let exact = limited_input(&[OperationId::CompactAsh], visited, 10_000);
+    assert_eq!(
+        enumerate_feasible_plans(&exact, &CapabilityView::Unconstrained)
+            .expect("the exact budget completes")
+            .search
+            .states_visited,
+        visited,
+    );
+
+    // One state short is a typed failure with no partial result.
+    let short = limited_input(&[OperationId::CompactAsh], visited - 1, 10_000);
+    let error = enumerate_feasible_plans(&short, &CapabilityView::Unconstrained).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            CompileError::ProofSearchStateLimitExceeded { maximum }
+                if maximum == visited - 1,
+        ),
+        "one state short exhausts: {error:?}",
+    );
+
+    // One state spare changes nothing: the budget bounds the walk, it
+    // does not participate in it.
+    let spare = limited_input(&[OperationId::CompactAsh], visited + 1, 10_000);
+    assert_eq!(
+        enumerate_feasible_plans(&spare, &CapabilityView::Unconstrained)
+            .expect("a spare budget completes")
+            .search
+            .states_visited,
+        visited,
+    );
+}
+
+#[test]
+fn a_constructibility_rejection_is_never_counted_as_a_capability_rejection() {
+    let input = bound_input(&[OperationId::CompactAsh]);
+    let declarations = pilot_declarations(&input);
+    let intact = build_constructibility_analysis(&input).expect("constructibility");
+
+    // Every capability stays available; only the witness census is
+    // corrupted, so the sole cause any alternative can now fail under is
+    // witness constructibility.
+    let mut starved = build_constructibility_analysis(&input).expect("constructibility");
+    starved
+        .node_by_id
+        .retain(|node, _| !matches!(node, realization::ConstructibilityNodeId::Witness { .. }));
+
+    let mut report = ProofSearchReport::default();
+    let mut observed = 0_u64;
+
+    for declaration in &declarations {
+        for alternative in &declaration.proof_alternatives {
+            if locally_feasible(
+                declaration,
+                alternative,
+                &CapabilityView::Unconstrained,
+                &intact,
+            )
+            .is_err()
+            {
+                continue;
+            }
+
+            let Err(rejection) = locally_feasible(
+                declaration,
+                alternative,
+                &CapabilityView::Unconstrained,
+                &starved,
+            ) else {
+                continue;
+            };
+
+            assert_eq!(
+                rejection,
+                LocalProofRejection::Constructibility,
+                "a starved witness census rejects for constructibility only",
+            );
+
+            report.record_local_rejection(rejection);
+            observed += 1;
+        }
+    }
+
+    assert!(
+        observed > 0,
+        "at least one pilot alternative depends on a witness",
+    );
+    assert_eq!(
+        report.rejected_by_capability, 0,
+        "capability rejection stays zero when every capability is available",
+    );
+    assert_eq!(report.rejected_by_source, 0);
+    assert_eq!(report.rejected_by_constructibility, observed);
+}
+
+#[test]
+fn a_missing_capability_is_counted_as_a_capability_rejection() {
+    let input = bound_input(&[OperationId::CompactAsh]);
+    let constructibility = build_constructibility_analysis(&input).expect("constructibility");
+    let declarations = pilot_declarations(&input);
+
+    let mut report = ProofSearchReport::default();
+    let mut observed = 0_u64;
+
+    for declaration in &declarations {
+        for alternative in &declaration.proof_alternatives {
+            let Err(rejection) = locally_feasible(
+                declaration,
+                alternative,
+                &CapabilityView::Available(BTreeSet::default()),
+                &constructibility,
+            ) else {
+                continue;
+            };
+
+            assert_eq!(rejection, LocalProofRejection::MissingCapability);
+            report.record_local_rejection(rejection);
+            observed += 1;
+        }
+    }
+
+    assert!(observed > 0);
+    assert_eq!(report.rejected_by_capability, observed);
+    assert_eq!(report.rejected_by_constructibility, 0);
+    assert_eq!(report.rejected_by_source, 0);
+}
+
+fn pilot_declarations(input: &crate::BoundCompilerInput) -> Vec<realization::RelationDeclaration> {
+    build_relation_analysis(input)
+        .expect("relations")
+        .project()
+        .nodes
+        .into_iter()
+        .map(|node| node.source)
+        .collect()
 }

@@ -25,6 +25,7 @@ compiler_source_files = files(
   'src/proof.rs',
   'src/relation.rs',
   'src/requirement.rs',
+  'src/search_counter.rs',
   'src/source.rs',
   'src/tests/analyzed_corruption_tests.rs',
   'src/tests/analyzed_operation_tests.rs',

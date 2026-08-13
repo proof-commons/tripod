@@ -84,6 +84,7 @@ use crate::{
     },
     proof::ProofPlanCandidate,
     relation::CompilerRelationAnalysis,
+    search_counter::{admit_search_state, record_search_event},
     source::SourceRequirement,
 };
 
@@ -1423,16 +1424,14 @@ fn visit_placement(
     chosen: &mut Vec<usize>,
     depth: usize,
 ) -> Result<(), CompileError> {
-    state.search.states_visited += 1;
-
-    if state.search.states_visited > state.limits.maximum_states.get() {
-        return Err(CompileError::PlacementSearchStateLimitExceeded {
-            maximum: state.limits.maximum_states.get(),
-        });
-    }
+    admit_search_state(
+        &mut state.search.states_visited,
+        state.limits.maximum_states,
+    )
+    .map_err(|maximum| CompileError::PlacementSearchStateLimitExceeded { maximum })?;
 
     if depth == state.options.len() {
-        state.search.complete_assignments += 1;
+        record_search_event(&mut state.search.complete_assignments);
 
         let candidate = assemble_placement(state.keys, state.options, chosen);
 

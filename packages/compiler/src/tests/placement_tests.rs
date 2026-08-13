@@ -882,3 +882,47 @@ fn placement_exhaustion_returns_no_partial_result() {
         Err(CompileError::PlacementCandidateLimitExceeded { maximum: 1 }),
     );
 }
+
+#[test]
+fn the_placement_state_budget_counts_every_visited_state_and_its_boundary_is_exact() {
+    let (plans, eligibility) = carried(OperationId::CompactAsh);
+    let generous = std::num::NonZeroU64::new(1_000_000).expect("nonzero");
+    let budget = |states: u64| {
+        PlacementSearchLimits::new(
+            std::num::NonZeroU64::new(states).expect("nonzero"),
+            generous,
+        )
+    };
+
+    let visited = enumerate_feasible_placements(&plans, &eligibility, budget(1_000_000))
+        .expect("placements")
+        .search
+        .states_visited;
+
+    assert!(visited > 1, "the pilot placement search recurses");
+
+    // Inclusive rule, matching the proof search: a budget of exactly the
+    // visited count completes.
+    assert_eq!(
+        enumerate_feasible_placements(&plans, &eligibility, budget(visited))
+            .expect("the exact budget completes")
+            .search
+            .states_visited,
+        visited,
+    );
+
+    assert_eq!(
+        enumerate_feasible_placements(&plans, &eligibility, budget(visited - 1)),
+        Err(CompileError::PlacementSearchStateLimitExceeded {
+            maximum: visited - 1,
+        }),
+    );
+
+    assert_eq!(
+        enumerate_feasible_placements(&plans, &eligibility, budget(visited + 1))
+            .expect("a spare budget completes")
+            .search
+            .states_visited,
+        visited,
+    );
+}

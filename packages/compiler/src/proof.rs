@@ -32,6 +32,7 @@ use crate::{
         RepresentationChoiceId, build_lifecycle_analysis, proof_supports_representation,
     },
     relation::{CompilerRelationAnalysis, build_relation_analysis},
+    search_counter::{admit_search_state, record_search_event},
     source::{
         OperandId, SourceRequirement, derive_source_requirements, proof_capabilities,
         relation_operands,
@@ -80,16 +81,57 @@ pub struct ProofPlanCandidate {
 }
 
 /// Diagnostic search statistics — never semantic identity.
+///
+/// Every rejection counter names the cause it counts, and only that
+/// cause. A report that folded several distinct causes into one counter
+/// would still be a typed account of how analysis was performed, and it
+/// would be a false one.
+///
+/// No counter is carried for a rejection the search cannot perform. A
+/// selected representation's lifecycle requirements are filtered into
+/// the candidate rather than tested against it, so lifecycle rejection
+/// has no site here; a permanently zero counter would read as evidence
+/// that the search looked and found nothing.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ProofSearchReport {
     pub states_visited: u64,
     pub complete_assignments: u64,
     pub feasible_assignments: u64,
     pub rejected_by_capability: u64,
+    pub rejected_by_source: u64,
     pub rejected_by_constructibility: u64,
     pub rejected_by_representation: u64,
     pub rejected_by_disclosure: u64,
-    pub rejected_by_lifecycle: u64,
+}
+
+impl ProofSearchReport {
+    /// Record one local rejection under the cause that produced it.
+    pub const fn record_local_rejection(&mut self, rejection: LocalProofRejection) {
+        let counter = match rejection {
+            LocalProofRejection::MissingCapability => &mut self.rejected_by_capability,
+            LocalProofRejection::SourceDerivation => &mut self.rejected_by_source,
+            LocalProofRejection::Constructibility => &mut self.rejected_by_constructibility,
+        };
+
+        record_search_event(counter);
+    }
+}
+
+/// Why one proof alternative failed the local feasibility filters.
+///
+/// The three causes are genuinely different questions about the same
+/// alternative — whether the target can express the proof, whether the
+/// proof's source rows can be derived at all, and whether the derived
+/// rows can actually be constructed from the operation's witnesses — so
+/// collapsing them loses the only information the rejection carried.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LocalProofRejection {
+    /// The capability view does not support the proof's capabilities.
+    MissingCapability,
+    /// The proof's source requirements could not be derived.
+    SourceDerivation,
+    /// The derived source rows are not constructible for the relation.
+    Constructibility,
 }
 
 /// The complete canonical feasible set.
@@ -244,7 +286,7 @@ pub fn enumerate_feasible_plans(
     for (relation, alternatives) in &proof_variables {
         let declaration = &declarations[relation];
         let locally_feasible = alternatives.iter().any(|alternative| {
-            locally_feasible(declaration, alternative, view, &constructibility).is_some()
+            locally_feasible(declaration, alternative, view, &constructibility).is_ok()
         });
 
         if !locally_feasible {
@@ -317,25 +359,34 @@ struct SearchState<'a> {
 }
 
 /// Local (representation-independent) feasibility of one alternative:
-/// capability containment and witness constructibility. Returns the
-/// alternative's capabilities and source rows when feasible.
-fn locally_feasible(
+/// capability containment and witness constructibility.
+///
+/// Returns the alternative's capabilities and source rows when
+/// feasible, and otherwise the typed cause of the rejection, so the
+/// search records the failure it actually observed.
+///
+/// # Errors
+///
+/// The [`LocalProofRejection`] the alternative failed under.
+pub fn locally_feasible(
     declaration: &RelationDeclaration,
     alternative: &ProofAlternativeId,
     view: &CapabilityView,
     constructibility: &CompilerConstructibilityAnalysis,
-) -> Option<(BTreeSet<RequiredCapability>, Vec<SourceRequirement>)> {
+) -> Result<(BTreeSet<RequiredCapability>, Vec<SourceRequirement>), LocalProofRejection> {
     let capabilities = proof_capabilities(declaration, alternative.proof());
 
     if !view.supports(&capabilities) {
-        return None;
+        return Err(LocalProofRejection::MissingCapability);
     }
 
-    let rows = derive_source_requirements(declaration, alternative.proof()).ok()?;
+    let rows = derive_source_requirements(declaration, alternative.proof())
+        .map_err(|_| LocalProofRejection::SourceDerivation)?;
 
-    validate_source_constructibility(constructibility, &declaration.id, &rows).ok()?;
+    validate_source_constructibility(constructibility, &declaration.id, &rows)
+        .map_err(|_| LocalProofRejection::Constructibility)?;
 
-    Some((capabilities, rows))
+    Ok((capabilities, rows))
 }
 
 fn visit(
@@ -344,13 +395,11 @@ fn visit(
     representations: BTreeMap<RepresentationChoiceId, RepresentationMode>,
     depth: usize,
 ) -> Result<(), CompileError> {
-    state.search.states_visited += 1;
-
-    if state.search.states_visited > state.limits.maximum_states.get() {
-        return Err(CompileError::ProofSearchStateLimitExceeded {
-            maximum: state.limits.maximum_states.get(),
-        });
-    }
+    admit_search_state(
+        &mut state.search.states_visited,
+        state.limits.maximum_states,
+    )
+    .map_err(|maximum| CompileError::ProofSearchStateLimitExceeded { maximum })?;
 
     let proof_count = state.proof_variables.len();
     let choices: &[RepresentationChoice] = &state.lifecycle.choices;
@@ -360,15 +409,13 @@ fn visit(
         let declaration = state.declarations[relation].clone();
 
         for alternative in alternatives {
-            if locally_feasible(
+            if let Err(rejection) = locally_feasible(
                 &declaration,
                 alternative,
                 state.view,
                 state.constructibility,
-            )
-            .is_none()
-            {
-                state.search.rejected_by_capability += 1;
+            ) {
+                state.search.record_local_rejection(rejection);
                 continue;
             }
 
@@ -386,7 +433,7 @@ fn visit(
         for mode in &choice.candidates {
             // Prune a proof already incompatible with this mode.
             if representation_conflict(state.declarations, &proofs, &choice.id, *mode).is_some() {
-                state.search.rejected_by_representation += 1;
+                record_search_event(&mut state.search.rejected_by_representation);
                 continue;
             }
 
@@ -399,7 +446,7 @@ fn visit(
     }
 
     // Complete assignment.
-    state.search.complete_assignments += 1;
+    record_search_event(&mut state.search.complete_assignments);
     complete(state, proofs, representations)
 }
 
@@ -448,10 +495,13 @@ fn complete(
         let declaration = &state.declarations[relation];
         required_capabilities.extend(proof_capabilities(declaration, alternative.proof()));
 
+        // Source-row derivation, not constructibility: the rows could
+        // not be produced at all, so nothing was ever checked against
+        // the operation's witnesses.
         if let Ok(rows) = derive_source_requirements(declaration, alternative.proof()) {
             source_requirements.extend(rows);
         } else {
-            state.search.rejected_by_constructibility += 1;
+            record_search_event(&mut state.search.rejected_by_source);
             return Ok(());
         }
     }
@@ -477,12 +527,12 @@ fn complete(
         state.input.realization().declassification(),
         &representations,
     ) else {
-        state.search.rejected_by_disclosure += 1;
+        record_search_event(&mut state.search.rejected_by_disclosure);
         return Ok(());
     };
 
     if validate_disclosure(&disclosure).is_err() {
-        state.search.rejected_by_disclosure += 1;
+        record_search_event(&mut state.search.rejected_by_disclosure);
         return Ok(());
     }
 
