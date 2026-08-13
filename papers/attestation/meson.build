@@ -1,6 +1,10 @@
 # papers/attestation/meson.build - Attestation paper subproject
 
-project('attestation', 'c', version: '1.0.0', meson_version: '>=1.3.0')
+# No project language: this subproject builds a document, not code, so
+# declaring one would make Meson probe for a compiler the repository
+# does not require (S2-06). The Rust helper binaries are built through
+# custom targets that call cargo, not through Meson's Rust support.
+project('attestation', version: '1.0.0', meson_version: '>=1.3.0')
 
 fs = import('fs')
 
