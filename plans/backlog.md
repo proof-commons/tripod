@@ -760,8 +760,8 @@ in §5.2.
 | `SR2-08` | Low | DONE | Representation-conditional activation was keyed by mode only; it is now keyed by object and mode. |
 | `SR2-09` | Low | DONE | Coverage shape validation was weaker than derivation; the analyzed-program validator compares exact independently re-derived coverage projections in both directions, gate record §2.11. |
 | `SR2-10` | Low | DONE | Compiler package-index status and review provenance had drifted; both reconciled. |
-| `SR2-H1` | Hardening | TODO | Tempfile publication can replace generated files with owner-only permissions; activated by the third review as SR3-04, scheduled in the Guide-8 preflight wave. |
-| `SR2-H2` | Hardening | TODO | Dirty-tree document-reproducibility probe skips with exit 0; activated by the third review as SR3-06, scheduled in the Guide-8 preflight wave. |
+| `SR2-H1` | Hardening | DONE | Tempfile publication can replace generated files with owner-only permissions; closed by the SR3-04 repair in the Guide-8 preflight wave. |
+| `SR2-H2` | Hardening | DONE | Dirty-tree document-reproducibility probe skips with exit 0; closed by the SR3-06 repair in the Guide-8 preflight wave. |
 
 The DONE rows were repaired in the Guide-7 preflight wave with focused tests
 and the working debug lane; the batch full gate is recorded with the Guide-7
@@ -780,20 +780,20 @@ review's S2 identifiers.
 
 | ID | Severity | Status | Finding |
 |---|---|---|---|
-| `SR3-01` | High | TODO | A malformed same-owner citation whose one-sided parenthesis test is suppressed by an unrelated parenthesis elsewhere on the line falls back to a bare occurrence and silently mints the label. |
-| `SR3-02` | Medium | TODO | Census filesystem traversal suppresses read-dir and entry errors, so an unreadable tree with an empty declared group can verify as an empty census. |
+| `SR3-01` | High | DONE | A malformed same-owner citation whose one-sided parenthesis test is suppressed by an unrelated parenthesis elsewhere on the line falls back to a bare occurrence and silently mints the label. Citations now classify by their immediate parenthesized group with a focused malformed-group diagnostic in both parsers; the previously test-locked vulnerable assertion was inverted; a corpus scan showed zero live classification changes. |
+| `SR3-02` | Medium | DONE | Census filesystem traversal suppresses read-dir and entry errors, so an unreadable tree with an empty declared group can verify as an empty census. Traversal failures are now typed census-unreadable diagnostics consumed by verification, with unreadable-directory, failed-entry, and scoped-derivation regressions; container-nested fences are additionally rejected. |
 | `SR3-03` | Medium | TODO | The complete analyzed-program validator is not on the production construction path; the constructor runs only the narrow assembly-closure check. |
-| `SR3-04` | Medium | TODO | Atomic publication staging leaves published public files with owner-only tempfile permissions; supersedes the parked SR2-H1. |
-| `SR3-05` | Medium | TODO | Git-derived checker census arguments are expanded unquoted, so an unusual tracked path can split or alter checker argv. |
-| `SR3-06` | Medium | TODO | The document-reproducibility gate exits 0 after skipping its reused-build epoch probe on a dirty tree; supersedes the parked SR2-H2. |
+| `SR3-04` | Medium | DONE | Atomic publication staging leaves published public files with owner-only tempfile permissions; supersedes the parked SR2-H1. A typed publication-mode helper now sets 0644 or 0755 on the staged file before rename in batch publication, report writing, and the shell sync path, with absent, changed, and unchanged destination mode tests. |
+| `SR3-05` | Medium | DONE | Git-derived checker census arguments are expanded unquoted, so an unusual tracked path can split or alter checker argv. A shared census-argument library now emits shell-quoted role-tagged argv re-read as quoted words, fails closed on an empty census, and a loud preflight audit rejects tracked paths outside a safe grammar; derived argv verified byte-identical on the live tree. |
+| `SR3-06` | Medium | DONE | The document-reproducibility gate exits 0 after skipping its reused-build epoch probe on a dirty tree; supersedes the parked SR2-H2. The gate now fails a dirty tree by default, reserves exit 0 for both advertised checks passing, and reports an explicit partial status under an opt-in flag; fixing it exposed and repaired a signing-config defect that had prevented the epoch probe from ever running here. |
 | `SR3-07` | Low | TODO | Proof-search rejection statistics count source and constructibility failures as capability rejections. |
-| `SR3-08` | Low | TODO | The package index still says complete analyzed pilots are open, contradicting the recorded Guide-7 state. |
-| `S2-01` | High | TODO | Sponsor erasure is keyed to the ordinary L-BTC object family instead of fee-sponsor flow membership, erasing protocol-role amounts that future operations must read. |
+| `SR3-08` | Low | DONE | The package index still says complete analyzed pilots are open, contradicting the recorded Guide-7 state. The index row now states the implemented-internally claim with the public boundary and target adapter absent. |
+| `S2-01` | High | IN PROGRESS | Sponsor erasure is keyed to the ordinary L-BTC object family instead of fee-sponsor flow membership, erasing protocol-role amounts that future operations must read. The model and realization layers now derive the sponsor region from exact fee-sponsor flow membership with two-point overlap rejection, protocol-role readability, pilot-invariance evidence, and a kernel balanced-theft regression; the compiler-side activation and operand identity repair remains with the preflight compiler wave. |
 | `S2-03` | Medium | TODO | The coverage dependency graph mixes opposite edge orientations against its documented prerequisite-to-dependent convention. |
 | `S2-04` | Medium | TODO | Analyzed-program coverage-graph validation compares sets rather than exact projections, silently accepting duplicated nodes and edges. |
 | `S2-05` | Low | TODO | Exact-search counters use unchecked addition and can overflow instead of returning the promised typed complexity failure. |
-| `S2-06` | Low | TODO | The paper subproject declares C as a project language with no C target, requiring an undocumented compiler. |
-| `S2-07` | Low | TODO | Compiler planning status remains stale and a resolved factorization question is still listed as open, although the drift finding was marked closed. |
+| `S2-06` | Low | DONE | The paper subproject declares C as a project language with no C target, requiring an undocumented compiler. The language declaration is removed; setup no longer probes a C toolchain and the mocked contract passes. |
+| `S2-07` | Low | DONE | Compiler planning status remains stale and a resolved factorization question is still listed as open, although the drift finding was marked closed. The resolved per-operation-factor decision is now recorded as a rule and removed from the open questions; the genuinely open boundary, ownership, objective, and identity questions remain. |
 
 The Guide-8 preflight wave owns SR3-01 through SR3-08 and S2-01 through
 S2-07; the Guide-8 exit gate requires the boundary-relevant rows closed
