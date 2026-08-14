@@ -42,3 +42,4 @@ Cargo.lock
 !packages/model/generated/architecture.json
 !packages/model/generated/declassification.json
 !packages/model/generated/model_labels.json
+__pycache__/
