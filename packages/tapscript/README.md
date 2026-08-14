@@ -29,8 +29,27 @@ publication exists to hand them.
 
 ```text
 package boundary
-compiler-to-target capability adapter
+static capability adapter over the reviewed target contract
+external-evidence-role adapter
 ```
+
+## Static, not deployment-aware
+
+Every assessment here is a statement about the reviewed *static* target
+contract. Nothing in the crate accepts a development binding, and nothing reads
+a network identity, a genesis identity, an activation declaration, or a
+deployment resource override. The static contract, the deployment declaration,
+and target-native evidence are three different values; a function that took one
+and answered for another would be a false claim about binding-aware assessment.
+A deployment-aware assessment is deferred until a consumer for one exists.
+
+## Both published censuses are answered
+
+The compiler publishes what an analysis requires as two censuses — abstract
+capabilities and external-evidence roles — and the adapter answers both, with
+exact equality in both directions. A compiler evidence role therefore cannot
+disappear at this boundary: the mapping is exhaustive, so a new role stops this
+crate compiling until its target obligation is stated.
 
 ## Not implemented
 

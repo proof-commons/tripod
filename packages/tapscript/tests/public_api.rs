@@ -7,41 +7,21 @@
 //! answers the whole compiler census in typed multi-state form without
 //! claiming that anything has been completed.
 
-use compiler::target::RequiredCapability;
-use tapscript::{AssessmentDisposition, TapscriptError};
+use compiler::target::{ExternalEvidenceRole, RequiredCapability};
+use tapscript::{AssessmentDisposition, EvidenceAssessmentDisposition, TapscriptError};
 use target_elements::{
-    ActivationDeclaration, DeploymentEnvironment, DevelopmentDeploymentBinding, ElementsCapability,
-    ElementsTarget, LeafVersion, TargetContractVersion, bind_development_target,
-    reviewed_elements_tapscript, validate_development_binding,
+    ElementsCapability, ReviewedElementsTapscriptDefinition, TargetEvidenceRequirementId,
+    reviewed_elements_tapscript,
 };
 
-/// The reviewed contract bound to a development instance.
+/// The reviewed static contract.
 ///
-/// Built here rather than imported: `target-elements` publishes no
-/// ready-made target, deliberately, so that every consumer states the
-/// deployment it means instead of inheriting an unexamined one.
-fn reviewed_target() -> ElementsTarget {
-    let definition = reviewed_elements_tapscript()
-        .expect("the reviewed contract validates")
-        .into_validated();
-    let binding = validate_development_binding(
-        &definition,
-        DevelopmentDeploymentBinding::new(
-            TargetContractVersion::V1,
-            DeploymentEnvironment::Development,
-            [0x11; 32],
-            [0x22; 32],
-            ActivationDeclaration::new(
-                true,
-                LeafVersion::TAPSCRIPT,
-                [ElementsCapability::TapscriptExecution],
-            ),
-            None,
-        ),
-    )
-    .expect("a well-formed development binding is accepted");
-
-    bind_development_target(definition, binding).expect("the two agree on the contract revision")
+/// The whole input of every public assessment entry point. An external
+/// consumer cannot substitute a contract of its own here: the reviewed
+/// state has no public constructor, and a definition that differs from
+/// the first-party one anywhere stays generic.
+fn reviewed_target() -> ReviewedElementsTapscriptDefinition {
+    reviewed_elements_tapscript().expect("the reviewed contract validates")
 }
 
 #[test]
@@ -50,7 +30,7 @@ fn an_external_consumer_can_assess_the_whole_census() {
         tapscript::assess_complete_census(&reviewed_target()).expect("the census assesses");
 
     let projected: Vec<_> = assessed
-        .projection()
+        .capability_projection()
         .into_iter()
         .map(|projection| projection.required())
         .collect();
@@ -67,7 +47,7 @@ fn no_assessment_is_a_boolean_and_none_claims_completion() {
     // its identity type is uninhabited.
     let assessed = tapscript::assess_complete_census(&reviewed_target()).expect("census");
 
-    for projection in assessed.projection() {
+    for projection in assessed.capability_projection() {
         assert_ne!(
             projection.disposition(),
             AssessmentDisposition::CompleteBackendPattern,
@@ -77,7 +57,7 @@ fn no_assessment_is_a_boolean_and_none_claims_completion() {
     // The unreviewed sighash is visible from outside rather than hidden
     // behind an optimistic pattern obligation.
     let owner = assessed
-        .assessment(RequiredCapability::OwnerAuthorization)
+        .capability_assessment(RequiredCapability::OwnerAuthorization)
         .expect("the census covers owner authorization");
     assert_eq!(
         owner.disposition(),
@@ -115,9 +95,40 @@ fn both_joined_vocabularies_are_reachable_through_this_package() {
 }
 
 #[test]
+fn an_external_consumer_sees_the_evidence_role_census_too() {
+    // The compiler's second published census survives the adapter: a
+    // consumer can ask which compiler-owned evidence role caused which
+    // target evidence obligation, rather than seeing only the target
+    // requirement with its cause erased.
+    let assessed = tapscript::assess_complete_census(&reviewed_target()).expect("census");
+
+    let roles: Vec<_> = assessed
+        .evidence_projection()
+        .into_iter()
+        .map(|projection| projection.role())
+        .collect();
+    assert_eq!(roles, ExternalEvidenceRole::ALL);
+
+    let substrate = assessed
+        .evidence_assessment(ExternalEvidenceRole::SubstrateConservation)
+        .expect("the census covers substrate conservation")
+        .projection();
+    assert_eq!(
+        substrate.disposition(),
+        EvidenceAssessmentDisposition::TargetEvidenceRequired,
+        "no analysis and no program discharges it, so only the target's own rules can",
+    );
+    assert!(
+        substrate
+            .evidence()
+            .contains(&TargetEvidenceRequirementId::ConfidentialValueConservation),
+    );
+}
+
+#[test]
 fn the_reviewed_target_binds_and_resolves_no_evidence() {
     let target = reviewed_target();
-    let contract = target.definition().definition();
+    let contract = target.definition();
 
     // Every requirement the contract names is still open. An adapter
     // built on this value cannot read anything here as evidence that

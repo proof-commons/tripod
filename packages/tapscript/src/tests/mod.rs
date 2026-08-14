@@ -1,5 +1,24 @@
 //! Adapter tests and their shared target fixtures.
 //!
+//! # A degraded contract is never a reviewed one
+//!
+//! The reviewed contract is the only input the public assessment API
+//! takes, and the target package alone constructs that wrapper. So the
+//! non-weakening fixtures below cannot produce a reviewed value at all:
+//! a contract with a capability downgraded is by construction not the
+//! reviewed Elements contract, and `validate_as_reviewed_elements`
+//! rejects it — which is exactly the guarantee wave 0A added and which
+//! [`public_api_tests`] checks rather than assumes.
+//!
+//! They therefore assess through
+//! [`crate::capability::assess_validated_capability`], the crate-private
+//! core that the public entry point also calls. That keeps one mapping
+//! rather than two that could drift, and it cannot leak: the function is
+//! `pub(crate)`, no public re-export names it, and the public entry
+//! points take the reviewed wrapper by type. Adding a public assessment
+//! over a generic definition would be the backdoor this arrangement
+//! exists to refuse.
+//!
 //! # Mutated targets are built through the target package's own API
 //!
 //! Every fixture below reaches a modified target the way an external
@@ -21,66 +40,44 @@
 mod census_tests;
 mod mapping_tests;
 mod non_weakening_tests;
+mod public_api_tests;
 
 use std::collections::BTreeMap;
 
 use target_elements::{
-    ActivationDeclaration, CapabilityContract, ConfidentialCapabilityState,
-    ConfidentialValueCapability, ConfidentialValueContract, DeploymentEnvironment,
-    DevelopmentDeploymentBinding, ElementsCapability, ElementsTarget, LeafVersion,
-    StaticCapabilityStatus, TargetContractVersion, TargetDefinition, TargetDefinitionParts,
-    ValidatedTargetDefinition, bind_development_target, reviewed_elements_tapscript,
-    status_closure_violations, validate_development_binding, validate_target_definition,
+    CapabilityContract, ConfidentialCapabilityState, ConfidentialValueCapability,
+    ConfidentialValueContract, ElementsCapability, ReviewedElementsTapscriptDefinition,
+    StaticCapabilityStatus, TargetDefinition, TargetDefinitionParts, ValidatedTargetDefinition,
+    reviewed_elements_tapscript, status_closure_violations, validate_target_definition,
 };
 
 /// The reviewed contract, unmodified.
-fn reviewed_definition() -> ValidatedTargetDefinition {
-    reviewed_elements_tapscript()
-        .expect("the reviewed contract validates")
-        .into_validated()
+fn reviewed_target() -> ReviewedElementsTapscriptDefinition {
+    reviewed_elements_tapscript().expect("the reviewed contract validates")
 }
 
-/// Bind a validated contract to a development instance.
+/// The reviewed contract's validated view, unmodified.
 ///
-/// The activation declares only the execution domain. A declaration
-/// naming more would be refused when a fixture downgrades one of the
-/// named capabilities, and the refusal would land on the binding rather
-/// than on the assessment the test is about.
-fn bind(definition: ValidatedTargetDefinition) -> ElementsTarget {
-    let binding = validate_development_binding(
-        &definition,
-        DevelopmentDeploymentBinding::new(
-            TargetContractVersion::V1,
-            DeploymentEnvironment::Development,
-            [0x11; 32],
-            [0x22; 32],
-            ActivationDeclaration::new(
-                true,
-                LeafVersion::TAPSCRIPT,
-                [ElementsCapability::TapscriptExecution],
-            ),
-            None,
-        ),
-    )
-    .expect("a well-formed development binding is accepted");
-
-    bind_development_target(definition, binding).expect("the two agree on the contract revision")
-}
-
-/// The reviewed contract bound to a development instance.
-fn reviewed_target() -> ElementsTarget {
-    bind(reviewed_definition())
+/// The baseline the degraded fixtures are compared against, assessed
+/// through the same crate-private path they are, so a difference
+/// between two assessments is a difference in the contract rather than
+/// in the entry point.
+fn reviewed_definition() -> ValidatedTargetDefinition {
+    reviewed_target().into_validated()
 }
 
 /// The reviewed contract with one capability's reviewed status changed.
 ///
 /// The closest reachable analogue of "remove one target prerequisite":
 /// the registry must stay complete, so the prerequisite stops being
-/// established rather than stops existing.
+/// established rather than stops existing. The result is a validated
+/// definition and can be nothing more — a downgraded contract is not the
+/// reviewed Elements contract, and the target package refuses to say
+/// otherwise.
 fn target_with_status(
     capability: ElementsCapability,
     status: StaticCapabilityStatus,
-) -> ElementsTarget {
+) -> ValidatedTargetDefinition {
     target_with_statuses(&[(capability, status)])
 }
 
@@ -125,7 +122,7 @@ const fn implied_state(status: StaticCapabilityStatus) -> ConfidentialCapability
 /// The reviewed contract with several capabilities' statuses changed.
 fn target_with_statuses(
     changes: &[(ElementsCapability, StaticCapabilityStatus)],
-) -> ElementsTarget {
+) -> ValidatedTargetDefinition {
     let reviewed = reviewed_definition();
     let contract = reviewed.definition();
 
@@ -213,7 +210,7 @@ fn target_with_statuses(
         source.evidence().iter().copied(),
     );
 
-    let definition = validate_target_definition(TargetDefinition::new(TargetDefinitionParts {
+    validate_target_definition(TargetDefinition::new(TargetDefinitionParts {
         version: contract.version(),
         execution_domain: contract.execution_domain(),
         leaf_version: contract.leaf_version(),
@@ -226,7 +223,5 @@ fn target_with_statuses(
         capabilities,
         evidence_requirements: contract.evidence_requirements().clone(),
     }))
-    .expect("restating a reviewed status leaves the contract structurally valid");
-
-    bind(definition)
+    .expect("restating a reviewed status leaves the contract structurally valid")
 }

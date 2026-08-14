@@ -21,10 +21,17 @@
 //!
 //! # State
 //!
-//! Implemented: the package boundary and the capability adapter — a
-//! multi-state assessment of each compiler capability against one
-//! validated target and development binding, with exact census equality
-//! against the analysis that published the requirements.
+//! Implemented: the package boundary, the static capability adapter —
+//! a multi-state assessment of each compiler capability against the
+//! reviewed static target contract — and the external-evidence-role
+//! adapter, with exact census equality in both directions against the
+//! two censuses the analysis published.
+//!
+//! Not assessed here: anything a deployment declares. The static
+//! contract, the development binding, and target-native evidence are
+//! three different values, and nothing in this crate accepts one while
+//! answering for another. A deployment-aware assessment is deferred
+//! until a consumer for one exists.
 //!
 //! Not implemented: the target program type, the instruction builder,
 //! the stack scheduler, backend proof patterns, constructors, and the
@@ -43,8 +50,9 @@ pub mod error;
 
 pub use capability::{
     AssessmentDisposition, AssessmentProjection, BackendFoundationRequirement, BackendPatternId,
-    CapabilityAssessment, CapabilityAssessmentSet, UnsupportedReason, assess_capability,
-    assess_complete_census, assess_requirements,
+    EvidenceAssessmentDisposition, EvidenceAssessmentProjection, ExternalEvidenceAssessment,
+    StaticCapabilityAssessment, TargetAssessmentSet, UnsupportedReason, assess_complete_census,
+    assess_evidence_role, assess_requirements, assess_static_capability,
 };
 pub use error::TapscriptError;
 
