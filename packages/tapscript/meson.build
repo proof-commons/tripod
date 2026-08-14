@@ -10,6 +10,7 @@ tapscript_source_files = files(
   'src/tests/mapping_tests.rs',
   'src/tests/mod.rs',
   'src/tests/non_weakening_tests.rs',
+  'src/tests/public_api_tests.rs',
 )
 
 # Crate documentation (DOC owner).

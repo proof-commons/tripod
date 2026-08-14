@@ -8,8 +8,8 @@ use target_elements::{ElementsCapability, StaticCapabilityStatus};
 
 use super::{reviewed_target, target_with_status, target_with_statuses};
 use crate::capability::{
-    AssessmentDisposition, BackendFoundationRequirement, CapabilityAssessment, UnsupportedReason,
-    assess_capability,
+    AssessmentDisposition, BackendFoundationRequirement, StaticCapabilityAssessment,
+    UnsupportedReason, assess_static_capability, assess_validated_capability,
 };
 
 /// The dispositions in which no obligation has been discharged.
@@ -64,7 +64,7 @@ fn removing_a_prerequisite_blocks_and_keeps_the_requirement() {
 
     for (capability, prerequisite) in downgrades {
         let target = target_with_status(prerequisite, StaticCapabilityStatus::Incomplete);
-        let assessment = assess_capability(&target, capability);
+        let assessment = assess_validated_capability(&target, capability);
 
         assert_eq!(
             assessment.required(),
@@ -72,7 +72,8 @@ fn removing_a_prerequisite_blocks_and_keeps_the_requirement() {
             "the compiler requirement survives its own blocking",
         );
 
-        let CapabilityAssessment::MissingTargetPrimitives { missing, .. } = &assessment else {
+        let StaticCapabilityAssessment::MissingTargetPrimitives { missing, .. } = &assessment
+        else {
             panic!("{capability:?} must block on {prerequisite:?}, got {assessment:?}");
         };
         assert!(missing.contains(&prerequisite));
@@ -88,9 +89,10 @@ fn a_reviewed_negative_fact_is_not_reported_as_an_incomplete_review() {
         ElementsCapability::OutputAssetInspection,
         StaticCapabilityStatus::Unsupported,
     );
-    let assessment = assess_capability(&target, RequiredCapability::AuthenticatedObjectRecognition);
+    let assessment =
+        assess_validated_capability(&target, RequiredCapability::AuthenticatedObjectRecognition);
 
-    let CapabilityAssessment::Unsupported {
+    let StaticCapabilityAssessment::Unsupported {
         required,
         reason: UnsupportedReason::ReviewedTargetPrimitivesUnsupported { primitives },
     } = &assessment
@@ -109,18 +111,15 @@ fn a_reviewed_negative_fact_is_not_reported_as_an_incomplete_review() {
 fn no_downgrade_ever_discharges_a_capability() {
     // The general form of §20.6: whatever is taken away from the
     // target, no capability's disposition improves into a completion.
+    // Every primitive, including the execution domain itself: status is
+    // closed over the prerequisite relation, so downgrading the domain
+    // carries everything standing on it down too, and the assessment
+    // must still degrade rather than improve.
     for primitive in ElementsCapability::ALL {
-        // The activation declaration names the execution domain, and a
-        // binding that declares reliance on an unsupported capability is
-        // refused by the target package before an assessment happens.
-        if *primitive == ElementsCapability::TapscriptExecution {
-            continue;
-        }
-
         let target = target_with_status(*primitive, StaticCapabilityStatus::Incomplete);
 
         for capability in RequiredCapability::ALL {
-            let assessment = assess_capability(&target, *capability);
+            let assessment = assess_validated_capability(&target, *capability);
 
             assert_eq!(assessment.required(), *capability);
             assert!(is_blocked_or_owed(assessment.disposition()));
@@ -139,8 +138,9 @@ fn whole_transaction_conservation_stays_external_evidence() {
         RequiredCapability::WholeTransactionValueConservation,
         RequiredCapability::ConfidentialValueConservation,
     ] {
-        let assessment = assess_capability(&target, capability);
-        let CapabilityAssessment::ExternalEvidenceRequired { evidence, .. } = &assessment else {
+        let assessment = assess_static_capability(&target, capability);
+        let StaticCapabilityAssessment::ExternalEvidenceRequired { evidence, .. } = &assessment
+        else {
             panic!("{capability:?} is external evidence, got {assessment:?}");
         };
         assert!(!evidence.is_empty());
@@ -161,9 +161,11 @@ fn whole_transaction_conservation_stays_external_evidence() {
 fn confidential_conservation_does_not_imply_object_recognition() {
     let target = reviewed_target();
     let conservation =
-        assess_capability(&target, RequiredCapability::ConfidentialValueConservation).projection();
+        assess_static_capability(&target, RequiredCapability::ConfidentialValueConservation)
+            .projection();
     let recognition =
-        assess_capability(&target, RequiredCapability::AuthenticatedObjectRecognition).projection();
+        assess_static_capability(&target, RequiredCapability::AuthenticatedObjectRecognition)
+            .projection();
 
     assert_ne!(conservation.disposition(), recognition.disposition());
     assert!(
@@ -177,9 +179,9 @@ fn confidential_conservation_does_not_imply_object_recognition() {
 #[test]
 fn public_constructibility_stays_structural_and_needs_no_signature() {
     let target = reviewed_target();
-    let assessment = assess_capability(&target, RequiredCapability::PublicConstructibility);
+    let assessment = assess_static_capability(&target, RequiredCapability::PublicConstructibility);
 
-    let CapabilityAssessment::BackendStructural {
+    let StaticCapabilityAssessment::BackendStructural {
         primitives,
         requirements,
         ..
@@ -218,8 +220,8 @@ fn authorization_needs_both_a_signature_and_a_sighash_obligation() {
         RequiredCapability::OperatorAuthorization,
         RequiredCapability::RefundAuthorization,
     ] {
-        let assessment = assess_capability(&target, capability);
-        let CapabilityAssessment::BackendPatternRequired {
+        let assessment = assess_validated_capability(&target, capability);
+        let StaticCapabilityAssessment::BackendPatternRequired {
             primitives,
             evidence,
             ..
@@ -238,7 +240,8 @@ fn authorization_needs_both_a_signature_and_a_sighash_obligation() {
 
     // And against the target as actually reviewed, the gap is visible
     // rather than papered over.
-    let reviewed = assess_capability(&reviewed_target(), RequiredCapability::OwnerAuthorization);
+    let reviewed =
+        assess_static_capability(&reviewed_target(), RequiredCapability::OwnerAuthorization);
     assert_eq!(
         reviewed.disposition(),
         AssessmentDisposition::MissingTargetPrimitives,
@@ -256,7 +259,8 @@ fn no_assessment_requires_a_sponsor_amount() {
     // sponsor amount would be to require a value primitive here.
     let target = reviewed_target();
     let projection =
-        assess_capability(&target, RequiredCapability::AuthenticatedOpenFlowPartition).projection();
+        assess_static_capability(&target, RequiredCapability::AuthenticatedOpenFlowPartition)
+            .projection();
 
     let value_primitives = BTreeSet::from([
         ElementsCapability::InputValueInspection,
@@ -282,8 +286,9 @@ fn no_assessment_requires_a_sponsor_amount() {
 
     // Protocol-role amounts remain readable where a capability genuinely
     // needs them: erasure is role-based, not a blanket ban on values.
-    let partition = assess_capability(&target, RequiredCapability::AuthenticatedCanonicalPartition)
-        .projection();
+    let partition =
+        assess_static_capability(&target, RequiredCapability::AuthenticatedCanonicalPartition)
+            .projection();
     assert!(
         partition
             .primitives()

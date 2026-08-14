@@ -10,11 +10,14 @@
 
 use std::collections::BTreeSet;
 
-use compiler::target::RequiredCapability;
+use compiler::target::{ExternalEvidenceRole, RequiredCapability};
 use target_elements::{ElementsCapability, TargetEvidenceRequirementId};
 
 use super::reviewed_target;
-use crate::capability::{AssessmentDisposition, BackendFoundationRequirement, assess_capability};
+use crate::capability::{
+    AssessmentDisposition, BackendFoundationRequirement, EvidenceAssessmentDisposition,
+    assess_evidence_role, assess_static_capability,
+};
 
 /// One independently stated expectation for the reviewed target.
 struct Expected {
@@ -232,6 +235,99 @@ fn oracle() -> Vec<Expected> {
     ]
 }
 
+/// One independently stated expectation for a compiler evidence role.
+struct ExpectedEvidence {
+    role: ExternalEvidenceRole,
+    disposition: EvidenceAssessmentDisposition,
+    evidence: &'static [TargetEvidenceRequirementId],
+}
+
+/// The expected assessment of every compiler external-evidence role.
+///
+/// Written from the compiler's own description of the role and the
+/// target's evidence vocabulary — the compiler says the substrate must
+/// conserve value across a transaction, and the target names exactly
+/// one requirement about whole-transaction conservation — not from the
+/// production match. As with the capability table, a mistake copied
+/// into production does not reproduce itself here.
+fn evidence_oracle() -> Vec<ExpectedEvidence> {
+    use EvidenceAssessmentDisposition as D;
+    use ExternalEvidenceRole as E;
+    use TargetEvidenceRequirementId as R;
+
+    vec![ExpectedEvidence {
+        role: E::SubstrateConservation,
+        disposition: D::TargetEvidenceRequired,
+        evidence: &[R::ConfidentialValueConservation],
+    }]
+}
+
+#[test]
+fn the_evidence_oracle_covers_the_whole_role_census_exactly_once() {
+    let stated: Vec<_> = evidence_oracle().into_iter().map(|row| row.role).collect();
+    let distinct: BTreeSet<_> = stated.iter().copied().collect();
+
+    assert_eq!(stated.len(), distinct.len(), "no row is written twice");
+    assert_eq!(
+        distinct,
+        ExternalEvidenceRole::ALL
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>(),
+        "the oracle and the compiler role census name the same roles",
+    );
+}
+
+#[test]
+fn the_production_evidence_mapping_matches_the_independent_table() {
+    for row in evidence_oracle() {
+        let projection = assess_evidence_role(row.role).projection();
+
+        assert_eq!(projection.role(), row.role, "{:?}", row.role);
+        assert_eq!(projection.disposition(), row.disposition, "{:?}", row.role);
+        assert_eq!(
+            projection
+                .evidence()
+                .iter()
+                .copied()
+                .collect::<BTreeSet<_>>(),
+            row.evidence.iter().copied().collect::<BTreeSet<_>>(),
+            "target evidence for {:?}",
+            row.role,
+        );
+        assert!(
+            projection
+                .evidence()
+                .windows(2)
+                .all(|pair| pair[0] < pair[1]),
+            "the evidence census for {:?} ascends strictly",
+            row.role,
+        );
+        assert!(
+            !projection.evidence().is_empty(),
+            "a role no target evidence answers would be a role the adapter dropped",
+        );
+    }
+}
+
+#[test]
+fn every_role_names_evidence_the_target_registry_declares() {
+    // Same invariant as for capabilities, and the same reason the
+    // adapter has no "missing evidence requirement" error: a validated
+    // contract's registry census is complete.
+    let target = reviewed_target();
+    let registry = target.definition().evidence_requirements();
+
+    for role in ExternalEvidenceRole::ALL {
+        for evidence in assess_evidence_role(*role).projection().evidence() {
+            assert!(
+                registry.contains_key(evidence),
+                "{role:?} names {evidence:?}, which the target must declare",
+            );
+        }
+    }
+}
+
 #[test]
 fn the_oracle_covers_the_whole_compiler_census_exactly_once() {
     let stated: Vec<_> = oracle().into_iter().map(|row| row.required).collect();
@@ -253,7 +349,7 @@ fn the_production_mapping_matches_the_independent_table() {
     let target = reviewed_target();
 
     for row in oracle() {
-        let projection = assess_capability(&target, row.required).projection();
+        let projection = assess_static_capability(&target, row.required).projection();
 
         assert_eq!(projection.required(), row.required, "{:?}", row.required);
         assert_eq!(
@@ -303,7 +399,7 @@ fn every_projection_census_is_canonically_ordered() {
     let target = reviewed_target();
 
     for capability in RequiredCapability::ALL {
-        let projection = assess_capability(&target, *capability).projection();
+        let projection = assess_static_capability(&target, *capability).projection();
 
         assert!(
             projection
@@ -338,7 +434,7 @@ fn every_structural_obligation_is_reachable_from_some_capability() {
     let stated: BTreeSet<_> = RequiredCapability::ALL
         .iter()
         .flat_map(|capability| {
-            assess_capability(&target, *capability)
+            assess_static_capability(&target, *capability)
                 .projection()
                 .structural()
                 .to_vec()
@@ -365,10 +461,10 @@ fn every_named_evidence_requirement_exists_in_the_target_registry() {
     // is what makes the absent error variant honest, so it is checked
     // here rather than assumed.
     let target = reviewed_target();
-    let registry = target.definition().definition().evidence_requirements();
+    let registry = target.definition().evidence_requirements();
 
     for capability in RequiredCapability::ALL {
-        for evidence in assess_capability(&target, *capability)
+        for evidence in assess_static_capability(&target, *capability)
             .projection()
             .evidence()
         {

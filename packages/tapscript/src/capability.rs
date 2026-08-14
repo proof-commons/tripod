@@ -1,4 +1,4 @@
-//! The compiler-to-target capability adapter.
+//! The compiler-to-target capability and evidence-role adapter.
 //!
 //! # What an assessment is
 //!
@@ -9,9 +9,35 @@
 //! assessment in this module says that a pattern has been written, that
 //! a program has been emitted, or that any evidence has been produced.
 //!
+//! # Every assessment here is static
+//!
+//! The input is the *reviewed static target contract*
+//! ([`ReviewedElementsTapscriptDefinition`]), and nothing else. No
+//! function in this module reads a network identity, a genesis
+//! identity, an activation declaration, or a deployment resource
+//! override, and none accepts a value carrying them: Guide-9 §1.3 keeps
+//! the static contract, the deployment declaration, and target-native
+//! evidence apart, and a function that took a deployment binding and
+//! then ignored it would collapse the first two of those into a false
+//! impression of binding-aware assessment (second review, R2-N02).
+//! Guide-9 §7.2 defers a deployment-aware assessment until a consumer
+//! for one exists; when it arrives it will be a different function, over
+//! a different input, returning a different type.
+//!
+//! # Two censuses, both carried
+//!
+//! The compiler publishes what an analysis requires of a target as two
+//! censuses: abstract capabilities, and external-evidence *roles*. The
+//! adapter assesses both, and [`TargetAssessmentSet`] carries both.
+//! Consuming only the capabilities would drop half of the boundary
+//! silently, and a compiler evidence role added later would vanish
+//! without any signal (second review, R2-C05). Both mappings are
+//! exhaustive matches with no wildcard arm, so a new member of either
+//! census stops this crate compiling until its disposition is stated.
+//!
 //! # Support is not a boolean
 //!
-//! [`CapabilityAssessment`] separates five things a single Boolean
+//! [`StaticCapabilityAssessment`] separates five things a single Boolean
 //! would merge:
 //!
 //! - the reviewed contract states a needed primitive does not exist;
@@ -45,10 +71,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use compiler::target::{RequiredCapability, TargetRequirementSet};
+use compiler::target::{ExternalEvidenceRole, RequiredCapability, TargetRequirementSet};
 use target_elements::{
-    CapabilityContract, ElementsCapability, ElementsTarget, StaticCapabilityStatus,
-    TargetEvidenceRequirementId,
+    CapabilityContract, ElementsCapability, ReviewedElementsTapscriptDefinition,
+    StaticCapabilityStatus, TargetEvidenceRequirementId, ValidatedTargetDefinition,
 };
 
 use crate::error::TapscriptError;
@@ -102,7 +128,7 @@ impl BackendFoundationRequirement {
 ///
 /// The type is uninhabited, and that is the point. No backend proof
 /// pattern has been approved, so there is no value of this type, so
-/// [`CapabilityAssessment::CompleteBackendPattern`] cannot be
+/// [`StaticCapabilityAssessment::CompleteBackendPattern`] cannot be
 /// constructed — by anyone, including a future careless caller inside
 /// this crate. Guide-8 §16.5 states that no complete pattern may be
 /// claimed here; stating it in the type system rather than in a comment
@@ -129,7 +155,7 @@ pub enum UnsupportedReason {
 /// What this target obliges a backend to do about one compiler
 /// capability.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum CapabilityAssessment {
+pub enum StaticCapabilityAssessment {
     /// The reviewed contract rules the capability out.
     Unsupported {
         /// The compiler capability, retained.
@@ -187,7 +213,7 @@ pub enum CapabilityAssessment {
     },
 }
 
-impl CapabilityAssessment {
+impl StaticCapabilityAssessment {
     /// The compiler capability this assessment answers.
     ///
     /// Every variant carries it, so no disposition can lose the
@@ -594,26 +620,50 @@ const fn obligations(required: RequiredCapability) -> TargetObligations {
     }
 }
 
-/// Assess one compiler capability against one validated target.
+/// Assess one compiler capability against the reviewed static target.
 ///
-/// Pure and deterministic: the result depends on the target's
-/// capability registry and on nothing else — no clock, no environment,
-/// no interior state, and no node.
+/// Pure and deterministic: the result depends on the reviewed
+/// contract's capability registry and on nothing else — no clock, no
+/// environment, no interior state, no deployment binding, and no node.
 ///
 /// # What is checked, and what is not
 ///
-/// The primitive prerequisites are checked against the target's
+/// The primitive prerequisites are checked against the contract's
 /// reviewed status for each. The evidence requirements a row names are
 /// not checked for existence, because they cannot be absent: a
 /// validated target definition carries the complete evidence census, so
-/// there is no [`ElementsTarget`] in which one is missing.
+/// there is no definition in which one is missing.
 #[must_use]
-pub fn assess_capability(
-    target: &ElementsTarget,
+pub fn assess_static_capability(
+    target: &ReviewedElementsTapscriptDefinition,
     required: RequiredCapability,
-) -> CapabilityAssessment {
+) -> StaticCapabilityAssessment {
+    assess_validated_capability(target.validated(), required)
+}
+
+/// Assess one compiler capability against a merely validated contract.
+///
+/// Crate-private, and deliberately so. The mapping is one function —
+/// duplicating it for a second trust state would be two mappings that
+/// could disagree — but *who may call it with what* is the trust
+/// boundary: a caller-assembled definition can be locally valid without
+/// being the reviewed Elements contract, and only the reviewed wrapper
+/// reaches the public entry point above. Inside the crate this is how
+/// the non-weakening fixtures assess a deliberately degraded contract:
+/// they build one the target validator accepts, and it can never
+/// impersonate the reviewed one at the package boundary because no
+/// public path takes it.
+///
+/// This function must never become public. Making it public would hand
+/// back exactly the impersonation the reviewed wrapper exists to
+/// prevent (second review, R2-N01).
+#[must_use]
+pub(crate) fn assess_validated_capability(
+    target: &ValidatedTargetDefinition,
+    required: RequiredCapability,
+) -> StaticCapabilityAssessment {
     let obligations = obligations(required);
-    let contracts = target.definition().definition().capabilities();
+    let contracts = target.definition().capabilities();
 
     let mut unsupported = BTreeSet::new();
     let mut missing = BTreeSet::new();
@@ -641,7 +691,7 @@ pub fn assess_capability(
     // exist would invite a reader to wait for a review that can never
     // land.
     if !unsupported.is_empty() {
-        return CapabilityAssessment::Unsupported {
+        return StaticCapabilityAssessment::Unsupported {
             required,
             reason: UnsupportedReason::ReviewedTargetPrimitivesUnsupported {
                 primitives: unsupported,
@@ -650,7 +700,7 @@ pub fn assess_capability(
     }
 
     if !missing.is_empty() {
-        return CapabilityAssessment::MissingTargetPrimitives { required, missing };
+        return StaticCapabilityAssessment::MissingTargetPrimitives { required, missing };
     }
 
     let primitives = obligations.primitives.iter().copied().collect();
@@ -658,146 +708,379 @@ pub fn assess_capability(
     let evidence = obligations.evidence.iter().copied().collect();
 
     match obligations.kind {
-        ObligationKind::Pattern => CapabilityAssessment::BackendPatternRequired {
+        ObligationKind::Pattern => StaticCapabilityAssessment::BackendPatternRequired {
             required,
             primitives,
             structural,
             evidence,
         },
-        ObligationKind::Structural => CapabilityAssessment::BackendStructural {
+        ObligationKind::Structural => StaticCapabilityAssessment::BackendStructural {
             required,
             primitives,
             requirements: structural,
         },
         ObligationKind::ExternalEvidence => {
-            CapabilityAssessment::ExternalEvidenceRequired { required, evidence }
+            StaticCapabilityAssessment::ExternalEvidenceRequired { required, evidence }
         }
     }
 }
 
-/// Exactly one assessment per required capability.
+/// What one compiler external-evidence role obliges of this target.
+///
+/// One variant today, because one disposition is true today: every role
+/// the compiler publishes is discharged by the target's own consensus
+/// rules and by nothing a program could do. It is an enum rather than a
+/// struct so that a role whose obligation is *not* target evidence — a
+/// role a backend pattern could discharge, say — is added as a new
+/// disposition rather than by widening this one until it means nothing.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CapabilityAssessmentSet {
-    assessments: BTreeMap<RequiredCapability, CapabilityAssessment>,
+pub enum ExternalEvidenceAssessment {
+    /// Only target evidence a deployment must produce discharges it.
+    TargetEvidenceRequired {
+        /// The compiler evidence role, retained.
+        role: ExternalEvidenceRole,
+        /// The target evidence requirements it lands on.
+        evidence: BTreeSet<TargetEvidenceRequirementId>,
+    },
 }
 
-impl CapabilityAssessmentSet {
-    /// Every assessment, in canonical compiler-capability order.
-    pub fn assessments(&self) -> impl Iterator<Item = (RequiredCapability, &CapabilityAssessment)> {
-        self.assessments
+impl ExternalEvidenceAssessment {
+    /// The compiler evidence role this assessment answers.
+    ///
+    /// Every variant carries it, so the role cannot be lost on the way
+    /// through the adapter — which is the whole traceability the census
+    /// exists for.
+    #[must_use]
+    pub const fn role(&self) -> ExternalEvidenceRole {
+        match self {
+            Self::TargetEvidenceRequired { role, .. } => *role,
+        }
+    }
+
+    /// This assessment's disposition, without its detail.
+    #[must_use]
+    pub const fn disposition(&self) -> EvidenceAssessmentDisposition {
+        match self {
+            Self::TargetEvidenceRequired { .. } => {
+                EvidenceAssessmentDisposition::TargetEvidenceRequired
+            }
+        }
+    }
+
+    /// The stable comparison form of this assessment.
+    ///
+    /// The role, the disposition, and the target evidence census in
+    /// canonical order. It carries no result, no report, no deployment,
+    /// and no digest, because none of those exists here.
+    #[must_use]
+    pub fn projection(&self) -> EvidenceAssessmentProjection {
+        let evidence = match self {
+            Self::TargetEvidenceRequired { evidence, .. } => evidence.clone(),
+        };
+
+        EvidenceAssessmentProjection {
+            role: self.role(),
+            disposition: self.disposition(),
+            evidence: evidence.into_iter().collect(),
+        }
+    }
+}
+
+/// One evidence assessment's disposition, without its detail.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum EvidenceAssessmentDisposition {
+    /// Target evidence a deployment must produce is owed.
+    TargetEvidenceRequired,
+}
+
+/// The stable comparison form of one evidence assessment.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EvidenceAssessmentProjection {
+    role: ExternalEvidenceRole,
+    disposition: EvidenceAssessmentDisposition,
+    evidence: Vec<TargetEvidenceRequirementId>,
+}
+
+impl EvidenceAssessmentProjection {
+    /// The compiler evidence role this projection answers.
+    #[must_use]
+    pub const fn role(&self) -> ExternalEvidenceRole {
+        self.role
+    }
+
+    /// The disposition reached.
+    #[must_use]
+    pub const fn disposition(&self) -> EvidenceAssessmentDisposition {
+        self.disposition
+    }
+
+    /// The target evidence requirements, in canonical order.
+    #[must_use]
+    pub fn evidence(&self) -> &[TargetEvidenceRequirementId] {
+        &self.evidence
+    }
+}
+
+/// What this target obliges about one compiler evidence role.
+///
+/// Exhaustive with no wildcard arm, for the same reason the capability
+/// mapping is: a role added to the compiler census stops this crate
+/// compiling until its target obligation is stated here. That compile
+/// failure is the mechanism the second review asks for in R2-C05, and a
+/// wildcard arm would replace it with a silent default.
+///
+/// The function takes no target. The obligation a role lands on is a
+/// property of the role and of this target contract's evidence
+/// vocabulary, not of any one contract value: the target validator
+/// refuses a definition whose evidence registry is not the complete
+/// census, so there is no validated contract in which the requirement
+/// below is absent. Taking a target here and not reading it would be
+/// the same defect as R2-N02 in miniature.
+#[must_use]
+pub fn assess_evidence_role(role: ExternalEvidenceRole) -> ExternalEvidenceAssessment {
+    let evidence: &[TargetEvidenceRequirementId] = match role {
+        // The compiler says the substrate itself must conserve value
+        // across a transaction; the target names that claim as
+        // whole-transaction conservation over its confidential and
+        // explicit value classes. Neither an opcode nor a backend
+        // pattern discharges it, so no primitive and no structural
+        // obligation appears here — listing one would turn an external
+        // consensus claim into a question of primitive availability.
+        ExternalEvidenceRole::SubstrateConservation => {
+            &[TargetEvidenceRequirementId::ConfidentialValueConservation]
+        }
+    };
+
+    ExternalEvidenceAssessment::TargetEvidenceRequired {
+        role,
+        evidence: evidence.iter().copied().collect(),
+    }
+}
+
+/// Build one census map and check it against the census it must cover.
+///
+/// Shared by both halves of [`TargetAssessmentSet`], because both owe
+/// the same three checks — no member assessed twice, no required member
+/// unassessed, no assessment nothing required — and two hand-written
+/// copies of them would be two places for one of the three to go
+/// missing.
+fn assemble_census<K: Copy + Ord, V>(
+    required: &BTreeSet<K>,
+    assessed: Vec<(K, V)>,
+    duplicate: impl Fn(K) -> TapscriptError,
+    mismatch: impl Fn(Vec<K>, Vec<K>) -> TapscriptError,
+) -> Result<BTreeMap<K, V>, TapscriptError> {
+    let mut assessments = BTreeMap::new();
+
+    for (key, assessment) in assessed {
+        if assessments.insert(key, assessment).is_some() {
+            return Err(duplicate(key));
+        }
+    }
+
+    let missing: Vec<_> = required
+        .iter()
+        .filter(|key| !assessments.contains_key(key))
+        .copied()
+        .collect();
+    let unexpected: Vec<_> = assessments
+        .keys()
+        .filter(|key| !required.contains(key))
+        .copied()
+        .collect();
+
+    if missing.is_empty() && unexpected.is_empty() {
+        Ok(assessments)
+    } else {
+        Err(mismatch(missing, unexpected))
+    }
+}
+
+/// Exactly one assessment per required capability and per evidence role.
+///
+/// The compiler publishes two censuses, so the adapter answers two.
+/// Both are exact in both directions; neither may be dropped, and
+/// neither may quietly answer for the other.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TargetAssessmentSet {
+    capabilities: BTreeMap<RequiredCapability, StaticCapabilityAssessment>,
+    external_evidence: BTreeMap<ExternalEvidenceRole, ExternalEvidenceAssessment>,
+}
+
+impl TargetAssessmentSet {
+    /// Every capability assessment, in canonical census order.
+    pub fn capability_assessments(
+        &self,
+    ) -> impl Iterator<Item = (RequiredCapability, &StaticCapabilityAssessment)> {
+        self.capabilities
             .iter()
             .map(|(capability, assessment)| (*capability, assessment))
     }
 
     /// One capability's assessment, if the set covers it.
     #[must_use]
-    pub fn assessment(&self, required: RequiredCapability) -> Option<&CapabilityAssessment> {
-        self.assessments.get(&required)
+    pub fn capability_assessment(
+        &self,
+        required: RequiredCapability,
+    ) -> Option<&StaticCapabilityAssessment> {
+        self.capabilities.get(&required)
     }
 
-    /// The stable comparison form of the whole set.
+    /// Every evidence-role assessment, in canonical census order.
+    pub fn evidence_assessments(
+        &self,
+    ) -> impl Iterator<Item = (ExternalEvidenceRole, &ExternalEvidenceAssessment)> {
+        self.external_evidence
+            .iter()
+            .map(|(role, assessment)| (*role, assessment))
+    }
+
+    /// One evidence role's assessment, if the set covers it.
+    #[must_use]
+    pub fn evidence_assessment(
+        &self,
+        role: ExternalEvidenceRole,
+    ) -> Option<&ExternalEvidenceAssessment> {
+        self.external_evidence.get(&role)
+    }
+
+    /// The stable comparison form of the capability census.
     ///
     /// A vector in canonical compiler-capability order, not a set: the
     /// order is part of the contract, and a set comparison would accept
     /// a projection that named one capability twice.
     #[must_use]
-    pub fn projection(&self) -> Vec<AssessmentProjection> {
-        self.assessments
+    pub fn capability_projection(&self) -> Vec<AssessmentProjection> {
+        self.capabilities
             .values()
-            .map(CapabilityAssessment::projection)
+            .map(StaticCapabilityAssessment::projection)
             .collect()
     }
 
-    /// Build a set and check it against the census it must cover.
+    /// The stable comparison form of the evidence-role census.
     ///
-    /// Crate-private and taking a vector rather than a map, so that
-    /// both failures are real branches rather than assertions about a
-    /// container that already made them impossible.
+    /// A vector in canonical role order, for the same reason.
+    #[must_use]
+    pub fn evidence_projection(&self) -> Vec<EvidenceAssessmentProjection> {
+        self.external_evidence
+            .values()
+            .map(ExternalEvidenceAssessment::projection)
+            .collect()
+    }
+
+    /// Build a set and check both halves against the censuses they
+    /// must cover.
+    ///
+    /// Crate-private and taking vectors rather than maps, so that every
+    /// failure is a real branch rather than an assertion about a
+    /// container that already made it impossible.
     ///
     /// # Errors
     ///
-    /// [`TapscriptError::DuplicateCapabilityAssessment`] when one
-    /// capability is assessed twice;
-    /// [`TapscriptError::CapabilityAssessmentCensusMismatch`] when the
-    /// assessed keys are not exactly `required`, in either direction.
+    /// [`TapscriptError::DuplicateCapabilityAssessment`] or
+    /// [`TapscriptError::DuplicateEvidenceAssessment`] when one member
+    /// is assessed twice;
+    /// [`TapscriptError::CapabilityAssessmentCensusMismatch`] or
+    /// [`TapscriptError::EvidenceAssessmentCensusMismatch`] when the
+    /// assessed keys are not exactly the required ones, in either
+    /// direction.
     pub(crate) fn assemble(
-        required: &BTreeSet<RequiredCapability>,
-        assessed: Vec<(RequiredCapability, CapabilityAssessment)>,
+        required_capabilities: &BTreeSet<RequiredCapability>,
+        capability_assessments: Vec<(RequiredCapability, StaticCapabilityAssessment)>,
+        required_roles: &BTreeSet<ExternalEvidenceRole>,
+        evidence_assessments: Vec<(ExternalEvidenceRole, ExternalEvidenceAssessment)>,
     ) -> Result<Self, TapscriptError> {
-        let mut assessments = BTreeMap::new();
-
-        for (capability, assessment) in assessed {
-            if assessments.insert(capability, assessment).is_some() {
-                return Err(TapscriptError::DuplicateCapabilityAssessment(capability));
-            }
-        }
-
-        let missing: Vec<_> = required
-            .iter()
-            .filter(|capability| !assessments.contains_key(capability))
-            .copied()
-            .collect();
-        let unexpected: Vec<_> = assessments
-            .keys()
-            .filter(|capability| !required.contains(capability))
-            .copied()
-            .collect();
-
-        if missing.is_empty() && unexpected.is_empty() {
-            Ok(Self { assessments })
-        } else {
-            Err(TapscriptError::CapabilityAssessmentCensusMismatch {
+        let capabilities = assemble_census(
+            required_capabilities,
+            capability_assessments,
+            TapscriptError::DuplicateCapabilityAssessment,
+            |missing, unexpected| TapscriptError::CapabilityAssessmentCensusMismatch {
                 missing,
                 unexpected,
-            })
-        }
+            },
+        )?;
+        let external_evidence = assemble_census(
+            required_roles,
+            evidence_assessments,
+            TapscriptError::DuplicateEvidenceAssessment,
+            |missing, unexpected| TapscriptError::EvidenceAssessmentCensusMismatch {
+                missing,
+                unexpected,
+            },
+        )?;
+
+        Ok(Self {
+            capabilities,
+            external_evidence,
+        })
     }
 
-    /// Assess an explicit capability census against one target.
-    fn of_census(
-        target: &ElementsTarget,
-        required: &BTreeSet<RequiredCapability>,
+    /// Assess two explicit censuses against the reviewed contract.
+    fn of_censuses(
+        target: &ReviewedElementsTapscriptDefinition,
+        required_capabilities: &BTreeSet<RequiredCapability>,
+        required_roles: &BTreeSet<ExternalEvidenceRole>,
     ) -> Result<Self, TapscriptError> {
-        let assessed = required
+        let capabilities = required_capabilities
             .iter()
-            .map(|capability| (*capability, assess_capability(target, *capability)))
+            .map(|capability| (*capability, assess_static_capability(target, *capability)))
+            .collect();
+        let evidence = required_roles
+            .iter()
+            .map(|role| (*role, assess_evidence_role(*role)))
             .collect();
 
-        Self::assemble(required, assessed)
+        Self::assemble(
+            required_capabilities,
+            capabilities,
+            required_roles,
+            evidence,
+        )
     }
 }
 
 /// Assess everything one validated analysis requires of this target.
 ///
-/// The published requirement census and the assessment census are equal
-/// in both directions, exactly. No required capability may vanish from
-/// the result, and no assessment may appear that nothing required.
+/// Both published censuses are answered, and both are equal to their
+/// assessment census in both directions, exactly. No required
+/// capability and no external-evidence role may vanish from the result,
+/// and no assessment may appear that nothing required.
 ///
 /// # Errors
 ///
-/// [`TapscriptError::DuplicateCapabilityAssessment`] or
-/// [`TapscriptError::CapabilityAssessmentCensusMismatch`] if the two
-/// censuses ever disagree.
+/// [`TapscriptError::DuplicateCapabilityAssessment`],
+/// [`TapscriptError::CapabilityAssessmentCensusMismatch`],
+/// [`TapscriptError::DuplicateEvidenceAssessment`], or
+/// [`TapscriptError::EvidenceAssessmentCensusMismatch`] if a census
+/// ever disagrees with its assessments.
 pub fn assess_requirements(
-    target: &ElementsTarget,
+    target: &ReviewedElementsTapscriptDefinition,
     requirements: &TargetRequirementSet,
-) -> Result<CapabilityAssessmentSet, TapscriptError> {
-    CapabilityAssessmentSet::of_census(target, &requirements.capabilities().collect())
+) -> Result<TargetAssessmentSet, TapscriptError> {
+    TargetAssessmentSet::of_censuses(
+        target,
+        &requirements.capabilities().collect(),
+        &requirements.external_evidence().collect(),
+    )
 }
 
-/// Assess the complete compiler capability census against this target.
+/// Assess the complete compiler censuses against this target.
 ///
 /// The upper bound on any requirement set: an analysis can require a
-/// subset of this and never anything outside it. Stated as its own
+/// subset of these and never anything outside them. Stated as its own
 /// entry point because the interesting question about a newly reviewed
-/// target is what it obliges across the whole census, before any
+/// target is what it obliges across the whole vocabulary, before any
 /// particular analysis narrows it.
 ///
 /// # Errors
 ///
 /// As [`assess_requirements`].
 pub fn assess_complete_census(
-    target: &ElementsTarget,
-) -> Result<CapabilityAssessmentSet, TapscriptError> {
-    CapabilityAssessmentSet::of_census(target, &RequiredCapability::ALL.iter().copied().collect())
+    target: &ReviewedElementsTapscriptDefinition,
+) -> Result<TargetAssessmentSet, TapscriptError> {
+    TargetAssessmentSet::of_censuses(
+        target,
+        &RequiredCapability::ALL.iter().copied().collect(),
+        &ExternalEvidenceRole::ALL.iter().copied().collect(),
+    )
 }
