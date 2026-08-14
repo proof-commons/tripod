@@ -162,6 +162,24 @@ pub enum TargetError {
     /// claiming a numeric interpretation the field does not have.
     SpuriousByteOrder(EncodingClass),
 
+    /// A numeric encoding states an order the contract revision does
+    /// not give that class, so its bytes decode to a different value.
+    EncodingByteOrderMismatch(EncodingClass),
+
+    /// An encoding is filed under a field group the contract revision
+    /// does not put it in, so its prefixes would have to be
+    /// unambiguous against the wrong set of forms.
+    EncodingDomainMismatch(EncodingClass),
+
+    /// An encoding states a width the contract revision does not give
+    /// that class.
+    EncodingWidthMismatch(EncodingClass),
+
+    /// An encoding states a canonicality rule the contract revision
+    /// does not give that class, so a decoder would accept or reject
+    /// the wrong byte strings.
+    EncodingCanonicalityMismatch(EncodingClass),
+
     /// An encoding names no evidence requirement.
     MissingEncodingEvidence(EncodingClass),
 
@@ -395,6 +413,18 @@ impl fmt::Display for TargetError {
             }
             Self::SpuriousByteOrder(class) => {
                 write!(f, "opaque encoding {class:?} states a byte order")
+            }
+            Self::EncodingByteOrderMismatch(class) => {
+                write!(f, "encoding {class:?} states the wrong byte order")
+            }
+            Self::EncodingDomainMismatch(class) => {
+                write!(f, "encoding {class:?} states the wrong field group")
+            }
+            Self::EncodingWidthMismatch(class) => {
+                write!(f, "encoding {class:?} states the wrong payload width")
+            }
+            Self::EncodingCanonicalityMismatch(class) => {
+                write!(f, "encoding {class:?} states the wrong canonicality rule")
             }
             Self::MissingEncodingEvidence(class) => {
                 write!(f, "encoding {class:?} names no evidence requirement")

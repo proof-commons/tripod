@@ -108,8 +108,8 @@ pub use deployment::{
     validate_development_binding,
 };
 pub use encoding::{
-    ByteOrder, CanonicalEncodingRule, EncodingClass, EncodingDomain, EncodingSpec, PayloadWidth,
-    UnknownPrefixRule,
+    ByteOrder, CanonicalEncodingRule, EncodingClass, EncodingDomain, EncodingSpec,
+    PayloadInterpretation, PayloadWidth, UnknownPrefixRule, V1EncodingShape,
 };
 pub use error::TargetError;
 pub use evidence::TargetEvidenceRequirementId;

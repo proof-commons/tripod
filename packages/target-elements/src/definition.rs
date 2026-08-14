@@ -677,14 +677,38 @@ fn validate_encodings(definition: &TargetDefinition, errors: &mut Vec<TargetErro
             errors.push(TargetError::InvalidEncodingWidth(*key));
         }
 
-        // A numeric payload without an order does not determine a
-        // value; a non-numeric one carrying an order claims an
-        // interpretation the field does not have.
-        if spec.is_numeric() && spec.byte_order().is_none() {
-            errors.push(TargetError::MissingByteOrder(*key));
-        }
-        if !spec.is_numeric() && spec.byte_order().is_some() {
+        // Interpretation comes from the class, not from whether an
+        // order was supplied, so these two branches are now decidable
+        // rather than tautological: a numeric payload without an order
+        // does not determine a value, and an opaque one carrying an
+        // order claims an arithmetic meaning the field does not have.
+        let expected = key.v1_shape();
+        if key.interpretation().is_numeric() {
+            match spec.byte_order() {
+                None => errors.push(TargetError::MissingByteOrder(*key)),
+                Some(order) if Some(order) != expected.byte_order() => {
+                    errors.push(TargetError::EncodingByteOrderMismatch(*key));
+                }
+                Some(_) => {}
+            }
+        } else if spec.byte_order().is_some() {
             errors.push(TargetError::SpuriousByteOrder(*key));
+        }
+
+        // Under V1 the shape of each class is fixed by the contract
+        // revision. A caller supplies prefixes and evidence links; it
+        // does not get to decide how wide an outpoint index is or
+        // which field group a nonce belongs to.
+        if definition.version == TargetContractVersion::V1 {
+            if spec.domain() != expected.domain() {
+                errors.push(TargetError::EncodingDomainMismatch(*key));
+            }
+            if spec.payload() != expected.payload() {
+                errors.push(TargetError::EncodingWidthMismatch(*key));
+            }
+            if spec.canonicality() != expected.canonicality() {
+                errors.push(TargetError::EncodingCanonicalityMismatch(*key));
+            }
         }
 
         if spec.evidence().is_empty() {

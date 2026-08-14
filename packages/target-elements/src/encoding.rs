@@ -244,6 +244,181 @@ impl EncodingClass {
         Self::EcScalar,
         Self::TaprootTweak,
     ];
+
+    /// What the class's payload bytes mean.
+    ///
+    /// Exhaustive by construction: a new encoding class cannot be
+    /// added without deciding, here, whether its bytes carry a number.
+    /// That is the point — the previous design let the decision be
+    /// made accidentally, by whether a caller happened to pass a byte
+    /// order.
+    #[must_use]
+    pub const fn interpretation(self) -> PayloadInterpretation {
+        use PayloadInterpretation as I;
+
+        match self {
+            // Amounts are unsigned, and the explicit form reaches the
+            // stack little-endian even though the transaction field
+            // stores it the other way round.
+            Self::ExplicitValue
+            | Self::OutPointIndex
+            | Self::Sequence
+            | Self::UnsignedLittleEndian32
+            | Self::UnsignedLittleEndian64 => I::UnsignedInteger,
+            // The script language's number is signed, and so is the
+            // fixed-width form the arithmetic primitives operate on.
+            Self::ScriptNumber | Self::SignedLittleEndian64 => I::SignedInteger,
+            // Commitments, digests, keys, signatures, scalars,
+            // programs, and the absent forms are byte strings. An
+            // order over them would claim an arithmetic meaning the
+            // target never gives them.
+            Self::ExplicitAsset
+            | Self::ConfidentialAsset
+            | Self::ConfidentialValue
+            | Self::NullValue
+            | Self::ExplicitNonce
+            | Self::ConfidentialNonce
+            | Self::NullNonce
+            | Self::WitnessProgram
+            | Self::ScriptPubKeySha256
+            | Self::OutPointTxid
+            | Self::OutPointFlags
+            | Self::IssuanceEntropy
+            | Self::IssuanceBlindingNonce
+            | Self::Sha256Context
+            | Self::Sha256Digest
+            | Self::XOnlyPublicKey
+            | Self::CompressedPublicKey
+            | Self::SchnorrSignature
+            | Self::EcScalar
+            | Self::TaprootTweak => I::Opaque,
+        }
+    }
+
+    /// The shape this class is fixed to under contract revision V1.
+    ///
+    /// Stated independently of the reviewed registry rather than read
+    /// back out of it, so that a transcription mistake in the registry
+    /// is a disagreement between two statements rather than a value
+    /// agreeing with itself.
+    #[must_use]
+    #[expect(
+        clippy::match_same_arms,
+        reason = "one arm per encoding class, so a new class must be decided"
+    )]
+    pub const fn v1_shape(self) -> V1EncodingShape {
+        use ByteOrder::LittleEndian as LE;
+        use CanonicalEncodingRule as K;
+        use EncodingDomain as D;
+
+        let (domain, payload, canonicality, byte_order) = match self {
+            Self::ExplicitAsset => (D::Asset, exact(32), K::PrefixDiscriminated, None),
+            Self::ConfidentialAsset => (D::Asset, exact(32), K::PrefixDiscriminated, None),
+            Self::ExplicitValue => (D::Value, exact(8), K::FixedWidth, Some(LE)),
+            Self::ConfidentialValue => (D::Value, exact(32), K::PrefixDiscriminated, None),
+            Self::NullValue => (D::Value, PayloadWidth::Absent, K::Unique, None),
+            Self::ExplicitNonce => (D::Nonce, exact(32), K::PrefixDiscriminated, None),
+            Self::ConfidentialNonce => (D::Nonce, exact(32), K::PrefixDiscriminated, None),
+            Self::NullNonce => (D::Nonce, PayloadWidth::Absent, K::Unique, None),
+            Self::WitnessProgram => (D::Program, bounded(2, 40), K::Unique, None),
+            Self::ScriptPubKeySha256 => (D::Program, exact(32), K::Unique, None),
+            Self::OutPointTxid => (D::OutPoint, exact(32), K::Unique, None),
+            Self::OutPointIndex => (D::OutPoint, exact(4), K::FixedWidth, Some(LE)),
+            Self::OutPointFlags => (D::OutPoint, exact(1), K::Unique, None),
+            Self::Sequence => (D::Sequence, exact(4), K::FixedWidth, Some(LE)),
+            Self::IssuanceEntropy => (D::Issuance, exact(32), K::Unique, None),
+            Self::IssuanceBlindingNonce => (D::Issuance, exact(32), K::Unique, None),
+            Self::ScriptNumber => (D::Number, bounded(0, 4), K::Minimal, Some(LE)),
+            Self::SignedLittleEndian64 => (D::Number, exact(8), K::FixedWidth, Some(LE)),
+            Self::UnsignedLittleEndian32 => (D::Number, exact(4), K::FixedWidth, Some(LE)),
+            Self::UnsignedLittleEndian64 => (D::Number, exact(8), K::FixedWidth, Some(LE)),
+            Self::Sha256Context => (D::Hash, bounded(40, 103), K::Unique, None),
+            Self::Sha256Digest => (D::Hash, exact(32), K::Unique, None),
+            Self::XOnlyPublicKey => (D::Key, exact(32), K::Unique, None),
+            Self::CompressedPublicKey => (D::Key, exact(32), K::PrefixDiscriminated, None),
+            Self::SchnorrSignature => (D::Signature, exact(64), K::Unique, None),
+            Self::EcScalar => (D::Scalar, exact(32), K::Unique, None),
+            Self::TaprootTweak => (D::Scalar, exact(32), K::Unique, None),
+        };
+
+        V1EncodingShape {
+            domain,
+            payload,
+            canonicality,
+            byte_order,
+        }
+    }
+}
+
+/// What the bytes of an encoded payload mean.
+///
+/// # Why this is not inferred from the byte order
+///
+/// Numericity used to be derived from whether a byte order happened to
+/// be supplied, which made the byte-order checks tautological: an
+/// encoding without an order was opaque *by definition*, so a signed
+/// sixty-four bit integer offered with no order validated cleanly as
+/// an opaque blob. The meaning of a field is a property of the field,
+/// so it is decided here by an exhaustive match the caller cannot
+/// reach into, and the offered byte order is then checked against it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum PayloadInterpretation {
+    /// The bytes carry no number, so no order applies to them.
+    Opaque,
+    /// The bytes carry a signed integer.
+    SignedInteger,
+    /// The bytes carry an unsigned integer.
+    UnsignedInteger,
+}
+
+impl PayloadInterpretation {
+    /// Whether the payload carries a number and so needs an order.
+    #[must_use]
+    pub const fn is_numeric(self) -> bool {
+        !matches!(self, Self::Opaque)
+    }
+}
+
+/// The V1 shape of one encoding class, owned by this package.
+///
+/// A caller supplies prefixes and evidence links; it does not get to
+/// decide what an explicit amount is or how wide an outpoint index is.
+/// Those are fixed by the contract revision, and a definition that
+/// disagrees with them under V1 is describing a different target
+/// rather than configuring this one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct V1EncodingShape {
+    domain: EncodingDomain,
+    payload: PayloadWidth,
+    canonicality: CanonicalEncodingRule,
+    byte_order: Option<ByteOrder>,
+}
+
+impl V1EncodingShape {
+    /// The field group the encoding belongs to.
+    #[must_use]
+    pub const fn domain(self) -> EncodingDomain {
+        self.domain
+    }
+
+    /// The admissible payload width.
+    #[must_use]
+    pub const fn payload(self) -> PayloadWidth {
+        self.payload
+    }
+
+    /// How a decoder recognizes the canonical form.
+    #[must_use]
+    pub const fn canonicality(self) -> CanonicalEncodingRule {
+        self.canonicality
+    }
+
+    /// The order of the payload's bytes, for a numeric payload.
+    #[must_use]
+    pub const fn byte_order(self) -> Option<ByteOrder> {
+        self.byte_order
+    }
 }
 
 /// The complete typed contract of one field encoding.
@@ -253,7 +428,6 @@ pub struct EncodingSpec {
     domain: EncodingDomain,
     prefixes: BTreeSet<u8>,
     payload: PayloadWidth,
-    numeric: bool,
     byte_order: Option<ByteOrder>,
     canonicality: CanonicalEncodingRule,
     unknown_prefix: UnknownPrefixRule,
@@ -277,7 +451,6 @@ impl EncodingSpec {
             domain,
             prefixes: prefixes.into_iter().collect(),
             payload,
-            numeric: byte_order.is_some(),
             byte_order,
             canonicality,
             unknown_prefix: UnknownPrefixRule::Reject,
@@ -309,11 +482,20 @@ impl EncodingSpec {
         self.payload
     }
 
+    /// What the payload's bytes mean.
+    ///
+    /// Derived from the encoding class, never from what the caller
+    /// supplied alongside it.
+    #[must_use]
+    pub const fn interpretation(&self) -> PayloadInterpretation {
+        self.class.interpretation()
+    }
+
     /// Whether the payload's bytes carry a number, and so need an
     /// order.
     #[must_use]
     pub const fn is_numeric(&self) -> bool {
-        self.numeric
+        self.class.interpretation().is_numeric()
     }
 
     /// The order of the payload's bytes, for a numeric payload.
