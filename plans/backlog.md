@@ -144,7 +144,7 @@ No named consumer means no digest. No distinct decision means no digest.
 
 ### 2.1 Latest static review · `tbl:backlog:review-basis`
 
-The current review is the third static review, performed in two independent
+The current review is the fourth static review, performed in two independent
 passes over the supplied concatenation of the tree:
 
 ```text
@@ -152,10 +152,7 @@ tree:
    
 
 selected files:
-    267
-
-selected bytes:
-    approximately 3.23 MiB
+    292
 ```
 
 The supplied report excluded, among other things:
@@ -183,15 +180,16 @@ Therefore:
 - licence compatibility was not independently checked;
 - historical gate records remain historical evidence only.
 
-Its findings are recorded in §5.3; the review found no obvious currently
-reachable unauthorized issuance, reserve-drain, closed-asset inflation, or
-recipient-redirection path in the selected implementation source, and its
-most consequential finding is the object-family versus flow-role sponsor
-abstraction that Phase-3 expansion must correct first.
+Its findings are recorded in §5.4; the review found no obvious reachable
+valid-world model path for unauthorized issuance, reserve extraction,
+receipt-class escape, or recipient redirection, and its most consequential
+finding is that the new target boundary conflates well-shaped, internally
+coherent, and reviewed-Elements trust states that Guide 9 must separate
+before the instruction core consumes them.
 
 ### 2.2 Earlier review basis
 
-The repository retains four earlier reviewed trees as historical context:
+The repository retains five earlier reviewed trees as historical context:
 
 ```text
 initial reviewed tree:
@@ -204,6 +202,9 @@ proof-planning reviewed tree:
    
 
 second-review tree:
+   
+
+third-review tree:
    
 ```
 
@@ -852,9 +853,31 @@ review's S2 identifiers.
 | `S2-06` | Low | DONE | The paper subproject declares C as a project language with no C target, requiring an undocumented compiler. The language declaration is removed; setup no longer probes a C toolchain and the mocked contract passes. |
 | `S2-07` | Low | DONE | Compiler planning status remains stale and a resolved factorization question is still listed as open, although the drift finding was marked closed. The resolved per-operation-factor decision is now recorded as a rule and removed from the open questions; the genuinely open boundary, ownership, objective, and identity questions remain. |
 
-The Guide-8 preflight wave owns SR3-01 through SR3-08 and S2-01 through
-S2-07; the Guide-8 exit gate requires the boundary-relevant rows closed
-before the compiler target-requirement boundary becomes public.
+The Guide-8 preflight wave owned SR3-01 through SR3-08 and S2-01 through
+S2-07; all were closed before the compiler target-requirement boundary
+became public, gate record §2.12.
+
+### 5.4 Fourth-review findings · `tbl:backlog:findings-r2`
+
+The fourth static review reported two passes over the tree recorded in §2.1.
+Reconfirmed first-pass findings carry R2-C identifiers; second-pass additions
+carry R2-N identifiers. The Guide-9 preflight owns the register; the review
+ranks the target-contract rows as Phase-3 blockers before the typed
+instruction core consumes the contracts.
+
+| ID | Severity | Status | Finding |
+|---|---|---|---|
+| `R2-C01` | High | TODO | The opcode stack contract carries one success result sequence, so primitives with alternative valid success shapes, retained operands, or discriminated encodings cannot be represented; issuance-absent, confidential values, null nonces, digest programs, and the retained timelock operand are all inexpressible. |
+| `R2-C02` | High | TODO | Redundant target subcontracts are only locally validated; signature, timelock, issuance, confidential-value, resource, and evidence views can contradict one another inside one validated definition. |
+| `R2-C03` | High | TODO | Capability assessment reads only direct primitive statuses, so a reviewed capability whose transitive prerequisite is unsupported still assesses as usable. |
+| `R2-C04` | Medium | TODO | Encoding numericity is derived from byte-order presence, making the byte-order validation circular and letting a numeric class validate without any order. |
+| `R2-C05` | Medium | TODO | The adapter consumes only the capability census and drops the compiler's external-evidence-role census, so a new role can disappear without adapter work. |
+| `R2-C06` | Medium | TODO | The active architecture semantic hash predates the domain-separated identity recipe; the exception or migration must be explicit, never a silent prefix change. |
+| `R2-C07` | Low | TODO | The package index still marks the implemented target packages as planned, and the root README layout omits the current package set; paper end-marker comment drift is noted but deferred with the paper-edit obligations. |
+| `R2-N01` | High | TODO | A caller-assembled target definition can acquire the same validated wrapper as the built-in reviewed Elements definition, so the reviewed trust state is caller-assertable. |
+| `R2-N02` | Medium | TODO | The adapter accepts a combined target-and-binding value but ignores the deployment half entirely, so assessments are invariant under activation, network, and resource-override differences. |
+| `R2-N03` | Medium | TODO | Public architecture identity functions accept unvalidated architecture values, so an invalid architecture can bear the active semantic hash recipe. |
+| `R2-N04` | Medium | TODO | Compare-if-changed publication checks bytes only, so mode-only corruption survives indefinitely, including a synced helper binary that lost its executable bit. |
 
 ### T6 — Validate capabilities for external-evidence obligations · `task:review:external-evidence-capability`
 
