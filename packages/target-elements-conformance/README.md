@@ -57,11 +57,28 @@ native-conformance report, the Guide-9 evidence plan, the comparison,
 the gate, and the ADR-010 checker command with its non-default Meson
 lane.
 
-Not implemented: the canonical fixture census. No primitive fixture has
-been authored, so every required evidence row has no case bearing on
-it, and a run fails the gate rather than passing on an empty census.
-Authoring the fixtures, adapting a real executor, and materializing the
-transaction context are later work.
+Also implemented: the canonical primitive census. It covers every
+reviewed primitive, and every required evidence row has cases bearing on
+it.
+
+What a case can establish is bounded by what a validating node reports.
+It answers whether a spend was valid and, coarsely, why not; it exposes
+no interpreter stack, and it reports one reason for several reviewed
+causes. Expectations are shaped accordingly: a verdict, the failure
+classes the contract admits, and the exact stacks as static statements
+that are compared only when an executor reports one.
+
+The reviewed domain requires evaluation to finish with exactly one true
+item, and the reviewed primitive census has no equality, drop, or verify
+primitive to reduce a deeper stack with. Several primitives therefore
+have no reachable accepting case, and their cases establish the number
+of items the primitive pushed instead.
+
+Deliberately not covered, and recorded as residuals rather than filled
+in with cases that cannot run: a signature over a transaction sighash,
+blinded assets, amounts, and nonces, issuing inputs, an absent
+introspection context, and any execution domain other than the reviewed
+one.
 
 ## The native lane is not part of ordinary CI
 
