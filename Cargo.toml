@@ -13,6 +13,7 @@ members = [
     "packages/realization",
     "packages/tapscript",
     "packages/target-elements",
+    "packages/target-elements-conformance",
 ]
 
 [workspace.package]
@@ -35,6 +36,7 @@ model = { package = "tripod-model", path = "packages/model" }
 realization = { package = "tripod-realization", path = "packages/realization" }
 tapscript = { package = "tripod-tapscript", path = "packages/tapscript" }
 target-elements = { package = "tripod-target-elements", path = "packages/target-elements" }
+target-elements-conformance = { package = "tripod-target-elements-conformance", path = "packages/target-elements-conformance" }
 
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

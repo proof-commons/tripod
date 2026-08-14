@@ -16,3 +16,28 @@ option(
   value: false,
   description: 'Mock the TeX toolchain (via execwrap --mock-child) so the Meson graph runs without a TeX toolchain, for the mocked contract test',
 )
+option(
+  'target_native_executor',
+  type: 'string',
+  value: '',
+  description: 'Explicit path to the external Elements executor for the non-default target-elements-native-check target; empty means the native lane is not built and ordinary CI claims no target-native evidence',
+)
+option(
+  'target_native_executor_class',
+  type: 'combo',
+  choices: ['mock', 'reviewed-non-mock'],
+  value: 'reviewed-non-mock',
+  description: 'What the caller declares the selected executor to be; a mock declaration can never satisfy the target-native gate',
+)
+option(
+  'target_native_network_id',
+  type: 'string',
+  value: '',
+  description: 'Public development network identifier (64 hex digits) for the target-elements-native-check target',
+)
+option(
+  'target_native_genesis_id',
+  type: 'string',
+  value: '',
+  description: 'Public development genesis identifier (64 hex digits) for the target-elements-native-check target',
+)

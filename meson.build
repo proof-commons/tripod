@@ -649,3 +649,54 @@ test(
   timeout: 600,
   is_parallel: false,
 )
+
+# ---------------------------------------------------------------------------
+# Target-native primitive conformance (Guide 9): a NON-DEFAULT lane.
+#
+# The executor is external code the operator selects explicitly, and
+# selecting it grants execution authority (ADR-015). It is therefore not
+# a configured dependency of the ordinary build: with no
+# `target_native_executor` option the checker target is not defined at
+# all, nothing runs it, and ordinary CI claims no target-native evidence
+# — a skipped native lane leaves the Guide-9 evidence incomplete even
+# when every other lane is green.
+#
+# No credential appears in this command, and none may be added: the
+# checker defines no credential argument, and an executor that must
+# authenticate to a node establishes that boundary outside this process
+# (ADR-015, Guide-9 §17.6).
+target_native_executor = get_option('target_native_executor')
+if target_native_executor != ''
+  check_target_native_bin = custom_target(
+    'cargo-check-target-elements-native',
+    output: 'check-target-elements-native-bin',
+    command: [
+      cargo_bin_sync, cargo, cargo_manifest,
+      'tripod-target-elements-conformance',
+      'check-target-elements-native', '@OUTPUT@',
+    ],
+    console: true,
+    build_always_stale: true,
+  )
+
+  # The report is a build-directory evidence asset, not a tracked
+  # generated artifact: it records what one executor observed on one
+  # host, and nothing in the repository is derived from it.
+  target_native_check = custom_target(
+    'target-elements-native',
+    output: ['target-elements-native.ok', 'target-elements-native.json'],
+    command: [check_target_native_bin,
+      '--executor', target_native_executor,
+      '--executor-class', get_option('target_native_executor_class'),
+      '--network-id', get_option('target_native_network_id'),
+      '--genesis-id', get_option('target_native_genesis_id'),
+      '--report', '@OUTPUT1@',
+      '--stamp', '@OUTPUT0@',
+    ],
+    build_always_stale: true,
+    build_by_default: false,
+    console: true,
+  )
+
+  alias_target('target-elements-native-check', target_native_check)
+endif
