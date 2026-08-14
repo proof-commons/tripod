@@ -23,6 +23,7 @@ use crate::encoding::EncodingClass;
 use crate::evidence::TargetEvidenceRequirementId;
 use crate::opcode::{FailureCause, OpcodeId};
 use crate::resource::ResourceDimension;
+use crate::success::SuccessCondition;
 
 /// A typed target-contract failure.
 ///
@@ -51,6 +52,13 @@ pub enum TargetError {
         offered: u8,
     },
 
+    /// An offered contract is internally coherent but is not the
+    /// first-party reviewed Elements contract, so it cannot carry the
+    /// reviewed trust state. This is not a claim that the offered
+    /// contract is malformed: it is a claim about whose contract it
+    /// is.
+    ReviewedDefinitionMismatch,
+
     /// A reviewed primitive identity has no contract in the registry.
     MissingOpcodeContract(OpcodeId),
 
@@ -75,6 +83,28 @@ pub enum TargetError {
     /// A primitive's operand or result widths are incoherent, so the
     /// contract describes no admissible stack shape.
     InvalidOpcodeStackContract(OpcodeId),
+
+    /// A primitive offers alternative successful forms but names none,
+    /// so the contract states no successful behavior at all.
+    IncompleteSuccessContract(OpcodeId),
+
+    /// A primitive names two successful forms under the same
+    /// condition, so the contract does not say which one the target
+    /// produces.
+    DuplicateSuccessCase {
+        /// The primitive carrying the duplicate.
+        opcode: OpcodeId,
+        /// The condition claimed twice.
+        case: SuccessCondition,
+    },
+
+    /// A successful form consumes more operands than the primitive
+    /// declares, so its resulting stack depth is not computable.
+    ContradictorySuccessCase(OpcodeId),
+
+    /// A primitive declares that it retains its operands while
+    /// declaring no operands to retain.
+    InvalidRetainedOperandContract(OpcodeId),
 
     /// A primitive declares no failure behavior at all. Every reviewed
     /// primitive can fail, so an empty failure contract is an
@@ -131,6 +161,24 @@ pub enum TargetError {
     /// An encoding carries opaque bytes but states a byte order,
     /// claiming a numeric interpretation the field does not have.
     SpuriousByteOrder(EncodingClass),
+
+    /// A numeric encoding states an order the contract revision does
+    /// not give that class, so its bytes decode to a different value.
+    EncodingByteOrderMismatch(EncodingClass),
+
+    /// An encoding is filed under a field group the contract revision
+    /// does not put it in, so its prefixes would have to be
+    /// unambiguous against the wrong set of forms.
+    EncodingDomainMismatch(EncodingClass),
+
+    /// An encoding states a width the contract revision does not give
+    /// that class.
+    EncodingWidthMismatch(EncodingClass),
+
+    /// An encoding states a canonicality rule the contract revision
+    /// does not give that class, so a decoder would accept or reject
+    /// the wrong byte strings.
+    EncodingCanonicalityMismatch(EncodingClass),
 
     /// An encoding names no evidence requirement.
     MissingEncodingEvidence(EncodingClass),
@@ -201,6 +249,17 @@ pub enum TargetError {
     /// A capability names no evidence requirement.
     MissingCapabilityEvidence(ElementsCapability),
 
+    /// A capability claims a stronger status than one of the
+    /// capabilities it transitively requires. Status is closed over
+    /// the prerequisite relation, because a capability cannot be more
+    /// usable than the weakest thing it is built on.
+    CapabilityStatusExceedsPrerequisite {
+        /// The capability claiming too much.
+        capability: ElementsCapability,
+        /// The weakest prerequisite it exceeds.
+        prerequisite: ElementsCapability,
+    },
+
     /// Capabilities require each other in a cycle, so no order in
     /// which they could be established exists.
     ///
@@ -228,6 +287,32 @@ pub enum TargetError {
     /// evidence for it goes stale, so a report for it would never
     /// expire.
     MissingStaleCondition(TargetEvidenceRequirementId),
+
+    /// The signature primitives, the signature primitive contract, the
+    /// per-check budget, the operand encodings, and the evidence link
+    /// do not describe the same behavior.
+    SignatureContractMismatch,
+
+    /// The timelock primitive, the relative-timelock contract, the
+    /// version prerequisite, and the evidence link do not describe the
+    /// same behavior.
+    TimelockContractMismatch,
+
+    /// The confidential-value claim states and the capability rows
+    /// describing the same claims do not agree.
+    ConfidentialContractMismatch,
+
+    /// The issuance census, the introspection result, the null marker,
+    /// the outpoint flag, and the issuance capabilities do not agree.
+    IssuanceContractMismatch,
+
+    /// The per-opcode resource costs, the per-check budget, and the
+    /// consensus and policy dimensions do not agree.
+    ResourceContractMismatch,
+
+    /// A subcontract names no evidence requirement, or names one the
+    /// registry does not declare.
+    EvidenceContractMismatch,
 
     /// A binding named the production environment. There is no
     /// production evidence boundary, so there is no production
@@ -286,6 +371,12 @@ impl fmt::Display for TargetError {
             Self::UnreviewedLeafVersion { offered } => {
                 write!(f, "unreviewed leaf version {offered:#04x}")
             }
+            Self::ReviewedDefinitionMismatch => {
+                write!(
+                    f,
+                    "the offered contract is not the reviewed Elements contract"
+                )
+            }
             Self::MissingOpcodeContract(id) => {
                 write!(f, "reviewed opcode {id:?} has no contract")
             }
@@ -300,6 +391,18 @@ impl fmt::Display for TargetError {
             }
             Self::InvalidOpcodeStackContract(id) => {
                 write!(f, "opcode {id:?} has an incoherent stack contract")
+            }
+            Self::IncompleteSuccessContract(id) => {
+                write!(f, "opcode {id:?} offers no successful form")
+            }
+            Self::DuplicateSuccessCase { opcode, case } => {
+                write!(f, "opcode {opcode:?} states condition {case:?} twice")
+            }
+            Self::ContradictorySuccessCase(id) => {
+                write!(f, "opcode {id:?} consumes operands it does not declare")
+            }
+            Self::InvalidRetainedOperandContract(id) => {
+                write!(f, "opcode {id:?} retains operands it does not declare")
             }
             Self::MissingOpcodeFailureContract(id) => {
                 write!(f, "opcode {id:?} declares no failure behavior")
@@ -336,6 +439,18 @@ impl fmt::Display for TargetError {
             }
             Self::SpuriousByteOrder(class) => {
                 write!(f, "opaque encoding {class:?} states a byte order")
+            }
+            Self::EncodingByteOrderMismatch(class) => {
+                write!(f, "encoding {class:?} states the wrong byte order")
+            }
+            Self::EncodingDomainMismatch(class) => {
+                write!(f, "encoding {class:?} states the wrong field group")
+            }
+            Self::EncodingWidthMismatch(class) => {
+                write!(f, "encoding {class:?} states the wrong payload width")
+            }
+            Self::EncodingCanonicalityMismatch(class) => {
+                write!(f, "encoding {class:?} states the wrong canonicality rule")
             }
             Self::MissingEncodingEvidence(class) => {
                 write!(f, "encoding {class:?} names no evidence requirement")
@@ -391,6 +506,15 @@ impl fmt::Display for TargetError {
             Self::MissingCapabilityEvidence(capability) => {
                 write!(f, "capability {capability:?} names no evidence requirement")
             }
+            Self::CapabilityStatusExceedsPrerequisite {
+                capability,
+                prerequisite,
+            } => {
+                write!(
+                    f,
+                    "capability {capability:?} claims more than prerequisite {prerequisite:?}"
+                )
+            }
             Self::CapabilityDependencyCycle { members } => {
                 write!(f, "capabilities require each other in a cycle: {members:?}")
             }
@@ -402,6 +526,24 @@ impl fmt::Display for TargetError {
             }
             Self::MissingStaleCondition(id) => {
                 write!(f, "evidence requirement {id:?} never goes stale")
+            }
+            Self::SignatureContractMismatch => {
+                write!(f, "the signature views do not describe one behavior")
+            }
+            Self::TimelockContractMismatch => {
+                write!(f, "the timelock views do not describe one behavior")
+            }
+            Self::ConfidentialContractMismatch => {
+                write!(f, "the confidential-value views do not agree")
+            }
+            Self::IssuanceContractMismatch => {
+                write!(f, "the issuance views do not agree")
+            }
+            Self::ResourceContractMismatch => {
+                write!(f, "the resource views do not agree")
+            }
+            Self::EvidenceContractMismatch => {
+                write!(f, "a subcontract names no declared evidence")
             }
             Self::ProductionBindingUnsupported => {
                 write!(f, "no production deployment binding exists")

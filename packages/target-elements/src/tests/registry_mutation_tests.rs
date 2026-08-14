@@ -19,7 +19,10 @@ use crate::definition::{
     TargetDefinition, TargetDefinitionParts, reviewed_elements_tapscript,
     validate_target_definition,
 };
-use crate::encoding::{EncodingClass, EncodingSpec, PayloadWidth};
+use crate::encoding::{
+    ByteOrder, CanonicalEncodingRule, EncodingClass, EncodingDomain, EncodingSpec,
+    PayloadInterpretation, PayloadWidth,
+};
 use crate::error::TargetError;
 use crate::evidence::TargetEvidenceRequirementId;
 use crate::opcode::OpcodeId;
@@ -93,33 +96,153 @@ fn the_same_prefix_in_two_field_groups_is_accepted() {
     assert!(validate_target_definition(TargetDefinition::new(parts)).is_ok());
 }
 
-#[test]
-fn a_numeric_encoding_stripped_of_its_order_stops_being_numeric() {
-    // The order and the numeric flag travel together by construction,
-    // so a contract cannot end up claiming a number whose bytes have
-    // no order. What a stripped encoding becomes instead is an opaque
-    // payload, and the mutation is visible as exactly that.
-    let mut parts = parts();
-    let victim = parts.encodings[&EncodingClass::SignedLittleEndian64].clone();
-    assert!(victim.is_numeric());
+/// The numeric encodings, stated independently of the registry.
+const NUMERIC_CLASSES: &[EncodingClass] = &[
+    EncodingClass::ExplicitValue,
+    EncodingClass::OutPointIndex,
+    EncodingClass::Sequence,
+    EncodingClass::ScriptNumber,
+    EncodingClass::SignedLittleEndian64,
+    EncodingClass::UnsignedLittleEndian32,
+    EncodingClass::UnsignedLittleEndian64,
+];
 
+/// Restates one encoding with a replacement byte order.
+fn with_byte_order(
+    parts: &mut TargetDefinitionParts,
+    class: EncodingClass,
+    byte_order: Option<ByteOrder>,
+) {
+    let victim = parts.encodings[&class].clone();
     parts.encodings.insert(
-        EncodingClass::SignedLittleEndian64,
+        class,
         EncodingSpec::new(
             victim.class(),
             victim.domain(),
             victim.prefixes().iter().copied(),
             victim.payload(),
-            None,
+            byte_order,
             victim.canonicality(),
             victim.evidence().iter().copied(),
         ),
     );
+}
+
+#[test]
+fn numericity_comes_from_the_class_and_not_from_the_offered_order() {
+    // The defect this replaces: numericity used to be *defined* as
+    // "an order was supplied", so stripping the order silently turned
+    // a signed sixty-four bit integer into an opaque blob and the
+    // validator's two byte-order branches could never fire.
+    let mut parts = parts();
+    with_byte_order(&mut parts, EncodingClass::SignedLittleEndian64, None);
 
     let rebuilt = parts.encodings[&EncodingClass::SignedLittleEndian64].clone();
-    assert!(!rebuilt.is_numeric());
+    assert!(
+        rebuilt.is_numeric(),
+        "a stripped order does not change the field"
+    );
     assert_eq!(rebuilt.byte_order(), None);
-    assert_ne!(rebuilt, victim);
+    assert_eq!(
+        rebuilt.interpretation(),
+        PayloadInterpretation::SignedInteger
+    );
+}
+
+#[test]
+fn every_numeric_encoding_stripped_of_its_order_is_rejected() {
+    for class in NUMERIC_CLASSES {
+        let mut parts = parts();
+        with_byte_order(&mut parts, *class, None);
+        assert!(
+            reject(parts).contains(&TargetError::MissingByteOrder(*class)),
+            "{class:?} carries a number and needs an order"
+        );
+    }
+}
+
+#[test]
+fn every_numeric_encoding_with_a_reversed_order_is_rejected() {
+    for class in NUMERIC_CLASSES {
+        let mut parts = parts();
+        with_byte_order(&mut parts, *class, Some(ByteOrder::BigEndian));
+        assert!(
+            reject(parts).contains(&TargetError::EncodingByteOrderMismatch(*class)),
+            "{class:?} is little-endian on the stack"
+        );
+    }
+}
+
+#[test]
+fn an_opaque_encoding_with_a_spurious_order_is_rejected() {
+    // The other direction, and the one the old design could not
+    // express at all: assigning an order to a commitment used to make
+    // it numeric by definition and therefore also consistent.
+    for class in [
+        EncodingClass::ConfidentialValue,
+        EncodingClass::SchnorrSignature,
+        EncodingClass::OutPointTxid,
+    ] {
+        let mut parts = parts();
+        with_byte_order(&mut parts, class, Some(ByteOrder::LittleEndian));
+        assert!(
+            reject(parts).contains(&TargetError::SpuriousByteOrder(class)),
+            "{class:?} is a byte string"
+        );
+    }
+}
+
+#[test]
+fn a_v1_encoding_stating_the_wrong_shape_is_rejected() {
+    // Under V1 the width, field group, and canonicality of each class
+    // are fixed by the contract revision rather than offered by the
+    // caller.
+    let mut parts = parts();
+    let victim = parts.encodings[&EncodingClass::OutPointIndex].clone();
+    parts.encodings.insert(
+        EncodingClass::OutPointIndex,
+        EncodingSpec::new(
+            victim.class(),
+            EncodingDomain::Number,
+            victim.prefixes().iter().copied(),
+            PayloadWidth::Exact(NonZeroUsize::new(8).expect("8 is not zero")),
+            victim.byte_order(),
+            CanonicalEncodingRule::Minimal,
+            victim.evidence().iter().copied(),
+        ),
+    );
+
+    let errors = reject(parts);
+    assert!(errors.contains(&TargetError::EncodingDomainMismatch(
+        EncodingClass::OutPointIndex
+    )));
+    assert!(errors.contains(&TargetError::EncodingWidthMismatch(
+        EncodingClass::OutPointIndex
+    )));
+    assert!(errors.contains(&TargetError::EncodingCanonicalityMismatch(
+        EncodingClass::OutPointIndex
+    )));
+}
+
+#[test]
+fn the_reviewed_registry_matches_the_declared_v1_shapes() {
+    // Two independent statements of the same facts have to agree. If
+    // they ever stop agreeing, one of them is a transcription mistake
+    // and the build says so rather than a consumer finding out.
+    let parts = parts();
+    for class in EncodingClass::ALL {
+        let spec = &parts.encodings[class];
+        let shape = class.v1_shape();
+        assert_eq!(spec.domain(), shape.domain(), "{class:?}");
+        assert_eq!(spec.payload(), shape.payload(), "{class:?}");
+        assert_eq!(spec.canonicality(), shape.canonicality(), "{class:?}");
+        assert_eq!(spec.byte_order(), shape.byte_order(), "{class:?}");
+        assert_eq!(
+            spec.byte_order().is_some(),
+            class.interpretation().is_numeric(),
+            "{class:?}"
+        );
+    }
 }
 
 #[test]

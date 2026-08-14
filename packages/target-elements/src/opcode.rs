@@ -22,6 +22,9 @@ use std::num::NonZeroUsize;
 
 use crate::encoding::{ByteOrder, EncodingClass};
 use crate::evidence::TargetEvidenceRequirementId;
+use crate::success::{
+    SuccessCase, SuccessCondition, SuccessContract, SuccessContractDefect, SuccessStackEffect,
+};
 
 /// The script execution domain a primitive is available in.
 ///
@@ -134,6 +137,25 @@ pub enum StackValueType {
     EncodedPayload(EncodingClass),
     /// The prefix byte of an encoded field, pushed as its own item.
     EncodingPrefix(EncodingClass),
+    /// The payload of an encoded field whose form is selected by the
+    /// prefix item pushed immediately above it.
+    ///
+    /// # Why this exists alongside the success alternatives
+    ///
+    /// A primitive that reads *one* field states its explicit and
+    /// confidential forms as separate success cases, because the whole
+    /// result differs. The issuance primitive reads *four* fields at
+    /// once, two of which are amounts that are independently explicit
+    /// or blinded. Its condition is issuance presence, not
+    /// confidentiality, and enumerating the product of the two amounts'
+    /// forms as four cases would name a condition the target does not
+    /// branch on. So the field's admissible forms are stated on the
+    /// item itself, and the prefix pushed above it is what a program
+    /// reads to tell them apart.
+    EncodedPayloadAlternatives(BTreeSet<EncodingClass>),
+    /// The prefix byte selecting among the alternative forms of one
+    /// encoded field, pushed as its own item.
+    EncodingPrefixAlternatives(BTreeSet<EncodingClass>),
     /// The target's empty stack item, used as both a false and an
     /// absent-field marker.
     Empty,
@@ -282,7 +304,7 @@ impl FailureContract {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StackContract {
     operands: Vec<StackValueType>,
-    success_results: Vec<StackValueType>,
+    success: SuccessContract,
     failure: FailureContract,
 }
 
@@ -290,17 +312,17 @@ impl StackContract {
     /// Builds a stack contract.
     ///
     /// `operands` is ordered deepest first, matching the order in
-    /// which a program pushes them. `success_results` is ordered in
-    /// push order, so its last element ends up on top.
+    /// which a program pushes them. `success` states every valid
+    /// successful form and what each one does to the stack.
     #[must_use]
     pub const fn new(
         operands: Vec<StackValueType>,
-        success_results: Vec<StackValueType>,
+        success: SuccessContract,
         failure: FailureContract,
     ) -> Self {
         Self {
             operands,
-            success_results,
+            success,
             failure,
         }
     }
@@ -311,10 +333,10 @@ impl StackContract {
         &self.operands
     }
 
-    /// The successful results, in push order.
+    /// The successful behavior, in all of its valid forms.
     #[must_use]
-    pub fn success_results(&self) -> &[StackValueType] {
-        &self.success_results
+    pub const fn success(&self) -> &SuccessContract {
+        &self.success
     }
 
     /// The failure behavior.
@@ -328,8 +350,15 @@ impl StackContract {
     pub fn has_malformed_width(&self) -> bool {
         self.operands
             .iter()
-            .chain(self.success_results.iter())
+            .chain(self.success.result_types().iter())
             .any(|value| matches!(value, StackValueType::Bytes { minimum, maximum } if minimum > maximum))
+    }
+
+    /// Why the successful behavior is not a coherent relation over the
+    /// declared operands, if it is not.
+    #[must_use]
+    pub fn success_defect(&self) -> Option<SuccessContractDefect> {
+        self.success.defect(self.operands.len())
     }
 }
 
@@ -671,6 +700,111 @@ const fn unsigned32() -> StackValueType {
     }
 }
 
+/// A stack contract whose one successful form consumes every operand
+/// it declares.
+///
+/// The common shape by a wide margin. Stating the consumed count from
+/// the operand list rather than by hand keeps the two from drifting
+/// apart in a registry this long.
+const fn consuming(
+    operands: Vec<StackValueType>,
+    results: Vec<StackValueType>,
+    failure: FailureContract,
+) -> StackContract {
+    let consumed_operands = operands.len();
+    StackContract::new(
+        operands,
+        SuccessContract::Fixed {
+            consumed_operands,
+            results,
+        },
+        failure,
+    )
+}
+
+/// One alternative successful form that consumes every operand.
+const fn case(
+    condition: SuccessCondition,
+    consumed_operands: usize,
+    results: Vec<StackValueType>,
+) -> SuccessCase {
+    SuccessCase::new(
+        condition,
+        SuccessStackEffect::new(consumed_operands, results),
+    )
+}
+
+/// The two forms a whole asset or value field arrives in.
+///
+/// Both push a payload and then a prefix, so the prefix ends up on
+/// top; what differs is the payload's width and meaning. An explicit
+/// amount is eight bytes and a blinded one is thirty-two, so a
+/// consumer that read only the explicit form would size the wrong
+/// item.
+fn explicit_or_confidential_field(
+    explicit: EncodingClass,
+    confidential: EncodingClass,
+) -> SuccessContract {
+    use StackValueType as S;
+
+    SuccessContract::Alternatives {
+        cases: vec![
+            case(
+                SuccessCondition::ExplicitEncoding,
+                1,
+                vec![S::EncodedPayload(explicit), S::EncodingPrefix(explicit)],
+            ),
+            case(
+                SuccessCondition::ConfidentialEncoding,
+                1,
+                vec![
+                    S::EncodedPayload(confidential),
+                    S::EncodingPrefix(confidential),
+                ],
+            ),
+        ],
+    }
+}
+
+/// The two forms a locking program arrives in.
+///
+/// A witness program is pushed as it stands with its version above it.
+/// Anything else is replaced by a digest of the program with a
+/// negative version marker above it, and the marker is what a program
+/// must branch on: the digest is not a program and cannot be treated
+/// as one.
+fn witness_or_digest_program() -> SuccessContract {
+    use StackValueType as S;
+
+    SuccessContract::Alternatives {
+        cases: vec![
+            case(
+                SuccessCondition::WitnessProgram,
+                1,
+                vec![S::Encoded(EncodingClass::WitnessProgram), S::ScriptNumber],
+            ),
+            case(
+                SuccessCondition::NonWitnessProgram,
+                1,
+                vec![
+                    S::Encoded(EncodingClass::ScriptPubKeySha256),
+                    S::ScriptNumber,
+                ],
+            ),
+        ],
+    }
+}
+
+/// The forms one issuance amount can arrive in.
+fn issuance_amount_forms() -> BTreeSet<EncodingClass> {
+    [
+        EncodingClass::ExplicitValue,
+        EncodingClass::ConfidentialValue,
+    ]
+    .into_iter()
+    .collect()
+}
+
 /// The failure effects every domain-gated primitive shares.
 fn gated(extra: impl IntoIterator<Item = FailureEffect>) -> FailureContract {
     let mut effects = vec![FailureEffect::new(
@@ -763,7 +897,7 @@ fn hashing_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::Sha256Initialize,
             0xc4,
-            StackContract::new(
+            consuming(
                 vec![any_bytes()],
                 vec![hash_state()],
                 gated([abort(C::StackUnderflow), abort(C::HashContextWrite)]),
@@ -774,7 +908,7 @@ fn hashing_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::Sha256Update,
             0xc5,
-            StackContract::new(
+            consuming(
                 vec![hash_state(), any_bytes()],
                 vec![hash_state()],
                 gated([
@@ -789,7 +923,7 @@ fn hashing_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::Sha256Finalize,
             0xc6,
-            StackContract::new(
+            consuming(
                 vec![hash_state(), any_bytes()],
                 vec![S::Encoded(E::Sha256Digest)],
                 gated([
@@ -815,7 +949,7 @@ fn input_introspection_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::InspectInputOutpoint,
             0xc7,
-            StackContract::new(
+            consuming(
                 vec![S::ScriptNumber],
                 vec![
                     S::Encoded(E::OutPointTxid),
@@ -836,11 +970,10 @@ fn input_introspection_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
                 // so the prefix ends up on top. Both explicit and
                 // confidential assets carry a payload of the same
                 // width, which is why the prefix is the only thing
-                // that distinguishes them on the stack.
-                vec![
-                    S::EncodedPayload(E::ExplicitAsset),
-                    S::EncodingPrefix(E::ExplicitAsset),
-                ],
+                // that distinguishes them on the stack — and why the
+                // two forms must still be named, since the payload's
+                // *meaning* differs entirely.
+                explicit_or_confidential_field(E::ExplicitAsset, E::ConfidentialAsset),
                 gated(introspection_failures()),
             ),
             plain(1),
@@ -857,13 +990,13 @@ fn input_introspection_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
                 vec![S::ScriptNumber],
                 // An explicit amount reaches the stack little-endian
                 // even though the transaction field stores it
-                // big-endian, and a confidential amount reaches it as
-                // a wider payload. The prefix is what tells them
-                // apart, and it is pushed last.
-                vec![
-                    S::EncodedPayload(E::ExplicitValue),
-                    S::EncodingPrefix(E::ExplicitValue),
-                ],
+                // big-endian, and it is eight bytes wide; a
+                // confidential amount reaches it as a thirty-two byte
+                // payload. The prefix is what tells them apart, and it
+                // is pushed last. An absent amount is pushed in the
+                // explicit form, as eight zero bytes under the
+                // explicit prefix, so it needs no third form.
+                explicit_or_confidential_field(E::ExplicitValue, E::ConfidentialValue),
                 gated(introspection_failures()),
             ),
             plain(1),
@@ -878,10 +1011,7 @@ fn input_introspection_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
             0xca,
             StackContract::new(
                 vec![S::ScriptNumber],
-                // A witness program is pushed with its version; any
-                // other program is replaced by a digest paired with a
-                // negative version marker.
-                vec![S::Encoded(E::WitnessProgram), S::ScriptNumber],
+                witness_or_digest_program(),
                 gated(introspection_failures()),
             ),
             plain(1),
@@ -906,7 +1036,7 @@ fn input_sequence_and_issuance_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::InspectInputSequence,
             0xcb,
-            StackContract::new(
+            consuming(
                 vec![S::ScriptNumber],
                 vec![S::Encoded(E::Sequence)],
                 gated(introspection_failures()),
@@ -920,19 +1050,43 @@ fn input_sequence_and_issuance_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
             StackContract::new(
                 vec![S::ScriptNumber],
                 // An input carrying an issuance pushes six items; an
-                // input carrying none pushes a single empty item. The
-                // successful result stated here is the issuance-present
-                // shape, and the absent shape is the reason the empty
-                // marker is a declared stack type rather than an
-                // afterthought.
-                vec![
-                    S::EncodedPayload(E::ExplicitValue),
-                    S::EncodingPrefix(E::ExplicitValue),
-                    S::EncodedPayload(E::ExplicitValue),
-                    S::EncodingPrefix(E::ExplicitValue),
-                    S::Encoded(E::IssuanceEntropy),
-                    S::Encoded(E::IssuanceBlindingNonce),
-                ],
+                // input carrying none pushes a single empty item.
+                //
+                // The push order is the reviewed one and it is not the
+                // order the fields are usually named in: the
+                // inflation-keys amount goes first, the issued amount
+                // second, then the entropy, then the blinding nonce.
+                // The nonce is last so that an empty stack top means
+                // exactly "no issuance" — which is why the absent form
+                // pushes the null value marker and nothing else.
+                //
+                // Either amount may be explicit or blinded, and the
+                // two are independent of each other. That is a
+                // property of each amount rather than of the issuance,
+                // so it is stated on the payload items instead of
+                // multiplying out into conditions the target does not
+                // branch on.
+                SuccessContract::Alternatives {
+                    cases: vec![
+                        case(
+                            SuccessCondition::IssuancePresent,
+                            1,
+                            vec![
+                                S::EncodedPayloadAlternatives(issuance_amount_forms()),
+                                S::EncodingPrefixAlternatives(issuance_amount_forms()),
+                                S::EncodedPayloadAlternatives(issuance_amount_forms()),
+                                S::EncodingPrefixAlternatives(issuance_amount_forms()),
+                                S::Encoded(E::IssuanceEntropy),
+                                S::Encoded(E::IssuanceBlindingNonce),
+                            ],
+                        ),
+                        case(
+                            SuccessCondition::IssuanceAbsent,
+                            1,
+                            vec![S::Encoded(E::NullValue)],
+                        ),
+                    ],
+                },
                 gated(introspection_failures()),
             ),
             plain(5),
@@ -956,7 +1110,7 @@ fn current_index_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::PushCurrentInputIndex,
             0xcd,
-            StackContract::new(
+            consuming(
                 vec![],
                 vec![S::ScriptNumber],
                 gated([abort(C::IntrospectionContextUnavailable)]),
@@ -980,10 +1134,7 @@ fn output_introspection_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
             0xce,
             StackContract::new(
                 vec![S::ScriptNumber],
-                vec![
-                    S::EncodedPayload(E::ExplicitAsset),
-                    S::EncodingPrefix(E::ExplicitAsset),
-                ],
+                explicit_or_confidential_field(E::ExplicitAsset, E::ConfidentialAsset),
                 gated(introspection_failures()),
             ),
             plain(1),
@@ -998,10 +1149,7 @@ fn output_introspection_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
             0xcf,
             StackContract::new(
                 vec![S::ScriptNumber],
-                vec![
-                    S::EncodedPayload(E::ExplicitValue),
-                    S::EncodingPrefix(E::ExplicitValue),
-                ],
+                explicit_or_confidential_field(E::ExplicitValue, E::ConfidentialValue),
                 gated(introspection_failures()),
             ),
             plain(1),
@@ -1019,8 +1167,28 @@ fn output_introspection_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
                 // The one asymmetric case among the reviewed
                 // introspection primitives: the nonce arrives as a
                 // single item with its prefix byte still attached,
-                // where assets and values arrive split in two.
-                vec![S::Encoded(E::ExplicitNonce)],
+                // where assets and values arrive split in two. An
+                // absent nonce arrives as the empty item, which is a
+                // third form rather than a degenerate explicit one.
+                SuccessContract::Alternatives {
+                    cases: vec![
+                        case(
+                            SuccessCondition::ExplicitEncoding,
+                            1,
+                            vec![S::Encoded(E::ExplicitNonce)],
+                        ),
+                        case(
+                            SuccessCondition::ConfidentialEncoding,
+                            1,
+                            vec![S::Encoded(E::ConfidentialNonce)],
+                        ),
+                        case(
+                            SuccessCondition::NullEncoding,
+                            1,
+                            vec![S::Encoded(E::NullNonce)],
+                        ),
+                    ],
+                },
                 gated(introspection_failures()),
             ),
             plain(0),
@@ -1035,7 +1203,7 @@ fn output_introspection_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
             0xd1,
             StackContract::new(
                 vec![S::ScriptNumber],
-                vec![S::Encoded(E::WitnessProgram), S::ScriptNumber],
+                witness_or_digest_program(),
                 gated(introspection_failures()),
             ),
             plain(1),
@@ -1059,21 +1227,21 @@ fn transaction_introspection_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::InspectVersion,
             0xd2,
-            StackContract::new(vec![], vec![unsigned32()], gated([])),
+            consuming(vec![], vec![unsigned32()], gated([])),
             plain(1),
             &[R::OpcodeSemantics, R::TransactionIntrospectionSemantics],
         ),
         spec(
             O::InspectLockTime,
             0xd3,
-            StackContract::new(vec![], vec![unsigned32()], gated([])),
+            consuming(vec![], vec![unsigned32()], gated([])),
             plain(1),
             &[R::OpcodeSemantics, R::TransactionIntrospectionSemantics],
         ),
         spec(
             O::InspectNumInputs,
             0xd4,
-            StackContract::new(
+            consuming(
                 vec![],
                 vec![S::ScriptNumber],
                 gated([abort(C::IntrospectionContextUnavailable)]),
@@ -1084,7 +1252,7 @@ fn transaction_introspection_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::InspectNumOutputs,
             0xd5,
-            StackContract::new(
+            consuming(
                 vec![],
                 vec![S::ScriptNumber],
                 gated([abort(C::IntrospectionContextUnavailable)]),
@@ -1095,7 +1263,7 @@ fn transaction_introspection_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::TxWeight,
             0xd6,
-            StackContract::new(
+            consuming(
                 vec![],
                 vec![unsigned64()],
                 gated([abort(C::IntrospectionContextUnavailable)]),
@@ -1122,7 +1290,7 @@ fn arithmetic_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::Add64,
             0xd7,
-            StackContract::new(
+            consuming(
                 vec![signed64(), signed64()],
                 vec![signed64(), S::Bool],
                 gated([
@@ -1137,7 +1305,7 @@ fn arithmetic_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::Sub64,
             0xd8,
-            StackContract::new(
+            consuming(
                 vec![signed64(), signed64()],
                 vec![signed64(), S::Bool],
                 gated([
@@ -1152,7 +1320,7 @@ fn arithmetic_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::Mul64,
             0xd9,
-            StackContract::new(
+            consuming(
                 vec![signed64(), signed64()],
                 vec![signed64(), S::Bool],
                 gated([
@@ -1167,7 +1335,7 @@ fn arithmetic_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::Div64,
             0xda,
-            StackContract::new(
+            consuming(
                 vec![signed64(), signed64()],
                 // Remainder first, then quotient, then the flag. The
                 // remainder is normalized non-negative, so this is
@@ -1186,7 +1354,7 @@ fn arithmetic_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::Neg64,
             0xdb,
-            StackContract::new(
+            consuming(
                 vec![signed64()],
                 vec![signed64(), S::Bool],
                 gated([
@@ -1217,7 +1385,7 @@ fn comparison_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::LessThan64,
             0xdc,
-            StackContract::new(
+            consuming(
                 vec![signed64(), signed64()],
                 vec![S::Bool],
                 gated([abort(C::StackUnderflow), abort(C::InvalidOperandWidth)]),
@@ -1228,7 +1396,7 @@ fn comparison_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::LessThanOrEqual64,
             0xdd,
-            StackContract::new(
+            consuming(
                 vec![signed64(), signed64()],
                 vec![S::Bool],
                 gated([abort(C::StackUnderflow), abort(C::InvalidOperandWidth)]),
@@ -1239,7 +1407,7 @@ fn comparison_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::GreaterThan64,
             0xde,
-            StackContract::new(
+            consuming(
                 vec![signed64(), signed64()],
                 vec![S::Bool],
                 gated([abort(C::StackUnderflow), abort(C::InvalidOperandWidth)]),
@@ -1250,7 +1418,7 @@ fn comparison_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::GreaterThanOrEqual64,
             0xdf,
-            StackContract::new(
+            consuming(
                 vec![signed64(), signed64()],
                 vec![S::Bool],
                 gated([abort(C::StackUnderflow), abort(C::InvalidOperandWidth)]),
@@ -1272,7 +1440,7 @@ fn conversion_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::ScriptNumToLe64,
             0xe0,
-            StackContract::new(
+            consuming(
                 vec![S::ScriptNumber],
                 vec![signed64()],
                 gated([abort(C::StackUnderflow), abort(C::MalformedScriptNumber)]),
@@ -1283,7 +1451,7 @@ fn conversion_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::Le64ToScriptNum,
             0xe1,
-            StackContract::new(
+            consuming(
                 vec![signed64()],
                 vec![S::ScriptNumber],
                 // Narrowing aborts rather than pushing a false: a
@@ -1301,7 +1469,7 @@ fn conversion_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::Le32ToLe64,
             0xe2,
-            StackContract::new(
+            consuming(
                 // The operand is read unsigned and zero-extended, so
                 // this widening never produces a negative result.
                 vec![unsigned32()],
@@ -1326,7 +1494,7 @@ fn curve_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::EcMulScalarVerify,
             0xe3,
-            StackContract::new(
+            consuming(
                 vec![
                     S::Encoded(E::CompressedPublicKey),
                     S::Encoded(E::CompressedPublicKey),
@@ -1348,7 +1516,7 @@ fn curve_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::TweakVerify,
             0xe4,
-            StackContract::new(
+            consuming(
                 vec![
                     S::Encoded(E::CompressedPublicKey),
                     S::Encoded(E::TaprootTweak),
@@ -1385,7 +1553,7 @@ fn signature_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::CheckSig,
             0xac,
-            StackContract::new(
+            consuming(
                 vec![
                     S::Encoded(E::SchnorrSignature),
                     S::Encoded(E::XOnlyPublicKey),
@@ -1409,7 +1577,7 @@ fn signature_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::CheckSigVerify,
             0xad,
-            StackContract::new(
+            consuming(
                 vec![
                     S::Encoded(E::SchnorrSignature),
                     S::Encoded(E::XOnlyPublicKey),
@@ -1436,7 +1604,7 @@ fn signature_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::CheckSigFromStack,
             0xc1,
-            StackContract::new(
+            consuming(
                 vec![
                     S::Encoded(E::SchnorrSignature),
                     any_bytes(),
@@ -1457,7 +1625,7 @@ fn signature_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::CheckSigFromStackVerify,
             0xc2,
-            StackContract::new(
+            consuming(
                 vec![
                     S::Encoded(E::SchnorrSignature),
                     any_bytes(),
@@ -1490,10 +1658,15 @@ fn timelock_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
             O::CheckSequenceVerify,
             0xb2,
             StackContract::new(
-                // The operand is inspected and left in place; this
-                // primitive pushes and pops nothing.
                 vec![S::ScriptNumber],
-                vec![],
+                // The operand is inspected and left in place, and
+                // nothing is pushed above it: a successful check
+                // leaves the stack exactly as it found it. Recording
+                // this as a consuming form with no results would have
+                // described a net reduction of one, contradicting the
+                // resource row's growth of zero and mis-scheduling
+                // every program that uses a relative timelock.
+                SuccessContract::RetainsOperands { results: vec![] },
                 FailureContract::new([
                     abort(C::StackUnderflow),
                     abort(C::MalformedScriptNumber),

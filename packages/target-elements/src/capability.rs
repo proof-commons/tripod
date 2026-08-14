@@ -172,6 +172,33 @@ pub enum StaticCapabilityStatus {
     Unsupported,
 }
 
+impl StaticCapabilityStatus {
+    /// The status's place in the total order
+    /// `Unsupported < Incomplete < Reviewed`.
+    ///
+    /// # Why this is not the derived ordering
+    ///
+    /// The derived comparison follows declaration order, which runs
+    /// the other way and would silently invert every closure check.
+    /// The strength order is a semantic decision, so it is written out
+    /// here and reordering the variants for readability cannot change
+    /// what the validator enforces.
+    #[must_use]
+    pub const fn strength(self) -> u8 {
+        match self {
+            Self::Unsupported => 0,
+            Self::Incomplete => 1,
+            Self::Reviewed => 2,
+        }
+    }
+
+    /// Whether this status is no stronger than `other`.
+    #[must_use]
+    pub const fn at_most(self, other: Self) -> bool {
+        self.strength() <= other.strength()
+    }
+}
+
 /// The complete typed contract of one capability.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CapabilityContract {
@@ -292,6 +319,74 @@ pub fn prerequisite_cycle_residual(
             }
         }
     }
+}
+
+/// Every capability reachable from `capability` by following
+/// prerequisites, excluding the capability itself.
+///
+/// Cycle-safe: a capability already visited is not expanded again, so
+/// a cyclic registry yields a finite set rather than looping. The
+/// cycle itself is reported separately by
+/// [`prerequisite_cycle_residual`].
+#[must_use]
+pub fn transitive_prerequisites(
+    contracts: &BTreeMap<ElementsCapability, CapabilityContract>,
+    capability: ElementsCapability,
+) -> BTreeSet<ElementsCapability> {
+    let mut reached: BTreeSet<ElementsCapability> = BTreeSet::new();
+    let mut pending: Vec<ElementsCapability> = contracts
+        .get(&capability)
+        .map(|contract| contract.prerequisites().iter().copied().collect())
+        .unwrap_or_default();
+
+    while let Some(next) = pending.pop() {
+        if next == capability || !reached.insert(next) {
+            continue;
+        }
+        if let Some(contract) = contracts.get(&next) {
+            pending.extend(contract.prerequisites().iter().copied());
+        }
+    }
+
+    reached
+}
+
+/// Reports each capability whose status exceeds a transitive
+/// prerequisite's, paired with the weakest prerequisite responsible.
+///
+/// # Why the status must be closed and not merely resolvable
+///
+/// A capability is a claim that a program can do something. Realizing
+/// it needs everything it depends upon, so a row marked reviewed above
+/// a prerequisite marked unsupported is not a strong claim standing on
+/// a weak one — it is a claim that cannot be true. The existing
+/// prerequisite checks establish that the edges resolve and that the
+/// graph can be ordered; neither says anything about strength.
+///
+/// One offending prerequisite is named per capability. Naming every
+/// one would list the same repair several times over, and the weakest
+/// is the one that has to move first.
+#[must_use]
+pub fn status_closure_violations(
+    contracts: &BTreeMap<ElementsCapability, CapabilityContract>,
+) -> Vec<(ElementsCapability, ElementsCapability)> {
+    let mut violations = Vec::new();
+
+    for (capability, contract) in contracts {
+        let offender = transitive_prerequisites(contracts, *capability)
+            .into_iter()
+            .filter_map(|prerequisite| {
+                let status = contracts.get(&prerequisite)?.status();
+                (!contract.status().at_most(status)).then_some((status.strength(), prerequisite))
+            })
+            .min();
+
+        if let Some((_, prerequisite)) = offender {
+            violations.push((*capability, prerequisite));
+        }
+    }
+
+    violations
 }
 
 /// Builds the reviewed capability registry.

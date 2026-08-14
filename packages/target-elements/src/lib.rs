@@ -82,6 +82,8 @@ pub mod evidence;
 pub mod evidence_registry;
 pub mod opcode;
 pub mod resource;
+pub mod success;
+mod weld;
 
 pub use authorization::{
     AuthorizationContract, RelativeTimelockContract, SequenceFieldLayout, SighashCapability,
@@ -89,14 +91,16 @@ pub use authorization::{
 };
 pub use capability::{
     CapabilityContract, ElementsCapability, StaticCapabilityStatus, prerequisite_cycle_residual,
+    status_closure_violations, transitive_prerequisites,
 };
 pub use confidential::{
     ConfidentialCapabilityState, ConfidentialValueCapability, ConfidentialValueContract,
     IssuanceContract, IssuanceField,
 };
 pub use definition::{
-    TargetContractVersion, TargetDefinition, TargetDefinitionParts, TargetProjection,
-    ValidatedTargetDefinition, reviewed_elements_tapscript, validate_target_definition,
+    ReviewedElementsTapscriptDefinition, TargetContractVersion, TargetDefinition,
+    TargetDefinitionParts, TargetProjection, ValidatedTargetDefinition,
+    reviewed_elements_tapscript, validate_as_reviewed_elements, validate_target_definition,
 };
 pub use deployment::{
     ActivationDeclaration, DeploymentEnvironment, DeploymentProjection,
@@ -105,8 +109,8 @@ pub use deployment::{
     validate_development_binding,
 };
 pub use encoding::{
-    ByteOrder, CanonicalEncodingRule, EncodingClass, EncodingDomain, EncodingSpec, PayloadWidth,
-    UnknownPrefixRule,
+    ByteOrder, CanonicalEncodingRule, EncodingClass, EncodingDomain, EncodingSpec,
+    PayloadInterpretation, PayloadWidth, UnknownPrefixRule, V1EncodingShape,
 };
 pub use error::TargetError;
 pub use evidence::TargetEvidenceRequirementId;
@@ -121,6 +125,9 @@ pub use opcode::{
 pub use resource::{
     ConsensusResourceLimits, PolicyResourceLimits, ResourceBound, ResourceContract,
     ResourceDimension,
+};
+pub use success::{
+    SuccessCase, SuccessCondition, SuccessContract, SuccessContractDefect, SuccessStackEffect,
 };
 
 #[cfg(test)]

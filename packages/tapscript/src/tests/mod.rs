@@ -25,15 +25,19 @@ mod non_weakening_tests;
 use std::collections::BTreeMap;
 
 use target_elements::{
-    ActivationDeclaration, CapabilityContract, DeploymentEnvironment, DevelopmentDeploymentBinding,
-    ElementsCapability, ElementsTarget, LeafVersion, StaticCapabilityStatus, TargetContractVersion,
-    TargetDefinition, TargetDefinitionParts, ValidatedTargetDefinition, bind_development_target,
-    reviewed_elements_tapscript, validate_development_binding, validate_target_definition,
+    ActivationDeclaration, CapabilityContract, ConfidentialCapabilityState,
+    ConfidentialValueCapability, ConfidentialValueContract, DeploymentEnvironment,
+    DevelopmentDeploymentBinding, ElementsCapability, ElementsTarget, LeafVersion,
+    StaticCapabilityStatus, TargetContractVersion, TargetDefinition, TargetDefinitionParts,
+    ValidatedTargetDefinition, bind_development_target, reviewed_elements_tapscript,
+    status_closure_violations, validate_development_binding, validate_target_definition,
 };
 
 /// The reviewed contract, unmodified.
 fn reviewed_definition() -> ValidatedTargetDefinition {
-    reviewed_elements_tapscript().expect("the reviewed contract validates")
+    reviewed_elements_tapscript()
+        .expect("the reviewed contract validates")
+        .into_validated()
 }
 
 /// Bind a validated contract to a development instance.
@@ -80,6 +84,44 @@ fn target_with_status(
     target_with_statuses(&[(capability, status)])
 }
 
+/// The two capability rows that carry one confidential-value claim.
+const VALUE_INSPECTION_PAIR: &[ElementsCapability] = &[
+    ElementsCapability::InputValueInspection,
+    ElementsCapability::OutputValueInspection,
+];
+
+/// Rewrites one capability row's status in place.
+fn restate(
+    capabilities: &mut BTreeMap<ElementsCapability, CapabilityContract>,
+    capability: ElementsCapability,
+    status: StaticCapabilityStatus,
+) {
+    let previous = capabilities[&capability].clone();
+    capabilities.insert(
+        capability,
+        CapabilityContract::new(
+            previous.capability(),
+            previous.prerequisites().iter().copied(),
+            previous.opcodes().iter().copied(),
+            previous.encodings().iter().copied(),
+            previous.evidence().iter().copied(),
+            status,
+        ),
+    );
+}
+
+/// The confidential-value claim state a capability status implies.
+const fn implied_state(status: StaticCapabilityStatus) -> ConfidentialCapabilityState {
+    match status {
+        StaticCapabilityStatus::Reviewed => ConfidentialCapabilityState::PrimitiveReviewed,
+        StaticCapabilityStatus::Incomplete => ConfidentialCapabilityState::ExternalConsensusClaim,
+        // The status enum is non-exhaustive, so unsupported is reached
+        // through the wildcard along with anything added later. A
+        // fixture erring toward the weakest claim is the safe default.
+        _ => ConfidentialCapabilityState::Unsupported,
+    }
+}
+
 /// The reviewed contract with several capabilities' statuses changed.
 fn target_with_statuses(
     changes: &[(ElementsCapability, StaticCapabilityStatus)],
@@ -104,6 +146,73 @@ fn target_with_statuses(
         capabilities.insert(*capability, restated);
     }
 
+    // Two target-package rules now constrain what a lone downgrade can
+    // mean, and both have to be honoured here or the mutated contract
+    // does not validate at all. Status is closed over the prerequisite
+    // relation, so a downgrade carries its dependents down with it; and
+    // input and output value inspection are two rows of one
+    // confidential-value claim, so they move together. Settling both to
+    // a fixed point keeps this fixture mechanical: it still says "this
+    // capability stops being established", and now says it about
+    // everything that stood on it.
+    loop {
+        let mut moved = false;
+
+        let weakest = VALUE_INSPECTION_PAIR
+            .iter()
+            .map(|capability| capabilities[capability].status())
+            .min_by_key(|status| status.strength())
+            .expect("the pair is not empty");
+        for capability in VALUE_INSPECTION_PAIR {
+            if capabilities[capability].status() != weakest {
+                restate(&mut capabilities, *capability, weakest);
+                moved = true;
+            }
+        }
+
+        for (capability, prerequisite) in status_closure_violations(&capabilities) {
+            let bound = capabilities[&prerequisite].status();
+            restate(&mut capabilities, capability, bound);
+            moved = true;
+        }
+
+        if !moved {
+            break;
+        }
+    }
+
+    // The confidential-value claim states describe the same facts as
+    // those capability rows, so they are re-derived rather than left
+    // asserting the reviewed answer over a downgraded registry.
+    let source = contract.confidential_values();
+    let confidential_values = ConfidentialValueContract::new(
+        [
+            (
+                ConfidentialValueCapability::ConsensusValueConservation,
+                ElementsCapability::ConfidentialValueConservation,
+            ),
+            (
+                ConfidentialValueCapability::CommitmentEquality,
+                ElementsCapability::CommitmentEquality,
+            ),
+            (
+                ConfidentialValueCapability::ExplicitValueInspection,
+                ElementsCapability::ExplicitValueInspection,
+            ),
+            (
+                ConfidentialValueCapability::ConfidentialValueInspection,
+                ElementsCapability::InputValueInspection,
+            ),
+            (
+                ConfidentialValueCapability::AuthenticatedOpening,
+                ElementsCapability::AuthenticatedValueOpening,
+            ),
+        ]
+        .map(|(claim, capability)| (claim, implied_state(capabilities[&capability].status()))),
+        source.participating_encodings().iter().copied(),
+        source.evidence().iter().copied(),
+    );
+
     let definition = validate_target_definition(TargetDefinition::new(TargetDefinitionParts {
         version: contract.version(),
         execution_domain: contract.execution_domain(),
@@ -111,7 +220,7 @@ fn target_with_statuses(
         opcodes: contract.opcodes().clone(),
         encodings: contract.encodings().clone(),
         authorization: contract.authorization().clone(),
-        confidential_values: contract.confidential_values().clone(),
+        confidential_values,
         issuance: contract.issuance().clone(),
         resources: contract.resources().clone(),
         capabilities,

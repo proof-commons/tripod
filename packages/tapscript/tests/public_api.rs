@@ -21,7 +21,9 @@ use target_elements::{
 /// ready-made target, deliberately, so that every consumer states the
 /// deployment it means instead of inheriting an unexamined one.
 fn reviewed_target() -> ElementsTarget {
-    let definition = reviewed_elements_tapscript().expect("the reviewed contract validates");
+    let definition = reviewed_elements_tapscript()
+        .expect("the reviewed contract validates")
+        .into_validated();
     let binding = validate_development_binding(
         &definition,
         DevelopmentDeploymentBinding::new(

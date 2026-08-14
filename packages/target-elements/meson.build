@@ -15,6 +15,8 @@ target_elements_source_files = files(
   'src/lib.rs',
   'src/opcode.rs',
   'src/resource.rs',
+  'src/success.rs',
+  'src/weld.rs',
   'src/tests/capability_tests.rs',
   'src/tests/definition_tests.rs',
   'src/tests/deployment_tests.rs',
@@ -24,6 +26,8 @@ target_elements_source_files = files(
   'src/tests/opcode_tests.rs',
   'src/tests/permutation_tests.rs',
   'src/tests/registry_mutation_tests.rs',
+  'src/tests/status_closure_tests.rs',
+  'src/tests/weld_tests.rs',
 )
 
 # Crate documentation (DOC owner).

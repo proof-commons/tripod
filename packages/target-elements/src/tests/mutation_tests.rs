@@ -18,6 +18,7 @@ use crate::opcode::{
     FailureCause, FailureContract, FailureEffect, FailureOutcome, LeafVersion, OpcodeId,
     OpcodeResourceCost, OpcodeSpec, StackContract, StackValueType,
 };
+use crate::success::{SuccessCase, SuccessCondition, SuccessContract, SuccessStackEffect};
 
 /// The reviewed registry, as a mutable starting point.
 fn registry() -> BTreeMap<OpcodeId, OpcodeSpec> {
@@ -146,7 +147,7 @@ fn an_absent_failure_contract_is_rejected() {
     let victim = opcodes[&OpcodeId::Add64].clone();
     let stack = StackContract::new(
         victim.stack().operands().to_vec(),
-        victim.stack().success_results().to_vec(),
+        victim.stack().success().clone(),
         FailureContract::new([]),
     );
     opcodes.insert(OpcodeId::Add64, with_stack(&victim, stack));
@@ -165,7 +166,7 @@ fn one_failure_cause_with_two_effects_is_rejected() {
     let victim = opcodes[&OpcodeId::Add64].clone();
     let stack = StackContract::new(
         victim.stack().operands().to_vec(),
-        victim.stack().success_results().to_vec(),
+        victim.stack().success().clone(),
         FailureContract::new([
             FailureEffect::new(
                 FailureCause::ArithmeticOverflow,
@@ -196,7 +197,7 @@ fn a_malformed_operand_width_is_rejected() {
             minimum: 64,
             maximum: 32,
         }],
-        victim.stack().success_results().to_vec(),
+        victim.stack().success().clone(),
         victim.stack().failure().clone(),
     );
     opcodes.insert(OpcodeId::Sha256Initialize, with_stack(&victim, stack));
@@ -365,4 +366,92 @@ fn an_unsigned_operand_is_not_a_signed_one() {
 
     let widening = registry()[&OpcodeId::Le32ToLe64].clone();
     assert_eq!(widening.stack().operands(), &[unsigned]);
+}
+
+/// Replaces one primitive's successful behavior and rejects.
+fn reject_success(id: OpcodeId, success: SuccessContract) -> Vec<TargetError> {
+    let mut opcodes = registry();
+    let victim = opcodes[&id].clone();
+    let stack = StackContract::new(
+        victim.stack().operands().to_vec(),
+        success,
+        victim.stack().failure().clone(),
+    );
+    opcodes.insert(id, with_stack(&victim, stack));
+    reject(definition(opcodes))
+}
+
+#[test]
+fn a_success_contract_offering_no_form_is_rejected() {
+    // Alternatives with no cases states that the primitive succeeds
+    // and refuses to say what that does to the stack.
+    assert!(
+        reject_success(
+            OpcodeId::InspectOutputNonce,
+            SuccessContract::Alternatives { cases: Vec::new() }
+        )
+        .contains(&TargetError::IncompleteSuccessContract(
+            OpcodeId::InspectOutputNonce
+        ))
+    );
+}
+
+#[test]
+fn two_forms_under_one_condition_are_rejected() {
+    // Two answers to the same question is not a contract.
+    let duplicated = SuccessContract::Alternatives {
+        cases: vec![
+            SuccessCase::new(
+                SuccessCondition::ExplicitEncoding,
+                SuccessStackEffect::new(1, vec![StackValueType::ScriptNumber]),
+            ),
+            SuccessCase::new(
+                SuccessCondition::ExplicitEncoding,
+                SuccessStackEffect::new(1, vec![StackValueType::Bool]),
+            ),
+        ],
+    };
+    assert!(
+        reject_success(OpcodeId::InspectOutputNonce, duplicated).contains(
+            &TargetError::DuplicateSuccessCase {
+                opcode: OpcodeId::InspectOutputNonce,
+                case: SuccessCondition::ExplicitEncoding,
+            }
+        )
+    );
+}
+
+#[test]
+fn a_form_consuming_undeclared_operands_is_rejected() {
+    // The nonce primitive declares one operand. A form claiming to
+    // consume three describes a depth no program could reach.
+    assert!(
+        reject_success(
+            OpcodeId::InspectOutputNonce,
+            SuccessContract::Fixed {
+                consumed_operands: 3,
+                results: vec![StackValueType::Bool],
+            }
+        )
+        .contains(&TargetError::ContradictorySuccessCase(
+            OpcodeId::InspectOutputNonce
+        ))
+    );
+}
+
+#[test]
+fn retaining_operands_that_do_not_exist_is_rejected() {
+    // The current-index primitive takes no operands, so there is
+    // nothing for it to retain and the claim is empty.
+    assert!(
+        reject_success(
+            OpcodeId::PushCurrentInputIndex,
+            SuccessContract::RetainsOperands {
+                results: vec![StackValueType::ScriptNumber],
+            }
+        )
+        .contains(&TargetError::InvalidRetainedOperandContract(
+            OpcodeId::PushCurrentInputIndex
+        ))
+    );
 }
