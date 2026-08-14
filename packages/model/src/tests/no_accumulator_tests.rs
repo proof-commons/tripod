@@ -519,7 +519,10 @@ fn runtime_constants_match_a_calibrated_deployment_profile() {
     let profile = architecture::DeploymentProfile {
         schema_version: architecture::DEPLOYMENT_PROFILE_SCHEMA_VERSION,
         status: architecture::PublicationStatus::Draft,
-        architecture_semantic_hash: architecture::semantic_hash(&ARCHITECTURE).unwrap(),
+        architecture_semantic_hash: architecture::semantic_hash(
+            &architecture::validate_draft(&ARCHITECTURE).unwrap(),
+        )
+        .unwrap(),
         network_id: [0xC1; 32],
         genesis_id: [0xC2; 32],
         script_limits: architecture::ScriptLimits {

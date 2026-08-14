@@ -305,8 +305,8 @@ Current identities have these scopes:
 | Git commit/tree IDs | Source provenance | Retain; never protocol identity |
 | Document UUID | Exact paper-input provenance in XMP | Retain; publication-only |
 | Instance UUID | Paper-subtree Git-tree provenance in XMP | Retain; publication-only |
-| Layer-0 anchor-set hash | Exact imported Layer-0 dependency set | Retain |
-| Architecture semantic hash | Canonical complete architecture meaning | Retain |
+| Layer-0 anchor-set hash | Exact imported Layer-0 dependency set | Retain; grandfathered recipe |
+| Architecture semantic hash | Canonical complete architecture meaning | Retain; grandfathered recipe |
 | Architecture behavioural hash | Realization-major versioning gate only | Retain; do not propagate as a general runtime identity |
 | Generated-file exact comparisons | Publication freshness | Retain; add no redundant hash |
 | Deployment-profile hash | Future aggregate deployment-profile identity | Retain as pre-release infrastructure; it gives no release assurance until a real consumer validates it |
@@ -346,6 +346,30 @@ Migration records:
 
 A recipe migration does not itself imply a semantic version change. The owning
 semantic versioning rule decides that question.
+
+---
+
+## Grandfathered digest recipes · `rule:identity:grandfathered`
+
+Two active recipes predate the domain-separated form and are reviewed
+exceptions to it, not defects awaiting migration: the architecture semantic
+hash, SHA-256 over the canonical architecture JSON body with the algorithm
+identifier carried beside the hash in the envelope rather than inside the
+hashed input; and the Layer-0 anchor-set hash, SHA-256 over the sorted distinct
+anchor names.
+
+The exception rests on three facts. The algorithm identifier is published
+alongside every value, so a recipe is never inferred from a digest. Every
+consumer welds algorithm and value as one pair, so a value cannot be
+reinterpreted under another recipe. And both identities are already published:
+adding a domain prefix under the existing identifier is the silent redefinition
+the migration rule forbids, and minting new identifiers without a
+consumer-driven migration would move published values for no assurance gain.
+
+The exception is bounded to these two recipes. Every future semantic identity
+uses the domain-separated form, as the behavioural and deployment-profile
+hashes already do, and either grandfathered recipe changes only through the
+migration rule, never in place.
 
 ---
 

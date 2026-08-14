@@ -18,11 +18,14 @@ pub struct ArchitectureBinding {
 impl ArchitectureBinding {
     /// Validate and bind one typed architecture.
     pub fn from_architecture(architecture: &Architecture) -> Result<Self, RealizationError> {
-        if let Err(errors) = architecture::validate_draft(architecture) {
-            return Err(RealizationError::ArchitectureValidationFailed { errors });
-        }
+        // Validation before identity: the wrapper `validate_draft`
+        // returns is the only value the semantic hash accepts, so this
+        // ordering is now enforced by the type rather than by
+        // convention (R2-N03).
+        let validated = architecture::validate_draft(architecture)
+            .map_err(|errors| RealizationError::ArchitectureValidationFailed { errors })?;
 
-        let semantic_hash = architecture::semantic_hash(architecture)
+        let semantic_hash = architecture::semantic_hash(&validated)
             .map_err(|_| RealizationError::ArchitectureHashUnavailable)?;
 
         Ok(Self {

@@ -4,10 +4,18 @@
 //! any masthead identity fails here deterministically.
 
 use architecture::{
-    ARCHITECTURE, PublishedArchitecture, behavioural_hash_hex, canonical, semantic_hash_hex,
+    ARCHITECTURE, PublishedArchitecture, ValidatedDraftArchitecture, behavioural_hash_hex,
+    canonical, semantic_hash_hex, validate_draft,
 };
 
 use crate::weld::{extract_appendix_toml, masthead};
+
+/// The validated wrapper the identity functions accept: an
+/// architecture reaches a semantic identity only through validation
+/// (R2-N03).
+fn validated() -> ValidatedDraftArchitecture<'static> {
+    validate_draft(&ARCHITECTURE).expect("the typed architecture is draft-valid")
+}
 
 /// The committed realization document, embedded at compile time so
 /// cargo tracks the fixture and the test never resolves a repository
@@ -35,7 +43,7 @@ fn appendix_toml_is_the_generated_manifest_verbatim() {
         toml::from_str(&attached).expect("attached manifest parses");
     published.validate_envelope().expect("envelope validates");
 
-    let expected = PublishedArchitecture::from_architecture(&ARCHITECTURE).expect("derives");
+    let expected = PublishedArchitecture::from_architecture(&validated()).expect("derives");
     assert_eq!(published, expected);
 }
 
@@ -52,13 +60,13 @@ fn masthead_identities_match_the_typed_architecture() {
         "masthead does not state architecture schema {schema}",
     );
 
-    let semantic = semantic_hash_hex(&ARCHITECTURE).unwrap();
+    let semantic = semantic_hash_hex(&validated()).unwrap();
     assert!(
         masthead.contains(&format!("semantic hash* `{semantic}`")),
         "masthead semantic hash does not match the typed architecture",
     );
 
-    let behavioural = behavioural_hash_hex(&ARCHITECTURE).unwrap();
+    let behavioural = behavioural_hash_hex(&validated()).unwrap();
     assert!(
         masthead.contains(&format!("behavioural hash* `{behavioural}`")),
         "masthead behavioural hash does not match the typed architecture",

@@ -178,7 +178,13 @@ pub const ATTESTATION_SCHEMA_VERSION: SchemaVersion = 13;
 // from a caller-supplied string.
 
 pub fn expected_architecture_manifest_hash() -> Result<[u8; 32], QueryValidationError> {
-    semantic_hash(&ARCHITECTURE).map_err(|_| QueryValidationError::ArchitectureHashUnavailable)
+    // Validation precedes identity: the semantic hash accepts only the
+    // wrapper draft validation returns, so an invalid architecture
+    // yields no expected hash rather than a self-consistent one.
+    let validated = architecture::validate_draft(&ARCHITECTURE)
+        .map_err(|_| QueryValidationError::ArchitectureHashUnavailable)?;
+
+    semantic_hash(&validated).map_err(|_| QueryValidationError::ArchitectureHashUnavailable)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

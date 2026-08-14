@@ -362,9 +362,14 @@ fn mutation_relaxing_compaction_ash_minimum_fails() {
 fn minimum_mutations_change_the_semantic_hash() {
     let mutated = mutate_output_minimum(OperationId::Burn, ObjectId::Ash, 0);
 
+    // The mutated manifest is deliberately invalid, so it cannot reach
+    // a hash through the public identity path (R2-N03). Mutation
+    // coverage of the canonical projection uses the crate-private
+    // unchecked recipe on both sides, which is the same recipe the
+    // public path applies after validation.
     assert_ne!(
-        semantic_hash(&ARCHITECTURE).unwrap(),
-        semantic_hash(&mutated).unwrap(),
+        crate::canonical::unchecked_semantic_hash(&ARCHITECTURE).unwrap(),
+        crate::canonical::unchecked_semantic_hash(&mutated).unwrap(),
     );
 }
 

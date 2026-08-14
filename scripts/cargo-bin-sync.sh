@@ -32,6 +32,12 @@ target_dir="${CARGO_TARGET_DIR:-$(dirname "$manifest")/target}"
 
 built="$target_dir/release/$bin"
 
+# POSIX sh has no portable mode query; `find <file> -perm <octal>`
+# matches the exact permission bits and prints the path when they agree.
+publication_mode_is() {
+  [ -n "$(find "$1" -perm "$2" -print 2>/dev/null)" ]
+}
+
 if ! cmp -s "$built" "$dest" 2>/dev/null; then
   # Unique staging name: ninja serializes this target, but a fixed
   # "$dest.tmp" would let any direct concurrent invocation corrupt the
@@ -40,4 +46,14 @@ if ! cmp -s "$built" "$dest" 2>/dev/null; then
   cp "$built" "$staged"
   chmod 755 "$staged"
   mv "$staged" "$dest"
+elif ! publication_mode_is "$dest" 755; then
+  # Equal bytes with the wrong mode is not a current publication
+  # (R2-N04). Without this branch a synced helper binary that lost its
+  # executable bit stayed broken forever: cargo reports the build
+  # fresh, cmp reports equal bytes, the copy and chmod are skipped, and
+  # the consumer fails with permission denied on every rebuild. Repair
+  # the mode on the destination itself — the bytes and their mtime are
+  # untouched, so ninja's restat pass still leaves downstream (paper)
+  # targets clean.
+  chmod 755 "$dest"
 fi

@@ -624,6 +624,21 @@ test(
 # propagation) are covered by scripts/test-meson-mock.sh, which runs from
 # scripts/ci.sh with the TeX toolchain mocked rather than as a nested
 # Meson test.
+# Publication-mode freshness contract for the two shell publication
+# paths (R2-N04): compare-if-changed equality is bytes AND required
+# mode, so a byte-current destination with a wrong mode is repaired
+# rather than skipped forever. Uses a mock cargo, so no Rust toolchain
+# or TeX is involved.
+publication_mode_test = find_program('scripts/test-publication-mode.sh')
+
+test(
+  'publication-mode-freshness',
+  publication_mode_test,
+  args: [meson.project_source_root()],
+  suite: 'integration',
+  timeout: 120,
+)
+
 attestation_stamps_test = find_program('scripts/test-attestation-stamps.sh')
 
 test(

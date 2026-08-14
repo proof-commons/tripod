@@ -17,6 +17,15 @@
 //! semantic hash (the whole export body) and the behavioural hash
 //! (the behavioural arrays only, under a domain-separation prefix).
 //! The versioning gate (`pin:pins:denotation`) keys on the latter.
+//!
+//! Every public identity function takes a
+//! [`ValidatedDraftArchitecture`], never a raw `Architecture`
+//! (R2-N03). ADR-016 puts validation before identity, and rehashing is
+//! explicitly not revalidation, so an architecture with duplicate
+//! declarations or a missing root must not be able to acquire a
+//! semantic hash through any public path. The unchecked projections
+//! remain crate-private for the mutation tests, which deliberately
+//! build invalid architectures.
 
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -27,6 +36,7 @@ use crate::export::{
     OperationExport, QuantityExport, RootExport, TagExport, WitnessExport,
 };
 use crate::spec::Architecture;
+use crate::validate::ValidatedDraftArchitecture;
 
 pub const SEMANTIC_HASH_ALGORITHM: &str = "sha256-canonical-json-v2";
 
@@ -154,14 +164,29 @@ struct BehaviouralBody<'a> {
 /// decisions, and envelope excluded. The versioning gate keys on
 /// this: if this hash moves undeclared,
 /// the build fails.
-pub fn behavioural_hash(architecture: &Architecture) -> Result<[u8; 32], serde_json::Error> {
+pub fn behavioural_hash(
+    validated: &ValidatedDraftArchitecture<'_>,
+) -> Result<[u8; 32], serde_json::Error> {
+    unchecked_behavioural_hash(validated.architecture())
+}
+
+pub fn behavioural_hash_hex(
+    validated: &ValidatedDraftArchitecture<'_>,
+) -> Result<String, serde_json::Error> {
+    Ok(hex(&behavioural_hash(validated)?))
+}
+
+/// Behavioural hash over an architecture that has *not* been validated.
+///
+/// Crate-private on purpose (R2-N03): mutation tests deliberately build
+/// invalid architectures and still need the projection, but no public
+/// path may mint an identity for one.
+pub(crate) fn unchecked_behavioural_hash(
+    architecture: &Architecture,
+) -> Result<[u8; 32], serde_json::Error> {
     let export = ArchitectureExport::from_architecture(architecture);
 
     export_behavioural_hash(&export)
-}
-
-pub fn behavioural_hash_hex(architecture: &Architecture) -> Result<String, serde_json::Error> {
-    Ok(hex(&behavioural_hash(architecture)?))
 }
 
 pub(crate) fn export_behavioural_hash(
@@ -211,14 +236,41 @@ pub(crate) fn export_behavioural_hash_hex(
     Ok(hex(&export_behavioural_hash(export)?))
 }
 
-pub fn canonical_json_bytes(architecture: &Architecture) -> Result<Vec<u8>, serde_json::Error> {
+pub fn canonical_json_bytes(
+    validated: &ValidatedDraftArchitecture<'_>,
+) -> Result<Vec<u8>, serde_json::Error> {
+    unchecked_canonical_json_bytes(validated.architecture())
+}
+
+pub fn semantic_hash(
+    validated: &ValidatedDraftArchitecture<'_>,
+) -> Result<[u8; 32], serde_json::Error> {
+    unchecked_semantic_hash(validated.architecture())
+}
+
+pub fn semantic_hash_hex(
+    validated: &ValidatedDraftArchitecture<'_>,
+) -> Result<String, serde_json::Error> {
+    Ok(hex(&semantic_hash(validated)?))
+}
+
+/// Canonical projection of an architecture that has *not* been
+/// validated; crate-private for the same reason as
+/// [`unchecked_behavioural_hash`].
+pub(crate) fn unchecked_canonical_json_bytes(
+    architecture: &Architecture,
+) -> Result<Vec<u8>, serde_json::Error> {
     let export = ArchitectureExport::from_architecture(architecture);
 
     export_body_canonical_bytes(&export)
 }
 
-pub fn semantic_hash(architecture: &Architecture) -> Result<[u8; 32], serde_json::Error> {
-    let bytes = canonical_json_bytes(architecture)?;
+/// Semantic hash over an architecture that has *not* been validated;
+/// crate-private for the same reason as [`unchecked_behavioural_hash`].
+pub(crate) fn unchecked_semantic_hash(
+    architecture: &Architecture,
+) -> Result<[u8; 32], serde_json::Error> {
+    let bytes = unchecked_canonical_json_bytes(architecture)?;
 
     let digest = Sha256::digest(bytes);
 
@@ -226,10 +278,6 @@ pub fn semantic_hash(architecture: &Architecture) -> Result<[u8; 32], serde_json
     result.copy_from_slice(&digest);
 
     Ok(result)
-}
-
-pub fn semantic_hash_hex(architecture: &Architecture) -> Result<String, serde_json::Error> {
-    Ok(hex(&semantic_hash(architecture)?))
 }
 
 /// The Layer-0 anchor-set hash recipe:

@@ -105,7 +105,73 @@ impl fmt::Display for ManifestError {
 
 impl std::error::Error for ManifestError {}
 
-pub fn validate_draft(architecture: &Architecture) -> Result<(), Vec<ManifestError>> {
+/// An architecture that has passed draft validation.
+///
+/// The wrapper is the type-level record of ADR-016's identity rule —
+/// a complete typed object is validated first, then projected
+/// canonically, and only then does it bear an identity — applied to
+/// the architecture exactly as `ValidatedDeploymentProfile` applies it
+/// to a deployment profile (R2-N03). Because the only constructor is
+/// [`validate_draft`], holding one is proof that draft validation
+/// accepted the architecture, so no caller can mint an architecture
+/// semantic identity for an architecture with duplicate declarations,
+/// a missing root, an issuance/authority mismatch, or any other draft
+/// defect.
+///
+/// Draft validity is the right precondition for identity: publication
+/// status and the attestation anchor-set pin are envelope metadata excluded from the
+/// hashed body, so a draft and its later final revision share one
+/// semantic hash. [`ValidatedReleaseArchitecture`] adds the release
+/// obligations for consumers that need them.
+#[derive(Clone, Copy, Debug)]
+pub struct ValidatedDraftArchitecture<'a> {
+    architecture: &'a Architecture,
+}
+
+impl<'a> ValidatedDraftArchitecture<'a> {
+    /// The architecture draft validation accepted.
+    pub const fn architecture(&self) -> &'a Architecture {
+        self.architecture
+    }
+}
+
+/// An architecture that has passed release validation.
+///
+/// Strictly stronger than [`ValidatedDraftArchitecture`]: release
+/// validation runs draft validation and additionally requires a pinned
+/// attestation anchor set and a final publication status. The only
+/// constructor is [`validate_architecture_release`].
+#[derive(Clone, Copy, Debug)]
+pub struct ValidatedReleaseArchitecture<'a> {
+    architecture: &'a Architecture,
+}
+
+impl<'a> ValidatedReleaseArchitecture<'a> {
+    /// The architecture release validation accepted.
+    pub const fn architecture(&self) -> &'a Architecture {
+        self.architecture
+    }
+
+    /// The draft-validated view, since release validation subsumes it.
+    ///
+    /// This is the value the identity functions accept: a release is
+    /// draft-valid by construction, and both states share one semantic
+    /// hash recipe.
+    pub const fn draft(&self) -> ValidatedDraftArchitecture<'a> {
+        ValidatedDraftArchitecture {
+            architecture: self.architecture,
+        }
+    }
+}
+
+/// Validate an architecture draft and carry the verdict in the type.
+///
+/// This is the sole entry to architecture identity: the returned
+/// wrapper is the only value the canonical projection and hash
+/// functions accept.
+pub fn validate_draft(
+    architecture: &Architecture,
+) -> Result<ValidatedDraftArchitecture<'_>, Vec<ManifestError>> {
     let mut errors = Vec::new();
 
     check_unique_ids(
@@ -215,7 +281,7 @@ pub fn validate_draft(architecture: &Architecture) -> Result<(), Vec<ManifestErr
     validate_amount_limits(architecture, &mut errors);
 
     if errors.is_empty() {
-        Ok(())
+        Ok(ValidatedDraftArchitecture { architecture })
     } else {
         Err(errors)
     }
@@ -231,9 +297,9 @@ pub fn validate_draft(architecture: &Architecture) -> Result<(), Vec<ManifestErr
 /// obligations, checked by `validate_deployment_release`.
 pub fn validate_architecture_release(
     architecture: &Architecture,
-) -> Result<(), Vec<ManifestError>> {
+) -> Result<ValidatedReleaseArchitecture<'_>, Vec<ManifestError>> {
     let mut errors = match validate_draft(architecture) {
-        Ok(()) => Vec::new(),
+        Ok(_) => Vec::new(),
         Err(errors) => errors,
     };
 
@@ -249,7 +315,7 @@ pub fn validate_architecture_release(
     }
 
     if errors.is_empty() {
-        Ok(())
+        Ok(ValidatedReleaseArchitecture { architecture })
     } else {
         Err(errors)
     }

@@ -22,6 +22,7 @@ use crate::spec::{
     Architecture, CanonicalDeltaSpec, DataOutputSpec, InputSpec, MaxCount, OperationSpec,
     OutputSpec, QuantitySpec, owner_bearing,
 };
+use crate::validate::ValidatedDraftArchitecture;
 
 /// One row of the generated input-authorization evidence table
 /// `[tbl:manifest:input-authorization-evidence]`: the evidence class
@@ -78,7 +79,16 @@ pub struct PublishedArchitecture {
 }
 
 impl PublishedArchitecture {
-    pub fn from_architecture(architecture: &Architecture) -> Result<Self, serde_json::Error> {
+    /// Derive the publication envelope of a validated architecture.
+    ///
+    /// Takes the validated wrapper rather than a raw `Architecture`
+    /// (R2-N03): the envelope carries the active semantic identity, and
+    /// ADR-016 puts validation before identity, so an invalid draft
+    /// must not be able to produce a trusted publication.
+    pub fn from_architecture(
+        validated: &ValidatedDraftArchitecture<'_>,
+    ) -> Result<Self, serde_json::Error> {
+        let architecture = validated.architecture();
         let body = ArchitectureExport::from_architecture(architecture);
 
         Ok(Self {

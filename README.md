@@ -17,6 +17,12 @@ A compiler is proved by what it compiles. This tree therefore carries, beside th
 - `packages/architecture/` - Typed normative architecture manifest of the realization.
 - `packages/realization/` - Target-independent typed semantic realization,
   currently scoped to compact ASH and live receipt transfer.
+- `packages/compiler/` - Target-independent relation, proof, disclosure,
+  lifecycle, placement, and layout analysis over the realization.
+- `packages/target-elements/` - Typed static Liquid/Elements target contract
+  and its development deployment binding; no target-native evidence.
+- `packages/tapscript/` - Elements tapscript backend, currently the
+  compiler-to-target capability adapter only; no instruction core.
 - `packages/artifacts/` - Generator/checker for the generated derivative artifacts.
 - `packages/labels/` - Repository-wide documentation-label registries and checks.
 - `adr/` - Architecture decision records for the repository tooling.

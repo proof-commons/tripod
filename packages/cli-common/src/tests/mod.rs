@@ -908,6 +908,18 @@ mod publication {
         PublicationAsset { role, path, bytes }
     }
 
+    /// Write a destination already carrying the public publication
+    /// mode, so a byte-equality test is not perturbed by the umask
+    /// (freshness is bytes and mode together).
+    fn write_public(path: &Path, bytes: &[u8]) {
+        std::fs::write(path, bytes).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        }
+    }
+
     fn staged_leftovers(directory: &Path) -> Vec<String> {
         std::fs::read_dir(directory)
             .unwrap()
@@ -934,8 +946,8 @@ mod publication {
         let dir = tempfile::tempdir().unwrap();
         let first = dir.path().join("first.txt");
         let second = dir.path().join("second.txt");
-        std::fs::write(&first, b"one").unwrap();
-        std::fs::write(&second, b"two").unwrap();
+        write_public(&first, b"one");
+        write_public(&second, b"two");
         let first_mtime = std::fs::metadata(&first).unwrap().modified().unwrap();
         let second_mtime = std::fs::metadata(&second).unwrap().modified().unwrap();
 
@@ -945,7 +957,7 @@ mod publication {
         ])
         .unwrap();
 
-        assert!(results.iter().all(|result| !result.changed));
+        assert!(results.iter().all(|result| result.change.unchanged()));
         assert_eq!(
             std::fs::metadata(&first).unwrap().modified().unwrap(),
             first_mtime
@@ -961,8 +973,8 @@ mod publication {
         let dir = tempfile::tempdir().unwrap();
         let current = dir.path().join("current.txt");
         let stale = dir.path().join("stale.txt");
-        std::fs::write(&current, b"kept").unwrap();
-        std::fs::write(&stale, b"old").unwrap();
+        write_public(&current, b"kept");
+        write_public(&stale, b"old");
         let kept_mtime = std::fs::metadata(&current).unwrap().modified().unwrap();
 
         let results = publish_batch(&[
@@ -974,7 +986,7 @@ mod publication {
         assert_eq!(
             results
                 .iter()
-                .map(|result| result.changed)
+                .map(|result| result.change.bytes_changed)
                 .collect::<Vec<_>>(),
             [false, true]
         );
@@ -989,7 +1001,7 @@ mod publication {
     fn a_staging_failure_changes_no_final_destination() {
         let dir = tempfile::tempdir().unwrap();
         let first = dir.path().join("first.txt");
-        std::fs::write(&first, b"old").unwrap();
+        write_public(&first, b"old");
         // The second output's parent is a regular file, so directory
         // creation (and therefore staging) must fail.
         let blocker = dir.path().join("blocker");
@@ -1043,7 +1055,7 @@ mod publication {
         assert_eq!(
             results
                 .iter()
-                .map(|result| result.changed)
+                .map(|result| result.change.bytes_changed)
                 .collect::<Vec<_>>(),
             [false, true]
         );
@@ -1056,8 +1068,8 @@ mod publication {
         let dir = tempfile::tempdir().unwrap();
         let fresh = dir.path().join("fresh.txt");
         let stale = dir.path().join("stale.txt");
-        std::fs::write(&fresh, b"generation-2").unwrap();
-        std::fs::write(&stale, b"generation-1").unwrap();
+        write_public(&fresh, b"generation-2");
+        write_public(&stale, b"generation-1");
 
         let results = publish_batch(&[
             asset("fresh", &fresh, b"generation-2"),
@@ -1068,7 +1080,7 @@ mod publication {
         assert_eq!(
             results
                 .iter()
-                .map(|result| result.changed)
+                .map(|result| result.change.bytes_changed)
                 .collect::<Vec<_>>(),
             [false, true]
         );
@@ -1104,7 +1116,7 @@ mod publication {
 
         let results = publish_batch(&[asset("out", &out, b"data")]).unwrap();
 
-        assert!(results[0].changed);
+        assert!(results[0].change.bytes_changed);
         assert_eq!(mode_of(&out), 0o644, "a new publication must be public");
     }
 
@@ -1120,7 +1132,7 @@ mod publication {
 
         let results = publish_batch(&[asset("out", &out, b"new")]).unwrap();
 
-        assert!(results[0].changed);
+        assert!(results[0].change.bytes_changed);
         assert_eq!(std::fs::read(&out).unwrap(), b"new");
         assert_eq!(
             mode_of(&out),
@@ -1141,7 +1153,7 @@ mod publication {
 
         let results = publish_batch(&[asset("out", &out, b"same")]).unwrap();
 
-        assert!(!results[0].changed);
+        assert!(results[0].change.unchanged());
         assert_eq!(mode_of(&out), 0o644);
     }
 
@@ -1167,7 +1179,204 @@ mod publication {
 
         let results = publish_batch(&[asset("out", &nested, b"data")]).unwrap();
 
-        assert!(results[0].changed);
+        assert!(results[0].change.bytes_changed);
         assert_eq!(std::fs::read(&nested).unwrap(), b"data");
+    }
+
+    // --- R2-N04: publication mode is part of compare-if-changed
+    // freshness ---
+    //
+    // Byte equality alone left a destination stuck at a wrong mode
+    // forever: every run saw equal bytes and skipped the repair. The
+    // rows below are the review's freshness matrix.
+
+    #[cfg(unix)]
+    #[test]
+    fn an_owner_only_destination_with_current_bytes_is_mode_repaired() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("out.txt");
+        std::fs::write(&out, b"same").unwrap();
+        std::fs::set_permissions(&out, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let mtime = std::fs::metadata(&out).unwrap().modified().unwrap();
+
+        let results = publish_batch(&[asset("out", &out, b"same")]).unwrap();
+
+        assert!(
+            !results[0].change.bytes_changed,
+            "a mode repair must not rewrite content"
+        );
+        assert!(results[0].change.mode_changed, "the repair must be visible");
+        assert_eq!(mode_of(&out), 0o644);
+        assert_eq!(std::fs::read(&out).unwrap(), b"same");
+        assert_eq!(
+            std::fs::metadata(&out).unwrap().modified().unwrap(),
+            mtime,
+            "a mode-only repair must leave the bytes' mtime alone"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_run_after_a_mode_repair_is_a_no_op() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("out.txt");
+        std::fs::write(&out, b"same").unwrap();
+        std::fs::set_permissions(&out, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+        let repaired = publish_batch(&[asset("out", &out, b"same")]).unwrap();
+        assert!(repaired[0].change.mode_changed);
+
+        let again = publish_batch(&[asset("out", &out, b"same")]).unwrap();
+
+        assert!(
+            again[0].change.unchanged(),
+            "a repaired destination is current in both components"
+        );
+        assert_eq!(mode_of(&out), 0o644);
+        assert_eq!(staged_leftovers(dir.path()), [] as [std::string::String; 0]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stale_bytes_are_republished_rather_than_mode_repaired() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("out.txt");
+        write_public(&out, b"old");
+
+        let results = publish_batch(&[asset("out", &out, b"new")]).unwrap();
+
+        assert!(results[0].change.bytes_changed);
+        assert!(
+            !results[0].change.mode_changed,
+            "a republished member carries its mode from staging, not from a repair"
+        );
+        assert_eq!(mode_of(&out), 0o644);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_executable_destination_missing_its_x_bit_is_not_current() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        use crate::PublicationMode;
+        use crate::publication::{DestinationState, inspect_destination, repair_publication_mode};
+
+        let dir = tempfile::tempdir().unwrap();
+        let tool = dir.path().join("tool");
+        std::fs::write(&tool, b"binary").unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        assert_eq!(
+            inspect_destination(&tool, b"binary", PublicationMode::Executable),
+            DestinationState::ModeOnly,
+            "equal bytes without the executable bit are not a current publication"
+        );
+
+        repair_publication_mode(&tool, PublicationMode::Executable).unwrap();
+
+        assert_eq!(mode_of(&tool), 0o755);
+        assert_eq!(std::fs::read(&tool).unwrap(), b"binary");
+        assert_eq!(
+            inspect_destination(&tool, b"binary", PublicationMode::Executable),
+            DestinationState::Current
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_absent_destination_is_stale_in_every_publication_class() {
+        use crate::PublicationMode;
+        use crate::publication::{DestinationState, inspect_destination};
+
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing");
+
+        for mode in [PublicationMode::Public, PublicationMode::Executable] {
+            assert_eq!(
+                inspect_destination(&missing, b"bytes", mode),
+                DestinationState::StaleBytes
+            );
+        }
+    }
+
+    // --- R2-N04: the JSON checker report shares the freshness rule ---
+
+    #[cfg(unix)]
+    mod report {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        use super::mode_of;
+        use crate::write_json_report_if_changed;
+
+        fn value() -> serde_json::Value {
+            serde_json::json!({"ok": true})
+        }
+
+        #[test]
+        fn an_absent_report_is_published_publicly_readable() {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("report.json");
+
+            let change = write_json_report_if_changed(&path, &value()).unwrap();
+
+            assert!(change.bytes_changed);
+            assert!(!change.mode_changed);
+            assert_eq!(mode_of(&path), 0o644);
+        }
+
+        #[test]
+        fn a_current_report_with_a_correct_mode_is_untouched() {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("report.json");
+            write_json_report_if_changed(&path, &value()).unwrap();
+            let mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
+
+            let change = write_json_report_if_changed(&path, &value()).unwrap();
+
+            assert!(change.unchanged());
+            assert_eq!(std::fs::metadata(&path).unwrap().modified().unwrap(), mtime);
+        }
+
+        #[test]
+        fn a_stale_report_is_rewritten() {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("report.json");
+            std::fs::write(&path, b"{\"ok\":false}\n").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+            let change = write_json_report_if_changed(&path, &value()).unwrap();
+
+            assert!(change.bytes_changed);
+            assert!(!change.mode_changed);
+            assert_eq!(std::fs::read(&path).unwrap(), b"{\"ok\":true}\n");
+        }
+
+        #[test]
+        fn an_owner_only_current_report_is_mode_repaired_without_rewriting() {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("report.json");
+            write_json_report_if_changed(&path, &value()).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+            let mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
+
+            let change = write_json_report_if_changed(&path, &value()).unwrap();
+
+            assert!(!change.bytes_changed);
+            assert!(change.mode_changed);
+            assert_eq!(mode_of(&path), 0o644);
+            assert_eq!(std::fs::read(&path).unwrap(), b"{\"ok\":true}\n");
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().modified().unwrap(),
+                mtime,
+                "a mode-only report repair must not rewrite the report"
+            );
+
+            let again = write_json_report_if_changed(&path, &value()).unwrap();
+            assert!(again.unchanged(), "the run after a repair is a no-op");
+        }
     }
 }

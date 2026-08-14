@@ -47,8 +47,8 @@ its realization dependency is for post-execution conformance projection.
 | [realization.md](realization.md) | Active | Target-independent semantic declaration. |
 | [labels.md](labels.md) | Active | Repository-wide documentation label registries and checks. |
 | [compiler.md](compiler.md) | Active — complete scoped analyzed pilots implemented internally; public complete-analysis boundary and target adapter absent | Relation, proof, disclosure, lifecycle, placement, and layout analysis. |
-| [target-elements.md](target-elements.md) | Planned | Typed Liquid/Elements compatibility contract. |
-| [tapscript.md](tapscript.md) | Planned | First production target backend. |
+| [target-elements.md](target-elements.md) | Active — typed static target contract and development binding implemented; target-native evidence absent | Typed Liquid/Elements compatibility contract. |
+| [tapscript.md](tapscript.md) | Active — capability adapter implemented; instruction core and backend patterns absent | First production target backend. |
 | [simplicity.md](simplicity.md) | Parked | Future second backend. |
 | [linker.md](linker.md) | Planned | Constructor, relocation, and bundle resolution. |
 | [transaction.md](transaction.md) | Planned | Canonical transaction and witness ABI. |
