@@ -325,6 +325,29 @@ Secret values must not be introduced through command-line arguments.
 
 No current public-data package implicitly becomes a secret-processing package.
 
+## Disposable test-network material · `rule:security:test-material`
+
+A value that is cryptographically secret in form is not a secret in this
+policy when it is generated for, and scoped to, a test network: a regtest or
+internal development chain whose assets have no value. Such disposable test
+material — ephemeral test-chain wallet keys, test signing scalars, test
+blinding factors, and node cookies confined to a disposable test data
+directory — is public test fixture data, and handling it does not make a
+package a secret-processing package or trigger the future-secrets design
+gate.
+
+The classification holds only while all of the following are true:
+
+- the material is generated for a test network and can authorize nothing of
+  value on any production network;
+- it lives in committed fixtures or disposable test state, is clearly
+  labeled test-only, and is destroyed or discardable with its environment;
+- it is never reused as, or derived from, production key material;
+- no interface accepting it is also a production-secret interface.
+
+Material that fails any condition is a secret and the future-secrets rule
+applies unchanged.
+
 ## Secret scanning · `rule:security:secret-scanning`
 
 A maintained external secret scanner may be used as a bounded detective control
