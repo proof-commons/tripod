@@ -28,7 +28,8 @@ use target_elements::{
     ActivationDeclaration, CapabilityContract, DeploymentEnvironment, DevelopmentDeploymentBinding,
     ElementsCapability, ElementsTarget, LeafVersion, StaticCapabilityStatus, TargetContractVersion,
     TargetDefinition, TargetDefinitionParts, ValidatedTargetDefinition, bind_development_target,
-    reviewed_elements_tapscript, validate_development_binding, validate_target_definition,
+    reviewed_elements_tapscript, status_closure_violations, validate_development_binding,
+    validate_target_definition,
 };
 
 /// The reviewed contract, unmodified.
@@ -104,6 +105,34 @@ fn target_with_statuses(
             *status,
         );
         capabilities.insert(*capability, restated);
+    }
+
+    // Target capability status is closed over the prerequisite
+    // relation, so a downgrade has to carry its dependents down with
+    // it or the mutated contract no longer validates at all. Capping
+    // to a fixed point keeps this fixture mechanical: it still says
+    // "this capability stops being established", and now says it about
+    // everything that stood on it.
+    loop {
+        let violations = status_closure_violations(&capabilities);
+        if violations.is_empty() {
+            break;
+        }
+        for (capability, prerequisite) in violations {
+            let bound = capabilities[&prerequisite].status();
+            let previous = capabilities[&capability].clone();
+            capabilities.insert(
+                capability,
+                CapabilityContract::new(
+                    previous.capability(),
+                    previous.prerequisites().iter().copied(),
+                    previous.opcodes().iter().copied(),
+                    previous.encodings().iter().copied(),
+                    previous.evidence().iter().copied(),
+                    bound,
+                ),
+            );
+        }
     }
 
     let definition = validate_target_definition(TargetDefinition::new(TargetDefinitionParts {

@@ -90,6 +90,7 @@ pub use authorization::{
 };
 pub use capability::{
     CapabilityContract, ElementsCapability, StaticCapabilityStatus, prerequisite_cycle_residual,
+    status_closure_violations, transitive_prerequisites,
 };
 pub use confidential::{
     ConfidentialCapabilityState, ConfidentialValueCapability, ConfidentialValueContract,

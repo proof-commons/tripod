@@ -25,6 +25,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::authorization::{AuthorizationContract, reviewed_authorization};
 use crate::capability::{
     CapabilityContract, ElementsCapability, prerequisite_cycle_residual, reviewed_capabilities,
+    status_closure_violations,
 };
 use crate::confidential::{
     ConfidentialValueContract, IssuanceContract, reviewed_confidential_values, reviewed_issuance,
@@ -834,6 +835,17 @@ fn validate_capabilities(definition: &TargetDefinition, errors: &mut Vec<TargetE
     let residual = prerequisite_cycle_residual(&definition.capabilities);
     if !residual.is_empty() {
         errors.push(TargetError::CapabilityDependencyCycle { members: residual });
+    }
+
+    // Status is closed over the prerequisite relation: no capability
+    // may claim more than its weakest transitive prerequisite. A
+    // reviewed row above an unsupported one is not a strong claim
+    // resting on a weak one, it is a claim that cannot be realized.
+    for (capability, prerequisite) in status_closure_violations(&definition.capabilities) {
+        errors.push(TargetError::CapabilityStatusExceedsPrerequisite {
+            capability,
+            prerequisite,
+        });
     }
 }
 

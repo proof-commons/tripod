@@ -231,6 +231,17 @@ pub enum TargetError {
     /// A capability names no evidence requirement.
     MissingCapabilityEvidence(ElementsCapability),
 
+    /// A capability claims a stronger status than one of the
+    /// capabilities it transitively requires. Status is closed over
+    /// the prerequisite relation, because a capability cannot be more
+    /// usable than the weakest thing it is built on.
+    CapabilityStatusExceedsPrerequisite {
+        /// The capability claiming too much.
+        capability: ElementsCapability,
+        /// The weakest prerequisite it exceeds.
+        prerequisite: ElementsCapability,
+    },
+
     /// Capabilities require each other in a cycle, so no order in
     /// which they could be established exists.
     ///
@@ -438,6 +449,15 @@ impl fmt::Display for TargetError {
             }
             Self::MissingCapabilityEvidence(capability) => {
                 write!(f, "capability {capability:?} names no evidence requirement")
+            }
+            Self::CapabilityStatusExceedsPrerequisite {
+                capability,
+                prerequisite,
+            } => {
+                write!(
+                    f,
+                    "capability {capability:?} claims more than prerequisite {prerequisite:?}"
+                )
             }
             Self::CapabilityDependencyCycle { members } => {
                 write!(f, "capabilities require each other in a cycle: {members:?}")

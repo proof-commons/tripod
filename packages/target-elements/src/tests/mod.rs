@@ -8,3 +8,4 @@ mod mutation_tests;
 mod opcode_tests;
 mod permutation_tests;
 mod registry_mutation_tests;
+mod status_closure_tests;
