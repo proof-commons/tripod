@@ -52,7 +52,7 @@ fn release_profile(architecture: &Architecture) -> DeploymentProfile {
         schema_version: DEPLOYMENT_PROFILE_SCHEMA_VERSION,
         status: PublicationStatus::Final,
 
-        architecture_semantic_hash: semantic_hash(architecture).unwrap(),
+        architecture_semantic_hash: semantic_hash(&super::validated(architecture)).unwrap(),
 
         network_id: [0xC1; 32],
         genesis_id: [0xC2; 32],
@@ -796,7 +796,7 @@ fn deployment_profile_hash_is_stable_and_domain_separated() {
     // separated even when the profile embeds the architecture hash.
     assert_ne!(
         deployment_profile_hash(&validated).unwrap(),
-        semantic_hash(&architecture).unwrap(),
+        semantic_hash(&super::validated(&architecture)).unwrap(),
     );
 
     assert_eq!(

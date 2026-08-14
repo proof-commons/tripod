@@ -10,7 +10,7 @@ mod property_graph_tests;
 mod root_policy_tests;
 mod type_tests;
 
-use architecture::{ARCHITECTURE, OperationId, semantic_hash};
+use architecture::{ARCHITECTURE, OperationId, semantic_hash, validate_draft};
 
 use crate::{
     ArchitectureBinding, Count, PROTOCOL_AMOUNT_LIMIT_EXCLUSIVE, ProtocolAmount, RealizationError,
@@ -33,7 +33,7 @@ fn architecture_binding_matches_the_typed_architecture() {
 
     assert_eq!(
         binding.semantic_hash(),
-        semantic_hash(&ARCHITECTURE).unwrap()
+        semantic_hash(&validate_draft(&ARCHITECTURE).unwrap()).unwrap()
     );
 }
 

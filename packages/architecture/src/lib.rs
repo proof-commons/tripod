@@ -57,7 +57,10 @@ pub use deployment::{
 pub use export::{ArchitectureExport, EnvelopeError, PublishedArchitecture};
 pub use ids::*;
 pub use spec::*;
-pub use validate::{ManifestError, validate_architecture_release, validate_draft};
+pub use validate::{
+    ManifestError, ValidatedDraftArchitecture, ValidatedReleaseArchitecture,
+    validate_architecture_release, validate_draft,
+};
 
 #[cfg(test)]
 mod tests;

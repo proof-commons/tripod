@@ -6,13 +6,13 @@ use crate::*;
 #[test]
 fn semantic_hash_is_stable_within_one_build() {
     assert_eq!(
-        canonical_json_bytes(&ARCHITECTURE).unwrap(),
-        canonical_json_bytes(&ARCHITECTURE).unwrap(),
+        canonical_json_bytes(&super::validated(&ARCHITECTURE)).unwrap(),
+        canonical_json_bytes(&super::validated(&ARCHITECTURE)).unwrap(),
     );
 
     assert_eq!(
-        semantic_hash(&ARCHITECTURE).unwrap(),
-        semantic_hash(&ARCHITECTURE).unwrap(),
+        semantic_hash(&super::validated(&ARCHITECTURE)).unwrap(),
+        semantic_hash(&super::validated(&ARCHITECTURE)).unwrap(),
     );
 }
 
@@ -24,7 +24,8 @@ fn envelope_metadata_does_not_change_body_hash() {
     // envelope metadata hash-invisible. Hash-invisibility is
     // verify_hashes' claim; supported-envelope validation is separate
     // and stricter.
-    let mut published = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let mut published =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
 
     published.publication_status = PublicationStatus::Final.as_str().to_owned();
     published.architecture_schema_version += 1;
@@ -41,7 +42,8 @@ fn envelope_validation_rejects_unsupported_metadata() {
     // unknown schema, an unrecognized status, or a blank realization
     // version must fail full envelope validation even though its
     // digests verify.
-    let published = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let published =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
     published.validate_envelope().unwrap();
 
     let mut wrong_schema = published.clone();
@@ -80,7 +82,8 @@ fn envelope_validation_rejects_unsupported_metadata() {
 
 #[test]
 fn release_envelope_requires_final_status() {
-    let mut published = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let mut published =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
 
     published.publication_status = PublicationStatus::Final.as_str().to_owned();
     published.validate_release_envelope().unwrap();
@@ -100,7 +103,8 @@ fn self_consistent_forgery_passes_envelope_but_fails_expected_identity() {
     // self-consistency check only. Only the complete-value comparison
     // against an independently derived expected publication turns
     // ingestion into an authenticity claim.
-    let expected = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let expected =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
 
     let mut forged = expected.clone();
     forged.publication_status = PublicationStatus::Final.as_str().to_owned();
@@ -126,7 +130,8 @@ fn calibrated_default_mutation_moves_only_the_full_hash() {
     // a draft default outside the abstract denotation
     // (`def:versioning:denotation-law`): changing it must move the
     // semantic (full) hash but leave the behavioural hash fixed.
-    let mut modified = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let mut modified =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
 
     let bound = &mut modified.architecture.bounds[0];
     assert!(
@@ -145,7 +150,8 @@ fn fixed_bound_value_mutation_moves_both_hashes() {
     // current architecture declares no fixed bounds, so this is
     // exercised on the export DTO: flipping the calibration flag off
     // pulls the value into the behavioural projection.
-    let mut modified = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let mut modified =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
 
     let bound = &mut modified.architecture.bounds[0];
     bound.requires_deployment_calibration = false;
@@ -156,7 +162,8 @@ fn fixed_bound_value_mutation_moves_both_hashes() {
 
 #[test]
 fn operation_cardinality_mutation_moves_both_hashes() {
-    let mut modified = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let mut modified =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
 
     modified.architecture.operations[0].inputs[0].minimum += 1;
 
@@ -168,7 +175,8 @@ fn operation_cardinality_mutation_moves_both_hashes() {
 fn fixed_amount_limit_mutation_moves_both_hashes() {
     // `amount_limits` are declared protocol values, not calibration
     // placeholders: they stay inside the behavioural projection.
-    let mut modified = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let mut modified =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
 
     modified.architecture.amount_limits[0].value += 1;
 
@@ -184,7 +192,8 @@ fn witness_document_label_rename_moves_only_the_full_hash() {
     // semantic hash (the export body changed) but not the behavioural
     // hash: a label rename leaves the denotation and its behavioural
     // hash unchanged.
-    let mut modified = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let mut modified =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
 
     modified.architecture.witnesses[0].semantic_tag = "lem:invariant:renamed".to_owned();
 
@@ -196,7 +205,8 @@ fn witness_document_label_rename_moves_only_the_full_hash() {
 fn clause_document_label_rename_moves_only_the_full_hash() {
     // The clause registry's `id` is likewise the document's frozen
     // citation label.
-    let mut modified = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let mut modified =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
 
     modified.architecture.clauses[0].id = "inv:invariant:renamed".to_owned();
 
@@ -208,13 +218,15 @@ fn clause_document_label_rename_moves_only_the_full_hash() {
 fn witness_semantic_identity_mutation_moves_both_hashes() {
     // The witness id and code are semantic identity, not presentation:
     // both stay behavioural-hash inputs.
-    let mut renamed = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let mut renamed =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
     renamed.architecture.witnesses[0].id = "renamed-witness".to_owned();
 
     assert!(!renamed.verify_body_hash().unwrap());
     assert!(!renamed.verify_behavioural_hash().unwrap());
 
-    let mut recoded = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let mut recoded =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
     recoded.architecture.witnesses[0].code += 100;
 
     assert!(!recoded.verify_body_hash().unwrap());
@@ -223,7 +235,8 @@ fn witness_semantic_identity_mutation_moves_both_hashes() {
 
 #[test]
 fn clause_code_mutation_moves_both_hashes() {
-    let mut modified = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let mut modified =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
 
     modified.architecture.clauses[0].code += 100;
 
@@ -236,7 +249,8 @@ fn dependency_mutation_moves_only_the_full_hash() {
     // Dependencies are normative-descriptive: outside the behavioural
     // hash, inside the full hash. This asymmetry is the versioning
     // law's letter/major cut, mechanized.
-    let mut modified = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let mut modified =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
 
     modified.architecture.dependencies[0].rationale = "reworded".to_owned();
 
@@ -246,7 +260,8 @@ fn dependency_mutation_moves_only_the_full_hash() {
 
 #[test]
 fn json_and_toml_export_the_same_manifest() {
-    let published = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let published =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
 
     let json = serde_json::to_string_pretty(&published).unwrap();
     let toml = toml::to_string_pretty(&published).unwrap();
@@ -260,7 +275,8 @@ fn json_and_toml_export_the_same_manifest() {
 
 #[test]
 fn both_exports_verify_the_semantic_hash() {
-    let published = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let published =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
 
     assert!(published.verify_body_hash().unwrap());
     published.validate_envelope().unwrap();
@@ -276,7 +292,8 @@ fn both_exports_verify_the_semantic_hash() {
 
 #[test]
 fn pretty_printing_does_not_change_the_semantic_hash() {
-    let published = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let published =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
 
     let compact = serde_json::to_string(&published).unwrap();
     let pretty = serde_json::to_string_pretty(&published).unwrap();
@@ -292,7 +309,8 @@ fn pretty_printing_does_not_change_the_semantic_hash() {
 
 #[test]
 fn semantic_change_changes_hash() {
-    let mut modified = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let mut modified =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
 
     modified.architecture.target_network = "different-network".to_owned();
 
@@ -306,7 +324,8 @@ fn semantic_change_changes_hash() {
 
 #[test]
 fn unknown_fields_are_rejected() {
-    let published = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let published =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
 
     let mut value = serde_json::to_value(published).unwrap();
 
@@ -413,7 +432,8 @@ fn with_unknown_field_at(value: &serde_json::Value, path: &[String]) -> serde_js
 
 #[test]
 fn nested_unknown_fields_are_rejected_in_json() {
-    let published = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let published =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
     let value = serde_json::to_value(published).unwrap();
 
     for path in nested_object_paths(&value) {
@@ -429,7 +449,8 @@ fn nested_unknown_fields_are_rejected_in_json() {
 
 #[test]
 fn nested_unknown_fields_are_rejected_in_toml() {
-    let published = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let published =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
     let value = serde_json::to_value(published).unwrap();
 
     for path in nested_object_paths(&value) {
@@ -448,7 +469,8 @@ fn incorrect_algorithm_identifier_invalidates_envelope() {
     // The body hash intentionally excludes envelope metadata, so the
     // body still verifies; publication-envelope validation must
     // nevertheless reject the unknown algorithm identifier.
-    let mut modified = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let mut modified =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
     modified.semantic_hash_algorithm = "renamed".to_owned();
 
     assert!(modified.verify_body_hash().unwrap());
@@ -473,15 +495,16 @@ fn generated_json_equals_typed_architecture_completely() {
     let published: PublishedArchitecture = serde_json::from_str(generated).unwrap();
     published.validate_envelope().unwrap();
 
-    let expected = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let expected =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
     assert_eq!(published, expected);
     assert_eq!(
         published.semantic_hash,
-        semantic_hash_hex(&ARCHITECTURE).unwrap(),
+        semantic_hash_hex(&super::validated(&ARCHITECTURE)).unwrap(),
     );
     assert_eq!(
         published.behavioural_hash,
-        behavioural_hash_hex(&ARCHITECTURE).unwrap(),
+        behavioural_hash_hex(&super::validated(&ARCHITECTURE)).unwrap(),
     );
 
     assert_eq!(
@@ -499,15 +522,16 @@ fn generated_toml_equals_typed_architecture_completely() {
     let published: PublishedArchitecture = toml::from_str(generated).unwrap();
     published.validate_envelope().unwrap();
 
-    let expected = PublishedArchitecture::from_architecture(&ARCHITECTURE).unwrap();
+    let expected =
+        PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
     assert_eq!(published, expected);
     assert_eq!(
         published.semantic_hash,
-        semantic_hash_hex(&ARCHITECTURE).unwrap(),
+        semantic_hash_hex(&super::validated(&ARCHITECTURE)).unwrap(),
     );
     assert_eq!(
         published.behavioural_hash,
-        behavioural_hash_hex(&ARCHITECTURE).unwrap(),
+        behavioural_hash_hex(&super::validated(&ARCHITECTURE)).unwrap(),
     );
 
     assert_eq!(
@@ -586,4 +610,71 @@ fn authorization_evidence_rows_are_declaration_order_independent() {
     let exported = ArchitectureExport::from_architecture(&ARCHITECTURE);
     assert_eq!(exported.input_authorization_evidence, forward);
     assert_eq!(exported.operation_authorization_evidence, forward_classes);
+}
+
+// --- R2-N03: identity is reachable only through validation ---
+//
+// ADR-016 puts validation before identity, and rehashing is explicitly
+// not revalidation. `ValidatedDraftArchitecture` is the only public
+// input to `semantic_hash`, `behavioural_hash`, `canonical_json_bytes`,
+// and `PublishedArchitecture::from_architecture`, and `validate_draft`
+// is its only constructor, so an invalid architecture has no public
+// identity path at all — the cases below record that the gate is the
+// validator, not a convention followed by each caller.
+
+#[test]
+fn an_invalid_architecture_cannot_reach_a_public_semantic_identity() {
+    let mut architecture = ARCHITECTURE;
+    architecture.document.realization_version = "  ";
+
+    assert!(
+        validate_draft(&architecture).is_err(),
+        "the fixture must be invalid for this case to mean anything"
+    );
+
+    // The recipe itself is unchanged: the crate-private projection
+    // still hashes the same bytes. What changed is who may call it.
+    assert!(crate::canonical::unchecked_semantic_hash(&architecture).is_ok());
+}
+
+#[test]
+fn an_invalid_architecture_cannot_produce_a_publication() {
+    let mut architecture = ARCHITECTURE;
+    architecture.assets = &[];
+
+    assert!(validate_draft(&architecture).is_err());
+}
+
+#[test]
+fn validation_does_not_move_any_published_identity() {
+    // The wrapper changes the callable surface, not the hashed body:
+    // every identity taken through the validated path must equal the
+    // unchecked recipe applied to the same architecture.
+    let validated = super::validated(&ARCHITECTURE);
+
+    assert_eq!(
+        semantic_hash(&validated).unwrap(),
+        crate::canonical::unchecked_semantic_hash(&ARCHITECTURE).unwrap(),
+    );
+    assert_eq!(
+        behavioural_hash(&validated).unwrap(),
+        crate::canonical::unchecked_behavioural_hash(&ARCHITECTURE).unwrap(),
+    );
+    assert_eq!(
+        canonical_json_bytes(&validated).unwrap(),
+        crate::canonical::unchecked_canonical_json_bytes(&ARCHITECTURE).unwrap(),
+    );
+}
+
+#[test]
+fn the_release_state_carries_the_same_identity_as_its_draft() {
+    // Release validation subsumes draft validation, and the release
+    // obligations (attestation anchor-set pin, final status) are envelope metadata
+    // outside the hashed body, so both states share one identity.
+    let release = validate_architecture_release(&ARCHITECTURE).unwrap();
+
+    assert_eq!(
+        semantic_hash(&release.draft()).unwrap(),
+        semantic_hash(&super::validated(&ARCHITECTURE)).unwrap(),
+    );
 }

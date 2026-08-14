@@ -105,7 +105,7 @@ fn tracked_version_derivation_is_patch_blind() {
 #[test]
 fn behavioural_hash_gate() {
     assert_eq!(
-        behavioural_hash_hex(&ARCHITECTURE).unwrap(),
+        behavioural_hash_hex(&super::validated(&ARCHITECTURE)).unwrap(),
         PINNED_BEHAVIOURAL_HASH,
         "the behavioural hash moved: the denotation changed, and the \
          change must be declared — re-pin here, update the realization \
@@ -116,7 +116,7 @@ fn behavioural_hash_gate() {
 #[test]
 fn behavioural_hash_is_stable_within_one_build() {
     assert_eq!(
-        behavioural_hash(&ARCHITECTURE).unwrap(),
-        behavioural_hash(&ARCHITECTURE).unwrap(),
+        behavioural_hash(&super::validated(&ARCHITECTURE)).unwrap(),
+        behavioural_hash(&super::validated(&ARCHITECTURE)).unwrap(),
     );
 }

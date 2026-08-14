@@ -350,13 +350,17 @@ pub fn validate_deployment_release(
     // Architecture binding: the architecture must itself be
     // releasable, and the profile must bind to its exact semantic
     // hash.
-    if validate_architecture_release(architecture).is_err() {
-        errors.push(DeploymentError::ArchitectureNotReleasable);
-    }
+    match validate_architecture_release(architecture) {
+        Ok(release) => match crate::canonical::semantic_hash(&release.draft()) {
+            Ok(hash) if hash == profile.architecture_semantic_hash => {}
+            _ => errors.push(DeploymentError::ArchitectureHashMismatch),
+        },
 
-    match crate::canonical::semantic_hash(architecture) {
-        Ok(hash) if hash == profile.architecture_semantic_hash => {}
-        _ => errors.push(DeploymentError::ArchitectureHashMismatch),
+        // An unreleasable architecture has no architecture identity to
+        // compare the binding against (ADR-016 puts validation before
+        // identity), so no binding verdict is claimed here; the profile
+        // already fails closed on `ArchitectureNotReleasable`.
+        Err(_) => errors.push(DeploymentError::ArchitectureNotReleasable),
     }
 
     if profile.status != PublicationStatus::Final {

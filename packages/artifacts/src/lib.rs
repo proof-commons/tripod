@@ -66,16 +66,21 @@ pub struct ExpectedArtifact {
 pub fn expected_artifacts(
     census: &labels::RepositoryCensus,
 ) -> anyhow::Result<Vec<ExpectedArtifact>> {
-    if let Err(errors) = validate_draft(&ARCHITECTURE) {
-        let rendered = errors
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join("\n");
-        bail!("typed architecture failed draft validation:\n{rendered}");
-    }
+    // The validated wrapper is the only input the publication envelope
+    // accepts, so generation cannot skip validation (R2-N03).
+    let validated = match validate_draft(&ARCHITECTURE) {
+        Ok(validated) => validated,
+        Err(errors) => {
+            let rendered = errors
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("\n");
+            bail!("typed architecture failed draft validation:\n{rendered}");
+        }
+    };
 
-    let published = PublishedArchitecture::from_architecture(&ARCHITECTURE)
+    let published = PublishedArchitecture::from_architecture(&validated)
         .context("deriving published architecture")?;
     published
         .validate_envelope()
