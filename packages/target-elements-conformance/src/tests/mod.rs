@@ -1,5 +1,6 @@
 //! Crate-internal test suites.
 
+mod census_tests;
 mod fixture_tests;
 mod protocol_tests;
 mod support;

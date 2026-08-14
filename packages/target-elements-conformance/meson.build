@@ -21,6 +21,7 @@ target_elements_conformance_source_files = files(
   'src/lib.rs',
   'src/protocol.rs',
   'src/report.rs',
+  'src/tests/census_tests.rs',
   'src/tests/fixture_tests.rs',
   'src/tests/mod.rs',
   'src/tests/protocol_tests.rs',

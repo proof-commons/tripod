@@ -159,6 +159,16 @@ impl<'a> CensusAuthor<'a> {
         self.state(case, expected, LeafVersionStatus::Reviewed, None);
     }
 
+    /// One case the target accepts, whose one final item is a value the
+    /// executor's own materialization fixes rather than the fixture.
+    pub fn accept_unstated_stack(&mut self, case: Case<'_>) {
+        let expected = ExpectedPrimitiveOutcome::Accept {
+            static_final_stack: None,
+            static_final_altstack: Some(Vec::new()),
+        };
+        self.state(case, expected, LeafVersionStatus::Reviewed, None);
+    }
+
     /// One case whose primitives all succeed and whose one final item is
     /// false.
     pub fn evaluated_false(&mut self, case: Case<'_>, final_stack: Vec<Vec<u8>>) {

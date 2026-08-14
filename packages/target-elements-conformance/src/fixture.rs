@@ -946,10 +946,10 @@ impl<'a> IntoIterator for &'a PrimitiveFixtureSet {
 
 /// The canonical fixture census of this repository.
 ///
-/// The complete primitive matrix, authored in [`crate::census`] against
-/// the reviewed contract and independent published vectors. Its content,
-/// its coverage, and what it deliberately does not cover are documented
-/// there.
+/// The complete primitive matrix, authored against
+/// the reviewed contract and independent published vectors by the
+/// crate-internal census module. Its content, its coverage, and what it
+/// deliberately does not cover are documented there.
 ///
 /// # Errors
 ///

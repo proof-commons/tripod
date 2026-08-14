@@ -31,13 +31,19 @@
 //! reviewed runner is provenance a reader may check against the
 //! executor's recorded handshake and the backlog gate record.
 //!
-//! # Why a run can fail today
+//! # What a run establishes
 //!
-//! The canonical fixture census is empty: no primitive fixture has been
-//! authored yet. Every required evidence row therefore has no case
-//! bearing on it, the gate refuses, and the command exits on the failure
-//! branch without publishing a report or dating a stamp. That is the
-//! honest state of the evidence, not a defect of the command.
+//! The canonical census covers every reviewed primitive, and every
+//! required evidence row has cases bearing on it. Three rows remain
+//! outside the required plan by design — sighash semantics, commitment
+//! equality, and confidential-value conservation — so a complete run
+//! reports partial completeness rather than a clean sweep, which is the
+//! honest state of the evidence.
+//!
+//! A run against a mock still cannot be evidence: the gate refuses a
+//! declared mock outright, and a mock declared otherwise answers with the
+//! census's own expectations, which the report records in its executor
+//! provenance for a reader to catch.
 
 use std::path::PathBuf;
 use std::process::ExitCode;

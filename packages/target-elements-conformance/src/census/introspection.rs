@@ -176,6 +176,16 @@ fn current_index(author: &mut CensusAuthor<'_>) {
     };
     let expected = vec![author.number_bytes(1)];
     author.accept(case, expected);
+
+    let script = [op(id), op(OpcodeId::Le64ToScriptNum)];
+    let case = Case {
+        group,
+        opcode: Some(id),
+        script: &script,
+        stack: &[],
+        context: Some(census_transaction_at_input(1)),
+    };
+    author.reject(case, &[ObservedFailureClass::InvalidOperandWidth]);
 }
 
 /// Issuance introspection, over inputs that carry none.
@@ -278,6 +288,12 @@ fn transaction_fields(author: &mut CensusAuthor<'_>) {
         let expected = vec![author.number_bytes(count)];
         author.accept(reading(group, id, &script, &[]), expected);
 
+        let script = [op(id), op(OpcodeId::Le64ToScriptNum)];
+        author.reject(
+            reading(group, id, &script, &[]),
+            &[ObservedFailureClass::InvalidOperandWidth],
+        );
+
         bracket_script_number(author, group, id, &[op(id)], count);
     }
 }
@@ -304,12 +320,18 @@ fn transaction_weight(author: &mut CensusAuthor<'_>) {
     let script = [op(id), push(author.le64(0)), op(OpcodeId::LessThan64)];
     author.evaluated_false(reading(group, id, &script, &[]), vec![falsity()]);
 
-    // The weight is a fixed-width field, not a script number.
-    let script = [op(id), op(OpcodeId::Le64ToScriptNum)];
+    // Eight bytes is wider than a script number, so reading the field
+    // as one aborts; narrowing it to one does not, because a weight is a
+    // small number, and the value is the executor's rather than the
+    // fixture's.
+    let script = [op(id), op(OpcodeId::ScriptNumToLe64)];
     author.reject(
         reading(group, id, &script, &[]),
-        &[ObservedFailureClass::ScriptNumberRangeExceeded],
+        &[ObservedFailureClass::MalformedScriptNumber],
     );
+
+    let script = [op(id), op(OpcodeId::Le64ToScriptNum)];
+    author.accept_unstated_stack(reading(group, id, &script, &[]));
 }
 
 /// Two cases bracketing one unsigned four-byte field.
