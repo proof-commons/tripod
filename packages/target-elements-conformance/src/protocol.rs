@@ -228,6 +228,17 @@ pub enum ObservedFailureClass {
     MalformedScriptNumber,
     /// A result was not representable as a script number.
     ScriptNumberRangeExceeded,
+    /// A fixed-width conversion was refused, without saying which of its
+    /// two reviewed causes applied.
+    ///
+    /// The target answers a conversion whose operand is the wrong width
+    /// and one whose result will not fit a script number with one code,
+    /// and the reviewed contract names those as separate causes. An
+    /// executor reporting either would be naming a cause it did not
+    /// observe, so it reports this — and a fixture whose contract cause
+    /// is one of the two admits it alongside, which is what the class
+    /// set is for.
+    FixedWidthConversionRefused,
     /// The primitive is unavailable in the executing domain.
     UnsupportedExecutionDomain,
     /// The introspection context was unavailable.

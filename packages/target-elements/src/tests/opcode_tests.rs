@@ -597,7 +597,14 @@ fn the_timelock_primitive_neither_pushes_nor_pops() {
     // would make every program that uses it one item short, and would
     // contradict the resource row's growth of zero.
     let spec = spec(OpcodeId::CheckSequenceVerify);
-    assert_eq!(spec.stack().operands(), &[StackValueType::ScriptNumber]);
+    // And it is read at the lock-time width. Four bytes is the ordinary
+    // script number; the fifth is where the flag that disables the check
+    // lives, so a four-byte operand type would say the target refuses a
+    // value it treats as no lock at all.
+    assert_eq!(
+        spec.stack().operands(),
+        &[StackValueType::Encoded(EncodingClass::LockTimeScriptNumber)]
+    );
     assert!(matches!(
         spec.stack().success(),
         SuccessContract::RetainsOperands { results } if results.is_empty()

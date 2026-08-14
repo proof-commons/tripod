@@ -703,7 +703,7 @@ fn computation_capabilities() -> Vec<(ElementsCapability, CapabilityContract)> {
             P::RelativeTimelock,
             &[P::TapscriptExecution, P::TransactionVersionInspection],
             &[O::CheckSequenceVerify],
-            &[E::ScriptNumber, E::Sequence],
+            &[E::LockTimeScriptNumber, E::Sequence],
             &[R::RelativeTimelockSemantics],
             Reviewed,
         ),

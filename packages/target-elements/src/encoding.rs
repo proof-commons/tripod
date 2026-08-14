@@ -186,6 +186,22 @@ pub enum EncodingClass {
     /// The variable-width signed number encoding used by the script
     /// language.
     ScriptNumber,
+    /// The wider script-number encoding a lock-time operand is read at.
+    ///
+    /// The script language's ordinary number is bounded to four bytes,
+    /// which is what makes arithmetic on it fit a thirty-two bit range.
+    /// A lock-time operand is compared against an *unsigned* thirty-two
+    /// bit transaction field, and the whole of that field — together
+    /// with the flag bit above it that disables the check — needs a
+    /// fifth byte to be stated as a signed number at all. The target
+    /// reads that operand, and only that operand, at five.
+    ///
+    /// Stating it as its own class rather than widening
+    /// [`Self::ScriptNumber`] keeps the two facts apart: an arithmetic
+    /// or introspection operand five bytes wide is still malformed, and
+    /// a contract that widened the shared class would have said the
+    /// target accepts it everywhere.
+    LockTimeScriptNumber,
     /// A signed 64-bit fixed-width integer.
     SignedLittleEndian64,
     /// An unsigned 32-bit fixed-width integer.
@@ -233,6 +249,7 @@ impl EncodingClass {
         Self::IssuanceEntropy,
         Self::IssuanceBlindingNonce,
         Self::ScriptNumber,
+        Self::LockTimeScriptNumber,
         Self::SignedLittleEndian64,
         Self::UnsignedLittleEndian32,
         Self::UnsignedLittleEndian64,
@@ -267,7 +284,9 @@ impl EncodingClass {
             | Self::UnsignedLittleEndian64 => I::UnsignedInteger,
             // The script language's number is signed, and so is the
             // fixed-width form the arithmetic primitives operate on.
-            Self::ScriptNumber | Self::SignedLittleEndian64 => I::SignedInteger,
+            Self::ScriptNumber | Self::LockTimeScriptNumber | Self::SignedLittleEndian64 => {
+                I::SignedInteger
+            }
             // Commitments, digests, keys, signatures, scalars,
             // programs, and the absent forms are byte strings. An
             // order over them would claim an arithmetic meaning the
@@ -329,6 +348,7 @@ impl EncodingClass {
             Self::IssuanceEntropy => (D::Issuance, exact(32), K::Unique, None),
             Self::IssuanceBlindingNonce => (D::Issuance, exact(32), K::Unique, None),
             Self::ScriptNumber => (D::Number, bounded(0, 4), K::Minimal, Some(LE)),
+            Self::LockTimeScriptNumber => (D::Number, bounded(0, 5), K::Minimal, Some(LE)),
             Self::SignedLittleEndian64 => (D::Number, exact(8), K::FixedWidth, Some(LE)),
             Self::UnsignedLittleEndian32 => (D::Number, exact(4), K::FixedWidth, Some(LE)),
             Self::UnsignedLittleEndian64 => (D::Number, exact(8), K::FixedWidth, Some(LE)),
@@ -785,6 +805,15 @@ fn primitive_encodings() -> Vec<(EncodingClass, EncodingSpec)> {
             D::Number,
             &[],
             bounded(0, 4),
+            Some(LE),
+            K::Minimal,
+            shape,
+        ),
+        spec(
+            C::LockTimeScriptNumber,
+            D::Number,
+            &[],
+            bounded(0, 5),
             Some(LE),
             K::Minimal,
             shape,

@@ -11,9 +11,18 @@
 //! # What the check compares
 //!
 //! The operand is compared with the *input's own sequence field*, which
-//! the fixture states, and the transaction version is the prerequisite.
-//! Nothing here depends on how old a funding output is, so every case is
-//! materializable without waiting for anything (Guide-9 §13.12).
+//! the fixture states, and the transaction version is the prerequisite
+//! (Guide-9 §13.12).
+//!
+//! # A satisfied lock is still a lock
+//!
+//! What the primitive compares does not depend on how old a funding
+//! output is — but the transaction carrying the lock does. A relative
+//! lock is enforced by the chain as well as read by the script, so an
+//! input younger than its own sequence is refused before the
+//! interpreter is reached, and the executor has to age the input to
+//! what the fixture declared. That is cheap in blocks and free in
+//! seconds, and it is why the ages stated here are the ages they are.
 //!
 //! # No cadence
 //!
@@ -22,7 +31,7 @@
 //! or may.
 
 use tapscript::TapscriptInstruction;
-use target_elements::OpcodeId;
+use target_elements::{EncodingClass, OpcodeId};
 
 use crate::census::author::{Case, CensusAuthor, falsity, op, push};
 use crate::census::context::timelock_transaction;
@@ -47,8 +56,31 @@ const TIME_SEQUENCE: u32 = TIME_MODE_FLAG | 5;
 /// The largest age the sequence field's own mask can express.
 const MASK_BOUNDARY: u32 = 0x0000_ffff;
 
+/// The mask's largest age, counted in intervals rather than blocks.
+///
+/// The mask is the same sixteen bits in both modes, so a satisfied lock
+/// at its top is the same fact either way — but only one of the two can
+/// be materialized. Aging an input by sixty-five thousand blocks is a
+/// chain a run cannot build; aging it by the same count of intervals is
+/// a clock the executor moves forward at no cost. The boundary is
+/// therefore stated in the mode that can be reached, and the height
+/// mode's own boundary is a recorded residual rather than a case that
+/// answers with infrastructure trouble.
+const TIME_MASK_BOUNDARY: u32 = TIME_MODE_FLAG | MASK_BOUNDARY;
+
 /// The sequence that disables the check.
 const DISABLED_SEQUENCE: u32 = 0xffff_ffff;
+
+/// The operand bit that makes the check do nothing at all.
+///
+/// Set on the *operand* rather than the input, it is the target's
+/// forward-compatibility escape: the primitive returns before it
+/// compares anything, so neither the age nor the mode is consulted. The
+/// bit sits above the thirty-two bit field the operand is compared
+/// against, which is why stating it at all needs the lock-time
+/// script-number width and why no case here could be written until the
+/// operand was typed at it.
+const OPERAND_DISABLE_FLAG: u32 = 0x8000_0000;
 
 /// Every relative-timelock case.
 pub fn cases(author: &mut CensusAuthor<'_>) {
@@ -63,7 +95,7 @@ pub fn cases(author: &mut CensusAuthor<'_>) {
         (HEIGHT_SEQUENCE, i64::from(HEIGHT_SEQUENCE)),
         (HEIGHT_SEQUENCE, i64::from(HEIGHT_SEQUENCE) - 1),
         (TIME_SEQUENCE, i64::from(TIME_SEQUENCE)),
-        (MASK_BOUNDARY, i64::from(MASK_BOUNDARY)),
+        (TIME_MASK_BOUNDARY, i64::from(TIME_MASK_BOUNDARY)),
     ] {
         let stack = [author.number(operand)];
         let expected = vec![author.number_bytes(operand)];
@@ -109,6 +141,24 @@ pub fn cases(author: &mut CensusAuthor<'_>) {
         );
     }
 
+    // An operand carrying the disable flag is not a lock at all: the
+    // primitive returns before comparing anything, so the operand is
+    // retained and its own truth — it is a large positive number — is
+    // the script's. Both cases would be rejections without the flag:
+    // the first names an age far above the input's, and the second
+    // names the interval mode against an input counting blocks.
+    for operand in [
+        i64::from(OPERAND_DISABLE_FLAG),
+        i64::from(OPERAND_DISABLE_FLAG | TIME_SEQUENCE),
+    ] {
+        let bytes = lock_time_number_bytes(operand);
+        let stack = [author.encoded(EncodingClass::LockTimeScriptNumber, bytes.clone())];
+        author.accept(
+            timelock_case(group, id, &script, &stack, MINIMUM_VERSION, HEIGHT_SEQUENCE),
+            vec![bytes],
+        );
+    }
+
     // A negative operand is refused before the comparison.
     let stack = [author.number(-1)];
     author.reject(
@@ -116,9 +166,11 @@ pub fn cases(author: &mut CensusAuthor<'_>) {
         &[ObservedFailureClass::NegativeTimelock],
     );
 
-    // A trailing zero byte is not a minimal script number.
+    // A trailing zero byte is not a minimal script number — and
+    // minimality is a relay rule, not the target's own: at consensus the
+    // operand is read as the age it encodes and the lock is satisfied.
     let stack = [author.item(vec![0x0a, 0x00])];
-    author.reject(
+    author.reject_at_relay(
         timelock_case(group, id, &script, &stack, MINIMUM_VERSION, HEIGHT_SEQUENCE),
         &[ObservedFailureClass::MalformedScriptNumber],
     );
@@ -141,6 +193,28 @@ pub fn cases(author: &mut CensusAuthor<'_>) {
         timelock_case(group, id, &script, &stack, MINIMUM_VERSION, HEIGHT_SEQUENCE),
         vec![crate::census::author::truth()],
     );
+}
+
+/// The target's minimal signed encoding of one lock-time operand.
+///
+/// Stated here rather than taken from the typed script-number
+/// constructor, which is bounded to the ordinary four-byte width: an
+/// operand carrying the disable flag is exactly the value that does not
+/// fit there, and the whole point of the case is that the target reads
+/// this operand one byte wider.
+fn lock_time_number_bytes(value: i64) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let mut remaining = value.unsigned_abs();
+    while remaining > 0 {
+        bytes.push(u8::try_from(remaining & 0xff).unwrap_or(0));
+        remaining >>= 8;
+    }
+    // A leading byte with its high bit set would read as negative, so a
+    // positive number takes one more byte rather than one fewer.
+    if bytes.last().is_some_and(|byte| byte & 0x80 != 0) {
+        bytes.push(0x00);
+    }
+    bytes
 }
 
 /// One case against a transaction at one version and one sequence.

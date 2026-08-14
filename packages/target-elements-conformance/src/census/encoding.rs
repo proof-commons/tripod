@@ -268,6 +268,12 @@ fn push_forms(author: &mut CensusAuthor<'_>) {
 
     // Bytes no typed program produces: a payload that runs off the end,
     // a width byte with nothing after it, and a width that overruns.
+    //
+    // The target answers a push it cannot read and a byte it does not
+    // execute with one code: both are the parser failing to produce an
+    // instruction, and it does not record which. So the class the
+    // reviewed contract names is admitted alongside the one the target
+    // reports, which is what a class set is for.
     for script in [
         vec![0x02, 0xaa],
         vec![ONE_BYTE_WIDTH_OPCODE],
@@ -278,7 +284,13 @@ fn push_forms(author: &mut CensusAuthor<'_>) {
             group,
             None,
             script,
-            ExpectedPrimitiveOutcome::reject([ObservedFailureClass::MalformedPush], None),
+            ExpectedPrimitiveOutcome::reject(
+                [
+                    ObservedFailureClass::MalformedPush,
+                    ObservedFailureClass::UnknownOpcode,
+                ],
+                None,
+            ),
             EnforcementLayer::Consensus,
         );
     }

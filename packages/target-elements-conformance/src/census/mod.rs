@@ -37,7 +37,12 @@
 //!   reviewed executor cannot yet materialize;
 //! - a case with no introspection context, which a node cannot produce;
 //! - an execution-domain rejection, which needs a domain the reviewed
-//!   contract deliberately does not describe.
+//!   contract deliberately does not describe;
+//! - a relative timelock at the top of the sequence mask counted in
+//!   *blocks*, which would need an input sixty-five thousand
+//!   confirmations deep. The same boundary counted in intervals is
+//!   stated instead, because the mask is the same sixteen bits either
+//!   way and only one of the two is a chain a run can build.
 //!
 //! Each is recorded as a residual. A case that can only be answered with
 //! infrastructure trouble establishes nothing, and a census padded with

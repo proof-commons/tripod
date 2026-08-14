@@ -45,6 +45,15 @@ use crate::protocol::ObservedFailureClass;
 /// reduction below both consumes the prefix and asserts what it was.
 const EXPLICIT_PREFIX_AS_NUMBER: i64 = 1;
 
+/// The first input's sequence field, read as a script number.
+///
+/// Four bytes with every bit set: the sign bit is the top byte's, so the
+/// magnitude is what remains and the value is the largest negative
+/// script number. Stated here rather than derived, because the point of
+/// the case that uses it is that the target's two four-byte readings of
+/// one field differ.
+const SEQUENCE_AS_SCRIPT_NUMBER: i64 = -0x7fff_ffff;
+
 /// Every introspection case.
 pub fn cases(author: &mut CensusAuthor<'_>) {
     input_fields(author);
@@ -132,17 +141,21 @@ fn input_sequence(author: &mut CensusAuthor<'_>) {
     let expected = vec![author.le32_bytes(SECOND_INPUT_SEQUENCE)];
     author.evaluated_false(reading(group, id, &script, &[]), expected);
 
-    // A four-byte field is not a script number, and the target says so
-    // rather than reading the low bytes of one.
+    // A four-byte field and a four-byte script number are the same
+    // width, and this field's bytes happen to be a minimal one: every
+    // bit set reads as the largest negative script number. So the
+    // conversion does not refuse it — it reads it — and the case states
+    // the value the target actually produces rather than a separation
+    // between the encodings that this field cannot show. The separation
+    // is a relay rule, and the cases that show it are the ones whose
+    // field is *not* a minimal number.
     let script = [
         push(author.number(0)),
         op(id),
         op(OpcodeId::ScriptNumToLe64),
     ];
-    author.reject(
-        reading(group, id, &script, &[]),
-        &[ObservedFailureClass::MalformedScriptNumber],
-    );
+    let expected = vec![author.le64_bytes(SEQUENCE_AS_SCRIPT_NUMBER)];
+    author.accept(reading(group, id, &script, &[]), expected);
 
     // Bracketed through the widening conversion, which pins the field.
     let prefix = [push(author.number(0)), op(id)];
@@ -270,9 +283,11 @@ fn transaction_fields(author: &mut CensusAuthor<'_>) {
         let expected = vec![author.le32_bytes(u32::try_from(value).unwrap_or(u32::MAX))];
         author.accept(reading(group, id, &script, &[]), expected);
 
-        // A four-byte field is not a script number.
+        // A four-byte field is not a *minimal* script number, which is a
+        // relay rule: the widths coincide, so at consensus the field is
+        // read as a nonminimal number and the conversion succeeds.
         let script = [op(id), op(OpcodeId::ScriptNumToLe64)];
-        author.reject(
+        author.reject_at_relay(
             reading(group, id, &script, &[]),
             &[ObservedFailureClass::MalformedScriptNumber],
         );
@@ -426,15 +441,36 @@ fn index_failures(author: &mut CensusAuthor<'_>) {
             );
         }
 
-        // A trailing zero byte is not a minimal script number, and five
-        // bytes is wider than one.
-        let nonminimal = author.item(vec![0x00, 0x00]);
+        // Five bytes is wider than a script number, which is the
+        // target's own rule.
         let oversized = author.item(vec![0x01, 0x00, 0x00, 0x00, 0x00]);
-        for operand in [nonminimal, oversized] {
-            author.reject(
-                reading(group, id, &script, &[operand]),
-                &[ObservedFailureClass::MalformedScriptNumber],
-            );
+        author.reject(
+            reading(group, id, &script, &[oversized]),
+            &[ObservedFailureClass::MalformedScriptNumber],
+        );
+
+        // A trailing zero byte is not a minimal script number — and
+        // minimality is a relay rule, not the target's own. At consensus
+        // the operand is read as the index zero and the primitive
+        // succeeds, so what this case establishes is that nonminimality
+        // does not stop the target. The relay rule itself is established
+        // by the cases whose scripts are otherwise valid, where a relay
+        // refusal is the only thing that can happen: a script that fails
+        // at consensus too reports the consensus reason and the relay
+        // rule is never reached.
+        let sequence = author.le32_bytes(FIRST_INPUT_SEQUENCE);
+        let nonminimal = [author.item(vec![0x00, 0x00])];
+        let case = reading(group, id, &script, &nonminimal);
+        match id {
+            // One empty item, which is the target's absent-field marker
+            // and its false.
+            OpcodeId::InspectOutputNonce | OpcodeId::InspectInputIssuance => {
+                author.evaluated_false(case, vec![falsity()]);
+            }
+            // One four-byte field, whose own truth is the script's.
+            OpcodeId::InspectInputSequence => author.accept(case, vec![sequence]),
+            // Two or three items, which the reviewed domain refuses.
+            _ => author.left_multiple_unstated(case),
         }
 
         author.reject(

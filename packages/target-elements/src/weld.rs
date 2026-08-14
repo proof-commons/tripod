@@ -278,6 +278,20 @@ fn weld_timelock(definition: &TargetDefinition, errors: &mut Vec<TargetError>) {
         _ => disagrees = true,
     }
 
+    // The operand is read at the lock-time width, not the ordinary
+    // script-number width. The two differ by one byte, and that byte is
+    // the whole of the disable flag: an operand typed at four bytes says
+    // the target refuses a value it in fact treats as "no lock at all".
+    let lock_time_operand = &[StackValueType::Encoded(EncodingClass::LockTimeScriptNumber)][..];
+    if definition
+        .opcodes()
+        .get(&OpcodeId::CheckSequenceVerify)
+        .map(|spec| spec.stack().operands())
+        != Some(lock_time_operand)
+    {
+        disagrees = true;
+    }
+
     // Below the stated version the lock is not merely satisfied, it is
     // not enforced at all, so a program relying on it must be able to
     // constrain the version. That is only possible if the timelock

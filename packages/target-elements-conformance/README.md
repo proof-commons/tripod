@@ -77,8 +77,21 @@ of items the primitive pushed instead.
 Deliberately not covered, and recorded as residuals rather than filled
 in with cases that cannot run: a signature over a transaction sighash,
 blinded assets, amounts, and nonces, issuing inputs, an absent
-introspection context, and any execution domain other than the reviewed
-one.
+introspection context, any execution domain other than the reviewed one,
+and a relative timelock at the top of the sequence mask counted in
+blocks — which would need an input sixty-five thousand confirmations
+deep, so the same boundary counted in intervals is stated in its place.
+
+## Consensus and relay are asked differently
+
+Every case states which layer its verdict belongs to, and the two are
+different questions. A relay rule can only be observed on a script that
+is otherwise valid: a script that fails at consensus as well reports the
+consensus reason, and the relay rule is never reached. That is why the
+cases establishing minimal script-number encoding — which is a relay
+rule and not the target's own — are the ones whose scripts would
+otherwise be accepted, while the cases whose operand merely happens to
+be nonminimal state what consensus does with it.
 
 ## The native lane is not part of ordinary CI
 

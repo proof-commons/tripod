@@ -54,6 +54,18 @@ def case(ordinal):
     return {"group": "instruction_encoding", "opcode": None, "ordinal": ordinal}
 
 
+def resource_expectation(script, stack):
+    return {
+        "script_bytes": {"exact": len(script)},
+        "initial_stack_items": {"exact": len(stack)},
+        "peak_stack_items": "recorded_only",
+        "peak_altstack_items": "recorded_only",
+        "maximum_element_bytes": "recorded_only",
+        "validation_budget_used": "recorded_only",
+        "transaction_weight": "recorded_only",
+    }
+
+
 def fixture(ordinal, script, stack, expected, context=None):
     return {
         "case": case(ordinal),
@@ -62,18 +74,28 @@ def fixture(ordinal, script, stack, expected, context=None):
         "genesis_id": ZERO_32,
         "execution_domain": "tapscript",
         "leaf_version": TAPSCRIPT_LEAF_VERSION,
+        "leaf_version_status": "reviewed",
+        "enforcement_layer": "consensus",
+        "script_source": "typed_program",
         "script": list(script),
         "initial_stack": [list(item) for item in stack],
         "context": context,
         "expected": expected,
+        "expected_resources": resource_expectation(script, stack),
     }
 
 
-ACCEPTS = {"accept": {"final_stack": [[1]], "final_altstack": []}}
+ACCEPTS = {"accept": {"static_final_stack": [[1]], "static_final_altstack": []}}
 
 
 def rejects(name):
-    return {"reject": {"class": name}}
+    return {
+        "reject": {
+            "classes": [name],
+            "static_final_stack": None,
+            "static_final_altstack": None,
+        }
+    }
 
 
 # A context whose current input names a transaction that does not exist on
@@ -87,17 +109,17 @@ UNMATERIALISABLE_CONTEXT = {
     "inputs": [
         {
             "outpoint_txid": [7] * 32,
-            "outpoint_index": 0,
-            "spent_asset": [1] + ZERO_32,
-            "spent_value": [1] + [0] * 8,
-            "spent_program": [],
+            "outpoint_index": None,
+            "spent_asset": None,
+            "spent_value": None,
+            "spent_program": None,
             "sequence": 4294967294,
             "issuance": None,
             "witness": [],
         }
     ],
     "outputs": [],
-    "script_path": {"leaf_version": TAPSCRIPT_LEAF_VERSION, "script": [], "control": []},
+    "script_path": {"leaf_version": TAPSCRIPT_LEAF_VERSION, "script": [], "control": None},
 }
 
 # The elementsregtest policy asset, as an explicit asset field: the 0x01
@@ -121,11 +143,11 @@ MATERIALISABLE_CONTEXT = {
     "current_input_index": 0,
     "inputs": [
         {
-            "outpoint_txid": ZERO_32,
-            "outpoint_index": 0,
+            "outpoint_txid": None,
+            "outpoint_index": None,
             "spent_asset": POLICY_ASSET_FIELD,
             "spent_value": explicit_value(100000),
-            "spent_program": [],
+            "spent_program": None,
             "sequence": 4294967294,
             "issuance": None,
             "witness": [],
@@ -145,7 +167,45 @@ MATERIALISABLE_CONTEXT = {
             "program": [],
         },
     ],
-    "script_path": {"leaf_version": TAPSCRIPT_LEAF_VERSION, "script": [], "control": []},
+    "script_path": {"leaf_version": TAPSCRIPT_LEAF_VERSION, "script": [], "control": None},
+}
+
+# A context whose outputs the executor supplies entirely: no asset and no
+# program are stated, and no input value is, so the executor funds the one
+# input with exactly what the outputs demand. This is the shape the canonical
+# census uses, and it is the shape that proves no fee or change output is
+# added behind the fixture's back.
+SUPPLIED_CONTEXT = {
+    "version": 2,
+    "locktime": 0,
+    "current_input_index": 0,
+    "inputs": [
+        {
+            "outpoint_txid": None,
+            "outpoint_index": None,
+            "spent_asset": None,
+            "spent_value": None,
+            "spent_program": None,
+            "sequence": 4294967294,
+            "issuance": None,
+            "witness": [],
+        }
+    ],
+    "outputs": [
+        {
+            "asset": None,
+            "value": explicit_value(70000),
+            "nonce": [0],
+            "program": None,
+        },
+        {
+            "asset": None,
+            "value": explicit_value(30000),
+            "nonce": [0],
+            "program": None,
+        },
+    ],
+    "script_path": {"leaf_version": TAPSCRIPT_LEAF_VERSION, "script": [], "control": None},
 }
 
 REQUESTS = [
@@ -159,6 +219,8 @@ REQUESTS = [
     fixture(3, b"\x51", [], ACCEPTS, UNMATERIALISABLE_CONTEXT),
     # A context the adapter can materialise, spent through the same leaf.
     fixture(4, b"\x51", [], ACCEPTS, MATERIALISABLE_CONTEXT),
+    # A context whose asset, programs, and input amount the executor supplies.
+    fixture(5, b"\x51", [], ACCEPTS, SUPPLIED_CONTEXT),
 ]
 
 with open(sys.argv[1], "w", encoding="utf-8") as stream:
@@ -183,7 +245,18 @@ EXPECTED = [
     (2, "rejected", "stack_underflow"),
     (3, "infrastructure_error", None),
     (4, "accepted", None),
+    (5, "accepted", None),
 ]
+
+# Every figure a validating node cannot see. The schema admits absence, and
+# an adapter reporting zero for one of these would be reporting a
+# measurement it never made.
+UNOBSERVED_RESOURCES = (
+    "peak_stack_items",
+    "peak_altstack_items",
+    "maximum_element_bytes",
+    "validation_budget_used",
+)
 
 failures = []
 with open(sys.argv[1], encoding="utf-8") as stream:
@@ -201,6 +274,10 @@ for field, want in (
     ("protocol_schema", 1),
     ("supported_domains", ["tapscript"]),
     ("supported_leaf_versions", [196]),
+    (
+        "capabilities",
+        ["failure_class_reporting", "resource_observation", "transaction_context"],
+    ),
 ):
     if handshake.get(field) != want:
         failures.append("handshake.%s is %r, wanted %r" % (field, handshake.get(field), want))
@@ -222,6 +299,22 @@ for line, (ordinal, verdict, failure) in zip(lines[1:], EXPECTED):
         )
     if answer.get("final_stack") is not None or answer.get("final_altstack") is not None:
         failures.append("case %d reported a stack the node cannot expose" % ordinal)
+    resources = answer.get("resources")
+    if not isinstance(resources, dict):
+        failures.append("case %d reported no resource observation" % ordinal)
+        continue
+    for row in UNOBSERVED_RESOURCES:
+        if resources.get(row) is not None:
+            failures.append(
+                "case %d reported %s as %r, which the node does not expose"
+                % (ordinal, row, resources.get(row))
+            )
+    weight = resources.get("transaction_weight")
+    if verdict == "infrastructure_error":
+        if weight is not None:
+            failures.append("case %d reported a weight for a transaction it never built" % ordinal)
+    elif not isinstance(weight, int) or isinstance(weight, bool) or weight <= 0:
+        failures.append("case %d reported no transaction weight" % ordinal)
 
 for failure in failures:
     print("FAIL: " + failure)

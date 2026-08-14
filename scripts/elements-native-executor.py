@@ -71,6 +71,33 @@ contract is about consensus behaviour and standardness is not consensus.
 `final_stack` and `final_altstack` are always null: `elementsd` exposes no
 interpreter stack, and synthesising one would be fabricating evidence.
 
+What the fixture states, and what this adapter supplies
+-------------------------------------------------------
+Several fixture fields are optional, and an absent one is the fixture saying
+that only the executor can know the value: an outpoint names a funding output
+this adapter created, the program of the input under validation commits to
+the very script the fixture carries, and which asset a development network
+issues is the network's own fact. Those are supplied here. A field that *is*
+stated is a requirement, and every requirement this adapter cannot meet is
+refused by name -- never approximated, because an approximated context makes
+the target answer a question the fixture did not ask.
+
+Input amounts are the one supplied value with a rule attached. The declared
+outputs fix the total the inputs must carry, and no fee or change output may
+be added, since an added output would move every output index a fixture
+states. So the inputs the fixture leaves unstated share exactly what the
+stated ones leave, and the materialised transaction conserves value with the
+outputs the fixture asked for and no others.
+
+Resource observations
+---------------------
+`script_bytes` and `initial_stack_items` are restated from the fixture, so a
+harness comparing them catches an executor that ran something else.
+`transaction_weight` is read back from `decoderawtransaction`. The peak
+depths, the largest element, and the validation budget are null: a validating
+node exposes none of them, and a zero would report "not observed" as a
+measurement.
+
 Verdict mapping
 ---------------
 `testmempoolaccept` reports an allowed result, or a `reject-reason`. Elements
@@ -114,52 +141,66 @@ never as a plausible neighbour.
   Taproot version reserved for soft-fork upgrades        leaf_version_rejected
   OP_CHECKMULTISIG(VERIFY) is not available in           unsupported_execution_domain
     tapscript
-  Arithmetic opcode error                                unmapped (see below)
-  unknown error                                          unmapped (see below)
-  Push value size limit exceeded                         unmapped
+  Stack size must be exactly one after execution         non_singleton_final_stack
+  Push value size limit exceeded                         malformed_push
+  unknown error                                          malformed_script_number
+  Invalid Schnorr signature size                         invalid_signature
+  Script failed an OP_CHECKSIGVERIFY operation           empty_signature
+  Arithmetic opcode error                                fixed_width_conversion_refused
   Stack size limit exceeded                              unmapped
-  Stack size must be exactly one after execution         unmapped
   Script is too big                                      unmapped
   Operation limit exceeded                               unmapped
   Script failed an OP_VERIFY operation                   unmapped
   Script failed an OP_EQUALVERIFY operation              unmapped
-  Script failed an OP_CHECKSIGVERIFY operation           unmapped
   Script failed an OP_NUMEQUALVERIFY operation           unmapped
-  Invalid Schnorr signature size                         unmapped
   Invalid Schnorr signature hash type                    unmapped
   Invalid Taproot control block size                     unmapped
 
-Two of those unmapped entries are deliberate and load-bearing. Elements
-answers both an overflowing 64-bit operation and a zero divisor with the
-single string "Arithmetic opcode error", so `arithmetic_overflow` and
-`division_by_zero` are not distinguishable here; and a malformed or oversized
-script number raises `scriptnum_error`, which becomes `SCRIPT_ERR_UNKNOWN_ERROR`
-and the string "unknown error", so `malformed_script_number` and
-`script_number_range_exceeded` are not distinguishable either. Reporting
-either pair as one of its members would be a guess presented as an
-observation.
+Four of those entries are worth naming, because they were settled by reading
+the interpreter rather than by guessing at a string:
+
+  "unknown error" is what a script-number exception becomes. Minimal encoding
+  is enforced by a relay flag and not at consensus, so the only script-number
+  exception a consensus run can raise is an operand wider than the primitive
+  reads -- which is exactly the harness's malformed-script-number class. In
+  the relay lane a nonminimal operand raises the same exception, and the same
+  class covers it.
+
+  "Invalid Schnorr signature size" and "Invalid Schnorr signature" are two
+  target codes under one contract cause: the reviewed failure census admits
+  the offered signature being refused, and does not split refusal by width
+  from refusal by verification.
+
+  "Script failed an OP_CHECKSIGVERIFY operation" is reachable in tapscript
+  only for an empty signature -- a non-empty signature that does not verify
+  errors earlier with its own code -- so the generic string is precise.
+
+  "Arithmetic opcode error" is genuinely coarse and is reported as such. It
+  is raised for a fixed-width conversion whose operand is the wrong width and
+  for one whose result will not fit a script number, and the reviewed
+  contract names those as separate causes. The harness has a class that means
+  exactly "the target refused a fixed-width conversion without saying which",
+  and that is what is reported; a fixture whose contract cause is one of the
+  two admits it alongside.
 
 What consensus does not see
 ---------------------------
-Because a policy-only rejection is retried as a block, three of the table's
-entries were measured to be unreachable through this adapter, and are kept
-only so that a future Elements making them consensus would be classified
-rather than silently unmapped:
+Two of the table's entries were measured to be unreachable in the consensus
+lane, and are kept so that a fixture stating them at the relay layer -- where
+they are real -- is classified rather than silently unmapped:
 
-  malformed_push          a nonminimal push is standardness in tapscript,
-                          not consensus, and is accepted at consensus;
+  malformed_push          a nonminimal push is standardness in tapscript and
+                          is accepted at consensus. The oversized form is a
+                          consensus rule and does reach this class;
   leaf_version_rejected   an unrecognised leaf version is unconditionally
-                          valid at consensus under BIP-341, and is accepted;
-  unknown_opcode          an OP_SUCCESSx byte makes the script succeed at
-                          consensus. Only a byte that is neither defined nor
-                          OP_SUCCESSx -- inside an executed branch -- is
-                          rejected as an unknown opcode.
+                          valid at consensus under BIP-341, and is accepted.
 
-Measured against `v28.99.0-7110a84bb1fe`: leaf versions `0xc0` and `0xc2`,
-`OP_SUCCESS` byte `0x50`, and a nonminimal one-byte push were all accepted at
-consensus while the mempool refused them on policy grounds. A fixture whose
-reviewed expectation is a rejection in one of those classes is stating a
-policy requirement, and no node verdict will confirm it.
+`unknown_opcode` is reachable: an OP_SUCCESSx byte makes the script succeed
+at consensus, but a byte that is neither defined nor OP_SUCCESSx is rejected
+there, and so is a push whose payload runs off the end of the script -- the
+target answers a malformed push and an undefined byte with one code.
+
+Measured against `v28.99.0-6f43e3ffe730`.
 """
 
 from __future__ import annotations
@@ -202,6 +243,26 @@ EXPLICIT_PREFIX = 0x01
 CASE_FUNDING_SATOSHIS = 100_000
 ADAPTER_FEE_SATOSHIS = 1_000
 
+# The boundary between a lock time counted in blocks and one counted in
+# seconds, and the bit layout of a sequence field's relative lock. All four
+# are the target's own constants, restated here because the adapter has to
+# mature a chain far enough for the declared transaction to be final -- and a
+# transaction refused as non-final is not a script verdict.
+LOCKTIME_HEIGHT_THRESHOLD = 500_000_000
+SEQUENCE_DISABLE_FLAG = 0x8000_0000
+SEQUENCE_TIME_MODE_FLAG = 0x0040_0000
+SEQUENCE_AGE_MASK = 0x0000_FFFF
+SEQUENCE_TIME_GRANULARITY_BITS = 9
+
+# The median a relative time lock is compared against is taken over this many
+# blocks, so advancing it means mining that many at the later time.
+MEDIAN_TIME_BLOCKS = 11
+
+# The descriptor the maturity blocks pay to: the same anyone-can-spend
+# program the chain's free coins sit behind, which keeps every coin this
+# adapter creates spendable by the adapter and by nobody who cares.
+MINING_DESCRIPTOR = "raw(%s)" % ANYONE_CAN_SPEND_HEX
+
 # Prefixes Elements puts in front of a script error in a rejection reason.
 CONSENSUS_SCRIPT_PREFIX = "mandatory-script-verify-flag-failed ("
 POLICY_SCRIPT_PREFIX = "non-mandatory-script-verify-flag ("
@@ -230,10 +291,32 @@ FAILURE_CLASS_BY_SCRIPT_ERROR = {
     "Too much signature validation relative to witness weight": "validation_budget_exhausted",
     "Taproot version reserved for soft-fork upgrades": "leaf_version_rejected",
     "OP_CHECKMULTISIG(VERIFY) is not available in tapscript": "unsupported_execution_domain",
-    # Deliberately unmapped: Elements collapses two harness classes into one
-    # string in each of these cases. See the module docstring.
-    "Arithmetic opcode error": None,
-    "unknown error": None,
+    # The final stack was not the single item the reviewed domain requires.
+    "Stack size must be exactly one after execution": "non_singleton_final_stack",
+    # A literal the target refuses outright, which is what the harness's
+    # malformed-push class names.
+    "Push value size limit exceeded": "malformed_push",
+    # The generic code a script-number exception becomes. At consensus the
+    # only script-number exception is an operand wider than the primitive
+    # reads: minimal encoding is a relay rule and is not enforced there at
+    # all, so this string has one meaning in the consensus lane and the
+    # same one in the relay lane, where a nonminimal operand joins it.
+    "unknown error": "malformed_script_number",
+    # A signature of the wrong width, which the reviewed contract classes
+    # with a signature that does not verify: both are the target refusing
+    # the offered signature, and the contract's failure census draws no
+    # line between them.
+    "Invalid Schnorr signature size": "invalid_signature",
+    # The verifying forms reach this only for an empty signature: a
+    # non-empty signature that does not verify errors earlier with its own
+    # code, so the generic verify-failure string is precise here.
+    "Script failed an OP_CHECKSIGVERIFY operation": "empty_signature",
+    # Deliberately coarse, and named as such. Elements answers a conversion
+    # whose operand is the wrong width and one whose result will not fit a
+    # script number with this one string, and the reviewed contract names
+    # those as separate causes. Reporting either would name a cause this
+    # adapter did not observe.
+    "Arithmetic opcode error": "fixed_width_conversion_refused",
 }
 
 
@@ -313,12 +396,46 @@ def require_byte_vectors(value: object, path: str) -> list:
     return [require_bytes(item, "%s[%d]" % (path, index)) for index, item in enumerate(value)]
 
 
+def require_optional_bytes(value: object, path: str):
+    """Returns an optional serde byte sequence: bytes, or None where absent.
+
+    An absent field is the fixture saying the executor supplies the value.
+    It is never read as an empty one: empty bytes are a statement, and
+    silence is not.
+    """
+    if value is None:
+        return None
+    return require_bytes(value, path)
+
+
+def require_optional_int(value: object, path: str):
+    """Returns an optional integer, or None where the fixture states none."""
+    if value is None:
+        return None
+    return require_int(value, path)
+
+
+def require_string(value: object, path: str) -> str:
+    """Returns value as a string, or names the path that was not one."""
+    if not isinstance(value, str):
+        raise AdapterError("field is not a string: %s" % path)
+    return value
+
+
 def parse_fixture(raw: object) -> dict:
     """Decodes one fixture strictly, naming any field this adapter cannot read.
 
     The `expected` member is checked for shape and then discarded. This
     adapter never reads what the fixture expects: an executor that consults
     the expectation is comparing a fixture with itself (Guide-9 section 10.6).
+
+    Four members are validated and then discarded for a different reason:
+    `leaf_version_status`, `script_source`, and `expected_resources` describe
+    how the fixture came to be stated and what the harness will compare, none
+    of which changes what a node is asked; and `enforcement_layer` is checked
+    against the one layer this adapter answers at rather than ignored, since
+    answering a relay question with a consensus verdict would be a different
+    answer wearing the right shape.
     """
     fixture = require_object(raw, "fixture")
     require_keys(
@@ -330,21 +447,50 @@ def parse_fixture(raw: object) -> dict:
             "genesis_id",
             "execution_domain",
             "leaf_version",
+            "leaf_version_status",
+            "enforcement_layer",
+            "script_source",
             "script",
             "initial_stack",
             "context",
             "expected",
+            "expected_resources",
         ),
         "fixture",
     )
     check_expected_shape(fixture["expected"])
+    check_resource_expectation_shape(fixture["expected_resources"])
+    check_enumeration(
+        fixture["leaf_version_status"],
+        ("reviewed", "unreviewed"),
+        "fixture.leaf_version_status",
+    )
+    check_enumeration(
+        fixture["script_source"],
+        ("typed_program", "deliberately_malformed"),
+        "fixture.script_source",
+    )
+    layer = check_enumeration(
+        fixture["enforcement_layer"],
+        ("consensus", "relay_policy"),
+        "fixture.enforcement_layer",
+    )
     return {
+        "enforcement_layer": layer,
         "execution_domain": fixture["execution_domain"],
         "leaf_version": require_int(fixture["leaf_version"], "fixture.leaf_version"),
         "script": require_bytes(fixture["script"], "fixture.script"),
         "initial_stack": require_byte_vectors(fixture["initial_stack"], "fixture.initial_stack"),
         "context": parse_context(fixture["context"]),
     }
+
+
+def check_enumeration(raw: object, admitted: tuple, path: str) -> str:
+    """Returns one of the admitted spellings, or names the one that was not."""
+    text = require_string(raw, path)
+    if text not in admitted:
+        raise AdapterError("unknown value at %s: %s" % (path, text))
+    return text
 
 
 def check_expected_shape(raw: object) -> None:
@@ -356,17 +502,47 @@ def check_expected_shape(raw: object) -> None:
         if name == "accept":
             require_keys(
                 require_object(body, "fixture.expected.accept"),
-                ("final_stack", "final_altstack"),
+                ("static_final_stack", "static_final_altstack"),
                 "fixture.expected.accept",
             )
         elif name == "reject":
             require_keys(
                 require_object(body, "fixture.expected.reject"),
-                ("class",),
+                ("classes", "static_final_stack", "static_final_altstack"),
                 "fixture.expected.reject",
             )
         else:
             raise AdapterError("unknown field: fixture.expected.%s" % name)
+
+
+# The rows a fixture's resource expectation carries, in the order the
+# harness declares them. Each is either an exact figure or the
+# recorded-only marker; this adapter validates the shape and reports its
+# own observations, and never reads the expectation into an answer.
+RESOURCE_EXPECTATION_ROWS = (
+    "script_bytes",
+    "initial_stack_items",
+    "peak_stack_items",
+    "peak_altstack_items",
+    "maximum_element_bytes",
+    "validation_budget_used",
+    "transaction_weight",
+)
+
+
+def check_resource_expectation_shape(raw: object) -> None:
+    """Validates the resource expectation's shape, without reading a figure."""
+    expected = require_object(raw, "fixture.expected_resources")
+    require_keys(expected, RESOURCE_EXPECTATION_ROWS, "fixture.expected_resources")
+    for row in RESOURCE_EXPECTATION_ROWS:
+        path = "fixture.expected_resources.%s" % row
+        entry = expected[row]
+        if entry == "recorded_only":
+            continue
+        body = require_object(entry, path)
+        if len(body) != 1 or "exact" not in body:
+            raise AdapterError("unknown resource expectation at %s" % path)
+        require_int(body["exact"], path + ".exact")
 
 
 def parse_context(raw: object):
@@ -426,11 +602,17 @@ def parse_input(raw: object, path: str) -> dict:
             path + ".issuance",
         )
     return {
-        "outpoint_txid": require_bytes(value["outpoint_txid"], path + ".outpoint_txid"),
-        "outpoint_index": require_int(value["outpoint_index"], path + ".outpoint_index"),
-        "spent_asset": require_bytes(value["spent_asset"], path + ".spent_asset"),
-        "spent_value": require_bytes(value["spent_value"], path + ".spent_value"),
-        "spent_program": require_bytes(value["spent_program"], path + ".spent_program"),
+        "outpoint_txid": require_optional_bytes(
+            value["outpoint_txid"], path + ".outpoint_txid"
+        ),
+        "outpoint_index": require_optional_int(
+            value["outpoint_index"], path + ".outpoint_index"
+        ),
+        "spent_asset": require_optional_bytes(value["spent_asset"], path + ".spent_asset"),
+        "spent_value": require_optional_bytes(value["spent_value"], path + ".spent_value"),
+        "spent_program": require_optional_bytes(
+            value["spent_program"], path + ".spent_program"
+        ),
         "sequence": require_int(value["sequence"], path + ".sequence"),
         "issuance": issuance,
         "witness": require_byte_vectors(value["witness"], path + ".witness"),
@@ -443,10 +625,10 @@ def parse_output(raw: object, path: str) -> dict:
     value = require_object(raw, path)
     require_keys(value, ("asset", "value", "nonce", "program"), path)
     return {
-        "asset": require_bytes(value["asset"], path + ".asset"),
+        "asset": require_optional_bytes(value["asset"], path + ".asset"),
         "value": require_bytes(value["value"], path + ".value"),
         "nonce": require_bytes(value["nonce"], path + ".nonce"),
-        "program": require_bytes(value["program"], path + ".program"),
+        "program": require_optional_bytes(value["program"], path + ".program"),
         "path": path,
     }
 
@@ -462,7 +644,9 @@ def parse_script_path(raw: object) -> dict:
             value["leaf_version"], "fixture.context.script_path.leaf_version"
         ),
         "script": require_bytes(value["script"], "fixture.context.script_path.script"),
-        "control": require_bytes(value["control"], "fixture.context.script_path.control"),
+        "control": require_optional_bytes(
+            value["control"], "fixture.context.script_path.control"
+        ),
     }
 
 
@@ -647,9 +831,16 @@ class CaseExecutor:
         self.anyone_can_spend = bytes.fromhex(ANYONE_CAN_SPEND_HEX)
         self.change = None
         self.policy_asset_field = None
+        self.mining_descriptor = None
+        self.mock_time = 0
 
     def prime(self) -> None:
         """Locates the chain's free-coin output and confirms one block."""
+        # The descriptor the maturity blocks are mined to, checksummed by the
+        # node so that a hand-written checksum cannot drift from the script.
+        self.mining_descriptor = self.node.call(
+            "getdescriptorinfo", MINING_DESCRIPTOR
+        )["descriptor"]
         self.node.call("generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, "[]")
         genesis_hash = self.node.call("getblockhash", "0")
         genesis = self.node.call("getblock", genesis_hash, "2")
@@ -668,8 +859,83 @@ class CaseExecutor:
                     "vout": output["n"],
                     "amount": amount,
                 }
+                self.mock_time = self.node.call("getblockchaininfo")["mediantime"]
                 return
         raise FatalAdapterError("the chain carries no anyone-can-spend free-coin output")
+
+    # -- chain maturity ---------------------------------------------------
+
+    def mine(self, count: int) -> None:
+        """Mines empty blocks to the adapter's own program."""
+        if count > 0:
+            self.node.call("generatetodescriptor", str(count), self.mining_descriptor)
+
+    def mature(self, context: dict, funded: list) -> None:
+        """Advances the chain until the declared transaction can be final.
+
+        A fixture states a lock time and a sequence per input, and both are
+        chain requirements as well as script data: a transaction whose lock
+        time is above the tip, or whose input is younger than its own
+        relative lock, is refused as non-final. That refusal is not a script
+        verdict, and reporting it as one would make every introspection case
+        look like a target rejection.
+
+        So the chain is grown to meet what the fixture declared, rather than
+        the declaration being trimmed to what an unmatured chain accepts. The
+        rules restated here are the target's: an absolute lock time below the
+        threshold counts blocks and above it counts seconds; a relative lock
+        counts either, is measured from the block that funded the input, and
+        is disabled outright by the flag bit.
+        """
+        required_height = 0
+        required_time = 0
+
+        # An absolute lock binds only while some input is non-final.
+        if context["locktime"] != 0 and any(
+            declared["sequence"] != 0xFFFF_FFFF for declared in context["inputs"]
+        ):
+            if context["locktime"] < LOCKTIME_HEIGHT_THRESHOLD:
+                required_height = max(required_height, context["locktime"])
+            else:
+                required_time = max(required_time, context["locktime"] + 1)
+
+        # Relative locks bind only from the version that introduced them.
+        if context["version"] >= 2:
+            for entry in funded:
+                sequence = entry["sequence"]
+                if sequence & SEQUENCE_DISABLE_FLAG:
+                    continue
+                age = sequence & SEQUENCE_AGE_MASK
+                if sequence & SEQUENCE_TIME_MODE_FLAG:
+                    required_time = max(
+                        required_time,
+                        entry["parent_median_time"] + (age << SEQUENCE_TIME_GRANULARITY_BITS) + 1,
+                    )
+                else:
+                    required_height = max(required_height, entry["coin_height"] + age - 1)
+
+        self.advance(required_height, required_time)
+
+    def advance(self, required_height: int, required_time: int) -> None:
+        """Grows the chain to one height and one median time."""
+        info = self.node.call("getblockchaininfo")
+        if required_time > info["mediantime"]:
+            # The median is taken over a window, so the clock is moved once
+            # and the window is refilled at the later time. The clock only
+            # ever moves forward: a chain whose time went backwards would
+            # refuse the very blocks meant to advance it.
+            self.mock_time = max(self.mock_time + 1, required_time)
+            self.node.call("setmocktime", str(self.mock_time))
+            self.mine(MEDIAN_TIME_BLOCKS)
+            info = self.node.call("getblockchaininfo")
+            if info["mediantime"] < required_time:
+                raise AdapterError(
+                    "the chain's median time reached %d, and the declared "
+                    "relative timelock needs %d"
+                    % (info["mediantime"], required_time)
+                )
+        if required_height > info["blocks"]:
+            self.mine(required_height - info["blocks"])
 
     # -- taproot ----------------------------------------------------------
 
@@ -698,14 +964,28 @@ class CaseExecutor:
             out.nNonce = messages.CTxOutNonce(nonce_field)
         return out
 
-    def raw_output(self, asset_field: bytes, value_field: bytes, nonce_field: bytes, program: bytes):
-        """Builds one output from declared field bytes, verbatim."""
+    def raw_output(self, declared: dict):
+        """Builds one output from declared field bytes, verbatim.
+
+        A field the fixture leaves unstated is the executor's to supply, and
+        only two are: the asset, because which asset a development network
+        issues is the network's fact, and the program, because a fixture that
+        named one would be describing a deployment. Both are supplied with
+        the chain's own -- the policy asset and the anyone-can-spend program
+        -- and everything the fixture does state is written unchanged.
+        """
         messages = self.messages
+        asset_field = declared["asset"]
+        if asset_field is None:
+            asset_field = self.policy_asset_field
+        program = declared["program"]
+        if program is None:
+            program = self.anyone_can_spend
         out = messages.CTxOut()
         out.nAsset = messages.CTxOutAsset(asset_field)
         out.nValue = messages.CTxOutValue()
-        out.nValue.vchCommitment = value_field
-        out.nNonce = messages.CTxOutNonce(nonce_field)
+        out.nValue.vchCommitment = declared["value"]
+        out.nNonce = messages.CTxOutNonce(declared["nonce"])
         out.scriptPubKey = program
         return out
 
@@ -766,7 +1046,30 @@ class CaseExecutor:
             transaction = self.build_context_spend(
                 program, leaf_script, control, fixture, context
             )
-        return self.judge(transaction)
+        raw = transaction.serialize().hex()
+        body = self.judge(raw, fixture["enforcement_layer"])
+        body["transaction_weight"] = self.weight_of(raw)
+        return body
+
+    def weight_of(self, raw: str):
+        """The materialised transaction's weight, as the node computes it.
+
+        The one resource figure a validating node can actually be asked for.
+        It is read back from the node rather than computed here so that the
+        observation is the target's own accounting; when a node reports none,
+        the answer is that it was not observed, never a number this adapter
+        derived.
+        """
+        try:
+            decoded = self.node.call("decoderawtransaction", raw)
+        except AdapterError:
+            return None
+        if not isinstance(decoded, dict):
+            return None
+        weight = decoded.get("weight")
+        if isinstance(weight, bool) or not isinstance(weight, int):
+            return None
+        return weight
 
     def build_default_spend(self, program, leaf_script, control, fixture):
         """Builds the minimal transaction that exercises the leaf."""
@@ -810,36 +1113,49 @@ class CaseExecutor:
             raise AdapterError(
                 "fixture.context.script_path.script disagrees with fixture.script"
             )
-        if declared_path["control"]:
+        if declared_path["control"] is not None:
             raise AdapterError(
-                "fixture.context.script_path.control is declared, and this adapter "
+                "fixture.context.script_path.control is stated, and this adapter "
                 "derives the control block from the leaf it built"
             )
 
+        # Every unmaterialisable declaration is named before any amount is
+        # computed, so that a refusal reports the field it could not honour
+        # rather than an arithmetic consequence of it.
+        for declared in inputs:
+            self.refuse_unmaterialisable_input(declared)
+        amounts = self.input_amounts(context)
         funded = []
         for position, declared in enumerate(inputs):
-            self.refuse_unmaterialisable_input(declared, position == index)
-            amount = explicit_amount(declared["spent_value"], declared["path"] + ".spent_value")
+            amount = amounts[position]
             spend_program = program if position == index else self.anyone_can_spend
-            funded.append((declared, self.fund(spend_program, amount), amount))
+            # Read before funding: the block that will carry the funding
+            # output is the next one, so this tip is exactly the block a
+            # relative time lock measures from.
+            before = self.node.call("getblockchaininfo")
+            funded.append(
+                {
+                    "declared": declared,
+                    "sequence": declared["sequence"],
+                    "txid": self.fund(spend_program, amount),
+                    "coin_height": before["blocks"] + 1,
+                    "parent_median_time": before["mediantime"],
+                }
+            )
 
         transaction = messages.CTransaction()
         transaction.version = context["version"]
         transaction.nLockTime = context["locktime"]
-        for declared, funding_txid, _amount in funded:
+        for entry in funded:
             transaction.vin.append(
                 messages.CTxIn(
-                    messages.COutPoint(txid_to_internal_int(funding_txid), 0),
-                    nSequence=declared["sequence"],
+                    messages.COutPoint(txid_to_internal_int(entry["txid"]), 0),
+                    nSequence=entry["sequence"],
                 )
             )
         for declared in context["outputs"]:
-            transaction.vout.append(
-                self.raw_output(
-                    declared["asset"], declared["value"], declared["nonce"], declared["program"]
-                )
-            )
-        for position, (declared, _txid, _amount) in enumerate(funded):
+            transaction.vout.append(self.raw_output(declared))
+        for position, entry in enumerate(funded):
             witness = messages.CTxInWitness()
             if position == index:
                 witness.scriptWitness.stack = list(fixture["initial_stack"]) + [
@@ -847,41 +1163,140 @@ class CaseExecutor:
                     control,
                 ]
             else:
-                witness.scriptWitness.stack = list(declared["witness"])
+                witness.scriptWitness.stack = list(entry["declared"]["witness"])
             transaction.wit.vtxinwit.append(witness)
+
+        self.mature(context, funded)
         return transaction
 
-    def refuse_unmaterialisable_input(self, declared: dict, is_current: bool) -> None:
-        """Names every declared input field this adapter cannot honour."""
+    def input_amounts(self, context: dict) -> list:
+        """How much each declared input carries.
+
+        Value conservation is the chain's rule, not the fixture's. The
+        declared outputs fix the total the inputs must carry, and an input
+        whose value the fixture leaves unstated is one the executor funds --
+        so the unstated inputs share whatever the stated ones leave. That is
+        what lets the fixture's transaction be materialised exactly: an
+        adapter that funded arbitrary amounts would have to add a change or
+        fee output, which would move every output index the fixture states.
+        """
+        outputs = context["outputs"]
+        inputs = context["inputs"]
+        total = 0
+        for declared in outputs:
+            if declared["asset"] is not None and declared["asset"] != self.policy_asset_field:
+                raise AdapterError(
+                    "%s.asset names an asset this adapter cannot issue on the "
+                    "disposable chain" % declared["path"]
+                )
+            total += explicit_amount(declared["value"], declared["path"] + ".value")
+
+        stated = {}
+        for position, declared in enumerate(inputs):
+            if declared["spent_value"] is not None:
+                stated[position] = explicit_amount(
+                    declared["spent_value"], declared["path"] + ".spent_value"
+                )
+        unstated = [position for position in range(len(inputs)) if position not in stated]
+        remainder = total - sum(stated.values())
+
+        if not unstated:
+            if remainder != 0:
+                raise AdapterError(
+                    "the declared inputs and outputs do not conserve value, and no "
+                    "input is left unstated for the executor to fund"
+                )
+            return [stated[position] for position in range(len(inputs))]
+        if remainder < len(unstated):
+            raise AdapterError(
+                "the declared outputs leave too little value for the %d input(s) "
+                "the executor funds" % len(unstated)
+            )
+        share = remainder // len(unstated)
+        amounts = dict(stated)
+        for position in unstated[:-1]:
+            amounts[position] = share
+        amounts[unstated[-1]] = remainder - share * (len(unstated) - 1)
+        return [amounts[position] for position in range(len(inputs))]
+
+    def refuse_unmaterialisable_input(self, declared: dict) -> None:
+        """Names every declared input field this adapter cannot honour.
+
+        A field stated as absent is the fixture leaving the value to the
+        executor, which is the case this adapter serves. A field stated with
+        a value is a requirement, and every requirement it cannot meet is
+        refused by name rather than approximated.
+        """
         path = declared["path"]
-        if any(declared["outpoint_txid"]):
+        if declared["outpoint_txid"] is not None:
             raise AdapterError(
                 "%s.outpoint_txid names a transaction this adapter cannot create; "
-                "leave it all-zero to have the executor supply the real outpoint" % path
+                "state it absent to have the executor supply the real outpoint" % path
             )
-        if declared["outpoint_index"] != 0:
+        if declared["outpoint_index"] is not None:
             raise AdapterError(
-                "%s.outpoint_index is declared nonzero, and this adapter supplies "
-                "the real outpoint" % path
+                "%s.outpoint_index is stated, and this adapter supplies the real "
+                "outpoint" % path
             )
         if declared["issuance"] is not None:
             raise AdapterError("%s.issuance is not materialisable by this adapter" % path)
-        if self.policy_asset_field != declared["spent_asset"]:
+        if (
+            declared["spent_asset"] is not None
+            and declared["spent_asset"] != self.policy_asset_field
+        ):
             raise AdapterError(
                 "%s.spent_asset names an asset this adapter cannot issue on the "
                 "disposable chain" % path
             )
-        if is_current and declared["spent_program"]:
+        if declared["spent_program"] is not None:
             raise AdapterError(
-                "%s.spent_program is declared, and this adapter supplies the taproot "
-                "program committing to the fixture's leaf" % path
+                "%s.spent_program is stated, and this adapter supplies the programs "
+                "it funds -- the taproot commitment to the fixture's leaf for the "
+                "input under validation, and an anyone-can-spend program for the "
+                "rest" % path
             )
 
     # -- verdict ----------------------------------------------------------
 
-    def judge(self, transaction) -> dict:
-        """Submits the spending transaction and classifies what the node said."""
-        raw = transaction.serialize().hex()
+    def judge(self, raw: str, layer: str) -> dict:
+        """Asks the node the question the fixture actually stated.
+
+        The two layers are different rules and are asked in different ways.
+        Consensus is what a block enforces, so a consensus fixture is judged
+        by offering the transaction to `generateblock`; relay is what the
+        mempool enforces, so a relay fixture is judged by
+        `testmempoolaccept`. Answering either question with the other's
+        machinery is how a harness reports an unrelayable but perfectly
+        valid spend as an invalid one, or the reverse.
+
+        The previous shape -- mempool first, retried as a block when the
+        refusal was a policy script failure -- collapsed the two, and it
+        could only retry a refusal that named a script. A policy rule that
+        refuses a transaction *without* running the script, such as an
+        oversized witness element, then looked like the adapter failing to
+        build a transaction rather than like standardness.
+        """
+        if layer == "relay_policy":
+            return self.judge_in_mempool(raw)
+        return self.judge_in_block(raw)
+
+    def judge_in_block(self, raw: str) -> dict:
+        """Judges at consensus, which is what block validation enforces."""
+        try:
+            self.node.call("generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw]))
+        except AdapterError as error:
+            if CONSENSUS_SCRIPT_PREFIX in error.note:
+                start = error.note.index(CONSENSUS_SCRIPT_PREFIX) + len(CONSENSUS_SCRIPT_PREFIX)
+                end = error.note.index(")", start)
+                return rejection(error.note[start:end])
+            raise AdapterError(
+                "the node refused the block for a reason that is not a script "
+                "verdict: %s" % error.note
+            )
+        return {"verdict": "accepted", "observed_failure": None}
+
+    def judge_in_mempool(self, raw: str) -> dict:
+        """Judges at relay, which is what the mempool enforces."""
         answer = self.node.call("testmempoolaccept", json.dumps([raw]))
         if not isinstance(answer, list) or len(answer) != 1:
             raise AdapterError("the node did not answer testmempoolaccept with one result")
@@ -891,33 +1306,13 @@ class CaseExecutor:
         reason = result.get("reject-reason")
         if not isinstance(reason, str):
             raise AdapterError("the node rejected without naming a reason")
-        if reason.startswith(CONSENSUS_SCRIPT_PREFIX):
-            return rejection(reason[len(CONSENSUS_SCRIPT_PREFIX) : -1])
-        if reason.startswith(POLICY_SCRIPT_PREFIX):
-            return self.judge_at_consensus(raw, reason[len(POLICY_SCRIPT_PREFIX) : -1])
-        raise AdapterError("the node refused the transaction for a reason that is not "
-                           "a script verdict: %s" % reason)
-
-    def judge_at_consensus(self, raw: str, policy_error: str) -> dict:
-        """Retries a policy-only rejection as a block, which is consensus.
-
-        Standardness is not consensus, and the reviewed contract is about
-        consensus. A transaction the mempool refuses on policy grounds is
-        offered to `generateblock`, which validates it the way a block does.
-        """
-        try:
-            self.node.call("generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw]))
-        except AdapterError as error:
-            if CONSENSUS_SCRIPT_PREFIX in error.note:
-                start = error.note.index(CONSENSUS_SCRIPT_PREFIX) + len(CONSENSUS_SCRIPT_PREFIX)
-                end = error.note.index(")", start)
-                return rejection(error.note[start:end])
-            raise AdapterError(
-                "the node refused the transaction on policy grounds (%s) and refused "
-                "the block for a reason that is not a script verdict: %s"
-                % (policy_error, error.note)
-            )
-        return {"verdict": "accepted", "observed_failure": None}
+        for prefix in (POLICY_SCRIPT_PREFIX, CONSENSUS_SCRIPT_PREFIX):
+            if reason.startswith(prefix):
+                return rejection(reason[len(prefix) : -1])
+        raise AdapterError(
+            "the node refused the transaction for a reason that is not a script "
+            "verdict: %s" % reason
+        )
 
 
 def rejection(script_error: str) -> dict:
@@ -940,22 +1335,28 @@ def write_message(value: dict) -> None:
     sys.stdout.flush()
 
 
-def resources_for(fixture) -> dict:
+def resources_for(fixture, weight) -> dict:
     """Reports the observations this executor can actually make.
 
-    A node exposes no interpreter stack, so the peak depths and the largest
-    element are unobserved. The protocol's resource type has no null for
-    them, so they are reported as zero and this adapter does not declare the
-    resource-observation capability; a zero here means "not observed", and
-    the schema cannot yet say so.
+    Two figures are the fixture's own and are restated exactly, so that a
+    harness comparing them catches an executor that ran something other than
+    what it was handed. The transaction's weight is a real observation, read
+    back from the node.
+
+    Everything else is null, and null is the point: a node exposes no
+    interpreter stack, so the peak depths, the largest element, and the
+    validation budget are not measured here. Reporting them as zero -- which
+    is what this adapter had to do before the schema admitted absence --
+    turned "not observed" into a measurement of nothing.
     """
     return {
         "script_bytes": len(fixture["script"]) if fixture else 0,
         "initial_stack_items": len(fixture["initial_stack"]) if fixture else 0,
-        "peak_stack_items": 0,
-        "peak_altstack_items": 0,
-        "maximum_element_bytes": 0,
+        "peak_stack_items": None,
+        "peak_altstack_items": None,
+        "maximum_element_bytes": None,
         "validation_budget_used": None,
+        "transaction_weight": weight,
     }
 
 
@@ -1027,7 +1428,11 @@ def serve(arguments) -> int:
                 "upstream_revision": revision,
                 "supported_domains": ["tapscript"],
                 "supported_leaf_versions": [TAPSCRIPT_LEAF_VERSION],
-                "capabilities": ["failure_class_reporting", "transaction_context"],
+                "capabilities": [
+                    "failure_class_reporting",
+                    "resource_observation",
+                    "transaction_context",
+                ],
             }
         )
 
@@ -1074,7 +1479,7 @@ def answer_case(executor: CaseExecutor, line: str) -> None:
             "final_stack": None,
             "final_altstack": None,
             "observed_failure": body["observed_failure"],
-            "resources": resources_for(fixture),
+            "resources": resources_for(fixture, body.get("transaction_weight")),
         }
     )
 
