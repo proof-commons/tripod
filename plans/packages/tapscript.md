@@ -1,8 +1,10 @@
 # Elements Tapscript Backend · `pkg:tapscript:contract`
 
-> **Status:** Active — package boundary and the exhaustive compiler-to-target
-> capability adapter implemented; instruction core, stack scheduling, backend
-> proof patterns, and constructors not implemented and prototype-dependent
+> **Status:** Active — static capability and evidence-role adapter over the
+> reviewed contract, typed instruction values, canonical opcode/push
+> encoding, the supported-subset parser, and the abstract stack and
+> failure-state validator implemented; backend proof patterns, protocol
+> stack scheduling, and constructors not implemented and prototype-dependent
 > **Phases:** [Phase 3](../phases/03-target-foundation.md) onward
 > **Package:** `tripod-tapscript`
 > **Library:** `tapscript`

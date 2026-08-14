@@ -696,9 +696,9 @@ Architecture finality does not imply:
 ```text
 public complete compiler-analysis API beyond the target-requirement boundary
 compiler-plan identity
-target-native primitive evidence
-typed tapscript instruction core
 backend proof patterns
+STATE-constructor, wide-arithmetic, and declassification prototypes
+production target-native evidence
 
 tripod-linker
 tripod-transaction
@@ -728,9 +728,11 @@ Compiler coverage:                  implemented internally, section 2.10
 Complete analyzed pilots:           implemented internally, section 2.11
 Compiler target-requirement boundary:
                                     public and validated, section 2.12
-Typed Elements target contract:     implemented, section 2.12
-Capability adapter:                 implemented, section 2.12
-Target-native evidence:            absent
+Typed Elements target contract:     reviewed and welded, section 2.13
+Capability and evidence adapter:    implemented, section 2.13
+Typed instruction core:             implemented, section 2.13
+Development target-native evidence: recorded, section 2.13
+Production target evidence:        absent
 Backend patterns/linker/ABI:       absent
 Independent deployment evidence:   absent
 Production deployment:             absent
@@ -1457,16 +1459,16 @@ Phase-3 task state is:
 | `T3-003` | DONE | Encoding and opcode contracts |
 | `T3-004` | DONE | Development deployment binding |
 | `T3-005` | DONE | Compiler capability adapter |
-| `T3-006` | TODO | Target-native primitive conformance |
-| `T3-007` | TODO | Typed tapscript instruction foundation |
+| `T3-006` | DONE | Target-native primitive conformance, gate record §2.13 |
+| `T3-007` | DONE | Typed tapscript instruction foundation, gate record §2.13 |
 
 Current blockers are:
 
 ```text
 Phase-3 work:
-    Guide-9 target-native primitive conformance
-    typed tapscript instruction core
-    STATE, wide-arithmetic, and declassification prototypes
+    STATE-constructor prototype
+    exact wide floor-arithmetic prototype
+    public declassification prototype
 ```
 
 Standing rules that survive the phase exit:
@@ -1494,9 +1496,9 @@ Standing rules that survive the phase exit:
 Execute in this order unless reproduction changes dependencies:
 
 ```text
-1. Charter Guide 9: target-native primitive conformance against an
-   explicitly bound secretless development target, and the typed
-   tapscript instruction core.
+1. Charter the Phase-3 prototypes: the metadata-dependent STATE
+   constructor, exact wide floor arithmetic, and public declassification,
+   each prototype-only with its own target-native gate.
 2. Keep target types out of compiler core; the target packages consume
    the analyzed boundary, never the reverse.
 3. Mint no target hash and claim no production activation without a real
@@ -1566,4 +1568,4 @@ After a phase or remediation series:
 
 ## 14. One-line backlog · `rem:backlog:one-line`
 
-> Prove the reviewed typed target contract against a real development target and build the typed instruction core, without emitting operations, completing backend patterns, minting speculative identities, or claiming production activation.
+> Settle the STATE-constructor, wide-arithmetic, and declassification prototypes on the evidenced primitive substrate, without emitting operations, completing backend patterns, minting speculative identities, or claiming production activation.

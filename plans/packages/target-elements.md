@@ -1,9 +1,12 @@
 # Elements Target Contract · `pkg:target-elements:contract`
 
-> **Status:** Active — typed static contract, reviewed primitive registry,
-> encoding/authorization/CT/issuance/resource contracts, evidence-requirement
-> registry, and development deployment binding implemented; target-native
-> evidence absent and production support not claimed
+> **Status:** Active — reviewed-trust-state separation, complete
+> success/failure stack contracts, cross-contract welds, transitive
+> capability-status closure, push contract, and development binding
+> implemented; the reviewed primitive subset carries development
+> target-native evidence recorded with the Guide-9 gate; commitment
+> equality and authenticated opening remain unsupported and production
+> support is not claimed
 > **Phase:** [Phase 3](../phases/03-target-foundation.md)
 > **Package:** `tripod-target-elements`
 > **Library:** `target_elements`

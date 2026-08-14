@@ -1,8 +1,9 @@
 # Phase 3 — Elements Target and Foundational Prototypes · `phase:roadmap:target-foundation`
 
-> **Status:** Active — typed target-contract and capability-adapter
-> foundation implemented; target-native primitive evidence and the backend
-> instruction core remain open; prototype-driven
+> **Status:** Active — typed target contract, capability adapter, typed
+> instruction core, and development target-native primitive evidence
+> implemented; the STATE-constructor, wide-arithmetic, and public
+> declassification prototypes remain open; prototype-driven
 > **Entry:** (`gate:phase2:exit`)
 > **Packages:** [`target-elements`](../packages/target-elements.md),
 > [`tapscript`](../packages/tapscript.md)

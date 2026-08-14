@@ -492,11 +492,26 @@ than claiming verification.
 
 ### Target-native tests still required · `rule:elements-ref:review-required-tests`
 
-Every evidence requirement named by the typed contract is unresolved. No
-target-native test has been run against any node, no deployment evidence has
-been produced, and production target support is not claimed. The typed static
-contract states what such a test would have to demonstrate; it does not stand in
-for having demonstrated it.
+The Guide-9 development conformance run resolved the required primitive
+evidence rows; the executor provenance is recorded below. Sighash semantics
+remain unresolved by design, commitment equality and authenticated opening
+remain unsupported by the static contract, and confidential-value
+conservation remains deferred to complete transaction evidence. No
+production deployment evidence has been produced and production target
+support is not claimed. A development report speaks only for its exact
+executor, revision, and disposable chain.
+
+### Native execution provenance · `tbl:elements-ref:native-provenance`
+
+| Fact | Value |
+|---|---|
+| Executor adapter | `scripts/elements-native-executor.py` via its launcher, protocol schema 1 |
+| Implementation | Elements Core daemon v28.99.0-6f43e3ffe730 |
+| Upstream revision executed | `6f43e3ffe7308589f3cbaaec9115ce7456b1bf99` (rebuilt from a clean tree; an earlier stale binary two commits behind was refused for evidence because it predated the EC opcode stack-size fix) |
+| Chain | disposable elementsregtest, wallet-free genesis-free-coins funding |
+| Development identifiers | synthetic nonzero network and genesis IDs recorded in the gate record |
+| Fixture census | 398 cases, 18 of 18 required evidence rows, zero infrastructure errors |
+| Determinism | report bytes identical across two fresh-node runs and the build lane |
 
 ## Updating · `rule:elements-ref:update`
 
