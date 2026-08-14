@@ -102,6 +102,18 @@ pub enum NativeConformanceError {
     #[error("two fixtures declare case {0}")]
     DuplicateFixtureCase(NativeCaseId),
 
+    /// A canonical fixture could not be stated against the reviewed
+    /// contract at all.
+    ///
+    /// The census is first-party source, so this is a defect in it: a
+    /// literal wider than the target admits, a script number outside
+    /// the admissible range, or a program longer than the work limit.
+    /// It is an error rather than a panic because the census is built
+    /// by a command, and a command that cannot state its own fixtures
+    /// must fail rather than abort the process.
+    #[error("a canonical fixture could not be stated against the reviewed contract")]
+    FixtureNotExpressible,
+
     /// A fixture is stated against a different contract revision, or a
     /// different execution domain or leaf version, from the run's.
     #[error("a fixture is stated against a different target contract from the run's")]

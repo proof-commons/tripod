@@ -228,27 +228,41 @@ fn echo(request: &NativeExecutionRequest, behavior: Behavior) -> NativeExecution
         };
     }
 
+    // The fixture's own figures, echoed like everything else: the mock
+    // measures nothing, and a run against it is not evidence.
+    let resources = NativeResourceObservation {
+        script_bytes: request.fixture.script().len() as u64,
+        initial_stack_items: request.fixture.initial_stack().len() as u64,
+        ..NativeResourceObservation::default()
+    };
+
     match request.fixture.expected() {
         ExpectedPrimitiveOutcome::Accept {
-            final_stack,
-            final_altstack,
+            static_final_stack,
+            static_final_altstack,
         } => NativeExecutionResponse {
             schema,
             case: request.case,
             verdict: NativeVerdict::Accepted,
-            final_stack: Some(final_stack.clone()),
-            final_altstack: Some(final_altstack.clone()),
+            final_stack: static_final_stack.clone(),
+            final_altstack: static_final_altstack.clone(),
             observed_failure: None,
-            resources: NativeResourceObservation::default(),
+            resources,
         },
-        ExpectedPrimitiveOutcome::Reject { class } => NativeExecutionResponse {
+        ExpectedPrimitiveOutcome::Reject {
+            classes,
+            static_final_stack,
+            static_final_altstack,
+        } => NativeExecutionResponse {
             schema,
             case: request.case,
             verdict: NativeVerdict::Rejected,
-            final_stack: None,
-            final_altstack: None,
-            observed_failure: Some(*class),
-            resources: NativeResourceObservation::default(),
+            final_stack: static_final_stack.clone(),
+            final_altstack: static_final_altstack.clone(),
+            // The first class the fixture admits, which is the only one
+            // a mock could pick without measuring anything.
+            observed_failure: classes.iter().next().copied(),
+            resources,
         },
     }
 }

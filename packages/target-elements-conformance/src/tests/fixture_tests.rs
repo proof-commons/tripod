@@ -30,10 +30,10 @@ fn add64_fixture(ordinal: u32) -> PrimitiveFixture {
         &program,
         &stack,
         None,
-        ExpectedPrimitiveOutcome::Accept {
-            final_stack: vec![StackItem::signed_le64(&target, 5).bytes().to_vec(), vec![1]],
-            final_altstack: Vec::new(),
-        },
+        ExpectedPrimitiveOutcome::accept(Some(vec![
+            StackItem::signed_le64(&target, 5).bytes().to_vec(),
+            vec![1],
+        ])),
     )
     .expect("the reviewed domain has a wire spelling")
 }
@@ -90,14 +90,13 @@ fn a_duplicate_case_identity_is_refused() {
 }
 
 #[test]
-fn the_canonical_census_is_empty_and_says_so() {
+fn the_canonical_census_is_stated_and_not_empty() {
     let target = reviewed_target();
     let binding = development_binding(&target);
-    let census =
-        canonical_fixture_set(&target, &binding).expect("an empty census has no duplicate");
+    let census = canonical_fixture_set(&target, &binding).expect("the census is expressible");
     assert!(
-        census.is_empty(),
-        "no primitive fixture has been authored yet",
+        !census.is_empty(),
+        "the canonical census is the evidence a run rests on",
     );
 }
 
@@ -164,18 +163,15 @@ fn a_rejecting_fixture_states_its_failure_class() {
         &program,
         &[],
         None,
-        ExpectedPrimitiveOutcome::Reject {
-            class: ObservedFailureClass::StackUnderflow,
-        },
+        ExpectedPrimitiveOutcome::reject([ObservedFailureClass::StackUnderflow], None),
     )
     .expect("the reviewed domain has a wire spelling");
 
     assert_eq!(
-        fixture.expected(),
-        &ExpectedPrimitiveOutcome::Reject {
-            class: ObservedFailureClass::StackUnderflow,
-        },
+        fixture.expected().classes(),
+        std::iter::once(ObservedFailureClass::StackUnderflow).collect(),
     );
+    assert!(!fixture.expected().is_accepting());
 }
 
 #[test]
