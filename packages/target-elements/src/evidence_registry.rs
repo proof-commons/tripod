@@ -26,6 +26,14 @@ pub enum TargetEvidenceSubject {
     Primitives,
     /// The field encodings.
     Encodings,
+    /// The forms a literal is pushed in.
+    ///
+    /// Separate from the field encodings because the two are enforced
+    /// by different rules and can go stale independently: a field
+    /// encoding is what a transaction carries, while a push form is how
+    /// a script states a literal, and only the latter has a
+    /// standardness dimension.
+    LiteralPushes,
     /// Signature and sighash behavior.
     Authorization,
     /// Relative-timelock behavior.
@@ -215,13 +223,6 @@ fn execution_requirements() -> Vec<(TargetEvidenceRequirementId, TargetEvidenceR
             CONTRACT_OR_NODE,
         ),
         entry(
-            R::EncodingSemantics,
-            S::Encodings,
-            K::EncodingShape,
-            AnyNetwork,
-            CONTRACT_OR_NODE,
-        ),
-        entry(
             R::InputIntrospectionSemantics,
             S::Primitives,
             K::StackBehavior,
@@ -279,6 +280,42 @@ fn execution_requirements() -> Vec<(TargetEvidenceRequirementId, TargetEvidenceR
             K::Availability,
             AnyNetwork,
             CONTRACT_OR_NODE,
+        ),
+    ]
+}
+
+/// Requirements about how bytes are laid out and pushed.
+fn encoding_requirements() -> Vec<(TargetEvidenceRequirementId, TargetEvidenceRequirement)> {
+    use EvidenceClaimClass as K;
+    use RequiredEvidenceEnvironment::AnyNetwork;
+    use TargetEvidenceRequirementId as R;
+    use TargetEvidenceSubject as S;
+
+    vec![
+        entry(
+            R::EncodingSemantics,
+            S::Encodings,
+            K::EncodingShape,
+            AnyNetwork,
+            CONTRACT_OR_NODE,
+        ),
+        // The push rules straddle the two rule sets: the literal bound
+        // and the well-formedness of an encoded push are consensus,
+        // while the minimal form is standardness. A policy change can
+        // therefore invalidate evidence for this requirement without
+        // touching the contract or the node's consensus code, which is
+        // why it carries a staleness condition the encoding
+        // requirement does not.
+        entry(
+            R::PushEncodingSemantics,
+            S::LiteralPushes,
+            K::EncodingShape,
+            AnyNetwork,
+            &[
+                EvidenceStaleCondition::TargetContractChange,
+                EvidenceStaleCondition::NodeUpgrade,
+                EvidenceStaleCondition::PolicyChange,
+            ],
         ),
     ]
 }
@@ -357,8 +394,12 @@ fn contract_requirements() -> Vec<(TargetEvidenceRequirementId, TargetEvidenceRe
 /// Builds the reviewed evidence-requirement registry.
 pub(crate) fn reviewed_evidence_requirements()
 -> BTreeMap<TargetEvidenceRequirementId, TargetEvidenceRequirement> {
-    [execution_requirements(), contract_requirements()]
-        .into_iter()
-        .flatten()
-        .collect()
+    [
+        execution_requirements(),
+        encoding_requirements(),
+        contract_requirements(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }

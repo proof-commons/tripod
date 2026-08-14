@@ -216,6 +216,7 @@ fn target_with_statuses(
         leaf_version: contract.leaf_version(),
         opcodes: contract.opcodes().clone(),
         encodings: contract.encodings().clone(),
+        pushes: contract.pushes().clone(),
         authorization: contract.authorization().clone(),
         confidential_values,
         issuance: contract.issuance().clone(),

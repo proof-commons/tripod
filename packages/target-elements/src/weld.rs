@@ -38,6 +38,8 @@ use crate::encoding::EncodingClass;
 use crate::error::TargetError;
 use crate::evidence::TargetEvidenceRequirementId;
 use crate::opcode::{FailureCause, FailureOutcome, OpcodeId, StackValueType};
+use crate::push::PushPayloadPredicate;
+use crate::resource::{ResourceBound, ResourceDimension};
 use crate::success::{SuccessCondition, SuccessContract};
 
 /// The signature primitives whose empty-signature result is branchable.
@@ -49,6 +51,7 @@ const VERIFYING_SIGNATURE_OPCODES: &[OpcodeId] =
 
 /// Runs every cross-subcontract weld.
 pub fn validate_welds(definition: &TargetDefinition, errors: &mut Vec<TargetError>) {
+    weld_pushes(definition, errors);
     weld_signature(definition, errors);
     weld_timelock(definition, errors);
     weld_issuance(definition, errors);
@@ -116,6 +119,71 @@ fn status_of(
         .capabilities()
         .get(&capability)
         .map(crate::capability::CapabilityContract::status)
+}
+
+/// The push forms, the minimal-form rule, the literal bound, the
+/// primitive bytes, and the evidence link must agree.
+///
+/// The literal bound is the sharpest of these. It is stated as a push
+/// rule and again as a consensus resource bound, and the two are the
+/// same target number: a contract that let them drift would admit a
+/// program whose pushes the resource contract says are too wide.
+fn weld_pushes(definition: &TargetDefinition, errors: &mut Vec<TargetError>) {
+    let pushes = definition.pushes();
+    let declared_bound = definition
+        .resources()
+        .consensus()
+        .bounds()
+        .get(&ResourceDimension::StackElementBytes)
+        .copied()
+        .and_then(ResourceBound::maximum);
+    let mut disagrees = pushes.evidence().is_empty()
+        || declared_bound != u64::try_from(pushes.maximum_payload_bytes()).ok();
+
+    // Every step of the minimal-form rule must name a declared form
+    // that can actually carry the payloads the step matches. A rule
+    // naming a form that refuses them would leave those payloads with
+    // no encoding at all.
+    for step in pushes.minimality() {
+        let Some(spec) = pushes.form(step.form()) else {
+            disagrees = true;
+            continue;
+        };
+        let widest = match step.predicate() {
+            PushPayloadPredicate::ExactWidth(width) | PushPayloadPredicate::WidthAtMost(width) => {
+                width
+            }
+            PushPayloadPredicate::SingleByteInRange { .. } => 1,
+        };
+        if !spec.admits_width(widest) {
+            disagrees = true;
+        }
+    }
+
+    // A push opcode and a primitive opcode are read from the same byte
+    // position, so a byte claimed by both would decode two ways.
+    let occupied = pushes.occupied_opcodes();
+    for spec in definition.opcodes().values() {
+        if occupied.contains(&spec.code()) {
+            disagrees = true;
+        }
+    }
+
+    let named = pushes.evidence().iter().chain(
+        pushes
+            .forms()
+            .values()
+            .flat_map(crate::push::PushFormSpec::evidence),
+    );
+    for id in named {
+        if !definition.evidence_requirements().contains_key(id) {
+            disagrees = true;
+        }
+    }
+
+    if disagrees {
+        errors.push(TargetError::PushContractMismatch);
+    }
 }
 
 /// Signature opcodes, the signature primitive contract, the per-check

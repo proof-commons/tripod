@@ -52,7 +52,8 @@
 //! version, the reviewed primitive registry with complete stack,
 //! failure, and resource contracts, the target validator, the stable
 //! semantic projection,
-//! the field-specific encoding registry, signature and sighash and
+//! the field-specific encoding registry, the literal-push forms with
+//! their minimal-form rule and its enforcement, signature and sighash and
 //! relative-timelock dimensions, confidential-value and issuance
 //! capability descriptions, separate consensus and policy resource
 //! interfaces, the capability registry with an acyclic prerequisite
@@ -81,6 +82,7 @@ pub mod error;
 pub mod evidence;
 pub mod evidence_registry;
 pub mod opcode;
+pub mod push;
 pub mod resource;
 pub mod success;
 mod weld;
@@ -121,6 +123,10 @@ pub use evidence_registry::{
 pub use opcode::{
     ExecutionDomain, FailureCause, FailureContract, FailureEffect, FailureOutcome, LeafVersion,
     OpcodeId, OpcodeResourceCost, OpcodeSpec, StackContract, StackValueType,
+};
+pub use push::{
+    PushContract, PushContractDefect, PushDefect, PushEnforcement, PushForm, PushFormParts,
+    PushFormSpec, PushMinimalityStep, PushOpcodeMapping, PushPayloadPredicate,
 };
 pub use resource::{
     ConsensusResourceLimits, PolicyResourceLimits, ResourceBound, ResourceContract,

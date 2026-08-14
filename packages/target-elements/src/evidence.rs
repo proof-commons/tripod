@@ -32,6 +32,11 @@ pub enum TargetEvidenceRequirementId {
     /// That the described encodings are the encodings a real node
     /// produces and accepts.
     EncodingSemantics,
+    /// That the described literal-push forms are the forms a real node
+    /// decodes, that its maximum literal size is the described one, and
+    /// that its relayed-transaction rules require exactly the described
+    /// minimal form.
+    PushEncodingSemantics,
     /// That input introspection results carry the described shapes.
     InputIntrospectionSemantics,
     /// That output introspection results carry the described shapes.
@@ -85,6 +90,7 @@ impl TargetEvidenceRequirementId {
         Self::LeafVersionActivation,
         Self::OpcodeSemantics,
         Self::EncodingSemantics,
+        Self::PushEncodingSemantics,
         Self::InputIntrospectionSemantics,
         Self::OutputIntrospectionSemantics,
         Self::TransactionIntrospectionSemantics,
