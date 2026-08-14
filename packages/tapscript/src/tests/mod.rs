@@ -37,6 +37,7 @@
 //! capability's reviewed status — is used instead, and the tests say so
 //! where it matters.
 
+mod abstract_oracle_tests;
 mod byte_census_tests;
 mod census_tests;
 mod mapping_tests;
@@ -44,6 +45,7 @@ mod non_weakening_tests;
 mod parser_tests;
 mod public_api_tests;
 mod push_census_tests;
+mod stack_tests;
 
 use std::collections::BTreeMap;
 

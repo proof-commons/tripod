@@ -23,7 +23,10 @@
 //!
 //! Implemented: the package boundary, the typed instruction core — a
 //! typed instruction, a checked stack item, an exact serializer, and a
-//! parser over the reviewed subset — the static capability adapter —
+//! parser over the reviewed subset — the abstract stack validator, which
+//! keeps every successful alternative and every non-aborting failure
+//! state apart from the aborting causes — the static capability adapter
+//! —
 //! a multi-state assessment of each compiler capability against the
 //! reviewed static target contract — and the external-evidence-role
 //! adapter, with exact census equality in both directions against the
@@ -50,6 +53,7 @@ pub mod capability;
 pub mod error;
 pub mod instruction;
 pub mod program;
+pub mod stack;
 
 pub use capability::{
     AssessmentDisposition, AssessmentProjection, BackendFoundationRequirement, BackendPatternId,
@@ -60,6 +64,10 @@ pub use capability::{
 pub use error::TapscriptError;
 pub use instruction::{StackItem, TapscriptInstruction};
 pub use program::{MAXIMUM_PROGRAM_INSTRUCTIONS, TapscriptProgram};
+pub use stack::{
+    AbstractExecutionResult, AbstractLimits, AbstractStackState, resource_projection,
+    validate_program,
+};
 
 #[cfg(test)]
 mod tests;

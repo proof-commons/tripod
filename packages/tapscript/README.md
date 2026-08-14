@@ -31,6 +31,7 @@ publication exists to hand them.
 package boundary
 typed instruction and checked stack item
 exact serializer and reviewed-subset parser
+abstract stack validator over the reviewed primitive contracts
 static capability adapter over the reviewed target contract
 external-evidence-role adapter
 ```
@@ -47,6 +48,20 @@ contract, so no target number is restated in this crate.
 The parser refuses a nonminimal push always, which is stricter than the target's
 own validity rules: the target enforces minimality only under the standardness
 rules a node applies to what it relays.
+
+## Three outcomes, and every alternative
+
+The abstract stack validator answers what a program can produce as three sets: the
+states it reaches cleanly, the states it reaches through a failure that pushed a
+false and carried on, and the causes on which it ends evaluation. They are never
+collapsed into one Boolean, because their stack depths differ exactly where a
+backend has to be careful — the fixed-width arithmetic leaves its operands in
+place and pushes a false above them.
+
+Where a primitive has more than one successful form and the discriminant is a
+property of the target value rather than of the program, every compatible
+alternative is retained. Work exhaustion returns a typed error and no partial
+result.
 
 ## Static, not deployment-aware
 

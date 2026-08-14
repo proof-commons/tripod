@@ -8,6 +8,8 @@ tapscript_source_files = files(
   'src/instruction.rs',
   'src/lib.rs',
   'src/program.rs',
+  'src/stack.rs',
+  'src/tests/abstract_oracle_tests.rs',
   'src/tests/byte_census_tests.rs',
   'src/tests/census_tests.rs',
   'src/tests/mapping_tests.rs',
@@ -16,6 +18,7 @@ tapscript_source_files = files(
   'src/tests/parser_tests.rs',
   'src/tests/public_api_tests.rs',
   'src/tests/push_census_tests.rs',
+  'src/tests/stack_tests.rs',
 )
 
 # Crate documentation (DOC owner).

@@ -53,7 +53,7 @@
 use std::fmt;
 
 use compiler::target::{ExternalEvidenceRole, RequiredCapability};
-use target_elements::EncodingClass;
+use target_elements::{EncodingClass, StackValueType};
 
 /// A typed adapter failure.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -100,6 +100,47 @@ pub enum TapscriptError {
     /// A push ran off the end of the script, so the script ends in the
     /// middle of an instruction.
     TruncatedInstruction,
+
+    /// An instruction needed more operands than the stack reaching it
+    /// carries.
+    ///
+    /// The index is ephemeral diagnostic context naming where in this
+    /// program the defect is. It is not an identity, it does not
+    /// survive an edit, and it appears in no projection.
+    StackUnderflow {
+        /// Where in the program the instruction sits.
+        instruction: usize,
+    },
+
+    /// An operand was not a value the instruction's declared operand
+    /// admits.
+    StackTypeMismatch {
+        /// Where in the program the instruction sits.
+        instruction: usize,
+        /// The operand the contract declares.
+        expected: StackValueType,
+        /// The operand the stack carries.
+        actual: StackValueType,
+    },
+
+    /// A validation reached its state budget, so there is no complete
+    /// state set to return and no partial one is offered.
+    AbstractStateLimitExceeded {
+        /// The limit that was reached.
+        maximum: u64,
+    },
+
+    /// A state grew deeper than the target admits.
+    StackLimitExceeded {
+        /// The limit that was exceeded.
+        maximum: u64,
+    },
+
+    /// A result carried more alternatives than the budget admits.
+    ResultAlternativeLimitExceeded {
+        /// The limit that was exceeded.
+        maximum: u64,
+    },
 
     /// A payload was carried in a form that is not its minimal one.
     ///
@@ -183,6 +224,28 @@ impl fmt::Display for TapscriptError {
             Self::NonMinimalPush => {
                 write!(formatter, "the literal is not pushed in its minimal form")
             }
+            Self::StackUnderflow { instruction } => write!(
+                formatter,
+                "instruction {instruction} needs more operands than the stack carries",
+            ),
+            Self::StackTypeMismatch {
+                instruction,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "instruction {instruction} expects {expected:?} and the stack carries {actual:?}",
+            ),
+            Self::AbstractStateLimitExceeded { maximum } => {
+                write!(formatter, "a validation may visit at most {maximum} states")
+            }
+            Self::StackLimitExceeded { maximum } => {
+                write!(formatter, "a stack may hold at most {maximum} items")
+            }
+            Self::ResultAlternativeLimitExceeded { maximum } => write!(
+                formatter,
+                "a result may carry at most {maximum} alternatives",
+            ),
             Self::DuplicateCapabilityAssessment(capability) => {
                 write!(formatter, "capability {capability:?} was assessed twice")
             }

@@ -9,8 +9,8 @@
 
 use compiler::target::{ExternalEvidenceRole, RequiredCapability};
 use tapscript::{
-    AssessmentDisposition, EvidenceAssessmentDisposition, StackItem, TapscriptError,
-    TapscriptInstruction, TapscriptProgram,
+    AbstractLimits, AbstractStackState, AssessmentDisposition, EvidenceAssessmentDisposition,
+    StackItem, TapscriptError, TapscriptInstruction, TapscriptProgram, validate_program,
 };
 use target_elements::{
     ElementsCapability, OpcodeId, ReviewedElementsTapscriptDefinition, TargetEvidenceRequirementId,
@@ -191,4 +191,43 @@ fn an_external_consumer_sees_a_focused_reason_for_every_refused_script() {
         TapscriptProgram::decode(&target, &[0x01, 0x05]),
         Err(TapscriptError::NonMinimalPush),
     ));
+}
+
+#[test]
+fn an_external_consumer_receives_three_outcome_sets_and_not_one_boolean() {
+    // The arithmetic asymmetry, through the public surface: the
+    // successful path is two items deep and the non-aborting failure
+    // path is three, because the overflow leaves both operands where
+    // they were.
+    let target = reviewed_target();
+    let operand = StackItem::signed_le64(&target, 1);
+    let program = TapscriptProgram::new(vec![
+        TapscriptInstruction::Push(operand.clone()),
+        TapscriptInstruction::Push(operand),
+        TapscriptInstruction::Opcode(OpcodeId::Add64),
+    ])
+    .expect("three instructions are within the limit");
+
+    let result = validate_program(
+        &target,
+        &program,
+        &AbstractStackState::from_main(Vec::new()),
+        AbstractLimits::for_target(&target),
+    )
+    .expect("the program validates");
+
+    assert_eq!(
+        result.success().iter().map(AbstractStackState::depth).max(),
+        Some(2),
+    );
+    assert_eq!(
+        result
+            .nonaborting_failure()
+            .iter()
+            .map(AbstractStackState::depth)
+            .max(),
+        Some(3),
+    );
+    assert!(!result.aborts().is_empty());
+    assert!(!result.always_aborts());
 }
