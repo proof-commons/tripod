@@ -45,14 +45,29 @@ must authenticate to a node owns that boundary outside this process
 
 Disposable test-network material — regtest keys and a cookie confined to
 a throwaway data directory — is public fixture data under
-`[ADR015-rule:security:test-material]`, and it remains the *executor's*
+(`[ADR015-rule:security:test-material]`), and it remains the *executor's*
 material: the first-party interface neither accepts it nor reads it.
 
 ## State
 
-Implemented: the package boundary and the wire vocabulary that names
-reviewed target identities in protocol and report data.
+Implemented: the package boundary, the wire vocabulary, the generic
+fixture language, the secretless executor protocol, the external
+executor driver with its explicit typed timeout, the typed
+native-conformance report, the Guide-9 evidence plan, the comparison,
+the gate, and the ADR-010 checker command with its non-default Meson
+lane.
 
-Not implemented: the canonical fixture census, the executor protocol
-driver, and the report. No primitive fixture has been authored, so no
-run can satisfy the Guide-9 evidence plan yet.
+Not implemented: the canonical fixture census. No primitive fixture has
+been authored, so every required evidence row has no case bearing on
+it, and a run fails the gate rather than passing on an empty census.
+Authoring the fixtures, adapting a real executor, and materializing the
+transaction context are later work.
+
+## The native lane is not part of ordinary CI
+
+The Meson target `target-elements-native-check` is non-default and is
+defined only when `-Dtarget_native_executor=` names an executor. With no
+executor configured the target does not exist, nothing runs it, and
+ordinary CI claims no target-native evidence — a skipped native lane
+leaves the Guide-9 evidence incomplete even when every other lane is
+green.

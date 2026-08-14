@@ -43,8 +43,9 @@
 //!
 //! Implemented: the package boundary, the typed error root, the wire
 //! vocabulary that names reviewed target identities, the generic fixture
-//! language, the secretless executor protocol, and the external
-//! executor driver.
+//! language, the secretless executor protocol, the external executor
+//! driver, the typed conformance report, the Guide-9 evidence plan, and
+//! the gate.
 //!
 //! Not implemented: the canonical fixture census. No primitive fixture
 //! has been authored yet, so no run of the checker can satisfy the
@@ -57,6 +58,8 @@ pub mod error;
 pub mod executor;
 pub mod fixture;
 pub mod protocol;
+pub mod report;
+pub mod validate;
 pub mod vocabulary;
 
 pub use error::NativeConformanceError;
