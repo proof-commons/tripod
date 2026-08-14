@@ -1,0 +1,152 @@
+//! The harness's typed error root.
+//!
+//! # Every variant is a branch that runs
+//!
+//! There is no variant here for a condition the harness cannot reach and
+//! no catch-all that absorbs an unclassified failure into a plausible
+//! neighbour. A failure the harness has not classified is a failure it
+//! does not understand, and reporting it as one it does understand is
+//! how a rejection gets recorded as infrastructure trouble, or worse,
+//! the other way round.
+//!
+//! # No child detail
+//!
+//! No variant carries the executor's path, its argv, its raw stderr, or
+//! any environment value (ADR-010
+//! `[ADR010-rule:output:data-classification]`). What a failing external
+//! program is reported as is a fixed message, the protocol phase, the
+//! process status, and the safe typed case identity — never the bytes it
+//! chose to write.
+
+use target_elements::TargetEvidenceRequirementId;
+
+use crate::fixture::NativeCaseId;
+use crate::protocol::ProtocolPhase;
+use crate::vocabulary::evidence_requirement_name;
+
+/// A failure of the target-native conformance harness.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum NativeConformanceError {
+    /// The executor answered the handshake with a protocol schema this
+    /// harness does not speak.
+    #[error("the executor offered protocol schema {offered}, which this harness does not speak")]
+    UnsupportedProtocolSchema {
+        /// The schema the executor offered.
+        offered: u32,
+    },
+
+    /// The executor process could not be started.
+    #[error("the external executor could not be started")]
+    ExecutorStartupFailed,
+
+    /// The executor did not complete the handshake.
+    #[error("the external executor did not complete the handshake")]
+    ExecutorHandshakeFailed,
+
+    /// The executor's handshake does not cover the execution domain or
+    /// leaf version the fixtures are stated against.
+    #[error("the external executor does not support the required domain or leaf version")]
+    ExecutorProtocolMismatch,
+
+    /// The executor did not answer within its explicit typed timeout.
+    ///
+    /// Never a rejection: an executor that ran out of time observed
+    /// nothing about the target (Guide-9 §11.7).
+    #[error("the external executor exceeded its explicit timeout")]
+    ExecutorTimeout,
+
+    /// The executor exited before the protocol completed.
+    #[error("the external executor exited before the protocol completed")]
+    ExecutorExited {
+        /// The child's exit status, where the host reported one.
+        status: Option<i32>,
+    },
+
+    /// A protocol message could not be read as the typed message the
+    /// phase requires.
+    #[error("the executor sent a malformed message during the {phase} phase")]
+    MalformedResponse {
+        /// The phase the harness was in.
+        phase: ProtocolPhase,
+    },
+
+    /// The executor wrote further protocol data after the last response.
+    #[error("the external executor wrote protocol data after its last response")]
+    TrailingProtocolData,
+
+    /// The executor answered one case twice.
+    #[error("the external executor answered case {0} twice")]
+    DuplicateCaseResponse(NativeCaseId),
+
+    /// The executor never answered a case it was asked about.
+    #[error("the external executor did not answer case {0}")]
+    MissingCaseResponse(NativeCaseId),
+
+    /// The executor answered a case it was never asked about.
+    #[error("the external executor answered case {0}, which it was not asked about")]
+    UnexpectedCaseResponse(NativeCaseId),
+
+    /// The executor answered a different case from the outstanding one.
+    #[error("the external executor answered out of order; case {expected} was outstanding")]
+    ResponseOrderViolation {
+        /// The case whose response was outstanding.
+        expected: NativeCaseId,
+    },
+
+    /// The executor reported infrastructure trouble for one case.
+    #[error("the external executor reported infrastructure trouble for case {0}")]
+    InfrastructureFailure(NativeCaseId),
+
+    /// Two fixtures declared the same typed case identity.
+    #[error("two fixtures declare case {0}")]
+    DuplicateFixtureCase(NativeCaseId),
+
+    /// A fixture is stated against a different contract revision, or a
+    /// different execution domain or leaf version, from the run's.
+    #[error("a fixture is stated against a different target contract from the run's")]
+    TargetContractMismatch,
+
+    /// A fixture is stated against a different development binding from
+    /// the run's.
+    #[error("a fixture is stated against a different development binding from the run's")]
+    DevelopmentBindingMismatch,
+
+    /// The evidence plan does not partition the target's requirement
+    /// census exactly.
+    #[error("the evidence plan does not partition the target evidence census exactly")]
+    EvidenceCensusMismatch,
+
+    /// A required evidence requirement has no case evidence at all.
+    #[error("required target evidence {} has no case evidence", requirement_text(*.0))]
+    RequiredEvidenceMissing(TargetEvidenceRequirementId),
+
+    /// A required evidence requirement has failing case evidence.
+    #[error("required target evidence {} failed", requirement_text(*.0))]
+    RequiredEvidenceFailed(TargetEvidenceRequirementId),
+
+    /// A required evidence requirement could not be established because
+    /// the executor reported infrastructure trouble.
+    #[error("required target evidence {} hit executor infrastructure trouble", requirement_text(*.0))]
+    RequiredEvidenceInfrastructureError(TargetEvidenceRequirementId),
+
+    /// The run selected a mock executor, which can never satisfy the
+    /// target-native gate.
+    ///
+    /// A mock is admitted for protocol and failure-path tests only. The
+    /// gate needs an explicit nonmock selection, and it is recorded as
+    /// ordinary provenance rather than as a proof of anything
+    /// (Guide-9 §1.6, §11.8).
+    #[error("a mock executor cannot satisfy the target-native gate")]
+    MockExecutorCannotSatisfyNativeGate,
+}
+
+/// The safe spelling of one evidence requirement for a message.
+///
+/// A requirement outside the spelling table cannot reach a message
+/// today — the vocabulary census test proves the table is total — and
+/// the fallback names the shape of the gap rather than inventing a
+/// spelling for it.
+fn requirement_text(id: TargetEvidenceRequirementId) -> &'static str {
+    evidence_requirement_name(id).unwrap_or("an unspelled target evidence requirement")
+}

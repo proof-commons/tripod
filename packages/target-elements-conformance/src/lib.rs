@@ -41,8 +41,9 @@
 //!
 //! # State
 //!
-//! Implemented: the package boundary and the wire vocabulary that names
-//! reviewed target identities in protocol and report data.
+//! Implemented: the package boundary, the typed error root, the wire
+//! vocabulary that names reviewed target identities, the generic fixture
+//! language, and the secretless executor protocol.
 //!
 //! Not implemented: the canonical fixture census. No primitive fixture
 //! has been authored yet, so no run of the checker can satisfy the
@@ -51,7 +52,12 @@
 
 #![forbid(unsafe_code)]
 
+pub mod error;
+pub mod fixture;
+pub mod protocol;
 pub mod vocabulary;
+
+pub use error::NativeConformanceError;
 
 #[cfg(test)]
 mod tests;
