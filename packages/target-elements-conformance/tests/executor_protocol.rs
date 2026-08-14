@@ -71,10 +71,9 @@ fn fixtures() -> PrimitiveFixtureSet {
             &program,
             &stack,
             None,
-            ExpectedPrimitiveOutcome::Accept {
-                final_stack: vec![StackItem::signed_le64(&target, 5).bytes().to_vec()],
-                final_altstack: Vec::new(),
-            },
+            ExpectedPrimitiveOutcome::accept(Some(vec![
+                StackItem::signed_le64(&target, 5).bytes().to_vec(),
+            ])),
         )
         .expect("the reviewed domain has a wire spelling")
     };

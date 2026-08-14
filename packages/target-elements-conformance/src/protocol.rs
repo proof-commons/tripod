@@ -264,6 +264,13 @@ pub enum ObservedFailureClass {
     LeafVersionRejected,
     /// Evaluation completed with a false on top of the stack.
     EvaluatedFalse,
+    /// Evaluation completed leaving other than a single stack item.
+    ///
+    /// The reviewed execution domain requires exactly one item at the
+    /// end, so a primitive that pushed the wrong number of results — or
+    /// a non-aborting failure that left its operands in place — is
+    /// observed here rather than as a failure of the primitive itself.
+    NonSingletonFinalStack,
 }
 
 /// What one execution cost.
@@ -271,6 +278,13 @@ pub enum ObservedFailureClass {
 /// Observations, not projections. Nothing here is compared with a
 /// target-contract bound by this module; that comparison belongs to the
 /// report, against expectations the fixture states.
+///
+/// # Absent is not zero
+///
+/// Every figure an executor may be unable to observe is optional. A node
+/// that validates a transaction reports what the transaction cost, not
+/// what its interpreter's stack did on the way, and recording an
+/// unobserved peak as zero would turn "not measured" into a measurement.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeResourceObservation {
@@ -278,13 +292,17 @@ pub struct NativeResourceObservation {
     pub script_bytes: u64,
     /// How many items the initial stack held.
     pub initial_stack_items: u64,
-    /// The deepest the main stack became.
-    pub peak_stack_items: u64,
-    /// The deepest the alternate stack became.
-    pub peak_altstack_items: u64,
-    /// The largest stack element, in bytes.
-    pub maximum_element_bytes: u64,
+    /// The deepest the main stack became, where the executor sees it.
+    pub peak_stack_items: Option<u64>,
+    /// The deepest the alternate stack became, where the executor sees
+    /// it.
+    pub peak_altstack_items: Option<u64>,
+    /// The largest stack element in bytes, where the executor sees it.
+    pub maximum_element_bytes: Option<u64>,
     /// How much validation budget the execution used, where the
     /// executor accounts for it.
     pub validation_budget_used: Option<u64>,
+    /// The materialized transaction's weight, where the executor
+    /// reports one.
+    pub transaction_weight: Option<u64>,
 }

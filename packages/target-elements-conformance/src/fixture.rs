@@ -28,7 +28,7 @@
 //! executor is asked about, because a re-encoding at execution time
 //! would let a serializer change what was tested.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -237,21 +237,214 @@ impl<'de> Deserialize<'de> for NativeCaseId {
 }
 
 /// What the reviewed contract says the target must do with one case.
+///
+/// # A verdict, and the classes the contract admits for it
+///
+/// The observation a target-native executor can actually make is whether
+/// the spend was valid, and -- where the target distinguishes them --
+/// why it was not. The failure side is therefore a *set*: the target
+/// reports one reason for several reviewed causes, and a fixture naming
+/// one of them would fail an honest executor over a distinction the
+/// target does not draw. The set is the contract's admissible causes for
+/// the case, and an observation passes when it is one of them.
+///
+/// # The stacks are static, and say so
+///
+/// A stack here is what the reviewed contract and the abstract validator
+/// establish, not what a node reports: a validating node exposes no
+/// interpreter stack at all. The expected stacks are carried because
+/// they are the fixture's complete statement of the case, and because an
+/// executor that *does* report a stack is then compared against them --
+/// never because a run without them is incomplete (Guide-9 §15.4).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExpectedPrimitiveOutcome {
-    /// The target accepts, leaving exactly these stacks.
+    /// The target accepts the spend.
     Accept {
-        /// The exact final main stack.
-        final_stack: Vec<Vec<u8>>,
-        /// The exact final alternate stack.
-        final_altstack: Vec<Vec<u8>>,
+        /// The exact final main stack, deepest item first, where the
+        /// contract fixes one.
+        static_final_stack: Option<Vec<Vec<u8>>>,
+        /// The exact final alternate stack, deepest item first.
+        static_final_altstack: Option<Vec<Vec<u8>>>,
     },
-    /// The target rejects, in exactly this class.
+    /// The target rejects the spend, for one of these reasons.
     Reject {
-        /// The failure class the contract declares.
-        class: ObservedFailureClass,
+        /// The failure classes the reviewed contract admits here.
+        classes: BTreeSet<ObservedFailureClass>,
+        /// The exact final main stack, where the case leaves one and
+        /// the contract fixes it.
+        static_final_stack: Option<Vec<Vec<u8>>>,
+        /// The exact final alternate stack, where the case leaves one.
+        static_final_altstack: Option<Vec<Vec<u8>>>,
     },
+}
+
+impl ExpectedPrimitiveOutcome {
+    /// The spend is valid, leaving exactly this stack.
+    #[must_use]
+    pub const fn accept(static_final_stack: Option<Vec<Vec<u8>>>) -> Self {
+        Self::Accept {
+            static_final_stack,
+            static_final_altstack: Some(Vec::new()),
+        }
+    }
+
+    /// The spend is invalid, for one of these reasons.
+    #[must_use]
+    pub fn reject(
+        classes: impl IntoIterator<Item = ObservedFailureClass>,
+        static_final_stack: Option<Vec<Vec<u8>>>,
+    ) -> Self {
+        Self::Reject {
+            classes: classes.into_iter().collect(),
+            static_final_stack,
+            static_final_altstack: Some(Vec::new()),
+        }
+    }
+
+    /// Whether the outcome says the spend is valid.
+    #[must_use]
+    pub const fn is_accepting(&self) -> bool {
+        matches!(self, Self::Accept { .. })
+    }
+
+    /// The failure classes the outcome admits.
+    #[must_use]
+    pub fn classes(&self) -> BTreeSet<ObservedFailureClass> {
+        match self {
+            Self::Accept { .. } => BTreeSet::new(),
+            Self::Reject { classes, .. } => classes.clone(),
+        }
+    }
+
+    /// The exact final main stack, where the outcome fixes one.
+    #[must_use]
+    pub fn static_final_stack(&self) -> Option<&[Vec<u8>]> {
+        match self {
+            Self::Accept {
+                static_final_stack, ..
+            }
+            | Self::Reject {
+                static_final_stack, ..
+            } => static_final_stack.as_deref(),
+        }
+    }
+
+    /// The exact final alternate stack, where the outcome fixes one.
+    #[must_use]
+    pub fn static_final_altstack(&self) -> Option<&[Vec<u8>]> {
+        match self {
+            Self::Accept {
+                static_final_altstack,
+                ..
+            }
+            | Self::Reject {
+                static_final_altstack,
+                ..
+            } => static_final_altstack.as_deref(),
+        }
+    }
+}
+
+/// Which rule a fixture's verdict is stated at.
+///
+/// The target's own validity rules and a node's relay rules refuse
+/// different things: a nonminimally encoded literal is a valid spend
+/// that nodes will not forward, and one verdict covering both layers
+/// would make an unrelayable program look invalid. Every fixture says
+/// which layer its verdict belongs to, and an executor answers at the
+/// layer it validates.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum EnforcementLayer {
+    /// The target's own validity rules.
+    Consensus,
+    /// A node's relay rules, which leave the spend valid.
+    RelayPolicy,
+}
+
+/// Whether a fixture's leaf version is the reviewed one.
+///
+/// The reviewed status travels with the byte because one case needs a
+/// byte the contract has *not* reviewed. A leaf version selects the
+/// semantics of everything under it, and the reviewed semantics are
+/// exactly what an unreviewed byte does not select: the reviewed
+/// primitives are not executed there at all. No fixture stated at the
+/// reviewed version can establish that, which is why this one is not.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum LeafVersionStatus {
+    /// The leaf version the reviewed contract fixes.
+    Reviewed,
+    /// A byte the contract has not reviewed, stated so that the
+    /// reviewed semantics can be observed not applying under it.
+    Unreviewed,
+}
+
+/// Where a fixture's exact script bytes came from.
+///
+/// A fixture's bytes are normally produced by encoding a typed
+/// [`TapscriptProgram`], which is what makes them reviewed bytes rather
+/// than bytes somebody typed. The encoding-conformance cases are the
+/// exception on purpose: a truncated push, an oversized literal, and a
+/// nonminimal form are precisely the shapes the typed program refuses to
+/// build, so those fixtures state their bytes directly and say so here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum FixtureScriptSource {
+    /// The bytes are one typed program's own encoding.
+    TypedProgram,
+    /// The bytes are stated directly because no typed program expresses
+    /// the malformed or nonminimal form the case exercises.
+    DeliberatelyMalformed,
+}
+
+/// How one observed resource figure is compared.
+///
+/// Exact where the fixture or the reviewed contract fixes the value;
+/// recorded-only everywhere else. A figure nothing fixes is still worth
+/// carrying — it is the observation §13.16 asks for — but comparing it
+/// against a number this package invented would fail honest executors
+/// over a value no contract states.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum ResourceExpectation {
+    /// The figure is fixed, and an observation must match it exactly.
+    Exact(u64),
+    /// The figure is observed and recorded, and not compared.
+    RecordedOnly,
+}
+
+/// What one execution is expected to cost.
+///
+/// Two rows are exact: the script's size and the initial stack's depth
+/// are fixed by the fixture itself, so a disagreement means the executor
+/// ran something other than what it was handed. Everything else is
+/// recorded rather than compared, because a validating node observes
+/// what a transaction cost and not what an interpreter's stack did on
+/// the way — and a peak this package invented would fail an honest
+/// executor over a figure no contract states.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExpectedResourceObservation {
+    /// The script's size in bytes.
+    pub script_bytes: ResourceExpectation,
+    /// How many items the initial stack held.
+    pub initial_stack_items: ResourceExpectation,
+    /// The deepest the main stack became.
+    pub peak_stack_items: ResourceExpectation,
+    /// The deepest the alternate stack became.
+    pub peak_altstack_items: ResourceExpectation,
+    /// The largest stack element, in bytes.
+    pub maximum_element_bytes: ResourceExpectation,
+    /// How much validation budget the execution used.
+    pub validation_budget_used: ResourceExpectation,
+    /// The materialized transaction's weight.
+    pub transaction_weight: ResourceExpectation,
 }
 
 /// One input of a fixture transaction.
@@ -260,28 +453,74 @@ pub enum ExpectedPrimitiveOutcome {
 /// root, and no owner here, and none may be added: a fixture describes a
 /// target transaction, and a field naming an attestation-contract
 /// object would make it describe something else.
+///
+/// # What the executor materializes
+///
+/// One transaction input, spending the named outpoint from a previous
+/// output carrying exactly `spent_asset`, `spent_value`, and
+/// `spent_program`. The spent-output fields are stated in their
+/// *transaction* encoding, prefix byte included, which is not always the
+/// order the introspection primitives push: an explicit amount is stored
+/// most significant byte first in the field and reaches the stack least
+/// significant byte first. The executor writes the field; the expected
+/// stack states the stack form.
+///
+/// # What only the executor can supply
+///
+/// Two fields are optional because no fixture can know them. An outpoint
+/// names a real funding output the executor created, and the program of
+/// the input under validation commits to the very script the fixture
+/// carries, so it can only be computed once that script exists. `None`
+/// means the executor supplies the value, and a fixture states no
+/// expectation about it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FixtureInput {
-    /// The spent outpoint's transaction identifier.
-    pub outpoint_txid: [u8; 32],
-    /// The spent outpoint's index.
-    pub outpoint_index: u32,
-    /// The spent output's asset field, prefix included.
-    pub spent_asset: Vec<u8>,
-    /// The spent output's value field, prefix included.
-    pub spent_value: Vec<u8>,
-    /// The spent output's program.
-    pub spent_program: Vec<u8>,
+    /// The spent outpoint's transaction identifier, in the byte order
+    /// the outpoint field carries it, where the fixture fixes one.
+    pub outpoint_txid: Option<[u8; 32]>,
+    /// The spent outpoint's index, where the fixture fixes one.
+    pub outpoint_index: Option<u32>,
+    /// The spent output's asset field, prefix included, where the
+    /// fixture fixes one.
+    ///
+    /// `None` for a funding output the executor created: which asset a
+    /// development network issues is the network's fact, not a fixture's,
+    /// and a fixture that named one would be describing a chain rather
+    /// than a target.
+    pub spent_asset: Option<Vec<u8>>,
+    /// The spent output's value field, prefix included, in transaction
+    /// byte order, where the fixture fixes one.
+    pub spent_value: Option<Vec<u8>>,
+    /// The spent output's program, as complete script bytes, where the
+    /// fixture fixes one.
+    ///
+    /// A witness program's script is its version opcode and its pushed
+    /// payload; anything else is an ordinary script, which the program
+    /// introspection primitives replace with a digest. The input under
+    /// validation states `None`: its program commits to the fixture's own
+    /// leaf script, so only the executor can compute it.
+    pub spent_program: Option<Vec<u8>>,
     /// The input's sequence number.
     pub sequence: u32,
     /// The input's issuance fields, where it carries an issuance.
     pub issuance: Option<FixtureIssuance>,
-    /// The input's initial witness stack.
+    /// The input's initial witness stack, deepest item first.
+    ///
+    /// Only the input under validation needs a witness that satisfies a
+    /// script; the executor may spend every other input however the
+    /// materialization requires, since no fixture states an expectation
+    /// about them.
     pub witness: Vec<Vec<u8>>,
 }
 
 /// The issuance fields of one input.
+///
+/// # What the executor materializes
+///
+/// The input's issuance record. A zero blinding nonce marks an issuance
+/// and a nonzero one marks a reissuance, which is a target fact rather
+/// than a convention this package chose.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FixtureIssuance {
@@ -296,20 +535,40 @@ pub struct FixtureIssuance {
 }
 
 /// One output of a fixture transaction.
+///
+/// # What the executor materializes
+///
+/// One transaction output carrying exactly these four fields as stated,
+/// prefix bytes included. The asset and value axes are independent: a
+/// fixture may state an explicit asset with a blinded value or the
+/// reverse, and an executor that derives one from the other is not
+/// materializing what it was handed.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FixtureOutput {
-    /// The asset field, prefix included.
-    pub asset: Vec<u8>,
-    /// The value field, prefix included.
+    /// The asset field, prefix included, where the fixture fixes one.
+    ///
+    /// `None` leaves the executor to pay in whatever asset its network
+    /// issues, which is the only asset it can pay in.
+    pub asset: Option<Vec<u8>>,
+    /// The value field, prefix included, in transaction byte order.
     pub value: Vec<u8>,
-    /// The nonce field, prefix included.
+    /// The nonce field, prefix included; empty for the absent form.
     pub nonce: Vec<u8>,
-    /// The output program.
-    pub program: Vec<u8>,
+    /// The output program, as complete script bytes, where the fixture
+    /// fixes one.
+    pub program: Option<Vec<u8>>,
 }
 
 /// The script-path data the executor spends through.
+///
+/// # What the executor materializes
+///
+/// A script-path spend of the input under validation whose leaf carries
+/// exactly `script` at exactly `leaf_version`. The control block is
+/// computed by the executor from the leaf it built, so `control` is
+/// `None` unless a fixture pins it — and no fixture states an
+/// expectation about its bytes.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FixtureScriptPath {
@@ -317,14 +576,28 @@ pub struct FixtureScriptPath {
     pub leaf_version: u8,
     /// The exact leaf script bytes.
     pub script: Vec<u8>,
-    /// The control data, where the executor requires it.
-    pub control: Vec<u8>,
+    /// The control data, where the fixture pins it.
+    pub control: Option<Vec<u8>>,
 }
 
 /// The generic transaction context an introspection primitive reads.
 ///
 /// Input and output counts are not fields: they are the lengths of the
 /// two vectors, and a separately stated count could disagree with them.
+///
+/// # What the executor materializes
+///
+/// One complete target transaction on the development network the run is
+/// bound to, with exactly these inputs and outputs in exactly this order,
+/// this version, and this locktime, validating the input at
+/// `current_input_index` through `script_path`. Every value here is
+/// public generic test material: no field names an attestation-contract
+/// object, and none carries production secret material.
+///
+/// Fees, change, and any further outputs an executor's own machinery
+/// would ordinarily add are *not* admitted — an added output would move
+/// every output index a fixture states, and the fixture's expectations
+/// would then describe a different transaction from the one that ran.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PrimitiveExecutionContext {
@@ -334,12 +607,48 @@ pub struct PrimitiveExecutionContext {
     pub locktime: u32,
     /// Which input is being validated.
     pub current_input_index: u32,
-    /// The transaction's inputs.
+    /// The transaction's inputs, in transaction order.
     pub inputs: Vec<FixtureInput>,
-    /// The transaction's outputs.
+    /// The transaction's outputs, in transaction order.
     pub outputs: Vec<FixtureOutput>,
     /// The script path being spent.
     pub script_path: FixtureScriptPath,
+}
+
+/// The script bytes one fixture hands the executor, and where they came
+/// from.
+#[derive(Clone, Debug)]
+pub enum FixtureScript<'a> {
+    /// One typed program, encoded through the reviewed contract.
+    Typed(&'a TapscriptProgram),
+    /// Bytes stated directly, because the form under test is one no
+    /// typed program expresses.
+    DeliberatelyMalformed(Vec<u8>),
+}
+
+/// Everything one fixture states, gathered for construction.
+///
+/// A parts struct rather than a long argument list: the fields are named
+/// at every call site, so a census this long cannot silently transpose
+/// two of them.
+#[derive(Debug)]
+pub struct FixtureStatement<'a> {
+    /// Which case the fixture answers for.
+    pub case: NativeCaseId,
+    /// The script, and where its bytes came from.
+    pub script: FixtureScript<'a>,
+    /// The exact initial stack, deepest item first.
+    pub initial_stack: &'a [StackItem],
+    /// The transaction context, where the case needs one.
+    pub context: Option<PrimitiveExecutionContext>,
+    /// What the reviewed contract requires the target to do.
+    pub expected: ExpectedPrimitiveOutcome,
+    /// Whether the fixture is stated at the reviewed leaf version.
+    pub leaf_version: LeafVersionStatus,
+    /// The leaf version byte, where the case states an unreviewed one.
+    pub unreviewed_leaf_version: Option<u8>,
+    /// Which rule the stated verdict belongs to.
+    pub enforcement_layer: EnforcementLayer,
 }
 
 /// One generic target execution, and the outcome the contract requires.
@@ -352,10 +661,14 @@ pub struct PrimitiveFixture {
     genesis_id: [u8; 32],
     execution_domain: WireExecutionDomain,
     leaf_version: u8,
+    leaf_version_status: LeafVersionStatus,
+    enforcement_layer: EnforcementLayer,
+    script_source: FixtureScriptSource,
     script: Vec<u8>,
     initial_stack: Vec<Vec<u8>>,
     context: Option<PrimitiveExecutionContext>,
     expected: ExpectedPrimitiveOutcome,
+    expected_resources: ExpectedResourceObservation,
 }
 
 impl PrimitiveFixture {
@@ -381,25 +694,127 @@ impl PrimitiveFixture {
         context: Option<PrimitiveExecutionContext>,
         expected: ExpectedPrimitiveOutcome,
     ) -> Result<Self, NativeConformanceError> {
+        Self::state(
+            target,
+            binding,
+            FixtureStatement {
+                case,
+                script: FixtureScript::Typed(program),
+                initial_stack,
+                context,
+                expected,
+                leaf_version: LeafVersionStatus::Reviewed,
+                unreviewed_leaf_version: None,
+                enforcement_layer: EnforcementLayer::Consensus,
+            },
+        )
+    }
+
+    /// States one fixture from its complete typed parts.
+    ///
+    /// # Errors
+    ///
+    /// [`NativeConformanceError::TargetContractMismatch`] when the
+    /// reviewed contract's execution domain has no wire spelling, and
+    /// when a statement's leaf version disagrees with its own status —
+    /// an unreviewed case that names the reviewed byte would establish
+    /// nothing, and a reviewed case cannot name any other byte.
+    pub fn state(
+        target: &ReviewedElementsTapscriptDefinition,
+        binding: &ValidatedDevelopmentBinding,
+        statement: FixtureStatement<'_>,
+    ) -> Result<Self, NativeConformanceError> {
         let definition = target.definition();
         let domain = WireExecutionDomain::of(definition.execution_domain())
             .ok_or(NativeConformanceError::TargetContractMismatch)?;
+        let reviewed_leaf = definition.leaf_version().get();
+        let leaf_version = match (statement.leaf_version, statement.unreviewed_leaf_version) {
+            (LeafVersionStatus::Reviewed, None) => reviewed_leaf,
+            (LeafVersionStatus::Unreviewed, Some(byte)) if byte != reviewed_leaf => byte,
+            _ => return Err(NativeConformanceError::TargetContractMismatch),
+        };
+
+        let (script_source, script) = match statement.script {
+            // Exact bytes, produced once through the typed program.
+            FixtureScript::Typed(program) => {
+                (FixtureScriptSource::TypedProgram, program.encode(target))
+            }
+            FixtureScript::DeliberatelyMalformed(bytes) => {
+                (FixtureScriptSource::DeliberatelyMalformed, bytes)
+            }
+        };
+        let initial_stack: Vec<Vec<u8>> = statement
+            .initial_stack
+            .iter()
+            .map(|item| item.bytes().to_vec())
+            .collect();
+        // The script path is filled in from the fixture rather than
+        // accepted from the caller, so a context cannot claim a leaf
+        // version or a leaf script other than the one that ran. Only
+        // the control data, which no fixture states an expectation
+        // about, is left as it was offered.
+        let context = statement.context.map(|context| PrimitiveExecutionContext {
+            script_path: FixtureScriptPath {
+                leaf_version,
+                script: script.clone(),
+                control: context.script_path.control,
+            },
+            ..context
+        });
+        let expected_resources = ExpectedResourceObservation {
+            script_bytes: ResourceExpectation::Exact(
+                u64::try_from(script.len()).unwrap_or(u64::MAX),
+            ),
+            initial_stack_items: ResourceExpectation::Exact(
+                u64::try_from(initial_stack.len()).unwrap_or(u64::MAX),
+            ),
+            peak_stack_items: ResourceExpectation::RecordedOnly,
+            peak_altstack_items: ResourceExpectation::RecordedOnly,
+            maximum_element_bytes: ResourceExpectation::RecordedOnly,
+            validation_budget_used: ResourceExpectation::RecordedOnly,
+            transaction_weight: ResourceExpectation::RecordedOnly,
+        };
+
         Ok(Self {
-            case,
+            case: statement.case,
             target_contract_version: definition.version().get(),
             network_id: binding.binding().network_id(),
             genesis_id: binding.binding().genesis_id(),
             execution_domain: domain,
-            leaf_version: definition.leaf_version().get(),
-            // Exact bytes, produced once through the typed program.
-            script: program.encode(target),
-            initial_stack: initial_stack
-                .iter()
-                .map(|item| item.bytes().to_vec())
-                .collect(),
+            leaf_version,
+            leaf_version_status: statement.leaf_version,
+            enforcement_layer: statement.enforcement_layer,
+            script_source,
+            script,
+            initial_stack,
             context,
-            expected,
+            expected: statement.expected,
+            expected_resources,
         })
+    }
+
+    /// Whether the fixture is stated at the reviewed leaf version.
+    #[must_use]
+    pub const fn leaf_version_status(&self) -> LeafVersionStatus {
+        self.leaf_version_status
+    }
+
+    /// Which rule the fixture's verdict is stated at.
+    #[must_use]
+    pub const fn enforcement_layer(&self) -> EnforcementLayer {
+        self.enforcement_layer
+    }
+
+    /// Where the fixture's exact script bytes came from.
+    #[must_use]
+    pub const fn script_source(&self) -> FixtureScriptSource {
+        self.script_source
+    }
+
+    /// What the execution is expected to cost.
+    #[must_use]
+    pub const fn expected_resources(&self) -> ExpectedResourceObservation {
+        self.expected_resources
     }
 
     /// The case this fixture answers for.
@@ -531,20 +946,20 @@ impl<'a> IntoIterator for &'a PrimitiveFixtureSet {
 
 /// The canonical fixture census of this repository.
 ///
-/// Empty: no primitive fixture has been authored yet. An empty census is
-/// stated rather than filled with something plausible, because a
-/// fixture that has not been reviewed against the target contract is not
-/// evidence, and the report is required to say so — a run over this
-/// census cannot satisfy the Guide-9 evidence plan and does not pretend
-/// to.
+/// The complete primitive matrix, authored against
+/// the reviewed contract and independent published vectors by the
+/// crate-internal census module. Its content, its coverage, and what it
+/// deliberately does not cover are documented there.
 ///
 /// # Errors
 ///
-/// [`NativeConformanceError::DuplicateFixtureCase`] once the census
-/// holds fixtures and two of them declare one case identity.
+/// [`NativeConformanceError::DuplicateFixtureCase`] when two fixtures
+/// declare one case identity, and
+/// [`NativeConformanceError::TargetContractMismatch`] when a fixture
+/// cannot be stated against the reviewed contract at all.
 pub fn canonical_fixture_set(
-    _target: &ReviewedElementsTapscriptDefinition,
-    _binding: &ValidatedDevelopmentBinding,
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ValidatedDevelopmentBinding,
 ) -> Result<PrimitiveFixtureSet, NativeConformanceError> {
-    PrimitiveFixtureSet::new([])
+    crate::census::canonical_census(target, binding)
 }

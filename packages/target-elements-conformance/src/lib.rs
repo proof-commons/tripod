@@ -39,21 +39,38 @@
 //! persistent report identity is admitted until a cross-process release
 //! consumer exists (Guide-9 §1.8, ADR-016).
 //!
+//! # What a native run can and cannot observe
+//!
+//! A validating node answers one question: was this spend valid, and
+//! coarsely, why not. It exposes no interpreter stack, and it reports one
+//! reason for several reviewed causes. Every expectation here is shaped
+//! by that: a verdict, the set of failure classes the contract admits,
+//! and the exact stacks as *static* statements, compared only when an
+//! executor happens to report one.
+//!
+//! The reviewed domain also requires evaluation to finish with exactly
+//! one true item, and the reviewed primitive census has no equality,
+//! drop, or verify primitive to reduce a deeper stack with. So several
+//! primitives have no reachable accepting case at all, and what their
+//! cases establish is the number of items the primitive pushed. The
+//! census says which primitives those are and why.
+//!
 //! # State
 //!
 //! Implemented: the package boundary, the typed error root, the wire
 //! vocabulary that names reviewed target identities, the generic fixture
 //! language, the secretless executor protocol, the external executor
-//! driver, the typed conformance report, the Guide-9 evidence plan, and
-//! the gate.
+//! driver, the typed conformance report, the Guide-9 evidence plan, the
+//! gate, and the canonical primitive census.
 //!
-//! Not implemented: the canonical fixture census. No primitive fixture
-//! has been authored yet, so no run of the checker can satisfy the
-//! Guide-9 evidence plan, and the command reports that state rather than
-//! passing on an empty census.
+//! Not covered by the census, and recorded as residuals rather than
+//! filled in: a signature over a transaction sighash, blinded fields,
+//! issuing inputs, an absent introspection context, and any execution
+//! domain other than the reviewed one.
 
 #![forbid(unsafe_code)]
 
+mod census;
 pub mod error;
 pub mod executor;
 pub mod fixture;

@@ -155,10 +155,12 @@ fn a_declared_mock_run_cannot_satisfy_the_gate() {
 }
 
 #[test]
-fn declaring_a_mock_reviewed_does_not_make_the_evidence_appear() {
+fn declaring_a_mock_reviewed_leaves_the_lie_in_the_provenance() {
     // The harness cannot tell a mock from an interpreter, so a
-    // dishonest declaration gets past the mock refusal. It then meets
-    // the evidence plan, which the empty fixture census cannot satisfy.
+    // dishonest declaration gets past the mock refusal, and the census
+    // it then "passes" is the census's own expectations read back. What
+    // the report does carry is what the program said it was, which is
+    // how a reader catches this rather than the gate.
     let directory = tempfile::tempdir().expect("tempdir");
     let executor = wrapper(directory.path(), "echo-expected");
     let output = run(&[
@@ -172,12 +174,11 @@ fn declaring_a_mock_reviewed_does_not_make_the_evidence_appear() {
         GENESIS_ID,
     ]);
 
-    assert_eq!(output.status.code(), Some(1));
-    assert!(output.stdout.is_empty(), "a failed check writes no result");
-    let stderr = String::from_utf8(output.stderr).expect("stderr is utf8");
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
     assert!(
-        stderr.contains("has no case evidence"),
-        "expected a required-evidence failure: {stderr}",
+        stdout.contains("mock-native-executor"),
+        "the report must record what the program called itself: {stdout}",
     );
 }
 

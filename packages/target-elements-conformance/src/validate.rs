@@ -35,9 +35,10 @@ use target_elements::{
 use crate::error::NativeConformanceError;
 use crate::executor::{ExecutionTranscript, ExecutorTrust};
 use crate::fixture::{
-    ExpectedPrimitiveOutcome, NativeCaseGroup, NativeCaseId, PrimitiveFixtureSet,
+    ExpectedPrimitiveOutcome, ExpectedResourceObservation, LeafVersionStatus, NativeCaseGroup,
+    NativeCaseId, PrimitiveFixture, PrimitiveFixtureSet, ResourceExpectation,
 };
-use crate::protocol::{NativeVerdict, WireExecutionDomain};
+use crate::protocol::{NativeResourceObservation, NativeVerdict, WireExecutionDomain};
 use crate::report::{
     ActivationRecord, CaseStatus, EvidenceDisposition, EvidencePlanClass,
     EvidenceRequirementResult, ExecutorDeclaration, ExecutorProvenance, NATIVE_REPORT_SCHEMA,
@@ -195,23 +196,38 @@ pub fn guide_nine_evidence_plan() -> Result<EvidencePlan, NativeConformanceError
 /// A case exercising a primitive also bears on opcode semantics, which
 /// is added separately: the group says what the case is about, the
 /// primitive says that a reviewed byte executed at all.
+///
+/// # What was corrected here
+///
+/// Instruction encoding used to bear on *field* encoding semantics as
+/// well. It does not: a case establishing that one byte decodes as one
+/// primitive says nothing about the prefix an explicit asset carries.
+/// Field encodings are established by the introspection cases, which are
+/// the cases that read a field and state its exact stack form — and
+/// which is also what the reviewed contract says, since those are the
+/// primitives whose declared evidence includes the encoding
+/// requirement.
+///
+/// Resource limits stay split between their two rows deliberately. The
+/// literal-width boundary is the target's own rule and bears on the
+/// consensus row; the nonminimal forms are valid spends that nodes
+/// decline to forward, which is the relay row and nothing else.
 const fn requirements_of(group: NativeCaseGroup) -> &'static [TargetEvidenceRequirementId] {
     match group {
         NativeCaseGroup::ExecutionDomain => {
             &[TargetEvidenceRequirementId::TapscriptExecutionDomain]
         }
         NativeCaseGroup::LeafVersion => &[TargetEvidenceRequirementId::LeafVersionActivation],
-        NativeCaseGroup::InstructionEncoding => &[
-            TargetEvidenceRequirementId::OpcodeSemantics,
+        NativeCaseGroup::InstructionEncoding => &[TargetEvidenceRequirementId::OpcodeSemantics],
+        NativeCaseGroup::PushEncoding => &[TargetEvidenceRequirementId::PushEncodingSemantics],
+        NativeCaseGroup::InputIntrospection => &[
+            TargetEvidenceRequirementId::InputIntrospectionSemantics,
             TargetEvidenceRequirementId::EncodingSemantics,
         ],
-        NativeCaseGroup::PushEncoding => &[TargetEvidenceRequirementId::PushEncodingSemantics],
-        NativeCaseGroup::InputIntrospection => {
-            &[TargetEvidenceRequirementId::InputIntrospectionSemantics]
-        }
-        NativeCaseGroup::OutputIntrospection => {
-            &[TargetEvidenceRequirementId::OutputIntrospectionSemantics]
-        }
+        NativeCaseGroup::OutputIntrospection => &[
+            TargetEvidenceRequirementId::OutputIntrospectionSemantics,
+            TargetEvidenceRequirementId::EncodingSemantics,
+        ],
         NativeCaseGroup::TransactionIntrospection => {
             &[TargetEvidenceRequirementId::TransactionIntrospectionSemantics]
         }
@@ -228,7 +244,10 @@ const fn requirements_of(group: NativeCaseGroup) -> &'static [TargetEvidenceRequ
         NativeCaseGroup::ConfidentialValue => {
             &[TargetEvidenceRequirementId::ConfidentialValueConservation]
         }
-        NativeCaseGroup::Issuance => &[TargetEvidenceRequirementId::IssuanceIntrospection],
+        NativeCaseGroup::Issuance => &[
+            TargetEvidenceRequirementId::IssuanceIntrospection,
+            TargetEvidenceRequirementId::InputIntrospectionSemantics,
+        ],
         NativeCaseGroup::Resource => &[
             TargetEvidenceRequirementId::ConsensusResourceLimits,
             TargetEvidenceRequirementId::PolicyResourceLimits,
@@ -269,9 +288,22 @@ pub fn evaluate(
         BTreeMap::new();
 
     for fixture in fixtures {
+        // The leaf version is checked against what the fixture says it
+        // is: a reviewed case must be stated at the contract's leaf, and
+        // an unreviewed one must not be, since a case claiming to
+        // exercise an unreviewed leaf at the reviewed byte would
+        // establish nothing.
+        let leaf_agrees = match fixture.leaf_version_status() {
+            LeafVersionStatus::Reviewed => {
+                fixture.leaf_version() == definition.leaf_version().get()
+            }
+            LeafVersionStatus::Unreviewed => {
+                fixture.leaf_version() != definition.leaf_version().get()
+            }
+        };
         if fixture.target_contract_version() != definition.version().get()
             || fixture.execution_domain() != domain
-            || fixture.leaf_version() != definition.leaf_version().get()
+            || !leaf_agrees
         {
             return Err(NativeConformanceError::TargetContractMismatch);
         }
@@ -294,7 +326,7 @@ pub fn evaluate(
             observed_failure: response.observed_failure,
             resources: response.resources,
         };
-        let status = compare(fixture.expected(), &observed);
+        let status = compare(fixture, &observed);
 
         for requirement in bearing_requirements(case) {
             per_requirement.entry(requirement).or_default().push(status);
@@ -368,28 +400,96 @@ pub fn gate(report: &NativeConformanceReport) -> Result<(), NativeConformanceErr
 }
 
 /// Whether the observation is what the contract requires.
-fn compare(expected: &ExpectedPrimitiveOutcome, observed: &ObservedNativeOutcome) -> CaseStatus {
+///
+/// The verdict is compared always. A failure class is compared against
+/// the set the contract admits, because the target reports one reason
+/// for several reviewed causes and requiring the finest of them would
+/// fail an honest executor over a distinction the target does not draw.
+/// A stack and a resource figure are compared only where both sides have
+/// one: the expectations are established statically, and a node that
+/// reports no interpreter stack is not thereby disagreeing with them.
+fn compare(fixture: &PrimitiveFixture, observed: &ObservedNativeOutcome) -> CaseStatus {
     if observed.verdict == NativeVerdict::InfrastructureError {
         return CaseStatus::InfrastructureError;
     }
-    let matched = match expected {
-        ExpectedPrimitiveOutcome::Accept {
-            final_stack,
-            final_altstack,
-        } => {
-            observed.verdict == NativeVerdict::Accepted
-                && observed.final_stack.as_ref() == Some(final_stack)
-                && observed.final_altstack.as_ref() == Some(final_altstack)
-        }
-        ExpectedPrimitiveOutcome::Reject { class } => {
-            observed.verdict == NativeVerdict::Rejected && observed.observed_failure == Some(*class)
+    let expected = fixture.expected();
+    let verdict_matched = match expected {
+        ExpectedPrimitiveOutcome::Accept { .. } => observed.verdict == NativeVerdict::Accepted,
+        ExpectedPrimitiveOutcome::Reject { classes, .. } => {
+            observed.verdict == NativeVerdict::Rejected
+                && observed
+                    .observed_failure
+                    .is_some_and(|class| classes.contains(&class))
         }
     };
-    if matched {
+    if verdict_matched
+        && stacks_matched(expected, observed)
+        && resources_matched(fixture.expected_resources(), &observed.resources)
+    {
         CaseStatus::Passed
     } else {
         CaseStatus::Failed
     }
+}
+
+/// Whether a reported stack is the one the fixture states.
+///
+/// Vacuously true where the executor reports none or the fixture states
+/// none. Neither absence is a disagreement, and treating one as a
+/// failure would refuse every executor that validates transactions
+/// rather than instrumenting an interpreter.
+fn stacks_matched(expected: &ExpectedPrimitiveOutcome, observed: &ObservedNativeOutcome) -> bool {
+    let main = match (
+        expected.static_final_stack(),
+        observed.final_stack.as_deref(),
+    ) {
+        (Some(stated), Some(reported)) => stated == reported,
+        _ => true,
+    };
+    let alternate = match (
+        expected.static_final_altstack(),
+        observed.final_altstack.as_deref(),
+    ) {
+        (Some(stated), Some(reported)) => stated == reported,
+        _ => true,
+    };
+    main && alternate
+}
+
+/// Whether the reported figures are the ones the fixture fixes.
+///
+/// Only the exact rows are compared, and an exact row disagreeing means
+/// the executor ran something other than what it was handed — which is a
+/// failure of the case, not a resource note.
+fn resources_matched(
+    expected: ExpectedResourceObservation,
+    observed: &NativeResourceObservation,
+) -> bool {
+    let rows = [
+        (expected.script_bytes, Some(observed.script_bytes)),
+        (
+            expected.initial_stack_items,
+            Some(observed.initial_stack_items),
+        ),
+        (expected.peak_stack_items, observed.peak_stack_items),
+        (expected.peak_altstack_items, observed.peak_altstack_items),
+        (
+            expected.maximum_element_bytes,
+            observed.maximum_element_bytes,
+        ),
+        (
+            expected.validation_budget_used,
+            observed.validation_budget_used,
+        ),
+        (expected.transaction_weight, observed.transaction_weight),
+    ];
+    rows.into_iter().all(|(stated, reported)| {
+        match (stated, reported) {
+            (ResourceExpectation::Exact(fixed), Some(seen)) => fixed == seen,
+            // Recorded-only, or a figure this executor cannot observe.
+            _ => true,
+        }
+    })
 }
 
 /// Which requirements one case bears on.
