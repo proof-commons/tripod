@@ -3,7 +3,9 @@
 # listed here, or the census audit fails the build. The parent
 # meson.build accumulates this list into its role group.
 target_elements_conformance_source_files = files(
+  'src/bin/mock-native-executor.rs',
   'src/error.rs',
+  'src/executor.rs',
   'src/fixture.rs',
   'src/lib.rs',
   'src/protocol.rs',
@@ -13,6 +15,14 @@ target_elements_conformance_source_files = files(
   'src/tests/support.rs',
   'src/tests/vocabulary_tests.rs',
   'src/vocabulary.rs',
+)
+
+# Same-typed files deliberately outside the crate-source census
+# (ADR-014): integration-test sources are cargo test inputs, not label
+# subjects. The census audit accepts the exclusion only because it is
+# declared here.
+target_elements_conformance_excluded_files = files(
+  'tests/executor_protocol.rs',
 )
 
 # Crate documentation (DOC owner).
