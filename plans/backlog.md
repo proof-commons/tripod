@@ -591,6 +591,71 @@ generated publications unchanged; no target, deployment, compiler, or
 report digest minted; Cargo.lock gained exactly the two first-party
 package stanzas; no third-party dependency entered.
 
+### 2.13 Guide-9 target-native gate · `gate:backlog:guide9`
+
+The Guide-9 batch closed the fourth-review register (§5.4, all eleven
+rows), made the target contract sound, and delivered the typed instruction
+core with development target-native primitive evidence. Starting revision
+88d0661; batch branch merged fast-forward after this record.
+
+Contract soundness: a reviewed-Elements trust state distinct from generic
+validation, constructible only by the first-party derivation or exact
+typed equality; a typed success algebra with retained operands and
+condition-discriminated alternatives re-reviewed against upstream with
+line provenance; six cross-subcontract welds; transitive capability-status
+closure under an explicit strength order; package-owned encoding
+interpretation; a reviewed literal-push contract whose minimality cascade
+is ordered data and whose relay-versus-consensus enforcement is typed; a
+five-byte timelock operand class making the sequence disable flag
+stateable. Identity and publication repairs: the draft and release
+validators return the only wrappers accepted by the public architecture
+identity functions with published values proven unmoved; publication
+freshness now includes the required mode with in-place mode-only repair;
+ADR-016 records the bounded grandfathered-recipe exception.
+
+Instruction core and adapter: typed instructions, checked stack items,
+canonical minimal-push serialization, a strict supported-subset parser
+with round-trip equality, and an abstract stack validator carrying every
+success alternative and all three failure shapes under checked work
+limits, agreeing with an independent bounded oracle; the static adapter
+consumes only the reviewed contract and answers both compiler censuses
+with exhaustive matches and both-direction exact equality.
+
+Native evidence: a secretless conformance harness with a lock-step
+protocol that fails closed on every malformation and types mock runs as
+unable to satisfy the gate; a 398-case fixture census whose expectations
+come from the typed contract and independent published vectors; a
+first-party executor adapter driving a disposable wallet-free
+elementsregtest node, judging consensus fixtures by block validation and
+relay fixtures by mempool acceptance, with an explicit reason-string
+mapping that leaves target-collapsed causes coarse rather than guessed.
+The run: 398 of 398 cases passed, 18 of 18 required evidence rows, zero
+infrastructure errors, report bytes identical across fresh-node runs and
+the build lane; triage attributed and repaired every first-contact
+divergence in its owning module, including a transcription error in a
+published signature vector that only real verification exposed. Executor
+provenance: Elements Core v28.99.0-6f43e3ffe730, rebuilt from a clean
+tree at the reviewed revision after an earlier stale binary predating the
+elliptic-curve stack-size fix was refused for evidence; synthetic
+development identifiers 32x09 and 32x07.
+
+Gate evidence on the merged tree: ci.sh eleven lanes green under the
+pinned SDK toolchain with the advisory lane running through the isolated
+shim and the mocked Meson contract required; canonical meson compile and
+test eleven of eleven; the native lane on the batch tip with the stamp
+produced; document byte reproducibility not required because no paper
+input changed. Honest bounds: sighash semantics remain unresolved by
+design, commitment equality and authenticated opening remain unsupported,
+confidential-value conservation remains transaction-level evidence, the
+report completeness is partial-unresolved-remains, and the Guide-9
+concept text stays in the session archive because carrying it breached
+the plan-tree hard byte cap.
+
+Identity impact: Layer-0 version, architecture schema and hashes, and
+generated publications unchanged; no digest of any kind minted; the
+conformance package is the only Cargo.lock addition; no new third-party
+dependency beyond workspace-existing crates plus a test-only PTY helper.
+
 ---
 
 ### The verification harness's two standing hazards · `rem:backlog:verification-harness`
