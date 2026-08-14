@@ -35,6 +35,7 @@ use crate::error::TargetError;
 use crate::evidence::TargetEvidenceRequirementId;
 use crate::evidence_registry::{TargetEvidenceRequirement, reviewed_evidence_requirements};
 use crate::opcode::{ExecutionDomain, LeafVersion, OpcodeId, OpcodeSpec, reviewed_opcodes};
+use crate::push::{PushContract, PushContractDefect, reviewed_pushes};
 use crate::resource::{ResourceContract, reviewed_resources};
 use crate::success::SuccessContractDefect;
 
@@ -89,6 +90,7 @@ pub struct TargetDefinition {
     leaf_version: LeafVersion,
     opcodes: BTreeMap<OpcodeId, OpcodeSpec>,
     encodings: BTreeMap<EncodingClass, EncodingSpec>,
+    pushes: PushContract,
     authorization: AuthorizationContract,
     confidential_values: ConfidentialValueContract,
     issuance: IssuanceContract,
@@ -115,6 +117,8 @@ pub struct TargetDefinitionParts {
     pub opcodes: BTreeMap<OpcodeId, OpcodeSpec>,
     /// The reviewed encoding registry.
     pub encodings: BTreeMap<EncodingClass, EncodingSpec>,
+    /// The reviewed literal-push rules.
+    pub pushes: PushContract,
     /// Signature, sighash, and timelock dimensions.
     pub authorization: AuthorizationContract,
     /// Confidential-value capabilities.
@@ -142,6 +146,7 @@ impl TargetDefinition {
             leaf_version: parts.leaf_version,
             opcodes: parts.opcodes,
             encodings: parts.encodings,
+            pushes: parts.pushes,
             authorization: parts.authorization,
             confidential_values: parts.confidential_values,
             issuance: parts.issuance,
@@ -179,6 +184,12 @@ impl TargetDefinition {
     #[must_use]
     pub const fn encodings(&self) -> &BTreeMap<EncodingClass, EncodingSpec> {
         &self.encodings
+    }
+
+    /// The reviewed literal-push rules.
+    #[must_use]
+    pub const fn pushes(&self) -> &PushContract {
+        &self.pushes
     }
 
     /// Signature, sighash, and timelock dimensions.
@@ -247,6 +258,7 @@ impl ValidatedTargetDefinition {
             leaf_version: self.definition.leaf_version,
             opcodes: self.definition.opcodes.values().cloned().collect(),
             encodings: self.definition.encodings.values().cloned().collect(),
+            pushes: self.definition.pushes.clone(),
             authorization: self.definition.authorization.clone(),
             confidential_values: self.definition.confidential_values.clone(),
             issuance: self.definition.issuance.clone(),
@@ -342,6 +354,7 @@ pub struct TargetProjection {
     leaf_version: LeafVersion,
     opcodes: Vec<OpcodeSpec>,
     encodings: Vec<EncodingSpec>,
+    pushes: PushContract,
     authorization: AuthorizationContract,
     confidential_values: ConfidentialValueContract,
     issuance: IssuanceContract,
@@ -379,6 +392,12 @@ impl TargetProjection {
     #[must_use]
     pub fn encodings(&self) -> &[EncodingSpec] {
         &self.encodings
+    }
+
+    /// The reviewed literal-push rules.
+    #[must_use]
+    pub const fn pushes(&self) -> &PushContract {
+        &self.pushes
     }
 
     /// Signature, sighash, and timelock dimensions.
@@ -440,6 +459,7 @@ pub fn validate_target_definition(
 
     validate_opcodes(&definition, &mut errors);
     validate_encodings(&definition, &mut errors);
+    validate_pushes(&definition, &mut errors);
     validate_authorization(&definition, &mut errors);
     validate_confidential_and_issuance(&definition, &mut errors);
     validate_resources(&definition, &mut errors);
@@ -576,6 +596,7 @@ fn reviewed_elements_declaration() -> TargetDefinition {
         leaf_version: LeafVersion::TAPSCRIPT,
         opcodes: reviewed_opcodes(),
         encodings: reviewed_encodings(),
+        pushes: reviewed_pushes(),
         authorization: reviewed_authorization(),
         confidential_values: reviewed_confidential_values(),
         issuance: reviewed_issuance(),
@@ -735,6 +756,23 @@ fn validate_encodings(definition: &TargetDefinition, errors: &mut Vec<TargetErro
         if !definition.encodings.contains_key(&class) {
             errors.push(TargetError::MissingEncodingSpec(class));
         }
+    }
+}
+
+/// Checks the literal-push rules.
+fn validate_pushes(definition: &TargetDefinition, errors: &mut Vec<TargetError>) {
+    for defect in definition.pushes.defects() {
+        errors.push(match defect {
+            PushContractDefect::MissingForm(form) => TargetError::MissingPushForm(form),
+            PushContractDefect::IncoherentForm(form) => TargetError::InvalidPushForm(form),
+            PushContractDefect::DuplicateOpcode(opcode) => TargetError::DuplicatePushOpcode(opcode),
+            PushContractDefect::MissingFormEvidence(form) => {
+                TargetError::MissingPushFormEvidence(form)
+            }
+            PushContractDefect::MissingEnforcement(defect) => {
+                TargetError::MissingPushEnforcement(defect)
+            }
+        });
     }
 }
 

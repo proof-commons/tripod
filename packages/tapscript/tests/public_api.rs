@@ -8,9 +8,12 @@
 //! claiming that anything has been completed.
 
 use compiler::target::{ExternalEvidenceRole, RequiredCapability};
-use tapscript::{AssessmentDisposition, EvidenceAssessmentDisposition, TapscriptError};
+use tapscript::{
+    AbstractLimits, AbstractStackState, AssessmentDisposition, EvidenceAssessmentDisposition,
+    StackItem, TapscriptError, TapscriptInstruction, TapscriptProgram, validate_program,
+};
 use target_elements::{
-    ElementsCapability, ReviewedElementsTapscriptDefinition, TargetEvidenceRequirementId,
+    ElementsCapability, OpcodeId, ReviewedElementsTapscriptDefinition, TargetEvidenceRequirementId,
     reviewed_elements_tapscript,
 };
 
@@ -136,4 +139,95 @@ fn the_reviewed_target_binds_and_resolves_no_evidence() {
     // requirement identity carries no result and has no field for one.
     assert!(!contract.evidence_requirements().is_empty());
     assert!(!contract.capabilities().is_empty());
+}
+
+#[test]
+fn an_external_consumer_builds_programs_only_from_typed_instructions() {
+    // The whole safe surface: a reviewed primitive identity and a
+    // checked literal. There is no public constructor taking a raw
+    // opcode byte, a raw instruction, or a raw program, so untrusted
+    // bytes have exactly one way in — the parser, which either produces
+    // typed instructions or fails.
+    let target = reviewed_target();
+    let item = StackItem::script_number(&target, 3).expect("three is representable");
+    let program = TapscriptProgram::new(vec![
+        TapscriptInstruction::Push(item),
+        TapscriptInstruction::Opcode(OpcodeId::InspectInputValue),
+    ])
+    .expect("two instructions are within the limit");
+
+    let bytes = program.encode(&target);
+    assert_eq!(bytes, vec![0x53, 0xc9]);
+    assert_eq!(
+        TapscriptProgram::decode(&target, &bytes).expect("the program parses"),
+        program,
+    );
+}
+
+#[test]
+fn an_external_consumer_cannot_push_an_oversized_literal() {
+    let target = reviewed_target();
+
+    assert!(StackItem::new(&target, vec![0; 520]).is_ok());
+    assert!(matches!(
+        StackItem::new(&target, vec![0; 521]),
+        Err(TapscriptError::OversizedStackItem { .. }),
+    ));
+}
+
+#[test]
+fn an_external_consumer_sees_a_focused_reason_for_every_refused_script() {
+    let target = reviewed_target();
+
+    assert!(matches!(
+        TapscriptProgram::decode(&target, &[0xff]),
+        Err(TapscriptError::UnknownOpcodeByte(0xff)),
+    ));
+    assert!(matches!(
+        TapscriptProgram::decode(&target, &[0x02, 0xab]),
+        Err(TapscriptError::TruncatedInstruction),
+    ));
+    assert!(matches!(
+        TapscriptProgram::decode(&target, &[0x01, 0x05]),
+        Err(TapscriptError::NonMinimalPush),
+    ));
+}
+
+#[test]
+fn an_external_consumer_receives_three_outcome_sets_and_not_one_boolean() {
+    // The arithmetic asymmetry, through the public surface: the
+    // successful path is two items deep and the non-aborting failure
+    // path is three, because the overflow leaves both operands where
+    // they were.
+    let target = reviewed_target();
+    let operand = StackItem::signed_le64(&target, 1);
+    let program = TapscriptProgram::new(vec![
+        TapscriptInstruction::Push(operand.clone()),
+        TapscriptInstruction::Push(operand),
+        TapscriptInstruction::Opcode(OpcodeId::Add64),
+    ])
+    .expect("three instructions are within the limit");
+
+    let result = validate_program(
+        &target,
+        &program,
+        &AbstractStackState::from_main(Vec::new()),
+        AbstractLimits::for_target(&target),
+    )
+    .expect("the program validates");
+
+    assert_eq!(
+        result.success().iter().map(AbstractStackState::depth).max(),
+        Some(2),
+    );
+    assert_eq!(
+        result
+            .nonaborting_failure()
+            .iter()
+            .map(AbstractStackState::depth)
+            .max(),
+        Some(3),
+    );
+    assert!(!result.aborts().is_empty());
+    assert!(!result.always_aborts());
 }

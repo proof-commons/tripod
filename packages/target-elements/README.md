@@ -58,6 +58,9 @@ Implemented:
   and resource contracts for every admitted primitive;
 - the field-specific encoding registry, with asset and value as independent
   axes and no global byte order;
+- the literal-push contract: every push form with its opcode span and width
+  field, the ordered minimal-form rule, the maximum literal size, and which
+  of those rules is consensus and which is relay policy;
 - signature, sighash, and relative-timelock dimensions;
 - confidential-value and issuance capability descriptions;
 - separate consensus and policy resource interfaces;

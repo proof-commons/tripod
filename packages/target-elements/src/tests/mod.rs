@@ -7,6 +7,7 @@ mod encoding_tests;
 mod mutation_tests;
 mod opcode_tests;
 mod permutation_tests;
+mod push_tests;
 mod registry_mutation_tests;
 mod status_closure_tests;
 mod weld_tests;

@@ -43,6 +43,7 @@ fn parts() -> TargetDefinitionParts {
         leaf_version: source.leaf_version(),
         opcodes: source.opcodes().clone(),
         encodings: source.encodings().clone(),
+        pushes: source.pushes().clone(),
         authorization: source.authorization().clone(),
         confidential_values: source.confidential_values().clone(),
         issuance: source.issuance().clone(),

@@ -22,6 +22,7 @@ use crate::confidential::ConfidentialValueCapability;
 use crate::encoding::EncodingClass;
 use crate::evidence::TargetEvidenceRequirementId;
 use crate::opcode::{FailureCause, OpcodeId};
+use crate::push::{PushDefect, PushForm};
 use crate::resource::ResourceDimension;
 use crate::success::SuccessCondition;
 
@@ -288,6 +289,33 @@ pub enum TargetError {
     /// expire.
     MissingStaleCondition(TargetEvidenceRequirementId),
 
+    /// A reviewed push form has no contract. The census is the
+    /// authority: a missing form is an incomplete contract rather than
+    /// a target that pushes literals in fewer ways.
+    MissingPushForm(PushForm),
+
+    /// A push form states an opcode span or a width range that admits
+    /// nothing.
+    InvalidPushForm(PushForm),
+
+    /// Two push forms claim the same opcode byte, so a decoder could
+    /// not say which form a script used.
+    DuplicatePushOpcode(u8),
+
+    /// A push form names no evidence, so its rule rests on this
+    /// crate's assertion alone.
+    MissingPushFormEvidence(PushForm),
+
+    /// A push defect has no stated enforcement, so a consumer could not
+    /// tell a program the target refuses from one nodes decline to
+    /// relay.
+    MissingPushEnforcement(PushDefect),
+
+    /// The push forms, the minimal-form rule, the literal bound, the
+    /// primitive bytes, and the evidence link do not describe the same
+    /// rules.
+    PushContractMismatch,
+
     /// The signature primitives, the signature primitive contract, the
     /// per-check budget, the operand encodings, and the evidence link
     /// do not describe the same behavior.
@@ -526,6 +554,24 @@ impl fmt::Display for TargetError {
             }
             Self::MissingStaleCondition(id) => {
                 write!(f, "evidence requirement {id:?} never goes stale")
+            }
+            Self::MissingPushForm(form) => {
+                write!(f, "reviewed push form {form:?} has no contract")
+            }
+            Self::InvalidPushForm(form) => {
+                write!(f, "push form {form:?} admits no encoding")
+            }
+            Self::DuplicatePushOpcode(opcode) => {
+                write!(f, "two push forms claim target byte {opcode:#04x}")
+            }
+            Self::MissingPushFormEvidence(form) => {
+                write!(f, "push form {form:?} names no evidence")
+            }
+            Self::MissingPushEnforcement(defect) => {
+                write!(f, "push defect {defect:?} states no enforcement")
+            }
+            Self::PushContractMismatch => {
+                write!(f, "the push rules do not agree with the target contract")
             }
             Self::SignatureContractMismatch => {
                 write!(f, "the signature views do not describe one behavior")

@@ -1,0 +1,485 @@
+//! Abstract stack validation: alternatives, failure shapes, limits.
+
+use std::collections::BTreeSet;
+use std::num::{NonZeroU64, NonZeroUsize};
+
+use target_elements::{
+    ByteOrder, EncodingClass, FailureCause, OpcodeId, ResourceDimension, StackValueType,
+};
+
+use crate::error::TapscriptError;
+use crate::instruction::{StackItem, TapscriptInstruction};
+use crate::program::TapscriptProgram;
+use crate::stack::{
+    AbstractExecutionResult, AbstractLimits, AbstractStackState, resource_projection,
+    validate_program,
+};
+
+use super::reviewed_target;
+
+/// A literal of `width` bytes, as an instruction.
+fn push(width: usize) -> TapscriptInstruction {
+    let target = reviewed_target();
+    TapscriptInstruction::Push(
+        StackItem::new(&target, vec![0xab; width]).expect("the payload is within the bound"),
+    )
+}
+
+/// The abstract type of a literal of `width` bytes.
+fn literal(width: usize) -> StackValueType {
+    StackValueType::Bytes {
+        minimum: width,
+        maximum: width,
+    }
+}
+
+/// The target's signed fixed-width type.
+fn signed64() -> StackValueType {
+    StackValueType::SignedFixedWidth {
+        bytes: NonZeroUsize::new(8).expect("eight is not zero"),
+        byte_order: ByteOrder::LittleEndian,
+    }
+}
+
+/// Validates one instruction sequence from an empty stack.
+fn validate(instructions: Vec<TapscriptInstruction>) -> AbstractExecutionResult {
+    let target = reviewed_target();
+    let program = TapscriptProgram::new(instructions).expect("the fixture is within the limit");
+    validate_program(
+        &target,
+        &program,
+        &AbstractStackState::from_main(Vec::new()),
+        AbstractLimits::for_target(&target),
+    )
+    .expect("the fixture validates")
+}
+
+#[test]
+fn a_push_grows_the_main_stack_and_leaves_the_alternate_one_alone() {
+    let result = validate(vec![push(4), push(0)]);
+
+    assert_eq!(
+        result.success().iter().cloned().collect::<Vec<_>>(),
+        vec![AbstractStackState::from_main(vec![
+            literal(4),
+            StackValueType::Empty,
+        ])],
+    );
+    assert!(result.nonaborting_failure().is_empty());
+    assert!(result.aborts().is_empty());
+    for state in result.success() {
+        assert_eq!(state.alternate(), []);
+        assert_eq!(state.depth(), 2);
+    }
+}
+
+#[test]
+fn a_relative_timelock_leaves_its_operand_exactly_where_it_found_it() {
+    // The retained-operand shape. A consuming form with no results
+    // would have described a net reduction of one and would
+    // mis-schedule every program that uses a lock.
+    let result = validate(vec![
+        push(1),
+        TapscriptInstruction::Opcode(OpcodeId::CheckSequenceVerify),
+    ]);
+
+    assert_eq!(
+        result.success().iter().cloned().collect::<Vec<_>>(),
+        vec![AbstractStackState::from_main(vec![literal(1)])],
+    );
+    assert!(result.nonaborting_failure().is_empty());
+    assert!(result.aborts().contains(&FailureCause::UnsatisfiedTimelock));
+    assert!(result.aborts().contains(&FailureCause::NegativeTimelock));
+}
+
+#[test]
+fn arithmetic_overflow_keeps_both_operands_and_pushes_a_false_above_them() {
+    // The most important reviewed asymmetry: the failing path leaves a
+    // *deeper* stack than the successful one.
+    let result = validate(vec![
+        push(8),
+        push(8),
+        TapscriptInstruction::Opcode(OpcodeId::Add64),
+    ]);
+
+    assert_eq!(
+        result.success().iter().cloned().collect::<Vec<_>>(),
+        vec![AbstractStackState::from_main(vec![
+            signed64(),
+            StackValueType::Bool,
+        ])],
+    );
+    assert_eq!(
+        result
+            .nonaborting_failure()
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![AbstractStackState::from_main(vec![
+            literal(8),
+            literal(8),
+            StackValueType::Empty,
+        ])],
+    );
+
+    let success_depth = result.success().iter().map(AbstractStackState::depth).max();
+    let failure_depth = result
+        .nonaborting_failure()
+        .iter()
+        .map(AbstractStackState::depth)
+        .max();
+    assert_eq!(success_depth, Some(2));
+    assert_eq!(failure_depth, Some(3));
+}
+
+#[test]
+fn a_division_states_both_of_its_retained_failure_causes() {
+    let result = validate(vec![
+        push(8),
+        push(8),
+        TapscriptInstruction::Opcode(OpcodeId::Div64),
+    ]);
+
+    // Two causes, one retained shape: the state set is the union, not a
+    // duplicate for each cause.
+    assert_eq!(result.nonaborting_failure().len(), 1);
+    assert_eq!(
+        result.success().iter().cloned().collect::<Vec<_>>(),
+        vec![AbstractStackState::from_main(vec![
+            signed64(),
+            signed64(),
+            StackValueType::Bool,
+        ])],
+    );
+}
+
+#[test]
+fn an_empty_signature_consumes_the_operands_where_an_invalid_one_aborts() {
+    let result = validate(vec![
+        push(64),
+        push(32),
+        TapscriptInstruction::Opcode(OpcodeId::CheckSig),
+    ]);
+
+    assert_eq!(
+        result
+            .nonaborting_failure()
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![AbstractStackState::from_main(vec![StackValueType::Empty])],
+    );
+    assert!(result.aborts().contains(&FailureCause::InvalidSignature));
+    assert!(!result.aborts().contains(&FailureCause::EmptySignature));
+}
+
+#[test]
+fn the_verifying_signature_form_leaves_no_branchable_result() {
+    let result = validate(vec![
+        push(64),
+        push(32),
+        TapscriptInstruction::Opcode(OpcodeId::CheckSigVerify),
+    ]);
+
+    assert!(result.nonaborting_failure().is_empty());
+    assert!(result.aborts().contains(&FailureCause::EmptySignature));
+    assert_eq!(
+        result.success().iter().cloned().collect::<Vec<_>>(),
+        vec![AbstractStackState::from_main(Vec::new())],
+    );
+}
+
+#[test]
+fn every_alternative_of_an_undecidable_discriminant_is_retained() {
+    let target = reviewed_target();
+
+    // Issuance present or absent: six items or one, and no abstract
+    // state can say which.
+    let issuance = validate(vec![
+        push(1),
+        TapscriptInstruction::Opcode(OpcodeId::InspectInputIssuance),
+    ]);
+    let depths: BTreeSet<usize> = issuance
+        .success()
+        .iter()
+        .map(AbstractStackState::depth)
+        .collect();
+    assert_eq!(depths, [1, 6].into_iter().collect());
+
+    // Explicit or confidential: same depth, different payload widths.
+    let value = validate(vec![
+        push(1),
+        TapscriptInstruction::Opcode(OpcodeId::InspectOutputValue),
+    ]);
+    assert_eq!(value.success().len(), 2);
+    assert!(value.success().iter().any(|state| state.main()
+        == [
+            StackValueType::EncodedPayload(EncodingClass::ExplicitValue),
+            StackValueType::EncodingPrefix(EncodingClass::ExplicitValue),
+        ]));
+    assert!(value.success().iter().any(|state| state.main()
+        == [
+            StackValueType::EncodedPayload(EncodingClass::ConfidentialValue),
+            StackValueType::EncodingPrefix(EncodingClass::ConfidentialValue),
+        ]));
+
+    // Explicit, confidential, or absent.
+    let nonce = validate(vec![
+        push(1),
+        TapscriptInstruction::Opcode(OpcodeId::InspectOutputNonce),
+    ]);
+    assert_eq!(nonce.success().len(), 3);
+    assert!(
+        nonce
+            .success()
+            .iter()
+            .any(|state| state.main() == [StackValueType::Encoded(EncodingClass::NullNonce)])
+    );
+
+    // A witness program or a digest standing in for one.
+    let program = validate(vec![
+        push(1),
+        TapscriptInstruction::Opcode(OpcodeId::InspectInputScriptPubKey),
+    ]);
+    assert_eq!(program.success().len(), 2);
+
+    // Nothing above depends on the target being read twice, but the
+    // fixture does depend on it being the reviewed one.
+    assert_eq!(
+        target.definition().opcodes().len(),
+        OpcodeId::ALL.len(),
+        "the fixtures ran against the whole reviewed census",
+    );
+}
+
+#[test]
+fn alternatives_multiply_through_a_sequence() {
+    // Two independent undecidable discriminants leave four states, and
+    // the validator keeps all of them rather than picking a path.
+    let result = validate(vec![
+        push(1),
+        TapscriptInstruction::Opcode(OpcodeId::InspectOutputNonce),
+        push(1),
+        TapscriptInstruction::Opcode(OpcodeId::InspectInputScriptPubKey),
+    ]);
+
+    assert_eq!(result.success().len(), 6);
+}
+
+#[test]
+fn a_cause_the_abstract_state_settles_is_not_recorded_as_an_abort() {
+    // Both operands have one decided width, so an operand of the wrong
+    // width is not something this program can do.
+    let decided = validate(vec![
+        push(8),
+        push(8),
+        TapscriptInstruction::Opcode(OpcodeId::Add64),
+    ]);
+    assert!(
+        !decided
+            .aborts()
+            .contains(&FailureCause::InvalidOperandWidth)
+    );
+    assert!(!decided.aborts().contains(&FailureCause::StackUnderflow));
+
+    // The domain claim survives: nothing in an abstract stack says
+    // which domain the program will run in.
+    assert!(
+        decided
+            .aborts()
+            .contains(&FailureCause::UnsupportedExecutionDomain),
+    );
+}
+
+#[test]
+fn an_operand_whose_width_is_unsettled_never_reaches_the_width_question() {
+    // A stack carrying "somewhere between nothing and eight bytes" does
+    // not satisfy an operand the contract fixes at eight, so the
+    // program is refused rather than validated with the width failure
+    // left on the table.
+    let target = reviewed_target();
+    let program = TapscriptProgram::new(vec![TapscriptInstruction::Opcode(OpcodeId::Neg64)])
+        .expect("one instruction is within the limit");
+    let unsettled = StackValueType::Bytes {
+        minimum: 0,
+        maximum: 8,
+    };
+    let initial = AbstractStackState::from_main(vec![unsettled.clone()]);
+
+    assert_eq!(
+        validate_program(
+            &target,
+            &program,
+            &initial,
+            AbstractLimits::for_target(&target),
+        ),
+        Err(TapscriptError::StackTypeMismatch {
+            instruction: 0,
+            expected: signed64(),
+            actual: unsettled,
+        }),
+    );
+}
+
+#[test]
+fn an_instruction_with_too_few_operands_is_a_validation_failure() {
+    let target = reviewed_target();
+    let program =
+        TapscriptProgram::new(vec![push(8), TapscriptInstruction::Opcode(OpcodeId::Add64)])
+            .expect("two instructions are within the limit");
+
+    assert_eq!(
+        validate_program(
+            &target,
+            &program,
+            &AbstractStackState::from_main(Vec::new()),
+            AbstractLimits::for_target(&target),
+        ),
+        Err(TapscriptError::StackUnderflow { instruction: 1 }),
+    );
+}
+
+#[test]
+fn an_operand_of_the_wrong_shape_is_a_validation_failure() {
+    let target = reviewed_target();
+    let program = TapscriptProgram::new(vec![
+        push(4),
+        push(4),
+        TapscriptInstruction::Opcode(OpcodeId::Add64),
+    ])
+    .expect("three instructions are within the limit");
+
+    assert_eq!(
+        validate_program(
+            &target,
+            &program,
+            &AbstractStackState::from_main(Vec::new()),
+            AbstractLimits::for_target(&target),
+        ),
+        Err(TapscriptError::StackTypeMismatch {
+            instruction: 2,
+            expected: signed64(),
+            actual: literal(4),
+        }),
+    );
+}
+
+#[test]
+fn exhausting_the_state_budget_returns_no_partial_result() {
+    let target = reviewed_target();
+    let program = TapscriptProgram::new(vec![
+        push(1),
+        TapscriptInstruction::Opcode(OpcodeId::InspectOutputNonce),
+    ])
+    .expect("two instructions are within the limit");
+    let limits = AbstractLimits::for_target(&target)
+        .with_maximum_states(NonZeroU64::new(2).expect("two is not zero"));
+
+    assert_eq!(
+        validate_program(
+            &target,
+            &program,
+            &AbstractStackState::from_main(Vec::new()),
+            limits,
+        ),
+        Err(TapscriptError::AbstractStateLimitExceeded { maximum: 2 }),
+    );
+}
+
+#[test]
+fn exhausting_the_depth_budget_returns_no_partial_result() {
+    let target = reviewed_target();
+    let program = TapscriptProgram::new(vec![push(1), push(1)])
+        .expect("two instructions are within the limit");
+    let limits = AbstractLimits::for_target(&target).with_maximum_stack_depth(1);
+
+    assert_eq!(
+        validate_program(
+            &target,
+            &program,
+            &AbstractStackState::from_main(Vec::new()),
+            limits,
+        ),
+        Err(TapscriptError::StackLimitExceeded { maximum: 1 }),
+    );
+}
+
+#[test]
+fn exhausting_the_instruction_budget_returns_no_partial_result() {
+    let target = reviewed_target();
+    let program = TapscriptProgram::new(vec![push(1), push(1)])
+        .expect("two instructions are within the limit");
+    let limits = AbstractLimits::for_target(&target)
+        .with_maximum_instructions(NonZeroU64::new(1).expect("one is not zero"));
+
+    assert_eq!(
+        validate_program(
+            &target,
+            &program,
+            &AbstractStackState::from_main(Vec::new()),
+            limits,
+        ),
+        Err(TapscriptError::InstructionLimitExceeded { maximum: 1 }),
+    );
+}
+
+#[test]
+fn exhausting_the_alternative_budget_returns_no_partial_result() {
+    let target = reviewed_target();
+    let program = TapscriptProgram::new(vec![
+        push(1),
+        TapscriptInstruction::Opcode(OpcodeId::InspectOutputNonce),
+    ])
+    .expect("two instructions are within the limit");
+    let limits = AbstractLimits::for_target(&target)
+        .with_maximum_result_alternatives(NonZeroU64::new(2).expect("two is not zero"));
+
+    assert_eq!(
+        validate_program(
+            &target,
+            &program,
+            &AbstractStackState::from_main(Vec::new()),
+            limits,
+        ),
+        Err(TapscriptError::ResultAlternativeLimitExceeded { maximum: 2 }),
+    );
+}
+
+#[test]
+fn a_limit_can_only_be_narrowed() {
+    let target = reviewed_target();
+    let default = AbstractLimits::for_target(&target);
+    let widened = default
+        .with_maximum_stack_depth(u64::MAX)
+        .with_maximum_states(NonZeroU64::MAX)
+        .with_maximum_instructions(NonZeroU64::MAX)
+        .with_maximum_result_alternatives(NonZeroU64::MAX);
+
+    assert_eq!(widened, default);
+    assert_eq!(default.maximum_stack_depth(), 1_000);
+}
+
+#[test]
+fn a_resource_projection_states_each_unit_separately() {
+    let target = reviewed_target();
+    let program = TapscriptProgram::new(vec![
+        push(64),
+        push(32),
+        TapscriptInstruction::Opcode(OpcodeId::CheckSig),
+        TapscriptInstruction::Opcode(OpcodeId::TxWeight),
+    ])
+    .expect("four instructions are within the limit");
+
+    let projection = resource_projection(&target, &program);
+
+    // Two primitives, one of which can charge the per-check budget. The
+    // literals occupy script bytes the target contract does not price
+    // per primitive, which is why this is a projection over primitives
+    // rather than a script size.
+    assert_eq!(projection.get(&ResourceDimension::ScriptBytes), Some(&2));
+    assert_eq!(
+        projection.get(&ResourceDimension::ValidationBudget),
+        Some(&50),
+    );
+    assert_eq!(projection.get(&ResourceDimension::OperationCost), Some(&0));
+}
