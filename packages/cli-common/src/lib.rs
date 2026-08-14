@@ -24,8 +24,8 @@ use tracing_subscriber::fmt::MakeWriter;
 mod publication;
 
 pub use publication::{
-    BatchPublicationError, PublicationAsset, PublicationMode, PublicationResult, publish_batch,
-    set_publication_mode,
+    BatchPublicationError, PublicationAsset, PublicationChange, PublicationMode, PublicationResult,
+    publish_batch, set_publication_mode,
 };
 
 #[cfg(test)]
@@ -1318,7 +1318,10 @@ pub fn finish_check_command<T: serde::Serialize>(
 
         (Some(report_path), Some(stamp_path)) => {
             ensure_distinct_outputs(&[("report", report_path), ("stamp", stamp_path)])?;
-            write_json_report_if_changed(report_path, report)?;
+            // The checker CLI contract reports the check result, not
+            // the publication's freshness components; a mode-repaired
+            // report is still a current report.
+            let _change = write_json_report_if_changed(report_path, report)?;
             touch_stamp(stamp_path)?;
             Ok(())
         }
@@ -1336,15 +1339,28 @@ pub fn finish_check_command<T: serde::Serialize>(
 /// does not inherit the owner-only mode of the temporary. The
 /// compare-if-changed skip keeps ninja `restat` from cascading rebuilds
 /// on unchanged results.
+///
+/// Freshness is bytes **and** mode (R2-N04): a report whose bytes are
+/// current but whose mode is not `0o644` is repaired in place, leaving
+/// its bytes and their modification time alone. The typed
+/// [`PublicationChange`] says which of the two happened.
 fn write_json_report_if_changed<T: serde::Serialize>(
     path: &std::path::Path,
     value: &T,
-) -> io::Result<()> {
+) -> io::Result<PublicationChange> {
     let mut bytes = serde_json::to_vec(value)?;
     bytes.push(b'\n');
 
-    if std::fs::read(path).is_ok_and(|current| current == bytes) {
-        return Ok(());
+    match publication::inspect_destination(path, &bytes, publication::PublicationMode::Public) {
+        publication::DestinationState::Current => return Ok(PublicationChange::default()),
+        publication::DestinationState::ModeOnly => {
+            publication::repair_publication_mode(path, publication::PublicationMode::Public)?;
+            return Ok(PublicationChange {
+                bytes_changed: false,
+                mode_changed: true,
+            });
+        }
+        publication::DestinationState::StaleBytes => {}
     }
 
     let directory = path.parent().unwrap_or_else(|| std::path::Path::new("."));
@@ -1357,5 +1373,8 @@ fn write_json_report_if_changed<T: serde::Serialize>(
     staged.as_file().sync_all()?;
     publication::set_publication_mode(staged.as_file(), publication::PublicationMode::Public)?;
     staged.persist(path).map_err(|error| error.error)?;
-    Ok(())
+    Ok(PublicationChange {
+        bytes_changed: true,
+        mode_changed: false,
+    })
 }

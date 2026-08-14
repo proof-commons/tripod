@@ -92,7 +92,8 @@ fn main() -> ExitCode {
         for result in cli_common::publish_batch(&assets)? {
             tracing::info!(
                 path = %result.path.display(),
-                changed = result.changed,
+                bytes_changed = result.change.bytes_changed,
+                mode_changed = result.change.mode_changed,
                 "artifact published",
             );
         }

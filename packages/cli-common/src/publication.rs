@@ -18,10 +18,18 @@
 //! [`set_publication_mode`] *before* the rename; otherwise a public
 //! report, generated artifact, PDF mirror, or flattened source would
 //! silently become unreadable to other users, and Git — which records
-//! only the executable bit — would not notice. Unchanged destinations
-//! are deliberately left completely untouched, so this repairs the
-//! mode of every member it actually republishes, not of a destination
-//! that already carries the expected bytes.
+//! only the executable bit — would not notice.
+//!
+//! Publication freshness therefore has two components, not one
+//! (R2-N04). A destination is current when its bytes equal the derived
+//! bytes **and** its mode equals the mode the publication class
+//! requires. Comparing bytes alone left a byte-current destination
+//! stuck at a wrong mode forever: every subsequent run saw equal bytes
+//! and skipped the repair. A mode-only mismatch is now repaired in
+//! place — the bytes and their modification time are untouched — and
+//! the repair is reported separately from a byte rewrite through
+//! [`PublicationChange`], so a mode repair is never mistaken for new
+//! content. A run after the repair is a no-op.
 
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
@@ -78,6 +86,76 @@ pub fn set_publication_mode(file: &std::fs::File, mode: PublicationMode) -> io::
     }
 }
 
+/// Whether a destination already carries the required bytes and mode.
+///
+/// Read by the compare-if-changed paths before anything is staged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DestinationState {
+    /// Absent, unreadable, or carrying different bytes: republish.
+    StaleBytes,
+    /// Bytes already current, mode wrong: repair the mode only.
+    ModeOnly,
+    /// Bytes and mode both current: leave completely untouched.
+    Current,
+}
+
+/// Compare a destination against the bytes and mode a publication
+/// requires.
+///
+/// An unreadable destination is reported as [`DestinationState::StaleBytes`]
+/// so the caller republishes it through the ordinary staged path and
+/// surfaces any real failure there.
+pub fn inspect_destination(path: &Path, bytes: &[u8], mode: PublicationMode) -> DestinationState {
+    if !std::fs::read(path).is_ok_and(|current| current == bytes) {
+        return DestinationState::StaleBytes;
+    }
+
+    if destination_mode_matches(path, mode) {
+        DestinationState::Current
+    } else {
+        DestinationState::ModeOnly
+    }
+}
+
+/// Whether the destination's permission bits already equal `mode`.
+#[cfg(unix)]
+fn destination_mode_matches(path: &Path, mode: PublicationMode) -> bool {
+    use std::os::unix::fs::PermissionsExt as _;
+    std::fs::metadata(path)
+        .is_ok_and(|metadata| metadata.permissions().mode() & 0o777 == mode.octal())
+}
+
+/// Non-Unix hosts carry no equivalent bits, so mode never differs.
+#[cfg(not(unix))]
+fn destination_mode_matches(_path: &Path, _mode: PublicationMode) -> bool {
+    true
+}
+
+/// Repair a byte-current destination's mode without touching its bytes.
+///
+/// Applied to the destination itself rather than through a staged
+/// rename: the published bytes and their modification time must not
+/// change, so downstream `restat` consumers stay clean.
+///
+/// # Errors
+///
+/// Propagates the underlying `chmod` failure.
+#[cfg(unix)]
+pub fn repair_publication_mode(path: &Path, mode: PublicationMode) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode.octal()))
+}
+
+/// Non-Unix hosts have nothing to repair.
+///
+/// # Errors
+///
+/// Never fails on these hosts.
+#[cfg(not(unix))]
+pub fn repair_publication_mode(_path: &Path, _mode: PublicationMode) -> io::Result<()> {
+    Ok(())
+}
+
 /// One output of a multi-output generation command.
 pub struct PublicationAsset<'a> {
     /// Stable diagnostic role of this output (never file contents).
@@ -86,14 +164,36 @@ pub struct PublicationAsset<'a> {
     pub bytes: &'a [u8],
 }
 
+/// What a compare-if-changed publication actually altered.
+///
+/// The two components are reported separately so a mode repair is
+/// never read as new content (R2-N04).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PublicationChange {
+    /// The destination received new bytes, staged with the required
+    /// mode already applied.
+    pub bytes_changed: bool,
+    /// A byte-current destination's mode was repaired in place; its
+    /// bytes and their modification time were not touched.
+    pub mode_changed: bool,
+}
+
+impl PublicationChange {
+    /// A destination that already carried the required bytes and mode.
+    #[must_use]
+    pub const fn unchanged(self) -> bool {
+        !self.bytes_changed && !self.mode_changed
+    }
+}
+
 /// Publication outcome for one asset, in input order.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PublicationResult {
     pub role: String,
     pub path: PathBuf,
-    /// False when the destination already carried the expected bytes
-    /// and was deliberately left untouched.
-    pub changed: bool,
+    /// Empty when the destination already carried the expected bytes
+    /// and mode and was deliberately left untouched.
+    pub change: PublicationChange,
 }
 
 /// Failure publishing a batch of generated outputs.
@@ -122,6 +222,23 @@ pub enum BatchPublicationError {
         #[source]
         source: io::Error,
     },
+}
+
+/// Publication class every batch asset carries.
+///
+/// Batch publication covers reports, generated text, and generated
+/// data only; published executables are synced by
+/// `scripts/cargo-bin-sync.sh`, not by this path.
+const ASSET_MODE: PublicationMode = PublicationMode::Public;
+
+/// What phase 2 decided to do with one destination.
+enum PlannedPublication {
+    /// Bytes and mode already current: touch nothing.
+    Current,
+    /// Bytes current, mode wrong: repair the mode in place.
+    ModeOnly,
+    /// Republish these staged bytes over the destination.
+    Stage(tempfile::NamedTempFile),
 }
 
 /// Publish `assets` with all-staged-before-first-rename discipline.
@@ -159,13 +276,22 @@ pub fn publish_batch(
 
     // Phase 2 — compare and stage every changed member. Temporaries
     // stay in memory; dropping them on any failure removes every
-    // staged file while all final destinations remain untouched.
+    // staged file while all final destinations remain untouched. A
+    // byte-current member whose mode is wrong is planned as a mode-only
+    // repair: nothing is staged, because its bytes must not move.
     let mut staged = Vec::new();
 
     for asset in assets {
-        if std::fs::read(asset.path).is_ok_and(|current| current == asset.bytes) {
-            staged.push(None);
-            continue;
+        match inspect_destination(asset.path, asset.bytes, ASSET_MODE) {
+            DestinationState::Current => {
+                staged.push(PlannedPublication::Current);
+                continue;
+            }
+            DestinationState::ModeOnly => {
+                staged.push(PlannedPublication::ModeOnly);
+                continue;
+            }
+            DestinationState::StaleBytes => {}
         }
 
         let directory = asset.path.parent().unwrap_or_else(|| Path::new("."));
@@ -177,34 +303,46 @@ pub fn publish_batch(
             .write_all(asset.bytes)
             .and_then(|()| temporary.flush())
             .and_then(|()| temporary.as_file().sync_all())
-            .and_then(|()| set_publication_mode(temporary.as_file(), PublicationMode::Public))
+            .and_then(|()| set_publication_mode(temporary.as_file(), ASSET_MODE))
             .map_err(|error| stage_error(asset.role, error))?;
 
-        staged.push(Some(temporary));
+        staged.push(PlannedPublication::Stage(temporary));
     }
 
-    // Phase 3 — publish. Only rename steps remain; see the module
-    // documentation for the residual multi-rename window.
+    // Phase 3 — publish. Only rename and mode-repair steps remain; see
+    // the module documentation for the residual multi-rename window.
     let mut results = Vec::new();
 
-    for (asset, temporary) in assets.iter().zip(staged) {
-        let changed = match temporary {
-            None => false,
-            Some(temporary) => {
+    for (asset, planned) in assets.iter().zip(staged) {
+        let publish_error = |error: io::Error| BatchPublicationError::Publish {
+            role: asset.role.to_owned(),
+            source: error,
+        };
+
+        let change = match planned {
+            PlannedPublication::Current => PublicationChange::default(),
+            PlannedPublication::ModeOnly => {
+                repair_publication_mode(asset.path, ASSET_MODE).map_err(publish_error)?;
+                PublicationChange {
+                    bytes_changed: false,
+                    mode_changed: true,
+                }
+            }
+            PlannedPublication::Stage(temporary) => {
                 temporary
                     .persist(asset.path)
-                    .map_err(|error| BatchPublicationError::Publish {
-                        role: asset.role.to_owned(),
-                        source: error.error,
-                    })?;
-                true
+                    .map_err(|error| publish_error(error.error))?;
+                PublicationChange {
+                    bytes_changed: true,
+                    mode_changed: false,
+                }
             }
         };
 
         results.push(PublicationResult {
             role: asset.role.to_owned(),
             path: asset.path.to_path_buf(),
-            changed,
+            change,
         });
     }
 
