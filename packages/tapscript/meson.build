@@ -5,12 +5,17 @@
 tapscript_source_files = files(
   'src/capability.rs',
   'src/error.rs',
+  'src/instruction.rs',
   'src/lib.rs',
+  'src/program.rs',
+  'src/tests/byte_census_tests.rs',
   'src/tests/census_tests.rs',
   'src/tests/mapping_tests.rs',
   'src/tests/mod.rs',
   'src/tests/non_weakening_tests.rs',
+  'src/tests/parser_tests.rs',
   'src/tests/public_api_tests.rs',
+  'src/tests/push_census_tests.rs',
 )
 
 # Crate documentation (DOC owner).

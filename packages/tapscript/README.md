@@ -29,9 +29,24 @@ publication exists to hand them.
 
 ```text
 package boundary
+typed instruction and checked stack item
+exact serializer and reviewed-subset parser
 static capability adapter over the reviewed target contract
 external-evidence-role adapter
 ```
+
+## Raw bytes have exactly one way in
+
+The safe construction API offers no raw opcode, no raw instruction, and no raw
+program. A program is built from reviewed primitive identities and checked
+literals; untrusted bytes reach it only through the parser, which either
+produces typed instructions or fails with a focused reason. Every opcode byte
+and every push form the serializer emits is resolved from the reviewed target
+contract, so no target number is restated in this crate.
+
+The parser refuses a nonminimal push always, which is stricter than the target's
+own validity rules: the target enforces minimality only under the standardness
+rules a node applies to what it relays.
 
 ## Static, not deployment-aware
 
@@ -54,8 +69,6 @@ crate compiling until its target obligation is stated.
 ## Not implemented
 
 ```text
-target program type
-instruction builder
 stack scheduler
 backend proof patterns
 constructors

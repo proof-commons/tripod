@@ -21,7 +21,9 @@
 //!
 //! # State
 //!
-//! Implemented: the package boundary, the static capability adapter —
+//! Implemented: the package boundary, the typed instruction core — a
+//! typed instruction, a checked stack item, an exact serializer, and a
+//! parser over the reviewed subset — the static capability adapter —
 //! a multi-state assessment of each compiler capability against the
 //! reviewed static target contract — and the external-evidence-role
 //! adapter, with exact census equality in both directions against the
@@ -33,9 +35,8 @@
 //! answering for another. A deployment-aware assessment is deferred
 //! until a consumer for one exists.
 //!
-//! Not implemented: the target program type, the instruction builder,
-//! the stack scheduler, backend proof patterns, constructors, and the
-//! relocatable bundle.
+//! Not implemented: the stack scheduler, backend proof patterns,
+//! constructors, and the relocatable bundle.
 //!
 //! Not claimed: anything about a real node. No target program has been
 //! emitted, no transaction has been built, every evidence requirement
@@ -47,6 +48,8 @@
 
 pub mod capability;
 pub mod error;
+pub mod instruction;
+pub mod program;
 
 pub use capability::{
     AssessmentDisposition, AssessmentProjection, BackendFoundationRequirement, BackendPatternId,
@@ -55,6 +58,8 @@ pub use capability::{
     assess_evidence_role, assess_requirements, assess_static_capability,
 };
 pub use error::TapscriptError;
+pub use instruction::{StackItem, TapscriptInstruction};
+pub use program::{MAXIMUM_PROGRAM_INSTRUCTIONS, TapscriptProgram};
 
 #[cfg(test)]
 mod tests;

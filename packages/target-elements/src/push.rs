@@ -309,6 +309,17 @@ impl PushFormSpec {
         }
     }
 
+    /// The order of this form's width prefix, for a form that has one.
+    #[must_use]
+    pub const fn width_prefix_order(&self) -> Option<ByteOrder> {
+        match self.mapping {
+            PushOpcodeMapping::WidthPrefix { byte_order, .. } => Some(byte_order),
+            PushOpcodeMapping::LiteralPayload(_)
+            | PushOpcodeMapping::NumericPayload { .. }
+            | PushOpcodeMapping::WidthInOpcode => None,
+        }
+    }
+
     /// The opcode byte that carries `payload` under this form.
     ///
     /// Returns `None` when the form cannot carry that payload at all,
