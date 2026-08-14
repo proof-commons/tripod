@@ -73,7 +73,7 @@ interpreter stack, and synthesising one would be fabricating evidence.
 
 Verdict mapping
 ---------------
-`testmempoolaccept` reports `allowed: true`, or a `reject-reason`. Elements
+`testmempoolaccept` reports an allowed result, or a `reject-reason`. Elements
 formats a script failure as `mandatory-script-verify-flag-failed (TEXT)` at
 consensus level and `non-mandatory-script-verify-flag (TEXT)` at policy
 level, where TEXT is `ScriptErrorString` from `src/script/script_error.cpp`.
@@ -1045,7 +1045,15 @@ def answer_case(executor: CaseExecutor, line: str) -> None:
     request = json.loads(line)
     if not isinstance(request, dict):
         raise FatalAdapterError("the harness sent a request that is not an object")
+    for key in request:
+        if key not in ("schema", "case", "fixture"):
+            raise FatalAdapterError("the harness sent a request field named %s" % key)
     case = request.get("case")
+    # The case identity is echoed verbatim, so that the harness correlates
+    # against exactly what it sent. Without one there is nothing to answer,
+    # and answering the wrong case would be worse than not answering.
+    if not isinstance(case, dict):
+        raise FatalAdapterError("the harness sent a request naming no case")
     fixture = None
     body = None
     try:
