@@ -258,38 +258,40 @@ fn changed_signature_failure_behavior_never_becomes_reviewed() {
     // Both views of the same fact move together, so the mutated
     // contract survives the cross-contract welds as well as the local
     // checks. It is coherent; it is simply not this project's.
-    let source = parts
-        .opcodes
-        .get(&OpcodeId::CheckSig)
-        .expect("the reviewed registry declares it")
-        .clone();
-    let stack = source.stack();
-    let mut effects: Vec<FailureEffect> = stack
-        .failure()
-        .effects()
-        .iter()
-        .filter(|effect| effect.cause() != FailureCause::EmptySignature)
-        .copied()
-        .collect();
-    effects.push(FailureEffect::new(
-        FailureCause::EmptySignature,
-        FailureOutcome::AbortEvaluation,
-    ));
-    parts.opcodes.insert(
-        OpcodeId::CheckSig,
-        OpcodeSpec::new(
-            source.id(),
-            source.code(),
-            source.domains().iter().copied(),
-            StackContract::new(
-                stack.operands().to_vec(),
-                stack.success().clone(),
-                FailureContract::new(effects),
+    for opcode in [OpcodeId::CheckSig, OpcodeId::CheckSigFromStack] {
+        let source = parts
+            .opcodes
+            .get(&opcode)
+            .expect("the reviewed registry declares it")
+            .clone();
+        let stack = source.stack();
+        let mut effects: Vec<FailureEffect> = stack
+            .failure()
+            .effects()
+            .iter()
+            .filter(|effect| effect.cause() != FailureCause::EmptySignature)
+            .copied()
+            .collect();
+        effects.push(FailureEffect::new(
+            FailureCause::EmptySignature,
+            FailureOutcome::AbortEvaluation,
+        ));
+        parts.opcodes.insert(
+            opcode,
+            OpcodeSpec::new(
+                source.id(),
+                source.code(),
+                source.domains().iter().copied(),
+                StackContract::new(
+                    stack.operands().to_vec(),
+                    stack.success().clone(),
+                    FailureContract::new(effects),
+                ),
+                source.resources(),
+                source.evidence().iter().copied(),
             ),
-            source.resources(),
-            source.evidence().iter().copied(),
-        ),
-    );
+        );
+    }
 
     let signature = parts.authorization.signature();
     parts.authorization = AuthorizationContract::new(

@@ -288,6 +288,32 @@ pub enum TargetError {
     /// expire.
     MissingStaleCondition(TargetEvidenceRequirementId),
 
+    /// The signature primitives, the signature primitive contract, the
+    /// per-check budget, the operand encodings, and the evidence link
+    /// do not describe the same behavior.
+    SignatureContractMismatch,
+
+    /// The timelock primitive, the relative-timelock contract, the
+    /// version prerequisite, and the evidence link do not describe the
+    /// same behavior.
+    TimelockContractMismatch,
+
+    /// The confidential-value claim states and the capability rows
+    /// describing the same claims do not agree.
+    ConfidentialContractMismatch,
+
+    /// The issuance census, the introspection result, the null marker,
+    /// the outpoint flag, and the issuance capabilities do not agree.
+    IssuanceContractMismatch,
+
+    /// The per-opcode resource costs, the per-check budget, and the
+    /// consensus and policy dimensions do not agree.
+    ResourceContractMismatch,
+
+    /// A subcontract names no evidence requirement, or names one the
+    /// registry does not declare.
+    EvidenceContractMismatch,
+
     /// A binding named the production environment. There is no
     /// production evidence boundary, so there is no production
     /// binding.
@@ -500,6 +526,24 @@ impl fmt::Display for TargetError {
             }
             Self::MissingStaleCondition(id) => {
                 write!(f, "evidence requirement {id:?} never goes stale")
+            }
+            Self::SignatureContractMismatch => {
+                write!(f, "the signature views do not describe one behavior")
+            }
+            Self::TimelockContractMismatch => {
+                write!(f, "the timelock views do not describe one behavior")
+            }
+            Self::ConfidentialContractMismatch => {
+                write!(f, "the confidential-value views do not agree")
+            }
+            Self::IssuanceContractMismatch => {
+                write!(f, "the issuance views do not agree")
+            }
+            Self::ResourceContractMismatch => {
+                write!(f, "the resource views do not agree")
+            }
+            Self::EvidenceContractMismatch => {
+                write!(f, "a subcontract names no declared evidence")
             }
             Self::ProductionBindingUnsupported => {
                 write!(f, "no production deployment binding exists")

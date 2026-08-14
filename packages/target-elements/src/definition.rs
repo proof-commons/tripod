@@ -445,6 +445,11 @@ pub fn validate_target_definition(
     validate_resources(&definition, &mut errors);
     validate_capabilities(&definition, &mut errors);
     validate_evidence(&definition, &mut errors);
+    // The welds run last: they compare views that the checks above
+    // have already established are individually well-formed, so a
+    // weld diagnostic always means the views disagree rather than that
+    // one of them is malformed.
+    crate::weld::validate_welds(&definition, &mut errors);
 
     if errors.is_empty() {
         Ok(ValidatedTargetDefinition { definition })

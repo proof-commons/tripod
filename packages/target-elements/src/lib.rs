@@ -83,6 +83,7 @@ pub mod evidence_registry;
 pub mod opcode;
 pub mod resource;
 pub mod success;
+mod weld;
 
 pub use authorization::{
     AuthorizationContract, RelativeTimelockContract, SequenceFieldLayout, SighashCapability,
