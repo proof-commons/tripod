@@ -14,6 +14,7 @@ use crate::opcode::{
     ExecutionDomain, FailureCause, FailureOutcome, LeafVersion, OpcodeId, OpcodeSpec,
     StackValueType, VALIDATION_BUDGET_PER_CHECK,
 };
+use crate::success::{SuccessCase, SuccessCondition, SuccessContract};
 
 /// The expected identity-to-byte census, stated independently.
 ///
@@ -69,6 +70,42 @@ fn spec(id: OpcodeId) -> OpcodeSpec {
         .get(&id)
         .expect("every reviewed identity has a contract")
         .clone()
+}
+
+/// The results of a primitive that has exactly one successful form.
+///
+/// Asserting the singleness here rather than at each call site keeps
+/// the older fixtures honest: if a primitive acquires an alternative
+/// form, every fixture that assumed one shape fails loudly instead of
+/// silently checking the first case.
+fn sole_results(spec: &OpcodeSpec) -> Vec<StackValueType> {
+    let cases = spec.stack().success().cases();
+    assert_eq!(cases.len(), 1, "{:?} has one successful form", spec.id());
+    assert_eq!(cases[0].condition(), SuccessCondition::Always);
+    cases[0].effect().results().to_vec()
+}
+
+/// The results a primitive pushes under one named condition.
+fn results_under(spec: &OpcodeSpec, condition: SuccessCondition) -> Vec<StackValueType> {
+    spec.stack()
+        .success()
+        .cases()
+        .into_iter()
+        .find(|case| case.condition() == condition)
+        .unwrap_or_else(|| panic!("{:?} states a {condition:?} form", spec.id()))
+        .effect()
+        .results()
+        .to_vec()
+}
+
+/// The conditions a primitive's successful forms are selected by.
+fn conditions(spec: &OpcodeSpec) -> BTreeSet<SuccessCondition> {
+    spec.stack()
+        .success()
+        .cases()
+        .iter()
+        .map(SuccessCase::condition)
+        .collect()
 }
 
 #[test]
@@ -219,7 +256,7 @@ fn comparison_failure_never_retains_operands() {
         OpcodeId::GreaterThanOrEqual64,
     ] {
         let spec = spec(id);
-        assert_eq!(spec.stack().success_results(), &[StackValueType::Bool]);
+        assert_eq!(sole_results(&spec), vec![StackValueType::Bool]);
         assert!(
             spec.stack()
                 .failure()
@@ -245,15 +282,15 @@ fn arithmetic_operands_and_results_are_exactly_eight_bytes_little_endian() {
         &[expected.clone(), expected.clone()]
     );
     assert_eq!(
-        addition.stack().success_results(),
-        &[expected.clone(), StackValueType::Bool]
+        sole_results(&addition),
+        vec![expected.clone(), StackValueType::Bool]
     );
 
     // Division alone pushes three items: remainder, quotient, flag.
     let division = spec(OpcodeId::Div64);
     assert_eq!(
-        division.stack().success_results(),
-        &[expected.clone(), expected, StackValueType::Bool]
+        sole_results(&division),
+        vec![expected.clone(), expected, StackValueType::Bool]
     );
 }
 
@@ -262,34 +299,200 @@ fn asset_and_value_introspection_split_payload_from_prefix() {
     // The interpreter pushes the payload first and the prefix second,
     // as two separate items. A backend that expected one combined item
     // would misjudge every stack depth after the inspection.
-    for (id, class) in [
-        (OpcodeId::InspectInputAsset, EncodingClass::ExplicitAsset),
-        (OpcodeId::InspectOutputAsset, EncodingClass::ExplicitAsset),
-        (OpcodeId::InspectInputValue, EncodingClass::ExplicitValue),
-        (OpcodeId::InspectOutputValue, EncodingClass::ExplicitValue),
+    //
+    // Both forms are stated independently here. The explicit and
+    // confidential payloads are *different widths* for a value, so a
+    // consumer that read only one form would size the wrong item on
+    // exactly the transactions this project cares about.
+    for (id, explicit, confidential) in [
+        (
+            OpcodeId::InspectInputAsset,
+            EncodingClass::ExplicitAsset,
+            EncodingClass::ConfidentialAsset,
+        ),
+        (
+            OpcodeId::InspectOutputAsset,
+            EncodingClass::ExplicitAsset,
+            EncodingClass::ConfidentialAsset,
+        ),
+        (
+            OpcodeId::InspectInputValue,
+            EncodingClass::ExplicitValue,
+            EncodingClass::ConfidentialValue,
+        ),
+        (
+            OpcodeId::InspectOutputValue,
+            EncodingClass::ExplicitValue,
+            EncodingClass::ConfidentialValue,
+        ),
     ] {
         let spec = spec(id);
         assert_eq!(
-            spec.stack().success_results(),
-            &[
-                StackValueType::EncodedPayload(class),
-                StackValueType::EncodingPrefix(class),
+            conditions(&spec),
+            BTreeSet::from([
+                SuccessCondition::ExplicitEncoding,
+                SuccessCondition::ConfidentialEncoding,
+            ]),
+            "{id:?} states both forms"
+        );
+        assert_eq!(
+            results_under(&spec, SuccessCondition::ExplicitEncoding),
+            vec![
+                StackValueType::EncodedPayload(explicit),
+                StackValueType::EncodingPrefix(explicit),
             ],
             "{id:?} splits payload from prefix, prefix on top"
+        );
+        assert_eq!(
+            results_under(&spec, SuccessCondition::ConfidentialEncoding),
+            vec![
+                StackValueType::EncodedPayload(confidential),
+                StackValueType::EncodingPrefix(confidential),
+            ],
+            "{id:?} states the blinded form too"
+        );
+
+        // Both forms consume the index and push two items, so the
+        // depth is the same either way.
+        for condition in [
+            SuccessCondition::ExplicitEncoding,
+            SuccessCondition::ConfidentialEncoding,
+        ] {
+            assert_eq!(results_under(&spec, condition).len(), 2, "{id:?}");
+        }
+        assert_eq!(spec.resources().maximum_stack_growth(), 1, "{id:?}");
+    }
+}
+
+#[test]
+fn nonce_introspection_keeps_its_prefix_inline_and_states_three_forms() {
+    // The one asymmetric case among the reviewed introspection
+    // primitives: the nonce arrives whole rather than split. An absent
+    // nonce arrives as the empty item, which is a form of its own.
+    let spec = spec(OpcodeId::InspectOutputNonce);
+    assert_eq!(
+        conditions(&spec),
+        BTreeSet::from([
+            SuccessCondition::ExplicitEncoding,
+            SuccessCondition::ConfidentialEncoding,
+            SuccessCondition::NullEncoding,
+        ])
+    );
+    for (condition, class) in [
+        (
+            SuccessCondition::ExplicitEncoding,
+            EncodingClass::ExplicitNonce,
+        ),
+        (
+            SuccessCondition::ConfidentialEncoding,
+            EncodingClass::ConfidentialNonce,
+        ),
+        (SuccessCondition::NullEncoding, EncodingClass::NullNonce),
+    ] {
+        assert_eq!(
+            results_under(&spec, condition),
+            vec![StackValueType::Encoded(class)]
+        );
+    }
+    assert_eq!(spec.resources().maximum_stack_growth(), 0);
+}
+
+#[test]
+fn program_introspection_states_the_witness_and_digest_forms() {
+    // A witness program is pushed as it stands with its version above
+    // it. Anything else is replaced by a digest under a negative
+    // marker, and the digest is not a program: a consumer that
+    // conflated the two would treat a hash as spendable script.
+    for id in [
+        OpcodeId::InspectInputScriptPubKey,
+        OpcodeId::InspectOutputScriptPubKey,
+    ] {
+        let spec = spec(id);
+        assert_eq!(
+            conditions(&spec),
+            BTreeSet::from([
+                SuccessCondition::WitnessProgram,
+                SuccessCondition::NonWitnessProgram,
+            ]),
+            "{id:?}"
+        );
+        assert_eq!(
+            results_under(&spec, SuccessCondition::WitnessProgram),
+            vec![
+                StackValueType::Encoded(EncodingClass::WitnessProgram),
+                StackValueType::ScriptNumber,
+            ],
+            "{id:?}"
+        );
+        assert_eq!(
+            results_under(&spec, SuccessCondition::NonWitnessProgram),
+            vec![
+                StackValueType::Encoded(EncodingClass::ScriptPubKeySha256),
+                StackValueType::ScriptNumber,
+            ],
+            "{id:?}"
         );
     }
 }
 
 #[test]
-fn nonce_introspection_keeps_its_prefix_inline() {
-    // The one asymmetric case among the reviewed introspection
-    // primitives.
-    let spec = spec(OpcodeId::InspectOutputNonce);
+fn issuance_introspection_states_the_present_and_absent_forms() {
+    // Six items when the input carries an issuance, one empty marker
+    // when it does not. The absent form is the reason the null value
+    // marker is a declared encoding rather than an afterthought.
+    let spec = spec(OpcodeId::InspectInputIssuance);
     assert_eq!(
-        spec.stack().success_results(),
-        &[StackValueType::Encoded(EncodingClass::ExplicitNonce)]
+        conditions(&spec),
+        BTreeSet::from([
+            SuccessCondition::IssuancePresent,
+            SuccessCondition::IssuanceAbsent,
+        ])
     );
-    assert_eq!(spec.resources().maximum_stack_growth(), 0);
+
+    let amount: BTreeSet<EncodingClass> = BTreeSet::from([
+        EncodingClass::ExplicitValue,
+        EncodingClass::ConfidentialValue,
+    ]);
+    assert_eq!(
+        results_under(&spec, SuccessCondition::IssuancePresent),
+        vec![
+            StackValueType::EncodedPayloadAlternatives(amount.clone()),
+            StackValueType::EncodingPrefixAlternatives(amount.clone()),
+            StackValueType::EncodedPayloadAlternatives(amount.clone()),
+            StackValueType::EncodingPrefixAlternatives(amount),
+            StackValueType::Encoded(EncodingClass::IssuanceEntropy),
+            StackValueType::Encoded(EncodingClass::IssuanceBlindingNonce),
+        ],
+        "the blinding nonce is pushed last, so an empty stack top means no issuance"
+    );
+    assert_eq!(
+        results_under(&spec, SuccessCondition::IssuanceAbsent),
+        vec![StackValueType::Encoded(EncodingClass::NullValue)]
+    );
+
+    // The two forms have genuinely different depths, which is the
+    // whole reason a single result vector could not state them.
+    let present = spec
+        .stack()
+        .success()
+        .cases()
+        .into_iter()
+        .find(|case| case.condition() == SuccessCondition::IssuancePresent)
+        .expect("the present form is declared");
+    let absent = spec
+        .stack()
+        .success()
+        .cases()
+        .into_iter()
+        .find(|case| case.condition() == SuccessCondition::IssuanceAbsent)
+        .expect("the absent form is declared");
+    assert_eq!(present.effect().depth_change(), 5);
+    assert_eq!(absent.effect().depth_change(), 0);
+    assert_eq!(
+        spec.resources().maximum_stack_growth(),
+        present.effect().depth_change(),
+        "the resource row states the greatest growth any form can cause"
+    );
 }
 
 #[test]
@@ -321,7 +524,7 @@ fn signature_verification_distinguishes_empty_from_invalid() {
     // The verifying forms leave no branchable result at all.
     for id in [OpcodeId::CheckSigVerify, OpcodeId::CheckSigFromStackVerify] {
         let spec = spec(id);
-        assert_eq!(spec.stack().success_results(), []);
+        assert!(sole_results(&spec).is_empty());
         assert!(
             spec.stack()
                 .failure()
@@ -383,7 +586,7 @@ fn the_verify_style_curve_primitives_push_nothing() {
     for id in [OpcodeId::EcMulScalarVerify, OpcodeId::TweakVerify] {
         let spec = spec(id);
         assert_eq!(spec.stack().operands().len(), 3, "{id:?}");
-        assert!(spec.stack().success_results().is_empty(), "{id:?}");
+        assert!(sole_results(&spec).is_empty(), "{id:?}");
         assert_eq!(spec.resources().maximum_stack_growth(), -3, "{id:?}");
     }
 }
@@ -391,10 +594,19 @@ fn the_verify_style_curve_primitives_push_nothing() {
 #[test]
 fn the_timelock_primitive_neither_pushes_nor_pops() {
     // The operand is inspected in place. Modelling it as consumed
-    // would make every program that uses it one item short.
+    // would make every program that uses it one item short, and would
+    // contradict the resource row's growth of zero.
     let spec = spec(OpcodeId::CheckSequenceVerify);
     assert_eq!(spec.stack().operands(), &[StackValueType::ScriptNumber]);
-    assert_eq!(spec.stack().success_results(), []);
+    assert!(matches!(
+        spec.stack().success(),
+        SuccessContract::RetainsOperands { results } if results.is_empty()
+    ));
+
+    let case = &spec.stack().success().cases()[0];
+    assert_eq!(case.effect().consumed_operands(), 0);
+    assert_eq!(case.effect().retained_operands(1), 1);
+    assert_eq!(case.effect().depth_change(), 0);
     assert_eq!(spec.resources().maximum_stack_growth(), 0);
 }
 

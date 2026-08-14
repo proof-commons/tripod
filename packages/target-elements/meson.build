@@ -15,6 +15,7 @@ target_elements_source_files = files(
   'src/lib.rs',
   'src/opcode.rs',
   'src/resource.rs',
+  'src/success.rs',
   'src/tests/capability_tests.rs',
   'src/tests/definition_tests.rs',
   'src/tests/deployment_tests.rs',

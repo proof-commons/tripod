@@ -82,6 +82,7 @@ pub mod evidence;
 pub mod evidence_registry;
 pub mod opcode;
 pub mod resource;
+pub mod success;
 
 pub use authorization::{
     AuthorizationContract, RelativeTimelockContract, SequenceFieldLayout, SighashCapability,
@@ -122,6 +123,9 @@ pub use opcode::{
 pub use resource::{
     ConsensusResourceLimits, PolicyResourceLimits, ResourceBound, ResourceContract,
     ResourceDimension,
+};
+pub use success::{
+    SuccessCase, SuccessCondition, SuccessContract, SuccessContractDefect, SuccessStackEffect,
 };
 
 #[cfg(test)]

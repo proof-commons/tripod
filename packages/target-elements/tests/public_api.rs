@@ -283,7 +283,7 @@ fn changed_signature_failure_behavior_never_becomes_reviewed() {
             source.domains().iter().copied(),
             StackContract::new(
                 stack.operands().to_vec(),
-                stack.success_results().to_vec(),
+                stack.success().clone(),
                 FailureContract::new(effects),
             ),
             source.resources(),

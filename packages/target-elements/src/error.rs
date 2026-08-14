@@ -23,6 +23,7 @@ use crate::encoding::EncodingClass;
 use crate::evidence::TargetEvidenceRequirementId;
 use crate::opcode::{FailureCause, OpcodeId};
 use crate::resource::ResourceDimension;
+use crate::success::SuccessCondition;
 
 /// A typed target-contract failure.
 ///
@@ -82,6 +83,28 @@ pub enum TargetError {
     /// A primitive's operand or result widths are incoherent, so the
     /// contract describes no admissible stack shape.
     InvalidOpcodeStackContract(OpcodeId),
+
+    /// A primitive offers alternative successful forms but names none,
+    /// so the contract states no successful behavior at all.
+    IncompleteSuccessContract(OpcodeId),
+
+    /// A primitive names two successful forms under the same
+    /// condition, so the contract does not say which one the target
+    /// produces.
+    DuplicateSuccessCase {
+        /// The primitive carrying the duplicate.
+        opcode: OpcodeId,
+        /// The condition claimed twice.
+        case: SuccessCondition,
+    },
+
+    /// A successful form consumes more operands than the primitive
+    /// declares, so its resulting stack depth is not computable.
+    ContradictorySuccessCase(OpcodeId),
+
+    /// A primitive declares that it retains its operands while
+    /// declaring no operands to retain.
+    InvalidRetainedOperandContract(OpcodeId),
 
     /// A primitive declares no failure behavior at all. Every reviewed
     /// primitive can fail, so an empty failure contract is an
@@ -313,6 +336,18 @@ impl fmt::Display for TargetError {
             }
             Self::InvalidOpcodeStackContract(id) => {
                 write!(f, "opcode {id:?} has an incoherent stack contract")
+            }
+            Self::IncompleteSuccessContract(id) => {
+                write!(f, "opcode {id:?} offers no successful form")
+            }
+            Self::DuplicateSuccessCase { opcode, case } => {
+                write!(f, "opcode {opcode:?} states condition {case:?} twice")
+            }
+            Self::ContradictorySuccessCase(id) => {
+                write!(f, "opcode {id:?} consumes operands it does not declare")
+            }
+            Self::InvalidRetainedOperandContract(id) => {
+                write!(f, "opcode {id:?} retains operands it does not declare")
             }
             Self::MissingOpcodeFailureContract(id) => {
                 write!(f, "opcode {id:?} declares no failure behavior")

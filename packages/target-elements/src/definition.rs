@@ -35,6 +35,7 @@ use crate::evidence::TargetEvidenceRequirementId;
 use crate::evidence_registry::{TargetEvidenceRequirement, reviewed_evidence_requirements};
 use crate::opcode::{ExecutionDomain, LeafVersion, OpcodeId, OpcodeSpec, reviewed_opcodes};
 use crate::resource::{ResourceContract, reviewed_resources};
+use crate::success::SuccessContractDefect;
 
 /// The revision of the typed target compatibility contract.
 ///
@@ -487,6 +488,29 @@ fn validate_opcodes(definition: &TargetDefinition, errors: &mut Vec<TargetError>
             errors.push(TargetError::InvalidOpcodeStackContract(*key));
         }
 
+        // A primitive's successful behavior must be a relation the
+        // stack arithmetic can be read off. Naming no form at all,
+        // naming one form twice, consuming operands that were never
+        // declared, or retaining operands there are none of each
+        // leaves a consumer unable to compute a resulting depth.
+        if let Some(defect) = spec.stack().success_defect() {
+            errors.push(match defect {
+                SuccessContractDefect::NoCases => TargetError::IncompleteSuccessContract(*key),
+                SuccessContractDefect::DuplicateCondition(condition) => {
+                    TargetError::DuplicateSuccessCase {
+                        opcode: *key,
+                        case: condition,
+                    }
+                }
+                SuccessContractDefect::ConsumesMoreThanDeclared => {
+                    TargetError::ContradictorySuccessCase(*key)
+                }
+                SuccessContractDefect::NothingToRetain => {
+                    TargetError::InvalidRetainedOperandContract(*key)
+                }
+            });
+        }
+
         if spec.stack().failure().is_empty() {
             errors.push(TargetError::MissingOpcodeFailureContract(*key));
         }
@@ -601,13 +625,17 @@ pub fn encoding_dependencies(definition: &TargetDefinition) -> BTreeSet<Encoding
         for value in stack
             .operands()
             .iter()
-            .chain(stack.success_results().iter())
+            .chain(stack.success().result_types().iter())
         {
             match value {
                 StackValueType::Encoded(class)
                 | StackValueType::EncodedPayload(class)
                 | StackValueType::EncodingPrefix(class) => {
                     classes.insert(*class);
+                }
+                StackValueType::EncodedPayloadAlternatives(alternatives)
+                | StackValueType::EncodingPrefixAlternatives(alternatives) => {
+                    classes.extend(alternatives.iter().copied());
                 }
                 StackValueType::Bool
                 | StackValueType::ScriptNumber
