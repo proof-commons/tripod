@@ -138,6 +138,28 @@ and the string "unknown error", so `malformed_script_number` and
 `script_number_range_exceeded` are not distinguishable either. Reporting
 either pair as one of its members would be a guess presented as an
 observation.
+
+What consensus does not see
+---------------------------
+Because a policy-only rejection is retried as a block, three of the table's
+entries were measured to be unreachable through this adapter, and are kept
+only so that a future Elements making them consensus would be classified
+rather than silently unmapped:
+
+  malformed_push          a nonminimal push is standardness in tapscript,
+                          not consensus, and is accepted at consensus;
+  leaf_version_rejected   an unrecognised leaf version is unconditionally
+                          valid at consensus under BIP-341, and is accepted;
+  unknown_opcode          an OP_SUCCESSx byte makes the script succeed at
+                          consensus. Only a byte that is neither defined nor
+                          OP_SUCCESSx -- inside an executed branch -- is
+                          rejected as an unknown opcode.
+
+Measured against `v28.99.0-7110a84bb1fe`: leaf versions `0xc0` and `0xc2`,
+`OP_SUCCESS` byte `0x50`, and a nonminimal one-byte push were all accepted at
+consensus while the mempool refused them on policy grounds. A fixture whose
+reviewed expectation is a rejection in one of those classes is stating a
+policy requirement, and no node verdict will confirm it.
 """
 
 from __future__ import annotations
@@ -688,7 +710,17 @@ class CaseExecutor:
         return out
 
     def fund(self, program: bytes, amount: int) -> str:
-        """Creates and confirms one output paying `amount` to `program`."""
+        """Creates and confirms one output paying `amount` to `program`.
+
+        The funding transaction is confirmed by mining it directly, rather
+        than broadcast and left in the mempool. `generateblock` mines exactly
+        the transactions it is handed and pulls nothing from the mempool, so
+        an unconfirmed parent would be invisible both to the consensus retry
+        in `judge_at_consensus` and to a block built later; and an
+        ever-growing mempool chain would eventually meet the ancestor limit,
+        whose rejection is not a script verdict but would arrive looking like
+        one.
+        """
         messages = self.messages
         source = self.change
         if source is None:
@@ -707,10 +739,12 @@ class CaseExecutor:
         transaction.vout.append(self.output(amount, program))
         transaction.vout.append(self.output(remainder, self.anyone_can_spend))
         transaction.vout.append(self.output(ADAPTER_FEE_SATOSHIS, b""))
-        txid = self.node.call("sendrawtransaction", transaction.serialize().hex())
-        if not isinstance(txid, str):
-            raise AdapterError("the node did not return a funding transaction identifier")
-        self.node.call("generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, "[]")
+        self.node.call(
+            "generateblock",
+            "raw(%s)" % ANYONE_CAN_SPEND_HEX,
+            json.dumps([transaction.serialize().hex()]),
+        )
+        txid = transaction.rehash()
         self.change = {"txid": txid, "vout": 1, "amount": remainder}
         return txid
 
@@ -858,10 +892,7 @@ class CaseExecutor:
         if not isinstance(reason, str):
             raise AdapterError("the node rejected without naming a reason")
         if reason.startswith(CONSENSUS_SCRIPT_PREFIX):
-            return {
-                "verdict": "rejected",
-                "observed_failure": classify(reason[len(CONSENSUS_SCRIPT_PREFIX) : -1]),
-            }
+            return rejection(reason[len(CONSENSUS_SCRIPT_PREFIX) : -1])
         if reason.startswith(POLICY_SCRIPT_PREFIX):
             return self.judge_at_consensus(raw, reason[len(POLICY_SCRIPT_PREFIX) : -1])
         raise AdapterError("the node refused the transaction for a reason that is not "
@@ -880,17 +911,22 @@ class CaseExecutor:
             if CONSENSUS_SCRIPT_PREFIX in error.note:
                 start = error.note.index(CONSENSUS_SCRIPT_PREFIX) + len(CONSENSUS_SCRIPT_PREFIX)
                 end = error.note.index(")", start)
-                return {"verdict": "rejected", "observed_failure": classify(error.note[start:end])}
+                return rejection(error.note[start:end])
             raise AdapterError(
                 "the node refused the transaction on policy grounds (%s) and refused "
-                "the block for a reason that is not a script verdict" % policy_error
+                "the block for a reason that is not a script verdict: %s"
+                % (policy_error, error.note)
             )
         return {"verdict": "accepted", "observed_failure": None}
 
 
-def classify(script_error: str):
-    """Maps one Elements script-error string to a harness failure class."""
-    return FAILURE_CLASS_BY_SCRIPT_ERROR.get(script_error.strip())
+def rejection(script_error: str) -> dict:
+    """Builds a rejection body, naming any script error the table cannot map."""
+    text = script_error.strip()
+    failure = FAILURE_CLASS_BY_SCRIPT_ERROR.get(text)
+    if failure is None:
+        log("rejected, with a script error this adapter does not classify: %s" % text)
+    return {"verdict": "rejected", "observed_failure": failure}
 
 
 # --------------------------------------------------------------------------

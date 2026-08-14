@@ -100,6 +100,54 @@ UNMATERIALISABLE_CONTEXT = {
     "script_path": {"leaf_version": TAPSCRIPT_LEAF_VERSION, "script": [], "control": []},
 }
 
+# The elementsregtest policy asset, as an explicit asset field: the 0x01
+# prefix followed by the identifier in internal byte order. A public chain
+# constant, not fixture-specific material.
+POLICY_ASSET_FIELD = [1] + list(
+    bytes.fromhex("b2e15d0d7a0c94e4e2ce0fe6e8691b9e451377f6e46e8045a86f7c4b5d4f0f23")[::-1]
+)
+
+
+def explicit_value(satoshis):
+    return [1] + list(satoshis.to_bytes(8, "big"))
+
+
+# A context the adapter can materialise: one input whose all-zero outpoint
+# asks the executor to supply the real one, and two explicit outputs that
+# conserve the input's value.
+MATERIALISABLE_CONTEXT = {
+    "version": 2,
+    "locktime": 0,
+    "current_input_index": 0,
+    "inputs": [
+        {
+            "outpoint_txid": ZERO_32,
+            "outpoint_index": 0,
+            "spent_asset": POLICY_ASSET_FIELD,
+            "spent_value": explicit_value(100000),
+            "spent_program": [],
+            "sequence": 4294967294,
+            "issuance": None,
+            "witness": [],
+        }
+    ],
+    "outputs": [
+        {
+            "asset": POLICY_ASSET_FIELD,
+            "value": explicit_value(99000),
+            "nonce": [0],
+            "program": [0x51],
+        },
+        {
+            "asset": POLICY_ASSET_FIELD,
+            "value": explicit_value(1000),
+            "nonce": [0],
+            "program": [],
+        },
+    ],
+    "script_path": {"leaf_version": TAPSCRIPT_LEAF_VERSION, "script": [], "control": []},
+}
+
 REQUESTS = [
     # OP_TRUE: one push of true, which leaves a true top of stack.
     fixture(0, b"\x51", [], ACCEPTS),
@@ -109,6 +157,8 @@ REQUESTS = [
     fixture(2, b"\x93", [], rejects("stack_underflow")),
     # A context the adapter cannot materialise.
     fixture(3, b"\x51", [], ACCEPTS, UNMATERIALISABLE_CONTEXT),
+    # A context the adapter can materialise, spent through the same leaf.
+    fixture(4, b"\x51", [], ACCEPTS, MATERIALISABLE_CONTEXT),
 ]
 
 with open(sys.argv[1], "w", encoding="utf-8") as stream:
@@ -132,6 +182,7 @@ EXPECTED = [
     (1, "rejected", "evaluated_false"),
     (2, "rejected", "stack_underflow"),
     (3, "infrastructure_error", None),
+    (4, "accepted", None),
 ]
 
 failures = []
