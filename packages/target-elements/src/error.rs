@@ -51,6 +51,13 @@ pub enum TargetError {
         offered: u8,
     },
 
+    /// An offered contract is internally coherent but is not the
+    /// first-party reviewed Elements contract, so it cannot carry the
+    /// reviewed trust state. This is not a claim that the offered
+    /// contract is malformed: it is a claim about whose contract it
+    /// is.
+    ReviewedDefinitionMismatch,
+
     /// A reviewed primitive identity has no contract in the registry.
     MissingOpcodeContract(OpcodeId),
 
@@ -285,6 +292,12 @@ impl fmt::Display for TargetError {
             }
             Self::UnreviewedLeafVersion { offered } => {
                 write!(f, "unreviewed leaf version {offered:#04x}")
+            }
+            Self::ReviewedDefinitionMismatch => {
+                write!(
+                    f,
+                    "the offered contract is not the reviewed Elements contract"
+                )
             }
             Self::MissingOpcodeContract(id) => {
                 write!(f, "reviewed opcode {id:?} has no contract")

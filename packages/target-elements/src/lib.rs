@@ -95,8 +95,9 @@ pub use confidential::{
     IssuanceContract, IssuanceField,
 };
 pub use definition::{
-    TargetContractVersion, TargetDefinition, TargetDefinitionParts, TargetProjection,
-    ValidatedTargetDefinition, reviewed_elements_tapscript, validate_target_definition,
+    ReviewedElementsTapscriptDefinition, TargetContractVersion, TargetDefinition,
+    TargetDefinitionParts, TargetProjection, ValidatedTargetDefinition,
+    reviewed_elements_tapscript, validate_as_reviewed_elements, validate_target_definition,
 };
 pub use deployment::{
     ActivationDeclaration, DeploymentEnvironment, DeploymentProjection,

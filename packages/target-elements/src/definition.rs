@@ -260,6 +260,63 @@ impl ValidatedTargetDefinition {
     }
 }
 
+/// The first-party reviewed Elements tapscript contract.
+///
+/// # Why this is a second wrapper rather than a flag
+///
+/// [`ValidatedTargetDefinition`] proves *internal coherence*: a caller
+/// can assemble a locally consistent contract that permutes opcode
+/// bytes, rewrites failure behavior, restates resource limits, or
+/// marks its own capabilities reviewed, and the generic validator will
+/// accept it, because every one of those is a well-formed contract —
+/// just not this project's. A consumer whose claim is "these are the
+/// Elements tapscript semantics the project reviewed" needs a stronger
+/// state, and a boolean on the validated value would be settable by
+/// whoever set the rest of it.
+///
+/// So the reviewed state is a distinct type with no public
+/// constructor. The only two ways to obtain one are
+/// [`reviewed_elements_tapscript`], which derives the first-party
+/// contract and validates it, and [`validate_as_reviewed_elements`],
+/// which admits an offered validated contract only when it is
+/// *typed-equal* to that independently derived value.
+///
+/// The wrapper is a trust state, not a digest. Nothing here is hashed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReviewedElementsTapscriptDefinition {
+    definition: ValidatedTargetDefinition,
+}
+
+impl ReviewedElementsTapscriptDefinition {
+    /// The reviewed contract as a generic validated contract.
+    #[must_use]
+    pub const fn validated(&self) -> &ValidatedTargetDefinition {
+        &self.definition
+    }
+
+    /// Consumes the reviewed state, yielding the validated contract.
+    ///
+    /// Deliberately one-way: a consumer that only needs internal
+    /// coherence can drop down to the generic state, and nothing
+    /// climbs back up without another exact comparison.
+    #[must_use]
+    pub fn into_validated(self) -> ValidatedTargetDefinition {
+        self.definition
+    }
+
+    /// The reviewed contract.
+    #[must_use]
+    pub const fn definition(&self) -> &TargetDefinition {
+        self.definition.definition()
+    }
+
+    /// The stable semantic projection of the reviewed contract.
+    #[must_use]
+    pub fn projection(&self) -> TargetProjection {
+        self.definition.projection()
+    }
+}
+
 /// The stable comparison form of a validated contract.
 ///
 /// # What it excludes, and why that is structural
@@ -470,8 +527,20 @@ fn validate_opcodes(definition: &TargetDefinition, errors: &mut Vec<TargetError>
 /// crate is itself defective. A test exercises this path, so a
 /// transcription mistake fails the build rather than reaching a
 /// consumer.
-pub fn reviewed_elements_tapscript() -> Result<ValidatedTargetDefinition, Vec<TargetError>> {
-    validate_target_definition(TargetDefinition::new(TargetDefinitionParts {
+pub fn reviewed_elements_tapscript() -> Result<ReviewedElementsTapscriptDefinition, Vec<TargetError>>
+{
+    validate_target_definition(reviewed_elements_declaration())
+        .map(|definition| ReviewedElementsTapscriptDefinition { definition })
+}
+
+/// The first-party reviewed declaration, before validation.
+///
+/// Private on purpose. Handing out the unvalidated reviewed value
+/// would let a caller mutate one field and validate the result, which
+/// is exactly the path [`ReviewedElementsTapscriptDefinition`] exists
+/// to close.
+fn reviewed_elements_declaration() -> TargetDefinition {
+    TargetDefinition::new(TargetDefinitionParts {
         version: TargetContractVersion::V1,
         execution_domain: ExecutionDomain::Tapscript,
         leaf_version: LeafVersion::TAPSCRIPT,
@@ -483,7 +552,37 @@ pub fn reviewed_elements_tapscript() -> Result<ValidatedTargetDefinition, Vec<Ta
         resources: reviewed_resources(),
         capabilities: reviewed_capabilities(),
         evidence_requirements: reviewed_evidence_requirements(),
-    }))
+    })
+}
+
+/// Promotes an offered validated contract to the reviewed state.
+///
+/// The offered value must be *typed-equal* to the contract this crate
+/// derives independently. Nothing weaker is accepted: not the same
+/// contract version, not the same leaf version, not the same opcode
+/// census with different bytes. A contract that differs anywhere stays
+/// generic, which is the honest description of what it is.
+///
+/// # Errors
+///
+/// Returns [`TargetError::ReviewedDefinitionMismatch`] when the
+/// offered contract is not the reviewed Elements contract.
+pub fn validate_as_reviewed_elements(
+    offered: ValidatedTargetDefinition,
+) -> Result<ReviewedElementsTapscriptDefinition, TargetError> {
+    // A defective first-party declaration is reported by
+    // `reviewed_elements_tapscript` and by a test that calls it; here
+    // it can only mean the comparison has no reviewed value to make,
+    // so the offered contract is not it.
+    let expected =
+        reviewed_elements_tapscript().map_err(|_| TargetError::ReviewedDefinitionMismatch)?;
+    if offered == *expected.validated() {
+        Ok(ReviewedElementsTapscriptDefinition {
+            definition: offered,
+        })
+    } else {
+        Err(TargetError::ReviewedDefinitionMismatch)
+    }
 }
 
 /// The encoding keys the reviewed primitive registry actually depends

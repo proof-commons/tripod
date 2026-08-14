@@ -24,7 +24,9 @@ const GENESIS_ID: [u8; 32] = [0x22; 32];
 
 /// The reviewed contract.
 fn target() -> ValidatedTargetDefinition {
-    reviewed_elements_tapscript().expect("the reviewed contract validates")
+    reviewed_elements_tapscript()
+        .expect("the reviewed contract validates")
+        .into_validated()
 }
 
 /// A well-formed activation declaration.

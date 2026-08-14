@@ -33,7 +33,9 @@ use target_elements::{
 
 /// The reviewed contract, unmodified.
 fn reviewed_definition() -> ValidatedTargetDefinition {
-    reviewed_elements_tapscript().expect("the reviewed contract validates")
+    reviewed_elements_tapscript()
+        .expect("the reviewed contract validates")
+        .into_validated()
 }
 
 /// Bind a validated contract to a development instance.
