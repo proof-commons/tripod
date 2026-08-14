@@ -1,0 +1,47 @@
+[package]
+name = "tripod-target-elements-conformance"
+description = "Secretless target-native conformance harness for reviewed Elements primitives"
+
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[lib]
+name = "target_elements_conformance"
+
+# Exactly the three first-party packages the harness joins. The target
+# package owns the reviewed semantics the fixtures are stated against,
+# the tapscript package owns the typed program whose exact bytes a
+# fixture carries, and `cli-common` owns the ADR-010 command contract the
+# checker binary follows. `compiler`, `architecture`, `realization`,
+# `model`, `linker`, `transaction`, `vectors`, `release`, `artifacts`,
+# and `labels` are absent: this package owns execution protocol and
+# evidence mechanics, and naming any of those would either restate
+# target semantics it does not own or import a publication boundary it
+# has no asset for.
+#
+# No hashing dependency, deliberately: no report, fixture, executor,
+# instruction, or target digest is minted here, so a hash crate would
+# have no consumer (Guide-9 §1.8).
+[dependencies]
+cli-common = { workspace = true }
+tapscript = { workspace = true }
+target-elements = { workspace = true }
+
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+# `nix` is the PTY harness for the ADR-010 terminal-refusal subprocess
+# test, exactly as the labels crate uses it, and is test-scope only.
+nix = { workspace = true }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true
