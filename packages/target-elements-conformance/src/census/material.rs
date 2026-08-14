@@ -116,8 +116,18 @@ pub const SIGNATURE_VECTOR_KEY: [u8; 32] =
 pub const SIGNATURE_VECTOR_MESSAGE: [u8; 32] = [0_u8; 32];
 
 /// The signature of published signature vector zero.
+///
+/// # A transcription defect the native run found
+///
+/// The thirty-first byte read `ba` here and reads `ca` in the published
+/// vector. One nibble, and the consequence was total: the vector did not
+/// verify, so both accepting cases of both stack-message signature
+/// primitives failed against a node that was behaving correctly. Nothing
+/// in this repository could have caught it — the census states the
+/// vector and the abstract validator never verifies a signature — which
+/// is the whole argument for running the primitives natively.
 pub const SIGNATURE_VECTOR_SIGNATURE: [u8; 64] = hex64(
-    b"e907831f80848d1069a5371b402410364bdf1c5f8307b0084c55f1ce2dba821525f66a4a85ea8b71e482a74f382d2ce5ebeee8fdb2172f477df4900d310536c0",
+    b"e907831f80848d1069a5371b402410364bdf1c5f8307b0084c55f1ce2dca821525f66a4a85ea8b71e482a74f382d2ce5ebeee8fdb2172f477df4900d310536c0",
 );
 
 /// The signature vector's signature with its last byte flipped.

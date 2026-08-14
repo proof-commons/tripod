@@ -405,17 +405,24 @@ fn widening(author: &mut CensusAuthor<'_>) {
         }
     }
 
-    // A trailing zero byte is never the minimal encoding of a script
-    // number, and a five-byte one is wider than the target admits.
+    // A five-byte operand is wider than the target reads, which is its
+    // own rule: the spend is invalid.
     let script = [op(id)];
-    let nonminimal = author.item(vec![0x01, 0x00]);
     let oversized = author.item(vec![0x01, 0x00, 0x00, 0x00, 0x00]);
-    for operand in [nonminimal, oversized] {
-        author.reject(
-            bare(group, id, &script, &[operand]),
-            &[ObservedFailureClass::MalformedScriptNumber],
-        );
-    }
+    author.reject(
+        bare(group, id, &script, &[oversized]),
+        &[ObservedFailureClass::MalformedScriptNumber],
+    );
+
+    // A trailing zero byte is never the minimal encoding of a script
+    // number — and minimality is a relay rule, not the target's own. At
+    // consensus the operand is simply read; the refusal is real, and it
+    // is real one layer up.
+    let nonminimal = author.item(vec![0x01, 0x00]);
+    author.reject_at_relay(
+        bare(group, id, &script, &[nonminimal]),
+        &[ObservedFailureClass::MalformedScriptNumber],
+    );
     author.reject(
         bare(group, id, &script, &[]),
         &[ObservedFailureClass::StackUnderflow],
@@ -451,11 +458,20 @@ fn narrowing(author: &mut CensusAuthor<'_>) {
     // script-number representation to push, so both abort rather than
     // pushing a false.
     let script = [op(id)];
+    //
+    // The target answers this and a conversion operand of the wrong width
+    // with one code, so the undistinguished observation is admitted
+    // alongside the cause the contract names. Requiring the finer of the
+    // two would fail an honest executor over a line the target does not
+    // draw.
     for value in [MAXIMUM_SCRIPT_NUMBER + 1, -MAXIMUM_SCRIPT_NUMBER - 1] {
         let operand = author.le64(value);
         author.reject(
             bare(group, id, &script, &[operand]),
-            &[ObservedFailureClass::ScriptNumberRangeExceeded],
+            &[
+                ObservedFailureClass::ScriptNumberRangeExceeded,
+                ObservedFailureClass::FixedWidthConversionRefused,
+            ],
         );
     }
 
@@ -492,9 +508,14 @@ fn unsigned_widening(author: &mut CensusAuthor<'_>) {
     let narrow = author.item(vec![0x01, 0x02, 0x03]);
     let wide = author.item(vec![0x01; 8]);
     for operand in [narrow, wide] {
+        // The same undistinguished conversion refusal as the narrowing
+        // primitive's range failure: one code, two reviewed causes.
         author.reject(
             bare(group, id, &script, &[operand]),
-            &[ObservedFailureClass::InvalidOperandWidth],
+            &[
+                ObservedFailureClass::InvalidOperandWidth,
+                ObservedFailureClass::FixedWidthConversionRefused,
+            ],
         );
     }
     author.reject(

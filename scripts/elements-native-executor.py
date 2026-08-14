@@ -141,52 +141,66 @@ never as a plausible neighbour.
   Taproot version reserved for soft-fork upgrades        leaf_version_rejected
   OP_CHECKMULTISIG(VERIFY) is not available in           unsupported_execution_domain
     tapscript
-  Arithmetic opcode error                                unmapped (see below)
-  unknown error                                          unmapped (see below)
-  Push value size limit exceeded                         unmapped
+  Stack size must be exactly one after execution         non_singleton_final_stack
+  Push value size limit exceeded                         malformed_push
+  unknown error                                          malformed_script_number
+  Invalid Schnorr signature size                         invalid_signature
+  Script failed an OP_CHECKSIGVERIFY operation           empty_signature
+  Arithmetic opcode error                                fixed_width_conversion_refused
   Stack size limit exceeded                              unmapped
-  Stack size must be exactly one after execution         unmapped
   Script is too big                                      unmapped
   Operation limit exceeded                               unmapped
   Script failed an OP_VERIFY operation                   unmapped
   Script failed an OP_EQUALVERIFY operation              unmapped
-  Script failed an OP_CHECKSIGVERIFY operation           unmapped
   Script failed an OP_NUMEQUALVERIFY operation           unmapped
-  Invalid Schnorr signature size                         unmapped
   Invalid Schnorr signature hash type                    unmapped
   Invalid Taproot control block size                     unmapped
 
-Two of those unmapped entries are deliberate and load-bearing. Elements
-answers both an overflowing 64-bit operation and a zero divisor with the
-single string "Arithmetic opcode error", so `arithmetic_overflow` and
-`division_by_zero` are not distinguishable here; and a malformed or oversized
-script number raises `scriptnum_error`, which becomes `SCRIPT_ERR_UNKNOWN_ERROR`
-and the string "unknown error", so `malformed_script_number` and
-`script_number_range_exceeded` are not distinguishable either. Reporting
-either pair as one of its members would be a guess presented as an
-observation.
+Four of those entries are worth naming, because they were settled by reading
+the interpreter rather than by guessing at a string:
+
+  "unknown error" is what a script-number exception becomes. Minimal encoding
+  is enforced by a relay flag and not at consensus, so the only script-number
+  exception a consensus run can raise is an operand wider than the primitive
+  reads -- which is exactly the harness's malformed-script-number class. In
+  the relay lane a nonminimal operand raises the same exception, and the same
+  class covers it.
+
+  "Invalid Schnorr signature size" and "Invalid Schnorr signature" are two
+  target codes under one contract cause: the reviewed failure census admits
+  the offered signature being refused, and does not split refusal by width
+  from refusal by verification.
+
+  "Script failed an OP_CHECKSIGVERIFY operation" is reachable in tapscript
+  only for an empty signature -- a non-empty signature that does not verify
+  errors earlier with its own code -- so the generic string is precise.
+
+  "Arithmetic opcode error" is genuinely coarse and is reported as such. It
+  is raised for a fixed-width conversion whose operand is the wrong width and
+  for one whose result will not fit a script number, and the reviewed
+  contract names those as separate causes. The harness has a class that means
+  exactly "the target refused a fixed-width conversion without saying which",
+  and that is what is reported; a fixture whose contract cause is one of the
+  two admits it alongside.
 
 What consensus does not see
 ---------------------------
-Because a policy-only rejection is retried as a block, three of the table's
-entries were measured to be unreachable through this adapter, and are kept
-only so that a future Elements making them consensus would be classified
-rather than silently unmapped:
+Two of the table's entries were measured to be unreachable in the consensus
+lane, and are kept so that a fixture stating them at the relay layer -- where
+they are real -- is classified rather than silently unmapped:
 
-  malformed_push          a nonminimal push is standardness in tapscript,
-                          not consensus, and is accepted at consensus;
+  malformed_push          a nonminimal push is standardness in tapscript and
+                          is accepted at consensus. The oversized form is a
+                          consensus rule and does reach this class;
   leaf_version_rejected   an unrecognised leaf version is unconditionally
-                          valid at consensus under BIP-341, and is accepted;
-  unknown_opcode          an OP_SUCCESSx byte makes the script succeed at
-                          consensus. Only a byte that is neither defined nor
-                          OP_SUCCESSx -- inside an executed branch -- is
-                          rejected as an unknown opcode.
+                          valid at consensus under BIP-341, and is accepted.
 
-Measured against `v28.99.0-7110a84bb1fe`: leaf versions `0xc0` and `0xc2`,
-`OP_SUCCESS` byte `0x50`, and a nonminimal one-byte push were all accepted at
-consensus while the mempool refused them on policy grounds. A fixture whose
-reviewed expectation is a rejection in one of those classes is stating a
-policy requirement, and no node verdict will confirm it.
+`unknown_opcode` is reachable: an OP_SUCCESSx byte makes the script succeed
+at consensus, but a byte that is neither defined nor OP_SUCCESSx is rejected
+there, and so is a push whose payload runs off the end of the script -- the
+target answers a malformed push and an undefined byte with one code.
+
+Measured against `v28.99.0-6f43e3ffe730`.
 """
 
 from __future__ import annotations
@@ -229,6 +243,26 @@ EXPLICIT_PREFIX = 0x01
 CASE_FUNDING_SATOSHIS = 100_000
 ADAPTER_FEE_SATOSHIS = 1_000
 
+# The boundary between a lock time counted in blocks and one counted in
+# seconds, and the bit layout of a sequence field's relative lock. All four
+# are the target's own constants, restated here because the adapter has to
+# mature a chain far enough for the declared transaction to be final -- and a
+# transaction refused as non-final is not a script verdict.
+LOCKTIME_HEIGHT_THRESHOLD = 500_000_000
+SEQUENCE_DISABLE_FLAG = 0x8000_0000
+SEQUENCE_TIME_MODE_FLAG = 0x0040_0000
+SEQUENCE_AGE_MASK = 0x0000_FFFF
+SEQUENCE_TIME_GRANULARITY_BITS = 9
+
+# The median a relative time lock is compared against is taken over this many
+# blocks, so advancing it means mining that many at the later time.
+MEDIAN_TIME_BLOCKS = 11
+
+# The descriptor the maturity blocks pay to: the same anyone-can-spend
+# program the chain's free coins sit behind, which keeps every coin this
+# adapter creates spendable by the adapter and by nobody who cares.
+MINING_DESCRIPTOR = "raw(%s)" % ANYONE_CAN_SPEND_HEX
+
 # Prefixes Elements puts in front of a script error in a rejection reason.
 CONSENSUS_SCRIPT_PREFIX = "mandatory-script-verify-flag-failed ("
 POLICY_SCRIPT_PREFIX = "non-mandatory-script-verify-flag ("
@@ -257,10 +291,32 @@ FAILURE_CLASS_BY_SCRIPT_ERROR = {
     "Too much signature validation relative to witness weight": "validation_budget_exhausted",
     "Taproot version reserved for soft-fork upgrades": "leaf_version_rejected",
     "OP_CHECKMULTISIG(VERIFY) is not available in tapscript": "unsupported_execution_domain",
-    # Deliberately unmapped: Elements collapses two harness classes into one
-    # string in each of these cases. See the module docstring.
-    "Arithmetic opcode error": None,
-    "unknown error": None,
+    # The final stack was not the single item the reviewed domain requires.
+    "Stack size must be exactly one after execution": "non_singleton_final_stack",
+    # A literal the target refuses outright, which is what the harness's
+    # malformed-push class names.
+    "Push value size limit exceeded": "malformed_push",
+    # The generic code a script-number exception becomes. At consensus the
+    # only script-number exception is an operand wider than the primitive
+    # reads: minimal encoding is a relay rule and is not enforced there at
+    # all, so this string has one meaning in the consensus lane and the
+    # same one in the relay lane, where a nonminimal operand joins it.
+    "unknown error": "malformed_script_number",
+    # A signature of the wrong width, which the reviewed contract classes
+    # with a signature that does not verify: both are the target refusing
+    # the offered signature, and the contract's failure census draws no
+    # line between them.
+    "Invalid Schnorr signature size": "invalid_signature",
+    # The verifying forms reach this only for an empty signature: a
+    # non-empty signature that does not verify errors earlier with its own
+    # code, so the generic verify-failure string is precise here.
+    "Script failed an OP_CHECKSIGVERIFY operation": "empty_signature",
+    # Deliberately coarse, and named as such. Elements answers a conversion
+    # whose operand is the wrong width and one whose result will not fit a
+    # script number with this one string, and the reviewed contract names
+    # those as separate causes. Reporting either would name a cause this
+    # adapter did not observe.
+    "Arithmetic opcode error": "fixed_width_conversion_refused",
 }
 
 
@@ -419,12 +475,8 @@ def parse_fixture(raw: object) -> dict:
         ("consensus", "relay_policy"),
         "fixture.enforcement_layer",
     )
-    if layer != "consensus":
-        raise AdapterError(
-            "fixture.enforcement_layer is %s, and this adapter answers at "
-            "consensus: a relay verdict is a different question" % layer
-        )
     return {
+        "enforcement_layer": layer,
         "execution_domain": fixture["execution_domain"],
         "leaf_version": require_int(fixture["leaf_version"], "fixture.leaf_version"),
         "script": require_bytes(fixture["script"], "fixture.script"),
@@ -779,9 +831,16 @@ class CaseExecutor:
         self.anyone_can_spend = bytes.fromhex(ANYONE_CAN_SPEND_HEX)
         self.change = None
         self.policy_asset_field = None
+        self.mining_descriptor = None
+        self.mock_time = 0
 
     def prime(self) -> None:
         """Locates the chain's free-coin output and confirms one block."""
+        # The descriptor the maturity blocks are mined to, checksummed by the
+        # node so that a hand-written checksum cannot drift from the script.
+        self.mining_descriptor = self.node.call(
+            "getdescriptorinfo", MINING_DESCRIPTOR
+        )["descriptor"]
         self.node.call("generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, "[]")
         genesis_hash = self.node.call("getblockhash", "0")
         genesis = self.node.call("getblock", genesis_hash, "2")
@@ -800,8 +859,83 @@ class CaseExecutor:
                     "vout": output["n"],
                     "amount": amount,
                 }
+                self.mock_time = self.node.call("getblockchaininfo")["mediantime"]
                 return
         raise FatalAdapterError("the chain carries no anyone-can-spend free-coin output")
+
+    # -- chain maturity ---------------------------------------------------
+
+    def mine(self, count: int) -> None:
+        """Mines empty blocks to the adapter's own program."""
+        if count > 0:
+            self.node.call("generatetodescriptor", str(count), self.mining_descriptor)
+
+    def mature(self, context: dict, funded: list) -> None:
+        """Advances the chain until the declared transaction can be final.
+
+        A fixture states a lock time and a sequence per input, and both are
+        chain requirements as well as script data: a transaction whose lock
+        time is above the tip, or whose input is younger than its own
+        relative lock, is refused as non-final. That refusal is not a script
+        verdict, and reporting it as one would make every introspection case
+        look like a target rejection.
+
+        So the chain is grown to meet what the fixture declared, rather than
+        the declaration being trimmed to what an unmatured chain accepts. The
+        rules restated here are the target's: an absolute lock time below the
+        threshold counts blocks and above it counts seconds; a relative lock
+        counts either, is measured from the block that funded the input, and
+        is disabled outright by the flag bit.
+        """
+        required_height = 0
+        required_time = 0
+
+        # An absolute lock binds only while some input is non-final.
+        if context["locktime"] != 0 and any(
+            declared["sequence"] != 0xFFFF_FFFF for declared in context["inputs"]
+        ):
+            if context["locktime"] < LOCKTIME_HEIGHT_THRESHOLD:
+                required_height = max(required_height, context["locktime"])
+            else:
+                required_time = max(required_time, context["locktime"] + 1)
+
+        # Relative locks bind only from the version that introduced them.
+        if context["version"] >= 2:
+            for entry in funded:
+                sequence = entry["sequence"]
+                if sequence & SEQUENCE_DISABLE_FLAG:
+                    continue
+                age = sequence & SEQUENCE_AGE_MASK
+                if sequence & SEQUENCE_TIME_MODE_FLAG:
+                    required_time = max(
+                        required_time,
+                        entry["parent_median_time"] + (age << SEQUENCE_TIME_GRANULARITY_BITS) + 1,
+                    )
+                else:
+                    required_height = max(required_height, entry["coin_height"] + age - 1)
+
+        self.advance(required_height, required_time)
+
+    def advance(self, required_height: int, required_time: int) -> None:
+        """Grows the chain to one height and one median time."""
+        info = self.node.call("getblockchaininfo")
+        if required_time > info["mediantime"]:
+            # The median is taken over a window, so the clock is moved once
+            # and the window is refilled at the later time. The clock only
+            # ever moves forward: a chain whose time went backwards would
+            # refuse the very blocks meant to advance it.
+            self.mock_time = max(self.mock_time + 1, required_time)
+            self.node.call("setmocktime", str(self.mock_time))
+            self.mine(MEDIAN_TIME_BLOCKS)
+            info = self.node.call("getblockchaininfo")
+            if info["mediantime"] < required_time:
+                raise AdapterError(
+                    "the chain's median time reached %d, and the declared "
+                    "relative timelock needs %d"
+                    % (info["mediantime"], required_time)
+                )
+        if required_height > info["blocks"]:
+            self.mine(required_height - info["blocks"])
 
     # -- taproot ----------------------------------------------------------
 
@@ -913,7 +1047,7 @@ class CaseExecutor:
                 program, leaf_script, control, fixture, context
             )
         raw = transaction.serialize().hex()
-        body = self.judge(raw)
+        body = self.judge(raw, fixture["enforcement_layer"])
         body["transaction_weight"] = self.weight_of(raw)
         return body
 
@@ -995,21 +1129,33 @@ class CaseExecutor:
         for position, declared in enumerate(inputs):
             amount = amounts[position]
             spend_program = program if position == index else self.anyone_can_spend
-            funded.append((declared, self.fund(spend_program, amount), amount))
+            # Read before funding: the block that will carry the funding
+            # output is the next one, so this tip is exactly the block a
+            # relative time lock measures from.
+            before = self.node.call("getblockchaininfo")
+            funded.append(
+                {
+                    "declared": declared,
+                    "sequence": declared["sequence"],
+                    "txid": self.fund(spend_program, amount),
+                    "coin_height": before["blocks"] + 1,
+                    "parent_median_time": before["mediantime"],
+                }
+            )
 
         transaction = messages.CTransaction()
         transaction.version = context["version"]
         transaction.nLockTime = context["locktime"]
-        for declared, funding_txid, _amount in funded:
+        for entry in funded:
             transaction.vin.append(
                 messages.CTxIn(
-                    messages.COutPoint(txid_to_internal_int(funding_txid), 0),
-                    nSequence=declared["sequence"],
+                    messages.COutPoint(txid_to_internal_int(entry["txid"]), 0),
+                    nSequence=entry["sequence"],
                 )
             )
         for declared in context["outputs"]:
             transaction.vout.append(self.raw_output(declared))
-        for position, (declared, _txid, _amount) in enumerate(funded):
+        for position, entry in enumerate(funded):
             witness = messages.CTxInWitness()
             if position == index:
                 witness.scriptWitness.stack = list(fixture["initial_stack"]) + [
@@ -1017,8 +1163,10 @@ class CaseExecutor:
                     control,
                 ]
             else:
-                witness.scriptWitness.stack = list(declared["witness"])
+                witness.scriptWitness.stack = list(entry["declared"]["witness"])
             transaction.wit.vtxinwit.append(witness)
+
+        self.mature(context, funded)
         return transaction
 
     def input_amounts(self, context: dict) -> list:
@@ -1110,8 +1258,45 @@ class CaseExecutor:
 
     # -- verdict ----------------------------------------------------------
 
-    def judge(self, raw: str) -> dict:
-        """Submits the spending transaction and classifies what the node said."""
+    def judge(self, raw: str, layer: str) -> dict:
+        """Asks the node the question the fixture actually stated.
+
+        The two layers are different rules and are asked in different ways.
+        Consensus is what a block enforces, so a consensus fixture is judged
+        by offering the transaction to `generateblock`; relay is what the
+        mempool enforces, so a relay fixture is judged by
+        `testmempoolaccept`. Answering either question with the other's
+        machinery is how a harness reports an unrelayable but perfectly
+        valid spend as an invalid one, or the reverse.
+
+        The previous shape -- mempool first, retried as a block when the
+        refusal was a policy script failure -- collapsed the two, and it
+        could only retry a refusal that named a script. A policy rule that
+        refuses a transaction *without* running the script, such as an
+        oversized witness element, then looked like the adapter failing to
+        build a transaction rather than like standardness.
+        """
+        if layer == "relay_policy":
+            return self.judge_in_mempool(raw)
+        return self.judge_in_block(raw)
+
+    def judge_in_block(self, raw: str) -> dict:
+        """Judges at consensus, which is what block validation enforces."""
+        try:
+            self.node.call("generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw]))
+        except AdapterError as error:
+            if CONSENSUS_SCRIPT_PREFIX in error.note:
+                start = error.note.index(CONSENSUS_SCRIPT_PREFIX) + len(CONSENSUS_SCRIPT_PREFIX)
+                end = error.note.index(")", start)
+                return rejection(error.note[start:end])
+            raise AdapterError(
+                "the node refused the block for a reason that is not a script "
+                "verdict: %s" % error.note
+            )
+        return {"verdict": "accepted", "observed_failure": None}
+
+    def judge_in_mempool(self, raw: str) -> dict:
+        """Judges at relay, which is what the mempool enforces."""
         answer = self.node.call("testmempoolaccept", json.dumps([raw]))
         if not isinstance(answer, list) or len(answer) != 1:
             raise AdapterError("the node did not answer testmempoolaccept with one result")
@@ -1121,33 +1306,13 @@ class CaseExecutor:
         reason = result.get("reject-reason")
         if not isinstance(reason, str):
             raise AdapterError("the node rejected without naming a reason")
-        if reason.startswith(CONSENSUS_SCRIPT_PREFIX):
-            return rejection(reason[len(CONSENSUS_SCRIPT_PREFIX) : -1])
-        if reason.startswith(POLICY_SCRIPT_PREFIX):
-            return self.judge_at_consensus(raw, reason[len(POLICY_SCRIPT_PREFIX) : -1])
-        raise AdapterError("the node refused the transaction for a reason that is not "
-                           "a script verdict: %s" % reason)
-
-    def judge_at_consensus(self, raw: str, policy_error: str) -> dict:
-        """Retries a policy-only rejection as a block, which is consensus.
-
-        Standardness is not consensus, and the reviewed contract is about
-        consensus. A transaction the mempool refuses on policy grounds is
-        offered to `generateblock`, which validates it the way a block does.
-        """
-        try:
-            self.node.call("generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw]))
-        except AdapterError as error:
-            if CONSENSUS_SCRIPT_PREFIX in error.note:
-                start = error.note.index(CONSENSUS_SCRIPT_PREFIX) + len(CONSENSUS_SCRIPT_PREFIX)
-                end = error.note.index(")", start)
-                return rejection(error.note[start:end])
-            raise AdapterError(
-                "the node refused the transaction on policy grounds (%s) and refused "
-                "the block for a reason that is not a script verdict: %s"
-                % (policy_error, error.note)
-            )
-        return {"verdict": "accepted", "observed_failure": None}
+        for prefix in (POLICY_SCRIPT_PREFIX, CONSENSUS_SCRIPT_PREFIX):
+            if reason.startswith(prefix):
+                return rejection(reason[len(prefix) : -1])
+        raise AdapterError(
+            "the node refused the transaction for a reason that is not a script "
+            "verdict: %s" % reason
+        )
 
 
 def rejection(script_error: str) -> dict:

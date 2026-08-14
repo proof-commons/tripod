@@ -52,7 +52,25 @@ use crate::fixture::{FixtureInput, FixtureOutput, FixtureScriptPath, PrimitiveEx
 pub const TRANSACTION_VERSION: u32 = 2;
 
 /// The locktime the census transaction carries.
-pub const TRANSACTION_LOCKTIME: u32 = 500_000;
+///
+/// # Why this number and not a rounder one
+///
+/// A lock time below the height threshold names a block height, and a
+/// transaction carrying one is not merely unusual until that height is
+/// reached — it is *non-final*, and a node refuses it without ever
+/// running the script. So the value a fixture states is a chain
+/// requirement as much as a field to be introspected, and the executor
+/// has to grow a disposable chain past it before any of these cases can
+/// reach the interpreter at all.
+///
+/// The first native run made that concrete: at the round five hundred
+/// thousand this census originally stated, every context-bearing case —
+/// a hundred and thirty-one of them — came back as infrastructure
+/// trouble, because half a million blocks is not a chain a run can
+/// build. The height is stated small enough to be reached and large
+/// enough to be a distinctive four-byte field, which is all the
+/// reviewed contract ever asked of it.
+pub const TRANSACTION_LOCKTIME: u32 = 1_000;
 
 /// Which input the census transaction validates.
 pub const CURRENT_INPUT_INDEX: u32 = 0;

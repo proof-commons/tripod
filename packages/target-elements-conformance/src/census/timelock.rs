@@ -11,9 +11,18 @@
 //! # What the check compares
 //!
 //! The operand is compared with the *input's own sequence field*, which
-//! the fixture states, and the transaction version is the prerequisite.
-//! Nothing here depends on how old a funding output is, so every case is
-//! materializable without waiting for anything (Guide-9 §13.12).
+//! the fixture states, and the transaction version is the prerequisite
+//! (Guide-9 §13.12).
+//!
+//! # A satisfied lock is still a lock
+//!
+//! What the primitive compares does not depend on how old a funding
+//! output is — but the transaction carrying the lock does. A relative
+//! lock is enforced by the chain as well as read by the script, so an
+//! input younger than its own sequence is refused before the
+//! interpreter is reached, and the executor has to age the input to
+//! what the fixture declared. That is cheap in blocks and free in
+//! seconds, and it is why the ages stated here are the ages they are.
 //!
 //! # No cadence
 //!
@@ -47,6 +56,18 @@ const TIME_SEQUENCE: u32 = TIME_MODE_FLAG | 5;
 /// The largest age the sequence field's own mask can express.
 const MASK_BOUNDARY: u32 = 0x0000_ffff;
 
+/// The mask's largest age, counted in intervals rather than blocks.
+///
+/// The mask is the same sixteen bits in both modes, so a satisfied lock
+/// at its top is the same fact either way — but only one of the two can
+/// be materialized. Aging an input by sixty-five thousand blocks is a
+/// chain a run cannot build; aging it by the same count of intervals is
+/// a clock the executor moves forward at no cost. The boundary is
+/// therefore stated in the mode that can be reached, and the height
+/// mode's own boundary is a recorded residual rather than a case that
+/// answers with infrastructure trouble.
+const TIME_MASK_BOUNDARY: u32 = TIME_MODE_FLAG | MASK_BOUNDARY;
+
 /// The sequence that disables the check.
 const DISABLED_SEQUENCE: u32 = 0xffff_ffff;
 
@@ -74,7 +95,7 @@ pub fn cases(author: &mut CensusAuthor<'_>) {
         (HEIGHT_SEQUENCE, i64::from(HEIGHT_SEQUENCE)),
         (HEIGHT_SEQUENCE, i64::from(HEIGHT_SEQUENCE) - 1),
         (TIME_SEQUENCE, i64::from(TIME_SEQUENCE)),
-        (MASK_BOUNDARY, i64::from(MASK_BOUNDARY)),
+        (TIME_MASK_BOUNDARY, i64::from(TIME_MASK_BOUNDARY)),
     ] {
         let stack = [author.number(operand)];
         let expected = vec![author.number_bytes(operand)];
@@ -145,9 +166,11 @@ pub fn cases(author: &mut CensusAuthor<'_>) {
         &[ObservedFailureClass::NegativeTimelock],
     );
 
-    // A trailing zero byte is not a minimal script number.
+    // A trailing zero byte is not a minimal script number — and
+    // minimality is a relay rule, not the target's own: at consensus the
+    // operand is read as the age it encodes and the lock is satisfied.
     let stack = [author.item(vec![0x0a, 0x00])];
-    author.reject(
+    author.reject_at_relay(
         timelock_case(group, id, &script, &stack, MINIMUM_VERSION, HEIGHT_SEQUENCE),
         &[ObservedFailureClass::MalformedScriptNumber],
     );

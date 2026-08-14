@@ -211,6 +211,27 @@ impl<'a> CensusAuthor<'a> {
         self.state(case, expected, LeafVersionStatus::Reviewed, None);
     }
 
+    /// One case a *relay* rule refuses, leaving the spend valid.
+    ///
+    /// Minimal encoding is the rule this exists for. The reviewed
+    /// contract says a script-number operand is refused "where minimality
+    /// is enforced", and at consensus it is not enforced at all: a
+    /// nonminimal operand is read, and the primitive succeeds. A case
+    /// stating that refusal at the consensus layer is therefore stating
+    /// something the target does not do — while the same case stated at
+    /// the relay layer is exactly true, and is the only place the rule
+    /// can be observed.
+    pub fn reject_at_relay(&mut self, case: Case<'_>, classes: &[ObservedFailureClass]) {
+        let expected = ExpectedPrimitiveOutcome::reject(classes.iter().copied(), None);
+        self.state_at(
+            case,
+            expected,
+            LeafVersionStatus::Reviewed,
+            None,
+            EnforcementLayer::RelayPolicy,
+        );
+    }
+
     /// One case stated at a leaf version the contract has not reviewed.
     ///
     /// The reviewed semantics do not apply under an unreviewed leaf, so
@@ -264,6 +285,24 @@ impl<'a> CensusAuthor<'a> {
         leaf_version: LeafVersionStatus,
         unreviewed_leaf_version: Option<u8>,
     ) {
+        self.state_at(
+            case,
+            expected,
+            leaf_version,
+            unreviewed_leaf_version,
+            EnforcementLayer::Consensus,
+        );
+    }
+
+    /// States one case at one enforcement layer.
+    fn state_at(
+        &mut self,
+        case: Case<'_>,
+        expected: ExpectedPrimitiveOutcome,
+        leaf_version: LeafVersionStatus,
+        unreviewed_leaf_version: Option<u8>,
+        enforcement_layer: EnforcementLayer,
+    ) {
         let Some(program) = self.compile(case.script) else {
             return;
         };
@@ -276,7 +315,7 @@ impl<'a> CensusAuthor<'a> {
             expected,
             leaf_version,
             unreviewed_leaf_version,
-            enforcement_layer: EnforcementLayer::Consensus,
+            enforcement_layer,
         };
         self.add(statement);
     }
