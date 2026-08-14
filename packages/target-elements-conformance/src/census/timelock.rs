@@ -22,7 +22,7 @@
 //! or may.
 
 use tapscript::TapscriptInstruction;
-use target_elements::OpcodeId;
+use target_elements::{EncodingClass, OpcodeId};
 
 use crate::census::author::{Case, CensusAuthor, falsity, op, push};
 use crate::census::context::timelock_transaction;
@@ -49,6 +49,17 @@ const MASK_BOUNDARY: u32 = 0x0000_ffff;
 
 /// The sequence that disables the check.
 const DISABLED_SEQUENCE: u32 = 0xffff_ffff;
+
+/// The operand bit that makes the check do nothing at all.
+///
+/// Set on the *operand* rather than the input, it is the target's
+/// forward-compatibility escape: the primitive returns before it
+/// compares anything, so neither the age nor the mode is consulted. The
+/// bit sits above the thirty-two bit field the operand is compared
+/// against, which is why stating it at all needs the lock-time
+/// script-number width and why no case here could be written until the
+/// operand was typed at it.
+const OPERAND_DISABLE_FLAG: u32 = 0x8000_0000;
 
 /// Every relative-timelock case.
 pub fn cases(author: &mut CensusAuthor<'_>) {
@@ -109,6 +120,24 @@ pub fn cases(author: &mut CensusAuthor<'_>) {
         );
     }
 
+    // An operand carrying the disable flag is not a lock at all: the
+    // primitive returns before comparing anything, so the operand is
+    // retained and its own truth — it is a large positive number — is
+    // the script's. Both cases would be rejections without the flag:
+    // the first names an age far above the input's, and the second
+    // names the interval mode against an input counting blocks.
+    for operand in [
+        i64::from(OPERAND_DISABLE_FLAG),
+        i64::from(OPERAND_DISABLE_FLAG | TIME_SEQUENCE),
+    ] {
+        let bytes = lock_time_number_bytes(operand);
+        let stack = [author.encoded(EncodingClass::LockTimeScriptNumber, bytes.clone())];
+        author.accept(
+            timelock_case(group, id, &script, &stack, MINIMUM_VERSION, HEIGHT_SEQUENCE),
+            vec![bytes],
+        );
+    }
+
     // A negative operand is refused before the comparison.
     let stack = [author.number(-1)];
     author.reject(
@@ -141,6 +170,28 @@ pub fn cases(author: &mut CensusAuthor<'_>) {
         timelock_case(group, id, &script, &stack, MINIMUM_VERSION, HEIGHT_SEQUENCE),
         vec![crate::census::author::truth()],
     );
+}
+
+/// The target's minimal signed encoding of one lock-time operand.
+///
+/// Stated here rather than taken from the typed script-number
+/// constructor, which is bounded to the ordinary four-byte width: an
+/// operand carrying the disable flag is exactly the value that does not
+/// fit there, and the whole point of the case is that the target reads
+/// this operand one byte wider.
+fn lock_time_number_bytes(value: i64) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let mut remaining = value.unsigned_abs();
+    while remaining > 0 {
+        bytes.push(u8::try_from(remaining & 0xff).unwrap_or(0));
+        remaining >>= 8;
+    }
+    // A leading byte with its high bit set would read as negative, so a
+    // positive number takes one more byte rather than one fewer.
+    if bytes.last().is_some_and(|byte| byte & 0x80 != 0) {
+        bytes.push(0x00);
+    }
+    bytes
 }
 
 /// One case against a transaction at one version and one sequence.

@@ -159,6 +159,7 @@ fn only_numeric_encodings_carry_a_byte_order() {
         (EncodingClass::OutPointIndex, ByteOrder::LittleEndian),
         (EncodingClass::Sequence, ByteOrder::LittleEndian),
         (EncodingClass::ScriptNumber, ByteOrder::LittleEndian),
+        (EncodingClass::LockTimeScriptNumber, ByteOrder::LittleEndian),
         (EncodingClass::SignedLittleEndian64, ByteOrder::LittleEndian),
         (
             EncodingClass::UnsignedLittleEndian32,
@@ -191,6 +192,30 @@ fn the_hash_state_width_is_genuinely_variable() {
         }
         other => panic!("a hash state is not one fixed width: {other:?}"),
     }
+}
+
+#[test]
+fn the_lock_time_number_is_one_byte_wider_than_the_ordinary_one() {
+    // The two widths are the whole difference between the classes, and
+    // that one byte is where the flag that disables a relative timelock
+    // lives: a lock-time operand carrying it cannot be stated at four.
+    // Both stay minimal, because the wider read is a width allowance and
+    // not a licence to pad.
+    let ordinary = spec(EncodingClass::ScriptNumber);
+    let lock_time = spec(EncodingClass::LockTimeScriptNumber);
+
+    for (class, width) in [(&ordinary, 4_usize), (&lock_time, 5_usize)] {
+        match class.payload() {
+            PayloadWidth::Bounded { minimum, maximum } => {
+                assert_eq!(minimum, 0);
+                assert_eq!(maximum.get(), width);
+            }
+            other => panic!("a script number is not one fixed width: {other:?}"),
+        }
+    }
+    assert_eq!(lock_time.canonicality(), CanonicalEncodingRule::Minimal);
+    assert_eq!(lock_time.domain(), EncodingDomain::Number);
+    assert!(lock_time.prefixes().is_empty());
 }
 
 #[test]

@@ -1658,7 +1658,15 @@ fn timelock_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
             O::CheckSequenceVerify,
             0xb2,
             StackContract::new(
-                vec![S::ScriptNumber],
+                // Five bytes, not four. The operand is compared against
+                // an unsigned thirty-two bit sequence field, and the
+                // flag bit that disables the check sits above that
+                // field's range, so the target reads this one operand at
+                // the wider width. Typing it as the ordinary script
+                // number said a five-byte operand is malformed, which
+                // made the disable-flag behavior unstateable and would
+                // have refused a program the target accepts.
+                vec![S::Encoded(EncodingClass::LockTimeScriptNumber)],
                 // The operand is inspected and left in place, and
                 // nothing is pushed above it: a successful check
                 // leaves the stack exactly as it found it. Recording
