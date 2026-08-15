@@ -69,7 +69,7 @@ fn a_deployment_binding_reaches_no_assessment() {
         let binding = validate_development_binding(
             &definition,
             DevelopmentDeploymentBinding::new(
-                TargetContractVersion::V1,
+                TargetContractVersion::V2,
                 DeploymentEnvironment::Development,
                 network,
                 genesis,

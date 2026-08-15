@@ -47,7 +47,7 @@ fn development_binding(target: &ReviewedElementsTapscriptDefinition) -> Reviewed
     // whose executor observed another chain is refused before any case
     // executes, which is what several cases below drive.
     let binding = DevelopmentDeploymentBinding::new(
-        TargetContractVersion::V1,
+        TargetContractVersion::V2,
         DeploymentEnvironment::Development,
         MOCK_EXECUTOR_NETWORK_ID,
         MOCK_EXECUTOR_GENESIS_ID,

@@ -152,7 +152,7 @@ fn run(args: &Args) -> Result<NativeConformanceReport, String> {
         ),
     )
     .map_err(|_| "the development binding did not validate".to_owned())?;
-    debug_assert_eq!(definition.version(), TargetContractVersion::V1);
+    debug_assert_eq!(definition.version(), TargetContractVersion::V2);
 
     let fixtures = canonical_fixture_set(&target, &binding).map_err(|error| error.to_string())?;
     let plan = guide_nine_evidence_plan().map_err(|error| error.to_string())?;

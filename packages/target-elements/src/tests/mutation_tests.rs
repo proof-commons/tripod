@@ -289,8 +289,8 @@ fn the_version_and_leaf_mutations_are_refused_before_assembly() {
     // diagnostic: a contract carrying an unsupported revision or an
     // unreviewed leaf simply cannot be built.
     assert_eq!(
-        TargetContractVersion::supported(2),
-        Err(TargetError::UnsupportedTargetContractVersion { offered: 2 })
+        TargetContractVersion::supported(3),
+        Err(TargetError::UnsupportedTargetContractVersion { offered: 3 })
     );
     assert_eq!(
         LeafVersion::new(0xc0),

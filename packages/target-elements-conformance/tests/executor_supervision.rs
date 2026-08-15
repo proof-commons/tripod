@@ -52,7 +52,7 @@ fn reviewed_target() -> ReviewedElementsTapscriptDefinition {
 
 fn development_binding(target: &ReviewedElementsTapscriptDefinition) -> ReviewedDevelopmentBinding {
     let binding = DevelopmentDeploymentBinding::new(
-        TargetContractVersion::V1,
+        TargetContractVersion::V2,
         DeploymentEnvironment::Development,
         MOCK_EXECUTOR_NETWORK_ID,
         MOCK_EXECUTOR_GENESIS_ID,
