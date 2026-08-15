@@ -39,6 +39,87 @@ implementation revision.
 No package parses that reference. It is review support for a human reader; the
 typed Rust source here is the authority.
 
+## The compound-proof primitive census
+
+Guide 10 required a primitive-needs census before any prototype code: every
+need a compound proof has, decided against what the reviewed target actually
+offers, with no row left assumed. This is that table. "Constructor" is the
+dynamic-metadata-leaf candidate; "wide floor" is the derived-limb candidate.
+
+| Need | Constructor | Wide floor | Before V2 | Decision |
+|---|---|---|---|---|
+| duplicate top item | yes | yes | absent | admitted, `OP_DUP` 0x76 |
+| duplicate top pair | yes | yes | absent | admitted, `OP_2DUP` 0x6e |
+| copy second item | yes | yes | absent | admitted, `OP_OVER` 0x78 |
+| swap two items | yes | yes | absent | admitted, `OP_SWAP` 0x7c |
+| rotate short frame | yes | yes | absent | admitted, `OP_ROT` 0x7b |
+| remove second item | yes | yes | absent | admitted, `OP_NIP` 0x77 |
+| copy top below second | yes | yes | absent | admitted, `OP_TUCK` 0x7d |
+| remove item | yes | yes | absent | admitted, `OP_DROP` 0x75 |
+| remove two items | yes | yes | absent | admitted, `OP_2DROP` 0x6d |
+| equality | yes | yes | absent | admitted, `OP_EQUAL` 0x87 |
+| equality-and-abort | yes | yes | absent | admitted, `OP_EQUALVERIFY` 0x88 |
+| verify Boolean | yes | yes | absent | admitted, `OP_VERIFY` 0x69 |
+| byte concatenation | yes | no | absent | admitted, `OP_CAT` 0x7e |
+| byte split/slice | yes | no | absent | admitted, `OP_SUBSTR` 0x7f |
+| byte width | yes | no | absent | admitted, `OP_SIZE` 0x82 |
+| bitwise selection | yes | no | absent | admitted, `OP_AND` 0x84 and `OP_XOR` 0x86 |
+| byte lexicographic order | yes | no | absent | **unavailable as a primitive**; see below |
+| conditional branch | no | no | absent | not admitted; see below |
+| alternate stack | no | no | absent | not admitted; see below |
+| indexed copy | no | no | absent | not admitted; see below |
+| streaming hash | yes | no | reviewed | unchanged |
+| signed fixed-width arithmetic | yes | yes | reviewed | unchanged |
+| signed comparison | no | yes | reviewed | unchanged |
+| script-number conversion | yes | yes | reviewed | unchanged |
+| input/output program inspection | yes | no | reviewed | unchanged |
+| tweak verification | yes | no | reviewed | unchanged |
+
+Concatenation, slicing, and the bitwise operations are admitted because Elements
+re-enables them: the disable list that carries them upstream has them commented
+out, so they execute in tapscript rather than being refused. That is a target
+fact and not an assumption from another script language, which is the whole
+reason the census exists.
+
+### Byte-lexicographic ordering is not a primitive
+
+No reviewed primitive orders two byte strings. The fixed-width comparisons take
+eight-byte signed integers and refuse anything else, and the script-number
+ordering reads a number; neither orders a thirty-two byte digest. The capability
+is named and carries `Unsupported` rather than being left unmentioned, so a
+construction that needs canonical ordering has to confront the status.
+
+It does not follow that the constructor candidate is rejected. Ordering is
+constructible from primitives that do exist: a four-byte chunk read unsigned and
+compared, applied per chunk, with the per-chunk results combined arithmetically
+so the first differing chunk decides. Having the capability and being able to
+build it are different claims, and only the second one holds.
+
+### Three needs are decided as not admitted
+
+Conditional branching is not admitted. No schedule step requires it — the
+selection a canonical ordering needs is arithmetic on values in `{0,1}` and
+branches nowhere — and the abstract stack validator is a linear fold with no
+control stack, so admitting a branch would put a primitive in the registry whose
+contract nothing could check.
+
+The alternate stack is not admitted. The success algebra states main-stack
+effects only, and no scheduled step needs the scratch space, so admitting a
+mover would mean extending the algebra for a convenience.
+
+Indexed copying is not admitted. Its operand count is chosen at run time, and a
+contract whose operand list is fixed cannot state that. The schedules close
+without it.
+
+## Review provenance for the compound-proof primitives
+
+Every primitive above was read in the upstream interpreter one at a time, in the
+tapscript execution path. The repository, revision, source paths, and review
+date belong in
+[plans/reference/elements-tapscript.md](../../plans/reference/elements-tapscript.md)
+with the rest of the review provenance; that file was not updated by the wave
+that admitted these primitives and is outstanding.
+
 ## Identity
 
 The crate mints no digest. There is no target-definition hash, no
@@ -52,10 +133,18 @@ Implemented:
 
 - the crate boundary and its no-dependency rule;
 - the typed error root;
-- the target-contract version and its supported census;
+- the target-contract version and its supported census, now two revisions:
+  V1 remains the historical Guide-9 contract and V2 carries the compound-proof
+  primitive census together with the widened operand and success algebra;
 - the tapscript execution domain and the validated leaf version;
 - the reviewed primitive registry, with complete operand, result, failure,
-  and resource contracts for every admitted primitive;
+  and resource contracts for every admitted primitive, including the
+  compound-proof substrate: the ordinary stack operations, byte equality and its
+  verifying form, Boolean verification, concatenation, width, slicing, and the
+  bitwise combinators;
+- an operand position that constrains nothing and a successful form that carries
+  a declared operand through by index, which is what lets a polymorphic stack
+  operation be described without inventing types for the caller's items;
 - the field-specific encoding registry, with asset and value as independent
   axes and no global byte order;
 - the literal-push contract: every push form with its opcode span and width
@@ -100,14 +189,16 @@ A capability is `Reviewed`, `Incomplete`, or `Unsupported`, and none of the
 three means deployment-evidenced. `Reviewed` means the typed static contract was
 checked against upstream source; it does not mean a node was ever asked.
 
-Three capabilities are deliberately not `Reviewed`. The sighash dimensions are
+Four capabilities are deliberately not `Reviewed`. The sighash dimensions are
 `Incomplete` because the review reached the signature primitives but not the
 sighash construction, and every sighash dimension is recorded as unreviewed
 rather than guessed. Whole-transaction value conservation is `Incomplete`
 because it is a claim about the target's own consensus rules that no script
 primitive demonstrates. Authenticated value opening is `Unsupported`, and it
 must stay that way until a complete tested pattern exists: the low-level curve
-and hash primitives being present is not an opening proof.
+and hash primitives being present is not an opening proof. Canonical byte
+ordering is `Unsupported` because no reviewed primitive performs it at all, as
+the census above records.
 
 ## Failure behavior is part of every primitive contract
 
