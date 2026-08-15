@@ -21,7 +21,7 @@
 use target_elements::TargetEvidenceRequirementId;
 
 use crate::fixture::NativeCaseId;
-use crate::protocol::ProtocolPhase;
+use crate::protocol::{ProtocolPhase, ResponseShapeDefect};
 use crate::vocabulary::evidence_requirement_name;
 
 /// A failure of the target-native conformance harness.
@@ -71,6 +71,57 @@ pub enum NativeConformanceError {
         phase: ProtocolPhase,
     },
 
+    /// A protocol record exceeded the explicit bound for its phase.
+    ///
+    /// Reached without reading past the bound: a record that never
+    /// terminates is refused here rather than allocated until the host
+    /// intervenes.
+    #[error("the executor sent a {phase} record larger than the {maximum}-byte bound")]
+    ProtocolRecordTooLarge {
+        /// The phase the harness was in.
+        phase: ProtocolPhase,
+        /// The bound that applied.
+        maximum: usize,
+    },
+
+    /// The executor sent a blank or whitespace-only protocol record.
+    ///
+    /// The framing defines one nonempty JSON object per record, so an
+    /// empty one is a failure rather than filler to be skipped.
+    #[error("the executor sent a blank record during the {phase} phase")]
+    BlankProtocolRecord {
+        /// The phase the harness was in.
+        phase: ProtocolPhase,
+    },
+
+    /// A response contradicted the interface its own executor
+    /// advertised.
+    #[error("the executor's response for case {case} is malformed: {defect}")]
+    MalformedResponseShape {
+        /// The case answered.
+        case: NativeCaseId,
+        /// How the response contradicts the advertised interface.
+        defect: ResponseShapeDefect,
+    },
+
+    /// The executor never stated the environment it ran on.
+    #[error("the external executor stated no environment observation")]
+    MissingEnvironmentObservation,
+
+    /// The environment the executor observed is not the one the binding
+    /// names.
+    #[error("the executor observed a different environment from the one the binding names")]
+    EnvironmentBindingMismatch,
+
+    /// The genesis the executor observed is not the bound one.
+    #[error("the executor observed a different genesis identity from the bound one")]
+    GenesisObservationMismatch,
+
+    /// The reviewed domain or leaf version is not active where the
+    /// executor ran.
+    #[error("the reviewed domain or leaf version is not active where the executor ran")]
+    ActivationObservationMismatch,
+
     /// The executor wrote further protocol data after the last response.
     #[error("the external executor wrote protocol data after its last response")]
     TrailingProtocolData,
@@ -114,6 +165,15 @@ pub enum NativeConformanceError {
     #[error("a canonical fixture could not be stated against the reviewed contract")]
     FixtureNotExpressible,
 
+    /// A fixture's transaction context is not internally well shaped.
+    ///
+    /// A malformed fixture does not acquire a report subject: an index
+    /// naming no input, an empty stated field, or a path with no script
+    /// would leave the executor to invent what the fixture failed to
+    /// state.
+    #[error("the context of fixture {0} is not internally well shaped")]
+    MalformedFixtureContext(NativeCaseId),
+
     /// A fixture is stated against a different contract revision, or a
     /// different execution domain or leaf version, from the run's.
     #[error("a fixture is stated against a different target contract from the run's")]
@@ -141,6 +201,69 @@ pub enum NativeConformanceError {
     /// the executor reported infrastructure trouble.
     #[error("required target evidence {} hit executor infrastructure trouble", requirement_text(*.0))]
     RequiredEvidenceInfrastructureError(TargetEvidenceRequirementId),
+
+    /// The report was written under a revision this harness does not
+    /// validate.
+    #[error("the report offers schema {offered}, which this harness does not validate")]
+    UnsupportedReportSchema {
+        /// The schema the report offers.
+        offered: u32,
+    },
+
+    /// The report's case census is not the fixture census.
+    #[error("the report's case census is not the fixture census")]
+    ReportCaseCensusMismatch,
+
+    /// The report holds one case twice.
+    #[error("the report holds case {0} twice")]
+    DuplicateReportCase(NativeCaseId),
+
+    /// The report's row for one case does not state the fixture that was
+    /// executed.
+    #[error("the report's row for case {0} does not state the executed fixture")]
+    FixtureProjectionMismatch(NativeCaseId),
+
+    /// The report's row for one case does not state what the executor
+    /// observed, or what that observation compares to.
+    #[error("the report's row for case {0} does not state the observed outcome")]
+    ReportCaseOutcomeMismatch(NativeCaseId),
+
+    /// The report's evidence rows are not the recomputed ones.
+    #[error("the report's evidence rows are not the ones the plan and the run produce")]
+    ReportEvidenceCensusMismatch,
+
+    /// The report's claim rows are not the recomputed ones.
+    #[error("the report's claim rows are not the ones the registry and the run produce")]
+    ReportClaimCensusMismatch,
+
+    /// The report states one claim twice.
+    #[error("the report states one claim twice")]
+    DuplicateEvidenceClaim(crate::claim::NativeEvidenceClaim),
+
+    /// The report omits a claim the registry holds.
+    #[error("the report omits a claim the registry holds")]
+    MissingEvidenceClaim(crate::claim::NativeEvidenceClaim),
+
+    /// The report states a claim the registry does not hold.
+    #[error("the report states a claim the registry does not hold")]
+    UnexpectedEvidenceClaim(crate::claim::NativeEvidenceClaim),
+
+    /// The report's summary is not the recomputed one.
+    #[error("the report's summary is not the one its own rows add up to")]
+    ReportSummaryMismatch,
+
+    /// The report's provenance or observed environment is not the
+    /// transcript's.
+    #[error("the report's provenance or observed environment is not the run's")]
+    ReportProvenanceMismatch,
+
+    /// A required claim has no passing case bearing on it.
+    #[error("a required evidence claim has no passing case bearing on it")]
+    RequiredClaimMissing(crate::claim::NativeEvidenceClaim),
+
+    /// A required claim has failing case evidence.
+    #[error("a required evidence claim has failing case evidence")]
+    RequiredClaimFailed(crate::claim::NativeEvidenceClaim),
 
     /// The run selected a mock executor, which can never satisfy the
     /// target-native gate.

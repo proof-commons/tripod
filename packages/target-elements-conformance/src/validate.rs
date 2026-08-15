@@ -18,32 +18,54 @@
 //! transcription, executor, target behaviour, fixture), never a reason
 //! to adopt the observation as the new expectation.
 //!
+//! # A broad row is not established by one case
+//!
+//! Aggregating cases straight onto a broad evidence requirement is
+//! existential, and one passing case would move a whole dimension to
+//! passed. Beneath every row sits the typed claim census
+//! ([`crate::claim`]): a row passes only when every claim it requires has
+//! a passing case bearing on it, and a claim no passing case bears on is
+//! recorded as unresolved with its reason rather than absorbed into a
+//! passing row.
+//!
 //! # The gate is not the report
 //!
-//! A report describes a run. The gate decides whether that run is
-//! target-native evidence, and it refuses a declared mock run before it
-//! looks at anything else: a mock's answers are the fixture's own
-//! expectations read back, so a green mock report says only that the
-//! harness can compare a value with itself.
+//! A report describes a run. Describing a run is not the run having
+//! happened that way, so the gate does not read a report: it reads a
+//! [`ValidatedNativeConformanceReport`], which exists only once every
+//! field of the raw report has been recomputed from the fixtures, the
+//! plan, the claim registry, and the transcript, and found equal in both
+//! directions. Removing a failed row, relabelling it unresolved, clearing
+//! the evidence array, duplicating a passing row, or editing the summary
+//! all fail there rather than passing here.
+//!
+//! The gate then refuses a declared mock run before anything else: a
+//! mock's answers are the fixture's own expectations read back, so a
+//! green mock report says only that the harness can compare a value with
+//! itself.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use target_elements::{
-    ReviewedElementsTapscriptDefinition, TargetEvidenceRequirementId, ValidatedDevelopmentBinding,
+    ReviewedDevelopmentBinding, ReviewedElementsTapscriptDefinition, TargetEvidenceRequirementId,
 };
 
+use crate::claim::{ClaimRegistry, NativeEvidenceClaim};
 use crate::error::NativeConformanceError;
 use crate::executor::{ExecutionTranscript, ExecutorTrust};
 use crate::fixture::{
     ExpectedPrimitiveOutcome, ExpectedResourceObservation, LeafVersionStatus, NativeCaseGroup,
     NativeCaseId, PrimitiveFixture, PrimitiveFixtureSet, ResourceExpectation,
 };
-use crate::protocol::{NativeResourceObservation, NativeVerdict, WireExecutionDomain};
+use crate::protocol::{
+    NativeResourceObservation, NativeVerdict, RequestExpectationBoundary, WireEnvironment,
+    WireExecutionDomain,
+};
 use crate::report::{
     ActivationRecord, CaseStatus, EvidenceDisposition, EvidencePlanClass,
     EvidenceRequirementResult, ExecutorDeclaration, ExecutorProvenance, NATIVE_REPORT_SCHEMA,
-    NativeCaseResult, NativeConformanceReport, NativeReportSummary, ObservedNativeOutcome,
-    ReportCompleteness, WireEnvironment,
+    NativeCaseResult, NativeConformanceReport, NativeEvidenceClaimResult, NativeReportSummary,
+    ObservedEnvironment, ObservedNativeOutcome, PrototypeReportRole, ReportCompleteness,
 };
 use crate::vocabulary::{capability_name, evidence_requirement_name};
 
@@ -274,17 +296,27 @@ pub(crate) const fn requirements_for_tests(
 /// transcript does not answer a fixture.
 pub fn evaluate(
     target: &ReviewedElementsTapscriptDefinition,
-    binding: &ValidatedDevelopmentBinding,
+    binding: &ReviewedDevelopmentBinding,
     fixtures: &PrimitiveFixtureSet,
     transcript: &ExecutionTranscript,
     plan: &EvidencePlan,
+    registry: &ClaimRegistry,
 ) -> Result<NativeConformanceReport, NativeConformanceError> {
     let definition = target.definition();
     let domain = WireExecutionDomain::of(definition.execution_domain())
         .ok_or(NativeConformanceError::TargetContractMismatch)?;
+    // The binding must be the one this exact contract validated. A
+    // same-revision neighbour is a different contract, and a run stated
+    // against one and reported against the other would attach this
+    // contract's name to that contract's evidence.
+    if !binding.welded_to(target) {
+        return Err(NativeConformanceError::TargetContractMismatch);
+    }
 
     let mut cases = Vec::new();
     let mut per_requirement: BTreeMap<TargetEvidenceRequirementId, Vec<CaseStatus>> =
+        BTreeMap::new();
+    let mut per_claim: BTreeMap<NativeEvidenceClaim, Vec<(NativeCaseId, CaseStatus)>> =
         BTreeMap::new();
 
     for fixture in fixtures {
@@ -327,49 +359,254 @@ pub fn evaluate(
             resources: response.resources,
         };
         let status = compare(fixture, &observed);
+        let projection = fixture.projection();
 
         for requirement in bearing_requirements(case) {
             per_requirement.entry(requirement).or_default().push(status);
         }
+        for claim in &projection.claims {
+            per_claim.entry(*claim).or_default().push((case, status));
+        }
 
         cases.push(NativeCaseResult {
-            case,
-            expected: fixture.expected().clone(),
+            claims: projection.claims.clone(),
+            fixture: projection,
             observed,
             status,
         });
     }
 
-    let evidence = evidence_rows(plan, &per_requirement);
-    let summary = summarize(&cases, &evidence);
+    let claims = claim_rows(registry, plan, &per_claim);
+    let evidence = evidence_rows(plan, registry, &per_requirement, &claims);
+    let summary = summarize(&cases, &evidence, &claims);
+    let observation = transcript.environment();
 
     Ok(NativeConformanceReport {
         schema: NATIVE_REPORT_SCHEMA,
+        role: PrototypeReportRole::PrimitiveConformance,
         target_contract_version: definition.version().get(),
+        expectation_boundary: RequestExpectationBoundary::FixtureCarriesExpectation,
         environment: WireEnvironment::Development,
         network_id: binding.binding().network_id(),
         genesis_id: binding.binding().genesis_id(),
         activation: activation_record(binding),
+        observed_environment: ObservedEnvironment {
+            environment: observation.environment,
+            chain_name: observation.chain_name.clone(),
+            network_id: observation.network_id,
+            genesis_id: observation.genesis_id,
+            active_domains: observation.active_domains.clone(),
+            active_leaf_versions: observation.active_leaf_versions.clone(),
+        },
         executor: provenance(transcript),
         cases,
         evidence,
+        claims,
         summary,
     })
 }
 
+/// Everything the report validator needs to recompute a report.
+#[derive(Clone, Copy, Debug)]
+pub struct NativeReportValidationInputs<'a> {
+    /// The exact reviewed contract.
+    pub target: &'a ReviewedElementsTapscriptDefinition,
+    /// The binding welded to that contract.
+    pub binding: &'a ReviewedDevelopmentBinding,
+    /// The fixture census that was executed.
+    pub fixtures: &'a PrimitiveFixtureSet,
+    /// The evidence plan.
+    pub plan: &'a EvidencePlan,
+    /// The typed claim census.
+    pub registry: &'a ClaimRegistry,
+    /// What the executor answered.
+    pub transcript: &'a ExecutionTranscript,
+}
+
+/// A report every field of which has been recomputed and found equal.
+///
+/// The wrapper has no public constructor other than
+/// [`validate_native_report`]. That is the whole point: a raw report is a
+/// description someone produced, and the gate must not accept a
+/// description of a run in place of the run.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ValidatedNativeConformanceReport {
+    report: NativeConformanceReport,
+}
+
+impl ValidatedNativeConformanceReport {
+    /// The validated report.
+    #[must_use]
+    pub const fn report(&self) -> &NativeConformanceReport {
+        &self.report
+    }
+
+    /// Consumes the validated state, yielding the raw report.
+    #[must_use]
+    pub fn into_report(self) -> NativeConformanceReport {
+        self.report
+    }
+}
+
+/// Recomputes every field of an offered report from its own inputs.
+///
+/// # What is recomputed rather than trusted
+///
+/// The case census, each case's complete fixture projection, each case's
+/// observation and recomputed status, the evidence rows and their plan
+/// classes, the typed claim rows and their dispositions, the summary
+/// counts, the completeness, the observed environment, and the executor
+/// provenance. Every comparison rejects in both directions: a row the
+/// report omits and a row the report invents are both failures.
+///
+/// # Errors
+///
+/// [`NativeConformanceError::UnsupportedReportSchema`] for a report
+/// revision this harness does not validate, and then the first typed
+/// mismatch: a case census that is not the fixture census, a duplicated
+/// case, a fixture projection that is not the executed fixture, an
+/// observation that is not the transcript's, evidence or claim rows that
+/// are not the recomputed ones, or a summary that is not what the rows
+/// add up to.
+pub fn validate_native_report(
+    report: NativeConformanceReport,
+    inputs: NativeReportValidationInputs<'_>,
+) -> Result<ValidatedNativeConformanceReport, NativeConformanceError> {
+    if report.schema != NATIVE_REPORT_SCHEMA {
+        return Err(NativeConformanceError::UnsupportedReportSchema {
+            offered: report.schema,
+        });
+    }
+
+    let recomputed = evaluate(
+        inputs.target,
+        inputs.binding,
+        inputs.fixtures,
+        inputs.transcript,
+        inputs.plan,
+        inputs.registry,
+    )?;
+
+    // The case census, duplicate-sensitively and in both directions.
+    let mut seen: BTreeSet<NativeCaseId> = BTreeSet::new();
+    for row in &report.cases {
+        if !seen.insert(row.case()) {
+            return Err(NativeConformanceError::DuplicateReportCase(row.case()));
+        }
+    }
+    let expected_cases: BTreeSet<NativeCaseId> = recomputed
+        .cases
+        .iter()
+        .map(NativeCaseResult::case)
+        .collect();
+    if seen != expected_cases || report.cases.len() != recomputed.cases.len() {
+        return Err(NativeConformanceError::ReportCaseCensusMismatch);
+    }
+
+    // Each row's complete subject and its recomputed outcome. The order
+    // is canonical, so a permutation is a census mismatch rather than a
+    // reordering to be tolerated.
+    for (offered, expected) in report.cases.iter().zip(&recomputed.cases) {
+        if offered.case() != expected.case() {
+            return Err(NativeConformanceError::ReportCaseCensusMismatch);
+        }
+        if offered.fixture != expected.fixture || offered.claims != expected.claims {
+            return Err(NativeConformanceError::FixtureProjectionMismatch(
+                expected.case(),
+            ));
+        }
+        if offered.observed != expected.observed || offered.status != expected.status {
+            return Err(NativeConformanceError::ReportCaseOutcomeMismatch(
+                expected.case(),
+            ));
+        }
+    }
+
+    // The typed claims, duplicate-sensitively and in both directions.
+    let mut offered_claims: BTreeSet<NativeEvidenceClaim> = BTreeSet::new();
+    for row in &report.claims {
+        if !offered_claims.insert(row.claim) {
+            return Err(NativeConformanceError::DuplicateEvidenceClaim(row.claim));
+        }
+    }
+    let expected_claims: BTreeSet<NativeEvidenceClaim> =
+        recomputed.claims.iter().map(|row| row.claim).collect();
+    if let Some(missing) = expected_claims.difference(&offered_claims).next() {
+        return Err(NativeConformanceError::MissingEvidenceClaim(*missing));
+    }
+    if let Some(extra) = offered_claims.difference(&expected_claims).next() {
+        return Err(NativeConformanceError::UnexpectedEvidenceClaim(*extra));
+    }
+    if report.claims != recomputed.claims {
+        return Err(NativeConformanceError::ReportClaimCensusMismatch);
+    }
+
+    if report.evidence != recomputed.evidence {
+        return Err(NativeConformanceError::ReportEvidenceCensusMismatch);
+    }
+    if report.summary != recomputed.summary {
+        return Err(NativeConformanceError::ReportSummaryMismatch);
+    }
+    if report.executor != recomputed.executor
+        || report.observed_environment != recomputed.observed_environment
+        || report.activation != recomputed.activation
+    {
+        return Err(NativeConformanceError::ReportProvenanceMismatch);
+    }
+
+    // Anything left is a field neither the census nor the run supplies:
+    // the schema, the role, the boundary, the contract revision, and the
+    // bound identifiers. A whole-value comparison catches all of them at
+    // once and needs no per-field enumeration to stay complete.
+    if report != recomputed {
+        return Err(NativeConformanceError::ReportSummaryMismatch);
+    }
+
+    Ok(ValidatedNativeConformanceReport { report })
+}
+
 /// Decides whether one run is target-native evidence.
+///
+/// Accepts only a validated report: a raw report is a description of a
+/// run, and the gate's question is about the run.
 ///
 /// # Errors
 ///
 /// [`NativeConformanceError::MockExecutorCannotSatisfyNativeGate`] for a
-/// declared mock run, checked before anything else, and then
+/// declared mock run, checked before anything else, then
+/// [`NativeConformanceError::RequiredClaimMissing`] or
+/// [`NativeConformanceError::RequiredClaimFailed`] for the first required
+/// claim without passing case evidence, and then
 /// [`NativeConformanceError::RequiredEvidenceMissing`],
 /// [`NativeConformanceError::RequiredEvidenceFailed`], or
 /// [`NativeConformanceError::RequiredEvidenceInfrastructureError`] for
 /// the first required row that does not pass.
-pub fn gate(report: &NativeConformanceReport) -> Result<(), NativeConformanceError> {
+pub fn gate(validated: &ValidatedNativeConformanceReport) -> Result<(), NativeConformanceError> {
+    let report = &validated.report;
     if report.executor.declaration == ExecutorDeclaration::Mock {
         return Err(NativeConformanceError::MockExecutorCannotSatisfyNativeGate);
+    }
+
+    // Claims before rows. A row's disposition already accounts for its
+    // claims, but naming the claim is what tells a reader which corner of
+    // a dimension the run failed to establish.
+    for row in &report.claims {
+        if !row.required {
+            continue;
+        }
+        match row.disposition {
+            EvidenceDisposition::Passed => {}
+            EvidenceDisposition::UnresolvedByDesign => {
+                return Err(NativeConformanceError::RequiredClaimMissing(row.claim));
+            }
+            EvidenceDisposition::Failed | EvidenceDisposition::InfrastructureError => {
+                return Err(if row.bearing_cases.is_empty() {
+                    NativeConformanceError::RequiredClaimMissing(row.claim)
+                } else {
+                    NativeConformanceError::RequiredClaimFailed(row.claim)
+                });
+            }
+        }
     }
 
     for row in &report.evidence {
@@ -503,14 +740,94 @@ fn bearing_requirements(case: NativeCaseId) -> Vec<TargetEvidenceRequirementId> 
     requirements
 }
 
+/// The typed claim rows, in claim order.
+///
+/// A claim the registry requires and no passing case bears on is
+/// `Failed`, and a claim the registry does not require and no case bears
+/// on is `UnresolvedByDesign` — which is neither a pass nor a failure but
+/// the project stating which corner of a dimension it has not
+/// established. A claim outside the required plan that a case *did*
+/// establish still passes: the run gets credit for what it did.
+fn claim_rows(
+    registry: &ClaimRegistry,
+    plan: &EvidencePlan,
+    per_claim: &BTreeMap<NativeEvidenceClaim, Vec<(NativeCaseId, CaseStatus)>>,
+) -> Vec<NativeEvidenceClaimResult> {
+    registry
+        .iter()
+        .map(|record| {
+            let bearing = per_claim
+                .get(&record.claim())
+                .map_or(&[][..], Vec::as_slice);
+            // A claim is required only where its owning requirement is
+            // itself required: the plan owns which dimensions this run
+            // must establish, and the registry owns what establishing one
+            // means.
+            let required = record.is_required()
+                && plan.class(record.requirement()) == Some(EvidencePlanClass::Required);
+            let statuses: Vec<CaseStatus> = bearing.iter().map(|(_, status)| *status).collect();
+
+            let disposition = if statuses.contains(&CaseStatus::InfrastructureError) {
+                EvidenceDisposition::InfrastructureError
+            } else if statuses.contains(&CaseStatus::Failed) {
+                EvidenceDisposition::Failed
+            } else if statuses.is_empty() {
+                if required {
+                    EvidenceDisposition::Failed
+                } else {
+                    EvidenceDisposition::UnresolvedByDesign
+                }
+            } else {
+                EvidenceDisposition::Passed
+            };
+
+            NativeEvidenceClaimResult {
+                claim: record.claim(),
+                requirement: evidence_requirement_name(record.requirement())
+                    .unwrap_or("unspelled_requirement")
+                    .to_owned(),
+                required,
+                unresolved_reason: record.unresolved_reason().map(str::to_owned),
+                bearing_cases: bearing.iter().map(|(case, _)| *case).collect(),
+                disposition,
+            }
+        })
+        .collect()
+}
+
 /// The evidence rows, in requirement order.
 fn evidence_rows(
     plan: &EvidencePlan,
+    registry: &ClaimRegistry,
     per_requirement: &BTreeMap<TargetEvidenceRequirementId, Vec<CaseStatus>>,
+    claims: &[NativeEvidenceClaimResult],
 ) -> Vec<EvidenceRequirementResult> {
+    let claim_disposition: BTreeMap<NativeEvidenceClaim, EvidenceDisposition> = claims
+        .iter()
+        .map(|row| (row.claim, row.disposition))
+        .collect();
+
     plan.iter()
         .map(|(id, class)| {
             let statuses = per_requirement.get(&id).map_or(&[][..], Vec::as_slice);
+            let required_claims = registry.required_claims(id);
+            let owned_claims = registry.owned_by(id);
+
+            // A required claim without a passing case is what stops one
+            // corner of a dimension standing in for the whole of it.
+            let missing_required_claims: BTreeSet<NativeEvidenceClaim> = required_claims
+                .iter()
+                .filter(|claim| claim_disposition.get(claim) != Some(&EvidenceDisposition::Passed))
+                .copied()
+                .collect();
+            let unresolved_claims: BTreeSet<NativeEvidenceClaim> = owned_claims
+                .iter()
+                .filter(|claim| {
+                    claim_disposition.get(claim) == Some(&EvidenceDisposition::UnresolvedByDesign)
+                })
+                .copied()
+                .collect();
+
             let disposition = if statuses.contains(&CaseStatus::InfrastructureError) {
                 EvidenceDisposition::InfrastructureError
             } else if statuses.contains(&CaseStatus::Failed) {
@@ -523,9 +840,12 @@ fn evidence_rows(
                 } else {
                     EvidenceDisposition::UnresolvedByDesign
                 }
+            } else if class == EvidencePlanClass::Required && !missing_required_claims.is_empty() {
+                EvidenceDisposition::Failed
             } else {
                 EvidenceDisposition::Passed
             };
+
             EvidenceRequirementResult {
                 requirement: evidence_requirement_name(id)
                     .unwrap_or("unspelled_requirement")
@@ -533,6 +853,8 @@ fn evidence_rows(
                 plan: class,
                 disposition,
                 cases: u32::try_from(statuses.len()).unwrap_or(u32::MAX),
+                missing_required_claims,
+                unresolved_claims,
             }
         })
         .collect()
@@ -542,6 +864,7 @@ fn evidence_rows(
 fn summarize(
     cases: &[NativeCaseResult],
     evidence: &[EvidenceRequirementResult],
+    claims: &[NativeEvidenceClaimResult],
 ) -> NativeReportSummary {
     let count = |wanted: CaseStatus| {
         u32::try_from(cases.iter().filter(|case| case.status == wanted).count()).unwrap_or(u32::MAX)
@@ -559,17 +882,29 @@ fn summarize(
         .filter(|row| row.disposition == EvidenceDisposition::UnresolvedByDesign)
         .count();
 
+    let required_claims: Vec<&NativeEvidenceClaimResult> =
+        claims.iter().filter(|row| row.required).collect();
+    let required_claims_passed = required_claims
+        .iter()
+        .filter(|row| row.disposition == EvidenceDisposition::Passed)
+        .count();
+    let claims_unresolved = claims
+        .iter()
+        .filter(|row| row.disposition == EvidenceDisposition::UnresolvedByDesign)
+        .count();
+
     let cases_failed = count(CaseStatus::Failed);
     let cases_infrastructure_error = count(CaseStatus::InfrastructureError);
     let completeness = if required_passed != required.len()
+        || required_claims_passed != required_claims.len()
         || cases_failed > 0
         || cases_infrastructure_error > 0
     {
         ReportCompleteness::Failed
-    } else if unresolved > 0 {
-        ReportCompleteness::PartialUnresolvedRemains
+    } else if unresolved > 0 || claims_unresolved > 0 {
+        ReportCompleteness::PartialUnresolvedClaims
     } else {
-        ReportCompleteness::CompleteForRequiredPlan
+        ReportCompleteness::CompleteForPrimitivePlan
     };
 
     NativeReportSummary {
@@ -580,12 +915,15 @@ fn summarize(
         required_evidence_total: u32::try_from(required.len()).unwrap_or(u32::MAX),
         required_evidence_passed: u32::try_from(required_passed).unwrap_or(u32::MAX),
         evidence_unresolved_by_design: u32::try_from(unresolved).unwrap_or(u32::MAX),
+        required_claims_total: u32::try_from(required_claims.len()).unwrap_or(u32::MAX),
+        required_claims_passed: u32::try_from(required_claims_passed).unwrap_or(u32::MAX),
+        claims_unresolved: u32::try_from(claims_unresolved).unwrap_or(u32::MAX),
         completeness,
     }
 }
 
 /// What the caller intended the environment to have active.
-fn activation_record(binding: &ValidatedDevelopmentBinding) -> ActivationRecord {
+fn activation_record(binding: &ReviewedDevelopmentBinding) -> ActivationRecord {
     let activation = binding.binding().activation();
     ActivationRecord {
         tapscript_expected_active: activation.tapscript_expected_active(),
@@ -608,9 +946,15 @@ fn provenance(transcript: &ExecutionTranscript) -> ExecutorProvenance {
     let handshake = transcript.handshake();
     ExecutorProvenance {
         protocol_schema: handshake.protocol_schema,
-        implementation_name: handshake.implementation_name.clone(),
-        implementation_version: handshake.implementation_version.clone(),
-        upstream_revision: handshake.upstream_revision.clone(),
+        adapter_name: handshake.adapter_name.clone(),
+        adapter_version: handshake.adapter_version.clone(),
+        framework_revision: handshake.framework_revision.clone(),
+        node_name: handshake.node_name.clone(),
+        node_version: handshake.node_version.clone(),
+        binary_reported_revision: handshake.binary_reported_revision.clone(),
+        intended_executed_tip: handshake.intended_executed_tip.clone(),
+        upstream_base: handshake.upstream_base.clone(),
+        included_local_topics: handshake.included_local_topics.clone(),
         supported_domains: handshake.supported_domains.clone(),
         supported_leaf_versions: handshake.supported_leaf_versions.clone(),
         capabilities: handshake.capabilities.clone(),

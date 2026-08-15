@@ -42,7 +42,7 @@ use std::collections::BTreeMap;
 
 use tapscript::{StackItem, TapscriptInstruction, TapscriptProgram};
 use target_elements::{
-    EncodingClass, OpcodeId, ReviewedElementsTapscriptDefinition, ValidatedDevelopmentBinding,
+    EncodingClass, OpcodeId, ReviewedDevelopmentBinding, ReviewedElementsTapscriptDefinition,
 };
 
 use crate::error::NativeConformanceError;
@@ -66,7 +66,7 @@ pub const FALSE_ITEM: &[u8] = &[];
 /// Collects the canonical census, one case at a time.
 pub struct CensusAuthor<'a> {
     target: &'a ReviewedElementsTapscriptDefinition,
-    binding: &'a ValidatedDevelopmentBinding,
+    binding: &'a ReviewedDevelopmentBinding,
     ordinals: BTreeMap<(NativeCaseGroup, Option<OpcodeId>), u32>,
     fixtures: Vec<PrimitiveFixture>,
     failure: Option<NativeConformanceError>,
@@ -90,7 +90,7 @@ impl<'a> CensusAuthor<'a> {
     /// Starts an empty census against one contract and one binding.
     pub const fn new(
         target: &'a ReviewedElementsTapscriptDefinition,
-        binding: &'a ValidatedDevelopmentBinding,
+        binding: &'a ReviewedDevelopmentBinding,
     ) -> Self {
         Self {
             target,

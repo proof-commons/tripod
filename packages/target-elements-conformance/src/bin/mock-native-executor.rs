@@ -26,8 +26,10 @@ use cli_common::{
     CommandExit, emit_control_plane_record, install_json_panic_hook, parse_args_from,
 };
 use target_elements_conformance::protocol::{
-    ExecutorCapability, ExecutorHandshake, NATIVE_PROTOCOL_SCHEMA, NativeExecutionRequest,
-    NativeExecutionResponse, NativeResourceObservation, NativeVerdict, WireExecutionDomain,
+    ExecutorCapability, ExecutorEnvironmentObservation, ExecutorHandshake,
+    MOCK_EXECUTOR_GENESIS_ID, MOCK_EXECUTOR_NETWORK_ID, NATIVE_PROTOCOL_SCHEMA,
+    NativeExecutionRequest, NativeExecutionResponse, NativeResourceObservation, NativeVerdict,
+    ObservedFailureClass, WireEnvironment, WireExecutionDomain,
 };
 
 const COMMAND_NAME: &str = "mock-native-executor";
@@ -65,7 +67,83 @@ enum Behavior {
     Hang,
     /// Answer correctly, but write a secret-shaped line on stderr first.
     NoisyStderr,
+    /// Write a blank record before the handshake.
+    BlankRecord,
+    /// Write a handshake record larger than the harness's bound.
+    OversizedHandshake,
+    /// Write an oversized handshake record and never terminate it.
+    UnterminatedHandshake,
+    /// State an environment observation naming another chain's genesis.
+    WrongGenesis,
+    /// State an environment observation naming another network.
+    WrongNetwork,
+    /// State an environment observation in which the reviewed leaf is
+    /// not active.
+    InactiveLeafVersion,
+    /// Answer every case as accepted while also naming a failure class.
+    AcceptedWithFailureClass,
+    /// Write a blank record after the last response.
+    TrailingBlankRecord,
+    /// State no environment observation at all.
+    MissingEnvironment,
 }
+
+/// How much filler an oversized record carries.
+///
+/// Past the harness's handshake bound, so that the refusal is the bound
+/// rather than the size of any real message.
+const OVERSIZED_RECORD_BYTES: usize = 128 * 1024;
+
+/// This mock's own handshake.
+fn handshake(schema: u32) -> ExecutorHandshake {
+    ExecutorHandshake {
+        protocol_schema: schema,
+        adapter_name: "mock-native-executor".to_owned(),
+        adapter_version: "0.0.0".to_owned(),
+        framework_revision: None,
+        node_name: "mock-native-executor".to_owned(),
+        node_version: "0.0.0".to_owned(),
+        // A mock builds nothing and executes nothing, so it states no
+        // binary revision, no intended tip, and no upstream base. The
+        // report then records that this run establishes no workspace
+        // provenance, which is exactly true of it.
+        binary_reported_revision: None,
+        intended_executed_tip: None,
+        upstream_base: None,
+        included_local_topics: BTreeSet::new(),
+        supported_domains: BTreeSet::from([WireExecutionDomain::Tapscript]),
+        supported_leaf_versions: BTreeSet::from([TAPSCRIPT_LEAF_VERSION]),
+        capabilities: BTreeSet::from([
+            ExecutorCapability::FinalStackReporting,
+            ExecutorCapability::FinalAltstackReporting,
+            ExecutorCapability::FailureClassReporting,
+            ExecutorCapability::TransactionContext,
+        ]),
+    }
+}
+
+/// The environment this mock says it ran on.
+fn environment(behavior: Behavior) -> ExecutorEnvironmentObservation {
+    let mut observation = ExecutorEnvironmentObservation {
+        schema: NATIVE_PROTOCOL_SCHEMA,
+        environment: WireEnvironment::Development,
+        chain_name: "mock-development-chain".to_owned(),
+        network_id: MOCK_EXECUTOR_NETWORK_ID,
+        genesis_id: MOCK_EXECUTOR_GENESIS_ID,
+        active_domains: BTreeSet::from([WireExecutionDomain::Tapscript]),
+        active_leaf_versions: BTreeSet::from([TAPSCRIPT_LEAF_VERSION]),
+    };
+    match behavior {
+        Behavior::WrongGenesis => observation.genesis_id = [0xee; 32],
+        Behavior::WrongNetwork => observation.network_id = [0xdd; 32],
+        Behavior::InactiveLeafVersion => observation.active_leaf_versions = BTreeSet::new(),
+        _ => {}
+    }
+    observation
+}
+
+/// The leaf version byte the reviewed contract fixes.
+const TAPSCRIPT_LEAF_VERSION: u8 = 0xc4;
 
 /// The fixed text the noisy behavior writes on its stderr.
 ///
@@ -98,6 +176,37 @@ fn main() -> ExitCode {
     run(args.behavior).map_or_else(|_| CommandExit::Failure.exit_code(), CommandExit::exit_code)
 }
 
+/// Writes one record the strict framing defines nothing for.
+///
+/// Answers whether the exchange is over: each of these ends the mock's
+/// part, because the harness must refuse the record rather than read on.
+fn malformed_record(stdout: &mut impl Write, behavior: Behavior) -> std::io::Result<bool> {
+    match behavior {
+        Behavior::MalformedJson => writeln!(stdout, "{{this is not json")?,
+        // Not skipped, and not filler: the framing has no empty record.
+        Behavior::BlankRecord => writeln!(stdout)?,
+        // Two shapes of oversized record: one that terminates past the
+        // bound and one that never terminates at all. The harness must
+        // refuse both without reading past the bound.
+        Behavior::OversizedHandshake | Behavior::UnterminatedHandshake => {
+            let filler = "x".repeat(OVERSIZED_RECORD_BYTES);
+            write!(stdout, "{{\"padding\":\"{filler}\"")?;
+            if behavior == Behavior::OversizedHandshake {
+                writeln!(stdout, "}}")?;
+            }
+        }
+        _ => return Ok(false),
+    }
+    stdout.flush()?;
+    if behavior == Behavior::UnterminatedHandshake {
+        // Stay alive holding the unterminated record open, so the
+        // refusal is the harness's bound rather than an end of stream
+        // that would have ended the read anyway.
+        std::thread::sleep(std::time::Duration::from_secs(30));
+    }
+    Ok(true)
+}
+
 /// Speaks the protocol in the selected way.
 fn run(behavior: Behavior) -> std::io::Result<CommandExit> {
     if behavior == Behavior::DieEarly {
@@ -122,9 +231,7 @@ fn run(behavior: Behavior) -> std::io::Result<CommandExit> {
         }
     }
 
-    if behavior == Behavior::MalformedJson {
-        writeln!(stdout, "{{this is not json")?;
-        stdout.flush()?;
+    if malformed_record(&mut stdout, behavior)? {
         return Ok(CommandExit::Success);
     }
 
@@ -133,22 +240,12 @@ fn run(behavior: Behavior) -> std::io::Result<CommandExit> {
     } else {
         NATIVE_PROTOCOL_SCHEMA
     };
-    write_json(
-        &mut stdout,
-        &ExecutorHandshake {
-            protocol_schema: schema,
-            implementation_name: "mock-native-executor".to_owned(),
-            implementation_version: "0.0.0".to_owned(),
-            upstream_revision: None,
-            supported_domains: BTreeSet::from([WireExecutionDomain::Tapscript]),
-            supported_leaf_versions: BTreeSet::from([0xc4]),
-            capabilities: BTreeSet::from([
-                ExecutorCapability::FinalStackReporting,
-                ExecutorCapability::FinalAltstackReporting,
-                ExecutorCapability::FailureClassReporting,
-            ]),
-        },
-    )?;
+    write_json(&mut stdout, &handshake(schema))?;
+
+    if behavior == Behavior::MissingEnvironment {
+        return Ok(CommandExit::Success);
+    }
+    write_json(&mut stdout, &environment(behavior))?;
 
     if behavior == Behavior::MissingResult {
         return Ok(CommandExit::Success);
@@ -198,6 +295,10 @@ fn run(behavior: Behavior) -> std::io::Result<CommandExit> {
     if behavior == Behavior::TrailingData {
         write_json(&mut stdout, &serde_json::json!({"unsolicited": true}))?;
     }
+    if behavior == Behavior::TrailingBlankRecord {
+        writeln!(stdout)?;
+        stdout.flush()?;
+    }
 
     Ok(if behavior == Behavior::ExitNonzero {
         CommandExit::Failure
@@ -236,6 +337,25 @@ fn echo(request: &NativeExecutionRequest, behavior: Behavior) -> NativeExecution
         ..NativeResourceObservation::default()
     };
 
+    // This mock advertises stack reporting, so every answer states both
+    // stacks. Where the fixture fixes none, the mock states the empty
+    // one: it measured nothing either way, and a response that advertised
+    // stack reporting and then omitted the stack would be malformed
+    // protocol rather than a weak observation.
+    let stack = |stated: &Option<Vec<Vec<u8>>>| Some(stated.clone().unwrap_or_default());
+
+    if behavior == Behavior::AcceptedWithFailureClass {
+        return NativeExecutionResponse {
+            schema,
+            case: request.case,
+            verdict: NativeVerdict::Accepted,
+            final_stack: Some(Vec::new()),
+            final_altstack: Some(Vec::new()),
+            observed_failure: Some(ObservedFailureClass::EvaluatedFalse),
+            resources,
+        };
+    }
+
     match request.fixture.expected() {
         ExpectedPrimitiveOutcome::Accept {
             static_final_stack,
@@ -244,8 +364,8 @@ fn echo(request: &NativeExecutionRequest, behavior: Behavior) -> NativeExecution
             schema,
             case: request.case,
             verdict: NativeVerdict::Accepted,
-            final_stack: static_final_stack.clone(),
-            final_altstack: static_final_altstack.clone(),
+            final_stack: stack(static_final_stack),
+            final_altstack: stack(static_final_altstack),
             observed_failure: None,
             resources,
         },
@@ -257,8 +377,8 @@ fn echo(request: &NativeExecutionRequest, behavior: Behavior) -> NativeExecution
             schema,
             case: request.case,
             verdict: NativeVerdict::Rejected,
-            final_stack: static_final_stack.clone(),
-            final_altstack: static_final_altstack.clone(),
+            final_stack: stack(static_final_stack),
+            final_altstack: stack(static_final_altstack),
             // The first class the fixture admits, which is the only one
             // a mock could pick without measuring anything.
             observed_failure: classes.iter().next().copied(),

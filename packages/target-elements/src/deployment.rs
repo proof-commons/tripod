@@ -38,7 +38,10 @@
 use std::collections::BTreeSet;
 
 use crate::capability::{CapabilityContract, ElementsCapability, StaticCapabilityStatus};
-use crate::definition::{TargetContractVersion, ValidatedTargetDefinition};
+use crate::definition::{
+    ReviewedElementsTapscriptDefinition, TargetContractVersion, TargetProjection,
+    ValidatedTargetDefinition,
+};
 use crate::error::TargetError;
 use crate::opcode::LeafVersion;
 use crate::resource::{PolicyResourceLimits, ResourceDimension};
@@ -362,6 +365,86 @@ pub fn validate_development_binding(
     }
 
     Ok(ValidatedDevelopmentBinding { binding })
+}
+
+/// A development binding welded to the exact reviewed contract that
+/// validated it.
+///
+/// # Why a version number is not the weld
+///
+/// [`ValidatedDevelopmentBinding`] records the contract *revision* it was
+/// validated against and nothing more, so a binding validated against one
+/// contract combines with any other contract carrying the same revision
+/// number. Several internally coherent contracts share a revision while
+/// differing in capability status, primitive behavior, failure behavior,
+/// encodings, resource bounds, and evidence requirements — and a consumer
+/// treating a binding as evidence that *this* contract was the validated
+/// one would be reading a number as an identity.
+///
+/// This state retains the complete validated target projection instead.
+/// Equality of the retained projection with a candidate contract's
+/// projection is exact typed equality over the whole contract, which is
+/// the statement the consumer needs and the version number is not.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReviewedDevelopmentBinding {
+    target: TargetProjection,
+    deployment: ValidatedDevelopmentBinding,
+}
+
+impl ReviewedDevelopmentBinding {
+    /// The complete contract projection the binding was validated
+    /// against.
+    #[must_use]
+    pub const fn target(&self) -> &TargetProjection {
+        &self.target
+    }
+
+    /// The generic validated binding.
+    #[must_use]
+    pub const fn deployment(&self) -> &ValidatedDevelopmentBinding {
+        &self.deployment
+    }
+
+    /// The binding itself.
+    #[must_use]
+    pub const fn binding(&self) -> &DevelopmentDeploymentBinding {
+        self.deployment.binding()
+    }
+
+    /// The stable comparison form of the binding.
+    #[must_use]
+    pub fn projection(&self) -> DeploymentProjection {
+        self.deployment.projection()
+    }
+
+    /// Whether this binding was validated against exactly this contract.
+    ///
+    /// Exact typed equality over the complete projection, never version
+    /// equality.
+    #[must_use]
+    pub fn welded_to(&self, target: &ReviewedElementsTapscriptDefinition) -> bool {
+        self.target == target.projection()
+    }
+}
+
+/// Validates a deployment binding against one exact reviewed contract.
+///
+/// The returned state retains that contract's complete projection, so a
+/// binding validated here cannot later be combined with a different
+/// contract carrying the same revision number.
+///
+/// # Errors
+///
+/// Everything [`validate_development_binding`] rejects.
+pub fn validate_reviewed_development_binding(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: DevelopmentDeploymentBinding,
+) -> Result<ReviewedDevelopmentBinding, TargetError> {
+    let deployment = validate_development_binding(target.validated(), binding)?;
+    Ok(ReviewedDevelopmentBinding {
+        target: target.projection(),
+        deployment,
+    })
 }
 
 /// A validated contract paired with a validated development binding.

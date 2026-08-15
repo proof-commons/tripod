@@ -58,7 +58,7 @@ pub mod material;
 pub mod numeric;
 pub mod timelock;
 
-use target_elements::{ReviewedElementsTapscriptDefinition, ValidatedDevelopmentBinding};
+use target_elements::{ReviewedDevelopmentBinding, ReviewedElementsTapscriptDefinition};
 
 use crate::error::NativeConformanceError;
 use crate::fixture::PrimitiveFixtureSet;
@@ -76,7 +76,7 @@ use author::CensusAuthor;
 /// one identity.
 pub fn canonical_census(
     target: &ReviewedElementsTapscriptDefinition,
-    binding: &ValidatedDevelopmentBinding,
+    binding: &ReviewedDevelopmentBinding,
 ) -> Result<PrimitiveFixtureSet, NativeConformanceError> {
     let mut author = CensusAuthor::new(target, binding);
 

@@ -71,6 +71,7 @@
 #![forbid(unsafe_code)]
 
 mod census;
+pub mod claim;
 pub mod error;
 pub mod executor;
 pub mod fixture;

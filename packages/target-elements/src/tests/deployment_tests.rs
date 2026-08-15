@@ -2,16 +2,17 @@
 
 use crate::capability::ElementsCapability;
 use crate::definition::{
-    TargetContractVersion, ValidatedTargetDefinition, reviewed_elements_tapscript,
+    TargetContractVersion, TargetDefinition, TargetDefinitionParts, ValidatedTargetDefinition,
+    reviewed_elements_tapscript, validate_target_definition,
 };
 use crate::deployment::{
     ActivationDeclaration, DeploymentEnvironment, DevelopmentDeploymentBinding,
     DevelopmentResourceOverrides, bind_development_target, overridable_dimensions,
-    validate_development_binding,
+    validate_development_binding, validate_reviewed_development_binding,
 };
 use crate::error::TargetError;
 use crate::opcode::LeafVersion;
-use crate::resource::{PolicyResourceLimits, ResourceBound, ResourceDimension};
+use crate::resource::{PolicyResourceLimits, ResourceBound, ResourceContract, ResourceDimension};
 
 /// A synthetic development network identifier.
 ///
@@ -446,4 +447,60 @@ fn an_activation_declaration_is_input_rather_than_evidence() {
     let validated =
         validate_development_binding(&definition, binding()).expect("the binding is coherent");
     assert_eq!(validated.binding().activation(), &declaration);
+}
+
+#[test]
+fn a_reviewed_binding_retains_the_exact_contract_it_validated_against() {
+    let reviewed = reviewed_elements_tapscript().expect("the reviewed contract validates");
+    let welded =
+        validate_reviewed_development_binding(&reviewed, binding()).expect("the binding is valid");
+
+    // The retained value is the complete projection, not the revision
+    // number: everything the contract says travels with the binding.
+    assert_eq!(welded.target(), &reviewed.projection());
+    assert!(welded.welded_to(&reviewed));
+    assert_eq!(welded.binding().network_id(), NETWORK_ID);
+    assert_eq!(welded.projection().genesis_id(), GENESIS_ID);
+    assert_eq!(
+        welded.deployment(),
+        &validate_development_binding(&target(), binding()).expect("the binding is valid")
+    );
+}
+
+#[test]
+fn contract_revision_equality_does_not_establish_contract_equality() {
+    // Two internally coherent contracts can carry one revision number
+    // and still say different things. This one narrows the policy
+    // resource interface to nothing, which the generic validator
+    // accepts — a policy bound cannot be looser than consensus, and an
+    // absent one is not looser. A consumer comparing revisions would
+    // treat the two as interchangeable; the projection does not.
+    let reviewed = reviewed_elements_tapscript().expect("the reviewed contract validates");
+    let source = reviewed.definition();
+    let neighbour = validate_target_definition(TargetDefinition::new(TargetDefinitionParts {
+        version: source.version(),
+        execution_domain: source.execution_domain(),
+        leaf_version: source.leaf_version(),
+        opcodes: source.opcodes().clone(),
+        encodings: source.encodings().clone(),
+        pushes: source.pushes().clone(),
+        authorization: source.authorization().clone(),
+        confidential_values: source.confidential_values().clone(),
+        issuance: source.issuance().clone(),
+        resources: ResourceContract::new(
+            source.resources().consensus().clone(),
+            PolicyResourceLimits::new([]),
+        ),
+        capabilities: source.capabilities().clone(),
+        evidence_requirements: source.evidence_requirements().clone(),
+    }))
+    .expect("narrowing the policy interface leaves a coherent contract");
+
+    let welded =
+        validate_reviewed_development_binding(&reviewed, binding()).expect("the binding is valid");
+
+    // Same revision, different contract — and the weld sees it.
+    assert_eq!(neighbour.definition().version(), source.version());
+    assert_eq!(welded.target().version(), neighbour.projection().version());
+    assert_ne!(welded.target(), &neighbour.projection());
 }

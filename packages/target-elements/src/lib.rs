@@ -107,8 +107,8 @@ pub use definition::{
 pub use deployment::{
     ActivationDeclaration, DeploymentEnvironment, DeploymentProjection,
     DevelopmentDeploymentBinding, DevelopmentResourceOverrides, ElementsTarget,
-    ValidatedDevelopmentBinding, bind_development_target, overridable_dimensions,
-    validate_development_binding,
+    ReviewedDevelopmentBinding, ValidatedDevelopmentBinding, bind_development_target,
+    overridable_dimensions, validate_development_binding, validate_reviewed_development_binding,
 };
 pub use encoding::{
     ByteOrder, CanonicalEncodingRule, EncodingClass, EncodingDomain, EncodingSpec,

@@ -39,14 +39,46 @@ NUMS constant, which is a public test constant with no known discrete log.
 
 Provenance
 ----------
-`implementation_name` is the first word of `elementsd --version`, and
-`implementation_version` is that first line verbatim, so the report carries
-the binary's own version string including any `-dirty` marker. Elements
-embeds the revision it was built from in that string; when it does,
-`upstream_revision` is that embedded revision, because that is the revision
-that actually executed. `--upstream-repo` may name the upstream checkout, and
-its `git rev-parse HEAD` is used only as a fallback when the binary embeds no
-revision -- a checkout's HEAD is not evidence about a binary built earlier.
+Five roles, kept apart, because one revision string cannot answer five
+questions and a schema offering one invites whichever answer is easiest to
+obtain (ADR-018).
+
+  adapter_name/version       this script, which builds the transactions
+  framework_revision         the upstream functional-test framework it
+                             builds them with
+  node_name/node_version     the first word, and the whole first line, of
+                             `elementsd --version`
+  binary_reported_revision   the revision the binary itself embeds in that
+                             line, and nothing else
+  intended_executed_tip      what the operator says they meant to run
+  upstream_base              the upstream base that tip derives from
+  included_local_topics      the local topic branches folded into it
+
+A checkout's `git rev-parse HEAD` is never substituted for
+`binary_reported_revision`. A checkout identifies intended source; it says
+nothing about a binary built at some earlier time from some other state, and
+the fallback that once filled the field this way was a misattribution rather
+than a best effort. A binary embedding no revision reports `None`, and the
+report records that this run establishes no workspace provenance.
+
+The last three are explicit operator declarations, passed as arguments. They
+are recorded as declarations and are never derived from a working tree.
+
+Environment
+-----------
+The adapter states the environment it actually ran on, after the node is up:
+
+  genesis_id    `getblockhash 0` from the node that executed, byte order as
+                the node prints it
+  chain_name    the chain the node was configured to run
+  network_id    the identity the deployment binding names for that chain,
+                passed as `--network-id` and restated only once the genesis
+                above has been read from the booted node
+
+The harness compares all of it with the validated binding before any case
+executes, so a run cannot inherit a caller's label for a chain the adapter
+never looked at. A dishonest adapter can still lie; what this removes is the
+honest one labelling one chain with another chain's identity.
 
 Execution model
 ---------------
@@ -219,9 +251,13 @@ import time
 
 COMMAND_NAME = "elements-native-executor"
 
+# This adapter's own version, which is provenance for the transactions it
+# builds and is not the node's version.
+ADAPTER_VERSION = "2.0.0"
+
 # The protocol revision this adapter speaks. It must match
 # NATIVE_PROTOCOL_SCHEMA in the conformance package.
-NATIVE_PROTOCOL_SCHEMA = 1
+NATIVE_PROTOCOL_SCHEMA = 2
 
 # The reviewed tapscript leaf version.
 TAPSCRIPT_LEAF_VERSION = 0xC4
@@ -1109,7 +1145,12 @@ class CaseExecutor:
                 "fixture.context.current_input_index names no declared input"
             )
         declared_path = context["script_path"]
-        if declared_path["script"] and declared_path["script"] != fixture["script"]:
+        # Exact equality, in both directions. Tolerating an empty declared
+        # path let a context that stated no leaf script through, and the
+        # adapter would then have chosen the leaf the fixture failed to
+        # state. Canonical construction cannot produce that shape, but the
+        # protocol is what stands between this adapter and a sender.
+        if declared_path["script"] != fixture["script"]:
             raise AdapterError(
                 "fixture.context.script_path.script disagrees with fixture.script"
             )
@@ -1360,8 +1401,13 @@ def resources_for(fixture, weight) -> dict:
     }
 
 
-def implementation_provenance(elementsd: str, upstream_repo):
-    """Reads the node's own version line and the revision it embeds."""
+def node_provenance(elementsd: str):
+    """Reads the node's own version line and the revision it embeds.
+
+    The revision returned is the *binary's* own, or None. There is no
+    checkout fallback: a working tree's HEAD identifies intended source, and
+    reporting it here would attribute one program's identity to another.
+    """
     completed = subprocess.run(
         [elementsd, "--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True,
         check=False,
@@ -1371,24 +1417,44 @@ def implementation_provenance(elementsd: str, upstream_repo):
     first_line = completed.stdout.strip().splitlines()[0].strip()
     name = first_line.split(" ")[0] if first_line else "unknown"
     match = re.search(r"-([0-9a-f]{7,40})(-dirty)?$", first_line)
-    revision = match.group(1) if match else None
-    if revision is None and upstream_repo is not None:
-        head = subprocess.run(
-            ["git", "-C", upstream_repo, "rev-parse", "HEAD"],
-            stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False,
-        )
-        if head.returncode == 0:
-            revision = head.stdout.strip()
-    return name, first_line, revision
+    return name, first_line, (match.group(1) if match else None)
+
+
+def framework_revision(framework_path):
+    """The revision of the transaction framework this adapter builds with.
+
+    Read from the framework checkout, which is exactly what this field is
+    about: the framework is source this adapter imports and runs in-process,
+    so its checkout state *is* what executed. That is not true of the node
+    binary, whose field is left alone.
+    """
+    if framework_path is None:
+        return None
+    completed = subprocess.run(
+        ["git", "-C", str(framework_path), "rev-parse", "HEAD"],
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False,
+    )
+    return completed.stdout.strip() if completed.returncode == 0 else None
+
+
+def identifier(text: str, role: str) -> bytes:
+    """One 32-byte public identifier, from 64 hex digits."""
+    try:
+        value = bytes.fromhex(text)
+    except ValueError:
+        raise FatalAdapterError("the %s identifier is not hex" % role) from None
+    if len(value) != 32:
+        raise FatalAdapterError("the %s identifier must be 32 bytes" % role)
+    return value
 
 
 def serve(arguments) -> int:
     """Runs the whole exchange, and destroys the node whatever happens."""
     framework_path, messages, script = load_framework(arguments.framework)
     log("framework loaded from %s" % framework_path)
-    name, version, revision = implementation_provenance(
-        arguments.elementsd, arguments.upstream_repo
-    )
+    name, version, revision = node_provenance(arguments.elementsd)
+    network_id = identifier(arguments.network_id, "network")
+    topics = [topic for topic in (arguments.included_local_topic or []) if topic]
 
     request_line = sys.stdin.readline()
     if request_line == "":
@@ -1423,9 +1489,16 @@ def serve(arguments) -> int:
         write_message(
             {
                 "protocol_schema": NATIVE_PROTOCOL_SCHEMA,
-                "implementation_name": name,
-                "implementation_version": version,
-                "upstream_revision": revision,
+                "adapter_name": COMMAND_NAME,
+                "adapter_version": ADAPTER_VERSION,
+                "framework_revision": framework_revision(framework_path),
+                "node_name": name,
+                "node_version": version,
+                # The binary's own revision, or nothing. Never a checkout.
+                "binary_reported_revision": revision,
+                "intended_executed_tip": arguments.intended_executed_tip,
+                "upstream_base": arguments.upstream_base,
+                "included_local_topics": sorted(set(topics)),
                 "supported_domains": ["tapscript"],
                 "supported_leaf_versions": [TAPSCRIPT_LEAF_VERSION],
                 "capabilities": [
@@ -1433,6 +1506,24 @@ def serve(arguments) -> int:
                     "resource_observation",
                     "transaction_context",
                 ],
+            }
+        )
+
+        # What this run actually executed on, read from the node that is
+        # now up. The genesis is the node's answer; the chain name is what
+        # it was configured to run; the network identity is the name the
+        # binding gives that chain, restated only now that its genesis has
+        # been observed.
+        genesis = identifier(node.call("getblockhash", "0"), "genesis")
+        write_message(
+            {
+                "schema": NATIVE_PROTOCOL_SCHEMA,
+                "environment": "development",
+                "chain_name": arguments.chain,
+                "network_id": list(network_id),
+                "genesis_id": list(genesis),
+                "active_domains": ["tapscript"],
+                "active_leaf_versions": [TAPSCRIPT_LEAF_VERSION],
             }
         )
 
@@ -1502,10 +1593,28 @@ def parse_arguments(argv):
         "package, or the directory holding it)",
     )
     parser.add_argument(
-        "--upstream-repo",
+        "--network-id",
+        required=True,
+        help="the public development network identity of the chain this adapter "
+        "boots, as 64 hex digits; restated as an observation only once the "
+        "chain's genesis has been read from the node",
+    )
+    parser.add_argument(
+        "--intended-executed-tip",
         default=None,
-        help="upstream checkout, consulted for a revision only when the binary "
-        "embeds none",
+        help="the integration tip the operator intended to run (ADR-018); a "
+        "declaration, never derived from a working tree",
+    )
+    parser.add_argument(
+        "--upstream-base",
+        default=None,
+        help="the upstream base that tip derives from (ADR-018)",
+    )
+    parser.add_argument(
+        "--included-local-topic",
+        action="append",
+        default=None,
+        help="one local topic branch folded into that tip; repeatable (ADR-018)",
     )
     parser.add_argument("--chain", default="elementsregtest", help="the disposable chain name")
     parser.add_argument(
