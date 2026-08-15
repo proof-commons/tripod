@@ -144,7 +144,7 @@ No named consumer means no digest. No distinct decision means no digest.
 
 ### 2.1 Latest static review · `tbl:backlog:review-basis`
 
-The current review is the fourth static review, performed in two independent
+The current review is the fifth static review, performed in two independent
 passes over the supplied concatenation of the tree:
 
 ```text
@@ -152,24 +152,26 @@ tree:
    
 
 selected files:
-    292
+    266
 ```
 
-The supplied report excluded, among other things:
+The supplied filter excluded, among other things:
 
 ```text
 Cargo.lock
 licence files
-docs/attestation/human.md
+the paper sources
+packages/artifacts/
+packages/cli-common/
 packages/document-stamps/
 packages/execwrap/
-packages/flatten-latex-main/
-packages/model/generated/architecture.json
+packages/labels/
 most unit and integration test directories
+some generated files
 ```
 
-No Cargo, Meson, TeX, target-execution, advisory, or reproducibility command
-was run as part of this review.
+No Cargo, Meson, TeX, the native executor, advisory, or reproducibility
+command was run as part of this review.
 
 Therefore:
 
@@ -180,17 +182,21 @@ Therefore:
 - licence compatibility was not independently checked;
 - historical gate records remain historical evidence only.
 
-Its findings are recorded in §5.4; the review found no obvious reachable
-valid-world model path for unauthorized issuance, reserve extraction,
-receipt-class escape, or recipient redirection, and its most consequential
-finding is that the new target boundary conflates well-shaped, internally
-coherent, and reviewed-Elements trust states that Guide 9 must separate
-before the instruction core consumes them. The review text is archived at
-[plans/reviews/review-4-0.3.2-dev.md](reviews/review-4-0.3.2-dev.md).
+Its findings are recorded in §5.5; the review found no obvious valid-world
+route in the selected model code for unauthorized issuance, reserve
+extraction, receipt-class escape, sponsor-funded payout substitution,
+recipient redirection, post-sealing pool revival, or history residue
+influencing monetary computation. Its central verdict is that the native
+evidence layer can currently say passed without proving the complete claimed
+subject was present and covered, and that the static signature abstraction
+cannot represent the target's documented empty-signature and unknown-key-type
+paths; both must be repaired before Guide-10 prototype evidence is recorded.
+The review text is archived at
+[plans/reviews/review-5-0.3.3-dev.md](reviews/review-5-0.3.3-dev.md).
 
 ### 2.2 Earlier review basis
 
-The repository retains five earlier reviewed trees as historical context:
+The repository retains six earlier reviewed trees as historical context:
 
 ```text
 initial reviewed tree:
@@ -207,10 +213,13 @@ second-review tree:
 
 third-review tree:
    
+
+fourth-review tree:
+   
 ```
 
 Those reviews and their findings are evidence about their exact trees. They are
-not current-checkout execution evidence. The second, third, and fourth review
+not current-checkout execution evidence. The second through fifth review
 texts are archived under [plans/reviews/](reviews/README.md).
 
 ### 2.3 Historical Phase-1 gate · `gate:backlog:phase1`
@@ -947,6 +956,38 @@ instruction core consumes the contracts.
 | `R2-N02` | Medium | DONE | The adapter accepts a combined target-and-binding value but ignores the deployment half entirely, so assessments are invariant under activation, network, and resource-override differences. The assessment API now consumes the reviewed static definition and is named static; the combined value is no longer named anywhere in the adapter crate, and deployment-aware assessment remains deliberately deferred until a real consumer exists. |
 | `R2-N03` | Medium | DONE | Public architecture identity functions accept unvalidated architecture values, so an invalid architecture can bear the active semantic hash recipe. The draft and release validators now return borrowing validated wrappers that are the only public path to the identity and publication functions; unchecked projections are crate-private for mutation tests, and an equivalence test plus the pinned gates prove no published identity moved. |
 | `R2-N04` | Medium | DONE | Compare-if-changed publication checks bytes only, so mode-only corruption survives indefinitely, including a synced helper binary that lost its executable bit. Destination freshness now means bytes and required mode; mode-only mismatches are repaired in place without rewriting bytes, the repair is visible in the typed result, both sync scripts repair equal-byte destinations, and a mock-toolchain shell test runs the full matrix. |
+
+### 5.5 Fifth-review findings · `tbl:backlog:findings-sr5`
+
+The fifth static review reported two passes over the tree recorded in §2.1.
+The second pass consolidates the first: first-pass identifiers R5-01 through
+R5-07 map into the SR5 register as SR5-01, SR5-02, SR5-03, SR5-06, SR5-08,
+SR5-12, and SR5-13 respectively; the remaining SR5 rows are second-pass
+additions. The Guide-10 preflight waves own the register; the review ranks
+the native-evidence rows and the signature abstraction as blockers before
+Guide-10 prototype evidence may be recorded (guide §2.1).
+
+| ID | Severity | Status | Finding |
+|---|---|---|---|
+| `SR5-01` | High | ACTIVE | The public native-report gate validates only required evidence rows that happen to be present; an empty, row-deleted, or relabeled report census passes. Required repair: complete owner validation returning a validated report wrapper with exact duplicate-sensitive case and evidence-row censuses and recomputed statuses, dispositions, and summary. |
+| `SR5-02` | High | ACTIVE | Broad evidence rows pass when only a subset of their semantic claim has cases: issuance-absent cases complete issuance introspection, rejection-only signature cases complete signature semantics, explicit-form cases complete confidential encodings, and consensus resource cases complete relay-policy resource evidence. Required repair: typed claim-level evidence census beneath the broad requirement identifiers with exact required-claim coverage. |
+| `SR5-03` | High | ACTIVE | Native reports retain only the case ordinal, expected outcome, observed outcome, and status, omitting the exact script, stack, context, enforcement layer, leaf version, and expected resources; two fixture sets can produce indistinguishable reports. Required repair: complete canonical fixture projection embedded in each report row. |
+| `SR5-04` | High | ACTIVE | A development binding validated against one target definition can later combine with a different definition of the same contract version, because the binding retains only the version. Required repair: retain the validated target projection in the binding or introduce a reviewed-development-binding wrapper constructible only against the reviewed Elements definition. |
+| `SR5-05` | High | ACTIVE | The static signature model cannot represent the target's documented empty-signature and unknown-public-key-type behavior: exact-width operand types reject the empty form before the failure contract applies and exclude the succeeds-without-verification path. Required repair: operand alternatives with conditional failure semantics, plus native unknown-key vectors before signature evidence is complete. |
+| `SR5-06` | Medium | ACTIVE | Reported network and genesis identifiers are caller declarations copied through the pipeline; the executor never reports what chain it actually ran, and the recorded synthetic identifiers confirm the fields are run labels. Required repair: a typed executor environment observation compared against the validated binding before any case executes. |
+| `SR5-07` | Medium | ACTIVE | Relation identifiers are not generically welded to relation bodies; the kind vocabulary contains an unused member and lacks a member for expression predicates. Required repair: an exhaustive relation-identity validator deriving expected kind and subject from every body variant, with the kind vocabulary corrected. |
+| `SR5-08` | Medium | ACTIVE | Native executor provenance cannot express the executed tip, upstream base, and local-topic census that ADR-018 requires, and a checkout-HEAD fallback can misattribute a binary's revision. Required repair: separated adapter, node, and integration-provenance fields with no checkout fallback into the binary-reported revision. |
+| `SR5-09` | Medium | ACTIVE | Executor timeout kills only the immediate child, so a real adapter's node, temporary datadir, cookie, and inherited pipes can outlive the run. Required repair: process-group supervision with graceful-then-forced group termination and a descendant-retaining regression test. |
+| `SR5-10` | Medium | ACTIVE | Executor protocol lines are read into an unbounded buffer, so one unterminated line can exhaust memory before typed rejection. Required repair: explicit per-phase protocol record limits enforced with bounded reads. |
+| `SR5-11` | Medium | ACTIVE | Schema-2 deployment profiles can acquire a type named validated deployment release despite the documented production-blocking ABI gap. Required repair: split structural profile validity from production-release validity, with the latter unconstructible under schema 2. |
+| `SR5-12` | Low | ACTIVE | Blank protocol lines and trailing blank data are silently accepted despite the documented fail-closed protocol. Required repair: strict NDJSON framing with blank and trailing records rejected. |
+| `SR5-13` | Low | ACTIVE | Public status documentation is stale: the root README denies the instruction core and omits the conformance package, and the target package still claims no native evidence exists. Required repair: reconcile the statements with the package-boundary claim that the static crate owns requirements while development native evidence lives in the conformance package. |
+
+The review also recorded three lower-severity observations to close alongside
+the owning repairs: accepted responses are not protocol-shape validated
+against the advertised handshake capabilities, public fixture construction
+does little semantic context validation, and the Python adapter tolerates an
+empty context script path where the fixture script is nonempty.
 
 ### T6 — Validate capabilities for external-evidence obligations · `task:review:external-evidence-capability`
 
