@@ -370,6 +370,36 @@ fn transaction_signatures(author: &mut CensusAuthor<'_>) {
             author.reject(case, &[ObservedFailureClass::InvalidSignature]);
         }
 
+        // A nonempty public key of a form the target does not recognize.
+        //
+        // The reviewed forward-compatibility path, and the residual
+        // Guide-10 Wave 2 left open. Upstream settles the key's size
+        // *before* any verification: a key that is neither empty nor
+        // thirty-two bytes reaches no signature check at all, and the
+        // check's result stays whatever the signature's emptiness made
+        // it. So a nonempty signature — which is never examined, and
+        // need not be a signature over anything — succeeds.
+        //
+        // This is the target's most counter-intuitive success, and the
+        // one a caller is most likely to mistake for a rejection. The
+        // signature bytes here are deliberately not a valid signature
+        // over anything, because the point is that nothing verifies
+        // them (Guide-10 `rule:guide10:signature-abstraction`).
+        let unknown_key = author.item(vec![0x02; 33]);
+        let unverified_signature = author.item(vec![0x07; 64]);
+        let stack = [unverified_signature, unknown_key];
+        let case = Case {
+            group,
+            opcode: Some(id),
+            script: &script,
+            stack: &stack,
+            context: Some(census_transaction()),
+        };
+        // Both forms end in one true item, by different routes: the
+        // pushing form pushes the true itself, and the verifying form
+        // pushes nothing and lets the continuation leave it.
+        author.accept(case, vec![truth()]);
+
         // An absent public key.
         let stack = [
             author.encoded(

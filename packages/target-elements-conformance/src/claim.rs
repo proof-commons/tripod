@@ -417,12 +417,7 @@ const CLAIM_CENSUS: &[ClaimRecord] = {
         record(
             Claim::UnknownPublicKeyTypeSucceededUnverified,
             Requirement::SignatureSemantics,
-            Unresolved(
-                "the static contract now states the target's forward-compatibility path — a \
-                 nonempty key of an unrecognized form succeeds without verification — but no \
-                 native fixture offers such a key yet, so the behavior is asserted by the \
-                 reviewed contract and observed by nothing",
-            ),
+            Required,
         ),
         record(
             Claim::RelativeTimelockSatisfied,
@@ -578,6 +573,7 @@ struct CaseFacts<'a> {
     outcome: CaseOutcome,
     aborted: BTreeSet<ObservedFailureClass>,
     context: Option<&'a PrimitiveExecutionContext>,
+    initial_stack: &'a [Vec<u8>],
 }
 
 impl CaseFacts<'_> {
@@ -608,6 +604,7 @@ pub fn claims_of(fixture: &PrimitiveFixture) -> BTreeSet<NativeEvidenceClaim> {
         outcome: outcome_of(expected),
         aborted: abort_classes(expected),
         context: fixture.context(),
+        initial_stack: fixture.initial_stack(),
     };
 
     let mut claims = BTreeSet::new();
@@ -775,16 +772,29 @@ fn authorization_claims(facts: &CaseFacts<'_>) -> BTreeSet<NativeEvidenceClaim> 
             facts.opcode,
             Some(OpcodeId::CheckSigFromStack | OpcodeId::CheckSigFromStackVerify)
         );
-        // The split is on the *spend*, not on whether the primitive
-        // completed: an empty signature makes the checking form consume
-        // its operands and push a false, which is a completed primitive
-        // and emphatically not a signature that verified.
-        claims.insert(match (stack_message, facts.accepting()) {
-            (true, true) => Claim::StackMessageSignatureAccepted,
-            (true, false) => Claim::StackMessageSignatureRefused,
-            (false, true) => Claim::TransactionSignatureAccepted,
-            (false, false) => Claim::TransactionSignatureRefused,
-        });
+        // The forward-compatibility path is not a signature that
+        // verified, and must not be counted as one. Upstream settles the
+        // key's width before any verification happens: a nonempty key
+        // that is not the recognized width reaches no check at all, so
+        // an accepting case here establishes that the target succeeded
+        // *without* verifying — the opposite of what the
+        // signature-accepted claims say.
+        //
+        // Otherwise the split is on the *spend*, not on whether the
+        // primitive completed: an empty signature makes the checking
+        // form consume its operands and push a false, which is a
+        // completed primitive and emphatically not a signature that
+        // verified.
+        if offers_unknown_key_type(facts) && facts.accepting() {
+            claims.insert(Claim::UnknownPublicKeyTypeSucceededUnverified);
+        } else {
+            claims.insert(match (stack_message, facts.accepting()) {
+                (true, true) => Claim::StackMessageSignatureAccepted,
+                (true, false) => Claim::StackMessageSignatureRefused,
+                (false, true) => Claim::TransactionSignatureAccepted,
+                (false, false) => Claim::TransactionSignatureRefused,
+            });
+        }
     }
     if facts.group == NativeCaseGroup::RelativeTimelock {
         claims.insert(if facts.completed() {
@@ -818,6 +828,31 @@ fn boundary_claims(facts: &CaseFacts<'_>) -> BTreeSet<NativeEvidenceClaim> {
         claims.insert(Claim::SighashCommitmentObserved);
     }
     claims
+}
+
+/// The width of the one public-key encoding the target verifies
+/// against.
+///
+/// Stated here rather than read from the reviewed contract so that this
+/// derivation stays an independent statement about the fixtures. A weld
+/// test requires it to agree with the contract, which is what keeps the
+/// independence from becoming a second source of truth.
+const RECOGNIZED_PUBLIC_KEY_BYTES: usize = 32;
+
+/// Whether the case offers a public key of a form the target does not
+/// recognize.
+///
+/// The key is the topmost operand of every reviewed signature
+/// primitive, so the top of the stated initial stack is the key the
+/// executor will hand it. An empty key is not this: the target refuses
+/// emptiness outright, and folding the two together would put the
+/// hardest rejection and the forward-compatibility success under one
+/// name.
+fn offers_unknown_key_type(facts: &CaseFacts<'_>) -> bool {
+    facts
+        .initial_stack
+        .last()
+        .is_some_and(|key| !key.is_empty() && key.len() != RECOGNIZED_PUBLIC_KEY_BYTES)
 }
 
 /// The failure classes that are aborts of a primitive.

@@ -22,6 +22,23 @@ use crate::success::{SuccessCase, SuccessCondition, SuccessContract};
 /// These bytes come from the reviewed upstream opcode declaration, not
 /// from a lookup through the registry under test.
 const EXPECTED_CODES: &[(OpcodeId, u8)] = &[
+    (OpcodeId::Verify, 0x69),
+    (OpcodeId::DropTwo, 0x6d),
+    (OpcodeId::DuplicateTwo, 0x6e),
+    (OpcodeId::Drop, 0x75),
+    (OpcodeId::Duplicate, 0x76),
+    (OpcodeId::RemoveSecond, 0x77),
+    (OpcodeId::CopyOver, 0x78),
+    (OpcodeId::Rotate, 0x7b),
+    (OpcodeId::Swap, 0x7c),
+    (OpcodeId::Tuck, 0x7d),
+    (OpcodeId::Concatenate, 0x7e),
+    (OpcodeId::Substring, 0x7f),
+    (OpcodeId::Size, 0x82),
+    (OpcodeId::BitwiseAnd, 0x84),
+    (OpcodeId::BitwiseXor, 0x86),
+    (OpcodeId::Equal, 0x87),
+    (OpcodeId::EqualVerify, 0x88),
     (OpcodeId::CheckSig, 0xac),
     (OpcodeId::CheckSigVerify, 0xad),
     (OpcodeId::CheckSequenceVerify, 0xb2),

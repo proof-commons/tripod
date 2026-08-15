@@ -111,6 +111,15 @@ impl<'a> CensusAuthor<'a> {
 
     // -- Stack items -------------------------------------------------
 
+    /// The widest literal the reviewed contract admits.
+    ///
+    /// Read from the contract rather than restated, so a case about the
+    /// bound cannot drift away from the bound it is about.
+    #[must_use]
+    pub const fn maximum_literal_bytes(&self) -> usize {
+        self.target.definition().pushes().maximum_payload_bytes()
+    }
+
     /// One literal of arbitrary bytes.
     pub fn item(&mut self, bytes: Vec<u8>) -> StackItem {
         self.admit(StackItem::new(self.target, bytes))

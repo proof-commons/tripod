@@ -603,6 +603,17 @@ pub enum ObservedFailureClass {
     LeafVersionRejected,
     /// Evaluation completed with a false on top of the stack.
     EvaluatedFalse,
+    /// A computed byte string was wider than the target admits.
+    ResultSizeExceeded,
+    /// A requested slice did not lie within the operand.
+    SliceOutOfRange,
+    /// Two operands a verifying comparison requires equal were not.
+    UnequalOperands,
+    /// A verified operand was the target's false.
+    FalseVerification,
+    /// Two operands a bitwise primitive combines were of different
+    /// widths.
+    MismatchedOperandWidths,
     /// Evaluation completed leaving other than a single stack item.
     ///
     /// The reviewed execution domain requires exactly one item at the

@@ -12,9 +12,11 @@
 //!
 //! The reviewed execution domain requires evaluation to finish with
 //! exactly one item, and that item to be true. Most reviewed primitives
-//! push more than one, and the reviewed primitive census has no
-//! equality, drop, or verify primitive to reduce them with. So a case
-//! ends one of four ways, and which one it ends is the observation:
+//! push more than one. Until the compound-proof substrate was reviewed
+//! there was no equality, drop, or verify primitive to reduce them with,
+//! and the groups written before it still state their outcomes the way
+//! that constraint forced. So a case ends one of four ways, and which
+//! one it ends is the observation:
 //!
 //! ```text
 //! accepted                    one true item
@@ -28,6 +30,13 @@
 //! path collapses to one item and the retained-operand failure path to
 //! two, so the two verdicts differ. Where none exists, the case states
 //! the depth, which is still the contract's success alternative.
+//!
+//! The compound-proof group in [`compound`] is the first that does not
+//! work under that limitation: it has equality and verification, so its
+//! cases compare the target's result against an independently computed
+//! expectation and end in one true item. Reworking the older groups to
+//! assert their bytes the same way is available and deliberately not
+//! done here — it would rewrite evidence this wave did not review.
 //!
 //! # What this census deliberately does not contain
 //!
@@ -49,6 +58,7 @@
 //! them reports a broken environment as target evidence.
 
 pub mod author;
+pub mod compound;
 pub mod context;
 pub mod crypto;
 pub mod encoding;
@@ -86,6 +96,7 @@ pub fn canonical_census(
     introspection::cases(&mut author);
     crypto::cases(&mut author);
     timelock::cases(&mut author);
+    compound::cases(&mut author);
 
     PrimitiveFixtureSet::new(author.finish()?)
 }

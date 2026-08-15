@@ -371,6 +371,33 @@ fn contract_requirements() -> Vec<(TargetEvidenceRequirementId, TargetEvidenceRe
             AnyNetwork,
             CONTRACT_OR_NODE,
         ),
+        // The compound-proof substrate. Rearrangement and equality are
+        // stack behaviour; the byte-string operations are asked for
+        // their failure behaviour too, because the width bound
+        // concatenation enforces on a computed result is exactly the
+        // kind of rule a reviewed contract can state and a node can
+        // contradict.
+        entry(
+            R::StackRearrangementSemantics,
+            S::Primitives,
+            K::StackBehavior,
+            AnyNetwork,
+            CONTRACT_OR_NODE,
+        ),
+        entry(
+            R::ByteStringSemantics,
+            S::Primitives,
+            K::FailureBehavior,
+            AnyNetwork,
+            CONTRACT_OR_NODE,
+        ),
+        entry(
+            R::VerificationSemantics,
+            S::Primitives,
+            K::FailureBehavior,
+            AnyNetwork,
+            CONTRACT_OR_NODE,
+        ),
         entry(
             R::ConsensusResourceLimits,
             S::Resources,

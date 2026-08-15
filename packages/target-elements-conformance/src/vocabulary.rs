@@ -71,6 +71,23 @@ const OPCODE_NAMES: &[(OpcodeId, &str)] = &[
         "check_sig_from_stack_verify",
     ),
     (OpcodeId::CheckSequenceVerify, "check_sequence_verify"),
+    (OpcodeId::Duplicate, "duplicate"),
+    (OpcodeId::DuplicateTwo, "duplicate_two"),
+    (OpcodeId::CopyOver, "copy_over"),
+    (OpcodeId::Swap, "swap"),
+    (OpcodeId::Rotate, "rotate"),
+    (OpcodeId::RemoveSecond, "remove_second"),
+    (OpcodeId::Tuck, "tuck"),
+    (OpcodeId::Drop, "drop"),
+    (OpcodeId::DropTwo, "drop_two"),
+    (OpcodeId::Equal, "equal"),
+    (OpcodeId::EqualVerify, "equal_verify"),
+    (OpcodeId::Verify, "verify"),
+    (OpcodeId::Concatenate, "concatenate"),
+    (OpcodeId::Size, "size"),
+    (OpcodeId::Substring, "substring"),
+    (OpcodeId::BitwiseAnd, "bitwise_and"),
+    (OpcodeId::BitwiseXor, "bitwise_xor"),
 ];
 
 /// The wire spelling of every target capability.
@@ -183,6 +200,29 @@ const CAPABILITY_NAMES: &[(ElementsCapability, &str)] = &[
     ),
     (ElementsCapability::RelativeTimelock, "relative_timelock"),
     (
+        ElementsCapability::StackRearrangement,
+        "stack_rearrangement",
+    ),
+    (
+        ElementsCapability::ByteStringEquality,
+        "byte_string_equality",
+    ),
+    (
+        ElementsCapability::BooleanVerification,
+        "boolean_verification",
+    ),
+    (
+        ElementsCapability::ByteStringConcatenation,
+        "byte_string_concatenation",
+    ),
+    (ElementsCapability::ByteStringWidth, "byte_string_width"),
+    (ElementsCapability::ByteStringSlicing, "byte_string_slicing"),
+    (ElementsCapability::BitwiseByteLogic, "bitwise_byte_logic"),
+    (
+        ElementsCapability::CanonicalByteOrdering,
+        "canonical_byte_ordering",
+    ),
+    (
         ElementsCapability::ConfidentialValueConservation,
         "confidential_value_conservation",
     ),
@@ -293,6 +333,18 @@ const EVIDENCE_NAMES: &[(TargetEvidenceRequirementId, &str)] = &[
     (
         TargetEvidenceRequirementId::IssuanceIntrospection,
         "issuance_introspection",
+    ),
+    (
+        TargetEvidenceRequirementId::StackRearrangementSemantics,
+        "stack_rearrangement_semantics",
+    ),
+    (
+        TargetEvidenceRequirementId::ByteStringSemantics,
+        "byte_string_semantics",
+    ),
+    (
+        TargetEvidenceRequirementId::VerificationSemantics,
+        "verification_semantics",
     ),
     (
         TargetEvidenceRequirementId::ConsensusResourceLimits,
