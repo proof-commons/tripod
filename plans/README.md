@@ -103,19 +103,36 @@ Ancestor READMEs do not repeat the complete descendant census.
 
 ## Weight budget · `rule:plans:weight`
 
-The combined Markdown under:
+There are two budgets, because the tree holds two kinds of document.
+
+Maintained planning prose — the combined Markdown under:
 
 ```text
 plans/
 adr/
 ```
 
-must remain below the accepted documentation budget.
+excluding the archive directories below, must remain under the accepted
+documentation budget. That prose is maintained, so unchecked growth there is
+duplication rather than content, and the budget keeps one fact to one owner.
 
-The documentation checker reports total bytes, bytes by directory,
-authored-file threshold warnings, and generated-register bytes. The budget is a
-guardrail against accidental duplication, not a reason to omit useful rationale,
-examples, or implementation detail.
+Archived documents — the verbatim records under:
+
+```text
+plans/guides/
+plans/reviews/
+```
+
+are excluded from that budget and accounted separately against a much larger
+archive budget. An archive records a named tree exactly and is never trimmed
+to fit, so charging it to the maintained-prose budget would make the
+guardrail fire on the one class of file it must not police. The archive
+budget is a runaway-paste tripwire, not a shaping force.
+
+The documentation checker reports total bytes, bytes by directory, archive
+bytes against the archive budget, authored-file threshold warnings, and
+generated-register bytes. Neither budget is a reason to omit useful
+rationale, examples, or implementation detail.
 
 ## Updating · `rule:plans:update`
 
