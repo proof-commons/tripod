@@ -18,6 +18,7 @@ tapscript_source_files = files(
   'src/tests/parser_tests.rs',
   'src/tests/public_api_tests.rs',
   'src/tests/push_census_tests.rs',
+  'src/tests/schedule_tests.rs',
   'src/tests/stack_tests.rs',
 )
 
