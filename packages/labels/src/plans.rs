@@ -4,6 +4,21 @@
 //! reconciliation, README ownership indexing, heading/link/scaffolding
 //! hygiene, phase-gate consistency, and the Markdown weight budget.
 //!
+//! The weight budget is two budgets, because the tree holds two kinds
+//! of document. Load-bearing planning prose — everything outside the
+//! archive directories — is what the combined `adr/` + `plans/` cap
+//! guards: that prose is maintained, so unchecked growth there is
+//! duplication rather than content, and the cap keeps one fact to one
+//! owner. Archived documents are different in kind: the executed
+//! implementation guides under `plans/guides/` and the static reviews
+//! under `plans/reviews/` are verbatim historical records of a named
+//! tree, never edited to fit a budget and never trimmed, so charging
+//! them to the maintained-prose cap would make the guardrail fire on
+//! the one class of file it must not police. Their bytes are excluded
+//! from `combined_bytes` and accounted separately against the much
+//! larger [`ARCHIVE_HARD_CAP_BYTES`], which exists only to catch a
+//! runaway paste rather than to shape the archive.
+//!
 //! Subject files arrive by argument from the build system (ADR-014);
 //! the checker re-discovers them on disk and hard-fails on any
 //! disagreement, so a stale census cannot silently pass. This module
@@ -20,10 +35,24 @@ use std::{
 use anyhow::Context;
 use serde::Serialize;
 
-pub const PLANS_REPORT_SCHEMA: u32 = 1;
+/// Bumped to 2 when the archive budget split `combined_bytes` off from
+/// the archive total and added the archive fields to [`PlansReport`].
+pub const PLANS_REPORT_SCHEMA: u32 = 2;
 
 const HARD_CAP_BYTES: u64 = 768 * 1024;
 const SOFT_TARGET_BYTES: u64 = 520 * 1024;
+
+/// Ceiling for the archived-document budget (4 MiB).
+///
+/// Deliberately far above the present archive: the archive is verbatim
+/// history, so the cap is a runaway-paste tripwire, not a shaping
+/// force.
+const ARCHIVE_HARD_CAP_BYTES: u64 = 4 * 1024 * 1024;
+
+/// Directories holding verbatim archived documents, excluded from the
+/// load-bearing combined budget and accounted against
+/// [`ARCHIVE_HARD_CAP_BYTES`] instead.
+const ARCHIVE_DIRECTORIES: [&str; 2] = ["plans/guides/", "plans/reviews/"];
 
 /// Generated register publications carry no per-file weight threshold.
 const GENERATED_REGISTERS: [&str; 2] = [
@@ -101,11 +130,17 @@ pub struct PlansReport {
     pub schema: u32,
     pub files_checked: usize,
     pub adr_bytes: u64,
+    /// Load-bearing `plans/` bytes: the archive directories excluded.
     pub plans_bytes: u64,
+    /// `adr_bytes + plans_bytes`, checked against `hard_cap_bytes`.
     pub combined_bytes: u64,
     pub hard_cap_bytes: u64,
     pub soft_target_bytes: u64,
     pub soft_target_exceeded: bool,
+    /// Verbatim archived-document bytes under [`ARCHIVE_DIRECTORIES`],
+    /// checked against `archive_hard_cap_bytes` alone.
+    pub archive_bytes: u64,
+    pub archive_hard_cap_bytes: u64,
     pub warnings: usize,
     pub valid: bool,
 }
@@ -138,11 +173,21 @@ pub fn check_plans(root: &Path, subjects: &[PathBuf]) -> anyhow::Result<PlansOut
     verify_phase_gate(&root, &mut failures)?;
     verify_task_status_agreement(&root, &mut failures)?;
 
-    let (adr_bytes, plans_bytes) = tree_bytes(&root, &files)?;
+    let TreeBytes {
+        adr: adr_bytes,
+        plans: plans_bytes,
+        archive: archive_bytes,
+    } = tree_bytes(&root, &files)?;
     let combined_bytes = adr_bytes + plans_bytes;
     if combined_bytes > HARD_CAP_BYTES {
         failures.push(format!(
             "weight: combined Markdown {combined_bytes} exceeds hard cap {HARD_CAP_BYTES}"
+        ));
+    }
+    if archive_bytes > ARCHIVE_HARD_CAP_BYTES {
+        failures.push(format!(
+            "weight: archived Markdown {archive_bytes} exceeds archive hard cap \
+             {ARCHIVE_HARD_CAP_BYTES}"
         ));
     }
 
@@ -155,6 +200,8 @@ pub fn check_plans(root: &Path, subjects: &[PathBuf]) -> anyhow::Result<PlansOut
         hard_cap_bytes: HARD_CAP_BYTES,
         soft_target_bytes: SOFT_TARGET_BYTES,
         soft_target_exceeded: combined_bytes > SOFT_TARGET_BYTES,
+        archive_bytes,
+        archive_hard_cap_bytes: ARCHIVE_HARD_CAP_BYTES,
         warnings: warnings.len(),
         valid: failures.is_empty(),
     };
@@ -363,7 +410,16 @@ fn warn_threshold(relative_path: &str) -> Option<u64> {
     let tree = parts.next().unwrap_or_default();
     let group = parts.next();
     if relative_path.ends_with("/README.md") || relative_path == "README.md" {
+        // An index README is authored maintenance prose wherever it
+        // sits, including inside an archive directory, so it keeps the
+        // ordinary README threshold.
         return Some(16 * 1024);
+    }
+    if is_archive(relative_path) {
+        // A verbatim archive is unbounded per file: it records a named
+        // tree exactly, so a size warning would only ever ask for the
+        // record to be falsified.
+        return None;
     }
     if tree == "adr" {
         return Some(14 * 1024);
@@ -600,24 +656,40 @@ fn verify_task_status_agreement(root: &Path, failures: &mut Vec<String>) -> anyh
     Ok(())
 }
 
-/// Total Markdown bytes for the `adr/` and `plans/` trees.
-fn tree_bytes(root: &Path, files: &[PathBuf]) -> anyhow::Result<(u64, u64)> {
-    let mut adr_bytes = 0_u64;
-    let mut plans_bytes = 0_u64;
+/// Markdown bytes for the `adr/` and `plans/` trees, split by budget.
+struct TreeBytes {
+    adr: u64,
+    plans: u64,
+    archive: u64,
+}
+
+/// Total Markdown bytes for the `adr/` and `plans/` trees, with the
+/// archive directories separated out of the load-bearing totals.
+fn tree_bytes(root: &Path, files: &[PathBuf]) -> anyhow::Result<TreeBytes> {
+    let mut totals = TreeBytes {
+        adr: 0,
+        plans: 0,
+        archive: 0,
+    };
     for path in files {
         let size = file_bytes(path)?;
-        if path.strip_prefix(root).is_ok_and(|relative_path| {
-            relative_path
-                .components()
-                .next()
-                .is_some_and(|component| component.as_os_str() == "adr")
-        }) {
-            adr_bytes += size;
+        let relative_path = relative(root, path);
+        if is_archive(&relative_path) {
+            totals.archive += size;
+        } else if relative_path.starts_with("adr/") {
+            totals.adr += size;
         } else {
-            plans_bytes += size;
+            totals.plans += size;
         }
     }
-    Ok((adr_bytes, plans_bytes))
+    Ok(totals)
+}
+
+/// True for a path inside an archive directory.
+fn is_archive(relative_path: &str) -> bool {
+    ARCHIVE_DIRECTORIES
+        .iter()
+        .any(|directory| relative_path.starts_with(directory))
 }
 
 fn file_bytes(path: &Path) -> anyhow::Result<u64> {
@@ -1042,6 +1114,138 @@ mod tests {
         );
         assert_eq!(warn_threshold("plans/research/x.md"), Some(32 * 1024));
         assert_eq!(warn_threshold("plans/backlog.md"), None);
+        // Verbatim archives are unbounded per file; their index
+        // READMEs are ordinary authored prose and stay bounded.
+        assert_eq!(warn_threshold("plans/guides/guide_seven.md"), None);
+        assert_eq!(warn_threshold("plans/reviews/review-2-0.2.3-dev.md"), None);
+        assert_eq!(warn_threshold("plans/guides/README.md"), Some(16 * 1024));
+        assert_eq!(warn_threshold("plans/reviews/README.md"), Some(16 * 1024));
+    }
+
+    /// Add an archive directory holding `size` bytes of verbatim
+    /// document, indexed by its own README.
+    fn write_archive(root: &Path, group: &str, size: usize) {
+        fs::create_dir_all(root.join("plans").join(group)).expect("archive dir");
+        fs::write(
+            root.join("plans").join(group).join("README.md"),
+            format!("# {group}\n\narchived.md\n"),
+        )
+        .expect("archive readme");
+        let mut body = String::from("# Archived\n\n");
+        body.push_str(&"x".repeat(size));
+        body.push('\n');
+        fs::write(root.join("plans").join(group).join("archived.md"), body)
+            .expect("archived document");
+        let readme = root.join("plans/README.md");
+        let mut index = fs::read_to_string(&readme).expect("plans readme");
+        index.push('\n');
+        index.push_str(group);
+        index.push_str("/README.md\n");
+        fs::write(&readme, index).expect("indexed archive");
+    }
+
+    #[test]
+    fn archive_bytes_are_excluded_from_the_combined_budget() {
+        // The point of the split: an archive directory can hold more
+        // than the whole load-bearing cap without moving
+        // combined_bytes at all.
+        let dir = fixture();
+        let bare = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+        let bare_combined = bare.report.combined_bytes;
+        assert_eq!(bare.report.archive_bytes, 0);
+
+        write_archive(dir.path(), "guides", 900 * 1024);
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+
+        assert!(outcome.report.valid, "{:#?}", outcome.failures);
+        assert!(
+            outcome.report.archive_bytes > HARD_CAP_BYTES,
+            "the archive alone must exceed the load-bearing cap: {}",
+            outcome.report.archive_bytes,
+        );
+        // The archive README and the plans README index line are the
+        // only load-bearing growth; the 900 KiB document is not.
+        assert!(
+            outcome.report.combined_bytes < bare_combined + 1024,
+            "combined {} grew from {bare_combined}",
+            outcome.report.combined_bytes,
+        );
+        assert_eq!(
+            outcome.report.combined_bytes,
+            outcome.report.adr_bytes + outcome.report.plans_bytes
+        );
+        assert_eq!(
+            outcome.report.archive_hard_cap_bytes,
+            ARCHIVE_HARD_CAP_BYTES
+        );
+    }
+
+    #[test]
+    fn both_archive_directories_are_accounted_as_archive() {
+        let dir = fixture();
+        write_archive(dir.path(), "guides", 4 * 1024);
+        write_archive(dir.path(), "reviews", 8 * 1024);
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+        assert!(outcome.report.valid, "{:#?}", outcome.failures);
+        assert!(
+            outcome.report.archive_bytes > 12 * 1024,
+            "{}",
+            outcome.report.archive_bytes
+        );
+    }
+
+    #[test]
+    fn an_oversize_archive_fails_with_a_focused_message() {
+        let dir = fixture();
+        let over = usize::try_from(ARCHIVE_HARD_CAP_BYTES).expect("cap fits in usize") + 1;
+        write_archive(dir.path(), "reviews", over);
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+        assert!(!outcome.report.valid);
+        assert!(
+            outcome
+                .failures
+                .iter()
+                .any(|failure| failure.starts_with("weight: archived Markdown")
+                    && failure.contains("archive hard cap")),
+            "{:#?}",
+            outcome.failures,
+        );
+        // The load-bearing cap is untouched by archive growth, so the
+        // combined diagnostic must not also fire.
+        assert!(
+            !outcome
+                .failures
+                .iter()
+                .any(|failure| failure.starts_with("weight: combined Markdown")),
+            "{:#?}",
+            outcome.failures,
+        );
+    }
+
+    #[test]
+    fn the_load_bearing_cap_still_fails_on_maintained_prose() {
+        // Archive growth must not have loosened the core guardrail:
+        // an oversize maintained document still trips it.
+        let dir = fixture();
+        write_archive(dir.path(), "guides", 16 * 1024);
+        let mut heavy = String::from("# Heavy\n\n");
+        heavy.push_str(&"x".repeat(usize::try_from(HARD_CAP_BYTES).expect("cap fits in usize")));
+        fs::write(dir.path().join("plans/research.md"), heavy).expect("heavy plan");
+        let readme = dir.path().join("plans/README.md");
+        let mut index = fs::read_to_string(&readme).expect("plans readme");
+        index.push_str("\nresearch.md\n");
+        fs::write(&readme, index).expect("indexed");
+
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+        assert!(
+            outcome
+                .failures
+                .iter()
+                .any(|failure| failure.starts_with("weight: combined Markdown")),
+            "{:#?}",
+            outcome.failures,
+        );
+        assert!(outcome.report.archive_bytes > 0);
     }
 
     #[test]
