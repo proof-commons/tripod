@@ -82,6 +82,7 @@ pub mod error;
 pub mod evidence;
 pub mod evidence_registry;
 pub mod opcode;
+pub mod operand;
 pub mod push;
 pub mod resource;
 pub mod success;
@@ -124,6 +125,7 @@ pub use opcode::{
     ExecutionDomain, FailureCause, FailureContract, FailureEffect, FailureOutcome, LeafVersion,
     OpcodeId, OpcodeResourceCost, OpcodeSpec, StackContract, StackValueType,
 };
+pub use operand::{OperandContract, PublicKeyOperandFacts, SignatureOperandFacts};
 pub use push::{
     PushContract, PushContractDefect, PushDefect, PushEnforcement, PushForm, PushFormParts,
     PushFormSpec, PushMinimalityStep, PushOpcodeMapping, PushPayloadPredicate,

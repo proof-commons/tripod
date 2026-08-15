@@ -22,6 +22,7 @@ use std::num::NonZeroUsize;
 
 use crate::encoding::{ByteOrder, EncodingClass};
 use crate::evidence::TargetEvidenceRequirementId;
+use crate::operand::OperandContract;
 use crate::success::{
     SuccessCase, SuccessCondition, SuccessContract, SuccessContractDefect, SuccessStackEffect,
 };
@@ -189,11 +190,28 @@ pub enum FailureCause {
     /// A division had a zero divisor.
     DivisionByZero,
     /// The offered signature was empty.
+    ///
+    /// A documented path rather than a malformed operand: in the
+    /// pushing form it consumes the operands and pushes a false, and
+    /// it applies whatever the key is, because the target settles
+    /// emptiness before it looks at the key's form.
     EmptySignature,
-    /// The offered signature did not verify.
+    /// The offered signature did not verify against a recognized key.
+    ///
+    /// Reachable only where the key is the recognized encoding. Where
+    /// the key is an unrecognized nonempty form there is no
+    /// verification to fail, which is a success rather than a silent
+    /// pass of this cause.
     InvalidSignature,
-    /// A public key was absent or carried an encoding the primitive
-    /// rejects.
+    /// The offered public key was the empty item.
+    ///
+    /// Its own cause rather than a shade of a rejected encoding: the
+    /// empty key is refused outright while every other unrecognized
+    /// nonempty form succeeds without verification, so collapsing the
+    /// two would put the target's forward-compatibility path and its
+    /// hardest rejection under one name.
+    EmptyPublicKey,
+    /// A public key carried an encoding the primitive rejects.
     InvalidPublicKeyEncoding,
     /// An elliptic-curve relation did not hold.
     InvalidCurveRelation,
@@ -303,7 +321,7 @@ impl FailureContract {
 /// The operand and result behavior of one primitive.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StackContract {
-    operands: Vec<StackValueType>,
+    operands: Vec<OperandContract>,
     success: SuccessContract,
     failure: FailureContract,
 }
@@ -316,7 +334,7 @@ impl StackContract {
     /// successful form and what each one does to the stack.
     #[must_use]
     pub const fn new(
-        operands: Vec<StackValueType>,
+        operands: Vec<OperandContract>,
         success: SuccessContract,
         failure: FailureContract,
     ) -> Self {
@@ -329,7 +347,7 @@ impl StackContract {
 
     /// The operands, deepest first.
     #[must_use]
-    pub fn operands(&self) -> &[StackValueType] {
+    pub fn operands(&self) -> &[OperandContract] {
         &self.operands
     }
 
@@ -348,7 +366,12 @@ impl StackContract {
     /// Whether any declared operand or result has an incoherent width.
     #[must_use]
     pub fn has_malformed_width(&self) -> bool {
-        self.operands
+        let operand_types = self
+            .operands
+            .iter()
+            .flat_map(OperandContract::named_types)
+            .collect::<Vec<_>>();
+        operand_types
             .iter()
             .chain(self.success.result_types().iter())
             .any(|value| matches!(value, StackValueType::Bytes { minimum, maximum } if minimum > maximum))
@@ -706,14 +729,14 @@ const fn unsigned32() -> StackValueType {
 /// The common shape by a wide margin. Stating the consumed count from
 /// the operand list rather than by hand keeps the two from drifting
 /// apart in a registry this long.
-const fn consuming(
+fn consuming(
     operands: Vec<StackValueType>,
     results: Vec<StackValueType>,
     failure: FailureContract,
 ) -> StackContract {
     let consumed_operands = operands.len();
     StackContract::new(
-        operands,
+        operands.into_iter().map(OperandContract::Exact).collect(),
         SuccessContract::Fixed {
             consumed_operands,
             results,
@@ -965,7 +988,7 @@ fn input_introspection_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
             O::InspectInputAsset,
             0xc8,
             StackContract::new(
-                vec![S::ScriptNumber],
+                vec![OperandContract::Exact(S::ScriptNumber)],
                 // The payload is pushed first and the prefix second,
                 // so the prefix ends up on top. Both explicit and
                 // confidential assets carry a payload of the same
@@ -987,7 +1010,7 @@ fn input_introspection_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
             O::InspectInputValue,
             0xc9,
             StackContract::new(
-                vec![S::ScriptNumber],
+                vec![OperandContract::Exact(S::ScriptNumber)],
                 // An explicit amount reaches the stack little-endian
                 // even though the transaction field stores it
                 // big-endian, and it is eight bytes wide; a
@@ -1010,7 +1033,7 @@ fn input_introspection_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
             O::InspectInputScriptPubKey,
             0xca,
             StackContract::new(
-                vec![S::ScriptNumber],
+                vec![OperandContract::Exact(S::ScriptNumber)],
                 witness_or_digest_program(),
                 gated(introspection_failures()),
             ),
@@ -1048,7 +1071,7 @@ fn input_sequence_and_issuance_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
             O::InspectInputIssuance,
             0xcc,
             StackContract::new(
-                vec![S::ScriptNumber],
+                vec![OperandContract::Exact(S::ScriptNumber)],
                 // An input carrying an issuance pushes six items; an
                 // input carrying none pushes a single empty item.
                 //
@@ -1133,7 +1156,7 @@ fn output_introspection_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
             O::InspectOutputAsset,
             0xce,
             StackContract::new(
-                vec![S::ScriptNumber],
+                vec![OperandContract::Exact(S::ScriptNumber)],
                 explicit_or_confidential_field(E::ExplicitAsset, E::ConfidentialAsset),
                 gated(introspection_failures()),
             ),
@@ -1148,7 +1171,7 @@ fn output_introspection_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
             O::InspectOutputValue,
             0xcf,
             StackContract::new(
-                vec![S::ScriptNumber],
+                vec![OperandContract::Exact(S::ScriptNumber)],
                 explicit_or_confidential_field(E::ExplicitValue, E::ConfidentialValue),
                 gated(introspection_failures()),
             ),
@@ -1163,7 +1186,7 @@ fn output_introspection_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
             O::InspectOutputNonce,
             0xd0,
             StackContract::new(
-                vec![S::ScriptNumber],
+                vec![OperandContract::Exact(S::ScriptNumber)],
                 // The one asymmetric case among the reviewed
                 // introspection primitives: the nonce arrives as a
                 // single item with its prefix byte still attached,
@@ -1202,7 +1225,7 @@ fn output_introspection_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
             O::InspectOutputScriptPubKey,
             0xd1,
             StackContract::new(
-                vec![S::ScriptNumber],
+                vec![OperandContract::Exact(S::ScriptNumber)],
                 witness_or_digest_program(),
                 gated(introspection_failures()),
             ),
@@ -1537,36 +1560,36 @@ fn curve_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
 }
 /// Part of the reviewed primitive registry.
 fn signature_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
-    use crate::encoding::EncodingClass as E;
     use crate::evidence::TargetEvidenceRequirementId as R;
-    use FailureCause as C;
     use OpcodeId as O;
     use StackValueType as S;
 
     vec![
         // -- Signature verification ----------------------------
         //
-        // The reviewed failure split matters: an empty signature
-        // consumes the operands and pushes a false, while a non-empty
-        // signature that does not verify aborts. A backend cannot
-        // treat "verification failed" as a branchable condition.
+        // Three reviewed branches, none of which collapses into
+        // another (Guide-10 rule:guide10:signature-abstraction).
+        //
+        // An empty signature is a documented path, not a malformed
+        // operand: the pushing form consumes the operands and pushes a
+        // false, and the verifying form aborts. A nonempty signature
+        // that does not verify against a recognized key aborts in both
+        // forms, so a backend cannot treat "verification failed" as a
+        // branchable condition. And a nonempty key of an unrecognized
+        // form is not a rejection at all: the check succeeds without
+        // verifying anything, which is the target's own
+        // forward-compatibility rule. Only the empty key is refused
+        // outright.
+        //
+        // The operand positions carry those alternatives because no
+        // single stack type can: an exact 64-byte signature type
+        // excludes the empty item the target accepts there, and an
+        // exact x-only key type excludes the unrecognized forms the
+        // target succeeds on.
         spec(
             O::CheckSig,
             0xac,
-            consuming(
-                vec![
-                    S::Encoded(E::SchnorrSignature),
-                    S::Encoded(E::XOnlyPublicKey),
-                ],
-                vec![S::Bool],
-                FailureContract::new([
-                    abort(C::StackUnderflow),
-                    abort(C::InvalidPublicKeyEncoding),
-                    abort(C::ValidationBudgetExhausted),
-                    abort(C::InvalidSignature),
-                    FailureEffect::new(C::EmptySignature, FailureOutcome::ConsumeOperandsPushFalse),
-                ]),
-            ),
+            signature_check(schnorr_signature(), any_public_key(), vec![S::Bool], false),
             budgeted(-1),
             &[
                 R::OpcodeSemantics,
@@ -1577,23 +1600,10 @@ fn signature_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::CheckSigVerify,
             0xad,
-            consuming(
-                vec![
-                    S::Encoded(E::SchnorrSignature),
-                    S::Encoded(E::XOnlyPublicKey),
-                ],
-                vec![],
-                // The verifying form leaves no branchable result: an
-                // empty signature that would have pushed a false
-                // aborts here instead.
-                FailureContract::new([
-                    abort(C::StackUnderflow),
-                    abort(C::InvalidPublicKeyEncoding),
-                    abort(C::ValidationBudgetExhausted),
-                    abort(C::InvalidSignature),
-                    abort(C::EmptySignature),
-                ]),
-            ),
+            // The verifying form leaves no branchable result: an empty
+            // signature that would have pushed a false aborts here
+            // instead.
+            signature_check(schnorr_signature(), any_public_key(), vec![], true),
             budgeted(-1),
             &[
                 R::OpcodeSemantics,
@@ -1604,46 +1614,109 @@ fn signature_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         spec(
             O::CheckSigFromStack,
             0xc1,
-            consuming(
-                vec![
-                    S::Encoded(E::SchnorrSignature),
-                    any_bytes(),
-                    S::Encoded(E::XOnlyPublicKey),
-                ],
-                vec![S::Bool],
-                FailureContract::new([
-                    abort(C::StackUnderflow),
-                    abort(C::InvalidPublicKeyEncoding),
-                    abort(C::ValidationBudgetExhausted),
-                    abort(C::InvalidSignature),
-                    FailureEffect::new(C::EmptySignature, FailureOutcome::ConsumeOperandsPushFalse),
-                ]),
-            ),
+            signature_check_from_stack(vec![S::Bool], false),
             budgeted(-2),
             &[R::OpcodeSemantics, R::SignatureSemantics],
         ),
         spec(
             O::CheckSigFromStackVerify,
             0xc2,
-            consuming(
-                vec![
-                    S::Encoded(E::SchnorrSignature),
-                    any_bytes(),
-                    S::Encoded(E::XOnlyPublicKey),
-                ],
-                vec![],
-                FailureContract::new([
-                    abort(C::StackUnderflow),
-                    abort(C::InvalidPublicKeyEncoding),
-                    abort(C::ValidationBudgetExhausted),
-                    abort(C::InvalidSignature),
-                    abort(C::EmptySignature),
-                ]),
-            ),
+            signature_check_from_stack(vec![], true),
             budgeted(-2),
             &[R::OpcodeSemantics, R::SignatureSemantics],
         ),
     ]
+}
+
+/// The signature operand of the reviewed signature primitives.
+const fn schnorr_signature() -> OperandContract {
+    OperandContract::Signature {
+        nonempty_encoding: EncodingClass::SchnorrSignature,
+        empty_allowed: true,
+    }
+}
+
+/// The public-key operand of the reviewed signature primitives.
+const fn any_public_key() -> OperandContract {
+    OperandContract::PublicKey {
+        recognized_encoding: EncodingClass::XOnlyPublicKey,
+        unknown_nonempty_allowed: true,
+    }
+}
+
+/// The two successful forms and five failure paths every reviewed
+/// signature primitive shares.
+///
+/// `aborts_on_empty_signature` is what separates the verifying forms
+/// from the pushing ones, and it is the only thing that does: both push
+/// nothing else and both fail on everything else alike.
+fn signature_check(
+    signature: OperandContract,
+    public_key: OperandContract,
+    results: Vec<StackValueType>,
+    aborts_on_empty_signature: bool,
+) -> StackContract {
+    signature_check_over(
+        vec![signature, public_key],
+        results,
+        aborts_on_empty_signature,
+    )
+}
+
+/// The same, for the forms that verify a signature over a stack item.
+fn signature_check_from_stack(
+    results: Vec<StackValueType>,
+    aborts_on_empty_signature: bool,
+) -> StackContract {
+    signature_check_over(
+        vec![
+            schnorr_signature(),
+            OperandContract::Exact(any_bytes()),
+            any_public_key(),
+        ],
+        results,
+        aborts_on_empty_signature,
+    )
+}
+
+/// One signature primitive's complete stack contract.
+fn signature_check_over(
+    operands: Vec<OperandContract>,
+    results: Vec<StackValueType>,
+    aborts_on_empty_signature: bool,
+) -> StackContract {
+    let consumed_operands = operands.len();
+    let empty_signature = if aborts_on_empty_signature {
+        FailureOutcome::AbortEvaluation
+    } else {
+        FailureOutcome::ConsumeOperandsPushFalse
+    };
+
+    StackContract::new(
+        operands,
+        SuccessContract::Alternatives {
+            cases: vec![
+                case(
+                    SuccessCondition::RecognizedKeyVerifiedSignature,
+                    consumed_operands,
+                    results.clone(),
+                ),
+                case(
+                    SuccessCondition::UnknownKeyTypeUnverified,
+                    consumed_operands,
+                    results,
+                ),
+            ],
+        },
+        FailureContract::new([
+            abort(FailureCause::StackUnderflow),
+            abort(FailureCause::EmptyPublicKey),
+            abort(FailureCause::InvalidPublicKeyEncoding),
+            abort(FailureCause::ValidationBudgetExhausted),
+            abort(FailureCause::InvalidSignature),
+            FailureEffect::new(FailureCause::EmptySignature, empty_signature),
+        ]),
+    )
 }
 /// Part of the reviewed primitive registry.
 fn timelock_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
@@ -1666,7 +1739,9 @@ fn timelock_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
                 // number said a five-byte operand is malformed, which
                 // made the disable-flag behavior unstateable and would
                 // have refused a program the target accepts.
-                vec![S::Encoded(EncodingClass::LockTimeScriptNumber)],
+                vec![OperandContract::Exact(S::Encoded(
+                    EncodingClass::LockTimeScriptNumber,
+                ))],
                 // The operand is inspected and left in place, and
                 // nothing is pushed above it: a successful check
                 // leaves the stack exactly as it found it. Recording

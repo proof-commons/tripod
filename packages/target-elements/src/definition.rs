@@ -649,8 +649,16 @@ pub fn encoding_dependencies(definition: &TargetDefinition) -> BTreeSet<Encoding
     let mut classes = BTreeSet::new();
     for spec in definition.opcodes.values() {
         let stack = spec.stack();
-        for value in stack
+        // An operand position may name several types, or name a class
+        // without naming a type for every form it admits; the contract
+        // is what knows which, so the classes come from it rather than
+        // from a type this loop would have to guess.
+        let operand_types = stack
             .operands()
+            .iter()
+            .flat_map(crate::operand::OperandContract::named_types)
+            .collect::<Vec<_>>();
+        for value in operand_types
             .iter()
             .chain(stack.success().result_types().iter())
         {

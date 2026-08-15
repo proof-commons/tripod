@@ -4,7 +4,8 @@ use std::collections::BTreeSet;
 use std::num::{NonZeroU64, NonZeroUsize};
 
 use target_elements::{
-    ByteOrder, EncodingClass, FailureCause, OpcodeId, ResourceDimension, StackValueType,
+    ByteOrder, EncodingClass, FailureCause, OpcodeId, OperandContract, ResourceDimension,
+    StackValueType,
 };
 
 use crate::error::TapscriptError;
@@ -154,9 +155,35 @@ fn a_division_states_both_of_its_retained_failure_causes() {
 }
 
 #[test]
-fn an_empty_signature_consumes_the_operands_where_an_invalid_one_aborts() {
+fn a_nonempty_signature_verifies_or_aborts_and_is_never_the_empty_path() {
     let result = validate(vec![
         push(64),
+        push(32),
+        TapscriptInstruction::Opcode(OpcodeId::CheckSig),
+    ]);
+
+    // A 64-byte literal cannot be the empty item, so the
+    // empty-signature path is not something this program can reach.
+    // The operand contract is what makes that sayable: while the
+    // position was one exact 64-byte type, the empty path was carried
+    // as reachable by every program that used a signature at all.
+    assert!(result.nonaborting_failure().is_empty());
+    assert!(!result.aborts().contains(&FailureCause::EmptySignature));
+
+    assert!(result.aborts().contains(&FailureCause::InvalidSignature));
+    assert_eq!(
+        result.success().iter().cloned().collect::<Vec<_>>(),
+        vec![AbstractStackState::from_main(vec![StackValueType::Bool])],
+    );
+}
+
+#[test]
+fn an_empty_signature_consumes_the_operands_and_pushes_a_false() {
+    // The case the old model could not state at all: an empty item in
+    // the signature position was refused as a type mismatch before the
+    // failure effect describing it could apply.
+    let result = validate(vec![
+        push(0),
         push(32),
         TapscriptInstruction::Opcode(OpcodeId::CheckSig),
     ]);
@@ -169,8 +196,10 @@ fn an_empty_signature_consumes_the_operands_where_an_invalid_one_aborts() {
             .collect::<Vec<_>>(),
         vec![AbstractStackState::from_main(vec![StackValueType::Empty])],
     );
-    assert!(result.aborts().contains(&FailureCause::InvalidSignature));
-    assert!(!result.aborts().contains(&FailureCause::EmptySignature));
+    // Nothing was verified, so no verification can have failed, and
+    // there is no successful form either.
+    assert!(!result.aborts().contains(&FailureCause::InvalidSignature));
+    assert!(result.success().is_empty());
 }
 
 #[test]
@@ -182,10 +211,61 @@ fn the_verifying_signature_form_leaves_no_branchable_result() {
     ]);
 
     assert!(result.nonaborting_failure().is_empty());
-    assert!(result.aborts().contains(&FailureCause::EmptySignature));
     assert_eq!(
         result.success().iter().cloned().collect::<Vec<_>>(),
         vec![AbstractStackState::from_main(Vec::new())],
+    );
+}
+
+#[test]
+fn an_empty_signature_aborts_the_verifying_form() {
+    let result = validate(vec![
+        push(0),
+        push(32),
+        TapscriptInstruction::Opcode(OpcodeId::CheckSigVerify),
+    ]);
+
+    assert!(result.aborts().contains(&FailureCause::EmptySignature));
+    assert!(result.nonaborting_failure().is_empty());
+    assert!(result.success().is_empty());
+}
+
+#[test]
+fn an_unknown_nonempty_key_type_succeeds_without_verification() {
+    // The target's forward-compatibility rule. A 33-byte key is not
+    // the recognized x-only encoding, so nothing is verified — and a
+    // model that reported this as a rejection would say a spend fails
+    // that in fact stands.
+    let result = validate(vec![
+        push(64),
+        push(33),
+        TapscriptInstruction::Opcode(OpcodeId::CheckSig),
+    ]);
+
+    assert_eq!(
+        result.success().iter().cloned().collect::<Vec<_>>(),
+        vec![AbstractStackState::from_main(vec![StackValueType::Bool])],
+    );
+    assert!(
+        !result.aborts().contains(&FailureCause::InvalidSignature),
+        "a verification that does not happen cannot fail: {:?}",
+        result.aborts(),
+    );
+}
+
+#[test]
+fn an_empty_public_key_is_rejected_rather_than_treated_as_unknown() {
+    let result = validate(vec![
+        push(64),
+        push(0),
+        TapscriptInstruction::Opcode(OpcodeId::CheckSig),
+    ]);
+
+    assert!(result.aborts().contains(&FailureCause::EmptyPublicKey));
+    assert!(
+        result.success().is_empty(),
+        "the empty key is the one nonrecognized form that does not succeed: {:?}",
+        result.success(),
     );
 }
 
@@ -315,7 +395,7 @@ fn an_operand_whose_width_is_unsettled_never_reaches_the_width_question() {
         ),
         Err(TapscriptError::StackTypeMismatch {
             instruction: 0,
-            expected: signed64(),
+            expected: OperandContract::Exact(signed64()),
             actual: unsettled,
         }),
     );
@@ -358,7 +438,7 @@ fn an_operand_of_the_wrong_shape_is_a_validation_failure() {
         ),
         Err(TapscriptError::StackTypeMismatch {
             instruction: 2,
-            expected: signed64(),
+            expected: OperandContract::Exact(signed64()),
             actual: literal(4),
         }),
     );

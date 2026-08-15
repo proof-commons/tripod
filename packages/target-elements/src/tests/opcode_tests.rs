@@ -14,6 +14,7 @@ use crate::opcode::{
     ExecutionDomain, FailureCause, FailureOutcome, LeafVersion, OpcodeId, OpcodeSpec,
     StackValueType, VALIDATION_BUDGET_PER_CHECK,
 };
+use crate::operand::OperandContract;
 use crate::success::{SuccessCase, SuccessCondition, SuccessContract};
 
 /// The expected identity-to-byte census, stated independently.
@@ -279,7 +280,10 @@ fn arithmetic_operands_and_results_are_exactly_eight_bytes_little_endian() {
     let addition = spec(OpcodeId::Add64);
     assert_eq!(
         addition.stack().operands(),
-        &[expected.clone(), expected.clone()]
+        &[
+            OperandContract::Exact(expected.clone()),
+            OperandContract::Exact(expected.clone())
+        ]
     );
     assert_eq!(
         sole_results(&addition),
@@ -524,7 +528,15 @@ fn signature_verification_distinguishes_empty_from_invalid() {
     // The verifying forms leave no branchable result at all.
     for id in [OpcodeId::CheckSigVerify, OpcodeId::CheckSigFromStackVerify] {
         let spec = spec(id);
-        assert!(sole_results(&spec).is_empty());
+        for condition in [
+            SuccessCondition::RecognizedKeyVerifiedSignature,
+            SuccessCondition::UnknownKeyTypeUnverified,
+        ] {
+            assert!(
+                results_under(&spec, condition).is_empty(),
+                "{id:?} pushes nothing under {condition:?}"
+            );
+        }
         assert!(
             spec.stack()
                 .failure()
@@ -532,6 +544,66 @@ fn signature_verification_distinguishes_empty_from_invalid() {
                 .iter()
                 .all(|effect| effect.outcome() == FailureOutcome::AbortEvaluation),
             "{id:?} can only abort"
+        );
+    }
+}
+
+#[test]
+fn every_signature_primitive_states_the_unknown_key_and_empty_key_paths() {
+    // The three branches the target documents and the model could not
+    // previously carry: an empty item is admissible in the signature
+    // position, an unrecognized nonempty key succeeds without
+    // verification, and an empty key is rejected outright
+    // (Guide-10 rule:guide10:signature-abstraction).
+    for id in [
+        OpcodeId::CheckSig,
+        OpcodeId::CheckSigVerify,
+        OpcodeId::CheckSigFromStack,
+        OpcodeId::CheckSigFromStackVerify,
+    ] {
+        let spec = spec(id);
+
+        assert_eq!(
+            conditions(&spec),
+            BTreeSet::from([
+                SuccessCondition::RecognizedKeyVerifiedSignature,
+                SuccessCondition::UnknownKeyTypeUnverified,
+            ]),
+            "{id:?} has both successful forms"
+        );
+
+        let operands = spec.stack().operands();
+        assert!(
+            operands.iter().any(|operand| matches!(
+                operand,
+                OperandContract::Signature {
+                    nonempty_encoding: EncodingClass::SchnorrSignature,
+                    empty_allowed: true
+                }
+            )),
+            "{id:?} admits an empty signature in its signature position"
+        );
+        assert!(
+            operands.iter().any(|operand| matches!(
+                operand,
+                OperandContract::PublicKey {
+                    recognized_encoding: EncodingClass::XOnlyPublicKey,
+                    unknown_nonempty_allowed: true
+                }
+            )),
+            "{id:?} admits an unrecognized nonempty key"
+        );
+
+        let causes: BTreeSet<FailureCause> = spec
+            .stack()
+            .failure()
+            .effects()
+            .iter()
+            .map(|effect| effect.cause())
+            .collect();
+        assert!(
+            causes.contains(&FailureCause::EmptyPublicKey),
+            "{id:?} rejects the empty key as its own cause"
         );
     }
 }
@@ -603,7 +675,9 @@ fn the_timelock_primitive_neither_pushes_nor_pops() {
     // value it treats as no lock at all.
     assert_eq!(
         spec.stack().operands(),
-        &[StackValueType::Encoded(EncodingClass::LockTimeScriptNumber)]
+        &[OperandContract::Exact(StackValueType::Encoded(
+            EncodingClass::LockTimeScriptNumber
+        ))]
     );
     assert!(matches!(
         spec.stack().success(),

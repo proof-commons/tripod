@@ -58,6 +58,21 @@ pub enum SuccessCondition {
     IssuancePresent,
     /// The input read carried no issuance.
     IssuanceAbsent,
+    /// The key offered was the recognized encoding, and the nonempty
+    /// signature verified against it.
+    ///
+    /// The ordinary signature success, named rather than left as
+    /// `Always` because it is now one of two: the target has a second
+    /// successful form that verifies nothing at all.
+    RecognizedKeyVerifiedSignature,
+    /// The key offered was a nonempty key of an unrecognized form, so
+    /// the check succeeded without verifying anything.
+    ///
+    /// The target's forward-compatibility rule. It is a success and
+    /// must be modeled as one: a caller that treated an unrecognized
+    /// key as a rejection would believe a spend fails that in fact
+    /// stands, which is the more dangerous of the two errors.
+    UnknownKeyTypeUnverified,
 }
 
 impl SuccessCondition {
@@ -71,6 +86,8 @@ impl SuccessCondition {
         Self::NonWitnessProgram,
         Self::IssuancePresent,
         Self::IssuanceAbsent,
+        Self::RecognizedKeyVerifiedSignature,
+        Self::UnknownKeyTypeUnverified,
     ];
 }
 

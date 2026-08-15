@@ -40,8 +40,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU64;
 
 use target_elements::{
-    EncodingClass, FailureCause, FailureOutcome, OpcodeId, OpcodeSpec, PayloadWidth, ResourceBound,
-    ResourceDimension, ReviewedElementsTapscriptDefinition, StackValueType, SuccessCase,
+    EncodingClass, FailureCause, FailureOutcome, OpcodeId, OpcodeSpec, OperandContract,
+    PayloadWidth, PublicKeyOperandFacts, ResourceBound, ResourceDimension,
+    ReviewedElementsTapscriptDefinition, SignatureOperandFacts, StackValueType, SuccessCase,
+    SuccessCondition,
 };
 
 use crate::error::TapscriptError;
@@ -441,7 +443,7 @@ fn apply_opcode(
     let mut widths_decided = true;
     for (offset, declared) in operands.iter().enumerate() {
         let actual = &state.main()[base + offset];
-        if !accepts(target, declared, actual) {
+        if !admits(target, declared, actual) {
             return Err(TapscriptError::StackTypeMismatch {
                 instruction: index,
                 expected: declared.clone(),
@@ -451,18 +453,31 @@ fn apply_opcode(
         widths_decided &= is_exact_width(target, actual);
     }
 
+    // What the incoming operands settle about the signature branches.
+    // Nothing else in the state can settle them, and nothing else has
+    // to: outside a signature primitive every branch stays open.
+    let authorization = AuthorizationFacts::observe(target, operands, &state.main()[base..]);
+
     let mut transfer = Transfer::default();
 
     // Every compatible alternative is retained. The condition selecting
-    // one is a property of the target value that was read, which no
-    // abstract state can settle.
+    // one is generally a property of the target value that was read,
+    // which no abstract state can settle — except where the operand
+    // types themselves rule a branch out, which is exactly the
+    // signature case.
     for case in stack.success().cases() {
+        if !authorization.admits_success(case.condition()) {
+            continue;
+        }
         let reached = apply_case(state, &case);
         check_depth(&reached, limits)?;
         transfer.success.push(reached);
     }
 
     for effect in stack.failure().effects() {
+        if !authorization.admits_failure(effect.cause()) {
+            continue;
+        }
         match effect.outcome() {
             FailureOutcome::AbortEvaluation => {
                 if !statically_excluded(effect.cause(), widths_decided) {
@@ -490,6 +505,168 @@ fn apply_opcode(
     }
 
     Ok(transfer)
+}
+
+/// What the incoming operands settle about a signature primitive.
+///
+/// # Why the branches are decided here and not by the contract alone
+///
+/// A signature primitive has two successful forms and two
+/// signature-shaped failure causes, and which of them a program can
+/// actually reach depends on what it pushed. A program pushing an empty
+/// item into the signature position reaches the empty-signature effect
+/// and neither success; a program pushing a 64-byte signature and an
+/// x-only key reaches the verified success and the invalid-signature
+/// abort, and never the unknown-key path; a program pushing some other
+/// nonempty key reaches the unverified success, and no verification
+/// failure exists there to abort on.
+///
+/// Applying every declared case regardless would report each program as
+/// possibly reaching all of them, which is the same answer for every
+/// program and therefore no answer at all. What is *not* done here is
+/// the opposite error: where the abstract type leaves a form open — an
+/// unconstrained byte string that could be empty or not — both branches
+/// stay, because the state genuinely does not settle it.
+#[derive(Clone, Copy, Debug)]
+struct AuthorizationFacts {
+    signature: Option<SignatureOperandFacts>,
+    public_key: Option<PublicKeyOperandFacts>,
+}
+
+impl AuthorizationFacts {
+    /// Reads the signature and key positions of one instruction.
+    ///
+    /// A primitive with no such position gets `None` for it, and
+    /// admits every case: this narrows signature behaviour and nothing
+    /// else.
+    fn observe(
+        target: &ReviewedElementsTapscriptDefinition,
+        declared: &[OperandContract],
+        actual: &[StackValueType],
+    ) -> Self {
+        let mut facts = Self {
+            signature: None,
+            public_key: None,
+        };
+        for (contract, actual) in declared.iter().zip(actual.iter()) {
+            match contract {
+                OperandContract::Signature {
+                    nonempty_encoding,
+                    empty_allowed,
+                } => {
+                    facts.signature = Some(SignatureOperandFacts {
+                        can_be_empty: *empty_allowed && can_be_empty(target, actual),
+                        can_be_nonempty: can_be(
+                            target,
+                            actual,
+                            &StackValueType::Encoded(*nonempty_encoding),
+                        ),
+                    });
+                }
+                OperandContract::PublicKey {
+                    recognized_encoding,
+                    unknown_nonempty_allowed,
+                } => {
+                    let recognized = StackValueType::Encoded(*recognized_encoding);
+                    facts.public_key = Some(PublicKeyOperandFacts {
+                        can_be_empty: can_be_empty(target, actual),
+                        can_be_recognized: can_be(target, actual, &recognized),
+                        can_be_unknown_nonempty: *unknown_nonempty_allowed
+                            && can_be_unknown(target, actual, &recognized),
+                    });
+                }
+                OperandContract::Exact(_) | OperandContract::OneOf(_) => {}
+            }
+        }
+        facts
+    }
+
+    /// Whether one successful form is still reachable.
+    fn admits_success(self, condition: SuccessCondition) -> bool {
+        match condition {
+            SuccessCondition::RecognizedKeyVerifiedSignature => {
+                self.signature.is_none_or(|facts| facts.can_be_nonempty)
+                    && self.public_key.is_none_or(|facts| facts.can_be_recognized)
+            }
+            SuccessCondition::UnknownKeyTypeUnverified => {
+                self.signature.is_none_or(|facts| facts.can_be_nonempty)
+                    && self
+                        .public_key
+                        .is_none_or(|facts| facts.can_be_unknown_nonempty)
+            }
+            _ => true,
+        }
+    }
+
+    /// Whether one failure cause is still reachable.
+    fn admits_failure(self, cause: FailureCause) -> bool {
+        match cause {
+            FailureCause::EmptySignature => self.signature.is_none_or(|facts| facts.can_be_empty),
+            // A verification that does not happen cannot fail. The
+            // unknown-key path verifies nothing, so this cause needs a
+            // signature that can be nonempty *and* a key the target
+            // recognizes.
+            FailureCause::InvalidSignature => {
+                self.signature.is_none_or(|facts| facts.can_be_nonempty)
+                    && self.public_key.is_none_or(|facts| facts.can_be_recognized)
+            }
+            FailureCause::EmptyPublicKey => self.public_key.is_none_or(|facts| facts.can_be_empty),
+            _ => true,
+        }
+    }
+}
+
+/// Whether an abstract type can be the empty item.
+fn can_be_empty(target: &ReviewedElementsTapscriptDefinition, actual: &StackValueType) -> bool {
+    matches!(actual, StackValueType::Empty)
+        || width_ranges(target, actual)
+            .into_iter()
+            .any(|(minimum, _)| minimum == 0)
+}
+
+/// Whether an abstract type can be a value of the declared type.
+fn can_be(
+    target: &ReviewedElementsTapscriptDefinition,
+    actual: &StackValueType,
+    declared: &StackValueType,
+) -> bool {
+    if actual == declared {
+        return true;
+    }
+    // Width is all an abstract state carries here. An item whose widths
+    // overlap the declared encoding's could be one; an item whose
+    // widths cannot reach it could not.
+    let admissible = width_ranges(target, declared);
+    width_ranges(target, actual)
+        .into_iter()
+        .any(|range| admissible.iter().any(|form| overlaps(*form, range)))
+}
+
+/// Whether an abstract type can be a nonempty value that is *not* the
+/// recognized form.
+fn can_be_unknown(
+    target: &ReviewedElementsTapscriptDefinition,
+    actual: &StackValueType,
+    recognized: &StackValueType,
+) -> bool {
+    if matches!(actual, StackValueType::Empty) {
+        return false;
+    }
+    let excluded = width_ranges(target, recognized);
+    width_ranges(target, actual).into_iter().any(|(low, high)| {
+        // Some admissible width in this range is nonzero and is not one
+        // the recognized form fixes.
+        (low.max(1)..=high).any(|width| {
+            !excluded
+                .iter()
+                .any(|(minimum, maximum)| *minimum <= width && width <= *maximum)
+        })
+    })
+}
+
+/// Whether two inclusive width ranges share a width.
+const fn overlaps(left: (usize, usize), right: (usize, usize)) -> bool {
+    left.0 <= right.1 && right.0 <= left.1
 }
 
 /// Whether the abstract state settles this cause by itself.
@@ -537,7 +714,50 @@ fn opcode(target: &ReviewedElementsTapscriptDefinition, id: OpcodeId) -> &'_ Opc
         .expect("the reviewed contract states a contract for every primitive")
 }
 
-/// Whether an operand of type `actual` satisfies a declared operand.
+/// Whether an operand of type `actual` satisfies a declared position.
+///
+/// # The alternatives are the point
+///
+/// A signature position admits the empty item as well as the encoded
+/// signature, and a key position admits nonempty forms the target does
+/// not recognize. Both are behaviour the target documents, and both
+/// were previously unreachable: declared as one exact type, the empty
+/// signature and the unknown key were refused here as type mismatches
+/// before the cases describing them could apply
+/// (Guide-10 `rule:guide10:signature-abstraction`).
+fn admits(
+    target: &ReviewedElementsTapscriptDefinition,
+    declared: &OperandContract,
+    actual: &StackValueType,
+) -> bool {
+    match declared {
+        OperandContract::Exact(value) => accepts(target, value, actual),
+        OperandContract::OneOf(values) => values.iter().any(|value| accepts(target, value, actual)),
+        OperandContract::Signature {
+            nonempty_encoding,
+            empty_allowed,
+        } => {
+            (*empty_allowed && matches!(actual, StackValueType::Empty))
+                || accepts(target, &StackValueType::Encoded(*nonempty_encoding), actual)
+                || (*empty_allowed && can_be_empty(target, actual))
+        }
+        OperandContract::PublicKey {
+            recognized_encoding,
+            unknown_nonempty_allowed,
+        } => {
+            let recognized = StackValueType::Encoded(*recognized_encoding);
+            // The empty key is admitted as an operand and rejected as
+            // behaviour: it reaches the primitive's own empty-key
+            // abort, which is a target verdict rather than a program
+            // this validator refuses to describe.
+            matches!(actual, StackValueType::Empty)
+                || accepts(target, &recognized, actual)
+                || (*unknown_nonempty_allowed && can_be_unknown(target, actual, &recognized))
+        }
+    }
+}
+
+/// Whether an operand of type `actual` satisfies one declared type.
 ///
 /// The same type always satisfies itself. Otherwise one of the two must
 /// be an unconstrained byte string — a literal a program pushed, or an
