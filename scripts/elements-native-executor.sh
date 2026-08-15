@@ -20,9 +20,17 @@
 #   ELEMENTS_NATIVE_EXECUTOR_FRAMEWORK      upstream test_framework package,
 #                                           or the directory holding it
 #                                           (required)
-#   ELEMENTS_NATIVE_EXECUTOR_UPSTREAM_REPO  upstream checkout, consulted for
-#                                           a revision only when the binary
-#                                           embeds none (optional)
+#   ELEMENTS_NATIVE_EXECUTOR_NETWORK_ID     the development network identity
+#                                           of the chain booted, as 64 hex
+#                                           digits (required)
+#   ELEMENTS_NATIVE_EXECUTOR_INTENDED_TIP   the integration tip the operator
+#                                           intended to run (optional,
+#                                           ADR-018)
+#   ELEMENTS_NATIVE_EXECUTOR_UPSTREAM_BASE  the upstream base that tip
+#                                           derives from (optional, ADR-018)
+#   ELEMENTS_NATIVE_EXECUTOR_LOCAL_TOPICS   space-separated local topic
+#                                           branches folded into that tip
+#                                           (optional, ADR-018)
 #   ELEMENTS_NATIVE_EXECUTOR_PYTHON         python interpreter (default
 #                                           python3)
 #   ELEMENTS_NATIVE_EXECUTOR_LAUNCH_PREFIX  word-split command placed in
@@ -43,7 +51,8 @@ adapter="$here/elements-native-executor.py"
 missing=""
 for name in ELEMENTS_NATIVE_EXECUTOR_ELEMENTSD \
             ELEMENTS_NATIVE_EXECUTOR_ELEMENTS_CLI \
-            ELEMENTS_NATIVE_EXECUTOR_FRAMEWORK; do
+            ELEMENTS_NATIVE_EXECUTOR_FRAMEWORK \
+            ELEMENTS_NATIVE_EXECUTOR_NETWORK_ID; do
   eval "value=\${$name:-}"
   if [ -z "$value" ]; then
     missing="$missing $name"
@@ -57,11 +66,21 @@ fi
 set -- --elementsd "$ELEMENTS_NATIVE_EXECUTOR_ELEMENTSD" \
        --elements-cli "$ELEMENTS_NATIVE_EXECUTOR_ELEMENTS_CLI" \
        --framework "$ELEMENTS_NATIVE_EXECUTOR_FRAMEWORK" \
+       --network-id "$ELEMENTS_NATIVE_EXECUTOR_NETWORK_ID" \
        "$@"
 
-if [ -n "${ELEMENTS_NATIVE_EXECUTOR_UPSTREAM_REPO:-}" ]; then
-  set -- --upstream-repo "$ELEMENTS_NATIVE_EXECUTOR_UPSTREAM_REPO" "$@"
+# ADR-018 provenance. Each is an operator declaration of what was meant to
+# run; none is derived from a working tree, and none stands in for the
+# revision the node binary reports about itself.
+if [ -n "${ELEMENTS_NATIVE_EXECUTOR_INTENDED_TIP:-}" ]; then
+  set -- --intended-executed-tip "$ELEMENTS_NATIVE_EXECUTOR_INTENDED_TIP" "$@"
 fi
+if [ -n "${ELEMENTS_NATIVE_EXECUTOR_UPSTREAM_BASE:-}" ]; then
+  set -- --upstream-base "$ELEMENTS_NATIVE_EXECUTOR_UPSTREAM_BASE" "$@"
+fi
+for topic in ${ELEMENTS_NATIVE_EXECUTOR_LOCAL_TOPICS:-}; do
+  set -- --included-local-topic "$topic" "$@"
+done
 
 python="${ELEMENTS_NATIVE_EXECUTOR_PYTHON:-python3}"
 

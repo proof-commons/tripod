@@ -34,6 +34,14 @@ for name in ELEMENTS_NATIVE_EXECUTOR_ELEMENTSD \
   fi
 done
 
+# The adapter states an observed environment, and the network identity of
+# the chain it boots is explicit configuration rather than something a node
+# can be asked for. This is an arbitrary nonzero development value: it names
+# nothing, authorizes nothing, and is not secret material.
+ELEMENTS_NATIVE_EXECUTOR_NETWORK_ID="${ELEMENTS_NATIVE_EXECUTOR_NETWORK_ID:-\
+1111111111111111111111111111111111111111111111111111111111111111}"
+export ELEMENTS_NATIVE_EXECUTOR_NETWORK_ID
+
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT INT TERM
 
@@ -45,7 +53,7 @@ python3 - "$requests" <<'WRITE_REQUESTS'
 import json
 import sys
 
-SCHEMA = 1
+SCHEMA = 2
 TAPSCRIPT_LEAF_VERSION = 0xC4
 ZERO_32 = [0] * 32
 
@@ -67,6 +75,11 @@ def resource_expectation(script, stack):
 
 
 def fixture(ordinal, script, stack, expected, context=None):
+    if context is not None:
+        # Exact equality, both directions: the adapter no longer tolerates
+        # a context that leaves its leaf script unstated.
+        context = dict(context)
+        context["script_path"] = dict(context["script_path"], script=list(script))
     return {
         "case": case(ordinal),
         "target_contract_version": 1,
@@ -262,16 +275,37 @@ failures = []
 with open(sys.argv[1], encoding="utf-8") as stream:
     lines = [line for line in stream if line.strip()]
 
-if len(lines) != len(EXPECTED) + 1:
-    print("FAIL: expected %d lines, read %d" % (len(EXPECTED) + 1, len(lines)))
+# The handshake and the environment observation both precede the answers.
+if len(lines) != len(EXPECTED) + 2:
+    print("FAIL: expected %d lines, read %d" % (len(EXPECTED) + 2, len(lines)))
     for line in lines:
         print("  " + line.rstrip())
     sys.exit(1)
 
 handshake = json.loads(lines[0])
+environment = json.loads(lines[1])
+print("environment: " + json.dumps(environment, sort_keys=True))
+for field, want in (
+    ("schema", 2),
+    ("environment", "development"),
+    ("active_domains", ["tapscript"]),
+    ("active_leaf_versions", [196]),
+):
+    if environment.get(field) != want:
+        failures.append(
+            "environment.%s is %r, wanted %r" % (field, environment.get(field), want)
+        )
+# The genesis is the node's own answer, so the test asserts its shape rather
+# than a value: a fixed expectation here would be this script declaring what
+# the chain is instead of reading it.
+genesis = environment.get("genesis_id")
+if not isinstance(genesis, list) or len(genesis) != 32 or not any(genesis):
+    failures.append("environment.genesis_id is not an observed 32-byte identity")
+if not environment.get("chain_name"):
+    failures.append("environment.chain_name is empty")
 print("handshake: " + json.dumps(handshake, sort_keys=True))
 for field, want in (
-    ("protocol_schema", 1),
+    ("protocol_schema", 2),
     ("supported_domains", ["tapscript"]),
     ("supported_leaf_versions", [196]),
     (
@@ -281,12 +315,18 @@ for field, want in (
 ):
     if handshake.get(field) != want:
         failures.append("handshake.%s is %r, wanted %r" % (field, handshake.get(field), want))
-if "elements" not in str(handshake.get("implementation_name", "")).lower():
-    failures.append("handshake.implementation_name does not name Elements")
-if not handshake.get("upstream_revision"):
-    failures.append("handshake.upstream_revision is empty")
+if "elements" not in str(handshake.get("node_name", "")).lower():
+    failures.append("handshake.node_name does not name Elements")
+if not handshake.get("adapter_name"):
+    failures.append("handshake.adapter_name is empty")
+# The binary's own revision, and nothing standing in for it. A binary that
+# embeds none reports null, and the report then records that this run
+# establishes no workspace provenance rather than borrowing a checkout's.
+revision = handshake.get("binary_reported_revision", "missing")
+if revision != "missing" and revision is not None and not str(revision).strip():
+    failures.append("handshake.binary_reported_revision is blank rather than absent")
 
-for line, (ordinal, verdict, failure) in zip(lines[1:], EXPECTED):
+for line, (ordinal, verdict, failure) in zip(lines[2:], EXPECTED):
     answer = json.loads(line)
     print("case %d: " % ordinal + json.dumps(answer, sort_keys=True))
     if answer.get("case", {}).get("ordinal") != ordinal:
