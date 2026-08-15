@@ -70,7 +70,7 @@ Imported citations are linted under
 | [`phases/`](phases/README.md) | Phase entry conditions, deliverables, evidence, and exit gates. |
 | [`research/`](research/README.md) | Unresolved prototype-driven questions. |
 | [`reference/`](reference/README.md) | External technical reference material. |
-| [`guides/`](guides/README.md) | Concept guides for upcoming implementation batches. |
+| [`guides/`](guides/README.md) | Archived executed and concept implementation guides. |
 
 ## Root files · `tbl:plans:root-files`
 
