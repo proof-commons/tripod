@@ -20,8 +20,8 @@ use std::time::Duration;
 use tapscript::{StackItem, TapscriptInstruction, TapscriptProgram};
 use target_elements::{
     ActivationDeclaration, DeploymentEnvironment, DevelopmentDeploymentBinding, LeafVersion,
-    OpcodeId, ReviewedElementsTapscriptDefinition, TargetContractVersion,
-    ValidatedDevelopmentBinding, reviewed_elements_tapscript, validate_development_binding,
+    OpcodeId, ReviewedDevelopmentBinding, ReviewedElementsTapscriptDefinition,
+    TargetContractVersion, reviewed_elements_tapscript, validate_reviewed_development_binding,
 };
 use target_elements_conformance::error::NativeConformanceError;
 use target_elements_conformance::executor::{
@@ -30,7 +30,10 @@ use target_elements_conformance::executor::{
 use target_elements_conformance::fixture::{
     ExpectedPrimitiveOutcome, NativeCaseGroup, NativeCaseId, PrimitiveFixture, PrimitiveFixtureSet,
 };
-use target_elements_conformance::protocol::{NativeVerdict, ProtocolPhase};
+use target_elements_conformance::protocol::{
+    MOCK_EXECUTOR_GENESIS_ID, MOCK_EXECUTOR_NETWORK_ID, NativeVerdict, ProtocolLimits,
+    ProtocolPhase, ResponseShapeDefect,
+};
 
 /// The string the noisy mock writes on its stderr.
 const NOISE: &str = "MOCK_EXECUTOR_STDERR_THAT_MUST_NOT_BE_RELAYED";
@@ -39,18 +42,19 @@ fn reviewed_target() -> ReviewedElementsTapscriptDefinition {
     reviewed_elements_tapscript().expect("the reviewed contract validates")
 }
 
-fn development_binding(
-    target: &ReviewedElementsTapscriptDefinition,
-) -> ValidatedDevelopmentBinding {
+fn development_binding(target: &ReviewedElementsTapscriptDefinition) -> ReviewedDevelopmentBinding {
+    // The identifiers are the ones the mock states it observed. A run
+    // whose executor observed another chain is refused before any case
+    // executes, which is what several cases below drive.
     let binding = DevelopmentDeploymentBinding::new(
         TargetContractVersion::V1,
         DeploymentEnvironment::Development,
-        [0x11; 32],
-        [0x22; 32],
+        MOCK_EXECUTOR_NETWORK_ID,
+        MOCK_EXECUTOR_GENESIS_ID,
         ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
         None,
     );
-    validate_development_binding(target.validated(), binding).expect("the binding validates")
+    validate_reviewed_development_binding(target, binding).expect("the binding validates")
 }
 
 /// Two fixtures, differing only in ordinal.
@@ -107,10 +111,21 @@ fn run_with_timeout(
     behavior: &str,
     timeout: Duration,
 ) -> Result<ExecutionTranscript, NativeConformanceError> {
+    run_with(behavior, timeout, ProtocolLimits::DEFAULT)
+}
+
+fn run_with(
+    behavior: &str,
+    timeout: Duration,
+    limits: ProtocolLimits,
+) -> Result<ExecutionTranscript, NativeConformanceError> {
     let directory = tempfile::tempdir().expect("tempdir");
     let program = wrapper(directory.path(), behavior);
-    let configuration = ExecutorConfiguration::new(&program, ExecutorTrust::Mock, timeout);
-    execute(&reviewed_target(), &configuration, &fixtures())
+    let configuration =
+        ExecutorConfiguration::new(&program, ExecutorTrust::Mock, timeout).with_limits(limits);
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    execute(&target, &binding, &configuration, &fixtures())
 }
 
 #[test]
@@ -118,9 +133,14 @@ fn a_well_behaved_executor_answers_every_case_once() {
     let transcript = run("echo-expected").expect("the exchange completes");
     assert_eq!(transcript.responses().len(), 2);
     assert_eq!(transcript.trust(), ExecutorTrust::Mock);
+    assert_eq!(transcript.handshake().node_name, "mock-native-executor");
+    // A mock builds nothing, so it establishes no workspace provenance
+    // and says so rather than substituting a plausible revision.
+    assert_eq!(transcript.handshake().binary_reported_revision, None);
+    assert_eq!(transcript.handshake().intended_executed_tip, None);
     assert_eq!(
-        transcript.handshake().implementation_name,
-        "mock-native-executor",
+        transcript.environment().genesis_id,
+        MOCK_EXECUTOR_GENESIS_ID,
     );
     for response in transcript.responses().values() {
         assert_eq!(response.verdict, NativeVerdict::Accepted);
@@ -236,8 +256,10 @@ fn an_executor_that_cannot_be_started_fails_closed() {
     let missing = directory.path().join("no-such-executor");
     let configuration =
         ExecutorConfiguration::new(&missing, ExecutorTrust::Mock, Duration::from_secs(5));
+    let target = reviewed_target();
+    let binding = development_binding(&target);
     let error =
-        execute(&reviewed_target(), &configuration, &fixtures()).expect_err("nothing to start");
+        execute(&target, &binding, &configuration, &fixtures()).expect_err("nothing to start");
     assert!(matches!(
         error,
         NativeConformanceError::ExecutorStartupFailed,
@@ -260,6 +282,152 @@ fn infrastructure_trouble_is_reported_as_itself() {
     for response in transcript.responses().values() {
         assert_eq!(response.verdict, NativeVerdict::InfrastructureError);
     }
+}
+
+#[test]
+fn a_blank_record_is_refused_rather_than_skipped() {
+    // The framing defines one nonempty JSON object per record. A framing
+    // that skipped empty ones could not tell an executor that said
+    // nothing from an executor that finished.
+    let error = run("blank-record").expect_err("the blank record is refused");
+    assert!(
+        matches!(
+            error,
+            NativeConformanceError::BlankProtocolRecord {
+                phase: ProtocolPhase::Handshake,
+            },
+        ),
+        "expected a blank-record failure, got {error}",
+    );
+}
+
+#[test]
+fn a_blank_record_after_the_last_response_is_trailing_data() {
+    let error = run("trailing-blank-record").expect_err("the trailing record is refused");
+    assert!(
+        matches!(error, NativeConformanceError::TrailingProtocolData),
+        "expected trailing protocol data, got {error}",
+    );
+}
+
+#[test]
+fn a_record_past_the_bound_is_refused() {
+    let error = run("oversized-handshake").expect_err("the oversized record is refused");
+    assert!(
+        matches!(
+            error,
+            NativeConformanceError::ProtocolRecordTooLarge {
+                phase: ProtocolPhase::Handshake,
+                ..
+            },
+        ),
+        "expected an oversized-record failure, got {error}",
+    );
+}
+
+#[test]
+fn an_unterminated_oversized_record_is_refused_without_unbounded_allocation() {
+    // The child holds the record open and never emits a newline. The
+    // harness must refuse at its own bound rather than allocate until
+    // the host intervenes — which is why the bound here is small and the
+    // timeout is long enough that a timeout would not be the answer.
+    let limits = ProtocolLimits {
+        maximum_handshake_bytes: 1024,
+        ..ProtocolLimits::DEFAULT
+    };
+    let error = run_with("unterminated-handshake", Duration::from_secs(20), limits)
+        .expect_err("the unterminated record is refused");
+    assert!(
+        matches!(
+            error,
+            NativeConformanceError::ProtocolRecordTooLarge {
+                phase: ProtocolPhase::Handshake,
+                maximum: 1024,
+            },
+        ),
+        "expected an oversized-record failure at the stated bound, got {error}",
+    );
+}
+
+#[test]
+fn a_record_at_exactly_the_bound_is_accepted() {
+    // The bound is on the record, and a record of exactly the maximum is
+    // a record within it. An off-by-one here would refuse honest
+    // executors at the boundary the protocol documents.
+    let handshake_bytes = {
+        let transcript = run("echo-expected").expect("the exchange completes");
+        serde_json::to_vec(transcript.handshake())
+            .expect("a handshake serializes")
+            .len()
+    };
+    let limits = ProtocolLimits {
+        maximum_handshake_bytes: handshake_bytes,
+        ..ProtocolLimits::DEFAULT
+    };
+    run_with("echo-expected", Duration::from_secs(30), limits)
+        .expect("a record of exactly the maximum is within the bound");
+
+    let limits = ProtocolLimits {
+        maximum_handshake_bytes: handshake_bytes - 1,
+        ..ProtocolLimits::DEFAULT
+    };
+    let error = run_with("echo-expected", Duration::from_secs(30), limits)
+        .expect_err("one byte past the bound is refused");
+    assert!(
+        matches!(
+            error,
+            NativeConformanceError::ProtocolRecordTooLarge {
+                phase: ProtocolPhase::Handshake,
+                ..
+            },
+        ),
+        "expected an oversized-record failure, got {error}",
+    );
+}
+
+#[test]
+fn an_executor_that_states_no_environment_fails_closed() {
+    let error = run("missing-environment").expect_err("the silence is refused");
+    assert!(
+        matches!(error, NativeConformanceError::MissingEnvironmentObservation),
+        "expected a missing-environment failure, got {error}",
+    );
+}
+
+#[test]
+fn an_executor_that_ran_another_chain_fails_before_any_case() {
+    let error = run("wrong-genesis").expect_err("the other chain is refused");
+    assert!(
+        matches!(error, NativeConformanceError::GenesisObservationMismatch),
+        "expected a genesis mismatch, got {error}",
+    );
+
+    let error = run("wrong-network").expect_err("the other network is refused");
+    assert!(
+        matches!(error, NativeConformanceError::EnvironmentBindingMismatch),
+        "expected an environment mismatch, got {error}",
+    );
+
+    let error = run("inactive-leaf-version").expect_err("the inactive leaf is refused");
+    assert!(
+        matches!(error, NativeConformanceError::ActivationObservationMismatch),
+        "expected an activation mismatch, got {error}",
+    );
+}
+
+#[test]
+fn an_accepted_response_naming_a_failure_class_is_not_a_passing_case() {
+    let error = run("accepted-with-failure-class").expect_err("the contradiction is refused");
+    assert!(
+        matches!(
+            error,
+            NativeConformanceError::MalformedResponseShape {
+                defect: ResponseShapeDefect::AcceptedResponseNamesFailure,
+                ..
+            },
+        ),
+        "expected a response-shape failure, got {error}",
+    );
 }
 
 #[test]

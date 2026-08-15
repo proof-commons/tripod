@@ -31,20 +31,23 @@
 //! target rejection would turn a slow machine into target evidence.
 
 use std::collections::BTreeMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
-use target_elements::ReviewedElementsTapscriptDefinition;
+use target_elements::{
+    DeploymentEnvironment, ReviewedDevelopmentBinding, ReviewedElementsTapscriptDefinition,
+};
 
 use crate::error::NativeConformanceError;
 use crate::fixture::{NativeCaseId, PrimitiveFixtureSet};
 use crate::protocol::{
-    ExecutorHandshake, HandshakeRequest, NATIVE_PROTOCOL_SCHEMA, NativeExecutionRequest,
-    NativeExecutionResponse, ProtocolPhase, WireExecutionDomain,
+    ExecutorCapability, ExecutorEnvironmentObservation, ExecutorHandshake, HandshakeRequest,
+    NATIVE_PROTOCOL_SCHEMA, NativeExecutionRequest, NativeExecutionResponse, ProtocolLimits,
+    ProtocolPhase, WireEnvironment, WireExecutionDomain, validate_response_shape,
 };
 
 /// How long a run may take before the executor is stopped.
@@ -75,17 +78,25 @@ pub struct ExecutorConfiguration {
     program: PathBuf,
     timeout: Duration,
     trust: ExecutorTrust,
+    limits: ProtocolLimits,
 }
 
 impl ExecutorConfiguration {
-    /// Selects one executor.
+    /// Selects one executor, under the default record bounds.
     #[must_use]
     pub fn new(program: &Path, trust: ExecutorTrust, timeout: Duration) -> Self {
         Self {
             program: program.to_path_buf(),
             timeout,
             trust,
+            limits: ProtocolLimits::DEFAULT,
         }
+    }
+
+    /// The same selection under explicit record bounds.
+    #[must_use]
+    pub fn with_limits(self, limits: ProtocolLimits) -> Self {
+        Self { limits, ..self }
     }
 
     /// How long the run may take.
@@ -99,12 +110,19 @@ impl ExecutorConfiguration {
     pub const fn trust(&self) -> ExecutorTrust {
         self.trust
     }
+
+    /// The byte bound on each class of protocol record.
+    #[must_use]
+    pub const fn limits(&self) -> ProtocolLimits {
+        self.limits
+    }
 }
 
 /// Everything one executor run observed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExecutionTranscript {
     handshake: ExecutorHandshake,
+    environment: ExecutorEnvironmentObservation,
     trust: ExecutorTrust,
     responses: BTreeMap<NativeCaseId, NativeExecutionResponse>,
 }
@@ -114,6 +132,12 @@ impl ExecutionTranscript {
     #[must_use]
     pub const fn handshake(&self) -> &ExecutorHandshake {
         &self.handshake
+    }
+
+    /// What the executor said it ran on.
+    #[must_use]
+    pub const fn environment(&self) -> &ExecutorEnvironmentObservation {
+        &self.environment
     }
 
     /// What the caller declared the executor to be.
@@ -126,6 +150,26 @@ impl ExecutionTranscript {
     #[must_use]
     pub const fn responses(&self) -> &BTreeMap<NativeCaseId, NativeExecutionResponse> {
         &self.responses
+    }
+
+    /// A transcript assembled directly, for the crate's own tests.
+    ///
+    /// Not public: a transcript is what an executor said, and a caller
+    /// able to state one without an executor could hand the evaluator a
+    /// run that never happened.
+    #[cfg(test)]
+    pub(crate) const fn for_tests(
+        handshake: ExecutorHandshake,
+        environment: ExecutorEnvironmentObservation,
+        trust: ExecutorTrust,
+        responses: BTreeMap<NativeCaseId, NativeExecutionResponse>,
+    ) -> Self {
+        Self {
+            handshake,
+            environment,
+            trust,
+            responses,
+        }
     }
 }
 
@@ -180,6 +224,7 @@ const fn libc_etxtbsy() -> i32 {
 /// and a nonzero exit status.
 pub fn execute(
     target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
     configuration: &ExecutorConfiguration,
     fixtures: &PrimitiveFixtureSet,
 ) -> Result<ExecutionTranscript, NativeConformanceError> {
@@ -199,7 +244,18 @@ pub fn execute(
     let child = Arc::new(Mutex::new(child));
     let watchdog = Watchdog::start(Arc::clone(&child), configuration.timeout);
 
-    let outcome = run_protocol(target, configuration, fixtures, stdin, &mut reader);
+    let outcome = run_protocol(target, binding, configuration, fixtures, stdin, &mut reader);
+
+    // A refused exchange ends the run here. The child is stopped rather
+    // than waited for, because it may be mid-way through writing the very
+    // record the harness has already refused — an unterminated oversized
+    // one, say — and waiting would let the watchdog report a typed
+    // protocol failure as a timeout instead.
+    if outcome.is_err()
+        && let Ok(mut child) = child.lock()
+    {
+        let _ignored = child.kill();
+    }
 
     // The wait polls rather than blocking, so the watchdog can still
     // reach the child: a child that outstays the exchange is a timeout,
@@ -230,17 +286,19 @@ pub fn execute(
 /// The protocol exchange itself.
 fn run_protocol(
     target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
     configuration: &ExecutorConfiguration,
     fixtures: &PrimitiveFixtureSet,
     mut stdin: impl Write,
     reader: &mut impl BufRead,
 ) -> Result<ExecutionTranscript, NativeConformanceError> {
+    let limits = configuration.limits;
     write_message(
         &mut stdin,
         &HandshakeRequest::default(),
         ProtocolPhase::Handshake,
     )?;
-    let handshake: ExecutorHandshake = read_message(reader, ProtocolPhase::Handshake)?
+    let handshake: ExecutorHandshake = read_message(reader, ProtocolPhase::Handshake, limits)?
         .ok_or(NativeConformanceError::ExecutorHandshakeFailed)?;
 
     if handshake.protocol_schema != NATIVE_PROTOCOL_SCHEMA {
@@ -259,6 +317,22 @@ fn run_protocol(
     {
         return Err(NativeConformanceError::ExecutorProtocolMismatch);
     }
+    // A census whose cases read a transaction cannot be answered by an
+    // executor that says it accepts no transaction context. Refusing here
+    // is the difference between a run that could not happen and a run of
+    // cases that quietly executed against no transaction at all.
+    if fixtures.iter().any(|fixture| fixture.context().is_some())
+        && !handshake
+            .capabilities
+            .contains(&ExecutorCapability::TransactionContext)
+    {
+        return Err(NativeConformanceError::ExecutorProtocolMismatch);
+    }
+
+    let environment: ExecutorEnvironmentObservation =
+        read_message(reader, ProtocolPhase::Environment, limits)?
+            .ok_or(NativeConformanceError::MissingEnvironmentObservation)?;
+    compare_environment(target, binding, &environment)?;
 
     let mut responses: BTreeMap<NativeCaseId, NativeExecutionResponse> = BTreeMap::new();
     for fixture in fixtures {
@@ -274,8 +348,9 @@ fn run_protocol(
         // status, not guessed here.
         let _write = write_message(&mut stdin, &request, ProtocolPhase::Request);
 
-        let response: NativeExecutionResponse = read_message(reader, ProtocolPhase::Response)?
-            .ok_or(NativeConformanceError::MissingCaseResponse(case))?;
+        let response: NativeExecutionResponse =
+            read_message(reader, ProtocolPhase::Response, limits)?
+                .ok_or(NativeConformanceError::MissingCaseResponse(case))?;
 
         if response.schema != NATIVE_PROTOCOL_SCHEMA {
             return Err(NativeConformanceError::UnsupportedProtocolSchema {
@@ -297,6 +372,12 @@ fn run_protocol(
             }
             return Err(NativeConformanceError::ResponseOrderViolation { expected: case });
         }
+        // Shape before comparison. A response that contradicts its own
+        // executor's advertised interface is a protocol failure, and
+        // reading a target verdict out of it would mean believing
+        // whichever half of the contradiction happens to match.
+        validate_response_shape(&response, &handshake.capabilities)
+            .map_err(|defect| NativeConformanceError::MalformedResponseShape { case, defect })?;
 
         responses.insert(case, response);
     }
@@ -309,16 +390,68 @@ fn run_protocol(
 
     // The protocol is over. Anything further is the executor writing
     // outside the exchange, which fails the run rather than being
-    // ignored as harmless noise.
-    if read_line(reader, ProtocolPhase::Shutdown)?.is_some() {
-        return Err(NativeConformanceError::TrailingProtocolData);
-    }
+    // ignored as harmless noise — a blank trailing record included,
+    // since the framing has no empty records to be tolerant of.
+    expect_end_of_stream(reader, limits)?;
 
     Ok(ExecutionTranscript {
         handshake,
+        environment,
         trust: configuration.trust,
         responses,
     })
+}
+
+/// Whether the executor ran the chain the binding names.
+///
+/// Compared before any case executes. A run whose executor observed a
+/// different chain from the one the fixtures are stated against has not
+/// produced weak evidence about the bound network; it has produced
+/// evidence about some other network, and continuing would attach that
+/// evidence to this one.
+fn compare_environment(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    observation: &ExecutorEnvironmentObservation,
+) -> Result<(), NativeConformanceError> {
+    if observation.schema != NATIVE_PROTOCOL_SCHEMA {
+        return Err(NativeConformanceError::UnsupportedProtocolSchema {
+            offered: observation.schema,
+        });
+    }
+
+    let declared = binding.binding();
+    let environment_agrees = match declared.environment() {
+        DeploymentEnvironment::Development => {
+            observation.environment == WireEnvironment::Development
+        }
+        // No validated production binding exists, so this arm cannot be
+        // reached by any binding this crate accepts; it refuses rather
+        // than choosing a development answer for a production question.
+        _ => false,
+    };
+    if !environment_agrees || observation.chain_name.is_empty() {
+        return Err(NativeConformanceError::EnvironmentBindingMismatch);
+    }
+    if observation.network_id != declared.network_id() {
+        return Err(NativeConformanceError::EnvironmentBindingMismatch);
+    }
+    if observation.genesis_id != declared.genesis_id() {
+        return Err(NativeConformanceError::GenesisObservationMismatch);
+    }
+
+    let definition = target.definition();
+    let domain = WireExecutionDomain::of(definition.execution_domain())
+        .ok_or(NativeConformanceError::TargetContractMismatch)?;
+    if !observation.active_domains.contains(&domain)
+        || !observation
+            .active_leaf_versions
+            .contains(&definition.leaf_version().get())
+    {
+        return Err(NativeConformanceError::ActivationObservationMismatch);
+    }
+
+    Ok(())
 }
 
 /// Writes one NDJSON message.
@@ -342,8 +475,9 @@ fn write_message<T: serde::Serialize>(
 fn read_message<T: serde::de::DeserializeOwned>(
     reader: &mut impl BufRead,
     phase: ProtocolPhase,
+    limits: ProtocolLimits,
 ) -> Result<Option<T>, NativeConformanceError> {
-    let Some(line) = read_line(reader, phase)? else {
+    let Some(line) = read_record(reader, phase, limits)? else {
         return Ok(None);
     };
     serde_json::from_str(&line)
@@ -351,23 +485,78 @@ fn read_message<T: serde::de::DeserializeOwned>(
         .map_err(|_| NativeConformanceError::MalformedResponse { phase })
 }
 
-/// Reads one nonempty line, or `None` at end of stream.
-fn read_line(
+/// Requires the executor to have finished.
+///
+/// Any further byte at all is trailing protocol data, including one that
+/// makes up a blank record: the framing defines no empty record, so an
+/// executor emitting one is writing outside the exchange.
+fn expect_end_of_stream(
+    reader: &mut impl BufRead,
+    limits: ProtocolLimits,
+) -> Result<(), NativeConformanceError> {
+    let phase = ProtocolPhase::Shutdown;
+    let maximum = limits.for_phase(phase);
+    let mut buffer = Vec::new();
+    let read = bounded_read(reader, maximum, &mut buffer)
+        .map_err(|_| NativeConformanceError::MalformedResponse { phase })?;
+    if read == 0 {
+        return Ok(());
+    }
+    Err(NativeConformanceError::TrailingProtocolData)
+}
+
+/// Reads one complete strict-NDJSON record.
+///
+/// # Strict, and bounded
+///
+/// A record is one nonempty JSON object and one newline. A blank or
+/// whitespace-only record is refused rather than skipped, because a
+/// framing that skips them cannot distinguish an executor that said
+/// nothing from an executor that finished. At most `maximum + 1` bytes
+/// are read, so a record that never terminates is refused as oversized
+/// rather than allocated: the two are told apart by whether the bound was
+/// reached, and neither grows the buffer past it.
+fn read_record(
     reader: &mut impl BufRead,
     phase: ProtocolPhase,
+    limits: ProtocolLimits,
 ) -> Result<Option<String>, NativeConformanceError> {
-    loop {
-        let mut line = String::new();
-        let read = reader
-            .read_line(&mut line)
-            .map_err(|_| NativeConformanceError::MalformedResponse { phase })?;
-        if read == 0 {
-            return Ok(None);
-        }
-        if !line.trim().is_empty() {
-            return Ok(Some(line));
-        }
+    let maximum = limits.for_phase(phase);
+    let mut buffer = Vec::new();
+    let read = bounded_read(reader, maximum, &mut buffer)
+        .map_err(|_| NativeConformanceError::MalformedResponse { phase })?;
+    if read == 0 {
+        return Ok(None);
     }
+
+    if buffer.last() != Some(&b'\n') {
+        // Either the bound was reached without a newline, or the stream
+        // ended mid-record. The first is an oversized record; the second
+        // is a truncated one, and they are not the same fault.
+        return Err(if buffer.len() > maximum {
+            NativeConformanceError::ProtocolRecordTooLarge { phase, maximum }
+        } else {
+            NativeConformanceError::MalformedResponse { phase }
+        });
+    }
+    buffer.pop();
+
+    let record = String::from_utf8(buffer)
+        .map_err(|_| NativeConformanceError::MalformedResponse { phase })?;
+    if record.trim().is_empty() {
+        return Err(NativeConformanceError::BlankProtocolRecord { phase });
+    }
+    Ok(Some(record))
+}
+
+/// Reads up to `maximum + 1` bytes, stopping at the first newline.
+fn bounded_read(
+    reader: &mut impl BufRead,
+    maximum: usize,
+    buffer: &mut Vec<u8>,
+) -> std::io::Result<usize> {
+    let ceiling = u64::try_from(maximum.saturating_add(1)).unwrap_or(u64::MAX);
+    reader.by_ref().take(ceiling).read_until(b'\n', buffer)
 }
 
 /// Stops the executor when its explicit timeout expires.

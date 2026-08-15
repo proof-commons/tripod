@@ -33,8 +33,9 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use tapscript::{StackItem, TapscriptProgram};
-use target_elements::{OpcodeId, ReviewedElementsTapscriptDefinition, ValidatedDevelopmentBinding};
+use target_elements::{OpcodeId, ReviewedDevelopmentBinding, ReviewedElementsTapscriptDefinition};
 
+use crate::claim::{NativeEvidenceClaim, claims_of};
 use crate::error::NativeConformanceError;
 use crate::protocol::{ObservedFailureClass, WireExecutionDomain};
 use crate::vocabulary::{opcode_from_name, opcode_name};
@@ -687,7 +688,7 @@ impl PrimitiveFixture {
     /// means the domain is one this harness has never seen.
     pub fn new(
         target: &ReviewedElementsTapscriptDefinition,
-        binding: &ValidatedDevelopmentBinding,
+        binding: &ReviewedDevelopmentBinding,
         case: NativeCaseId,
         program: &TapscriptProgram,
         initial_stack: &[StackItem],
@@ -721,7 +722,7 @@ impl PrimitiveFixture {
     /// nothing, and a reviewed case cannot name any other byte.
     pub fn state(
         target: &ReviewedElementsTapscriptDefinition,
-        binding: &ValidatedDevelopmentBinding,
+        binding: &ReviewedDevelopmentBinding,
         statement: FixtureStatement<'_>,
     ) -> Result<Self, NativeConformanceError> {
         let definition = target.definition();
@@ -775,6 +776,15 @@ impl PrimitiveFixture {
             transaction_weight: ResourceExpectation::RecordedOnly,
         };
 
+        // A malformed fixture does not acquire a report subject. The
+        // canonical census is first-party source and is expected to be
+        // well shaped, but a fixture is a public construction surface,
+        // and "well shaped" is a property the constructor establishes
+        // rather than a property callers are trusted to preserve.
+        if let Some(context) = context.as_ref() {
+            validate_context(statement.case, context)?;
+        }
+
         Ok(Self {
             case: statement.case,
             target_contract_version: definition.version().get(),
@@ -791,6 +801,32 @@ impl PrimitiveFixture {
             expected: statement.expected,
             expected_resources,
         })
+    }
+
+    /// The complete comparison form of this fixture.
+    ///
+    /// Everything the executor was handed, plus the claims the case bears
+    /// on. This is what a report row carries: a case ordinal navigates
+    /// one census and identifies nothing across two.
+    #[must_use]
+    pub fn projection(&self) -> PrimitiveFixtureProjection {
+        PrimitiveFixtureProjection {
+            case: self.case,
+            target_contract_version: self.target_contract_version,
+            network_id: self.network_id,
+            genesis_id: self.genesis_id,
+            execution_domain: self.execution_domain,
+            leaf_version: self.leaf_version,
+            leaf_version_status: self.leaf_version_status,
+            enforcement_layer: self.enforcement_layer,
+            script_source: self.script_source,
+            script: self.script.clone(),
+            initial_stack: self.initial_stack.clone(),
+            context: self.context.clone(),
+            expected: self.expected.clone(),
+            expected_resources: self.expected_resources,
+            claims: claims_of(self),
+        }
     }
 
     /// Whether the fixture is stated at the reviewed leaf version.
@@ -878,6 +914,106 @@ impl PrimitiveFixture {
     }
 }
 
+/// The complete comparison form of one fixture.
+///
+/// Carried by every report row, so that a report states what was executed
+/// rather than pointing at a census that may since have changed.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PrimitiveFixtureProjection {
+    /// Which case.
+    pub case: NativeCaseId,
+    /// The contract revision the fixture was stated against.
+    pub target_contract_version: u32,
+    /// The network the fixture was stated against.
+    pub network_id: [u8; 32],
+    /// The genesis identifier the fixture was stated against.
+    pub genesis_id: [u8; 32],
+    /// The execution domain.
+    pub execution_domain: WireExecutionDomain,
+    /// The leaf version byte.
+    pub leaf_version: u8,
+    /// Whether that byte is the reviewed one.
+    pub leaf_version_status: LeafVersionStatus,
+    /// Which rule the stated verdict belongs to.
+    pub enforcement_layer: EnforcementLayer,
+    /// Where the exact script bytes came from.
+    pub script_source: FixtureScriptSource,
+    /// The exact script bytes.
+    pub script: Vec<u8>,
+    /// The exact initial stack.
+    pub initial_stack: Vec<Vec<u8>>,
+    /// The transaction context, where the case needs one.
+    pub context: Option<PrimitiveExecutionContext>,
+    /// What the reviewed contract requires the target to do.
+    pub expected: ExpectedPrimitiveOutcome,
+    /// What the execution is expected to cost.
+    pub expected_resources: ExpectedResourceObservation,
+    /// The typed claims the case bears on.
+    pub claims: BTreeSet<NativeEvidenceClaim>,
+}
+
+/// Whether one transaction context is internally well shaped.
+///
+/// Local structure only: the relationships a fixture can state wrongly
+/// without any executor being involved. It does not establish that a node
+/// can materialize the transaction, which no static check can.
+fn validate_context(
+    case: NativeCaseId,
+    context: &PrimitiveExecutionContext,
+) -> Result<(), NativeConformanceError> {
+    let malformed = || NativeConformanceError::MalformedFixtureContext(case);
+
+    if context.inputs.is_empty() || context.outputs.is_empty() {
+        return Err(malformed());
+    }
+    // The validated input must exist. An index past the end names an
+    // input the executor would have to invent, and a fixture's
+    // expectations would then describe a different transaction.
+    let index = usize::try_from(context.current_input_index).map_err(|_| malformed())?;
+    if index >= context.inputs.len() {
+        return Err(malformed());
+    }
+    // The leaf script under validation is the fixture's own, welded in
+    // above. A context whose path states no script would leave the
+    // executor to choose one.
+    if context.script_path.script.is_empty() {
+        return Err(malformed());
+    }
+
+    for input in &context.inputs {
+        // A stated field is a field the executor must write exactly. An
+        // empty one is not a field, and a fixture leaving it to the
+        // executor says so with `None` rather than with emptiness.
+        for field in [input.spent_asset.as_deref(), input.spent_value.as_deref()]
+            .into_iter()
+            .flatten()
+        {
+            if field.is_empty() {
+                return Err(malformed());
+            }
+        }
+        if input.spent_program.as_deref().is_some_and(<[u8]>::is_empty) {
+            return Err(malformed());
+        }
+        if let Some(issuance) = input.issuance.as_ref()
+            && (issuance.asset_amount.is_empty() || issuance.inflation_keys_amount.is_empty())
+        {
+            return Err(malformed());
+        }
+    }
+    for output in &context.outputs {
+        if output.value.is_empty() || output.asset.as_deref().is_some_and(<[u8]>::is_empty) {
+            return Err(malformed());
+        }
+        if output.program.as_deref().is_some_and(<[u8]>::is_empty) {
+            return Err(malformed());
+        }
+    }
+
+    Ok(())
+}
+
 /// The canonical fixture census.
 ///
 /// Sorted by typed case identity, so the declaration order of the
@@ -959,7 +1095,7 @@ impl<'a> IntoIterator for &'a PrimitiveFixtureSet {
 /// cannot be stated against the reviewed contract at all.
 pub fn canonical_fixture_set(
     target: &ReviewedElementsTapscriptDefinition,
-    binding: &ValidatedDevelopmentBinding,
+    binding: &ReviewedDevelopmentBinding,
 ) -> Result<PrimitiveFixtureSet, NativeConformanceError> {
     crate::census::canonical_census(target, binding)
 }

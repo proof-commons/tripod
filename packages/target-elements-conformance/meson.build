@@ -15,6 +15,7 @@ target_elements_conformance_source_files = files(
   'src/census/mod.rs',
   'src/census/numeric.rs',
   'src/census/timelock.rs',
+  'src/claim.rs',
   'src/error.rs',
   'src/executor.rs',
   'src/fixture.rs',

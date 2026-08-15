@@ -53,14 +53,17 @@ use clap::{Parser, ValueEnum};
 use cli_common::{BaseArgs, CheckOutputArgs, install_json_panic_hook, run_check_command};
 use target_elements::{
     ActivationDeclaration, DeploymentEnvironment, DevelopmentDeploymentBinding, LeafVersion,
-    TargetContractVersion, reviewed_elements_tapscript, validate_development_binding,
+    TargetContractVersion, reviewed_elements_tapscript, validate_reviewed_development_binding,
 };
+use target_elements_conformance::claim::claim_registry;
 use target_elements_conformance::executor::{
     DEFAULT_EXECUTOR_TIMEOUT, ExecutorConfiguration, ExecutorTrust, execute,
 };
 use target_elements_conformance::fixture::canonical_fixture_set;
 use target_elements_conformance::report::NativeConformanceReport;
-use target_elements_conformance::validate::{evaluate, gate, guide_nine_evidence_plan};
+use target_elements_conformance::validate::{
+    NativeReportValidationInputs, evaluate, gate, guide_nine_evidence_plan, validate_native_report,
+};
 
 const COMMAND_NAME: &str = "check-target-elements-native";
 
@@ -130,8 +133,8 @@ fn run(args: &Args) -> Result<NativeConformanceReport, String> {
     let target = reviewed_elements_tapscript()
         .map_err(|_| "the reviewed target contract did not validate".to_owned())?;
     let definition = target.definition();
-    let binding = validate_development_binding(
-        target.validated(),
+    let binding = validate_reviewed_development_binding(
+        &target,
         DevelopmentDeploymentBinding::new(
             definition.version(),
             DeploymentEnvironment::Development,
@@ -153,6 +156,7 @@ fn run(args: &Args) -> Result<NativeConformanceReport, String> {
 
     let fixtures = canonical_fixture_set(&target, &binding).map_err(|error| error.to_string())?;
     let plan = guide_nine_evidence_plan().map_err(|error| error.to_string())?;
+    let registry = claim_registry().map_err(|error| error.to_string())?;
 
     let configuration = ExecutorConfiguration::new(
         &args.executor,
@@ -165,15 +169,33 @@ fn run(args: &Args) -> Result<NativeConformanceReport, String> {
     );
 
     let transcript =
-        execute(&target, &configuration, &fixtures).map_err(|error| error.to_string())?;
-    let report = evaluate(&target, &binding, &fixtures, &transcript, &plan)
+        execute(&target, &binding, &configuration, &fixtures).map_err(|error| error.to_string())?;
+    let report = evaluate(&target, &binding, &fixtures, &transcript, &plan, &registry)
         .map_err(|error| error.to_string())?;
+
+    // The report this command just built goes back through the validator
+    // before the gate sees it. That is not a formality: the validator is
+    // the only thing that establishes the report's censuses are exact,
+    // and a command that skipped it for its own output would be trusting
+    // the one report nobody else has checked.
+    let validated = validate_native_report(
+        report,
+        NativeReportValidationInputs {
+            target: &target,
+            binding: &binding,
+            fixtures: &fixtures,
+            plan: &plan,
+            registry: &registry,
+            transcript: &transcript,
+        },
+    )
+    .map_err(|error| error.to_string())?;
 
     // The gate decides whether this run is evidence. A refused run
     // publishes nothing: no stdout result, no report asset, and no fresh
     // stamp date.
-    gate(&report).map_err(|error| error.to_string())?;
-    Ok(report)
+    gate(&validated).map_err(|error| error.to_string())?;
+    Ok(validated.into_report())
 }
 
 /// One 32-byte public identifier, from 64 hex digits.
