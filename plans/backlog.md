@@ -185,7 +185,8 @@ valid-world model path for unauthorized issuance, reserve extraction,
 receipt-class escape, or recipient redirection, and its most consequential
 finding is that the new target boundary conflates well-shaped, internally
 coherent, and reviewed-Elements trust states that Guide 9 must separate
-before the instruction core consumes them.
+before the instruction core consumes them. The review text is archived at
+[plans/reviews/review-4-0.3.2-dev.md](reviews/review-4-0.3.2-dev.md).
 
 ### 2.2 Earlier review basis
 
@@ -209,7 +210,8 @@ third-review tree:
 ```
 
 Those reviews and their findings are evidence about their exact trees. They are
-not current-checkout execution evidence.
+not current-checkout execution evidence. The second, third, and fourth review
+texts are archived under [plans/reviews/](reviews/README.md).
 
 ### 2.3 Historical Phase-1 gate · `gate:backlog:phase1`
 
