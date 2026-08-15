@@ -107,6 +107,10 @@ pub enum TargetError {
     /// declaring no operands to retain.
     InvalidRetainedOperandContract(OpcodeId),
 
+    /// A successful form carries through an operand position the
+    /// primitive does not declare, so there is no item to carry.
+    UndeclaredCarriedOperand(OpcodeId),
+
     /// A primitive declares no failure behavior at all. Every reviewed
     /// primitive can fail, so an empty failure contract is an
     /// incomplete transcription.
@@ -431,6 +435,12 @@ impl fmt::Display for TargetError {
             }
             Self::InvalidRetainedOperandContract(id) => {
                 write!(f, "opcode {id:?} retains operands it does not declare")
+            }
+            Self::UndeclaredCarriedOperand(id) => {
+                write!(
+                    f,
+                    "opcode {id:?} carries through an operand it does not declare"
+                )
             }
             Self::MissingOpcodeFailureContract(id) => {
                 write!(f, "opcode {id:?} declares no failure behavior")

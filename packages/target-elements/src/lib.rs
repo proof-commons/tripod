@@ -140,7 +140,8 @@ pub use resource::{
     ResourceDimension,
 };
 pub use success::{
-    SuccessCase, SuccessCondition, SuccessContract, SuccessContractDefect, SuccessStackEffect,
+    ResultValue, SuccessCase, SuccessCondition, SuccessContract, SuccessContractDefect,
+    SuccessStackEffect,
 };
 
 #[cfg(test)]

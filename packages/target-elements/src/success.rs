@@ -91,11 +91,47 @@ impl SuccessCondition {
     ];
 }
 
+/// One item a successful form leaves on the stack.
+///
+/// # Why a result is not always a type
+///
+/// Most primitives push values they compute, and the contract can name
+/// what those values are: a digest, a truth value, a fixed-width
+/// integer. The ordinary stack operations push nothing of their own.
+/// [`OpcodeId::Duplicate`] pushes whatever was already there, and what
+/// that is depends entirely on the program, not on the primitive.
+///
+/// Naming a type for such a result would be a claim about the caller's
+/// stack that this contract has no way to know. Naming the *operand*
+/// instead states exactly what the target does — the item is carried
+/// through unchanged — and lets a stack validator resolve the type from
+/// the state it actually has (Guide-10 `rule:guide10:primitive-admission`).
+///
+/// [`OpcodeId::Duplicate`]: crate::opcode::OpcodeId::Duplicate
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ResultValue {
+    /// A value the primitive computes, stated as its type.
+    Computed(StackValueType),
+    /// A copy of one declared operand, named by its deepest-first
+    /// index in the operand list.
+    ///
+    /// The item is carried through byte for byte. It is a copy rather
+    /// than a move because the same operand may be named more than
+    /// once, which is exactly what a duplicating primitive does.
+    OperandCopy(usize),
+}
+
+impl From<StackValueType> for ResultValue {
+    fn from(value: StackValueType) -> Self {
+        Self::Computed(value)
+    }
+}
+
 /// What one successful form does to the stack.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SuccessStackEffect {
     consumed_operands: usize,
-    results: Vec<StackValueType>,
+    results: Vec<ResultValue>,
 }
 
 impl SuccessStackEffect {
@@ -103,7 +139,19 @@ impl SuccessStackEffect {
     ///
     /// `results` is in push order, so its last element ends up on top.
     #[must_use]
-    pub const fn new(consumed_operands: usize, results: Vec<StackValueType>) -> Self {
+    pub fn new(consumed_operands: usize, results: Vec<StackValueType>) -> Self {
+        Self::rearranging(
+            consumed_operands,
+            results.into_iter().map(ResultValue::Computed).collect(),
+        )
+    }
+
+    /// States one successful form that can carry operands through.
+    ///
+    /// The general form. [`Self::new`] is the common case where every
+    /// result is a value the primitive computed.
+    #[must_use]
+    pub const fn rearranging(consumed_operands: usize, results: Vec<ResultValue>) -> Self {
         Self {
             consumed_operands,
             results,
@@ -124,8 +172,36 @@ impl SuccessStackEffect {
 
     /// The items pushed, in push order.
     #[must_use]
-    pub fn results(&self) -> &[StackValueType] {
+    pub fn results(&self) -> &[ResultValue] {
         &self.results
+    }
+
+    /// The types among the pushed items.
+    ///
+    /// An operand carried through has no type here, and is absent
+    /// rather than guessed at: its type is whatever the caller's stack
+    /// held, which this contract does not know.
+    #[must_use]
+    pub fn computed_types(&self) -> Vec<StackValueType> {
+        self.results
+            .iter()
+            .filter_map(|result| match result {
+                ResultValue::Computed(value) => Some(value.clone()),
+                ResultValue::OperandCopy(_) => None,
+            })
+            .collect()
+    }
+
+    /// The greatest declared-operand index this form names, if any.
+    #[must_use]
+    pub fn deepest_named_operand(&self) -> Option<usize> {
+        self.results
+            .iter()
+            .filter_map(|result| match result {
+                ResultValue::OperandCopy(index) => Some(*index),
+                ResultValue::Computed(_) => None,
+            })
+            .max()
     }
 
     /// The change this form makes to the main stack's depth.
@@ -198,6 +274,19 @@ pub enum SuccessContract {
         /// The forms, one per condition.
         cases: Vec<SuccessCase>,
     },
+    /// One successful form that rearranges the operands it was given
+    /// rather than computing a value of its own.
+    ///
+    /// The ordinary stack operations. Their results are the operands
+    /// themselves, in a new order and possibly more than once, so they
+    /// cannot be stated as [`Self::Fixed`] without inventing types for
+    /// items whose types the caller chose.
+    Rearrangement {
+        /// How many of the declared operands are consumed.
+        consumed_operands: usize,
+        /// The items pushed, in push order.
+        results: Vec<ResultValue>,
+    },
 }
 
 /// Why a success contract does not describe a coherent relation.
@@ -214,6 +303,9 @@ pub enum SuccessContractDefect {
     /// A contract retains operands the primitive does not declare, so
     /// there is nothing for it to retain.
     NothingToRetain,
+    /// A result names an operand position the primitive does not
+    /// declare, so there is no item for it to carry through.
+    ResultNamesNoOperand,
 }
 
 impl SuccessContract {
@@ -238,6 +330,13 @@ impl SuccessContract {
                 SuccessStackEffect::new(0, results.clone()),
             )],
             Self::Alternatives { cases } => cases.clone(),
+            Self::Rearrangement {
+                consumed_operands,
+                results,
+            } => vec![SuccessCase::new(
+                SuccessCondition::Always,
+                SuccessStackEffect::rearranging(*consumed_operands, results.clone()),
+            )],
         }
     }
 
@@ -248,7 +347,14 @@ impl SuccessContract {
             Self::Fixed { results, .. } | Self::RetainsOperands { results } => results.clone(),
             Self::Alternatives { cases } => cases
                 .iter()
-                .flat_map(|case| case.effect().results().iter().cloned())
+                .flat_map(|case| case.effect().computed_types())
+                .collect(),
+            Self::Rearrangement { results, .. } => results
+                .iter()
+                .filter_map(|result| match result {
+                    ResultValue::Computed(value) => Some(value.clone()),
+                    ResultValue::OperandCopy(_) => None,
+                })
                 .collect(),
         }
     }
@@ -266,7 +372,31 @@ impl SuccessContract {
                 (declared_operands == 0).then_some(SuccessContractDefect::NothingToRetain)
             }
             Self::Alternatives { cases } => Self::alternatives_defect(cases, declared_operands),
+            Self::Rearrangement {
+                consumed_operands,
+                results,
+            } => Self::rearrangement_defect(*consumed_operands, results, declared_operands),
         }
+    }
+
+    /// The first defect in a rearranging form.
+    ///
+    /// A named operand that the primitive does not declare is the
+    /// dangerous one: a stack validator resolving it would read past
+    /// the operands it checked, so the contract is refused here rather
+    /// than left for the validator to survive.
+    fn rearrangement_defect(
+        consumed_operands: usize,
+        results: &[ResultValue],
+        declared_operands: usize,
+    ) -> Option<SuccessContractDefect> {
+        if consumed_operands > declared_operands {
+            return Some(SuccessContractDefect::ConsumesMoreThanDeclared);
+        }
+        results
+            .iter()
+            .any(|result| matches!(result, ResultValue::OperandCopy(index) if *index >= declared_operands))
+            .then_some(SuccessContractDefect::ResultNamesNoOperand)
     }
 
     /// The first defect among a set of alternative forms.
@@ -285,6 +415,13 @@ impl SuccessContract {
             }
             if case.effect().consumed_operands() > declared_operands {
                 return Some(SuccessContractDefect::ConsumesMoreThanDeclared);
+            }
+            if case
+                .effect()
+                .deepest_named_operand()
+                .is_some_and(|index| index >= declared_operands)
+            {
+                return Some(SuccessContractDefect::ResultNamesNoOperand);
             }
         }
         None

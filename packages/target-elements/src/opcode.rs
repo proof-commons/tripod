@@ -746,7 +746,7 @@ fn consuming(
 }
 
 /// One alternative successful form that consumes every operand.
-const fn case(
+fn case(
     condition: SuccessCondition,
     consumed_operands: usize,
     results: Vec<StackValueType>,

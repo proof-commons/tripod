@@ -83,7 +83,7 @@ fn sole_results(spec: &OpcodeSpec) -> Vec<StackValueType> {
     let cases = spec.stack().success().cases();
     assert_eq!(cases.len(), 1, "{:?} has one successful form", spec.id());
     assert_eq!(cases[0].condition(), SuccessCondition::Always);
-    cases[0].effect().results().to_vec()
+    cases[0].effect().computed_types()
 }
 
 /// The results a primitive pushes under one named condition.
@@ -95,8 +95,7 @@ fn results_under(spec: &OpcodeSpec, condition: SuccessCondition) -> Vec<StackVal
         .find(|case| case.condition() == condition)
         .unwrap_or_else(|| panic!("{:?} states a {condition:?} form", spec.id()))
         .effect()
-        .results()
-        .to_vec()
+        .computed_types()
 }
 
 /// The conditions a primitive's successful forms are selected by.

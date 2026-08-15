@@ -534,6 +534,9 @@ fn validate_opcodes(definition: &TargetDefinition, errors: &mut Vec<TargetError>
                 SuccessContractDefect::NothingToRetain => {
                     TargetError::InvalidRetainedOperandContract(*key)
                 }
+                SuccessContractDefect::ResultNamesNoOperand => {
+                    TargetError::UndeclaredCarriedOperand(*key)
+                }
             });
         }
 
