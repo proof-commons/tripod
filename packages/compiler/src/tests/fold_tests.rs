@@ -32,7 +32,7 @@ fn expr(index: u32) -> ExprId {
         RelationKind::Recognition,
         RelationKind::Authorization,
         RelationKind::Conservation,
-        RelationKind::ClassClosure,
+        RelationKind::RootPolicy,
         RelationKind::AllowedObjectFamilies,
         RelationKind::CanonicalDeltaPolicy,
         RelationKind::OpenFlowPolicy,

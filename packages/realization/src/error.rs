@@ -313,6 +313,39 @@ pub enum RealizationError {
     #[error("relation {relation:?} disagrees with its architecture object family")]
     ArchitectureRelationMismatch { relation: RelationId },
 
+    /// An operation declares a cardinality or recognition relation that
+    /// its architecture row does not call for.
+    ///
+    /// The other direction of the family census. Without it an
+    /// operation could add a family relation for an object family the
+    /// architecture never declared, and every check keyed on the
+    /// expected rows would still pass while the surplus row travelled
+    /// on as if it were architecture-owned.
+    #[error("relation {relation:?} is an architecture-family relation the architecture omits")]
+    SurplusArchitectureRelation { relation: RelationId },
+
+    /// A relation's declared identity does not describe its body.
+    ///
+    /// The identity is the stable semantic key everything downstream
+    /// is filed under, and the body is what actually evaluates. When
+    /// they disagree there are two answers to what the relation is,
+    /// and no rule downstream can be trusted to have picked the same
+    /// one as the rule before it.
+    #[error("relation {declared:?} has a body whose semantic kind is {expected:?}")]
+    RelationKindMismatch {
+        declared: RelationId,
+        expected: RelationKind,
+    },
+
+    /// A relation's declared subject does not describe its body.
+    ///
+    /// The kind may agree while the subject names another family,
+    /// asset, root, projection, or lifecycle exit than the one the body
+    /// constrains — a transposed input/output side being the sharpest
+    /// case, since both sides exist and both are well typed.
+    #[error("relation {declared:?} has a body whose subject is not the declared one")]
+    RelationSubjectMismatch { declared: RelationId },
+
     /// An object family named by an architecture operation row has no
     /// object specification.
     #[error("architecture object {0:?} is missing")]
