@@ -62,13 +62,18 @@
 //! and the development deployment binding with its validated
 //! combination.
 //!
-//! Not claimed: any target-native evidence whatever. Every evidence
-//! requirement this crate names is unresolved, no node has been asked
-//! anything, and there is no production deployment binding.
+//! # Requirements, not evidence completion
 //!
-//! Every evidence requirement this crate names is unresolved. No
-//! target-native deployment evidence has been produced, and production
-//! target support is not claimed.
+//! Not claimed: any target-native evidence whatever. This crate owns
+//! the requirements and carries no mutable evidence-completion status
+//! for them, which is what keeps a static contract from depending on
+//! when a run last happened.
+//!
+//! Evidence about the requirements named here is produced and recorded
+//! separately, by `tripod-target-elements-conformance`, and
+//! development native evidence exists there. Nothing about that is
+//! readable from this crate, deliberately. Production target evidence
+//! remains absent, and there is no production deployment binding.
 
 #![forbid(unsafe_code)]
 
