@@ -32,15 +32,19 @@ tapscript = { workspace = true }
 target-elements = { workspace = true }
 
 clap = { workspace = true }
+# `nix` carries the POSIX process-group calls the executor supervisor
+# needs — a graceful group signal, a bounded non-reaping wait, and a
+# forceful group signal — so that a timed-out run terminates the whole
+# executor tree rather than only its first process (Guide-10 §5.8). It
+# is already a workspace dependency and remains the only route to those
+# calls that does not open an unsafe block, which ADR-011 denies.
+nix = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-# `nix` is the PTY harness for the ADR-010 terminal-refusal subprocess
-# test, exactly as the labels crate uses it, and is test-scope only.
-nix = { workspace = true }
 tempfile = { workspace = true }
 
 [lints]
