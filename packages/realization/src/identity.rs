@@ -77,13 +77,21 @@ pub enum FactId {
 }
 
 /// Semantic relation family.
+///
+/// # Every member has a body
+///
+/// A member of this vocabulary names a family of `Relation` bodies, and
+/// the owner validator derives the member from the body. A member with
+/// no body variant could therefore only ever be declared by a relation
+/// that means something else, so members are added with their bodies
+/// and removed when they lose them (Guide-10
+/// `rule:guide10:relation-identity`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RelationKind {
     Cardinality,
     Recognition,
     Authorization,
     Conservation,
-    ClassClosure,
     AllowedObjectFamilies,
     CanonicalDeltaPolicy,
     OpenFlowPolicy,
@@ -95,6 +103,14 @@ pub enum RelationKind {
     Lifecycle,
     Representation,
     SubstrateConservation,
+    /// A relation whose content is one owned boolean expression.
+    ///
+    /// The body already existed; the identity did not, so an
+    /// expression-bearing relation had to borrow a kind describing
+    /// something else. It is named here so that it can be declared
+    /// honestly, not because expression-bearing production scope has
+    /// begun.
+    ExpressionPredicate,
 }
 
 /// Typed subject distinguishing relations of one family.

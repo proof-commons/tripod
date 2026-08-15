@@ -13,9 +13,11 @@
 //! mutable test status would make the target definition depend on when
 //! it was last run, which is exactly the coupling this design refuses.
 //!
-//! As of this stage every requirement below is unresolved. No
-//! target-native evidence has been produced for any of them, and this
-//! crate does not claim otherwise.
+//! So no requirement below carries a status. Whether evidence has been
+//! produced about one is a question for the conformance harness that
+//! produces it — `tripod-target-elements-conformance`, which
+//! has recorded development native evidence — and not a field here.
+//! Production target evidence remains absent.
 
 /// A stable key naming one class of required target evidence.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

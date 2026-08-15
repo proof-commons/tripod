@@ -29,6 +29,29 @@
 //! [`NativeConformanceError::ExecutorTimeout`]. An executor that ran out
 //! of time observed nothing about the target, and recording that as a
 //! target rejection would turn a slow machine into target evidence.
+//!
+//! # One run is one process group
+//!
+//! A real executor is not one process. The reviewed adapter starts a
+//! node, and an arbitrary caller-selected executor may start anything;
+//! either descendant inherits the protocol pipe. Stopping only the
+//! first process therefore stops neither the tree nor the harness's own
+//! wait: a descendant holding stdout open keeps the reader waiting for
+//! an end of stream that never comes.
+//!
+//! So the executor is started in its own process group and stopped as
+//! one (Guide-10 §5.8): a graceful signal to the group, a bounded
+//! interval in which a well-written adapter runs its own cleanup, a
+//! forceful signal to whatever is left, and only then the reap. The
+//! order matters in both directions — graceful first, so an adapter can
+//! still shut its node down and remove its temporary directory; reap
+//! last, so the unreaped child keeps its process-group identifier
+//! allocated and the forceful signal cannot land on a recycled group.
+//!
+//! This is not containment and does not become it. A process that
+//! leaves the group, or that the harness has no authority over, is
+//! outside what this can reach; the residual is stated in the
+//! supervisor's own documentation rather than papered over.
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -56,6 +79,13 @@ use crate::protocol::{
 /// stated here, is overridable, and travels as configuration.
 pub const DEFAULT_EXECUTOR_TIMEOUT: Duration = Duration::from_secs(300);
 
+/// How long the executor group has to clean up after a graceful signal.
+///
+/// Long enough for the reviewed adapter to stop a node and remove its
+/// temporary directory, and bounded so that an executor which ignores
+/// the graceful signal cannot extend the run indefinitely by doing so.
+pub const DEFAULT_EXECUTOR_CLEANUP_GRACE: Duration = Duration::from_secs(5);
+
 /// What the caller declares the selected executor to be.
 ///
 /// The declaration is the caller's, recorded as ordinary provenance. It
@@ -79,6 +109,7 @@ pub struct ExecutorConfiguration {
     timeout: Duration,
     trust: ExecutorTrust,
     limits: ProtocolLimits,
+    cleanup_grace: Duration,
 }
 
 impl ExecutorConfiguration {
@@ -90,6 +121,7 @@ impl ExecutorConfiguration {
             timeout,
             trust,
             limits: ProtocolLimits::DEFAULT,
+            cleanup_grace: DEFAULT_EXECUTOR_CLEANUP_GRACE,
         }
     }
 
@@ -97,6 +129,21 @@ impl ExecutorConfiguration {
     #[must_use]
     pub fn with_limits(self, limits: ProtocolLimits) -> Self {
         Self { limits, ..self }
+    }
+
+    /// The same selection under an explicit cleanup interval.
+    #[must_use]
+    pub fn with_cleanup_grace(self, cleanup_grace: Duration) -> Self {
+        Self {
+            cleanup_grace,
+            ..self
+        }
+    }
+
+    /// How long the executor group has to clean up before it is killed.
+    #[must_use]
+    pub const fn cleanup_grace(&self) -> Duration {
+        self.cleanup_grace
     }
 
     /// How long the run may take.
@@ -186,13 +233,20 @@ impl ExecutionTranscript {
 fn spawn_executor(program: &std::path::Path) -> std::io::Result<std::process::Child> {
     let mut attempts = 0u8;
     loop {
-        let result = Command::new(program)
+        let mut command = Command::new(program);
+        command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             // Not captured, not read, not relayed: arbitrary child bytes
             // never become first-party diagnostics.
-            .stderr(Stdio::null())
-            .spawn();
+            .stderr(Stdio::null());
+        // The child leads its own process group, so the whole executor
+        // tree can be signalled as one. This is the safe standard-library
+        // route to it: the equivalent hand-written pre-exec hook would
+        // need an unsafe block, which ADR-011 denies workspace-wide.
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut command, 0);
+        let result = command.spawn();
         match result {
             Err(error) if error.raw_os_error() == Some(libc_etxtbsy()) && attempts < 5 => {
                 attempts += 1;
@@ -206,6 +260,189 @@ fn spawn_executor(program: &std::path::Path) -> std::io::Result<std::process::Ch
 /// The text-file-busy errno, named without a libc dependency.
 const fn libc_etxtbsy() -> i32 {
     26
+}
+
+/// The process group one executor run leads.
+///
+/// # Why the leader is checked rather than assumed
+///
+/// Every signal this sends goes to a whole process group, so the one
+/// thing that must not be guessed is which group. If the child were not
+/// its own group leader it would share this process's group, and a
+/// graceful termination of that group would stop the harness — and, in a
+/// terminal, whatever else shares it. So the group is verified to be the
+/// child's own at spawn, and a run that cannot establish one is refused
+/// rather than run unsupervised.
+///
+/// # What this does not claim
+///
+/// Group membership is inherited, not enforced. An executor may put a
+/// descendant in a group of its own, or hand work to a process this
+/// harness never started; neither is reachable here, and neither is
+/// claimed to be. This is the harness keeping its own timeout and
+/// cleanup contract, not a sandbox (ADR-015, ADR-017).
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug)]
+struct SupervisedGroup {
+    /// The group's leader, which is the direct child. The group
+    /// identifier has the same value, by construction.
+    leader: nix::unistd::Pid,
+}
+
+#[cfg(unix)]
+impl SupervisedGroup {
+    /// Establishes the group the spawned child leads.
+    fn establish(child: &Child) -> Result<Self, NativeConformanceError> {
+        let raw = i32::try_from(child.id())
+            .map_err(|_| NativeConformanceError::ExecutorProcessGroupUnavailable)?;
+        let leader = nix::unistd::Pid::from_raw(raw);
+        match nix::unistd::getpgid(Some(leader)) {
+            Ok(group) if group == leader => Ok(Self { leader }),
+            _ => Err(NativeConformanceError::ExecutorProcessGroupUnavailable),
+        }
+    }
+
+    /// Signals the whole group.
+    ///
+    /// A group that is already empty answers with `ESRCH`, which is the
+    /// outcome the call asked for rather than a failure to report.
+    fn signal(self, signal: nix::sys::signal::Signal) {
+        let _ignored = nix::sys::signal::killpg(self.leader, signal);
+    }
+
+    /// Whether the group leader has exited, leaving it unreaped.
+    ///
+    /// Not reaping is the point. A reaped child releases its process
+    /// identifier, and with it the group identifier derived from it; a
+    /// forceful signal sent afterwards could then land on an unrelated
+    /// group the host has since created. Observing the exit without
+    /// consuming it keeps the identifier allocated until the supervisor
+    /// is finished with it.
+    #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
+    fn leader_exited(self) -> bool {
+        use nix::sys::wait::{Id, WaitPidFlag, WaitStatus, waitid};
+
+        let flags = WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT | WaitPidFlag::WNOHANG;
+        match waitid(Id::Pid(self.leader), flags) {
+            // An error here is an unobserved state, not an observed
+            // exit, and is treated as the former: the cleanup interval
+            // simply runs to its bound.
+            Ok(WaitStatus::StillAlive) | Err(_) => false,
+            Ok(_) => true,
+        }
+    }
+
+    /// Where no non-reaping wait is available, nothing is observed and
+    /// the bounded cleanup interval runs in full.
+    #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "freebsd")))]
+    const fn leader_exited(self) -> bool {
+        false
+    }
+}
+
+/// Where there is no process group, there is nothing to establish.
+#[cfg(not(unix))]
+#[derive(Clone, Copy, Debug)]
+struct SupervisedGroup;
+
+#[cfg(not(unix))]
+impl SupervisedGroup {
+    const fn establish(_child: &Child) -> Result<Self, NativeConformanceError> {
+        Ok(Self)
+    }
+
+    const fn leader_exited(self) -> bool {
+        false
+    }
+}
+
+/// One executor run, started and stopped as a whole process tree.
+struct ExecutorSupervisor {
+    child: Mutex<Child>,
+    group: SupervisedGroup,
+    /// Held for the whole of one termination sequence.
+    ///
+    /// Reaping is taken under the same lock, so the direct child cannot
+    /// be consumed part-way through a sequence that still has a group
+    /// signal to send. Without that, a watchdog waiting out the cleanup
+    /// interval could send its forceful signal after the exchange's own
+    /// wait had already released the identifier.
+    termination: Mutex<()>,
+}
+
+impl ExecutorSupervisor {
+    /// Takes ownership of a spawned child and the group it leads.
+    fn adopt(child: Child) -> Result<Self, NativeConformanceError> {
+        let group = SupervisedGroup::establish(&child)?;
+        Ok(Self {
+            child: Mutex::new(child),
+            group,
+            termination: Mutex::new(()),
+        })
+    }
+
+    /// Stops the whole run: graceful, bounded wait, forceful.
+    ///
+    /// The forceful signal is sent whether or not the leader has
+    /// already gone. A leader that exits promptly says nothing about
+    /// the descendants it started, and those are exactly what the group
+    /// signal exists to reach.
+    fn terminate(&self, grace: Duration) {
+        let _sequence = self
+            .termination
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        #[cfg(unix)]
+        self.group.signal(nix::sys::signal::Signal::SIGTERM);
+
+        let deadline = std::time::Instant::now() + grace;
+        while !self.group.leader_exited() {
+            if std::time::Instant::now() >= deadline {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+
+        #[cfg(unix)]
+        self.group.signal(nix::sys::signal::Signal::SIGKILL);
+
+        // The direct child again, for its own sake: on a host with no
+        // process groups this is the whole of the termination, and on
+        // one with them it costs a signal to an already-dying process.
+        if let Ok(mut child) = self.child.lock() {
+            let _ignored = child.kill();
+        }
+    }
+
+    /// The child's exit status, where the host reports one.
+    ///
+    /// Polled rather than blocked on, so the child is free between
+    /// attempts and the watchdog can still stop a run that outstays the
+    /// exchange. A signal-terminated child reports no code, which is why
+    /// a timeout is decided by the watchdog's flag rather than by this.
+    fn wait(&self) -> Option<i32> {
+        loop {
+            {
+                let _sequence = self
+                    .termination
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let mut child = self
+                    .child
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                match child.try_wait() {
+                    Ok(Some(status)) => return status.code(),
+                    Ok(None) => {}
+                    Err(_) => return None,
+                }
+            }
+            // A killed child is reaped on one of the next passes: the
+            // forceful signal cannot be ignored.
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
 }
 
 /// Runs every fixture through the selected executor.
@@ -241,26 +478,36 @@ pub fn execute(
         .ok_or(NativeConformanceError::ExecutorStartupFailed)?;
     let mut reader = BufReader::new(stdout);
 
-    let child = Arc::new(Mutex::new(child));
-    let watchdog = Watchdog::start(Arc::clone(&child), configuration.timeout);
+    let supervisor = match ExecutorSupervisor::adopt(child) {
+        Ok(supervisor) => Arc::new(supervisor),
+        Err(error) => {
+            // Nothing is supervised, so nothing may be left running: the
+            // pipes are dropped and the run is refused rather than
+            // continued outside the cleanup contract.
+            return Err(error);
+        }
+    };
+    let watchdog = Watchdog::start(
+        Arc::clone(&supervisor),
+        configuration.timeout,
+        configuration.cleanup_grace,
+    );
 
     let outcome = run_protocol(target, binding, configuration, fixtures, stdin, &mut reader);
 
-    // A refused exchange ends the run here. The child is stopped rather
+    // A refused exchange ends the run here. The tree is stopped rather
     // than waited for, because it may be mid-way through writing the very
     // record the harness has already refused — an unterminated oversized
     // one, say — and waiting would let the watchdog report a typed
     // protocol failure as a timeout instead.
-    if outcome.is_err()
-        && let Ok(mut child) = child.lock()
-    {
-        let _ignored = child.kill();
+    if outcome.is_err() {
+        supervisor.terminate(configuration.cleanup_grace);
     }
 
     // The wait polls rather than blocking, so the watchdog can still
-    // reach the child: a child that outstays the exchange is a timeout,
+    // reach the run: a child that outstays the exchange is a timeout,
     // not a hang of the harness.
-    let status = wait_for(&child);
+    let status = supervisor.wait();
     let expired = watchdog.stop();
 
     let transcript = match outcome {
@@ -559,7 +806,7 @@ fn bounded_read(
     reader.by_ref().take(ceiling).read_until(b'\n', buffer)
 }
 
-/// Stops the executor when its explicit timeout expires.
+/// Stops the executor tree when its explicit timeout expires.
 struct Watchdog {
     finished: Arc<(Mutex<bool>, Condvar)>,
     expired: Arc<AtomicBool>,
@@ -567,8 +814,8 @@ struct Watchdog {
 }
 
 impl Watchdog {
-    /// Starts watching one child.
-    fn start(child: Arc<Mutex<Child>>, timeout: Duration) -> Self {
+    /// Starts watching one run.
+    fn start(supervisor: Arc<ExecutorSupervisor>, timeout: Duration, grace: Duration) -> Self {
         let finished = Arc::new((Mutex::new(false), Condvar::new()));
         let expired = Arc::new(AtomicBool::new(false));
 
@@ -590,9 +837,7 @@ impl Watchdog {
             };
             if timed_out {
                 flag.store(true, Ordering::SeqCst);
-                if let Ok(mut child) = child.lock() {
-                    let _ignored = child.kill();
-                }
+                supervisor.terminate(grace);
             }
         });
 
@@ -618,29 +863,5 @@ impl Watchdog {
             let _ignored = handle.join();
         }
         self.expired.load(Ordering::SeqCst)
-    }
-}
-
-/// The child's exit status, where the host reports one.
-///
-/// Polled rather than blocked on, so the child mutex is free between
-/// attempts and the watchdog can still stop a child that outstays the
-/// exchange. A signal-terminated child reports no code, which is why the
-/// timeout is decided by the watchdog's flag rather than by the status.
-fn wait_for(child: &Arc<Mutex<Child>>) -> Option<i32> {
-    loop {
-        {
-            let mut child = child
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            match child.try_wait() {
-                Ok(Some(status)) => return status.code(),
-                Ok(None) => {}
-                Err(_) => return None,
-            }
-        }
-        // A killed child is reaped on one of the next passes: the
-        // signal the watchdog sends cannot be ignored.
-        std::thread::sleep(Duration::from_millis(5));
     }
 }

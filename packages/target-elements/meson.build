@@ -14,6 +14,7 @@ target_elements_source_files = files(
   'src/evidence_registry.rs',
   'src/lib.rs',
   'src/opcode.rs',
+  'src/operand.rs',
   'src/push.rs',
   'src/resource.rs',
   'src/success.rs',

@@ -1825,9 +1825,14 @@ fn missing_sponsor_recognition_fails_derivation() {
 #[test]
 fn transposed_sponsor_cardinality_sides_fail_derivation() {
     // Each ID keeps its subject while the payloads swap: the input
-    // relation now carries the output bounds and vice versa. Nothing
-    // else in the census can see this, because both relations still
-    // exist and both bounds still appear somewhere.
+    // relation now carries the output bounds and vice versa. Both
+    // relations still exist and both bounds still appear somewhere, so
+    // a census counting rows cannot see it.
+    //
+    // The identity weld sees it first, and more precisely than the
+    // architecture comparison did: the swapped body states the other
+    // side, which contradicts the subject its own ID declares, and that
+    // is true whatever the architecture happens to say.
     let input = compact_relation(&sponsor_input_cardinality());
     let output = compact_relation(&sponsor_output_cardinality());
     let error = reassembled(|operation| {
@@ -1838,8 +1843,8 @@ fn transposed_sponsor_cardinality_sides_fail_derivation() {
 
     assert_eq!(
         error,
-        crate::RealizationError::ArchitectureRelationMismatch {
-            relation: sponsor_input_cardinality(),
+        crate::RealizationError::RelationSubjectMismatch {
+            declared: sponsor_input_cardinality(),
         },
     );
 }

@@ -39,7 +39,7 @@ struct OracleContract {
     retain_and_push_false: bool,
     /// Causes on which evaluation ends, less the ones an abstract stack
     /// settles by itself.
-    aborts: &'static [FailureCause],
+    aborts: Vec<FailureCause>,
 }
 
 /// A signed little-endian sixty-four bit item.
@@ -106,7 +106,7 @@ fn introspection_oracle(id: OpcodeId) -> OracleContract {
             ],
             consume_and_push_false: false,
             retain_and_push_false: false,
-            aborts: INTROSPECTION_ABORTS,
+            aborts: INTROSPECTION_ABORTS.to_vec(),
         },
         // A payload and then its prefix, in one of two forms.
         OpcodeId::InspectOutputValue => OracleContract {
@@ -129,7 +129,7 @@ fn introspection_oracle(id: OpcodeId) -> OracleContract {
             ],
             consume_and_push_false: false,
             retain_and_push_false: false,
-            aborts: INTROSPECTION_ABORTS,
+            aborts: INTROSPECTION_ABORTS.to_vec(),
         },
         // One item with its prefix still attached, in one of three
         // forms; the absent one is a form in its own right.
@@ -142,7 +142,7 @@ fn introspection_oracle(id: OpcodeId) -> OracleContract {
             ],
             consume_and_push_false: false,
             retain_and_push_false: false,
-            aborts: INTROSPECTION_ABORTS,
+            aborts: INTROSPECTION_ABORTS.to_vec(),
         },
         // A witness program with its version, or a digest with a
         // negative marker above it.
@@ -154,7 +154,7 @@ fn introspection_oracle(id: OpcodeId) -> OracleContract {
             ],
             consume_and_push_false: false,
             retain_and_push_false: false,
-            aborts: INTROSPECTION_ABORTS,
+            aborts: INTROSPECTION_ABORTS.to_vec(),
         },
         other => panic!("the oracle states no introspection contract for {other:?}"),
     }
@@ -172,7 +172,7 @@ fn oracle(id: OpcodeId) -> OracleContract {
             cases: vec![case(0, Vec::new())],
             consume_and_push_false: false,
             retain_and_push_false: false,
-            aborts: &[
+            aborts: vec![
                 C::MalformedScriptNumber,
                 C::NegativeTimelock,
                 C::UnsatisfiedTimelock,
@@ -185,7 +185,7 @@ fn oracle(id: OpcodeId) -> OracleContract {
             cases: vec![case(2, vec![signed64(), S::Bool])],
             consume_and_push_false: false,
             retain_and_push_false: true,
-            aborts: ARITHMETIC_ABORTS,
+            aborts: ARITHMETIC_ABORTS.to_vec(),
         },
         // Always consumes both operands and pushes one answer; the
         // false it can push is the comparison's result, not a failure.
@@ -194,22 +194,60 @@ fn oracle(id: OpcodeId) -> OracleContract {
             cases: vec![case(2, vec![S::Bool])],
             consume_and_push_false: false,
             retain_and_push_false: false,
-            aborts: ARITHMETIC_ABORTS,
+            aborts: ARITHMETIC_ABORTS.to_vec(),
         },
-        // An empty signature consumes the operands and pushes a false;
-        // a signature that does not verify aborts.
-        OpcodeId::CheckSig => OracleContract {
-            operands: 2,
-            cases: vec![case(2, vec![S::Bool])],
-            consume_and_push_false: true,
-            retain_and_push_false: false,
-            aborts: &[
-                C::InvalidPublicKeyEncoding,
-                C::ValidationBudgetExhausted,
-                C::InvalidSignature,
-            ],
-        },
+        // Stated by hand below, because which of its branches a
+        // program can reach depends on the operands it pushed.
+        OpcodeId::CheckSig => unreachable!("the signature oracle reads its operands"),
         other => introspection_oracle(other),
+    }
+}
+
+/// The expected contract of the pushing signature check, for one pair
+/// of incoming operand types.
+///
+/// Written out from the reviewed rules rather than derived from the
+/// production contract: an empty signature consumes the operands and
+/// pushes a false whatever the key is; a nonempty signature verifies
+/// against a recognized 32-byte key, and aborts if that verification
+/// fails; a nonempty key of any other width is not verified against at
+/// all, and the check succeeds; and an empty key is rejected outright.
+fn signature_oracle(signature: &StackValueType, public_key: &StackValueType) -> OracleContract {
+    use FailureCause as C;
+    use StackValueType as S;
+
+    let signature_empty = matches!(signature, S::Empty);
+    let key_empty = matches!(public_key, S::Empty);
+    let key_recognized = matches!(
+        public_key,
+        S::Bytes {
+            minimum: 32,
+            maximum: 32
+        }
+    );
+
+    let mut cases = Vec::new();
+    let mut aborts = Vec::new();
+    if !signature_empty && !key_empty {
+        // One successful form either way: verified against a
+        // recognized key, or unverified against an unknown one.
+        cases.push(case(2, vec![S::Bool]));
+        if key_recognized {
+            aborts.push(C::InvalidSignature);
+        }
+    }
+    if key_empty {
+        aborts.push(C::EmptyPublicKey);
+    }
+    aborts.push(C::InvalidPublicKeyEncoding);
+    aborts.push(C::ValidationBudgetExhausted);
+
+    OracleContract {
+        operands: 2,
+        cases,
+        consume_and_push_false: signature_empty,
+        retain_and_push_false: false,
+        aborts,
     }
 }
 
@@ -247,7 +285,12 @@ fn reference(instructions: &[TapscriptInstruction]) -> Expected {
                     next.push((grown, *failed));
                 }
                 TapscriptInstruction::Opcode(id) => {
-                    let contract = oracle(*id);
+                    let contract = if *id == OpcodeId::CheckSig {
+                        let top = stack.len();
+                        signature_oracle(&stack[top - 2], &stack[top - 1])
+                    } else {
+                        oracle(*id)
+                    };
                     assert!(stack.len() >= contract.operands, "the fixture underflows");
                     aborts.extend(contract.aborts.iter().copied());
 

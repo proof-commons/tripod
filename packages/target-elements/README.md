@@ -119,5 +119,14 @@ primitives leave their operands in place and push a false *above* them on
 overflow, so the failing path leaves a deeper stack than the succeeding one. All
 three shapes are typed separately and none may be collapsed into the others.
 
-Target-native deployment evidence has not been produced, and production target
-support is not claimed.
+## What this package owns, and what it does not
+
+This crate carries target evidence *requirements* and no mutable
+evidence-completion status for them. A static contract that recorded whether a
+run had happened would change every time one did.
+
+Evidence is produced and recorded separately by
+`tripod-target-elements-conformance`, which runs a caller-selected
+external executor against the reviewed primitive fixtures; development native
+evidence exists there. Production target evidence remains absent, and
+production target support is not claimed.

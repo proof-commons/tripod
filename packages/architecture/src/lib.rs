@@ -50,9 +50,9 @@ pub use canonical::{
 pub use deployment::{
     ArtifactHashes, BoundCalibration, DEPLOYMENT_HASH_ALGORITHM, DEPLOYMENT_PROFILE_SCHEMA_VERSION,
     DependencyEvidence, DeploymentError, DeploymentProfile, ScriptLimits, TestEvidence,
-    ValidatedDeploymentProfile, VerificationStatus, deployment_profile_hash,
+    ValidatedPreReleaseDeploymentProfile, VerificationStatus, deployment_profile_hash,
     deployment_profile_hash_hex, manifest_minimum_for_bound, validate_deployment_profile,
-    validate_deployment_release,
+    validate_deployment_profile_structure, validate_production_deployment_release,
 };
 pub use export::{ArchitectureExport, EnvelopeError, PublishedArchitecture};
 pub use ids::*;

@@ -40,6 +40,16 @@ pub enum NativeConformanceError {
     #[error("the external executor could not be started")]
     ExecutorStartupFailed,
 
+    /// The executor started but does not lead a process group of its
+    /// own, so the run could not be supervised as one tree.
+    ///
+    /// Refused rather than run unsupervised: the alternative is a run
+    /// whose timeout could only reach the first process, and whose
+    /// cleanup contract would therefore be a claim the harness cannot
+    /// keep (Guide-10 §5.8).
+    #[error("the external executor could not be supervised as one process group")]
+    ExecutorProcessGroupUnavailable,
+
     /// The executor did not complete the handshake.
     #[error("the external executor did not complete the handshake")]
     ExecutorHandshakeFailed,

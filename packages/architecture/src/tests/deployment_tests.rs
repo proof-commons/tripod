@@ -92,7 +92,48 @@ fn fully_populated_final_profile_validates() {
     let architecture = release_architecture();
     let profile = release_profile(&architecture);
 
-    validate_deployment_release(&architecture, &profile).unwrap();
+    validate_deployment_profile_structure(&architecture, &profile).unwrap();
+}
+
+#[test]
+fn a_structurally_perfect_profile_cannot_acquire_production_release_state() {
+    // Nothing is wrong with this profile: it is the one the structural
+    // validator accepts above. What it cannot do is carry a production
+    // release, because the schema it is written in has nowhere to bind
+    // the transaction ABI its calibrations were measured under.
+    let architecture = release_architecture();
+    let profile = release_profile(&architecture);
+
+    validate_deployment_profile_structure(&architecture, &profile)
+        .expect("the profile is structurally valid");
+
+    let errors = crate::validate_production_deployment_release(&architecture, &profile)
+        .expect_err("no schema-2 profile is production-release valid");
+
+    assert_eq!(
+        errors,
+        vec![DeploymentError::ProductionReleaseUnsupported],
+        "a structurally valid profile fails on the schema limit alone",
+    );
+}
+
+#[test]
+fn production_release_validation_reports_structural_defects_too() {
+    let architecture = release_architecture();
+    let mut profile = release_profile(&architecture);
+    profile.status = PublicationStatus::Draft;
+
+    let errors = crate::validate_production_deployment_release(&architecture, &profile)
+        .expect_err("a draft profile is not production-release valid");
+
+    assert!(
+        errors.contains(&DeploymentError::ProfileNotFinal),
+        "the profile's own defect must still surface: {errors:?}",
+    );
+    assert!(
+        errors.contains(&DeploymentError::ProductionReleaseUnsupported),
+        "and the schema limit with it: {errors:?}",
+    );
 }
 
 #[test]
@@ -105,7 +146,7 @@ fn draft_architecture_is_rejected_for_deployment() {
 
     // The profile hash was bound to the final architecture; both the
     // release failure and the hash mismatch must surface.
-    let errors = validate_deployment_release(&draft, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&draft, &profile).unwrap_err();
 
     assert!(errors.contains(&DeploymentError::ArchitectureNotReleasable));
 }
@@ -117,7 +158,7 @@ fn unpinned_specification_is_rejected_for_deployment() {
 
     let profile = release_profile(&architecture);
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(errors.contains(&DeploymentError::ArchitectureNotReleasable));
 }
@@ -129,7 +170,7 @@ fn architecture_hash_mismatch_is_rejected() {
     let mut profile = release_profile(&architecture);
     profile.architecture_semantic_hash = [0x99; 32];
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(errors.contains(&DeploymentError::ArchitectureHashMismatch));
 }
@@ -141,7 +182,7 @@ fn draft_profile_is_rejected() {
     let mut profile = release_profile(&architecture);
     profile.status = PublicationStatus::Draft;
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(errors.contains(&DeploymentError::ProfileNotFinal));
 }
@@ -153,7 +194,7 @@ fn unsupported_schema_version_is_rejected() {
     let mut profile = release_profile(&architecture);
     profile.schema_version = 0;
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(errors.contains(&DeploymentError::UnsupportedSchemaVersion));
 }
@@ -166,7 +207,7 @@ fn zero_network_and_genesis_ids_are_rejected() {
     profile.network_id = [0; 32];
     profile.genesis_id = [0; 32];
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(errors.contains(&DeploymentError::ZeroNetworkId));
     assert!(errors.contains(&DeploymentError::ZeroGenesisId));
@@ -181,7 +222,7 @@ fn missing_bound_calibration_is_rejected() {
         .calibrated_bounds
         .retain(|calibration| calibration.bound != BoundId::BurnInputMax);
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(errors.contains(&DeploymentError::MissingBoundCalibration(
         BoundId::BurnInputMax,
@@ -197,7 +238,7 @@ fn duplicate_bound_calibration_is_rejected() {
     let bound = duplicate.bound;
     profile.calibrated_bounds.push(duplicate);
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(errors.contains(&DeploymentError::DuplicateBoundCalibration(bound)));
 }
@@ -214,7 +255,7 @@ fn zero_calibrated_bound_is_rejected() {
         }
     }
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(errors.contains(&DeploymentError::ZeroCalibratedValue(
         BoundId::AdmissionBatchMax,
@@ -235,7 +276,7 @@ fn calibrated_bound_below_manifest_minimum_is_rejected() {
         }
     }
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(
         errors.contains(&DeploymentError::CalibratedValueBelowManifestMinimum(
@@ -256,7 +297,7 @@ fn missing_bound_evidence_hash_is_rejected() {
         }
     }
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(errors.contains(&DeploymentError::MissingBoundEvidence(
         BoundId::TransferInputMax,
@@ -282,7 +323,7 @@ fn zero_calibration_bundle_hash_is_missing_evidence_not_mismatch() {
         }
     }
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(errors.contains(&DeploymentError::MissingBoundEvidence(
         BoundId::TransferInputMax,
@@ -306,7 +347,7 @@ fn calibration_bound_to_different_bundle_is_rejected() {
         }
     }
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(
         errors.contains(&DeploymentError::BoundCalibrationBundleMismatch(
@@ -325,7 +366,7 @@ fn all_calibrations_bound_to_stale_bundle_are_rejected() {
         calibration.script_bundle_hash = [0x77; 32];
     }
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     for bound in architecture.bounds {
         if bound.requires_deployment_calibration {
@@ -343,7 +384,7 @@ fn bundle_change_without_recalibration_is_rejected() {
     let mut profile = release_profile(&architecture);
     profile.artifacts.emitted_script_bundle = [0x88; 32];
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     for bound in architecture.bounds {
         if bound.requires_deployment_calibration {
@@ -362,7 +403,7 @@ fn matching_bundle_bindings_carry_no_mismatch_error() {
     let mut profile = release_profile(&architecture);
     profile.network_id = [0; 32];
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(
         !errors
@@ -383,7 +424,7 @@ fn measurement_exceeding_script_limits_is_rejected() {
         }
     }
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(
         errors.contains(&DeploymentError::MeasurementExceedsScriptLimit(
@@ -412,7 +453,7 @@ fn unexpected_bound_calibration_is_rejected() {
 
     let profile = release_profile(&architecture);
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(errors.contains(&DeploymentError::UnexpectedBoundCalibration(bounds[0].id,)));
 }
@@ -433,7 +474,7 @@ fn duplicate_optional_dependency_evidence_is_rejected() {
         .clone();
     profile.dependency_evidence.insert(0, duplicate);
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(
         errors.contains(&DeploymentError::DuplicateDependencyEvidence(
@@ -455,7 +496,7 @@ fn duplicate_entries_are_rejected_in_any_order() {
     let dependency = duplicate_evidence.dependency;
     profile.dependency_evidence.insert(0, duplicate_evidence);
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(errors.contains(&DeploymentError::DuplicateBoundCalibration(bound)));
     assert!(errors.contains(&DeploymentError::DuplicateDependencyEvidence(dependency)));
@@ -474,7 +515,7 @@ fn whitespace_only_dependency_fields_are_rejected() {
         }
     }
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(
         errors.contains(&DeploymentError::MissingDependencyToolVersion(
@@ -503,7 +544,7 @@ fn present_optional_evidence_must_be_well_formed() {
         }
     }
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     // Pending status alone is allowed for an optional dependency…
     assert!(!errors.contains(&DeploymentError::DependencyNotVerified(
@@ -531,7 +572,7 @@ fn absent_optional_evidence_is_allowed() {
         .dependency_evidence
         .retain(|evidence| evidence.dependency != DependencyId::ValueCommitmentOpening);
 
-    validate_deployment_release(&architecture, &profile).unwrap();
+    validate_deployment_profile_structure(&architecture, &profile).unwrap();
 }
 
 #[test]
@@ -543,7 +584,7 @@ fn missing_required_dependency_is_rejected() {
         .dependency_evidence
         .retain(|evidence| evidence.dependency != DependencyId::WeldEnforcement);
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(errors.contains(&DeploymentError::MissingDependencyEvidence(
         DependencyId::WeldEnforcement,
@@ -563,7 +604,7 @@ fn pending_and_failed_dependencies_are_rejected() {
             }
         }
 
-        let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+        let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
         assert!(errors.contains(&DeploymentError::DependencyNotVerified(
             DependencyId::PackageRelay,
@@ -585,7 +626,7 @@ fn missing_dependency_evidence_fields_are_rejected() {
         }
     }
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(
         errors.contains(&DeploymentError::MissingDependencyEvidenceHash(
@@ -611,7 +652,7 @@ fn missing_artifact_hashes_are_rejected() {
     profile.artifacts.emitted_script_bundle = [0; 32];
     profile.artifacts.reference_indexer = [0; 32];
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(errors.contains(&DeploymentError::MissingArtifactHash(
         "compiler-configuration",
@@ -629,7 +670,7 @@ fn missing_test_report_hashes_are_rejected() {
     let mut profile = release_profile(&architecture);
     profile.test_evidence.script_integration_report_hash = [0; 32];
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(errors.contains(&DeploymentError::MissingTestReportHash(
         "script-integration-report",
@@ -649,7 +690,7 @@ fn missing_event_projection_report_hash_is_rejected() {
         .test_evidence
         .independent_event_projection_report_hash = [0; 32];
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(errors.contains(&DeploymentError::MissingTestReportHash(
         "independent-event-projection-report",
@@ -665,7 +706,7 @@ fn missing_attestation_query_report_hash_is_rejected() {
         .test_evidence
         .independent_attestation_query_report_hash = [0; 32];
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(errors.contains(&DeploymentError::MissingTestReportHash(
         "independent-attestation-query-report",
@@ -681,7 +722,7 @@ fn missing_receipt_accounting_report_hash_is_rejected() {
         .test_evidence
         .independent_receipt_accounting_report_hash = [0; 32];
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(errors.contains(&DeploymentError::MissingTestReportHash(
         "independent-receipt-accounting-report",
@@ -697,7 +738,7 @@ fn profile_schema_version_two_is_required() {
     let mut profile = release_profile(&architecture);
     profile.schema_version = 1;
 
-    let errors = validate_deployment_release(&architecture, &profile).unwrap_err();
+    let errors = validate_deployment_profile_structure(&architecture, &profile).unwrap_err();
 
     assert!(errors.contains(&DeploymentError::UnsupportedSchemaVersion));
 }
@@ -713,7 +754,7 @@ fn final_architecture_alone_is_not_deployment_ready() {
     profile.calibrated_bounds.clear();
     profile.dependency_evidence.clear();
 
-    assert!(validate_deployment_release(&architecture, &profile).is_err());
+    assert!(validate_deployment_profile_structure(&architecture, &profile).is_err());
 }
 
 /// Requiring validation is a precondition on the API, not a change to

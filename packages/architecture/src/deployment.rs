@@ -9,14 +9,30 @@
 //! [`DeploymentProfile`], which binds calibrated limits, verified
 //! dependencies, and artifact hashes to one architecture semantic hash
 //! and one network/genesis identity, and is checked by
-//! [`validate_deployment_release`].
+//! [`validate_deployment_profile_structure`].
+//!
+//! # Structural validity is not production-release validity
+//!
+//! Those are two claims, and this module keeps them apart. A schema-2
+//! profile can be complete, final, and exactly bound to its
+//! architecture — that is what the structural validator establishes and
+//! what [`ValidatedPreReleaseDeploymentProfile`] records. It cannot be
+//! production-release valid, because schema 2 has nowhere to bind the
+//! transaction ABI and configuration its calibrations were measured
+//! under. [`validate_production_deployment_release`] is where that
+//! second question is asked, and under this schema it refuses every
+//! profile (Guide-10 `rule:guide10:profile-state`).
+//!
+//! This is a trust-state correction, not a deployment feature: no
+//! deployment release is constructed here, and none can be until a
+//! schema binds the ABI.
 //!
 //! The profile has its own canonical hash under a domain-separated
 //! algorithm identifier; the architecture hash algorithm is never
 //! reused for profile bytes.
 //!
 //! Validation precedes identity (ADR-016). The profile hash is defined
-//! only over a [`ValidatedDeploymentProfile`], which
+//! only over a [`ValidatedPreReleaseDeploymentProfile`], which
 //! [`validate_deployment_profile`] alone constructs, so "hashable"
 //! cannot be mistaken for "valid" once a release consumer appears. The
 //! unchecked canonical projection stays crate-private for mutation
@@ -203,6 +219,16 @@ pub enum DeploymentError {
 
     MissingArtifactHash(&'static str),
     MissingTestReportHash(&'static str),
+
+    /// The profile schema cannot express what a production release
+    /// requires, whatever the profile says.
+    ///
+    /// Not a defect in any particular profile: schema 2 has no field
+    /// binding the transaction ABI and configuration under which
+    /// calibration was measured, so no schema-2 profile — however
+    /// complete, however final — can carry the evidence a production
+    /// release rests on.
+    ProductionReleaseUnsupported,
 }
 
 impl fmt::Display for DeploymentError {
@@ -285,6 +311,10 @@ impl fmt::Display for DeploymentError {
             Self::MissingTestReportHash(report) => {
                 write!(formatter, "missing test report hash: {report}")
             }
+            Self::ProductionReleaseUnsupported => formatter.write_str(
+                "the deployment-profile schema cannot bind the calibrated transaction ABI, \
+                 which a production release requires",
+            ),
         }
     }
 }
@@ -332,12 +362,24 @@ fn is_zero(hash: &[u8; 32]) -> bool {
     hash.iter().all(|byte| *byte == 0)
 }
 
-/// Deployment-release validation.
+/// Structural validation of one deployment profile.
 ///
-/// The architecture being final is necessary but never sufficient: a
-/// deployment is release-ready only when this validation passes for a
-/// final profile bound to the final architecture.
-pub fn validate_deployment_release(
+/// # What passing here does and does not mean
+///
+/// Passing means the profile is internally complete and consistent, is
+/// final, and is bound to the exact semantic hash of an architecture
+/// that itself validates for release. The architecture being final is
+/// necessary for that and never sufficient.
+///
+/// It does not mean the deployment is release-ready. Schema 2 has no
+/// field binding the transaction ABI and configuration under which the
+/// bound calibrations were measured, so a profile can satisfy every
+/// check here and still rest on measurements taken under some other
+/// transaction shape. That is a limit of the schema rather than of any
+/// profile, which is why the production question is asked separately by
+/// [`validate_production_deployment_release`] and answered there
+/// (Guide-10 `rule:guide10:profile-state`).
+pub fn validate_deployment_profile_structure(
     architecture: &Architecture,
     profile: &DeploymentProfile,
 ) -> Result<(), Vec<DeploymentError>> {
@@ -748,26 +790,37 @@ fn profile_value(profile: &DeploymentProfile) -> Value {
     ])
 }
 
-/// A deployment profile that has passed release validation.
+/// A deployment profile that has passed structural validation.
 ///
 /// The wrapper is the type-level record of the identity rule stated in
 /// ADR-016: a complete typed object is validated first, then projected
 /// canonically, and only then does it bear an identity. Because the
 /// only constructor is [`validate_deployment_profile`], holding one of
-/// these is proof that [`validate_deployment_release`] accepted the
-/// profile against the architecture it binds, so no caller can mint a
-/// canonical profile identity for a draft, mis-bound, uncalibrated, or
-/// otherwise unreleasable profile.
+/// these is proof that
+/// [`validate_deployment_profile_structure`] accepted the profile
+/// against the architecture it binds, so no caller can mint a canonical
+/// profile identity for a draft, mis-bound, uncalibrated, or otherwise
+/// structurally invalid profile.
+///
+/// # Pre-release, and named so
+///
+/// What this type does not record is production-release validity, and
+/// the name says which of the two it is. Under schema 2 the second
+/// claim is unavailable to any profile at all — the calibrated
+/// transaction ABI has nowhere to be bound — so a type named for a
+/// validated deployment release would have been a claim the schema
+/// cannot support, waiting at the boundary for the first consumer that
+/// took the name at its word.
 ///
 /// The identity itself remains dormant: nothing in the workspace
 /// consumes a profile hash or publishes one.
 #[derive(Clone, Copy, Debug)]
-pub struct ValidatedDeploymentProfile<'a> {
+pub struct ValidatedPreReleaseDeploymentProfile<'a> {
     architecture: &'a Architecture,
     profile: &'a DeploymentProfile,
 }
 
-impl<'a> ValidatedDeploymentProfile<'a> {
+impl<'a> ValidatedPreReleaseDeploymentProfile<'a> {
     /// The architecture the profile was validated against.
     pub const fn architecture(&self) -> &'a Architecture {
         self.architecture
@@ -779,20 +832,61 @@ impl<'a> ValidatedDeploymentProfile<'a> {
     }
 }
 
-/// Validate a deployment release and carry the verdict in the type.
+/// Validate a profile structurally and carry the verdict in the type.
 ///
 /// This is the sole entry to profile identity: the returned wrapper is
 /// the only value [`deployment_profile_hash`] accepts.
 pub fn validate_deployment_profile<'a>(
     architecture: &'a Architecture,
     profile: &'a DeploymentProfile,
-) -> Result<ValidatedDeploymentProfile<'a>, Vec<DeploymentError>> {
-    validate_deployment_release(architecture, profile)?;
+) -> Result<ValidatedPreReleaseDeploymentProfile<'a>, Vec<DeploymentError>> {
+    validate_deployment_profile_structure(architecture, profile)?;
 
-    Ok(ValidatedDeploymentProfile {
+    Ok(ValidatedPreReleaseDeploymentProfile {
         architecture,
         profile,
     })
+}
+
+/// Production-release validation of one deployment profile.
+///
+/// # Unavailable, rather than absent
+///
+/// This is the question a release consumer actually asks, and under the
+/// current profile schema the answer is no for every profile. Schema 2
+/// binds each calibration to the emitted script bundle it measured but
+/// not to the transaction ABI and configuration it measured under, so
+/// bundle equality alone does not establish that the measured
+/// transaction shape used the final ABI — the residual ADR-016 and the
+/// calibration type both record.
+///
+/// The function exists rather than being omitted because omitting it
+/// leaves the question to whoever needs it answered, and the nearest
+/// available answer would be the structural one under a name that
+/// sounds like this one. It refuses, in the vocabulary of the reason it
+/// refuses, and gains a passing branch when a schema binds the ABI —
+/// not before.
+///
+/// Structural validation still runs first, so a caller learns about
+/// both the profile's own defects and the schema's limit rather than
+/// only the second.
+///
+/// # Errors
+///
+/// Every structural error the profile has, and
+/// [`DeploymentError::ProductionReleaseUnsupported`] in all cases.
+pub fn validate_production_deployment_release(
+    architecture: &Architecture,
+    profile: &DeploymentProfile,
+) -> Result<(), Vec<DeploymentError>> {
+    let mut errors = match validate_deployment_profile_structure(architecture, profile) {
+        Ok(()) => Vec::new(),
+        Err(errors) => errors,
+    };
+
+    errors.push(DeploymentError::ProductionReleaseUnsupported);
+
+    Err(errors)
 }
 
 /// Canonical semantic hash of a validated deployment profile,
@@ -802,7 +896,7 @@ pub fn validate_deployment_profile<'a>(
 /// through [`validate_deployment_profile`], so an invalid profile has
 /// no hash under this API.
 pub fn deployment_profile_hash(
-    validated: &ValidatedDeploymentProfile<'_>,
+    validated: &ValidatedPreReleaseDeploymentProfile<'_>,
 ) -> Result<[u8; 32], serde_json::Error> {
     unchecked_deployment_profile_hash(validated.profile)
 }
@@ -835,7 +929,7 @@ pub(crate) fn unchecked_deployment_profile_hash(
 
 /// Hex form of [`deployment_profile_hash`].
 pub fn deployment_profile_hash_hex(
-    validated: &ValidatedDeploymentProfile<'_>,
+    validated: &ValidatedPreReleaseDeploymentProfile<'_>,
 ) -> Result<String, serde_json::Error> {
     Ok(hex(&deployment_profile_hash(validated)?))
 }

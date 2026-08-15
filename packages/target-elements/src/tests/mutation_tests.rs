@@ -18,6 +18,7 @@ use crate::opcode::{
     FailureCause, FailureContract, FailureEffect, FailureOutcome, LeafVersion, OpcodeId,
     OpcodeResourceCost, OpcodeSpec, StackContract, StackValueType,
 };
+use crate::operand::OperandContract;
 use crate::success::{SuccessCase, SuccessCondition, SuccessContract, SuccessStackEffect};
 
 /// The reviewed registry, as a mutable starting point.
@@ -194,10 +195,10 @@ fn a_malformed_operand_width_is_rejected() {
     let mut opcodes = registry();
     let victim = opcodes[&OpcodeId::Sha256Initialize].clone();
     let stack = StackContract::new(
-        vec![StackValueType::Bytes {
+        vec![OperandContract::Exact(StackValueType::Bytes {
             minimum: 64,
             maximum: 32,
-        }],
+        })],
         victim.stack().success().clone(),
         victim.stack().failure().clone(),
     );
@@ -366,7 +367,10 @@ fn an_unsigned_operand_is_not_a_signed_one() {
     assert_ne!(unsigned, signed);
 
     let widening = registry()[&OpcodeId::Le32ToLe64].clone();
-    assert_eq!(widening.stack().operands(), &[unsigned]);
+    assert_eq!(
+        widening.stack().operands(),
+        &[OperandContract::Exact(unsigned)]
+    );
 }
 
 /// Replaces one primitive's successful behavior and rejects.

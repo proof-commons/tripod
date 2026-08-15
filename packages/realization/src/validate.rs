@@ -57,6 +57,8 @@ pub fn validate_scoped_realization(
         }
     }
 
+    validate_relation_identities(realization)?;
+
     validate_architecture_family_relations(architecture, realization)?;
 
     validate_lifecycle_relation_weld(realization)?;
@@ -66,6 +68,188 @@ pub fn validate_scoped_realization(
     validate_sponsor_value_opacity(realization)?;
 
     Ok(())
+}
+
+/// Every declared relation's identity describes its own body.
+fn validate_relation_identities(
+    realization: &ScopedRealizationSpec,
+) -> Result<(), RealizationError> {
+    for declaration in realization.operations.values() {
+        for relation in &declaration.relations {
+            validate_relation_identity(relation)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// One relation's identity, derived from its body and compared.
+///
+/// # Why a helper being right is not this being right
+///
+/// Relations are declared through constructors that pair an identity
+/// with a body, and those constructors are careful. But a constructor
+/// is the author's own account of what it built, and the identity is
+/// what every later stage files the relation under: the compiler keys
+/// coverage by [`RelationId`](crate::RelationId) while behaviour
+/// classification reads the body. A relation whose key says one family
+/// and whose body implements another gives two answers to the question
+/// of what it is, and each later stage picks whichever answer its own
+/// data structure happens to hold.
+///
+/// So the derivation here is the owner's, not the author's: the kind
+/// comes out of the body exhaustively, with no wildcard arm, so a new
+/// `Relation` variant cannot be added without deciding what it is
+/// (Guide-10 `rule:guide10:relation-identity`).
+///
+/// # What the subject can and cannot be checked against
+///
+/// Where the body names its own subject — a family's side and object,
+/// an asset, a represented object, a lifecycle exit — the declared
+/// subject must be exactly that. Where the body fixes a policy for the
+/// whole operation, the body names no single subject, and what is
+/// checked is the subject's class plus membership where the body has
+/// members to check: a root policy may be subjected to the operation or
+/// to a root the policy governs, and never to a root it does not. The
+/// canonical-delta and open-flow policies name assets and flow kinds
+/// rather than projections, so a projection subject is admitted by
+/// class alone; that residual is stated rather than hidden behind a
+/// check that would only appear to hold.
+///
+/// # Errors
+///
+/// [`RealizationError::RelationKindMismatch`] when the body belongs to
+/// another relation family, and
+/// [`RealizationError::RelationSubjectMismatch`] when it belongs to
+/// this family but not to the declared subject.
+pub fn validate_relation_identity(
+    declaration: &crate::RelationDeclaration,
+) -> Result<(), RealizationError> {
+    let expected = expected_relation_kind(&declaration.relation);
+    if declaration.id.kind() != expected {
+        return Err(RealizationError::RelationKindMismatch {
+            declared: declaration.id.clone(),
+            expected,
+        });
+    }
+    if !subject_describes_body(&declaration.relation, declaration.id.subject()) {
+        return Err(RealizationError::RelationSubjectMismatch {
+            declared: declaration.id.clone(),
+        });
+    }
+
+    Ok(())
+}
+
+/// The relation family one body belongs to.
+///
+/// Exhaustive by construction: there is no wildcard arm, so a new body
+/// variant is a compile error here until its family is decided.
+const fn expected_relation_kind(relation: &Relation) -> crate::RelationKind {
+    use crate::RelationKind as Kind;
+
+    match relation {
+        Relation::Cardinality { .. } => Kind::Cardinality,
+        Relation::AllowedObjectFamilies { .. } => Kind::AllowedObjectFamilies,
+        Relation::Recognition { .. } => Kind::Recognition,
+        Relation::AmountConservation { .. } => Kind::Conservation,
+        Relation::OwnerAuthorization { .. } | Relation::PermissionlessAuthorization => {
+            Kind::Authorization
+        }
+        Relation::SponsorIsolation => Kind::SponsorIsolation,
+        Relation::SponsorEnvelopeMultiplicity { .. } => Kind::SponsorEnvelopeMultiplicity,
+        Relation::RootPolicy { .. } => Kind::RootPolicy,
+        Relation::ProjectionPolicy { .. } => Kind::ProjectionPolicy,
+        Relation::CanonicalDeltaPolicy { .. } => Kind::CanonicalDeltaPolicy,
+        Relation::OpenFlowPolicy { .. } => Kind::OpenFlowPolicy,
+        Relation::Constructibility { .. } => Kind::Constructibility,
+        Relation::Representation { .. } => Kind::Representation,
+        Relation::LifecycleExit { .. } => Kind::Lifecycle,
+        Relation::ExpressionPredicate { .. } => Kind::ExpressionPredicate,
+        Relation::SubstrateConservation { .. } => Kind::SubstrateConservation,
+    }
+}
+
+/// Whether one declared subject is the subject the body constrains.
+///
+/// Exhaustive in the same way, and for the same reason.
+fn subject_describes_body(relation: &Relation, subject: &crate::RelationSubject) -> bool {
+    use crate::RelationSubject as Subject;
+
+    let family = |side: crate::ObservedSide, object: ObjectId| match subject {
+        Subject::ObjectFamily {
+            side: declared,
+            object: declared_object,
+        } => *declared == transaction_side(side) && *declared_object == object,
+        _ => false,
+    };
+
+    match relation {
+        Relation::Cardinality { side, object, .. } | Relation::Recognition { side, object, .. } => {
+            family(*side, *object)
+        }
+        // The closure relation constrains a whole side, and the subject
+        // names one family on that side. The named family must be one
+        // the closure admits: a closure subjected to a family it forbids
+        // would be filed under the object it exists to exclude.
+        Relation::AllowedObjectFamilies { side, allowed } => match subject {
+            Subject::ObjectFamily {
+                side: declared,
+                object,
+            } => *declared == transaction_side(*side) && allowed.contains(object),
+            _ => false,
+        },
+        // Owners are committed by an input family, which is the side
+        // the authorization is about.
+        Relation::OwnerAuthorization { object } => family(crate::ObservedSide::Input, *object),
+        Relation::PermissionlessAuthorization | Relation::Constructibility { .. } => {
+            matches!(subject, Subject::Operation)
+        }
+        Relation::AmountConservation { asset, .. } | Relation::SubstrateConservation { asset } => {
+            matches!(subject, Subject::Asset { asset: declared } if declared == asset)
+        }
+        Relation::SponsorIsolation | Relation::SponsorEnvelopeMultiplicity { .. } => {
+            matches!(subject, Subject::Sponsor)
+        }
+        Relation::RootPolicy { expected } => match subject {
+            Subject::Operation => true,
+            Subject::Root { root } => expected.contains_key(root),
+            _ => false,
+        },
+        Relation::ProjectionPolicy { expected } => match subject {
+            Subject::Operation => true,
+            Subject::Projection { projection } => expected.contains_key(projection),
+            _ => false,
+        },
+        // Named by class only: neither body names a projection, so
+        // there is no membership to check and none is pretended.
+        Relation::CanonicalDeltaPolicy { .. } | Relation::OpenFlowPolicy { .. } => {
+            matches!(subject, Subject::Operation | Subject::Projection { .. })
+        }
+        Relation::Representation { object, .. } => {
+            matches!(subject, Subject::Representation { object: declared } if declared == object)
+        }
+        Relation::LifecycleExit { object, exit } => matches!(
+            subject,
+            Subject::LifecycleExit {
+                object: declared_object,
+                exit: declared_exit,
+            } if declared_object == object && declared_exit == exit
+        ),
+        // An expression predicate is owned by its operation. The
+        // subject vocabulary has no expression member, and inventing
+        // one for a relation nothing declares yet would be minting
+        // identity ahead of need.
+        Relation::ExpressionPredicate { .. } => matches!(subject, Subject::Operation),
+    }
+}
+
+/// The identity-side spelling of an observed transaction side.
+const fn transaction_side(side: crate::ObservedSide) -> crate::TransactionSide {
+    match side {
+        crate::ObservedSide::Input => crate::TransactionSide::Input,
+        crate::ObservedSide::Output => crate::TransactionSide::Output,
+    }
 }
 
 /// Every architecture-declared object family carries its semantic
@@ -97,19 +281,43 @@ fn validate_architecture_family_relations(
             .get(operation_id)
             .ok_or(RealizationError::OperationOutsideScope(*operation_id))?;
 
-        for (id, expected) in expected_family_relations(architecture, operation)? {
+        let census = expected_family_relations(architecture, operation)?;
+
+        for (id, expected) in &census {
             let declared = declaration
                 .relations
                 .iter()
-                .find(|declared| declared.id == id)
+                .find(|declared| declared.id == *id)
                 .ok_or_else(|| RealizationError::MissingArchitectureRelation {
                     operation: *operation_id,
                     kind: id.kind(),
                     subject: id.subject().clone(),
                 })?;
 
-            if declared.relation != expected {
-                return Err(RealizationError::ArchitectureRelationMismatch { relation: id });
+            if declared.relation != *expected {
+                return Err(RealizationError::ArchitectureRelationMismatch {
+                    relation: id.clone(),
+                });
+            }
+        }
+
+        // And the other direction. Every relation of a family kind must
+        // be one the architecture called for, so a surplus row cannot
+        // travel as architecture-owned semantics for a family the
+        // architecture never declared.
+        let expected_ids = census
+            .iter()
+            .map(|(id, _)| id.clone())
+            .collect::<BTreeSet<_>>();
+        for declared in &declaration.relations {
+            if matches!(
+                declared.id.kind(),
+                crate::RelationKind::Cardinality | crate::RelationKind::Recognition
+            ) && !expected_ids.contains(&declared.id)
+            {
+                return Err(RealizationError::SurplusArchitectureRelation {
+                    relation: declared.id.clone(),
+                });
             }
         }
     }

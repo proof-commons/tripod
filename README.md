@@ -20,9 +20,18 @@ A compiler is proved by what it compiles. This tree therefore carries, beside th
 - `packages/compiler/` - Target-independent relation, proof, disclosure,
   lifecycle, placement, and layout analysis over the realization.
 - `packages/target-elements/` - Typed static Liquid/Elements target contract
-  and its development deployment binding; no target-native evidence.
-- `packages/tapscript/` - Elements tapscript backend, currently the
-  compiler-to-target capability adapter only; no instruction core.
+  and its development deployment binding. It owns target requirements, not
+  evidence: no evidence is produced or recorded here, and no production
+  target evidence exists anywhere in this repository.
+- `packages/tapscript/` - Elements tapscript backend: the compiler-to-target
+  capability adapter, together with typed instructions, checked stack items,
+  a serializer and parser, and an abstract stack validator over the reviewed
+  primitive contracts. Nothing here executes anything.
+- `packages/target-elements-conformance/` - Target-native conformance harness.
+  It runs a caller-selected external executor against the reviewed primitive
+  fixtures and records what that executor answered. Development native
+  evidence is produced and recorded here, separately from the static
+  contract; a mock executor can never satisfy its gate.
 - `packages/artifacts/` - Generator/checker for the generated derivative artifacts.
 - `packages/labels/` - Repository-wide documentation-label registries and checks.
 - `adr/` - Architecture decision records for the repository tooling.

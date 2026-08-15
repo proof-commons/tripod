@@ -37,6 +37,16 @@ state, destroyed with its environment, and never derived from or reused as
 production key material. The internal taproot key is the published BIP-341
 NUMS constant, which is a public test constant with no known discrete log.
 
+The harness supervises this whole tree as one process group and stops it
+gracefully first, precisely so that the cleanup below is reachable on a
+timeout: the SIGTERM handler is what removes the datadir and the cookie in it
+(Guide-10 section 5.8). Two residuals stay honest about their limits. A
+forceful kill -- the harness's own second step, once the bounded cleanup
+interval has passed, or any kill -9 from elsewhere -- cannot be handled, so the
+node and the datadir are then reclaimed by the group signal and by the host's
+temporary-directory policy rather than by this script. And a datadir left by a
+hard-killed run is not adopted by a later one: each run mkdtemps its own.
+
 Provenance
 ----------
 Five roles, kept apart, because one revision string cannot answer five

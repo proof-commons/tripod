@@ -110,7 +110,7 @@ impl std::error::Error for ManifestError {}
 /// The wrapper is the type-level record of ADR-016's identity rule —
 /// a complete typed object is validated first, then projected
 /// canonically, and only then does it bear an identity — applied to
-/// the architecture exactly as `ValidatedDeploymentProfile` applies it
+/// the architecture exactly as `ValidatedPreReleaseDeploymentProfile` applies it
 /// to a deployment profile (R2-N03). Because the only constructor is
 /// [`validate_draft`], holding one is proof that draft validation
 /// accepted the architecture, so no caller can mint an architecture
@@ -294,7 +294,7 @@ pub fn validate_draft(
 /// This validates the *architecture* only. It makes no deployability
 /// claim: calibrated bounds, verified substrate dependencies, and
 /// implementation artifact hashes are the deployment profile's
-/// obligations, checked by `validate_deployment_release`.
+/// obligations, checked by `validate_deployment_profile_structure`.
 pub fn validate_architecture_release(
     architecture: &Architecture,
 ) -> Result<ValidatedReleaseArchitecture<'_>, Vec<ManifestError>> {

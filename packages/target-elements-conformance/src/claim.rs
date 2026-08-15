@@ -129,6 +129,9 @@ pub enum NativeEvidenceClaim {
     TransactionSignatureAccepted,
     /// A signature over the transaction sighash was refused.
     TransactionSignatureRefused,
+    /// A nonempty public key of an unrecognized form succeeded without
+    /// any signature being verified.
+    UnknownPublicKeyTypeSucceededUnverified,
 
     /// A relative timelock was satisfied.
     RelativeTimelockSatisfied,
@@ -409,6 +412,16 @@ const CLAIM_CENSUS: &[ClaimRecord] = {
                 "a signature that verifies against a transaction sighash commits to the \
                  transaction the executor builds, which no static fixture can state, so only \
                  the rejecting paths of the transaction-signature primitives are established",
+            ),
+        ),
+        record(
+            Claim::UnknownPublicKeyTypeSucceededUnverified,
+            Requirement::SignatureSemantics,
+            Unresolved(
+                "the static contract now states the target's forward-compatibility path — a \
+                 nonempty key of an unrecognized form succeeds without verification — but no \
+                 native fixture offers such a key yet, so the behavior is asserted by the \
+                 reviewed contract and observed by nothing",
             ),
         ),
         record(

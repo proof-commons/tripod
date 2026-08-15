@@ -53,7 +53,7 @@
 use std::fmt;
 
 use compiler::target::{ExternalEvidenceRole, RequiredCapability};
-use target_elements::{EncodingClass, StackValueType};
+use target_elements::{EncodingClass, OperandContract, StackValueType};
 
 /// A typed adapter failure.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -117,8 +117,12 @@ pub enum TapscriptError {
     StackTypeMismatch {
         /// Where in the program the instruction sits.
         instruction: usize,
-        /// The operand the contract declares.
-        expected: StackValueType,
+        /// The operand position the contract declares.
+        ///
+        /// The whole position rather than one type: a signature or key
+        /// position admits alternatives, and naming one of them would
+        /// misreport what the program was refused against.
+        expected: OperandContract,
         /// The operand the stack carries.
         actual: StackValueType,
     },

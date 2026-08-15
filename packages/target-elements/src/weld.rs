@@ -84,12 +84,7 @@ fn operand_classes(definition: &TargetDefinition, opcode: OpcodeId) -> BTreeSet<
         .get(&opcode)
         .into_iter()
         .flat_map(|spec| spec.stack().operands().iter())
-        .filter_map(|value| match value {
-            StackValueType::Encoded(class)
-            | StackValueType::EncodedPayload(class)
-            | StackValueType::EncodingPrefix(class) => Some(*class),
-            _ => None,
-        })
+        .flat_map(crate::operand::OperandContract::named_encodings)
         .collect()
 }
 
@@ -282,7 +277,9 @@ fn weld_timelock(definition: &TargetDefinition, errors: &mut Vec<TargetError>) {
     // script-number width. The two differ by one byte, and that byte is
     // the whole of the disable flag: an operand typed at four bytes says
     // the target refuses a value it in fact treats as "no lock at all".
-    let lock_time_operand = &[StackValueType::Encoded(EncodingClass::LockTimeScriptNumber)][..];
+    let lock_time_operand = &[crate::operand::OperandContract::Exact(
+        StackValueType::Encoded(EncodingClass::LockTimeScriptNumber),
+    )][..];
     if definition
         .opcodes()
         .get(&OpcodeId::CheckSequenceVerify)
