@@ -129,6 +129,41 @@ impl ExecutionTranscript {
     }
 }
 
+/// Spawn the executor, absorbing the Linux fork/exec text-busy race.
+///
+/// A caller that stages its executor script immediately before this call
+/// can lose the race against an unrelated concurrent fork that still
+/// holds the script's write descriptor across its own pre-exec window;
+/// the kernel then refuses the exec with a text-file-busy error even
+/// though the writer has already closed it. The race self-resolves as
+/// soon as the concurrent child completes its exec, so that one cause is
+/// retried briefly. Every other spawn failure — an absent program, a
+/// permission refusal — is reported on the first attempt.
+fn spawn_executor(program: &std::path::Path) -> std::io::Result<std::process::Child> {
+    let mut attempts = 0u8;
+    loop {
+        let result = Command::new(program)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            // Not captured, not read, not relayed: arbitrary child bytes
+            // never become first-party diagnostics.
+            .stderr(Stdio::null())
+            .spawn();
+        match result {
+            Err(error) if error.raw_os_error() == Some(libc_etxtbsy()) && attempts < 5 => {
+                attempts += 1;
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            other => return other,
+        }
+    }
+}
+
+/// The text-file-busy errno, named without a libc dependency.
+const fn libc_etxtbsy() -> i32 {
+    26
+}
+
 /// Runs every fixture through the selected executor.
 ///
 /// The exchange is lock-step and the request order is the census's
@@ -148,13 +183,7 @@ pub fn execute(
     configuration: &ExecutorConfiguration,
     fixtures: &PrimitiveFixtureSet,
 ) -> Result<ExecutionTranscript, NativeConformanceError> {
-    let mut child = Command::new(&configuration.program)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        // Not captured, not read, not relayed: arbitrary child bytes
-        // never become first-party diagnostics.
-        .stderr(Stdio::null())
-        .spawn()
+    let mut child = spawn_executor(&configuration.program)
         .map_err(|_| NativeConformanceError::ExecutorStartupFailed)?;
 
     let stdin = child
