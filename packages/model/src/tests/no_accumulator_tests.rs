@@ -612,5 +612,5 @@ fn runtime_constants_match_a_calibrated_deployment_profile() {
 
     // A draft profile with no verified dependencies is never a
     // deployment release, even though the abstract model is green.
-    assert!(architecture::validate_deployment_release(&ARCHITECTURE, &profile).is_err());
+    assert!(architecture::validate_deployment_profile_structure(&ARCHITECTURE, &profile).is_err());
 }
