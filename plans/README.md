@@ -71,6 +71,7 @@ Imported citations are linted under
 | [`research/`](research/README.md) | Unresolved prototype-driven questions. |
 | [`reference/`](reference/README.md) | External technical reference material. |
 | [`guides/`](guides/README.md) | Archived executed and concept implementation guides. |
+| [`reviews/`](reviews/README.md) | Archived static reviews of named repository trees. |
 
 ## Root files · `tbl:plans:root-files`
 
