@@ -224,6 +224,17 @@ fn the_handshake_request_states_this_harnesss_schema() {
 }
 
 #[test]
+fn this_harness_speaks_schema_two_and_not_schema_one() {
+    // Stated as a value rather than left implicit. Schema 2 adds the
+    // environment observation, the separated provenance roles, and the
+    // bounded-record contract; a schema-1 executor establishes none of
+    // them, so the two are refused for each other rather than reconciled
+    // by reading whichever fields happen to overlap.
+    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 2);
+    assert_ne!(NATIVE_PROTOCOL_SCHEMA, 1);
+}
+
+#[test]
 fn a_handshake_round_trips() {
     let json = serde_json::to_string(&handshake()).expect("a handshake serializes");
     let parsed: ExecutorHandshake = serde_json::from_str(&json).expect("a handshake parses");

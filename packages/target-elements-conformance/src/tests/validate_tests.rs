@@ -543,6 +543,43 @@ fn a_failed_case_cannot_be_removed_to_make_the_run_pass() {
 }
 
 #[test]
+fn equal_inputs_produce_equal_report_bytes() {
+    // Determinism is the property that lets a report be compared at all.
+    // Nothing here carries a clock, a host, a process identifier, or a
+    // path, and every collection is ordered — so two runs over the same
+    // contract, binding, census, registry, and answers are the same
+    // bytes, not merely the same information.
+    let first = Run::passing().report();
+    let second = Run::passing().report();
+    assert_eq!(first, second);
+    assert_eq!(
+        serde_json::to_vec(&first).expect("a report serializes"),
+        serde_json::to_vec(&second).expect("a report serializes"),
+    );
+}
+
+#[test]
+fn an_executor_that_establishes_no_workspace_provenance_says_so() {
+    // The support handshake states a binary revision, an intended tip,
+    // and an upstream base, which is what ADR-018 asks a run to record.
+    let run = Run::passing();
+    let report = run.report();
+    assert!(report.executor.establishes_workspace_provenance());
+    assert_eq!(
+        report.executor.node_name,
+        run.transcript.handshake().node_name,
+    );
+
+    // Strip the binary's own revision and the run no longer establishes
+    // it. The point is that the field goes empty rather than being filled
+    // from a checkout that identifies intended source and not a binary.
+    let mut provenance = report.executor;
+    provenance.binary_reported_revision = None;
+    assert!(!provenance.establishes_workspace_provenance());
+    assert!(provenance.intended_executed_tip.is_some());
+}
+
+#[test]
 fn a_declared_mock_run_can_never_satisfy_the_gate() {
     let run = Run::new(ExecutorTrust::Mock, |_case, _answer| None);
     let report = run.report();
