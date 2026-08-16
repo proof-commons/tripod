@@ -1698,7 +1698,7 @@ typed-boundary or correctness repair.
 
 ## 13. Adopted-draft integration queue · `sec:backlog:drafts`
 
-Four externally authored normative drafts were accepted 2026-08-16 and
+Four externally authored normative drafts were accepted 2026-08-16, audited (28 findings), corrected upstream by the author, and re-adopted and
 archived verbatim under [plans/drafts/](drafts/README.md): the label
 calculus, the environment-kind registry, the identity-adjudication
 procedure, and the interchange conventions. Integration is chartered as
@@ -1712,10 +1712,16 @@ active tree.
 | ID | Status | Task |
 |---|---|---|
 | `DI-001` | ACTIVE | Gap census: map each draft clause onto the present ADR-012/ADR-013 text, the ADR-016 identity rules, and the implemented labels package; classify every clause as already-implemented, divergent, or new; record the checker-engineering findings register. |
-| `DI-002` | QUEUED | Adopt the label calculus and the kind registry as ADRs; delete the ADR text they retire; reconcile every repository label and citation the adoption invalidates. |
+| `DI-002` | ACTIVE | Adopt the corrected label calculus and kind registry as ADRs; delete the ADR text they retire; migrate the eight conflicting kind tokens to the registry forms corpus-wide per the user's ruling, with every citation updated in the same commit; record the hyphenated-area amendment and the local-extension register. |
 | `DI-003` | QUEUED | Re-engineer the labels checker to the calculus: a single participation scanner shared by every check (mints, citations, links, hygiene, inline-code discipline), owner signatures with registered prefixes, imported and synthetic citations, anchor harvests, and the kind registry as the checker's kind vocabulary. |
-| `DI-004` | QUEUED | Adopt the identity-adjudication procedure against ADR-016: classify every existing digest through the benefit criterion, record admission records or retire digests, and align the identity-register prose. |
+| `DI-004` | QUEUED | Adopt the identity-adjudication procedure against ADR-016: classify every existing digest through the benefit criterion with admission records, and MIGRATE the two grandfathered recipes to domain-separated forms per the user's ruling — the architecture semantic and anchor-set hashes change under a recorded recipe migration, superseding the ADR-016 grandfather clause. |
 | `DI-005` | QUEUED | Interchange conventions: record adoption as the standing wire-format discipline for future externally consumed documents; no implementation until a consumer exists. |
+
+The user's integration rulings, 2026-08-16: kind-token conflicts migrate
+to the registry forms; the two grandfathered identity recipes migrate
+now rather than persisting as a recorded divergence; the area grammar is
+adopted with a recorded amendment admitting hyphens; per-package owner
+prefixes are registered as checker data in DI-003.
 
 ### 13.2 Checker findings so far · `tbl:backlog:draft-findings`
 
