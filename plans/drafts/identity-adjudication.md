@@ -38,17 +38,20 @@ deployment readiness (`warn:identity:non-claims`).
 **Model (Objects and boundaries)** · `model:identity:objects`
 The corpus holds authoritative typed objects; artifacts rendered from
 them; evidence reports about them; profiles aggregating requirements;
-and releases aggregating everything. As a running illustration, its
-identities form a chain of immediate dependencies:
+and releases aggregating everything. As a running illustration, the
+identities of one adopting corpus form a graph of immediate
+dependencies, of which one path runs:
 
 ```text
 ModelId → PlanId → BuildId → BundleId → InterfaceId → ProfileId → ReleaseId
 ```
 
-The boundaries that matter to identity are package, process, cache,
-publication, distribution, and signature. An identity earns its place
-only at such a boundary; inside one owner, the typed value itself is
-the comparison.
+with fan-in where an object aggregates several: a release binds its
+profile, its required evidence reports, and its distributed artifacts
+alike. The boundaries that matter to identity are package, process,
+cache, publication, distribution, and signature. An identity earns its
+place only at such a boundary; inside one owner, the typed value
+itself is the comparison.
 
 **Definition (Digest; recipe)** · `def:identity:recipe`
 A digest is the output of a fixed function over a fixed presentation
@@ -62,8 +65,10 @@ records and prescribed nowhere else.
 
 **Table (Identity properties and their benefits)** ·
 `tab:identity:properties`
-An admitted identity delivers the following properties, each demanded
-not for its own sake but for the benefit it provides:
+Each admitted identity delivers the properties its assurance class
+requires; the following are the properties an identity can be required
+to deliver, each demanded not for its own sake but for the benefit it
+provides:
 
 | Property | Benefit it provides | Failure without it |
 |---|---|---|
@@ -132,9 +137,9 @@ reviewed anyhow · compared anyhow · parent-assured?
 record the admission facts
     ↓
 dispatch on boundary:
-    semantic | bytes | provenance | evidence | release
+    semantic | artifact | provenance | evidence | release
 
-bytes branch:     canonical renderer → artifact bytes
+artifact branch:  canonical renderer → artifact bytes
                   → exact freshness comparison
                   → byte digest only when independently
                     distributed or release-bound
@@ -163,9 +168,9 @@ An accepted digest records: the complete typed object or exact
 artifact bytes identified; the package owning the recipe; the
 producer; the present consumer, arriving no later than the same
 implementation series; that consumer's exact accept, reject, cache, or
-reuse decision; the assurance class — semantic equality, byte
-integrity, provenance, evidence binding, or release authentication;
-the recipe, by identifier, warranting every property of
+reuse decision; the assurance class — semantic, artifact, provenance,
+evidence, or release, as fixed by (`sec:identity:cases`); the recipe,
+by identifier, warranting every property its assurance class requires
 (`tab:identity:properties`); the exact stale conditions; the migration
 behavior; and the explicit non-claims. Fields are validated as parts
 of their owning object and are never independently hashed merely to
@@ -218,9 +223,10 @@ an independent operational authority boundary.
 **Case (No identity)** · `case:identity:none`
 The affirmative stop, as first-class as any admission. No digest is
 created when direct typed comparison suffices; when the parent
-identity already provides the assurance; when the value has no
-independent storage, transport, signature, cache, reuse, disclosure,
-or versioning boundary; when importance is the only motive, importance
+identity already provides the assurance; when the value crosses no
+package, process, cache, publication, distribution, or signature
+boundary of (`model:identity:objects`) and has no independent
+lifecycle of its own; when importance is the only motive, importance
 being no consumer; when the value is ephemeral local evidence, such as
 ordinary CI logs nobody consumes as release evidence; or when the
 purpose never required byte-equal provenance, because every change is
@@ -386,9 +392,9 @@ The discipline is implemented when:
   non-claims;
 - no new digest enters without passing (`crit:identity:benefit`) and
   recording (`cond:identity:admission-record`);
-- every admitted recipe demonstrably delivers the properties of
-  (`tab:identity:properties`), and no scheme is prescribed outside a
-  recipe record;
+- every admitted recipe demonstrably delivers the properties its
+  assurance class requires (`tab:identity:properties`), and no scheme
+  is prescribed outside a recipe record;
 - semantic, artifact, provenance, evidence, and release identities use
   distinct typed roles;
 - committed generated publications keep exact freshness comparisons

@@ -2,9 +2,10 @@
 
 This document lays down, self-containedly, the reference graph of an
 authored corpus — prose documents and source code — as a small calculus:
-a Language of labels, a Signature of owners, Judgments asserting
-minting, resolution, and participation, Inference rules deriving them,
-and Invariants every derivation must satisfy. Meta-theorems record what
+a Language of labels and a Grammar of their occurrences, a Signature of
+owners, Judgments asserting minting, resolution, and participation,
+Inference rules deriving them, and Invariants every derivation must
+satisfy. Meta-theorems record what
 holds of the calculus; Caveats bound its authority; five rejected
 Ansätze delimit it negatively; a single Postcondition gates
 implementation. The calculus is parametric in three data — the
@@ -19,7 +20,9 @@ running text is a same-owner citation; material in fenced blocks and
 double-backtick spans is displayed without participating. Environments
 carry no numbers: replacing numbering is part of what a label is for,
 so the mint at each head is the sole name of its environment, and this
-document refers to its own environments only by citation.
+document refers to its own environments only by citation. A
+Demonstration is part of the environment it closes and mints nothing of
+its own.
 
 ## Syntax · `sec:labels:syntax`
 
@@ -72,11 +75,11 @@ need no prefix. For illustration:
 
 | Source | Owner prefix |
 |---|---|
-| the specification | `SPEC-` |
-| the user guide | `GUIDE-` |
-| each numbered record `records/NNN-*.md` | `RECNNN-` |
-| each code package | one owner per package |
-| working notes | `NOTES-` |
+| the specification | `SPEC` |
+| the user guide | `GUIDE` |
+| each numbered record `records/NNN-*.md` | `RECNNN` |
+| each code package | one prefix per package, derived from the package name |
+| working notes | `NOTES` |
 
 ## Judgments · `sec:labels:judgments`
 
@@ -130,7 +133,9 @@ part(c)      c = (ℓ)      owner(c) = O      O ⊢ o ⇓ ℓ
 
 A parenthesized bare occurrence cites within its own owner and resolves
 anywhere within that owner, across files and across the two concrete
-syntaxes. It never resolves into another owner.
+syntaxes. It never resolves into another owner. In Cite, Import, and
+Synthetic the minting premise is read existentially: some occurrence of
+the named owner mints the label, unique by (`inv:labels:unique-mint`).
 
 **Inference rule (Import)** · `inf:labels:import`
 
@@ -174,8 +179,7 @@ c ∈ body(D)      part(c)      c ↦ ⟨U, ℓ⟩
 ```
 
 Side conditions: body(D) excludes the citation-index section itself
-together with all nonparticipating material; every such citation
-resolves to a mint of U; the harvest never writes. The committed index
+together with all nonparticipating material; the harvest never writes. The committed index
 presents exactly the distinct set Anchors(D, U), and any pinned hash of
 the anchor set is computed from that set alone. Attribution and
 commentary columns of the index remain editorial prose.
@@ -188,8 +192,9 @@ O ⊢ o ⇓ ℓ. A second bare occurrence is a violation, reported with both
 locations — never a harmless repeat.
 
 **Invariant (Total resolution)** · `inv:labels:total-resolution`
-Every participating citation is the conclusion of exactly one rule, with
-exactly one mint. Unknown owners, unresolved citations, malformed
+Every participating citation, and every designated typed-data string of
+(`inf:labels:synthetic-citation`), is the conclusion of exactly one
+rule, with exactly one mint. Unknown owners, unresolved citations, malformed
 forms, non-parenthesized imports, and bracket-free cross-owner tokens
 all fail.
 

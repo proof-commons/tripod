@@ -6,10 +6,13 @@ like the theorem family, displayed like the equation, structural like
 the section, kept like the record — from papers, monographs, textbooks,
 lecture notes, standards, specifications, and decision records, in
 which every distinct genre carries one kind, a short token fit to serve
-as the first segment of a label. The catalogue's 248 attested names
-classify into 148 kinds. Synonymous surface names share a kind: a Judgment
-classifies names, one Inference rule composes hybrid kinds, Invariants
-govern the assignment, eleven Conventions lay out the registry itself,
+as the first segment of a label. Of the catalogue's 248 attested names, 244
+classify into 148 kinds — three of them composed by the Hybrid rule —
+and four are expressly declared presentation devices. Synonymous
+surface names share a kind: a Language fixes the token shape, a
+Judgment classifies names, one Inference rule composes hybrid kinds,
+Invariants govern the assignment, eleven Conventions lay out the
+registry itself,
 Caveats bound it, three rejected Ansätze delimit it negatively, and a
 Postcondition gates adoption. The catalogue is descriptive — every name
 is attested in real formal writing — while the kind assignment is laid
@@ -45,7 +48,7 @@ a citation of that label:                    (`thm:analysis:mean-value`)
 ## Assignment · `sec:kinds:assignment`
 
 **Judgment (Classification)** · `judg:kinds:classification`
-Form: n ▹ k — "surface name n is classified by kind k." The eight
+Form: n ▹ k — "surface name n is classified by kind k." The eleven
 Conventions of the registry are the complete graph of ▹: a name is
 classified exactly as its row states, and there are no other
 derivations except by (`inf:kinds:hybrid`).
@@ -61,7 +64,9 @@ n₁ ▹ k₁      n₂ ▹ k₂      n = n₁ "–" n₂
 A hybrid environment concatenates its parts' kinds in order: a
 Definition–Proposition is classified `defprop` because Definition is
 classified `def` and Proposition `prop`. The hybrid rows of the
-registry are exactly this rule's instances.
+registry are exactly this rule's instances. Side condition: the
+composed token is not otherwise assigned. The composition is not
+decoded: a hybrid token names its compound genre directly.
 
 ## Invariants · `sec:kinds:invariants`
 
@@ -217,10 +222,12 @@ asides, warnings, morals, corrections, and editorial notes.
 | Environment | Kind |
 |---|---|
 | Acknowledgment | `ack` |
+| Addendum | `adden` |
 | Aside | `aside` |
 | Caution | `warn` |
 | Caveat | `cav` |
 | Comment | `rem` |
+| Corollary (of the proof) | `por` |
 | Corrigendum | `errat` |
 | Dictum | `slogan` |
 | Digression | `aside` |
@@ -414,8 +421,6 @@ than genre (`cav:kinds:presentation`).
 
 | Environment | Kind |
 |---|---|
-| Addendum | `adden` |
-| Corollary (of the proof) | `por` |
 | Definition–Proposition | `defprop` |
 | Definition–Theorem | `defthm` |
 | Lemma–Definition | `lemdef` |
@@ -456,15 +461,17 @@ Numbering, lettering (Theorem A), attached names (Theorem
 ("restated"), continuation ("continued"), and the sub- prefix,
 iterated at need (Sublemma, Subclaim, Subexample, Subcase, Substep,
 Subsection, Subsubsection, Subparagraph), are presentation, not genre:
-each such occurrence carries the kind of its base environment. In particular a restated theorem cites its original
+each such occurrence is classified by its base environment rather than
+by a kind of its own, and the registry records no separate token for
+it. In particular a restated theorem cites its original
 rather than minting anew — replacing exactly these devices is what
 labels are for. A Refrain is the genre built on this mechanic: it
 mints once, at its first statement, and every later return of the
 refrain is a citation.
 
 **Caveat (One word, several homes)** · `cav:kinds:homonyms`
-Some words are catalogued in more than one family; the concept, not the
-family, carries the kind. Heuristic commentary and heuristic argument
+Some concepts are catalogued in more than one family, under names of
+their own; the concept, not the family, carries the kind. Heuristic commentary and heuristic argument
 are one genre, `heur`; Fallacy names the same exhibit whether filed
 with the false proofs or the misconceptions, `fallacy`; an Assumption
 is `assum` whether ambient or case-analytic; a Porism and a Corollary
@@ -474,16 +481,28 @@ statements as `hyp` — and an ambient hypothesis is written as an
 assumption. Illustration is catalogued among the examples, as the
 worked instance; the pictorial illustration is a `fig`. The minutes of
 a meeting are `minutes` even where local usage calls them a protocol,
-Protocol remaining the procedural genre. And a Historical note
-comments while a Chronicle records: commentary and record part even
-when they concern the same past.
+Protocol remaining the procedural genre. A Historical note comments
+while a Chronicle records: commentary and record part even when they
+concern the same past. A Fact stated as a result, a Fun fact, and a
+Curiosity are one genre, `fact`, the family recording only the
+register in which it is told; a Prediction and an Expectation likewise
+are one genre, `pred`. The word registry names distinct artifacts
+across a corpus's disciplines — a kind registry, a theory registry,
+minting registries — the sense fixed by each document's preamble. And
+Signature here is the logical signature of a calculus; a cryptographic
+signature is an act, recorded by the record genres, not an environment
+of this family.
 
 **Caveat (Attestation)** · `cav:kinds:attestation`
 The catalogue is descriptive: every name is attested, but the whimsical
 kinds — `dream`, `miracle`, `yoga` and their neighbours — are rare, and
 Yoga and Meta-question are borderline, flagged rather than firmly
 attested. Adopting the registry does not oblige a corpus to use any
-kind; it fixes what each kind means when used.
+kind; it fixes what each kind means when used. A corpus may also use a
+kind the registry does not carry: such a kind is a local extension,
+added to the registry, or recorded as an extension, by the same
+decision that introduces it, and bound by (`inv:kinds:distinctness`)
+against the whole registry.
 
 ## Rejected Ansätze · `sec:kinds:rejected-ansaetze`
 
@@ -514,7 +533,8 @@ A corpus has adopted the registry when all of the following hold:
   concept;
 - synonym classes are convergent: word-order variants, register
   variants, and classical doublets share one kind;
-- the hybrid rows are exactly the instances of the Hybrid rule;
+- the hybrid rows — the compound names — are exactly the instances of
+  the Hybrid rule;
 - this document's own environment heads and heading anchors are
   classified by the registry they define;
 - the document carries exactly one mint per environment and no

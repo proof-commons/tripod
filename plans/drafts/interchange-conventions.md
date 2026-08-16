@@ -22,7 +22,11 @@ displayed without participating. Every label here has area
 `interchange`, each environment's kind names its genre, and
 environments carry no numbers: the mint at each head is the sole name
 of its environment. External section numbers, such as §4.2, quote
-other corpora; only internal numbering is absent.
+other corpora; only internal numbering is absent. A Demonstration is
+part of the environment it closes and mints nothing of its own. And
+the namespace labels of this document are unrelated to the
+documentation labels of any corpus labeling discipline; only the word
+is shared.
 
 ## The two languages · `sec:interchange:languages`
 
@@ -52,7 +56,8 @@ determinism is a property of the data language's names
 (`lang:interchange:data-language`), not of its structures. The two
 languages are therefore independent, and both are load-bearing.
 
-**Grammar (Labels and versions)** · `gram:interchange:label-grammar`
+**Grammar (Namespace labels and versions)** ·
+`gram:interchange:label-grammar`
 Σ is the set of thirty-six characters comprising the lowercase Latin
 letters `a`–`z` and the decimal digits `0`–`9`; Σ⁻ is Σ together with
 the hyphen. An *atom* is a nonempty finite word over Σ⁻ whose first
@@ -122,10 +127,11 @@ namespace-label = namespace-form .size (3..255)
 namespace-form = tstr .regexp "[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+"
 ```
 
-The `.regexp` operationalizes the ABNF of
-(`gram:interchange:label-grammar`), which is normative where they
-could be read to differ; `.size` is the byte bound, with 3 the length
-of the shortest label. The `.gt 1` on the wildcard is exposition more
+The `.regexp` operationalizes the shape fixed by the ABNF of
+(`gram:interchange:label-grammar`), which is normative for shape where
+the two could be read to differ; the length bound is carried by
+`.size` — with 3 the length of the shortest label — and by the
+sentence of that Grammar, and the ABNF says nothing about it. The `.gt 1` on the wildcard is exposition more
 than enforcement — deterministic maps already exclude duplicate keys —
 but it lets the base theory say what the data language says: the
 envelope is not the content's to redefine.
@@ -146,8 +152,8 @@ nothing for ⊨ to hold of.
 
 **Signature (Theory assignment)** ·
 `sig:interchange:theory-assignment`
-The registry **R** is a partial map from pairs (namespace label ℓ,
-(major M, minor m)) to theories of the description language,
+The registry **R** is a partial map from triples (namespace label ℓ,
+major M, minor m) to theories of the description language,
 maintained by an owner. Every assigned theory extends the base theory
 (`schema:interchange:global`): it pins key 0 to ℓ, pins key 1 to
 [M, m, uint] with patch free, enumerates its content keys, and is
@@ -181,8 +187,9 @@ preservation is a governance obligation
 allocation.
 
 **Law (Major boundary)** · `law:interchange:major-boundary`
-A revision violating (`inv:interchange:patch`) or
-(`inv:interchange:minor`) is major, whatever else it claims to be.
+A revision of the described system whose new assignment would violate
+(`inv:interchange:patch`) or (`inv:interchange:minor`) is major,
+whatever else it claims to be.
 Symmetrically: a revision changing the model class at all is at least
 minor, whatever else it claims to be.
 
@@ -201,6 +208,9 @@ example = {
   ? 7 => bstr,         ; added at 1.2 — necessarily optional
 }
 ```
+
+Extension is by restriction: the envelope keys are pinned, and the base
+theory's wildcard is replaced by the enumerated content keys.
 
 ## Metatheory · `sec:interchange:metatheory`
 
@@ -231,8 +241,8 @@ character; injectivity follows. No character of the alphabet
 participates in any Unicode canonical or compatibility decomposition,
 so every label is a fixed point of NFC and NFD alike, and no
 normalization can produce a second byte form; there is no case to
-fold, no ignorable to strip, and no confusable pair within the
-alphabet. §4.2 then fixes a unique text-string name of those bytes. ∎
+fold and no ignorable to strip. §4.2 then fixes a unique text-string
+name of those bytes. ∎
 
 **Meta-theorem (Bounded determination)** ·
 `mthm:interchange:bounded-determination`
