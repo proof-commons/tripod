@@ -1,6 +1,6 @@
 //! Request creation and cancellation.
 //!
-//! Implements `(´protocol:operations:create-request´)` and
+//! Implements `(´proto:operations:create-request´)` and
 //! `(´branch:operations:cancel-request´)`.
 
 use crate::asset::Asset;
@@ -14,7 +14,7 @@ use crate::signer::{SignerSet, require_signer};
 use crate::transition::Transition;
 use crate::world::World;
 
-// ´protocol:operations:create-request´
+// ´proto:operations:create-request´
 
 /// The creation profile is client-side policy. Arbitrary malformed
 /// request-shaped L-BTC may still exist and remains inert until

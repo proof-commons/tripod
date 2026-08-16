@@ -3,12 +3,12 @@
 //!
 //! Each submodule carries the spec labels it implements:
 //!
-//! - [`request`] — `(´protocol:operations:create-request´)`,
+//! - [`request`] — `(´proto:operations:create-request´)`,
 //!   `(´branch:operations:cancel-request´)`.
 //! - [`admission`] — `(´branch:operations:admit-deposits´)`.
 //! - [`cycle`] — `(´def:operations:cycle-caller´)`, `(´branch:operations:cycle´)`.
 //! - [`settlement`] — `(´branch:operations:settle-distribution´)`.
-//! - [`transfer`] — `(´protocol:operations:transfer´)`.
+//! - [`transfer`] — `(´proto:operations:transfer´)`.
 //! - [`redeem`] — `(´branch:operations:redeem´)`.
 //! - [`relabel`] — `(´branch:operations:receipt-relabel´)`.
 //! - [`burn`] — `(´branch:operations:burn´)`.
