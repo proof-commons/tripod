@@ -1864,6 +1864,19 @@ def serve(arguments) -> int:
                     "transaction_context",
                 ]
                 + (["tree_materialization"] if executor.tree_materialization else []),
+                # Deliberately absent: compound_prototype_fixtures.
+                #
+                # A compound-prototype fixture states a construction and a
+                # spend rather than a primitive execution context, so
+                # answering one means building a transaction that spends the
+                # stated output and creates the outputs the fixture's
+                # relation requires. This adapter builds a primitive
+                # fixture's transaction and nothing else yet, and
+                # advertising a capability it does not have would turn a
+                # missing feature into a stream of refusals the harness
+                # would have to interpret. Not advertising it means the
+                # harness never sends one and says why
+                # (Guide-10 rule:guide10:schema-migration).
             }
         )
 
@@ -1903,6 +1916,17 @@ def answer_case(executor: CaseExecutor, line: str) -> None:
         if key not in ("schema", "case", "fixture", "construction"):
             raise FatalAdapterError("the harness sent a request field named %s" % key)
     case = request.get("case")
+    # A compound-prototype request names its case by relation and name
+    # rather than by group and ordinal. This adapter does not advertise
+    # the capability, so it is never sent one; recognizing the shape here
+    # means an adapter that somehow received one refuses it as the record
+    # it is, instead of reading a primitive case out of a message that
+    # does not carry one.
+    if isinstance(case, dict) and "relation" in case:
+        raise FatalAdapterError(
+            "the harness sent a compound-prototype request, and this "
+            "adapter advertised no compound-prototype capability"
+        )
     # The case identity is echoed verbatim, so that the harness correlates
     # against exactly what it sent. Without one there is nothing to answer,
     # and answering the wrong case would be worse than not answering.
