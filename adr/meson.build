@@ -11,6 +11,8 @@ adr_record_files = files(
   '016-semantic-identities-and-evidence-binding.md',
   '017-path-scope-and-host-filesystem-trust.md',
   '018-upstream-elements-workspace.md',
+  '019-label-calculus.md',
+  '020-environment-kinds.md',
 )
 
 # Non-numbered documentation in this directory (DOC owner).
