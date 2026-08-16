@@ -294,3 +294,154 @@ fn the_three_verdicts_stay_distinct() {
     assert_eq!(spellings.len(), 3, "no two verdicts share a spelling");
     assert!(spellings.contains("\"infrastructure_error\""));
 }
+
+/// The reviewed adapter's failure-class table, as it is written.
+///
+/// Read from the adapter's own source rather than restated here. A copy
+/// of the table in this crate would be a second table, and the failure
+/// this test exists to catch is exactly the two disagreeing: the adapter
+/// names a class the harness does not admit, the harness refuses the
+/// response, and every refusing row of a native run becomes a malformed
+/// response instead of the target verdict it is.
+fn adapter_failure_class_table() -> Vec<(String, String)> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("the crate sits two levels below the repository root")
+        .to_path_buf();
+    let source = std::fs::read_to_string(root.join("scripts/elements-native-executor.py"))
+        .expect("the reviewed adapter is in the repository");
+
+    let mut rows = Vec::new();
+    let mut inside = false;
+    for line in source.lines() {
+        if line.starts_with("FAILURE_CLASS_BY_SCRIPT_ERROR = {") {
+            inside = true;
+            continue;
+        }
+        if !inside {
+            continue;
+        }
+        if line.starts_with('}') {
+            break;
+        }
+        let trimmed = line.trim();
+        // Comment lines carry the reasoning and no entry.
+        if !trimmed.starts_with('"') {
+            continue;
+        }
+        let entry = trimmed.trim_end_matches(',');
+        let (key, value) = entry
+            .rsplit_once("\": \"")
+            .expect("every table entry is a quoted key and a quoted value");
+        rows.push((
+            key.trim_start_matches('"').to_owned(),
+            value.trim_end_matches('"').to_owned(),
+        ));
+    }
+    assert!(!rows.is_empty(), "the adapter's table was located and read");
+    rows
+}
+
+/// Every class the reviewed adapter names is one this harness admits.
+///
+/// The direction that matters. A harness class no adapter reports is an
+/// observation nothing has made yet, which is an ordinary state; an
+/// adapter class the harness cannot parse is a run that cannot report
+/// what it saw.
+#[test]
+fn every_adapter_failure_class_is_one_the_harness_admits() {
+    for (script_error, class) in adapter_failure_class_table() {
+        let quoted = format!("\"{class}\"");
+        serde_json::from_str::<ObservedFailureClass>(&quoted).unwrap_or_else(|_| {
+            panic!("the adapter maps {script_error:?} to {class:?}, which this harness cannot read")
+        });
+    }
+}
+
+/// The five target refusals this wave gave a class of their own.
+///
+/// Pinned by their exact adapter strings, because the point of the work
+/// was that reporting no class for an observed refusal reports less than
+/// was observed — and, from an adapter advertising failure-class
+/// reporting, is an unanswerable response rather than a cautious one.
+#[test]
+fn the_shape_and_authentication_refusals_are_classified() {
+    let table = adapter_failure_class_table();
+    let expected = [
+        ("Stack size limit exceeded", "stack_size_limit_exceeded"),
+        ("Script is too big", "script_size_limit_exceeded"),
+        (
+            "Operation limit exceeded",
+            "script_operation_limit_exceeded",
+        ),
+        (
+            "Invalid Schnorr signature hash type",
+            "invalid_signature_hash_type",
+        ),
+        (
+            "Invalid Taproot control block size",
+            "malformed_control_block",
+        ),
+    ];
+    for (script_error, class) in expected {
+        let found = table
+            .iter()
+            .find(|(key, _)| key == script_error)
+            .unwrap_or_else(|| panic!("the adapter classifies {script_error:?}"));
+        assert_eq!(found.1, class, "{script_error:?} keeps its reviewed class");
+    }
+}
+
+/// No two failure classes share a wire spelling.
+///
+/// A shared spelling would make two observations one value, and a report
+/// would record whichever the parser reached first.
+#[test]
+fn every_failure_class_spelling_is_distinct() {
+    let classes = [
+        ObservedFailureClass::StackUnderflow,
+        ObservedFailureClass::InvalidOperandWidth,
+        ObservedFailureClass::MalformedScriptNumber,
+        ObservedFailureClass::ScriptNumberRangeExceeded,
+        ObservedFailureClass::FixedWidthConversionRefused,
+        ObservedFailureClass::UnsupportedExecutionDomain,
+        ObservedFailureClass::IntrospectionContextUnavailable,
+        ObservedFailureClass::IntrospectionIndexOutOfRange,
+        ObservedFailureClass::HashContextLoad,
+        ObservedFailureClass::HashContextWrite,
+        ObservedFailureClass::ArithmeticOverflow,
+        ObservedFailureClass::DivisionByZero,
+        ObservedFailureClass::EmptySignature,
+        ObservedFailureClass::InvalidSignature,
+        ObservedFailureClass::InvalidSignatureHashType,
+        ObservedFailureClass::InvalidPublicKeyEncoding,
+        ObservedFailureClass::InvalidCurveRelation,
+        ObservedFailureClass::UnsatisfiedTimelock,
+        ObservedFailureClass::NegativeTimelock,
+        ObservedFailureClass::ValidationBudgetExhausted,
+        ObservedFailureClass::ScriptSizeLimitExceeded,
+        ObservedFailureClass::ScriptOperationLimitExceeded,
+        ObservedFailureClass::StackSizeLimitExceeded,
+        ObservedFailureClass::UnknownOpcode,
+        ObservedFailureClass::MalformedPush,
+        ObservedFailureClass::LeafVersionRejected,
+        ObservedFailureClass::MalformedControlBlock,
+        ObservedFailureClass::EvaluatedFalse,
+        ObservedFailureClass::ResultSizeExceeded,
+        ObservedFailureClass::SliceOutOfRange,
+        ObservedFailureClass::UnequalOperands,
+        ObservedFailureClass::FalseVerification,
+        ObservedFailureClass::MismatchedOperandWidths,
+        ObservedFailureClass::NonSingletonFinalStack,
+    ];
+    let spellings: BTreeSet<String> = classes
+        .iter()
+        .map(|class| serde_json::to_string(class).expect("a failure class serializes"))
+        .collect();
+    assert_eq!(
+        spellings.len(),
+        classes.len(),
+        "no two failure classes share a spelling",
+    );
+}
