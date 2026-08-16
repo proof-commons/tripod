@@ -767,6 +767,17 @@ pub enum ObservedFailureClass {
     EmptySignature,
     /// The offered signature did not verify.
     InvalidSignature,
+    /// The signature named a sighash type the target does not admit.
+    ///
+    /// # Why this is not a signature that failed to verify
+    ///
+    /// The sighash type is read from the signature's trailing byte
+    /// *before* any verification is attempted, and a byte outside the
+    /// admitted set ends the operation there. Reporting it as an invalid
+    /// signature would say the target computed a message and found the
+    /// signature wrong over it, which is a claim about work the target
+    /// never did.
+    InvalidSignatureHashType,
     /// A public key was absent or wrongly encoded.
     InvalidPublicKeyEncoding,
     /// An elliptic-curve relation did not hold.
@@ -777,12 +788,40 @@ pub enum ObservedFailureClass {
     NegativeTimelock,
     /// The script-path validation budget was exhausted.
     ValidationBudgetExhausted,
+    /// The script itself was longer than the target executes.
+    ///
+    /// Refused before execution begins, on the script's own length, so it
+    /// is neither a budget the execution spent nor a result the execution
+    /// computed.
+    ScriptSizeLimitExceeded,
+    /// The execution performed more operations than the target admits.
+    ScriptOperationLimitExceeded,
+    /// The main and alternate stacks together grew past the target's
+    /// bound.
+    ///
+    /// # Why the result-size class does not cover this
+    ///
+    /// [`Self::ResultSizeExceeded`] is one computed byte string being too
+    /// wide. This is the *number* of items being too many, which no
+    /// element's width establishes and which a primitive pushing one
+    /// admissible item at a time still reaches.
+    StackSizeLimitExceeded,
     /// The script used a byte the target does not execute.
     UnknownOpcode,
     /// A literal was pushed in a form the target refuses.
     MalformedPush,
     /// The leaf version was refused before execution began.
     LeafVersionRejected,
+    /// The control block was not a width the target admits.
+    ///
+    /// # Why this is not a leaf version the target refused
+    ///
+    /// Both are refusals of the spend's authentication data before any
+    /// script runs, and they are still different observations: a refused
+    /// leaf version is a version byte the target declines to execute at,
+    /// and this is a block whose length is not one the format defines, so
+    /// the target never reaches a version byte to judge at all.
+    MalformedControlBlock,
     /// Evaluation completed with a false on top of the stack.
     EvaluatedFalse,
     /// A computed byte string was wider than the target admits.

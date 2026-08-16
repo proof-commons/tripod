@@ -226,20 +226,32 @@ impl PrototypeClaim {
         }
     }
 
-    /// Whether Guide 10 requires the claim, and why it is not yet met.
+    /// Whether the prototype gate requires a passing case to bear on the
+    /// claim.
     ///
-    /// The same answer for both relations, and for the same reason: each
-    /// prototype's program is emitted, each matrix is authored and
-    /// checked for coherence, and every claim has bearing cases among
-    /// its own rows. What is missing in both is a target-native run.
+    /// # Why every row is required, and why it was not
+    ///
+    /// This answered `Unresolved` for every claim of both relations, and
+    /// the stated reason was exact: each prototype's program was
+    /// emitted, each matrix was authored and checked for coherence, and
+    /// every claim had bearing cases among its own rows — and none of
+    /// that was a verdict an executor gave, because no runner existed to
+    /// ask one for.
+    ///
+    /// A runner exists now ([`crate::prototype_validate`], and the
+    /// `check-target-elements-prototypes` command that drives it), and
+    /// both matrices are executed against the reviewed target through
+    /// it. So the reason no longer holds, and leaving the answer as it
+    /// was would be the mirror of the failure the wording warned about:
+    /// recording a run that happened as evidence nobody attempted.
+    ///
+    /// Required is therefore the answer for every claim of both
+    /// relations, on the same ground the old reason gave — every claim
+    /// has bearing cases among its own matrix's rows, so there is no
+    /// claim here whose corner the census cannot reach.
     #[must_use]
     pub const fn requirement(self) -> ClaimRequirement {
-        ClaimRequirement::Unresolved(
-            "the prototype's program is emitted and its case matrix is authored and checked for \
-             coherence, and every claim has bearing cases among those rows; what is missing is a \
-             target-native run, because a fixture an executor could be asked to run is not a \
-             verdict an executor gave",
-        )
+        ClaimRequirement::Required
     }
 }
 

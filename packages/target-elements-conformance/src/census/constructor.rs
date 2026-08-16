@@ -42,14 +42,21 @@
 //!
 //! Every row's outcome is a target verdict. The mock executor recomputes
 //! constructions and echoes fixtures' own expectations, which is enough
-//! to check that a fixture is answerable and nothing else. Until a
-//! native run answers these rows, every claim below stays unresolved.
+//! to check that a fixture is answerable and nothing else.
+//!
+//! These rows are answered by a native run: `check-target-elements-
+//! prototypes` drives this matrix through the reviewed executor and the
+//! prototype gate reads the result, which is why every claim here is now
+//! required rather than unresolved.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
 use target_elements::ReviewedElementsTapscriptDefinition;
 
-use crate::constructor::canonical::{CanonicalConstruction, construct_canonically_ordered};
+use crate::constructor::canonical::{
+    CanonicalConstruction, CanonicalSide, construct_canonically_ordered,
+};
 use crate::constructor::curve::FIELD_ELEMENT_BYTES;
 use crate::constructor::internal_key::UNSPENDABLE_INTERNAL_KEY;
 use crate::constructor::metadata::{METADATA_BYTES, PrototypeMetadata};
@@ -102,6 +109,45 @@ pub enum ConstructorMatrixDefect {
     /// No predecessor of either output-key parity was found within the
     /// counters the matrix searches.
     ParityNotFound,
+    /// No metadata leaf landing on the side the canonical search
+    /// rejects was found within the nonces the matrix grinds.
+    ///
+    /// The branch-order row needs one, because what it states is an
+    /// instance the program's own unsorted derivation does not reach.
+    CanonicalSideNotFound,
+}
+
+impl fmt::Display for ConstructorMatrixDefect {
+    /// The defect, spelled for a command's typed diagnostic.
+    ///
+    /// Every spelling says the matrix could not be authored and names
+    /// which of this package's own parts did not determine a row. None
+    /// of them describes a target: a command reporting one is reporting
+    /// that this repository's contract and its oracle disagree, which is
+    /// a first-party defect to fix rather than a finding about anything
+    /// executed (ADR-010 `[ADR010-rule:output:data-classification]`).
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let text = match self {
+            Self::ProgramNotAdmitted => {
+                "the constructor prototype's program is not admitted against the reviewed \
+                 contract, so there is no operation leaf to build a tree from"
+            }
+            Self::InstanceNotConstructible => {
+                "a metadata object has no canonically ordered instance"
+            }
+            Self::TransitionNotAvailable => "a metadata object has no successor",
+            Self::LeafNotExpressible => "the metadata leaf script is not expressible",
+            Self::ParityNotFound => {
+                "no predecessor of either output-key parity was found within the counters the \
+                 matrix searches"
+            }
+            Self::CanonicalSideNotFound => {
+                "no metadata leaf landing on the side the canonical search rejects was found \
+                 within the nonces the matrix grinds"
+            }
+        };
+        formatter.write_str(text)
+    }
 }
 
 /// One predecessor instance and the successor it advances to.
@@ -545,11 +591,6 @@ pub fn constructor_matrix(
             changed.object_kind = OBJECT_KIND + 1;
             changed
         }),
-        ("successor_nonce_not_the_witnessed_one", {
-            let mut changed = *step.successor.metadata();
-            changed.nonce = step.successor.metadata().nonce.wrapping_add(1);
-            changed
-        }),
     ] {
         let created = recipe.instance(target, &object_after)?;
         rows.push(recipe.row(
@@ -558,6 +599,47 @@ pub fn constructor_matrix(
             &step,
             witness.clone(),
             created.output().output_program().to_vec(),
+            Rejected,
+        ));
+    }
+
+    // A successor output whose nonce is not the one the witness carries.
+    //
+    // # Why this row states its leaf directly
+    //
+    // It used to state the mutation as an object and hand it to the
+    // oracle's own instance search, exactly like the four mutations
+    // above. That was not a mutation at all: the search grinds the nonce
+    // itself, writing `with_nonce(attempt)` from zero upward, so the
+    // offered nonce is discarded before the first leaf is built and the
+    // instance it returned was byte-identical to the unmutated
+    // successor's. The row stated the correct successor program, the
+    // target accepted the spend it was handed, and the row recorded a
+    // failure of a program that had done nothing wrong.
+    //
+    // The nonce is a representation choice rather than a field of the
+    // state, which is exactly why the search owns it and why a mutation
+    // of it has to be written down directly. So the leaf is built here
+    // from the successor's own metadata at the next nonce, and the tree
+    // the program never derives is what the fixture states.
+    {
+        let shifted = step
+            .successor
+            .metadata()
+            .with_nonce(step.successor.metadata().nonce.wrapping_add(1));
+        let leaf = FixtureTapTree::leaf(
+            metadata_leaf_script(target, &shifted.encode())
+                .map_err(|_| ConstructorMatrixDefect::LeafNotExpressible)?,
+        );
+        let tree = FixtureTapTree::branch(leaf, recipe.operation_leaf.clone());
+        let created = construct(&UNSPENDABLE_INTERNAL_KEY, &tree, &recipe.operation_leaf)
+            .map_err(|_| ConstructorMatrixDefect::InstanceNotConstructible)?;
+        rows.push(recipe.row(
+            "successor_nonce_not_the_witnessed_one",
+            &[K::SuccessorProgramObserved, K::CounterTransitionObserved],
+            &step,
+            witness.clone(),
+            created.output_program().to_vec(),
             Rejected,
         ));
     }
@@ -759,27 +841,67 @@ pub fn constructor_matrix(
     }
 
     {
-        // The branch in the order the program does not hash. The nonce
-        // is ground the other way, so the instance is well formed and
-        // its root is not the one the program derives — which is the
-        // mechanism, stated rather than implied: the order is enforced
-        // by the tweak comparison, not by a comparison of children
+        // An instance whose metadata leaf lands on the side the program
+        // does not hash.
+        //
+        // # What this row used to state, and why it could not fail
+        //
+        // It used to state the same two children written the other way
+        // round, on the reasoning that the root would then not be the
+        // one the program derives. That reasoning was wrong, and this
+        // package says so three files away: the target sorts a branch's
+        // two child hashes before hashing them, so a tree written with
+        // its children swapped is the *same tree* with the same root,
+        // the same output key, and the same program. The fixture stated
+        // the spend it meant to reject as the spend it meant to accept,
+        // and the target accepted it.
+        //
+        // The threat is real; what it is has to be stated exactly. The
+        // program cannot sort — the reviewed domain gives it no
+        // comparison to sort with — so it hashes the metadata leaf and
+        // the static root in one fixed order, and the search that
+        // authors an instance grinds the nonce until the true ordering
+        // is that one. An instance ground the other way is therefore a
+        // well-formed taproot output that the program's own branch
+        // derivation does not reach: it computes the unsorted hash, the
+        // target committed to the sorted one, and the derived output key
+        // is not the witnessed one
         // (Guide-10 `rule:guide10:tapbranch-order`).
-        let reversed = FixtureTapTree::branch(
-            recipe.operation_leaf.clone(),
-            FixtureTapTree::leaf(
-                metadata_leaf_script(target, &metadata)
+        //
+        // That is what is stated below, by grinding for the side the
+        // canonical search rejects.
+        let static_root = recipe.operation_leaf.node_hash();
+        let mut wrong_side = None;
+        for attempt in 0..GRIND_ATTEMPTS {
+            let written = step.predecessor.metadata().with_nonce(attempt);
+            let leaf = FixtureTapTree::leaf(
+                metadata_leaf_script(target, &written.encode())
                     .map_err(|_| ConstructorMatrixDefect::LeafNotExpressible)?,
-            ),
-        );
-        let built = construct(&UNSPENDABLE_INTERNAL_KEY, &reversed, &recipe.operation_leaf)
-            .map_err(|_| ConstructorMatrixDefect::InstanceNotConstructible)?;
+            );
+            if CanonicalSide::MetadataFirst.holds(&leaf.node_hash(), &static_root) {
+                continue;
+            }
+            let tree = FixtureTapTree::branch(leaf, recipe.operation_leaf.clone());
+            if let Ok(built) = construct(&UNSPENDABLE_INTERNAL_KEY, &tree, &recipe.operation_leaf) {
+                wrong_side = Some((written, tree, built));
+                break;
+            }
+        }
+        let (written, tree, built) =
+            wrong_side.ok_or(ConstructorMatrixDefect::CanonicalSideNotFound)?;
+
+        // The witness is the step's own, with the two items the shifted
+        // nonce moves. A successor is derived at nonce zero from fields
+        // the predecessor's nonce does not touch, so the successor half
+        // of the witness is unchanged and this row mutates exactly one
+        // thing.
         let mut ordered = witness;
         ordered[1] = compressed(&built);
+        ordered[3] = written.encode().to_vec();
         rows.push(Recipe::row_over(
             "noncanonical_branch_order",
             &[K::CanonicalBranchOrderObserved],
-            reversed,
+            tree,
             recipe.operation_leaf.clone(),
             recipe.program.clone(),
             UNSPENDABLE_INTERNAL_KEY,

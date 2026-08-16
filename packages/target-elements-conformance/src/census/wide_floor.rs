@@ -43,10 +43,13 @@
 //!
 //! # A mock cannot satisfy any of this
 //!
-//! Every row's outcome is a target verdict. Until a native run answers
-//! these rows, every claim below stays unresolved.
+//! Every row's outcome is a target verdict, and these rows are answered
+//! by a native run: `check-target-elements-prototypes` drives this matrix
+//! through the reviewed executor and the prototype gate reads the result,
+//! which is why every claim here is now required rather than unresolved.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
 use tapscript::instruction::TapscriptInstruction;
 use tapscript::program::TapscriptProgram;
@@ -82,6 +85,31 @@ pub enum WideFloorMatrixDefect {
     LeafNotConstructible,
     /// The flag-unchecked script variant is not expressible.
     VariantNotExpressible,
+}
+
+impl fmt::Display for WideFloorMatrixDefect {
+    /// The defect, spelled for a command's typed diagnostic.
+    ///
+    /// As for the constructor matrix: every spelling names a part of
+    /// this package that did not determine a row, and none describes a
+    /// target. A command reporting one is reporting that this
+    /// repository's contract and its oracle disagree
+    /// (ADR-010 `[ADR010-rule:output:data-classification]`).
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let text = match self {
+            Self::ProgramNotAdmitted => {
+                "the wide-floor prototype's program is not admitted against the reviewed \
+                 contract, so there is no script to state"
+            }
+            Self::InstanceNotAvailable => {
+                "a vector the matrix states has no coherent instance, so the oracle and the \
+                 vector disagree about the domain"
+            }
+            Self::LeafNotConstructible => "the bare leaf determines no output key",
+            Self::VariantNotExpressible => "the flag-unchecked script variant is not expressible",
+        };
+        formatter.write_str(text)
+    }
 }
 
 /// A resource expectation that compares nothing.

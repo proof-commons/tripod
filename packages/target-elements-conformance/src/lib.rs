@@ -63,6 +63,15 @@
 //! driver, the typed conformance report, the Guide-9 evidence plan, the
 //! gate, and the canonical primitive census.
 //!
+//! Implemented alongside it, and kept apart from it throughout: the
+//! compound-prototype fixture language, the constructor and wide-floor
+//! case matrices, the typed prototype report, and the prototype
+//! validator and gate. The two are separate types answering separate
+//! questions, and one report never carries both — a primitive census
+//! establishes what one reviewed primitive did, and a prototype matrix
+//! establishes whether a multi-step construction held together across a
+//! whole target output.
+//!
 //! Not covered by the census, and recorded as residuals rather than
 //! filled in: a signature over a transaction sighash, blinded fields,
 //! issuing inputs, an absent introspection context, and any execution
@@ -79,6 +88,8 @@ pub mod fixture;
 pub mod protocol;
 pub mod prototype;
 pub mod prototype_program;
+pub mod prototype_report;
+pub mod prototype_validate;
 pub mod report;
 pub mod validate;
 pub mod vocabulary;

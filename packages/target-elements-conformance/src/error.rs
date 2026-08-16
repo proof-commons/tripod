@@ -328,6 +328,104 @@ pub enum NativeConformanceError {
     /// (Guide-9 §1.6, §11.8).
     #[error("a mock executor cannot satisfy the target-native gate")]
     MockExecutorCannotSatisfyNativeGate,
+
+    /// A matrix row does not belong to the relation being run.
+    ///
+    /// One report answers one relation. A row of the other relation in
+    /// the same run would put its coverage under the wrong role, where a
+    /// reader would count it as coverage of a relation nothing
+    /// established.
+    #[error("a matrix row does not belong to the relation being run")]
+    PrototypeMatrixRelationMismatch {
+        /// The offending case.
+        case: PrototypeCaseId,
+    },
+
+    /// Two matrix rows declare the same compound case identity.
+    #[error("two matrix rows declare one compound case")]
+    DuplicatePrototypeCase(PrototypeCaseId),
+
+    /// A matrix row does not state a coherent case.
+    ///
+    /// An incoherent fixture has no report subject: it could be
+    /// satisfied by a transaction other than the one it means, and an
+    /// executor's agreement with it would establish nothing.
+    #[error("a matrix row does not state a coherent case")]
+    IncoherentPrototypeFixture {
+        /// The offending case.
+        case: PrototypeCaseId,
+        /// How the fixture is incoherent.
+        ///
+        /// Boxed because the defect carries a whole tree defect, and an
+        /// error root every other variant of which is a few words would
+        /// otherwise be as large as its largest member everywhere it is
+        /// returned.
+        defect: Box<crate::prototype::PrototypeFixtureDefect>,
+    },
+
+    /// The prototype report's role is not the one its relation answers
+    /// for.
+    #[error("the prototype report's role is not the one its relation answers for")]
+    PrototypeReportRoleMismatch,
+
+    /// The prototype report's case census is not the executed matrix.
+    #[error("the prototype report's case census is not the executed matrix")]
+    PrototypeReportCaseCensusMismatch,
+
+    /// The prototype report's row for one case does not state the
+    /// fixture that was executed.
+    #[error("the prototype report's row for case {0} does not state the executed fixture")]
+    PrototypeProjectionMismatch(PrototypeCaseId),
+
+    /// The prototype report's row for one case does not state what the
+    /// executor observed, or what that observation compares to.
+    #[error("the prototype report's row for case {0} does not state the observed outcome")]
+    PrototypeCaseOutcomeMismatch(PrototypeCaseId),
+
+    /// The prototype report states one claim twice.
+    #[error("the prototype report states one compound claim twice")]
+    DuplicatePrototypeClaim(crate::prototype::PrototypeClaim),
+
+    /// The prototype report omits a claim its relation holds.
+    #[error("the prototype report omits a claim its relation holds")]
+    MissingPrototypeClaim(crate::prototype::PrototypeClaim),
+
+    /// The prototype report states a claim its relation does not hold.
+    #[error("the prototype report states a claim its relation does not hold")]
+    UnexpectedPrototypeClaim(crate::prototype::PrototypeClaim),
+
+    /// The prototype report's claim rows are not the recomputed ones.
+    #[error("the prototype report's claim rows are not the ones the census and the run produce")]
+    PrototypeReportClaimCensusMismatch,
+
+    /// The prototype report's summary is not the recomputed one.
+    #[error("the prototype report's summary is not the one its own rows add up to")]
+    PrototypeReportSummaryMismatch,
+
+    /// The run executed no compound case at all.
+    ///
+    /// A run of nothing establishes nothing. Without this the gate would
+    /// accept an empty matrix, whose every required claim is vacuously
+    /// absent only because there are no claims to fail either.
+    #[error("the run executed no compound case at all")]
+    EmptyPrototypeMatrix,
+
+    /// A required compound claim has no passing case bearing on it.
+    #[error("a required compound claim has no passing case bearing on it")]
+    RequiredPrototypeClaimMissing(crate::prototype::PrototypeClaim),
+
+    /// A required compound claim has failing case evidence.
+    #[error("a required compound claim has failing case evidence")]
+    RequiredPrototypeClaimFailed(crate::prototype::PrototypeClaim),
+
+    /// One compound case's observation was not what its fixture
+    /// requires.
+    #[error("compound case {0} did not observe what its fixture requires")]
+    PrototypeCaseFailed(PrototypeCaseId),
+
+    /// One compound case could not be run by the executor.
+    #[error("compound case {0} hit executor infrastructure trouble")]
+    PrototypeCaseInfrastructureError(PrototypeCaseId),
 }
 
 /// The safe spelling of one evidence requirement for a message.

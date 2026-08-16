@@ -264,11 +264,11 @@ never as a plausible neighbour.
   Script failed an OP_VERIFY operation                   false_verification
   Script failed an OP_EQUALVERIFY operation              unequal_operands
   Script failed an OP_NUMEQUALVERIFY operation           unequal_operands
-  Stack size limit exceeded                              unmapped
-  Script is too big                                      unmapped
-  Operation limit exceeded                               unmapped
-  Invalid Schnorr signature hash type                    unmapped
-  Invalid Taproot control block size                     unmapped
+  Stack size limit exceeded                              stack_size_limit_exceeded
+  Script is too big                                      script_size_limit_exceeded
+  Operation limit exceeded                               script_operation_limit_exceeded
+  Invalid Schnorr signature hash type                    invalid_signature_hash_type
+  Invalid Taproot control block size                     malformed_control_block
 
 The three verify failures were unmapped until a compound-prototype run
 reached them, and leaving them so was not the conservative choice it looked
@@ -282,10 +282,18 @@ exactly these opcodes, so every refusing row of both prototype matrices
 would have been refused as a malformed response rather than read as the
 target verdict it is.
 
-The five that remain unmapped are unmapped because the harness's vocabulary
-names no class for them, which is a different statement and stays one.
+The last five were unmapped for the same reason and were mapped the same way:
+the harness's vocabulary had no class for them, so the vocabulary gained one
+rather than the adapter gaining a plausible neighbour. Each names an
+observation the target makes and no existing class states -- three limits
+refused on the script's own shape rather than on any value it computed, a
+sighash type read and refused before verification is attempted, and a
+control block whose width is not one the format defines. A table entry
+naming an approximate class would have been worse than no entry, because a
+report cannot tell an approximation from an observation; a table entry
+naming an exact one is what makes a refusing row readable.
 
-Four of those entries are worth naming, because they were settled by reading
+Four of the earlier entries are worth naming, because they were settled by reading
 the interpreter rather than by guessing at a string:
 
   "unknown error" is what a script-number exception becomes. Minimal encoding
@@ -466,6 +474,23 @@ FAILURE_CLASS_BY_SCRIPT_ERROR = {
     # A verified operand that was the target's false, which is what an
     # unsatisfied arithmetic success flag becomes.
     "Script failed an OP_VERIFY operation": "false_verification",
+    # The three limits the target refuses on the script's own shape rather
+    # than on a value it computed: too many stack items across both
+    # stacks, a script longer than it executes, and more operations than
+    # it admits. None of them is a budget the execution spent, and none is
+    # a result too wide, so each has its own class.
+    "Stack size limit exceeded": "stack_size_limit_exceeded",
+    "Script is too big": "script_size_limit_exceeded",
+    "Operation limit exceeded": "script_operation_limit_exceeded",
+    # The sighash type is read from the signature's trailing byte before
+    # verification is attempted, so a byte outside the admitted set is not
+    # a signature that failed to verify over a message the target
+    # computed.
+    "Invalid Schnorr signature hash type": "invalid_signature_hash_type",
+    # A control block whose length is not one the format defines. The
+    # target never reaches a leaf version to judge, so this is not the
+    # refused-leaf-version class.
+    "Invalid Taproot control block size": "malformed_control_block",
 }
 
 
