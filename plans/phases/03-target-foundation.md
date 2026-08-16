@@ -2,8 +2,9 @@
 
 > **Status:** Active — typed target contract, capability adapter, typed
 > instruction core, and development target-native primitive evidence
-> implemented; the STATE-constructor, wide-arithmetic, and public
-> declassification prototypes remain open; prototype-driven
+> implemented; the STATE-constructor and wide-arithmetic prototypes are
+> accepted; public declassification remains the open foundational
+> prototype; prototype-driven
 > **Entry:** (`gate:phase2:exit`)
 > **Packages:** [`target-elements`](../packages/target-elements.md),
 > [`tapscript`](../packages/tapscript.md)
@@ -82,6 +83,13 @@ The prototype must test:
 Result handoff:
 [STATE constructor research](../research/state-constructor.md).
 
+Accepted. The selected candidate is the dynamic metadata leaf beside a static
+code subtree, with successor metadata derived on-stack from the predecessor's
+authenticated bytes and canonical branch order obtained creator-side. Evidence
+is 36 of 36 native rows and 9 of 9 claims against a reviewed node, twice and
+byte-identically; the decision, resources, and residuals are in the research
+file and the gate record is in [the backlog](../backlog.md) (§2.14).
+
 ### Wide arithmetic prototype
 
 The prototype must test exact:
@@ -105,6 +113,13 @@ Required:
 
 Result handoff:
 [wide arithmetic research](../research/wide-arithmetic.md).
+
+Accepted. The selected candidate is derived limbs at base `2^26` over the
+reviewed Euclidean division, with every limb and carry derived from the five
+witnessed amounts. Evidence is 39 of 39 native rows and 11 of 11 claims, twice
+and byte-identically. Operation-level integration was not performed, so
+settlement feasibility is not claimed; see the research file for the resources
+and the residual operand-binding threats.
 
 ### Public declassification prototype
 

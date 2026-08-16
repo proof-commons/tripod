@@ -490,6 +490,50 @@ than claiming verification.
 | commitment equality | no reviewed script primitive establishes it |
 | authenticated opening | low-level curve and hash primitives exist, which does not constitute an opening proof |
 
+### Contract revision 2 review · `tbl:elements-ref:review-v2`
+
+The Guide-10 prototypes needed primitives the first review had not reached, so
+the contract moved to revision 2. The census below is review provenance for
+that revision; the typed registry remains the authority.
+
+| Field | Value |
+|---|---|
+| revision consulted | merged tip `0b3bffd`, upstream base `b7fc5d0` |
+| workspace | ADR-018, topics `fix/tapscript-opcodes` and notes |
+| census after revision | 55 opcodes |
+| newly reviewed | 17 compound-proof primitives |
+| review date | 2026-08-16 |
+
+The newly reviewed primitives are the stack-rearrangement, byte-string
+equality, boolean-verification, concatenation, width, slicing, and
+bitwise-logic groups. They are ordinary script primitives the first review had
+no need for; admitting them is a scope change, not a semantic discovery.
+
+An eighth compound-proof capability, canonical byte ordering, is typed
+`Unsupported` and names no primitive. The reviewed target has no
+byte-lexicographic comparison: its ordering primitives read fixed-width signed
+integers and its script-number ordering reads a number, and neither orders a
+thirty-two byte digest. A construction needing canonical ordering must build it
+from the primitives that do exist and prove the construction, which is a
+different claim from having the capability.
+
+### Corrections and additions from that review · `tbl:elements-ref:review-v2-repairs`
+
+| Correction | Detail |
+|---|---|
+| tweak-verify operand | the tweak operand is width-only. The interpreter checks its length is thirty-two and passes the bytes to the pay-to-contract check without interpreting them, so a stricter typed operand claimed a check the target does not perform (`src/script/interpreter.cpp:2206-2220`) |
+| reach property | every reviewed prototype schedule reads no lower than the third stack item and uses no pick, roll, or altstack. This is a property of the emitted programs, machine-checked, not a target rule |
+
+Five failure classes were added to the executor vocabulary, each naming a
+refusal no existing class stated. Three are refusals on the script's own shape
+rather than on a value it computed: script size, operation count, and combined
+stack-item count. Two are refusals of the spend's authentication data before
+any script runs: a sighash type declined from the signature's trailing byte
+before verification is attempted, and a control block whose width is not one
+the format defines, which the target refuses before reaching a version byte to
+judge. A rejection carrying none of these would previously have been read as a
+malformed response rather than as the verdict it is.
+
 ### Target-native tests still required · `rule:elements-ref:review-required-tests`
 
 The Guide-9 development conformance run resolved the required primitive
@@ -512,6 +556,13 @@ executor, revision, and disposable chain.
 | Development identifiers | synthetic nonzero network and genesis IDs recorded in the gate record |
 | Fixture census | 398 cases, 18 of 18 required evidence rows, zero infrastructure errors |
 | Determinism | report bytes identical across two fresh-node runs and the build lane |
+
+The Guide-10 prototype matrices ran later, against a daemon at the merged tip
+recorded in (`tbl:elements-ref:review-v2`): 36 constructor rows and 39
+wide-floor rows, each twice and byte-identically. Those runs are prototype
+evidence and are recorded in the research files, not here. A report still
+speaks only for its exact executor, revision, and disposable chain, and no
+production deployment evidence exists for either revision.
 
 ## Updating · `rule:elements-ref:update`
 

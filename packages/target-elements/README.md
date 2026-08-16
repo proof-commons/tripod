@@ -160,8 +160,9 @@ Every primitive above was read in the upstream interpreter one at a time, in the
 tapscript execution path. The repository, revision, source paths, and review
 date belong in
 [plans/reference/elements-tapscript.md](../../plans/reference/elements-tapscript.md)
-with the rest of the review provenance; that file was not updated by the wave
-that admitted these primitives and is outstanding.
+with the rest of the review provenance, which now records the revision-2 census,
+the width-only tweak correction and its interpreter lines, and the unsupported
+ordering capability.
 
 ## Identity
 

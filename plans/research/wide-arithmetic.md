@@ -1,6 +1,6 @@
 # Research Question: Exact Wide Floor Arithmetic · `q:arithmetic:wide-floor`
 
-> **Status:** Prototype and measurement required
+> **Status:** Accepted prototype — see (`sec:wide-arithmetic:result`)
 > **Blocks:** redemption; settlement floors; cycle issuance
 > **Affected packages:** realization, compiler, target-elements, tapscript,
 > transaction, vectors, release
@@ -353,7 +353,81 @@ Reject a candidate if:
 
 ## Result · `sec:wide-arithmetic:result`
 
-Pending.
+Accepted as a prototype. The selected candidate is
+(`candidate:arithmetic:derived-limbs`) at base `B = 2^26`, resting on the
+reviewed Euclidean `Div64`, which returns remainder, quotient, and a success
+flag with the remainder normalized non-negative.
+
+### Decisive design results · `sec:wide-arithmetic:decisive`
+
+**Nothing that could be corrupted is witnessed.** The witness is exactly the
+five amounts `a`, `b`, `d`, `q`, `r`. Every limb, every partial product, and
+every carry is derived from those five inside the program. The wrong-limb and
+wrong-carry rows of (`sec:wide-arithmetic:threats`) therefore have no witness
+to mutate under Candidate A: they are refused by construction rather than by a
+check, and the matrix records them as such rather than pretending to test them.
+
+Candidates B and C were carried through to typed lower bounds rather than
+dropped by argument — B costs 27 witness items where A costs 5, and C costs
+three wide products where A computes one. Both are dominated on every measured
+axis, and the comparison is emitted so that the domination is a figure rather
+than a claim.
+
+**The bound census is machine-checked.** Every intermediate the schedule
+produces is proven below `2^53`, so no target arithmetic relies on an informal
+overflow argument.
+
+**One documented deviation from the staged form.** The quotient-side carry
+cascade is folded, giving three divisions where the staged §11.5 shape gives
+six. The folded form was cross-checked two independent ways: against the staged
+form itself, and against arbitrary-precision digit extraction. The deviation is
+recorded here because a reader comparing the emitted schedule against the guide
+will otherwise find three divisions missing and be right to ask.
+
+Layout is a single packed byte-string accumulator read by constant-width
+slices, which is what keeps the schedule inside the reach bound: no primitive
+reads below the third stack item, and there is no `OP_PICK`, no `OP_ROLL`, and
+no altstack.
+
+### Resources · `tbl:wide-arithmetic:resources`
+
+Measured on the emitted program.
+
+| Quantity | Value |
+|---|---:|
+| script bytes | 523 |
+| witness bytes (5 items) | 606 |
+| peak main stack | 7 |
+| widest element | 216 |
+| instructions | 304 |
+| multiplications | 8 |
+| divisions | 11 |
+| hash, curve, budget | 0 |
+
+The pattern is pure arithmetic: it hashes nothing, touches no curve, and spends
+none of the per-check validation budget.
+
+### Native evidence · `sec:wide-arithmetic:evidence`
+
+| Fact | Value |
+|---|---|
+| matrix | 39 of 39 rows agreed |
+| claims | 11 of 11 covered |
+| completeness | `complete_for_wide_floor_prototype` |
+| determinism | two gated runs byte-identical |
+| report digest | `2ab1b75b87a5706be70e21760f3f53b314e38c928361adf9374e0749c1119ca3` |
+
+Node and workspace provenance are the same run recorded in the constructor
+research.
+
+### Residuals · `sec:wide-arithmetic:residuals`
+
+Enumerated by the matrix's own `residual_threats`, not by prose. The
+load-bearing three are the enclosing-binding substitutions: swapping the
+semantic source of `a`, of `b`, or of `d` is correct arithmetic over a wrong
+fact, and this pattern has no standalone boundary that could catch it. Operand
+binding is the enclosing operation's claim and stays there — which is the same
+separation (`sec:wide-arithmetic:threats`) already draws in its final row.
 
 ## Handoff · `sec:wide-arithmetic:handoff`
 
@@ -369,3 +443,21 @@ A successful result creates an arithmetic-pattern decision and updates:
 - release evidence requirements.
 
 A failed result does not weaken the exact floor relation.
+
+### What this acceptance is · `sec:wide-arithmetic:scope`
+
+The accepted object is a prototype. No operation emits it, no ABI is frozen
+around its five witness items, no bundle contains it, no identity was minted
+for it, and no bound was calibrated from its figures. Stage 6 operation
+integration was not performed, so no settlement claim rests on this: the
+batch-size-2 measurement that (`gate:wide-arithmetic:accept`) requires before
+settlement feasibility may be claimed has not been taken, and settlement
+feasibility is accordingly not claimed.
+
+Promotion to a production backend pattern is a separate reviewed act. What the
+acceptance settles is the question the pattern was blocked on — whether the
+target can verify the exact floor relation over the `2^51` domain at a cost an
+operation could afford — and the answer is yes, at 523 script bytes.
+
+Evidence lives in `target-elements-conformance` and in the Guide-10 gate record
+in [the backlog](../backlog.md) (§2.14).
