@@ -623,7 +623,11 @@ cargo_test_json = find_program('scripts/cargo-test-json.sh')
 # time queued behind that lock and their per-package durations would
 # measure the queue rather than the package. Building once and running
 # many leaves each lane holding the lock only briefly, which is what
-# makes the per-package figures attributable at all.
+# makes the per-package figures attributable at all. Measured on a
+# 14-core host, thirteen debug lanes: 0:52 warm-up plus 5:00 of lanes,
+# against 6:53 for the same lanes with no warm-up and a cold target
+# directory. The measurement and the parallelism it settles are
+# recorded in scripts/ci.py.
 cargo_test_warmup = {}
 foreach profile : ['debug', 'release']
   warmup_args = [

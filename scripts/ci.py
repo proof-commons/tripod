@@ -117,14 +117,28 @@ LOG_DIRECTORY = os.path.join("target", "ci-logs")
 # a test run cannot perturb the tracked archive and trip the clean-tree lane.
 MESON_BUILD_DIR = os.path.join("target", "ci-meson")
 
-# Per-package lane parallelism, measured rather than assumed (CI-002). With
-# the profile's warm-up build already done, the thirteen debug lanes take
-# 8:32 serially and 4:48 at meson's default parallelism on a 14-core host:
-# cargo's lock on the shared target directory is held only briefly by a test
-# run, so the lanes do overlap and parallel is the honest default. The floor
-# is one package -- target-elements-conformance alone is about 250s -- so the
-# gain is bounded by the slowest package, not by the core count. Set
-# CI_TEST_PROCESSES to override; 1 reproduces the serial measurement.
+# Per-package lane parallelism, measured rather than assumed (CI-002). All
+# figures are the thirteen debug lanes on one 14-core host, wall clock:
+#
+#   warm-up build then serial lanes (--num-processes 1)     0:52 + 8:32
+#   warm-up build then parallel lanes (meson's default)     0:52 + 5:00
+#   no warm-up, parallel lanes, cold target directory              6:53
+#
+# Two things follow, and both are why this file pins rather than defaults.
+# Parallel is faster, so the lanes really do overlap: cargo's lock over the
+# shared target directory is held only briefly once the binaries are built,
+# and the serialization the lock could have forced does not materialize. The
+# gain is bounded from below by the slowest single package --
+# target-elements-conformance alone is about 250s serial, and 300s while
+# thirteen lanes share the cores -- so it is 1.7x, not 13x.
+#
+# The third row is the configuration without the warm-up target, where every
+# lane's cargo has to build: it is slower in total than building once and
+# running many, and worse, each lane's duration then measures how long that
+# lane waited for the build lock rather than how long its tests took. The
+# warm-up is what makes per-package attribution mean anything.
+#
+# Set CI_TEST_PROCESSES to override; 1 reproduces the serial measurement.
 DEFAULT_TEST_PROCESSES = 0  # 0 means meson's own default (one per core)
 
 # How many individual tests the report names, per package and repository-wide.
@@ -739,7 +753,15 @@ def print_summary(records, total_seconds, outcome):
 
 
 def print_package_summary(records):
-    """Per-package and per-test attribution beneath the lane table."""
+    """Per-package and per-test attribution beneath the lane table.
+
+    The `duration` column is the package lane's wall time, which includes
+    whatever cargo still had to build. The `in-test` column is the sum of the
+    per-test execution times libtest reported, and it routinely EXCEEDS the
+    wall time: the harness runs a package's tests on several threads, so those
+    seconds overlap each other. It is a measure of test work, never of elapsed
+    time, and the two columns are not meant to reconcile.
+    """
     for record in records:
         if not record.packages:
             continue
