@@ -104,6 +104,14 @@ fn value(number: i64) -> TapscriptInstruction {
     TapscriptInstruction::Push(StackItem::signed_le64(&target, number))
 }
 
+/// A script-number literal, as an instruction.
+fn number(value: i64) -> TapscriptInstruction {
+    let target = reviewed_target();
+    TapscriptInstruction::Push(
+        StackItem::script_number(&target, value).expect("a small script number is admissible"),
+    )
+}
+
 /// The states a set of stacks describes.
 fn states(stacks: &[Vec<StackValueType>]) -> BTreeSet<AbstractStackState> {
     stacks
@@ -350,62 +358,127 @@ fn a_four_byte_chunk_comparison_is_expressible() {
 }
 
 #[test]
-fn a_sliced_chunk_cannot_yet_be_scheduled_into_a_width_constrained_operand() {
-    // The precise step that blocks a complete constructor schedule, and
-    // it is a limitation of this crate's abstract state rather than of
-    // the target.
+fn a_sliced_chunk_schedules_into_a_width_constrained_operand() {
+    // The step that used to block a complete constructor schedule.
     //
-    // Slicing four bytes out of a digest produces, in the contract, a
-    // byte string of unconstrained width — the primitive's result type
-    // cannot depend on its operands under the present success algebra.
-    // The widening conversion requires exactly four bytes. So the
-    // validator refuses to schedule the composition even though the
-    // target would execute it, because it cannot prove the slice is
-    // four bytes wide.
-    //
-    // Closing this needs a result whose width is stated as a function of
-    // the operands' widths. That is a further extension of the success
-    // algebra, and it belongs to the wave that writes the constructor
-    // schedule rather than to the wave that reviews the primitives
+    // Slicing four bytes out of a digest produces a result whose width
+    // the reviewed contract states as its length operand's value, so a
+    // schedule that slices with a literal bound carries a settled
+    // four-byte item into the widening conversion — which is exactly
+    // what the target does. Before the width relation existed the
+    // contract reported an unconstrained byte string here and the
+    // composition was refused, even though no target ever refused it
     // (Guide-10 `rule:guide10:stack-schedule`).
+    let result = schedule(
+        vec![
+            number(0),
+            number(4),
+            op(OpcodeId::Substring),
+            op(OpcodeId::Le32ToLe64),
+        ],
+        &AbstractStackState::from_main(vec![literal(32)]),
+    );
+
+    // One widened chunk; the digest and both bounds are gone.
+    assert_eq!(result.success(), &states(&[vec![signed64()]]));
+    assert!(result.nonaborting_failure().is_empty());
+}
+
+#[test]
+fn a_slice_of_the_wrong_width_is_still_refused() {
+    // The relation narrows a result; it does not admit one. A five-byte
+    // slice is a five-byte item, and the widening conversion takes
+    // four, so the composition is refused exactly where the target
+    // would refuse it.
     let target = reviewed_target();
-    let number = |v: i64| {
-        TapscriptInstruction::Push(
-            StackItem::script_number(&target, v).expect("a small script number is admissible"),
-        )
-    };
     let program = TapscriptProgram::new(vec![
         number(0),
-        number(4),
+        number(5),
         op(OpcodeId::Substring),
         op(OpcodeId::Le32ToLe64),
     ])
     .expect("the schedule is within the limit");
     let initial = AbstractStackState::from_main(vec![literal(32)]);
 
-    let outcome = validate_program(
-        &target,
-        &program,
-        &initial,
-        AbstractLimits::for_target(&target),
-    );
-    assert!(
-        outcome.is_err(),
-        "the abstract state cannot yet carry a computed width"
-    );
-
-    // The slice itself schedules cleanly; it is only the composition
-    // into a width-constrained operand that does not.
-    let sliced = TapscriptProgram::new(vec![number(0), number(4), op(OpcodeId::Substring)])
-        .expect("the schedule is within the limit");
     assert!(
         validate_program(
             &target,
-            &sliced,
+            &program,
             &initial,
             AbstractLimits::for_target(&target),
         )
-        .is_ok(),
-        "slicing a digest is itself schedulable"
+        .is_err(),
+        "a five-byte slice does not satisfy a four-byte position"
     );
+}
+
+#[test]
+fn a_slice_whose_length_the_program_did_not_fix_stays_unsettled() {
+    // The negative control for the repair, and its honest floor.
+    //
+    // Where the length operand is not a literal the program pushed —
+    // here it arrives on the initial stack — the walk settles nothing,
+    // the result keeps the contract's unconstrained type, and the
+    // composition is refused rather than assumed. The width relation is
+    // a statement about bounds a program fixed, and it claims nothing
+    // whatever about a bound it did not.
+    let target = reviewed_target();
+    let program = TapscriptProgram::new(vec![op(OpcodeId::Substring), op(OpcodeId::Le32ToLe64)])
+        .expect("the schedule is within the limit");
+    let initial = AbstractStackState::from_main(vec![
+        literal(32),
+        StackValueType::ScriptNumber,
+        StackValueType::ScriptNumber,
+    ]);
+
+    assert!(
+        validate_program(
+            &target,
+            &program,
+            &initial,
+            AbstractLimits::for_target(&target),
+        )
+        .is_err(),
+        "an unsettled length settles no width"
+    );
+}
+
+#[test]
+fn a_chunk_of_each_digest_is_compared_end_to_end() {
+    // The Wave-3 finding, composed: read the same four-byte chunk out
+    // of each of two digests, widen both unsigned, and compare them.
+    //
+    // This is the whole of canonical ordering except the combination
+    // step: applied per chunk and combined so that the first differing
+    // chunk decides, it orders two digests with no conditional branch
+    // (Guide-10 `rule:guide10:tapbranch-order`).
+    let digest = literal(32);
+    let initial = AbstractStackState::from_main(vec![digest.clone(), digest]);
+    let result = schedule(
+        vec![
+            // The deeper digest's chunk, widened.
+            op(OpcodeId::CopyOver),
+            number(0),
+            number(4),
+            op(OpcodeId::Substring),
+            op(OpcodeId::Le32ToLe64),
+            // The shallower digest's chunk, widened.
+            op(OpcodeId::CopyOver),
+            number(0),
+            number(4),
+            op(OpcodeId::Substring),
+            op(OpcodeId::Le32ToLe64),
+            op(OpcodeId::LessThan64),
+        ],
+        &initial,
+    );
+
+    // Both digests survive for the next chunk, with one truth value
+    // above them: the step is repeatable, which is what makes the
+    // per-chunk ordering schedulable at all.
+    assert_eq!(
+        result.success(),
+        &states(&[vec![literal(32), literal(32), StackValueType::Bool]])
+    );
+    assert!(result.nonaborting_failure().is_empty());
 }

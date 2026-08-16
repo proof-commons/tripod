@@ -119,6 +119,74 @@ pub enum ResultValue {
     /// than a move because the same operand may be named more than
     /// once, which is exactly what a duplicating primitive does.
     OperandCopy(usize),
+    /// A value the primitive computes whose exact width the target
+    /// takes from the *value* of one declared operand.
+    ///
+    /// # Why a width has to be stated this way
+    ///
+    /// The reviewed slice primitive returns exactly as many bytes as
+    /// its length operand asks for. Stated as a plain
+    /// [`Self::Computed`] byte string the result is a width the
+    /// contract does not fix, and a consumer that then wants to feed
+    /// the slice into a width-constrained position has no ground to
+    /// stand on: it would have to assume a width the contract never
+    /// claimed. The reviewed target has no such freedom — it produces
+    /// the requested width or it aborts — so the contract states the
+    /// dependency instead of losing it.
+    ///
+    /// # Deliberately not a width calculus
+    ///
+    /// This names one operand whose value *is* the width, and nothing
+    /// more: no arithmetic over widths, no symbolic expressions, no
+    /// relation between two operands. A consumer that cannot settle the
+    /// named operand's value falls back to [`Self::unsettled_type`],
+    /// which is the same unconstrained result the contract stated
+    /// before, so the extension never narrows a result a consumer could
+    /// not already justify.
+    ComputedWidthFromOperand {
+        /// The deepest-first index of the operand whose numeric value
+        /// is the result's width in bytes.
+        width_operand: usize,
+        /// The type the result carries wherever that operand's value is
+        /// not settled.
+        ///
+        /// It must admit every width the settled form can take: it is
+        /// the honest answer for a consumer that knows nothing about
+        /// the operand, and every narrower answer this variant permits
+        /// lies inside it.
+        unsettled: StackValueType,
+    },
+}
+
+impl ResultValue {
+    /// The type this result carries when nothing about the operands is
+    /// settled.
+    ///
+    /// An operand copy has none: its type is whatever the caller's
+    /// stack held, which this contract does not know.
+    #[must_use]
+    pub const fn unsettled_type(&self) -> Option<&StackValueType> {
+        match self {
+            Self::Computed(value)
+            | Self::ComputedWidthFromOperand {
+                unsettled: value, ..
+            } => Some(value),
+            Self::OperandCopy(_) => None,
+        }
+    }
+
+    /// The declared-operand index this result names, if any.
+    #[must_use]
+    pub const fn named_operand(&self) -> Option<usize> {
+        match self {
+            Self::OperandCopy(index)
+            | Self::ComputedWidthFromOperand {
+                width_operand: index,
+                ..
+            } => Some(*index),
+            Self::Computed(_) => None,
+        }
+    }
 }
 
 impl From<StackValueType> for ResultValue {
@@ -140,7 +208,7 @@ impl SuccessStackEffect {
     /// `results` is in push order, so its last element ends up on top.
     #[must_use]
     pub fn new(consumed_operands: usize, results: Vec<StackValueType>) -> Self {
-        Self::rearranging(
+        Self::resolving(
             consumed_operands,
             results.into_iter().map(ResultValue::Computed).collect(),
         )
@@ -151,7 +219,7 @@ impl SuccessStackEffect {
     /// The general form. [`Self::new`] is the common case where every
     /// result is a value the primitive computed.
     #[must_use]
-    pub const fn rearranging(consumed_operands: usize, results: Vec<ResultValue>) -> Self {
+    pub const fn resolving(consumed_operands: usize, results: Vec<ResultValue>) -> Self {
         Self {
             consumed_operands,
             results,
@@ -181,14 +249,18 @@ impl SuccessStackEffect {
     /// An operand carried through has no type here, and is absent
     /// rather than guessed at: its type is whatever the caller's stack
     /// held, which this contract does not know.
+    ///
+    /// A result whose width the target takes from an operand reports
+    /// its unsettled type, which is the widest form it can take. A
+    /// consumer reading this method learns exactly what it learned
+    /// before the width relation existed; narrowing is available only
+    /// to a consumer that walks [`Self::results`] and can settle the
+    /// operand.
     #[must_use]
     pub fn computed_types(&self) -> Vec<StackValueType> {
         self.results
             .iter()
-            .filter_map(|result| match result {
-                ResultValue::Computed(value) => Some(value.clone()),
-                ResultValue::OperandCopy(_) => None,
-            })
+            .filter_map(|result| result.unsettled_type().cloned())
             .collect()
     }
 
@@ -197,10 +269,7 @@ impl SuccessStackEffect {
     pub fn deepest_named_operand(&self) -> Option<usize> {
         self.results
             .iter()
-            .filter_map(|result| match result {
-                ResultValue::OperandCopy(index) => Some(*index),
-                ResultValue::Computed(_) => None,
-            })
+            .filter_map(ResultValue::named_operand)
             .max()
     }
 
@@ -274,14 +343,20 @@ pub enum SuccessContract {
         /// The forms, one per condition.
         cases: Vec<SuccessCase>,
     },
-    /// One successful form that rearranges the operands it was given
-    /// rather than computing a value of its own.
+    /// One successful form whose results are stated against the
+    /// operands rather than as plain types.
     ///
-    /// The ordinary stack operations. Their results are the operands
-    /// themselves, in a new order and possibly more than once, so they
-    /// cannot be stated as [`Self::Fixed`] without inventing types for
-    /// items whose types the caller chose.
-    Rearrangement {
+    /// Two reviewed shapes need this. The ordinary stack operations
+    /// push the operands themselves, in a new order and possibly more
+    /// than once, so they cannot be stated as [`Self::Fixed`] without
+    /// inventing types for items whose types the caller chose. The
+    /// slice primitive pushes a value it computed, but of a width its
+    /// operand names, which [`Self::Fixed`] cannot state either.
+    ///
+    /// Both are the same fact about the target: what the primitive
+    /// leaves behind is a function of what it was handed, and a
+    /// contract that dropped the dependency would understate it.
+    OperandResolved {
         /// How many of the declared operands are consumed.
         consumed_operands: usize,
         /// The items pushed, in push order.
@@ -330,12 +405,12 @@ impl SuccessContract {
                 SuccessStackEffect::new(0, results.clone()),
             )],
             Self::Alternatives { cases } => cases.clone(),
-            Self::Rearrangement {
+            Self::OperandResolved {
                 consumed_operands,
                 results,
             } => vec![SuccessCase::new(
                 SuccessCondition::Always,
-                SuccessStackEffect::rearranging(*consumed_operands, results.clone()),
+                SuccessStackEffect::resolving(*consumed_operands, results.clone()),
             )],
         }
     }
@@ -349,12 +424,9 @@ impl SuccessContract {
                 .iter()
                 .flat_map(|case| case.effect().computed_types())
                 .collect(),
-            Self::Rearrangement { results, .. } => results
+            Self::OperandResolved { results, .. } => results
                 .iter()
-                .filter_map(|result| match result {
-                    ResultValue::Computed(value) => Some(value.clone()),
-                    ResultValue::OperandCopy(_) => None,
-                })
+                .filter_map(|result| result.unsettled_type().cloned())
                 .collect(),
         }
     }
@@ -372,20 +444,20 @@ impl SuccessContract {
                 (declared_operands == 0).then_some(SuccessContractDefect::NothingToRetain)
             }
             Self::Alternatives { cases } => Self::alternatives_defect(cases, declared_operands),
-            Self::Rearrangement {
+            Self::OperandResolved {
                 consumed_operands,
                 results,
-            } => Self::rearrangement_defect(*consumed_operands, results, declared_operands),
+            } => Self::operand_resolved_defect(*consumed_operands, results, declared_operands),
         }
     }
 
-    /// The first defect in a rearranging form.
+    /// The first defect in an operand-resolved form.
     ///
     /// A named operand that the primitive does not declare is the
     /// dangerous one: a stack validator resolving it would read past
     /// the operands it checked, so the contract is refused here rather
     /// than left for the validator to survive.
-    fn rearrangement_defect(
+    fn operand_resolved_defect(
         consumed_operands: usize,
         results: &[ResultValue],
         declared_operands: usize,
@@ -395,7 +467,8 @@ impl SuccessContract {
         }
         results
             .iter()
-            .any(|result| matches!(result, ResultValue::OperandCopy(index) if *index >= declared_operands))
+            .filter_map(ResultValue::named_operand)
+            .any(|index| index >= declared_operands)
             .then_some(SuccessContractDefect::ResultNamesNoOperand)
     }
 
