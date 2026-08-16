@@ -1725,6 +1725,12 @@ active tree.
 | `DI-F02` | ACTIVE | Participation is enforced inconsistently across checks: the label scanner honors fences, the link scanner did not, and the scaffolding, placeholder, and confidence hygiene checks still scan fenced material. One participation model must feed every check. |
 | `DI-F03` | ACTIVE | The calculus's owner signatures, imported-citation prefixes, synthetic citations, anchor harvests, and acute-delimiter hard failure are only partially realized in the present checker; the gap census of DI-001 owns the exact delta. |
 
+### 13.3 Toolchain engineering · `tbl:backlog:toolchain-tasks`
+
+| ID | Status | Task |
+|---|---|---|
+| `CI-001` | ACTIVE | Rewrite the shell CI driver in Python with a typed lane tracker: every lane declared with status and skip reason, every lane and the whole run wall-timed, and a timing report emitted as the success output and on failure alike, so the repository accumulates the cost data the thoroughness/time trade has so far lacked. The entry-point name and the ADR-010 output and stamp behavior of the lanes it drives are preserved. |
+
 ## 14. Backlog hygiene · `sec:backlog:hygiene`
 
 ### 13.1 Adding work · `rule:backlog:add`
