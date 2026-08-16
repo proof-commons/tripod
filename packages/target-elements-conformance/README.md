@@ -3,9 +3,9 @@
 The secretless target-native conformance harness for the reviewed
 Elements tapscript primitives.
 
-This README and `src/lib.rs` together are meant to be enough to use the public
-API correctly. The crate documentation is the compressed orientation; the worked
-example and the full tour are here.
+This README is the crate documentation: it is included verbatim as the rendered
+landing page, and its example runs as a doctest. It is meant to be enough to use
+the public API correctly on its own.
 
 The library crate is named `target_elements_conformance`; the Cargo package is
 `tripod-target-elements-conformance`.
@@ -43,6 +43,12 @@ observed.
 - backend correctness;
 - release evidence identity — no report digest is minted, and none may
   be added here.
+
+Nothing in this package is hashed: there is no report digest, no
+fixture-set digest, no executor digest, and no field reserved for one. A
+report is compared by its typed content and its exact bytes, and no
+persistent report identity is admitted until a cross-process release
+consumer exists (Guide-9 section 1.8, ADR-016).
 
 ## The executor has authority, and the harness does not check it
 
@@ -120,12 +126,12 @@ report it was handed.
 
 ## Quickstart: assemble fixtures, drive the mock executor, validate the report
 
-```rust,ignore
-// `ignore`: this spawns a child process. `execute` needs a real
-// executor program on disk, and `ExecutionTranscript` has no public
-// constructor, so the chain cannot be exercised as a doctest. The
-// crate's own integration tests in `tests/executor_protocol.rs` run
-// exactly this against the `mock-native-executor` binary.
+```rust,no_run
+// `no_run`: this is compiled, so the API usage below is checked, but it
+// is not executed — `execute` spawns a child process and needs a real
+// executor program on disk. The crate's own integration tests in
+// `tests/executor_protocol.rs` run exactly this chain against the
+// `mock-native-executor` binary.
 use std::time::Duration;
 
 use tapscript::{StackItem, TapscriptInstruction, TapscriptProgram};
