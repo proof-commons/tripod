@@ -634,7 +634,7 @@ foreach profile : ['debug', 'release']
     warmup_args += ['--release']
   endif
   warmup = custom_target(
-    'cargo-test-warmup-' + profile,
+    'run-cargo-test-warmup-' + profile,
     output: ['cargo-test-warmup-' + profile + '.ok',
              'cargo-test-warmup-' + profile + '.log'],
     command: cargo_quiet_stamp_wrap + warmup_args,
