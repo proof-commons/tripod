@@ -10,7 +10,7 @@
 
 ---
 
-## Mission · `sec:guide10:mission`
+## Mission · `sec:guide10-concept:mission`
 
 Guide 10 determines whether the reviewed Elements tapscript substrate can support two load-bearing backend mechanisms without weakening their target-independent semantics:
 
@@ -68,7 +68,7 @@ Guide 10 is prototype-only. Its result is an accepted construction decision, a m
 
 ---
 
-## Completion boundary · `rule:guide10:completion-boundary`
+## Completion boundary · `rule:guide10-concept:completion-boundary`
 
 Guide 10 succeeds when each research question reaches one of two typed outcomes:
 
@@ -100,7 +100,7 @@ The target-native report must bind the exact program, stack, transaction context
 
 ---
 
-# 1. Executive rulings · `sec:guide10:rulings`
+# 1. Executive rulings · `sec:guide10-concept:rulings`
 
 ## 1.1 Repair the evidence boundary before recording new prototype evidence
 
@@ -391,7 +391,7 @@ A future linker or release consumer may activate identities under ADR-016. Guide
 
 ---
 
-# 2. Entry conditions · `sec:guide10:entry`
+# 2. Entry conditions · `sec:guide10-concept:entry`
 
 Guide 10 begins only when:
 
@@ -440,7 +440,7 @@ The relation-ID/body weld should close before Guide 10 adds any compiler-visible
 
 ---
 
-# 3. Required reading and authority · `sec:guide10:authority`
+# 3. Required reading and authority · `sec:guide10-concept:authority`
 
 Repository policy:
 
@@ -509,7 +509,7 @@ No package parses these documents as semantic input.
 
 ---
 
-# 4. Scope · `sec:guide10:scope`
+# 4. Scope · `sec:guide10-concept:scope`
 
 ## 4.1 In scope
 
@@ -559,7 +559,7 @@ A synthetic STATE-like metadata structure may be used to exercise field changes.
 
 ---
 
-# 5. Package ownership · `sec:guide10:packages`
+# 5. Package ownership · `sec:guide10-concept:packages`
 
 ## 5.1 `target-elements`
 
@@ -661,7 +661,7 @@ The reference implementation belongs in the conformance/prototype side, never in
 
 ---
 
-# 6. Preliminary target primitive closure · `sec:guide10:primitive-closure`
+# 6. Preliminary target primitive closure · `sec:guide10-concept:primitive-closure`
 
 ## 6.1 Question
 
@@ -783,7 +783,7 @@ If the schedule needs an unavailable operation, the candidate is blocked at that
 
 ---
 
-# 7. STATE constructor prototype · `sec:guide10:constructor`
+# 7. STATE constructor prototype · `sec:guide10-concept:constructor`
 
 ## 7.1 Fixed semantic relation
 
@@ -1040,7 +1040,7 @@ The last row proves that constructor continuity and semantic state assignment re
 
 ---
 
-# 8. Exact wide-floor prototype · `sec:guide10:wide-floor`
+# 8. Exact wide-floor prototype · `sec:guide10-concept:wide-floor`
 
 ## 8.1 Fixed semantic relation
 
@@ -1353,7 +1353,7 @@ A huge random native suite is not a substitute for a complete semantic partition
 
 ---
 
-# 9. Generic compound-prototype fixtures · `sec:guide10:fixtures`
+# 9. Generic compound-prototype fixtures · `sec:guide10-concept:fixtures`
 
 ## 9.1 New fixture class
 
@@ -1460,7 +1460,7 @@ Each report case embeds the complete fixture projection and records:
 
 ---
 
-# 10. Prototype evidence and reports · `sec:guide10:evidence`
+# 10. Prototype evidence and reports · `sec:guide10-concept:evidence`
 
 ## 10.1 Report classes
 
@@ -1558,7 +1558,7 @@ Exclude:
 
 ---
 
-# 11. Independent oracles · `sec:guide10:oracles`
+# 11. Independent oracles · `sec:guide10-concept:oracles`
 
 ## 11.1 Primitive-byte oracle
 
@@ -1627,7 +1627,7 @@ For bounded short programs and selected compound fragments, enumerate every comp
 
 ---
 
-# 12. Security boundary · `sec:guide10:security`
+# 12. Security boundary · `sec:guide10-concept:security`
 
 ## 12.1 Public data only
 
@@ -1692,7 +1692,7 @@ No repository-controlled lane publishes core dumps, heap captures, or node data 
 
 ---
 
-# 13. Resource evidence · `sec:guide10:resources`
+# 13. Resource evidence · `sec:guide10-concept:resources`
 
 ## 13.1 Constructor measurements
 
@@ -1772,7 +1772,7 @@ No architecture default changes as a result of an isolated prototype measurement
 
 ---
 
-# 14. Acceptance criteria · `sec:guide10:acceptance`
+# 14. Acceptance criteria · `sec:guide10-concept:acceptance`
 
 ## 14.1 Constructor acceptance
 
@@ -1828,7 +1828,7 @@ No prototype is accepted unless:
 
 ---
 
-# 15. Rejection criteria · `sec:guide10:rejection`
+# 15. Rejection criteria · `sec:guide10-concept:rejection`
 
 Reject a constructor candidate if it:
 
@@ -1869,7 +1869,7 @@ Reject the Guide-10 gate if:
 
 ---
 
-# 16. Suggested implementation waves · `sec:guide10:waves`
+# 16. Suggested implementation waves · `sec:guide10-concept:waves`
 
 ## Wave 0 — Accept and close the blocking review register
 
@@ -2020,7 +2020,7 @@ Commit each coherent green wave promptly.
 
 ---
 
-# 17. Focused verification · `sec:guide10:verification`
+# 17. Focused verification · `sec:guide10-concept:verification`
 
 ## 17.1 Target contract
 
@@ -2119,7 +2119,7 @@ Every new tracked source joins its nearest `meson.build` census in the same comm
 
 ---
 
-# 18. Full batch gate · `gate:guide10:batch`
+# 18. Full batch gate · `gate:guide10-concept:batch`
 
 After the coherent batch:
 
@@ -2154,7 +2154,7 @@ The output must be empty.
 
 ---
 
-# 19. Identity and dependency impact · `sec:guide10:impact`
+# 19. Identity and dependency impact · `sec:guide10-concept:impact`
 
 Expected identity impact:
 
@@ -2216,7 +2216,7 @@ Any such dependency is reviewed under ADR-011 before adoption.
 
 ---
 
-# 20. Guide-10 exit checklist · `gate:guide10:exit`
+# 20. Guide-10 exit checklist · `gate:guide10-concept:exit`
 
 Guide 10 exits only when all applicable items hold.
 
@@ -2305,7 +2305,7 @@ Guide 10 exits only when all applicable items hold.
 
 ---
 
-# 21. Completion report template · `sec:guide10:report-template`
+# 21. Completion report template · `sec:guide10-concept:report-template`
 
 ```text
 Guide 10 result
@@ -2461,7 +2461,7 @@ Residuals:
 
 ---
 
-# 22. What follows Guide 10 · `sec:guide10:next`
+# 22. What follows Guide 10 · `sec:guide10-concept:next`
 
 Guide 10 does not complete Phase 3.
 
@@ -2502,6 +2502,6 @@ Guide 10 supplies mechanisms to later phases. It does not move those phases forw
 
 ---
 
-## One-line concept · `rem:guide10:one-line`
+## One-line concept · `rem:guide10-concept:one-line`
 
 > Guide 10 must prove, against an exact and self-validating native-evidence boundary, that Elements tapscript can preserve one metadata-dependent constructor across a state transition and can verify \(q=\lfloor a·b/d\rfloor\) exactly under the \(2^{51}\) amount domain—without emitting an attestation-contract operation, freezing an ABI, calibrating a bound, minting an identity, or weakening either relation when the target substrate is insufficient.
