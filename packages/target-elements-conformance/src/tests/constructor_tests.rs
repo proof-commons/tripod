@@ -31,6 +31,7 @@ use crate::constructor::metadata::{
     METADATA_BYTES, MetadataDefect, PrototypeMetadata, TransitionDefect,
 };
 use crate::constructor::tagged::{Digest32, sha256, tagged_hash};
+use crate::constructor::totality::{TotalityDefect, TweakTotalityPolicy, construct_under_policy};
 use crate::constructor::tree::{
     ConstructionDefect, FixtureTapTree, TreeDefect, TweakDefect, branch_hash, construct,
     control_block, leaf_hash, leaf_hash_of_version_byte, output_program, tweak, tweak_without_tree,
@@ -496,6 +497,7 @@ const fn representative() -> PrototypeMetadata {
         object_kind: 7,
         counter: 42,
         flags: 0x0000_0003,
+        nonce: 0,
     }
 }
 
@@ -512,6 +514,7 @@ fn a_metadata_encoding_round_trips_at_the_extremes() {
             object_kind: 0,
             counter: 0,
             flags: 0,
+            nonce: 0,
         },
         representative(),
         PrototypeMetadata {
@@ -519,6 +522,7 @@ fn a_metadata_encoding_round_trips_at_the_extremes() {
             object_kind: u32::MAX,
             counter: u64::MAX,
             flags: u32::MAX,
+            nonce: u32::MAX,
         },
     ] {
         let encoded = object.encode();
@@ -530,7 +534,7 @@ fn a_metadata_encoding_round_trips_at_the_extremes() {
 fn a_noncanonical_encoding_decodes_to_nothing() {
     let mut encoded = representative().encode();
     // A reserved byte that is not zero.
-    encoded[43] = 1;
+    encoded[47] = 1;
     assert_eq!(
         PrototypeMetadata::decode(&encoded),
         Err(MetadataDefect::ReservedFieldSet)
@@ -546,8 +550,8 @@ fn a_noncanonical_encoding_decodes_to_nothing() {
 
     // A short encoding.
     assert_eq!(
-        PrototypeMetadata::decode(&representative().encode()[..43]),
-        Err(MetadataDefect::WrongWidth { offered: 43 })
+        PrototypeMetadata::decode(&representative().encode()[..47]),
+        Err(MetadataDefect::WrongWidth { offered: 47 })
     );
 }
 
@@ -559,6 +563,134 @@ fn a_transition_moves_the_counter_and_nothing_else() {
     assert_eq!(after.schema, before.schema);
     assert_eq!(after.object_kind, before.object_kind);
     assert_eq!(after.flags, before.flags);
+}
+
+// -- Tweak totality -----------------------------------------------
+
+#[test]
+fn a_nonce_is_a_representation_and_not_a_state() {
+    // Both halves of what makes the retry policy admissible: two
+    // encodings of one state, and a nonce that cannot survive a
+    // transition (Guide-10 `rule:guide10:tweak-totality`).
+    let object = representative();
+    let rewritten = object.with_nonce(17);
+    assert!(object.same_state(&rewritten));
+    assert_ne!(object.encode(), rewritten.encode());
+
+    // The successor's counter does not depend on the nonce, and the
+    // nonce does not carry.
+    let from_zero = object.successor().expect("the counter has room");
+    let from_seventeen = rewritten.successor().expect("the counter has room");
+    assert!(from_zero.same_state(&from_seventeen));
+    assert_eq!(from_zero.encode(), from_seventeen.encode());
+    assert_eq!(from_zero.nonce, 0);
+}
+
+#[test]
+fn every_policy_constructs_an_ordinary_instance_on_the_first_attempt() {
+    let static_leaf = reviewed_leaf(b"operation");
+    for policy in [
+        TweakTotalityPolicy::RejectInstance,
+        TweakTotalityPolicy::CanonicalNonceRetry {
+            maximum_attempts: 8,
+        },
+        TweakTotalityPolicy::NamedNegligibleResidual,
+    ] {
+        let outcome = construct_under_policy(
+            &UNSPENDABLE_INTERNAL_KEY,
+            representative(),
+            &static_leaf,
+            policy,
+            |object| FixtureTapTree::branch(static_leaf.clone(), reviewed_leaf(&object.encode())),
+        )
+        .expect("an ordinary instance constructs");
+
+        assert_eq!(outcome.attempts(), 1, "{policy:?}");
+        assert_eq!(outcome.metadata().nonce, 0, "{policy:?}");
+    }
+}
+
+#[test]
+fn a_defect_no_nonce_can_repair_is_not_retried() {
+    // A tree that does not contain the executing leaf fails the same
+    // way for every nonce, so the retry policy declines rather than
+    // spinning through its bound.
+    let static_leaf = reviewed_leaf(b"operation");
+    let outcome = construct_under_policy(
+        &UNSPENDABLE_INTERNAL_KEY,
+        representative(),
+        &reviewed_leaf(b"not in the tree"),
+        TweakTotalityPolicy::CanonicalNonceRetry {
+            maximum_attempts: 1_000,
+        },
+        |object| FixtureTapTree::branch(static_leaf.clone(), reviewed_leaf(&object.encode())),
+    );
+
+    assert_eq!(
+        outcome,
+        Err(TotalityDefect::NotRepairableByRetry(
+            ConstructionDefect::Tree(TreeDefect::ExecutingLeafAbsent)
+        ))
+    );
+}
+
+#[test]
+fn the_corpus_measures_no_retry_and_claims_nothing_about_the_tail() {
+    // The measurement Guide-10 §9.12 asks for, and the honest reading
+    // of it.
+    //
+    // What is measured: over this corpus, every instance had an output
+    // key at nonce zero, so the retry policy and the reject policy are
+    // indistinguishable on everything anybody has constructed.
+    //
+    // What is NOT established: that a retry is never needed. An
+    // instance needs one when a hash of public data lands at or above
+    // the group order, which happens for roughly one input in 2^128. A
+    // corpus this size — or any size a test can run — cannot observe
+    // that even once, so a run of zero is exactly what a correct
+    // implementation and a broken one would both produce. The residual
+    // stays named rather than measured away
+    // (Guide-10 `rule:guide10:tweak-totality`).
+    let static_leaf = reviewed_leaf(b"operation");
+    let mut instances = 0_u32;
+    let mut retried = 0_u32;
+
+    for counter in 0..64_u64 {
+        for flags in [0_u32, 1, u32::MAX] {
+            for object_kind in [0_u32, 7] {
+                let object = PrototypeMetadata {
+                    schema: 1,
+                    object_kind,
+                    counter,
+                    flags,
+                    nonce: 0,
+                };
+                let outcome = construct_under_policy(
+                    &UNSPENDABLE_INTERNAL_KEY,
+                    object,
+                    &static_leaf,
+                    TweakTotalityPolicy::CanonicalNonceRetry {
+                        maximum_attempts: 64,
+                    },
+                    |written| {
+                        FixtureTapTree::branch(
+                            static_leaf.clone(),
+                            reviewed_leaf(&written.encode()),
+                        )
+                    },
+                )
+                .expect("every corpus instance constructs");
+
+                instances += 1;
+                if outcome.attempts() > 1 {
+                    retried += 1;
+                }
+            }
+        }
+    }
+
+    assert_eq!(instances, 384);
+    assert_eq!(retried, 0, "no corpus instance needed a retry");
 }
 
 #[test]
