@@ -14,6 +14,16 @@
 //! it must be declared a mock run, and the gate refuses such a run
 //! whatever the report says (Guide-9 §1.6, §11.8).
 //!
+//! It also answers tree-bearing requests, so that a validation test can
+//! drive both of a constructor case's outcomes without an Elements node.
+//! Materializing here means recomputing the stated construction with
+//! this package's own oracle and comparing the stated predecessor
+//! program and control block against what that oracle determines — no
+//! transaction is built and no target is consulted, so the answer is
+//! still the fixture's own expectation and still not evidence. A
+//! construction that does not check out, and every construction under
+//! the refusing behavior, is refused rather than answered.
+//!
 //! Under ADR-010 this command's stdout is protocol data, in the NDJSON
 //! form the harness's protocol documents.
 
@@ -25,12 +35,14 @@ use clap::{Parser, ValueEnum};
 use cli_common::{
     CommandExit, emit_control_plane_record, install_json_panic_hook, parse_args_from,
 };
+use target_elements_conformance::constructor::tree::construct;
 use target_elements_conformance::protocol::{
     ExecutorCapability, ExecutorEnvironmentObservation, ExecutorHandshake,
     MOCK_EXECUTOR_GENESIS_ID, MOCK_EXECUTOR_NETWORK_ID, NATIVE_PROTOCOL_SCHEMA,
     NativeExecutionRequest, NativeExecutionResponse, NativeResourceObservation, NativeVerdict,
     ObservedFailureClass, WireEnvironment, WireExecutionDomain,
 };
+use target_elements_conformance::prototype::{OutputRole, PrototypeConstruction};
 
 const COMMAND_NAME: &str = "mock-native-executor";
 
@@ -86,6 +98,11 @@ enum Behavior {
     TrailingBlankRecord,
     /// State no environment observation at all.
     MissingEnvironment,
+    /// Recompute a stated construction and answer the case where it
+    /// checks out.
+    MaterializeTree,
+    /// Refuse every stated construction as one it cannot build exactly.
+    RefuseTreeMaterialization,
 }
 
 /// How much filler an oversized record carries.
@@ -118,6 +135,13 @@ fn handshake(schema: u32) -> ExecutorHandshake {
             ExecutorCapability::FinalAltstackReporting,
             ExecutorCapability::FailureClassReporting,
             ExecutorCapability::TransactionContext,
+            // Advertised because this mock can recompute a stated
+            // construction with the package's own oracle and say whether
+            // the stated program and control block are the ones it
+            // determines. That is a check, not an execution: no
+            // transaction is built and no target is consulted, which is
+            // why a run against this mock is still not evidence.
+            ExecutorCapability::TreeMaterialization,
         ]),
     }
 }
@@ -318,15 +342,18 @@ fn echo(request: &NativeExecutionRequest, behavior: Behavior) -> NativeExecution
     };
 
     if behavior == Behavior::InfrastructureError {
-        return NativeExecutionResponse {
-            schema,
-            case: request.case,
-            verdict: NativeVerdict::InfrastructureError,
-            final_stack: None,
-            final_altstack: None,
-            observed_failure: None,
-            resources: NativeResourceObservation::default(),
-        };
+        return refusal(schema, request);
+    }
+
+    // A construction is a requirement to materialize one exact tree, so a
+    // case bearing one is answered only where this mock has checked it.
+    // Echoing the expectation for a construction it did not check would be
+    // the silent substitution the stated tree exists to prevent, and a
+    // refusal is not a target verdict.
+    if let Some(construction) = &request.construction
+        && !materializes(construction, behavior)
+    {
+        return refusal(schema, request);
     }
 
     // The fixture's own figures, echoed like everything else: the mock
@@ -385,6 +412,67 @@ fn echo(request: &NativeExecutionRequest, behavior: Behavior) -> NativeExecution
             resources,
         },
     }
+}
+
+/// One case refused, carrying no observation of any kind.
+///
+/// A refusal says the executor did not run the case. Every field
+/// describing what a target did is absent, because a run that did not
+/// happen observed nothing.
+fn refusal(schema: u32, request: &NativeExecutionRequest) -> NativeExecutionResponse {
+    NativeExecutionResponse {
+        schema,
+        case: request.case,
+        verdict: NativeVerdict::InfrastructureError,
+        final_stack: None,
+        final_altstack: None,
+        observed_failure: None,
+        resources: NativeResourceObservation::default(),
+    }
+}
+
+/// Whether this mock can account for the stated construction exactly.
+///
+/// # What the check is, and what it is not
+///
+/// The construction is recomputed with this package's own oracle, and
+/// the stated predecessor program and control block are compared against
+/// what that oracle determines. Nothing is executed: the mock builds no
+/// transaction, boots no node, and observes no target. So a construction
+/// that checks out lets the case be answered from the fixture's own
+/// expectation as every other case here is, and a run against this mock
+/// remains a mock run.
+///
+/// [`Behavior::RefuseTreeMaterialization`] answers false whatever the
+/// construction says, so that the refusal branch can be driven by a
+/// coherent fixture rather than only by a broken one.
+fn materializes(construction: &PrototypeConstruction, behavior: Behavior) -> bool {
+    if behavior != Behavior::MaterializeTree {
+        return false;
+    }
+    let Ok(built) = construct(
+        &construction.internal_key,
+        &construction.tree,
+        &construction.executing_leaf,
+    ) else {
+        return false;
+    };
+    if built.output_program() != construction.predecessor_program {
+        return false;
+    }
+    if let Some(stated) = &construction.control
+        && stated != built.control_block()
+    {
+        return false;
+    }
+    // A successor the transaction could not carry uniquely is one this
+    // mock has no single answer for either.
+    let successors = construction
+        .outputs
+        .iter()
+        .filter(|output| output.role == OutputRole::Successor)
+        .count();
+    successors == 1 && construction.outputs.len() == 1
 }
 
 /// The requested case, with its ordinal moved on by one.
