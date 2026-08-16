@@ -261,14 +261,29 @@ never as a plausible neighbour.
   Invalid Schnorr signature size                         invalid_signature
   Script failed an OP_CHECKSIGVERIFY operation           empty_signature
   Arithmetic opcode error                                fixed_width_conversion_refused
+  Script failed an OP_VERIFY operation                   false_verification
+  Script failed an OP_EQUALVERIFY operation              unequal_operands
+  Script failed an OP_NUMEQUALVERIFY operation           unequal_operands
   Stack size limit exceeded                              unmapped
   Script is too big                                      unmapped
   Operation limit exceeded                               unmapped
-  Script failed an OP_VERIFY operation                   unmapped
-  Script failed an OP_EQUALVERIFY operation              unmapped
-  Script failed an OP_NUMEQUALVERIFY operation           unmapped
   Invalid Schnorr signature hash type                    unmapped
   Invalid Taproot control block size                     unmapped
+
+The three verify failures were unmapped until a compound-prototype run
+reached them, and leaving them so was not the conservative choice it looked
+like. The harness names both classes exactly -- one for a verifying
+comparison whose operands were not equal, one for a verified operand that
+was the target's false -- so reporting neither was reporting less than was
+observed. It was also unanswerable: this adapter advertises failure-class
+reporting, and the harness refuses a rejection that names no class from an
+executor that said it distinguishes them. A composed proof rejects through
+exactly these opcodes, so every refusing row of both prototype matrices
+would have been refused as a malformed response rather than read as the
+target verdict it is.
+
+The five that remain unmapped are unmapped because the harness's vocabulary
+names no class for them, which is a different statement and stays one.
 
 Four of those entries are worth naming, because they were settled by reading
 the interpreter rather than by guessing at a string:
@@ -443,6 +458,14 @@ FAILURE_CLASS_BY_SCRIPT_ERROR = {
     # those as separate causes. Reporting either would name a cause this
     # adapter did not observe.
     "Arithmetic opcode error": "fixed_width_conversion_refused",
+    # The two verifying comparisons, which the harness names exactly. A
+    # composed proof rejects through these more often than through anything
+    # else: every equality a schedule verifies is one of them.
+    "Script failed an OP_EQUALVERIFY operation": "unequal_operands",
+    "Script failed an OP_NUMEQUALVERIFY operation": "unequal_operands",
+    # A verified operand that was the target's false, which is what an
+    # unsatisfied arithmetic success flag becomes.
+    "Script failed an OP_VERIFY operation": "false_verification",
 }
 
 
