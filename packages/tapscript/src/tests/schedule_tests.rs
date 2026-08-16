@@ -446,6 +446,193 @@ fn a_slice_whose_length_the_program_did_not_fix_stays_unsettled() {
     );
 }
 
+/// An arbitrary byte string, as an instruction.
+fn raw(bytes: Vec<u8>) -> TapscriptInstruction {
+    let target = reviewed_target();
+    TapscriptInstruction::Push(StackItem::new(&target, bytes).expect("within the literal bound"))
+}
+
+#[test]
+fn a_boolean_verdict_does_not_enter_the_arithmetic_domain() {
+    // The Wave-3 residual, stated exactly.
+    //
+    // A comparison pushes the target's truth value, and every
+    // fixed-width arithmetic primitive takes eight-byte operands. So a
+    // verdict cannot be added, multiplied, or otherwise combined with
+    // another verdict: the composition is a typed refusal, not a
+    // narrower result.
+    //
+    // Every scheme that orders two digests by comparing them chunk by
+    // chunk and combining the per-chunk verdicts arithmetically dies
+    // here. The repair below is not a widening primitive; it is a
+    // construction that never produces a second verdict to combine.
+    let target = reviewed_target();
+    let program = TapscriptProgram::new(vec![op(OpcodeId::LessThan64), op(OpcodeId::Add64)])
+        .expect("the schedule is within the limit");
+    let initial = AbstractStackState::from_main(vec![signed64(), signed64(), signed64()]);
+
+    assert!(
+        validate_program(
+            &target,
+            &program,
+            &initial,
+            AbstractLimits::for_target(&target),
+        )
+        .is_err(),
+        "a truth value does not satisfy a fixed-width arithmetic operand"
+    );
+}
+
+#[test]
+fn one_verdict_is_consumed_where_it_is_produced() {
+    // The shape the repair relies on. A single comparison feeding the
+    // verification that consumes it needs no widening at all: the
+    // verdict never becomes an operand of anything, so the domain it
+    // cannot enter is never entered.
+    let result = schedule(
+        vec![op(OpcodeId::LessThan64), op(OpcodeId::Verify)],
+        &AbstractStackState::from_main(vec![signed64(), signed64()]),
+    );
+
+    assert_eq!(result.success(), &states(&[Vec::new()]));
+    assert!(result.nonaborting_failure().is_empty());
+
+    let mut expected = domain_abort();
+    expected.insert(FailureCause::FalseVerification);
+    assert_eq!(result.aborts(), &expected);
+}
+
+#[test]
+fn a_witnessed_number_is_pinned_to_one_digest_byte() {
+    // The step that replaces the missing widening
+    // (Guide-10 `rule:guide10:tapbranch-order`).
+    //
+    // A single byte of a digest cannot be read as a number: the
+    // reviewed widening conversion takes four bytes, and nothing
+    // narrows one. So the caller witnesses the byte's numeric form and
+    // the program *proves* it: the script-number conversion produces a
+    // canonical eight-byte value, its low byte must equal the digest
+    // byte at the witnessed index, and its remaining seven bytes must
+    // be zero.
+    //
+    // The zero tail is what makes the witness harmless. It pins the
+    // number into `0..=255`, so a caller cannot offer a negative or
+    // oversized value and win a comparison the bytes do not support.
+    let result = schedule(
+        vec![
+            // The digest byte at the witnessed index. The length is a
+            // literal, so the slice's width is settled even though its
+            // offset is not.
+            number(1),
+            op(OpcodeId::Substring),
+            op(OpcodeId::Swap),
+            op(OpcodeId::ScriptNumToLe64),
+            // Seven zero bytes above the low one.
+            op(OpcodeId::Duplicate),
+            number(1),
+            number(7),
+            op(OpcodeId::Substring),
+            raw(vec![0; 7]),
+            op(OpcodeId::EqualVerify),
+            // The low byte is the digest byte.
+            op(OpcodeId::Duplicate),
+            number(0),
+            number(1),
+            op(OpcodeId::Substring),
+            op(OpcodeId::Rotate),
+            op(OpcodeId::EqualVerify),
+        ],
+        // Deepest first: the witnessed number, the digest, the
+        // witnessed index.
+        &AbstractStackState::from_main(vec![
+            StackValueType::ScriptNumber,
+            literal(32),
+            StackValueType::ScriptNumber,
+        ]),
+    );
+
+    // The pinned value, in the domain the comparison accepts.
+    assert_eq!(result.success(), &states(&[vec![signed64()]]));
+    assert!(result.nonaborting_failure().is_empty());
+}
+
+#[test]
+fn an_orientation_limb_is_pinned_to_the_two_admissible_masks() {
+    // The other half of the repair: which way round the two children
+    // go is a witness, and this is the check that leaves it exactly two
+    // choices.
+    //
+    // The limb `m` must satisfy `m * (m + 1) = 0`, whose only integer
+    // roots are `0` and `-1` — the all-zero and all-ones eight-byte
+    // masks. A limb outside that pair either fails the equality or
+    // overflows the multiplication, and the overflow path pushes a
+    // false that the verification then aborts on, so neither survives.
+    //
+    // Repeated into a thirty-two byte mask, those two values select
+    // between the two child orders with no conditional branch: one
+    // leaves the pair alone and the other exchanges it.
+    let result = schedule(
+        vec![
+            op(OpcodeId::Duplicate),
+            op(OpcodeId::Duplicate),
+            value(1),
+            op(OpcodeId::Add64),
+            op(OpcodeId::Verify),
+            op(OpcodeId::Mul64),
+            op(OpcodeId::Verify),
+            value(0),
+            op(OpcodeId::EqualVerify),
+        ],
+        &AbstractStackState::from_main(vec![signed64()]),
+    );
+
+    assert_eq!(result.success(), &states(&[vec![signed64()]]));
+    assert!(result.nonaborting_failure().is_empty());
+
+    let mut expected = domain_abort();
+    expected.insert(FailureCause::FalseVerification);
+    expected.insert(FailureCause::UnequalOperands);
+    assert_eq!(result.aborts(), &expected);
+}
+
+#[test]
+fn no_reviewed_primitive_reads_below_the_third_item() {
+    // The constraint that governs every schedule in this file, stated
+    // once and machine-checked.
+    //
+    // The reviewed census has no positional copy, no positional move,
+    // and no alternate-stack transfer. So the deepest item any
+    // primitive can read is the third, and a value a program must keep
+    // while it consumes something beneath it has to be kept within
+    // reach of that window. It is a property of the reviewed contracts
+    // rather than a convention, and it is what decides whether a
+    // compound proof can be scheduled at all.
+    let target = reviewed_target();
+    let deepest = target
+        .definition()
+        .opcodes()
+        .values()
+        .map(|spec| spec.stack().operands().len())
+        .max()
+        .expect("the reviewed contract states at least one primitive");
+
+    assert_eq!(
+        deepest, 3,
+        "no reviewed primitive declares a fourth operand"
+    );
+
+    // And nothing moves an item to or from the alternate stack, so the
+    // window cannot be widened by parking a value.
+    for spec in target.definition().opcodes().values() {
+        for case in spec.stack().success().cases() {
+            assert!(
+                case.effect().consumed_operands() <= 3,
+                "a reviewed primitive consumes at most the top three items"
+            );
+        }
+    }
+}
+
 #[test]
 fn a_chunk_of_each_digest_is_compared_end_to_end() {
     // The Wave-3 finding, composed: read the same four-byte chunk out
