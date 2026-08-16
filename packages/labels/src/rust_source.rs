@@ -17,7 +17,7 @@ use crate::{
     source::{SourceLocation, relative_to},
 };
 
-pub const MODEL_TYPES: &[&str] = &["def", "rule", "thm", "test", "branch", "proto", "lst"];
+pub const MODEL_TYPES: &[&str] = &["def", "rule", "thm", "test", "branch", "proto", "listing"];
 pub const REALIZATION_TYPES: &[&str] = &[
     "sec", "subsec", "app", "req", "inv", "lem", "obl", "trap", "rem", "intuit", "pin", "res",
     "fig", "tbl", "leaf",

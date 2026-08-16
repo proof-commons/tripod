@@ -102,7 +102,7 @@
   "def:verification:validated-chain-view",
   "def:verification:wallets",
   "def:verification:world",
-  "lst:verification:property-owner-helpers",
+  "listing:verification:property-owner-helpers",
   "proto:operations:create-request",
   "proto:operations:transfer",
   "proto:state:genesis",
