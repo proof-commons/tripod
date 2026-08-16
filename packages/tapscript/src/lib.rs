@@ -46,6 +46,129 @@
 //! the target contract names remains unresolved, and no complete
 //! backend proof pattern exists — the last of those is enforced by an
 //! uninhabited pattern identity rather than by convention.
+//!
+//! # Public modules
+//!
+//! - [`instruction`] — [`TapscriptInstruction`], the typed instruction,
+//!   and [`StackItem`], the checked literal it pushes. There is no raw
+//!   opcode, no raw instruction, and no raw program in the safe API.
+//! - [`program`] — [`TapscriptProgram`], the validated instruction
+//!   sequence, with the exact serializer
+//!   ([`TapscriptProgram::encode`]) and the reviewed-subset parser
+//!   ([`TapscriptProgram::decode`]) that is this crate's one entry
+//!   point for untrusted bytes.
+//! - [`stack`] — the abstract stack validator: [`validate_program`],
+//!   its [`AbstractStackState`] input, its [`AbstractLimits`] work
+//!   budget, its three-set [`AbstractExecutionResult`], and
+//!   [`resource_projection`].
+//! - [`capability`] — the adapter proper:
+//!   [`assess_static_capability`], [`assess_evidence_role`],
+//!   [`assess_requirements`], and [`assess_complete_census`], returning
+//!   the multi-state [`StaticCapabilityAssessment`] and
+//!   [`ExternalEvidenceAssessment`] carried together in a
+//!   [`TargetAssessmentSet`].
+//! - [`error`] — [`TapscriptError`], the crate's single error root.
+//!
+//! Every entry point in the crate takes the reviewed static contract,
+//! `target_elements::ReviewedElementsTapscriptDefinition`, obtained from
+//! `target_elements::reviewed_elements_tapscript`. That type has no
+//! public constructor, so a caller cannot substitute a contract of its
+//! own at this boundary.
+//!
+//! # Quickstart: build a program, round-trip it, validate it
+//!
+//! ```
+//! use tapscript::{
+//!     AbstractLimits, AbstractStackState, StackItem, TapscriptInstruction, TapscriptProgram,
+//!     validate_program,
+//! };
+//! use target_elements::{FailureCause, OpcodeId, StackValueType, reviewed_elements_tapscript};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // The reviewed static contract is the input of everything here.
+//! let target = reviewed_elements_tapscript().expect("the reviewed contract validates");
+//!
+//! // Programs are built from reviewed primitive identities and checked
+//! // literals. No raw byte enters by this path.
+//! let program = TapscriptProgram::new(vec![
+//!     TapscriptInstruction::Push(StackItem::script_number(&target, 7)?),
+//!     TapscriptInstruction::Push(StackItem::script_number(&target, 7)?),
+//!     TapscriptInstruction::Opcode(OpcodeId::Equal),
+//! ])?;
+//!
+//! // The serializer resolves every opcode byte and push form from the
+//! // contract, and the parser accepts exactly the reviewed subset back.
+//! let bytes = program.encode(&target);
+//! assert_eq!(TapscriptProgram::decode(&target, &bytes)?, program);
+//!
+//! // The validator answers three sets, never one Boolean.
+//! let result = validate_program(
+//!     &target,
+//!     &program,
+//!     &AbstractStackState::from_main(Vec::new()),
+//!     AbstractLimits::for_target(&target),
+//! )?;
+//!
+//! // One clean state, holding the Boolean the comparison pushed.
+//! assert_eq!(result.success().len(), 1);
+//! assert_eq!(
+//!     result.success().iter().next().expect("one state").main(),
+//!     &[StackValueType::Bool],
+//! );
+//!
+//! // No failure pushed a false and carried on here.
+//! assert!(result.nonaborting_failure().is_empty());
+//!
+//! // Abort causes are retained rather than dismissed: nothing in the
+//! // abstract state rules out the target refusing the execution
+//! // domain, so the cause stays in the answer.
+//! assert!(
+//!     result
+//!         .aborts()
+//!         .contains(&FailureCause::UnsupportedExecutionDomain),
+//! );
+//! assert!(!result.always_aborts());
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Quickstart: assess what this target obliges a backend to do
+//!
+//! ```
+//! use compiler::target::RequiredCapability;
+//! use tapscript::{AssessmentDisposition, assess_complete_census};
+//! use target_elements::reviewed_elements_tapscript;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let target = reviewed_elements_tapscript().expect("the reviewed contract validates");
+//! let assessed = assess_complete_census(&target)?;
+//!
+//! let owner = assessed
+//!     .capability_assessment(RequiredCapability::OwnerAuthorization)
+//!     .expect("the census covers every compiler capability");
+//!
+//! // A multi-state answer: the sighash construction was not reached by
+//! // the review, so the prerequisites are not established.
+//! assert_eq!(
+//!     owner.disposition(),
+//!     AssessmentDisposition::MissingTargetPrimitives,
+//! );
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Errors
+//!
+//! Every fallible operation returns [`TapscriptError`], which is a
+//! `std::error::Error`. Its variants fall into four families: literal
+//! and encoding refusals from the [`StackItem`] constructors, parse
+//! refusals from [`TapscriptProgram::decode`], abstract-validation and
+//! work-budget refusals from [`validate_program`], and census
+//! disagreements from the assessment entry points. Each entry point's
+//! own `# Errors` section names the exact variants it can return.
+//!
+//! Worked examples, the full public-API tour, and the boundary
+//! discussion are in the package README.
 
 #![forbid(unsafe_code)]
 
