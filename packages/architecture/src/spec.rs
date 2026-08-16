@@ -414,6 +414,9 @@ pub const DOCUMENT: DocumentSpec = DocumentSpec {
         // sha256 over the newline-joined sorted distinct Layer-0 anchor
         // names harvested from the document's §17 index (A- prefix
         // stripped): the pin ceremony of `rem:overview:anchor-pin`.
+        // Recomputed 2026-08-16 for the ADR-020 kind migration: the
+        // anchor set is the same 38 anchors, renamed. A rename of label
+        // values is a source correction, never silent formatting.
         anchor_set_hash: Some([
             0xb0, 0xca, 0xfa, 0xa4, 0x8a, 0xc2, 0xed, 0x38, 0x89, 0x84, 0xf6, 0xa2, 0xd7, 0x57,
             0xa0, 0x11, 0xa9, 0xc8, 0x65, 0x4a, 0xcf, 0x22, 0x4f, 0x5f, 0x64, 0x51, 0x6f, 0x26,
