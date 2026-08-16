@@ -13,3 +13,6 @@ document_stamps_source_files = files(
 # subjects. The census audit accepts the exclusion only because it is
 # declared here.
 document_stamps_excluded_files = files('tests/subprocess_contract.rs')
+
+# Crate documentation (DOC owner).
+document_stamps_doc_files = files('README.md')
