@@ -252,6 +252,31 @@ pub enum ExecutorCapability {
     TreeMaterialization,
 }
 
+impl ExecutorHandshake {
+    /// Whether this executor may be sent a tree-bearing request.
+    ///
+    /// # The gate that keeps the protocol revision at 2
+    ///
+    /// A tree-bearing request carries a field a schema-2 executor has
+    /// never seen, and its strict framing would reject the whole
+    /// message. That is only safe because no such executor is ever sent
+    /// one, and this predicate is where that is decided rather than
+    /// assumed: a construction goes out only to an executor that said it
+    /// can materialize a tree exactly
+    /// (Guide-10 `rule:guide10:schema-migration`).
+    ///
+    /// It is the executor's own claim, like every other capability here.
+    /// An executor that advertises this and then approximates a tree is
+    /// dishonest, and the fixture's stated values are what catches that
+    /// — the capability decides what may be *sent*, never what is
+    /// believed about the answer.
+    #[must_use]
+    pub fn materializes_trees(&self) -> bool {
+        self.capabilities
+            .contains(&ExecutorCapability::TreeMaterialization)
+    }
+}
+
 /// The harness's opening message.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

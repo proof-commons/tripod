@@ -391,6 +391,23 @@ fn a_tree_bearing_request_round_trips() {
 }
 
 #[test]
+fn an_executor_that_did_not_advertise_a_tree_is_not_sent_one() {
+    // The gate that keeps the protocol revision at 2, exercised rather
+    // than described. Without it the additive field would reach an
+    // executor whose strict framing rejects the whole message.
+    let mut handshake = crate::tests::support::nonmock_handshake();
+    handshake
+        .capabilities
+        .remove(&ExecutorCapability::TreeMaterialization);
+    assert!(!handshake.materializes_trees());
+
+    handshake
+        .capabilities
+        .insert(ExecutorCapability::TreeMaterialization);
+    assert!(handshake.materializes_trees());
+}
+
+#[test]
 fn tree_materialization_is_an_advertised_capability() {
     // A tree-bearing request goes only to an executor that said it can
     // build one. That is what makes the additive field safe for a
