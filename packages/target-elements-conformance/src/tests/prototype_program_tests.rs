@@ -259,6 +259,45 @@ fn the_resource_profile_does_not_move_with_the_metadata_or_the_parity() {
 }
 
 #[test]
+fn the_emitted_program_does_not_yet_carry_the_metadata_transition() {
+    // The residual this wave found and did not close, recorded as a
+    // checked absence rather than left for a reader to notice.
+    //
+    // The metadata transition proof — the counter incremented by exactly
+    // one, every other field pinned, both reserved fields zero —
+    // schedules on its own, and so does the continuity proof. Composing
+    // them into one program is not currently expressible: the transition
+    // needs the two metadata objects adjacent, the continuity proof
+    // needs the one static root between them so it can outlive both
+    // derivations, and no reviewed primitive reaches past the third item
+    // to reorder them.
+    //
+    // So the emitted program proves that two constructors share one
+    // static root, and it does not prove that the successor's metadata
+    // is the predecessor's successor. The counter increment is the
+    // visible marker of that gap: the transition is the only part of the
+    // construction that does arithmetic, and this program does none.
+    let program = prototype();
+    let arithmetic = program
+        .program()
+        .instructions()
+        .iter()
+        .filter(|instruction| {
+            matches!(
+                instruction,
+                TapscriptInstruction::Opcode(
+                    OpcodeId::Add64 | OpcodeId::Sub64 | OpcodeId::Mul64 | OpcodeId::Div64
+                )
+            )
+        })
+        .count();
+    assert_eq!(
+        arithmetic, 0,
+        "the transition proof is not composed into the continuity program"
+    );
+}
+
+#[test]
 fn a_prototype_program_compares_by_its_typed_content() {
     // Two independently constructed prototypes are equal, and equality
     // is the whole comparison: there is no digest of a prototype
