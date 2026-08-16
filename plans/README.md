@@ -70,6 +70,7 @@ Imported citations are linted under
 | [`phases/`](phases/README.md) | Phase entry conditions, deliverables, evidence, and exit gates. |
 | [`research/`](research/README.md) | Unresolved prototype-driven questions. |
 | [`reference/`](reference/README.md) | External technical reference material. |
+| [`drafts/`](drafts/README.md) | Archived adopted-source normative drafts awaiting integration. |
 | [`guides/`](guides/README.md) | Archived executed and concept implementation guides. |
 | [`reviews/`](reviews/README.md) | Archived static reviews of named repository trees. |
 
@@ -120,6 +121,7 @@ duplication rather than content, and the budget keeps one fact to one owner.
 Archived documents — the verbatim records under:
 
 ```text
+plans/drafts/
 plans/guides/
 plans/reviews/
 ```

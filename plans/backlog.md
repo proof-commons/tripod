@@ -1696,7 +1696,36 @@ typed-boundary or correctness repair.
 
 ---
 
-## 13. Backlog hygiene · `sec:backlog:hygiene`
+## 13. Adopted-draft integration queue · `sec:backlog:drafts`
+
+Four externally authored normative drafts were accepted 2026-08-16 and
+archived verbatim under [plans/drafts/](drafts/README.md): the label
+calculus, the environment-kind registry, the identity-adjudication
+procedure, and the interchange conventions. Integration is chartered as
+its own batch; the drafts bind nothing until the integrating changes
+land. The user has ruled that a superseded ADR is deleted, not kept
+marked superseded: retired records belong to Git history, not the
+active tree.
+
+### 13.1 Integration tasks · `tbl:backlog:draft-tasks`
+
+| ID | Status | Task |
+|---|---|---|
+| `DI-001` | ACTIVE | Gap census: map each draft clause onto the present ADR-012/ADR-013 text, the ADR-016 identity rules, and the implemented labels package; classify every clause as already-implemented, divergent, or new; record the checker-engineering findings register. |
+| `DI-002` | QUEUED | Adopt the label calculus and the kind registry as ADRs; delete the ADR text they retire; reconcile every repository label and citation the adoption invalidates. |
+| `DI-003` | QUEUED | Re-engineer the labels checker to the calculus: a single participation scanner shared by every check (mints, citations, links, hygiene, inline-code discipline), owner signatures with registered prefixes, imported and synthetic citations, anchor harvests, and the kind registry as the checker's kind vocabulary. |
+| `DI-004` | QUEUED | Adopt the identity-adjudication procedure against ADR-016: classify every existing digest through the benefit criterion, record admission records or retire digests, and align the identity-register prose. |
+| `DI-005` | QUEUED | Interchange conventions: record adoption as the standing wire-format discipline for future externally consumed documents; no implementation until a consumer exists. |
+
+### 13.2 Checker findings so far · `tbl:backlog:draft-findings`
+
+| ID | Status | Finding |
+|---|---|---|
+| `DI-F01` | DONE | The plans-tree link scanner read bracketed patterns inside fenced blocks as Markdown links, so a CDDL regex in an archived draft failed as a broken link. Fenced interiors are now blanked before link scanning; the systematic single-scanner repair remains DI-003. |
+| `DI-F02` | ACTIVE | Participation is enforced inconsistently across checks: the label scanner honors fences, the link scanner did not, and the scaffolding, placeholder, and confidence hygiene checks still scan fenced material. One participation model must feed every check. |
+| `DI-F03` | ACTIVE | The calculus's owner signatures, imported-citation prefixes, synthetic citations, anchor harvests, and acute-delimiter hard failure are only partially realized in the present checker; the gap census of DI-001 owns the exact delta. |
+
+## 14. Backlog hygiene · `sec:backlog:hygiene`
 
 ### 13.1 Adding work · `rule:backlog:add`
 
@@ -1752,6 +1781,6 @@ After a phase or remediation series:
 
 ---
 
-## 14. One-line backlog · `rem:backlog:one-line`
+## 15. One-line backlog · `rem:backlog:one-line`
 
 > Settle the STATE-constructor, wide-arithmetic, and declassification prototypes on the evidenced primitive substrate, without emitting operations, completing backend patterns, minting speculative identities, or claiming production activation.
