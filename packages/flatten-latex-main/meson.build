@@ -13,3 +13,6 @@ flatten_latex_main_source_files = files(
 # subjects. The census audit accepts the exclusion only because it is
 # declared here.
 flatten_latex_main_excluded_files = files('tests/subprocess_contract.rs')
+
+# Crate documentation (DOC owner).
+flatten_latex_main_doc_files = files('README.md')
