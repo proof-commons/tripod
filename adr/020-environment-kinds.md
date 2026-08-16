@@ -81,8 +81,12 @@ lists in the same commit so the gate never went red.
 
 ## Local-extension register · `tab:kinds:extensions`
 
-Kinds this repository uses that the registry does not carry. Each was
-checked against the whole registry for token and concept distinctness.
+Kinds this repository uses that the registry does not carry, across the
+surfaces this record governs: the planning tree, the decision records,
+the documentation tree, and the Rust packages. Each was checked against
+the whole registry for token and concept distinctness. The attestation LaTeX
+surface is not yet in scope and carries three further tokens, named
+under the consequences below.
 
 | Kind | Genre it names |
 |---|---|
