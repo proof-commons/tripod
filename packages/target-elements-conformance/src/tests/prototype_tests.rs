@@ -389,14 +389,22 @@ fn a_fixture_stated_against_another_contract_revision_is_refused() {
 // -- The claim vocabulary -----------------------------------------
 
 #[test]
-fn every_constructor_claim_belongs_to_the_constructor_relation() {
+fn every_claim_belongs_to_exactly_one_relation() {
+    // The registry now carries both relations' claims, so the property
+    // is a partition rather than a constant: every claim names one
+    // relation, both relations are named, and no claim of one is
+    // reachable as coverage of the other.
+    let mut constructor = 0_usize;
+    let mut wide_floor = 0_usize;
     for claim in PrototypeClaim::ALL {
-        assert_eq!(
-            claim.relation(),
-            PrototypeRelation::MetadataConstructorContinuity,
-            "{claim:?}"
-        );
+        match claim.relation() {
+            PrototypeRelation::MetadataConstructorContinuity => constructor += 1,
+            PrototypeRelation::WideFloorRelation => wide_floor += 1,
+        }
     }
+    assert_eq!(constructor + wide_floor, PrototypeClaim::ALL.len());
+    assert!(constructor > 0);
+    assert!(wide_floor > 0);
 }
 
 #[test]

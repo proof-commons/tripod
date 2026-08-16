@@ -32,6 +32,20 @@ fn matrix() -> Vec<CompoundPrototypeFixture> {
     constructor_case_matrix(&target()).expect("the constructor matrix is determined")
 }
 
+/// The claims this relation owns.
+///
+/// The registry carries both prototypes' claims, and a matrix answers
+/// only for its own: demanding a wide-floor bearing case of a
+/// constructor row would be demanding coverage of a relation these rows
+/// do not state (Guide-10 `rule:guide10:claim-coverage`).
+fn constructor_claims() -> Vec<PrototypeClaim> {
+    PrototypeClaim::ALL
+        .iter()
+        .copied()
+        .filter(|claim| claim.relation() == PrototypeRelation::MetadataConstructorContinuity)
+        .collect()
+}
+
 #[test]
 fn every_row_states_a_coherent_case() {
     // The fixture language's own rules, applied to every row: the tree
@@ -186,9 +200,9 @@ fn every_declared_claim_has_a_bearing_case() {
     let matrix = matrix();
     let bearing = bearing_cases(&matrix);
 
-    for claim in PrototypeClaim::ALL {
+    for claim in constructor_claims() {
         let cases = bearing
-            .get(claim)
+            .get(&claim)
             .unwrap_or_else(|| panic!("{claim:?} has a bearing case"));
         assert!(!cases.is_empty());
     }
@@ -204,7 +218,7 @@ fn every_claim_is_borne_by_a_refusal_as_well_as_an_acceptance() {
     // such: the metadata leaf is fail-closed, so every case bearing on it
     // is a refusal and an accepting one would be the defect.
     let matrix = matrix();
-    for claim in PrototypeClaim::ALL.iter().copied() {
+    for claim in constructor_claims() {
         let bearing: Vec<&CompoundPrototypeFixture> = matrix
             .iter()
             .filter(|fixture| fixture.claims.contains(&claim))
