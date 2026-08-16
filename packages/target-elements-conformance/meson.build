@@ -4,6 +4,7 @@
 # meson.build accumulates this list into its role group.
 target_elements_conformance_source_files = files(
   'src/bin/check-target-elements-native.rs',
+  'src/bin/check-target-elements-prototypes.rs',
   'src/bin/mock-native-executor.rs',
   'src/census/author.rs',
   'src/census/compound.rs',
@@ -35,6 +36,8 @@ target_elements_conformance_source_files = files(
   'src/protocol.rs',
   'src/prototype.rs',
   'src/prototype_program.rs',
+  'src/prototype_report.rs',
+  'src/prototype_validate.rs',
   'src/report.rs',
   'src/tests/canonical_tests.rs',
   'src/tests/census_tests.rs',

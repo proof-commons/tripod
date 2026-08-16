@@ -6,7 +6,9 @@
 
 use std::collections::BTreeSet;
 
-use target_elements::{LeafVersion, ReviewedElementsTapscriptDefinition};
+use target_elements::{
+    LeafVersion, ReviewedElementsTapscriptDefinition, reviewed_elements_tapscript,
+};
 
 use crate::claim::ClaimRequirement;
 use crate::constructor::internal_key::UNSPENDABLE_INTERNAL_KEY;
@@ -408,21 +410,35 @@ fn every_claim_belongs_to_exactly_one_relation() {
 }
 
 #[test]
-fn every_constructor_claim_is_unresolved_with_a_stated_reason() {
-    // The honest state of this wave: the language and the reference
-    // oracle exist, and no executed case bears on any constructor claim
-    // yet. Unresolved is not success and is not failure -- it is the
-    // project saying which corner it has not established, in a form a
-    // reader can enumerate (Guide-10 `rule:guide10:claim-registry`).
+fn every_prototype_claim_is_required_and_reachable() {
+    // These claims were unresolved for as long as no runner existed to
+    // ask an executor for a verdict. One exists now, both matrices are
+    // executed through it, and every claim has bearing cases among its
+    // own matrix's rows -- so there is no corner here the census cannot
+    // reach, and recording one as unresolved would say the project did
+    // not attempt what it did (Guide-10 `rule:guide10:claim-registry`).
+    let target = reviewed_elements_tapscript().expect("the reviewed contract validates");
+    let constructor = crate::prototype::constructor_case_matrix(&target)
+        .expect("the constructor matrix is authored");
+    let wide_floor = crate::prototype::wide_floor_case_matrix(&target)
+        .expect("the wide-floor matrix is authored");
+
+    let mut borne: BTreeSet<PrototypeClaim> = BTreeSet::new();
+    for fixture in constructor.iter().chain(&wide_floor) {
+        borne.extend(fixture.claims.iter().copied());
+    }
+
     for claim in PrototypeClaim::ALL {
         match claim.requirement() {
-            ClaimRequirement::Unresolved(reason) => {
-                assert!(!reason.is_empty(), "{claim:?}");
-            }
-            ClaimRequirement::Required => {
-                panic!("{claim:?} is recorded as required, but no case can bear on it yet")
+            ClaimRequirement::Required => {}
+            ClaimRequirement::Unresolved(_) => {
+                panic!("{claim:?} is unresolved, but its matrix has rows bearing on it")
             }
         }
+        assert!(
+            borne.contains(claim),
+            "{claim:?} is required and no matrix row bears on it",
+        );
     }
 }
 

@@ -42,10 +42,15 @@
 //!
 //! Every row's outcome is a target verdict. The mock executor recomputes
 //! constructions and echoes fixtures' own expectations, which is enough
-//! to check that a fixture is answerable and nothing else. Until a
-//! native run answers these rows, every claim below stays unresolved.
+//! to check that a fixture is answerable and nothing else.
+//!
+//! These rows are answered by a native run: `check-target-elements-
+//! prototypes` drives this matrix through the reviewed executor and the
+//! prototype gate reads the result, which is why every claim here is now
+//! required rather than unresolved.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
 use target_elements::ReviewedElementsTapscriptDefinition;
 
@@ -102,6 +107,35 @@ pub enum ConstructorMatrixDefect {
     /// No predecessor of either output-key parity was found within the
     /// counters the matrix searches.
     ParityNotFound,
+}
+
+impl fmt::Display for ConstructorMatrixDefect {
+    /// The defect, spelled for a command's typed diagnostic.
+    ///
+    /// Every spelling says the matrix could not be authored and names
+    /// which of this package's own parts did not determine a row. None
+    /// of them describes a target: a command reporting one is reporting
+    /// that this repository's contract and its oracle disagree, which is
+    /// a first-party defect to fix rather than a finding about anything
+    /// executed (ADR-010 `[ADR010-rule:output:data-classification]`).
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let text = match self {
+            Self::ProgramNotAdmitted => {
+                "the constructor prototype's program is not admitted against the reviewed \
+                 contract, so there is no operation leaf to build a tree from"
+            }
+            Self::InstanceNotConstructible => {
+                "a metadata object has no canonically ordered instance"
+            }
+            Self::TransitionNotAvailable => "a metadata object has no successor",
+            Self::LeafNotExpressible => "the metadata leaf script is not expressible",
+            Self::ParityNotFound => {
+                "no predecessor of either output-key parity was found within the counters the \
+                 matrix searches"
+            }
+        };
+        formatter.write_str(text)
+    }
 }
 
 /// One predecessor instance and the successor it advances to.

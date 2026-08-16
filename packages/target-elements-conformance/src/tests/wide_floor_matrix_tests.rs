@@ -222,14 +222,17 @@ fn each_claim_is_borne_by_the_verdict_it_is_about() {
 }
 
 #[test]
-fn no_claim_is_resolved_before_a_native_run() {
+fn every_wide_floor_claim_is_required() {
+    // This asserted the opposite for as long as no runner existed to
+    // execute the matrix. One exists now, so a claim recorded as
+    // unresolved would be the project understating what it attempted.
     for claim in wide_floor_claims() {
         assert!(
             matches!(
                 claim.requirement(),
-                crate::claim::ClaimRequirement::Unresolved(_)
+                crate::claim::ClaimRequirement::Required
             ),
-            "{claim:?} claims to be resolved"
+            "{claim:?} is not required, though its matrix is executed"
         );
     }
 }

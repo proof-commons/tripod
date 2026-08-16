@@ -699,4 +699,50 @@ if target_native_executor != ''
   )
 
   alias_target('target-elements-native-check', target_native_check)
+
+  # The compound-prototype lanes, under the same option and the same
+  # reasoning: the executor is external code the operator selects, so
+  # nothing here is a configured dependency of the ordinary build.
+  #
+  # One target per relation rather than one target with a flag. A run
+  # answers one relation, its report carries that relation's own claim
+  # census and its own completeness status, and two relations sharing a
+  # build target would share one report asset — which is the outcome the
+  # separate report roles exist to prevent (Guide-10 section 15.1).
+  check_target_prototypes_bin = custom_target(
+    'cargo-check-target-elements-prototypes',
+    output: 'check-target-elements-prototypes-bin',
+    command: [
+      cargo_bin_sync, cargo, cargo_manifest,
+      'tripod-target-elements-conformance',
+      'check-target-elements-prototypes', '@OUTPUT@',
+    ],
+    console: true,
+    build_always_stale: true,
+  )
+
+  target_prototype_checks = []
+  foreach relation : ['constructor-continuity', 'wide-floor']
+    target_prototype_checks += custom_target(
+      'target-elements-prototype-' + relation,
+      output: [
+        'target-elements-prototype-' + relation + '.ok',
+        'target-elements-prototype-' + relation + '.json',
+      ],
+      command: [check_target_prototypes_bin,
+        '--relation', relation,
+        '--executor', target_native_executor,
+        '--executor-class', get_option('target_native_executor_class'),
+        '--network-id', get_option('target_native_network_id'),
+        '--genesis-id', get_option('target_native_genesis_id'),
+        '--report', '@OUTPUT1@',
+        '--stamp', '@OUTPUT0@',
+      ],
+      build_always_stale: true,
+      build_by_default: false,
+      console: true,
+    )
+  endforeach
+
+  alias_target('target-elements-prototype-check', target_prototype_checks)
 endif

@@ -409,7 +409,7 @@ pub fn evaluate(
         environment: WireEnvironment::Development,
         network_id: binding.binding().network_id(),
         genesis_id: binding.binding().genesis_id(),
-        activation: activation_record(binding),
+        activation: activation_record_of(binding),
         observed_environment: ObservedEnvironment {
             environment: observation.environment,
             chain_name: observation.chain_name.clone(),
@@ -418,7 +418,7 @@ pub fn evaluate(
             active_domains: observation.active_domains.clone(),
             active_leaf_versions: observation.active_leaf_versions.clone(),
         },
-        executor: provenance(transcript),
+        executor: provenance_of(transcript),
         cases,
         evidence,
         claims,
@@ -681,7 +681,7 @@ fn compare(fixture: &PrimitiveFixture, observed: &ObservedNativeOutcome) -> Case
     };
     if verdict_matched
         && stacks_matched(expected, observed)
-        && resources_matched(fixture.expected_resources(), &observed.resources)
+        && resources_agree(fixture.expected_resources(), &observed.resources)
     {
         CaseStatus::Passed
     } else {
@@ -718,7 +718,7 @@ fn stacks_matched(expected: &ExpectedPrimitiveOutcome, observed: &ObservedNative
 /// Only the exact rows are compared, and an exact row disagreeing means
 /// the executor ran something other than what it was handed — which is a
 /// failure of the case, not a resource note.
-fn resources_matched(
+pub(crate) fn resources_agree(
     expected: ExpectedResourceObservation,
     observed: &NativeResourceObservation,
 ) -> bool {
@@ -943,7 +943,11 @@ fn summarize(
 }
 
 /// What the caller intended the environment to have active.
-fn activation_record(binding: &ReviewedDevelopmentBinding) -> ActivationRecord {
+///
+/// Crate-visible because the prototype report states the same record
+/// from the same binding, and two copies of it would eventually disagree
+/// about what a caller declared.
+pub(crate) fn activation_record_of(binding: &ReviewedDevelopmentBinding) -> ActivationRecord {
     let activation = binding.binding().activation();
     ActivationRecord {
         tapscript_expected_active: activation.tapscript_expected_active(),
@@ -962,7 +966,11 @@ fn activation_record(binding: &ReviewedDevelopmentBinding) -> ActivationRecord {
 
 /// Which runner produced the observations, and what it was declared to
 /// be.
-fn provenance(transcript: &ExecutionTranscript) -> ExecutorProvenance {
+///
+/// Crate-visible for the prototype report, which records provenance from
+/// the same handshake under the same rule: five roles kept apart, and
+/// every field still what the executor *says*.
+pub(crate) fn provenance_of(transcript: &ExecutionTranscript) -> ExecutorProvenance {
     let handshake = transcript.handshake();
     ExecutorProvenance {
         protocol_schema: handshake.protocol_schema,

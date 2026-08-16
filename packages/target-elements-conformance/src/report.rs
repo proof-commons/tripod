@@ -66,14 +66,22 @@ pub const NATIVE_REPORT_SCHEMA: u32 = 2;
 /// Which prototype census one report answers for.
 ///
 /// A report may carry several roles only if each has its own exact case
-/// and claim census. This wave writes the primitive role; the constructor
-/// and wide-floor roles arrive with their prototypes.
+/// and claim census (Guide-10 `rule:guide10:report-roles`). No report
+/// this crate writes carries two: a primitive report answers the
+/// primitive role, and each prototype report answers exactly one
+/// relation, because the two matrices have separate case identities and
+/// separate claim censuses and a report holding both would let one
+/// relation's coverage read as the other's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum PrototypeReportRole {
     /// The reviewed primitive census.
     PrimitiveConformance,
+    /// The metadata-constructor continuity matrix.
+    ConstructorContinuity,
+    /// The wide-arithmetic floor matrix.
+    WideFloor,
 }
 
 /// What the caller intended the environment to have active.
