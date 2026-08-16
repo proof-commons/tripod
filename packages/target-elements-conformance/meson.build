@@ -47,8 +47,13 @@ target_elements_conformance_source_files = files(
   'src/tests/support.rs',
   'src/tests/validate_tests.rs',
   'src/tests/vocabulary_tests.rs',
+  'src/tests/wide_floor_tests.rs',
   'src/validate.rs',
   'src/vocabulary.rs',
+  'src/wide_floor/domain.rs',
+  'src/wide_floor/mod.rs',
+  'src/wide_floor/normalizer.rs',
+  'src/wide_floor/oracle.rs',
 )
 
 # Same-typed files deliberately outside the crate-source census

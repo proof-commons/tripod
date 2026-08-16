@@ -82,6 +82,7 @@ pub mod prototype_program;
 pub mod report;
 pub mod validate;
 pub mod vocabulary;
+pub mod wide_floor;
 
 pub use error::NativeConformanceError;
 
