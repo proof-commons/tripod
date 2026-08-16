@@ -46,7 +46,7 @@ When artifacts disagree:
 
 A lower owner never overrides an upper owner on the upper owner’s subject.
 
-### 1.2 Status vocabulary · `tbl:backlog:status`
+### 1.2 Status vocabulary · `tab:backlog:status`
 
 | Status | Meaning |
 |---|---|
@@ -70,7 +70,7 @@ A static-review finding remains open until one of these occurs:
 “Existing tests pass” does not close a finding unless a named test reaches the
 reported path.
 
-### 1.3 Priority vocabulary · `tbl:backlog:priority`
+### 1.3 Priority vocabulary · `tab:backlog:priority`
 
 | Priority | Meaning |
 |---|---|
@@ -142,7 +142,7 @@ No named consumer means no digest. No distinct decision means no digest.
 
 ## 2. Review basis and current evidence · `sec:backlog:review-basis`
 
-### 2.1 Latest static review · `tbl:backlog:review-basis`
+### 2.1 Latest static review · `tab:backlog:review-basis`
 
 The current review is the fifth static review, performed in two independent
 passes over the supplied concatenation of the tree:
@@ -792,7 +792,7 @@ A domain separator is hashed input that identifies a recipe, and the product's n
 
 ## 3. Current repository state · `sec:backlog:state`
 
-### 3.1 Implemented areas · `tbl:backlog:implemented`
+### 3.1 Implemented areas · `tab:backlog:implemented`
 
 | Area | Current source state |
 |---|---|
@@ -819,7 +819,7 @@ A domain separator is hashed input that identifies a recipe, and the product's n
 | Security policy | Public-data interfaces and external execution-environment boundary |
 | Path policy | Central tracked-mode audit, lexical output roles, explicit host-filesystem non-claims |
 
-### 3.2 Current published identities · `tbl:backlog:identities`
+### 3.2 Current published identities · `tab:backlog:identities`
 
 Exact hash and version values are deliberately not duplicated here. Read each
 identity from its authority:
@@ -844,7 +844,7 @@ Architecture finality does not imply:
 - deployment evidence;
 - production readiness.
 
-### 3.3 Not implemented · `tbl:backlog:not-implemented`
+### 3.3 Not implemented · `tab:backlog:not-implemented`
 
 ```text
 public complete compiler-analysis API beyond the target-requirement boundary
@@ -900,7 +900,7 @@ credentials, or production authority.
 
 ## 4. Compact historical record · `sec:backlog:history`
 
-### 4.1 Completed phases · `tbl:backlog:completed-phases`
+### 4.1 Completed phases · `tab:backlog:completed-phases`
 
 | Phase | Status | Durable record |
 |---|---|---|
@@ -909,7 +909,7 @@ credentials, or production authority.
 | Phase 2 | HISTORICAL | Guide-4 through Guide-7 gate records, §2.8–§2.11 |
 | Phase 3 | Active | current backlog and Phase-3 card |
 
-### 4.2 Historical finding families · `tbl:backlog:historical-findings`
+### 4.2 Historical finding families · `tab:backlog:historical-findings`
 
 | Family | Status | Scope |
 |---|---|---|
@@ -926,7 +926,7 @@ credentials, or production authority.
 | `T4` | DONE | Runtime-bound conformance in the global invariant |
 | `T5` | DONE | Removed duplicated volatile identities from planning prose |
 
-### 4.3 Identity work · `tbl:backlog:identity-work`
+### 4.3 Identity work · `tab:backlog:identity-work`
 
 | ID | Status | Result |
 |---|---|---|
@@ -944,7 +944,7 @@ no public realization or compiler digest without a real consumer.
 
 ## 5. Current static-review findings · `sec:backlog:findings`
 
-### 5.1 Summary · `tbl:backlog:findings-current`
+### 5.1 Summary · `tab:backlog:findings-current`
 
 | ID | Priority | Status | Finding |
 |---|---:|---|---|
@@ -959,7 +959,7 @@ records follow. Implementation detail beyond these records belongs to Git
 history. The later two-pass review recorded in §2.1 opened the SR2 findings
 in §5.2.
 
-### 5.2 Second-review findings · `tbl:backlog:findings-sr2`
+### 5.2 Second-review findings · `tab:backlog:findings-sr2`
 
 | ID | Severity | Status | Finding |
 |---|---|---|---|
@@ -985,7 +985,7 @@ were parked with explicit activation conditions; the third review re-raised
 both, which satisfies those conditions, so they are active again and tracked
 with the §5.3 register.
 
-### 5.3 Third-review findings · `tbl:backlog:findings-sr3`
+### 5.3 Third-review findings · `tab:backlog:findings-sr3`
 
 The third static review reported two passes over the tree recorded in §2.1.
 First-pass findings carry SR3 identifiers; second-pass findings retain the
@@ -1012,7 +1012,7 @@ The Guide-8 preflight wave owned SR3-01 through SR3-08 and S2-01 through
 S2-07; all were closed before the compiler target-requirement boundary
 became public, gate record §2.12.
 
-### 5.4 Fourth-review findings · `tbl:backlog:findings-r2`
+### 5.4 Fourth-review findings · `tab:backlog:findings-r2`
 
 The fourth static review reported two passes over the tree recorded in §2.1.
 Reconfirmed first-pass findings carry R2-C identifiers; second-pass additions
@@ -1034,7 +1034,7 @@ instruction core consumes the contracts.
 | `R2-N03` | Medium | DONE | Public architecture identity functions accept unvalidated architecture values, so an invalid architecture can bear the active semantic hash recipe. The draft and release validators now return borrowing validated wrappers that are the only public path to the identity and publication functions; unchecked projections are crate-private for mutation tests, and an equivalence test plus the pinned gates prove no published identity moved. |
 | `R2-N04` | Medium | DONE | Compare-if-changed publication checks bytes only, so mode-only corruption survives indefinitely, including a synced helper binary that lost its executable bit. Destination freshness now means bytes and required mode; mode-only mismatches are repaired in place without rewriting bytes, the repair is visible in the typed result, both sync scripts repair equal-byte destinations, and a mock-toolchain shell test runs the full matrix. |
 
-### 5.5 Fifth-review findings · `tbl:backlog:findings-sr5`
+### 5.5 Fifth-review findings · `tab:backlog:findings-sr5`
 
 The fifth static review reported two passes over the tree recorded in §2.1.
 The second pass consolidates the first: first-pass identifiers R5-01 through
@@ -1163,7 +1163,7 @@ plans check all passed.
 
 ## 6. Phase-2 implementation queue · `sec:backlog:phase2`
 
-### 6.1 Summary · `tbl:backlog:phase2`
+### 6.1 Summary · `tab:backlog:phase2`
 
 | ID | Priority | Status | Deliverable |
 |---|---:|---|---|
@@ -1308,7 +1308,7 @@ none was minted.
 
 ## 7. Immediate algorithm preparation · `sec:backlog:algorithms`
 
-### 7.1 Current status · `tbl:backlog:algorithms`
+### 7.1 Current status · `tab:backlog:algorithms`
 
 | ID | Status | Deliverable |
 |---|---|---|
@@ -1387,7 +1387,7 @@ hard predicates independently of the production helper it verifies.
 
 ## 8. Dependency posture · `sec:backlog:dependencies`
 
-### 8.1 Current and deferred dependencies · `tbl:backlog:dependencies`
+### 8.1 Current and deferred dependencies · `tab:backlog:dependencies`
 
 | Dependency | Status | Role |
 |---|---|---|
@@ -1539,7 +1539,7 @@ Do not run the full Meson/release surface after every small edit.
 Documentation-only changes do not require the Rust lane, but they still require
 the relevant documentation and census checks.
 
-### 10.2 Focused commands · `tbl:backlog:focused-tests`
+### 10.2 Focused commands · `tab:backlog:focused-tests`
 
 | Area | Command |
 |---|---|
@@ -1707,7 +1707,7 @@ land. The user has ruled that a superseded ADR is deleted, not kept
 marked superseded: retired records belong to Git history, not the
 active tree.
 
-### 13.1 Integration tasks · `tbl:backlog:draft-tasks`
+### 13.1 Integration tasks · `tab:backlog:draft-tasks`
 
 | ID | Status | Task |
 |---|---|---|
@@ -1723,7 +1723,7 @@ now rather than persisting as a recorded divergence; the area grammar is
 adopted with a recorded amendment admitting hyphens; per-package owner
 prefixes are registered as checker data in DI-003.
 
-### 13.2 Checker findings so far · `tbl:backlog:draft-findings`
+### 13.2 Checker findings so far · `tab:backlog:draft-findings`
 
 | ID | Status | Finding |
 |---|---|---|
@@ -1731,7 +1731,7 @@ prefixes are registered as checker data in DI-003.
 | `DI-F02` | ACTIVE | Participation is enforced inconsistently across checks: the label scanner honors fences, the link scanner did not, and the scaffolding, placeholder, and confidence hygiene checks still scan fenced material. One participation model must feed every check. |
 | `DI-F03` | ACTIVE | The calculus's owner signatures, imported-citation prefixes, synthetic citations, anchor harvests, and acute-delimiter hard failure are only partially realized in the present checker; the gap census of DI-001 owns the exact delta. |
 
-### 13.3 Toolchain engineering · `tbl:backlog:toolchain-tasks`
+### 13.3 Toolchain engineering · `tab:backlog:toolchain-tasks`
 
 | ID | Status | Task |
 |---|---|---|

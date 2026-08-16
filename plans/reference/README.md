@@ -6,7 +6,7 @@ review.
 References are not project authority, compiler input, target identity, or
 deployment evidence.
 
-## Index · `tbl:reference:index`
+## Index · `tab:reference:index`
 
 | Reference | Status |
 |---|---|

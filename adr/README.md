@@ -19,7 +19,7 @@ The relevant authority order is:
 Plans may propose future policy. An ADR records policy accepted for the
 repository itself.
 
-## Record index · `tbl:adr:index`
+## Record index · `tab:adr:index`
 
 | Record | Status | Policy |
 |---|---|---|

@@ -213,7 +213,7 @@ impl NormalizedProduct {
 ///
 /// Deliberately unconstrained. A witness is what a caller supplies, and
 /// every mutation row in the threat matrix is a witness the relation
-/// does not hold for (`tbl:guide10:wide-floor-threats`).
+/// does not hold for (`tab:guide10:wide-floor-threats`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WideFloorWitness {
     /// The first authenticated factor.

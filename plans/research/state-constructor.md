@@ -121,7 +121,7 @@ metadata schema
 target construction rule
 ```
 
-## Candidate matrix · `tbl:state-constructor:candidates`
+## Candidate matrix · `tab:state-constructor:candidates`
 
 | Mint | Candidate | Strength | Main risk |
 |---|---|---|---|
@@ -440,7 +440,7 @@ derived as SHA-256 of the generator's uncompressed encoding. Determinism and
 the absence of a generation step are evidenced; discrete-log hardness is not,
 and remains a named residual.
 
-### Resources · `tbl:state-constructor:resources`
+### Resources · `tab:state-constructor:resources`
 
 Measured on the emitted program, not predicted.
 

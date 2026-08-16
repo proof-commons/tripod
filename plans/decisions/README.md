@@ -10,7 +10,7 @@ A decision owns one durable implementation choice and its consequences. It does
 not own protocol semantics, package-local API details, roadmap sequencing,
 current task status, or unresolved target research.
 
-## Index · `tbl:decisions:index`
+## Index · `tab:decisions:index`
 
 | Record | Status | Choice |
 |---|---|---|

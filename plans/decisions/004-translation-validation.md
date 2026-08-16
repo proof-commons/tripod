@@ -57,7 +57,7 @@ Conditional relations additionally require:
 
 A broad operation test does not substitute for relation coverage.
 
-## Evidence boundaries · `tbl:translation-validation:evidence`
+## Evidence boundaries · `tab:translation-validation:evidence`
 
 | Evidence | Subject |
 |---|---|

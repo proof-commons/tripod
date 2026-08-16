@@ -243,7 +243,7 @@ Every program and witness role has a symbolic resource formula covering:
 
 Complete transaction feasibility is measured downstream.
 
-## Pilot order · `tbl:tapscript:pilots`
+## Pilot order · `tab:tapscript:pilots`
 
 | Operation | Purpose |
 |---|---|

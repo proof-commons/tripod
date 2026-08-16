@@ -294,7 +294,7 @@ The selected dedicated algorithm is investigated under
 A general optimizer may later serve as an independent small-instance oracle,
 not as the first production tree builder.
 
-## Solver candidates · `tbl:optimization:candidates`
+## Solver candidates · `tab:optimization:candidates`
 
 | Candidate | Class | Initial posture |
 |---|---|---|

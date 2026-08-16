@@ -10,7 +10,7 @@ Archived drafts are excluded from the load-bearing documentation weight
 budget and accounted against the separate archive budget instead, under
 the weight rule in [the plans README](../README.md).
 
-## Index · `tbl:drafts:index`
+## Index · `tab:drafts:index`
 
 | Draft | Subject | Integration owner |
 |---|---|---|

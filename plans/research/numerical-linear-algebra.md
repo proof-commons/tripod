@@ -109,7 +109,7 @@ x_i\in\{0,1\}\quad\text{or}\quad x_i\in\mathbb Z
 This includes proof selection, placement, optional program selection, and
 integer calibration. It belongs to (`q:optimization:solvers`).
 
-## Dependency posture · `tbl:numerical:dependencies`
+## Dependency posture · `tab:numerical:dependencies`
 
 | Dependency | Status | Role |
 |---|---|---|

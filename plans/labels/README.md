@@ -23,7 +23,7 @@ and every local citation resolves across the planning tree
 Imported labels are authoritative references and are linted under
 (`inf:labels:import`).
 
-## Registers · `tbl:labels-index:files`
+## Registers · `tab:labels-index:files`
 
 | Register | Owner | Source |
 |---|---|---|

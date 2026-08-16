@@ -5,7 +5,7 @@ This directory owns one compact card per implementation phase.
 The root [roadmap](../roadmap.md) owns phase order and dependencies. Each phase
 card owns its entry conditions, deliverables, evidence, and exit gate.
 
-## Index · `tbl:phases:index`
+## Index · `tab:phases:index`
 
 | Phase | Status | Result |
 |---|---|---|

@@ -30,7 +30,7 @@ since been removed and replaced by separately scoped claims.
 That observation stands. What does not stand is the inference that the repair
 is a second vocabulary registry.
 
-## Observed drift instances · `tbl:notation-semantic-census:drift`
+## Observed drift instances · `tab:notation-semantic-census:drift`
 
 Retained as evidence. All were found by reading, not by any gate.
 
@@ -98,7 +98,7 @@ scope that matters, distinguishing two claims that share notation, asserted as
 a verification invariant, or whose alteration would change a released
 consumer's dependency.
 
-## Audit of the second half of the diagnosis · `tbl:notation-semantic-census:audit`
+## Audit of the second half of the diagnosis · `tab:notation-semantic-census:audit`
 
 The diagnosis also proposed that the realization often cites a broad nearby
 definition or section instead of the exact upstream claim. Measured against the

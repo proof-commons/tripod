@@ -33,7 +33,7 @@ Architecture continues to own finite identifiers and enumerated relations.
 Realization owns the target-independent semantic detail needed by the model
 conformance boundary and compiler.
 
-## Ownership · `tbl:realization-layer:ownership`
+## Ownership · `tab:realization-layer:ownership`
 
 | Architecture owns | Realization owns |
 |---|---|

@@ -155,7 +155,7 @@ Safety and minimality remain separate claims.
 
 Neither substitutes for the other.
 
-## Initial operation posture · `tbl:representation:initial`
+## Initial operation posture · `tab:representation:initial`
 
 | Operation | Initial posture |
 |---|---|

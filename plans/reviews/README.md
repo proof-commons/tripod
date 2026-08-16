@@ -13,7 +13,7 @@ Archived reviews are excluded from the load-bearing documentation weight
 budget and accounted against the separate archive budget instead, under the
 weight rule in [the plans README](../README.md).
 
-## Index · `tbl:reviews:index`
+## Index · `tab:reviews:index`
 
 | Review | Tree reviewed | Findings register | Remediating batch |
 |---|---|---|---|
