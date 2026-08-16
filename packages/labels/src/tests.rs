@@ -8,7 +8,7 @@ use petgraph::Direction;
 use crate::{
     LabelErrorCode,
     census::{CensusGroup, RepositoryCensus},
-    label::{Label, LabelShape},
+    label::{Label, LabelParseError, LabelShape},
     latex::harvest_attestation,
     markdown::{InlineCodeContext, scan_markdown},
     model_labels_json,
@@ -257,6 +257,28 @@ fn unclosed_inline_code_rejects() {
             .iter()
             .any(|diagnostic| diagnostic.code == LabelErrorCode::UnclosedInlineCode)
     );
+}
+
+/// The ADR-019 segment amendment, both halves: an area may hyphenate
+/// exactly as a name may, and a kind may not, because the kind ranges
+/// over the ADR-020 registry of words.
+#[test]
+fn area_may_hyphenate_and_kind_may_not() {
+    let hyphenated_area = Label::parse("sec:labels-index:purpose", LabelShape::Planning);
+    assert!(hyphenated_area.is_ok(), "an area may hyphenate");
+
+    let hyphenated_name = Label::parse("rule:labels:external-citation", LabelShape::Planning);
+    assert!(hyphenated_name.is_ok(), "a name may hyphenate");
+
+    let hyphenated_kind = Label::parse("sub-sec:labels:purpose", LabelShape::Planning);
+    assert!(
+        matches!(hyphenated_kind, Err(LabelParseError::Malformed(_))),
+        "a kind may not hyphenate"
+    );
+
+    // The realization owner's two-part divisions are unaffected.
+    let two_part = Label::parse("sec:representation", LabelShape::Realization);
+    assert!(two_part.is_ok());
 }
 
 #[test]

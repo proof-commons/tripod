@@ -31,7 +31,7 @@ repository itself.
 | [ADR-017](017-path-scope-and-host-filesystem-trust.md) | Decided and implemented | Repository/build path scope, central prohibition of symlinks and submodules, source-derived reference confinement, lexical output roles, and the host filesystem/TOCTOU boundary. |
 | [ADR-018](018-upstream-elements-workspace.md) | Decided; adoption proceeds in the Elements checkout | Upstream Elements workspace shape: pristine-mirror default branch, fix and notes branches, derived merged worktree, the gripe register, and executed-revision provenance. |
 | [ADR-019](019-label-calculus.md) | Decided and implemented; checker re-engineering tracked as DI-003 | Adoption of the archived label calculus as normative, with this repository's adoption parameters and the hyphenated-area amendment. |
-| [ADR-020](020-environment-kinds.md) | Decided; the kind-token migration lands across this batch | Adoption of the archived environment-kind registry as the kind vocabulary, with the migration adjudication and the local-extension register. |
+| [ADR-020](020-environment-kinds.md) | Decided and implemented | Adoption of the archived environment-kind registry as the kind vocabulary, with the migration adjudication and the local-extension register. |
 
 ## Numbering · `rule:adr:numbering`
 

@@ -1,7 +1,7 @@
 # ADR-020: Adoption of the Environment-Kind Registry
 
-**Status:** Decided; the kind-token migration adjudicated below lands
-across the commits of this batch
+**Status:** Decided and implemented; the kind-token migration recorded
+below is complete
 **Scope:** The kind segment of every label minted in this repository,
 and the checker's kind vocabulary
 **Adopts:** the corrected draft archived at
@@ -60,7 +60,7 @@ because the registry classifies genres and not words. A token collides
 when the registry assigns the same genre a different kind; a token is an
 extension when the genre is uncatalogued and the token is unclaimed.
 
-Six collided and are migrated, on 2026-08-16. Two did not.
+Six collided and were migrated on 2026-08-16. Two did not.
 
 | Repository kind | Registry position | Adjudication | Outcome |
 |---|---|---|---|
@@ -131,10 +131,17 @@ checker's vocabulary is a stated list rather than an accident of which
 owner was implemented first.
 
 The migration was a rename of label values, not a re-presentation, so
-the presentation-invariance meta-theorem does **not** cover it: the
-generated registers were regenerated, and the attestation anchor-set pin was
-recomputed and reviewed as a source correction rather than accepted as
-formatting.
+the presentation-invariance meta-theorem does **not** cover it, and the
+identities that hash label strings moved with it. The generated
+registers were regenerated; the attestation anchor-set pin was recomputed
+over the same thirty-eight anchors under new names; and because welded
+witness semantic tags carry renamed labels, the architecture semantic
+hash and the deployment-profile identity were re-pinned, with the
+document's welded appendix and masthead re-welded to the regenerated
+manifest. Each was reviewed as a source correction rather than accepted
+as formatting, which is what the calculus demands of a rename. The
+recomputation recipe was checked by reproducing the retired pin exactly
+before the new one was taken.
 
 Two narrownesses remain. The kind vocabulary is still split between a
 realization list and a model list compiled into Rust, with no vocabulary
@@ -174,4 +181,4 @@ Adoption holds when:
   the retired ones;
 - the corpus-wide label check passes in continuous integration.
 
-Every item holds once the migration commits of this batch have landed.
+Every item holds as of this record.

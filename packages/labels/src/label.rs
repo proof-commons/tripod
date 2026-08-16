@@ -11,6 +11,13 @@ impl Label {
         if parts.iter().any(|part| !valid_segment(part)) {
             return Err(LabelParseError::Malformed(value.to_owned()));
         }
+        // The kind is a word, never a hyphenated one: it ranges over the
+        // ADR-020 registry, and a registry of words admits no hyphenated
+        // member. Area and name may hyphenate — the area concession is
+        // this repository's amendment recorded in ADR-019.
+        if parts.first().is_some_and(|kind| kind.contains('-')) {
+            return Err(LabelParseError::Malformed(value.to_owned()));
+        }
         match shape {
             LabelShape::Attestation if matches!(parts.len(), 2 | 3) => {}
             LabelShape::Attestation => return Err(LabelParseError::Shape(value.to_owned())),
