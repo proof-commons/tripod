@@ -22,7 +22,7 @@ crate_source_files = architecture_source_files + artifacts_source_files \
   + tapscript_source_files + target_elements_source_files \
   + target_elements_conformance_source_files
 packages_doc_files = cli_common_doc_files + architecture_doc_files + compiler_doc_files \
-  + labels_doc_files + realization_doc_files \
+  + labels_doc_files + model_doc_files + realization_doc_files \
   + tapscript_doc_files + target_elements_doc_files \
   + target_elements_conformance_doc_files
 packages_excluded_files = artifacts_excluded_files + cli_common_excluded_files \

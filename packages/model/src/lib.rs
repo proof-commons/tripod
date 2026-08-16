@@ -145,6 +145,90 @@
 //! **provisional, derivative publication** (see [`artifacts`]): the
 //! planned compiler derives declassification from the typed
 //! realization dependency graph and never ingests that JSON.
+//!
+//! # Primary workflow
+//!
+//! Construct a world, apply declared operations to it, check the
+//! invariant. The exact entry points, in order:
+//!
+//! 1. [`constants::Constants`] — declare the finite bounds and ratios.
+//!    `Ratio::new` is the only route to a ratio, so an out-of-domain
+//!    constant is unconstructible rather than merely rejected.
+//! 2. [`genesis::genesis`] — the trusted-setup constructor and the only
+//!    origin of a valid world. It validates the constants against the
+//!    architecture's cardinality minima before building anything.
+//! 3. one of the twelve operation constructors re-exported from [`ops`]
+//!    ([`CreateRequest`], [`CancelRequest`], [`AdmitDeposits`],
+//!    [`RunCycle`], [`SettleDistribution`], [`TransferReceipts`],
+//!    [`RedeemReceipt`], [`RelabelReceipts`], [`BurnReceipts`],
+//!    [`CompactAsh`], [`ClearAsh`], [`AnnounceMaturity`]), applied
+//!    through [`transition::execute`] — the normative, invariant-wrapped
+//!    path — or [`transition::execute_bound`] when the
+//!    predecessor/request/successor binding must be retained.
+//! 4. [`invariant::check_invariant`] to re-check a world independently,
+//!    and [`invariant::clause_of`] to map a failure to its clause.
+//! 5. for conformance evidence, project a bound execution with
+//!    [`conformance::observe_compact_ash`] or
+//!    [`conformance::observe_live_transfer`], evaluate it against a
+//!    `realization` spec, and confirm
+//!    [`conformance::unresolved_model_evidence`] is empty.
+//!
+//! ```
+//! use model::{
+//!     AnnounceMaturity, BranchKind, CanonicalOrder, Constants, FeeEnvelope, OPERATOR_KEY,
+//!     Ratio, Sat, TxId, check_invariant, execute, genesis,
+//! };
+//!
+//! let constants = Constants {
+//!     pool_id: 7,
+//!     zeta: Ratio::new(1, 2).unwrap(),
+//!     mint_fee: Ratio::new(1, 2).unwrap(),
+//!     min_maturity_lead: 10,
+//!     max_maturity_lead: 1000,
+//!     min_cadence_blocks: 10,
+//!     max_cadence_blocks: 100,
+//!     admission_batch_max: 32,
+//!     settlement_batch_max: 32,
+//!     relabel_batch_max: 32,
+//!     ash_batch_max: 64,
+//!     burn_input_max: 64,
+//!     burn_change_max: 32,
+//!     burn_record_max: 64,
+//!     transfer_input_max: 64,
+//!     transfer_output_max: 64,
+//!     fee_sponsor_input_max: 16,
+//! };
+//!
+//! let world = genesis(
+//!     constants,
+//!     Sat::new(1_000_000).unwrap(),
+//!     CanonicalOrder { height: 0, tx_index: 0 },
+//!     TxId([0_u8; 32]),
+//! )
+//! .unwrap();
+//!
+//! let announce = AnnounceMaturity {
+//!     maturity_cycle: world.constants.min_maturity_lead,
+//!     signers: std::iter::once(OPERATOR_KEY).collect(),
+//!     fee_envelope: FeeEnvelope::default(),
+//! };
+//!
+//! let next = execute(
+//!     &world,
+//!     &announce,
+//!     CanonicalOrder { height: 0, tx_index: 1 },
+//! )
+//! .unwrap();
+//!
+//! check_invariant(&next).unwrap();
+//! assert_eq!(
+//!     next.history.transitions.last().unwrap().branch,
+//!     BranchKind::AnnounceMaturity,
+//! );
+//! ```
+//!
+//! The README carries the worked examples, the public-API tour grouped
+//! by workflow, and the error-handling guide.
 
 // The Rust in this crate is a transcription of the normative executable
 // model. To keep the source textually aligned with the frozen manifest,
