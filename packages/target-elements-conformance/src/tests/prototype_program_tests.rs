@@ -4,12 +4,12 @@ use tapscript::instruction::TapscriptInstruction;
 use target_elements::{OpcodeId, ResourceDimension, StackValueType, reviewed_elements_tapscript};
 
 use crate::constructor::internal_key::UNSPENDABLE_INTERNAL_KEY;
-use crate::constructor::metadata::{METADATA_BYTES, PrototypeMetadata};
+use crate::constructor::metadata::{METADATA_BYTES, METADATA_DOMAIN, PrototypeMetadata};
 use crate::constructor::tagged::{TAP_BRANCH_TAG, TAP_LEAF_TAG, TAP_TWEAK_TAG, sha256};
 use crate::prototype_program::{
     COUNTER_AT, COUNTER_BYTES, FLAGS_AT, FLAGS_BYTES, MAXIMUM_PREDECESSOR_COUNTER, NONCE_AT,
-    NONCE_BYTES, PrototypeKind, PrototypeProgram, PrototypeProgramRelation, PrototypeStatus,
-    RESERVED_AT, RESERVED_BYTES,
+    NONCE_BYTES, PROTOTYPE_SCHEMA, PrototypeKind, PrototypeProgram, PrototypeProgramRelation,
+    PrototypeStatus, RECIPE_PREFIX_BYTES, RESERVED_AT, RESERVED_BYTES, recipe_prefix,
 };
 
 /// The reviewed contract, for a test that needs one.
@@ -128,27 +128,28 @@ fn the_resource_table_is_the_measured_one() {
     //
     // ```text
     // dimension              measured   reviewed bound   share
-    // script bytes                672   unbounded            -
-    // witness bytes               897   unbounded            -
+    // script bytes                699   unbounded            -
+    // witness bytes               924   unbounded            -
     // peak main stack               9   1000             0.9 %
     // largest element             103   520             19.8 %
     // hash primitives              16   unbounded            -
     // curve checks                  2   unbounded            -
-    // validation budget           100   witness + 50    10.6 %
+    // validation budget           100   witness + 50    10.3 %
     // control path nodes            1   128              0.8 %
-    // witness weight              897   400000 policy    0.2 %
+    // witness weight              924   400000 policy    0.2 %
     // ```
     //
     // # What composing the transition cost
     //
-    // Seventy-nine script bytes, and nothing else. The derivation adds
-    // the slices, the checked increment, and the joins; the witness
-    // loses a whole metadata object and gains a four-byte nonce, so the
-    // witness grows by thirty-five bytes net. The peak stack does not
-    // move at all, which is the measurement that matters: the reach
-    // bound, not the depth bound, is what the composition had to fit,
-    // and the derived object occupies the slot the second witnessed
-    // object used to.
+    // One hundred and six script bytes. The derivation adds the slices,
+    // the checked increment, the joins, and the literal the recipe's
+    // domain and schema are pinned against. The witness items lose a
+    // whole metadata object and gain a four-byte nonce, so the serialized
+    // witness — which carries the script itself — grows by sixty-two
+    // bytes net. The peak stack does not move at all, which is the
+    // measurement that matters: the reach bound, not the depth bound, is
+    // what the composition had to fit, and the derived object occupies
+    // the slot the second witnessed object used to.
     //
     // # Which limit binds first
     //
@@ -157,13 +158,13 @@ fn the_resource_table_is_the_measured_one() {
     // context at one hundred and three bytes, and no other dimension
     // reaches a fifth of its bound: the peak stack is nine items against
     // one thousand, the control path is one node against one hundred and
-    // twenty-eight, and the witness weighs eight hundred and sixty-two
+    // twenty-eight, and the witness weighs nine hundred and twenty-four
     // units against a four-hundred-thousand policy ceiling.
     //
     // The validation budget is not the binding one, which is worth
     // stating because it is the dimension a reader expects to bind. The
     // reviewed domain funds it from the witness size plus an offset of
-    // fifty, so this witness funds nine hundred and forty-seven units
+    // fifty, so this witness funds nine hundred and seventy-four units
     // and the two curve checks charge one hundred. A construction that added
     // curve checks without adding witness would move that ratio, and a
     // construction that widened a stack element would hit five hundred
@@ -175,8 +176,8 @@ fn the_resource_table_is_the_measured_one() {
     let program = prototype();
     let measured = program.resources();
 
-    assert_eq!(measured.script_bytes(), 672);
-    assert_eq!(measured.witness_bytes(), 897);
+    assert_eq!(measured.script_bytes(), 699);
+    assert_eq!(measured.witness_bytes(), 924);
     assert_eq!(measured.peak_main_stack(), 9);
     assert_eq!(measured.largest_element_bytes(), 103);
     assert_eq!(measured.hash_operations(), 16);
@@ -315,6 +316,38 @@ fn the_emitted_program_carries_the_metadata_transition() {
         instructions.get(at + 1),
         Some(&TapscriptInstruction::Opcode(OpcodeId::Verify))
     );
+}
+
+#[test]
+fn the_program_pins_its_own_domain_and_schema() {
+    // Carrying the domain and schema through unchanged would let an
+    // object of another schema be advanced by a transition rule written
+    // for this one. The program compares them against the recipe's own
+    // constants instead, and the constants are in the emitted bytes.
+    let prefix = recipe_prefix();
+    assert_eq!(prefix.len(), RECIPE_PREFIX_BYTES);
+    assert_eq!(&prefix[..METADATA_DOMAIN.len()], &METADATA_DOMAIN);
+    assert_eq!(
+        &prefix[METADATA_DOMAIN.len()..],
+        &PROTOTYPE_SCHEMA.to_le_bytes()
+    );
+
+    let script = prototype().encode(&target());
+    assert!(
+        script.windows(prefix.len()).any(|window| window == prefix),
+        "the emitted script carries the recipe's own prefix"
+    );
+
+    // And the pinned prefix is exactly what a canonical encoding of an
+    // object of this recipe begins with.
+    let object = PrototypeMetadata {
+        schema: PROTOTYPE_SCHEMA,
+        object_kind: 3,
+        counter: 7,
+        flags: 0,
+        nonce: 0,
+    };
+    assert_eq!(&object.encode()[..RECIPE_PREFIX_BYTES], prefix.as_slice());
 }
 
 #[test]

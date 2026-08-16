@@ -1325,6 +1325,10 @@ fn an_unsettled_width_does_not_satisfy_the_tweak_position() {
 
 // -- The transition composed into the continuity proof -------------
 
+/// How much of the object the recipe pins to its own constants: the
+/// domain and the schema, which are contiguous and come first.
+const RECIPE_PREFIX_BYTES: i64 = 20;
+
 /// How wide the contiguous domain, schema, and object-kind prefix is.
 ///
 /// Restated from the constructor oracle's schema for the reason
@@ -1394,6 +1398,15 @@ fn derived_successor_metadata() -> Vec<TapscriptInstruction> {
         number(NONCE_BYTES),
         op(OpcodeId::EqualVerify),
         op(OpcodeId::Swap),
+        // The recipe's own domain and schema, pinned to constants: an
+        // object of another schema must not be advanced by a transition
+        // rule written for this one.
+        op(OpcodeId::Duplicate),
+        number(0),
+        number(RECIPE_PREFIX_BYTES),
+        op(OpcodeId::Substring),
+        raw(vec![0; usize::try_from(RECIPE_PREFIX_BYTES).unwrap_or(20)]),
+        op(OpcodeId::EqualVerify),
         // Domain, schema, and object kind, in one contiguous slice.
         op(OpcodeId::Duplicate),
         number(0),

@@ -47,11 +47,31 @@ use target_elements::{
 
 use crate::constructor::curve::FIELD_ELEMENT_BYTES;
 use crate::constructor::internal_key::UNSPENDABLE_INTERNAL_KEY;
-use crate::constructor::metadata::METADATA_BYTES;
+use crate::constructor::metadata::{METADATA_BYTES, METADATA_DOMAIN};
 use crate::constructor::metadata_leaf::metadata_leaf_script;
 use crate::constructor::tagged::{
     DIGEST_BYTES, TAP_BRANCH_TAG, TAP_LEAF_TAG, TAP_TWEAK_TAG, compact_size, sha256,
 };
+
+/// The schema number this recipe is written for.
+///
+/// The program is one constructor recipe, and the schema field says
+/// which recipe an object was written under. Carrying it through
+/// unchanged is not enough: an object of another schema would then be
+/// advanced by this program as readily as one of its own, and the two
+/// families would share a transition rule neither was reviewed for. So
+/// the program compares the domain and the schema against the recipe's
+/// own constants and refuses anything else
+/// (Guide-10 `tbl:guide10:constructor-threats`, alternate schema).
+pub const PROTOTYPE_SCHEMA: u32 = 1;
+
+/// How much of a canonical encoding the recipe pins to a constant.
+///
+/// The domain and the schema, which are contiguous and come first. The
+/// object kind is deliberately not pinned: one schema admits several
+/// kinds, and an object of the wrong kind is refused by the constructor
+/// comparison rather than by a literal.
+pub const RECIPE_PREFIX_BYTES: usize = 20;
 
 /// Where the counter field begins in a canonical encoding.
 ///
@@ -485,6 +505,14 @@ fn raw(
         .map_err(|_| PrototypeProgramDefect::LiteralNotExpressible)
 }
 
+/// The exact bytes the recipe pins: its domain, then its schema.
+#[must_use]
+pub fn recipe_prefix() -> Vec<u8> {
+    let mut prefix = METADATA_DOMAIN.to_vec();
+    prefix.extend_from_slice(&PROTOTYPE_SCHEMA.to_le_bytes());
+    prefix
+}
+
 /// A signed fixed-width literal, as an instruction.
 ///
 /// Infallible by width: the target's fixed-width integer is eight bytes,
@@ -684,6 +712,13 @@ fn derive_successor_metadata(
         number(target, i64::try_from(NONCE_BYTES).unwrap_or(4))?,
         op(OpcodeId::EqualVerify),
         op(OpcodeId::Swap),
+        // The recipe's own domain and schema, pinned to constants.
+        op(OpcodeId::Duplicate),
+        number(target, 0)?,
+        number(target, i64::try_from(RECIPE_PREFIX_BYTES).unwrap_or(20))?,
+        op(OpcodeId::Substring),
+        raw(target, recipe_prefix())?,
+        op(OpcodeId::EqualVerify),
         // Domain, schema, and object kind, in one contiguous slice.
         op(OpcodeId::Duplicate),
         number(target, 0)?,
