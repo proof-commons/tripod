@@ -76,6 +76,84 @@
 //!
 //! No public value produced by the crate today can be mistaken for a
 //! completed compiler analysis.
+//!
+//! # Module map
+//!
+//! Only three modules are public, and that is the point: everything
+//! between the input boundary and the target boundary is crate-private.
+//!
+//! - [`input`] — the validated input boundary: [`CompilationScope`],
+//!   [`ProofSearchLimits`], [`AnalysisPolicy`], [`BoundCompilerInput`],
+//!   and [`bind_input`].
+//! - [`target`] — the abstract target requirement boundary:
+//!   [`target::RequiredCapability`], [`target::ExternalEvidenceRole`],
+//!   [`target::PlacementSearchLimits`], [`target::TargetRequirementSet`],
+//!   and [`target::analyze_target_requirements`].
+//! - [`error`] — [`CompileError`], the single error root for both.
+//!
+//! Three further items reach the crate root: [`ExpressionCycleComponent`]
+//! and [`RelationCycleComponent`], carried by the two cycle-diagnostic
+//! error variants, and [`OperandId`].
+//!
+//! # Primary workflow
+//!
+//! Two calls, in this order, with no route between them:
+//!
+//! 1. [`input::bind_input`] — hand it a typed architecture, a validated
+//!    [`realization::ScopedRealizationSpec`], a
+//!    [`input::CompilationScope`], and an [`input::AnalysisPolicy`]. It
+//!    re-runs the realization owner's validation, requires the
+//!    realization's architecture binding to equal the architecture you
+//!    passed, and requires every scope member to be declared by the
+//!    realization. What comes back is an immutable
+//!    [`input::BoundCompilerInput`].
+//! 2. [`target::analyze_target_requirements`] — hand it that bound input
+//!    and [`target::PlacementSearchLimits`]. It runs the complete scoped
+//!    analysis and its independent validator, then returns an opaque
+//!    read-only [`target::TargetRequirementSet`]. There is no partial
+//!    result: a search that ran out of budget is a typed failure, never
+//!    a smaller requirement set.
+//!
+//! ```
+//! use std::num::NonZeroU64;
+//!
+//! use architecture::{ARCHITECTURE, OperationId};
+//! use compiler::{AnalysisPolicy, CompilationScope, ProofSearchLimits, bind_input};
+//! use compiler::target::{PlacementSearchLimits, analyze_target_requirements};
+//!
+//! let realization = realization::derive(
+//!     &ARCHITECTURE,
+//!     realization::RealizationScope::phase1_pilots(),
+//! )
+//! .expect("phase-1 pilots derive");
+//!
+//! let scope =
+//!     CompilationScope::from_operations([OperationId::CompactAsh, OperationId::TransferLive])
+//!         .expect("nonempty, no duplicates");
+//!
+//! let policy = AnalysisPolicy::strict(ProofSearchLimits::new(
+//!     NonZeroU64::new(1_000_000).unwrap(),
+//!     NonZeroU64::new(10_000).unwrap(),
+//! ));
+//!
+//! let input = bind_input(&ARCHITECTURE, realization, scope, policy).expect("bindable");
+//!
+//! let requirements = analyze_target_requirements(
+//!     &input,
+//!     PlacementSearchLimits::new(
+//!         NonZeroU64::new(10_000_000).unwrap(),
+//!         NonZeroU64::new(1_000_000).unwrap(),
+//!     ),
+//! )
+//! .expect("the pilot analysis completes");
+//!
+//! assert!(requirements.capabilities().next().is_some());
+//! // Typed comparison is the whole comparison mechanism: no digest is minted.
+//! assert_eq!(requirements, requirements.clone());
+//! ```
+//!
+//! The README carries the public-API tour, the error-handling guide, and
+//! the record of what stays crate-private and why.
 
 #![forbid(unsafe_code)]
 

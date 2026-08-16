@@ -26,7 +26,7 @@ pub enum AvailabilityClass {
 /// Realization-owned analysis of how one operation is authorized.
 ///
 /// This is not architecture identity: it is the derived case set that
-/// [`constructibility_authorizations`](crate::constructibility_authorizations)
+/// [`constructibility_authorizations`](crate::ScopedRealizationSpec::constructibility_authorizations)
 /// computes from the typed operation row, and against which every
 /// constructibility dependency's [`AvailabilityClass`] is checked. A
 /// cadence-band operation yields two cases — an operator window and a

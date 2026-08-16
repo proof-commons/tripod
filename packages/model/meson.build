@@ -96,6 +96,9 @@ model_source_files = files(
   'src/world.rs',
 )
 
+# Crate documentation (DOC owner).
+model_doc_files = files('README.md')
+
 # Committed generated artifacts (ADR-011: publications, never semantic
 # inputs), owned by generate-all.
 model_generated_files = files(

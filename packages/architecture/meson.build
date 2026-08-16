@@ -18,3 +18,6 @@ architecture_source_files = files(
   'src/tests/versioning_gate_tests.rs',
   'src/validate.rs',
 )
+
+# Crate documentation (DOC owner).
+architecture_doc_files = files('README.md')
