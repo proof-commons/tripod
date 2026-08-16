@@ -1,6 +1,6 @@
 # Research Question: Metadata-Dependent Constructor Continuity · `q:constructor:state`
 
-> **Status:** Prototype required
+> **Status:** Accepted prototype — see (`sec:state-constructor:result`)
 > **Blocks:** STATE ABI; `announce-maturity`; all later STATE-spending target operations
 > **Affected packages:** tapscript, linker, transaction, vectors, release
 > **Decisions:** D003, D004, D006
@@ -206,7 +206,8 @@ Candidates:
 | deterministic internal-key retry | changes key selection per instance |
 | explicit negligible residual | requires named trust/constructibility residual |
 
-No policy is accepted by silence.
+No policy is accepted by silence. The deterministic representation nonce was
+selected; see (`sec:state-constructor:result`).
 
 The selected policy must define:
 
@@ -390,7 +391,98 @@ Reject a candidate if it:
 
 ## Result · `sec:state-constructor:result`
 
-Pending.
+Accepted as a prototype. The selected candidate is
+(`candidate:constructor:dynamic-metadata-leaf`): a dynamic metadata leaf beside
+a static code subtree, under one authenticated static root.
+
+### Decisive design results · `sec:state-constructor:decisive`
+
+**Successor metadata is derived, not witnessed.** The program builds the
+successor's bytes on the stack out of the predecessor's already-authenticated
+bytes: constant slices either side of the changed field, a checked counter
+increment, the witnessed nonce, and a literal zero reserved tail. No
+independent successor witness exists, so the mutation and adjacency threats
+against it are not defended — they are unrepresentable.
+
+**Canonical branch order is a creator-side property.** The program hashes the
+two children in one fixed order and compares the derived tweak against the
+introspected input program. It never computes an ordering, carries an order
+bit, or hashes in caller-supplied order. Instances whose fixed-order hash is
+not the canonical one are excluded at creation by grinding the schema's nonce
+field, the policy named `CanonicalNonceRetry`. This matters because the
+reviewed target has no byte-lexicographic comparison at all: its ordering
+primitives read fixed-width integers, neither of which orders a digest.
+
+**One authenticated static root.** The independently-chosen-roots threat is
+answered by there being one root to reuse, rather than by a check that two
+supplied roots agree. The static-subtree requirement is satisfied
+structurally.
+
+**The reach bound governs every layout.** No reviewed primitive in the emitted
+schedule reads below the third stack item, and the schedule uses no `OP_PICK`,
+no `OP_ROLL`, and no altstack. The property is machine-checked over the emitted
+program rather than asserted in prose.
+
+Pinned domains: the predecessor counter is `0..=2^63-2`, excluding the value
+whose increment would set the target's signed flag; the metadata schema is 48
+bytes with the nonce at bytes `36..40` and a zero reserved tail at `40..48`;
+domain and schema are pinned to the recipe's own constants rather than to a
+caller argument.
+
+The metadata leaf is machine-checked unspendable. The internal key is the NUMS
+point
+
+```text
+50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0
+```
+
+derived as SHA-256 of the generator's uncompressed encoding. Determinism and
+the absence of a generation step are evidenced; discrete-log hardness is not,
+and remains a named residual.
+
+### Resources · `tbl:state-constructor:resources`
+
+Measured on the emitted program, not predicted.
+
+| Quantity | Value | Bound |
+|---|---:|---|
+| script bytes | 699 | — |
+| witness bytes | 924 | 400000 weight |
+| peak main stack | 9 | 1000 |
+| largest element | 103 | 520 |
+| hash operations | 16 | — |
+| curve checks | 2 | — |
+| validation budget | 10.3% | per-check allowance |
+| control path | 1 | 128 |
+
+The largest element sits at 19.8% of its limit, which is the binding one.
+
+### Native evidence · `sec:state-constructor:evidence`
+
+| Fact | Value |
+|---|---|
+| matrix | 36 of 36 rows agreed |
+| claims | 9 of 9 covered |
+| completeness | `complete_for_constructor_prototype` |
+| node | Elements Core daemon v28.99.0-0b3bffd93138 |
+| workspace | ADR-018 merged tip `0b3bffd`, upstream base `b7fc5d0`, topics `fix/tapscript-opcodes` and notes |
+| determinism | two gated runs byte-identical |
+| report digest | `edebb1b3855436ff33246025aa9584d87151b05d933e2ac57af2dfb1cc0ff739` |
+
+First contact with the node found two defects, both in fixtures and neither in
+the program: a nonce-grinding discard that the fixture failed to apply, and a
+sorted-children row that described the same tree twice and so could not be the
+refusal it claimed. Both were repaired as fixtures. Zero program defects were
+found by native execution.
+
+### Residuals · `sec:state-constructor:residuals`
+
+- no proof that the NUMS point has no scalar, only that no step produced one;
+- tweak totality is implemented by nonce retry and was never exercised — zero
+  retries across 384 instances — so the policy is carried deliberately unleant
+  on, the triggering event being roughly `2^-128`;
+- scalar validity for the tweak is decided by the target during its own check,
+  not established beforehand by the program.
 
 ## Handoff · `sec:state-constructor:handoff`
 
@@ -406,3 +498,21 @@ A successful result creates an accepted constructor decision and updates:
 
 A failed result records target infeasibility. It does not silently weaken STATE
 succession.
+
+### What this acceptance is · `sec:state-constructor:scope`
+
+The accepted object is a prototype and nothing else. The work emitted no
+attestation-contract operation, froze no ABI, produced no bundle, minted no
+identity of any kind, and calibrated no bound. The 48-byte schema is the
+prototype's, not STATE's: it carries a synthetic counter where STATE carries
+its metadata, which is what (`sec:state-constructor:prototype`) Stage 2 asks
+for and is not Stage 4.
+
+Promoting this construction to a production backend pattern is a separate
+reviewed act, with its own decision, and cannot happen by a prototype being
+reused. What the acceptance licenses now is the STATE-side design work that
+was blocked on knowing whether the target could do this at all.
+
+Evidence lives in `target-elements-conformance` and in the Guide-10 gate record
+in [the backlog](../backlog.md) (§2.14). Guide 11 public declassification
+remains the open third foundational prototype.
