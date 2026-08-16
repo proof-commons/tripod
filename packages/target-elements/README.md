@@ -327,8 +327,7 @@ capability with the single weakest responsible transitive prerequisite.
 
 `EncodingClass` is a `#[non_exhaustive]` vocabulary of **28** classes, censused
 in `EncodingClass::ALL`. `EncodingSpec` states the class, domain, prefix bytes,
-payload width, byte order, canonicality rule, and evidence. `EncodingClass::
-v1_shape()` gives the `V1EncodingShape` a V1 consumer would read, which is how
+payload width, byte order, canonicality rule, and evidence. `EncodingClass:: v1_shape()` gives the `V1EncodingShape` a V1 consumer would read, which is how
 the two revisions coexist without a second registry.
 
 `PushContract` is effectively a small decoder, and it is the surface `tapscript`
@@ -675,9 +674,9 @@ Each of these is a design decision, not a gap awaiting an implementation.
 - **It carries no evidence-completion status.** The evidence registry holds
   requirements. A static contract that recorded whether a run had happened would
   change every time one did.
-- **It returns no validated production binding.** `DeploymentEnvironment::
-  Production` is nameable so that validation can refuse it, and a development
-  binding cannot be upgraded into one.
+- **It returns no validated production binding.** The production
+  environment variant is nameable so that validation can refuse it, and a
+  development binding cannot be upgraded into one.
 - **It holds no secret or endpoint.** A binding carries no endpoint, username,
   password, cookie path, bearer token, key, or wallet path, and none may be
   added. A future runner that must talk to a node needs its own security design.

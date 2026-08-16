@@ -211,8 +211,7 @@ Everything below is re-exported at the crate root.
 ### Stable keys (`identity`)
 
 `RelationId::new(OperationId, RelationKind, RelationSubject)` with readers
-`operation()`, `kind()`, `subject()`; `ProofAlternativeId::new(RelationId,
-ProofKind)` with `relation()`, `proof()`; `ExprId::fact(FactId)` and
+`operation()`, `kind()`, `subject()`; `ProofAlternativeId::new(RelationId, ProofKind)` with `relation()`, `proof()`; `ExprId::fact(FactId)` and
 `ExprId::relation(RelationId, ExpressionRole)`. Supporting enums: `FactId`,
 `RelationKind`, `RelationSubject`, `ExpressionRole`, `ProofKind`,
 `TransactionSide`. These are complete typed keys — never graph positions,

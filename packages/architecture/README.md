@@ -321,8 +321,7 @@ architecture this crate declares.
   `validate_bound_conformance` live on the model side). The direction is
   one-way.
 - **`tripod-compiler`** cites architecture-owned ids in its error
-  vocabulary — for example `CompileError::IncompleteRealizationScope {
-  operation: OperationId }` — precisely so a compiler-local operation identity
+  vocabulary — for example `CompileError::IncompleteRealizationScope { operation: OperationId }` — precisely so a compiler-local operation identity
   never duplicates an upstream one.
 - **`tripod-artifacts`** owns the generated `architecture.json` and
   `architecture.toml` publications, rendering them through

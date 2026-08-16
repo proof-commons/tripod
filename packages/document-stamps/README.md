@@ -79,8 +79,7 @@ The crate is a single flat module.
 
 ### Requests
 
-- `struct StampRequest { git: PathBuf, repository_root: PathBuf,
-  tree_ref: String, tree: PathBuf, inputs: Vec<PathBuf> }`
+- `struct StampRequest { git: PathBuf, repository_root: PathBuf, tree_ref: String, tree: PathBuf, inputs: Vec<PathBuf> }`
   — `git` is the executable to invoke; `repository_root` must be the Git
   top level and every other path is relative to it; `tree` is the paper
   subtree; `inputs` is the exact publication-input set. `tree_ref` is
@@ -89,8 +88,7 @@ The crate is a single flat module.
   equality, not string equality. Any other revision is rejected, since
   derivation renders the working tree and mixing in another commit's
   metadata would produce hybrid output.
-- `struct RenderRequest<'a> { stamps: &'a StampRequest, template: &'a Path,
-  stamps_output: &'a Path, epoch_output: &'a Path }`.
+- `struct RenderRequest<'a> { stamps: &'a StampRequest, template: &'a Path, stamps_output: &'a Path, epoch_output: &'a Path }`.
 
 ### Entry points
 
@@ -102,8 +100,7 @@ The crate is a single flat module.
 
 ### Values
 
-- `struct AttestationStampValues { date: String, timestamp: PreparedTimestamp,
-  document_uuid: String, instance_uuid: String }` — serialisable as the
+- `struct AttestationStampValues { date: String, timestamp: PreparedTimestamp, document_uuid: String, instance_uuid: String }` — serialisable as the
   binary's single JSON result object. Both UUID fields are lowercase hex
   grouped `8-4-4-4-12`; no version or variant bits are rewritten, so the
   text preserves all 128 derived bits.

@@ -116,8 +116,7 @@ preflight_routing(&config).expect("a single target is unambiguous");
 
 ### Root module
 
-- `struct RoutingConfig { redirect, redirect_output, redirect_error,
-  redirect_prefixed, notify_on_write, debug, quiet }` — all four targets
+- `struct RoutingConfig { redirect, redirect_output, redirect_error, redirect_prefixed, notify_on_write, debug, quiet }` — all four targets
   are `Option<PathBuf>`; the rest are `bool`. `Default` gives no
   redirection at all, meaning both streams pass through to the parent.
 - `RoutingConfig::is_stream_redirected(&self, stream: Stream) -> bool` —
@@ -151,12 +150,10 @@ preflight_routing(&config).expect("a single target is unambiguous");
 
 ### `writer` module
 
-- `struct Writer` — `Writer::new(file: impl Write + Send + 'static,
-  add_prefix: bool, wrap_length: usize, props: StreamProps, debug: bool)`,
+- `struct Writer` — `Writer::new(file: impl Write + Send + 'static, add_prefix: bool, wrap_length: usize, props: StreamProps, debug: bool)`,
   `write(&mut self, stream: Stream, raw: &[u8]) -> io::Result<()>`,
   `finalize(&mut self) -> io::Result<()>`.
-- `struct StreamProps { line1_prefix_stdout, wrap_prefix_stdout,
-  line1_prefix_stderr, wrap_prefix_stderr }` — all `String`, used only
+- `struct StreamProps { line1_prefix_stdout, wrap_prefix_stdout, line1_prefix_stderr, wrap_prefix_stderr }` — all `String`, used only
   in prefixed mode.
 
 The writer has two modes, and the distinction is load-bearing:

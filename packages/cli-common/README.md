@@ -136,8 +136,7 @@ published items are re-exported here.
 - Constructors: `new`, `help`, `version`, `usage_error`, `tty_refusal`,
   `panic`, `status`, `diagnostic`. `usage_error` fixes its own message;
   the caller supplies only the clap error class.
-- `enum ControlPlaneRecordKind { Help, Version, UsageError, TtyRefusal,
-  Panic, Status, Diagnostic }` and the matching
+- `enum ControlPlaneRecordKind { Help, Version, UsageError, TtyRefusal, Panic, Status, Diagnostic }` and the matching
   `enum ControlPlaneFields` payloads; `enum StandardStream { Stdout, Stderr }`.
 - `emit_control_plane_record(&ControlPlaneRecord) -> io::Result<()>` —
   one JSON line on stderr under a process-wide write lock. Does not
