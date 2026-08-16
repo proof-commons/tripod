@@ -685,11 +685,107 @@ const LEAF_PREFIX_BYTES: usize = 32 + 32 + 1 + 1 + 1;
 /// The metadata leaf script's constant tail, a false and a verify.
 const LEAF_TAIL_BYTES: usize = 2;
 
+/// The metadata schema's object width.
+///
+/// Restated from the constructor oracle's schema rather than imported,
+/// because this crate is beneath it and must not depend on it. The test
+/// below is what keeps the two from drifting: it emits the leaf script
+/// from this width and checks the framing the schedules assume.
+const METADATA_BYTES: usize = 48;
+
+/// The widest script a one-byte compact size can introduce.
+///
+/// A length below this is written as itself in one byte; at it and above
+/// a compact size grows a marker and a payload, and the leaf preimage
+/// would carry more framing than the schedules allow for.
+const ONE_BYTE_COMPACT_SIZE_LIMIT: usize = 253;
+
 /// Both tag digests of one tagged hash.
 const TAG_PREFIX_BYTES: usize = 64;
 
 /// Both tag digests of the tweak hash, and the internal key after them.
 const TWEAK_PREFIX_BYTES: usize = TAG_PREFIX_BYTES + 32;
+
+/// The metadata leaf's script, as the reviewed builder emits it.
+///
+/// The same three instructions the constructor oracle's leaf carries:
+/// the metadata as one literal, a false, and the verification that ends
+/// evaluation on it.
+fn metadata_leaf_script(metadata_bytes: usize) -> Vec<u8> {
+    let target = reviewed_target();
+    TapscriptProgram::new(vec![
+        TapscriptInstruction::Push(
+            StackItem::new(&target, vec![0; metadata_bytes])
+                .expect("the metadata is within the literal bound"),
+        ),
+        TapscriptInstruction::Push(StackItem::empty()),
+        op(OpcodeId::Verify),
+    ])
+    .expect("three instructions are within the limit")
+    .encode(&target)
+}
+
+#[test]
+fn the_leaf_framing_constants_are_the_emitted_ones() {
+    // The schedules above stream the metadata leaf's preimage as a
+    // constant prefix, the metadata, and a constant tail. Those two
+    // widths were asserted rather than derived when the schedules were
+    // written, and a wrong one would make every schedule a statement
+    // about a leaf no constructor builds.
+    //
+    // So they are computed here from the bytes the reviewed builder
+    // actually emits. The prefix is both tag digests, the leaf version
+    // byte, the script's compact-size length, and whatever the builder
+    // puts in front of the metadata to push it; the tail is everything
+    // the builder puts after it.
+    let script = metadata_leaf_script(METADATA_BYTES);
+
+    // The metadata appears once, contiguously, and the script is framing
+    // around it.
+    let metadata_at = script
+        .windows(METADATA_BYTES)
+        .position(|window| window == vec![0_u8; METADATA_BYTES])
+        .expect("the emitted script carries the metadata");
+    let push_framing = metadata_at;
+    let tail = script.len() - metadata_at - METADATA_BYTES;
+
+    // One byte of compact size, which holds only while the whole script
+    // is shorter than the marker threshold.
+    assert!(script.len() < ONE_BYTE_COMPACT_SIZE_LIMIT);
+    let compact_size_bytes = 1;
+    let leaf_version_bytes = 1;
+
+    assert_eq!(
+        LEAF_PREFIX_BYTES,
+        TAG_PREFIX_BYTES + leaf_version_bytes + compact_size_bytes + push_framing,
+        "the streamed prefix is the emitted framing"
+    );
+    assert_eq!(
+        LEAF_TAIL_BYTES, tail,
+        "the streamed tail is the emitted framing"
+    );
+
+    // And the whole preimage the schedules stream is the whole preimage
+    // the leaf hash covers.
+    assert_eq!(
+        LEAF_PREFIX_BYTES + METADATA_BYTES + LEAF_TAIL_BYTES,
+        TAG_PREFIX_BYTES + leaf_version_bytes + compact_size_bytes + script.len()
+    );
+}
+
+#[test]
+fn a_wider_metadata_object_would_move_the_leaf_framing() {
+    // The negative control, and the reason the width above is not
+    // incidental. A metadata object wide enough to need a longer push
+    // encoding shifts the prefix, so the schedules are statements about
+    // one schema width rather than about metadata in general.
+    let narrow = metadata_leaf_script(METADATA_BYTES).len() - METADATA_BYTES;
+    let wide = metadata_leaf_script(255).len() - 255;
+    assert!(
+        wide > narrow,
+        "a wider object needs more framing than the schedules allow for"
+    );
+}
 
 /// The predecessor half, ending with the curve step's operands placed.
 ///
@@ -787,21 +883,21 @@ fn output_binding() -> Vec<TapscriptInstruction> {
     ]
 }
 
-/// The declared stack effect of the curve step, and only that.
+/// The curve step: the internal key, then the tweak verification.
 ///
-/// The tweak verification consumes its three operands and pushes
-/// nothing. The validator will not schedule the instruction itself
-/// here, because the tweak it derives is typed as a digest rather than
-/// a scalar — see `a_derived_digest_is_not_admitted_as_a_tweak_scalar`,
-/// which records that boundary. So the composition schedules the
-/// declared *stack* effect in its place: the internal key is pushed and
-/// the three items are removed, exactly as the contract states.
+/// Until the tweak position was corrected against the target this was a
+/// model of the instruction's declared stack effect rather than the
+/// instruction — the derived tweak was typed as a digest and the
+/// position was declared as one exact encoding, so the composition was
+/// refused here. The position now says what the target says, and the
+/// composed schedule carries the real primitive
+/// (`a_derived_digest_is_admitted_as_a_tweak_operand`).
 ///
-/// This models the depth, never the check. Nothing here claims the
-/// curve relation holds, and the composed schedule is evidence about
-/// stack discipline alone.
-fn curve_step_stack_effect() -> Vec<TapscriptInstruction> {
-    vec![raw(vec![0; 32]), op(OpcodeId::DropTwo), op(OpcodeId::Drop)]
+/// The internal key is a fixed thirty-two byte literal the program
+/// pushes: the prototype's key is a published nothing-up-my-sleeve
+/// point, so it is a constant of the program rather than a witness.
+fn curve_step() -> Vec<TapscriptInstruction> {
+    vec![raw(vec![0; 32]), op(OpcodeId::TweakVerify)]
 }
 
 /// Proves one metadata field identical in both objects.
@@ -1040,10 +1136,10 @@ fn the_continuity_composition_carries_one_root_across_both_halves() {
     // witnessed, so the split-root instance has nothing to supply: there
     // is no second value to disagree with the first.
     let mut instructions = predecessor_proof();
-    instructions.extend(curve_step_stack_effect());
+    instructions.extend(curve_step());
     instructions.extend(successor_proof());
     instructions.extend(output_binding());
-    instructions.extend(curve_step_stack_effect());
+    instructions.extend(curve_step());
     // The final truth value a standalone spend needs.
     instructions.push(number(1));
 
@@ -1130,31 +1226,88 @@ fn the_predecessor_proof_schedules_and_leaves_one_authenticated_root() {
 }
 
 #[test]
-fn a_derived_digest_is_not_admitted_as_a_tweak_scalar() {
-    // The one step of the predecessor proof the abstract validator
-    // cannot express, recorded rather than worked around.
+fn a_derived_digest_is_admitted_as_a_tweak_operand() {
+    // The step the abstract validator used to refuse, corrected against
+    // the target rather than worked around.
     //
-    // The streaming hash produces a digest, and the tweak verification
-    // takes a scalar. Both are exactly thirty-two bytes, and the
-    // reviewed contracts type them apart on purpose: a digest is an
-    // opaque hash, a scalar must lie below the group order, and no
-    // reviewed primitive converts one into the other. So the
-    // composition is refused here even though the target performs it —
-    // the interpreter accepts any thirty-two byte tweak and decides
-    // scalar validity when it does the arithmetic.
+    // Until this wave the tweak position was declared as one exact
+    // encoding, so a derived digest did not satisfy it and the
+    // predecessor proof could not schedule its own curve check. The
+    // target has no such rule. Its entire operand guard is
+    // `vchTweak.size() != 32`, and what the thirty-two bytes mean is
+    // decided afterwards, inside `CheckPayToContract`
+    // (`src/script/interpreter.cpp:2206-2220`). The contract now says
+    // that, so the composition the target performs is the composition
+    // this validator schedules.
     //
-    // That gap is the abstract form of tweak totality
-    // (Guide-10 `rule:guide10:tweak-totality`): the rare instance whose
-    // derived tweak is not a scalar is exactly the instance this type
-    // boundary declines to promise. The prototype does not close it by
-    // asserting the conversion, because asserting it would claim a
-    // totality the construction does not have.
+    // # This is a correction, not a relaxation
+    //
+    // Nothing here promises the derived tweak is a scalar. The residual
+    // is unchanged and is still the target's to decide: the rare
+    // instance whose tweak is at or above the group order fails inside
+    // the curve arithmetic, which is exactly where the target fails it
+    // (Guide-10 `rule:guide10:tweak-totality`). What changed is that a
+    // refusal the target does not make is no longer made here.
+    let result = schedule(
+        vec![op(OpcodeId::TweakVerify)],
+        &AbstractStackState::from_main(vec![
+            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+            StackValueType::Encoded(EncodingClass::Sha256Digest),
+            StackValueType::Encoded(EncodingClass::XOnlyPublicKey),
+        ]),
+    );
+
+    assert_eq!(result.success(), &states(&[Vec::new()]));
+    assert!(result.nonaborting_failure().is_empty());
+}
+
+#[test]
+fn an_operand_of_the_wrong_width_is_still_refused_as_a_tweak() {
+    // The negative control for the correction, and the reason it is not
+    // a widening.
+    //
+    // The position admits thirty-two bytes and nothing else, so a
+    // fixed-width integer, a script number, or a literal of any other
+    // length is refused exactly where the target refuses it — at the
+    // size guard, before any curve arithmetic happens.
+    let target = reviewed_target();
+    let program = TapscriptProgram::new(vec![op(OpcodeId::TweakVerify)])
+        .expect("one instruction is within the limit");
+
+    for wrong in [signed64(), literal(31), literal(33), literal(64)] {
+        let initial = AbstractStackState::from_main(vec![
+            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+            wrong.clone(),
+            StackValueType::Encoded(EncodingClass::XOnlyPublicKey),
+        ]);
+        assert!(
+            validate_program(
+                &target,
+                &program,
+                &initial,
+                AbstractLimits::for_target(&target),
+            )
+            .is_err(),
+            "an item of the wrong width does not satisfy the tweak position: {wrong:?}"
+        );
+    }
+}
+
+#[test]
+fn an_unsettled_width_does_not_satisfy_the_tweak_position() {
+    // The honest floor of the correction. Where the abstract state has
+    // not fixed the item's width, the item could be one of the widths
+    // the target refuses, and a validator that admitted it would be
+    // claiming a fact the state does not carry.
     let target = reviewed_target();
     let program = TapscriptProgram::new(vec![op(OpcodeId::TweakVerify)])
         .expect("one instruction is within the limit");
     let initial = AbstractStackState::from_main(vec![
         StackValueType::Encoded(EncodingClass::CompressedPublicKey),
-        StackValueType::Encoded(EncodingClass::Sha256Digest),
+        StackValueType::Bytes {
+            minimum: 0,
+            maximum: 64,
+        },
         StackValueType::Encoded(EncodingClass::XOnlyPublicKey),
     ]);
 
@@ -1166,6 +1319,6 @@ fn a_derived_digest_is_not_admitted_as_a_tweak_scalar() {
             AbstractLimits::for_target(&target),
         )
         .is_err(),
-        "a derived digest does not satisfy a scalar position"
+        "an unsettled width settles no operand"
     );
 }

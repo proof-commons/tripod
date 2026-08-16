@@ -1617,16 +1617,30 @@ fn curve_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
             budgeted(-3),
             &[R::OpcodeSemantics, R::EllipticCurveSemantics],
         ),
+        // The tweak position admits on width alone, and the reason is
+        // the target's own guard: `vchTweak.size() != 32` is the entire
+        // operand check, and what the bytes mean is decided afterwards
+        // by `CheckPayToContract`
+        // (`src/script/interpreter.cpp:2206-2220`). Declaring it as one
+        // exact encoding refused the digest a program actually derives
+        // there, which the target accepts
+        // (Guide-10 `rule:guide10:tweak-totality`).
         spec(
             O::TweakVerify,
             0xe4,
-            consuming(
+            StackContract::new(
                 vec![
-                    S::Encoded(E::CompressedPublicKey),
-                    S::Encoded(E::TaprootTweak),
-                    S::Encoded(E::XOnlyPublicKey),
+                    OperandContract::Exact(S::Encoded(E::CompressedPublicKey)),
+                    OperandContract::WidthOnly {
+                        bytes: NonZeroUsize::new(32).expect("thirty-two is not zero"),
+                        intent: E::TaprootTweak,
+                    },
+                    OperandContract::Exact(S::Encoded(E::XOnlyPublicKey)),
                 ],
-                vec![],
+                SuccessContract::Fixed {
+                    consumed_operands: 3,
+                    results: vec![],
+                },
                 gated([
                     abort(C::StackUnderflow),
                     abort(C::InvalidPublicKeyEncoding),
