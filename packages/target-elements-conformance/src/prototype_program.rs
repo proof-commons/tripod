@@ -53,6 +53,52 @@ use crate::constructor::tagged::{
     DIGEST_BYTES, TAP_BRANCH_TAG, TAP_LEAF_TAG, TAP_TWEAK_TAG, compact_size, sha256,
 };
 
+/// Where the counter field begins in a canonical encoding.
+///
+/// Everything in front of it — the domain, the schema, and the object
+/// kind — is contiguous and unchanged by a transition, so one slice
+/// covers all three. The offsets are stated here and checked against the
+/// oracle's own encoding, which is what keeps a schema edit from
+/// silently moving a field boundary the program reads.
+pub const COUNTER_AT: usize = 24;
+
+/// The counter's width, which is the fixed-width arithmetic width.
+pub const COUNTER_BYTES: usize = 8;
+
+/// Where the flags field begins.
+pub const FLAGS_AT: usize = 32;
+
+/// The flags field's width.
+pub const FLAGS_BYTES: usize = 4;
+
+/// Where the representation nonce begins.
+pub const NONCE_AT: usize = 36;
+
+/// The representation nonce's width.
+pub const NONCE_BYTES: usize = 4;
+
+/// Where the reserved field begins.
+pub const RESERVED_AT: usize = 40;
+
+/// The reserved field's width.
+pub const RESERVED_BYTES: usize = 8;
+
+/// The greatest predecessor counter the composed program admits.
+///
+/// The target's fixed-width arithmetic is signed, so the increment's
+/// success flag reports the overflow at the signed maximum. The program
+/// pins the predecessor counter nonnegative in front of the increment,
+/// which closes the other end: a counter at the unsigned maximum would
+/// otherwise increment to zero with the flag set, and two distinct
+/// states of one object would become indistinguishable.
+///
+/// The oracle's own transition is unsigned and refuses only at the
+/// unsigned maximum, so the program admits strictly fewer predecessors
+/// than the oracle does. That is a stated prototype domain rather than
+/// a disagreement: every counter the program admits, the oracle admits
+/// and moves the same way.
+pub const MAXIMUM_PREDECESSOR_COUNTER: u64 = (i64::MAX as u64) - 1;
+
 /// Which prototype construction a program is.
 ///
 /// One variant, and a new one is a reviewed addition rather than a
@@ -77,6 +123,15 @@ pub enum PrototypeKind {
 pub enum PrototypeProgramRelation {
     /// One metadata object's constructor derives from its predecessor's
     /// by the stated transition.
+    ///
+    /// Two properties, and the program establishes both: the two
+    /// constructors are built from one static root, one internal key,
+    /// and one schema, and the successor's metadata is the predecessor's
+    /// own metadata with the counter advanced by exactly one and every
+    /// other stated field carried through. The second half of that used
+    /// to be an absence this module recorded; it is now a construction,
+    /// because the successor object is derived from the predecessor's
+    /// bytes rather than witnessed beside them.
     MetadataConstructorContinuity,
 }
 
@@ -430,6 +485,14 @@ fn raw(
         .map_err(|_| PrototypeProgramDefect::LiteralNotExpressible)
 }
 
+/// A signed fixed-width literal, as an instruction.
+///
+/// Infallible by width: the target's fixed-width integer is eight bytes,
+/// which is inside every literal bound the reviewed contract states.
+fn signed(target: &ReviewedElementsTapscriptDefinition, value: i64) -> TapscriptInstruction {
+    TapscriptInstruction::Push(StackItem::signed_le64(target, value))
+}
+
 /// A script-number literal, as an instruction.
 fn number(
     target: &ReviewedElementsTapscriptDefinition,
@@ -530,19 +593,27 @@ fn bind_introspected_program(
 /// One constructor derivation: the metadata leaf hash, the branch hash
 /// against the static root, and the tweak.
 ///
+/// `lift` brings the metadata object this derivation covers to the top,
+/// and differs between the two uses because the two arrive with
+/// different things beneath them: the successor's object is the value
+/// the derivation just produced and is already on top, and the
+/// predecessor's sits one deeper, beneath the successor tweak.
+///
 /// `retain_root` decides whether the static root survives the branch
-/// hash. The predecessor half hashes it from a copy so the authenticated
-/// instance outlives the whole second derivation; the successor half
-/// consumes the one it was handed, which is what binds the two
-/// constructors to the same value by construction rather than by
-/// comparing two witnesses (Guide-10 `rule:guide10:static-root`).
+/// hash. The successor half hashes it from a copy so the one instance
+/// outlives the whole second derivation; the predecessor half consumes
+/// the one it was handed, which is what binds the two constructors to
+/// the same value by construction rather than by comparing two
+/// witnesses (Guide-10 `rule:guide10:static-root`).
 fn derive_constructor(
     target: &ReviewedElementsTapscriptDefinition,
     literals: &ContinuityLiterals,
+    lift: Option<OpcodeId>,
     retain_root: bool,
 ) -> Result<Vec<TapscriptInstruction>, PrototypeProgramDefect> {
-    let mut out = vec![
-        op(OpcodeId::Swap),
+    let mut out = Vec::new();
+    out.extend(lift.map(op));
+    out.extend([
         raw(target, literals.leaf_prefix.clone())?,
         op(OpcodeId::Sha256Initialize),
         op(OpcodeId::Swap),
@@ -553,15 +624,18 @@ fn derive_constructor(
         op(OpcodeId::Sha256Initialize),
         op(OpcodeId::Swap),
         op(OpcodeId::Sha256Update),
-    ];
+    ]);
     if retain_root {
         out.extend([
             op(OpcodeId::Rotate),
             op(OpcodeId::Duplicate),
             op(OpcodeId::Rotate),
+            op(OpcodeId::Swap),
         ]);
+    } else {
+        out.push(op(OpcodeId::Rotate));
     }
-    out.extend([op(OpcodeId::Swap), op(OpcodeId::Sha256Finalize)]);
+    out.push(op(OpcodeId::Sha256Finalize));
     out.push(raw(target, literals.tweak_prefix.clone())?);
     out.extend([
         op(OpcodeId::Sha256Initialize),
@@ -571,39 +645,154 @@ fn derive_constructor(
     Ok(out)
 }
 
-/// The whole continuity program, with every literal resolved.
+/// Derives the successor metadata from the predecessor's own bytes.
+///
+/// # Why the successor object is derived and not witnessed
+///
+/// A witnessed successor has to be compared against the predecessor
+/// field by field, and that comparison needs both objects adjacent while
+/// the continuity layout needs the one static root between them. No
+/// reviewed primitive reads below the third item, so the two cannot both
+/// hold.
+///
+/// Deriving removes the comparison. Every unchanged field is a slice of
+/// the predecessor object, the counter is that object's own counter
+/// incremented under a verified success flag, the reserved field is a
+/// literal zero, and the representation nonce is the one witness item
+/// the successor needs — which is exactly the field the creator grinds
+/// to canonicalize the branch order. There is no second object for a
+/// caller to choose, so the unchanged-field and exact-transition
+/// requirements hold by construction
+/// (Guide-10 `rule:guide10:successor-metadata`).
+///
+/// # The counter's domain
+///
+/// The increment is signed, so its success flag catches the overflow at
+/// the signed maximum. The nonnegative check in front of it is what
+/// closes the other end: with both, the admitted predecessor counters
+/// are exactly zero through [`MAXIMUM_PREDECESSOR_COUNTER`], and the
+/// wrap from the unsigned maximum back to zero — which the flag alone
+/// would admit — is refused.
+fn derive_successor_metadata(
+    target: &ReviewedElementsTapscriptDefinition,
+) -> Result<Vec<TapscriptInstruction>, PrototypeProgramDefect> {
+    let reserved_zero = vec![0_u8; RESERVED_BYTES];
+    let mut out = vec![
+        // The nonce is exactly its schema width, so the derived object
+        // is exactly the schema's width.
+        op(OpcodeId::Size),
+        number(target, i64::try_from(NONCE_BYTES).unwrap_or(4))?,
+        op(OpcodeId::EqualVerify),
+        op(OpcodeId::Swap),
+        // Domain, schema, and object kind, in one contiguous slice.
+        op(OpcodeId::Duplicate),
+        number(target, 0)?,
+        number(target, i64::try_from(COUNTER_AT).unwrap_or(24))?,
+        op(OpcodeId::Substring),
+        op(OpcodeId::Swap),
+        // The counter, pinned nonnegative and incremented by one.
+        op(OpcodeId::Duplicate),
+        number(target, i64::try_from(COUNTER_AT).unwrap_or(24))?,
+        number(target, i64::try_from(COUNTER_BYTES).unwrap_or(8))?,
+        op(OpcodeId::Substring),
+        op(OpcodeId::Duplicate),
+        signed(target, 0),
+        op(OpcodeId::GreaterThanOrEqual64),
+        op(OpcodeId::Verify),
+        signed(target, 1),
+        op(OpcodeId::Add64),
+        op(OpcodeId::Verify),
+        op(OpcodeId::Rotate),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Concatenate),
+        // The flags, unchanged.
+        op(OpcodeId::Swap),
+        op(OpcodeId::Duplicate),
+        number(target, i64::try_from(FLAGS_AT).unwrap_or(32))?,
+        number(target, i64::try_from(FLAGS_BYTES).unwrap_or(4))?,
+        op(OpcodeId::Substring),
+        op(OpcodeId::Rotate),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Concatenate),
+        // The representation nonce, the one witnessed field.
+        op(OpcodeId::Rotate),
+        op(OpcodeId::Concatenate),
+        // The reserved field, zero by construction.
+        raw(target, reserved_zero.clone())?,
+        op(OpcodeId::Concatenate),
+    ];
+    // The predecessor's own reserved field, zero by requirement.
+    out.extend([
+        op(OpcodeId::Swap),
+        op(OpcodeId::Duplicate),
+        number(target, i64::try_from(RESERVED_AT).unwrap_or(40))?,
+        number(target, i64::try_from(RESERVED_BYTES).unwrap_or(8))?,
+        op(OpcodeId::Substring),
+        raw(target, reserved_zero)?,
+        op(OpcodeId::EqualVerify),
+        op(OpcodeId::Swap),
+    ]);
+    Ok(out)
+}
+
+/// The whole composed program, with every literal resolved.
 ///
 /// The instruction sequence is the one the schedules established, in the
-/// same order: the predecessor half, its curve check, the successor
-/// half, the successor output binding, its curve check, and the final
-/// truth value. What differs is that every literal is the value a spend
-/// carries.
+/// same order: the derivation, the successor constructor retaining the
+/// one root, the predecessor constructor consuming it, the consumed
+/// input's binding and curve check, the created output's binding and
+/// curve check, and the final truth value. What differs is that every
+/// literal is the value a spend carries.
+///
+/// # Why the successor constructor comes first
+///
+/// The order is forced by the reach bound rather than chosen. The
+/// successor's metadata is the value the derivation just produced, so
+/// nothing may pile on top of it; the one root is therefore retained
+/// across the predecessor half and consumed there; and the two curve
+/// checks run last, when the two witnessed output keys are the only
+/// witnesses left and the two tweaks are the only computed values above
+/// them — exactly the two the reach bound admits.
 fn continuity_instructions(
     target: &ReviewedElementsTapscriptDefinition,
 ) -> Result<Vec<TapscriptInstruction>, PrototypeProgramDefect> {
     let literals = ContinuityLiterals::resolve(target)?;
 
-    // The predecessor half: bind the witnessed output key to the program
-    // the consumed input carries, then derive that program's own tweak.
-    let mut out = vec![
+    let mut out = derive_successor_metadata(target)?;
+
+    // The successor constructor, from the derived object, keeping the
+    // one root alive for the predecessor half.
+    out.extend(derive_constructor(target, &literals, None, true)?);
+
+    // The predecessor constructor, consuming that one root.
+    out.extend(derive_constructor(
+        target,
+        &literals,
+        Some(OpcodeId::Rotate),
+        false,
+    )?);
+
+    // The consumed input's binding: the witnessed predecessor output key
+    // against the program the input actually carries, then that
+    // program's own curve check.
+    out.extend([
+        op(OpcodeId::Rotate),
         op(OpcodeId::PushCurrentInputIndex),
         op(OpcodeId::InspectInputScriptPubKey),
-    ];
+    ]);
     out.extend(bind_introspected_program(target, OpcodeId::Swap)?);
-    out.extend(derive_constructor(target, &literals, true)?);
-    // Place the curve step's operands, the retained root beneath them.
-    out.extend([op(OpcodeId::Rotate), op(OpcodeId::Swap)]);
+    out.push(op(OpcodeId::Swap));
     out.extend(curve_step(target)?);
 
-    // The successor half, consuming the one authenticated root.
-    out.extend(derive_constructor(target, &literals, false)?);
-
-    // The successor output binding, read at one stated role rather than
-    // searched for among the outputs
+    // The created output, read at one stated role rather than searched
+    // for among the outputs
     // (Guide-10 `rule:guide10:successor-constructor`).
-    out.push(number(target, 0)?);
-    out.push(op(OpcodeId::InspectOutputScriptPubKey));
-    out.extend(bind_introspected_program(target, OpcodeId::Rotate)?);
+    out.extend([
+        op(OpcodeId::Swap),
+        number(target, 0)?,
+        op(OpcodeId::InspectOutputScriptPubKey),
+    ]);
+    out.extend(bind_introspected_program(target, OpcodeId::Swap)?);
     out.push(op(OpcodeId::Swap));
     out.extend(curve_step(target)?);
 
@@ -613,20 +802,22 @@ fn continuity_instructions(
     Ok(out)
 }
 
-/// The witness the continuity program consumes, deepest item first.
+/// The witness the composed program consumes, deepest item first.
 ///
 /// The order is the consumption order reversed, and it is forced rather
 /// than chosen: no reviewed primitive reads below the third item, so a
 /// witness is reachable only while fewer than three computed values sit
-/// above it, and the one static root must outlive both constructor
-/// derivations (Guide-10 `rule:guide10:static-root`).
+/// above it. The representation nonce is consumed first, the one
+/// metadata object next, the one static root after it, and the two
+/// output keys last — by then the two derived tweaks are the only
+/// computed values above them (Guide-10 `rule:guide10:static-root`).
 fn continuity_initial_stack() -> AbstractStackState {
     AbstractStackState::from_main(vec![
         StackValueType::Encoded(EncodingClass::CompressedPublicKey),
-        metadata_item(),
+        StackValueType::Encoded(EncodingClass::CompressedPublicKey),
         digest_item(),
         metadata_item(),
-        StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+        nonce_item(),
     ])
 }
 
@@ -635,6 +826,14 @@ const fn metadata_item() -> StackValueType {
     StackValueType::Bytes {
         minimum: METADATA_BYTES,
         maximum: METADATA_BYTES,
+    }
+}
+
+/// One representation nonce, as a witness item.
+const fn nonce_item() -> StackValueType {
+    StackValueType::Bytes {
+        minimum: NONCE_BYTES,
+        maximum: NONCE_BYTES,
     }
 }
 
