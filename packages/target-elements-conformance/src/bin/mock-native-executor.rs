@@ -39,10 +39,13 @@ use target_elements_conformance::constructor::tree::construct;
 use target_elements_conformance::protocol::{
     ExecutorCapability, ExecutorEnvironmentObservation, ExecutorHandshake,
     MOCK_EXECUTOR_GENESIS_ID, MOCK_EXECUTOR_NETWORK_ID, NATIVE_PROTOCOL_SCHEMA,
-    NativeExecutionRequest, NativeExecutionResponse, NativeResourceObservation, NativeVerdict,
-    ObservedFailureClass, WireEnvironment, WireExecutionDomain,
+    NativeExecutionRequest, NativeExecutionResponse, NativePrototypeRequest,
+    NativePrototypeResponse, NativeResourceObservation, NativeVerdict, ObservedFailureClass,
+    WireEnvironment, WireExecutionDomain,
 };
-use target_elements_conformance::prototype::{OutputRole, PrototypeConstruction};
+use target_elements_conformance::prototype::{
+    ExpectedPrototypeOutcome, PrototypeConstruction, PrototypeRelation,
+};
 
 const COMMAND_NAME: &str = "mock-native-executor";
 
@@ -142,6 +145,10 @@ fn handshake(schema: u32) -> ExecutorHandshake {
             // transaction is built and no target is consulted, which is
             // why a run against this mock is still not evidence.
             ExecutorCapability::TreeMaterialization,
+            // Advertised for the same reason and with the same limit: it
+            // reads the record and checks the construction, and it still
+            // executes nothing.
+            ExecutorCapability::CompoundPrototypeFixtures,
         ]),
     }
 }
@@ -280,6 +287,14 @@ fn run(behavior: Behavior) -> std::io::Result<CommandExit> {
         if line.trim().is_empty() {
             continue;
         }
+        // A prototype request is its own record shape, so it is tried
+        // first: a primitive request never parses as one, and the
+        // misbehaviors below are all statements about a primitive case
+        // identity and so do not apply to it.
+        if let Ok(request) = serde_json::from_str::<NativePrototypeRequest>(&line) {
+            write_json(&mut stdout, &echo_prototype(&request, behavior))?;
+            continue;
+        }
         let Ok(request) = serde_json::from_str::<NativeExecutionRequest>(&line) else {
             return Ok(CommandExit::Failure);
         };
@@ -351,7 +366,11 @@ fn echo(request: &NativeExecutionRequest, behavior: Behavior) -> NativeExecution
     // the silent substitution the stated tree exists to prevent, and a
     // refusal is not a target verdict.
     if let Some(construction) = &request.construction
-        && !materializes(construction, behavior)
+        && !materializes(
+            construction,
+            PrototypeRelation::MetadataConstructorContinuity,
+            behavior,
+        )
     {
         return refusal(schema, request);
     }
@@ -446,7 +465,11 @@ fn refusal(schema: u32, request: &NativeExecutionRequest) -> NativeExecutionResp
 /// [`Behavior::RefuseTreeMaterialization`] answers false whatever the
 /// construction says, so that the refusal branch can be driven by a
 /// coherent fixture rather than only by a broken one.
-fn materializes(construction: &PrototypeConstruction, behavior: Behavior) -> bool {
+fn materializes(
+    construction: &PrototypeConstruction,
+    relation: PrototypeRelation,
+    behavior: Behavior,
+) -> bool {
     if behavior != Behavior::MaterializeTree {
         return false;
     }
@@ -465,14 +488,100 @@ fn materializes(construction: &PrototypeConstruction, behavior: Behavior) -> boo
     {
         return false;
     }
-    // A successor the transaction could not carry uniquely is one this
-    // mock has no single answer for either.
-    let successors = construction
-        .outputs
-        .iter()
-        .filter(|output| output.role == OutputRole::Successor)
-        .count();
-    successors == 1 && construction.outputs.len() == 1
+    // An output the transaction could not carry uniquely is one this
+    // mock has no single answer for either. Which roles those are is the
+    // relation's own question: the wide-floor pattern reads no
+    // transaction field and requires no output at all.
+    let required = relation.required_output_roles();
+    if construction.outputs.len() != required.len() {
+        return false;
+    }
+    required.iter().all(|role| {
+        construction
+            .outputs
+            .iter()
+            .filter(|output| output.role == *role)
+            .count()
+            == 1
+    })
+}
+
+/// One compound-prototype case, answered from its own expectation.
+///
+/// The same echo the primitive path performs, over the same
+/// construction check. Nothing is executed here either: what the mock
+/// establishes is that the record round-trips and that the stated
+/// construction is the one the oracle determines.
+fn echo_prototype(request: &NativePrototypeRequest, behavior: Behavior) -> NativePrototypeResponse {
+    let schema = if behavior == Behavior::WrongResponseSchema {
+        NATIVE_PROTOCOL_SCHEMA + 7
+    } else {
+        NATIVE_PROTOCOL_SCHEMA
+    };
+
+    let resources = NativeResourceObservation {
+        script_bytes: request.fixture.script.len() as u64,
+        initial_stack_items: request.fixture.initial_stack.len() as u64,
+        ..NativeResourceObservation::default()
+    };
+
+    if behavior == Behavior::InfrastructureError
+        || !materializes(
+            &request.fixture.construction,
+            request.fixture.case.relation,
+            behavior,
+        )
+    {
+        return NativePrototypeResponse {
+            schema,
+            case: request.case.clone(),
+            verdict: NativeVerdict::InfrastructureError,
+            final_stack: None,
+            final_altstack: None,
+            observed_failure: None,
+            resources: NativeResourceObservation::default(),
+        };
+    }
+
+    match request.fixture.expected {
+        ExpectedPrototypeOutcome::Accepted => NativePrototypeResponse {
+            schema,
+            case: request.case.clone(),
+            verdict: NativeVerdict::Accepted,
+            // A spend verdict exposes no interpreter stack, and this
+            // mock has none to expose. It advertises stack reporting, so
+            // it states the empty stack rather than omitting the field.
+            final_stack: Some(Vec::new()),
+            final_altstack: Some(Vec::new()),
+            observed_failure: None,
+            resources,
+        },
+        ExpectedPrototypeOutcome::Rejected => NativePrototypeResponse {
+            schema,
+            case: request.case.clone(),
+            verdict: NativeVerdict::Rejected,
+            final_stack: Some(Vec::new()),
+            final_altstack: Some(Vec::new()),
+            // The mock distinguishes no class it observed, and it
+            // advertises class reporting, so it names the one class a
+            // refused spend always exhibits from outside: evaluation did
+            // not end in one true item.
+            observed_failure: Some(ObservedFailureClass::NonSingletonFinalStack),
+            resources,
+        },
+        // An outcome this mock has not been taught is not one it can
+        // echo. Answering it as either verdict would be inventing a
+        // target result, so it reports that it could not run the case.
+        _ => NativePrototypeResponse {
+            schema,
+            case: request.case.clone(),
+            verdict: NativeVerdict::InfrastructureError,
+            final_stack: None,
+            final_altstack: None,
+            observed_failure: None,
+            resources: NativeResourceObservation::default(),
+        },
+    }
 }
 
 /// The requested case, with its ordinal moved on by one.

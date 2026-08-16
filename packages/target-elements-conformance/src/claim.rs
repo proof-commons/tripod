@@ -530,10 +530,10 @@ impl ClaimRegistry {
 ///
 /// # Errors
 ///
-/// [`NativeConformanceError::DuplicateEvidenceClaim`] when one claim is
-/// stated twice, and
-/// [`NativeConformanceError::EvidenceCensusMismatch`] when a claim names
-/// a requirement outside the target's evidence census.
+/// [`crate::error::NativeConformanceError::DuplicateEvidenceClaim`] when
+/// one claim is stated twice, and
+/// [`crate::error::NativeConformanceError::EvidenceCensusMismatch`] when
+/// a claim names a requirement outside the target's evidence census.
 pub fn claim_registry() -> Result<ClaimRegistry, crate::error::NativeConformanceError> {
     let mut records = BTreeMap::new();
     for record in CLAIM_CENSUS {

@@ -364,7 +364,7 @@ impl<'a> CensusAuthor<'a> {
     }
 
     /// Keeps the first defect, which is the one that explains the rest.
-    const fn record(&mut self, error: NativeConformanceError) {
+    fn record(&mut self, error: NativeConformanceError) {
         if self.failure.is_none() {
             self.failure = Some(error);
         }

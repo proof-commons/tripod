@@ -69,9 +69,26 @@ use crate::error::NativeConformanceError;
 use crate::fixture::{NativeCaseId, PrimitiveFixtureSet};
 use crate::protocol::{
     ExecutorCapability, ExecutorEnvironmentObservation, ExecutorHandshake, HandshakeRequest,
-    NATIVE_PROTOCOL_SCHEMA, NativeExecutionRequest, NativeExecutionResponse, ProtocolLimits,
-    ProtocolPhase, WireEnvironment, WireExecutionDomain, validate_response_shape,
+    NATIVE_PROTOCOL_SCHEMA, NativeExecutionRequest, NativeExecutionResponse,
+    NativePrototypeRequest, NativePrototypeResponse, ProtocolLimits, ProtocolPhase,
+    WireEnvironment, WireExecutionDomain, validate_response_shape,
 };
+use crate::prototype::{CompoundPrototypeFixture, PrototypeCaseId};
+
+/// What one run asks the executor about.
+///
+/// Two workloads, kept apart in the type rather than in a flag: a
+/// primitive census and a compound-prototype matrix are different
+/// questions with different case identities, and a run that could carry
+/// both would produce a transcript whose rows a report could not tell
+/// apart (Guide-10 `rule:guide10:compound-fixture`).
+#[derive(Clone, Copy, Debug)]
+pub enum NativeWorkload<'a> {
+    /// The canonical primitive census.
+    Primitives(&'a PrimitiveFixtureSet),
+    /// One compound-prototype case matrix.
+    Prototypes(&'a [CompoundPrototypeFixture]),
+}
 
 /// How long a run may take before the executor is stopped.
 ///
@@ -172,6 +189,7 @@ pub struct ExecutionTranscript {
     environment: ExecutorEnvironmentObservation,
     trust: ExecutorTrust,
     responses: BTreeMap<NativeCaseId, NativeExecutionResponse>,
+    prototype_responses: BTreeMap<PrototypeCaseId, NativePrototypeResponse>,
 }
 
 impl ExecutionTranscript {
@@ -199,6 +217,16 @@ impl ExecutionTranscript {
         &self.responses
     }
 
+    /// The compound-prototype responses, in canonical case order.
+    ///
+    /// Empty for a primitive run, and empty for a prototype run is a
+    /// contradiction the caller can see: the two maps are never both
+    /// populated, because one run asks one workload.
+    #[must_use]
+    pub const fn prototype_responses(&self) -> &BTreeMap<PrototypeCaseId, NativePrototypeResponse> {
+        &self.prototype_responses
+    }
+
     /// A transcript assembled directly, for the crate's own tests.
     ///
     /// Not public: a transcript is what an executor said, and a caller
@@ -216,6 +244,7 @@ impl ExecutionTranscript {
             environment,
             trust,
             responses,
+            prototype_responses: BTreeMap::new(),
         }
     }
 }
@@ -465,6 +494,49 @@ pub fn execute(
     configuration: &ExecutorConfiguration,
     fixtures: &PrimitiveFixtureSet,
 ) -> Result<ExecutionTranscript, NativeConformanceError> {
+    execute_workload(
+        target,
+        binding,
+        configuration,
+        NativeWorkload::Primitives(fixtures),
+    )
+}
+
+/// Runs one compound-prototype matrix through the selected executor.
+///
+/// The same exchange, the same supervision, and the same refusals: what
+/// differs is the record shape and the case identity. The executor is
+/// asked whether it reads prototype fixtures before any case is sent,
+/// so an executor that does not is a declined workload rather than a
+/// stream of messages it cannot parse
+/// (Guide-10 `rule:guide10:schema-migration`).
+///
+/// # Errors
+///
+/// Every protocol failure [`execute`] states, plus
+/// [`NativeConformanceError::PrototypeFixturesUnsupported`] when the
+/// executor does not advertise the capability.
+pub fn execute_prototypes(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    configuration: &ExecutorConfiguration,
+    fixtures: &[CompoundPrototypeFixture],
+) -> Result<ExecutionTranscript, NativeConformanceError> {
+    execute_workload(
+        target,
+        binding,
+        configuration,
+        NativeWorkload::Prototypes(fixtures),
+    )
+}
+
+/// The supervised run, over either workload.
+fn execute_workload(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    configuration: &ExecutorConfiguration,
+    workload: NativeWorkload<'_>,
+) -> Result<ExecutionTranscript, NativeConformanceError> {
     let mut child = spawn_executor(&configuration.program)
         .map_err(|_| NativeConformanceError::ExecutorStartupFailed)?;
 
@@ -493,7 +565,7 @@ pub fn execute(
         configuration.cleanup_grace,
     );
 
-    let outcome = run_protocol(target, binding, configuration, fixtures, stdin, &mut reader);
+    let outcome = run_protocol(target, binding, configuration, workload, stdin, &mut reader);
 
     // A refused exchange ends the run here. The tree is stopped rather
     // than waited for, because it may be mid-way through writing the very
@@ -535,7 +607,7 @@ fn run_protocol(
     target: &ReviewedElementsTapscriptDefinition,
     binding: &ReviewedDevelopmentBinding,
     configuration: &ExecutorConfiguration,
-    fixtures: &PrimitiveFixtureSet,
+    workload: NativeWorkload<'_>,
     mut stdin: impl Write,
     reader: &mut impl BufRead,
 ) -> Result<ExecutionTranscript, NativeConformanceError> {
@@ -568,12 +640,25 @@ fn run_protocol(
     // executor that says it accepts no transaction context. Refusing here
     // is the difference between a run that could not happen and a run of
     // cases that quietly executed against no transaction at all.
-    if fixtures.iter().any(|fixture| fixture.context().is_some())
-        && !handshake
-            .capabilities
-            .contains(&ExecutorCapability::TransactionContext)
-    {
-        return Err(NativeConformanceError::ExecutorProtocolMismatch);
+    match workload {
+        NativeWorkload::Primitives(fixtures) => {
+            if fixtures.iter().any(|fixture| fixture.context().is_some())
+                && !handshake
+                    .capabilities
+                    .contains(&ExecutorCapability::TransactionContext)
+            {
+                return Err(NativeConformanceError::ExecutorProtocolMismatch);
+            }
+        }
+        // A prototype request is a record shape a schema-2 executor has
+        // never seen, so the gate is what keeps the revision at 2: it
+        // decides what may be *sent*, and never what is believed about
+        // the answer.
+        NativeWorkload::Prototypes(_) => {
+            if !handshake.runs_prototype_fixtures() {
+                return Err(NativeConformanceError::PrototypeFixturesUnsupported);
+            }
+        }
     }
 
     let environment: ExecutorEnvironmentObservation =
@@ -582,6 +667,57 @@ fn run_protocol(
     compare_environment(target, binding, &environment)?;
 
     let mut responses: BTreeMap<NativeCaseId, NativeExecutionResponse> = BTreeMap::new();
+    let mut prototype_responses: BTreeMap<PrototypeCaseId, NativePrototypeResponse> =
+        BTreeMap::new();
+    match workload {
+        NativeWorkload::Primitives(fixtures) => run_primitive_cases(
+            fixtures,
+            &handshake,
+            limits,
+            &mut stdin,
+            reader,
+            &mut responses,
+        )?,
+        NativeWorkload::Prototypes(matrix) => run_prototype_cases(
+            matrix,
+            &handshake,
+            limits,
+            &mut stdin,
+            reader,
+            &mut prototype_responses,
+        )?,
+    }
+
+    // Closing stdin is how a well-behaved executor learns the exchange
+    // is over; it happens before the read below, because an executor
+    // still waiting for input would otherwise never reach its own end of
+    // stream and both sides would wait for each other.
+    drop(stdin);
+
+    // The protocol is over. Anything further is the executor writing
+    // outside the exchange, which fails the run rather than being
+    // ignored as harmless noise — a blank trailing record included,
+    // since the framing has no empty records to be tolerant of.
+    expect_end_of_stream(reader, limits)?;
+
+    Ok(ExecutionTranscript {
+        handshake,
+        environment,
+        trust: configuration.trust,
+        responses,
+        prototype_responses,
+    })
+}
+
+/// The primitive half of the exchange.
+fn run_primitive_cases(
+    fixtures: &PrimitiveFixtureSet,
+    handshake: &ExecutorHandshake,
+    limits: ProtocolLimits,
+    stdin: &mut impl Write,
+    reader: &mut impl BufRead,
+    responses: &mut BTreeMap<NativeCaseId, NativeExecutionResponse>,
+) -> Result<(), NativeConformanceError> {
     for fixture in fixtures {
         let case = fixture.case();
         let request = NativeExecutionRequest {
@@ -598,7 +734,7 @@ fn run_protocol(
         // timeout, an early exit, or an executor that simply stopped
         // answering — is decided by the read below and by the child's
         // status, not guessed here.
-        let _write = write_message(&mut stdin, &request, ProtocolPhase::Request);
+        let _write = write_message(&mut *stdin, &request, ProtocolPhase::Request);
 
         let response: NativeExecutionResponse =
             read_message(reader, ProtocolPhase::Response, limits)?
@@ -633,25 +769,69 @@ fn run_protocol(
 
         responses.insert(case, response);
     }
+    Ok(())
+}
 
-    // Closing stdin is how a well-behaved executor learns the exchange
-    // is over; it happens before the read below, because an executor
-    // still waiting for input would otherwise never reach its own end of
-    // stream and both sides would wait for each other.
-    drop(stdin);
+/// The compound-prototype half of the exchange.
+///
+/// The same lock-step discipline as the primitive loop, and the same
+/// three faults kept apart: an answer to a case already settled, an
+/// answer to a case never asked about, and an answer to a case that is
+/// still outstanding while another one was asked.
+fn run_prototype_cases(
+    matrix: &[CompoundPrototypeFixture],
+    handshake: &ExecutorHandshake,
+    limits: ProtocolLimits,
+    stdin: &mut impl Write,
+    reader: &mut impl BufRead,
+    responses: &mut BTreeMap<PrototypeCaseId, NativePrototypeResponse>,
+) -> Result<(), NativeConformanceError> {
+    for fixture in matrix {
+        let case = fixture.case.clone();
+        let request = NativePrototypeRequest {
+            schema: NATIVE_PROTOCOL_SCHEMA,
+            case: case.clone(),
+            fixture: fixture.clone(),
+        };
+        // A failed write means the pipe is gone. What that was is
+        // decided by the read below and by the child's status.
+        let _write = write_message(&mut *stdin, &request, ProtocolPhase::Request);
 
-    // The protocol is over. Anything further is the executor writing
-    // outside the exchange, which fails the run rather than being
-    // ignored as harmless noise — a blank trailing record included,
-    // since the framing has no empty records to be tolerant of.
-    expect_end_of_stream(reader, limits)?;
+        let response: NativePrototypeResponse =
+            read_message(reader, ProtocolPhase::Response, limits)?
+                .ok_or_else(|| NativeConformanceError::MissingPrototypeResponse(case.clone()))?;
 
-    Ok(ExecutionTranscript {
-        handshake,
-        environment,
-        trust: configuration.trust,
-        responses,
-    })
+        if response.schema != NATIVE_PROTOCOL_SCHEMA {
+            return Err(NativeConformanceError::UnsupportedProtocolSchema {
+                offered: response.schema,
+            });
+        }
+        if response.case != case {
+            if responses.contains_key(&response.case) {
+                return Err(NativeConformanceError::DuplicatePrototypeResponse(
+                    response.case,
+                ));
+            }
+            if !matrix.iter().any(|other| other.case == response.case) {
+                return Err(NativeConformanceError::UnexpectedPrototypeResponse(
+                    response.case,
+                ));
+            }
+            return Err(NativeConformanceError::PrototypeResponseOrderViolation { expected: case });
+        }
+        // Shape before comparison, exactly as for a primitive response.
+        response
+            .validate_shape(&handshake.capabilities)
+            .map_err(
+                |defect| NativeConformanceError::MalformedPrototypeResponseShape {
+                    case: case.clone(),
+                    defect,
+                },
+            )?;
+
+        responses.insert(case, response);
+    }
+    Ok(())
 }
 
 /// Whether the executor ran the chain the binding names.

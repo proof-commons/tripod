@@ -22,6 +22,7 @@ use target_elements::TargetEvidenceRequirementId;
 
 use crate::fixture::NativeCaseId;
 use crate::protocol::{ProtocolPhase, ResponseShapeDefect};
+use crate::prototype::PrototypeCaseId;
 use crate::vocabulary::evidence_requirement_name;
 
 /// A failure of the target-native conformance harness.
@@ -153,6 +154,49 @@ pub enum NativeConformanceError {
     ResponseOrderViolation {
         /// The case whose response was outstanding.
         expected: NativeCaseId,
+    },
+
+    /// The executor was asked for compound-prototype cases and said it
+    /// does not read them.
+    ///
+    /// Refused before any case runs, and kept apart from the primitive
+    /// mismatch above: an executor that speaks the primitive exchange
+    /// perfectly and reads no prototype record has not failed the
+    /// protocol, it has declined a workload
+    /// (Guide-10 `rule:guide10:schema-migration`).
+    #[error("the external executor does not read compound-prototype fixtures")]
+    PrototypeFixturesUnsupported,
+
+    /// A prototype response contradicted its executor's advertised
+    /// interface.
+    #[error("the executor's response for prototype case {case} is malformed: {defect}")]
+    MalformedPrototypeResponseShape {
+        /// The case answered.
+        case: PrototypeCaseId,
+        /// How the response contradicts the advertised interface.
+        defect: ResponseShapeDefect,
+    },
+
+    /// The executor answered one prototype case twice.
+    #[error("the external executor answered prototype case {0} twice")]
+    DuplicatePrototypeResponse(PrototypeCaseId),
+
+    /// The executor never answered a prototype case it was asked about.
+    #[error("the external executor did not answer prototype case {0}")]
+    MissingPrototypeResponse(PrototypeCaseId),
+
+    /// The executor answered a prototype case it was never asked about.
+    #[error("the external executor answered prototype case {0}, which it was not asked about")]
+    UnexpectedPrototypeResponse(PrototypeCaseId),
+
+    /// The executor answered a different prototype case from the
+    /// outstanding one.
+    #[error(
+        "the external executor answered out of order; prototype case {expected} was outstanding"
+    )]
+    PrototypeResponseOrderViolation {
+        /// The case whose response was outstanding.
+        expected: PrototypeCaseId,
     },
 
     /// The executor reported infrastructure trouble for one case.

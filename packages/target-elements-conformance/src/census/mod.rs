@@ -68,6 +68,7 @@ pub mod introspection;
 pub mod material;
 pub mod numeric;
 pub mod timelock;
+pub mod wide_floor;
 
 use target_elements::{ReviewedDevelopmentBinding, ReviewedElementsTapscriptDefinition};
 

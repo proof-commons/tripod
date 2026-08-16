@@ -58,7 +58,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use crate::fixture::{NativeCaseId, PrimitiveFixture};
-use crate::prototype::PrototypeConstruction;
+use crate::prototype::{CompoundPrototypeFixture, PrototypeCaseId, PrototypeConstruction};
 
 /// The protocol revision this harness speaks.
 ///
@@ -250,6 +250,24 @@ pub enum ExecutorCapability {
     /// gets a typed refusal from the harness instead of a message it
     /// cannot parse (Guide-10 `rule:guide10:schema-migration`).
     TreeMaterialization,
+    /// It accepts a compound-prototype fixture as such.
+    ///
+    /// # Why the fixture could not be projected onto a primitive one
+    ///
+    /// A primitive request carries a primitive fixture and a primitive
+    /// case identity. A compound fixture is neither: its case is a
+    /// relation and a name rather than a group and an ordinal, its
+    /// outcome is a spend verdict rather than a stack shape, and its
+    /// construction is a requirement to build one exact tree. Squeezing
+    /// it into the primitive request would have meant a primitive case
+    /// identity for a case that has none, and a report row that counted
+    /// compound coverage as primitive coverage
+    /// (Guide-10 `rule:guide10:compound-fixture`).
+    ///
+    /// So a prototype request is its own record, and this capability is
+    /// what keeps the protocol revision at 2: no executor is ever sent
+    /// one unless it said it reads them.
+    CompoundPrototypeFixtures,
 }
 
 impl ExecutorHandshake {
@@ -274,6 +292,24 @@ impl ExecutorHandshake {
     pub fn materializes_trees(&self) -> bool {
         self.capabilities
             .contains(&ExecutorCapability::TreeMaterialization)
+    }
+
+    /// Whether this executor may be sent a compound-prototype request.
+    ///
+    /// The same gate, for the same reason: a prototype request is a
+    /// record shape a schema-2 executor has never seen, and its strict
+    /// framing would refuse the whole message. It is only ever sent to
+    /// an executor that said it reads them.
+    ///
+    /// Materializing a tree is a separate claim and is required as well:
+    /// every compound fixture states a construction, and an executor
+    /// that reads the record but approximates the tree would be
+    /// answering about some other output.
+    #[must_use]
+    pub fn runs_prototype_fixtures(&self) -> bool {
+        self.capabilities
+            .contains(&ExecutorCapability::CompoundPrototypeFixtures)
+            && self.materializes_trees()
     }
 }
 
@@ -433,6 +469,75 @@ pub struct NativeExecutionRequest {
     pub construction: Option<PrototypeConstruction>,
 }
 
+/// One compound-prototype case, handed to the executor.
+///
+/// # A record of its own, not a primitive request with extras
+///
+/// The fixture carries its own case identity, script, witness stack,
+/// construction, expectation, and resource expectations, so the executor
+/// receives one typed value rather than a primitive request whose
+/// meaning depends on which optional fields are present. The top-level
+/// case restates the fixture's own, exactly as the primitive request
+/// restates its fixture's: it is what the lock-step exchange matches
+/// responses against, and a fixture whose two disagree is refused.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativePrototypeRequest {
+    /// The protocol revision.
+    pub schema: u32,
+    /// The case being asked about.
+    pub case: PrototypeCaseId,
+    /// The complete public fixture, construction included.
+    pub fixture: CompoundPrototypeFixture,
+}
+
+/// What the target did with one compound-prototype case.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativePrototypeResponse {
+    /// The protocol revision.
+    pub schema: u32,
+    /// The case answered.
+    pub case: PrototypeCaseId,
+    /// What the target did with the spend.
+    pub verdict: NativeVerdict,
+    /// The final main stack, where the executor reports one.
+    pub final_stack: Option<Vec<Vec<u8>>>,
+    /// The final alternate stack, where the executor reports one.
+    pub final_altstack: Option<Vec<Vec<u8>>>,
+    /// The failure class observed, where the spend failed and the
+    /// executor distinguishes classes.
+    pub observed_failure: Option<ObservedFailureClass>,
+    /// What the execution cost.
+    pub resources: NativeResourceObservation,
+}
+
+impl NativePrototypeResponse {
+    /// The same shape rules the primitive responses follow.
+    ///
+    /// Shared rather than restated: a prototype response that
+    /// contradicted its executor's advertised interface would be exactly
+    /// as unreadable as a primitive one that did, and two copies of the
+    /// rule would eventually disagree.
+    ///
+    /// # Errors
+    ///
+    /// The first [`ResponseShapeDefect`] the response exhibits.
+    pub fn validate_shape(
+        &self,
+        capabilities: &BTreeSet<ExecutorCapability>,
+    ) -> Result<(), ResponseShapeDefect> {
+        validate_observation_shape(
+            self.verdict,
+            self.final_stack.is_some(),
+            self.final_altstack.is_some(),
+            self.observed_failure.is_some(),
+            &self.resources,
+            capabilities,
+        )
+    }
+}
+
 /// What the target did with one case.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -526,42 +631,61 @@ pub fn validate_response_shape(
     response: &NativeExecutionResponse,
     capabilities: &BTreeSet<ExecutorCapability>,
 ) -> Result<(), ResponseShapeDefect> {
+    validate_observation_shape(
+        response.verdict,
+        response.final_stack.is_some(),
+        response.final_altstack.is_some(),
+        response.observed_failure.is_some(),
+        &response.resources,
+        capabilities,
+    )
+}
+
+/// The shape rules themselves, over the fields they read.
+///
+/// Stated once, over the observation rather than over one message type,
+/// because a primitive response and a prototype response report the same
+/// observation and differ only in which case identity they restate. Two
+/// copies of these rules would eventually disagree, and the half that
+/// disagreed would be the half nobody was reading.
+fn validate_observation_shape(
+    verdict: NativeVerdict,
+    reports_stack: bool,
+    reports_altstack: bool,
+    names_failure: bool,
+    observed: &NativeResourceObservation,
+    capabilities: &BTreeSet<ExecutorCapability>,
+) -> Result<(), ResponseShapeDefect> {
     let classes = capabilities.contains(&ExecutorCapability::FailureClassReporting);
     let stacks = capabilities.contains(&ExecutorCapability::FinalStackReporting);
     let altstacks = capabilities.contains(&ExecutorCapability::FinalAltstackReporting);
     let resources = capabilities.contains(&ExecutorCapability::ResourceObservation);
 
-    if response.observed_failure.is_some() && !classes {
+    if names_failure && !classes {
         return Err(ResponseShapeDefect::FailureClassWithoutAdvertisedReporting);
     }
-    match response.verdict {
+    match verdict {
         NativeVerdict::Accepted => {
-            if response.observed_failure.is_some() {
+            if names_failure {
                 return Err(ResponseShapeDefect::AcceptedResponseNamesFailure);
             }
         }
         NativeVerdict::Rejected => {
-            if classes && response.observed_failure.is_none() {
+            if classes && !names_failure {
                 return Err(ResponseShapeDefect::RejectedResponseOmitsAdvertisedFailure);
             }
         }
         NativeVerdict::InfrastructureError => {
             // A run that did not happen observed nothing, so every field
             // describing what the target did must be absent.
-            if response.observed_failure.is_some()
-                || response.final_stack.is_some()
-                || response.final_altstack.is_some()
-            {
+            if names_failure || reports_stack || reports_altstack {
                 return Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation);
             }
             return Ok(());
         }
     }
 
-    for (advertised, reported) in [
-        (stacks, response.final_stack.is_some()),
-        (altstacks, response.final_altstack.is_some()),
-    ] {
+    for (advertised, reported) in [(stacks, reports_stack), (altstacks, reports_altstack)] {
         if reported && !advertised {
             return Err(ResponseShapeDefect::StackWithoutAdvertisedReporting);
         }
@@ -570,7 +694,7 @@ pub fn validate_response_shape(
         }
     }
 
-    if !resources && response.resources.observes_interpreter() {
+    if !resources && observed.observes_interpreter() {
         return Err(ResponseShapeDefect::ResourceWithoutAdvertisedObservation);
     }
 

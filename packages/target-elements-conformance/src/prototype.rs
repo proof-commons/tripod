@@ -136,6 +136,37 @@ pub enum PrototypeClaim {
     /// The output key's parity was observed to be checked rather than
     /// trusted.
     OutputKeyParityObserved,
+
+    /// An exact division, with a zero remainder, was observed to be
+    /// accepted.
+    WideFloorExactDivisionObserved,
+    /// A nonzero remainder, at both ends of its range, was observed to
+    /// be accepted.
+    WideFloorNonzeroRemainderObserved,
+    /// Limb derivation and carry propagation were observed to hold at
+    /// the base and domain boundaries.
+    WideFloorLimbDerivationObserved,
+    /// A quotient one below the exact one was observed to be rejected.
+    WideFloorUnderQuotientRejectedObserved,
+    /// A quotient one above the exact one was observed to be rejected.
+    WideFloorOverQuotientRejectedObserved,
+    /// A remainder not below the divisor was observed to be rejected,
+    /// including the case where the equation still balances.
+    WideFloorRemainderBoundObserved,
+    /// A zero divisor was observed to be rejected.
+    WideFloorZeroDivisorRejectedObserved,
+    /// An amount outside the stated domain, in either direction, was
+    /// observed to be rejected.
+    WideFloorOperandDomainObserved,
+    /// An amount not in one canonical fixed-width encoding was observed
+    /// to be rejected.
+    WideFloorOperandEncodingObserved,
+    /// A witness whose items are the right values in the wrong places
+    /// was observed to be rejected.
+    WideFloorWitnessOrderObserved,
+    /// A schedule that leaves an arithmetic success flag unchecked was
+    /// observed to be rejected.
+    WideFloorUncheckedFlagRejectedObserved,
 }
 
 impl PrototypeClaim {
@@ -150,27 +181,64 @@ impl PrototypeClaim {
         Self::SuccessorProgramObserved,
         Self::CounterTransitionObserved,
         Self::OutputKeyParityObserved,
+        Self::WideFloorExactDivisionObserved,
+        Self::WideFloorNonzeroRemainderObserved,
+        Self::WideFloorLimbDerivationObserved,
+        Self::WideFloorUnderQuotientRejectedObserved,
+        Self::WideFloorOverQuotientRejectedObserved,
+        Self::WideFloorRemainderBoundObserved,
+        Self::WideFloorZeroDivisorRejectedObserved,
+        Self::WideFloorOperandDomainObserved,
+        Self::WideFloorOperandEncodingObserved,
+        Self::WideFloorWitnessOrderObserved,
+        Self::WideFloorUncheckedFlagRejectedObserved,
     ];
 
     /// The relation the claim belongs to.
     ///
-    /// Every constructor claim belongs to the constructor relation. The
-    /// mapping is stated rather than assumed so that a claim admitted
-    /// for the arithmetic relation later cannot be counted as
-    /// constructor coverage.
+    /// The mapping is stated rather than assumed so that a claim of one
+    /// relation cannot be counted as coverage of the other. A fixture
+    /// naming a claim outside its own relation is refused by validation
+    /// rather than quietly counted.
     #[must_use]
     pub const fn relation(self) -> PrototypeRelation {
-        PrototypeRelation::MetadataConstructorContinuity
+        match self {
+            Self::PredecessorProgramObserved
+            | Self::MetadataLeafDerivationObserved
+            | Self::StaticSubtreeContinuityObserved
+            | Self::ExecutingPathAdmittedObserved
+            | Self::MetadataLeafUnspendableObserved
+            | Self::CanonicalBranchOrderObserved
+            | Self::SuccessorProgramObserved
+            | Self::CounterTransitionObserved
+            | Self::OutputKeyParityObserved => PrototypeRelation::MetadataConstructorContinuity,
+            Self::WideFloorExactDivisionObserved
+            | Self::WideFloorNonzeroRemainderObserved
+            | Self::WideFloorLimbDerivationObserved
+            | Self::WideFloorUnderQuotientRejectedObserved
+            | Self::WideFloorOverQuotientRejectedObserved
+            | Self::WideFloorRemainderBoundObserved
+            | Self::WideFloorZeroDivisorRejectedObserved
+            | Self::WideFloorOperandDomainObserved
+            | Self::WideFloorOperandEncodingObserved
+            | Self::WideFloorWitnessOrderObserved
+            | Self::WideFloorUncheckedFlagRejectedObserved => PrototypeRelation::WideFloorRelation,
+        }
     }
 
     /// Whether Guide 10 requires the claim, and why it is not yet met.
+    ///
+    /// The same answer for both relations, and for the same reason: each
+    /// prototype's program is emitted, each matrix is authored and
+    /// checked for coherence, and every claim has bearing cases among
+    /// its own rows. What is missing in both is a target-native run.
     #[must_use]
     pub const fn requirement(self) -> ClaimRequirement {
         ClaimRequirement::Unresolved(
-            "the constructor prototype's program is emitted and its case matrix is authored and \
-             checked for coherence, and every claim has bearing cases among those rows; what is \
-             missing is a target-native run, because a fixture an executor could be asked to run \
-             is not a verdict an executor gave",
+            "the prototype's program is emitted and its case matrix is authored and checked for \
+             coherence, and every claim has bearing cases among those rows; what is missing is a \
+             target-native run, because a fixture an executor could be asked to run is not a \
+             verdict an executor gave",
         )
     }
 }
@@ -202,10 +270,34 @@ pub enum OutputRole {
 impl OutputRole {
     /// The complete census of roles a fixture may require.
     ///
-    /// Validation walks this rather than the one role it knows today,
-    /// so a role added later is required to be unique by construction
-    /// rather than by somebody remembering to add a check.
+    /// Validation walks the roles the fixture's own *relation* requires
+    /// rather than this census, so a role added for one relation is not
+    /// silently demanded of the other.
     pub const ALL: &'static [Self] = &[Self::Successor];
+}
+
+impl PrototypeRelation {
+    /// The output roles a fixture of this relation must state exactly
+    /// once each, and the only roles it may state at all.
+    ///
+    /// # Why this is a property of the relation
+    ///
+    /// It used to be a property of the language: every compound fixture
+    /// was required to carry exactly one successor output, because the
+    /// only compound relation was the constructor's. The wide-floor
+    /// relation has no successor and no output of any role — it proves
+    /// an arithmetic statement over its own witness — so a fixture of
+    /// that relation carrying a successor output would describe a
+    /// transaction its program never reads, and one carrying none was
+    /// refused for missing an output nothing in it means
+    /// (Guide-10 `rule:guide10:compound-fixture`).
+    #[must_use]
+    pub const fn required_output_roles(self) -> &'static [OutputRole] {
+        match self {
+            Self::MetadataConstructorContinuity => &[OutputRole::Successor],
+            Self::WideFloorRelation => &[],
+        }
+    }
 }
 
 /// One output a compound fixture requires the transaction to carry.
@@ -410,7 +502,8 @@ impl CompoundPrototypeFixture {
             }
         }
 
-        for role in OutputRole::ALL.iter().copied() {
+        let required = self.case.relation.required_output_roles();
+        for role in required.iter().copied() {
             let found = self
                 .construction
                 .outputs
@@ -420,6 +513,20 @@ impl CompoundPrototypeFixture {
             if found != 1 {
                 return Some(PrototypeFixtureDefect::OutputRoleNotUnique { role, found });
             }
+        }
+        // A role the relation does not require is a role its program
+        // never reads, so stating one describes a transaction the
+        // fixture does not mean.
+        if let Some(unexpected) = self
+            .construction
+            .outputs
+            .iter()
+            .find(|output| !required.contains(&output.role))
+        {
+            return Some(PrototypeFixtureDefect::OutputRoleNotUnique {
+                role: unexpected.role,
+                found: self.construction.outputs.len(),
+            });
         }
 
         None
@@ -465,3 +572,27 @@ pub fn constructor_case_matrix(
 ) -> Result<Vec<CompoundPrototypeFixture>, ConstructorMatrixDefect> {
     crate::census::constructor::constructor_matrix(target)
 }
+
+/// Why the wide-floor matrix could not be authored.
+pub use crate::census::wide_floor::WideFloorMatrixDefect;
+
+/// What the wide-floor matrix deliberately does not state, and why.
+pub use crate::census::wide_floor::residual_threats as wide_floor_residual_threats;
+
+/// The wide-floor prototype's complete case matrix.
+///
+/// The §22.6 rows, authored against the reviewed contract and this
+/// package's own wide-floor oracle by the crate-internal census module.
+///
+/// # Errors
+///
+/// [`WideFloorMatrixDefect`] when the reviewed contract and the oracle
+/// do not between them determine every row.
+pub fn wide_floor_case_matrix(
+    target: &ReviewedElementsTapscriptDefinition,
+) -> Result<Vec<CompoundPrototypeFixture>, WideFloorMatrixDefect> {
+    crate::census::wide_floor::wide_floor_matrix(target)
+}
+
+/// Which cases bear on each wide-floor claim, as the rows state it.
+pub use crate::census::wide_floor::bearing_cases as wide_floor_bearing_cases;
