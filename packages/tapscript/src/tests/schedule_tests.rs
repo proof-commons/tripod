@@ -37,7 +37,7 @@
 
 use std::collections::BTreeSet;
 
-use target_elements::{FailureCause, OpcodeId, StackValueType};
+use target_elements::{EncodingClass, FailureCause, OpcodeId, StackValueType};
 
 use crate::instruction::{StackItem, TapscriptInstruction};
 use crate::program::TapscriptProgram;
@@ -671,4 +671,160 @@ fn a_chunk_of_each_digest_is_compared_end_to_end() {
         &states(&[vec![literal(32), literal(32), StackValueType::Bool]])
     );
     assert!(result.nonaborting_failure().is_empty());
+}
+
+// -- The constructor prototype's predecessor proof ----------------
+
+/// The metadata leaf's constant preimage prefix.
+///
+/// Both tag digests, the leaf version, the compact-size length, and the
+/// push opcode introducing the metadata are fixed by the schema, so the
+/// program pushes them as one literal rather than assembling them.
+const LEAF_PREFIX_BYTES: usize = 32 + 32 + 1 + 1 + 1;
+
+/// The metadata leaf script's constant tail, a false and a verify.
+const LEAF_TAIL_BYTES: usize = 2;
+
+/// Both tag digests of one tagged hash.
+const TAG_PREFIX_BYTES: usize = 64;
+
+/// Both tag digests of the tweak hash, and the internal key after them.
+const TWEAK_PREFIX_BYTES: usize = TAG_PREFIX_BYTES + 32;
+
+#[test]
+fn the_predecessor_proof_schedules_and_leaves_one_authenticated_root() {
+    // Stage C3, end to end
+    // (Guide-10 `rule:guide10:constructor-predecessor-stage`).
+    //
+    // # Why no orientation witness appears
+    //
+    // Canonical child ordering is enforced without being computed. The
+    // program hashes the two children in one fixed order, and the
+    // instance is spendable only when that order is the canonical one —
+    // because the tweak it derives is compared against the consumed
+    // input's actual program, and a tree whose canonical order differs
+    // yields a different root and fails that comparison.
+    //
+    // Ordering is therefore a property the creator establishes, not one
+    // the caller asserts: the schema's representation nonce is ground
+    // until the metadata leaf hash falls on the fixed side of the
+    // static root, the same public deterministic retry §9.12 already
+    // admits for tweak totality. Nothing is hashed in caller order, no
+    // order bit is trusted, and no verdict is combined
+    // (Guide-10 `rule:guide10:tapbranch-order`).
+    //
+    // # Why the witness order is what it is
+    //
+    // No reviewed primitive reads below the third item, so a witness is
+    // reachable only while fewer than three computed values sit above
+    // it. The layout below is the consumption order: the compressed key
+    // is bound first, the metadata is consumed next, and the static
+    // root stays deepest because it must outlive both.
+    let result = schedule(
+        vec![
+            // -- Bind the witnessed output key to the consumed program.
+            op(OpcodeId::PushCurrentInputIndex),
+            op(OpcodeId::InspectInputScriptPubKey),
+            number(1),
+            op(OpcodeId::EqualVerify),
+            op(OpcodeId::Swap),
+            op(OpcodeId::Duplicate),
+            number(1),
+            number(32),
+            op(OpcodeId::Substring),
+            op(OpcodeId::Rotate),
+            op(OpcodeId::EqualVerify),
+            // -- The metadata leaf hash.
+            op(OpcodeId::Swap),
+            raw(vec![0; LEAF_PREFIX_BYTES]),
+            op(OpcodeId::Sha256Initialize),
+            op(OpcodeId::Swap),
+            op(OpcodeId::Sha256Update),
+            raw(vec![0; LEAF_TAIL_BYTES]),
+            op(OpcodeId::Sha256Finalize),
+            // -- The branch hash, in the fixed child order.
+            raw(vec![0; TAG_PREFIX_BYTES]),
+            op(OpcodeId::Sha256Initialize),
+            op(OpcodeId::Swap),
+            op(OpcodeId::Sha256Update),
+            // The static root is hashed from a copy, so the
+            // authenticated instance survives into the successor proof
+            // (Guide-10 `rule:guide10:static-root`).
+            op(OpcodeId::Rotate),
+            op(OpcodeId::Duplicate),
+            op(OpcodeId::Rotate),
+            op(OpcodeId::Swap),
+            op(OpcodeId::Sha256Finalize),
+            // -- The tweak.
+            raw(vec![0; TWEAK_PREFIX_BYTES]),
+            op(OpcodeId::Sha256Initialize),
+            op(OpcodeId::Swap),
+            op(OpcodeId::Sha256Finalize),
+        ],
+        // Deepest first: the static root, the predecessor metadata, and
+        // the compressed predecessor output key.
+        &AbstractStackState::from_main(vec![
+            literal(32),
+            literal(48),
+            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+        ]),
+    );
+
+    // The compressed key, the one surviving static root, and the
+    // derived tweak — the three the curve check consumes.
+    assert_eq!(
+        result.success(),
+        &states(&[vec![
+            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+            literal(32),
+            StackValueType::Encoded(EncodingClass::Sha256Digest),
+        ]])
+    );
+
+    // Both introspection alternatives were carried and both reached the
+    // same shape: the program never assumed the consumed output was a
+    // witness program, and the equality discriminating them is one the
+    // target performs.
+    assert!(result.nonaborting_failure().is_empty());
+}
+
+#[test]
+fn a_derived_digest_is_not_admitted_as_a_tweak_scalar() {
+    // The one step of the predecessor proof the abstract validator
+    // cannot express, recorded rather than worked around.
+    //
+    // The streaming hash produces a digest, and the tweak verification
+    // takes a scalar. Both are exactly thirty-two bytes, and the
+    // reviewed contracts type them apart on purpose: a digest is an
+    // opaque hash, a scalar must lie below the group order, and no
+    // reviewed primitive converts one into the other. So the
+    // composition is refused here even though the target performs it —
+    // the interpreter accepts any thirty-two byte tweak and decides
+    // scalar validity when it does the arithmetic.
+    //
+    // That gap is the abstract form of tweak totality
+    // (Guide-10 `rule:guide10:tweak-totality`): the rare instance whose
+    // derived tweak is not a scalar is exactly the instance this type
+    // boundary declines to promise. The prototype does not close it by
+    // asserting the conversion, because asserting it would claim a
+    // totality the construction does not have.
+    let target = reviewed_target();
+    let program = TapscriptProgram::new(vec![op(OpcodeId::TweakVerify)])
+        .expect("one instruction is within the limit");
+    let initial = AbstractStackState::from_main(vec![
+        StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+        StackValueType::Encoded(EncodingClass::Sha256Digest),
+        StackValueType::Encoded(EncodingClass::XOnlyPublicKey),
+    ]);
+
+    assert!(
+        validate_program(
+            &target,
+            &program,
+            &initial,
+            AbstractLimits::for_target(&target),
+        )
+        .is_err(),
+        "a derived digest does not satisfy a scalar position"
+    );
 }
