@@ -691,6 +691,250 @@ const TAG_PREFIX_BYTES: usize = 64;
 /// Both tag digests of the tweak hash, and the internal key after them.
 const TWEAK_PREFIX_BYTES: usize = TAG_PREFIX_BYTES + 32;
 
+/// The predecessor half, ending with the curve step's operands placed.
+///
+/// Leaves, deepest first, the retained static root, the compressed
+/// predecessor output key, and the derived tweak.
+fn predecessor_proof() -> Vec<TapscriptInstruction> {
+    vec![
+        // -- Bind the witnessed output key to the consumed program.
+        op(OpcodeId::PushCurrentInputIndex),
+        op(OpcodeId::InspectInputScriptPubKey),
+        number(1),
+        op(OpcodeId::EqualVerify),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Duplicate),
+        number(1),
+        number(32),
+        op(OpcodeId::Substring),
+        op(OpcodeId::Rotate),
+        op(OpcodeId::EqualVerify),
+        // -- The metadata leaf hash.
+        op(OpcodeId::Swap),
+        raw(vec![0; LEAF_PREFIX_BYTES]),
+        op(OpcodeId::Sha256Initialize),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Update),
+        raw(vec![0; LEAF_TAIL_BYTES]),
+        op(OpcodeId::Sha256Finalize),
+        // -- The branch hash, in the fixed child order.
+        raw(vec![0; TAG_PREFIX_BYTES]),
+        op(OpcodeId::Sha256Initialize),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Update),
+        // The static root is hashed from a copy, so the authenticated
+        // instance survives (Guide-10 `rule:guide10:static-root`).
+        op(OpcodeId::Rotate),
+        op(OpcodeId::Duplicate),
+        op(OpcodeId::Rotate),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Finalize),
+        // -- The tweak.
+        raw(vec![0; TWEAK_PREFIX_BYTES]),
+        op(OpcodeId::Sha256Initialize),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Finalize),
+        // -- Place the curve step's operands, root left beneath them.
+        op(OpcodeId::Rotate),
+        op(OpcodeId::Swap),
+    ]
+}
+
+/// The successor half, from the retained root to the successor tweak.
+///
+/// Consumes the retained static root rather than a second witnessed
+/// one, which is what makes the composition a continuity proof
+/// (Guide-10 `rule:guide10:static-root`).
+fn successor_proof() -> Vec<TapscriptInstruction> {
+    vec![
+        op(OpcodeId::Swap),
+        raw(vec![0; LEAF_PREFIX_BYTES]),
+        op(OpcodeId::Sha256Initialize),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Update),
+        raw(vec![0; LEAF_TAIL_BYTES]),
+        op(OpcodeId::Sha256Finalize),
+        raw(vec![0; TAG_PREFIX_BYTES]),
+        op(OpcodeId::Sha256Initialize),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Update),
+        // No copy is kept: the one authenticated root is consumed here,
+        // by the successor's own branch hash.
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Finalize),
+        raw(vec![0; TWEAK_PREFIX_BYTES]),
+        op(OpcodeId::Sha256Initialize),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Finalize),
+    ]
+}
+
+/// The successor output binding at one exact role.
+fn output_binding() -> Vec<TapscriptInstruction> {
+    vec![
+        number(0),
+        op(OpcodeId::InspectOutputScriptPubKey),
+        number(1),
+        op(OpcodeId::EqualVerify),
+        op(OpcodeId::Rotate),
+        op(OpcodeId::Duplicate),
+        number(1),
+        number(32),
+        op(OpcodeId::Substring),
+        op(OpcodeId::Rotate),
+        op(OpcodeId::EqualVerify),
+        op(OpcodeId::Swap),
+    ]
+}
+
+/// The declared stack effect of the curve step, and only that.
+///
+/// The tweak verification consumes its three operands and pushes
+/// nothing. The validator will not schedule the instruction itself
+/// here, because the tweak it derives is typed as a digest rather than
+/// a scalar — see `a_derived_digest_is_not_admitted_as_a_tweak_scalar`,
+/// which records that boundary. So the composition schedules the
+/// declared *stack* effect in its place: the internal key is pushed and
+/// the three items are removed, exactly as the contract states.
+///
+/// This models the depth, never the check. Nothing here claims the
+/// curve relation holds, and the composed schedule is evidence about
+/// stack discipline alone.
+fn curve_step_stack_effect() -> Vec<TapscriptInstruction> {
+    vec![raw(vec![0; 32]), op(OpcodeId::DropTwo), op(OpcodeId::Drop)]
+}
+
+#[test]
+fn the_curve_step_consumes_exactly_its_three_operands() {
+    // The contract the model above stands on, read through the
+    // validator rather than restated: given operands of the declared
+    // types, the tweak verification leaves nothing behind.
+    let result = schedule(
+        vec![op(OpcodeId::TweakVerify)],
+        &AbstractStackState::from_main(vec![
+            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+            StackValueType::Encoded(EncodingClass::TaprootTweak),
+            StackValueType::Encoded(EncodingClass::XOnlyPublicKey),
+        ]),
+    );
+
+    assert_eq!(result.success(), &states(&[Vec::new()]));
+    assert!(result.nonaborting_failure().is_empty());
+}
+
+#[test]
+fn the_successor_proof_consumes_the_one_authenticated_root() {
+    // Stage C4 (Guide-10 `rule:guide10:constructor-successor-stage`).
+    //
+    // The successor half never reads a static root of its own. It
+    // begins holding the root the predecessor proof authenticated and
+    // retained, and consumes it in its own branch hash, so the two
+    // constructors are bound to the same value by construction rather
+    // than by comparing two witnesses
+    // (Guide-10 `rule:guide10:static-root`).
+    //
+    // # The nonce needs no check here
+    //
+    // The successor's representation nonce is ground by the creator
+    // until the successor metadata leaf hash falls on the fixed side of
+    // the same static root. Nothing in the program inspects it: the
+    // check *is* the successor branch comparison succeeding, because a
+    // nonce that failed to canonicalize the order yields a different
+    // root, a different tweak, and a created program that does not
+    // match the one the output actually carries.
+    let result = schedule(
+        successor_proof(),
+        // Deepest first: the compressed successor output key, the
+        // successor metadata, and the retained authenticated root.
+        &AbstractStackState::from_main(vec![
+            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+            literal(48),
+            literal(32),
+        ]),
+    );
+
+    assert_eq!(
+        result.success(),
+        &states(&[vec![
+            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+            StackValueType::Encoded(EncodingClass::Sha256Digest),
+        ]])
+    );
+    assert!(result.nonaborting_failure().is_empty());
+}
+
+#[test]
+fn the_successor_binding_names_one_exact_output_role() {
+    // The created program is read at one stated role rather than
+    // searched for among the outputs, so an instance that puts the
+    // successor somewhere else does not satisfy this program
+    // (Guide-10 `rule:guide10:successor-constructor`).
+    let result = schedule(
+        output_binding(),
+        &AbstractStackState::from_main(vec![
+            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+            StackValueType::Encoded(EncodingClass::Sha256Digest),
+        ]),
+    );
+
+    // The curve step's first two operands, in its declared order.
+    assert_eq!(
+        result.success(),
+        &states(&[vec![
+            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+            StackValueType::Encoded(EncodingClass::Sha256Digest),
+        ]])
+    );
+    assert!(result.nonaborting_failure().is_empty());
+}
+
+#[test]
+fn the_continuity_composition_carries_one_root_across_both_halves() {
+    // Stage C5, the composition
+    // (Guide-10 `rule:guide10:constructor-continuity-stage`).
+    //
+    // The open question was whether the reach bound permits it at all:
+    // no reviewed primitive reads below the third item, so a program may
+    // hold at most two computed values and still reach its next witness,
+    // and the composed proof has to keep a static root alive across an
+    // entire second constructor derivation.
+    //
+    // It does, and the arrangement is forced rather than chosen. The
+    // root is the deepest of the three values the predecessor half
+    // retains, every later witness sits beneath it in consumption order,
+    // and the successor half consumes the root last. No second root is
+    // witnessed, so the split-root instance has nothing to supply: there
+    // is no second value to disagree with the first.
+    let mut instructions = predecessor_proof();
+    instructions.extend(curve_step_stack_effect());
+    instructions.extend(successor_proof());
+    instructions.extend(output_binding());
+    instructions.extend(curve_step_stack_effect());
+    // The final truth value a standalone spend needs.
+    instructions.push(number(1));
+
+    let result = schedule(
+        instructions,
+        // Deepest first, in reverse consumption order: the successor
+        // key, the successor metadata, the one static root, the
+        // predecessor metadata, the predecessor key.
+        &AbstractStackState::from_main(vec![
+            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+            literal(48),
+            literal(32),
+            literal(48),
+            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+        ]),
+    );
+
+    // One item, canonically true, and nothing proof-local left behind.
+    // The literal is typed by the width the program fixed for it, which
+    // is what a final truth value has to be: a one-byte item the target
+    // reads as true.
+    assert_eq!(result.success(), &states(&[vec![literal(1)]]));
+    assert!(result.nonaborting_failure().is_empty());
+}
+
 #[test]
 fn the_predecessor_proof_schedules_and_leaves_one_authenticated_root() {
     // Stage C3, end to end
@@ -721,46 +965,7 @@ fn the_predecessor_proof_schedules_and_leaves_one_authenticated_root() {
     // is bound first, the metadata is consumed next, and the static
     // root stays deepest because it must outlive both.
     let result = schedule(
-        vec![
-            // -- Bind the witnessed output key to the consumed program.
-            op(OpcodeId::PushCurrentInputIndex),
-            op(OpcodeId::InspectInputScriptPubKey),
-            number(1),
-            op(OpcodeId::EqualVerify),
-            op(OpcodeId::Swap),
-            op(OpcodeId::Duplicate),
-            number(1),
-            number(32),
-            op(OpcodeId::Substring),
-            op(OpcodeId::Rotate),
-            op(OpcodeId::EqualVerify),
-            // -- The metadata leaf hash.
-            op(OpcodeId::Swap),
-            raw(vec![0; LEAF_PREFIX_BYTES]),
-            op(OpcodeId::Sha256Initialize),
-            op(OpcodeId::Swap),
-            op(OpcodeId::Sha256Update),
-            raw(vec![0; LEAF_TAIL_BYTES]),
-            op(OpcodeId::Sha256Finalize),
-            // -- The branch hash, in the fixed child order.
-            raw(vec![0; TAG_PREFIX_BYTES]),
-            op(OpcodeId::Sha256Initialize),
-            op(OpcodeId::Swap),
-            op(OpcodeId::Sha256Update),
-            // The static root is hashed from a copy, so the
-            // authenticated instance survives into the successor proof
-            // (Guide-10 `rule:guide10:static-root`).
-            op(OpcodeId::Rotate),
-            op(OpcodeId::Duplicate),
-            op(OpcodeId::Rotate),
-            op(OpcodeId::Swap),
-            op(OpcodeId::Sha256Finalize),
-            // -- The tweak.
-            raw(vec![0; TWEAK_PREFIX_BYTES]),
-            op(OpcodeId::Sha256Initialize),
-            op(OpcodeId::Swap),
-            op(OpcodeId::Sha256Finalize),
-        ],
+        predecessor_proof(),
         // Deepest first: the static root, the predecessor metadata, and
         // the compressed predecessor output key.
         &AbstractStackState::from_main(vec![
@@ -770,13 +975,15 @@ fn the_predecessor_proof_schedules_and_leaves_one_authenticated_root() {
         ]),
     );
 
-    // The compressed key, the one surviving static root, and the
-    // derived tweak — the three the curve check consumes.
+    // The retained static root, beneath the two operands the curve
+    // check consumes above it. The root's position is the point: it is
+    // deeper than everything the predecessor half still needs, so it
+    // survives that check rather than being consumed by it.
     assert_eq!(
         result.success(),
         &states(&[vec![
-            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
             literal(32),
+            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
             StackValueType::Encoded(EncodingClass::Sha256Digest),
         ]])
     );
