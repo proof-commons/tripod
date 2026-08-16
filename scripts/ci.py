@@ -138,6 +138,17 @@ MESON_BUILD_DIR = os.path.join("target", "ci-meson")
 # lane waited for the build lock rather than how long its tests took. The
 # warm-up is what makes per-package attribution mean anything.
 #
+# What the warm-up does NOT cover is documentation tests: `cargo build
+# --tests` does not compile them, so rustdoc compiles each package's doctests
+# inside its own lane, holding cargo's lock while it does. In the debug
+# profile that cost is small. In release it dominates: a full gate run
+# measured 7:04 of warm-up and 10:31 of lanes, where individual packages
+# reported ten-minute lane durations against a tenth of a second of actual
+# test execution, and the logs carry cargo's own "Blocking waiting for file
+# lock" lines. The release per-package durations are therefore honest wall
+# times but poor attributions -- they are mostly queueing -- and that is a
+# known residual of this design, not a measurement to read as test cost.
+#
 # Set CI_TEST_PROCESSES to override; 1 reproduces the serial measurement.
 DEFAULT_TEST_PROCESSES = 0  # 0 means meson's own default (one per core)
 
