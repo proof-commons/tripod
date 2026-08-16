@@ -37,7 +37,7 @@
 
 use std::collections::BTreeSet;
 
-use target_elements::{FailureCause, OpcodeId, StackValueType};
+use target_elements::{EncodingClass, FailureCause, OpcodeId, StackValueType};
 
 use crate::instruction::{StackItem, TapscriptInstruction};
 use crate::program::TapscriptProgram;
@@ -446,6 +446,193 @@ fn a_slice_whose_length_the_program_did_not_fix_stays_unsettled() {
     );
 }
 
+/// An arbitrary byte string, as an instruction.
+fn raw(bytes: Vec<u8>) -> TapscriptInstruction {
+    let target = reviewed_target();
+    TapscriptInstruction::Push(StackItem::new(&target, bytes).expect("within the literal bound"))
+}
+
+#[test]
+fn a_boolean_verdict_does_not_enter_the_arithmetic_domain() {
+    // The Wave-3 residual, stated exactly.
+    //
+    // A comparison pushes the target's truth value, and every
+    // fixed-width arithmetic primitive takes eight-byte operands. So a
+    // verdict cannot be added, multiplied, or otherwise combined with
+    // another verdict: the composition is a typed refusal, not a
+    // narrower result.
+    //
+    // Every scheme that orders two digests by comparing them chunk by
+    // chunk and combining the per-chunk verdicts arithmetically dies
+    // here. The repair below is not a widening primitive; it is a
+    // construction that never produces a second verdict to combine.
+    let target = reviewed_target();
+    let program = TapscriptProgram::new(vec![op(OpcodeId::LessThan64), op(OpcodeId::Add64)])
+        .expect("the schedule is within the limit");
+    let initial = AbstractStackState::from_main(vec![signed64(), signed64(), signed64()]);
+
+    assert!(
+        validate_program(
+            &target,
+            &program,
+            &initial,
+            AbstractLimits::for_target(&target),
+        )
+        .is_err(),
+        "a truth value does not satisfy a fixed-width arithmetic operand"
+    );
+}
+
+#[test]
+fn one_verdict_is_consumed_where_it_is_produced() {
+    // The shape the repair relies on. A single comparison feeding the
+    // verification that consumes it needs no widening at all: the
+    // verdict never becomes an operand of anything, so the domain it
+    // cannot enter is never entered.
+    let result = schedule(
+        vec![op(OpcodeId::LessThan64), op(OpcodeId::Verify)],
+        &AbstractStackState::from_main(vec![signed64(), signed64()]),
+    );
+
+    assert_eq!(result.success(), &states(&[Vec::new()]));
+    assert!(result.nonaborting_failure().is_empty());
+
+    let mut expected = domain_abort();
+    expected.insert(FailureCause::FalseVerification);
+    assert_eq!(result.aborts(), &expected);
+}
+
+#[test]
+fn a_witnessed_number_is_pinned_to_one_digest_byte() {
+    // The step that replaces the missing widening
+    // (Guide-10 `rule:guide10:tapbranch-order`).
+    //
+    // A single byte of a digest cannot be read as a number: the
+    // reviewed widening conversion takes four bytes, and nothing
+    // narrows one. So the caller witnesses the byte's numeric form and
+    // the program *proves* it: the script-number conversion produces a
+    // canonical eight-byte value, its low byte must equal the digest
+    // byte at the witnessed index, and its remaining seven bytes must
+    // be zero.
+    //
+    // The zero tail is what makes the witness harmless. It pins the
+    // number into `0..=255`, so a caller cannot offer a negative or
+    // oversized value and win a comparison the bytes do not support.
+    let result = schedule(
+        vec![
+            // The digest byte at the witnessed index. The length is a
+            // literal, so the slice's width is settled even though its
+            // offset is not.
+            number(1),
+            op(OpcodeId::Substring),
+            op(OpcodeId::Swap),
+            op(OpcodeId::ScriptNumToLe64),
+            // Seven zero bytes above the low one.
+            op(OpcodeId::Duplicate),
+            number(1),
+            number(7),
+            op(OpcodeId::Substring),
+            raw(vec![0; 7]),
+            op(OpcodeId::EqualVerify),
+            // The low byte is the digest byte.
+            op(OpcodeId::Duplicate),
+            number(0),
+            number(1),
+            op(OpcodeId::Substring),
+            op(OpcodeId::Rotate),
+            op(OpcodeId::EqualVerify),
+        ],
+        // Deepest first: the witnessed number, the digest, the
+        // witnessed index.
+        &AbstractStackState::from_main(vec![
+            StackValueType::ScriptNumber,
+            literal(32),
+            StackValueType::ScriptNumber,
+        ]),
+    );
+
+    // The pinned value, in the domain the comparison accepts.
+    assert_eq!(result.success(), &states(&[vec![signed64()]]));
+    assert!(result.nonaborting_failure().is_empty());
+}
+
+#[test]
+fn an_orientation_limb_is_pinned_to_the_two_admissible_masks() {
+    // The other half of the repair: which way round the two children
+    // go is a witness, and this is the check that leaves it exactly two
+    // choices.
+    //
+    // The limb `m` must satisfy `m * (m + 1) = 0`, whose only integer
+    // roots are `0` and `-1` — the all-zero and all-ones eight-byte
+    // masks. A limb outside that pair either fails the equality or
+    // overflows the multiplication, and the overflow path pushes a
+    // false that the verification then aborts on, so neither survives.
+    //
+    // Repeated into a thirty-two byte mask, those two values select
+    // between the two child orders with no conditional branch: one
+    // leaves the pair alone and the other exchanges it.
+    let result = schedule(
+        vec![
+            op(OpcodeId::Duplicate),
+            op(OpcodeId::Duplicate),
+            value(1),
+            op(OpcodeId::Add64),
+            op(OpcodeId::Verify),
+            op(OpcodeId::Mul64),
+            op(OpcodeId::Verify),
+            value(0),
+            op(OpcodeId::EqualVerify),
+        ],
+        &AbstractStackState::from_main(vec![signed64()]),
+    );
+
+    assert_eq!(result.success(), &states(&[vec![signed64()]]));
+    assert!(result.nonaborting_failure().is_empty());
+
+    let mut expected = domain_abort();
+    expected.insert(FailureCause::FalseVerification);
+    expected.insert(FailureCause::UnequalOperands);
+    assert_eq!(result.aborts(), &expected);
+}
+
+#[test]
+fn no_reviewed_primitive_reads_below_the_third_item() {
+    // The constraint that governs every schedule in this file, stated
+    // once and machine-checked.
+    //
+    // The reviewed census has no positional copy, no positional move,
+    // and no alternate-stack transfer. So the deepest item any
+    // primitive can read is the third, and a value a program must keep
+    // while it consumes something beneath it has to be kept within
+    // reach of that window. It is a property of the reviewed contracts
+    // rather than a convention, and it is what decides whether a
+    // compound proof can be scheduled at all.
+    let target = reviewed_target();
+    let deepest = target
+        .definition()
+        .opcodes()
+        .values()
+        .map(|spec| spec.stack().operands().len())
+        .max()
+        .expect("the reviewed contract states at least one primitive");
+
+    assert_eq!(
+        deepest, 3,
+        "no reviewed primitive declares a fourth operand"
+    );
+
+    // And nothing moves an item to or from the alternate stack, so the
+    // window cannot be widened by parking a value.
+    for spec in target.definition().opcodes().values() {
+        for case in spec.stack().success().cases() {
+            assert!(
+                case.effect().consumed_operands() <= 3,
+                "a reviewed primitive consumes at most the top three items"
+            );
+        }
+    }
+}
+
 #[test]
 fn a_chunk_of_each_digest_is_compared_end_to_end() {
     // The Wave-3 finding, composed: read the same four-byte chunk out
@@ -484,4 +671,501 @@ fn a_chunk_of_each_digest_is_compared_end_to_end() {
         &states(&[vec![literal(32), literal(32), StackValueType::Bool]])
     );
     assert!(result.nonaborting_failure().is_empty());
+}
+
+// -- The constructor prototype's predecessor proof ----------------
+
+/// The metadata leaf's constant preimage prefix.
+///
+/// Both tag digests, the leaf version, the compact-size length, and the
+/// push opcode introducing the metadata are fixed by the schema, so the
+/// program pushes them as one literal rather than assembling them.
+const LEAF_PREFIX_BYTES: usize = 32 + 32 + 1 + 1 + 1;
+
+/// The metadata leaf script's constant tail, a false and a verify.
+const LEAF_TAIL_BYTES: usize = 2;
+
+/// Both tag digests of one tagged hash.
+const TAG_PREFIX_BYTES: usize = 64;
+
+/// Both tag digests of the tweak hash, and the internal key after them.
+const TWEAK_PREFIX_BYTES: usize = TAG_PREFIX_BYTES + 32;
+
+/// The predecessor half, ending with the curve step's operands placed.
+///
+/// Leaves, deepest first, the retained static root, the compressed
+/// predecessor output key, and the derived tweak.
+fn predecessor_proof() -> Vec<TapscriptInstruction> {
+    vec![
+        // -- Bind the witnessed output key to the consumed program.
+        op(OpcodeId::PushCurrentInputIndex),
+        op(OpcodeId::InspectInputScriptPubKey),
+        number(1),
+        op(OpcodeId::EqualVerify),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Duplicate),
+        number(1),
+        number(32),
+        op(OpcodeId::Substring),
+        op(OpcodeId::Rotate),
+        op(OpcodeId::EqualVerify),
+        // -- The metadata leaf hash.
+        op(OpcodeId::Swap),
+        raw(vec![0; LEAF_PREFIX_BYTES]),
+        op(OpcodeId::Sha256Initialize),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Update),
+        raw(vec![0; LEAF_TAIL_BYTES]),
+        op(OpcodeId::Sha256Finalize),
+        // -- The branch hash, in the fixed child order.
+        raw(vec![0; TAG_PREFIX_BYTES]),
+        op(OpcodeId::Sha256Initialize),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Update),
+        // The static root is hashed from a copy, so the authenticated
+        // instance survives (Guide-10 `rule:guide10:static-root`).
+        op(OpcodeId::Rotate),
+        op(OpcodeId::Duplicate),
+        op(OpcodeId::Rotate),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Finalize),
+        // -- The tweak.
+        raw(vec![0; TWEAK_PREFIX_BYTES]),
+        op(OpcodeId::Sha256Initialize),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Finalize),
+        // -- Place the curve step's operands, root left beneath them.
+        op(OpcodeId::Rotate),
+        op(OpcodeId::Swap),
+    ]
+}
+
+/// The successor half, from the retained root to the successor tweak.
+///
+/// Consumes the retained static root rather than a second witnessed
+/// one, which is what makes the composition a continuity proof
+/// (Guide-10 `rule:guide10:static-root`).
+fn successor_proof() -> Vec<TapscriptInstruction> {
+    vec![
+        op(OpcodeId::Swap),
+        raw(vec![0; LEAF_PREFIX_BYTES]),
+        op(OpcodeId::Sha256Initialize),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Update),
+        raw(vec![0; LEAF_TAIL_BYTES]),
+        op(OpcodeId::Sha256Finalize),
+        raw(vec![0; TAG_PREFIX_BYTES]),
+        op(OpcodeId::Sha256Initialize),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Update),
+        // No copy is kept: the one authenticated root is consumed here,
+        // by the successor's own branch hash.
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Finalize),
+        raw(vec![0; TWEAK_PREFIX_BYTES]),
+        op(OpcodeId::Sha256Initialize),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Finalize),
+    ]
+}
+
+/// The successor output binding at one exact role.
+fn output_binding() -> Vec<TapscriptInstruction> {
+    vec![
+        number(0),
+        op(OpcodeId::InspectOutputScriptPubKey),
+        number(1),
+        op(OpcodeId::EqualVerify),
+        op(OpcodeId::Rotate),
+        op(OpcodeId::Duplicate),
+        number(1),
+        number(32),
+        op(OpcodeId::Substring),
+        op(OpcodeId::Rotate),
+        op(OpcodeId::EqualVerify),
+        op(OpcodeId::Swap),
+    ]
+}
+
+/// The declared stack effect of the curve step, and only that.
+///
+/// The tweak verification consumes its three operands and pushes
+/// nothing. The validator will not schedule the instruction itself
+/// here, because the tweak it derives is typed as a digest rather than
+/// a scalar — see `a_derived_digest_is_not_admitted_as_a_tweak_scalar`,
+/// which records that boundary. So the composition schedules the
+/// declared *stack* effect in its place: the internal key is pushed and
+/// the three items are removed, exactly as the contract states.
+///
+/// This models the depth, never the check. Nothing here claims the
+/// curve relation holds, and the composed schedule is evidence about
+/// stack discipline alone.
+fn curve_step_stack_effect() -> Vec<TapscriptInstruction> {
+    vec![raw(vec![0; 32]), op(OpcodeId::DropTwo), op(OpcodeId::Drop)]
+}
+
+/// Proves one metadata field identical in both objects.
+///
+/// Reads the same constant-width slice out of each and requires byte
+/// equality, leaving both objects in place so the checks compose.
+fn unchanged_field(begin: i64, length: i64) -> Vec<TapscriptInstruction> {
+    vec![
+        op(OpcodeId::DuplicateTwo),
+        number(begin),
+        number(length),
+        op(OpcodeId::Substring),
+        op(OpcodeId::Swap),
+        number(begin),
+        number(length),
+        op(OpcodeId::Substring),
+        op(OpcodeId::EqualVerify),
+    ]
+}
+
+/// Proves the successor's reserved field is exactly zero.
+fn reserved_is_zero() -> Vec<TapscriptInstruction> {
+    vec![
+        op(OpcodeId::Duplicate),
+        number(40),
+        number(8),
+        op(OpcodeId::Substring),
+        raw(vec![0; 8]),
+        op(OpcodeId::EqualVerify),
+    ]
+}
+
+#[test]
+fn the_transition_moves_one_field_and_pins_the_rest() {
+    // Stage C6
+    // (Guide-10 `rule:guide10:constructor-transition-stage`).
+    //
+    // The schema's field order is what makes this expressible: domain,
+    // schema, and object kind are contiguous, so one constant-width
+    // slice pins all three, and every remaining field is its own slice
+    // at a fixed offset. Nothing is read at a caller-chosen offset, so
+    // no witness can move a field boundary.
+    //
+    // # The counter's flag is consumed where it is produced
+    //
+    // The increment is the only arithmetic here, and its success flag is
+    // verified immediately rather than dropped. An overflowing counter
+    // retains both operands and pushes a false, which the verification
+    // then ends evaluation on — so a wrapped counter cannot reach the
+    // equality and pass it (Guide-10 `rule:guide10:successor-metadata`).
+    //
+    // # Why the nonce is absent
+    //
+    // The representation nonce is deliberately unchecked. It is not
+    // state: the host oracle's `same_state` ignores it and `successor`
+    // resets it, and its value is ground by the creator to canonicalize
+    // the branch order. The program that checked it equal would reject
+    // every honest successor; the program that checked it reset would
+    // duplicate a constraint the branch comparison already enforces.
+    let mut instructions = Vec::new();
+    // Domain, schema, and object kind, in one slice.
+    instructions.extend(unchanged_field(0, 24));
+    // The counter, incremented by exactly one.
+    instructions.extend([
+        op(OpcodeId::DuplicateTwo),
+        number(24),
+        number(8),
+        op(OpcodeId::Substring),
+        op(OpcodeId::Swap),
+        number(24),
+        number(8),
+        op(OpcodeId::Substring),
+        value(1),
+        op(OpcodeId::Add64),
+        op(OpcodeId::Verify),
+        op(OpcodeId::EqualVerify),
+    ]);
+    // The flags.
+    instructions.extend(unchanged_field(32, 4));
+    // The reserved field of each object.
+    instructions.extend(reserved_is_zero());
+    instructions.push(op(OpcodeId::Swap));
+    instructions.extend(reserved_is_zero());
+    instructions.push(op(OpcodeId::Swap));
+
+    let result = schedule(
+        instructions,
+        // Deepest first: the predecessor metadata, then the successor.
+        &AbstractStackState::from_main(vec![literal(48), literal(48)]),
+    );
+
+    // Both objects survive, unconsumed: the transition proof is a
+    // constraint on them, not a replacement for them, and each is still
+    // needed to derive its own constructor.
+    assert_eq!(result.success(), &states(&[vec![literal(48), literal(48)]]));
+    assert!(result.nonaborting_failure().is_empty());
+
+    // The counter's overflow path does not survive, and the two
+    // inequality causes are the ones a mutated field reaches.
+    let mut expected = domain_abort();
+    expected.insert(FailureCause::FalseVerification);
+    expected.insert(FailureCause::UnequalOperands);
+    expected.insert(FailureCause::SliceOutOfRange);
+    expected.insert(FailureCause::MalformedScriptNumber);
+    assert_eq!(result.aborts(), &expected);
+}
+
+#[test]
+fn a_counter_slice_of_the_wrong_width_is_refused() {
+    // The negative control for the field reads. A counter slice that is
+    // not eight bytes wide does not satisfy the arithmetic operand, so a
+    // schema drift that moved the field would be a refusal here rather
+    // than a silently different number.
+    let target = reviewed_target();
+    let program = TapscriptProgram::new(vec![
+        number(24),
+        number(4),
+        op(OpcodeId::Substring),
+        value(1),
+        op(OpcodeId::Add64),
+    ])
+    .expect("the schedule is within the limit");
+    let initial = AbstractStackState::from_main(vec![literal(48)]);
+
+    assert!(
+        validate_program(
+            &target,
+            &program,
+            &initial,
+            AbstractLimits::for_target(&target),
+        )
+        .is_err(),
+        "a four-byte slice does not satisfy a fixed-width operand"
+    );
+}
+
+#[test]
+fn the_curve_step_consumes_exactly_its_three_operands() {
+    // The contract the model above stands on, read through the
+    // validator rather than restated: given operands of the declared
+    // types, the tweak verification leaves nothing behind.
+    let result = schedule(
+        vec![op(OpcodeId::TweakVerify)],
+        &AbstractStackState::from_main(vec![
+            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+            StackValueType::Encoded(EncodingClass::TaprootTweak),
+            StackValueType::Encoded(EncodingClass::XOnlyPublicKey),
+        ]),
+    );
+
+    assert_eq!(result.success(), &states(&[Vec::new()]));
+    assert!(result.nonaborting_failure().is_empty());
+}
+
+#[test]
+fn the_successor_proof_consumes_the_one_authenticated_root() {
+    // Stage C4 (Guide-10 `rule:guide10:constructor-successor-stage`).
+    //
+    // The successor half never reads a static root of its own. It
+    // begins holding the root the predecessor proof authenticated and
+    // retained, and consumes it in its own branch hash, so the two
+    // constructors are bound to the same value by construction rather
+    // than by comparing two witnesses
+    // (Guide-10 `rule:guide10:static-root`).
+    //
+    // # The nonce needs no check here
+    //
+    // The successor's representation nonce is ground by the creator
+    // until the successor metadata leaf hash falls on the fixed side of
+    // the same static root. Nothing in the program inspects it: the
+    // check *is* the successor branch comparison succeeding, because a
+    // nonce that failed to canonicalize the order yields a different
+    // root, a different tweak, and a created program that does not
+    // match the one the output actually carries.
+    let result = schedule(
+        successor_proof(),
+        // Deepest first: the compressed successor output key, the
+        // successor metadata, and the retained authenticated root.
+        &AbstractStackState::from_main(vec![
+            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+            literal(48),
+            literal(32),
+        ]),
+    );
+
+    assert_eq!(
+        result.success(),
+        &states(&[vec![
+            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+            StackValueType::Encoded(EncodingClass::Sha256Digest),
+        ]])
+    );
+    assert!(result.nonaborting_failure().is_empty());
+}
+
+#[test]
+fn the_successor_binding_names_one_exact_output_role() {
+    // The created program is read at one stated role rather than
+    // searched for among the outputs, so an instance that puts the
+    // successor somewhere else does not satisfy this program
+    // (Guide-10 `rule:guide10:successor-constructor`).
+    let result = schedule(
+        output_binding(),
+        &AbstractStackState::from_main(vec![
+            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+            StackValueType::Encoded(EncodingClass::Sha256Digest),
+        ]),
+    );
+
+    // The curve step's first two operands, in its declared order.
+    assert_eq!(
+        result.success(),
+        &states(&[vec![
+            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+            StackValueType::Encoded(EncodingClass::Sha256Digest),
+        ]])
+    );
+    assert!(result.nonaborting_failure().is_empty());
+}
+
+#[test]
+fn the_continuity_composition_carries_one_root_across_both_halves() {
+    // Stage C5, the composition
+    // (Guide-10 `rule:guide10:constructor-continuity-stage`).
+    //
+    // The open question was whether the reach bound permits it at all:
+    // no reviewed primitive reads below the third item, so a program may
+    // hold at most two computed values and still reach its next witness,
+    // and the composed proof has to keep a static root alive across an
+    // entire second constructor derivation.
+    //
+    // It does, and the arrangement is forced rather than chosen. The
+    // root is the deepest of the three values the predecessor half
+    // retains, every later witness sits beneath it in consumption order,
+    // and the successor half consumes the root last. No second root is
+    // witnessed, so the split-root instance has nothing to supply: there
+    // is no second value to disagree with the first.
+    let mut instructions = predecessor_proof();
+    instructions.extend(curve_step_stack_effect());
+    instructions.extend(successor_proof());
+    instructions.extend(output_binding());
+    instructions.extend(curve_step_stack_effect());
+    // The final truth value a standalone spend needs.
+    instructions.push(number(1));
+
+    let result = schedule(
+        instructions,
+        // Deepest first, in reverse consumption order: the successor
+        // key, the successor metadata, the one static root, the
+        // predecessor metadata, the predecessor key.
+        &AbstractStackState::from_main(vec![
+            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+            literal(48),
+            literal(32),
+            literal(48),
+            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+        ]),
+    );
+
+    // One item, canonically true, and nothing proof-local left behind.
+    // The literal is typed by the width the program fixed for it, which
+    // is what a final truth value has to be: a one-byte item the target
+    // reads as true.
+    assert_eq!(result.success(), &states(&[vec![literal(1)]]));
+    assert!(result.nonaborting_failure().is_empty());
+}
+
+#[test]
+fn the_predecessor_proof_schedules_and_leaves_one_authenticated_root() {
+    // Stage C3, end to end
+    // (Guide-10 `rule:guide10:constructor-predecessor-stage`).
+    //
+    // # Why no orientation witness appears
+    //
+    // Canonical child ordering is enforced without being computed. The
+    // program hashes the two children in one fixed order, and the
+    // instance is spendable only when that order is the canonical one —
+    // because the tweak it derives is compared against the consumed
+    // input's actual program, and a tree whose canonical order differs
+    // yields a different root and fails that comparison.
+    //
+    // Ordering is therefore a property the creator establishes, not one
+    // the caller asserts: the schema's representation nonce is ground
+    // until the metadata leaf hash falls on the fixed side of the
+    // static root, the same public deterministic retry §9.12 already
+    // admits for tweak totality. Nothing is hashed in caller order, no
+    // order bit is trusted, and no verdict is combined
+    // (Guide-10 `rule:guide10:tapbranch-order`).
+    //
+    // # Why the witness order is what it is
+    //
+    // No reviewed primitive reads below the third item, so a witness is
+    // reachable only while fewer than three computed values sit above
+    // it. The layout below is the consumption order: the compressed key
+    // is bound first, the metadata is consumed next, and the static
+    // root stays deepest because it must outlive both.
+    let result = schedule(
+        predecessor_proof(),
+        // Deepest first: the static root, the predecessor metadata, and
+        // the compressed predecessor output key.
+        &AbstractStackState::from_main(vec![
+            literal(32),
+            literal(48),
+            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+        ]),
+    );
+
+    // The retained static root, beneath the two operands the curve
+    // check consumes above it. The root's position is the point: it is
+    // deeper than everything the predecessor half still needs, so it
+    // survives that check rather than being consumed by it.
+    assert_eq!(
+        result.success(),
+        &states(&[vec![
+            literal(32),
+            StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+            StackValueType::Encoded(EncodingClass::Sha256Digest),
+        ]])
+    );
+
+    // Both introspection alternatives were carried and both reached the
+    // same shape: the program never assumed the consumed output was a
+    // witness program, and the equality discriminating them is one the
+    // target performs.
+    assert!(result.nonaborting_failure().is_empty());
+}
+
+#[test]
+fn a_derived_digest_is_not_admitted_as_a_tweak_scalar() {
+    // The one step of the predecessor proof the abstract validator
+    // cannot express, recorded rather than worked around.
+    //
+    // The streaming hash produces a digest, and the tweak verification
+    // takes a scalar. Both are exactly thirty-two bytes, and the
+    // reviewed contracts type them apart on purpose: a digest is an
+    // opaque hash, a scalar must lie below the group order, and no
+    // reviewed primitive converts one into the other. So the
+    // composition is refused here even though the target performs it —
+    // the interpreter accepts any thirty-two byte tweak and decides
+    // scalar validity when it does the arithmetic.
+    //
+    // That gap is the abstract form of tweak totality
+    // (Guide-10 `rule:guide10:tweak-totality`): the rare instance whose
+    // derived tweak is not a scalar is exactly the instance this type
+    // boundary declines to promise. The prototype does not close it by
+    // asserting the conversion, because asserting it would claim a
+    // totality the construction does not have.
+    let target = reviewed_target();
+    let program = TapscriptProgram::new(vec![op(OpcodeId::TweakVerify)])
+        .expect("one instruction is within the limit");
+    let initial = AbstractStackState::from_main(vec![
+        StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+        StackValueType::Encoded(EncodingClass::Sha256Digest),
+        StackValueType::Encoded(EncodingClass::XOnlyPublicKey),
+    ]);
+
+    assert!(
+        validate_program(
+            &target,
+            &program,
+            &initial,
+            AbstractLimits::for_target(&target),
+        )
+        .is_err(),
+        "a derived digest does not satisfy a scalar position"
+    );
 }
