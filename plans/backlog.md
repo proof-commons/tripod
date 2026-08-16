@@ -667,6 +667,83 @@ generated publications unchanged; no digest of any kind minted; the
 conformance package is the only Cargo.lock addition; no new third-party
 dependency beyond workspace-existing crates plus a test-only PTY helper.
 
+### 2.14 Guide-10 prototype gate · `gate:backlog:guide10`
+
+The Guide-10 batch closed the fifth-review register (§5.5, all thirteen
+rows), made the native evidence layer self-validating, and delivered
+both Phase-3 constructor and arithmetic prototypes with accepted
+research decisions. Starting revision bdb67da; batch branch merged
+fast-forward after this record.
+
+Evidence-boundary repairs: protocol and report schema 2 with strict
+bounded NDJSON; a validated report wrapper that recomputes every case
+status, evidence disposition, and summary with duplicate-sensitive
+censuses in both directions; complete fixture projections in every
+report row; a typed claim census beneath the broad evidence rows with
+deliberately unresolved claims stated; reviewed development binding
+retaining the exact target projection; observed executor environment
+compared before any case runs; separated adapter, node, and integration
+provenance with the checkout-fallback misattribution removed;
+process-group timeout supervision with a descendant-survival regression;
+the signature operand model made representable for empty, invalid, and
+unknown-key paths; the relation-identity weld; and the pre-release
+deployment-profile trust-state split.
+
+Substrate: target contract V2 expands the reviewed census from
+thirty-eight to fifty-five opcodes with seventeen compound-proof
+primitives reviewed at the ADR-018 merged tip; canonical byte ordering
+is recorded unsupported; the reach bound, that no reviewed primitive
+reads below the third stack item, is machine-checked and governed every
+compound layout; operand-conditioned result widths and width-only tweak
+operands were review-based contract corrections.
+
+Prototype decisions, recorded in the research owners: the
+metadata-dependent constructor is an accepted prototype under the
+dynamic-metadata-leaf candidate, with the successor derived on-stack
+from the predecessor's authenticated bytes, one authenticated static
+root, fixed-order branch hashing with creator-side nonce grinding, and
+a machine-checked unspendable metadata leaf; exact wide floor
+arithmetic is an accepted prototype under derived limbs at base two to
+the twenty-six through the reviewed Euclidean sixty-four-bit division,
+witnessing only the five semantic amounts. Public declassification
+remains the open third prototype.
+
+Native evidence on the merged tree: both complete matrices ran against
+the reviewed executor, Elements Core v28.99.0-0b3bffd93138 at the
+ADR-018 intended tip 0b3bffd with upstream base b7fc5d0 and local
+topics fix/tapscript-opcodes and notes, chain elementsregtest, through
+the check-target-elements-prototypes command: constructor continuity
+thirty-six of thirty-six cases with nine of nine required claims, and
+wide floor thirty-nine of thirty-nine cases with eleven of eleven
+required claims, each report byte-identical over two consecutive gated
+runs. First native contact surfaced two constructor fixture defects and
+zero program defects; both fixtures were repaired with review
+justification. Measured resources: constructor 699 script and 924
+witness bytes with the 520-byte element bound binding at a fifth of
+maximum; wide floor 523 script and 606 witness bytes. Report digests
+are recorded in the research files; the artifacts themselves are run
+output and are not checked in.
+
+Gate evidence on the merged tree: the working debug lane green through
+every wave with the workspace suite growing from 1913 to 2151 tests;
+ci.sh lanes green under the pinned SDK toolchain with the advisory lane
+through the isolated shim; canonical meson compile and test green; the
+native primitive lane and both native prototype lanes run on the batch
+tip. Honest bounds: the five newly typed failure classes are unexercised
+by any native row; compound fixtures state no admitted failure-class
+set, so observed classes are recorded but not compared; the request
+still carries the fixture expectation under the typed boundary; mock
+runs remain typed as unable to satisfy any gate; nothing here is an
+operation, linked bundle, transaction ABI, calibration, or production
+claim.
+
+Identity impact: Layer-0 version, architecture schema and hashes, and
+generated publications unchanged; the target contract version moved to
+V2 as an explicit reviewed revision; no digest of any kind minted; the
+nix crate moved from development to production dependency of the
+conformance package for process-group supervision; no new third-party
+package entered the graph.
+
 ---
 
 ### The verification harness's two standing hazards · `rem:backlog:verification-harness`
@@ -963,25 +1040,26 @@ The fifth static review reported two passes over the tree recorded in §2.1.
 The second pass consolidates the first: first-pass identifiers R5-01 through
 R5-07 map into the SR5 register as SR5-01, SR5-02, SR5-03, SR5-06, SR5-08,
 SR5-12, and SR5-13 respectively; the remaining SR5 rows are second-pass
-additions. The Guide-10 preflight waves own the register; the review ranks
-the native-evidence rows and the signature abstraction as blockers before
-Guide-10 prototype evidence may be recorded (guide §2.1).
+additions. The Guide-10 preflight waves owned the register and closed
+every row before prototype evidence was recorded; the gate record is
+§2.14. Each row states the reviewed defect and the repair the batch
+delivered.
 
 | ID | Severity | Status | Finding |
 |---|---|---|---|
-| `SR5-01` | High | ACTIVE | The public native-report gate validates only required evidence rows that happen to be present; an empty, row-deleted, or relabeled report census passes. Required repair: complete owner validation returning a validated report wrapper with exact duplicate-sensitive case and evidence-row censuses and recomputed statuses, dispositions, and summary. |
-| `SR5-02` | High | ACTIVE | Broad evidence rows pass when only a subset of their semantic claim has cases: issuance-absent cases complete issuance introspection, rejection-only signature cases complete signature semantics, explicit-form cases complete confidential encodings, and consensus resource cases complete relay-policy resource evidence. Required repair: typed claim-level evidence census beneath the broad requirement identifiers with exact required-claim coverage. |
-| `SR5-03` | High | ACTIVE | Native reports retain only the case ordinal, expected outcome, observed outcome, and status, omitting the exact script, stack, context, enforcement layer, leaf version, and expected resources; two fixture sets can produce indistinguishable reports. Required repair: complete canonical fixture projection embedded in each report row. |
-| `SR5-04` | High | ACTIVE | A development binding validated against one target definition can later combine with a different definition of the same contract version, because the binding retains only the version. Required repair: retain the validated target projection in the binding or introduce a reviewed-development-binding wrapper constructible only against the reviewed Elements definition. |
-| `SR5-05` | High | ACTIVE | The static signature model cannot represent the target's documented empty-signature and unknown-public-key-type behavior: exact-width operand types reject the empty form before the failure contract applies and exclude the succeeds-without-verification path. Required repair: operand alternatives with conditional failure semantics, plus native unknown-key vectors before signature evidence is complete. |
-| `SR5-06` | Medium | ACTIVE | Reported network and genesis identifiers are caller declarations copied through the pipeline; the executor never reports what chain it actually ran, and the recorded synthetic identifiers confirm the fields are run labels. Required repair: a typed executor environment observation compared against the validated binding before any case executes. |
-| `SR5-07` | Medium | ACTIVE | Relation identifiers are not generically welded to relation bodies; the kind vocabulary contains an unused member and lacks a member for expression predicates. Required repair: an exhaustive relation-identity validator deriving expected kind and subject from every body variant, with the kind vocabulary corrected. |
-| `SR5-08` | Medium | ACTIVE | Native executor provenance cannot express the executed tip, upstream base, and local-topic census that ADR-018 requires, and a checkout-HEAD fallback can misattribute a binary's revision. Required repair: separated adapter, node, and integration-provenance fields with no checkout fallback into the binary-reported revision. |
-| `SR5-09` | Medium | ACTIVE | Executor timeout kills only the immediate child, so a real adapter's node, temporary datadir, cookie, and inherited pipes can outlive the run. Required repair: process-group supervision with graceful-then-forced group termination and a descendant-retaining regression test. |
-| `SR5-10` | Medium | ACTIVE | Executor protocol lines are read into an unbounded buffer, so one unterminated line can exhaust memory before typed rejection. Required repair: explicit per-phase protocol record limits enforced with bounded reads. |
-| `SR5-11` | Medium | ACTIVE | Schema-2 deployment profiles can acquire a type named validated deployment release despite the documented production-blocking ABI gap. Required repair: split structural profile validity from production-release validity, with the latter unconstructible under schema 2. |
-| `SR5-12` | Low | ACTIVE | Blank protocol lines and trailing blank data are silently accepted despite the documented fail-closed protocol. Required repair: strict NDJSON framing with blank and trailing records rejected. |
-| `SR5-13` | Low | ACTIVE | Public status documentation is stale: the root README denies the instruction core and omits the conformance package, and the target package still claims no native evidence exists. Required repair: reconcile the statements with the package-boundary claim that the static crate owns requirements while development native evidence lives in the conformance package. |
+| `SR5-01` | High | DONE | The public native-report gate validates only required evidence rows that happen to be present; an empty, row-deleted, or relabeled report census passes. Repair delivered: complete owner validation returning a validated report wrapper with exact duplicate-sensitive case and evidence-row censuses and recomputed statuses, dispositions, and summary. |
+| `SR5-02` | High | DONE | Broad evidence rows pass when only a subset of their semantic claim has cases: issuance-absent cases complete issuance introspection, rejection-only signature cases complete signature semantics, explicit-form cases complete confidential encodings, and consensus resource cases complete relay-policy resource evidence. Repair delivered: typed claim-level evidence census beneath the broad requirement identifiers with exact required-claim coverage. |
+| `SR5-03` | High | DONE | Native reports retain only the case ordinal, expected outcome, observed outcome, and status, omitting the exact script, stack, context, enforcement layer, leaf version, and expected resources; two fixture sets can produce indistinguishable reports. Repair delivered: complete canonical fixture projection embedded in each report row. |
+| `SR5-04` | High | DONE | A development binding validated against one target definition can later combine with a different definition of the same contract version, because the binding retains only the version. Repair delivered: retain the validated target projection in the binding or introduce a reviewed-development-binding wrapper constructible only against the reviewed Elements definition. |
+| `SR5-05` | High | DONE | The static signature model cannot represent the target's documented empty-signature and unknown-public-key-type behavior: exact-width operand types reject the empty form before the failure contract applies and exclude the succeeds-without-verification path. Repair delivered: operand alternatives with conditional failure semantics, plus native unknown-key vectors before signature evidence is complete. |
+| `SR5-06` | Medium | DONE | Reported network and genesis identifiers are caller declarations copied through the pipeline; the executor never reports what chain it actually ran, and the recorded synthetic identifiers confirm the fields are run labels. Repair delivered: a typed executor environment observation compared against the validated binding before any case executes. |
+| `SR5-07` | Medium | DONE | Relation identifiers are not generically welded to relation bodies; the kind vocabulary contains an unused member and lacks a member for expression predicates. Repair delivered: an exhaustive relation-identity validator deriving expected kind and subject from every body variant, with the kind vocabulary corrected. |
+| `SR5-08` | Medium | DONE | Native executor provenance cannot express the executed tip, upstream base, and local-topic census that ADR-018 requires, and a checkout-HEAD fallback can misattribute a binary's revision. Repair delivered: separated adapter, node, and integration-provenance fields with no checkout fallback into the binary-reported revision. |
+| `SR5-09` | Medium | DONE | Executor timeout kills only the immediate child, so a real adapter's node, temporary datadir, cookie, and inherited pipes can outlive the run. Repair delivered: process-group supervision with graceful-then-forced group termination and a descendant-retaining regression test. |
+| `SR5-10` | Medium | DONE | Executor protocol lines are read into an unbounded buffer, so one unterminated line can exhaust memory before typed rejection. Repair delivered: explicit per-phase protocol record limits enforced with bounded reads. |
+| `SR5-11` | Medium | DONE | Schema-2 deployment profiles can acquire a type named validated deployment release despite the documented production-blocking ABI gap. Repair delivered: split structural profile validity from production-release validity, with the latter unconstructible under schema 2. |
+| `SR5-12` | Low | DONE | Blank protocol lines and trailing blank data are silently accepted despite the documented fail-closed protocol. Repair delivered: strict NDJSON framing with blank and trailing records rejected. |
+| `SR5-13` | Low | DONE | Public status documentation is stale: the root README denies the instruction core and omits the conformance package, and the target package still claims no native evidence exists. Repair delivered: reconcile the statements with the package-boundary claim that the static crate owns requirements while development native evidence lives in the conformance package. |
 
 The review also recorded three lower-severity observations to close alongside
 the owning repairs: accepted responses are not protocol-shape validated
@@ -1569,13 +1647,13 @@ Phase-3 task state is:
 | `T3-005` | DONE | Compiler capability adapter |
 | `T3-006` | DONE | Target-native primitive conformance, gate record §2.13 |
 | `T3-007` | DONE | Typed tapscript instruction foundation, gate record §2.13 |
+| `T3-008` | DONE | STATE-constructor prototype accepted, gate record §2.14 |
+| `T3-009` | DONE | Exact wide floor-arithmetic prototype accepted, gate record §2.14 |
 
 Current blockers are:
 
 ```text
 Phase-3 work:
-    STATE-constructor prototype
-    exact wide floor-arithmetic prototype
     public declassification prototype
 ```
 
@@ -1604,9 +1682,9 @@ Standing rules that survive the phase exit:
 Execute in this order unless reproduction changes dependencies:
 
 ```text
-1. Charter the Phase-3 prototypes: the metadata-dependent STATE
-   constructor, exact wide floor arithmetic, and public declassification,
-   each prototype-only with its own target-native gate.
+1. Charter the public-declassification prototype, the remaining
+   Phase-3 foundational question; the constructor and wide-floor
+   prototypes are accepted with gate record 2.14.
 2. Keep target types out of compiler core; the target packages consume
    the analyzed boundary, never the reverse.
 3. Mint no target hash and claim no production activation without a real
