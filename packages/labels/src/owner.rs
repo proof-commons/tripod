@@ -13,7 +13,7 @@ pub enum LabelOwner {
     /// One owner per first-party Cargo package other than the model
     /// crate, named by its `packages/` directory. Crate labels have no
     /// public import prefix until a real cross-owner citation needs
-    /// one (ADR-013 owner registry).
+    /// one (ADR-019 owner registry).
     Crate(String),
 }
 

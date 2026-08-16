@@ -45,7 +45,7 @@ citation:  (`pkg:realization:contract`)
 
 They are non-normative and non-identity-bearing. Their mints,
 same-owner citations, and owner crossings are mechanically checked under
-ADR-013 so planning navigation fails closed without becoming protocol,
+ADR-019 so planning navigation fails closed without becoming protocol,
 compiler, target, ABI, deployment, or release identity.
 
 Upstream citations use square brackets:
@@ -57,7 +57,7 @@ Upstream citations use square brackets:
 ```
 
 Imported citations are linted under
-(`[ADR012-rule:labels:external-citation]`).
+(`inf:labels:import`).
 
 ## Directory index · `tbl:plans:directories`
 

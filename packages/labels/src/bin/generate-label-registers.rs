@@ -1,6 +1,6 @@
 //! `generate-label-registers`: the register-publication writer.
 //!
-//! Scoped derivation (ADR-013): only the Layer-0 and realization
+//! Scoped derivation (ADR-019): only the attestation and realization
 //! sources feed the registers, and they arrive by role-tagged argument
 //! (ADR-014). The two register outputs are argument-supplied assets;
 //! the build system wraps this command with its own stamp.

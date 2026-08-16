@@ -16,12 +16,12 @@ imported upstream citation:
 ```
 
 Plan-local labels are non-normative, but they are mechanically complete:
-every planning label has one mint (`[ADR013-inv:labels:unique-mint]`)
+every planning label has one mint (`inv:labels:unique-mint`)
 and every local citation resolves across the planning tree
-(`[ADR013-inv:labels:total-resolution]`).
+(`inv:labels:total-resolution`).
 
 Imported labels are authoritative references and are linted under
-(`[ADR012-rule:labels:external-citation]`).
+(`inf:labels:import`).
 
 ## Registers · `tbl:labels-index:files`
 

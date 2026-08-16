@@ -122,8 +122,10 @@ which is what this section is.
 Adoption holds when:
 
 - the draft is archived, cited as normative here, and restated nowhere;
-- ADR-012 and ADR-013 are absent from the tree and no reference to
-  either survives;
+- ADR-012 and ADR-013 are absent from the tree, and no live citation or
+  cross-reference to either survives. Dated records that describe the
+  repository as it stood — the reviews under `plans/reviews/` and the
+  gap census — keep naming them, which is what a dated record is for;
 - the adoption-parameter table matches the checker's actual owners,
   designated classes, and index documents;
 - the checker admits a hyphenated area and rejects a hyphenated kind;

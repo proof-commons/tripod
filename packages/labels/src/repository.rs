@@ -593,7 +593,7 @@ fn harvest_adrs(paths: &RepositoryCensus, result: &mut RepositoryLabels) {
     }
 }
 // Planning and repository-documentation Markdown are complete label
-// owners (ADR-013): a bare planning-shaped label mints, a parenthesized
+// owners (ADR-019): a bare planning-shaped label mints, a parenthesized
 // one cites, and citations resolve against the complete owner registry
 // across files — not merely against imports.
 
@@ -1222,7 +1222,7 @@ fn looks_owner_qualified(value: &str) -> bool {
 /// owner had to use square brackets, and a token carrying an owner
 /// prefix whose owner is unknown — or whose local label is malformed —
 /// names nothing at all. Either way it fails closed instead of decaying
-/// into ordinary inline code (ADR-013 owner registry).
+/// into ordinary inline code (ADR-019 owner registry).
 ///
 /// No valid local label reaches either arm: every label segment is
 /// lowercase, so the segment preceding a token's first hyphen can never
@@ -1303,7 +1303,7 @@ impl GenerateError {
 /// paths (ADR-014: assets go only where arguments route them).
 ///
 /// An unrelated planning, ADR, or model defect must not block regenerating
-/// an upstream register (ADR-013 scoped-derivation rule);
+/// an upstream register (ADR-019 scoped-derivation rule);
 /// `check_repository` remains the full repository-wide gate.
 pub fn generate_registers(
     paths: &RepositoryCensus,

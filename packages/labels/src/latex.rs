@@ -211,7 +211,7 @@ fn insert(
                 home: None,
             };
             if let Err(duplicate) = registry.insert(mint) {
-                // ADR-013: a duplicate-mint diagnostic identifies both
+                // ADR-019: a duplicate-mint diagnostic identifies both
                 // locations — the duplicate occurrence and the first
                 // mint — matching the shared insert_or_diagnose path.
                 let original = registry

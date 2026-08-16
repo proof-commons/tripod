@@ -4,8 +4,8 @@
 > **Blocks:** nothing further; the surviving work is attestation label minting and editorial correction
 > **Affected packages:** `papers/attestation`
 > **Depends on:** the corrected scopes from (`q:attestation:floor-bounds`)
-> **Decisions:** ADR-013 owner-aware label graph is sufficient; a second semantic registry is rejected
-> **Expected handoff:** precise Layer-0 semantic labels for the floor-bound correction, plus editorial repairs to the macro comments and symbol index
+> **Decisions:** ADR-019 owner-aware label graph is sufficient; a second semantic registry is rejected
+> **Expected handoff:** precise attestation semantic labels for the floor-bound correction, plus editorial repairs to the macro comments and symbol index
 
 ## Question · `sec:notation-semantic-census:question`
 
@@ -127,8 +127,8 @@ current instances. The imprecision is Attestation-internal.
 Resolved. The problem was misdiagnosed.
 
 The repository does not need a second semantic-vocabulary registry, nor a
-parser for macro strata, aliases, symbol-index rows, and prose scopes. ADR-013's
-owner-aware label graph is sufficient: Layer 0 mints, consumers import with the
+parser for macro strata, aliases, symbol-index rows, and prose scopes. ADR-019's
+owner-aware label graph is sufficient: Attestation mints, consumers import with the
 `A-` prefix, and the graph already enforces ownership, uniqueness, form,
 resolution, index/body agreement, and the anchor-set binding.
 

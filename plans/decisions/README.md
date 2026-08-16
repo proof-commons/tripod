@@ -44,7 +44,7 @@ dec:<area>:<name>
 
 Other sections may mint local plan labels as needed. Decision labels remain
 non-normative and non-identity-bearing, but their mints and citations are
-mechanically checked under ADR-013.
+mechanically checked under ADR-019.
 
 ## Machine use · `rem:decisions:machine-use`
 

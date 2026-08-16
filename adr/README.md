@@ -25,8 +25,6 @@ repository itself.
 |---|---|---|
 | [ADR-010](010-command-line-output-contract.md) | Decided and implemented | First-party command-line streams, diagnostics, and exit classes. |
 | [ADR-011](011-toolchain-and-dependency-policy.md) | Decided and implemented | Rust, dependency, locking, unsafe-code, target-compatibility, and reproducibility policy. |
-| [ADR-012](012-documentation-labels.md) | Implemented; superseded in part by ADR-013 | Documentation labels, citation layers, registers, and lint boundaries. |
-| [ADR-013](013-label-calculus.md) | Decided and implemented | A calculus of documentation and source labels across Markdown and Rust sources. |
 | [ADR-014](014-meson-lint-census-and-stamps.md) | Decided and implemented | Build-system-owned lint census, argument-passed inputs, and stamp-file dependency edges. |
 | [ADR-015](015-public-data-and-execution-trust.md) | Decided and implemented | Public-data interfaces, untrusted execution, crash artifacts, and future secret boundaries. |
 | [ADR-016](016-semantic-identities-and-evidence-binding.md) | Decided and implemented for current identity policy; evidence, profile-migration, and release-root portions activate with their consumers | Admission, ownership, flow, consumption, and assurance meaning of semantic identities, artifact digests, provenance identities, evidence reports, and release roots. |
@@ -46,15 +44,20 @@ for density.
 ## Labels · `rule:adr:labels`
 
 Each numbered ADR is an independent label owner under
-(`[ADR013-sig:labels:owners]`); mint discipline follows
-(`[ADR012-rule:labels:mint]`).
+(`[PLAN-sig:labels:owners]`); mint discipline follows
+(`[PLAN-judg:labels:minting]`).
+
+The calculus itself is adopted by (`[ADR019-dec:labels:adoption]`), which
+makes the archived draft under `plans/drafts/` its normative text. A
+clause of the calculus is therefore cited with the `PLAN` prefix, at the
+draft; ADR-019 is cited for an adoption parameter or an amendment.
 
 A plan citing an ADR label uses the ADR owner prefix, for example:
 
 ```text
 (`[ADR010-rule:output:streams]`)
 (`[ADR011-rule:toolchain:locked]`)
-(`[ADR013-inf:labels:import]`)
+(`[ADR019-rule:labels:areas]`)
 ```
 
 ADR labels are policy-owned upstream labels and are linted when imported.

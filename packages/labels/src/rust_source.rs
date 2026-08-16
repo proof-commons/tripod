@@ -37,7 +37,7 @@ pub fn harvest_model(paths: &RepositoryCensus) -> RustHarvest {
 }
 
 /// Harvest every first-party crate other than the model crate as its
-/// own label owner (ADR-013: one owner per Cargo package). Crates with
+/// own label owner (ADR-019: one owner per Cargo package). Crates with
 /// no participating labels have empty registries, which is valid.
 pub fn harvest_crates(paths: &RepositoryCensus) -> BTreeMap<String, RustHarvest> {
     paths
@@ -71,7 +71,7 @@ fn harvest_rust_crate(root: &Path, sources: &[PathBuf], owner: &LabelOwner) -> R
 }
 
 /// Syntactic class of one comment, retained so fence handling can
-/// distinguish documentation from ordinary comments (ADR-013 excludes
+/// distinguish documentation from ordinary comments (ADR-019 excludes
 /// fenced Rustdoc examples, not arbitrary comment text).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CommentKind {
@@ -108,7 +108,7 @@ struct CommentSegment {
 
 /// Extract comment and documentation-comment text from Rust source.
 ///
-/// Labels participate only in comments (ADR-013 Rust-sources rule):
+/// Labels participate only in comments (ADR-019 Rust-sources rule):
 /// string literals, raw strings, byte/C strings, and character
 /// literals are code, so an acute span inside them — for example a
 /// label-bearing test fixture — must not mint or cite.

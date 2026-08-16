@@ -268,7 +268,7 @@ fn imported_owner_and_local_label_parse() {
 
 #[test]
 fn duplicate_attestation_mint_diagnostic_names_both_locations() {
-    // ADR-013 (F3-007): a duplicate-mint diagnostic identifies both
+    // ADR-019 (F3-007): a duplicate-mint diagnostic identifies both
     // the duplicate occurrence and the first mint, in canonical
     // repository-relative locations, for the attestation owner exactly as for the
     // shared insert_or_diagnose owners.
