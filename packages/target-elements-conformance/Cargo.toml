@@ -23,15 +23,28 @@ name = "target_elements_conformance"
 # target semantics it does not own or import a publication boundary it
 # has no asset for.
 #
-# No hashing dependency, deliberately: no report, fixture, executor,
-# instruction, or target digest is minted here, so a hash crate would
-# have no consumer (Guide-9 §1.8).
+# The hashing and bignum entries are for the constructor oracle and for
+# nothing else. No report, fixture, executor, instruction, or target
+# digest is minted here and none may be (Guide-9 §1.8): what these
+# compute are *target* values — a tagged leaf hash, a branch hash, a
+# tweak, a tweaked output key — which the target itself computes the
+# same way, and which a fixture states rather than a report identifies.
+#
+# Both are existing workspace dependencies with existing first-party
+# consumers, so the oracle adds no third-party crate to the workspace
+# and no entry to the lock file. A dedicated curve library was
+# considered and not taken (Guide-10 §26.2): the oracle's value is being
+# independent of the implementation it checks, the operations needed are
+# public-point arithmetic over published constants, and no secret scalar
+# exists here for a constant-time implementation to protect.
 [dependencies]
 cli-common = { workspace = true }
 tapscript = { workspace = true }
 target-elements = { workspace = true }
 
 clap = { workspace = true }
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
 # `nix` carries the POSIX process-group calls the executor supervisor
 # needs — a graceful group signal, a bounded non-reaping wait, and a
 # forceful group signal — so that a timed-out run terminates the whole
@@ -41,6 +54,7 @@ clap = { workspace = true }
 nix = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 

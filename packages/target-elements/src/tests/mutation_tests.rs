@@ -476,7 +476,7 @@ fn a_carried_operand_the_primitive_does_not_declare_is_refused() {
         .clone();
     let stack = StackContract::new(
         vec![OperandContract::AnyItem],
-        SuccessContract::Rearrangement {
+        SuccessContract::OperandResolved {
             consumed_operands: 1,
             results: vec![ResultValue::OperandCopy(1)],
         },
@@ -502,7 +502,7 @@ fn a_rearranging_form_may_carry_one_operand_through_more_than_once() {
         .clone();
     let stack = StackContract::new(
         vec![OperandContract::AnyItem],
-        SuccessContract::Rearrangement {
+        SuccessContract::OperandResolved {
             consumed_operands: 1,
             results: vec![ResultValue::OperandCopy(0), ResultValue::OperandCopy(0)],
         },

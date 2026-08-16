@@ -181,6 +181,58 @@ impl StackItem {
     pub const fn is_empty(&self) -> bool {
         self.bytes.is_empty()
     }
+
+    /// The script number this item carries, where it carries one.
+    ///
+    /// # Only the canonical form counts
+    ///
+    /// The answer is `None` for any item the target's own minimality
+    /// rule would reject, and for any item wider than the reviewed
+    /// script-number encoding admits. A non-minimal item is one the
+    /// target aborts on rather than one that carries a number, and
+    /// reporting a value for it would let a consumer reason about a
+    /// program the target never runs.
+    ///
+    /// This is the inverse of [`Self::script_number`] over that
+    /// canonical domain, and it exists so a consumer can settle a
+    /// literal a program pushed — a slice bound, for instance — instead
+    /// of treating every pushed number as an unknown.
+    #[must_use]
+    pub fn script_number_value(&self, target: &ReviewedElementsTapscriptDefinition) -> Option<i64> {
+        let spec = encoding(target, EncodingClass::ScriptNumber);
+        if !admits_width(spec.payload(), self.bytes.len()) {
+            return None;
+        }
+        let little_endian = order_bytes(spec, self.bytes.clone());
+        if !is_minimal_script_number(&little_endian) {
+            return None;
+        }
+        script_number_from_bytes(&little_endian)
+    }
+}
+
+/// The value of a minimal little-endian script number.
+///
+/// Sign and magnitude, mirroring [`script_number_bytes`]: the top bit
+/// of the last byte is the sign and the rest is the magnitude, written
+/// least significant byte first. Anything wide enough to overflow the
+/// magnitude has no value here rather than a wrapped one.
+fn script_number_from_bytes(little_endian: &[u8]) -> Option<i64> {
+    let [rest @ .., top] = little_endian else {
+        return Some(0);
+    };
+    if rest.len() >= 8 {
+        return None;
+    }
+
+    let mut magnitude: u64 = 0;
+    for (index, byte) in rest.iter().enumerate() {
+        magnitude |= u64::from(*byte) << (8 * index);
+    }
+    magnitude |= u64::from(top & 0x7f) << (8 * rest.len());
+
+    let value = i64::try_from(magnitude).ok()?;
+    Some(if top & 0x80 == 0 { value } else { -value })
 }
 
 /// The reviewed contract of one encoding class.

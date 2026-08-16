@@ -1854,7 +1854,7 @@ fn timelock_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
 fn rearranging(operands: usize, consumed_operands: usize, results: &[usize]) -> StackContract {
     StackContract::new(
         vec![OperandContract::AnyItem; operands],
-        SuccessContract::Rearrangement {
+        SuccessContract::OperandResolved {
             consumed_operands,
             results: results
                 .iter()
@@ -2055,7 +2055,7 @@ fn byte_string_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
             0x82,
             StackContract::new(
                 vec![OperandContract::AnyItem],
-                SuccessContract::Rearrangement {
+                SuccessContract::OperandResolved {
                     consumed_operands: 1,
                     results: vec![
                         ResultValue::OperandCopy(0),
@@ -2072,6 +2072,12 @@ fn byte_string_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         // end all end evaluation rather than clamping. The lazy
         // variant that clamps instead is a different target byte and
         // is not reviewed here.
+        //
+        // Because it never clamps, the successful result is exactly as
+        // wide as the length operand asks for — every other case is one
+        // of the aborts below. The contract states that dependency
+        // rather than reporting an unconstrained byte string a caller
+        // would then have to guess the width of.
         spec(
             O::Substring,
             0x7f,
@@ -2081,9 +2087,12 @@ fn byte_string_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
                     OperandContract::Exact(S::ScriptNumber),
                     OperandContract::Exact(S::ScriptNumber),
                 ],
-                SuccessContract::Fixed {
+                SuccessContract::OperandResolved {
                     consumed_operands: 3,
-                    results: vec![any_bytes()],
+                    results: vec![ResultValue::ComputedWidthFromOperand {
+                        width_operand: 2,
+                        unsettled: any_bytes(),
+                    }],
                 },
                 gated([
                     abort(C::StackUnderflow),

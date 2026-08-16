@@ -275,11 +275,75 @@ const fn admit_state(visited: &mut u64, maximum: u64) -> Result<(), u64> {
     Ok(())
 }
 
+/// The literal script numbers a program pushed, by main-stack
+/// position.
+///
+/// # Why this is not part of the abstract state
+///
+/// It is not a fact about the *shape* of a stack, which is what an
+/// [`AbstractStackState`] reports, and a consumer comparing two results
+/// should not have to reason about it. It is a fact about how one path
+/// through one program reached that shape, and it lives exactly as long
+/// as the walk does.
+///
+/// It is nonetheless carried alongside the state during the walk rather
+/// than merged into it, because merging would be unsound: two paths can
+/// reach the same shape carrying different constants, and collapsing
+/// them would let a width proved on one path be claimed on the other.
+/// Paired with the state, the two stay separate states of the walk and
+/// only collapse when they agree.
+///
+/// # Only what a program itself fixed
+///
+/// A position is known only where a literal push put a canonical script
+/// number there, and the knowledge travels only where the reviewed
+/// contract says the item itself travels — an operand copied through by
+/// a stack operation. Nothing is inferred, and every unknown stays
+/// unknown.
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+struct KnownConstants {
+    values: BTreeMap<usize, i64>,
+}
+
+impl KnownConstants {
+    /// The constant at one main-stack position, where there is one.
+    fn at(&self, position: usize) -> Option<i64> {
+        self.values.get(&position).copied()
+    }
+
+    /// Forgets every position at or above `depth`.
+    fn truncated(&self, depth: usize) -> Self {
+        Self {
+            values: self
+                .values
+                .iter()
+                .filter(|(position, _)| **position < depth)
+                .map(|(position, value)| (*position, *value))
+                .collect(),
+        }
+    }
+
+    /// Records what a newly pushed item at `position` carries.
+    fn record(&mut self, position: usize, value: Option<i64>) {
+        match value {
+            Some(value) => {
+                self.values.insert(position, value);
+            }
+            None => {
+                self.values.remove(&position);
+            }
+        }
+    }
+}
+
+/// One reached state, and what the walk still knows about it.
+type Reached = (AbstractStackState, KnownConstants);
+
 /// What one instruction does to one incoming state.
 #[derive(Clone, Debug, Default)]
 struct Transfer {
-    success: Vec<AbstractStackState>,
-    nonaborting_failure: Vec<AbstractStackState>,
+    success: Vec<Reached>,
+    nonaborting_failure: Vec<Reached>,
     aborts: BTreeSet<FailureCause>,
 }
 
@@ -317,30 +381,37 @@ pub fn validate_program(
     // A state is live together with whether it was reached through a
     // non-aborting failure. The same stack shape can be reached both
     // ways, and the two are different findings about the program.
-    let mut live: BTreeSet<(AbstractStackState, bool)> = BTreeSet::new();
-    live.insert((initial.clone(), false));
+    let mut live: BTreeSet<(AbstractStackState, bool, KnownConstants)> = BTreeSet::new();
+    live.insert((initial.clone(), false, KnownConstants::default()));
     let mut aborts: BTreeSet<FailureCause> = BTreeSet::new();
     let mut visited = 0_u64;
     check_depth(initial, limits)?;
 
     for (index, instruction) in program.instructions().iter().enumerate() {
-        let mut next: BTreeSet<(AbstractStackState, bool)> = BTreeSet::new();
-        for (state, failed) in &live {
-            let transfer = step(target, instruction, state, index, limits)?;
+        let mut next: BTreeSet<(AbstractStackState, bool, KnownConstants)> = BTreeSet::new();
+        for (state, failed, constants) in &live {
+            let transfer = step(target, instruction, state, constants, index, limits)?;
             aborts.extend(transfer.aborts);
-            for reached in transfer.success {
-                admit(&mut next, (reached, *failed), &mut visited, limits)?;
+            for (reached, constants) in transfer.success {
+                admit(
+                    &mut next,
+                    (reached, *failed, constants),
+                    &mut visited,
+                    limits,
+                )?;
             }
-            for reached in transfer.nonaborting_failure {
-                admit(&mut next, (reached, true), &mut visited, limits)?;
+            for (reached, constants) in transfer.nonaborting_failure {
+                admit(&mut next, (reached, true, constants), &mut visited, limits)?;
             }
         }
         live = next;
     }
 
+    // The constants are dropped here, and only here. They were a fact
+    // about how a path reached a shape; the result reports the shapes.
     let mut success = BTreeSet::new();
     let mut nonaborting_failure = BTreeSet::new();
-    for (state, failed) in live {
+    for (state, failed, _) in live {
         if failed {
             nonaborting_failure.insert(state);
         } else {
@@ -365,8 +436,8 @@ pub fn validate_program(
 
 /// Records one reached state against the state budget.
 fn admit(
-    next: &mut BTreeSet<(AbstractStackState, bool)>,
-    reached: (AbstractStackState, bool),
+    next: &mut BTreeSet<(AbstractStackState, bool, KnownConstants)>,
+    reached: (AbstractStackState, bool, KnownConstants),
     visited: &mut u64,
     limits: AbstractLimits,
 ) -> Result<(), TapscriptError> {
@@ -391,21 +462,29 @@ fn step(
     target: &ReviewedElementsTapscriptDefinition,
     instruction: &TapscriptInstruction,
     state: &AbstractStackState,
+    constants: &KnownConstants,
     index: usize,
     limits: AbstractLimits,
 ) -> Result<Transfer, TapscriptError> {
     match instruction {
         TapscriptInstruction::Push(item) => {
             let mut main = state.main().to_vec();
+            let position = main.len();
             main.push(literal_type(item));
             let reached = AbstractStackState::new(main, state.alternate().to_vec());
             check_depth(&reached, limits)?;
+            // A literal push is the one place a constant enters: the
+            // program itself fixed it.
+            let mut constants = constants.clone();
+            constants.record(position, item.script_number_value(target));
             Ok(Transfer {
-                success: vec![reached],
+                success: vec![(reached, constants)],
                 ..Transfer::default()
             })
         }
-        TapscriptInstruction::Opcode(id) => apply_opcode(target, *id, state, index, limits),
+        TapscriptInstruction::Opcode(id) => {
+            apply_opcode(target, *id, state, constants, index, limits)
+        }
     }
 }
 
@@ -426,6 +505,7 @@ fn apply_opcode(
     target: &ReviewedElementsTapscriptDefinition,
     id: OpcodeId,
     state: &AbstractStackState,
+    constants: &KnownConstants,
     index: usize,
     limits: AbstractLimits,
 ) -> Result<Transfer, TapscriptError> {
@@ -465,13 +545,26 @@ fn apply_opcode(
     // which no abstract state can settle — except where the operand
     // types themselves rule a branch out, which is exactly the
     // signature case.
+    // A primitive that aborts on a false operand has no successful form
+    // when the operand can only be the false item. Nothing else in the
+    // state settles a truth value: a nonempty byte string may still be
+    // false — the target reads a zero payload as one — so only this
+    // direction narrows, and the other stays open.
+    let definitely_false = stack
+        .failure()
+        .effects()
+        .iter()
+        .any(|effect| effect.cause() == FailureCause::FalseVerification)
+        && operands.len() == 1
+        && is_definitely_false(target, &state.main()[base]);
+
     for case in stack.success().cases() {
-        if !authorization.admits_success(case.condition()) {
+        if definitely_false || !authorization.admits_success(case.condition()) {
             continue;
         }
-        let reached = apply_case(state, &case, base);
+        let (reached, reached_constants) = apply_case(target, state, constants, &case, base);
         check_depth(&reached, limits)?;
-        transfer.success.push(reached);
+        transfer.success.push((reached, reached_constants));
     }
 
     for effect in stack.failure().effects() {
@@ -485,13 +578,13 @@ fn apply_opcode(
                 }
             }
             FailureOutcome::ConsumeOperandsPushFalse => {
-                let reached = with_false(state, base);
-                check_depth(&reached, limits)?;
+                let reached = with_false(state, constants, base);
+                check_depth(&reached.0, limits)?;
                 transfer.nonaborting_failure.push(reached);
             }
             FailureOutcome::RetainOperandsPushFalse => {
-                let reached = with_false(state, state.main().len());
-                check_depth(&reached, limits)?;
+                let reached = with_false(state, constants, state.main().len());
+                check_depth(&reached.0, limits)?;
                 transfer.nonaborting_failure.push(reached);
             }
             // An outcome this crate has not been taught is recorded as
@@ -618,6 +711,21 @@ impl AuthorizationFacts {
     }
 }
 
+/// Whether an abstract type can only be the target's false item.
+///
+/// The empty item is the target's false, and a type that admits no
+/// other width admits no other value. The converse is not available and
+/// is not attempted: a nonempty byte string can still be false, because
+/// the target reads an all-zero payload as one, so nothing here ever
+/// concludes that an operand is *true*.
+fn is_definitely_false(
+    target: &ReviewedElementsTapscriptDefinition,
+    value: &StackValueType,
+) -> bool {
+    matches!(value, StackValueType::Empty)
+        || width_ranges(target, value) == BTreeSet::from([(0, 0)])
+}
+
 /// Whether an abstract type can be the empty item.
 fn can_be_empty(target: &ReviewedElementsTapscriptDefinition, actual: &StackValueType) -> bool {
     matches!(actual, StackValueType::Empty)
@@ -691,37 +799,104 @@ const fn statically_excluded(cause: FailureCause, widths_decided: bool) -> bool 
 /// was consumed. Reading it afterwards would resolve a duplicate
 /// against whatever the truncation left behind, which is a different
 /// item or none at all.
-fn apply_case(state: &AbstractStackState, case: &SuccessCase, base: usize) -> AbstractStackState {
+fn apply_case(
+    target: &ReviewedElementsTapscriptDefinition,
+    state: &AbstractStackState,
+    constants: &KnownConstants,
+    case: &SuccessCase,
+    base: usize,
+) -> Reached {
     let effect = case.effect();
     let operands = state.main()[base..].to_vec();
+    let operand_constants: Vec<Option<i64>> = (base..state.main().len())
+        .map(|at| constants.at(at))
+        .collect();
     let mut main = state.main().to_vec();
     // Each form states how many of the declared operands it consumes,
     // which is what makes a retaining form different from a consuming
     // one with no results rather than a special case here.
     main.truncate(main.len().saturating_sub(effect.consumed_operands()));
+    let mut reached = constants.truncated(main.len());
+
     for result in effect.results() {
         match result {
             ResultValue::Computed(value) => main.push(value.clone()),
             // Total by construction: the target validator refuses a
             // contract whose results name an operand position the
             // primitive does not declare.
-            ResultValue::OperandCopy(index) => main.push(
-                operands
-                    .get(*index)
-                    .expect("a validated contract names only declared operands")
-                    .clone(),
-            ),
+            ResultValue::OperandCopy(index) => {
+                main.push(
+                    operands
+                        .get(*index)
+                        .expect("a validated contract names only declared operands")
+                        .clone(),
+                );
+                // The item travels byte for byte, so whatever the walk
+                // knew about it travels with it.
+                reached.record(
+                    main.len() - 1,
+                    operand_constants.get(*index).copied().flatten(),
+                );
+            }
+            ResultValue::ComputedWidthFromOperand {
+                width_operand,
+                unsettled,
+            } => {
+                main.push(settled_width(
+                    target,
+                    unsettled,
+                    operand_constants.get(*width_operand).copied().flatten(),
+                ));
+            }
         }
     }
-    AbstractStackState::new(main, state.alternate().to_vec())
+    (
+        AbstractStackState::new(main, state.alternate().to_vec()),
+        reached,
+    )
+}
+
+/// The type of a result whose width the target takes from an operand.
+///
+/// # The unsettled type is the floor, never the ceiling
+///
+/// `width` is what the walk knows about the operand, and it narrows the
+/// result only where it is a width the contract's own unsettled type
+/// already admits. A value outside that range is not a narrower answer
+/// but a disagreement — the target would abort there — and the
+/// unsettled type is returned rather than a width no contract states.
+fn settled_width(
+    target: &ReviewedElementsTapscriptDefinition,
+    unsettled: &StackValueType,
+    width: Option<i64>,
+) -> StackValueType {
+    let Some(width) = width.and_then(|width| usize::try_from(width).ok()) else {
+        return unsettled.clone();
+    };
+    let admissible = width_ranges(target, unsettled)
+        .into_iter()
+        .any(|(minimum, maximum)| minimum <= width && width <= maximum);
+    if admissible {
+        StackValueType::Bytes {
+            minimum: width,
+            maximum: width,
+        }
+    } else {
+        unsettled.clone()
+    }
 }
 
 /// The state a non-aborting failure leaves behind, truncated to `keep`.
-fn with_false(state: &AbstractStackState, keep: usize) -> AbstractStackState {
+fn with_false(state: &AbstractStackState, constants: &KnownConstants, keep: usize) -> Reached {
     let mut main = state.main().to_vec();
     main.truncate(keep);
+    let mut reached = constants.truncated(main.len());
+    reached.record(main.len(), None);
     main.push(StackValueType::Empty);
-    AbstractStackState::new(main, state.alternate().to_vec())
+    (
+        AbstractStackState::new(main, state.alternate().to_vec()),
+        reached,
+    )
 }
 
 /// The reviewed contract of one primitive.

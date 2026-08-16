@@ -588,6 +588,11 @@ fn run_protocol(
             schema: NATIVE_PROTOCOL_SCHEMA,
             case,
             fixture: fixture.clone(),
+            // A primitive fixture bears no construction, and the field
+            // is omitted from the wire entirely rather than written as
+            // null, so this request is byte-identical to the one a
+            // schema-2 executor has always received.
+            construction: None,
         };
         // A failed write means the pipe is gone. What that was — a
         // timeout, an early exit, or an executor that simply stopped

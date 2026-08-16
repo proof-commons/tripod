@@ -58,6 +58,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use crate::fixture::{NativeCaseId, PrimitiveFixture};
+use crate::prototype::PrototypeConstruction;
 
 /// The protocol revision this harness speaks.
 ///
@@ -230,6 +231,50 @@ pub enum ExecutorCapability {
     TransactionContext,
     /// It reports resource observations.
     ResourceObservation,
+    /// It materializes a complete taproot tree stated by a fixture, and
+    /// refuses one it cannot build exactly.
+    ///
+    /// # Why this is a capability and not a schema bump
+    ///
+    /// A tree-bearing request carries a field a schema-2 executor has
+    /// never seen, and its strict framing would reject the whole
+    /// request. That is not a schema incompatibility as long as no
+    /// schema-2 executor is ever sent one, and this capability is what
+    /// makes that true: the harness sends a tree-bearing request only to
+    /// an executor that advertised the ability to materialize a tree.
+    ///
+    /// So the protocol revision stays at 2. Every request a schema-2
+    /// executor can receive is byte-identical to the requests it
+    /// received before — the new field is omitted entirely rather than
+    /// written as null — and an executor that does not advertise this
+    /// gets a typed refusal from the harness instead of a message it
+    /// cannot parse (Guide-10 `rule:guide10:schema-migration`).
+    TreeMaterialization,
+}
+
+impl ExecutorHandshake {
+    /// Whether this executor may be sent a tree-bearing request.
+    ///
+    /// # The gate that keeps the protocol revision at 2
+    ///
+    /// A tree-bearing request carries a field a schema-2 executor has
+    /// never seen, and its strict framing would reject the whole
+    /// message. That is only safe because no such executor is ever sent
+    /// one, and this predicate is where that is decided rather than
+    /// assumed: a construction goes out only to an executor that said it
+    /// can materialize a tree exactly
+    /// (Guide-10 `rule:guide10:schema-migration`).
+    ///
+    /// It is the executor's own claim, like every other capability here.
+    /// An executor that advertises this and then approximates a tree is
+    /// dishonest, and the fixture's stated values are what catches that
+    /// — the capability decides what may be *sent*, never what is
+    /// believed about the answer.
+    #[must_use]
+    pub fn materializes_trees(&self) -> bool {
+        self.capabilities
+            .contains(&ExecutorCapability::TreeMaterialization)
+    }
 }
 
 /// The harness's opening message.
@@ -364,6 +409,15 @@ pub enum RequestExpectationBoundary {
 }
 
 /// One case, handed to the executor.
+///
+/// # The construction is additive and omitted by default
+///
+/// A primitive request serializes exactly as it did before this field
+/// existed: `skip_serializing_if` leaves it out entirely rather than
+/// writing a null, so a schema-2 executor's strict framing sees the
+/// message it has always seen. A tree-bearing request carries it, and
+/// goes only to an executor that advertised
+/// [`ExecutorCapability::TreeMaterialization`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeExecutionRequest {
@@ -373,6 +427,10 @@ pub struct NativeExecutionRequest {
     pub case: NativeCaseId,
     /// The complete public fixture.
     pub fixture: PrimitiveFixture,
+    /// The taproot construction the executor must materialize exactly,
+    /// where the case bears one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub construction: Option<PrototypeConstruction>,
 }
 
 /// What the target did with one case.

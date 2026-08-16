@@ -131,6 +131,43 @@ states. So the inputs the fixture leaves unstated share exactly what the
 stated ones leave, and the materialised transaction conserves value with the
 outputs the fixture asked for and no others.
 
+Stated taproot constructions
+----------------------------
+A request may carry a complete taproot construction: an internal key, a
+tree, the leaf the spend executes, an optional control block, the program the
+consumed output must carry, and the outputs the transaction must carry by
+role. The tree is then materialised exactly as stated, through the upstream
+framework's own `taproot_construct`, and every stated value is checked
+against what the framework built:
+
+  internal key         used as given; the framework is never asked to pick
+                       one, and the key it reports back is compared;
+  leaves               every leaf script and leaf version byte is written as
+                       stated, and the executing leaf's are compared against
+                       what the framework hashed;
+  shape                every branch is handed over as its own two-item list,
+                       because the framework's helper splits a flat list down
+                       the middle and would otherwise rebuild the tree in a
+                       shape the fixture did not state. The executing leaf's
+                       authenticated depth is compared against the stated
+                       one, and the committed program against the stated
+                       predecessor program, which together pin the tree;
+  control block        derived from the tree that was built, and compared
+                       against the stated one where the request states one.
+
+Any disagreement is refused by name as an infrastructure error, never
+approximated and never reported as a target verdict: a construction that was
+not the stated one makes the target answer a question the fixture did not
+ask. The capability is advertised only when the framework actually offers
+the helper, since an adapter that claimed it and could not build a tree would
+be sent work only it could refuse.
+
+The spending transaction carries exactly one program-carrying output, the
+stated successor, and no change output. The explicit fee output is neither
+requested nor avoidable: an Elements transaction accounts for its fee in an
+output with no program, and one without it pays nothing and is refused by
+relay for a reason that is not a script verdict.
+
 Resource observations
 ---------------------
 `script_bytes` and `initial_stack_items` are restated from the fixture, so a
@@ -271,6 +308,14 @@ NATIVE_PROTOCOL_SCHEMA = 2
 
 # The reviewed tapscript leaf version.
 TAPSCRIPT_LEAF_VERSION = 0xC4
+
+# The width of an x-only key, which is also the width of one control-block
+# path node.
+XONLY_KEY_BYTES = 32
+
+# The bit a control block's first byte carries the output key's parity in;
+# every other bit of that byte is the leaf version.
+CONTROL_PARITY_MASK = 0x01
 
 # The published BIP-341 NUMS point, used as the taproot internal key so that
 # the key path is unspendable. A public constant, not key material.
@@ -696,6 +741,96 @@ def parse_script_path(raw: object) -> dict:
     }
 
 
+def parse_tap_tree(raw: object, path: str) -> dict:
+    """Decodes one stated taproot tree node.
+
+    The wire form is an externally tagged enum: a node is an object carrying
+    exactly one of `leaf` or `branch`. A node carrying neither, or both,
+    states no tree and is refused here rather than read as whichever variant
+    happens to be recognised -- a tree read as something other than what was
+    sent is exactly the substitution the stated tree exists to prevent.
+    """
+    node = require_object(raw, path)
+    names = tuple(node)
+    if len(names) != 1 or names[0] not in ("leaf", "branch"):
+        raise AdapterError("field is not a taproot tree node: %s" % path)
+    variant = names[0]
+    inner = "%s.%s" % (path, variant)
+    body = require_object(node[variant], inner)
+    if variant == "leaf":
+        require_keys(body, ("version", "script"), inner)
+        version = require_int(body["version"], inner + ".version")
+        if version < 0 or version > 0xFF:
+            raise AdapterError("leaf version is not a byte: %s.version" % inner)
+        return {
+            "kind": "leaf",
+            "version": version,
+            "script": require_bytes(body["script"], inner + ".script"),
+        }
+    require_keys(body, ("left", "right"), inner)
+    return {
+        "kind": "branch",
+        "left": parse_tap_tree(body["left"], inner + ".left"),
+        "right": parse_tap_tree(body["right"], inner + ".right"),
+    }
+
+
+def parse_construction_output(raw: object, path: str) -> dict:
+    """Decodes one output a construction requires, by role."""
+    value = require_object(raw, path)
+    require_keys(value, ("role", "program"), path)
+    return {
+        "role": check_enumeration(value["role"], ("successor",), path + ".role"),
+        "program": require_bytes(value["program"], path + ".program"),
+    }
+
+
+def parse_construction(raw: object) -> dict:
+    """Decodes one stated taproot construction strictly.
+
+    Every field is a requirement rather than a hint, so an unreadable one is
+    named here and the case is refused. Reading a construction loosely would
+    let the adapter build a tree the request did not state and then report a
+    target verdict about it.
+    """
+    path = "request.construction"
+    value = require_object(raw, path)
+    require_keys(
+        value,
+        (
+            "internal_key",
+            "tree",
+            "executing_leaf",
+            "control",
+            "predecessor_program",
+            "outputs",
+        ),
+        path,
+    )
+    internal_key = require_bytes(value["internal_key"], path + ".internal_key")
+    if len(internal_key) != XONLY_KEY_BYTES:
+        raise AdapterError(
+            "the stated internal key is %d bytes, and an x-only key is %d: "
+            "%s.internal_key" % (len(internal_key), XONLY_KEY_BYTES, path)
+        )
+    raw_outputs = value["outputs"]
+    if not isinstance(raw_outputs, list):
+        raise AdapterError("field is not an array: %s.outputs" % path)
+    return {
+        "internal_key": internal_key,
+        "tree": parse_tap_tree(value["tree"], path + ".tree"),
+        "executing_leaf": parse_tap_tree(value["executing_leaf"], path + ".executing_leaf"),
+        "control": require_optional_bytes(value["control"], path + ".control"),
+        "predecessor_program": require_bytes(
+            value["predecessor_program"], path + ".predecessor_program"
+        ),
+        "outputs": [
+            parse_construction_output(item, "%s.outputs[%d]" % (path, index))
+            for index, item in enumerate(raw_outputs)
+        ],
+    }
+
+
 # --------------------------------------------------------------------------
 # The disposable node
 # --------------------------------------------------------------------------
@@ -856,6 +991,30 @@ def txid_to_internal_int(txid_hex: str) -> int:
     return int.from_bytes(bytes.fromhex(txid_hex), "big")
 
 
+def tree_items(node: dict, path: str, leaves: list):
+    """Maps one stated tree onto the item structure `taproot_construct` takes.
+
+    The framework's own helper splits a *flat* list of items down the middle
+    and descends, so a tree handed over flat would come back in whatever
+    shape that split produced rather than in the shape the fixture stated.
+    Every branch is therefore written as its own two-item list: the nesting
+    carries the shape, and the helper is left nothing to choose.
+
+    Each leaf is given a name unique to its position, so that a tree carrying
+    the same script twice still yields two distinct entries in the
+    framework's leaf table -- one name for two leaves would silently drop one
+    of them.
+    """
+    if node["kind"] == "leaf":
+        name = "leaf:%s" % (path or "root")
+        leaves.append({"name": name, "node": node, "depth": len(path)})
+        return (name, node["script"], node["version"])
+    return [
+        tree_items(node["left"], path + "l", leaves),
+        tree_items(node["right"], path + "r", leaves),
+    ]
+
+
 def explicit_amount(field: bytes, path: str) -> int:
     """Reads an explicit Elements value field, or refuses a confidential one."""
     if len(field) == 9 and field[0] == EXPLICIT_PREFIX:
@@ -879,6 +1038,12 @@ class CaseExecutor:
         self.policy_asset_field = None
         self.mining_descriptor = None
         self.mock_time = 0
+        # Whether this adapter can genuinely materialise a stated tree. It is
+        # the framework's helper that does the work, so the capability is the
+        # helper's presence and not a claim written by hand: an adapter that
+        # advertised a tree it could not build would be sent exactly the work
+        # only it could refuse.
+        self.tree_materialization = callable(getattr(script, "taproot_construct", None))
 
     def prime(self) -> None:
         """Locates the chain's free-coin output and confirms one block."""
@@ -995,6 +1160,118 @@ class CaseExecutor:
         control = bytes([leaf.version + info.negflag]) + info.internal_pubkey + leaf.merklebranch
         return info.scriptPubKey, bytes(leaf.script), control
 
+    def materialise_construction(self, fixture: dict, construction: dict):
+        """Builds exactly the taproot commitment the request states.
+
+        Nothing here is chosen by this adapter: the internal key, every leaf
+        script, every leaf version byte, and the tree's shape are the
+        request's, and each is checked against what the framework actually
+        built. A stated value this adapter cannot reproduce ends the case as
+        a named refusal, because an approximated construction makes the
+        target answer a question the fixture did not ask.
+
+        The two strongest checks are the last two. The committed program
+        pins the internal key and the whole tree at once -- no other tree
+        yields it -- and the control block pins the path the spend will
+        actually authenticate.
+        """
+        executing = construction["executing_leaf"]
+        if executing["kind"] != "leaf":
+            raise AdapterError(
+                "request.construction.executing_leaf is a branch, and a spend "
+                "executes a leaf"
+            )
+        if executing["script"] != fixture["script"]:
+            raise AdapterError(
+                "request.construction.executing_leaf.script disagrees with "
+                "fixture.script"
+            )
+        if executing["version"] != fixture["leaf_version"]:
+            raise AdapterError(
+                "request.construction.executing_leaf.version disagrees with "
+                "fixture.leaf_version"
+            )
+
+        leaves = []
+        items = tree_items(construction["tree"], "", leaves)
+        if not isinstance(items, list):
+            # A tree that is one leaf: the framework's helper reads a
+            # single-item list as that leaf.
+            items = [items]
+        for entry in leaves:
+            version = entry["node"]["version"]
+            if version & CONTROL_PARITY_MASK:
+                raise AdapterError(
+                    "the stated tree carries the odd leaf version %d, and a "
+                    "taproot leaf version's low bit is the output key's "
+                    "parity rather than part of the version" % version
+                )
+
+        try:
+            info = self.script.taproot_construct(construction["internal_key"], items)
+        except Exception as error:
+            raise AdapterError(
+                "the framework built no taproot commitment for the stated "
+                "tree: %s" % one_line("%s: %s" % (type(error).__name__, error))
+            )
+
+        if bytes(info.internal_pubkey) != construction["internal_key"]:
+            raise AdapterError(
+                "the framework committed to an internal key other than the "
+                "stated one"
+            )
+
+        matches = [
+            entry
+            for entry in leaves
+            if entry["node"]["version"] == executing["version"]
+            and entry["node"]["script"] == executing["script"]
+        ]
+        if len(matches) != 1:
+            raise AdapterError(
+                "the stated tree carries the executing leaf %d times, and a "
+                "control path is determined only by exactly one" % len(matches)
+            )
+        entry = matches[0]
+        leaf = info.leaves[entry["name"]]
+        if bytes(leaf.script) != executing["script"] or leaf.version != executing["version"]:
+            raise AdapterError(
+                "the framework built the executing leaf from other bytes than "
+                "the stated ones"
+            )
+        built_depth, remainder = divmod(len(leaf.merklebranch), XONLY_KEY_BYTES)
+        if remainder or built_depth != entry["depth"]:
+            raise AdapterError(
+                "the framework authenticated the executing leaf under %d "
+                "sibling bytes, and the stated tree places it at depth %d"
+                % (len(leaf.merklebranch), entry["depth"])
+            )
+
+        program = bytes(info.scriptPubKey)
+        control = (
+            bytes([leaf.version + info.negflag])
+            + bytes(info.internal_pubkey)
+            + bytes(leaf.merklebranch)
+        )
+        if program != construction["predecessor_program"]:
+            raise AdapterError(
+                "the stated tree commits to a program of %d bytes that is not "
+                "the stated predecessor program" % len(program)
+            )
+        stated_control = construction["control"]
+        if stated_control is not None and stated_control != control:
+            if len(stated_control) == len(control) and stated_control[1:] == control[1:]:
+                raise AdapterError(
+                    "the stated control block carries a first byte the stated "
+                    "tree does not determine, which is the leaf version or the "
+                    "output key's parity"
+                )
+            raise AdapterError(
+                "the stated control block is not the one the stated tree "
+                "determines"
+            )
+        return program, bytes(leaf.script), control
+
     # -- primitives -------------------------------------------------------
 
     def output(self, amount: int, program: bytes, asset_field=None, nonce_field=None):
@@ -1076,7 +1353,7 @@ class CaseExecutor:
 
     # -- one case ---------------------------------------------------------
 
-    def execute(self, fixture: dict) -> dict:
+    def execute(self, fixture: dict, construction=None) -> dict:
         """Runs one fixture and returns its verdict body."""
         if fixture["execution_domain"] != "tapscript":
             raise AdapterError(
@@ -1084,8 +1361,29 @@ class CaseExecutor:
             )
         script_bytes = fixture["script"]
         leaf_version = fixture["leaf_version"]
-        program, leaf_script, control = self.taproot_for(script_bytes, leaf_version)
         context = fixture["context"]
+        if construction is not None:
+            # One transaction shape per case. A request stating both a
+            # construction and a generic context states two, and the second
+            # would have to overwrite the first's outputs -- so the pair is
+            # refused rather than resolved by precedence.
+            if context is not None:
+                raise AdapterError(
+                    "the request states both a construction and a transaction "
+                    "context, and this adapter materialises one transaction "
+                    "shape rather than two"
+                )
+            program, leaf_script, control = self.materialise_construction(
+                fixture, construction
+            )
+            transaction = self.build_construction_spend(
+                program, leaf_script, control, fixture, construction
+            )
+            raw = transaction.serialize().hex()
+            body = self.judge(raw, fixture["enforcement_layer"])
+            body["transaction_weight"] = self.weight_of(raw)
+            return body
+        program, leaf_script, control = self.taproot_for(script_bytes, leaf_version)
         if context is None:
             transaction = self.build_default_spend(program, leaf_script, control, fixture)
         else:
@@ -1130,6 +1428,51 @@ class CaseExecutor:
         )
         transaction.vout.append(
             self.output(CASE_FUNDING_SATOSHIS - ADAPTER_FEE_SATOSHIS, self.anyone_can_spend)
+        )
+        transaction.vout.append(self.output(ADAPTER_FEE_SATOSHIS, b""))
+        witness = messages.CTxInWitness()
+        witness.scriptWitness.stack = list(fixture["initial_stack"]) + [leaf_script, control]
+        transaction.wit.vtxinwit.append(witness)
+        return transaction
+
+    def build_construction_spend(self, program, leaf_script, control, fixture, construction):
+        """Spends the stated predecessor output into the stated successor.
+
+        Exactly one program-carrying output is written, and it is the
+        successor the request named. No change output is added: a second
+        program-carrying output could satisfy a successor requirement the
+        request did not state.
+
+        The explicit fee output is neither requested nor avoidable. An
+        Elements transaction accounts for its fee in an output with no
+        program at all, so a transaction without one pays nothing and is
+        refused by relay for a reason that is not a script verdict.
+        """
+        messages = self.messages
+        successors = [
+            entry for entry in construction["outputs"] if entry["role"] == "successor"
+        ]
+        if len(successors) != 1:
+            raise AdapterError(
+                "the request states %d successor outputs, and a spend carries "
+                "exactly one" % len(successors)
+            )
+        successor_program = successors[0]["program"]
+        if not successor_program:
+            raise AdapterError(
+                "the stated successor output carries no program, which on this "
+                "chain is the shape of a fee output rather than of a successor"
+            )
+        funding_txid = self.fund(program, CASE_FUNDING_SATOSHIS)
+        transaction = messages.CTransaction()
+        transaction.version = 2
+        transaction.vin.append(
+            messages.CTxIn(
+                messages.COutPoint(txid_to_internal_int(funding_txid), 0), nSequence=0xFFFFFFFE
+            )
+        )
+        transaction.vout.append(
+            self.output(CASE_FUNDING_SATOSHIS - ADAPTER_FEE_SATOSHIS, successor_program)
         )
         transaction.vout.append(self.output(ADAPTER_FEE_SATOSHIS, b""))
         witness = messages.CTxInWitness()
@@ -1511,11 +1854,16 @@ def serve(arguments) -> int:
                 "included_local_topics": sorted(set(topics)),
                 "supported_domains": ["tapscript"],
                 "supported_leaf_versions": [TAPSCRIPT_LEAF_VERSION],
+                # Tree materialization is advertised only where the loaded
+                # framework actually offers the helper that builds one, so
+                # the harness never sends a tree-bearing request to an
+                # adapter that could only refuse it.
                 "capabilities": [
                     "failure_class_reporting",
                     "resource_observation",
                     "transaction_context",
-                ],
+                ]
+                + (["tree_materialization"] if executor.tree_materialization else []),
             }
         )
 
@@ -1552,7 +1900,7 @@ def answer_case(executor: CaseExecutor, line: str) -> None:
     if not isinstance(request, dict):
         raise FatalAdapterError("the harness sent a request that is not an object")
     for key in request:
-        if key not in ("schema", "case", "fixture"):
+        if key not in ("schema", "case", "fixture", "construction"):
             raise FatalAdapterError("the harness sent a request field named %s" % key)
     case = request.get("case")
     # The case identity is echoed verbatim, so that the harness correlates
@@ -1566,8 +1914,21 @@ def answer_case(executor: CaseExecutor, line: str) -> None:
         if request.get("schema") != NATIVE_PROTOCOL_SCHEMA:
             raise AdapterError("the request carries a protocol revision this adapter does not")
         fixture = parse_fixture(request.get("fixture"))
+        construction = request.get("construction")
+        if construction is not None:
+            # A construction sent to an adapter that advertised no tree
+            # materialization is the harness contradicting the handshake it
+            # was given. That is a protocol error, and the case is refused
+            # rather than answered from a tree this adapter would have had to
+            # invent.
+            if not executor.tree_materialization:
+                raise AdapterError(
+                    "the request states a taproot construction, and this "
+                    "adapter advertised no tree materialization"
+                )
+            construction = parse_construction(construction)
         started = time.monotonic()
-        body = executor.execute(fixture)
+        body = executor.execute(fixture, construction)
         log("case answered in %.2fs" % (time.monotonic() - started))
     except AdapterError as error:
         log("infrastructure error: %s" % error.note)
