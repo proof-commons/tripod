@@ -52,6 +52,14 @@ fn every_row_states_a_coherent_case() {
 }
 
 #[test]
+fn the_matrix_is_the_stated_size() {
+    // The census count, stated so that a row lost to a refactor is a
+    // failure here rather than a silently smaller matrix.
+    let matrix = matrix();
+    assert_eq!(matrix.len(), 36);
+}
+
+#[test]
 fn every_case_name_is_distinct() {
     // Duplicate identities would make two rows one row in every report
     // that indexed them (Guide-10 `rule:guide10:fixture-determinism`).
