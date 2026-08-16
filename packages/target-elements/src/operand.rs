@@ -26,8 +26,21 @@
 //! So the alternatives live in the operand contract, where the target's
 //! own branch structure is, rather than being flattened into a single
 //! type that has to be either too narrow or too wide.
+//!
+//! # And a third position that admits on width alone
+//!
+//! The tweak position of the taproot tweak check is neither. The target
+//! admits any item of exactly thirty-two bytes there and decides what
+//! the bytes mean afterwards, inside the curve arithmetic
+//! (`src/script/interpreter.cpp:2210-2219`: the operand guard is
+//! `vchTweak.size() != 32`, and scalar validity is whatever
+//! `CheckPayToContract` makes of it). Declaring that position as one
+//! exact encoding said the target refuses a thirty-two byte item of any
+//! other typed provenance, which it does not — and the item a program
+//! actually derives there is a streaming-hash digest.
 
 use std::collections::BTreeSet;
+use std::num::NonZeroUsize;
 
 use crate::encoding::EncodingClass;
 use crate::opcode::StackValueType;
@@ -71,6 +84,37 @@ pub enum OperandContract {
     /// alternatives select different target behaviour, which is what
     /// the two variants below carry and this one does not.
     OneOf(BTreeSet<StackValueType>),
+
+    /// A position the target admits on width alone.
+    ///
+    /// # Why a width is the whole admission rule
+    ///
+    /// Some positions carry no encoding check at all. The target reads
+    /// the item's length, refuses every other length, and then hands
+    /// the bytes to arithmetic that decides whether they mean anything.
+    /// Nothing about the item's provenance is inspected: a digest, a
+    /// key, and a literal of the right width are the same operand there.
+    ///
+    /// Declaring such a position as one exact encoding is wrong in the
+    /// refusing direction. It says the target rejects an item it in fact
+    /// accepts, and the rejection lands on precisely the item a program
+    /// derives — so a composition the target performs is refused before
+    /// it can be scheduled (Guide-10 `rule:guide10:primitive-admission`).
+    ///
+    /// # What the intent class is, and is not
+    ///
+    /// The class names what the target *reads* an admitted item as, so
+    /// that the encoding stays visible in the contract's dependency
+    /// closure and a reader can see which arithmetic the bytes reach.
+    /// It is not an admission condition, and it carries no promise that
+    /// an admitted item is a well-formed member of the class: where the
+    /// target decides that at execution, so does this contract.
+    WidthOnly {
+        /// The one width the target admits, in bytes.
+        bytes: NonZeroUsize,
+        /// The class naming what the target reads an admitted item as.
+        intent: EncodingClass,
+    },
 
     /// A signature position.
     Signature {
@@ -123,6 +167,11 @@ impl OperandContract {
             // would claim the position was a closed alternation.
             Self::AnyItem => BTreeSet::new(),
             Self::OneOf(values) => values.clone(),
+            // The intent class is named, because the dependency closure
+            // and a reader both need to see which encoding the bytes
+            // reach. Admission is still the width, and the variant's own
+            // documentation is where that is stated.
+            Self::WidthOnly { intent, .. } => BTreeSet::from([StackValueType::Encoded(*intent)]),
             Self::Signature {
                 nonempty_encoding,
                 empty_allowed,

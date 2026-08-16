@@ -670,6 +670,7 @@ impl AuthorizationFacts {
                 }
                 OperandContract::Exact(_)
                 | OperandContract::OneOf(_)
+                | OperandContract::WidthOnly { .. }
                 | OperandContract::AnyItem => {}
             }
         }
@@ -934,6 +935,16 @@ fn admits(
         // which a stack operation carries through just as faithfully.
         OperandContract::AnyItem => true,
         OperandContract::OneOf(values) => values.iter().any(|value| accepts(target, value, actual)),
+        // Width is the whole rule, so the question is whether every
+        // width the incoming state still admits is the declared one. A
+        // state that has not settled the width does not satisfy it: the
+        // target refuses the other widths, and an unsettled item could
+        // be one of them.
+        OperandContract::WidthOnly { bytes, .. } => {
+            let required = (bytes.get(), bytes.get());
+            let ranges = width_ranges(target, actual);
+            !ranges.is_empty() && ranges.iter().all(|range| *range == required)
+        }
         OperandContract::Signature {
             nonempty_encoding,
             empty_allowed,

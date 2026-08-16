@@ -68,12 +68,13 @@ dynamic-metadata-leaf candidate; "wide floor" is the derived-limb candidate.
 | conditional branch | no | no | absent | not admitted; see below |
 | alternate stack | no | no | absent | not admitted; see below |
 | indexed copy | no | no | absent | not admitted; see below |
+| read below the third item | yes | no | absent | **decided against**: no primitive offers it; see below |
 | streaming hash | yes | no | reviewed | unchanged |
 | signed fixed-width arithmetic | yes | yes | reviewed | unchanged |
 | signed comparison | no | yes | reviewed | unchanged |
 | script-number conversion | yes | yes | reviewed | unchanged |
 | input/output program inspection | yes | no | reviewed | unchanged |
-| tweak verification | yes | no | reviewed | unchanged |
+| tweak verification | yes | no | reviewed | operand corrected in V2; see below |
 
 Concatenation, slicing, and the bitwise operations are admitted because Elements
 re-enables them: the disable list that carries them upstream has them commented
@@ -110,6 +111,48 @@ mover would mean extending the algebra for a convenience.
 Indexed copying is not admitted. Its operand count is chosen at run time, and a
 contract whose operand list is fixed cannot state that. The schedules close
 without it.
+
+### The reach bound is three items, and every schedule is shaped by it
+
+The three refusals above have one consequence between them, and it governs
+every compound proof this crate can express. With no indexed copy, no indexed
+move, and no alternate-stack transfer, the deepest item any reviewed primitive
+can read is the third: no primitive in the registry declares a fourth operand,
+and no successful form consumes more than three. So a program may hold at most
+two computed values and still reach the next witness beneath them.
+
+This is a property of the reviewed contracts rather than a convention, and it is
+machine-checked over the whole registry rather than asserted about the
+primitives somebody happened to look at. It decides whether a compound proof can
+be scheduled at all: the constructor continuity proof has to keep one static
+subtree root alive across an entire second constructor derivation, and it fits
+only because the root is the deepest of the three values the first half retains,
+every later witness lies beneath it in consumption order, and the second half
+consumes it last.
+
+The bound also refuses things. The metadata transition proof and the continuity
+proof each schedule on their own, and composing the two into one program is not
+currently expressible: the transition needs both metadata objects adjacent, the
+continuity proof needs the static root between them, and no reviewed primitive
+reaches past the third item to reorder them. That is an open finding rather than
+a settled decision, and it is recorded as one.
+
+### The tweak operand is a width, not an encoding
+
+The tweak position of `OP_TWEAKVERIFY` was declared in the V2 registry as one
+exact encoding class. That was wrong about the target in the refusing direction.
+Upstream checks `vchTweak.size() != 32` and nothing else, and decides what the
+thirty-two bytes mean afterwards inside `CheckPayToContract`; a streaming-hash
+digest, which is exactly what a constructor program derives there, was refused
+by a rule the target does not have.
+
+The operand algebra now carries a position admitted on width alone, naming the
+class the target reads an item as without making that class an admission
+condition. A wrong width is still refused, and an item whose width the abstract
+state has not settled still satisfies nothing. What the correction does not do
+is promise the derived tweak is a valid scalar: the rare instance that is not
+fails inside the curve arithmetic, which is where the target fails it, and that
+residual is unchanged.
 
 ## Review provenance for the compound-proof primitives
 

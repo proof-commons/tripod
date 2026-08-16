@@ -78,6 +78,7 @@ pub mod executor;
 pub mod fixture;
 pub mod protocol;
 pub mod prototype;
+pub mod prototype_program;
 pub mod report;
 pub mod validate;
 pub mod vocabulary;
