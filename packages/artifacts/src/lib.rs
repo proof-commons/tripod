@@ -19,6 +19,46 @@
 //! Generated files are *publications*, never semantic inputs: the
 //! compiler, linker, and release logic must consume typed Rust, not
 //! these artifacts.
+//!
+//! # Boundary
+//!
+//! The library itself **never writes**. It renders bytes in memory and
+//! compares them; the only writing path in this package is the
+//! `generate-all` binary, which publishes the rendered set through
+//! `cli_common::publish_batch` so every artifact is staged before the
+//! first destination changes. Subject files arrive as a
+//! [`labels::RepositoryCensus`] built from command-line arguments
+//! (ADR-014); nothing here resolves a repository path from this
+//! crate's compiled location.
+//!
+//! # Map
+//!
+//! - [`ARTIFACT_NAMES`] — the owned census of generated file names.
+//! - [`expected_artifacts`] — render every artifact from its typed
+//!   source, in memory, returning [`ExpectedArtifact`] values.
+//! - [`check`] — compare a directory against those bytes and return a
+//!   [`CheckReport`] of [`ArtifactStatus`] / [`ArtifactFreshness`]
+//!   entries plus any unexpected files. Never writes.
+//! - [`CHECK_REPORT_SCHEMA`] — schema version of that report.
+//! - [`weld`] — structural extraction of the realization document's
+//!   attached manifest ([`weld::extract_appendix_toml`]) and masthead
+//!   ([`weld::masthead`]), used by the release-integrity weld tests.
+//!
+//! # Example
+//!
+//! The census is the only input, so a freshness check is one call:
+//!
+//! ```no_run
+//! // Requires a real repository tree on disk, so this compiles but
+//! // does not run as a doctest.
+//! let census = labels::RepositoryCensus::default();
+//! let report = artifacts::check(std::path::Path::new("packages/model/generated"), &census)?;
+//! assert!(report.current, "generated artifacts are stale");
+//! # Ok::<(), anyhow::Error>(())
+//! ```
+//!
+//! See `README.md` in this package for the generator and checker
+//! command-line contracts and the regeneration workflow.
 
 use std::path::Path;
 
@@ -223,16 +263,5 @@ pub fn check(dir: &Path, census: &labels::RepositoryCensus) -> anyhow::Result<Ch
     })
 }
 
-/// Atomically write `bytes` to `path`.
-///
-/// Staged through a uniquely named temporary file in the destination
-/// directory, then persisted by rename. Unique temporary names make
-/// concurrent generator invocations race-safe — two processes can
-/// never rename each other's half-written bytes into place, and a
-/// failure cannot leave a predictable stray `.tmp` behind.
-///
-/// # Errors
-///
-/// Returns the underlying I/O error.
 #[cfg(test)]
 mod tests;
