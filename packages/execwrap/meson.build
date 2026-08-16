@@ -15,3 +15,6 @@ execwrap_source_files = files(
 # subjects. The census audit accepts the exclusion only because it is
 # declared here.
 execwrap_excluded_files = files('tests/subprocess_contract.rs')
+
+# Crate documentation (DOC owner).
+execwrap_doc_files = files('README.md')

@@ -16,6 +16,46 @@
 //! process memory and may be visible through ordinary operating-system
 //! interfaces. Deliberately relayed child output is unsanitized child
 //! result data (ADR-015).
+//!
+//! # Map
+//!
+//! - [`RoutingConfig`] — the four redirection targets plus the
+//!   notification and verbosity switches; [`RoutingConfig::is_stream_redirected`]
+//!   answers whether a [`Stream`] has a file subscriber.
+//! - [`preflight_routing`] — validate a configuration before any side
+//!   effect. Targets are only stat'ed; nothing is opened or truncated.
+//! - [`run`] — spawn the child, capture both streams, and return an
+//!   [`ExecOutcome`]. Notifications arrive as [`Notification`] values.
+//! - [`ExecError`] — setup failures only; a non-zero child status is
+//!   not an error.
+//! - [`safe_open`] — open a log file, creating parent directories.
+//! - [`writer`] — the two-mode buffered log writer ([`Writer`],
+//!   [`StreamProps`]) that [`run`] builds per destination.
+//! - [`MockChild`] / [`run_mock_child`] — deterministic stand-ins for
+//!   the TeX toolchain, selected by the build in `mock_mode` (ADR-014).
+//!
+//! # Example
+//!
+//! Preflight is pure inspection, so a configuration can be validated
+//! without running anything:
+//!
+//! ```
+//! use execwrap::{RoutingConfig, Stream, preflight_routing};
+//!
+//! let config = RoutingConfig {
+//!     redirect_output: Some("build/out.log".into()),
+//!     ..RoutingConfig::default()
+//! };
+//!
+//! assert!(config.is_stream_redirected(Stream::Stdout));
+//! // stderr has no file subscriber, so it will be relayed to the parent.
+//! assert!(!config.is_stream_redirected(Stream::Stderr));
+//! preflight_routing(&config)?;
+//! # Ok::<(), execwrap::ExecError>(())
+//! ```
+//!
+//! See `README.md` in this package for the full run workflow, the
+//! routing table, and the exit-code mapping the binary applies.
 
 use std::ffi::OsString;
 use std::fs::{File, create_dir_all};
