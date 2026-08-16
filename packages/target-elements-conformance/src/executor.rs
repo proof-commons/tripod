@@ -612,11 +612,27 @@ fn run_protocol(
     reader: &mut impl BufRead,
 ) -> Result<ExecutionTranscript, NativeConformanceError> {
     let limits = configuration.limits;
-    write_message(
+    // The same rule the case loops below follow, and for the same
+    // reason: a failed write means the pipe is gone, and *what* that was
+    // is decided by the read below and by the child's status rather than
+    // guessed from which side of the pipe noticed first.
+    //
+    // Propagating it instead made the classification a race. A child
+    // that exits before the harness writes leaves the handshake write
+    // failing with `ExecutorExited`, and a child that exits after it
+    // leaves the write succeeding and the read reaching end of stream,
+    // which is `ExecutorHandshakeFailed`. The same child, told to die
+    // before it speaks, was reported as either one depending on how
+    // loaded the machine was. A child that never starts the protocol
+    // fails as a handshake failure, always: it is the phase that did not
+    // happen that names the failure, and the exit status is what the run
+    // reports about a child that *did* speak
+    // (Guide-10 `rule:guide10:protocol-handshake`).
+    let _handshake_write = write_message(
         &mut stdin,
         &HandshakeRequest::default(),
         ProtocolPhase::Handshake,
-    )?;
+    );
     let handshake: ExecutorHandshake = read_message(reader, ProtocolPhase::Handshake, limits)?
         .ok_or(NativeConformanceError::ExecutorHandshakeFailed)?;
 
@@ -1048,5 +1064,91 @@ impl Watchdog {
             let _ignored = handle.join();
         }
         self.expired.load(Ordering::SeqCst)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{self, Write};
+    use std::path::Path;
+    use std::time::Duration;
+
+    use target_elements::{
+        ActivationDeclaration, DeploymentEnvironment, DevelopmentDeploymentBinding, LeafVersion,
+        TargetContractVersion, reviewed_elements_tapscript, validate_reviewed_development_binding,
+    };
+
+    use super::{
+        ExecutorConfiguration, ExecutorTrust, NativeWorkload, PrimitiveFixtureSet, run_protocol,
+    };
+    use crate::error::NativeConformanceError;
+    use crate::protocol::{MOCK_EXECUTOR_GENESIS_ID, MOCK_EXECUTOR_NETWORK_ID};
+
+    /// A pipe whose far end is already gone.
+    struct BrokenPipe;
+
+    impl Write for BrokenPipe {
+        fn write(&mut self, _bytes: &[u8]) -> io::Result<usize> {
+            Err(io::Error::from(io::ErrorKind::BrokenPipe))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Err(io::Error::from(io::ErrorKind::BrokenPipe))
+        }
+    }
+
+    /// A child that never starts the protocol is a handshake failure.
+    ///
+    /// The two halves of a died-early child arrive in either order, and
+    /// the ordering is the machine's rather than the protocol's: a child
+    /// that exits before the harness writes breaks the handshake write,
+    /// and one that exits after it leaves the write succeeding and the
+    /// read reaching end of stream. Propagating the write's own error
+    /// made the classification depend on which happened first, which is
+    /// how one mock was reported as an exit under a loaded workspace and
+    /// as a handshake failure in isolation.
+    ///
+    /// This pins the losing ordering directly rather than trying to
+    /// provoke it under load: the write fails outright and the reader is
+    /// already at end of stream, which is exactly what the harness sees
+    /// when the child wins the race. The phase that did not happen names
+    /// the failure (Guide-10 `rule:guide10:protocol-handshake`).
+    #[test]
+    fn a_broken_handshake_write_is_still_a_handshake_failure() {
+        let target = reviewed_elements_tapscript().expect("the reviewed contract validates");
+        let binding = validate_reviewed_development_binding(
+            &target,
+            DevelopmentDeploymentBinding::new(
+                TargetContractVersion::V2,
+                DeploymentEnvironment::Development,
+                MOCK_EXECUTOR_NETWORK_ID,
+                MOCK_EXECUTOR_GENESIS_ID,
+                ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+                None,
+            ),
+        )
+        .expect("the binding validates");
+        let configuration = ExecutorConfiguration::new(
+            Path::new("/nonexistent-executor"),
+            ExecutorTrust::Mock,
+            Duration::from_secs(1),
+        );
+        let fixtures = PrimitiveFixtureSet::default();
+
+        let mut reader = io::empty();
+        let error = run_protocol(
+            &target,
+            &binding,
+            &configuration,
+            NativeWorkload::Primitives(&fixtures),
+            BrokenPipe,
+            &mut reader,
+        )
+        .expect_err("a child that never speaks is refused");
+
+        assert!(
+            matches!(error, NativeConformanceError::ExecutorHandshakeFailed),
+            "expected a handshake failure, got {error}",
+        );
     }
 }

@@ -162,11 +162,46 @@ ask. The capability is advertised only when the framework actually offers
 the helper, since an adapter that claimed it and could not build a tree would
 be sent work only it could refuse.
 
-The spending transaction carries exactly one program-carrying output, the
-stated successor, and no change output. The explicit fee output is neither
-requested nor avoidable: an Elements transaction accounts for its fee in an
-output with no program, and one without it pays nothing and is refused by
-relay for a reason that is not a script verdict.
+The spending transaction carries only the program-carrying outputs the
+construction stated, and no change output. The explicit fee output is
+neither requested nor avoidable: an Elements transaction accounts for its
+fee in an output with no program, and one without it pays nothing and is
+refused by relay for a reason that is not a script verdict.
+
+Compound-prototype fixtures
+---------------------------
+A compound fixture is a record of its own rather than a primitive one with
+extra fields: its case is a relation and a name, its outcome is a spend
+verdict, and it always states a construction. The two are told apart by the
+case identity, which is the one field whose shape differs, and a compound
+request is answered only because this adapter advertises
+`compound_prototype_fixtures` -- which it does only where the framework
+offers the helper that builds a taproot commitment at all.
+
+Both stated relations reach the same two steps. The stated tree is
+materialised and checked against every value the fixture stated, exactly as
+for a primitive case carrying a construction; then the predecessor output is
+funded and spent through the stated executing leaf with the fixture's exact
+witness. What differs is what the transaction is required to create:
+
+  metadata constructor    one successor output carrying the stated program,
+  continuity              at index zero, followed by the fee output. The
+                          composed program reads the created output at that
+                          stated role rather than searching for it;
+
+  wide floor              no output of any role. The pattern reads no
+                          transaction field, so the whole input value goes
+                          to the fee output and the transaction carries no
+                          program-carrying output at all -- which is what
+                          the fixture stating none means.
+
+Three fields a primitive fixture states are absent from a compound one and
+are supplied here under a stated rule rather than guessed: the execution
+domain, which a fixture stating a leaf and a control path already is; the
+leaf version, which is stated once inside the executing leaf and checked
+against the one version this adapter advertises; and the enforcement layer,
+which is consensus, because a compound relation states that a spend stands
+or does not and standardness is not that contract.
 
 Resource observations
 ---------------------
@@ -226,14 +261,29 @@ never as a plausible neighbour.
   Invalid Schnorr signature size                         invalid_signature
   Script failed an OP_CHECKSIGVERIFY operation           empty_signature
   Arithmetic opcode error                                fixed_width_conversion_refused
+  Script failed an OP_VERIFY operation                   false_verification
+  Script failed an OP_EQUALVERIFY operation              unequal_operands
+  Script failed an OP_NUMEQUALVERIFY operation           unequal_operands
   Stack size limit exceeded                              unmapped
   Script is too big                                      unmapped
   Operation limit exceeded                               unmapped
-  Script failed an OP_VERIFY operation                   unmapped
-  Script failed an OP_EQUALVERIFY operation              unmapped
-  Script failed an OP_NUMEQUALVERIFY operation           unmapped
   Invalid Schnorr signature hash type                    unmapped
   Invalid Taproot control block size                     unmapped
+
+The three verify failures were unmapped until a compound-prototype run
+reached them, and leaving them so was not the conservative choice it looked
+like. The harness names both classes exactly -- one for a verifying
+comparison whose operands were not equal, one for a verified operand that
+was the target's false -- so reporting neither was reporting less than was
+observed. It was also unanswerable: this adapter advertises failure-class
+reporting, and the harness refuses a rejection that names no class from an
+executor that said it distinguishes them. A composed proof rejects through
+exactly these opcodes, so every refusing row of both prototype matrices
+would have been refused as a malformed response rather than read as the
+target verdict it is.
+
+The five that remain unmapped are unmapped because the harness's vocabulary
+names no class for them, which is a different statement and stays one.
 
 Four of those entries are worth naming, because they were settled by reading
 the interpreter rather than by guessing at a string:
@@ -300,7 +350,7 @@ COMMAND_NAME = "elements-native-executor"
 
 # This adapter's own version, which is provenance for the transactions it
 # builds and is not the node's version.
-ADAPTER_VERSION = "2.0.0"
+ADAPTER_VERSION = "2.1.0"
 
 # The protocol revision this adapter speaks. It must match
 # NATIVE_PROTOCOL_SCHEMA in the conformance package.
@@ -408,6 +458,14 @@ FAILURE_CLASS_BY_SCRIPT_ERROR = {
     # those as separate causes. Reporting either would name a cause this
     # adapter did not observe.
     "Arithmetic opcode error": "fixed_width_conversion_refused",
+    # The two verifying comparisons, which the harness names exactly. A
+    # composed proof rejects through these more often than through anything
+    # else: every equality a schedule verifies is one of them.
+    "Script failed an OP_EQUALVERIFY operation": "unequal_operands",
+    "Script failed an OP_NUMEQUALVERIFY operation": "unequal_operands",
+    # A verified operand that was the target's false, which is what an
+    # unsatisfied arithmetic success flag becomes.
+    "Script failed an OP_VERIFY operation": "false_verification",
 }
 
 
@@ -785,15 +843,18 @@ def parse_construction_output(raw: object, path: str) -> dict:
     }
 
 
-def parse_construction(raw: object) -> dict:
+def parse_construction(raw: object, path: str = "request.construction") -> dict:
     """Decodes one stated taproot construction strictly.
 
     Every field is a requirement rather than a hint, so an unreadable one is
     named here and the case is refused. Reading a construction loosely would
     let the adapter build a tree the request did not state and then report a
     target verdict about it.
+
+    The path is a parameter because the same record reaches this adapter in
+    two places: beside a primitive fixture, and inside a compound one. A
+    refusal names where the field it could not read actually was.
     """
-    path = "request.construction"
     value = require_object(raw, path)
     require_keys(
         value,
@@ -829,6 +890,118 @@ def parse_construction(raw: object) -> dict:
             for index, item in enumerate(raw_outputs)
         ],
     }
+
+
+def parse_prototype_fixture(raw: object) -> tuple:
+    """Decodes one compound-prototype fixture strictly.
+
+    Returns the same pair the primitive path produces -- the execution
+    subject and the construction to materialise -- so that one execution
+    routine serves both. What differs is what the record states and what it
+    does not.
+
+    Three fields a primitive fixture states are absent here, and each is
+    supplied by this adapter under a stated rule rather than guessed:
+
+      execution domain    a compound fixture is a taproot script-path spend
+                          by construction, since it states a leaf, a tree,
+                          and a control path. This adapter executes exactly
+                          that domain and no other;
+      leaf version        stated once, inside the executing leaf, rather
+                          than twice where two copies could drift. It is
+                          checked against the one version this adapter
+                          advertises, and any other is refused;
+      enforcement layer   consensus. A compound relation states that a
+                          spend stands or does not, which is what block
+                          validation decides; standardness is not the
+                          contract, and answering a consensus question with
+                          a mempool verdict would report an unrelayable but
+                          perfectly valid spend as an invalid one.
+
+    `claims`, `target_contract_version`, `expected`, and
+    `expected_resources` are validated for shape and then discarded.
+    `expected` is discarded for the reason every expectation is: an
+    executor that consults it is comparing a fixture with itself.
+    """
+    fixture = require_object(raw, "fixture")
+    require_keys(
+        fixture,
+        (
+            "case",
+            "claims",
+            "target_contract_version",
+            "script",
+            "initial_stack",
+            "construction",
+            "expected",
+            "expected_resources",
+        ),
+        "fixture",
+    )
+    require_int(fixture["target_contract_version"], "fixture.target_contract_version")
+    check_prototype_case_shape(fixture["case"])
+    check_prototype_claims_shape(fixture["claims"])
+    check_enumeration(fixture["expected"], ("accepted", "rejected"), "fixture.expected")
+    check_resource_expectation_shape(fixture["expected_resources"])
+
+    construction = parse_construction(fixture["construction"], "fixture.construction")
+    executing = construction["executing_leaf"]
+    if executing["kind"] != "leaf":
+        raise AdapterError(
+            "fixture.construction.executing_leaf is a branch, and a spend "
+            "executes a leaf"
+        )
+    if executing["version"] != TAPSCRIPT_LEAF_VERSION:
+        raise AdapterError(
+            "fixture.construction.executing_leaf.version is %d, and this "
+            "adapter advertised only leaf version %d"
+            % (executing["version"], TAPSCRIPT_LEAF_VERSION)
+        )
+    return (
+        {
+            "enforcement_layer": "consensus",
+            "execution_domain": "tapscript",
+            "leaf_version": executing["version"],
+            "script": require_bytes(fixture["script"], "fixture.script"),
+            "initial_stack": require_byte_vectors(
+                fixture["initial_stack"], "fixture.initial_stack"
+            ),
+            "context": None,
+        },
+        construction,
+    )
+
+
+def check_prototype_case_shape(raw: object) -> None:
+    """Validates a compound case identity without reading it as a primitive one.
+
+    The identity is echoed back verbatim rather than rebuilt, so nothing
+    here is retained. What it establishes is that the record really is the
+    one this adapter thinks it is: a case naming no relation would have been
+    routed here by the relation key alone.
+    """
+    case = require_object(raw, "fixture.case")
+    require_keys(case, ("relation", "name"), "fixture.case")
+    check_enumeration(
+        case["relation"],
+        ("metadata_constructor_continuity", "wide_floor_relation"),
+        "fixture.case.relation",
+    )
+    require_string(case["name"], "fixture.case.name")
+
+
+def check_prototype_claims_shape(raw: object) -> None:
+    """Validates the claim set's shape, without reading a claim.
+
+    What a passing case would establish is the harness's accounting and
+    changes nothing about what the node is asked. The shape is checked
+    anyway, because a claim set this adapter could not read is a drift
+    between the harness's fixture type and this adapter's reading of it.
+    """
+    if not isinstance(raw, list) or not raw:
+        raise AdapterError("fixture.claims is not a nonempty array")
+    for index, claim in enumerate(raw):
+        require_string(claim, "fixture.claims[%d]" % index)
 
 
 # --------------------------------------------------------------------------
@@ -1044,6 +1217,13 @@ class CaseExecutor:
         # advertised a tree it could not build would be sent exactly the work
         # only it could refuse.
         self.tree_materialization = callable(getattr(script, "taproot_construct", None))
+        # A compound-prototype fixture states a construction and nothing
+        # else it could be answered from, so the ability to answer one is
+        # exactly the ability to materialise the tree it states. It is
+        # derived from the same helper rather than written by hand, because
+        # an adapter advertising a capability whose machinery it lacks would
+        # be sent precisely the work only it could refuse.
+        self.prototype_fixtures = self.tree_materialization
 
     def prime(self) -> None:
         """Locates the chain's free-coin output and confirms one block."""
@@ -1436,29 +1616,40 @@ class CaseExecutor:
         return transaction
 
     def build_construction_spend(self, program, leaf_script, control, fixture, construction):
-        """Spends the stated predecessor output into the stated successor.
+        """Spends the stated predecessor output into the stated outputs.
 
-        Exactly one program-carrying output is written, and it is the
-        successor the request named. No change output is added: a second
-        program-carrying output could satisfy a successor requirement the
+        Every program-carrying output the transaction has is one the
+        construction named, and no change output is added: a second
+        program-carrying output could satisfy an output requirement the
         request did not state.
 
         The explicit fee output is neither requested nor avoidable. An
         Elements transaction accounts for its fee in an output with no
         program at all, so a transaction without one pays nothing and is
         refused by relay for a reason that is not a script verdict.
+
+        A construction stating no output at all is the ordinary case for a
+        relation whose program reads no transaction field. The whole input
+        value then goes to the fee output and the transaction carries no
+        program-carrying output whatsoever -- which is what "no output of
+        any role" means, and is a stronger statement than paying the
+        remainder to an adapter-chosen program the fixture never asked for.
         """
         messages = self.messages
-        successors = [
-            entry for entry in construction["outputs"] if entry["role"] == "successor"
-        ]
-        if len(successors) != 1:
+        outputs = construction["outputs"]
+        successors = [entry for entry in outputs if entry["role"] == "successor"]
+        if outputs and len(successors) != len(outputs):
+            raise AdapterError(
+                "the request states an output whose role this adapter does not "
+                "materialise"
+            )
+        if len(successors) > 1:
             raise AdapterError(
                 "the request states %d successor outputs, and a spend carries "
-                "exactly one" % len(successors)
+                "at most one" % len(successors)
             )
-        successor_program = successors[0]["program"]
-        if not successor_program:
+        successor_program = successors[0]["program"] if successors else None
+        if successors and not successor_program:
             raise AdapterError(
                 "the stated successor output carries no program, which on this "
                 "chain is the shape of a fee output rather than of a successor"
@@ -1471,10 +1662,13 @@ class CaseExecutor:
                 messages.COutPoint(txid_to_internal_int(funding_txid), 0), nSequence=0xFFFFFFFE
             )
         )
-        transaction.vout.append(
-            self.output(CASE_FUNDING_SATOSHIS - ADAPTER_FEE_SATOSHIS, successor_program)
-        )
-        transaction.vout.append(self.output(ADAPTER_FEE_SATOSHIS, b""))
+        if successor_program is None:
+            transaction.vout.append(self.output(CASE_FUNDING_SATOSHIS, b""))
+        else:
+            transaction.vout.append(
+                self.output(CASE_FUNDING_SATOSHIS - ADAPTER_FEE_SATOSHIS, successor_program)
+            )
+            transaction.vout.append(self.output(ADAPTER_FEE_SATOSHIS, b""))
         witness = messages.CTxInWitness()
         witness.scriptWitness.stack = list(fixture["initial_stack"]) + [leaf_script, control]
         transaction.wit.vtxinwit.append(witness)
@@ -1854,29 +2048,28 @@ def serve(arguments) -> int:
                 "included_local_topics": sorted(set(topics)),
                 "supported_domains": ["tapscript"],
                 "supported_leaf_versions": [TAPSCRIPT_LEAF_VERSION],
-                # Tree materialization is advertised only where the loaded
-                # framework actually offers the helper that builds one, so
-                # the harness never sends a tree-bearing request to an
-                # adapter that could only refuse it.
+                # Both tree-bearing capabilities are advertised only where
+                # the loaded framework actually offers the helper that
+                # builds a taproot commitment, so the harness never sends a
+                # request to an adapter that could only refuse it
+                # (Guide-10 rule:guide10:schema-migration).
+                #
+                # They are two claims and not one. Materializing a stated
+                # tree is what a primitive case with a construction needs;
+                # reading a compound-prototype record is a further claim
+                # about the record shape itself, and the harness requires
+                # both before it sends one.
                 "capabilities": [
                     "failure_class_reporting",
                     "resource_observation",
                     "transaction_context",
                 ]
-                + (["tree_materialization"] if executor.tree_materialization else []),
-                # Deliberately absent: compound_prototype_fixtures.
-                #
-                # A compound-prototype fixture states a construction and a
-                # spend rather than a primitive execution context, so
-                # answering one means building a transaction that spends the
-                # stated output and creates the outputs the fixture's
-                # relation requires. This adapter builds a primitive
-                # fixture's transaction and nothing else yet, and
-                # advertising a capability it does not have would turn a
-                # missing feature into a stream of refusals the harness
-                # would have to interpret. Not advertising it means the
-                # harness never sends one and says why
-                # (Guide-10 rule:guide10:schema-migration).
+                + (["tree_materialization"] if executor.tree_materialization else [])
+                + (
+                    ["compound_prototype_fixtures"]
+                    if executor.prototype_fixtures
+                    else []
+                ),
             }
         )
 
@@ -1908,49 +2101,67 @@ def serve(arguments) -> int:
 
 
 def answer_case(executor: CaseExecutor, line: str) -> None:
-    """Answers exactly one execution request."""
+    """Answers exactly one execution request, primitive or compound.
+
+    The two records are told apart by the case identity they carry, which
+    is the one field whose shape differs between them: a primitive case is
+    a group and an ordinal, and a compound one is a relation and a name.
+    Reading the fixture first and inferring the record from which fields
+    parsed would mean deciding what was asked from what happened to be
+    readable.
+    """
     request = json.loads(line)
     if not isinstance(request, dict):
         raise FatalAdapterError("the harness sent a request that is not an object")
-    for key in request:
-        if key not in ("schema", "case", "fixture", "construction"):
-            raise FatalAdapterError("the harness sent a request field named %s" % key)
     case = request.get("case")
-    # A compound-prototype request names its case by relation and name
-    # rather than by group and ordinal. This adapter does not advertise
-    # the capability, so it is never sent one; recognizing the shape here
-    # means an adapter that somehow received one refuses it as the record
-    # it is, instead of reading a primitive case out of a message that
-    # does not carry one.
-    if isinstance(case, dict) and "relation" in case:
-        raise FatalAdapterError(
-            "the harness sent a compound-prototype request, and this "
-            "adapter advertised no compound-prototype capability"
-        )
     # The case identity is echoed verbatim, so that the harness correlates
     # against exactly what it sent. Without one there is nothing to answer,
     # and answering the wrong case would be worse than not answering.
     if not isinstance(case, dict):
         raise FatalAdapterError("the harness sent a request naming no case")
+    # A compound-prototype request carries no separate construction field:
+    # the fixture states its own. Admitting one here would admit a message
+    # stating two constructions.
+    compound = "relation" in case
+    allowed = ("schema", "case", "fixture") if compound else (
+        "schema",
+        "case",
+        "fixture",
+        "construction",
+    )
+    for key in request:
+        if key not in allowed:
+            raise FatalAdapterError("the harness sent a request field named %s" % key)
     fixture = None
     body = None
     try:
         if request.get("schema") != NATIVE_PROTOCOL_SCHEMA:
             raise AdapterError("the request carries a protocol revision this adapter does not")
-        fixture = parse_fixture(request.get("fixture"))
-        construction = request.get("construction")
-        if construction is not None:
-            # A construction sent to an adapter that advertised no tree
-            # materialization is the harness contradicting the handshake it
-            # was given. That is a protocol error, and the case is refused
-            # rather than answered from a tree this adapter would have had to
-            # invent.
-            if not executor.tree_materialization:
+        if compound:
+            # A compound request sent to an adapter that advertised no
+            # compound-prototype capability is the harness contradicting the
+            # handshake it was given. The case is refused rather than
+            # answered from machinery this adapter said it does not have.
+            if not executor.prototype_fixtures:
                 raise AdapterError(
-                    "the request states a taproot construction, and this "
-                    "adapter advertised no tree materialization"
+                    "the request is a compound-prototype fixture, and this "
+                    "adapter advertised no compound-prototype capability"
                 )
-            construction = parse_construction(construction)
+            fixture, construction = parse_prototype_fixture(request.get("fixture"))
+        else:
+            fixture = parse_fixture(request.get("fixture"))
+            construction = request.get("construction")
+            if construction is not None:
+                # A construction sent to an adapter that advertised no tree
+                # materialization is the same contradiction, for the same
+                # reason: the case is refused rather than answered from a
+                # tree this adapter would have had to invent.
+                if not executor.tree_materialization:
+                    raise AdapterError(
+                        "the request states a taproot construction, and this "
+                        "adapter advertised no tree materialization"
+                    )
+                construction = parse_construction(construction)
         started = time.monotonic()
         body = executor.execute(fixture, construction)
         log("case answered in %.2fs" % (time.monotonic() - started))
@@ -1975,8 +2186,9 @@ def parse_arguments(argv):
     parser = argparse.ArgumentParser(
         prog=COMMAND_NAME,
         description=(
-            "Execute Guide-9 primitive fixtures through a disposable Elements "
-            "regtest node, speaking the conformance executor protocol on stdio."
+            "Execute primitive and compound-prototype fixtures through a "
+            "disposable Elements regtest node, speaking the conformance "
+            "executor protocol on stdio."
         ),
     )
     parser.add_argument("--elementsd", required=True, help="path to the elementsd binary")

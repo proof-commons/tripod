@@ -2,10 +2,20 @@
 # Adapter smoke test for the target-native Elements executor.
 #
 # Boots scripts/elements-native-executor.sh through its documented
-# environment boundary, sends a handshake and four hand-written execution
-# requests, and asserts the typed responses. This is a test of the adapter,
-# not the conformance matrix: it proves the adapter boots a real elementsd,
-# builds a real taproot script-path spend, and reports what the node said.
+# environment boundary, sends a handshake and a series of hand-written
+# execution requests, and asserts the typed responses. This is a test of the
+# adapter, not the conformance matrix: it proves the adapter boots a real
+# elementsd, builds a real taproot script-path spend, and reports what the
+# node said.
+#
+# Both request records are exercised. The primitive ones cover the fixture
+# shapes the adapter has always answered; the compound-prototype ones cover
+# the two transaction shapes a stated construction can require -- one
+# successor output for the constructor relation, and no output of any role
+# for the wide-floor relation -- with one accepting and one refusing case
+# each. Their scripts are trivial, because what is under test is the
+# materialisation and the verdict path rather than either prototype's own
+# program.
 #
 # It needs the same configuration the adapter needs (see
 # elements-native-executor.sh). Without it there is nothing to execute
@@ -48,9 +58,10 @@ trap 'rm -rf "$work"' EXIT INT TERM
 requests="$work/requests.ndjson"
 responses="$work/responses.ndjson"
 
-echo "==> writing the handshake and four execution requests" >&2
-python3 - "$requests" <<'WRITE_REQUESTS'
+echo "==> writing the handshake, the primitive and the compound requests" >&2
+python3 - "$requests" "$ELEMENTS_NATIVE_EXECUTOR_FRAMEWORK" <<'WRITE_REQUESTS'
 import json
+import os
 import sys
 
 SCHEMA = 2
@@ -236,9 +247,128 @@ REQUESTS = [
     fixture(5, b"\x51", [], ACCEPTS, SUPPLIED_CONTEXT),
 ]
 
+
+# -- the compound-prototype requests ----------------------------------------
+#
+# A compound fixture states a complete taproot construction, and every value
+# in it must be the one the internal key and the tree actually determine --
+# the adapter refuses anything else rather than approximating it. So the
+# stated values are computed here from the same upstream helper the adapter
+# builds with, which is what makes this a test of the adapter's
+# materialisation rather than of a hand-copied constant.
+#
+# The scripts are trivial on purpose. This is an adapter smoke test: it
+# proves the two transaction shapes are built and judged, and it establishes
+# nothing about either prototype's own program, whose rows are the
+# conformance matrix's work.
+
+framework = os.path.abspath(sys.argv[2])
+if os.path.basename(framework) == "test_framework":
+    framework = os.path.dirname(framework)
+sys.path.insert(0, framework)
+from test_framework import script as framework_script  # noqa: E402
+
+# The published BIP-341 NUMS point, which is what both matrices state as
+# their internal key. A public test constant with no known discrete log.
+NUMS_INTERNAL_KEY = bytes.fromhex(
+    "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0"
+)
+
+ACCEPTING_SCRIPT = b"\x51"
+REJECTING_SCRIPT = b"\x00"
+# A second leaf, so that a two-leaf tree is a real branch with a real
+# control path rather than a single leaf wearing the word "tree".
+SIBLING_SCRIPT = b"\x6a"
+
+
+def leaf(program):
+    return {"leaf": {"version": TAPSCRIPT_LEAF_VERSION, "script": list(program)}}
+
+
+def branch(left, right):
+    return {"branch": {"left": left, "right": right}}
+
+
+def constructed(items, executing):
+    """The program and control block the stated key and tree determine."""
+    info = framework_script.taproot_construct(NUMS_INTERNAL_KEY, items)
+    built = info.leaves[executing]
+    control = (
+        bytes([built.version + info.negflag])
+        + bytes(info.internal_pubkey)
+        + bytes(built.merklebranch)
+    )
+    return bytes(info.scriptPubKey), control
+
+
+def item(name, program):
+    return (name, framework_script.CScript(program), TAPSCRIPT_LEAF_VERSION)
+
+
+def compound(relation, name, program, tree, items, outputs, expected):
+    built_program, control = constructed(items, "executing")
+    return {
+        "case": {"relation": relation, "name": name},
+        "claims": ["wide_floor_exact_division_observed"]
+        if relation == "wide_floor_relation"
+        else ["successor_program_observed"],
+        "target_contract_version": 1,
+        "script": list(program),
+        "initial_stack": [],
+        "construction": {
+            "internal_key": list(NUMS_INTERNAL_KEY),
+            "tree": tree,
+            "executing_leaf": leaf(program),
+            "control": list(control),
+            "predecessor_program": list(built_program),
+            "outputs": outputs,
+        },
+        "expected": expected,
+        "expected_resources": resource_expectation(program, []),
+    }
+
+
+def wide_floor_shaped(name, program, expected):
+    """A relation requiring no output of any role: one leaf, no successor."""
+    return compound(
+        "wide_floor_relation",
+        name,
+        program,
+        leaf(program),
+        [item("executing", program)],
+        [],
+        expected,
+    )
+
+
+def constructor_shaped(name, program, expected):
+    """A relation requiring one successor output, spent from a two-leaf tree."""
+    successor, _control = constructed([item("only", ACCEPTING_SCRIPT)], "only")
+    return compound(
+        "metadata_constructor_continuity",
+        name,
+        program,
+        branch(leaf(program), leaf(SIBLING_SCRIPT)),
+        [item("executing", program), item("sibling", SIBLING_SCRIPT)],
+        [{"role": "successor", "program": list(successor)}],
+        expected,
+    )
+
+
+COMPOUND_REQUESTS = [
+    wide_floor_shaped("adapter_smoke_accepting", ACCEPTING_SCRIPT, "accepted"),
+    wide_floor_shaped("adapter_smoke_rejecting", REJECTING_SCRIPT, "rejected"),
+    constructor_shaped("adapter_smoke_accepting", ACCEPTING_SCRIPT, "accepted"),
+    constructor_shaped("adapter_smoke_rejecting", REJECTING_SCRIPT, "rejected"),
+]
+
 with open(sys.argv[1], "w", encoding="utf-8") as stream:
     stream.write(json.dumps({"schema": SCHEMA}) + "\n")
     for entry in REQUESTS:
+        stream.write(
+            json.dumps({"schema": SCHEMA, "case": entry["case"], "fixture": entry}) + "\n"
+        )
+    for entry in COMPOUND_REQUESTS:
         stream.write(
             json.dumps({"schema": SCHEMA, "case": entry["case"], "fixture": entry}) + "\n"
         )
@@ -259,6 +389,25 @@ EXPECTED = [
     (3, "infrastructure_error", None),
     (4, "accepted", None),
     (5, "accepted", None),
+    # The two compound shapes, one accepting and one refusing each. A
+    # compound case is named by a relation and a name rather than by an
+    # ordinal, which is the field the adapter routes on.
+    (("wide_floor_relation", "adapter_smoke_accepting"), "accepted", None),
+    (
+        ("wide_floor_relation", "adapter_smoke_rejecting"),
+        "rejected",
+        "evaluated_false",
+    ),
+    (
+        ("metadata_constructor_continuity", "adapter_smoke_accepting"),
+        "accepted",
+        None,
+    ),
+    (
+        ("metadata_constructor_continuity", "adapter_smoke_rejecting"),
+        "rejected",
+        "evaluated_false",
+    ),
 ]
 
 # Every figure a validating node cannot see. The schema admits absence, and
@@ -308,13 +457,30 @@ for field, want in (
     ("protocol_schema", 2),
     ("supported_domains", ["tapscript"]),
     ("supported_leaf_versions", [196]),
+    # Compared as a set: the harness reads these into one, and asserting an
+    # order here would fail an adapter that listed the same capabilities
+    # differently. Both tree-bearing capabilities are required, because the
+    # compound cases below are exactly the work they gate -- an adapter
+    # whose framework offers no taproot_construct cannot run them, and
+    # saying so here is more use than the requests being refused one by one.
     (
         "capabilities",
-        ["failure_class_reporting", "resource_observation", "transaction_context"],
+        sorted(
+            [
+                "compound_prototype_fixtures",
+                "failure_class_reporting",
+                "resource_observation",
+                "transaction_context",
+                "tree_materialization",
+            ]
+        ),
     ),
 ):
-    if handshake.get(field) != want:
-        failures.append("handshake.%s is %r, wanted %r" % (field, handshake.get(field), want))
+    observed = handshake.get(field)
+    if field == "capabilities" and isinstance(observed, list):
+        observed = sorted(observed)
+    if observed != want:
+        failures.append("handshake.%s is %r, wanted %r" % (field, observed, want))
 if "elements" not in str(handshake.get("node_name", "")).lower():
     failures.append("handshake.node_name does not name Elements")
 if not handshake.get("adapter_name"):
@@ -326,35 +492,46 @@ revision = handshake.get("binary_reported_revision", "missing")
 if revision != "missing" and revision is not None and not str(revision).strip():
     failures.append("handshake.binary_reported_revision is blank rather than absent")
 
-for line, (ordinal, verdict, failure) in zip(lines[2:], EXPECTED):
+def answered_case(answer):
+    """The identity in one answer, in the shape its request stated it."""
+    case = answer.get("case")
+    if not isinstance(case, dict):
+        return None
+    if "relation" in case:
+        return (case.get("relation"), case.get("name"))
+    return case.get("ordinal")
+
+
+for line, (identity, verdict, failure) in zip(lines[2:], EXPECTED):
     answer = json.loads(line)
-    print("case %d: " % ordinal + json.dumps(answer, sort_keys=True))
-    if answer.get("case", {}).get("ordinal") != ordinal:
-        failures.append("case %d answered out of order" % ordinal)
+    label = "case %s" % (identity,)
+    print(label + ": " + json.dumps(answer, sort_keys=True))
+    if answered_case(answer) != identity:
+        failures.append("%s answered out of order" % label)
     if answer.get("verdict") != verdict:
-        failures.append("case %d verdict is %r, wanted %r" % (ordinal, answer.get("verdict"), verdict))
+        failures.append("%s verdict is %r, wanted %r" % (label, answer.get("verdict"), verdict))
     if answer.get("observed_failure") != failure:
         failures.append(
-            "case %d failure is %r, wanted %r" % (ordinal, answer.get("observed_failure"), failure)
+            "%s failure is %r, wanted %r" % (label, answer.get("observed_failure"), failure)
         )
     if answer.get("final_stack") is not None or answer.get("final_altstack") is not None:
-        failures.append("case %d reported a stack the node cannot expose" % ordinal)
+        failures.append("%s reported a stack the node cannot expose" % label)
     resources = answer.get("resources")
     if not isinstance(resources, dict):
-        failures.append("case %d reported no resource observation" % ordinal)
+        failures.append("%s reported no resource observation" % label)
         continue
     for row in UNOBSERVED_RESOURCES:
         if resources.get(row) is not None:
             failures.append(
-                "case %d reported %s as %r, which the node does not expose"
-                % (ordinal, row, resources.get(row))
+                "%s reported %s as %r, which the node does not expose"
+                % (label, row, resources.get(row))
             )
     weight = resources.get("transaction_weight")
     if verdict == "infrastructure_error":
         if weight is not None:
-            failures.append("case %d reported a weight for a transaction it never built" % ordinal)
+            failures.append("%s reported a weight for a transaction it never built" % label)
     elif not isinstance(weight, int) or isinstance(weight, bool) or weight <= 0:
-        failures.append("case %d reported no transaction weight" % ordinal)
+        failures.append("%s reported no transaction weight" % label)
 
 for failure in failures:
     print("FAIL: " + failure)
