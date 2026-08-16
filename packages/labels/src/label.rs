@@ -19,6 +19,11 @@ impl Label {
                 return Err(LabelParseError::Shape(value.to_owned()));
             }
             LabelShape::Realization => {
+                // ADR-020 retired `subsec`: a subsection is a section
+                // nested, and the sub- prefix is a presentation device.
+                // `sec` therefore spans both arities here — the two-part
+                // top-level divisions it always named, and the
+                // three-part divisions that were `subsec`.
                 let kinds = [
                     "sec", "app", "req", "def", "inv", "lem", "obl", "trap", "rem", "intuit",
                     "rule", "pin", "res", "listing", "fig", "tab", "leaf",

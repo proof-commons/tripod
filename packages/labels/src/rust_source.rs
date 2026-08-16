@@ -19,8 +19,8 @@ use crate::{
 
 pub const MODEL_TYPES: &[&str] = &["def", "rule", "thm", "test", "branch", "proto", "listing"];
 pub const REALIZATION_TYPES: &[&str] = &[
-    "sec", "subsec", "app", "req", "inv", "lem", "obl", "trap", "rem", "intuit", "pin", "res",
-    "fig", "tab", "leaf",
+    "sec", "app", "req", "inv", "lem", "obl", "trap", "rem", "intuit", "pin", "res", "fig", "tab",
+    "leaf",
 ];
 
 /// Harvest of one Rust-source label owner (the model crate or another
