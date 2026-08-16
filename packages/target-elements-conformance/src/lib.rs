@@ -72,6 +72,7 @@
 
 mod census;
 pub mod claim;
+pub mod constructor;
 pub mod error;
 pub mod executor;
 pub mod fixture;
