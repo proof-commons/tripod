@@ -48,6 +48,7 @@ target_elements_conformance_source_files = files(
   'src/tests/protocol_tests.rs',
   'src/tests/prototype_program_tests.rs',
   'src/tests/prototype_tests.rs',
+  'src/tests/prototype_validate_tests.rs',
   'src/tests/support.rs',
   'src/tests/validate_tests.rs',
   'src/tests/vocabulary_tests.rs',

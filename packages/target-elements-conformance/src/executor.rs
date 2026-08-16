@@ -247,6 +247,29 @@ impl ExecutionTranscript {
             prototype_responses: BTreeMap::new(),
         }
     }
+
+    /// A compound-prototype transcript assembled directly, for the
+    /// crate's own tests.
+    ///
+    /// Not public, for the same reason as the primitive one: a
+    /// transcript is what an executor said, and a caller able to state
+    /// one without an executor could hand the evaluator a run that never
+    /// happened.
+    #[cfg(test)]
+    pub(crate) const fn prototypes_for_tests(
+        handshake: ExecutorHandshake,
+        environment: ExecutorEnvironmentObservation,
+        trust: ExecutorTrust,
+        prototype_responses: BTreeMap<PrototypeCaseId, NativePrototypeResponse>,
+    ) -> Self {
+        Self {
+            handshake,
+            environment,
+            trust,
+            responses: BTreeMap::new(),
+            prototype_responses,
+        }
+    }
 }
 
 /// Spawn the executor, absorbing the Linux fork/exec text-busy race.
