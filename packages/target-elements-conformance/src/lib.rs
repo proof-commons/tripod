@@ -76,6 +76,87 @@
 //! filled in: a signature over a transaction sighash, blinded fields,
 //! issuing inputs, an absent introspection context, and any execution
 //! domain other than the reviewed one.
+//!
+//! # Public modules
+//!
+//! The primitive lane, in the order a run uses them:
+//!
+//! - [`fixture`] — the generic fixture language: [`fixture::NativeCaseId`],
+//!   [`fixture::PrimitiveFixture`], [`fixture::PrimitiveFixtureSet`], and
+//!   [`fixture::canonical_fixture_set`], which builds the whole
+//!   reviewed-primitive census.
+//! - [`protocol`] — the secretless wire vocabulary: the schema constant,
+//!   the handshake, the executor capability set, the verdict, the 34
+//!   observed failure classes, and the response-shape rules.
+//! - [`executor`] — the driver: [`executor::ExecutorConfiguration`],
+//!   [`executor::ExecutorTrust`], [`executor::execute`], and the
+//!   [`executor::ExecutionTranscript`] it returns.
+//! - [`claim`] — the typed claim census beneath the broad evidence
+//!   requirements, and which claims each fixture bears on.
+//! - [`validate`] — [`validate::guide_nine_evidence_plan`],
+//!   [`validate::evaluate`], [`validate::validate_native_report`], and
+//!   [`validate::gate`].
+//! - [`report`] — the typed report the lane produces.
+//!
+//! The prototype lane, kept apart from the primitive lane throughout:
+//!
+//! - [`prototype`] — the compound fixture language, the claim
+//!   vocabulary, and the two case matrices.
+//! - [`prototype_program`] — the typed prototype programs and their
+//!   measured resource projections.
+//! - [`prototype_validate`] — the prototype evaluator, report validator,
+//!   and gate.
+//! - [`prototype_report`] — the typed prototype report.
+//!
+//! The independent oracles the matrices are checked against:
+//!
+//! - [`constructor`] — public taproot and metadata arithmetic. No
+//!   secret scalar appears anywhere in it.
+//! - [`wide_floor`] — the wide-arithmetic floor domain and its oracle.
+//!
+//! - [`vocabulary`] — the explicit wire spellings for reviewed target
+//!   identities that cross the process boundary.
+//! - [`error`] — [`NativeConformanceError`], the crate's single error
+//!   root, re-exported at the crate root.
+//!
+//! # The workflow
+//!
+//! ```text
+//! reviewed_elements_tapscript()                 the reviewed static contract
+//! validate_reviewed_development_binding(..)     the development binding
+//! canonical_fixture_set(&target, &binding)      or hand-built fixtures
+//! ExecutorConfiguration::new(path, trust, ..)   the caller selects the executor
+//! executor::execute(..)          -> ExecutionTranscript
+//! validate::evaluate(..)         -> NativeConformanceReport
+//! validate::validate_native_report(..) -> ValidatedNativeConformanceReport
+//! validate::gate(&validated)     -> Ok(()) only for a nonmock executor
+//! ```
+//!
+//! Two types have no public constructor, deliberately.
+//! [`executor::ExecutionTranscript`] can only be obtained by actually
+//! running an executor, so a caller cannot fabricate one; and
+//! [`validate::ValidatedNativeConformanceReport`] can only be obtained
+//! from [`validate::validate_native_report`], which recomputes every
+//! field rather than trusting the report it was handed.
+//!
+//! A worked example of the whole chain, the full public-API tour, and
+//! the executor-authority rules are in the package README.
+//!
+//! # Errors
+//!
+//! Every fallible operation returns [`NativeConformanceError`], which
+//! has 68 variants declared in `src/error.rs` and is
+//! `#[non_exhaustive]`. Every variant is a branch that runs: there is
+//! no catch-all, and no variant carries child-process detail that could
+//! leak an executor's environment.
+//!
+//! The one to know by name is
+//! `NativeConformanceError::MockExecutorCannotSatisfyNativeGate`. It is
+//! the first thing [`validate::gate`] and
+//! [`prototype_validate::prototype_gate`] check, before any other
+//! condition, and nothing else in the crate enforces it: a mock runs,
+//! reports, and validates like any other executor, and is refused only
+//! at the gate.
 
 #![forbid(unsafe_code)]
 
