@@ -77,6 +77,7 @@ pub mod error;
 pub mod executor;
 pub mod fixture;
 pub mod protocol;
+pub mod prototype;
 pub mod report;
 pub mod validate;
 pub mod vocabulary;

@@ -25,6 +25,7 @@
 
 use std::collections::BTreeSet;
 
+use serde::{Deserialize, Serialize};
 use target_elements::LeafVersion;
 
 use crate::constructor::curve::{
@@ -70,12 +71,22 @@ pub const CONTROL_MAXIMUM_NODES: usize = 128;
 /// different tree than the one under test without anything noticing.
 /// The complete tree is stated, and the executor materializes exactly
 /// it (Guide-10 `rule:guide10:taptree-fixture`).
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+///
+/// # The leaf version is a byte here
+///
+/// A fixture states a leaf version the way the wire carries it, as a
+/// byte, and validation checks it against the reviewed contract. Typing
+/// the field as the reviewed version instead would make an unreviewed
+/// one unstateable, and a fixture that deliberately states an
+/// unreviewed version is exactly how the contract's leaf-version rule
+/// gets tested.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum FixtureTapTree {
     /// A leaf carrying one exact script under one exact version.
     Leaf {
         /// The leaf version byte.
-        version: LeafVersion,
+        version: u8,
         /// The exact script bytes.
         script: Vec<u8>,
     },
@@ -202,9 +213,15 @@ impl FixtureTapTree {
     #[must_use]
     pub const fn leaf(script: Vec<u8>) -> Self {
         Self::Leaf {
-            version: LeafVersion::TAPSCRIPT,
+            version: LeafVersion::TAPSCRIPT.get(),
             script,
         }
+    }
+
+    /// A leaf carrying one exact script under one exact version byte.
+    #[must_use]
+    pub const fn leaf_of_version(version: u8, script: Vec<u8>) -> Self {
+        Self::Leaf { version, script }
     }
 
     /// A branch over two subtrees.
@@ -221,7 +238,7 @@ impl FixtureTapTree {
     #[must_use]
     pub fn node_hash(&self) -> Digest32 {
         match self {
-            Self::Leaf { version, script } => leaf_hash(*version, script),
+            Self::Leaf { version, script } => leaf_hash_of_version_byte(*version, script),
             Self::Branch { left, right } => branch_hash(&left.node_hash(), &right.node_hash()),
         }
     }
@@ -230,7 +247,7 @@ impl FixtureTapTree {
     #[must_use]
     pub fn leaf_hashes(&self) -> Vec<Digest32> {
         match self {
-            Self::Leaf { version, script } => vec![leaf_hash(*version, script)],
+            Self::Leaf { version, script } => vec![leaf_hash_of_version_byte(*version, script)],
             Self::Branch { left, right } => {
                 let mut hashes = left.leaf_hashes();
                 hashes.extend(right.leaf_hashes());
@@ -276,7 +293,9 @@ impl FixtureTapTree {
     /// established that the leaf occurs exactly once.
     fn siblings_to(&self, leaf: &Digest32) -> Option<Vec<Digest32>> {
         match self {
-            Self::Leaf { version, script } => (leaf_hash(*version, script) == *leaf).then(Vec::new),
+            Self::Leaf { version, script } => {
+                (leaf_hash_of_version_byte(*version, script) == *leaf).then(Vec::new)
+            }
             Self::Branch { left, right } => {
                 if let Some(mut path) = left.siblings_to(leaf) {
                     path.push(right.node_hash());
@@ -430,8 +449,20 @@ pub fn control_block(
     internal_key: &[u8; FIELD_ELEMENT_BYTES],
     path: &[Digest32],
 ) -> Vec<u8> {
+    control_block_of_version_byte(version.get(), parity, internal_key, path)
+}
+
+/// The control block authenticating one leaf under a leaf version byte
+/// this contract has not necessarily reviewed.
+#[must_use]
+pub fn control_block_of_version_byte(
+    version: u8,
+    parity: u8,
+    internal_key: &[u8; FIELD_ELEMENT_BYTES],
+    path: &[Digest32],
+) -> Vec<u8> {
     let mut block = Vec::with_capacity(CONTROL_BASE_BYTES + path.len() * FIELD_ELEMENT_BYTES);
-    block.push(version.get() | (parity & PARITY_MASK));
+    block.push(version | (parity & PARITY_MASK));
     block.extend_from_slice(internal_key);
     for node in path {
         block.extend_from_slice(node);
@@ -462,7 +493,7 @@ pub fn construct(
     let FixtureTapTree::Leaf { version, script } = executing_leaf else {
         return Err(ConstructionDefect::Tree(TreeDefect::ExecutingLeafAbsent));
     };
-    let executing_leaf_hash = leaf_hash(*version, script);
+    let executing_leaf_hash = leaf_hash_of_version_byte(*version, script);
     let path = tree
         .path_to(&executing_leaf_hash)
         .map_err(ConstructionDefect::Tree)?;
@@ -471,12 +502,13 @@ pub fn construct(
     let tweak = tweak(internal_key, &merkle_root);
     let (output_key, parity) =
         tweaked_key(internal_key, &tweak).map_err(ConstructionDefect::Tweak)?;
+    let control_block = control_block_of_version_byte(*version, parity, internal_key, &path);
 
     Ok(ConstructedOutput {
         merkle_root,
         tweak,
         output_program: output_program(&output_key),
-        control_block: control_block(*version, parity, internal_key, &path),
+        control_block,
         output_key,
         parity,
         executing_leaf_hash,
