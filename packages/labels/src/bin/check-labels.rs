@@ -46,7 +46,7 @@ struct Args {
     /// Model crate Rust sources.
     #[arg(long = "model-source", value_name = "FILE")]
     model_sources: Vec<PathBuf>,
-    /// Other first-party crate Rust sources (packages/<name>/src).
+    /// Other first-party crate Rust sources (`packages/<name>/src`).
     #[arg(long = "crate-source", value_name = "FILE")]
     crate_sources: Vec<PathBuf>,
     /// The generated Layer-0 register publication.

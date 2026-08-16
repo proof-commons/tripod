@@ -16,7 +16,7 @@
 //! them to the maintained-prose cap would make the guardrail fire on
 //! the one class of file it must not police. Their bytes are excluded
 //! from `combined_bytes` and accounted separately against the much
-//! larger [`ARCHIVE_HARD_CAP_BYTES`], which exists only to catch a
+//! larger `ARCHIVE_HARD_CAP_BYTES`, which exists only to catch a
 //! runaway paste rather than to shape the archive.
 //!
 //! Subject files arrive by argument from the build system (ADR-014);
@@ -137,7 +137,7 @@ pub struct PlansReport {
     pub hard_cap_bytes: u64,
     pub soft_target_bytes: u64,
     pub soft_target_exceeded: bool,
-    /// Verbatim archived-document bytes under [`ARCHIVE_DIRECTORIES`],
+    /// Verbatim archived-document bytes under `ARCHIVE_DIRECTORIES`,
     /// checked against `archive_hard_cap_bytes` alone.
     pub archive_bytes: u64,
     pub archive_hard_cap_bytes: u64,
