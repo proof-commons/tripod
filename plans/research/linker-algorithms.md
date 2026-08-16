@@ -390,7 +390,7 @@ After final values are selected:
 
 Candidate evidence never silently validates different final bytes.
 
-## Dependency candidates · `tbl:linker-algorithms:dependencies`
+## Dependency candidates · `tab:linker-algorithms:dependencies`
 
 | Dependency | Initial status | Intended role |
 |---|---|---|

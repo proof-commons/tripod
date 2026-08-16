@@ -1,6 +1,6 @@
 //! Receipt transfer.
 //!
-//! Implements `(´protocol:operations:transfer´)`.
+//! Implements `(´proto:operations:transfer´)`.
 //!
 //! Every required owner authorizes the complete modeled output set.
 //! Exact sighash bytes remain a compiler/deployment concern.
@@ -17,7 +17,7 @@ use crate::signer::{SignerSet, require_signer};
 use crate::transition::Transition;
 use crate::world::World;
 
-// ´protocol:operations:transfer´
+// ´proto:operations:transfer´
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransferReceipts {

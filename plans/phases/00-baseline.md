@@ -62,7 +62,7 @@ baseline.
 The baseline record is the set of identities recorded below, together with the canonical architecture publications they were measured over.
 
 
-## Recorded baseline · `tbl:phase0:baseline`
+## Recorded baseline · `tab:phase0:baseline`
 
 | Field | Recorded value |
 |---|---|

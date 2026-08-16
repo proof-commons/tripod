@@ -4,7 +4,7 @@
 **Scope:** Every first-party checker and generator command, their Meson
 wiring, the file census they consume, and the unit-test fixture policy
 **Amends:** the carrier-discovery mechanism of
-(`[ADR013-judg:labels:minting]`); the checker command-line surface under
+(`[PLAN-judg:labels:minting]`); the checker command-line surface under
 ADR-010
 
 ---
@@ -129,13 +129,13 @@ independent directions:
    build. The audit rejects a tracked subject missing from its
    directory list, a declared file no longer tracked, and every
    tracked entry whose mode is not `100644` or `100755`.
-2. The carrier discovery walk of (`[ADR013-judg:labels:minting]`) survives
+2. The carrier discovery walk of (`[PLAN-judg:labels:minting]`) survives
    inside each checker as a verifier, not a source: the checker
    re-discovers its subjects on disk and hard-fails when the argument
    census and reality disagree.
 
 Declared lists, tracked files, and the on-disk tree are thereby welded
-pairwise. The ADR-013 completeness guarantee is preserved in a
+pairwise. The ADR-019 completeness guarantee is preserved in a
 stronger form: a newly added file cannot silently sit outside the
 label graph — it can only fail the build until its directory's list
 names it.
@@ -173,14 +173,14 @@ unconditional.
 ## Generators emit stamps for committed publications · `rule:build:generator-stamps`
 
 Generators keep writing committed in-tree publications under the
-generation/check split (`[ADR012-rule:labels:generation]`); a committed
+generation/check split (`[PLAN-judg:labels:participation]`); a committed
 publication cannot be a declared build-directory output, so the
 generator target's declared output is a stamp, and regeneration is
 incremental over the same census slices.
 
 Generated files remain publications, never semantic inputs
 (`[ADR011-rule:toolchain:generated]`), and remain nonparticipating in
-the label graph (`[ADR013-judg:labels:participation]`).
+the label graph (`[PLAN-judg:labels:participation]`).
 
 ## Publications gate on lints · `rule:build:publication-gating`
 
@@ -246,7 +246,7 @@ materialises.
 `meson setup` time makes the census a wholesale-regenerated snapshot:
 invisible in review, semantically flat, silently stale the moment a
 file lands, and repaired only by a manual reconfigure. The allowlist
-concern of (`[ADR013-judg:labels:minting]`) is answered not by
+concern of (`[PLAN-judg:labels:minting]`) is answered not by
 discovery but by the audit of
 (`rule:build:census-verification`): the lists are explicit, yet a
 missed file is a build failure, never a silent omission.

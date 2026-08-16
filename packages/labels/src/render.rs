@@ -4,7 +4,7 @@ use crate::{owner::LabelOwner, registry::LabelRegistry, source::slash_path};
 
 // Register tokens render as double-backtick spans: the label scanner
 // treats those as nonparticipating examples, so a register can never
-// mint or cite the labels it indexes (ADR-013 generated-register
+// mint or cite the labels it indexes (ADR-019 generated-register
 // nonparticipation rule).
 
 pub fn specification_register(registry: &LabelRegistry) -> String {

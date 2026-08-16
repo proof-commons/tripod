@@ -42,7 +42,7 @@ The order is intentional:
 Current: Phase 3 - Elements target and foundational prototypes
 ```
 
-## Phase index · `tbl:roadmap:phases`
+## Phase index · `tab:roadmap:phases`
 
 | Phase | Card |
 |---:|---|

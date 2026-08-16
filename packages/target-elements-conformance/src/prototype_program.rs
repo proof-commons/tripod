@@ -63,7 +63,7 @@ use crate::wide_floor::schedule::{self as wide_floor_schedule, PACKED_PROOF_BYTE
 /// families would share a transition rule neither was reviewed for. So
 /// the program compares the domain and the schema against the recipe's
 /// own constants and refuses anything else
-/// (Guide-10 `tbl:guide10:constructor-threats`, alternate schema).
+/// (Guide-10 `tab:guide10:constructor-threats`, alternate schema).
 pub const PROTOTYPE_SCHEMA: u32 = 1;
 
 /// How much of a canonical encoding the recipe pins to a constant.

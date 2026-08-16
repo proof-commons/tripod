@@ -284,7 +284,7 @@ It does not establish:
 - final calibration;
 - deployment release.
 
-## Initial operations · `tbl:transaction:pilots`
+## Initial operations · `tab:transaction:pilots`
 
 | Operation | Construction requirement |
 |---|---|

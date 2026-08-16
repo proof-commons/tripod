@@ -189,7 +189,7 @@ Settlement uses no global root.
 
 The control is the natural transaction coordinator.
 
-## Candidate matrix · `tbl:settlement-layout:candidates`
+## Candidate matrix · `tab:settlement-layout:candidates`
 
 | Mint | Candidate | Strength | Main risk |
 |---|---|---|---|

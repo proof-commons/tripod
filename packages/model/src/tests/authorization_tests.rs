@@ -6,7 +6,7 @@
 //! authorization of the complete transaction output set under an
 //! output-committing sighash mode; exact signature opcodes and sighash
 //! flags remain compiler/deployment obligations, per the generated
-//! table `[tbl:manifest:operation-authorization-evidence]`.
+//! table `[tab:manifest:operation-authorization-evidence]`.
 
 use super::distribution_fixtures::*;
 use super::scenario_fixtures::*;

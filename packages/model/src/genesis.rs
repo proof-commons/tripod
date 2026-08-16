@@ -1,6 +1,6 @@
 //! Genesis constructor.
 //!
-//! Implements `(´protocol:state:genesis´)`.
+//! Implements `(´proto:state:genesis´)`.
 //!
 //! Genesis is trusted setup, recorded as the dedicated
 //! `(´def:verification:genesis-history´)` projection carried by
@@ -22,7 +22,7 @@ use crate::scalar::{
 };
 use crate::world::{ExternalBudget, RootCursor, Wallets, World};
 
-// ´protocol:state:genesis´
+// ´proto:state:genesis´
 
 pub const GENESIS_OWNER: OwnerKey = OwnerKey([0_u8; 32]);
 

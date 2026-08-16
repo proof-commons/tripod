@@ -45,7 +45,7 @@ citation:  (`pkg:realization:contract`)
 
 They are non-normative and non-identity-bearing. Their mints,
 same-owner citations, and owner crossings are mechanically checked under
-ADR-013 so planning navigation fails closed without becoming protocol,
+ADR-019 so planning navigation fails closed without becoming protocol,
 compiler, target, ABI, deployment, or release identity.
 
 Upstream citations use square brackets:
@@ -57,9 +57,9 @@ Upstream citations use square brackets:
 ```
 
 Imported citations are linted under
-(`[ADR012-rule:labels:external-citation]`).
+(`inf:labels:import`).
 
-## Directory index · `tbl:plans:directories`
+## Directory index · `tab:plans:directories`
 
 | Path | Owner |
 |---|---|
@@ -74,7 +74,7 @@ Imported citations are linted under
 | [`guides/`](guides/README.md) | Archived executed and concept implementation guides. |
 | [`reviews/`](reviews/README.md) | Archived static reviews of named repository trees. |
 
-## Root files · `tbl:plans:root-files`
+## Root files · `tab:plans:root-files`
 
 | File | Owner |
 |---|---|
@@ -149,7 +149,7 @@ a reference for external facts; and the backlog for current work.
 Git history is the archive. Superseded long prose is deleted rather than copied
 into another planning folder.
 
-## Status vocabulary · `tbl:plans:status`
+## Status vocabulary · `tab:plans:status`
 
 | Status | Meaning |
 |---|---|

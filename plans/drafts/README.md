@@ -10,12 +10,12 @@ Archived drafts are excluded from the load-bearing documentation weight
 budget and accounted against the separate archive budget instead, under
 the weight rule in [the plans README](../README.md).
 
-## Index · `tbl:drafts:index`
+## Index · `tab:drafts:index`
 
 | Draft | Subject | Integration owner |
 |---|---|---|
-| [label-calculus.md](label-calculus.md) | The documentation/source label calculus as owners, judgments, and inference rules | backlog §13 (supersedes the ADR-012/ADR-013 statement) |
-| [environment-kinds.md](environment-kinds.md) | The environment kind registry: 248 names into 148 kinds | backlog §13 |
+| [label-calculus.md](label-calculus.md) | The documentation/source label calculus as owners, judgments, and inference rules | adopted as normative by [ADR-019](../../adr/019-label-calculus.md) |
+| [environment-kinds.md](environment-kinds.md) | The environment kind registry: 248 names into 148 kinds | adopted as normative by [ADR-020](../../adr/020-environment-kinds.md) |
 | [identity-adjudication.md](identity-adjudication.md) | The digest/identity adjudication procedure | backlog §13 (refines ADR-016) |
 | [interchange-conventions.md](interchange-conventions.md) | Deterministic CBOR/CDDL interchange: envelope, registry, satisfaction | backlog §13 |
 

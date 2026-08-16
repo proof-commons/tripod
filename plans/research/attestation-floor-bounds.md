@@ -157,7 +157,7 @@ recorded in the result below. It is attained as a supremum by depositing the
 whole of D at genesis, which preserves u = c, then burning the entire live
 class through arbitrarily fine settlements.
 
-## Candidate matrix · `tbl:attestation-floor-bounds:candidates`
+## Candidate matrix · `tab:attestation-floor-bounds:candidates`
 
 | Mint | Candidate | Strength | Main risk |
 |---|---|---|---|
@@ -180,7 +180,7 @@ their real scopes. They remain recorded because a future decision to want a
 finite lifetime bound must change an operation; the log identity forecloses
 obtaining one by restatement.
 
-## Semantic map · `tbl:attestation-floor-bounds:semantic-map`
+## Semantic map · `tab:attestation-floor-bounds:semantic-map`
 
 Each surviving claim gets one precise Attestation home before any prose is
 rewritten. The bundling of five distinct facts under one informal "floor

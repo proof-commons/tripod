@@ -16,7 +16,7 @@ The library crate is named `labels`; the Cargo package is
 
 A label is a documentation cross-reference and nothing else. Plan-local labels
 remain non-normative and non-identity-bearing, but their mints, citations, and
-owner crossings are mechanically checked under ADR-013. Nothing this crate
+owner crossings are mechanically checked under ADR-019. Nothing this crate
 produces is a protocol input, a compiler input, or an identity anything depends
 on.
 
@@ -76,7 +76,7 @@ A citation that crosses owners carries the target owner's prefix.
 |---|---|---|
 | `Attestation` | `A-` | `Attestation` |
 | `Realization` | `RZ-` | `Realization` |
-| `Adr(u16)` | `ADR012-` (zero-padded to three digits) | `Adr` |
+| `Adr(u16)` | `ADR019-` (zero-padded to three digits) | `Adr` |
 | `Model` | `MODEL-` | `Model` |
 | `Plan` | `PLAN-` | `Planning` |
 | `Doc` | `DOC-` | `Planning` |
@@ -96,10 +96,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(local.as_str(), "def:model:classes");
 
     // A citation naming another owner carries that owner's prefix.
-    let imported = ImportedLabel::parse("ADR012-rule:labels:decision")?;
-    assert_eq!(imported.owner, LabelOwner::Adr(12));
-    assert_eq!(imported.label.as_str(), "rule:labels:decision");
-    assert_eq!(imported.owner.prefix(), "ADR012-");
+    let imported = ImportedLabel::parse("ADR019-dec:labels:adoption")?;
+    assert_eq!(imported.owner, LabelOwner::Adr(19));
+    assert_eq!(imported.label.as_str(), "dec:labels:adoption");
+    assert_eq!(imported.owner.prefix(), "ADR019-");
     Ok(())
 }
 ```
@@ -144,7 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 Register tokens render as double-backtick spans deliberately: the label scanner
 treats those as nonparticipating examples, so a generated register can never
-mint or cite the labels it indexes (the ADR-013 generated-register
+mint or cite the labels it indexes (the ADR-019 generated-register
 nonparticipation rule).
 
 ## Quickstart: scan Markdown for label tokens

@@ -6,7 +6,7 @@ use crate::{
 };
 
 /// How one delimited span sits relative to the parenthesized-citation
-/// grammar (ADR-013).
+/// grammar (ADR-019).
 ///
 /// Only [`Self::Bare`] mints. The two failure contexts are diagnosed by
 /// the harvesting layer: a span adjacent to a parenthesis is an
@@ -99,7 +99,7 @@ pub fn scan_markdown(path: &Path, source: &str) -> MarkdownScan {
 /// one-based column of its marker run.
 ///
 /// The accepted Markdown grammar recognizes fences with at most three
-/// leading spaces (ADR-013 fenced material). A fence hidden behind a
+/// leading spaces (ADR-019 fenced material). A fence hidden behind a
 /// blockquote marker, a list bullet, or deeper indentation is outside
 /// that grammar, so its content would be scanned as ordinary prose.
 /// Rather than grow a container parser, the repository rejects such a

@@ -19,7 +19,7 @@ architecture
 Evidence and final assembly packages may depend broadly. Semantic packages must
 remain narrow.
 
-## Direct-dependency plan · `tbl:packages:dependencies`
+## Direct-dependency plan · `tab:packages:dependencies`
 
 | Package | Planned/current first-party direct dependencies |
 |---|---|
@@ -40,7 +40,7 @@ Cargo metadata and dependency review establish actual dependency conformance.
 The model's runtime transition acceptance remains independent of realization;
 its realization dependency is for post-execution conformance projection.
 
-## Index · `tbl:packages:index`
+## Index · `tab:packages:index`
 
 | Package | Status | Direct role |
 |---|---|---|
