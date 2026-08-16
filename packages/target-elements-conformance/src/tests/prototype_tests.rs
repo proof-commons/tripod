@@ -11,7 +11,8 @@ use target_elements::{LeafVersion, ReviewedElementsTapscriptDefinition};
 use crate::claim::ClaimRequirement;
 use crate::constructor::internal_key::UNSPENDABLE_INTERNAL_KEY;
 use crate::constructor::tree::{
-    FixtureTapTree, TreeDefect, construct, control_block_of_version_byte, leaf_hash_of_version_byte,
+    ConstructionDefect, FixtureTapTree, TreeDefect, construct, control_block_of_version_byte,
+    leaf_hash_of_version_byte,
 };
 use crate::fixture::{ExpectedResourceObservation, PrimitiveFixture, ResourceExpectation};
 use crate::protocol::{ExecutorCapability, NATIVE_PROTOCOL_SCHEMA, NativeExecutionRequest};
@@ -219,10 +220,15 @@ fn a_stated_control_block_must_be_the_one_the_tree_determines() {
 }
 
 #[test]
-fn either_parity_satisfies_a_stated_control_block() {
-    // The parity bit is the output key's, which the fixture does not
-    // fix. Every other bit of the first byte is the leaf version, and
-    // is fixed.
+fn only_the_parity_the_construction_determines_satisfies_a_control_block() {
+    // The parity bit is not free.
+    //
+    // An earlier version of this validator masked it out, reasoning that
+    // a fixture states a tree rather than an output key. That admitted
+    // fixtures that were coherent here and refused by every executor
+    // that derives its own control block, which is every honest one:
+    // the parity is determined by the internal key and the tree exactly
+    // as the rest of the block is.
     let target = target();
     let fixture = coherent(&target);
     let executing = leaf_hash_of_version_byte(LeafVersion::TAPSCRIPT.get(), OPERATION);
@@ -231,29 +237,102 @@ fn either_parity_satisfies_a_stated_control_block() {
         .tree
         .path_to(&executing)
         .expect("the leaf is in the tree");
+    let determined = fixture
+        .construction
+        .control
+        .as_ref()
+        .expect("the coherent fixture states one");
+    let parity = determined[0] & 0x01;
 
-    for parity in [0_u8, 1] {
-        let mut candidate = coherent(&target);
-        candidate.construction.control = Some(control_block_of_version_byte(
-            LeafVersion::TAPSCRIPT.get(),
-            parity,
-            &UNSPENDABLE_INTERNAL_KEY,
-            &path,
-        ));
-        assert_eq!(candidate.defect(&target), None, "parity {parity}");
-    }
+    let mut wrong_parity = coherent(&target);
+    wrong_parity.construction.control = Some(control_block_of_version_byte(
+        LeafVersion::TAPSCRIPT.get(),
+        parity ^ 1,
+        &UNSPENDABLE_INTERNAL_KEY,
+        &path,
+    ));
+    assert_eq!(
+        wrong_parity.defect(&target),
+        Some(PrototypeFixtureDefect::ControlBlockMismatch),
+        "the other parity is not the one this construction determines"
+    );
 
-    // But the leaf version's own bits are not free.
+    // And the leaf version's own bits are not free either.
     let mut wrong_version = coherent(&target);
     wrong_version.construction.control = Some(control_block_of_version_byte(
         0xc0,
-        0,
+        parity,
         &UNSPENDABLE_INTERNAL_KEY,
         &path,
     ));
     assert_eq!(
         wrong_version.defect(&target),
         Some(PrototypeFixtureDefect::ControlBlockMismatch)
+    );
+}
+
+#[test]
+fn a_predecessor_program_the_tree_does_not_determine_is_refused() {
+    // The consumed input's program is not a free field: it is what this
+    // internal key and this tree commit to, and no other tree commits
+    // to it. A fixture stating some other program describes a spend of
+    // an output its own tree does not commit to, and every honest
+    // executor would refuse it after the harness had called it
+    // coherent.
+    let target = target();
+    let mut fixture = coherent(&target);
+    fixture.construction.predecessor_program[5] ^= 0xff;
+
+    assert_eq!(
+        fixture.defect(&target),
+        Some(PrototypeFixtureDefect::PredecessorProgramMismatch)
+    );
+}
+
+#[test]
+fn a_fixture_whose_construction_has_no_output_key_is_refused() {
+    // Coherence must imply constructibility. An internal key that is
+    // not a curve point determines no output key at all, and a fixture
+    // stating one used to pass every check here and fail only when an
+    // executor tried to build it.
+    let target = target();
+    let mut fixture = coherent(&target);
+    fixture.construction.internal_key = [0_u8; 32];
+
+    assert!(
+        matches!(
+            fixture.defect(&target),
+            Some(PrototypeFixtureDefect::NotConstructible(_))
+        ),
+        "an internal key off the curve determines nothing"
+    );
+}
+
+#[test]
+fn a_branch_offered_as_the_executing_leaf_is_named_accurately() {
+    // A branch is not an absent leaf. It is a node a spend cannot
+    // execute at all, and reporting the two the same way would send a
+    // reader looking for the wrong defect.
+    let target = target();
+    let mut fixture = coherent(&target);
+    fixture.construction.executing_leaf = fixture.construction.tree.clone();
+
+    assert_eq!(
+        fixture.defect(&target),
+        Some(PrototypeFixtureDefect::ExecutingLeafIsNotALeaf)
+    );
+
+    // And the oracle names it the same way rather than calling it an
+    // absent leaf.
+    assert_eq!(
+        construct(
+            &UNSPENDABLE_INTERNAL_KEY,
+            &fixture.construction.tree,
+            &fixture.construction.tree,
+        ),
+        Err(ConstructionDefect::Tree(
+            TreeDefect::ExecutingLeafIsNotALeaf
+        ))
     );
 }
 

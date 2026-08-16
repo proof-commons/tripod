@@ -41,7 +41,9 @@ use target_elements::{LeafVersion, ReviewedElementsTapscriptDefinition};
 
 use crate::claim::ClaimRequirement;
 use crate::constructor::curve::FIELD_ELEMENT_BYTES;
-use crate::constructor::tree::{FixtureTapTree, TreeDefect, leaf_hash_of_version_byte};
+use crate::constructor::tree::{
+    ConstructionDefect, FixtureTapTree, TreeDefect, construct, leaf_hash_of_version_byte,
+};
 use crate::fixture::ExpectedResourceObservation;
 
 /// Which prototype relation a compound fixture bears on.
@@ -283,8 +285,25 @@ pub enum PrototypeFixtureDefect {
         /// The version byte stated.
         stated: u8,
     },
-    /// The stated control block does not authenticate the stated tree.
+    /// The stated control block is not the one the stated construction
+    /// determines.
     ControlBlockMismatch,
+    /// The internal key and tree determine no output key at all.
+    NotConstructible(ConstructionDefect),
+    /// The consumed input's program is not the one the stated internal
+    /// key and tree determine.
+    ///
+    /// # Why the successor's program has no such rule
+    ///
+    /// The predecessor's program is derivable from this fixture, because
+    /// this fixture carries the tree that determines it. The successor's
+    /// is not: it belongs to the *successor's* construction, over the
+    /// successor's metadata, which a predecessor fixture does not carry
+    /// and must not be made to carry. So the successor program stays a
+    /// stated value that the harness's own oracle computes for a case,
+    /// and requiring it to equal something derivable from this tree
+    /// would be requiring it to be the predecessor's.
+    PredecessorProgramMismatch,
     /// An output role appears other than exactly once.
     OutputRoleNotUnique {
         /// The role in question.
@@ -347,19 +366,45 @@ impl CompoundPrototypeFixture {
         }
 
         let executing = leaf_hash_of_version_byte(*version, script);
-        let path = match self.construction.tree.path_to(&executing) {
-            Ok(path) => path,
-            Err(defect) => return Some(PrototypeFixtureDefect::Tree(defect)),
+        if let Err(defect) = self.construction.tree.path_to(&executing) {
+            return Some(PrototypeFixtureDefect::Tree(defect));
+        }
+
+        // Everything above is a property of the fixture's own text. The
+        // check below is the one that asks whether the construction
+        // exists at all: an internal key that is not a curve point, or a
+        // tweak that is not a scalar, determines no output key, and a
+        // fixture stating one would be coherent on its face and refused
+        // by every honest executor.
+        let built = match construct(
+            &self.construction.internal_key,
+            &self.construction.tree,
+            &self.construction.executing_leaf,
+        ) {
+            Ok(built) => built,
+            Err(defect) => return Some(PrototypeFixtureDefect::NotConstructible(defect)),
         };
 
+        // The consumed input's program is not a free field: it is the
+        // program this internal key and this tree determine, and no
+        // other tree determines it. A fixture stating some other program
+        // describes a spend of an output its own tree does not commit
+        // to.
+        if self.construction.predecessor_program != built.output_program() {
+            return Some(PrototypeFixtureDefect::PredecessorProgramMismatch);
+        }
+
         if let Some(stated) = &self.construction.control {
-            // A stated control block is checked against the tree the
-            // fixture states, not merely for plausibility: its path must
-            // be exactly the path the tree determines, and its internal
-            // key exactly the stated one. Everything but the parity bit
-            // is fixed by the fixture, so the parity is the only byte
-            // that may differ.
-            if !control_matches(stated, *version, &self.construction.internal_key, &path) {
+            // Compared byte for byte, parity bit included.
+            //
+            // An earlier version of this check masked the parity out, on
+            // the reasoning that a fixture states a tree rather than an
+            // output key. That was wrong: the parity is determined by
+            // the internal key and the tree exactly as the rest of the
+            // block is, so leaving it free admitted fixtures that were
+            // coherent here and refused by every executor that derives
+            // its own control block — which is every honest one.
+            if stated != built.control_block() {
                 return Some(PrototypeFixtureDefect::ControlBlockMismatch);
             }
         }
@@ -394,29 +439,4 @@ impl CompoundPrototypeFixture {
             FixtureTapTree::Branch { .. } => None,
         }
     }
-}
-
-/// Whether a stated control block is the one this tree determines.
-fn control_matches(
-    stated: &[u8],
-    version: u8,
-    internal_key: &[u8; FIELD_ELEMENT_BYTES],
-    path: &[crate::constructor::tagged::Digest32],
-) -> bool {
-    let expected_length = 1 + FIELD_ELEMENT_BYTES + path.len() * FIELD_ELEMENT_BYTES;
-    if stated.len() != expected_length {
-        return false;
-    }
-    // The low bit is the output key's parity, which the fixture does not
-    // fix; every other bit of the first byte is the leaf version.
-    if stated[0] & 0xfe != version {
-        return false;
-    }
-    if stated[1..=FIELD_ELEMENT_BYTES] != internal_key[..] {
-        return false;
-    }
-    stated[1 + FIELD_ELEMENT_BYTES..]
-        .chunks(FIELD_ELEMENT_BYTES)
-        .zip(path.iter())
-        .all(|(stated, expected)| stated == expected)
 }

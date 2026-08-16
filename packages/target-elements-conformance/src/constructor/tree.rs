@@ -111,6 +111,13 @@ pub enum FixtureTapTree {
 pub enum TreeDefect {
     /// The tree does not contain the executing leaf.
     ExecutingLeafAbsent,
+    /// What was offered as the executing leaf is a branch.
+    ///
+    /// Distinct from an absent leaf: a branch is not a leaf that is
+    /// missing, it is a node a spend cannot execute at all, and
+    /// reporting the two the same way would send a reader looking for
+    /// the wrong defect.
+    ExecutingLeafIsNotALeaf,
     /// The tree contains the executing leaf more than once, so the
     /// control path is not determined.
     ExecutingLeafRepeated,
@@ -491,7 +498,9 @@ pub fn construct(
     executing_leaf: &FixtureTapTree,
 ) -> Result<ConstructedOutput, ConstructionDefect> {
     let FixtureTapTree::Leaf { version, script } = executing_leaf else {
-        return Err(ConstructionDefect::Tree(TreeDefect::ExecutingLeafAbsent));
+        return Err(ConstructionDefect::Tree(
+            TreeDefect::ExecutingLeafIsNotALeaf,
+        ));
     };
     let executing_leaf_hash = leaf_hash_of_version_byte(*version, script);
     let path = tree
