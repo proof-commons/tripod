@@ -52,6 +52,7 @@ use crate::constructor::metadata_leaf::metadata_leaf_script;
 use crate::constructor::tagged::{
     DIGEST_BYTES, TAP_BRANCH_TAG, TAP_LEAF_TAG, TAP_TWEAK_TAG, compact_size, sha256,
 };
+use crate::wide_floor::schedule::{self as wide_floor_schedule, PACKED_PROOF_BYTES};
 
 /// The schema number this recipe is written for.
 ///
@@ -129,6 +130,9 @@ pub enum PrototypeKind {
     /// The continuity proof: one static subtree root carried across a
     /// predecessor constructor and its successor.
     MetadataConstructorContinuity,
+    /// The exact wide-floor proof: `a·b = q·d + r` over the `2^51`
+    /// amount domain, with every limb derived rather than witnessed.
+    WideFloorRelation,
 }
 
 /// What a passing execution of a prototype program would establish.
@@ -141,6 +145,15 @@ pub enum PrototypeKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum PrototypeProgramRelation {
+    /// The exact wide-floor relation holds for the witnessed amounts.
+    ///
+    /// Not the floor alone: an accepting execution establishes that the
+    /// five amounts are in domain, that the divisor is positive, that
+    /// the remainder is below it, and that `a·b` and `q·d + r` have the
+    /// same canonical base-`B` limbs in all four positions. Those
+    /// together imply `q = floor(a·b / d)`, and each on its own does not
+    /// (Guide-10 `rule:guide10:wide-floor-relation`).
+    WideFloorRelation,
     /// One metadata object's constructor derives from its predecessor's
     /// by the stated transition.
     ///
@@ -355,6 +368,62 @@ impl PrototypeProgram {
     pub fn continuity(
         target: &ReviewedElementsTapscriptDefinition,
     ) -> Result<Self, PrototypeProgramDefect> {
+        Self::admit(
+            target,
+            PrototypeKind::MetadataConstructorContinuity,
+            PrototypeProgramRelation::MetadataConstructorContinuity,
+            continuity_instructions(target)?,
+            continuity_initial_stack(),
+            CONTROL_PATH_NODES,
+            &[sha256_context_bytes(target)],
+        )
+    }
+
+    /// Emits and admits the exact wide-floor prototype.
+    ///
+    /// The same checks against the same reviewed contracts, over a
+    /// construction with nothing in common with the constructor's: five
+    /// witnessed amounts, one leaf, no tree above it, no hashing, and no
+    /// curve operation. What the two share is the admission procedure,
+    /// which is deliberate — a second procedure could accept a program
+    /// the first would refuse (Guide-10 `rule:guide10:prototype-state`).
+    ///
+    /// # Errors
+    ///
+    /// [`PrototypeProgramDefect`] naming the first check that failed.
+    pub fn wide_floor(
+        target: &ReviewedElementsTapscriptDefinition,
+    ) -> Result<Self, PrototypeProgramDefect> {
+        let instructions = wide_floor_schedule::instructions(target)
+            .ok_or(PrototypeProgramDefect::LiteralNotExpressible)?;
+        let packed = u64::try_from(PACKED_PROOF_BYTES).unwrap_or(u64::MAX);
+        Self::admit(
+            target,
+            PrototypeKind::WideFloorRelation,
+            PrototypeProgramRelation::WideFloorRelation,
+            instructions,
+            AbstractStackState::from_main(wide_floor_schedule::initial_stack_types()),
+            WIDE_FLOOR_CONTROL_PATH_NODES,
+            &[packed],
+        )
+    }
+
+    /// The one admission procedure, shared by every prototype.
+    ///
+    /// `computed_widths` are the widths an execution handles that no
+    /// literal and no witness item states — a streaming-hash context, a
+    /// packed proof item — and are stated by the caller because they are
+    /// facts about the construction rather than about the instruction
+    /// list.
+    fn admit(
+        target: &ReviewedElementsTapscriptDefinition,
+        kind: PrototypeKind,
+        relation: PrototypeProgramRelation,
+        instructions: Vec<TapscriptInstruction>,
+        initial_stack: AbstractStackState,
+        control_path_nodes: u64,
+        computed_widths: &[u64],
+    ) -> Result<Self, PrototypeProgramDefect> {
         let reviewed = target.definition().version();
         if reviewed != TargetContractVersion::V2 {
             return Err(PrototypeProgramDefect::ContractRevisionUnsupported {
@@ -362,7 +431,6 @@ impl PrototypeProgram {
             });
         }
 
-        let instructions = continuity_instructions(target)?;
         let program = TapscriptProgram::new(instructions)
             .map_err(|_| PrototypeProgramDefect::ProgramNotExpressible)?;
 
@@ -374,7 +442,6 @@ impl PrototypeProgram {
             }
         }
 
-        let initial_stack = continuity_initial_stack();
         let outcome = validate_program(
             target,
             &program,
@@ -398,11 +465,17 @@ impl PrototypeProgram {
             return Err(PrototypeProgramDefect::ScheduleAdmitsASurvivingFailure);
         }
 
-        let resources = project_resources(target, &program, &initial_stack);
-        check_resource_bounds(target, resources)?;
+        let resources = project_resources(
+            target,
+            &program,
+            &initial_stack,
+            control_path_nodes,
+            computed_widths,
+        );
+        check_resource_bounds(target, resources, control_path_nodes)?;
 
         Ok(Self {
-            kind: PrototypeKind::MetadataConstructorContinuity,
+            kind,
             status: PrototypeStatus::Experimental,
             target: PrototypeTargetProjection {
                 contract_version: reviewed.get(),
@@ -410,7 +483,7 @@ impl PrototypeProgram {
             },
             program,
             initial_stack,
-            relation: PrototypeProgramRelation::MetadataConstructorContinuity,
+            relation,
             resources,
         })
     }
@@ -888,6 +961,14 @@ const fn digest_item() -> StackValueType {
 /// metadata leaf alone.
 const CONTROL_PATH_NODES: u64 = 1;
 
+/// How many nodes the wide-floor prototype's control path carries.
+///
+/// None. The wide-floor pattern is one leaf and nothing else: it proves
+/// an arithmetic relation over witnessed amounts and has no metadata
+/// leaf to sit beside, so the tree a fixture states is the bare leaf and
+/// its control block authenticates no sibling.
+const WIDE_FLOOR_CONTROL_PATH_NODES: u64 = 0;
+
 /// A compressed public key's width, as a witness item carries it.
 const COMPRESSED_KEY_BYTES: usize = 33;
 
@@ -896,6 +977,8 @@ fn project_resources(
     target: &ReviewedElementsTapscriptDefinition,
     program: &TapscriptProgram,
     initial: &AbstractStackState,
+    control_path_nodes: u64,
+    computed_widths: &[u64],
 ) -> PrototypeResourceProjection {
     let script = program.encode(target);
     let script_bytes = u64::try_from(script.len()).unwrap_or(u64::MAX);
@@ -933,10 +1016,12 @@ fn project_resources(
             widest = widest.max(u64::try_from(item.bytes().len()).unwrap_or(u64::MAX));
         }
     }
-    widest = widest.max(sha256_context_bytes(target));
+    for width in computed_widths {
+        widest = widest.max(*width);
+    }
 
     let control_block_bytes =
-        u64::try_from(1 + FIELD_ELEMENT_BYTES).unwrap_or(0) + CONTROL_PATH_NODES * 32;
+        u64::try_from(1 + FIELD_ELEMENT_BYTES).unwrap_or(0) + control_path_nodes * 32;
     let witness_bytes = serialized_witness_bytes(initial, script_bytes, control_block_bytes);
 
     PrototypeResourceProjection {
@@ -1039,6 +1124,7 @@ fn peak_main_stack(
 fn check_resource_bounds(
     target: &ReviewedElementsTapscriptDefinition,
     measured: PrototypeResourceProjection,
+    control_path_nodes: u64,
 ) -> Result<(), PrototypeProgramDefect> {
     let bounds = target.definition().resources().consensus().bounds();
     for (dimension, needed) in [
@@ -1049,7 +1135,7 @@ fn check_resource_bounds(
             ResourceDimension::StackElementBytes,
             measured.largest_element_bytes,
         ),
-        (ResourceDimension::ControlPathDepth, CONTROL_PATH_NODES),
+        (ResourceDimension::ControlPathDepth, control_path_nodes),
     ] {
         let Some(maximum) = bounds.get(&dimension).and_then(|bound| bound.maximum()) else {
             continue;

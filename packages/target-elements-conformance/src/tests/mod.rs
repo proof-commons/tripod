@@ -11,4 +11,5 @@ mod prototype_tests;
 mod support;
 mod validate_tests;
 mod vocabulary_tests;
+mod wide_floor_program_tests;
 mod wide_floor_tests;

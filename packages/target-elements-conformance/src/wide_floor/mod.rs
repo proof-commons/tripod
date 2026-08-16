@@ -20,16 +20,23 @@
 //! belongs to a run rather than to this module
 //! (`rule:guide10:independent-oracles`).
 //!
-//! # What is not here yet
+//! # Where the target program lives
 //!
-//! The target schedule. This module is the reference the schedule will
-//! be compared against, and it is deliberately complete before any
-//! instruction is emitted (`rule:guide10:arithmetic-oracle-stage`).
+//! [`schedule`] emits the instruction sequence and the witness contract;
+//! `crate::prototype_program` admits it against the reviewed contracts
+//! and measures it. The split is the Wave-5b boundary: a schedule is a
+//! statement about stack discipline, and a prototype program is that
+//! statement with every literal resolved and every reviewed check made.
 
+pub mod candidate;
 pub mod domain;
 pub mod normalizer;
 pub mod oracle;
+pub mod schedule;
 
+pub use candidate::{
+    CandidateComparison, ComparisonBasis, WideFloorCandidate, comparison, selected,
+};
 pub use domain::{
     AMOUNT_BITS, AMOUNT_DOMAIN, HIGH_LIMB_BOUND, LIMB_BASE, LIMB_BASE_BITS, LOW_LIMB_BOUND,
     PRODUCT_LIMBS, SIGNED_INTERMEDIATE_BOUND, WideFloorBound,
@@ -39,3 +46,4 @@ pub use oracle::{
     AMOUNT_BYTES, AmountLimbs, NormalizedProduct, WideFloorDefect, WideFloorInstance,
     WideFloorWitness,
 };
+pub use schedule::{PACKED_PROOF_BYTES, QUOTIENT_AT};
