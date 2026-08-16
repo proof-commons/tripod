@@ -96,6 +96,30 @@ pub enum ElementsCapability {
     /// A program can require a relative timelock.
     RelativeTimelock,
 
+    /// A program can duplicate, reorder, and discard stack items.
+    StackRearrangement,
+    /// A program can compare two items for byte equality.
+    ByteStringEquality,
+    /// A program can require a truth value and abort otherwise.
+    BooleanVerification,
+    /// A program can join two items into one.
+    ByteStringConcatenation,
+    /// A program can read the width of an item.
+    ByteStringWidth,
+    /// A program can extract a slice of an item.
+    ByteStringSlicing,
+    /// A program can combine two equal-width items bit by bit.
+    BitwiseByteLogic,
+    /// A program can order two byte strings lexicographically with one
+    /// reviewed primitive.
+    ///
+    /// No such primitive exists. The capability is named so that the
+    /// absence is a stated, evidenced row rather than a gap a reader
+    /// has to notice, and so that a construction depending on it must
+    /// confront the status instead of assuming a familiar opcode
+    /// (Guide-10 `rule:guide10:primitive-admission`).
+    CanonicalByteOrdering,
+
     /// The target's rules conserve value across a transaction.
     ConfidentialValueConservation,
     /// A program can establish equality of two commitments.
@@ -147,6 +171,14 @@ impl ElementsCapability {
         Self::OutputCommittingSighash,
         Self::InputCommitmentControl,
         Self::RelativeTimelock,
+        Self::StackRearrangement,
+        Self::ByteStringEquality,
+        Self::BooleanVerification,
+        Self::ByteStringConcatenation,
+        Self::ByteStringWidth,
+        Self::ByteStringSlicing,
+        Self::BitwiseByteLogic,
+        Self::CanonicalByteOrdering,
         Self::ConfidentialValueConservation,
         Self::CommitmentEquality,
         Self::AuthenticatedValueOpening,
@@ -789,6 +821,106 @@ fn authorization_and_value_capabilities() -> Vec<(ElementsCapability, Capability
     ]
 }
 
+/// The compound-proof capabilities: stack rearrangement, equality,
+/// verification, and the byte-string operations.
+///
+/// # The one that is not there
+///
+/// [`ElementsCapability::CanonicalByteOrdering`] names no primitive and
+/// is [`StaticCapabilityStatus::Unsupported`]. The reviewed target has
+/// no byte-lexicographic comparison: its ordering primitives read
+/// fixed-width signed integers, and its script-number ordering reads a
+/// number, neither of which orders a thirty-two byte digest. A
+/// construction needing canonical ordering must build it from the
+/// primitives that do exist and prove the construction, which is a
+/// different claim from having the capability
+/// (Guide-10 `rule:guide10:tapbranch-order`).
+fn compound_proof_capabilities() -> Vec<(ElementsCapability, CapabilityContract)> {
+    use ElementsCapability as P;
+    use OpcodeId as O;
+    use StaticCapabilityStatus::{Reviewed, Unsupported};
+    use TargetEvidenceRequirementId as R;
+
+    let base = BASE;
+
+    vec![
+        entry(
+            P::StackRearrangement,
+            base,
+            &[
+                O::Duplicate,
+                O::DuplicateTwo,
+                O::CopyOver,
+                O::Swap,
+                O::Rotate,
+                O::RemoveSecond,
+                O::Tuck,
+                O::Drop,
+                O::DropTwo,
+            ],
+            &[],
+            &[R::StackRearrangementSemantics],
+            Reviewed,
+        ),
+        entry(
+            P::ByteStringEquality,
+            base,
+            &[O::Equal, O::EqualVerify],
+            &[],
+            &[R::VerificationSemantics],
+            Reviewed,
+        ),
+        entry(
+            P::BooleanVerification,
+            base,
+            &[O::Verify],
+            &[],
+            &[R::VerificationSemantics],
+            Reviewed,
+        ),
+        entry(
+            P::ByteStringConcatenation,
+            base,
+            &[O::Concatenate],
+            &[],
+            &[R::ByteStringSemantics],
+            Reviewed,
+        ),
+        entry(
+            P::ByteStringWidth,
+            base,
+            &[O::Size],
+            &[],
+            &[R::ByteStringSemantics],
+            Reviewed,
+        ),
+        entry(
+            P::ByteStringSlicing,
+            base,
+            &[O::Substring],
+            &[],
+            &[R::ByteStringSemantics],
+            Reviewed,
+        ),
+        entry(
+            P::BitwiseByteLogic,
+            base,
+            &[O::BitwiseAnd, O::BitwiseXor],
+            &[],
+            &[R::ByteStringSemantics],
+            Reviewed,
+        ),
+        entry(
+            P::CanonicalByteOrdering,
+            base,
+            &[],
+            &[],
+            &[R::ByteStringSemantics],
+            Unsupported,
+        ),
+    ]
+}
+
 /// Builds the reviewed capability registry.
 pub(crate) fn reviewed_capabilities() -> BTreeMap<ElementsCapability, CapabilityContract> {
     [
@@ -796,6 +928,7 @@ pub(crate) fn reviewed_capabilities() -> BTreeMap<ElementsCapability, Capability
         output_and_transaction_capabilities(),
         computation_capabilities(),
         authorization_and_value_capabilities(),
+        compound_proof_capabilities(),
     ]
     .into_iter()
     .flatten()

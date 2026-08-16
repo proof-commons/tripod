@@ -55,13 +55,19 @@ fn stays_generic(parts: TargetDefinitionParts) {
 
 #[test]
 fn the_contract_version_is_publicly_decidable() {
-    let version = TargetContractVersion::supported(TargetContractVersion::V1.get())
+    let version = TargetContractVersion::supported(TargetContractVersion::V2.get())
         .expect("the declared revision is implemented");
-    assert_eq!(version, TargetContractVersion::V1);
+    assert_eq!(version, TargetContractVersion::V2);
+
+    // The historical revision stays implemented and stays distinct.
+    let historical = TargetContractVersion::supported(TargetContractVersion::V1.get())
+        .expect("the historical revision is still implemented");
+    assert_eq!(historical, TargetContractVersion::V1);
+    assert_ne!(historical, version);
 
     assert_eq!(
-        TargetContractVersion::supported(2),
-        Err(TargetError::UnsupportedTargetContractVersion { offered: 2 })
+        TargetContractVersion::supported(3),
+        Err(TargetError::UnsupportedTargetContractVersion { offered: 3 })
     );
 }
 
@@ -169,7 +175,7 @@ fn an_external_consumer_can_bind_a_development_instance_and_only_that() {
         [ElementsCapability::TapscriptExecution],
     );
     let development = DevelopmentDeploymentBinding::new(
-        TargetContractVersion::V1,
+        TargetContractVersion::V2,
         DeploymentEnvironment::Development,
         [0x11; 32],
         [0x22; 32],
@@ -183,7 +189,7 @@ fn an_external_consumer_can_bind_a_development_instance_and_only_that() {
     // public function in this crate that returns a validated one, and
     // no way to upgrade the development binding above into one.
     let production = DevelopmentDeploymentBinding::new(
-        TargetContractVersion::V1,
+        TargetContractVersion::V2,
         DeploymentEnvironment::Production,
         [0x11; 32],
         [0x22; 32],

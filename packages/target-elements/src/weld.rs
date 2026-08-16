@@ -102,7 +102,7 @@ fn results_under(
         .cases()
         .into_iter()
         .find(|case| case.condition() == condition)
-        .map(|case| case.effect().results().to_vec())
+        .map(|case| case.effect().computed_types())
 }
 
 /// The status a capability row carries.

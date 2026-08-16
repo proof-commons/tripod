@@ -81,6 +81,12 @@ pub enum NativeCaseGroup {
     Issuance,
     /// Resource accounting.
     Resource,
+    /// The ordinary stack operations.
+    StackRearrangement,
+    /// Byte-string concatenation, slicing, width, and bitwise logic.
+    ByteString,
+    /// Equality and Boolean verification.
+    Verification,
 }
 
 impl NativeCaseGroup {
@@ -104,12 +110,18 @@ impl NativeCaseGroup {
         Self::ConfidentialValue,
         Self::Issuance,
         Self::Resource,
+        Self::StackRearrangement,
+        Self::ByteString,
+        Self::Verification,
     ];
 
     /// The spelling this group travels under.
     #[must_use]
     pub const fn wire_name(self) -> &'static str {
         match self {
+            Self::StackRearrangement => "stack_rearrangement",
+            Self::ByteString => "byte_string",
+            Self::Verification => "verification",
             Self::ExecutionDomain => "execution_domain",
             Self::LeafVersion => "leaf_version",
             Self::InstructionEncoding => "instruction_encoding",

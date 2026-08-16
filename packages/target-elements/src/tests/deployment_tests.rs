@@ -46,7 +46,7 @@ fn activation() -> ActivationDeclaration {
 /// A well-formed development binding.
 fn binding() -> DevelopmentDeploymentBinding {
     DevelopmentDeploymentBinding::new(
-        TargetContractVersion::V1,
+        TargetContractVersion::V2,
         DeploymentEnvironment::Development,
         NETWORK_ID,
         GENESIS_ID,
@@ -72,7 +72,7 @@ fn a_production_binding_is_refused() {
     // evidence boundary, so there is no valid production binding and
     // no public function in this crate returns one.
     let production = DevelopmentDeploymentBinding::new(
-        TargetContractVersion::V1,
+        TargetContractVersion::V2,
         DeploymentEnvironment::Production,
         NETWORK_ID,
         GENESIS_ID,
@@ -91,7 +91,7 @@ fn a_production_binding_is_refused_even_when_everything_else_is_wrong() {
     // other checks pass, or a caller could learn that a production
     // binding is "otherwise fine".
     let production = DevelopmentDeploymentBinding::new(
-        TargetContractVersion::V1,
+        TargetContractVersion::V2,
         DeploymentEnvironment::Production,
         [0_u8; 32],
         [0_u8; 32],
@@ -110,7 +110,7 @@ fn a_zero_network_identifier_is_refused() {
     // takes. Accepting one would let a binding that names no network
     // look exactly like a binding that names a network.
     let zeroed = DevelopmentDeploymentBinding::new(
-        TargetContractVersion::V1,
+        TargetContractVersion::V2,
         DeploymentEnvironment::Development,
         [0_u8; 32],
         GENESIS_ID,
@@ -126,7 +126,7 @@ fn a_zero_network_identifier_is_refused() {
 #[test]
 fn a_zero_genesis_identifier_is_refused() {
     let zeroed = DevelopmentDeploymentBinding::new(
-        TargetContractVersion::V1,
+        TargetContractVersion::V2,
         DeploymentEnvironment::Development,
         NETWORK_ID,
         [0_u8; 32],
@@ -147,7 +147,7 @@ fn an_almost_zero_identifier_is_accepted() {
     let mut nearly = [0_u8; 32];
     nearly[31] = 1;
     let sparse = DevelopmentDeploymentBinding::new(
-        TargetContractVersion::V1,
+        TargetContractVersion::V2,
         DeploymentEnvironment::Development,
         nearly,
         nearly,
@@ -179,7 +179,7 @@ fn a_declaration_relying_on_an_unsupported_capability_is_refused() {
         ElementsCapability::CommitmentEquality,
     ] {
         let optimistic = DevelopmentDeploymentBinding::new(
-            TargetContractVersion::V1,
+            TargetContractVersion::V2,
             DeploymentEnvironment::Development,
             NETWORK_ID,
             GENESIS_ID,
@@ -204,7 +204,7 @@ fn a_declaration_relying_on_an_incomplete_capability_is_accepted() {
     // is what a development network is for — so only the capabilities
     // with no reviewed mechanism at all are refused.
     let exploratory = DevelopmentDeploymentBinding::new(
-        TargetContractVersion::V1,
+        TargetContractVersion::V2,
         DeploymentEnvironment::Development,
         NETWORK_ID,
         GENESIS_ID,
@@ -228,7 +228,7 @@ fn an_inconsistent_activation_declaration_is_refused() {
     // that exist only inside it describes an environment that cannot
     // satisfy the declaration.
     let inconsistent = DevelopmentDeploymentBinding::new(
-        TargetContractVersion::V1,
+        TargetContractVersion::V2,
         DeploymentEnvironment::Development,
         NETWORK_ID,
         GENESIS_ID,
@@ -249,7 +249,7 @@ fn an_inconsistent_activation_declaration_is_refused() {
 fn a_narrowing_resource_override_is_accepted() {
     // A deployment may enforce a stricter bound than the target does.
     let narrowed = DevelopmentDeploymentBinding::new(
-        TargetContractVersion::V1,
+        TargetContractVersion::V2,
         DeploymentEnvironment::Development,
         NETWORK_ID,
         GENESIS_ID,
@@ -269,7 +269,7 @@ fn a_widening_resource_override_is_refused() {
     // It cannot widen what the target permits: a transaction the
     // target refuses is not made valid by a permissive local setting.
     let widened = DevelopmentDeploymentBinding::new(
-        TargetContractVersion::V1,
+        TargetContractVersion::V2,
         DeploymentEnvironment::Development,
         NETWORK_ID,
         GENESIS_ID,
@@ -294,7 +294,7 @@ fn an_unbounded_override_over_a_bounded_dimension_is_refused() {
     // Declaring no bound where the target has one is the widest
     // possible widening.
     let unbounded = DevelopmentDeploymentBinding::new(
-        TargetContractVersion::V1,
+        TargetContractVersion::V2,
         DeploymentEnvironment::Development,
         NETWORK_ID,
         GENESIS_ID,
@@ -319,7 +319,7 @@ fn an_override_of_an_unbounded_dimension_is_refused() {
     // There is nothing to narrow where the target states no bound, so
     // an override there is a claim the contract cannot check.
     let stray = DevelopmentDeploymentBinding::new(
-        TargetContractVersion::V1,
+        TargetContractVersion::V2,
         DeploymentEnvironment::Development,
         NETWORK_ID,
         GENESIS_ID,
@@ -391,7 +391,7 @@ fn the_deployment_projection_tracks_the_network_identity() {
         validate_development_binding(&definition, binding()).expect("the binding is coherent");
 
     let other = DevelopmentDeploymentBinding::new(
-        TargetContractVersion::V1,
+        TargetContractVersion::V2,
         DeploymentEnvironment::Development,
         [0x33; 32],
         GENESIS_ID,

@@ -15,13 +15,30 @@ use crate::opcode::{
     StackValueType, VALIDATION_BUDGET_PER_CHECK,
 };
 use crate::operand::OperandContract;
-use crate::success::{SuccessCase, SuccessCondition, SuccessContract};
+use crate::success::{ResultValue, SuccessCase, SuccessCondition, SuccessContract};
 
 /// The expected identity-to-byte census, stated independently.
 ///
 /// These bytes come from the reviewed upstream opcode declaration, not
 /// from a lookup through the registry under test.
 const EXPECTED_CODES: &[(OpcodeId, u8)] = &[
+    (OpcodeId::Verify, 0x69),
+    (OpcodeId::DropTwo, 0x6d),
+    (OpcodeId::DuplicateTwo, 0x6e),
+    (OpcodeId::Drop, 0x75),
+    (OpcodeId::Duplicate, 0x76),
+    (OpcodeId::RemoveSecond, 0x77),
+    (OpcodeId::CopyOver, 0x78),
+    (OpcodeId::Rotate, 0x7b),
+    (OpcodeId::Swap, 0x7c),
+    (OpcodeId::Tuck, 0x7d),
+    (OpcodeId::Concatenate, 0x7e),
+    (OpcodeId::Substring, 0x7f),
+    (OpcodeId::Size, 0x82),
+    (OpcodeId::BitwiseAnd, 0x84),
+    (OpcodeId::BitwiseXor, 0x86),
+    (OpcodeId::Equal, 0x87),
+    (OpcodeId::EqualVerify, 0x88),
     (OpcodeId::CheckSig, 0xac),
     (OpcodeId::CheckSigVerify, 0xad),
     (OpcodeId::CheckSequenceVerify, 0xb2),
@@ -83,7 +100,7 @@ fn sole_results(spec: &OpcodeSpec) -> Vec<StackValueType> {
     let cases = spec.stack().success().cases();
     assert_eq!(cases.len(), 1, "{:?} has one successful form", spec.id());
     assert_eq!(cases[0].condition(), SuccessCondition::Always);
-    cases[0].effect().results().to_vec()
+    cases[0].effect().computed_types()
 }
 
 /// The results a primitive pushes under one named condition.
@@ -95,8 +112,7 @@ fn results_under(spec: &OpcodeSpec, condition: SuccessCondition) -> Vec<StackVal
         .find(|case| case.condition() == condition)
         .unwrap_or_else(|| panic!("{:?} states a {condition:?} form", spec.id()))
         .effect()
-        .results()
-        .to_vec()
+        .computed_types()
 }
 
 /// The conditions a primitive's successful forms are selected by.
@@ -706,5 +722,244 @@ fn every_primitive_is_gated_to_the_reviewed_domain_and_names_evidence() {
             spec.stack().failure().contradictory_cause().is_none(),
             "{id:?}"
         );
+    }
+}
+
+// ---------------------------------------------------------------
+// The compound-proof substrate's stack-contract oracle.
+//
+// Written out by hand from the same reading of upstream that produced
+// the registry, and deliberately in a different shape: an operand
+// count, a consumed count, the results as positions or types, and the
+// complete failure behaviour. Nothing below asks the registry what the
+// answer is (Guide-10 `rule:guide10:stack-oracle`).
+// ---------------------------------------------------------------
+
+/// The expected rearrangement of every reviewed stack operation.
+///
+/// Each entry is the primitive, how many positions it declares, how
+/// many it consumes, and the deepest-first operand index of each item
+/// it pushes, in push order.
+const EXPECTED_REARRANGEMENTS: &[(OpcodeId, usize, usize, &[usize])] = &[
+    (OpcodeId::Duplicate, 1, 1, &[0, 0]),
+    (OpcodeId::DuplicateTwo, 2, 2, &[0, 1, 0, 1]),
+    (OpcodeId::CopyOver, 2, 2, &[0, 1, 0]),
+    (OpcodeId::Swap, 2, 2, &[1, 0]),
+    (OpcodeId::Rotate, 3, 3, &[1, 2, 0]),
+    (OpcodeId::RemoveSecond, 2, 2, &[1]),
+    (OpcodeId::Tuck, 2, 2, &[1, 0, 1]),
+    (OpcodeId::Drop, 1, 1, &[]),
+    (OpcodeId::DropTwo, 2, 2, &[]),
+];
+
+#[test]
+fn the_stack_operations_rearrange_exactly_as_expected() {
+    for (id, operands, consumed, results) in EXPECTED_REARRANGEMENTS {
+        let spec = spec(*id);
+        assert_eq!(
+            spec.stack().operands().len(),
+            *operands,
+            "{id:?} declares {operands} operands"
+        );
+
+        // Every position constrains nothing: a stack operation does not
+        // interpret what it moves.
+        for operand in spec.stack().operands() {
+            assert_eq!(operand, &OperandContract::AnyItem, "{id:?}");
+        }
+
+        let cases = spec.stack().success().cases();
+        assert_eq!(cases.len(), 1, "{id:?} has one successful form");
+        assert_eq!(cases[0].condition(), SuccessCondition::Always);
+        assert_eq!(cases[0].effect().consumed_operands(), *consumed, "{id:?}");
+
+        let expected: Vec<ResultValue> = results
+            .iter()
+            .copied()
+            .map(ResultValue::OperandCopy)
+            .collect();
+        assert_eq!(cases[0].effect().results(), expected, "{id:?}");
+
+        // A stack operation computes nothing, so it pushes no type of
+        // its own. A result that named one would be a claim about the
+        // caller's items.
+        assert!(cases[0].effect().computed_types().is_empty(), "{id:?}");
+    }
+}
+
+#[test]
+fn the_stack_operations_fail_only_by_underflow() {
+    for (id, ..) in EXPECTED_REARRANGEMENTS {
+        let spec = spec(*id);
+        let expected = BTreeSet::from([
+            (
+                FailureCause::StackUnderflow,
+                FailureOutcome::AbortEvaluation,
+            ),
+            (
+                FailureCause::UnsupportedExecutionDomain,
+                FailureOutcome::AbortEvaluation,
+            ),
+        ]);
+        let actual: BTreeSet<(FailureCause, FailureOutcome)> = spec
+            .stack()
+            .failure()
+            .effects()
+            .iter()
+            .map(|effect| (effect.cause(), effect.outcome()))
+            .collect();
+        assert_eq!(actual, expected, "{id:?}");
+    }
+}
+
+/// The expected contract of every reviewed verification and
+/// byte-string primitive, stated independently.
+///
+/// The tuple is the primitive, its operand count, how many it consumes,
+/// and the failure causes it declares beyond the domain gate.
+const EXPECTED_COMPOUND_CONTRACTS: &[(OpcodeId, usize, usize, &[FailureCause])] = &[
+    (OpcodeId::Equal, 2, 2, &[FailureCause::StackUnderflow]),
+    (
+        OpcodeId::EqualVerify,
+        2,
+        2,
+        &[FailureCause::StackUnderflow, FailureCause::UnequalOperands],
+    ),
+    (
+        OpcodeId::Verify,
+        1,
+        1,
+        &[
+            FailureCause::StackUnderflow,
+            FailureCause::FalseVerification,
+        ],
+    ),
+    (
+        OpcodeId::Concatenate,
+        2,
+        2,
+        &[
+            FailureCause::StackUnderflow,
+            FailureCause::ResultSizeExceeded,
+        ],
+    ),
+    (OpcodeId::Size, 1, 1, &[FailureCause::StackUnderflow]),
+    (
+        OpcodeId::Substring,
+        3,
+        3,
+        &[
+            FailureCause::StackUnderflow,
+            FailureCause::MalformedScriptNumber,
+            FailureCause::SliceOutOfRange,
+        ],
+    ),
+    (
+        OpcodeId::BitwiseAnd,
+        2,
+        2,
+        &[
+            FailureCause::StackUnderflow,
+            FailureCause::MismatchedOperandWidths,
+        ],
+    ),
+    (
+        OpcodeId::BitwiseXor,
+        2,
+        2,
+        &[
+            FailureCause::StackUnderflow,
+            FailureCause::MismatchedOperandWidths,
+        ],
+    ),
+];
+
+#[test]
+fn the_compound_contracts_are_the_independently_expected_ones() {
+    for (id, operands, consumed, causes) in EXPECTED_COMPOUND_CONTRACTS {
+        let spec = spec(*id);
+        assert_eq!(spec.stack().operands().len(), *operands, "{id:?}");
+
+        let cases = spec.stack().success().cases();
+        assert_eq!(cases.len(), 1, "{id:?} has one successful form");
+        assert_eq!(cases[0].effect().consumed_operands(), *consumed, "{id:?}");
+
+        let mut expected: BTreeSet<FailureCause> = causes.iter().copied().collect();
+        expected.insert(FailureCause::UnsupportedExecutionDomain);
+        let actual: BTreeSet<FailureCause> = spec
+            .stack()
+            .failure()
+            .effects()
+            .iter()
+            .map(|effect| effect.cause())
+            .collect();
+        assert_eq!(actual, expected, "{id:?}");
+    }
+}
+
+#[test]
+fn the_compound_substrate_has_no_non_aborting_failure() {
+    // Every failure in this group ends evaluation. None consumes its
+    // operands and pushes a false, and none retains them, which is what
+    // makes a proof built from the substrate fail closed: there is no
+    // surviving state for a later step to mistake for success.
+    for id in EXPECTED_REARRANGEMENTS
+        .iter()
+        .map(|(id, ..)| *id)
+        .chain(EXPECTED_COMPOUND_CONTRACTS.iter().map(|(id, ..)| *id))
+    {
+        assert!(
+            spec(id)
+                .stack()
+                .failure()
+                .effects()
+                .iter()
+                .all(|effect| effect.outcome() == FailureOutcome::AbortEvaluation),
+            "{id:?}"
+        );
+    }
+}
+
+#[test]
+fn equality_answers_with_a_truth_value_and_its_verifying_form_answers_with_nothing() {
+    // Inequality is a successful false for the pushing form and an
+    // abort for the verifying one. Collapsing the two would make a
+    // program that legitimately branches on inequality look like one
+    // that failed.
+    assert_eq!(
+        sole_results(&spec(OpcodeId::Equal)),
+        vec![StackValueType::Bool]
+    );
+    assert!(sole_results(&spec(OpcodeId::EqualVerify)).is_empty());
+    assert!(sole_results(&spec(OpcodeId::Verify)).is_empty());
+}
+
+#[test]
+fn the_width_primitive_leaves_the_item_it_measured() {
+    // A contract that consumed the operand would have every caller
+    // scheduling one item too few.
+    let spec = spec(OpcodeId::Size);
+    let cases = spec.stack().success().cases();
+    assert_eq!(
+        cases[0].effect().results(),
+        vec![
+            ResultValue::OperandCopy(0),
+            ResultValue::Computed(StackValueType::ScriptNumber),
+        ]
+    );
+}
+
+#[test]
+fn the_compound_primitives_charge_no_validation_budget() {
+    // None of them verifies a signature or a curve relation, so none
+    // draws on the script-path budget. A cost stated otherwise would
+    // make every proof built from them look unaffordable.
+    for id in EXPECTED_REARRANGEMENTS
+        .iter()
+        .map(|(id, ..)| *id)
+        .chain(EXPECTED_COMPOUND_CONTRACTS.iter().map(|(id, ..)| *id))
+    {
+        assert_eq!(spec(id).resources().validation_budget(), 0, "{id:?}");
+        assert_eq!(spec(id).resources().script_bytes(), 1, "{id:?}");
     }
 }

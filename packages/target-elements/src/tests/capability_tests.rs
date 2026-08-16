@@ -75,6 +75,16 @@ fn the_statuses_are_the_independently_expected_ones() {
             ElementsCapability::AuthenticatedValueOpening,
             StaticCapabilityStatus::Unsupported,
         ),
+        // No reviewed primitive orders two byte strings
+        // lexicographically. The fixed-width comparisons order signed
+        // integers and the script-number ones order a number; neither
+        // orders a digest. Stated here independently of the registry so
+        // that a later entry claiming the capability has to disagree
+        // with this file to pass.
+        (
+            ElementsCapability::CanonicalByteOrdering,
+            StaticCapabilityStatus::Unsupported,
+        ),
     ]
     .into_iter()
     .collect();

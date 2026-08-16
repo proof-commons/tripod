@@ -19,7 +19,9 @@ use crate::opcode::{
     OpcodeResourceCost, OpcodeSpec, StackContract, StackValueType,
 };
 use crate::operand::OperandContract;
-use crate::success::{SuccessCase, SuccessCondition, SuccessContract, SuccessStackEffect};
+use crate::success::{
+    ResultValue, SuccessCase, SuccessCondition, SuccessContract, SuccessStackEffect,
+};
 
 /// The reviewed registry, as a mutable starting point.
 fn registry() -> BTreeMap<OpcodeId, OpcodeSpec> {
@@ -287,8 +289,8 @@ fn the_version_and_leaf_mutations_are_refused_before_assembly() {
     // diagnostic: a contract carrying an unsupported revision or an
     // unreviewed leaf simply cannot be built.
     assert_eq!(
-        TargetContractVersion::supported(2),
-        Err(TargetError::UnsupportedTargetContractVersion { offered: 2 })
+        TargetContractVersion::supported(3),
+        Err(TargetError::UnsupportedTargetContractVersion { offered: 3 })
     );
     assert_eq!(
         LeafVersion::new(0xc0),
@@ -458,5 +460,62 @@ fn retaining_operands_that_do_not_exist_is_rejected() {
         .contains(&TargetError::InvalidRetainedOperandContract(
             OpcodeId::PushCurrentInputIndex
         ))
+    );
+}
+
+#[test]
+fn a_carried_operand_the_primitive_does_not_declare_is_refused() {
+    // A rearranging form that names operand 1 while the primitive
+    // declares one operand has nothing to carry through. Left standing,
+    // a stack validator resolving the result would read past the
+    // operands it checked.
+    let mut opcodes = registry();
+    let spec = opcodes
+        .get(&OpcodeId::Neg64)
+        .expect("the reviewed registry states a contract for negation")
+        .clone();
+    let stack = StackContract::new(
+        vec![OperandContract::AnyItem],
+        SuccessContract::Rearrangement {
+            consumed_operands: 1,
+            results: vec![ResultValue::OperandCopy(1)],
+        },
+        spec.stack().failure().clone(),
+    );
+    opcodes.insert(OpcodeId::Neg64, with_stack(&spec, stack));
+
+    assert!(
+        reject(definition(opcodes))
+            .contains(&TargetError::UndeclaredCarriedOperand(OpcodeId::Neg64))
+    );
+}
+
+#[test]
+fn a_rearranging_form_may_carry_one_operand_through_more_than_once() {
+    // The duplicating shape. Naming the same declared position twice is
+    // exactly what a duplicate does, and the validator must not read
+    // the repetition as a defect.
+    let mut opcodes = registry();
+    let spec = opcodes
+        .get(&OpcodeId::Neg64)
+        .expect("the reviewed registry states a contract for negation")
+        .clone();
+    let stack = StackContract::new(
+        vec![OperandContract::AnyItem],
+        SuccessContract::Rearrangement {
+            consumed_operands: 1,
+            results: vec![ResultValue::OperandCopy(0), ResultValue::OperandCopy(0)],
+        },
+        spec.stack().failure().clone(),
+    );
+    opcodes.insert(OpcodeId::Neg64, with_stack(&spec, stack));
+
+    let errors = validate_target_definition(definition(opcodes))
+        .err()
+        .unwrap_or_default();
+    assert!(
+        !errors
+            .iter()
+            .any(|error| matches!(error, TargetError::UndeclaredCarriedOperand(_)))
     );
 }

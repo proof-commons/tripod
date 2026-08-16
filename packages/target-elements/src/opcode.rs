@@ -24,7 +24,8 @@ use crate::encoding::{ByteOrder, EncodingClass};
 use crate::evidence::TargetEvidenceRequirementId;
 use crate::operand::OperandContract;
 use crate::success::{
-    SuccessCase, SuccessCondition, SuccessContract, SuccessContractDefect, SuccessStackEffect,
+    ResultValue, SuccessCase, SuccessCondition, SuccessContract, SuccessContractDefect,
+    SuccessStackEffect,
 };
 
 /// The script execution domain a primitive is available in.
@@ -221,6 +222,31 @@ pub enum FailureCause {
     NegativeTimelock,
     /// The script-path validation budget was exhausted.
     ValidationBudgetExhausted,
+    /// A computed byte string was wider than the target admits.
+    ///
+    /// Distinct from an operand of the wrong width: the operands were
+    /// each admissible and the *result* was not, which is a bound the
+    /// reviewed domain does check on a computed value even though it
+    /// does not check one generally.
+    ResultSizeExceeded,
+    /// A requested slice did not lie within the operand.
+    SliceOutOfRange,
+    /// Two operands the primitive compares were not equal.
+    ///
+    /// Its own cause rather than a shade of a false result: the
+    /// pushing form of the comparison reports inequality as a
+    /// successful false, and only the verifying form treats it as a
+    /// failure at all.
+    UnequalOperands,
+    /// A verified operand was the target's false.
+    FalseVerification,
+    /// Two operands a bitwise primitive combines were of different
+    /// widths.
+    ///
+    /// The bitwise primitives pair their operands byte for byte and
+    /// refuse to guess at a shorter one, so a width disagreement ends
+    /// evaluation rather than padding either side.
+    MismatchedOperandWidths,
 }
 
 /// What the target does when a primitive fails.
@@ -566,6 +592,44 @@ pub enum OpcodeId {
 
     /// Requires a relative timelock to have matured.
     CheckSequenceVerify,
+
+    /// Copies the top item.
+    Duplicate,
+    /// Copies the top two items, as a pair.
+    DuplicateTwo,
+    /// Copies the second item to the top.
+    CopyOver,
+    /// Exchanges the top two items.
+    Swap,
+    /// Moves the third item to the top.
+    Rotate,
+    /// Removes the second item.
+    RemoveSecond,
+    /// Inserts a copy of the top item below the second.
+    Tuck,
+    /// Removes the top item.
+    Drop,
+    /// Removes the top two items.
+    DropTwo,
+
+    /// Compares two items for byte equality.
+    Equal,
+    /// Compares two items for byte equality and requires it.
+    EqualVerify,
+    /// Requires the top item to be true.
+    Verify,
+
+    /// Joins two items into one.
+    Concatenate,
+    /// Pushes the width of the top item above it.
+    Size,
+    /// Extracts a slice of one item.
+    Substring,
+
+    /// Combines two equal-width items bit by bit, conjunctively.
+    BitwiseAnd,
+    /// Combines two equal-width items bit by bit, exclusively.
+    BitwiseXor,
 }
 
 impl OpcodeId {
@@ -613,6 +677,23 @@ impl OpcodeId {
         Self::CheckSigFromStack,
         Self::CheckSigFromStackVerify,
         Self::CheckSequenceVerify,
+        Self::Duplicate,
+        Self::DuplicateTwo,
+        Self::CopyOver,
+        Self::Swap,
+        Self::Rotate,
+        Self::RemoveSecond,
+        Self::Tuck,
+        Self::Drop,
+        Self::DropTwo,
+        Self::Equal,
+        Self::EqualVerify,
+        Self::Verify,
+        Self::Concatenate,
+        Self::Size,
+        Self::Substring,
+        Self::BitwiseAnd,
+        Self::BitwiseXor,
     ];
 }
 
@@ -746,7 +827,7 @@ fn consuming(
 }
 
 /// One alternative successful form that consumes every operand.
-const fn case(
+fn case(
     condition: SuccessCondition,
     consumed_operands: usize,
     results: Vec<StackValueType>,
@@ -1763,6 +1844,279 @@ fn timelock_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
     ]
 }
 
+/// A rearranging contract over `operands` positions that constrain
+/// nothing.
+///
+/// The ordinary stack operations share this whole shape: every operand
+/// is any item at all, every result is one of those items carried
+/// through, and the only way they fail is by not being given enough to
+/// work with.
+fn rearranging(operands: usize, consumed_operands: usize, results: &[usize]) -> StackContract {
+    StackContract::new(
+        vec![OperandContract::AnyItem; operands],
+        SuccessContract::Rearrangement {
+            consumed_operands,
+            results: results
+                .iter()
+                .copied()
+                .map(ResultValue::OperandCopy)
+                .collect(),
+        },
+        gated([abort(FailureCause::StackUnderflow)]),
+    )
+}
+
+/// Part of the reviewed primitive registry.
+///
+/// # Why these are not typed by what they move
+///
+/// A duplicate does not know what it duplicated. Each position here
+/// constrains nothing and each result names the position it came from,
+/// so a fixed-width integer stays a fixed-width integer across a swap
+/// instead of being widened to an anonymous byte string
+/// (Guide-10 `rule:guide10:primitive-admission`).
+fn stack_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
+    use crate::evidence::TargetEvidenceRequirementId as R;
+    use OpcodeId as O;
+
+    let evidence: &[TargetEvidenceRequirementId] =
+        &[R::OpcodeSemantics, R::StackRearrangementSemantics];
+
+    vec![
+        // Results are listed in push order, and each entry is the
+        // deepest-first index of the declared operand it copies.
+        spec(
+            O::Duplicate,
+            0x76,
+            rearranging(1, 1, &[0, 0]),
+            plain(1),
+            evidence,
+        ),
+        spec(
+            O::DuplicateTwo,
+            0x6e,
+            rearranging(2, 2, &[0, 1, 0, 1]),
+            plain(2),
+            evidence,
+        ),
+        spec(
+            O::CopyOver,
+            0x78,
+            rearranging(2, 2, &[0, 1, 0]),
+            plain(1),
+            evidence,
+        ),
+        spec(
+            O::Swap,
+            0x7c,
+            rearranging(2, 2, &[1, 0]),
+            plain(0),
+            evidence,
+        ),
+        spec(
+            O::Rotate,
+            0x7b,
+            rearranging(3, 3, &[1, 2, 0]),
+            plain(0),
+            evidence,
+        ),
+        spec(
+            O::RemoveSecond,
+            0x77,
+            rearranging(2, 2, &[1]),
+            plain(-1),
+            evidence,
+        ),
+        spec(
+            O::Tuck,
+            0x7d,
+            rearranging(2, 2, &[1, 0, 1]),
+            plain(1),
+            evidence,
+        ),
+        spec(O::Drop, 0x75, rearranging(1, 1, &[]), plain(-1), evidence),
+        spec(
+            O::DropTwo,
+            0x6d,
+            rearranging(2, 2, &[]),
+            plain(-2),
+            evidence,
+        ),
+    ]
+}
+
+/// Part of the reviewed primitive registry.
+fn verification_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
+    use crate::evidence::TargetEvidenceRequirementId as R;
+    use FailureCause as C;
+    use OpcodeId as O;
+    use StackValueType as S;
+
+    let evidence: &[TargetEvidenceRequirementId] = &[R::OpcodeSemantics, R::VerificationSemantics];
+
+    vec![
+        // Equality compares the operands byte for byte, with no
+        // numeric interpretation whatever: two script numbers of equal
+        // value in different encodings are unequal here. That is why
+        // the operands constrain nothing — there is no type for which
+        // this primitive means something different.
+        spec(
+            O::Equal,
+            0x87,
+            StackContract::new(
+                vec![OperandContract::AnyItem, OperandContract::AnyItem],
+                // Inequality is a successful false, exactly as it is
+                // for the fixed-width comparisons. Recording it as a
+                // failure would make a program that legitimately
+                // branches on inequality look like one that failed.
+                SuccessContract::Fixed {
+                    consumed_operands: 2,
+                    results: vec![S::Bool],
+                },
+                gated([abort(C::StackUnderflow)]),
+            ),
+            plain(-1),
+            evidence,
+        ),
+        // The verifying form consumes both operands and pushes
+        // nothing, and inequality ends evaluation. The transient truth
+        // value the target pushes before popping it again is not a
+        // state a program can observe, so it is not in the contract.
+        spec(
+            O::EqualVerify,
+            0x88,
+            StackContract::new(
+                vec![OperandContract::AnyItem, OperandContract::AnyItem],
+                SuccessContract::Fixed {
+                    consumed_operands: 2,
+                    results: vec![],
+                },
+                gated([abort(C::StackUnderflow), abort(C::UnequalOperands)]),
+            ),
+            plain(-2),
+            evidence,
+        ),
+        spec(
+            O::Verify,
+            0x69,
+            StackContract::new(
+                vec![OperandContract::AnyItem],
+                SuccessContract::Fixed {
+                    consumed_operands: 1,
+                    results: vec![],
+                },
+                // A false operand aborts and is *not* consumed. The
+                // distinction does not reach the contract because
+                // nothing survives to observe the depth, which is why
+                // this is an aborting effect rather than a retaining
+                // one.
+                gated([abort(C::StackUnderflow), abort(C::FalseVerification)]),
+            ),
+            plain(-1),
+            evidence,
+        ),
+    ]
+}
+
+/// Part of the reviewed primitive registry.
+fn byte_string_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
+    use crate::evidence::TargetEvidenceRequirementId as R;
+    use FailureCause as C;
+    use OpcodeId as O;
+    use StackValueType as S;
+
+    let evidence: &[TargetEvidenceRequirementId] = &[R::OpcodeSemantics, R::ByteStringSemantics];
+
+    vec![
+        // Concatenation is the one reviewed primitive that checks the
+        // literal bound against a value it computed. The operands may
+        // each be admissible and their join not be, so the bound is a
+        // failure of this primitive rather than of whatever pushed the
+        // operands.
+        spec(
+            O::Concatenate,
+            0x7e,
+            StackContract::new(
+                vec![OperandContract::AnyItem, OperandContract::AnyItem],
+                SuccessContract::Fixed {
+                    consumed_operands: 2,
+                    results: vec![any_bytes()],
+                },
+                gated([abort(C::StackUnderflow), abort(C::ResultSizeExceeded)]),
+            ),
+            plain(-1),
+            evidence,
+        ),
+        // The width is pushed *above* the item, which stays where it
+        // was. A contract that consumed the operand would have every
+        // caller of this primitive scheduling one item too few.
+        spec(
+            O::Size,
+            0x82,
+            StackContract::new(
+                vec![OperandContract::AnyItem],
+                SuccessContract::Rearrangement {
+                    consumed_operands: 1,
+                    results: vec![
+                        ResultValue::OperandCopy(0),
+                        ResultValue::Computed(S::ScriptNumber),
+                    ],
+                },
+                gated([abort(C::StackUnderflow)]),
+            ),
+            plain(1),
+            evidence,
+        ),
+        // The slice must lie wholly within the operand: a start at or
+        // past the end, a negative bound, or a length running past the
+        // end all end evaluation rather than clamping. The lazy
+        // variant that clamps instead is a different target byte and
+        // is not reviewed here.
+        spec(
+            O::Substring,
+            0x7f,
+            StackContract::new(
+                vec![
+                    OperandContract::AnyItem,
+                    OperandContract::Exact(S::ScriptNumber),
+                    OperandContract::Exact(S::ScriptNumber),
+                ],
+                SuccessContract::Fixed {
+                    consumed_operands: 3,
+                    results: vec![any_bytes()],
+                },
+                gated([
+                    abort(C::StackUnderflow),
+                    abort(C::MalformedScriptNumber),
+                    abort(C::SliceOutOfRange),
+                ]),
+            ),
+            plain(-2),
+            evidence,
+        ),
+        spec(O::BitwiseAnd, 0x84, bitwise(), plain(-1), evidence),
+        spec(O::BitwiseXor, 0x86, bitwise(), plain(-1), evidence),
+    ]
+}
+
+/// The contract the reviewed bitwise primitives share.
+///
+/// They pair their operands byte for byte and refuse a width
+/// disagreement outright rather than padding either side, so the
+/// result is exactly as wide as both operands were.
+fn bitwise() -> StackContract {
+    StackContract::new(
+        vec![OperandContract::AnyItem, OperandContract::AnyItem],
+        SuccessContract::Fixed {
+            consumed_operands: 2,
+            results: vec![any_bytes()],
+        },
+        gated([
+            abort(FailureCause::StackUnderflow),
+            abort(FailureCause::MismatchedOperandWidths),
+        ]),
+    )
+}
 /// Builds the reviewed primitive registry.
 ///
 /// Every entry was transcribed from a reviewed reading of the upstream
@@ -1782,16 +2136,22 @@ pub(crate) fn reviewed_opcodes() -> BTreeMap<OpcodeId, OpcodeSpec> {
         curve_opcodes(),
         signature_opcodes(),
         timelock_opcodes(),
+        stack_opcodes(),
+        verification_opcodes(),
+        byte_string_opcodes(),
     ]
     .into_iter()
     .flatten()
     .collect()
 }
 
-/// The largest byte string the target admits as a literal script push
-/// and as an initial witness item.
+/// The largest byte string the target admits as a literal script push,
+/// as an initial witness item, and as a concatenated result.
 ///
 /// The reviewed execution domain does not re-check this bound against
-/// computed results, so it is stated as the literal-push and initial
-/// witness bound rather than as a universal stack item bound.
+/// computed results *generally* — an arithmetic or hashing result is
+/// not measured against it. Concatenation is the one reviewed
+/// primitive that does check it, refusing a join whose width exceeds
+/// this bound even though both operands were admissible, so the bound
+/// is no longer only an entry-point rule.
 pub const MAX_STACK_ELEMENT_BYTES: usize = 520;

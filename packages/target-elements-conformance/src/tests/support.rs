@@ -32,7 +32,7 @@ pub fn development_binding(
     target: &ReviewedElementsTapscriptDefinition,
 ) -> ReviewedDevelopmentBinding {
     let binding = DevelopmentDeploymentBinding::new(
-        TargetContractVersion::V1,
+        TargetContractVersion::V2,
         DeploymentEnvironment::Development,
         TEST_NETWORK_ID,
         TEST_GENESIS_ID,

@@ -77,6 +77,16 @@ pub enum TargetEvidenceRequirementId {
     /// That issuance and reissuance fields are introspectable as
     /// described.
     IssuanceIntrospection,
+    /// That the ordinary stack operations rearrange the stack as
+    /// described, carrying items through unchanged.
+    StackRearrangementSemantics,
+    /// That the byte-string operations concatenate, slice, measure,
+    /// and combine as described, and that the width bound a computed
+    /// result is refused for is the described one.
+    ByteStringSemantics,
+    /// That equality and Boolean verification accept and reject
+    /// exactly as described, including which of them abort.
+    VerificationSemantics,
     /// That the described consensus resource limits are the limits a
     /// real node enforces.
     ConsensusResourceLimits,
@@ -107,6 +117,9 @@ impl TargetEvidenceRequirementId {
         Self::ConfidentialValueConservation,
         Self::CommitmentEquality,
         Self::IssuanceIntrospection,
+        Self::StackRearrangementSemantics,
+        Self::ByteStringSemantics,
+        Self::VerificationSemantics,
         Self::ConsensusResourceLimits,
         Self::PolicyResourceLimits,
     ];

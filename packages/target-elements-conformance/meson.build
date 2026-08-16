@@ -6,6 +6,7 @@ target_elements_conformance_source_files = files(
   'src/bin/check-target-elements-native.rs',
   'src/bin/mock-native-executor.rs',
   'src/census/author.rs',
+  'src/census/compound.rs',
   'src/census/context.rs',
   'src/census/crypto.rs',
   'src/census/encoding.rs',

@@ -155,6 +155,21 @@ const EVIDENCE_PLAN: &[(TargetEvidenceRequirementId, EvidencePlanClass)] = &[
         TargetEvidenceRequirementId::PolicyResourceLimits,
         EvidencePlanClass::Required,
     ),
+    // The compound-proof substrate. Every one of these is exercised by
+    // static cases with no transaction context, so all three are
+    // required rather than deferred.
+    (
+        TargetEvidenceRequirementId::StackRearrangementSemantics,
+        EvidencePlanClass::Required,
+    ),
+    (
+        TargetEvidenceRequirementId::ByteStringSemantics,
+        EvidencePlanClass::Required,
+    ),
+    (
+        TargetEvidenceRequirementId::VerificationSemantics,
+        EvidencePlanClass::Required,
+    ),
     (
         TargetEvidenceRequirementId::SighashSemantics,
         EvidencePlanClass::UnresolvedByDesign,
@@ -253,6 +268,11 @@ const fn requirements_of(group: NativeCaseGroup) -> &'static [TargetEvidenceRequ
         NativeCaseGroup::TransactionIntrospection => {
             &[TargetEvidenceRequirementId::TransactionIntrospectionSemantics]
         }
+        NativeCaseGroup::StackRearrangement => {
+            &[TargetEvidenceRequirementId::StackRearrangementSemantics]
+        }
+        NativeCaseGroup::ByteString => &[TargetEvidenceRequirementId::ByteStringSemantics],
+        NativeCaseGroup::Verification => &[TargetEvidenceRequirementId::VerificationSemantics],
         NativeCaseGroup::Arithmetic => &[TargetEvidenceRequirementId::ArithmeticSemantics],
         NativeCaseGroup::Comparison => &[TargetEvidenceRequirementId::ComparisonSemantics],
         NativeCaseGroup::Conversion => &[TargetEvidenceRequirementId::ConversionSemantics],

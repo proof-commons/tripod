@@ -45,6 +45,7 @@ mod non_weakening_tests;
 mod parser_tests;
 mod public_api_tests;
 mod push_census_tests;
+mod schedule_tests;
 mod stack_tests;
 
 use std::collections::BTreeMap;

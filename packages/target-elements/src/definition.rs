@@ -51,10 +51,39 @@ pub struct TargetContractVersion(u32);
 
 impl TargetContractVersion {
     /// The first typed contract revision.
+    ///
+    /// The Guide-9 contract: the reviewed primitive census before the
+    /// compound-proof substrate, and a success algebra in which every
+    /// result was a value the primitive computed. It remains here as
+    /// the historical revision and is not widened — a consumer pinned
+    /// to it is pinned to what it described.
     pub const V1: Self = Self(1);
 
+    /// The second typed contract revision.
+    ///
+    /// # What moved
+    ///
+    /// Two things, either of which alone would have required the bump
+    /// (Guide-10 `rule:guide10:target-version`).
+    ///
+    /// The reviewed primitive census expanded by the compound-proof
+    /// substrate: the ordinary stack operations, byte equality and its
+    /// verifying form, Boolean verification, concatenation, width,
+    /// slicing, and the bitwise combinators.
+    ///
+    /// And the operand and success algebra itself changed shape. An
+    /// operand position may now constrain nothing, and a successful
+    /// form may carry a declared operand through by index rather than
+    /// naming a type for it. A consumer written against V1's algebra
+    /// cannot read a V2 contract correctly, which is precisely why the
+    /// revision is explicit rather than a silent widening.
+    ///
+    /// The reviewed Elements tapscript contract this crate derives is
+    /// a V2 contract.
+    pub const V2: Self = Self(2);
+
     /// Every contract revision this crate implements.
-    pub const SUPPORTED: &'static [Self] = &[Self::V1];
+    pub const SUPPORTED: &'static [Self] = &[Self::V1, Self::V2];
 
     /// Accepts a contract version number this crate implements.
     ///
@@ -534,6 +563,9 @@ fn validate_opcodes(definition: &TargetDefinition, errors: &mut Vec<TargetError>
                 SuccessContractDefect::NothingToRetain => {
                     TargetError::InvalidRetainedOperandContract(*key)
                 }
+                SuccessContractDefect::ResultNamesNoOperand => {
+                    TargetError::UndeclaredCarriedOperand(*key)
+                }
             });
         }
 
@@ -591,7 +623,7 @@ pub fn reviewed_elements_tapscript() -> Result<ReviewedElementsTapscriptDefiniti
 /// to close.
 fn reviewed_elements_declaration() -> TargetDefinition {
     TargetDefinition::new(TargetDefinitionParts {
-        version: TargetContractVersion::V1,
+        version: TargetContractVersion::V2,
         execution_domain: ExecutionDomain::Tapscript,
         leaf_version: LeafVersion::TAPSCRIPT,
         opcodes: reviewed_opcodes(),
@@ -729,11 +761,15 @@ fn validate_encodings(definition: &TargetDefinition, errors: &mut Vec<TargetErro
             errors.push(TargetError::SpuriousByteOrder(*key));
         }
 
-        // Under V1 the shape of each class is fixed by the contract
-        // revision. A caller supplies prefixes and evidence links; it
-        // does not get to decide how wide an outpoint index is or
-        // which field group a nonce belongs to.
-        if definition.version == TargetContractVersion::V1 {
+        // Under every revision so far the shape of each class is fixed
+        // by the contract. A caller supplies prefixes and evidence
+        // links; it does not get to decide how wide an outpoint index
+        // is or which field group a nonce belongs to. V2 expanded the
+        // primitive census and the success algebra and left the
+        // encoding shapes exactly as V1 stated them, so both revisions
+        // are pinned to the same shapes here rather than V2 being
+        // silently unconstrained.
+        if TargetContractVersion::SUPPORTED.contains(&definition.version) {
             if spec.domain() != expected.domain() {
                 errors.push(TargetError::EncodingDomainMismatch(*key));
             }

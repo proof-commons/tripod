@@ -41,7 +41,7 @@ use std::num::NonZeroU64;
 
 use target_elements::{
     EncodingClass, FailureCause, FailureOutcome, OpcodeId, OpcodeSpec, OperandContract,
-    PayloadWidth, PublicKeyOperandFacts, ResourceBound, ResourceDimension,
+    PayloadWidth, PublicKeyOperandFacts, ResourceBound, ResourceDimension, ResultValue,
     ReviewedElementsTapscriptDefinition, SignatureOperandFacts, StackValueType, SuccessCase,
     SuccessCondition,
 };
@@ -469,7 +469,7 @@ fn apply_opcode(
         if !authorization.admits_success(case.condition()) {
             continue;
         }
-        let reached = apply_case(state, &case);
+        let reached = apply_case(state, &case, base);
         check_depth(&reached, limits)?;
         transfer.success.push(reached);
     }
@@ -575,7 +575,9 @@ impl AuthorizationFacts {
                             && can_be_unknown(target, actual, &recognized),
                     });
                 }
-                OperandContract::Exact(_) | OperandContract::OneOf(_) => {}
+                OperandContract::Exact(_)
+                | OperandContract::OneOf(_)
+                | OperandContract::AnyItem => {}
             }
         }
         facts
@@ -683,14 +685,34 @@ const fn statically_excluded(cause: FailureCause, widths_decided: bool) -> bool 
 }
 
 /// The state one successful form leaves behind.
-fn apply_case(state: &AbstractStackState, case: &SuccessCase) -> AbstractStackState {
+///
+/// `base` is where the declared operands begin, so a result that names
+/// one is resolved against the state as it stood *before* any operand
+/// was consumed. Reading it afterwards would resolve a duplicate
+/// against whatever the truncation left behind, which is a different
+/// item or none at all.
+fn apply_case(state: &AbstractStackState, case: &SuccessCase, base: usize) -> AbstractStackState {
     let effect = case.effect();
+    let operands = state.main()[base..].to_vec();
     let mut main = state.main().to_vec();
     // Each form states how many of the declared operands it consumes,
     // which is what makes a retaining form different from a consuming
     // one with no results rather than a special case here.
     main.truncate(main.len().saturating_sub(effect.consumed_operands()));
-    main.extend(effect.results().iter().cloned());
+    for result in effect.results() {
+        match result {
+            ResultValue::Computed(value) => main.push(value.clone()),
+            // Total by construction: the target validator refuses a
+            // contract whose results name an operand position the
+            // primitive does not declare.
+            ResultValue::OperandCopy(index) => main.push(
+                operands
+                    .get(*index)
+                    .expect("a validated contract names only declared operands")
+                    .clone(),
+            ),
+        }
+    }
     AbstractStackState::new(main, state.alternate().to_vec())
 }
 
@@ -732,6 +754,10 @@ fn admits(
 ) -> bool {
     match declared {
         OperandContract::Exact(value) => accepts(target, value, actual),
+        // The position constrains nothing, so every item satisfies it —
+        // including one whose type this crate has not been taught,
+        // which a stack operation carries through just as faithfully.
+        OperandContract::AnyItem => true,
         OperandContract::OneOf(values) => values.iter().any(|value| accepts(target, value, actual)),
         OperandContract::Signature {
             nonempty_encoding,

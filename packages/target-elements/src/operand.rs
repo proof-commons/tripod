@@ -46,6 +46,24 @@ pub enum OperandContract {
     /// Exactly one stack type, which is the ordinary case.
     Exact(StackValueType),
 
+    /// Any one stack item, whatever form it carries.
+    ///
+    /// # Not a widened byte string
+    ///
+    /// The ordinary stack operations read an item without interpreting
+    /// it: a duplicate, a swap, a drop, an equality all work on the
+    /// bytes as they stand. Declaring such a position as an
+    /// unconstrained byte string would nearly work, and would then
+    /// refuse every operand whose type is more specific than bytes —
+    /// a fixed-width integer, a digest, a hash state — which is most of
+    /// what a compound proof actually shuffles.
+    ///
+    /// So the position states that it constrains nothing, and a
+    /// validator carries the incoming type through untouched instead of
+    /// widening it to bytes and losing it
+    /// (Guide-10 `rule:guide10:primitive-admission`).
+    AnyItem,
+
     /// Any one of several stack types, with no further structure.
     ///
     /// For a position whose admissible forms are alternatives of equal
@@ -100,6 +118,10 @@ impl OperandContract {
     pub fn named_types(&self) -> BTreeSet<StackValueType> {
         match self {
             Self::Exact(value) => BTreeSet::from([value.clone()]),
+            // A position that constrains nothing names nothing. The
+            // empty set is the honest answer: enumerating every type
+            // would claim the position was a closed alternation.
+            Self::AnyItem => BTreeSet::new(),
             Self::OneOf(values) => values.clone(),
             Self::Signature {
                 nonempty_encoding,
