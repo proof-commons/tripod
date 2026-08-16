@@ -804,6 +804,140 @@ fn curve_step_stack_effect() -> Vec<TapscriptInstruction> {
     vec![raw(vec![0; 32]), op(OpcodeId::DropTwo), op(OpcodeId::Drop)]
 }
 
+/// Proves one metadata field identical in both objects.
+///
+/// Reads the same constant-width slice out of each and requires byte
+/// equality, leaving both objects in place so the checks compose.
+fn unchanged_field(begin: i64, length: i64) -> Vec<TapscriptInstruction> {
+    vec![
+        op(OpcodeId::DuplicateTwo),
+        number(begin),
+        number(length),
+        op(OpcodeId::Substring),
+        op(OpcodeId::Swap),
+        number(begin),
+        number(length),
+        op(OpcodeId::Substring),
+        op(OpcodeId::EqualVerify),
+    ]
+}
+
+/// Proves the successor's reserved field is exactly zero.
+fn reserved_is_zero() -> Vec<TapscriptInstruction> {
+    vec![
+        op(OpcodeId::Duplicate),
+        number(40),
+        number(8),
+        op(OpcodeId::Substring),
+        raw(vec![0; 8]),
+        op(OpcodeId::EqualVerify),
+    ]
+}
+
+#[test]
+fn the_transition_moves_one_field_and_pins_the_rest() {
+    // Stage C6
+    // (Guide-10 `rule:guide10:constructor-transition-stage`).
+    //
+    // The schema's field order is what makes this expressible: domain,
+    // schema, and object kind are contiguous, so one constant-width
+    // slice pins all three, and every remaining field is its own slice
+    // at a fixed offset. Nothing is read at a caller-chosen offset, so
+    // no witness can move a field boundary.
+    //
+    // # The counter's flag is consumed where it is produced
+    //
+    // The increment is the only arithmetic here, and its success flag is
+    // verified immediately rather than dropped. An overflowing counter
+    // retains both operands and pushes a false, which the verification
+    // then ends evaluation on — so a wrapped counter cannot reach the
+    // equality and pass it (Guide-10 `rule:guide10:successor-metadata`).
+    //
+    // # Why the nonce is absent
+    //
+    // The representation nonce is deliberately unchecked. It is not
+    // state: the host oracle's `same_state` ignores it and `successor`
+    // resets it, and its value is ground by the creator to canonicalize
+    // the branch order. The program that checked it equal would reject
+    // every honest successor; the program that checked it reset would
+    // duplicate a constraint the branch comparison already enforces.
+    let mut instructions = Vec::new();
+    // Domain, schema, and object kind, in one slice.
+    instructions.extend(unchanged_field(0, 24));
+    // The counter, incremented by exactly one.
+    instructions.extend([
+        op(OpcodeId::DuplicateTwo),
+        number(24),
+        number(8),
+        op(OpcodeId::Substring),
+        op(OpcodeId::Swap),
+        number(24),
+        number(8),
+        op(OpcodeId::Substring),
+        value(1),
+        op(OpcodeId::Add64),
+        op(OpcodeId::Verify),
+        op(OpcodeId::EqualVerify),
+    ]);
+    // The flags.
+    instructions.extend(unchanged_field(32, 4));
+    // The reserved field of each object.
+    instructions.extend(reserved_is_zero());
+    instructions.push(op(OpcodeId::Swap));
+    instructions.extend(reserved_is_zero());
+    instructions.push(op(OpcodeId::Swap));
+
+    let result = schedule(
+        instructions,
+        // Deepest first: the predecessor metadata, then the successor.
+        &AbstractStackState::from_main(vec![literal(48), literal(48)]),
+    );
+
+    // Both objects survive, unconsumed: the transition proof is a
+    // constraint on them, not a replacement for them, and each is still
+    // needed to derive its own constructor.
+    assert_eq!(result.success(), &states(&[vec![literal(48), literal(48)]]));
+    assert!(result.nonaborting_failure().is_empty());
+
+    // The counter's overflow path does not survive, and the two
+    // inequality causes are the ones a mutated field reaches.
+    let mut expected = domain_abort();
+    expected.insert(FailureCause::FalseVerification);
+    expected.insert(FailureCause::UnequalOperands);
+    expected.insert(FailureCause::SliceOutOfRange);
+    expected.insert(FailureCause::MalformedScriptNumber);
+    assert_eq!(result.aborts(), &expected);
+}
+
+#[test]
+fn a_counter_slice_of_the_wrong_width_is_refused() {
+    // The negative control for the field reads. A counter slice that is
+    // not eight bytes wide does not satisfy the arithmetic operand, so a
+    // schema drift that moved the field would be a refusal here rather
+    // than a silently different number.
+    let target = reviewed_target();
+    let program = TapscriptProgram::new(vec![
+        number(24),
+        number(4),
+        op(OpcodeId::Substring),
+        value(1),
+        op(OpcodeId::Add64),
+    ])
+    .expect("the schedule is within the limit");
+    let initial = AbstractStackState::from_main(vec![literal(48)]);
+
+    assert!(
+        validate_program(
+            &target,
+            &program,
+            &initial,
+            AbstractLimits::for_target(&target),
+        )
+        .is_err(),
+        "a four-byte slice does not satisfy a fixed-width operand"
+    );
+}
+
 #[test]
 fn the_curve_step_consumes_exactly_its_three_operands() {
     // The contract the model above stands on, read through the
