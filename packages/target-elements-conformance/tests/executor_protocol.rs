@@ -235,10 +235,10 @@ fn protocol_data_after_the_last_response_fails_closed() {
 #[test]
 fn a_child_that_never_starts_the_protocol_fails_closed() {
     let error = run("die-early").expect_err("the early exit is refused");
-    assert!(matches!(
-        error,
-        NativeConformanceError::ExecutorHandshakeFailed,
-    ));
+    assert!(
+        matches!(error, NativeConformanceError::ExecutorHandshakeFailed),
+        "expected a handshake failure, got {error}",
+    );
 }
 
 #[test]
