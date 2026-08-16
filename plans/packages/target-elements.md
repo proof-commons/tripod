@@ -4,7 +4,8 @@
 > success/failure stack contracts, cross-contract welds, transitive
 > capability-status closure, push contract, and development binding
 > implemented; the reviewed primitive subset carries development
-> target-native evidence recorded with the Guide-9 gate; commitment
+> target-native evidence recorded with the Guide-9 gate, and the census is
+> now at revision 2 with the compound-proof substrate; commitment
 > equality and authenticated opening remain unsupported and production
 > support is not claimed
 > **Phase:** [Phase 3](../phases/03-target-foundation.md)
@@ -161,6 +162,16 @@ Every backend-used opcode defines:
 
 Backend code consumes these typed declarations rather than duplicating raw
 constants.
+
+The census is versioned rather than edited in place. Revision 1 is the
+historical Guide-9 contract; revision 2 adds the compound-proof substrate the
+Guide-10 prototypes needed — the ordinary stack operations, byte equality and
+its verifying form, Boolean verification, concatenation, width, slicing, and
+the bitwise combinators — together with the widened operand and success
+algebra. Canonical byte ordering is named and typed unsupported, because the
+target has no primitive that orders a digest. Review provenance for the
+revision is in
+[the capability reference](../reference/elements-tapscript.md).
 
 ## Encodings · `rule:target-elements:encodings`
 

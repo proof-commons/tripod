@@ -199,18 +199,25 @@ deterministic order, and tests.
 Narrow arithmetic uses exact target fixed-width operations with every success
 flag checked.
 
-Wide floor arithmetic remains prototype-gated by
-[wide arithmetic research](../research/wide-arithmetic.md).
+The wide floor prototype is accepted by
+[wide arithmetic research](../research/wide-arithmetic.md): derived limbs at
+base `2^26` over the reviewed Euclidean division.
 
-No production redemption, settlement floor, or cycle issuance pattern is used
-before that decision lands.
+That acceptance is a prototype decision, not a production pattern. No
+production redemption, settlement floor, or cycle issuance pattern is used
+until the construction is promoted by a separate reviewed act, and settlement
+in particular is unclaimed until the batch-size-2 measurement is taken.
 
 ## Constructors · `rule:tapscript:constructors`
 
 Object constructors are metadata-parameterized target recipes.
 
-STATE and other continuity-sensitive constructors remain gated by
-[STATE constructor research](../research/state-constructor.md).
+The continuity prototype is accepted by
+[STATE constructor research](../research/state-constructor.md): a dynamic
+metadata leaf beside a static code subtree, with derived successor metadata.
+Its schema carries a synthetic counter, so STATE's own metadata remains
+unimplemented and continuity-sensitive production constructors stay gated on
+promoting the construction.
 
 A production pattern must authenticate:
 
@@ -284,4 +291,4 @@ See [`errors/tapscript.md`](errors/tapscript.md).
 - Where does resource-sensitive final proof selection occur?
 - Is a local typed interpreter needed in addition to target-native execution?
 - What leaf-weight policy is handed to the linker?
-- Which constructor and arithmetic prototypes are accepted?
+- On what evidence is an accepted prototype promoted to a production pattern?

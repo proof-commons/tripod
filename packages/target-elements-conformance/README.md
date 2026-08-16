@@ -22,7 +22,9 @@ observed.
 ## Outputs
 
 - a typed native-conformance report;
-- optionally, that report as an explicit build asset plus its success
+- a typed prototype report, carrying per-case results, per-claim coverage,
+  and an explicit completeness token;
+- optionally, either report as an explicit build asset plus its success
   stamp (ADR-010, ADR-014).
 
 ## Not claimed
@@ -60,6 +62,15 @@ lane.
 Also implemented: the canonical primitive census. It covers every
 reviewed primitive, and every required evidence row has cases bearing on
 it.
+
+Also implemented: the two Guide-10 prototype programs and their case
+matrices — the STATE constructor and the exact wide floor — together with
+the prototype report, its claim registry and completeness tokens, and the
+runner command that answers a matrix from a real executor under the same
+ADR-010 contract as the primitive lane. Both matrices agreed with the
+executor on every row. Those programs are prototypes and are held to the
+prototype status: no operation emits them, and nothing here converts one
+into release output.
 
 What a case can establish is bounded by what a validating node reports.
 It answers whether a spend was valid and, coarsely, why not; it exposes
