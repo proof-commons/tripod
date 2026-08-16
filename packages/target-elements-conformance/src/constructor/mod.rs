@@ -34,6 +34,7 @@
 //! point arithmetic. There is no signing here and none may be added
 //! (Guide-10 `rule:guide10:public-data`).
 
+pub mod canonical;
 pub mod curve;
 pub mod internal_key;
 pub mod metadata;
