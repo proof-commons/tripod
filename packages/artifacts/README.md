@@ -3,8 +3,8 @@
 Imported as `artifacts`. This package is the single source of truth for
 the workspace's generated derivative artifacts in
 `packages/model/generated/`. It owns both halves of the repository's
-generation/check law: one typed source, one generator, one non-writing
-checker.
+generation/check law (`plans` section 18.2, and the maintenance gate
+M0.3): one typed source, one generator, one non-writing checker.
 
 The generated files are **publications, never semantic inputs**. The
 compiler, linker, and release logic consume typed Rust; nothing in the
@@ -110,8 +110,9 @@ masthead identity fails deterministically.
 
 ## Command-line contract
 
-Both binaries follow the ADR-010 output contract: JSON diagnostics on
-stderr, exit classes 0/1/2, and no prose on stdout.
+Both binaries follow the ADR-010 output contract
+(`adr/010-command-line-output-contract.md`): JSON diagnostics on stderr,
+exit classes 0/1/2, and no prose on stdout.
 
 `generate-all` is a side-effect command and writes nothing to stdout:
 
@@ -157,9 +158,11 @@ the directory cannot be read. The binary maps a non-current report onto
 the failure exit class, so the distinction is between "the check ran and
 says no" and "the check could not run".
 
-`generate-all` publishes through the batch publication path, so a
-failure during derivation or staging leaves every destination untouched
-and the generated directory is never left in mixed generations.
+`generate-all` publishes through the shared batch publication path,
+`cli_common::publish_batch`, so the whole rendered set is staged before
+the first destination changes: a failure during derivation or staging
+leaves every destination untouched, and the generated directory is never
+left in mixed generations.
 
 ## What this package deliberately does not do
 

@@ -147,7 +147,9 @@ attestation-stamps --git PROGRAM --repository-root DIR \
 The template is filled by substituting four `@ATTESTATION_...@`
 placeholders (date, timestamp, document UUID, instance UUID). If any
 placeholder token survives substitution, rendering fails rather than
-publishing a half-filled file.
+publishing a half-filled file. Both the substitution and that
+fail-closed placeholder check live in this library and are unit-tested
+here, rather than in a shell wrapper around the binary.
 
 ## Error handling
 
@@ -166,8 +168,9 @@ repairs the pair. This is a recovery preference, not a proof of
 atomicity, and it is stated rather than implied.
 
 Both outputs are compare-if-changed, so an unchanged rebuild leaves
-their bytes and modification times alone and does not cascade
-downstream.
+their bytes and modification times alone. That is what lets ninja
+`restat` prune the rest of the TeX pipeline instead of cascading a
+rebuild downstream on every invocation.
 
 Cleanliness is checked before and again after every input is read. That
 narrows, but does not close, the window in which the working tree

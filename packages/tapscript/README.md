@@ -8,9 +8,9 @@ The package contract is
 [plans/packages/tapscript.md](../../plans/packages/tapscript.md). That contract
 describes the eventual backend; this crate is its first, narrow stage.
 
-This README and `src/lib.rs` together are meant to be enough to use the public
-API correctly. The crate documentation is the compressed orientation; the worked
-examples and the full tour are here.
+This README is the crate documentation: it is included verbatim as the rendered
+landing page, and every example below runs as a doctest. It is meant to be
+enough to use the public API correctly on its own.
 
 ## Dependencies
 
@@ -67,7 +67,7 @@ wrapper reaches these entry points.
 
 ## Quickstart: build a program, round-trip it, validate it
 
-This is the primary workflow. The same code runs as a doctest in `src/lib.rs`.
+This is the primary workflow.
 
 ```rust
 use tapscript::{

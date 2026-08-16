@@ -8,8 +8,8 @@ compiles on its own with no surrounding directory.
 
 The workspace uses it to produce the standalone source artifact that
 accompanies the published paper. It is the Rust replacement for the
-original Perl flattening script, and the binary follows the ADR-010
-output contract through `cli-common`.
+original Perl flattening script `bin/create_flat_main.pl`, and the
+binary follows the ADR-010 output contract through `cli-common`.
 
 ## The fixed-list model
 
@@ -149,7 +149,9 @@ line. The catalogue:
 
 Failure never leaves a partial artifact. The output is written to a
 uniquely named temporary in the destination directory and renamed only
-on success; on failure the temporary is removed when it is dropped.
+on success; on failure the temporary is removed when it is dropped. The
+staging name is unique per invocation, so two concurrent flattens
+targeting one directory never share a staging path.
 
 ## Command-line contract
 

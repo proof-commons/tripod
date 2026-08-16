@@ -7,9 +7,9 @@ compatibility contract. It states target facts only, and nothing about the attes
 The package contract is
 [plans/packages/target-elements.md](../../plans/packages/target-elements.md).
 
-This README and `src/lib.rs` together are meant to be enough to use the public
-API correctly. The crate documentation is the compressed orientation; the worked
-examples and the full tour are here.
+This README is the crate documentation: it is included verbatim as the rendered
+landing page, and every example below runs as a doctest. It is meant to be
+enough to use the public API correctly on its own.
 
 The library crate is named `target_elements`; the Cargo package is
 `tripod-target-elements`.
@@ -66,7 +66,7 @@ typed Rust source here is the authority.
 ## Quickstart
 
 Obtain the reviewed contract, validate a binding against it, then inspect a
-capability. The same code runs as a doctest in `src/lib.rs`.
+capability.
 
 ```rust
 use target_elements::{

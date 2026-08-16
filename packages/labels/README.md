@@ -5,9 +5,9 @@ typed labels, validates imported citations and architecture/document welds, and
 renders deterministic label publications. It is documentation tooling only; no
 semantic package consumes its registries or planning labels.
 
-This README and `src/lib.rs` together are meant to be enough to use the public
-API correctly. The crate documentation is the compressed orientation; the worked
-examples and the full tour are here.
+This README is the crate documentation: it is included verbatim as the
+rendered landing page, and every example below runs as a doctest. It is meant
+to be enough to use the public API correctly on its own.
 
 The library crate is named `labels`; the Cargo package is
 `tripod-labels`.
@@ -84,8 +84,7 @@ A citation that crosses owners carries the target owner's prefix.
 
 ## Quickstart: parse a label and an imported citation
 
-Both parsers are pure and touch no filesystem. The same code runs as a doctest
-in `src/lib.rs`.
+Both parsers are pure and touch no filesystem.
 
 ```rust
 use labels::owner::{ImportedLabel, LabelOwner};
@@ -154,17 +153,27 @@ nonparticipation rule).
 use labels::markdown::{InlineCodeContext, scan_markdown};
 use std::path::Path;
 
-fn main() {
-    // The path is a diagnostic label only; the text is the input.
-    let scan = scan_markdown(Path::new("fixture.md"), "# Fixture · `sec:fixture`\n");
+// The path is a diagnostic label only; the text is the input.
+let scan = scan_markdown(Path::new("fixture.md"), "# Fixture · `sec:fixture`\n");
 
-    assert!(scan.diagnostics.is_empty());
-    assert_eq!(scan.code_spans.len(), 1);
+assert!(scan.diagnostics.is_empty());
+assert_eq!(scan.code_spans.len(), 1);
 
-    // Only a bare span mints; a parenthesized one is a citation.
-    assert_eq!(scan.code_spans[0].context, InlineCodeContext::Bare);
-}
+// Only a bare span mints; a parenthesized one is a citation.
+assert_eq!(scan.code_spans[0].context, InlineCodeContext::Bare);
 ```
+
+## What needs a repository on disk
+
+Everything shown above is pure. The entry points that read the tree are
+`check_repository`, `generate_registers`, `repository::model_labels_json`,
+`plans::check_plans`, `RepositoryCensus::discover`, and the three harvesters
+(`latex::harvest_attestation`, `rust_source::harvest_model`,
+`rust_source::harvest_crates`).
+
+There is no in-memory constructor for a `CheckReport`, and none is offered:
+the gate's subject is a real checkout, and a report assembled from synthetic
+counts would claim a verdict about a tree nobody looked at.
 
 ## Public-API tour
 

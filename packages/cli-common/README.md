@@ -60,7 +60,9 @@ refuses terminal stdout, writes the returned value as the single JSON
 result object, and maps a returned error onto exit class 1 after
 passing its display text through redaction.
 
-```rust
+```rust,no_run
+// Compiled but not executed: `main` parses process argv and installs a
+// process-wide panic hook, neither of which belongs in a test harness.
 use std::process::ExitCode;
 
 use clap::Parser;
