@@ -9,8 +9,8 @@ Lanes
 -----
   1. rustfmt          cargo fmt --all --check
   2. clippy           -D warnings, all targets, --locked
-  3. tests (debug)    cargo test --workspace --locked
-  4. tests (release)  cargo test --workspace --release --locked
+  3. tests (debug)    meson test --suite cargo-debug (per-package lanes)
+  4. tests (release)  meson test --suite cargo-release (per-package lanes)
   5. generated        check-generated (non-writing stale-artifact gate)
   6. labels           check-labels (non-writing label gate)
   7. advisories       cargo audit (skipped loudly when not installed)
@@ -66,6 +66,25 @@ lose it. Durations come from a monotonic clock; the wall-clock timestamps
 alongside them are for correlating a report with a session log, never for
 arithmetic.
 
+Test execution lives at the Meson layer (CI-002). This driver runs no
+workspace-level `cargo test`: lanes 3 and 4 configure a build directory under
+`target/ci-meson`, compile that profile's warm-up build once, and then run one
+Meson test per workspace package. Two consequences are deliberate. A duration
+and a failure now both name the package they belong to, so the report
+attributes cost instead of aggregating it. And the Rust test suites depend on
+Meson: without meson and ninja those lanes SKIP, exactly like lane 10, and a
+run that skipped them is partial and tested no Rust code -- which the skip
+line says in as many words. CI_REQUIRE_MESON=1 turns that skip into a
+failure, and protected-branch and release runs must set it.
+
+Per-test timing comes from libtest's own JSON event stream, which
+`scripts/cargo-test-json.sh` requests with `-Z unstable-options --format json
+--report-time` and captures per package. Those flags change how the harness
+reports, never which tests run or what passing proves. They need a nightly
+libtest; under a stable toolchain the wrapper runs the ordinary format, the
+tests still gate, and the report says per-test timing was not measured rather
+than inventing it.
+
 Lane output is streamed to the console exactly where the shell driver put it
 and captured to `target/ci-logs/<lane>.log` at the same time, so a failure
 stays diagnosable after the fact and the report can name the log. The three
@@ -89,6 +108,59 @@ from typing import Callable, Optional, Sequence
 REPOSITORY_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPORT_PATH = os.path.join("target", "ci-report.json")
 LOG_DIRECTORY = os.path.join("target", "ci-logs")
+
+# The build directory the test lanes configure and reuse. It sits under
+# target/, which Git ignores, and it is configured with mock_mode so that a
+# machine without a TeX toolchain can still run the Rust test lanes: mock_mode
+# governs only the LaTeX programs, and no cargo suite touches them. The
+# publication and generation outputs are redirected into the same directory so
+# a test run cannot perturb the tracked archive and trip the clean-tree lane.
+MESON_BUILD_DIR = os.path.join("target", "ci-meson")
+
+# Per-package lane parallelism, measured rather than assumed (CI-002). All
+# figures are the thirteen debug lanes on one 14-core host, wall clock:
+#
+#   warm-up build then serial lanes (--num-processes 1)     0:52 + 8:32
+#   warm-up build then parallel lanes (meson's default)     0:52 + 5:00
+#   no warm-up, parallel lanes, cold target directory              6:53
+#
+# Two things follow, and both are why this file pins rather than defaults.
+# Parallel is faster, so the lanes really do overlap: cargo's lock over the
+# shared target directory is held only briefly once the binaries are built,
+# and the serialization the lock could have forced does not materialize. The
+# gain is bounded from below by the slowest single package --
+# target-elements-conformance alone is about 250s serial, and 300s while
+# thirteen lanes share the cores -- so it is 1.7x, not 13x.
+#
+# The third row is the configuration without the warm-up target, where every
+# lane's cargo has to build: it is slower in total than building once and
+# running many, and worse, each lane's duration then measures how long that
+# lane waited for the build lock rather than how long its tests took. The
+# warm-up is what makes per-package attribution mean anything.
+#
+# What the warm-up does NOT cover is documentation tests: `cargo build
+# --tests` does not compile them, so rustdoc compiles each package's doctests
+# inside its own lane, holding cargo's lock while it does. In the debug
+# profile that cost is small. In release it dominates: a full gate run
+# measured 7:04 of warm-up and 10:31 of lanes, where individual packages
+# reported ten-minute lane durations against a tenth of a second of actual
+# test execution, and the logs carry cargo's own "Blocking waiting for file
+# lock" lines. The release per-package durations are therefore honest wall
+# times but poor attributions -- they are mostly queueing -- and that is a
+# known residual of this design, not a measurement to read as test cost.
+#
+# Set CI_TEST_PROCESSES to override; 1 reproduces the serial measurement.
+DEFAULT_TEST_PROCESSES = 0  # 0 means meson's own default (one per core)
+
+# How many individual tests the report names, per package and repository-wide.
+# The complete per-test data stays in the per-package libtest streams, whose
+# paths the report carries, so this cap trims the summary and hides nothing.
+# The two depths are deliberately equal: a repository-wide ranking of the
+# slowest N tests assembled from per-package lists of fewer than N could not
+# be exact, because one package may legitimately own more than its share of
+# the slowest tests.
+SLOWEST_TEST_LIMIT = 25
+SLOWEST_TESTS_PER_PACKAGE = SLOWEST_TEST_LIMIT
 
 PENDING = "pending"
 RUNNING = "running"
@@ -149,6 +221,9 @@ class LaneRecord:
     finished_at: Optional[str] = None
     duration_seconds: float = 0.0
     cumulative_seconds: float = 0.0
+    steps: list = field(default_factory=list)
+    packages: list = field(default_factory=list)
+    timing_note: Optional[str] = None
 
     def to_json(self):
         """The report record for this lane."""
@@ -165,6 +240,9 @@ class LaneRecord:
             "finished_at": self.finished_at,
             "duration_seconds": round(self.duration_seconds, 3),
             "cumulative_seconds": round(self.cumulative_seconds, 3),
+            "steps": self.steps,
+            "packages": self.packages,
+            "timing_note": self.timing_note,
         }
 
 
@@ -243,14 +321,15 @@ def pump(source, sinks):
     source.close()
 
 
-def run_command(command, log_path, discard_stdout=False):
+def run_command(command, log_path, discard_stdout=False, append=False):
     """Run `command`, tee its streams to `log_path`, return its exit status.
 
     A process killed by a signal reports 128 + signal, which is the status
-    the shell driver's `set -e` propagated for the same event.
+    the shell driver's `set -e` propagated for the same event. `append` keeps
+    an earlier step's output when one lane runs several commands into one log.
     """
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
-    with open(log_path, "wb") as log:
+    with open(log_path, "ab" if append else "wb") as log:
         process = subprocess.Popen(
             command,
             cwd=REPOSITORY_ROOT,
@@ -319,6 +398,215 @@ def meson_precondition(run):
     return "meson/ninja are not installed"
 
 
+def cargo_test_precondition(run):
+    """Lanes 3 and 4 skip without meson/ninja -- and then nothing tested Rust."""
+    if have("meson") and have("ninja"):
+        return None
+    announce("WARNING: meson/ninja not installed; the per-package test lanes are SKIPPED")
+    announce(
+        "         the Rust test suites run at the Meson layer (CI-002), so this run "
+        "executed no Rust test"
+    )
+    if run.require_meson:
+        announce("ERROR: CI_REQUIRE_MESON=1 and meson/ninja are unavailable")
+        raise LaneFailure(1)
+    return "meson/ninja are not installed"
+
+
+def meson_setup_command(build_directory):
+    """Configure argv for the test build directory. See MESON_BUILD_DIR."""
+    return [
+        "meson", "setup", build_directory, ".",
+        "-Dmock_mode=true",
+        "-Dpublication_archive_root=" + os.path.join(
+            REPOSITORY_ROOT, build_directory, "archive"
+        ),
+        "-Dartifact_generation_output_dir=" + os.path.join(
+            REPOSITORY_ROOT, build_directory, "generated"
+        ),
+    ]
+
+
+def test_processes():
+    """The `--num-processes` value, from CI_TEST_PROCESSES or the default."""
+    configured = os.environ.get("CI_TEST_PROCESSES", "")
+    if configured.strip():
+        try:
+            return max(1, int(configured))
+        except ValueError:
+            announce("WARNING: CI_TEST_PROCESSES is not a number; using the default")
+    return DEFAULT_TEST_PROCESSES
+
+
+def parse_libtest_stream(path):
+    """Per-test outcomes and durations from one libtest JSON event stream.
+
+    Every test binary of the package writes its own suite block into the same
+    stream, so unit, integration, and documentation tests all land here. A
+    line that is not a JSON object -- a panic message a test printed, say --
+    is not timing data and is passed over rather than guessed at.
+    """
+    tests = []
+    with open(path, "r", errors="surrogateescape") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if event.get("type") != "test":
+                continue
+            outcome = event.get("event")
+            if outcome == "started" or not event.get("name"):
+                continue
+            seconds = event.get("exec_time")
+            tests.append({
+                "name": event["name"],
+                "event": outcome,
+                "seconds": round(float(seconds), 6) if seconds is not None else None,
+            })
+    return tests
+
+
+def slowest(tests, limit):
+    """The `limit` slowest timed tests, unmeasured ones excluded honestly."""
+    timed = [test for test in tests if test.get("seconds") is not None]
+    timed.sort(key=lambda test: test["seconds"], reverse=True)
+    return timed[:limit]
+
+
+def collect_package_attribution(profile, meson_log_path):
+    """Per-package records for one test lane: Meson durations plus per-test data.
+
+    Meson's own machine-readable test log gives each package lane's status and
+    wall time; the package's libtest stream gives the tests inside it. A
+    package whose stream is missing -- a stable toolchain, or a lane that never
+    got to run -- is reported with its Meson duration and an explicit note, and
+    never with fabricated per-test detail.
+    """
+    prefix = "cargo-test-" + profile + "-"
+    packages = []
+    if not os.path.exists(meson_log_path):
+        return packages
+    with open(meson_log_path, "r", errors="surrogateescape") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            name = (entry.get("name") or "").split(":")[-1]
+            if not name.startswith(prefix):
+                continue
+            package = name[len(prefix):]
+            stream_relative = os.path.join(
+                MESON_BUILD_DIR, "cargo-test-json", profile, package + ".json"
+            )
+            stream_absolute = os.path.join(REPOSITORY_ROOT, stream_relative)
+            record = {
+                "package": package,
+                "meson_test": name,
+                "result": entry.get("result"),
+                "returncode": entry.get("returncode"),
+                "duration_seconds": round(float(entry.get("duration") or 0.0), 3),
+                "stream": None,
+                "per_test_timing": "unavailable: no libtest JSON stream was written",
+                "test_count": None,
+                "measured_seconds": None,
+                "failed_tests": None,
+                "slowest_tests": None,
+            }
+            if os.path.exists(stream_absolute):
+                tests = parse_libtest_stream(stream_absolute)
+                measured = [test for test in tests if test["seconds"] is not None]
+                record["stream"] = stream_relative
+                record["per_test_timing"] = "measured"
+                record["test_count"] = len(tests)
+                record["measured_seconds"] = round(
+                    sum(test["seconds"] for test in measured), 3
+                )
+                record["failed_tests"] = [
+                    test["name"] for test in tests if test["event"] not in ("ok", "ignored")
+                ]
+                record["slowest_tests"] = slowest(tests, SLOWEST_TESTS_PER_PACKAGE)
+            packages.append(record)
+    packages.sort(key=lambda item: item["duration_seconds"], reverse=True)
+    return packages
+
+
+def cargo_test_action(profile):
+    """Lane body for one profile: warm up once, then run the package lanes."""
+
+    def action(run, record, log_path):
+        del run
+        build_absolute = os.path.join(REPOSITORY_ROOT, MESON_BUILD_DIR)
+        configured = os.path.exists(
+            os.path.join(build_absolute, "meson-info", "meson-info.json")
+        )
+        commands = []
+        if not configured:
+            commands.append(meson_setup_command(MESON_BUILD_DIR))
+        # The warm-up compiles the profile's test binaries once. Without it
+        # thirteen cargo invocations would each try to build and would queue on
+        # cargo's lock over the shared target directory, so each lane's
+        # duration would measure the queue rather than the package.
+        commands.append(
+            ["meson", "compile", "-C", MESON_BUILD_DIR, "cargo-test-warmup-" + profile]
+        )
+        # --no-rebuild keeps `meson test` from building the default targets
+        # (the paper, the lint stamps): this lane owns the Rust suites only,
+        # and the warm-up above is the build it needs. --logbase gives the lane
+        # its own machine-readable log, so the second profile cannot overwrite
+        # the first one's per-package timing.
+        test_command = [
+            "meson", "test", "-C", MESON_BUILD_DIR, "--no-rebuild",
+            "--suite", "cargo-" + profile,
+            "--print-errorlogs",
+            "--logbase", "cargo-" + profile,
+        ]
+        processes = test_processes()
+        if processes:
+            test_command += ["--num-processes", str(processes)]
+        commands.append(test_command)
+        record.command = test_command
+
+        failure = None
+        for position, command in enumerate(commands):
+            started = time.monotonic()
+            status = run_command(command, log_path, append=position > 0)
+            record.steps.append({
+                "command": command,
+                "exit_status": status,
+                "duration_seconds": round(time.monotonic() - started, 3),
+            })
+            if status != 0:
+                record.exit_status = status
+                failure = LaneFailure(status)
+                break
+
+        # Attribution is read whether the lane passed or failed: a failing run
+        # is the one run whose cost and whose failing package must not be lost.
+        record.packages = collect_package_attribution(
+            profile,
+            os.path.join(build_absolute, "meson-logs", "cargo-" + profile + ".json"),
+        )
+        if record.packages and all(
+            package["per_test_timing"] != "measured" for package in record.packages
+        ):
+            record.timing_note = (
+                "per-test timing was not measured: no libtest JSON stream was "
+                "written (a non-nightly toolchain reports the human format)"
+            )
+        if failure is not None:
+            raise failure
+
+    return action
+
+
 def clean_tree_action(run, record, log_path):
     """Lane 11: refuse staged, unstaged, or untracked nonignored changes."""
     del run
@@ -363,15 +651,17 @@ LANES = [
     ),
     Lane(
         name="test-debug",
-        label="cargo test (debug)",
-        description="the workspace test suite in the debug profile",
-        command=["cargo", "test", "--workspace", "--locked"],
+        label="per-package tests (debug)",
+        description="one Meson test per workspace package, debug profile, with per-test timing",
+        action=cargo_test_action("debug"),
+        precondition=cargo_test_precondition,
     ),
     Lane(
         name="test-release",
-        label="cargo test (release)",
-        description="the workspace test suite in the release profile",
-        command=["cargo", "test", "--workspace", "--release", "--locked"],
+        label="per-package tests (release)",
+        description="one Meson test per workspace package, release profile, with per-test timing",
+        action=cargo_test_action("release"),
+        precondition=cargo_test_precondition,
     ),
     Lane(
         name="check-generated",
@@ -470,6 +760,79 @@ def print_summary(records, total_seconds, outcome):
         "    %-*s  %-8s  %9s"
         % (name_width, "total", outcome, format_duration(total_seconds))
     )
+    print_package_summary(records)
+
+
+def print_package_summary(records):
+    """Per-package and per-test attribution beneath the lane table.
+
+    The `duration` column is the package lane's wall time, which includes
+    whatever cargo still had to build. The `in-test` column is the sum of the
+    per-test execution times libtest reported, and it routinely EXCEEDS the
+    wall time: the harness runs a package's tests on several threads, so those
+    seconds overlap each other. It is a measure of test work, never of elapsed
+    time, and the two columns are not meant to reconcile.
+    """
+    for record in records:
+        if not record.packages:
+            continue
+        width = max([len("package")] + [len(p["package"]) for p in record.packages])
+        announce("")
+        announce("==> per-package timing: %s" % record.lane.name)
+        header = "%-*s  %-6s  %9s  %6s  %9s" % (
+            width, "package", "result", "duration", "tests", "in-test"
+        )
+        announce("    " + header)
+        announce("    " + "-" * len(header))
+        for package in record.packages:
+            announce(
+                "    %-*s  %-6s  %9s  %6s  %9s"
+                % (
+                    width,
+                    package["package"],
+                    package["result"] or "?",
+                    format_duration(package["duration_seconds"]),
+                    "-" if package["test_count"] is None else package["test_count"],
+                    "-" if package["measured_seconds"] is None
+                    else format_duration(package["measured_seconds"]),
+                )
+            )
+        if record.timing_note:
+            announce("    note: %s" % record.timing_note)
+
+    ranked = rank_tests(records, 10)
+    if not ranked:
+        return
+    announce("")
+    announce("==> slowest individual tests (top %d)" % len(ranked))
+    width = max(len("%s/%s" % (t["lane"], t["package"])) for t in ranked)
+    for entry in ranked:
+        announce(
+            "    %9s  %-*s  %s"
+            % (
+                format_duration(entry["seconds"]),
+                width,
+                "%s/%s" % (entry["lane"], entry["package"]),
+                entry["name"],
+            )
+        )
+
+
+def rank_tests(records, limit):
+    """The slowest individual tests across every lane that measured any."""
+    ranked = []
+    for record in records:
+        for package in record.packages:
+            for test in package.get("slowest_tests") or []:
+                ranked.append({
+                    "lane": record.lane.name,
+                    "package": package["package"],
+                    "name": test["name"],
+                    "seconds": test["seconds"],
+                    "event": test["event"],
+                })
+    ranked.sort(key=lambda entry: entry["seconds"], reverse=True)
+    return ranked[:limit]
 
 
 def build_report(records, started_at, finished_at, total_seconds, outcome, exit_status):
@@ -483,6 +846,7 @@ def build_report(records, started_at, finished_at, total_seconds, outcome, exit_
         "total_seconds": round(total_seconds, 3),
         "skipped": [r.lane.name for r in records if r.status == SKIPPED],
         "failed": [r.lane.name for r in records if r.status == FAILED],
+        "slowest_tests": rank_tests(records, SLOWEST_TEST_LIMIT),
         "lanes": [r.to_json() for r in records],
     }
 
@@ -664,6 +1028,22 @@ def self_test():
     for name in ("fmt", "clippy", "advisories", "meson-contract", "clean-tree"):
         if lane_by_name(name) is None:
             problems.append("declared lane %s is missing" % name)
+    # The test lanes are Meson-driven (CI-002): no lane may carry a
+    # workspace-level cargo test, and both profiles must still be declared.
+    for name in ("test-debug", "test-release"):
+        lane = lane_by_name(name)
+        if lane is None:
+            problems.append("declared lane %s is missing" % name)
+        elif lane.action is None or lane.precondition is None:
+            problems.append("%s: must be a Meson-driven action lane with a precondition" % name)
+    for lane in LANES:
+        argv = list(lane.command or [])
+        if argv[:2] == ["cargo", "test"]:
+            problems.append("%s: the gate runs no workspace-level cargo test" % lane.name)
+    if slowest([{"name": "a", "seconds": 1.0}, {"name": "b", "seconds": None}], 5) != [
+        {"name": "a", "seconds": 1.0}
+    ]:
+        problems.append("an unmeasured test was ranked as though it were timed")
     try:
         selected = select_lanes(["fmt"], [])
         if [lane.name for lane in selected] != ["fmt"]:
