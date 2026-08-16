@@ -23,6 +23,55 @@
 //!
 //! The identities derive from committed objects, so the paper subtree
 //! must be clean: a dirty subtree is a hard failure.
+//!
+//! # Boundary
+//!
+//! Nothing is read from the ambient environment: the Git program, the
+//! repository root, the revision, the subtree, and the exact input set
+//! all arrive on [`StampRequest`] (ADR-014). No timezone database,
+//! locale, or `date` binary participates — the calendar arithmetic is
+//! pure integer maths in UTC. Diagnostics stay free of raw argv and
+//! environment values (ADR-010), so a [`StampError`] names the failure
+//! class and not the offending path.
+//!
+//! Only [`render`] writes, and only to the two destinations named on
+//! [`RenderRequest`]. Both are staged and fsync'd before either is
+//! published; two independent renames are not one transaction, so a
+//! failure between them fails the build and the next invocation
+//! repairs the pair.
+//!
+//! # Map
+//!
+//! - [`StampRequest`] — the derivation inputs.
+//! - [`run`] — derive [`AttestationStampValues`] (with
+//!   [`PreparedTimestamp`]). Reads only; writes nothing.
+//! - [`RenderRequest`] / [`render`] — derive, fill the template, and
+//!   publish the generated TeX and epoch files compare-if-changed.
+//! - [`StampError`] — every failure class, from repository-root
+//!   mismatch to an unresolved template placeholder.
+//!
+//! # Example
+//!
+//! ```no_run
+//! // Requires a clean Git checkout and a `git` executable, so this
+//! // compiles but does not run as a doctest.
+//! use std::path::PathBuf;
+//!
+//! let request = document_stamps::StampRequest {
+//!     git: PathBuf::from("/usr/bin/git"),
+//!     repository_root: PathBuf::from("."),
+//!     tree_ref: "HEAD".to_owned(),
+//!     tree: PathBuf::from("papers/attestation"),
+//!     inputs: vec![PathBuf::from("papers/attestation/main.tex")],
+//! };
+//!
+//! let values = document_stamps::run(&request)?;
+//! println!("{} {}", values.date, values.timestamp.epoch);
+//! # Ok::<(), document_stamps::StampError>(())
+//! ```
+//!
+//! See `README.md` in this package for the two command-line modes and
+//! the exact meaning of each derived value.
 
 use std::fmt::Write as _;
 use std::path::{Component, Path, PathBuf};
