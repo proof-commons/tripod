@@ -545,8 +545,21 @@ fn apply_opcode(
     // which no abstract state can settle — except where the operand
     // types themselves rule a branch out, which is exactly the
     // signature case.
+    // A primitive that aborts on a false operand has no successful form
+    // when the operand can only be the false item. Nothing else in the
+    // state settles a truth value: a nonempty byte string may still be
+    // false — the target reads a zero payload as one — so only this
+    // direction narrows, and the other stays open.
+    let definitely_false = stack
+        .failure()
+        .effects()
+        .iter()
+        .any(|effect| effect.cause() == FailureCause::FalseVerification)
+        && operands.len() == 1
+        && is_definitely_false(target, &state.main()[base]);
+
     for case in stack.success().cases() {
-        if !authorization.admits_success(case.condition()) {
+        if definitely_false || !authorization.admits_success(case.condition()) {
             continue;
         }
         let (reached, reached_constants) = apply_case(target, state, constants, &case, base);
@@ -696,6 +709,21 @@ impl AuthorizationFacts {
             _ => true,
         }
     }
+}
+
+/// Whether an abstract type can only be the target's false item.
+///
+/// The empty item is the target's false, and a type that admits no
+/// other width admits no other value. The converse is not available and
+/// is not attempted: a nonempty byte string can still be false, because
+/// the target reads an all-zero payload as one, so nothing here ever
+/// concludes that an operand is *true*.
+fn is_definitely_false(
+    target: &ReviewedElementsTapscriptDefinition,
+    value: &StackValueType,
+) -> bool {
+    matches!(value, StackValueType::Empty)
+        || width_ranges(target, value) == BTreeSet::from([(0, 0)])
 }
 
 /// Whether an abstract type can be the empty item.

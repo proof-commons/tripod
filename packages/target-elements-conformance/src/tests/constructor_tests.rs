@@ -23,7 +23,11 @@
 //! which is the case where the tweak preimage omits the merkle root
 //! rather than zeroing it.
 
-use target_elements::LeafVersion;
+use tapscript::program::TapscriptProgram;
+use tapscript::stack::{AbstractLimits, AbstractStackState, validate_program};
+use target_elements::{FailureCause, LeafVersion, StackValueType};
+
+use crate::constructor::metadata_leaf::{metadata_leaf_program, metadata_leaf_script};
 
 use crate::constructor::curve::{FIELD_ELEMENT_BYTES, PointDecodingDefect, lift_x};
 use crate::constructor::internal_key::UNSPENDABLE_INTERNAL_KEY;
@@ -563,6 +567,104 @@ fn a_transition_moves_the_counter_and_nothing_else() {
     assert_eq!(after.schema, before.schema);
     assert_eq!(after.object_kind, before.object_kind);
     assert_eq!(after.flags, before.flags);
+}
+
+// -- The metadata leaf's unspendability ---------------------------
+
+#[test]
+fn the_metadata_leaf_aborts_whatever_the_witness_was() {
+    // The evidence Guide-10 §9.9 asks for, machine-checked against the
+    // reviewed contracts rather than argued.
+    //
+    // The abstract validator reports the states a program can reach.
+    // For this script there are none: every path ends in an abort, so
+    // the target never reaches its final-stack rule and nothing the
+    // witness contained can satisfy it.
+    //
+    // The witness shapes below are the ones that would spend a leaf
+    // that was merely empty: nothing, one true item, one false item,
+    // and a stack of arbitrary items.
+    let target = crate::tests::support::reviewed_target();
+    let program = metadata_leaf_program(&target, &representative().encode())
+        .expect("the metadata fits in one literal push");
+    let limits = AbstractLimits::for_target(&target);
+
+    let true_item = StackValueType::Bytes {
+        minimum: 1,
+        maximum: 1,
+    };
+    for witness in [
+        Vec::new(),
+        vec![true_item.clone()],
+        vec![StackValueType::Empty],
+        vec![true_item.clone(), true_item, StackValueType::Empty],
+        vec![StackValueType::Bytes {
+            minimum: 0,
+            maximum: 520,
+        }],
+    ] {
+        let result = validate_program(
+            &target,
+            &program,
+            &AbstractStackState::from_main(witness.clone()),
+            limits,
+        )
+        .expect("the leaf script validates");
+
+        assert!(
+            result.always_aborts(),
+            "a witness of {} items left a surviving state",
+            witness.len()
+        );
+        assert!(result.aborts().contains(&FailureCause::FalseVerification));
+    }
+}
+
+#[test]
+fn an_empty_leaf_script_is_spendable_and_is_why_the_leaf_is_not_empty() {
+    // The negative control, and the reason the metadata leaf carries a
+    // script at all. An empty program leaves the witness exactly as it
+    // found it, so a witness of one true item survives to satisfy the
+    // target's final-stack rule.
+    let target = crate::tests::support::reviewed_target();
+    let empty = TapscriptProgram::new(Vec::new()).expect("an empty program is within the limit");
+    let witness = AbstractStackState::from_main(vec![StackValueType::Bytes {
+        minimum: 1,
+        maximum: 1,
+    }]);
+
+    let result = validate_program(
+        &target,
+        &empty,
+        &witness,
+        AbstractLimits::for_target(&target),
+    )
+    .expect("an empty program validates");
+    assert!(!result.always_aborts());
+    assert_eq!(result.success().len(), 1);
+}
+
+#[test]
+fn the_metadata_leaf_commits_to_exactly_the_metadata_bytes() {
+    // Two objects differing in one field have different leaf scripts,
+    // and therefore different leaf hashes and different output
+    // programs. That is what makes the leaf a commitment.
+    let target = crate::tests::support::reviewed_target();
+    let before = representative();
+    let after = before.successor().expect("the counter has room");
+
+    let first = metadata_leaf_script(&target, &before.encode()).expect("the script exists");
+    let second = metadata_leaf_script(&target, &after.encode()).expect("the script exists");
+    assert_ne!(first, second);
+
+    // The metadata appears in the script verbatim, which is what the
+    // leaf hash then covers.
+    assert!(
+        first
+            .windows(METADATA_BYTES)
+            .any(|window| window == before.encode()),
+        "the committed bytes are not in the script"
+    );
 }
 
 // -- Tweak totality -----------------------------------------------

@@ -37,6 +37,7 @@
 pub mod curve;
 pub mod internal_key;
 pub mod metadata;
+pub mod metadata_leaf;
 pub mod tagged;
 pub mod totality;
 pub mod tree;
@@ -44,6 +45,7 @@ pub mod tree;
 pub use curve::{FIELD_ELEMENT_BYTES, PointDecodingDefect};
 pub use internal_key::UNSPENDABLE_INTERNAL_KEY;
 pub use metadata::{METADATA_BYTES, MetadataDefect, PrototypeMetadata, TransitionDefect};
+pub use metadata_leaf::{metadata_leaf_program, metadata_leaf_script};
 pub use tagged::{DIGEST_BYTES, Digest32, tagged_hash};
 pub use totality::{TotalityDefect, TotalityOutcome, TweakTotalityPolicy, construct_under_policy};
 pub use tree::{

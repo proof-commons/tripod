@@ -153,13 +153,16 @@ fn a_limb_decomposition_leaves_exactly_two_limbs() {
     assert_eq!(result.success(), &states(&[vec![signed64(), signed64()]]));
 
     // The divide-by-zero and overflow paths retain both operands and
-    // push a false, so verification finds a false beneath a stack of
-    // literals. The shape differs from the successful one, and the
-    // validator keeps it apart regardless.
-    assert_eq!(
-        result.nonaborting_failure(),
-        &states(&[vec![literal(8), literal(8)]])
-    );
+    // push a false — and the verification then finds that false and
+    // ends evaluation. So no failure path survives this schedule at
+    // all, which is the whole reason a proof verifies the flag instead
+    // of dropping it.
+    //
+    // The validator establishes this rather than being told it: the
+    // false is a literal the abstract state knows is the empty item,
+    // and a primitive that aborts on a false operand has no successful
+    // form there.
+    assert!(result.nonaborting_failure().is_empty());
 
     // No successful state is also a failure state: the two sets are
     // disjoint, which is the property §7.3 asks a schedule to prove.
