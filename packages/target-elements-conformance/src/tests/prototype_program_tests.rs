@@ -4,9 +4,12 @@ use tapscript::instruction::TapscriptInstruction;
 use target_elements::{OpcodeId, ResourceDimension, StackValueType, reviewed_elements_tapscript};
 
 use crate::constructor::internal_key::UNSPENDABLE_INTERNAL_KEY;
+use crate::constructor::metadata::{METADATA_BYTES, METADATA_DOMAIN, PrototypeMetadata};
 use crate::constructor::tagged::{TAP_BRANCH_TAG, TAP_LEAF_TAG, TAP_TWEAK_TAG, sha256};
 use crate::prototype_program::{
-    PrototypeKind, PrototypeProgram, PrototypeProgramRelation, PrototypeStatus,
+    COUNTER_AT, COUNTER_BYTES, FLAGS_AT, FLAGS_BYTES, MAXIMUM_PREDECESSOR_COUNTER, NONCE_AT,
+    NONCE_BYTES, PROTOTYPE_SCHEMA, PrototypeKind, PrototypeProgram, PrototypeProgramRelation,
+    PrototypeStatus, RECIPE_PREFIX_BYTES, RESERVED_AT, RESERVED_BYTES, recipe_prefix,
 };
 
 /// The reviewed contract, for a test that needs one.
@@ -125,16 +128,28 @@ fn the_resource_table_is_the_measured_one() {
     //
     // ```text
     // dimension              measured   reviewed bound   share
-    // script bytes                593   unbounded            -
-    // witness bytes               862   unbounded            -
+    // script bytes                699   unbounded            -
+    // witness bytes               924   unbounded            -
     // peak main stack               9   1000             0.9 %
     // largest element             103   520             19.8 %
     // hash primitives              16   unbounded            -
     // curve checks                  2   unbounded            -
-    // validation budget           100   witness + 50    11.0 %
+    // validation budget           100   witness + 50    10.3 %
     // control path nodes            1   128              0.8 %
-    // witness weight              862   400000 policy    0.2 %
+    // witness weight              924   400000 policy    0.2 %
     // ```
+    //
+    // # What composing the transition cost
+    //
+    // One hundred and six script bytes. The derivation adds the slices,
+    // the checked increment, the joins, and the literal the recipe's
+    // domain and schema are pinned against. The witness items lose a
+    // whole metadata object and gain a four-byte nonce, so the serialized
+    // witness — which carries the script itself — grows by sixty-two
+    // bytes net. The peak stack does not move at all, which is the
+    // measurement that matters: the reach bound, not the depth bound, is
+    // what the composition had to fit, and the derived object occupies
+    // the slot the second witnessed object used to.
     //
     // # Which limit binds first
     //
@@ -143,14 +158,14 @@ fn the_resource_table_is_the_measured_one() {
     // context at one hundred and three bytes, and no other dimension
     // reaches a fifth of its bound: the peak stack is nine items against
     // one thousand, the control path is one node against one hundred and
-    // twenty-eight, and the witness weighs eight hundred and sixty-two
+    // twenty-eight, and the witness weighs nine hundred and twenty-four
     // units against a four-hundred-thousand policy ceiling.
     //
     // The validation budget is not the binding one, which is worth
     // stating because it is the dimension a reader expects to bind. The
     // reviewed domain funds it from the witness size plus an offset of
-    // fifty, so this witness funds nine hundred and twelve units and the
-    // two curve checks charge one hundred. A construction that added
+    // fifty, so this witness funds nine hundred and seventy-four units
+    // and the two curve checks charge one hundred. A construction that added
     // curve checks without adding witness would move that ratio, and a
     // construction that widened a stack element would hit five hundred
     // and twenty first.
@@ -161,8 +176,8 @@ fn the_resource_table_is_the_measured_one() {
     let program = prototype();
     let measured = program.resources();
 
-    assert_eq!(measured.script_bytes(), 593);
-    assert_eq!(measured.witness_bytes(), 862);
+    assert_eq!(measured.script_bytes(), 699);
+    assert_eq!(measured.witness_bytes(), 924);
     assert_eq!(measured.peak_main_stack(), 9);
     assert_eq!(measured.largest_element_bytes(), 103);
     assert_eq!(measured.hash_operations(), 16);
@@ -259,42 +274,153 @@ fn the_resource_profile_does_not_move_with_the_metadata_or_the_parity() {
 }
 
 #[test]
-fn the_emitted_program_does_not_yet_carry_the_metadata_transition() {
-    // The residual this wave found and did not close, recorded as a
-    // checked absence rather than left for a reader to notice.
+fn the_emitted_program_carries_the_metadata_transition() {
+    // The residual the previous wave recorded, now closed, and checked
+    // in the same terms it was recorded in.
     //
-    // The metadata transition proof — the counter incremented by exactly
-    // one, every other field pinned, both reserved fields zero —
-    // schedules on its own, and so does the continuity proof. Composing
-    // them into one program is not currently expressible: the transition
-    // needs the two metadata objects adjacent, the continuity proof
-    // needs the one static root between them so it can outlive both
-    // derivations, and no reviewed primitive reaches past the third item
-    // to reorder them.
+    // The transition proof would not compose while the successor object
+    // was witnessed: the field-by-field comparison needs the two objects
+    // adjacent, the continuity layout needs the one static root between
+    // them, and no reviewed primitive reaches past the third item to
+    // reorder them. Deriving the successor from the predecessor's own
+    // bytes removes the comparison, so the arithmetic that was the
+    // visible marker of the gap is now in the program.
     //
-    // So the emitted program proves that two constructors share one
-    // static root, and it does not prove that the successor's metadata
-    // is the predecessor's successor. The counter increment is the
-    // visible marker of that gap: the transition is the only part of the
-    // construction that does arithmetic, and this program does none.
+    // Exactly one addition, and no other arithmetic: the counter is the
+    // only field that moves, and it moves by one.
     let program = prototype();
-    let arithmetic = program
+    let arithmetic: Vec<OpcodeId> = program
         .program()
         .instructions()
         .iter()
-        .filter(|instruction| {
-            matches!(
-                instruction,
-                TapscriptInstruction::Opcode(
-                    OpcodeId::Add64 | OpcodeId::Sub64 | OpcodeId::Mul64 | OpcodeId::Div64
-                )
-            )
+        .filter_map(|instruction| match instruction {
+            TapscriptInstruction::Opcode(
+                id @ (OpcodeId::Add64 | OpcodeId::Sub64 | OpcodeId::Mul64 | OpcodeId::Div64),
+            ) => Some(*id),
+            _ => None,
         })
-        .count();
+        .collect();
+    assert_eq!(arithmetic, vec![OpcodeId::Add64]);
+
+    // And its success flag is consumed where it is produced: the
+    // instruction after the addition is the verification
+    // (Guide-10 `rule:guide10:successor-metadata`).
+    let instructions = program.program().instructions();
+    let at = instructions
+        .iter()
+        .position(|instruction| {
+            matches!(instruction, TapscriptInstruction::Opcode(OpcodeId::Add64))
+        })
+        .expect("the program carries the increment");
     assert_eq!(
-        arithmetic, 0,
-        "the transition proof is not composed into the continuity program"
+        instructions.get(at + 1),
+        Some(&TapscriptInstruction::Opcode(OpcodeId::Verify))
     );
+}
+
+#[test]
+fn the_program_pins_its_own_domain_and_schema() {
+    // Carrying the domain and schema through unchanged would let an
+    // object of another schema be advanced by a transition rule written
+    // for this one. The program compares them against the recipe's own
+    // constants instead, and the constants are in the emitted bytes.
+    let prefix = recipe_prefix();
+    assert_eq!(prefix.len(), RECIPE_PREFIX_BYTES);
+    assert_eq!(&prefix[..METADATA_DOMAIN.len()], &METADATA_DOMAIN);
+    assert_eq!(
+        &prefix[METADATA_DOMAIN.len()..],
+        &PROTOTYPE_SCHEMA.to_le_bytes()
+    );
+
+    let script = prototype().encode(&target());
+    assert!(
+        script.windows(prefix.len()).any(|window| window == prefix),
+        "the emitted script carries the recipe's own prefix"
+    );
+
+    // And the pinned prefix is exactly what a canonical encoding of an
+    // object of this recipe begins with.
+    let object = PrototypeMetadata {
+        schema: PROTOTYPE_SCHEMA,
+        object_kind: 3,
+        counter: 7,
+        flags: 0,
+        nonce: 0,
+    };
+    assert_eq!(&object.encode()[..RECIPE_PREFIX_BYTES], prefix.as_slice());
+}
+
+#[test]
+fn the_program_reads_the_schema_at_the_oracle_s_own_offsets() {
+    // The derivation slices the predecessor object at stated offsets, so
+    // a schema edit that moved a field would make the program read the
+    // wrong bytes while every schedule still passed. The offsets are
+    // therefore checked against the encoding the oracle actually
+    // produces, field by field, rather than asserted once.
+    let object = PrototypeMetadata {
+        schema: 0x1112_1314,
+        object_kind: 0x2122_2324,
+        counter: 0x3132_3334_3536_3738,
+        flags: 0x4142_4344,
+        nonce: 0x5152_5354,
+    };
+    let encoded = object.encode();
+
+    assert_eq!(encoded.len(), METADATA_BYTES);
+    assert_eq!(
+        &encoded[COUNTER_AT..COUNTER_AT + COUNTER_BYTES],
+        &object.counter.to_le_bytes()
+    );
+    assert_eq!(
+        &encoded[FLAGS_AT..FLAGS_AT + FLAGS_BYTES],
+        &object.flags.to_le_bytes()
+    );
+    assert_eq!(
+        &encoded[NONCE_AT..NONCE_AT + NONCE_BYTES],
+        &object.nonce.to_le_bytes()
+    );
+    assert_eq!(
+        &encoded[RESERVED_AT..RESERVED_AT + RESERVED_BYTES],
+        &[0_u8; RESERVED_BYTES]
+    );
+
+    // The three fields the derivation copies in one slice are contiguous
+    // and end where the counter begins.
+    assert_eq!(NONCE_AT + NONCE_BYTES, RESERVED_AT);
+    assert_eq!(FLAGS_AT + FLAGS_BYTES, NONCE_AT);
+    assert_eq!(COUNTER_AT + COUNTER_BYTES, FLAGS_AT);
+    assert_eq!(RESERVED_AT + RESERVED_BYTES, METADATA_BYTES);
+}
+
+#[test]
+fn the_admitted_counter_domain_is_the_signed_one() {
+    // The program's stated domain, and the reason it is narrower than
+    // the oracle's. The increment is signed, so the flag reports the
+    // overflow at the signed maximum; the nonnegative check closes the
+    // other end. Every counter the program admits, the oracle moves the
+    // same way — and the oracle admits more.
+    assert_eq!(MAXIMUM_PREDECESSOR_COUNTER, (1_u64 << 63) - 2);
+
+    let admitted = PrototypeMetadata {
+        schema: 1,
+        object_kind: 1,
+        counter: MAXIMUM_PREDECESSOR_COUNTER,
+        flags: 0,
+        nonce: 0,
+    };
+    let successor = admitted
+        .successor()
+        .expect("the oracle moves every counter the program admits");
+    assert_eq!(successor.counter, MAXIMUM_PREDECESSOR_COUNTER + 1);
+
+    // The first counter the program refuses is still one the oracle
+    // moves, which is what makes this a stated domain rather than a
+    // disagreement.
+    let refused = PrototypeMetadata {
+        counter: MAXIMUM_PREDECESSOR_COUNTER + 1,
+        ..admitted
+    };
+    assert!(refused.successor().is_ok());
 }
 
 #[test]

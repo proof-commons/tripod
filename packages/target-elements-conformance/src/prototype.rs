@@ -167,9 +167,10 @@ impl PrototypeClaim {
     #[must_use]
     pub const fn requirement(self) -> ClaimRequirement {
         ClaimRequirement::Unresolved(
-            "the constructor prototype's target program and its cases are a later wave's work; \
-             the fixture language and the reference oracle exist, and no executed case yet bears \
-             on this claim",
+            "the constructor prototype's program is emitted and its case matrix is authored and \
+             checked for coherence, and every claim has bearing cases among those rows; what is \
+             missing is a target-native run, because a fixture an executor could be asked to run \
+             is not a verdict an executor gave",
         )
     }
 }
@@ -439,4 +440,28 @@ impl CompoundPrototypeFixture {
             FixtureTapTree::Branch { .. } => None,
         }
     }
+}
+
+/// Why the constructor matrix could not be authored.
+pub use crate::census::constructor::ConstructorMatrixDefect;
+
+/// Which cases bear on each constructor claim, as the rows themselves
+/// state it.
+pub use crate::census::constructor::bearing_cases;
+
+/// The constructor prototype's complete case matrix.
+///
+/// The §22.5 rows, authored against the reviewed contract and this
+/// package's own constructor oracle by the crate-internal census module.
+/// What each row states, where a mutation lives, and what the matrix
+/// deliberately cannot state are documented there.
+///
+/// # Errors
+///
+/// [`ConstructorMatrixDefect`] when the reviewed contract and the oracle
+/// do not between them determine every row.
+pub fn constructor_case_matrix(
+    target: &ReviewedElementsTapscriptDefinition,
+) -> Result<Vec<CompoundPrototypeFixture>, ConstructorMatrixDefect> {
+    crate::census::constructor::constructor_matrix(target)
 }

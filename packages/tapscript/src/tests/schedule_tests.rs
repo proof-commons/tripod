@@ -1322,3 +1322,402 @@ fn an_unsettled_width_does_not_satisfy_the_tweak_position() {
         "an unsettled width settles no operand"
     );
 }
+
+// -- The transition composed into the continuity proof -------------
+
+/// How much of the object the recipe pins to its own constants: the
+/// domain and the schema, which are contiguous and come first.
+const RECIPE_PREFIX_BYTES: i64 = 20;
+
+/// How wide the contiguous domain, schema, and object-kind prefix is.
+///
+/// Restated from the constructor oracle's schema for the reason
+/// [`METADATA_BYTES`] is: this crate is beneath the oracle and must not
+/// depend on it. Drift is caught by the framing test above and by the
+/// emitted program's own schedule.
+const DOMAIN_THROUGH_KIND_BYTES: i64 = 24;
+
+/// Where the counter begins.
+const COUNTER_AT: i64 = 24;
+
+/// The counter's width, which is the fixed-width arithmetic width.
+const COUNTER_BYTES: i64 = 8;
+
+/// Where the flags field begins.
+const FLAGS_AT: i64 = 32;
+
+/// The flags field's width.
+const FLAGS_BYTES: i64 = 4;
+
+/// The representation nonce's width.
+const NONCE_BYTES: i64 = 4;
+
+/// Where the reserved field begins.
+const RESERVED_AT: i64 = 40;
+
+/// The reserved field's width.
+const RESERVED_BYTES: i64 = 8;
+
+/// Derives the successor metadata from the predecessor's own bytes.
+///
+/// # Why the successor is derived rather than witnessed
+///
+/// A witnessed successor has to be compared against the predecessor
+/// field by field, and that comparison needs both objects adjacent
+/// while the continuity layout needs the one static root between them.
+/// No reviewed primitive reads below the third item, so the two
+/// requirements cannot both hold, and the composition was previously
+/// recorded as a checked absence.
+///
+/// Deriving removes the comparison rather than rearranging it. Every
+/// unchanged field is a slice of the predecessor object, the counter is
+/// that object's own counter incremented under a verified success flag,
+/// the reserved field is a literal zero, and the representation nonce
+/// is the one witness item the successor needs. There is no second
+/// object for a caller to choose, so the unchanged-field and
+/// exact-transition properties hold by construction.
+///
+/// # The counter's domain
+///
+/// The increment is signed, so the success flag catches the overflow at
+/// the signed maximum and not the unsigned one. The schedule pins the
+/// predecessor counter to the nonnegative half first: the reachable
+/// counters are then exactly zero through `2^63 - 2`, and the wrap from
+/// the unsigned maximum back to zero, which the flag alone would admit,
+/// is refused.
+///
+/// Consumes the representation nonce from the top and reads slices of
+/// the predecessor object. Leaves the predecessor object where it was,
+/// with the derived successor object above it.
+fn derived_successor_metadata() -> Vec<TapscriptInstruction> {
+    let reserved_zero = usize::try_from(RESERVED_BYTES).unwrap_or(8);
+    vec![
+        // The nonce is exactly its schema width, so the derived object
+        // is exactly the schema's width.
+        op(OpcodeId::Size),
+        number(NONCE_BYTES),
+        op(OpcodeId::EqualVerify),
+        op(OpcodeId::Swap),
+        // The recipe's own domain and schema, pinned to constants: an
+        // object of another schema must not be advanced by a transition
+        // rule written for this one.
+        op(OpcodeId::Duplicate),
+        number(0),
+        number(RECIPE_PREFIX_BYTES),
+        op(OpcodeId::Substring),
+        raw(vec![0; usize::try_from(RECIPE_PREFIX_BYTES).unwrap_or(20)]),
+        op(OpcodeId::EqualVerify),
+        // Domain, schema, and object kind, in one contiguous slice.
+        op(OpcodeId::Duplicate),
+        number(0),
+        number(DOMAIN_THROUGH_KIND_BYTES),
+        op(OpcodeId::Substring),
+        op(OpcodeId::Swap),
+        // The counter, pinned nonnegative and incremented by one.
+        op(OpcodeId::Duplicate),
+        number(COUNTER_AT),
+        number(COUNTER_BYTES),
+        op(OpcodeId::Substring),
+        op(OpcodeId::Duplicate),
+        value(0),
+        op(OpcodeId::GreaterThanOrEqual64),
+        op(OpcodeId::Verify),
+        value(1),
+        op(OpcodeId::Add64),
+        op(OpcodeId::Verify),
+        op(OpcodeId::Rotate),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Concatenate),
+        // The flags, unchanged.
+        op(OpcodeId::Swap),
+        op(OpcodeId::Duplicate),
+        number(FLAGS_AT),
+        number(FLAGS_BYTES),
+        op(OpcodeId::Substring),
+        op(OpcodeId::Rotate),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Concatenate),
+        // The representation nonce, the one witnessed field.
+        op(OpcodeId::Rotate),
+        op(OpcodeId::Concatenate),
+        // The reserved field, zero by construction.
+        raw(vec![0; reserved_zero]),
+        op(OpcodeId::Concatenate),
+        // The predecessor's own reserved field, zero by requirement.
+        op(OpcodeId::Swap),
+        op(OpcodeId::Duplicate),
+        number(RESERVED_AT),
+        number(RESERVED_BYTES),
+        op(OpcodeId::Substring),
+        raw(vec![0; reserved_zero]),
+        op(OpcodeId::EqualVerify),
+        op(OpcodeId::Swap),
+    ]
+}
+
+/// The successor constructor, derived from the derived object.
+///
+/// Incoming, deepest first: the one static root, the predecessor
+/// metadata, and the derived successor metadata. Leaves the predecessor
+/// metadata, the retained root, and the successor tweak.
+fn successor_from_derived() -> Vec<TapscriptInstruction> {
+    vec![
+        raw(vec![0; LEAF_PREFIX_BYTES]),
+        op(OpcodeId::Sha256Initialize),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Update),
+        raw(vec![0; LEAF_TAIL_BYTES]),
+        op(OpcodeId::Sha256Finalize),
+        raw(vec![0; TAG_PREFIX_BYTES]),
+        op(OpcodeId::Sha256Initialize),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Update),
+        // The root is hashed from a copy, so the one instance survives
+        // into the predecessor half
+        // (Guide-10 `rule:guide10:static-root`).
+        op(OpcodeId::Rotate),
+        op(OpcodeId::Duplicate),
+        op(OpcodeId::Rotate),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Finalize),
+        raw(vec![0; TWEAK_PREFIX_BYTES]),
+        op(OpcodeId::Sha256Initialize),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Finalize),
+    ]
+}
+
+/// The predecessor constructor, consuming the one retained root.
+///
+/// Incoming, deepest first: the predecessor metadata, the retained
+/// static root, and the successor tweak. Leaves the successor tweak and
+/// the predecessor tweak.
+fn predecessor_from_retained_root() -> Vec<TapscriptInstruction> {
+    vec![
+        op(OpcodeId::Rotate),
+        raw(vec![0; LEAF_PREFIX_BYTES]),
+        op(OpcodeId::Sha256Initialize),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Update),
+        raw(vec![0; LEAF_TAIL_BYTES]),
+        op(OpcodeId::Sha256Finalize),
+        raw(vec![0; TAG_PREFIX_BYTES]),
+        op(OpcodeId::Sha256Initialize),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Update),
+        // No copy is kept: the one instance is consumed here.
+        op(OpcodeId::Rotate),
+        op(OpcodeId::Sha256Finalize),
+        raw(vec![0; TWEAK_PREFIX_BYTES]),
+        op(OpcodeId::Sha256Initialize),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Sha256Finalize),
+    ]
+}
+
+/// Binds a witnessed compressed key to an introspected program.
+fn bind_key_to_introspected_program() -> Vec<TapscriptInstruction> {
+    vec![
+        number(1),
+        op(OpcodeId::EqualVerify),
+        op(OpcodeId::Swap),
+        op(OpcodeId::Duplicate),
+        number(1),
+        number(32),
+        op(OpcodeId::Substring),
+        op(OpcodeId::Rotate),
+        op(OpcodeId::EqualVerify),
+    ]
+}
+
+/// The consumed input's binding and its curve check.
+///
+/// Incoming, deepest first: the witnessed predecessor output key, the
+/// successor tweak, and the predecessor tweak. Leaves the successor
+/// tweak alone.
+fn input_binding_and_curve() -> Vec<TapscriptInstruction> {
+    let mut out = vec![
+        op(OpcodeId::Rotate),
+        op(OpcodeId::PushCurrentInputIndex),
+        op(OpcodeId::InspectInputScriptPubKey),
+    ];
+    out.extend(bind_key_to_introspected_program());
+    out.push(op(OpcodeId::Swap));
+    out.extend(curve_step());
+    out
+}
+
+/// The created output's binding at one exact role, and its curve check.
+///
+/// Incoming, deepest first: the witnessed successor output key and the
+/// successor tweak. Leaves nothing.
+fn output_binding_and_curve() -> Vec<TapscriptInstruction> {
+    let mut out = vec![
+        op(OpcodeId::Swap),
+        number(0),
+        op(OpcodeId::InspectOutputScriptPubKey),
+    ];
+    out.extend(bind_key_to_introspected_program());
+    out.push(op(OpcodeId::Swap));
+    out.extend(curve_step());
+    out
+}
+
+/// The whole composed proof: continuity and transition in one program.
+fn composed_transition_program() -> Vec<TapscriptInstruction> {
+    let mut instructions = derived_successor_metadata();
+    instructions.extend(successor_from_derived());
+    instructions.extend(predecessor_from_retained_root());
+    instructions.extend(input_binding_and_curve());
+    instructions.extend(output_binding_and_curve());
+    instructions.push(number(1));
+    instructions
+}
+
+/// The witness the composed proof consumes, deepest first.
+fn composed_transition_stack() -> AbstractStackState {
+    let nonce = usize::try_from(NONCE_BYTES).unwrap_or(4);
+    AbstractStackState::from_main(vec![
+        StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+        StackValueType::Encoded(EncodingClass::CompressedPublicKey),
+        literal(32),
+        literal(METADATA_BYTES),
+        literal(nonce),
+    ])
+}
+
+/// The abstract type the reviewed concatenation reports.
+///
+/// It is the one result width the contract does not settle: the join of
+/// two admissible operands may exceed the literal bound, so the width is
+/// a property of the values rather than of the types.
+fn joined_bytes() -> StackValueType {
+    let target = reviewed_target();
+    let spec = target
+        .definition()
+        .opcodes()
+        .get(&OpcodeId::Concatenate)
+        .expect("the reviewed contract states a contract for concatenation");
+    spec.stack()
+        .success()
+        .cases()
+        .first()
+        .expect("concatenation has a successful form")
+        .effect()
+        .computed_types()
+        .first()
+        .cloned()
+        .expect("concatenation pushes a result")
+}
+
+#[test]
+fn the_derivation_builds_one_successor_object_from_the_predecessor() {
+    // Stage C6, as a derivation rather than a comparison
+    // (Guide-10 `rule:guide10:constructor-transition-stage`).
+    //
+    // The predecessor object survives unconsumed — its own constructor
+    // still has to be derived from it — and the successor object is
+    // built above it out of the predecessor's own bytes, one literal
+    // zero field, and one witnessed nonce.
+    let nonce = usize::try_from(NONCE_BYTES).unwrap_or(4);
+    let result = schedule(
+        derived_successor_metadata(),
+        &AbstractStackState::from_main(vec![literal(METADATA_BYTES), literal(nonce)]),
+    );
+
+    // The derived object's width is fixed by construction and by the
+    // nonce's checked width rather than by its abstract type, which
+    // concatenation leaves unconstrained.
+    assert_eq!(
+        result.success(),
+        &states(&[vec![literal(METADATA_BYTES), joined_bytes()]])
+    );
+    assert!(result.nonaborting_failure().is_empty());
+
+    // The overflow path does not survive: the flag is verified where it
+    // is produced (Guide-10 `rule:guide10:successor-metadata`).
+    let mut expected = domain_abort();
+    expected.insert(FailureCause::FalseVerification);
+    expected.insert(FailureCause::UnequalOperands);
+    expected.insert(FailureCause::SliceOutOfRange);
+    expected.insert(FailureCause::MalformedScriptNumber);
+    expected.insert(FailureCause::ResultSizeExceeded);
+    assert_eq!(result.aborts(), &expected);
+}
+
+#[test]
+fn the_composed_proof_carries_continuity_and_transition_together() {
+    // Stages C5 and C6 in one program
+    // (Guide-10 `rule:guide10:constructor-continuity-stage`,
+    // `rule:guide10:constructor-transition-stage`).
+    //
+    // The order is forced by the reach bound rather than chosen. The
+    // successor constructor is derived first, because its metadata is
+    // the value the derivation just produced and nothing else may pile
+    // on top of it; the root is retained across the predecessor half
+    // and consumed there; and the two curve checks run last, when the
+    // two witnessed output keys are the only witnesses left and the two
+    // tweaks are the only computed values above them — exactly the two
+    // the reach bound admits.
+    let result = schedule(composed_transition_program(), &composed_transition_stack());
+
+    assert_eq!(result.success(), &states(&[vec![literal(1)]]));
+    assert!(result.nonaborting_failure().is_empty());
+}
+
+#[test]
+fn the_composed_proof_witnesses_no_successor_metadata() {
+    // The property that makes the composition a transition proof: the
+    // successor metadata is not a witness, so there is no second object
+    // for a caller to choose. Every field of it is a slice of the
+    // predecessor object, the checked increment of that object's
+    // counter, a literal zero, or the one witnessed nonce.
+    let metadata_items = composed_transition_stack()
+        .main()
+        .iter()
+        .filter(|value| **value == literal(METADATA_BYTES))
+        .count();
+    assert_eq!(metadata_items, 1);
+}
+
+#[test]
+fn a_derived_compressed_key_does_not_satisfy_the_curve_position() {
+    // The refutation of a cheaper witness, machine-checked rather than
+    // assumed.
+    //
+    // A compressed key is a parity byte and an x coordinate, and the
+    // introspection already pushes the coordinate. Witnessing only the
+    // parity byte and joining the two would save thirty-two witness
+    // bytes per key and would bind the key to the program by
+    // construction instead of by comparison.
+    //
+    // The reviewed contract refuses it. Concatenation's result is an
+    // unconstrained byte string, and the curve check's key position is
+    // declared as one exact encoding, so an item whose width the
+    // abstract state has not fixed does not satisfy it. The composed
+    // proof therefore witnesses whole compressed keys and compares
+    // their coordinates.
+    let target = reviewed_target();
+    let program = TapscriptProgram::new(vec![
+        op(OpcodeId::Concatenate),
+        raw(vec![0; 32]),
+        op(OpcodeId::TweakVerify),
+    ])
+    .expect("the schedule is within the limit");
+    let initial = AbstractStackState::from_main(vec![
+        StackValueType::Encoded(EncodingClass::Sha256Digest),
+        literal(1),
+        literal(32),
+    ]);
+
+    assert!(
+        validate_program(
+            &target,
+            &program,
+            &initial,
+            AbstractLimits::for_target(&target),
+        )
+        .is_err(),
+        "a joined key does not satisfy an exactly encoded key position"
+    );
+}

@@ -59,6 +59,7 @@
 
 pub mod author;
 pub mod compound;
+pub mod constructor;
 pub mod context;
 pub mod crypto;
 pub mod encoding;
