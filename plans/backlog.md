@@ -1745,6 +1745,26 @@ text for its own gate, and although the owner-keyed registries keep two
 owners minting one text from being a duplicate, one text naming two
 gates is a reader hazard the record yields on.
 
+A second kind-migration round followed the swap. The Layer-0
+verification appendix minted three walkthrough anchors under the token
+ver, which the adopted registry assigns to Version and Revision;
+verification is verif. The three mints in
+`papers/attestation/sections/A1_verification.tex` moved to the verif
+token, and the generated Layer-0 register followed in the same commit,
+six sites in two files and no other occurrence anywhere in the tree.
+
+The identity consequence was measured rather than assumed. The Layer-0
+anchor-set recipe was reproduced from the pre-change tree over the
+realization contract's thirty-eight cited anchors and returned the
+pinned value exactly, which is what validates the reproduction; none of the three
+renamed labels is in that set, because the contract cites the
+walkthrough section but never these three sub-anchors. The same
+recomputation after the rename returns the same value, so nothing was
+re-pinned: the ceremony ran and its answer was that the anchor set did
+not move. No welded witness semantic tag carries a walkthrough anchor
+either, so the architecture semantic hash and the deployment-profile
+identity are likewise untouched.
+
 ### 13.2 Checker findings so far · `tab:backlog:draft-findings`
 
 | ID | Status | Finding |
