@@ -117,7 +117,15 @@ which is what this section is.
 
 ---
 
-## Implementation gate · `gate:labels:implementation`
+## Adoption gate · `gate:labels:adoption`
+
+This gate carried the implementation name until the draft's third
+edition minted that same label text for its own implementation gate;
+the two are distinct gates in distinct owners, and one text naming both
+is a hazard for readers even where the owner-keyed registries keep it
+from being a duplicate mint, so this record's gate was renamed to
+adoption and its citations retargeted in the commit that swapped the
+draft.
 
 Adoption holds when:
 

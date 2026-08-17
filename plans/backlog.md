@@ -1713,6 +1713,7 @@ active tree.
 |---|---|---|
 | `DI-001` | ACTIVE | Gap census: map each draft clause onto the present ADR-012/ADR-013 text, the ADR-016 identity rules, and the implemented labels package; classify every clause as already-implemented, divergent, or new; record the checker-engineering findings register. |
 | `DI-002` | DONE | Adopt the corrected label calculus and kind registry as ADRs; delete the ADR text they retire; migrate the eight conflicting kind tokens to the registry forms corpus-wide per the user's ruling, with every citation updated in the same commit; record the hyphenated-area amendment and the local-extension register. |
+| `DI-002b` | DONE | Replace the second-edition adopted drafts with the author's third-edition texts and repair every citation that dangled as a result. The third edition was verified against the audit register before the swap: all 26 findings fixed, the 7 defects among them included, and a mechanical re-audit clean — every per-document citation resolves, every mint is unique, and the kind registry's headline counts of 333 names, 349 rows, 208 kinds, 3 declared hybrids and 4 device classes derive exactly from its tables. Fourteen citations across three plan files were retargeted in the same commit as the swap, per the calculus's same-commit rule. |
 | `DI-003` | QUEUED | Re-engineer the labels checker to the calculus: a single participation scanner shared by every check (mints, citations, links, hygiene, inline-code discipline), owner signatures with registered prefixes, imported and synthetic citations, anchor harvests, and the kind registry as the checker's kind vocabulary. |
 | `DI-004` | QUEUED | Adopt the identity-adjudication procedure against ADR-016: classify every existing digest through the benefit criterion with admission records, and MIGRATE the two grandfathered recipes to domain-separated forms per the user's ruling — the architecture semantic and anchor-set hashes change under a recorded recipe migration, superseding the ADR-016 grandfather clause. |
 | `DI-005` | QUEUED | Interchange conventions: record adoption as the standing wire-format discipline for future externally consumed documents; no implementation until a consumer exists. |
@@ -1730,6 +1731,19 @@ deployment-profile identity, each with the retired pin reproduced
 before the new one was taken. The Layer-0 LaTeX surface keeps three
 unadjudicated tokens (motto, a true collision; invest; abs), recorded
 in ADR-020.
+
+DI-002b's swap carried three consequences beyond the citation repairs.
+The calculus's third edition adds a derivation authority the checker has
+no notion of — a profile signature, a reserved-kind set, two warrant
+rules, warrant totality and inventory discipline — which is now the
+largest unmet item of its implementation gate and belongs to DI-003. The
+gap census's postcondition checklist was reframed as a gate checklist,
+both the calculus and the registry having moved to Gates. And this
+record's own label-calculus gate was renamed from the implementation
+name to the adoption name: the third edition mints the implementation
+text for its own gate, and although the owner-keyed registries keep two
+owners minting one text from being a duplicate, one text naming two
+gates is a reader hazard the record yields on.
 
 ### 13.2 Checker findings so far · `tab:backlog:draft-findings`
 
