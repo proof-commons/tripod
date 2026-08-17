@@ -1713,7 +1713,7 @@ active tree.
 |---|---|---|
 | `DI-001` | ACTIVE | Gap census: map each draft clause onto the present ADR-012/ADR-013 text, the ADR-016 identity rules, and the implemented labels package; classify every clause as already-implemented, divergent, or new; record the checker-engineering findings register. |
 | `DI-002` | DONE | Adopt the corrected label calculus and kind registry as ADRs; delete the ADR text they retire; migrate the eight conflicting kind tokens to the registry forms corpus-wide per the user's ruling, with every citation updated in the same commit; record the hyphenated-area amendment and the local-extension register. |
-| `DI-002b` | DONE | Replace the second-edition adopted drafts with the author's third-edition texts and repair every citation that dangled as a result. The third edition was verified against the audit register before the swap: all 26 findings fixed, the 7 defects among them included, and a mechanical re-audit clean — every per-document citation resolves, every mint is unique, and the kind registry's headline counts of 333 names, 349 rows, 208 kinds, 3 declared hybrids and 4 device classes derive exactly from its tables. Fourteen citations across three plan files were retargeted in the same commit as the swap, per the calculus's same-commit rule. |
+| `DI-002b` | DONE | Replace the second-edition adopted drafts with the author's third-edition texts and repair every citation that dangled as a result. The third edition was verified against the audit register before the swap: all 26 findings fixed, the 7 defects among them included, and a mechanical re-audit clean — every per-document citation resolves, every mint is unique, and the kind registry's headline counts of 333 names, 349 rows, 208 kinds, 3 declared hybrids and 4 device classes derive exactly from its tables. Fourteen citations across three plan files were retargeted in the same commit as the swap, per the calculus's same-commit rule. Both adopting records were then refreshed to the editions they adopt: ADR-019 restates all seven adoption parameters and records that the checker implements the authorship warrant species only, ADR-020 names this repository as the registry's acceptee and recasts its extension register as the recorded extension set with located first-hand evidence, and a second kind-migration round settled two further tokens. |
 | `DI-003` | QUEUED | Re-engineer the labels checker to the calculus: a single participation scanner shared by every check (mints, citations, links, hygiene, inline-code discipline), owner signatures with registered prefixes, imported and synthetic citations, anchor harvests, and the kind registry as the checker's kind vocabulary. |
 | `DI-004` | QUEUED | Adopt the identity-adjudication procedure against ADR-016: classify every existing digest through the benefit criterion with admission records, and MIGRATE the two grandfathered recipes to domain-separated forms per the user's ruling — the architecture semantic and anchor-set hashes change under a recorded recipe migration, superseding the ADR-016 grandfather clause. |
 | `DI-005` | QUEUED | Interchange conventions: record adoption as the standing wire-format discipline for future externally consumed documents; no implementation until a consumer exists. |
@@ -1764,6 +1764,40 @@ re-pinned: the ceremony ran and its answer was that the anchor set did
 not move. No welded witness semantic tag carries a walkthrough anchor
 either, so the architecture semantic hash and the deployment-profile
 identity are likewise untouched.
+
+DI-002b closes with the refresh of the two adopting records. ADR-019
+now fixes all seven adoption parameters the third edition asks for: the
+owner signature, the owner partition by tree location, an empty profile
+signature, an empty reserved-kind set, the designated typed-data
+classes, the two citation-index designations, and the scanned-region
+recognition for Markdown, Rust, and LaTeX. The profile signature and the
+reserved-kind set are empty together on purpose — a reserved kind no
+profile governs admits neither warrant rule, so a nonempty reserved set
+under an empty profile signature would reserve kinds nobody could use —
+and the record states plainly that the checker implements the authorship
+warrant species alone. ADR-020 names this repository as the registry's
+acceptee, recasts its register as the recorded extension set in the
+edition's own terms with a located occurrence behind each of the
+thirteen entries, and adjudicates the six keeps by genre: task against
+the registry's exercise and code-asset readings of Task, res against
+Result, trap against Pitfall, obl against Requirement, err against
+Erratum, and pin against Version. Four tokens left the set because the
+third edition carries them as rows of its own — pkg, q, req, and test —
+with no mint moved. Postcondition and Requirement remained registry
+rows, so the round-one decisions on post and req stand as taken.
+
+Four residual items outlive the close, none of them DI-002b's to
+discharge. The derivation-warrant machinery — a profile signature, a
+census, standard places, inventory discipline, and the half of warrant
+totality that governs reserved kinds — is unbuilt, as are the near-miss
+warnings the calculus asks for, the general form of synthetic-citation
+totality, and the registry's companion attestation register with its
+homonym view; all of these are DI-003, and ADR-019 and ADR-020 record
+them as unmet in their own terms. The identity census with admission and
+stop records is DI-004. The interchange conventions stay dormant until a
+consumer exists, which is DI-005. And the Layer-0 LaTeX surface keeps
+three unadjudicated tokens under ADR-020 — motto, a true collision;
+invest; and abs — which enter scope with that surface and not before.
 
 ### 13.2 Checker findings so far · `tab:backlog:draft-findings`
 
