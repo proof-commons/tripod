@@ -21,7 +21,7 @@ and every local citation resolves across the planning tree
 (`inv:labels:total-resolution`).
 
 Imported labels are authoritative references and are linted under
-(`inf:labels:import`).
+(`inf:labels:imported-citation`).
 
 ## Registers · `tab:labels-index:files`
 

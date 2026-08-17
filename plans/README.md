@@ -57,7 +57,7 @@ Upstream citations use square brackets:
 ```
 
 Imported citations are linted under
-(`inf:labels:import`).
+(`inf:labels:imported-citation`).
 
 ## Directory index · `tab:plans:directories`
 
