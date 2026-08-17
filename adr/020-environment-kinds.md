@@ -33,16 +33,15 @@ gap census compared it against every kind in use and found forty-three
 assigned identically, a short list divergent, and a longer list absent.
 
 The edition in force is the author's third, swapped in under backlog
-DI-002b. Its own generator-derived headline table reports 333 names over
-349 rows and 208 kinds, with three declared hybrids and four device
-classes; the counts are derived from its tables and hand-maintained
-nowhere, this sentence quoting them rather than fixing them. The edition
-also adds machinery an adopting corpus must answer for: it names an
-acceptee who owns the local extensions, the evidence, the statuses, and
-a generated companion register; it prints an attestation status at each
-row, marked by a dagger where the edition's evidence is borderline; and
-it derives homonymy from the effective relation rather than declaring
-it. The sections below answer for each.
+DI-002b. Its generator-derived headline table reports 333 names over 349
+rows and 208 kinds, with three declared hybrids and four device classes;
+this sentence quotes those counts rather than fixing them. The edition
+adds machinery an adopting corpus must answer for: an acceptee owning
+the extensions, the evidence, the statuses, and a generated companion
+register; an attestation status at each row, daggered where the
+edition's evidence is borderline; and homonymy derived from the
+effective relation rather than declared. The sections below answer for
+each.
 
 ---
 
@@ -59,25 +58,23 @@ the sense it fixes for one ambiguous word.
 **Rule (Acceptee)** · `rule:kinds:acceptee`
 
 This repository is the acceptee named by this adoption, and the only
-one. It owns the local extension set recorded below, which the registry
-writes X_A; the evidence for it, held first-hand in the corpus itself;
-the attestation statuses it assigns; and the companion register the
-registry requires of an acceptee. The adopted component of the evidence
-base is the edition's own, taken by reference here and not restated.
-
-The effective relation is therefore C_A, the registry's own rows
-together with X_A. A local extension is never a row of the registry, and
-becomes one only if a later edition expressly incorporates it.
+one. It owns the extension set recorded below, which the registry writes
+X_A; the evidence for it, held first-hand in the corpus; the attestation
+statuses it assigns; and the companion register an acceptee owes. The
+adopted component of the evidence base is the edition's own, taken by
+reference and not restated. The effective relation is therefore C_A, the
+registry's rows together with X_A; an extension is never a row of the
+registry, and becomes one only if a later edition incorporates it.
 
 **Rule (Extension entry)** · `rule:kinds:extension-entry`
 
 A kind the registry does not carry is a local extension, an entry of
-X_A. It enters the register below by the same decision that introduces
-it, and it must be distinct — as a token and as a concept — from every
-registry entry. A kind naming a genre the registry already classifies is
-not an extension but a defect, and is migrated. An entry records a
-name-and-kind pair, the catalogued sense that pair carries here, and the
-first-hand evidence for it: an occurrence in this corpus, located.
+X_A. It enters below by the same decision that introduces it, and it
+must be distinct — as a token and as a concept — from every registry
+entry. A kind naming a genre the registry already classifies is not an
+extension but a defect, and is migrated. An entry records a
+name-and-kind pair, the sense that pair carries here, and its
+first-hand evidence: an occurrence in this corpus, located.
 
 ---
 
@@ -114,20 +111,19 @@ from 148 kinds to 208 and reached two tokens round one had not.
 | `mthm` | Meta-theorem is `metathm` | Same genre, two spellings of one abbreviation. The occurrences were the gap census's citations of the calculus's own meta-theorems, which the third edition mints under the registry token | migrated to `metathm` in the census rewrite that accompanied the swap |
 | `ver` | Version and Revision are `ver`; Verification, Check, and Sanity check are `verif` | **Different genre, colliding token.** The three mints are walkthrough anchors of the attestation verification appendix — verifications, not version statements — and the registry's own distinctness note pairs `ver` and `verif` as a near-miss to be kept apart | migrated to `verif` |
 
-The `ver` migration moved three mints in the attestation verification
-appendix and the generated attestation register that follows them, six sites
-in two files and no other occurrence in the tree. Its identity
-consequence was measured rather than assumed, and the measurement is
-recorded in the backlog: the anchor-set recipe was first reproduced
-against the standing pin, then recomputed after the rename, and returned
-the same value, because the realization contract cites the walkthrough
-section and none of these three sub-anchors. Nothing was re-pinned.
+The `ver` migration moved three mints and the generated attestation register
+that follows them, six sites in two files and no other occurrence in the
+tree. Its identity consequence was measured, not assumed, and the
+measurement is recorded in the backlog: the anchor-set recipe was
+reproduced against the standing pin, recomputed after the rename, and
+returned the same value, because the realization contract cites the
+walkthrough section and none of these three sub-anchors. Nothing was
+re-pinned.
 
 Two round-one decisions the third edition could have unsettled did not
-move. Postcondition is still a registry row carrying `postc`, so the
-migration of `post` stands as taken. Requirement is still `req`, so the
-repository's `req` remains the registry's own token and needs no
-decision at all — it leaves X_A only because it was never an extension.
+move: Postcondition is still `postc`, so the migration of `post` stands
+as taken, and Requirement is still `req`, so the repository's `req` is
+the registry's own token and needs no decision at all.
 
 ---
 
@@ -136,37 +132,35 @@ decision at all — it leaves X_A only because it was never an extension.
 The pairs this repository adds to the registry's rows, across the
 surfaces this record governs: the planning tree, the decision records,
 the documentation tree, and the Rust packages. Each was checked against
-the whole registry for token distinctness and genre distinctness, and
-each carries first-hand evidence — an occurrence in this corpus, located
-— as the registry requires of an acceptee's own rows. The count is the
-occurrences of the token in the tree, mints and citations together, at
-the time of this record. The attestation LaTeX surface is not yet in scope
-and carries three further tokens, named under the consequences below.
+the whole registry for token and genre distinctness, and each carries
+first-hand evidence — an occurrence in this corpus, located — as the
+registry requires of an acceptee's own rows. The count is occurrences of
+the token in the tree, mints and citations together, at this record. The
+attestation LaTeX surface is not yet in scope and carries three further
+tokens, named under the consequences below.
 
-| Name | Kind | Catalogued sense | First-hand evidence |
+| Name | Kind | Sense | First-hand evidence |
 |---|---|---|---|
-| Branch | `branch` | A named control-flow branch of a typed source, headed at the branch and cited by the tests that cover it | `branch:operations:settle-distribution` at `packages/model/src/ops/settlement.rs:23`; 30 occurrences |
-| Candidate | `candidate` | A proposed option under evaluation, stated so that a later decision can select among a stated field | `candidate:guide11:explicit-only` at `plans/guides/guide_eleven_concept.md:990`; 59 occurrences |
-| Error vocabulary | `err` | The enumerated error surface a package presents at its boundary. Near the registry's Erratum, `errat`, and a different genre: an erratum corrects a document after publication, where this states what a package can return | `err:labels:vocabulary` at `plans/packages/errors/labels.md:1`; 10 occurrences, one per package |
-| Leaf | `leaf` | A terminal node of a decision or derivation tree, cited where the path through it is argued | `leaf:authorization:cadence-band` at `docs/attestation/realization.md:1121`; 4 occurrences |
-| Milestone | `milestone` | A named point in a delivery schedule, reached or not | `milestone:realization:crate` at `plans/packages/realization.md:272`; 28 occurrences |
-| Obligation | `obl` | A standing obligation on an implementation, discharged by evidence rather than satisfied once. Near the registry's Requirement, `req`, and distinct: a requirement states what the system must do, an obligation states what its builder must keep proving | `obl:oracle:adversary` at `docs/attestation/realization.md:1650`; 26 occurrences |
-| Operation | `op` | An operation of the protocol's state machine, the unit a transaction performs | `op:realization:compact-ash` at `plans/packages/realization.md:203`; 4 occurrences |
-| Phase | `phase` | A numbered stage of the delivery plan, with an entry and an exit | `phase:roadmap:cycle` at `plans/phases/11-cycle.md:1`; 16 occurrences |
-| Pin | `pin` | A committed value, recipe, or reference frozen against drift and enforced by a gate. No registry row names the frozen commitment; Version records what a version comprises, which is a different act | `pin:pins:denotation` at `docs/attestation/realization.md:127`; 98 occurrences |
-| Reference | `ref` | A cited external work or upstream artifact, summarized for use here | `ref:elements:tapscript` at `plans/reference/elements-tapscript.md:1`; 1 occurrence |
-| Residual risk | `res` | An accepted and catalogued exposure — R-dust, R-op, R-conv, R-CSV — recorded rather than removed. The registry's Result, `result`, is a stated result; the token `res` does not abbreviate it and is assigned to nothing | `res:trust:dust` at `docs/attestation/realization.md:1796`; 33 occurrences |
-| Task | `task` | A tracked unit of backlog work: kept, statused, and cited long after writing, a records-family genre. The registry's Task rows are `exer`, work assigned to a reader, and `job`, a code asset that runs; both misdescribe a backlog item, and the token `task` is assigned to nothing | `task:phase2:pilots` at `plans/backlog.md:1231`; 8 occurrences |
-| Trap | `trap` | A catalogued way to get the design wrong, stated once at its canonical site and returned to by every later argument that could fall into it. Near the registry's Pitfall, `warn`, and distinct in the same way a Refrain is distinct from a Remark: a warning is a caution in the flow of the text, where a trap is a named, cited entry of a standing register of design errors | `trap:architecture:two-clocks` at `docs/attestation/realization.md:327`; 165 occurrences |
+| Branch | `branch` | A named control-flow branch of a typed source, cited by the tests that cover it | `branch:operations:settle-distribution`, `packages/model/src/ops/settlement.rs:23`; 30 |
+| Candidate | `candidate` | A proposed option under evaluation, before selection | `candidate:guide11:explicit-only`, `plans/guides/guide_eleven_concept.md:990`; 59 |
+| Error vocabulary | `err` | The enumerated error surface a package presents at its boundary. Near Erratum, `errat`, and a different genre: an erratum corrects a document after publication; this states what a package can return | `err:labels:vocabulary`, `plans/packages/errors/labels.md:1`; 10, one per package |
+| Leaf | `leaf` | A terminal node of a decision or derivation tree | `leaf:authorization:cadence-band`, `docs/attestation/realization.md:1121`; 4 |
+| Milestone | `milestone` | A named point in a delivery schedule, reached or not | `milestone:realization:crate`, `plans/packages/realization.md:272`; 28 |
+| Obligation | `obl` | A standing obligation on an implementation, discharged by evidence rather than satisfied once. Near Requirement, `req`, and distinct: a requirement states what the system must do, an obligation what its builder must keep proving | `obl:oracle:adversary`, `docs/attestation/realization.md:1650`; 26 |
+| Operation | `op` | An operation of the protocol's state machine | `op:realization:compact-ash`, `plans/packages/realization.md:203`; 4 |
+| Phase | `phase` | A numbered stage of the delivery plan, with an entry and an exit | `phase:roadmap:cycle`, `plans/phases/11-cycle.md:1`; 16 |
+| Pin | `pin` | A committed value, recipe, or reference frozen against drift and enforced by a gate. No registry row names the frozen commitment; Version records what a version comprises, a different act | `pin:pins:denotation`, `docs/attestation/realization.md:127`; 98 |
+| Reference | `ref` | A cited external work or upstream artifact | `ref:elements:tapscript`, `plans/reference/elements-tapscript.md:1`; 1 |
+| Residual risk | `res` | An accepted and catalogued exposure — R-dust, R-op, R-conv, R-CSV — recorded rather than removed. Result, `result`, is a stated result; the token `res` does not abbreviate it and is assigned to nothing | `res:trust:dust`, `docs/attestation/realization.md:1796`; 33 |
+| Task | `task` | A tracked unit of backlog work: kept, statused, cited long after writing, a records-family genre. The registry's Task rows are `exer`, work set for a reader, and `job`, a code asset that runs; both misdescribe a backlog item, and `task` is assigned to nothing | `task:phase2:pilots`, `plans/backlog.md:1231`; 8 |
+| Trap | `trap` | A catalogued way to get the design wrong, stated once at its canonical site and returned to by later arguments. Near Pitfall, `warn`, and distinct: a warning cautions in the flow of the text, where a trap is a named, cited entry of a standing register of design errors | `trap:architecture:two-clocks`, `docs/attestation/realization.md:327`; 165 |
 
-**Rows that left the register.** The second edition's register carried
-four tokens the third edition's registry now carries as rows of its own,
-so they are no longer extensions and are struck from X_A without any
-change to the corpus: `pkg` (Package, among the assets), `q` (Question),
-`req` (Requirement), and `test` (Test, among the assets). Each was
-already the registry's own token in use here; the register was simply
-listing them redundantly, and the third edition settled it. No mint
-moved.
+**Rows that left the set.** Four tokens the second edition's register
+carried are rows of the third edition's registry, so they are no longer
+extensions and are struck from X_A with no change to the corpus: `pkg`
+(Package), `q` (Question), `req` (Requirement), and `test` (Test). Each
+was already the registry's own token in use here; the register was
+listing them redundantly. No mint moved.
 
 ---
 
@@ -189,32 +183,27 @@ labels context, it means the kind registry.
 One further word needs the same treatment. The third edition uses
 candidate for an attestation status: a pair whose evidence is kept but
 which is not admitted to the relation. This repository's `candidate`
-kind is unrelated — a proposed design option under evaluation — and no
-occurrence of it asserts anything about attestation. The status word
-appears in this record only where the attestation section says so.
+kind is unrelated — a proposed design option under evaluation — and
+asserts nothing about attestation.
 
 ---
 
-## Attestation, homonymy, and the companion register · `rem:kinds:attestation`
+## Attestation and homonymy · `rem:kinds:attestation`
 
-The third edition prints a status at each row and makes the acceptee
-answer for it. This repository accepts the edition's own statuses by
-reference, strengthens none of them, and weakens none. The edition's
-daggered rows — Yoga, Meta-question, and Schema in its data-shape sense
-— stand as borderline here, and none of the three is in use in this
-corpus. The edition's one candidate is Record read as a member-bearing
-aggregate; it lies outside the relation and so outside C_A, and this
+This repository accepts the edition's statuses by reference and neither
+strengthens nor weakens one. The edition's daggered rows — Yoga,
+Meta-question, and Schema in its data-shape sense — stand as borderline
+here, and none is in use. Its one candidate is Record read as a
+member-bearing aggregate, outside the relation and so outside C_A; this
 repository mints no `rec` at all, so nothing here rests on a candidate.
-Every pair of X_A is firm on the first-hand evidence located in the
-register above.
+Every pair of X_A is firm on the evidence located above.
 
-Homonymy is derived, not declared, and two of the pairs above sit under
-homonymous names. Test carries `quiz` among the examples and `test`
-among the assets; this repository uses the asset sense throughout, and
-the kind token at each label says so. Structure carries three senses in
-the registry and this repository mints none of them. The register that
-would present Hom(C_A) in full is generated, and this repository has not
-built its generator; the gap is recorded under the consequences.
+Homonymy is derived, not declared. Of the tokens in use, Test carries
+`quiz` among the examples and `test` among the assets, and this
+repository uses the asset sense throughout, the kind token at each label
+saying so. The register that would present Hom(C_A) in full is
+generated, and its generator is unbuilt; the gap is recorded under the
+consequences.
 
 ## Consequences · `rem:kinds:consequences`
 
@@ -287,10 +276,9 @@ Adoption holds when:
 
 Every item holds as of this record.
 
-The registry's own adoption gate carries one further item this record
-cannot yet discharge: the companion attestation register, generated and
-maintained by regeneration, presenting Hom(C_A) as a view of the same
-evidence base. It is unbuilt, is recorded as such under the consequences
-above, and is tracked as backlog DI-003. Nothing in the corpus depends
-on it today; what depends on it is the claim that the evidence for X_A
-is maintained rather than stated once.
+The registry's own adoption gate carries one item this record cannot yet
+discharge: the companion attestation register, generated, maintained by
+regeneration, and presenting Hom(C_A). It is unbuilt, recorded as such
+under the consequences, and tracked as backlog DI-003. What waits on it
+is the claim that the evidence for X_A is maintained rather than stated
+once.
