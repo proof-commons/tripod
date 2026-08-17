@@ -15,7 +15,7 @@ Archived guides are excluded from the load-bearing documentation weight
 budget and accounted against the separate archive budget instead, under the
 weight rule in [the plans README](../README.md).
 
-## Executed guides · `tbl:guides:executed`
+## Executed guides · `tab:guides:executed`
 
 | Guide | Batch |
 |---|---|
@@ -27,7 +27,7 @@ weight rule in [the plans README](../README.md).
 | [guide_nine.md](guide_nine.md) | Target-native primitive conformance and tapscript instruction core |
 | [guide_ten.md](guide_ten.md) | STATE constructor and exact wide-arithmetic prototypes |
 
-## Concept guides · `tbl:guides:concepts`
+## Concept guides · `tab:guides:concepts`
 
 | Guide | Sketch |
 |---|---|

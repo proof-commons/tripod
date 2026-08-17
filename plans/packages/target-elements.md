@@ -264,7 +264,7 @@ It does not establish:
 - resource feasibility of a protocol operation;
 - deployment evidence completion.
 
-## Milestones · `tbl:target-elements:milestones`
+## Milestones · `tab:target-elements:milestones`
 
 | Label | Deliverable |
 |---|---|

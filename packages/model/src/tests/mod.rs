@@ -59,8 +59,8 @@
 //! Each test module belongs to one category, and each category makes
 //! one evidence-class claim. A green test never upgrades its evidence
 //! class; the generated tables
-//! `[tbl:manifest:input-authorization-evidence]` and
-//! `[tbl:manifest:operation-authorization-evidence]` bind the same
+//! `[tab:manifest:input-authorization-evidence]` and
+//! `[tab:manifest:operation-authorization-evidence]` bind the same
 //! discipline to authorization claims.
 //!
 //! | Category | Modules | Evidence class | Claim |

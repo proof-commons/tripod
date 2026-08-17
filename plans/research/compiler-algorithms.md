@@ -377,7 +377,7 @@ deployment-independent bounds.
 Exceeding a limit returns a typed failure. It never silently switches to a
 greedy or weaker algorithm.
 
-## Dependency candidates · `tbl:compiler-algorithms:dependencies`
+## Dependency candidates · `tab:compiler-algorithms:dependencies`
 
 | Dependency | Initial status | Intended role |
 |---|---|---|

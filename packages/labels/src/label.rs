@@ -11,6 +11,13 @@ impl Label {
         if parts.iter().any(|part| !valid_segment(part)) {
             return Err(LabelParseError::Malformed(value.to_owned()));
         }
+        // The kind is a word, never a hyphenated one: it ranges over the
+        // ADR-020 registry, and a registry of words admits no hyphenated
+        // member. Area and name may hyphenate — the area concession is
+        // this repository's amendment recorded in ADR-019.
+        if parts.first().is_some_and(|kind| kind.contains('-')) {
+            return Err(LabelParseError::Malformed(value.to_owned()));
+        }
         match shape {
             LabelShape::Attestation if matches!(parts.len(), 2 | 3) => {}
             LabelShape::Attestation => return Err(LabelParseError::Shape(value.to_owned())),
@@ -19,6 +26,11 @@ impl Label {
                 return Err(LabelParseError::Shape(value.to_owned()));
             }
             LabelShape::Realization => {
+                // ADR-020 retired `subsec`: a subsection is a section
+                // nested, and the sub- prefix is a presentation device.
+                // `sec` therefore spans both arities here — the two-part
+                // top-level divisions it always named, and the
+                // three-part divisions that were `subsec`.
                 let kinds = [
                     "sec", "app", "req", "def", "inv", "lem", "obl", "trap", "rem", "intuit",
                     "rule", "pin", "res", "listing", "fig", "tab", "leaf",

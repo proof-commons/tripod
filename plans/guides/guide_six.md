@@ -90,7 +90,7 @@ Read these implementation owners before changing source:
 AGENTS.md
 
 adr/011-toolchain-and-dependency-policy.md
-adr/013-global-label-graph.md
+adr/019-label-calculus.md
 adr/014-meson-lint-census-and-stamps.md
 adr/016-semantic-identities-and-evidence-binding.md
 

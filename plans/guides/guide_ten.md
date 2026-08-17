@@ -482,7 +482,7 @@ git log -1 --oneline
 
 The tree must be clean.
 
-## 2.1 Blocking second-review findings · `tbl:guide10:blockers`
+## 2.1 Blocking second-review findings · `tab:guide10:blockers`
 
 | Finding | Required disposition before prototype evidence |
 |---|---|
@@ -1207,7 +1207,7 @@ The V2 reviewed target includes:
 
 If the implementation can prove a change is solely a correction to V1’s measurement without changing any consumer-visible target meaning, it may propose another migration. The default is V2 because the instruction census and successful relation are expanding.
 
-## 7.2 Primitive-needs census · `tbl:guide10:primitive-needs`
+## 7.2 Primitive-needs census · `tab:guide10:primitive-needs`
 
 Before writing prototype code, fill this table from complete symbolic schedules:
 
@@ -1667,7 +1667,7 @@ If retry is selected, it must be:
 - semantically erased from the prototype state value;
 - unable to alter the counter transition.
 
-## 9.13 Constructor candidate matrix · `tbl:guide10:constructor-candidates`
+## 9.13 Constructor candidate matrix · `tab:guide10:constructor-candidates`
 
 | Candidate | Description | Main concern |
 |---|---|---|
@@ -1681,7 +1681,7 @@ Only the first two are candidates for acceptance without upstream semantic chang
 
 The separate-metadata-output candidate may be measured but not adopted by this guide.
 
-## 9.14 Constructor threat matrix · `tbl:guide10:constructor-threats`
+## 9.14 Constructor threat matrix · `tab:guide10:constructor-threats`
 
 | Mutation | Required result |
 |---|---|
@@ -2208,7 +2208,7 @@ The authenticated \(q\) must be the value a later operation consumes.
 
 A pattern that proves one quotient and lets the caller provide another is rejected.
 
-## 11.11 Wide-floor threat matrix · `tbl:guide10:wide-floor-threats`
+## 11.11 Wide-floor threat matrix · `tab:guide10:wide-floor-threats`
 
 | Mutation | Required result |
 |---|---|
@@ -2960,7 +2960,7 @@ If constructor totality or arithmetic layout uses finite search:
 
 # 20. Resource evidence · `sec:guide10:resources`
 
-## 20.1 Constructor measurements · `tbl:guide10:constructor-resources`
+## 20.1 Constructor measurements · `tab:guide10:constructor-resources`
 
 Record:
 
@@ -2992,7 +2992,7 @@ Measure:
 - wrong-root rejection;
 - metadata-leaf escape rejection.
 
-## 20.2 Wide-floor measurements · `tbl:guide10:wide-resources`
+## 20.2 Wide-floor measurements · `tab:guide10:wide-resources`
 
 For each candidate record:
 

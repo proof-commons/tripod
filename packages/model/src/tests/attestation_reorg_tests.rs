@@ -10,7 +10,7 @@ use super::scenario_fixtures::ADDRESS_A;
 use super::test_fixtures::{block_hash, context, txid};
 use crate::*;
 
-/// A reorg is a change of chronology (`post:interface:monotonicity`,
+/// A reorg is a change of chronology (`postc:interface:monotonicity`,
 /// `sec:ledger:reorg`): the same immutable burn record is revalued
 /// upward or downward depending on which settlement precedes it in the
 /// selected context. Neither direction is privileged; only the raw

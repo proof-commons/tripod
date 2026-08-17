@@ -68,7 +68,7 @@ Call sites are:
 
 Small fixed-ratio splits may use a separate narrow pattern.
 
-## Candidate matrix · `tbl:wide-arithmetic:candidates`
+## Candidate matrix · `tab:wide-arithmetic:candidates`
 
 | Mint | Candidate | Witness | Main trade-off |
 |---|---|---|---|
@@ -389,7 +389,7 @@ slices, which is what keeps the schedule inside the reach bound: no primitive
 reads below the third stack item, and there is no `OP_PICK`, no `OP_ROLL`, and
 no altstack.
 
-### Resources · `tbl:wide-arithmetic:resources`
+### Resources · `tab:wide-arithmetic:resources`
 
 Measured on the emitted program.
 

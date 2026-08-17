@@ -25,7 +25,7 @@ use crate::spec::{
 use crate::validate::ValidatedDraftArchitecture;
 
 /// One row of the generated input-authorization evidence table
-/// `[tbl:manifest:input-authorization-evidence]`: the evidence class
+/// `[tab:manifest:input-authorization-evidence]`: the evidence class
 /// backing an input-authorization mode at each assurance layer.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -37,7 +37,7 @@ pub struct AuthorizationEvidenceExport {
 }
 
 /// One row of the generated operation-authorization evidence table
-/// `[tbl:manifest:operation-authorization-evidence]`.
+/// `[tab:manifest:operation-authorization-evidence]`.
 ///
 /// The evidence class backing an operation-level permission class at
 /// each assurance layer. Input participation and operation

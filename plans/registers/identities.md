@@ -10,7 +10,7 @@ never toolchain input.
 Admission of any new digest is governed by
 (`[ADR016-rule:identity:admission]`).
 
-## 1. Status vocabulary · `tbl:identities:status`
+## 1. Status vocabulary · `tab:identities:status`
 
 | Status | Meaning |
 |---|---|
@@ -414,7 +414,7 @@ speculative hash field enters compiler core: where no persistent cross-process
 consumer exists, typed comparison remains the boundary, and a field reserved
 for a future digest is itself a speculative identity.
 
-### 5.4 Ownership boundary · `tbl:identities:boundary`
+### 5.4 Ownership boundary · `tab:identities:boundary`
 
 Ownership and boundary for every unminted identity, including those outside the
 chain above.

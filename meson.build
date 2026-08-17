@@ -550,28 +550,133 @@ test(
   timeout: 60,
 )
 
-cargo_test_stamp = custom_target(
-  'cargo-test-check',
-  output: ['cargo-test.ok', 'cargo-test.log'],
-  command: cargo_quiet_stamp_wrap + [
-    cargo,
-    'test',
-    '--workspace',
-    '--manifest-path', cargo_manifest,
-  ],
-  build_by_default: false,
-  build_always_stale: true,
-  console: true,
-)
+# ---------------------------------------------------------------------------
+# Per-package test lanes (CI-002). The gate runs no workspace-level
+# `cargo test`: each workspace member is its own Meson test, so a
+# duration and a failure both name the package they belong to, and
+# `meson test --suite cargo-debug` is the whole Rust test surface for
+# that profile. Both profiles keep a full set of lanes; the release
+# duplicate is retained deliberately, and the per-package data is what
+# a later ruling on its value will be argued from.
+#
+# The list is the thirteen [workspace].members of Cargo.toml, spelled
+# out in the census discipline of ADR-014 rather than derived: each
+# entry pairs the package directory (the lane's short name) with the
+# published package name that `cargo test -p` takes, so a rename fails
+# here loudly instead of silently dropping a package's tests. A member
+# added to Cargo.toml without an entry here has no lane -- the
+# per-package test-lane census audit below is what refuses that.
+#
+# That audit is the same weld the ADR-014 census uses, applied to the
+# manifest: the declared lane list is diffed against the members list
+# read out of Cargo.toml at configuration time, in both directions, and
+# a mismatch is a hard configuration error rather than a quietly
+# missing lane.
+cargo_test_packages = [
+  ['architecture', 'tripod-architecture'],
+  ['artifacts', 'tripod-artifacts'],
+  ['cli-common', 'cli-common'],
+  ['compiler', 'tripod-compiler'],
+  ['document-stamps', 'tripod-document-stamps'],
+  ['execwrap', 'execwrap'],
+  ['flatten-latex-main', 'flatten-latex-main'],
+  ['labels', 'tripod-labels'],
+  ['model', 'tripod-model'],
+  ['realization', 'tripod-realization'],
+  ['tapscript', 'tripod-tapscript'],
+  ['target-elements', 'tripod-target-elements'],
+  ['target-elements-conformance', 'tripod-target-elements-conformance'],
+]
 
-test(
-  'cargo-test',
-  sh,
-  args: stamp_probe + [cargo_test_stamp[0].full_path()],
-  depends: cargo_test_stamp,
-  suite: 'unit',
-  timeout: 60,
-)
+cargo_test_lane_dirs = []
+foreach entry : cargo_test_packages
+  cargo_test_lane_dirs += entry[0]
+endforeach
+
+cargo_manifest_members = []
+foreach line : fs.read('Cargo.toml').split('members = [')[1].split(']')[0].split('\n')
+  member = line.strip().strip(',').strip('"')
+  if member != ''
+    cargo_manifest_members += member
+  endif
+endforeach
+
+foreach member : cargo_manifest_members
+  if not cargo_test_lane_dirs.contains(member.split('packages/')[-1])
+    error('workspace member ' + member
+      + ' has no per-package test lane; add it to cargo_test_packages')
+  endif
+endforeach
+foreach dir : cargo_test_lane_dirs
+  if not cargo_manifest_members.contains('packages/' + dir)
+    error('per-package test lane ' + dir
+      + ' is not a Cargo.toml [workspace].members entry')
+  endif
+endforeach
+
+cargo_test_json = find_program('scripts/cargo-test-json.sh')
+
+# Warm-up: one workspace-wide `cargo build --tests` per profile, which
+# every per-package lane of that profile depends on. Cargo serializes
+# concurrent invocations on a lock over the shared target directory, so
+# thirteen lanes that each had to compile would spend most of their wall
+# time queued behind that lock and their per-package durations would
+# measure the queue rather than the package. Building once and running
+# many leaves each lane holding the lock only briefly, which is what
+# makes the per-package figures attributable at all. Measured on a
+# 14-core host, thirteen debug lanes: 0:52 warm-up plus 5:00 of lanes,
+# against 6:53 for the same lanes with no warm-up and a cold target
+# directory. The measurement and the parallelism it settles are
+# recorded in scripts/ci.py.
+cargo_test_warmup = {}
+foreach profile : ['debug', 'release']
+  warmup_args = [
+    cargo, 'build', '--tests', '--workspace',
+    '--manifest-path', cargo_manifest,
+  ]
+  if profile == 'release'
+    warmup_args += ['--release']
+  endif
+  warmup = custom_target(
+    'run-cargo-test-warmup-' + profile,
+    output: ['cargo-test-warmup-' + profile + '.ok',
+             'cargo-test-warmup-' + profile + '.log'],
+    command: cargo_quiet_stamp_wrap + warmup_args,
+    build_by_default: false,
+    build_always_stale: true,
+    console: true,
+  )
+  alias_target('cargo-test-warmup-' + profile, warmup)
+  cargo_test_warmup += {profile: warmup}
+endforeach
+
+# The lanes themselves. Each runs the package's complete test set --
+# unit, integration, and documentation tests, exactly what
+# `cargo test -p <package>` ran before -- and captures libtest's JSON
+# event stream under the build tree, from which scripts/ci.py reads
+# per-test durations. is_parallel is pinned rather than left at its
+# default: see scripts/ci.py for the measurement behind the value.
+cargo_test_stream_root = meson.project_build_root() / 'cargo-test-json'
+
+foreach profile : ['debug', 'release']
+  foreach entry : cargo_test_packages
+    test(
+      'cargo-test-' + profile + '-' + entry[0],
+      cargo_test_json,
+      args: [
+        cargo.full_path(),
+        cargo_manifest,
+        entry[1],
+        profile,
+        cargo_test_stream_root / profile / (entry[0] + '.json'),
+      ],
+      depends: cargo_test_warmup[profile],
+      suite: 'cargo-' + profile,
+      timeout: 1800,
+      is_parallel: true,
+    )
+  endforeach
+endforeach
 
 test(
   'census-audit',

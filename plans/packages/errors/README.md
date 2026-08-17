@@ -16,7 +16,7 @@ typed context, or separate validation from runtime errors. They must preserve
 the represented failure classes and fail-closed behavior unless an owning
 contract or accepted decision changes.
 
-## Index · `tbl:error-sketches:index`
+## Index · `tab:error-sketches:index`
 
 | Package | Error sketch |
 |---|---|

@@ -100,7 +100,7 @@ fn the_matrix_carries_both_verdicts_and_far_more_refusals() {
     // A matrix of accepting rows would establish that the program can be
     // satisfied and nothing about what it refuses, which is the whole
     // point of a threat matrix
-    // (Guide-10 `tbl:guide10:constructor-threats`).
+    // (Guide-10 `tab:guide10:constructor-threats`).
     let matrix = matrix();
     let accepted = matrix
         .iter()

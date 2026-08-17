@@ -267,7 +267,7 @@ Every relation receives:
 
 Compiler output defines required evidence. It does not mark evidence complete.
 
-## Pilot analysis · `tbl:compiler:pilots`
+## Pilot analysis · `tab:compiler:pilots`
 
 | Pilot | Required analysis |
 |---|---|
@@ -299,7 +299,7 @@ It does not establish:
 
 Those are separate reports under D004.
 
-## Milestones · `tbl:compiler:milestones`
+## Milestones · `tab:compiler:milestones`
 
 | Label | Deliverable | State |
 |---|---|---|

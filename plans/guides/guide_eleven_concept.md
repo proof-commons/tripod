@@ -2129,7 +2129,7 @@ Any lockfile change receives explicit dependency review.
 
 ---
 
-# 23. Final policy matrix · `tbl:guide11:result-matrix`
+# 23. Final policy matrix · `tab:guide11:result-matrix`
 
 The Guide-11 result must fill this table with one of:
 

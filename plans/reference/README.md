@@ -6,10 +6,11 @@ review.
 References are not project authority, compiler input, target identity, or
 deployment evidence.
 
-## Index · `tbl:reference:index`
+## Index · `tab:reference:index`
 
 | Reference | Status |
 |---|---|
+| [draft-gap-census.md](draft-gap-census.md) | Active review reference |
 | [elements-tapscript.md](elements-tapscript.md) | Active review reference |
 
 ## Reference rule · `rule:reference:authority`

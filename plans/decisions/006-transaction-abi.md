@@ -142,7 +142,7 @@ Witness publications describe roles, not production secrets.
 Permissionless operations may use only public, deployment, bundle, or
 constructor-local sponsor facts.
 
-## Package ownership · `tbl:abi:ownership`
+## Package ownership · `tab:abi:ownership`
 
 | Package | ABI responsibility |
 |---|---|

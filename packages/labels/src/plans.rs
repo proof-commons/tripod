@@ -10,8 +10,9 @@
 //! guards: that prose is maintained, so unchecked growth there is
 //! duplication rather than content, and the cap keeps one fact to one
 //! owner. Archived documents are different in kind: the executed
-//! implementation guides under `plans/guides/` and the static reviews
-//! under `plans/reviews/` are verbatim historical records of a named
+//! implementation guides under `plans/guides/`, the static reviews
+//! under `plans/reviews/`, and the adopted-source drafts under
+//! `plans/drafts/` are verbatim records of a named
 //! tree, never edited to fit a budget and never trimmed, so charging
 //! them to the maintained-prose cap would make the guardrail fire on
 //! the one class of file it must not police. Their bytes are excluded
@@ -52,7 +53,7 @@ const ARCHIVE_HARD_CAP_BYTES: u64 = 4 * 1024 * 1024;
 /// Directories holding verbatim archived documents, excluded from the
 /// load-bearing combined budget and accounted against
 /// [`ARCHIVE_HARD_CAP_BYTES`] instead.
-const ARCHIVE_DIRECTORIES: [&str; 2] = ["plans/guides/", "plans/reviews/"];
+const ARCHIVE_DIRECTORIES: [&str; 3] = ["plans/drafts/", "plans/guides/", "plans/reviews/"];
 
 /// Generated register publications carry no per-file weight threshold.
 const GENERATED_REGISTERS: [&str; 2] = [
@@ -332,6 +333,29 @@ fn collect_directories(directory: &Path, directories: &mut Vec<PathBuf>) -> anyh
     Ok(())
 }
 
+/// The file's lines with fenced-block interiors and fence markers
+/// blanked, so line-oriented hygiene checks skip displayed material.
+fn without_fenced_lines(text: &str) -> String {
+    let mut fence: Option<(char, usize)> = None;
+    let mut kept = Vec::new();
+    for raw in text.lines() {
+        if let Some((marker, length)) = fence {
+            if crate::markdown::fence_close(raw, marker, length) {
+                fence = None;
+            }
+            kept.push("");
+            continue;
+        }
+        if let Some(open) = crate::markdown::fence_open(raw) {
+            fence = Some(open);
+            kept.push("");
+            continue;
+        }
+        kept.push(raw);
+    }
+    kept.join("\n")
+}
+
 /// Structure and hygiene checks for one Markdown file.
 fn check_file(
     root: &Path,
@@ -347,7 +371,10 @@ fn check_file(
             "heading: {relative_path} does not start with a top-level heading"
         ));
     }
-    for capture in LINK.captures_iter(&text) {
+    // Fenced material is displayed without participating: a bracketed
+    // pattern inside a code fence is not a Markdown link.
+    let linkable = without_fenced_lines(&text);
+    for capture in LINK.captures_iter(&linkable) {
         let target = &capture[1];
         if target.starts_with("http://")
             || target.starts_with("https://")

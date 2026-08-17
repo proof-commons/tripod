@@ -46,7 +46,7 @@ When artifacts disagree:
 
 A lower owner never overrides an upper owner on the upper owner’s subject.
 
-### 1.2 Status vocabulary · `tbl:backlog:status`
+### 1.2 Status vocabulary · `tab:backlog:status`
 
 | Status | Meaning |
 |---|---|
@@ -70,7 +70,7 @@ A static-review finding remains open until one of these occurs:
 “Existing tests pass” does not close a finding unless a named test reaches the
 reported path.
 
-### 1.3 Priority vocabulary · `tbl:backlog:priority`
+### 1.3 Priority vocabulary · `tab:backlog:priority`
 
 | Priority | Meaning |
 |---|---|
@@ -142,7 +142,7 @@ No named consumer means no digest. No distinct decision means no digest.
 
 ## 2. Review basis and current evidence · `sec:backlog:review-basis`
 
-### 2.1 Latest static review · `tbl:backlog:review-basis`
+### 2.1 Latest static review · `tab:backlog:review-basis`
 
 The current review is the fifth static review, performed in two independent
 passes over the supplied concatenation of the tree:
@@ -792,7 +792,7 @@ A domain separator is hashed input that identifies a recipe, and the product's n
 
 ## 3. Current repository state · `sec:backlog:state`
 
-### 3.1 Implemented areas · `tbl:backlog:implemented`
+### 3.1 Implemented areas · `tab:backlog:implemented`
 
 | Area | Current source state |
 |---|---|
@@ -819,7 +819,7 @@ A domain separator is hashed input that identifies a recipe, and the product's n
 | Security policy | Public-data interfaces and external execution-environment boundary |
 | Path policy | Central tracked-mode audit, lexical output roles, explicit host-filesystem non-claims |
 
-### 3.2 Current published identities · `tbl:backlog:identities`
+### 3.2 Current published identities · `tab:backlog:identities`
 
 Exact hash and version values are deliberately not duplicated here. Read each
 identity from its authority:
@@ -844,7 +844,7 @@ Architecture finality does not imply:
 - deployment evidence;
 - production readiness.
 
-### 3.3 Not implemented · `tbl:backlog:not-implemented`
+### 3.3 Not implemented · `tab:backlog:not-implemented`
 
 ```text
 public complete compiler-analysis API beyond the target-requirement boundary
@@ -900,7 +900,7 @@ credentials, or production authority.
 
 ## 4. Compact historical record · `sec:backlog:history`
 
-### 4.1 Completed phases · `tbl:backlog:completed-phases`
+### 4.1 Completed phases · `tab:backlog:completed-phases`
 
 | Phase | Status | Durable record |
 |---|---|---|
@@ -909,7 +909,7 @@ credentials, or production authority.
 | Phase 2 | HISTORICAL | Guide-4 through Guide-7 gate records, §2.8–§2.11 |
 | Phase 3 | Active | current backlog and Phase-3 card |
 
-### 4.2 Historical finding families · `tbl:backlog:historical-findings`
+### 4.2 Historical finding families · `tab:backlog:historical-findings`
 
 | Family | Status | Scope |
 |---|---|---|
@@ -926,7 +926,7 @@ credentials, or production authority.
 | `T4` | DONE | Runtime-bound conformance in the global invariant |
 | `T5` | DONE | Removed duplicated volatile identities from planning prose |
 
-### 4.3 Identity work · `tbl:backlog:identity-work`
+### 4.3 Identity work · `tab:backlog:identity-work`
 
 | ID | Status | Result |
 |---|---|---|
@@ -944,7 +944,7 @@ no public realization or compiler digest without a real consumer.
 
 ## 5. Current static-review findings · `sec:backlog:findings`
 
-### 5.1 Summary · `tbl:backlog:findings-current`
+### 5.1 Summary · `tab:backlog:findings-current`
 
 | ID | Priority | Status | Finding |
 |---|---:|---|---|
@@ -959,7 +959,7 @@ records follow. Implementation detail beyond these records belongs to Git
 history. The later two-pass review recorded in §2.1 opened the SR2 findings
 in §5.2.
 
-### 5.2 Second-review findings · `tbl:backlog:findings-sr2`
+### 5.2 Second-review findings · `tab:backlog:findings-sr2`
 
 | ID | Severity | Status | Finding |
 |---|---|---|---|
@@ -985,7 +985,7 @@ were parked with explicit activation conditions; the third review re-raised
 both, which satisfies those conditions, so they are active again and tracked
 with the §5.3 register.
 
-### 5.3 Third-review findings · `tbl:backlog:findings-sr3`
+### 5.3 Third-review findings · `tab:backlog:findings-sr3`
 
 The third static review reported two passes over the tree recorded in §2.1.
 First-pass findings carry SR3 identifiers; second-pass findings retain the
@@ -1012,7 +1012,7 @@ The Guide-8 preflight wave owned SR3-01 through SR3-08 and S2-01 through
 S2-07; all were closed before the compiler target-requirement boundary
 became public, gate record §2.12.
 
-### 5.4 Fourth-review findings · `tbl:backlog:findings-r2`
+### 5.4 Fourth-review findings · `tab:backlog:findings-r2`
 
 The fourth static review reported two passes over the tree recorded in §2.1.
 Reconfirmed first-pass findings carry R2-C identifiers; second-pass additions
@@ -1034,7 +1034,7 @@ instruction core consumes the contracts.
 | `R2-N03` | Medium | DONE | Public architecture identity functions accept unvalidated architecture values, so an invalid architecture can bear the active semantic hash recipe. The draft and release validators now return borrowing validated wrappers that are the only public path to the identity and publication functions; unchecked projections are crate-private for mutation tests, and an equivalence test plus the pinned gates prove no published identity moved. |
 | `R2-N04` | Medium | DONE | Compare-if-changed publication checks bytes only, so mode-only corruption survives indefinitely, including a synced helper binary that lost its executable bit. Destination freshness now means bytes and required mode; mode-only mismatches are repaired in place without rewriting bytes, the repair is visible in the typed result, both sync scripts repair equal-byte destinations, and a mock-toolchain shell test runs the full matrix. |
 
-### 5.5 Fifth-review findings · `tbl:backlog:findings-sr5`
+### 5.5 Fifth-review findings · `tab:backlog:findings-sr5`
 
 The fifth static review reported two passes over the tree recorded in §2.1.
 The second pass consolidates the first: first-pass identifiers R5-01 through
@@ -1163,7 +1163,7 @@ plans check all passed.
 
 ## 6. Phase-2 implementation queue · `sec:backlog:phase2`
 
-### 6.1 Summary · `tbl:backlog:phase2`
+### 6.1 Summary · `tab:backlog:phase2`
 
 | ID | Priority | Status | Deliverable |
 |---|---:|---|---|
@@ -1308,7 +1308,7 @@ none was minted.
 
 ## 7. Immediate algorithm preparation · `sec:backlog:algorithms`
 
-### 7.1 Current status · `tbl:backlog:algorithms`
+### 7.1 Current status · `tab:backlog:algorithms`
 
 | ID | Status | Deliverable |
 |---|---|---|
@@ -1387,7 +1387,7 @@ hard predicates independently of the production helper it verifies.
 
 ## 8. Dependency posture · `sec:backlog:dependencies`
 
-### 8.1 Current and deferred dependencies · `tbl:backlog:dependencies`
+### 8.1 Current and deferred dependencies · `tab:backlog:dependencies`
 
 | Dependency | Status | Role |
 |---|---|---|
@@ -1539,7 +1539,7 @@ Do not run the full Meson/release surface after every small edit.
 Documentation-only changes do not require the Rust lane, but they still require
 the relevant documentation and census checks.
 
-### 10.2 Focused commands · `tbl:backlog:focused-tests`
+### 10.2 Focused commands · `tab:backlog:focused-tests`
 
 | Area | Command |
 |---|---|
@@ -1696,7 +1696,125 @@ typed-boundary or correctness repair.
 
 ---
 
-## 13. Backlog hygiene · `sec:backlog:hygiene`
+## 13. Adopted-draft integration queue · `sec:backlog:drafts`
+
+Four externally authored normative drafts were accepted 2026-08-16, audited (28 findings), corrected upstream by the author, and re-adopted and
+archived verbatim under [plans/drafts/](drafts/README.md): the label
+calculus, the environment-kind registry, the identity-adjudication
+procedure, and the interchange conventions. Integration is chartered as
+its own batch; the drafts bind nothing until the integrating changes
+land. The user has ruled that a superseded ADR is deleted, not kept
+marked superseded: retired records belong to Git history, not the
+active tree.
+
+### 13.1 Integration tasks · `tab:backlog:draft-tasks`
+
+| ID | Status | Task |
+|---|---|---|
+| `DI-001` | ACTIVE | Gap census: map each draft clause onto the present ADR-012/ADR-013 text, the ADR-016 identity rules, and the implemented labels package; classify every clause as already-implemented, divergent, or new; record the checker-engineering findings register. |
+| `DI-002` | DONE | Adopt the corrected label calculus and kind registry as ADRs; delete the ADR text they retire; migrate the eight conflicting kind tokens to the registry forms corpus-wide per the user's ruling, with every citation updated in the same commit; record the hyphenated-area amendment and the local-extension register. |
+| `DI-002b` | DONE | Replace the second-edition adopted drafts with the author's third-edition texts and repair every citation that dangled as a result. The third edition was verified against the audit register before the swap: all 26 findings fixed, the 7 defects among them included, and a mechanical re-audit clean — every per-document citation resolves, every mint is unique, and the kind registry's headline counts of 333 names, 349 rows, 208 kinds, 3 declared hybrids and 4 device classes derive exactly from its tables. Fourteen citations across three plan files were retargeted in the same commit as the swap, per the calculus's same-commit rule. Both adopting records were then refreshed to the editions they adopt: ADR-019 restates all seven adoption parameters and records that the checker implements the authorship warrant species only, ADR-020 names this repository as the registry's acceptee and recasts its extension register as the recorded extension set with located first-hand evidence, and a second kind-migration round settled two further tokens. |
+| `DI-003` | QUEUED | Re-engineer the labels checker to the calculus: a single participation scanner shared by every check (mints, citations, links, hygiene, inline-code discipline), owner signatures with registered prefixes, imported and synthetic citations, anchor harvests, and the kind registry as the checker's kind vocabulary. |
+| `DI-004` | QUEUED | Adopt the identity-adjudication procedure against ADR-016: classify every existing digest through the benefit criterion with admission records, and MIGRATE the two grandfathered recipes to domain-separated forms per the user's ruling — the architecture semantic and anchor-set hashes change under a recorded recipe migration, superseding the ADR-016 grandfather clause. |
+| `DI-005` | QUEUED | Interchange conventions: record adoption as the standing wire-format discipline for future externally consumed documents; no implementation until a consumer exists. |
+
+The user's integration rulings, 2026-08-16: kind-token conflicts migrate
+to the registry forms; the two grandfathered identity recipes migrate
+now rather than persisting as a recorded divergence; the area grammar is
+adopted with a recorded amendment admitting hyphens; per-package owner
+prefixes are registered as checker data in DI-003. DI-002 landed
+ADR-019 and ADR-020, deleted the retired records, migrated six of the
+eight conflicts (task and res adjudicated as genuine local extensions),
+and re-pinned the three identities the label rename moved: the Layer-0
+anchor-set hash, the architecture semantic hash, and the
+deployment-profile identity, each with the retired pin reproduced
+before the new one was taken. The Layer-0 LaTeX surface keeps three
+unadjudicated tokens (motto, a true collision; invest; abs), recorded
+in ADR-020.
+
+DI-002b's swap carried three consequences beyond the citation repairs.
+The calculus's third edition adds a derivation authority the checker has
+no notion of — a profile signature, a reserved-kind set, two warrant
+rules, warrant totality and inventory discipline — which is now the
+largest unmet item of its implementation gate and belongs to DI-003. The
+gap census's postcondition checklist was reframed as a gate checklist,
+both the calculus and the registry having moved to Gates. And this
+record's own label-calculus gate was renamed from the implementation
+name to the adoption name: the third edition mints the implementation
+text for its own gate, and although the owner-keyed registries keep two
+owners minting one text from being a duplicate, one text naming two
+gates is a reader hazard the record yields on.
+
+A second kind-migration round followed the swap. The Layer-0
+verification appendix minted three walkthrough anchors under the token
+ver, which the adopted registry assigns to Version and Revision;
+verification is verif. The three mints in
+`papers/attestation/sections/A1_verification.tex` moved to the verif
+token, and the generated Layer-0 register followed in the same commit,
+six sites in two files and no other occurrence anywhere in the tree.
+
+The identity consequence was measured rather than assumed. The Layer-0
+anchor-set recipe was reproduced from the pre-change tree over the
+realization contract's thirty-eight cited anchors and returned the
+pinned value exactly, which is what validates the reproduction; none of the three
+renamed labels is in that set, because the contract cites the
+walkthrough section but never these three sub-anchors. The same
+recomputation after the rename returns the same value, so nothing was
+re-pinned: the ceremony ran and its answer was that the anchor set did
+not move. No welded witness semantic tag carries a walkthrough anchor
+either, so the architecture semantic hash and the deployment-profile
+identity are likewise untouched.
+
+DI-002b closes with the refresh of the two adopting records. ADR-019
+now fixes all seven adoption parameters the third edition asks for: the
+owner signature, the owner partition by tree location, an empty profile
+signature, an empty reserved-kind set, the designated typed-data
+classes, the two citation-index designations, and the scanned-region
+recognition for Markdown, Rust, and LaTeX. The profile signature and the
+reserved-kind set are empty together on purpose — a reserved kind no
+profile governs admits neither warrant rule, so a nonempty reserved set
+under an empty profile signature would reserve kinds nobody could use —
+and the record states plainly that the checker implements the authorship
+warrant species alone. ADR-020 names this repository as the registry's
+acceptee, recasts its register as the recorded extension set in the
+edition's own terms with a located occurrence behind each of the
+thirteen entries, and adjudicates the six keeps by genre: task against
+the registry's exercise and code-asset readings of Task, res against
+Result, trap against Pitfall, obl against Requirement, err against
+Erratum, and pin against Version. Four tokens left the set because the
+third edition carries them as rows of its own — pkg, q, req, and test —
+with no mint moved. Postcondition and Requirement remained registry
+rows, so the round-one decisions on post and req stand as taken.
+
+Four residual items outlive the close, none of them DI-002b's to
+discharge. The derivation-warrant machinery — a profile signature, a
+census, standard places, inventory discipline, and the half of warrant
+totality that governs reserved kinds — is unbuilt, as are the near-miss
+warnings the calculus asks for, the general form of synthetic-citation
+totality, and the registry's companion attestation register with its
+homonym view; all of these are DI-003, and ADR-019 and ADR-020 record
+them as unmet in their own terms. The identity census with admission and
+stop records is DI-004. The interchange conventions stay dormant until a
+consumer exists, which is DI-005. And the Layer-0 LaTeX surface keeps
+three unadjudicated tokens under ADR-020 — motto, a true collision;
+invest; and abs — which enter scope with that surface and not before.
+
+### 13.2 Checker findings so far · `tab:backlog:draft-findings`
+
+| ID | Status | Finding |
+|---|---|---|
+| `DI-F01` | DONE | The plans-tree link scanner read bracketed patterns inside fenced blocks as Markdown links, so a CDDL regex in an archived draft failed as a broken link. Fenced interiors are now blanked before link scanning; the systematic single-scanner repair remains DI-003. |
+| `DI-F02` | ACTIVE | Participation is enforced inconsistently across checks: the label scanner honors fences, the link scanner did not, and the scaffolding, placeholder, and confidence hygiene checks still scan fenced material. One participation model must feed every check. |
+| `DI-F03` | ACTIVE | The calculus's owner signatures, imported-citation prefixes, synthetic citations, anchor harvests, and acute-delimiter hard failure are only partially realized in the present checker; the gap census of DI-001 owns the exact delta. |
+
+### 13.3 Toolchain engineering · `tab:backlog:toolchain-tasks`
+
+| ID | Status | Task |
+|---|---|---|
+| `CI-001` | DONE | Rewrite the shell CI driver in Python with a typed lane tracker: every lane declared with status and skip reason, every lane and the whole run wall-timed, and a timing report emitted as the success output and on failure alike. Delivered as scripts/ci.py with an eleven-lane registry and the ci.sh shim; the first dataset shows the two test lanes at eighty-four percent of a twenty-minute gate. |
+| `CI-002` | ACTIVE | Move test execution to the meson layer per the user's ruling: no workspace-level cargo test in the gate; each package's test groups run as individual meson-driven lanes, and per-test timing uses the nightly libtest JSON output, which the user has admitted as not affecting what the tests prove. The timing report gains per-package and per-test figures; attribution replaces the aggregate block. Contention on the shared cargo target directory is measured and the chosen serialization or partitioning recorded honestly. |
+
+## 14. Backlog hygiene · `sec:backlog:hygiene`
 
 ### 13.1 Adding work · `rule:backlog:add`
 
@@ -1752,6 +1870,6 @@ After a phase or remediation series:
 
 ---
 
-## 14. One-line backlog · `rem:backlog:one-line`
+## 15. One-line backlog · `rem:backlog:one-line`
 
 > Settle the STATE-constructor, wide-arithmetic, and declassification prototypes on the evidenced primitive substrate, without emitting operations, completing backend patterns, minting speculative identities, or claiming production activation.

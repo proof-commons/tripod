@@ -21,7 +21,7 @@
 //! mutates the *script*, because a schedule that fails to verify a
 //! success flag is not a witness a caller could supply. Guide 10 admits
 //! that row as a static or a target rejection
-//! (`tbl:guide10:wide-floor-threats`); it is stated as both, refused by
+//! (`tab:guide10:wide-floor-threats`); it is stated as both, refused by
 //! the emitter and refused by the target.
 //!
 //! # What this matrix cannot state, and why

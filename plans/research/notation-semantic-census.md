@@ -4,8 +4,8 @@
 > **Blocks:** nothing further; the surviving work is attestation label minting and editorial correction
 > **Affected packages:** `papers/attestation`
 > **Depends on:** the corrected scopes from (`q:attestation:floor-bounds`)
-> **Decisions:** ADR-013 owner-aware label graph is sufficient; a second semantic registry is rejected
-> **Expected handoff:** precise Layer-0 semantic labels for the floor-bound correction, plus editorial repairs to the macro comments and symbol index
+> **Decisions:** ADR-019 owner-aware label graph is sufficient; a second semantic registry is rejected
+> **Expected handoff:** precise attestation semantic labels for the floor-bound correction, plus editorial repairs to the macro comments and symbol index
 
 ## Question · `sec:notation-semantic-census:question`
 
@@ -30,7 +30,7 @@ since been removed and replaced by separately scoped claims.
 That observation stands. What does not stand is the inference that the repair
 is a second vocabulary registry.
 
-## Observed drift instances · `tbl:notation-semantic-census:drift`
+## Observed drift instances · `tab:notation-semantic-census:drift`
 
 Retained as evidence. All were found by reading, not by any gate.
 
@@ -98,7 +98,7 @@ scope that matters, distinguishing two claims that share notation, asserted as
 a verification invariant, or whose alteration would change a released
 consumer's dependency.
 
-## Audit of the second half of the diagnosis · `tbl:notation-semantic-census:audit`
+## Audit of the second half of the diagnosis · `tab:notation-semantic-census:audit`
 
 The diagnosis also proposed that the realization often cites a broad nearby
 definition or section instead of the exact upstream claim. Measured against the
@@ -127,8 +127,8 @@ current instances. The imprecision is Attestation-internal.
 Resolved. The problem was misdiagnosed.
 
 The repository does not need a second semantic-vocabulary registry, nor a
-parser for macro strata, aliases, symbol-index rows, and prose scopes. ADR-013's
-owner-aware label graph is sufficient: Layer 0 mints, consumers import with the
+parser for macro strata, aliases, symbol-index rows, and prose scopes. ADR-019's
+owner-aware label graph is sufficient: Attestation mints, consumers import with the
 `A-` prefix, and the graph already enforces ownership, uniqueness, form,
 resolution, index/body agreement, and the anchor-set binding.
 

@@ -27,7 +27,7 @@ one-way publications.
 
 They are not first-party semantic inputs.
 
-## Owned sources · `tbl:source:owners`
+## Owned sources · `tab:source:owners`
 
 | Owner | Typed source |
 |---|---|

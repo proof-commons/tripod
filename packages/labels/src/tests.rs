@@ -8,7 +8,7 @@ use petgraph::Direction;
 use crate::{
     LabelErrorCode,
     census::{CensusGroup, RepositoryCensus},
-    label::{Label, LabelShape},
+    label::{Label, LabelParseError, LabelShape},
     latex::harvest_attestation,
     markdown::{InlineCodeContext, scan_markdown},
     model_labels_json,
@@ -259,6 +259,28 @@ fn unclosed_inline_code_rejects() {
     );
 }
 
+/// The ADR-019 segment amendment, both halves: an area may hyphenate
+/// exactly as a name may, and a kind may not, because the kind ranges
+/// over the ADR-020 registry of words.
+#[test]
+fn area_may_hyphenate_and_kind_may_not() {
+    let hyphenated_area = Label::parse("sec:labels-index:purpose", LabelShape::Planning);
+    assert!(hyphenated_area.is_ok(), "an area may hyphenate");
+
+    let hyphenated_name = Label::parse("rule:labels:external-citation", LabelShape::Planning);
+    assert!(hyphenated_name.is_ok(), "a name may hyphenate");
+
+    let hyphenated_kind = Label::parse("sub-sec:labels:purpose", LabelShape::Planning);
+    assert!(
+        matches!(hyphenated_kind, Err(LabelParseError::Malformed(_))),
+        "a kind may not hyphenate"
+    );
+
+    // The realization owner's two-part divisions are unaffected.
+    let two_part = Label::parse("sec:representation", LabelShape::Realization);
+    assert!(two_part.is_ok());
+}
+
 #[test]
 fn imported_owner_and_local_label_parse() {
     let imported = ImportedLabel::parse("ADR012-rule:labels:decision").expect("ADR token parses");
@@ -268,7 +290,7 @@ fn imported_owner_and_local_label_parse() {
 
 #[test]
 fn duplicate_attestation_mint_diagnostic_names_both_locations() {
-    // ADR-013 (F3-007): a duplicate-mint diagnostic identifies both
+    // ADR-019 (F3-007): a duplicate-mint diagnostic identifies both
     // the duplicate occurrence and the first mint, in canonical
     // repository-relative locations, for the attestation owner exactly as for the
     // shared insert_or_diagnose owners.

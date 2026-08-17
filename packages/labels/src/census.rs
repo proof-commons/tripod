@@ -6,7 +6,7 @@
 //! path from its own compiled location. The discovery walk survives
 //! here as a *verifier*: [`RepositoryCensus::verify`] re-discovers the
 //! subjects on disk and hard-fails when the argument census and
-//! reality disagree, preserving the ADR-013 guarantee that a new file
+//! reality disagree, preserving the ADR-019 guarantee that a new file
 //! cannot silently sit outside the label graph.
 //!
 //! [`RepositoryCensus::discover`] is also the fixture constructor for
@@ -25,7 +25,7 @@ use crate::{
     source::{SourceLocation, relative_to},
 };
 
-/// Directory names excluded from on-disk census discovery (ADR-013):
+/// Directory names excluded from on-disk census discovery (ADR-019):
 /// build products, archives, and vendored trees. Hidden directories
 /// are excluded unconditionally.
 const EXCLUDED_CENSUS_DIRS: &[&str] = &["archive", "build", "builddir", "target", "vendor"];
@@ -64,7 +64,7 @@ pub struct RepositoryCensus {
 }
 
 /// Census groups, for scoped verification: an unrelated group's
-/// staleness must not block a scoped derivation (ADR-013).
+/// staleness must not block a scoped derivation (ADR-019).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CensusGroup {
     Attestation,
@@ -604,7 +604,7 @@ fn collect_by_extension(
 }
 
 /// Discover every authored Markdown file outside the trees owned
-/// elsewhere: the `DOC` owner census (ADR-013).
+/// elsewhere: the `DOC` owner census (ADR-019).
 fn walk_docs(
     census: &RepositoryCensus,
     directory: &Path,

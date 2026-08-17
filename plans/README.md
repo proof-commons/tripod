@@ -45,7 +45,7 @@ citation:  (`pkg:realization:contract`)
 
 They are non-normative and non-identity-bearing. Their mints,
 same-owner citations, and owner crossings are mechanically checked under
-ADR-013 so planning navigation fails closed without becoming protocol,
+ADR-019 so planning navigation fails closed without becoming protocol,
 compiler, target, ABI, deployment, or release identity.
 
 Upstream citations use square brackets:
@@ -57,9 +57,9 @@ Upstream citations use square brackets:
 ```
 
 Imported citations are linted under
-(`[ADR012-rule:labels:external-citation]`).
+(`inf:labels:imported-citation`).
 
-## Directory index · `tbl:plans:directories`
+## Directory index · `tab:plans:directories`
 
 | Path | Owner |
 |---|---|
@@ -70,10 +70,11 @@ Imported citations are linted under
 | [`phases/`](phases/README.md) | Phase entry conditions, deliverables, evidence, and exit gates. |
 | [`research/`](research/README.md) | Unresolved prototype-driven questions. |
 | [`reference/`](reference/README.md) | External technical reference material. |
+| [`drafts/`](drafts/README.md) | Archived adopted-source normative drafts awaiting integration. |
 | [`guides/`](guides/README.md) | Archived executed and concept implementation guides. |
 | [`reviews/`](reviews/README.md) | Archived static reviews of named repository trees. |
 
-## Root files · `tbl:plans:root-files`
+## Root files · `tab:plans:root-files`
 
 | File | Owner |
 |---|---|
@@ -120,6 +121,7 @@ duplication rather than content, and the budget keeps one fact to one owner.
 Archived documents — the verbatim records under:
 
 ```text
+plans/drafts/
 plans/guides/
 plans/reviews/
 ```
@@ -147,7 +149,7 @@ a reference for external facts; and the backlog for current work.
 Git history is the archive. Superseded long prose is deleted rather than copied
 into another planning folder.
 
-## Status vocabulary · `tbl:plans:status`
+## Status vocabulary · `tab:plans:status`
 
 | Status | Meaning |
 |---|---|

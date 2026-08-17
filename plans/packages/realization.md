@@ -265,7 +265,7 @@ It does not establish:
 
 Model conformance is a separate test boundary.
 
-## Milestones · `tbl:realization:milestones`
+## Milestones · `tab:realization:milestones`
 
 | Label | Deliverable |
 |---|---|

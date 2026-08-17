@@ -2,7 +2,7 @@
 //!
 //! Implements `(´def:verification:property-action´)`,
 //! `(´def:verification:property-step-result´)`,
-//! `(´lst:verification:property-owner-helpers´)`,
+//! `(´listing:verification:property-owner-helpers´)`,
 //! `(´rule:verification:property-world-funding´)`,
 //! `(´rule:verification:property-selectors´)`,
 //! `(´def:verification:property-action-seed´)`,
@@ -61,7 +61,7 @@ use crate::signer::SignerSet;
 use crate::transition::Transition;
 use crate::world::World;
 
-// ´lst:verification:property-owner-helpers´
+// ´listing:verification:property-owner-helpers´
 
 pub const PROPERTY_OWNER_A: OwnerKey = OwnerKey([21_u8; 32]);
 

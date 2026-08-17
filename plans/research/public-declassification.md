@@ -130,7 +130,7 @@ LiveReceipt<private>
 
 with no state or event effect.
 
-## Candidate matrix · `tbl:public-opening:candidates`
+## Candidate matrix · `tab:public-opening:candidates`
 
 | Mint | Candidate | Strength | Main limitation |
 |---|---|---|---|

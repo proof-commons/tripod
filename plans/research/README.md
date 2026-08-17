@@ -5,7 +5,7 @@ review, prototypes, measurements, or formal analysis.
 
 Research notes do not define production policy.
 
-## Index · `tbl:research:index`
+## Index · `tab:research:index`
 
 | Question | Status | Blocks |
 |---|---|---|

@@ -37,7 +37,7 @@ It does not:
 
 Machine-consumed target facts live in typed Rust.
 
-## Evidence levels · `tbl:elements-ref:evidence-levels`
+## Evidence levels · `tab:elements-ref:evidence-levels`
 
 | Level | Meaning |
 |---|---|
@@ -79,7 +79,7 @@ policy/resource limits
 
 Paths may move. The review records the actual locations consulted.
 
-## Capability groups · `tbl:elements-ref:groups`
+## Capability groups · `tab:elements-ref:groups`
 
 | Group | Provisional target use |
 |---|---|
@@ -99,7 +99,7 @@ Paths may move. The review records the actual locations consulted.
 
 Exact opcode numbers and stack behavior belong in the typed target registry.
 
-## Surveyed opcode registry · `tbl:elements-ref:opcodes`
+## Surveyed opcode registry · `tab:elements-ref:opcodes`
 
 > Provisional survey facts; verify before encoding them in `target-elements`.
 
@@ -126,7 +126,7 @@ Exact opcode numbers and stack behavior belong in the typed target registry.
 | 227 | `OP_ECMULSCALARVERIFY` | elliptic-curve verification |
 | 228 | `OP_TWEAKVERIFY` | elliptic-curve verification |
 
-## Surveyed encodings · `tbl:elements-ref:encoding-values`
+## Surveyed encodings · `tab:elements-ref:encoding-values`
 
 > Provisional survey facts; verify before encoding them in `target-elements`.
 
@@ -139,7 +139,7 @@ Exact opcode numbers and stack behavior belong in the typed target registry.
 | explicit inspected value | 8-byte little-endian target amount |
 | arithmetic operands | exact 8-byte signed little-endian |
 
-## Surveyed sharp edges · `tbl:elements-ref:sharp-edges`
+## Surveyed sharp edges · `tab:elements-ref:sharp-edges`
 
 > Provisional survey facts; verify before encoding them in `target-elements`.
 
@@ -367,7 +367,7 @@ Review at least:
 Exact complete transactions determine deployment batch bounds. Isolated script
 size is insufficient.
 
-## Known gaps · `tbl:elements-ref:gaps`
+## Known gaps · `tab:elements-ref:gaps`
 
 | Gap | Required resolution |
 |---|---|
@@ -404,7 +404,7 @@ For every backend-used primitive, the target contract should expose:
 
 The backend consumes those typed values, not this document.
 
-## Review provenance record · `tbl:elements-ref:review-record`
+## Review provenance record · `tab:elements-ref:review-record`
 
 This section records the source review that produced the typed contract in
 `tripod-target-elements`. Everything in it is review provenance: it
@@ -423,7 +423,7 @@ No package parses this file.
 | review date | 2026-08-13 |
 | typed by | `packages/target-elements/src/opcode.rs` |
 
-### Source locations consulted · `tbl:elements-ref:review-sources`
+### Source locations consulted · `tab:elements-ref:review-sources`
 
 | Location | Facts taken from it |
 |---|---|
@@ -437,7 +437,7 @@ No package parses this file.
 | `src/crypto/sha256.cpp` | the streaming hash state serialization and its maximum message length |
 | `src/serialize.h` | the size bound the current-input-index primitive checks against |
 
-### Upstream tests consulted · `tbl:elements-ref:review-tests`
+### Upstream tests consulted · `tab:elements-ref:review-tests`
 
 | Test | Use |
 |---|---|
@@ -449,7 +449,7 @@ primitives. The functional test above is the only upstream behavioural source,
 which is itself a reason the typed contract states evidence requirements rather
 than claiming verification.
 
-### Claims accepted into the typed contract · `tbl:elements-ref:review-accepted`
+### Claims accepted into the typed contract · `tab:elements-ref:review-accepted`
 
 - the tapscript leaf version is target-specific and is not the corresponding
   upstream Bitcoin value;
@@ -479,7 +479,7 @@ than claiming verification.
 - the per-check validation budget is charged only by the signature and curve
   primitives.
 
-### Claims left unresolved · `tbl:elements-ref:review-unresolved`
+### Claims left unresolved · `tab:elements-ref:review-unresolved`
 
 | Claim | Why it is unresolved |
 |---|---|
@@ -490,7 +490,7 @@ than claiming verification.
 | commitment equality | no reviewed script primitive establishes it |
 | authenticated opening | low-level curve and hash primitives exist, which does not constitute an opening proof |
 
-### Contract revision 2 review · `tbl:elements-ref:review-v2`
+### Contract revision 2 review · `tab:elements-ref:review-v2`
 
 The Guide-10 prototypes needed primitives the first review had not reached, so
 the contract moved to revision 2. The census below is review provenance for
@@ -517,7 +517,7 @@ thirty-two byte digest. A construction needing canonical ordering must build it
 from the primitives that do exist and prove the construction, which is a
 different claim from having the capability.
 
-### Corrections and additions from that review · `tbl:elements-ref:review-v2-repairs`
+### Corrections and additions from that review · `tab:elements-ref:review-v2-repairs`
 
 | Correction | Detail |
 |---|---|
@@ -545,7 +545,7 @@ production deployment evidence has been produced and production target
 support is not claimed. A development report speaks only for its exact
 executor, revision, and disposable chain.
 
-### Native execution provenance · `tbl:elements-ref:native-provenance`
+### Native execution provenance · `tab:elements-ref:native-provenance`
 
 | Fact | Value |
 |---|---|
@@ -558,7 +558,7 @@ executor, revision, and disposable chain.
 | Determinism | report bytes identical across two fresh-node runs and the build lane |
 
 The Guide-10 prototype matrices ran later, against a daemon at the merged tip
-recorded in (`tbl:elements-ref:review-v2`): 36 constructor rows and 39
+recorded in (`tab:elements-ref:review-v2`): 36 constructor rows and 39
 wide-floor rows, each twice and byte-identically. Those runs are prototype
 evidence and are recorded in the research files, not here. A report still
 speaks only for its exact executor, revision, and disposable chain, and no

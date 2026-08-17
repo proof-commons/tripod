@@ -4,7 +4,7 @@
 > **Package:** `tripod-labels`
 > **Library:** `labels`
 > **Direct dependencies:** `architecture`, `petgraph`
-> **Policy:** (`[ADR012-rule:labels:decision]`),
+> **Policy:** (`[ADR019-dec:labels:adoption]`),
 > [D007](../decisions/007-petgraph-graph-substrate.md)
 > **Assurance class:** Documentation conformance
 
@@ -18,7 +18,7 @@ It owns Attestation LaTeX, realization Markdown, ADR, first-party crate Rust,
 and planning imported labels, plus the two generated upstream planning registers.
 
 Plan-local labels remain non-normative; under
-(`[ADR013-inv:labels:total-resolution]`) they are linted for one mint
+(`inv:labels:total-resolution`) they are linted for one mint
 per label and complete citation resolution.
 
 ## Inputs · `sec:labels-package:inputs`
