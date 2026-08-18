@@ -2126,7 +2126,7 @@ fn double_backtick_spans_are_displayed_not_participating() {
 
 #[test]
 fn a_fenced_index_heading_does_not_open_the_generated_index_region() {
-    // DI-F01 resolution 1. The Realization harvest read its index-region
+    // DI-F02. The Realization harvest read its index-region
     // boundary from the raw source while reading its spans from the
     // participation view, so a displayed heading could re-partition a
     // document the span scanner had already partitioned the other way.

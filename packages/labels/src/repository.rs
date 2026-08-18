@@ -769,7 +769,7 @@ fn harvest_attestation_citations(
         // let a heading inside a fenced block open or close the region
         // — a displayed heading silently re-partitioning the document
         // the span scanner had already partitioned the other way
-        // (DI-F01 resolution 1).
+        // (DI-F02).
         if !scan.participation.participates(number + 1) {
             continue;
         }

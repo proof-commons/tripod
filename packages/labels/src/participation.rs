@@ -13,7 +13,7 @@
 //!
 //! Before this module the repository re-derived fragments of that
 //! judgment in six places, which is how the scanners came to disagree
-//! (recorded as DI-F01). The survey below is the refactor's contract:
+//! (recorded as DI-F01 and DI-F02). The survey below is the contract:
 //! every row names a decision site, the logic it used to carry, and
 //! where that decision lives now. A new check must appear in this
 //! table, consuming this module, rather than growing a seventh
@@ -27,7 +27,7 @@
 //! | `repository::harvest_realization` | `delimiter_len != 1` skip, restated inline | [`MarkdownScan::participating_spans`] |
 //! | `repository::harvest_adrs` | `delimiter_len != 1` skip, restated inline | [`MarkdownScan::participating_spans`] |
 //! | `repository::harvest_markdown_owner` | `delimiter_len != 1` skip, restated inline | [`MarkdownScan::participating_spans`] |
-//! | `repository::harvest_attestation_citations` | `delimiter_len != 1` skip, restated inline; **and** computed the generated-index region boundary by walking raw `source.lines()` with no fence awareness | [`MarkdownScan::participating_spans`]; the region walk now consults [`ProseParticipation::participates`] (DI-F01 resolution 1) |
+//! | `repository::harvest_attestation_citations` | `delimiter_len != 1` skip, restated inline; **and** computed the generated-index region boundary by walking raw `source.lines()` with no fence awareness | [`MarkdownScan::participating_spans`]; the region walk now consults [`ProseParticipation::participates`] (DI-F02) |
 //! | `plans::without_fenced_lines` | a second fence open/close loop, blanking fenced lines for the link check only | [`ProseParticipation::blanked`] |
 //! | `rust_source::comment_segments` | comment/literal segmentation for Rust: the scanned-region recognition | moved here as [`comment_segments`], the Rust front-end; the harvester keeps only its fence handling, which calls [`fence_open`]/[`fence_close`]/[`nested_fence`] |
 //! | `latex::comments` | strips percent comments, honouring backslash escaping | moved here as [`latex_participating`], the LaTeX front-end; LaTeX has no fenced or double-delimited displayed material, so its region model is total |
