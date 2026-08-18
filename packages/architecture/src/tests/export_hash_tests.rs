@@ -577,8 +577,13 @@ fn anchor_set_hash_is_order_and_duplication_insensitive() {
 
 #[test]
 fn anchor_set_hash_matches_the_published_recipe() {
-    // sha256 of "def:model:classes\nopen:leverage-timing\nrem:model:calibration".
-    let expected = "7cf117528af2ae36e507b58ef1d0659c3b3976323e8e6deb9e96279533e347fb";
+    // sha256 of the domain prefix "tripod layer-0 anchor set
+    // v2\n" followed by
+    // "def:model:classes\nopen:leverage-timing\nrem:model:calibration".
+    // Re-pinned by the DI-004 recipe migration; the retired `…-v1`
+    // recipe hashed the joined names alone and returned
+    // 7cf117528af2ae36e507b58ef1d0659c3b3976323e8e6deb9e96279533e347fb.
+    let expected = "331071bbade9fce3fb4cc1386e5e7ff5701b6185e0e05e9b11143f9b26b00dd1";
 
     let digest = anchor_set_hash([
         "open:leverage-timing",
@@ -587,6 +592,35 @@ fn anchor_set_hash_matches_the_published_recipe() {
     ]);
 
     assert_eq!(canonical::hex(&digest), expected);
+}
+
+/// Retired identifiers stay retired: reusing one for a new recipe is
+/// the silent redefinition `rule:identity:migration` forbids.
+#[test]
+fn retired_identity_algorithms_stay_retired() {
+    assert_eq!(SEMANTIC_HASH_ALGORITHM, "sha256-canonical-json-v3");
+    assert!(RETIRED_SEMANTIC_HASH_ALGORITHMS.contains(&"sha256-canonical-json-v2"));
+    assert!(!RETIRED_SEMANTIC_HASH_ALGORITHMS.contains(&SEMANTIC_HASH_ALGORITHM));
+
+    assert_eq!(ANCHOR_SET_HASH_ALGORITHM, "sha256-anchor-set-v2");
+    assert!(RETIRED_ANCHOR_SET_HASH_ALGORITHMS.contains(&"sha256-anchor-set-v1"));
+    assert!(!RETIRED_ANCHOR_SET_HASH_ALGORITHMS.contains(&ANCHOR_SET_HASH_ALGORITHM));
+}
+
+/// The semantic hash is domain-separated: it is not the bare digest of
+/// the canonical body, so the retired `…-v2` measurement cannot be
+/// reintroduced by an unprefixed rehash of the same projection.
+#[test]
+fn the_semantic_hash_is_domain_separated() {
+    use sha2::{Digest, Sha256};
+
+    let validated = super::validated(&ARCHITECTURE);
+    let body = canonical_json_bytes(&validated).unwrap();
+
+    assert_ne!(
+        semantic_hash(&validated).unwrap().as_slice(),
+        Sha256::digest(&body).as_slice(),
+    );
 }
 
 #[test]
