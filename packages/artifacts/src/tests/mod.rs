@@ -41,7 +41,7 @@ fn fixture_census() -> (tempfile::TempDir, labels::RepositoryCensus) {
     .expect("attestation source");
     std::fs::write(
         root.join("docs/attestation/realization.md"),
-        "# Realization\n`sec:fixture`\n",
+        "# Realization\n`sec:fixture:division`\n",
     )
     .expect("realization source");
     std::fs::write(

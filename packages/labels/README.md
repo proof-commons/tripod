@@ -154,7 +154,7 @@ use labels::markdown::{InlineCodeContext, scan_markdown};
 use std::path::Path;
 
 // The path is a diagnostic label only; the text is the input.
-let scan = scan_markdown(Path::new("fixture.md"), "# Fixture · `sec:fixture`\n");
+let scan = scan_markdown(Path::new("fixture.md"), "# Fixture · `sec:fixture:division`\n");
 
 assert!(scan.diagnostics.is_empty());
 assert_eq!(scan.code_spans.len(), 1);
