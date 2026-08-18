@@ -120,7 +120,7 @@ struct FileSpec {
 /// Filesystem identity of a redirection target.
 ///
 /// This is the **sole** package-local exception to lexical output-role
-/// comparison (`[ADR017-rule:path:local-checks]`), which requires the
+/// comparison `(´[ADR017-rule:path:local-checks]´)`, which requires the
 /// exception to state four things:
 ///
 /// **The exact hazard.** Two redirection routes resolving to one file
