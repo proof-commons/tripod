@@ -162,27 +162,34 @@ This module is static data, not executable policy. It computes nothing.
 
 ### `canonical` — projection and identity
 
-- `SEMANTIC_HASH_ALGORITHM: &str` (`"sha256-canonical-json-v2"`),
+- `SEMANTIC_HASH_ALGORITHM: &str` (`"sha256-canonical-json-v3"`),
   `BEHAVIOURAL_HASH_ALGORITHM: &str`
-  (`"sha256-canonical-json-behavioural-v3"`), and
-  `RETIRED_BEHAVIOURAL_HASH_ALGORITHMS: &[&str]`.
+  (`"sha256-canonical-json-behavioural-v3"`),
+  `ANCHOR_SET_HASH_ALGORITHM: &str` (`"sha256-anchor-set-v2"`), and the
+  retired-identifier registers `RETIRED_SEMANTIC_HASH_ALGORITHMS`,
+  `RETIRED_BEHAVIOURAL_HASH_ALGORITHMS`, and
+  `RETIRED_ANCHOR_SET_HASH_ALGORITHMS: &[&str]`. Every recipe is
+  domain-separated; the anchor-set identifier is a code-side register, not a
+  published manifest field.
 - `canonical_json_bytes(&ValidatedDraftArchitecture) -> Result<Vec<u8>, serde_json::Error>`
   — the canonical encoding: sorted object keys, set-like arrays sorted during
   export conversion, insensitive to comments, formatting, and declaration
   order. TOML and pretty-printed JSON are presentation encodings and are never
   hash inputs.
 - `semantic_hash` / `semantic_hash_hex` — SHA-256 over the whole canonical
-  export body (not the envelope, which contains the hash).
+  export body (not the envelope, which contains the hash), under a
+  domain-separation prefix. `canonical_json_bytes` returns the projection
+  without that prefix: the separator belongs to the digest, not the encoding.
 - `behavioural_hash` / `behavioural_hash_hex` — SHA-256 over the behavioural
   arrays only (assets, roots, objects, operations, quantities, witnesses,
   clauses, bounds, amount limits, tags), under a domain-separation prefix;
   dependencies, decisions, and envelope metadata are excluded. The versioning
   gate keys on this hash: if it moves while `realization_version` is unchanged,
   the build fails.
-- `anchor_set_hash(impl IntoIterator<Item = &str>) -> [u8; 32]` — the Layer-0
-  pin recipe, `sha256(join("\n", sorted distinct anchor names))`. Sorting and
-  deduplication happen inside, so any occurrence order with repeats is
-  accepted.
+- `anchor_set_hash(impl IntoIterator<Item = &str>) -> [u8; 32]` — the attestation anchor-set
+  pin recipe: SHA-256 over the domain prefix followed by
+  `join("\n", sorted distinct anchor names)`. Sorting and deduplication happen
+  inside, so any occurrence order with repeats is accepted.
 - `hex(&[u8]) -> String` — lowercase hex helper.
 
 The unchecked projections over an unvalidated `Architecture` are deliberately

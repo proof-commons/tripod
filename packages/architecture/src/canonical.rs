@@ -9,14 +9,18 @@
 //!
 //! TOML and pretty-printed JSON are presentation encodings and are
 //! never hash inputs. This format is named
-//! `tripod canonical manifest JSON v2` (v2 lifts the version
-//! fields out of the hashed body and into the publication envelope);
-//! it is not a claim of RFC 8785/JCS compliance.
+//! `tripod canonical manifest JSON v3` (v2 lifted the version
+//! fields out of the hashed body and into the publication envelope; v3
+//! prefixes the hashed input with a domain separator and changes no
+//! byte of the encoding itself); it is not a claim of RFC 8785/JCS
+//! compliance.
 //!
 //! Two hashes are computed over the same canonical encoding: the full
 //! semantic hash (the whole export body) and the behavioural hash
-//! (the behavioural arrays only, under a domain-separation prefix).
-//! The versioning gate (`pin:pins:denotation`) keys on the latter.
+//! (the behavioural arrays only). Each applies its own
+//! domain-separation prefix, so the two digests cannot collide across
+//! recipes even over coincidentally identical bytes. The versioning
+//! gate (`pin:pins:denotation`) keys on the latter.
 //!
 //! Every public identity function takes a
 //! [`ValidatedDraftArchitecture`], never a raw `Architecture`
@@ -38,7 +42,21 @@ use crate::export::{
 use crate::spec::Architecture;
 use crate::validate::ValidatedDraftArchitecture;
 
-pub const SEMANTIC_HASH_ALGORITHM: &str = "sha256-canonical-json-v2";
+pub const SEMANTIC_HASH_ALGORITHM: &str = "sha256-canonical-json-v3";
+
+/// Retired semantic algorithm identifiers.
+///
+/// `…-v2` hashed the canonical body with no domain separator, carrying
+/// the algorithm identifier beside the digest in the envelope rather
+/// than inside the hashed input. It was a reviewed exception to the
+/// domain-separated form until the adopted adjudication discipline
+/// required domain separation for every semantic identity; `…-v3`
+/// prefixes the same canonical bytes. See ADR-016
+/// `rule:identity:separation-migration`.
+/// The projection and encoding are untouched, so the meaning
+/// identified is unchanged and only the measurement moved. The retired
+/// pinned value is recorded with the migration in ADR-016.
+pub const RETIRED_SEMANTIC_HASH_ALGORITHMS: &[&str] = &["sha256-canonical-json-v2"];
 
 pub const BEHAVIOURAL_HASH_ALGORITHM: &str = "sha256-canonical-json-behavioural-v3";
 
@@ -65,6 +83,29 @@ pub const RETIRED_BEHAVIOURAL_HASH_ALGORITHMS: &[&str] = &[
 /// behavioural digest can never be confused with a full-manifest
 /// digest over coincidentally identical bytes.
 const BEHAVIOURAL_DOMAIN_PREFIX: &[u8] = b"tripod behavioural JSON v3\n";
+
+/// Domain-separation prefix for the full-manifest semantic hash input.
+///
+/// Each prefix folds the domain separator and the recipe identifier of
+/// ADR-016 `rule:identity:classes` into one string, as the behavioural
+/// and deployment-profile prefixes already do.
+const MANIFEST_DOMAIN_PREFIX: &[u8] = b"tripod canonical manifest JSON v3\n";
+
+/// Canonical specification anchor-set hash algorithm identifier.
+pub const ANCHOR_SET_HASH_ALGORITHM: &str = "sha256-anchor-set-v2";
+
+/// Retired anchor-set algorithm identifiers.
+///
+/// `…-v1` retroactively names the original recipe, which hashed the
+/// newline-joined sorted names with no domain separator and published
+/// no identifier at all. It is named here so the migration record can
+/// refer to it; no manifest ever carried the string. The name set and
+/// its ordering are untouched by the migration, so the dependency set
+/// identified is unchanged and only the measurement moved.
+pub const RETIRED_ANCHOR_SET_HASH_ALGORITHMS: &[&str] = &["sha256-anchor-set-v1"];
+
+/// Domain-separation prefix for the specification anchor-set hash input (a frozen recipe string).
+const ANCHOR_SET_DOMAIN_PREFIX: &[u8] = b"tripod layer-0 anchor set v2\n";
 
 /// Behavioural projection of a bound: identity, cardinality use, and
 /// the frozen calibration classification. A calibrated bound's draft
@@ -272,16 +313,26 @@ pub(crate) fn unchecked_semantic_hash(
 ) -> Result<[u8; 32], serde_json::Error> {
     let bytes = unchecked_canonical_json_bytes(architecture)?;
 
-    let digest = Sha256::digest(bytes);
-
-    let mut result = [0_u8; 32];
-    result.copy_from_slice(&digest);
-
-    Ok(result)
+    Ok(manifest_digest(&bytes))
 }
 
-/// The Layer-0 anchor-set hash recipe:
-/// `sha256( join("\n", sorted(distinct anchor names)) )`.
+/// The full-manifest semantic digest: the domain prefix over the
+/// canonical body bytes. Single definition on purpose — the envelope
+/// producer and the standalone identity function must never drift into
+/// two recipes wearing one identifier.
+fn manifest_digest(canonical_bytes: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(MANIFEST_DOMAIN_PREFIX);
+    hasher.update(canonical_bytes);
+
+    let mut result = [0_u8; 32];
+    result.copy_from_slice(&hasher.finalize());
+
+    result
+}
+
+/// The Layer-0 anchor-set hash recipe ([`ANCHOR_SET_HASH_ALGORITHM`]):
+/// `sha256( domain_prefix || join("\n", sorted(distinct anchor names)) )`.
 ///
 /// Anchor names are the Layer-0 labels the realization document cites,
 /// without the `A-` consumer prefix. Sorting and deduplication happen
@@ -289,6 +340,10 @@ pub(crate) fn unchecked_semantic_hash(
 /// result is the value pinned as the manifest's
 /// `SpecificationBinding::anchor_set_hash`; release validation refuses a
 /// manifest that leaves it unset.
+///
+/// The prefix is the only difference from the retired `…-v1` recipe:
+/// the identified dependency set and its canonical ordering are
+/// unchanged.
 pub fn anchor_set_hash<'a>(anchor_names: impl IntoIterator<Item = &'a str>) -> [u8; 32] {
     let distinct = anchor_names
         .into_iter()
@@ -296,10 +351,12 @@ pub fn anchor_set_hash<'a>(anchor_names: impl IntoIterator<Item = &'a str>) -> [
 
     let joined = distinct.into_iter().collect::<Vec<_>>().join("\n");
 
-    let digest = Sha256::digest(joined.as_bytes());
+    let mut hasher = Sha256::new();
+    hasher.update(ANCHOR_SET_DOMAIN_PREFIX);
+    hasher.update(joined.as_bytes());
 
     let mut result = [0_u8; 32];
-    result.copy_from_slice(&digest);
+    result.copy_from_slice(&hasher.finalize());
 
     result
 }
@@ -309,7 +366,7 @@ pub(crate) fn export_body_hash_hex(
 ) -> Result<String, serde_json::Error> {
     let bytes = export_body_canonical_bytes(export)?;
 
-    Ok(hex(&Sha256::digest(bytes)))
+    Ok(hex(&manifest_digest(&bytes)))
 }
 
 fn export_body_canonical_bytes(export: &ArchitectureExport) -> Result<Vec<u8>, serde_json::Error> {

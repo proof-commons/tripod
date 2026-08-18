@@ -8,9 +8,42 @@ is a planning aid, not a substitute for typed identity definitions, and is
 never toolchain input.
 
 Admission of any new digest is governed by
-(`[ADR016-rule:identity:admission]`).
+(`[ADR016-rule:identity:admission]`). Every entry below was walked through the
+adopted adjudication procedure in DI-004: each digest the tree computes was
+found from the owning code, put to the benefit criterion, and recorded either
+as an admission record or as a stop. The classification is per identity class —
+one recipe, one role, one consumer-decision pattern — and never per value.
 
-## 1. Status vocabulary · `tab:identities:status`
+## 1. Census · `tab:identities:census`
+
+Every digest and identity the tree computes or carries, one row each. An em
+dash in the class column is a deliberate absence, not an omission: no identity
+is admitted there, and the stop record says on which branch the walk ended.
+
+| Identity | Class | Outcome |
+|---|---|---|
+| Git commit and tree object IDs | provenance | admitted, 2.1 |
+| Document identity | provenance | admitted, 2.2 |
+| Paper instance identity | provenance | admitted, 2.3 |
+| anchor-set hash | semantic | admitted, 2.4 |
+| Architecture semantic hash | semantic | admitted, 2.5 |
+| Architecture behavioural hash | semantic | admitted, 2.6 |
+| Generated-file exact comparison | — | stopped, 3.1 |
+| Field-level digests | — | stopped, 3.2 |
+| Deployment-profile hash | — | pre-admission, 3.3 |
+| Profile artifact, report, dependency and calibration hash fields | — | pre-admission, 3.4 |
+| Native conformance report identity | — | stopped, 3.5 |
+| Compiler plan and analyzed-program identity | — | stopped, 3.6 |
+| Realization identity | — | stopped, 3.7 |
+| Target-protocol tagged hashes and sighashes | — | stopped, 3.8 |
+| Received chain identifiers | — | stopped, 3.9 |
+| Executor wire-frame identity | — | stopped, 3.10 |
+| CI lane outputs | — | stopped, 3.11 |
+
+Six admitted classes, eleven recorded stops. No digest the tree computes is
+outside this table.
+
+### 1.1 Status vocabulary · `tab:identities:status`
 
 | Status | Meaning |
 |---|---|
@@ -23,11 +56,12 @@ Admission of any new digest is governed by
 A dormant or provisional identity is not release-ready and must not be cited as
 evidence of anything.
 
-## 2. Current inventory · `sec:identities:current`
+## 2. Admission records · `sec:identities:current`
 
-Nine identity-bearing mechanisms exist in the tree. Each records its subject,
-owner, producer, consumer, decision, assurance class, stale condition, recipe,
-migration rule, non-claims, and status.
+Six identity classes are admitted. Each records its subject, owner, producer,
+consumer, decision, assurance class, stale condition, recipe by identifier,
+migration rule, non-claims, and status — the admission fields the adopted
+procedure requires, in the order ADR-016 states them.
 
 ### 2.1 Git commit and tree object IDs
 
@@ -37,6 +71,8 @@ migration rule, non-claims, and status.
 - **Consumer:** `document-stamps` (date, timestamp, instance identity) and
   publication tooling.
 - **Decision:** which committed source state a published paper derives from.
+- **Class:** provenance, locator-grade. Never release-bound, so the weaker
+  conditional collision row applies.
 - **Assurance:** Git object naming; source provenance only.
 - **Stale condition:** any commit touching the subject path. A dirty paper
   subtree is a hard failure, not a stale value.
@@ -55,6 +91,9 @@ migration rule, non-claims, and status.
 - **Consumer:** the paper's PDF metadata, through the generated stamps include.
 - **Decision:** whether two built PDFs came from the same exact paper input
   set.
+- **Class:** provenance over an exact canonical input set, locator-grade. The
+  128-bit truncation is admissible only because the value is never
+  release-bound; a release-bound provenance identity could not carry it.
 - **Assurance:** SHA-256 over a domain-separated, length-framed encoding,
   truncated to its first 128 bits. A 128-bit prefix is adequate for provenance
   labelling and for nothing stronger.
@@ -86,6 +125,8 @@ migration rule, non-claims, and status.
   object.
 - **Consumer:** the paper's PDF metadata.
 - **Decision:** which paper-subtree instance a PDF was built from.
+- **Class:** provenance over a named tree, locator-grade, on the same
+  never-release-bound condition as the document identity.
 - **Assurance:** Git tree object naming, truncated to its first 128 bits and
   printed with the same grouping as the document identity.
 - **Stale condition:** any change under the paper subtree, including changes to
@@ -114,14 +155,21 @@ migration rule, non-claims, and status.
   release validation refuses a manifest that leaves the pin unset.
 - **Decision:** whether the imported specification dependency set still equals the
   pinned set.
+- **Class:** semantic. The recipe carries the full semantic column: it is
+  deterministic over the set, complete over it, free of occurrence order and
+  repetition, domain-separated, recipe-identified, and recomputable by the
+  labels checker, which is what the weld does on every build.
 - **Assurance:** exact set equality under SHA-256. Occurrence order and repeats
   are normalized away before hashing, so the value is a property of the set
   alone.
-- **Stale condition:** adding, removing, or renaming any cited anchor.
-- **Recipe:** SHA-256 over the sorted distinct anchor names joined by newlines,
-  with no consumer prefix on the names.
+- **Stale condition:** adding, removing, or renaming any cited specification anchor.
+- **Recipe:** `sha256-anchor-set-v2`: SHA-256 over the domain prefix followed by
+  the sorted distinct anchor names joined by newlines, with no consumer prefix
+  on the names.
 - **Migration:** a deliberate anchor-set change re-pins the manifest value in
-  the same commit that changes the citations.
+  the same commit that changes the citations. The recipe itself migrated once,
+  in DI-004, when the domain prefix was added; the retired `sha256-anchor-set-v1`
+  and both values are recorded in ADR-016.
 - **Non-claims:** it says nothing about what the anchors mean, and it is not an
   architecture identity.
 - **Status:** active.
@@ -132,17 +180,28 @@ migration rule, non-claims, and status.
 - **Owner:** architecture.
 - **Producer:** the semantic hash in `packages/architecture/src/canonical.rs`,
   under an explicit algorithm identifier.
-- **Consumer:** the realization architecture binding, the model ledger's query
-  context, the deployment profile, and the document and artifact weld.
+- **Consumer:** the realization architecture binding, the model ledger's
+  attestation context, the deployment profile, and the document and artifact
+  weld.
 - **Decision:** whether two values were derived from the same complete
-  architecture meaning.
+  architecture meaning. Each consumer's decision is a rejection: the ledger
+  refuses any attestation context whose manifest hash is not this build's
+  expected typed hash, on every indexer construction path, so a
+  wrong-architecture or placeholder context cannot reach a query result;
+  profile validation refuses a profile bound to a different architecture hash;
+  and the weld fails the build when a published masthead or manifest disagrees.
+- **Class:** semantic, and the only admitted identity that crosses a process
+  boundary today — the ledger's schema-13 checkpoint bytes carry it, so a
+  consumer that never re-derives the architecture still compares meaning.
 - **Assurance:** exact canonical-form equality under SHA-256. Canonicalization
   carries the meaning; the digest only compares it.
 - **Stale condition:** any change to the exported architecture body.
-- **Recipe:** SHA-256 over the canonical JSON bytes of the architecture export
-  body.
+- **Recipe:** `sha256-canonical-json-v3`: SHA-256 over the domain prefix
+  followed by the canonical JSON bytes of the architecture export body.
 - **Migration:** the algorithm identifier is carried explicitly beside the
-  value, so a recipe change is a visible measurement change.
+  value, so a recipe change is a visible measurement change. The recipe
+  migrated once, in DI-004, when the domain prefix was added; the retired
+  `sha256-canonical-json-v2` and both values are recorded in ADR-016.
 - **Non-claims:** not authenticity, not deployment readiness, not target
   correctness, and not a substitute for validation.
 - **Status:** active.
@@ -163,13 +222,16 @@ migration rule, non-claims, and status.
   build.
 - **Decision:** whether a change moved the denotation. Only a change of
   denotation may move the behavioural hash.
+- **Class:** semantic, over a projection rather than the whole export. Its
+  completeness is claimed over the behavioural projection alone, which is why
+  it is not a second architecture identity.
 - **Assurance:** exact equality of the projected behavioural body under a
   domain-separated SHA-256.
 - **Stale condition:** any behavioural change. Presentation changes — document
   labels, calibrated draft bound defaults — deliberately do not move it; that
   immunity is the point of the projection.
-- **Recipe:** SHA-256 over the domain prefix followed by the canonical JSON
-  bytes of the behavioural body.
+- **Recipe:** `sha256-canonical-json-behavioural-v3`: SHA-256 over the domain
+  prefix followed by the canonical JSON bytes of the behavioural body.
 - **Migration:** the gate is pinned per algorithm. Two earlier algorithms are
   retired, each recorded in the gate test with its pinned release value and the
   reason it was replaced, so no published value is silently redefined.
@@ -178,72 +240,177 @@ migration rule, non-claims, and status.
   though it identified the architecture.
 - **Status:** active, as a narrow versioning witness only.
 
-### 2.7 Generated-file exact comparison
+## 3. Stop records · `sec:identities:stops`
 
-- **Subject:** the exact bytes of committed generated files.
-- **Owner:** the artifact and label checkers.
-- **Producer:** none. This is a comparison, not a digest.
-- **Consumer:** the generated-file check lane and CI.
-- **Decision:** whether a committed generated file still equals what its
-  generator produces.
-- **Assurance:** byte equality, which is strictly stronger than any digest over
-  the same bytes.
-- **Stale condition:** any regeneration difference.
-- **Recipe:** not applicable. Generators write compare-if-changed and the
-  checker compares directly.
-- **Migration:** none.
-- **Non-claims:** this is not an identity and nothing may cite it as one.
-  Adding a hash beside it would mint a redundant identity with no consumer, in
-  direct conflict with the admission rule.
-- **Status:** active, and deliberately digest-free.
+A stop is an outcome, not an omission. Each record states the proposal, the
+branch of the adjudication procedure that decided it, the date the walk was
+taken, and the condition under which it is retaken. Until that condition holds,
+the absence of a digest is this repository's decided state and the same
+proposal is not re-adjudicated from nothing. All eleven walks were taken
+2026-08-18, in DI-004, over a tree read from the owning code; where a standing
+policy already refused the digest, the record fixes that refusal in the
+procedure's own terms rather than restating it.
 
-### 2.8 Deployment-profile hash
+### 3.1 Generated-file exact comparison
 
-- **Subject:** the canonical deployment-profile JSON.
-- **Owner:** architecture owns the type; release will own the value.
-- **Producer:** the deployment-profile hash in
-  `packages/architecture/src/deployment.rs`, under its own domain prefix.
-- **Consumer:** architecture tests only. The release consumer does not exist.
-- **Decision:** none today. Its future decision is whether two deployments
-  claim the same profile.
-- **Assurance:** exact canonical-form equality under a domain-separated
-  SHA-256, over a schema that is itself incomplete.
-- **Stale condition:** any profile field change.
-- **Recipe:** SHA-256 over the domain prefix followed by the canonical JSON
-  bytes of the profile.
-- **Migration:** the documented schema-2 bundle and ABI binding limitation is
-  release-blocking, and is repaired by the profile migration task rather than
-  by appending fields.
+- **Proposal:** a digest beside each committed generated file, so freshness is
+  decided by comparing digests rather than bytes.
+- **Branch:** the artifact branch's freshness sub-branch. Byte equality is
+  strictly stronger than any digest over the same bytes, and the generators
+  write compare-if-changed while the checker in `packages/artifacts/src/lib.rs`
+  compares the committed bytes against the regenerated ones directly.
+- **Revisit:** only if a generated file becomes independently distributed or
+  release-bound, at which point the walk is an artifact-digest walk with a
+  manifest row, not a freshness walk.
+- **Non-claim:** the comparison is not an identity and nothing may cite it as
+  one. A hash added beside it would be a redundant identity with no consumer.
+
+### 3.2 Field-level digests
+
+- **Proposal:** hash individual fields of a typed object to detect change.
+- **Branch:** equality the parent already carries, reducing to object
+  validation. Fields have no independent lifecycle and cross-field validity is
+  a property of the whole, so a field digest evidences nothing the owning
+  validator does not already establish.
+- **Revisit:** when a field acquires an independent lifecycle of its own — its
+  own transport, cache, publication, or signature boundary — which makes it an
+  object, not a field, and starts a fresh walk.
+
+### 3.3 Deployment-profile hash
+
+- **Proposal:** admit the canonical deployment-profile hash produced by
+  `packages/architecture/src/deployment.rs` under
+  `sha256-canonical-json-deployment-v1`.
+- **Branch:** no named consumer's decision changes. Architecture tests compute
+  and compare it; no release consumes it, so equality decides nothing today.
+  The value exists and is domain-separated, but it is pre-admission and carries
+  no assurance.
+- **Revisit:** when a release manifest consumes it. Activation is additionally
+  blocked until the schema-2 residual is repaired: the profile cannot yet bind
+  a linked bundle or a transaction ABI, and the calibration cannot bind the ABI
+  under which its measurement was taken, so bundle equality alone does not
+  prove the measured transaction shape used the final ABI.
 - **Non-claims:** it is not the architecture hash, not deployment readiness,
-  and it carries no present release meaning.
-- **Status:** dormant until a release consumes it.
+  and it carries no present release meaning. Status: dormant.
 
-### 2.9 Profile artifact and report hash fields
+### 3.4 Profile artifact, report, dependency and calibration hash fields
 
-- **Subject:** raw fixed-width hash fields carried inside the deployment
-  profile — unit-test and property-test reports, three independent-observer
-  reports, script integration, and the artifact hash rows.
-- **Owner:** a future release producer.
-- **Producer:** none in-tree. The fields are carried, not derived here.
-- **Consumer:** profile validation, which checks presence and binding
-  selectively.
-- **Decision:** none. The typed roles and the digest recipes are undefined, so
-  no field currently decides anything.
-- **Assurance:** none beyond presence. This is the weakest entry in the
-  inventory and is recorded as such.
-- **Stale condition:** undefined, because the recipes are undefined.
-- **Recipe:** undefined. That absence is precisely the defect the typed
-  evidence envelopes task must repair.
-- **Migration:** replaced by typed evidence references — role, schema, subject
-  identities, producer, configuration, result status, and payload — before any
-  release use.
+- **Proposal:** treat the raw fixed-width hash fields carried inside the
+  deployment profile as evidence and artifact identities. The tree carries four
+  families: seven artifact rows, six test and independent-observer report
+  rows, one evidence hash per substrate dependency, and the calibration's
+  evidence and script-bundle hashes.
+- **Branch:** validation before admission, and no decision. Profile validation
+  checks presence, nonzeroness, and the single binding that the calibration's
+  script-bundle hash equals the released emitted-script-bundle artifact row.
+  Beyond that the typed roles and the digest recipes are undefined, so no field
+  decides anything and no stale condition can be stated.
+- **Revisit:** before any production release, and not later. Each family is
+  replaced by typed evidence or artifact references — role, schema, exact
+  subject identities, producer, configuration, result status, and payload or
+  payload digest — under an owned recipe. This is the register's weakest
+  material and is recorded as such.
 - **Non-claims:** a raw report digest with no typed role and no bound subject
   proves nothing. Different report hashes do not demonstrate independent
   implementations, and a self-consistent local cache is not independent
   target-chain evidence.
-- **Status:** provisional pre-production reference.
 
-## 3. Inventory decisions · `rem:identities:decisions`
+### 3.5 Native conformance report identity
+
+- **Proposal:** a report digest, or a field reserved for one, on the native
+  evidence reports in `packages/target-elements-conformance/src/report.rs` and
+  `prototype_report.rs`.
+- **Branch:** equality already given on the path. The reports are deterministic
+  by construction — no clock, elapsed time, hostname, user, process identifier,
+  temporary path, executor path, or environment value, and every collection
+  ordered — so a report is compared by its typed content and its exact bytes
+  within one repository, and no cache, publication, or distribution boundary
+  lies between producer and consumer.
+- **Revisit:** when a report crosses such a boundary — a release consuming it
+  as required evidence, or a third party receiving it — at which point the walk
+  is an evidence-identity walk binding role, schema, and exact subjects, not a
+  bare digest.
+
+### 3.6 Compiler plan and analyzed-program identity
+
+- **Proposal:** a plan hash, analyzed-program digest, or report identity on the
+  compiler's analyzed types.
+- **Branch:** no boundary and typed comparison suffices. Nothing persists or
+  transports an analyzed program, so the typed value is the comparison. The
+  refusal is enforced structurally rather than by convention: a compile-time
+  probe in `packages/compiler/src/tests/pilot_program_tests.rs` resolves
+  differently the moment any analyzed type gains a hash implementation, and an
+  exhaustive destructuring of the stable projection stops compiling if a digest
+  field is added anywhere in it.
+- **Revisit:** when an analysis result is cached across processes, published as
+  an artifact, or consumed by a separately versioned backend. The one hash
+  reachable inside the analysis is the architecture binding's semantic hash,
+  which the analysis binds as the identity of its source; the compiler mints
+  none of its own.
+
+### 3.7 Realization identity
+
+- **Proposal:** publish a realization hash in Phase 1.
+- **Branch:** no boundary. A scoped realization is consumed as an in-process
+  typed value, and the derivation carries an architecture binding — schema
+  version, realization version, and the architecture semantic hash — rather
+  than an identity of its own.
+- **Revisit:** when a consumer receives a realization as external bytes across
+  a process, cache, or publication boundary. The complete-scope schema and
+  projection policy are reviewed first; a field reserved for a future digest
+  before then would itself be a speculative identity.
+
+### 3.8 Target-protocol tagged hashes and sighashes
+
+- **Proposal:** register the digests the target constructor and the conformance
+  fixtures compute — leaf and branch tagged hashes under the target's own tags,
+  output-key tweaks, signature hashes, and the streaming-hash primitives the
+  fixture census exercises — as identities of this repository.
+- **Branch:** the walk does not reach a benefit question, because these are not
+  identities of corpus objects. They are the modelled protocol's own values,
+  computed under the target's recipes to construct programs the target accepts
+  and to compare against what the target computes. Their equality decisions are
+  the target's; the transcribed tags carry their upstream provenance beside
+  each constant.
+- **Revisit:** never as corpus identity. A first-party object that wanted an
+  identity would take its own walk under its own recipe, and no target-protocol
+  digest may be quoted as a corpus semantic, artifact, evidence, or release
+  identity.
+
+### 3.9 Received chain identifiers
+
+- **Proposal:** admit the network identity, genesis identity, and block hashes
+  carried by the attestation context, the deployment profile, and the
+  executor's reported environment.
+- **Branch:** nothing is proposed to be hashed. These are received typed
+  fields naming target-chain material, validated by their owners — nonzero
+  network and genesis identities, and prefix consistency across a validated
+  chain view — under no recipe of ours.
+- **Revisit:** none. They stay provenance about the chain, never enter a
+  semantic identity, and are not evidence that the named chain state is
+  correct.
+
+### 3.10 Executor wire-frame identity
+
+- **Proposal:** a digest or signature over the native executor protocol's
+  frames.
+- **Branch:** no consumer's decision changes. The protocol is a line-delimited
+  JSON pipe between two first-party processes in one repository, with no
+  archive, no third-party reader, and no version negotiation; ADR-010 owns its
+  shape.
+- **Revisit:** when a frame stream is archived, read by a third party, or
+  consumed by a release as evidence.
+
+### 3.11 CI lane outputs
+
+- **Proposal:** a persistent identity over the lane records and timing reports
+  that `scripts/ci.py` emits.
+- **Branch:** ephemeral local evidence. Nothing consumes a lane record as
+  release evidence, and importance is not a consumer.
+- **Revisit:** when a lane record is named as required release evidence, which
+  makes it an evidence-identity walk with a typed envelope.
+
+## 4. Inventory decisions · `rem:identities:decisions`
 
 - Active identities with real consumers are kept: the anchor-set hash, the
   architecture semantic hash, and the behavioural hash.
@@ -258,19 +425,27 @@ migration rule, non-claims, and status.
   pre-production references, not evidence identities.
 - No entry lacks a present or explicitly deferred consumer, so this pass
   removes nothing.
+- Every admitted class is domain-separated. The two recipes that once were not
+  migrated together in DI-004 under
+  (`[ADR016-rule:identity:separation-migration]`), which supersedes the
+  grandfather clause; no exception remains.
+- The census found no unclassified digest and admitted nothing new. Its whole
+  yield on the admission side is sharper records; on the stop side it is eight
+  refusals that were practice, or enforced in code, without ever being written
+  down as decided outcomes.
 
 No entry carries two incompatible meanings. The semantic and behavioural hashes
 have deliberately different subjects under separate domains, and the document
 and instance identities answer deliberately different provenance questions.
 
-## 4. Local handles, never identities · `rule:identities:handles`
+## 5. Local handles, never identities · `rule:identities:handles`
 
 Petgraph node and edge indices are local in-memory graph positions owned by the
 graph-holding package. They are not semantic identity, not publication
 identity, and not evidence identity, and they must never enter a canonical
 projection — see (`[ADR016-rule:identity:classes]`).
 
-## 5. Future immediate-edge identity DAG · `sec:identities:future`
+## 6. Future immediate-edge identity DAG · `sec:identities:future`
 
 None of the identities in this section exists. This section fixes, for each,
 the phase that may activate it, the immediate consumer whose existence is the
@@ -288,7 +463,7 @@ ArchitectureSemanticId
     → ReleaseManifestId
 ```
 
-### 5.1 Activation rules · `rule:identities:activation`
+### 6.1 Activation rules · `rule:identities:activation`
 
 - No identity below is minted before a real consumer exists. An activation
   phase is permission, not a schedule: reaching the phase without the named
@@ -310,10 +485,10 @@ ArchitectureSemanticId
   under (`[ADR016-rule:identity:migration]`) rather than redefining the old
   one.
 
-### 5.2 Edges
+### 6.2 Edges
 
 **ArchitectureSemanticId** — the chain root, and the one link that is already
-active; see the current inventory above. It binds no upstream identity.
+active; see 2.5 above. It binds no upstream identity.
 
 **RealizationId**
 
@@ -407,14 +582,14 @@ active; see the current inventory above. It binds no upstream identity.
   demonstrate independent implementation, evidence independence, or
   correctness.
 
-### 5.3 Phase-2 consequence · `rule:identities:phase2`
+### 6.3 Phase-2 consequence · `rule:identities:phase2`
 
 Phase 2 proceeds without minting a public realization or compiler identity. No
 speculative hash field enters compiler core: where no persistent cross-process
 consumer exists, typed comparison remains the boundary, and a field reserved
 for a future digest is itself a speculative identity.
 
-### 5.4 Ownership boundary · `tab:identities:boundary`
+### 6.4 Ownership boundary · `tab:identities:boundary`
 
 Ownership and boundary for every unminted identity, including those outside the
 chain above.

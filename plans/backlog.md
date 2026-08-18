@@ -1715,7 +1715,7 @@ active tree.
 | `DI-002` | DONE | Adopt the corrected label calculus and kind registry as ADRs; delete the ADR text they retire; migrate the eight conflicting kind tokens to the registry forms corpus-wide per the user's ruling, with every citation updated in the same commit; record the hyphenated-area amendment and the local-extension register. |
 | `DI-002b` | DONE | Replace the second-edition adopted drafts with the author's third-edition texts and repair every citation that dangled as a result. The third edition was verified against the audit register before the swap: all 26 findings fixed, the 7 defects among them included, and a mechanical re-audit clean — every per-document citation resolves, every mint is unique, and the kind registry's headline counts of 333 names, 349 rows, 208 kinds, 3 declared hybrids and 4 device classes derive exactly from its tables. Fourteen citations across three plan files were retargeted in the same commit as the swap, per the calculus's same-commit rule. Both adopting records were then refreshed to the editions they adopt: ADR-019 restates all seven adoption parameters and records that the checker implements the authorship warrant species only, ADR-020 names this repository as the registry's acceptee and recasts its extension register as the recorded extension set with located first-hand evidence, and a second kind-migration round settled two further tokens. |
 | `DI-003` | QUEUED | Re-engineer the labels checker to the calculus: a single participation scanner shared by every check (mints, citations, links, hygiene, inline-code discipline), owner signatures with registered prefixes, imported and synthetic citations, anchor harvests, and the kind registry as the checker's kind vocabulary. |
-| `DI-004` | QUEUED | Adopt the identity-adjudication procedure against ADR-016: classify every existing digest through the benefit criterion with admission records, and MIGRATE the two grandfathered recipes to domain-separated forms per the user's ruling — the architecture semantic and anchor-set hashes change under a recorded recipe migration, superseding the ADR-016 grandfather clause. |
+| `DI-004` | DONE | Adopt the identity-adjudication procedure against ADR-016: classify every existing digest through the benefit criterion with admission records, and MIGRATE the two grandfathered recipes to domain-separated forms per the user's ruling — the architecture semantic and anchor-set hashes change under a recorded recipe migration, superseding the ADR-016 grandfather clause. Both halves delivered: the migration, and a census of the whole tree read from the owning code, recorded as six admission records and eleven stop records in the identities register. |
 | `DI-005` | QUEUED | Interchange conventions: record adoption as the standing wire-format discipline for future externally consumed documents; no implementation until a consumer exists. |
 
 The user's integration rulings, 2026-08-16: kind-token conflicts migrate
@@ -1798,6 +1798,102 @@ stop records is DI-004. The interchange conventions stay dormant until a
 consumer exists, which is DI-005. And the Layer-0 LaTeX surface keeps
 three unadjudicated tokens under ADR-020 — motto, a true collision;
 invest; and abs — which enter scope with that surface and not before.
+
+DI-004 opened with the recipe migration the user ruled on, folded into
+one recorded migration covering both identities. The retired values were
+reproduced before anything moved, and reproduced independently of the
+repository's own Rust: the architecture semantic recipe recomputed from
+the committed manifest body under sorted-key compact JSON returned the pinned value, and
+the Layer-0 recipe recomputed over the thirty-eight anchors harvested
+straight from the realization document returned the pinned value. Both
+matched the pins exactly, which is what licensed the migration to
+proceed.
+
+Each recipe then took a domain-separation prefix folding in its own
+identifier, the idiom the behavioural and deployment-profile hashes
+already use. The semantic hash moved to `sha256-canonical-json-v3`; the
+anchor set moved to `sha256-anchor-set-v2`. Both
+new values were predicted from the recipe before the code was run and
+then confirmed by the generator, so the implementation was checked
+against an independent computation rather than trusted. No projection or
+encoding changed: the meaning identified is the same and only the
+measurement moved.
+
+The welds moved atomically with the values — the typed pin, both
+generated manifests, the realization document's masthead and attached
+appendix, the identities register, and the synthetic release-profile
+identity, which moved because the deployment profile binds the
+architecture semantic hash as a hashed input while its own recipe stayed
+at version 1. The behavioural hash did not move and no version was
+bumped: its recipe and body are untouched, the versioning gate keys on
+it alone, and ADR-016 holds that a recipe migration does not by itself
+imply a semantic version change. The grandfather clause is superseded by
+the migration record in the same ADR.
+
+DI-004 then closed with the census. It was taken from the code outward
+rather than from the ADR's table — every digest, identity and hash the
+tree computes was found by sweeping packages and scripts and then
+reading the owning modules — and each was put to the benefit criterion:
+which named consumer decides what, and in which assurance class. The
+answer is six admitted identity classes and eleven recorded stops, all
+in `plans/registers/identities.md`, which now opens with a census table
+of one line per entry and carries admission records and stop records as
+its two register bodies. Nothing new was admitted and no unclassified
+digest was found, so the migration remains DI-004's only change to what
+the tree computes.
+
+The reading paid for itself twice. Eight of the eleven refusals were
+practice, or enforced in code, without ever having been written down as
+decided outcomes: the native conformance reports that deliberately carry
+no digest and no field reserved for one, the compiler's analyzed
+program whose refusal is held by a compile-time probe and an exhaustive
+destructuring rather than by convention, the Phase-1 realization that
+publishes an architecture binding instead of an identity, the target's
+own tagged hashes and sighashes, which are the modelled protocol's
+values and not identities of this corpus, the chain identifiers received
+as validated typed fields, the executor's wire frames, the CI lane
+records, and field-level digests in general. And the profile's raw hash
+fields were undercounted: the register named the report and artifact
+rows, while the schema also carries one evidence hash per substrate
+dependency and the calibration's own evidence and script-bundle hashes.
+All four families are recorded together, with the one binding profile
+validation actually enforces — the calibration's bundle hash must equal
+the released emitted-script-bundle row — separated from the presence
+checks that decide nothing.
+
+Two admission records gained precision the ADR's table does not carry.
+The architecture semantic hash is the one admitted identity that crosses
+a process boundary today, because the ledger's schema-13 attestation
+context carries it, and each of its consumers decides by rejection: the
+indexer refuses a context whose manifest hash is not the build's
+expected typed hash on every construction path, profile validation
+refuses a profile bound to another architecture, and the weld fails the
+build on a disagreeing masthead. The document and instance identities
+are locator-grade provenance, and their 128-bit truncation is admissible
+only on that condition — a release-bound provenance identity could not
+carry it — which the records now state rather than leave implied.
+
+The cross-check against ADR-016 found no row the census contradicts: all
+nine rows of its current-identities table hold against the code, and the
+ADR was not amended. One imprecision is recorded rather than corrected —
+the table calls the two publication identities UUIDs, which the
+producing functions do too, though neither value sets a version or
+variant field — because the register already carries that non-claim and
+the ADR remains the owner of its own wording. The gap census was
+repaired where the migration and the census falsified it: domain
+separation and recipe identifiers are implemented rather than divergent,
+the no-identity clause is implemented rather than divergent, the
+implementation gate's evidence names the three items DI-004 discharged,
+and the second open ruling is settled.
+
+What outlives DI-004 belongs elsewhere. The deployment-profile hash and
+the profile's raw hash fields stay pre-admission with their revisit
+conditions bound to the release surface, not to this batch; the benefit
+walk as a standing requirement on new proposals, rather than as the
+one-time census just taken, is a change to ADR-016's admission rule that
+no task yet owns; and the executor protocol's stop records the reasoning
+DI-005 will restate when the interchange conventions are adopted as the
+discipline for externally consumed documents.
 
 ### 13.2 Checker findings so far · `tab:backlog:draft-findings`
 
