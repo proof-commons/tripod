@@ -26,7 +26,7 @@
 //! | `repository` markdown harvests — bare and parenthesized spans in the realization document, the records, and the planning tree | b | b: unchanged, decided below |
 //! | `repository::harvest_realization_import`, `import` — bracketed imported citations | a | a, now coded as a shape defect |
 //! | `repository::add_architecture_citations` — synthetic citations from typed witness and clause data | a | a, now coded as a shape defect |
-//! | `heads::parse_head` — the delimited label of an environment head | b | a: a recognized head with a non-three-part label is a shape defect |
+//! | `heads::parse_head` — the delimited label of an environment head | b | b: unchanged, decided below |
 //! | `check`, `render` — generated registers | b | b: registers are compared as bytes and mint nothing |
 //! | `adoption` — the pair and package tables | b | b: those tables carry names and kinds, never labels |
 //!
@@ -40,6 +40,15 @@
 //! families warn where a reader would nonetheless read a label, and
 //! this rule never fires where they do — see the coordination rule
 //! below.
+//!
+//! **A head declines rather than fails.** Head recognition ends at a
+//! label that parses, and declining is not a defect there: the leader
+//! grammar is narrow precisely so that bold prose emphasis forms no
+//! judgment. A head whose label is two-segment is therefore read as
+//! emphasis, and its span falls to text by the rule above — one
+//! reading, not two. What that costs is visibility, not soundness: the
+//! label mints nothing either way, so nothing false enters the
+//! registry.
 //!
 //! **Macro bodies are not occurrences.** A `\label{}` inside a macro
 //! *definition* carries parameter tokens rather than a name, and the
