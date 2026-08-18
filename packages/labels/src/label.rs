@@ -2,6 +2,8 @@ use std::fmt;
 
 use thiserror::Error;
 
+use crate::shape;
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Label(String);
 
@@ -18,26 +20,25 @@ impl Label {
         if parts.first().is_some_and(|kind| kind.contains('-')) {
             return Err(LabelParseError::Malformed(value.to_owned()));
         }
-        match shape {
-            LabelShape::Attestation if matches!(parts.len(), 2 | 3) => {}
-            LabelShape::Attestation => return Err(LabelParseError::Shape(value.to_owned())),
-            LabelShape::Planning | LabelShape::Adr | LabelShape::Model if parts.len() == 3 => {}
-            LabelShape::Planning | LabelShape::Adr | LabelShape::Model => {
+        // The arity rule is one decision, held in `shape` and applied to
+        // every owner alike: a label is three-part, and the realization
+        // contract's frozen divisions are named there rather than
+        // admitted by a looser shape.
+        if !shape::arity_admitted(value, parts.len(), shape) {
+            return Err(LabelParseError::Arity(value.to_owned()));
+        }
+        if shape == LabelShape::Realization {
+            // ADR-020 retired `subsec`: a subsection is a section
+            // nested, and the sub- prefix is a presentation device, so
+            // what `subsec` labelled is a three-part `sec`. `app` joins
+            // the same list for the same reason: an appendix carries
+            // divisions exactly as a section does.
+            let kinds = [
+                "sec", "app", "req", "def", "inv", "lem", "obl", "trap", "rem", "intuit", "rule",
+                "pin", "res", "listing", "fig", "tab", "leaf",
+            ];
+            if !kinds.contains(&parts[0]) {
                 return Err(LabelParseError::Shape(value.to_owned()));
-            }
-            LabelShape::Realization => {
-                // ADR-020 retired `subsec`: a subsection is a section
-                // nested, and the sub- prefix is a presentation device.
-                // `sec` therefore spans both arities here — the two-part
-                // top-level divisions it always named, and the
-                // three-part divisions that were `subsec`.
-                let kinds = [
-                    "sec", "app", "req", "def", "inv", "lem", "obl", "trap", "rem", "intuit",
-                    "rule", "pin", "res", "listing", "fig", "tab", "leaf",
-                ];
-                if parts.len() != 3 || !kinds.contains(&parts[0]) {
-                    return Err(LabelParseError::Shape(value.to_owned()));
-                }
             }
         }
         Ok(Self(value.to_owned()))
@@ -82,6 +83,21 @@ fn valid_segment(value: &&str) -> bool {
 pub enum LabelParseError {
     #[error("malformed label {0:?}")]
     Malformed(String),
+    /// The token is not three-part. Reported with the expected form,
+    /// since the writer of a two-segment label has a name for what is
+    /// missing but not always a name for the rule.
+    #[error("label {0:?} is not three-part; a label is written {form}", form = shape::EXPECTED_FORM)]
+    Arity(String),
     #[error("invalid owner-specific label shape {0:?}")]
     Shape(String),
+}
+
+impl LabelParseError {
+    /// The diagnostic code a reported parse failure carries.
+    pub const fn code(&self) -> crate::diagnostic::LabelErrorCode {
+        match self {
+            Self::Arity(_) => crate::diagnostic::LabelErrorCode::MalformedLabelShape,
+            Self::Malformed(_) | Self::Shape(_) => crate::diagnostic::LabelErrorCode::InvalidLabel,
+        }
+    }
 }

@@ -15,16 +15,22 @@ use crate::{
     model_labels_json, nearmiss,
     owner::{ImportedLabel, LabelOwner},
     participation,
-    registry::LabelMint,
+    registry::{LabelMint, LabelRegistry, RegistrySet},
     repository::{
-        CitationClass, LabelGraphEdge, LabelGraphNode, RepositoryLabels, generate_registers,
+        CitationClass, CitationOrigin, LabelCitation, LabelGraphEdge, LabelGraphNode,
+        RepositoryLabels, build_label_graph, generate_registers, project_label_graph,
     },
     rust_source::{RustHarvest, harvest_model},
+    shape,
+    source::SourceLocation,
 };
 
 #[test]
 fn single_backtick_label_is_a_bare_span() {
-    let scan = scan_markdown(Path::new("fixture.md"), "# Fixture · `sec:fixture`\n");
+    let scan = scan_markdown(
+        Path::new("fixture.md"),
+        "# Fixture · `sec:fixture:division`\n",
+    );
     assert!(scan.diagnostics.is_empty());
     assert_eq!(scan.code_spans.len(), 1);
     assert_eq!(scan.code_spans[0].context, InlineCodeContext::Bare);
@@ -49,7 +55,7 @@ fn parenthesized_import_is_one_span() {
 fn parenthesized_citation_groups_mark_every_span_as_internal() {
     let scan = scan_markdown(
         Path::new("fixture.md"),
-        "See (`sec:fixture`, `sec:fixture:detail`).\n",
+        "See (`sec:fixture:division`, `sec:fixture:detail`).\n",
     );
     assert!(scan.diagnostics.is_empty());
     assert!(
@@ -63,7 +69,7 @@ fn parenthesized_citation_groups_mark_every_span_as_internal() {
 fn parenthesized_context_is_preserved_across_lines() {
     let scan = scan_markdown(
         Path::new("fixture.md"),
-        "`sec:mint`\n(`sec:fixture`, `sec:fixture:detail`)\n",
+        "`sec:mint`\n(`sec:fixture:division`, `sec:fixture:detail`)\n",
     );
     assert_eq!(scan.code_spans[0].context, InlineCodeContext::Bare);
     assert!(
@@ -75,7 +81,7 @@ fn parenthesized_context_is_preserved_across_lines() {
 
 #[test]
 fn one_sided_label_parenthesis_is_asymmetric() {
-    let scan = scan_markdown(Path::new("fixture.md"), "See (`sec:fixture`.\n");
+    let scan = scan_markdown(Path::new("fixture.md"), "See (`sec:fixture:division`.\n");
     assert_eq!(scan.code_spans[0].context, InlineCodeContext::Asymmetric);
 }
 
@@ -86,7 +92,7 @@ fn malformed_citation_group_with_trailing_prose_is_not_bare() {
     // and must be diagnosed rather than demoted to a mint.
     let scan = scan_markdown(
         Path::new("fixture.md"),
-        "See (`sec:fixture`, ordinary supporting prose).\n",
+        "See (`sec:fixture:division`, ordinary supporting prose).\n",
     );
     assert_eq!(
         scan.code_spans[0].context,
@@ -96,7 +102,7 @@ fn malformed_citation_group_with_trailing_prose_is_not_bare() {
 
 #[test]
 fn malformed_citation_group_with_leading_prose_is_not_bare() {
-    let scan = scan_markdown(Path::new("fixture.md"), "(see `sec:fixture`)\n");
+    let scan = scan_markdown(Path::new("fixture.md"), "(see `sec:fixture:division`)\n");
     assert_eq!(
         scan.code_spans[0].context,
         InlineCodeContext::MalformedGroup
@@ -120,7 +126,10 @@ fn multiple_citation_groups_on_one_line_are_each_parenthesized() {
 
 #[test]
 fn nested_parentheses_around_a_citation_group_stay_a_citation() {
-    let scan = scan_markdown(Path::new("fixture.md"), "Aside ((`sec:fixture`)) here.\n");
+    let scan = scan_markdown(
+        Path::new("fixture.md"),
+        "Aside ((`sec:fixture:division`)) here.\n",
+    );
     assert_eq!(scan.code_spans[0].context, InlineCodeContext::Parenthesized);
 }
 
@@ -131,7 +140,7 @@ fn unrelated_parentheses_elsewhere_never_change_a_bare_mint() {
     // parentheses neither promote nor demote it.
     let scan = scan_markdown(
         Path::new("fixture.md"),
-        "Prose (an aside) `sec:fixture` more (another aside).\n",
+        "Prose (an aside) `sec:fixture:division` more (another aside).\n",
     );
     assert_eq!(scan.code_spans[0].context, InlineCodeContext::Bare);
 }
@@ -142,7 +151,8 @@ fn a_malformed_citation_never_becomes_the_only_mint_of_a_label() {
     // malformed citation group. Before this rule the later close
     // parenthesis suppressed the diagnostic and the occurrence minted
     // the label, silently moving its conceptual home.
-    let directory = fixture_root("# Realization\nSee (`sec:fixture`, supporting prose).\n");
+    let directory =
+        fixture_root("# Realization\nSee (`sec:fixture:division`, supporting prose).\n");
     let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
 
     assert!(
@@ -158,7 +168,7 @@ fn a_malformed_citation_never_becomes_the_only_mint_of_a_label() {
             .registries
             .realization
             .labels()
-            .any(|label| label.as_str() == "sec:fixture"),
+            .any(|label| label.as_str() == "sec:fixture:division"),
         "malformed citation minted the label it cites",
     );
 }
@@ -254,12 +264,20 @@ fn fence_close_must_match_the_opening_delimiter_length() {
 
 #[test]
 fn unclosed_inline_code_rejects() {
-    let scan = scan_markdown(Path::new("fixture.md"), "broken `sec:fixture\n");
+    let scan = scan_markdown(Path::new("fixture.md"), "broken `sec:fixture:division\n");
     assert!(
         scan.diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == LabelErrorCode::UnclosedInlineCode)
     );
+}
+
+#[test]
+fn owner_specific_label_shapes_parse() {
+    let attestation = Label::parse("def:model:classes", LabelShape::Attestation);
+    let realization = Label::parse("sec:representation", LabelShape::Realization);
+    let adr = Label::parse("rule:labels:decision", LabelShape::Adr);
+    assert!(attestation.is_ok() && realization.is_ok() && adr.is_ok());
 }
 
 /// The ADR-019 segment amendment, both halves: an area may hyphenate
@@ -289,6 +307,25 @@ fn imported_owner_and_local_label_parse() {
     let imported = ImportedLabel::parse("ADR012-rule:labels:decision").expect("ADR token parses");
     assert_eq!(imported.owner, LabelOwner::Adr(12));
     assert_eq!(imported.label.as_str(), "rule:labels:decision");
+}
+
+#[test]
+fn open_subproblem_optional_label_is_harvested() {
+    let directory = tempfile::tempdir().expect("temporary repository");
+    let root = directory.path();
+    fs::create_dir_all(root.join("papers/attestation/sections"))
+        .expect("attestation sections directory");
+    fs::write(
+        root.join("papers/attestation/main.tex"),
+        "\\OpenSubProblem[inner-case]{An inner case}\n% \\OpenSubProblem[ignored]{Comment}\n",
+    )
+    .expect("attestation source");
+
+    let (registry, diagnostics) = harvest_attestation(&RepositoryCensus::discover(root));
+    assert!(diagnostics.is_empty());
+    assert!(registry.contains(
+        &Label::parse("open:attestation:inner-case", LabelShape::Attestation).expect("valid label")
+    ));
 }
 
 #[test]
@@ -339,7 +376,7 @@ fn model_harvest_uses_token_columns_and_rejects_malformed_known_labels() {
     fs::create_dir_all(&source_directory).expect("model source directory");
     fs::write(
         source_directory.join("fixture.rs"),
-        "// x ´test:fixture:defined´ and (´test:fixture:defined´)\n// ´def:malformed´\n",
+        "// x ´test:fixture:defined´ and (´test:fixture:defined´)\n// ´def:Malformed´\n",
     )
     .expect("model source");
 
@@ -424,7 +461,7 @@ fn plan_local_labels_resolve_while_unknown_imports_fail() {
     .expect("attestation source");
     fs::write(
         root.join("docs/attestation/realization.md"),
-        "# Realization\n`sec:fixture`\n",
+        "# Realization\n`sec:fixture:division`\n",
     )
     .expect("realization source");
     fs::write(
@@ -468,7 +505,7 @@ fn adr_imports_are_validated_once_and_internal_citations_resolve() {
     .expect("attestation source");
     fs::write(
         root.join("docs/attestation/realization.md"),
-        "# Realization\n`sec:fixture`\n",
+        "# Realization\n`sec:fixture:division`\n",
     )
     .expect("realization source");
     fs::write(
@@ -490,7 +527,7 @@ fn adr_imports_are_validated_once_and_internal_citations_resolve() {
 #[cfg(unix)]
 #[test]
 fn unreadable_adr_is_an_io_diagnostic() {
-    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let directory = fixture_root("# Realization\n`sec:fixture:division`\n");
     let root = directory.path();
     let adr = root.join("adr/012-unreadable.md");
 
@@ -530,7 +567,7 @@ fn unreadable_subject_directory_fails_an_empty_declared_group() {
     // The hole this closes: an unreadable directory used to discover
     // as an empty group, so an empty declared group agreed with it and
     // verification passed while subjects sat outside the label graph.
-    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let directory = fixture_root("# Realization\n`sec:fixture:division`\n");
     let root = directory.path();
     let adr_dir = root.join("adr");
     fs::write(
@@ -562,7 +599,7 @@ fn unreadable_subject_directory_fails_an_empty_declared_group() {
 #[cfg(unix)]
 #[test]
 fn one_unreadable_entry_is_reported_beside_the_readable_ones() {
-    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let directory = fixture_root("# Realization\n`sec:fixture:division`\n");
     let root = directory.path();
     fs::write(root.join("plans/first.md"), "# First\n").expect("plan source");
     fs::write(root.join("plans/second.md"), "# Second\n").expect("plan source");
@@ -600,7 +637,7 @@ fn one_unreadable_entry_is_reported_beside_the_readable_ones() {
 fn scoped_model_derivation_refuses_an_unreadable_scoped_directory() {
     // Scoped generation runs without the full repository audit, so it
     // is exactly where a suppressed traversal failure would pass.
-    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let directory = fixture_root("# Realization\n`sec:fixture:division`\n");
     let root = directory.path();
     let sources = root.join("packages/model/src");
     fs::write(sources.join("fixture.rs"), "// ´def:fixture:hidden´\n").expect("model source");
@@ -635,9 +672,9 @@ fn absent_and_empty_directories_are_equally_clean_empty_groups() {
     // present but empty both yield an empty group with no traversal
     // diagnostic. Only a directory that exists and cannot be read is a
     // failure — an empty group is knowledge, an unreadable one is not.
-    let absent = fixture_root("# Realization\n`sec:fixture`\n");
+    let absent = fixture_root("# Realization\n`sec:fixture:division`\n");
     fs::remove_dir_all(absent.path().join("adr")).expect("remove ADR directory");
-    let empty = fixture_root("# Realization\n`sec:fixture`\n");
+    let empty = fixture_root("# Realization\n`sec:fixture:division`\n");
 
     for root in [absent.path(), empty.path()] {
         let census = RepositoryCensus::discover(root);
@@ -661,7 +698,7 @@ fn absent_and_empty_directories_are_equally_clean_empty_groups() {
 #[test]
 fn register_generation_is_deterministic_in_explicit_outputs() {
     let directory =
-        fixture_root("# Realization\n`sec:fixture`\nBody cite (`[A-def:model:known]`).\n");
+        fixture_root("# Realization\n`sec:fixture:division`\nBody cite (`[A-def:model:known]`).\n");
     let paths = RepositoryCensus::discover(directory.path());
     let output = tempfile::tempdir().expect("temporary output root");
     let specification_output = output.path().join("specification.md");
@@ -688,7 +725,7 @@ fn register_generation_is_deterministic_in_explicit_outputs() {
 
 #[test]
 fn stale_census_is_a_hard_failure_naming_the_path() {
-    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let directory = fixture_root("# Realization\n`sec:fixture:division`\n");
     let root = directory.path();
 
     // The argument census predates a newly added plan file: the
@@ -740,7 +777,7 @@ fn model_label_derivation_ignores_invalid_planning_imports() {
     .expect("attestation source");
     fs::write(
         root.join("docs/attestation/realization.md"),
-        "# Realization\n`sec:fixture`\n",
+        "# Realization\n`sec:fixture:division`\n",
     )
     .expect("realization source");
     fs::write(
@@ -780,13 +817,69 @@ fn fixture_root(realization: &str) -> tempfile::TempDir {
 }
 
 #[test]
+fn malformed_realization_imports_fail_exhaustively() {
+    let directory = fixture_root(concat!(
+        "# Realization\n",
+        "`sec:fixture:division`\n",
+        "Unknown owner (`[UNKNOWN-sec:fixture:division]`).\n",
+        "Short ADR owner (`[ADR01-rule:fixture:defined]`).\n",
+        "Known owner malformed label (`[ADR013-rule:Bad]`).\n",
+        "Known owner valid import (`[ADR013-rule:fixture:defined]`).\n",
+        "Same owner imported (`[RZ-sec:fixture:division]`).\n",
+        "Bare import `[ADR013-rule:fixture:defined]`.\n",
+        "Legacy model (`[rule:verification:pure-transition]`).\n",
+        "Malformed model (`[rule:Bad]`).\n",
+        "Asymmetric (`[ADR013-rule:fixture:defined]`.\n",
+        "Example ``[UNKNOWN-sec:fixture:division]``.\n",
+        "```text\n",
+        "(`[UNKNOWN-sec:fixture:division]`)\n",
+        "```\n",
+    ));
+    let root = directory.path();
+    fs::write(
+        root.join("adr/013-fixture.md"),
+        "# ADR\n`rule:fixture:defined`\n",
+    )
+    .expect("ADR source");
+    fs::write(
+        root.join("packages/model/src/fixture.rs"),
+        "// ´rule:verification:pure-transition´\n",
+    )
+    .expect("model source");
+
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(root));
+    let realization_diagnostics = labels
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.path == "docs/attestation/realization.md")
+        .map(|diagnostic| (diagnostic.line, diagnostic.code))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        realization_diagnostics,
+        vec![
+            (3, LabelErrorCode::UnknownOwner),
+            (4, LabelErrorCode::UnknownOwner),
+            (5, LabelErrorCode::InvalidLabel),
+            (7, LabelErrorCode::InvalidImportedCitationForm),
+            (8, LabelErrorCode::InvalidImportedCitationForm),
+            (10, LabelErrorCode::InvalidLabel),
+            (11, LabelErrorCode::AsymmetricCitation),
+        ],
+        "{:#?}",
+        labels.diagnostics,
+    );
+    assert_eq!(labels.imported_citation_count(), 2);
+}
+
+#[test]
 fn status_tags_are_audited_in_their_grammar_class() {
     // Each bracketed token is audited in its own grammar class: live status
     // tags resolve their pin and clause references, template examples are
     // exempted, and malformed tags are typed InvalidStatusTag diagnostics.
     let directory = fixture_root(concat!(
         "# Realization\n",                          // 1
-        "`sec:fixture`\n",                          // 2
+        "`sec:fixture:division`\n",                 // 2
         "`pin:pins:fixture`\n",                     // 3 — the pin an enforced tag resolves to
         "Enforced `[enforced: P-fixture]` live.\n", // 4 — valid, resolves
         "Invariant `[invariant: 𝗜₅]` live.\n",      // 5 — valid clause ordinal
@@ -821,8 +914,23 @@ fn status_tags_are_audited_in_their_grammar_class() {
 }
 
 #[test]
+fn duplicate_realization_mint_fails() {
+    let directory = fixture_root("# Realization\n`sec:fixture:division`\n`sec:fixture:division`\n");
+
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
+    let duplicate = labels
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == LabelErrorCode::DuplicateMint)
+        .expect("duplicate realization mint diagnostic");
+    assert_eq!(duplicate.line, 3);
+    assert!(duplicate.message.contains("first minted at"));
+}
+
+#[test]
 fn repository_analysis_exposes_a_direct_petgraph_graph() {
-    let directory = fixture_root("# Realization\n`sec:fixture`\n(`sec:fixture`)\n");
+    let directory =
+        fixture_root("# Realization\n`sec:fixture:division`\n(`sec:fixture:division`)\n");
     let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
     let graph: &petgraph::graph::DiGraph<LabelGraphNode, LabelGraphEdge, u32> = &labels.graph;
 
@@ -833,8 +941,8 @@ fn repository_analysis_exposes_a_direct_petgraph_graph() {
 fn every_authored_citation_resolves_to_one_mint_edge() {
     let directory = fixture_root(concat!(
         "# Realization\n",
-        "`sec:fixture`\n",
-        "(`sec:fixture`)\n",
+        "`sec:fixture:division`\n",
+        "(`sec:fixture:division`)\n",
         "Body cite (`[A-def:model:known]`).\n",
     ));
     let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
@@ -860,7 +968,7 @@ fn every_authored_citation_resolves_to_one_mint_edge() {
 
 #[test]
 fn self_qualified_import_is_rejected_by_the_graph_builder() {
-    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let directory = fixture_root("# Realization\n`sec:fixture:division`\n");
     let root = directory.path();
 
     fs::write(
@@ -883,6 +991,42 @@ fn self_qualified_import_is_rejected_by_the_graph_builder() {
     );
 }
 
+#[test]
+fn label_graph_projection_ignores_citation_insertion_order() {
+    let mut registry = LabelRegistry::default();
+    let first = Label::parse("sec:fixture:first", LabelShape::Realization).unwrap();
+    let second = Label::parse("sec:fixture:second", LabelShape::Realization).unwrap();
+
+    for label in [first.clone(), second.clone()] {
+        registry
+            .insert(LabelMint {
+                owner: LabelOwner::Realization,
+                label,
+                location: SourceLocation::new("docs/attestation/realization.md", 1, 1),
+                home: None,
+            })
+            .unwrap();
+    }
+
+    let registries = RegistrySet {
+        realization: registry,
+        ..RegistrySet::default()
+    };
+    let citations = vec![citation_to(&first, 10), citation_to(&second, 11)];
+    let mut reversed = citations.clone();
+    reversed.reverse();
+    let mut first_diagnostics = Vec::new();
+    let mut second_diagnostics = Vec::new();
+    let first = build_label_graph(&registries, citations, &mut first_diagnostics);
+    let second = build_label_graph(&registries, reversed, &mut second_diagnostics);
+
+    assert_eq!(first_diagnostics, second_diagnostics);
+    assert_eq!(
+        project_label_graph(&first.0),
+        project_label_graph(&second.0)
+    );
+}
+
 // Guards the deliberately retained petgraph `serde-1` feature (P2-002): the
 // raw label graph is not yet serialized by product code, but serialization is
 // anticipated for noncanonical diagnostics, so the feature and this guard are
@@ -897,6 +1041,21 @@ fn petgraph_serde_feature_is_available_for_noncanonical_diagnostics() {
     assert!(!rendered.is_empty());
 }
 
+fn citation_to(label: &Label, line: usize) -> LabelCitation {
+    LabelCitation {
+        source_owner: LabelOwner::Realization,
+        target: ImportedLabel {
+            owner: LabelOwner::Realization,
+            label: label.clone(),
+        },
+        origin: CitationOrigin::Source {
+            owner: LabelOwner::Realization,
+            location: SourceLocation::new("docs/attestation/realization.md", line, 1),
+        },
+        class: CitationClass::AuthoredSameOwner,
+    }
+}
+
 #[test]
 fn attestation_anchor_set_derives_from_body_citations_only() {
     // A fenced example and the generated upward-citation index must
@@ -904,13 +1063,13 @@ fn attestation_anchor_set_derives_from_body_citations_only() {
     // is a stale index, not a member of the anchor set.
     let directory = fixture_root(concat!(
         "# Realization\n",
-        "`sec:fixture`\n",
+        "`sec:fixture:division`\n",
         "Body cite (`[A-def:model:known]`).\n",
         "```text\n",
         "[A-def:model:fenced]\n",
         "```\n",
         "## §17 Upward-citation index · `sec:realization:anchors`\n",
-        "| `[A-def:model:known]` | (`sec:fixture`) |\n",
+        "| `[A-def:model:known]` | (`sec:fixture:division`) |\n",
     ));
 
     let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
@@ -925,9 +1084,9 @@ fn attestation_anchor_set_derives_from_body_citations_only() {
 
     let stale = fixture_root(concat!(
         "# Realization\n",
-        "`sec:fixture`\n",
+        "`sec:fixture:division`\n",
         "## §17 Upward-citation index · `sec:realization:anchors`\n",
-        "| `[A-def:model:known]` | (`sec:fixture`) |\n",
+        "| `[A-def:model:known]` | (`sec:fixture:division`) |\n",
     ));
     let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(stale.path()));
     assert!(
@@ -940,7 +1099,7 @@ fn attestation_anchor_set_derives_from_body_citations_only() {
 
 #[test]
 fn malformed_attestation_import_is_invalid_label() {
-    let directory = fixture_root("# Realization\n`sec:fixture`\n(`[A-def:Bad]`)\n");
+    let directory = fixture_root("# Realization\n`sec:fixture:division`\n(`[A-def:Bad]`)\n");
 
     let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
 
@@ -953,7 +1112,7 @@ fn malformed_attestation_import_is_invalid_label() {
 
 #[test]
 fn unclosed_attestation_import_is_diagnostic() {
-    let directory = fixture_root("# Realization\n`sec:fixture`\n(`[A-def:model:known]\n");
+    let directory = fixture_root("# Realization\n`sec:fixture:division`\n(`[A-def:model:known]\n");
 
     let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
 
@@ -966,7 +1125,7 @@ fn unclosed_attestation_import_is_diagnostic() {
 
 #[test]
 fn non_parenthesized_attestation_import_is_rejected() {
-    let directory = fixture_root("# Realization\n`sec:fixture`\n`[A-def:model:known]`\n");
+    let directory = fixture_root("# Realization\n`sec:fixture:division`\n`[A-def:model:known]`\n");
 
     let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
 
@@ -979,7 +1138,8 @@ fn non_parenthesized_attestation_import_is_rejected() {
 
 #[test]
 fn raw_text_attestation_token_is_nonparticipating() {
-    let directory = fixture_root("# Realization\n`sec:fixture`\nRaw [A-def:model:known].\n");
+    let directory =
+        fixture_root("# Realization\n`sec:fixture:division`\nRaw [A-def:model:known].\n");
 
     let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
 
@@ -993,7 +1153,7 @@ fn raw_text_attestation_token_is_nonparticipating() {
 #[test]
 fn double_backtick_attestation_example_is_nonparticipating() {
     let directory =
-        fixture_root("# Realization\n`sec:fixture`\nExample ``[A-def:model:missing]``.\n");
+        fixture_root("# Realization\n`sec:fixture:division`\nExample ``[A-def:model:missing]``.\n");
 
     let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
 
@@ -1005,8 +1165,9 @@ fn double_backtick_attestation_example_is_nonparticipating() {
 
 #[test]
 fn fenced_attestation_example_is_nonparticipating() {
-    let directory =
-        fixture_root("# Realization\n`sec:fixture`\n```text\n(`[A-def:model:missing]`)\n```\n");
+    let directory = fixture_root(
+        "# Realization\n`sec:fixture:division`\n```text\n(`[A-def:model:missing]`)\n```\n",
+    );
 
     let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
 
@@ -1020,9 +1181,9 @@ fn fenced_attestation_example_is_nonparticipating() {
 fn upward_index_token_does_not_sustain_body_anchor() {
     let directory = fixture_root(concat!(
         "# Realization\n",
-        "`sec:fixture`\n",
+        "`sec:fixture:division`\n",
         "## §17 Upward-citation index · `sec:realization:anchors`\n",
-        "| `[A-def:model:known]` | (`sec:fixture`) |\n",
+        "| `[A-def:model:known]` | (`sec:fixture:division`) |\n",
     ));
 
     let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
@@ -1377,7 +1538,7 @@ fn scoped_derivations_ignore_cross_owner_imports_and_index_staleness() {
     // scoped register/model-label derivations.
     let directory = fixture_root(concat!(
         "# Realization\n",
-        "`sec:fixture`\n",
+        "`sec:fixture:division`\n",
         "Body cite (`[A-def:model:known]`).\n",
         "## §17 Upward-citation index · `sec:realization:anchors`\n",
     ));
@@ -1399,11 +1560,11 @@ fn scoped_derivations_ignore_cross_owner_imports_and_index_staleness() {
 fn anchor_scan_ignores_double_backtick_examples() {
     let directory = fixture_root(concat!(
         "# Realization\n",
-        "`sec:fixture`\n",
+        "`sec:fixture:division`\n",
         "Body cite (`[A-def:model:known]`).\n",
         "A display-only example: ``[A-def:model:example-only]``.\n",
         "## §17 Upward-citation index · `sec:realization:anchors`\n",
-        "| `[A-def:model:known]` | (`sec:fixture`) |\n",
+        "| `[A-def:model:known]` | (`sec:fixture:division`) |\n",
     ));
 
     let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
@@ -1421,7 +1582,7 @@ fn anchor_scan_ignores_double_backtick_examples() {
 
 #[test]
 fn crate_owners_are_independent_and_duplicates_fail() {
-    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let directory = fixture_root("# Realization\n`sec:fixture:division`\n");
     let root = directory.path();
     for child in ["packages/execwrap/src", "packages/artifacts/src"] {
         fs::create_dir_all(root.join(child)).expect("crate source directory");
@@ -1478,7 +1639,7 @@ fn crate_owners_are_independent_and_duplicates_fail() {
 
 #[test]
 fn planning_labels_resolve_across_files_and_duplicates_fail() {
-    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let directory = fixture_root("# Realization\n`sec:fixture:division`\n");
     let root = directory.path();
     fs::write(
         root.join("plans/first.md"),
@@ -1523,7 +1684,7 @@ fn planning_labels_resolve_across_files_and_duplicates_fail() {
 
 #[test]
 fn doc_owner_mints_resolve_and_are_importable() {
-    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let directory = fixture_root("# Realization\n`sec:fixture:division`\n");
     let root = directory.path();
     fs::write(
         root.join("README.md"),
@@ -1563,7 +1724,7 @@ fn malformed_owner_qualified_plan_tokens_fail_exhaustively() {
     // silent, a known owner without brackets and every unknown or
     // malformed owner fail closed, and ordinary inline code, a
     // double-backtick example, and a fenced example stay out.
-    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let directory = fixture_root("# Realization\n`sec:fixture:division`\n");
     let root = directory.path();
     fs::write(
         root.join("plans/tokens.md"),
@@ -1611,7 +1772,7 @@ fn malformed_owner_qualified_plan_tokens_fail_exhaustively() {
 fn malformed_owner_qualified_doc_token_fails_closed() {
     // The guard belongs to the shared Markdown-owner harvest, so the
     // DOC owner fails the same way the PLAN owner does.
-    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let directory = fixture_root("# Realization\n`sec:fixture:division`\n");
     let root = directory.path();
     fs::write(
         root.join("README.md"),
@@ -1637,7 +1798,7 @@ fn malformed_owner_qualified_adr_tokens_fail_closed() {
     // The ADR owner shares the bracket-free classifier, so a known
     // owner written without brackets and an unknown owner prefix fail
     // there exactly as they do for PLAN and DOC.
-    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let directory = fixture_root("# Realization\n`sec:fixture:division`\n");
     let root = directory.path();
     fs::write(
         root.join("adr/012-fixture.md"),
@@ -1672,7 +1833,7 @@ fn malformed_owner_qualified_adr_tokens_fail_closed() {
 
 #[test]
 fn register_generation_ignores_unrelated_adr_defects() {
-    let directory = fixture_root("# Realization\n`sec:fixture`\n");
+    let directory = fixture_root("# Realization\n`sec:fixture:division`\n");
     let root = directory.path();
     fs::write(
         root.join("adr/012-fixture.md"),
@@ -1695,11 +1856,11 @@ fn register_generation_ignores_unrelated_adr_defects() {
 #[test]
 fn malformed_model_label_does_not_block_upstream_register_generation() {
     let directory =
-        fixture_root("# Realization\n`sec:fixture`\nBody cite (`[A-def:model:known]`).\n");
+        fixture_root("# Realization\n`sec:fixture:division`\nBody cite (`[A-def:model:known]`).\n");
     let root = directory.path();
     fs::write(
         root.join("packages/model/src/fixture.rs"),
-        "// ´def:broken´\n",
+        "// ´def:Broken´\n",
     )
     .expect("malformed model source");
 
@@ -1864,7 +2025,7 @@ fn register_generation_repairs_mixed_state_and_preserves_mtimes() {
     // T3: a prior partial publication (one stale register) is repaired
     // without rewriting the already-current member.
     let directory =
-        fixture_root("# Realization\n`sec:fixture`\nBody cite (`[A-def:model:known]`).\n");
+        fixture_root("# Realization\n`sec:fixture:division`\nBody cite (`[A-def:model:known]`).\n");
     let paths = RepositoryCensus::discover(directory.path());
     let output = tempfile::tempdir().expect("temporary output root");
     let specification_output = output.path().join("specification.md");
@@ -1900,7 +2061,7 @@ fn register_generation_staging_failure_leaves_the_other_register_unchanged() {
     // T3: the realization destination's parent is a regular file, so
     // its staging fails; the specification register must keep its old bytes.
     let directory =
-        fixture_root("# Realization\n`sec:fixture`\nBody cite (`[A-def:model:known]`).\n");
+        fixture_root("# Realization\n`sec:fixture:division`\nBody cite (`[A-def:model:known]`).\n");
     let paths = RepositoryCensus::discover(directory.path());
     let output = tempfile::tempdir().expect("temporary output root");
     let specification_output = output.path().join("specification.md");
@@ -1927,7 +2088,7 @@ fn register_generation_rejects_aliased_outputs() {
     // F2-005: the two registers are distinct assets; one destination
     // serving both roles must fail before derivation or writing.
     let directory =
-        fixture_root("# Realization\n`sec:fixture`\nBody cite (`[A-def:model:known]`).\n");
+        fixture_root("# Realization\n`sec:fixture:division`\nBody cite (`[A-def:model:known]`).\n");
     let paths = RepositoryCensus::discover(directory.path());
     let output = tempfile::tempdir().expect("temporary output root");
     let shared = output.path().join("register.md");
@@ -1948,11 +2109,11 @@ fn duplicate_attestation_index_row_is_rejected() {
     // contract is one row per distinct anchor.
     let directory = fixture_root(concat!(
         "# Realization\n",
-        "`sec:fixture`\n",
+        "`sec:fixture:division`\n",
         "Body cite (`[A-def:model:known]`).\n",
         "## §17 Upward-citation index · `sec:realization:anchors`\n",
-        "| `[A-def:model:known]` | (`sec:fixture`) |\n",
-        "| `[A-def:model:known]` | (`sec:fixture`) |\n",
+        "| `[A-def:model:known]` | (`sec:fixture:division`) |\n",
+        "| `[A-def:model:known]` | (`sec:fixture:division`) |\n",
     ));
 
     let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
@@ -1975,11 +2136,11 @@ fn repeated_body_citation_needs_only_one_index_row() {
     // duplicate check must not break.
     let directory = fixture_root(concat!(
         "# Realization\n",
-        "`sec:fixture`\n",
+        "`sec:fixture:division`\n",
         "First (`[A-def:model:known]`).\n",
         "Second (`[A-def:model:known]`).\n",
         "## §17 Upward-citation index · `sec:realization:anchors`\n",
-        "| `[A-def:model:known]` | (`sec:fixture`) |\n",
+        "| `[A-def:model:known]` | (`sec:fixture:division`) |\n",
     ));
 
     let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
@@ -2000,9 +2161,9 @@ fn index_only_and_body_only_anchors_both_stale_the_index() {
     // row, are each a stale index in their own direction.
     let index_only = fixture_root(concat!(
         "# Realization\n",
-        "`sec:fixture`\n",
+        "`sec:fixture:division`\n",
         "## §17 Upward-citation index · `sec:realization:anchors`\n",
-        "| `[A-def:model:known]` | (`sec:fixture`) |\n",
+        "| `[A-def:model:known]` | (`sec:fixture:division`) |\n",
     ));
     let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(index_only.path()));
     assert!(
@@ -2014,10 +2175,10 @@ fn index_only_and_body_only_anchors_both_stale_the_index() {
 
     let body_only = fixture_root(concat!(
         "# Realization\n",
-        "`sec:fixture`\n",
+        "`sec:fixture:division`\n",
         "Body cite (`[A-def:model:known]`).\n",
         "## §17 Upward-citation index · `sec:realization:anchors`\n",
-        "| (`sec:fixture`) |\n",
+        "| (`sec:fixture:division`) |\n",
     ));
     let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(body_only.path()));
     assert!(
@@ -2142,13 +2303,13 @@ fn a_fenced_index_heading_does_not_open_the_generated_index_region() {
     // not a heading at all.
     let directory = fixture_root(concat!(
         "# Realization\n",
-        "`sec:fixture`\n",
+        "`sec:fixture:division`\n",
         "```text\n",
         "## §17 Upward-citation index · `sec:realization:anchors`\n",
         "```\n",
         "Body cite (`[A-def:model:known]`).\n",
         "## §17 Upward-citation index · `sec:realization:anchors`\n",
-        "| `[A-def:model:known]` | (`sec:fixture`) |\n",
+        "| `[A-def:model:known]` | (`sec:fixture:division`) |\n",
     ));
 
     let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
@@ -2247,7 +2408,7 @@ fn committed_extension_kinds_match_the_adopting_record() {
         parsed, committed,
         "the committed extension set must equal the record's extension table",
     );
-    assert_eq!(parsed.len(), 13, "the record carries thirteen extensions");
+    assert_eq!(parsed.len(), 14, "the record carries fourteen extensions");
 }
 
 /// No extension may collide with a registry token: the record requires
@@ -2421,19 +2582,39 @@ fn registry_and_extension_kinds_both_pass() {
     );
 }
 
-/// The Layer-0 LaTeX surface is recorded as not yet in scope, so an
-/// uncatalogued token there is reported and does not fail the gate.
+/// The attestation LaTeX surface is in scope since its last unregistered
+/// token was adjudicated, so an uncatalogued token there fails exactly
+/// as it does under every other owner.
 #[test]
-fn attestation_unknown_kind_reports_without_failing() {
+fn attestation_unknown_kind_fails_like_any_other_owner() {
     let adoption_data = adoption::Adoption::repository();
-    let mints = vec![mint_for(LabelOwner::Attestation, "motto:somewhere")];
+    let mints = vec![mint_for(
+        LabelOwner::Attestation,
+        "abs:attestation:somewhere",
+    )];
     let diagnostics = adoption::validate_warrants(&adoption_data, &mints, &no_place);
     assert_eq!(diagnostics.len(), 1);
     assert!(
-        !diagnostics[0].is_error(),
-        "the surface outside the record's scope reports rather than fails",
+        diagnostics[0].is_error(),
+        "the attestation surface is enforced, not reported",
     );
-    assert!(diagnostics[0].message.contains("awaits adjudication"));
+    assert_eq!(diagnostics[0].code, LabelErrorCode::UnknownKind);
+}
+
+/// The kind the migration adjudicated: the paper's abstract is minted
+/// under the registry's own `abst`, which the checker admits.
+#[test]
+fn attestation_abstract_kind_is_registered() {
+    let adoption_data = adoption::Adoption::repository();
+    let mints = vec![mint_for(
+        LabelOwner::Attestation,
+        "abst:attestation:abstract",
+    )];
+    let diagnostics = adoption::validate_warrants(&adoption_data, &mints, &no_place);
+    assert!(
+        diagnostics.is_empty(),
+        "abst is a registry token: {diagnostics:#?}",
+    );
 }
 
 /// A reserved kind no profile governs admits neither warrant rule, so
@@ -2647,7 +2828,7 @@ fn derived_base_relation_matches_the_registry_headline_counts() {
 fn recorded_extensions_carry_first_hand_evidence() {
     let base = attestation_fixture();
     let extensions = base.extensions().collect::<Vec<_>>();
-    assert_eq!(extensions.len(), 13);
+    assert_eq!(extensions.len(), 14);
     for record in extensions {
         assert_eq!(record.status, attestation::Status::Firm);
         assert!(
@@ -2674,8 +2855,8 @@ fn homonymy_is_derived_from_the_effective_relation() {
         .map(|record| record.key.name.as_str())
         .collect::<std::collections::BTreeSet<_>>();
 
-    assert_eq!(homonyms.len(), 32);
-    assert_eq!(names.len(), 15);
+    assert_eq!(homonyms.len(), 34);
+    assert_eq!(names.len(), 16);
     // The extension row is what puts Task's third sense in Hom.
     let task = homonyms
         .iter()
@@ -2688,6 +2869,21 @@ fn homonymy_is_derived_from_the_effective_relation() {
             ("exer", attestation::Source::Base),
             ("job", attestation::Source::Base),
             ("task", attestation::Source::Extension),
+        ],
+    );
+
+    // Motto is the deliberate case: the recorded deviation sets this
+    // corpus's own kind beside the registry's under one name.
+    let motto = homonyms
+        .iter()
+        .filter(|record| record.key.name == "Motto")
+        .map(|record| (record.key.kind.as_str(), record.key.source))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        motto,
+        vec![
+            ("motto", attestation::Source::Extension),
+            ("slogan", attestation::Source::Base),
         ],
     );
 }
@@ -3259,4 +3455,146 @@ fn live_tree_carries_no_uncatalogued_head_pair() {
         failures.is_empty(),
         "the governed tree carries an uncatalogued head pair: {failures:?}",
     );
+}
+
+// The three-part shape rule (the `shape` module): a label-intended
+// occurrence that is not three-part fails, wherever it is written, and
+// the near-miss warnings never double-report what it fails.
+
+/// Harvest one attestation LaTeX fixture body.
+fn latex_fixture_harvest(body: &str) -> (LabelRegistry, Vec<LabelDiagnostic>) {
+    let directory = tempfile::tempdir().expect("temporary repository");
+    let root = directory.path();
+    fs::create_dir_all(root.join("papers/attestation/sections"))
+        .expect("attestation sections directory");
+    fs::write(root.join("papers/attestation/main.tex"), body).expect("attestation source");
+    harvest_attestation(&RepositoryCensus::discover(root))
+}
+
+/// The gap this rule closes: the LaTeX surface accepted a two-segment
+/// label for years, and now fails it with its location and the form a
+/// label takes.
+#[test]
+fn a_two_segment_latex_label_fails_with_the_expected_form() {
+    // The label argument is assembled rather than written whole: a
+    // two-segment token inside braces is a formatting-argument
+    // silhouette, which the lints refuse in a literal.
+    let body = format!("% front\n\\label{{{}}}\n", "def:classes");
+    let (registry, diagnostics) = latex_fixture_harvest(&body);
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
+    assert_eq!(diagnostics[0].code, LabelErrorCode::MalformedLabelShape);
+    assert!(diagnostics[0].is_error());
+    assert_eq!(diagnostics[0].path, "papers/attestation/main.tex");
+    assert_eq!(diagnostics[0].line, 2);
+    assert!(
+        diagnostics[0].message.contains(shape::EXPECTED_FORM),
+        "the diagnostic names the expected form: {}",
+        diagnostics[0].message,
+    );
+    assert_eq!(registry.len(), 0, "a malformed label mints nothing");
+}
+
+/// Arity is exact, not a floor: a fourth segment fails like a missing
+/// one.
+#[test]
+fn a_four_segment_latex_label_fails() {
+    let (_registry, diagnostics) = latex_fixture_harvest("\\label{def:model:classes:extra}\n");
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
+    assert_eq!(diagnostics[0].code, LabelErrorCode::MalformedLabelShape);
+}
+
+/// The form the corpus writes passes, so the rule rejects nothing an
+/// author writes correctly.
+#[test]
+fn a_three_part_latex_label_passes() {
+    let (registry, diagnostics) = latex_fixture_harvest("\\label{def:model:classes}\n");
+    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+    assert_eq!(registry.len(), 1);
+}
+
+/// A macro-generated label is checked at the arity of what it
+/// synthesizes: the optional-argument form prefixes `open:attestation`, so an
+/// argument carrying its own colon overshoots the form.
+#[test]
+fn a_macro_generated_label_of_the_wrong_arity_fails() {
+    let (_registry, diagnostics) = latex_fixture_harvest("\\OpenSubProblem[inner:case]{A case}\n");
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
+    assert_eq!(diagnostics[0].code, LabelErrorCode::MalformedLabelShape);
+}
+
+/// A macro body is not an occurrence. The parameter token in a macro
+/// definition names no label -- each use of the macro is the occurrence
+/// -- so the harvest declines it before the shape rule can reach it.
+#[test]
+fn a_macro_parameter_body_is_not_an_occurrence() {
+    let (registry, diagnostics) =
+        latex_fixture_harvest("\\newcommand{\\Investigation}[2]{\\label{invest:attestation:#2}}\n");
+    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+    assert_eq!(registry.len(), 0, "a macro definition mints nothing");
+}
+
+/// The attestation owner no longer admits the two-segment form its surface
+/// carried before the migration.
+#[test]
+fn the_attestation_shape_admits_three_segments_only() {
+    assert!(matches!(
+        Label::parse("sec:overview", LabelShape::Attestation),
+        Err(LabelParseError::Arity(_)),
+    ));
+    assert!(Label::parse("sec:attestation:overview", LabelShape::Attestation).is_ok());
+}
+
+/// The realization contract's twenty divisions are frozen by name, not
+/// admitted by a looser shape: an unlisted two-segment token fails
+/// there exactly as it does anywhere else.
+#[test]
+fn the_realization_divisions_are_frozen_by_name() {
+    assert!(Label::parse("sec:representation", LabelShape::Realization).is_ok());
+    assert!(matches!(
+        Label::parse("sec:invented", LabelShape::Realization),
+        Err(LabelParseError::Arity(_)),
+    ));
+}
+
+/// The coordination rule, in one fixture. In scanned comment text the
+/// acute carries the label syntax and the backtick does not, so a
+/// two-segment acute span is a shape defect and never a near miss,
+/// while a label-shaped backtick span is a near miss and never a shape
+/// defect.
+#[test]
+fn a_span_is_never_both_a_near_miss_and_a_shape_defect() {
+    let harvest = rust_fixture_harvest(concat!(
+        "// a shape defect: \u{b4}def:fixture\u{b4}\n",
+        "// a near miss: `rem:overview:status-tags`\n",
+        "// neither: `def:fixture`\n",
+    ));
+    let mut codes: Vec<(LabelErrorCode, usize)> = harvest
+        .diagnostics
+        .iter()
+        .map(|diagnostic| (diagnostic.code, diagnostic.line))
+        .collect();
+    codes.sort_by_key(|(_, line)| *line);
+    assert_eq!(
+        codes,
+        vec![
+            (LabelErrorCode::MalformedLabelShape, 1),
+            (LabelErrorCode::NearMissSpan, 2),
+        ],
+        "{:#?}",
+        harvest.diagnostics,
+    );
+}
+
+/// The rule is live over the tree it governs: no occurrence anywhere in
+/// the corpus is label-intended and of the wrong arity.
+#[test]
+fn the_live_tree_carries_no_malformed_label_shape() {
+    let census = RepositoryCensus::discover(repository_root());
+    let labels = RepositoryLabels::harvest_sources(&census);
+    let failures: Vec<&LabelDiagnostic> = labels
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == LabelErrorCode::MalformedLabelShape)
+        .collect();
+    assert!(failures.is_empty(), "{failures:?}");
 }

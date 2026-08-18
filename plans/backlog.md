@@ -1717,6 +1717,7 @@ active tree.
 | `DI-003` | DONE | Re-engineer the labels checker to the calculus: a single participation scanner shared by every check (mints, citations, links, hygiene, inline-code discipline), owner signatures with registered prefixes, imported and synthetic citations, anchor harvests, and the kind registry as the checker's kind vocabulary. W1 landed the participation scanner and the DI-F02 repair, W2 the seven adoption parameters as typed data with the kind vocabulary and warrant totality, and W3 the near-miss warnings, the companion attestation register, and the gate reconciliation across both records. |
 | `DI-004` | DONE | Adopt the identity-adjudication procedure against ADR-016: classify every existing digest through the benefit criterion with admission records, and MIGRATE the two grandfathered recipes to domain-separated forms per the user's ruling — the architecture semantic and anchor-set hashes change under a recorded recipe migration, superseding the ADR-016 grandfather clause. Both halves delivered: the migration, and a census of the whole tree read from the owning code, recorded as six admission records and eleven stop records in the identities register. |
 | `DI-005` | QUEUED | Interchange conventions: record adoption as the standing wire-format discipline for future externally consumed documents; no implementation until a consumer exists. |
+| `DI-006` | DONE | Three-part labels: the paper's 16 two-segment labels take the area `attestation`, a division's home being the document itself; `abs` takes the registry's `abst` per the user's ruling. 16 mints and 59 sites moved in one commit; the anchor-set pin moved……, retired value reproduced; the semantic hash followed, the behavioural did not. Layer-0 kinds enforced. W-B holds the arity in one rule over every entry point: a label-intended occurrence that is not three-part fails as `malformed_label_shape`, and the realization's 20 two-segment divisions are frozen by name, not exempted as a surface. |
 
 The user's integration rulings, 2026-08-16: kind-token conflicts migrate
 to the registry forms; the two grandfathered identity recipes migrate
@@ -2017,6 +2018,14 @@ derivation-warrant machinery waits on a first inventory profile, Π and K
 empty by decision; Layer-0 kind scope waits on the motto, invest, and
 abs adjudication, entering with that surface; and the interchange
 conventions stay dormant until a consumer exists, which is DI-005.
+
+One of those three tokens is now settled. On the user's ruling this
+corpus keeps its opening motto apart from the registry's slogan genre,
+so Motto and `motto` enter X_A as its fourteenth entry, on first-hand
+evidence at the title section. ADR-020 records the deviation, the
+checker's kind and pair tables carry it, and the regenerated companion
+register puts Hom(C_A) at 34 pairs over 16 names. Layer-0 stays
+reported: `invest` and `abs` are open.
 
 The acute code syntax now classifies as the calculus fixes it. The
 harvester had paired acutes blindly, one comment line at a time, so

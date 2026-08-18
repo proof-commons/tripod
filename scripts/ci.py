@@ -5,6 +5,15 @@ A clean checkout must pass this program without modifying tracked files.
 Runner-agnostic: invoke it from any CI system or locally, through
 `scripts/ci.sh`, which is a thin shim over this file.
 
+Cadence: the FULL run is reserved for tags and other important moments
+(releases, identity re-pins, review baselines). Routine batch merges run
+the light gate — every lane except the two test suites, whose cost the
+per-commit worker lanes already paid:
+
+    scripts/ci.py --skip test-debug --skip test-release
+
+A narrowed run reports "partial" by design; the merge record cites it.
+
 Lanes
 -----
   1. rustfmt          cargo fmt --all --check

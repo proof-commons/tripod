@@ -35,15 +35,14 @@
 //!
 //! # Scope of kind enforcement
 //!
-//! ADR-020 governs the planning tree, the decision records, the
-//! documentation tree, and the Rust packages. It records, under its
-//! consequences, that the attestation LaTeX surface is not yet in scope and
-//! carries three tokens it adjudicates none of. Kind validation is
-//! therefore enforcing over the owners the ADR governs and reporting
-//! only over attestation, so the checker states the ADR's recorded position
-//! rather than inventing an adjudication. [`KindScope`] carries the
-//! distinction, and the attestation arm becomes enforcing by one edit when
-//! that surface enters scope.
+//! ADR-020 governs every owner: the planning tree, the decision
+//! records, the documentation tree, the Rust packages, and — since the
+//! three-part-label migration adjudicated its last unregistered token,
+//! `abs` becoming the registry's `abst` — the attestation LaTeX surface.
+//! Kind validation is therefore enforcing everywhere, and an
+//! unregistered kind is an error whoever mints it. The reported-only
+//! attestation arm this module once carried is gone with the narrowness it
+//! stated.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -1033,6 +1032,7 @@ pub const EXTENSION_KINDS: &[&str] = &[
     "err",
     "leaf",
     "milestone",
+    "motto",
     "obl",
     "op",
     "phase",
@@ -1054,6 +1054,7 @@ pub const EXTENSION_PAIRS: &[(&str, &str)] = &[
     ("Error vocabulary", "err"),
     ("Leaf", "leaf"),
     ("Milestone", "milestone"),
+    ("Motto", "motto"),
     ("Obligation", "obl"),
     ("Operation", "op"),
     ("Phase", "phase"),
@@ -1100,23 +1101,6 @@ pub fn pair_is_catalogued(name: &str, kind: &str) -> bool {
     catalogued_pairs().any(|(catalogued, catalogued_kind)| {
         catalogued.eq_ignore_ascii_case(name) && *catalogued_kind == kind
     })
-}
-
-/// Whether an owner's kinds are enforced against the vocabulary, or only
-/// reported. ADR-020 governs every owner but the attestation LaTeX surface,
-/// which it records as not yet in scope.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum KindScope {
-    Enforced,
-    Reported,
-}
-
-/// The scope ADR-020 gives an owner.
-pub const fn kind_scope(owner: &LabelOwner) -> KindScope {
-    match owner {
-        LabelOwner::Attestation => KindScope::Reported,
-        _ => KindScope::Enforced,
-    }
 }
 
 // ---------------------------------------------------------------------
@@ -1488,19 +1472,11 @@ pub fn validate_warrants(
             "kind {kind} is in neither the adopted registry at {REGISTRY_SOURCE} nor the \
              recorded extension set at {EXTENSION_SOURCE}"
         );
-        diagnostics.push(match kind_scope(&mint.owner) {
-            KindScope::Enforced => {
-                LabelDiagnostic::error(LabelErrorCode::UnknownKind, &mint.location, message)
-            }
-            KindScope::Reported => LabelDiagnostic::warning(
-                LabelErrorCode::UnknownKind,
-                &mint.location,
-                format!(
-                    "{message}; the attestation surface is recorded as not yet in scope of the \
-                     kind registry, and this token awaits adjudication"
-                ),
-            ),
-        });
+        diagnostics.push(LabelDiagnostic::error(
+            LabelErrorCode::UnknownKind,
+            &mint.location,
+            message,
+        ));
     }
     diagnostics
 }

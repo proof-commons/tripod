@@ -294,7 +294,7 @@ fn harvest_label(
                     .insert_or_diagnose(mint, "Rust", &mut result.diagnostics);
             }
             Err(error) => result.diagnostics.push(LabelDiagnostic::error(
-                LabelErrorCode::InvalidLabel,
+                error.code(),
                 &location,
                 error.to_string(),
             )),
