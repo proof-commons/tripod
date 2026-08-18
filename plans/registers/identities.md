@@ -117,11 +117,14 @@ migration rule, non-claims, and status.
 - **Assurance:** exact set equality under SHA-256. Occurrence order and repeats
   are normalized away before hashing, so the value is a property of the set
   alone.
-- **Stale condition:** adding, removing, or renaming any cited anchor.
-- **Recipe:** SHA-256 over the sorted distinct anchor names joined by newlines,
-  with no consumer prefix on the names.
+- **Stale condition:** adding, removing, or renaming any cited specification anchor.
+- **Recipe:** `sha256-anchor-set-v2`: SHA-256 over the domain prefix followed by
+  the sorted distinct anchor names joined by newlines, with no consumer prefix
+  on the names.
 - **Migration:** a deliberate anchor-set change re-pins the manifest value in
-  the same commit that changes the citations.
+  the same commit that changes the citations. The recipe itself migrated once,
+  in DI-004, when the domain prefix was added; the retired `sha256-anchor-set-v1`
+  and both values are recorded in ADR-016.
 - **Non-claims:** it says nothing about what the anchors mean, and it is not an
   architecture identity.
 - **Status:** active.
@@ -139,10 +142,12 @@ migration rule, non-claims, and status.
 - **Assurance:** exact canonical-form equality under SHA-256. Canonicalization
   carries the meaning; the digest only compares it.
 - **Stale condition:** any change to the exported architecture body.
-- **Recipe:** SHA-256 over the canonical JSON bytes of the architecture export
-  body.
+- **Recipe:** `sha256-canonical-json-v3`: SHA-256 over the domain prefix
+  followed by the canonical JSON bytes of the architecture export body.
 - **Migration:** the algorithm identifier is carried explicitly beside the
-  value, so a recipe change is a visible measurement change.
+  value, so a recipe change is a visible measurement change. The recipe
+  migrated once, in DI-004, when the domain prefix was added; the retired
+  `sha256-canonical-json-v2` and both values are recorded in ADR-016.
 - **Non-claims:** not authenticity, not deployment readiness, not target
   correctness, and not a substitute for validation.
 - **Status:** active.

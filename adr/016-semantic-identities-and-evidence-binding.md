@@ -305,8 +305,8 @@ Current identities have these scopes:
 | Git commit/tree IDs | Source provenance | Retain; never protocol identity |
 | Document UUID | Exact paper-input provenance in XMP | Retain; publication-only |
 | Instance UUID | Paper-subtree Git-tree provenance in XMP | Retain; publication-only |
-| Layer-0 anchor-set hash | Exact imported Layer-0 dependency set | Retain; grandfathered recipe |
-| Architecture semantic hash | Canonical complete architecture meaning | Retain; grandfathered recipe |
+| Layer-0 anchor-set hash | Exact imported Layer-0 dependency set | Retain; domain-separated |
+| Architecture semantic hash | Canonical complete architecture meaning | Retain; domain-separated |
 | Architecture behavioural hash | Realization-major versioning gate only | Retain; do not propagate as a general runtime identity |
 | Generated-file exact comparisons | Publication freshness | Retain; add no redundant hash |
 | Deployment-profile hash | Future aggregate deployment-profile identity | Retain as pre-release infrastructure; it gives no release assurance until a real consumer validates it |
@@ -349,27 +349,56 @@ semantic versioning rule decides that question.
 
 ---
 
-## Grandfathered digest recipes · `rule:identity:grandfathered`
+## Recorded separation migration · `rule:identity:separation-migration`
 
-Two active recipes predate the domain-separated form and are reviewed
-exceptions to it, not defects awaiting migration: the architecture semantic
-hash, SHA-256 over the canonical architecture JSON body with the algorithm
-identifier carried beside the hash in the envelope rather than inside the
-hashed input; and the Layer-0 anchor-set hash, SHA-256 over the sorted distinct
-anchor names.
+Every first-party semantic identity is domain-separated. The two recipes that
+once predated that form — the architecture semantic hash and the Layer-0
+anchor-set hash — were migrated together under (`rule:identity:migration`), and
+the earlier grandfathered exception is superseded. No exception remains.
 
-The exception rests on three facts. The algorithm identifier is published
-alongside every value, so a recipe is never inferred from a digest. Every
-consumer welds algorithm and value as one pair, so a value cannot be
-reinterpreted under another recipe. And both identities are already published:
-adding a domain prefix under the existing identifier is the silent redefinition
-the migration rule forbids, and minting new identifiers without a
-consumer-driven migration would move published values for no assurance gain.
+**Old recipes.** The architecture semantic hash was SHA-256 over the canonical
+architecture JSON body, algorithm `sha256-canonical-json-v2`, with the
+identifier carried beside the digest in the envelope rather than inside the
+hashed input. The Layer-0 anchor-set hash was SHA-256 over the newline-joined
+sorted distinct anchor names, publishing no identifier at all; it is named
+`sha256-anchor-set-v1` retroactively so this record can refer to it.
 
-The exception is bounded to these two recipes. Every future semantic identity
-uses the domain-separated form, as the behavioural and deployment-profile
-hashes already do, and either grandfathered recipe changes only through the
-migration rule, never in place.
+**New recipes.** Each prefixes its existing hashed input with a domain
+separator folding in the recipe identifier, exactly as the behavioural and
+deployment-profile recipes do: `sha256-canonical-json-v3` under
+`tripod canonical manifest JSON v3`, and `sha256-anchor-set-v2` under
+`tripod layer-0 anchor set v2`. The anchor-set identifier is a
+code-side register, not a new manifest field: publishing it would add a hashed
+body field and force a schema bump, which this migration does not make.
+
+**Reason.** The adopted adjudication discipline requires domain separation for
+every semantic identity, and the user ruling of 2026-08-16 folded the migration
+into the same re-pin cycle as DI-002 rather than deferring it to a separate
+consumer-driven event.
+
+**Meaning or measurement.** Measurement only. No projection, canonical
+encoding, digest algorithm, included field, or exclusion rule changed. Both
+identities identify exactly what they identified before.
+
+**Old and new identities.**
+
+| Identity | Old value | New value |
+|---|---|---|
+| Architecture semantic hash | `4039b936…dbb196ec` | `59d102a9…c66b2a1c` |
+| Layer-0 anchor-set hash | `1b7dff61…f13fa1417` | `766e7d5f…e0d5b258` |
+
+The behavioural hash did not move: its recipe and its body are untouched, and
+the versioning gate keys on it, so this migration is not a version change —
+consistent with the closing paragraph of (`rule:identity:migration`).
+
+**Consumer transition.** Every consumer moved in one change set: the typed pin,
+both generated manifests, the realization document's masthead and attached
+appendix, and the synthetic release-profile identity, which moved because the
+deployment profile binds the architecture semantic hash as a hashed input while
+its own recipe stayed `sha256-canonical-json-deployment-v1`. No dual-acceptance
+window exists and none is needed; the retired identifiers are recorded in
+`RETIRED_SEMANTIC_HASH_ALGORITHMS` and `RETIRED_ANCHOR_SET_HASH_ALGORITHMS` so
+neither name is ever reused.
 
 ---
 

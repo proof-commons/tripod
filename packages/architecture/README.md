@@ -186,10 +186,10 @@ This module is static data, not executable policy. It computes nothing.
   dependencies, decisions, and envelope metadata are excluded. The versioning
   gate keys on this hash: if it moves while `realization_version` is unchanged,
   the build fails.
-- `anchor_set_hash(impl IntoIterator<Item = &str>) -> [u8; 32]` — the Layer-0
-  pin recipe, `sha256(domain prefix || join("\n", sorted distinct anchor
-  names))`. Sorting and deduplication happen inside, so any occurrence order
-  with repeats is accepted.
+- `anchor_set_hash(impl IntoIterator<Item = &str>) -> [u8; 32]` — the attestation anchor-set
+  pin recipe: SHA-256 over the domain prefix followed by
+  `join("\n", sorted distinct anchor names)`. Sorting and deduplication happen
+  inside, so any occurrence order with repeats is accepted.
 - `hex(&[u8]) -> String` — lowercase hex helper.
 
 The unchecked projections over an unvalidated `Architecture` are deliberately

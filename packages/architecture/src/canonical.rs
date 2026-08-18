@@ -49,9 +49,10 @@ pub const SEMANTIC_HASH_ALGORITHM: &str = "sha256-canonical-json-v3";
 /// `…-v2` hashed the canonical body with no domain separator, carrying
 /// the algorithm identifier beside the digest in the envelope rather
 /// than inside the hashed input. It was a reviewed exception to the
-/// domain-separated form (ADR-016 `rule:identity:grandfathered`) until
-/// the adopted adjudication discipline required domain separation for
-/// every semantic identity; `…-v3` prefixes the same canonical bytes.
+/// domain-separated form until the adopted adjudication discipline
+/// required domain separation for every semantic identity; `…-v3`
+/// prefixes the same canonical bytes. See ADR-016
+/// `rule:identity:separation-migration`.
 /// The projection and encoding are untouched, so the meaning
 /// identified is unchanged and only the measurement moved. The retired
 /// pinned value is recorded with the migration in ADR-016.
