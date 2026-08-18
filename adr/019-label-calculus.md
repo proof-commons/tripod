@@ -1,8 +1,9 @@
 # ADR-019: Adoption of the Label Calculus
 
-**Status:** Decided and implemented for the authorship warrant species,
-with the derivation species and the rest of the checker re-engineering
-tracked as backlog DI-003
+**Status:** Decided and implemented for the authorship warrant species.
+The checker re-engineering landed as backlog DI-003; the derivation
+species stays unbuilt and waits on the first registered profile, Π
+being empty by decision
 **Scope:** Every authored prose and code source of this repository, and
 the labels checker that enforces the graph over them
 **Adopts:** the third edition of the corrected draft archived at
@@ -69,9 +70,9 @@ follows, and a change to any row enters only by a new record.
 
 | Parameter | Fixing |
 |---|---|
-| Signature Σ: owner prefixes | `A` the specification; `RZ` the realization contract; `PLAN` the planning tree; `DOC` repository documentation; `MODEL` the model crate; `ADRNNN` one owner per numbered record, derived from the filename and never written at a mint. One further owner per Cargo package. The package owners have no readable import prefix today; registering them is backlog DI-003, and until then they are citeable only within themselves |
+| Signature Σ: owner prefixes | `A` the specification; `RZ` the realization contract; `PLAN` the planning tree; `DOC` repository documentation; `MODEL` the model crate; `ADRNNN` one owner per numbered record, derived from the filename and never written at a mint. One further owner per Cargo package, its prefix derived from the directory name by rule and registered with the signature, so package labels are citeable across owners like any others |
 | Owner partition Ω | Fixed by tree location, total on the carrier: `papers/attestation/main.tex` with its sections to `A`; `docs/attestation/realization.md` to `RZ`; each `adr/NNN-*.md` to its own `ADRNNN`; the rest of `plans/` to `PLAN` and the rest of `docs/` to `DOC`; `packages/model/src/` to `MODEL`; each remaining `packages/*/src/` to that package's owner. Version-control internals, build and dependency directories, and generated artifacts are outside the carrier |
-| Profile signature Π | **Empty.** No inventory profile is registered, so no kind is warranted by derivation and every mint in the corpus stands on authorship. The first profile this repository invites is a test profile over the model crate's cases; registering it is backlog DI-003, and the decision that registers it claims its kind in the same commit, as the draft requires |
+| Profile signature Π | **Empty.** No inventory profile is registered, so no kind is warranted by derivation and every mint in the corpus stands on authorship. The first profile this repository invites is a test profile over the model crate's cases; registering it awaits that decision, which claims its kind in the same commit and supplies the standard-place detection the checker leaves unbuilt, as the draft requires |
 | Reserved kinds K | **Empty**, and necessarily so while Π is empty. A kind reserved in K that no profile governs admits neither warrant rule, so its every bare occurrence would be a hard failure by warrant totality: a nonempty K under an empty Π would reserve kinds no one could use. K grows only alongside the profile that governs it, and the kinds ADR-020 catalogues are not thereby reserved — that registry fixes what a kind means, never which authority warrants it |
 | Designated typed-data classes | Architecture witness semantic tags, and the exported clause identifiers of the architecture manifest. Both target the `R13` owner. No third class is designated |
 | Citation-index designations | `plans/labels/specification.md` over the `A` owner, and `plans/labels/realization.md` over the `RZ` owner. Both are generated registers and participate in nothing they index |
@@ -103,17 +104,26 @@ code. What it changes is where a reader looks: a question about minting,
 resolution, participation, or ownership is answered by the draft, and by
 this record only where a parameter or an amendment is at issue.
 
-The narrownesses stand and are honest rather than repaired here. The
+DI-003 discharged most of what this record left narrow: one
+participation scanner behind every check, the seven parameters above as
+typed checker data a reader can compare row by row, registered package
+prefixes, the registry as the checker's own kind vocabulary, warrant
+totality enforced ahead of anything that could exercise it, and the
+near-miss warnings the draft asks for.
+
+Two narrownesses stand and are honest rather than repaired. The
 synthetic-citation and anchor-harvest mechanisms are each one correct
-hardwired instance of their rule rather than the rule. The checker
-implements the authorship warrant species only: it has no notion of a
-profile, a census, a standard place, or a derived label, so the
-derivation rule, inventory discipline, and the half of warrant totality
-that governs reserved kinds are unimplemented — vacuously satisfied
-today, because Π and K are both empty, and unimplemented all the same.
-The near-miss warnings the draft asks for are not emitted. Widening all
-of this, along with the single participation scanner and the registered
-package prefixes, is backlog DI-003.
+hardwired instance of their rule rather than the rule; the gate asks
+only that the designated classes resolve, and they do, so this is a
+narrowness and not an unmet item. The checker still implements the
+authorship warrant species alone: warrant totality is live, but
+standard-place detection is unbuilt, so the derivation rule and
+inventory discipline are unimplemented — vacuously satisfied, Π and K
+being empty by decision, and unimplemented all the same. That is the
+one unmet bullet of the draft's implementation gate, and it waits on
+the decision that registers the first profile rather than on more code:
+a profile cannot be registered until the place detection it needs
+exists, and no profile has been proposed to need it.
 
 Adoption is not a migration of label values. Under the draft's own
 presentation-invariance meta-theorem nothing that hashes the corpus
@@ -162,4 +172,6 @@ Adoption holds when:
 - the checker admits a hyphenated area and rejects a hyphenated kind;
 - the corpus-wide label check passes in continuous integration.
 
-Every item holds as of this record.
+Every item holds as of this record, and each still holds after DI-003:
+the parameter table was rewritten above where the checker moved under
+it, so the third bullet is a live claim rather than a remembered one.
