@@ -6,13 +6,14 @@ use std::os::unix::fs::PermissionsExt;
 use petgraph::Direction;
 
 use crate::{
-    LabelErrorCode,
+    LabelDiagnostic, LabelErrorCode, adoption,
     census::{CensusGroup, RepositoryCensus},
     label::{Label, LabelParseError, LabelShape},
     latex::harvest_attestation,
     markdown::{InlineCodeContext, scan_markdown},
     model_labels_json,
     owner::{ImportedLabel, LabelOwner},
+    registry::LabelMint,
     repository::{
         CitationClass, LabelGraphEdge, LabelGraphNode, RepositoryLabels, generate_registers,
     },
@@ -2176,4 +2177,357 @@ fn latex_participation_strips_comments_and_respects_escaping() {
     // Line structure survives, so a location derived from the stripped
     // text still names the authored line.
     assert_eq!(stripped.lines().count(), 4);
+}
+
+// ---------------------------------------------------------------------
+// Adoption data, kind vocabulary, and warrant totality (DI-003 W2).
+// ---------------------------------------------------------------------
+
+fn repository_root() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("the repository root resolves from the crate manifest")
+}
+
+fn mint_for(owner: LabelOwner, label: &str) -> LabelMint {
+    let shape = owner.shape();
+    LabelMint {
+        owner,
+        label: Label::parse(label, shape).expect("fixture label parses"),
+        location: crate::source::SourceLocation::new("fixture.md", 1, 1),
+        home: None,
+    }
+}
+
+fn no_place(_mint: &LabelMint) -> Option<adoption::StandardPlace> {
+    None
+}
+
+/// The committed registry vocabulary is pinned to the archived draft.
+/// This test reads the real document, not a fixture: the point is that
+/// the checker's table cannot drift from the registry it adopts.
+#[test]
+fn committed_registry_kinds_match_the_archived_draft() {
+    let text = fs::read_to_string(repository_root().join(adoption::REGISTRY_SOURCE))
+        .expect("the archived kind registry is readable");
+    let parsed = adoption::parse_registry_source(&text);
+    let committed: std::collections::BTreeSet<String> = adoption::REGISTRY_KINDS
+        .iter()
+        .map(|kind| (*kind).to_owned())
+        .collect();
+    assert_eq!(
+        parsed, committed,
+        "the committed kind table must equal the draft's Convention tables",
+    );
+    // The edition in force reports 208 kinds over its own generated
+    // headline table, which the extraction must reproduce.
+    assert_eq!(
+        parsed.len(),
+        208,
+        "the adopted edition catalogues 208 kinds"
+    );
+}
+
+/// The committed extension set is pinned to the adopting record's table.
+/// ADR-020 is hand-maintained prose, so this is the drift that most
+/// needs catching.
+#[test]
+fn committed_extension_kinds_match_the_adopting_record() {
+    let text = fs::read_to_string(repository_root().join(adoption::EXTENSION_SOURCE))
+        .expect("the adopting record is readable");
+    let parsed = adoption::parse_extension_source(&text);
+    let committed: std::collections::BTreeSet<String> = adoption::EXTENSION_KINDS
+        .iter()
+        .map(|kind| (*kind).to_owned())
+        .collect();
+    assert_eq!(
+        parsed, committed,
+        "the committed extension set must equal the record's extension table",
+    );
+    assert_eq!(parsed.len(), 13, "the record carries thirteen extensions");
+}
+
+/// No extension may collide with a registry token: the record requires
+/// an extension to be distinct from every registry entry.
+#[test]
+fn extension_set_is_disjoint_from_the_registry() {
+    let collisions: Vec<&&str> = adoption::EXTENSION_KINDS
+        .iter()
+        .filter(|kind| adoption::REGISTRY_KINDS.contains(kind))
+        .collect();
+    assert!(
+        collisions.is_empty(),
+        "an extension may not claim a registry token: {collisions:?}",
+    );
+}
+
+/// Drift in either direction is reported, naming both sides, so that the
+/// committed table can be repaired from the diagnostic alone.
+#[test]
+fn vocabulary_drift_fails_loudly_and_names_both_sides() {
+    let directory = tempfile::tempdir().expect("temporary repository");
+    let root = directory.path();
+    fs::create_dir_all(root.join("plans/drafts")).expect("drafts directory");
+    fs::write(
+        root.join(adoption::REGISTRY_SOURCE),
+        concat!(
+            "**Convention (Invented)**\n\n",
+            "| Environment | Kind |\n",
+            "| --- | --- |\n",
+            "| Invention | `invented` |\n",
+        ),
+    )
+    .expect("doctored registry");
+
+    let diagnostics = adoption::verify_vocabulary_sources(root);
+    let drift = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == LabelErrorCode::KindVocabularyDrift)
+        .expect("a doctored registry is drift");
+    assert!(drift.is_error(), "drift must fail, never warn");
+    assert!(
+        drift.message.contains("invented"),
+        "the token the document carries must be named: {}",
+        drift.message,
+    );
+    assert!(
+        drift.message.contains("sec"),
+        "the tokens the checker carries alone must be named: {}",
+        drift.message,
+    );
+}
+
+/// An absent source is not drift: the synthetic fixture repositories of
+/// this suite carry neither document, and their absence must not be read
+/// as a vocabulary that shrank to nothing.
+#[test]
+fn absent_vocabulary_sources_are_not_drift() {
+    let directory = tempfile::tempdir().expect("temporary repository");
+    assert!(
+        adoption::verify_vocabulary_sources(directory.path()).is_empty(),
+        "a tree without the adopted documents reports no drift",
+    );
+}
+
+/// A kind in neither source fails, in an owner the registry governs, and
+/// the message names both sources so the reader knows where to look.
+#[test]
+fn unknown_kind_fails_in_a_governed_owner() {
+    let adoption_data = adoption::Adoption::repository();
+    let mints = vec![mint_for(LabelOwner::Plan, "notakind:area:name")];
+    let diagnostics = adoption::validate_warrants(&adoption_data, &mints, &no_place);
+    let unknown = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == LabelErrorCode::UnknownKind)
+        .expect("an uncatalogued kind fails");
+    assert!(unknown.is_error());
+    assert!(unknown.message.contains(adoption::REGISTRY_SOURCE));
+    assert!(unknown.message.contains(adoption::EXTENSION_SOURCE));
+}
+
+/// Both halves of the effective relation admit a mint: the registry's
+/// own tokens, and the acceptee's recorded extensions.
+#[test]
+fn registry_and_extension_kinds_both_pass() {
+    let adoption_data = adoption::Adoption::repository();
+    let mints = vec![
+        mint_for(LabelOwner::Plan, "sec:area:name"),
+        mint_for(LabelOwner::Plan, "trap:area:name"),
+        mint_for(LabelOwner::Doc, "postc:area:name"),
+    ];
+    let diagnostics = adoption::validate_warrants(&adoption_data, &mints, &no_place);
+    assert!(
+        diagnostics.is_empty(),
+        "a registry kind and a recorded extension both stand: {diagnostics:#?}",
+    );
+}
+
+/// The Layer-0 LaTeX surface is recorded as not yet in scope, so an
+/// uncatalogued token there is reported and does not fail the gate.
+#[test]
+fn attestation_unknown_kind_reports_without_failing() {
+    let adoption_data = adoption::Adoption::repository();
+    let mints = vec![mint_for(LabelOwner::Attestation, "motto:somewhere")];
+    let diagnostics = adoption::validate_warrants(&adoption_data, &mints, &no_place);
+    assert_eq!(diagnostics.len(), 1);
+    assert!(
+        !diagnostics[0].is_error(),
+        "the surface outside the record's scope reports rather than fails",
+    );
+    assert!(diagnostics[0].message.contains("awaits adjudication"));
+}
+
+/// A reserved kind no profile governs admits neither warrant rule, so
+/// its bare occurrence is a hard failure. The repository's reserved set
+/// is empty, so the enforcement is exercised on test-only adoption data
+/// -- which is the point: it must already be live when the set grows.
+#[test]
+fn reserved_kind_without_a_profile_fails() {
+    let mut adoption_data = adoption::Adoption::repository();
+    adoption_data.reserved_kinds.insert("suite".to_owned());
+    let mints = vec![mint_for(LabelOwner::Model, "suite:area:name")];
+    let diagnostics = adoption::validate_warrants(&adoption_data, &mints, &no_place);
+    let reserved = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == LabelErrorCode::ReservedKindWithoutProfile)
+        .expect("a reserved kind without a profile fails");
+    assert!(reserved.is_error());
+    assert_eq!(
+        adoption_data.ungoverned_reserved_kinds(),
+        vec!["suite"],
+        "the ungoverned reserved kinds are nameable before any mint is read",
+    );
+}
+
+/// An inventory-kind token away from its profile's standard place
+/// warrants nothing. Vacuous in this repository, which registers no
+/// profile, and exercised here on a test-only profile.
+#[test]
+fn inventory_kind_away_from_the_standard_place_fails() {
+    let profile = adoption::Profile {
+        kind: "test".to_owned(),
+        census: "the cases the harness recognizes".to_owned(),
+        classification: "the case's suite".to_owned(),
+        name_transformation: "hyphenation of the function identifier".to_owned(),
+        standard_place: adoption::StandardPlace::DocumentationComment,
+    };
+    let adoption_data = adoption::Adoption {
+        profiles: vec![profile],
+        reserved_kinds: ["test".to_owned()].into_iter().collect(),
+    };
+    let mints = vec![mint_for(LabelOwner::Model, "test:integration:roundtrip")];
+
+    let diagnostics = adoption::validate_warrants(&adoption_data, &mints, &no_place);
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == LabelErrorCode::InventoryKindOutOfPlace),
+        "a derived label away from its standard place is no mint: {diagnostics:#?}",
+    );
+
+    // At the standard place the same occurrence stands.
+    let at_place = |_mint: &LabelMint| Some(adoption::StandardPlace::DocumentationComment);
+    assert!(
+        adoption::validate_warrants(&adoption_data, &mints, &at_place).is_empty(),
+        "an occurrence at the standard place is warranted by derivation",
+    );
+}
+
+/// A prefix outside the signature names no owner, so its citation
+/// cannot resolve. The registered package prefixes do name owners.
+#[test]
+fn only_registered_prefixes_name_owners() {
+    assert!(
+        ImportedLabel::parse("NOTREGISTERED-def:area:name").is_err(),
+        "a prefix outside the signature has no owner",
+    );
+    let imported =
+        ImportedLabel::parse("LABELS-def:area:name").expect("a registered package prefix resolves");
+    assert_eq!(imported.owner, LabelOwner::Crate("labels".to_owned()));
+    assert_eq!(
+        adoption::owner_for_prefix("ADR019"),
+        Some(LabelOwner::Adr(19)),
+        "the numbered-record family derives its prefixes",
+    );
+    assert_eq!(
+        adoption::owner_for_prefix("ADR19"),
+        None,
+        "the family fixes three digits",
+    );
+}
+
+/// The package registration is answerable to the census: an unregistered
+/// package and a stale registration are both recorded decisions the tree
+/// has not taken.
+#[test]
+fn package_registration_is_checked_against_the_census() {
+    let location = crate::source::SourceLocation::new("packages", 1, 1);
+    let registered: Vec<&str> = adoption::PACKAGE_OWNERS
+        .iter()
+        .map(|(_, package)| *package)
+        .collect();
+    assert!(
+        adoption::verify_package_registration(registered.iter().copied(), &location).is_empty(),
+        "the registration agrees with itself",
+    );
+
+    let with_newcomer: Vec<&str> = registered
+        .iter()
+        .copied()
+        .chain(std::iter::once("newcomer"))
+        .collect();
+    let diagnostics = adoption::verify_package_registration(with_newcomer, &location);
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == LabelErrorCode::UnregisteredOwner
+                && diagnostic.message.contains("newcomer")
+        }),
+        "an unregistered package is named: {diagnostics:#?}",
+    );
+
+    let missing: Vec<&str> = registered.iter().copied().skip(1).collect();
+    let diagnostics = adoption::verify_package_registration(missing, &location);
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == LabelErrorCode::UnregisteredOwner),
+        "a registration naming no package is stale: {diagnostics:#?}",
+    );
+}
+
+/// The prefix derivation rule is injective over the registered packages:
+/// dropping hyphens could collide two names, and a collision would make
+/// one owner unciteable.
+#[test]
+fn derived_package_prefixes_are_distinct() {
+    let mut seen = std::collections::BTreeMap::new();
+    for (prefix, package) in adoption::PACKAGE_OWNERS {
+        assert_eq!(&adoption::derive_package_prefix(package), prefix);
+        assert!(
+            seen.insert(*prefix, *package).is_none(),
+            "two packages derive the prefix {prefix}",
+        );
+        assert!(
+            adoption::owner_for_prefix(prefix).is_some(),
+            "a registered package prefix resolves through the signature",
+        );
+    }
+}
+
+/// The owner partition is total on the carrier locations the census
+/// walks, and the specific rule precedes the general one.
+#[test]
+fn partition_rules_are_ordered_specific_before_general() {
+    let rules = adoption::partition();
+    let model = rules
+        .iter()
+        .position(|rule| rule.path == "packages/model/src")
+        .expect("the model crate has a rule");
+    let packages = rules
+        .iter()
+        .position(|rule| rule.path == "packages")
+        .expect("the package family has a rule");
+    assert!(
+        model < packages,
+        "the model crate must be matched before the package family",
+    );
+}
+
+/// The live tree is conformant: every kind minted in an owner the
+/// registry governs lies in the effective relation. The attestation surface
+/// is outside that scope and reports its two unadjudicated tokens.
+#[test]
+fn the_corpus_mints_no_ungoverned_kind() {
+    let census = RepositoryCensus::discover(repository_root());
+    let labels = RepositoryLabels::harvest_sources(&census);
+    let offending: Vec<&LabelDiagnostic> = labels
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == LabelErrorCode::UnknownKind)
+        .collect();
+    assert!(
+        offending.iter().all(|diagnostic| !diagnostic.is_error()),
+        "no governed owner may mint an uncatalogued kind: {offending:#?}",
+    );
 }
