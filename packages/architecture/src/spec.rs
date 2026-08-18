@@ -412,14 +412,16 @@ pub const DOCUMENT: DocumentSpec = DocumentSpec {
     specification: SpecificationBinding {
         version: "1.0.0",
         // sha256 over the domain prefix and the newline-joined sorted
-        // distinct Layer-0 anchor names harvested from the document's
-        // §17 index (A- prefix stripped): the pin ceremony of
-        // (´[RZ-rem:overview:anchor-pin]´) under algorithm
-        // `sha256-anchor-set-v2`. Re-pinned 2026-08-18 by the DI-004
-        // recipe migration, which added the domain separator; the
-        // anchor set is the same 38 names, so the dependency set
-        // identified did not change, only its measurement. The retired
-        // `…-v1` value is recorded with the migration in ADR-016.
+        // distinct specification anchor names harvested from the
+        // document's §17 index (A- prefix stripped): the pin ceremony
+        // of (´[RZ-rem:overview:anchor-pin]´) under algorithm
+        // `sha256-anchor-set-v2`. Re-pinned by the specification's
+        // v1.0.0 release, which renamed the paper's own-division label
+        // area to `attestation`: two of the thirty-eight anchors are
+        // renamed (`open:attestation:leverage-timing` and
+        // `open:attestation:operator-disambiguation` carry the new area), so
+        // this is a rename of label values and the measured set moved
+        // with them. The recipe is unchanged.
         anchor_set_hash: Some([
             0x8a, 0x7c, 0xe7, 0x65, 0xd3, 0x3c, 0x08, 0xee, 0x9e, 0x51, 0x32, 0x05, 0x3a, 0x83,
             0x08, 0xed, 0xec, 0x46, 0xd9, 0xe1, 0x92, 0x12, 0x8e, 0xb0, 0x76, 0xe2, 0x57, 0xea,
