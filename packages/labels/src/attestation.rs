@@ -33,7 +33,7 @@ use crate::{
 /// Which document recorded a pair.
 ///
 /// The two sources are the registry's own rows and this corpus's
-/// recorded extension set, written C and X_A by the registry.
+/// recorded extension set, written C and `X_A` by the registry.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Source {
     /// A row of the adopted registry's base relation.
