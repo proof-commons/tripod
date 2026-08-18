@@ -12,7 +12,7 @@
 //! # Kind vocabulary: the data-source decision
 //!
 //! ADR-020 adopts an archived registry draft as the kind vocabulary, and
-//! adds to it a recorded extension set the ADR calls X_A. Neither
+//! adds to it a recorded extension set the ADR calls `X_A`. Neither
 //! document may be edited by the checker: the draft under plans/drafts/
 //! is a verbatim archive, and the ADR is hand-maintained prose.
 //!
@@ -20,7 +20,7 @@
 //! use the parse as the vocabulary, or commit an extracted table and
 //! check it against the documents for exactness. This module commits the
 //! table, for three reasons. A committed table is a review surface: an
-//! edition swap or an X_A amendment shows every added and removed token
+//! edition swap or an `X_A` amendment shows every added and removed token
 //! in the diff, where a check-time parse would widen the vocabulary
 //! silently and legalize kinds no decision admitted. It keeps the
 //! vocabulary inspectable without a Markdown parser in the resolution
@@ -47,6 +47,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    fmt::Write as _,
     fs,
     path::Path,
 };
@@ -178,9 +179,10 @@ pub fn package_prefix(package: &str) -> Option<&'static str> {
         .map(|(prefix, _)| *prefix)
 }
 
-/// Check the committed package registration against the packages the
-/// census actually found, and against the derivation rule the family
-/// declares. A package present in the tree and absent from the table is
+/// Check the committed package registration against the census.
+///
+/// The packages the census found, and the derivation rule the family
+/// declares, must both agree with the table. A package present in the tree and absent from the table is
 /// an unregistered owner; a table row naming no package is a stale
 /// registration; and either is a decision the tree has not recorded.
 pub fn verify_package_registration<'a>(
@@ -245,9 +247,10 @@ pub enum PathRule {
     Under,
 }
 
-/// One rule of the owner partition: a tree location, and the owner it
-/// carries. The partition is total on the carrier, and the rules are
-/// ordered — the first match wins, so the specific precedes the general.
+/// One rule of the owner partition: a tree location, and its owner.
+///
+/// The partition is total on the carrier, and the rules are ordered —
+/// the first match wins, so the specific precedes the general.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PartitionRule {
     pub path: &'static str,
@@ -366,9 +369,11 @@ pub struct TypedDataClass {
     pub target: LabelOwner,
 }
 
-/// The two designated classes of ADR-019, both targeting the realization
-/// contract. Both are consumed in the architecture harvest, which turns
-/// each string into a synthetic citation of the realization owner.
+/// The two designated classes of ADR-019.
+///
+/// Both target the realization contract, and both are consumed in the
+/// architecture harvest, which turns each string into a synthetic
+/// citation of the realization owner.
 ///
 /// The model-label publication is deliberately absent: it is a generated
 /// artifact checked for exactness, not a citing class.
@@ -653,10 +658,11 @@ pub const REGISTRY_KINDS: &[&str] = &[
     "yoga",
 ];
 
-/// The recorded extension set X_A of ADR-020: the kinds this repository
-/// adds to the registry's rows as the registry's acceptee. Committed
-/// from the ADR's extension table and checked against it by
-/// [`verify_vocabulary_sources`].
+/// The recorded extension set `X_A` of ADR-020.
+///
+/// The kinds this repository adds to the registry's rows as the
+/// registry's acceptee. Committed from the ADR's extension table and
+/// checked against it by [`verify_vocabulary_sources`].
 pub const EXTENSION_KINDS: &[&str] = &[
     "branch",
     "candidate",
@@ -680,7 +686,7 @@ pub const EXTENSION_SOURCE: &str = "adr/020-environment-kinds.md";
 
 /// Whether a kind is in the adopted vocabulary: the registry's tokens
 /// together with the recorded extension set, which is the effective
-/// relation ADR-020 writes C_A.
+/// relation ADR-020 writes `C_A`.
 pub fn kind_is_adopted(kind: &str) -> bool {
     REGISTRY_KINDS.contains(&kind) || EXTENSION_KINDS.contains(&kind)
 }
@@ -695,7 +701,7 @@ pub enum KindScope {
 }
 
 /// The scope ADR-020 gives an owner.
-pub fn kind_scope(owner: &LabelOwner) -> KindScope {
+pub const fn kind_scope(owner: &LabelOwner) -> KindScope {
     match owner {
         LabelOwner::Attestation => KindScope::Reported,
         _ => KindScope::Enforced,
@@ -706,9 +712,11 @@ pub fn kind_scope(owner: &LabelOwner) -> KindScope {
 // Drift checks against the two vocabulary sources.
 // ---------------------------------------------------------------------
 
-/// Parse the distinct kind tokens of the archived registry draft: the
-/// second column of every Convention table. Device rows, whose kind cell
-/// is an em dash rather than a token, classify nothing and are skipped.
+/// Parse the distinct kind tokens of the archived registry draft.
+///
+/// The tokens are the second column of every Convention table. Device
+/// rows, whose kind cell is an em dash rather than a token, classify
+/// nothing and are skipped.
 pub fn parse_registry_source(text: &str) -> BTreeSet<String> {
     let mut kinds = BTreeSet::new();
     let mut in_convention = false;
@@ -839,16 +847,18 @@ fn check_source(
         "the checker's committed kind vocabulary has drifted from {description} at {relative}"
     );
     if !missing.is_empty() {
-        message.push_str(&format!(
+        let _ = write!(
+            message,
             "; the document carries and the checker does not: {}",
             missing.join(", ")
-        ));
+        );
     }
     if !extra.is_empty() {
-        message.push_str(&format!(
+        let _ = write!(
+            message,
             "; the checker carries and the document does not: {}",
             extra.join(", ")
-        ));
+        );
     }
     diagnostics.push(LabelDiagnostic::error(
         LabelErrorCode::KindVocabularyDrift,
@@ -861,10 +871,11 @@ fn check_source(
 // The adoption data, and the invariants stated over it.
 // ---------------------------------------------------------------------
 
-/// The adoption data the checker loads before any resolution, which is
-/// the first stage of the calculus's two-pass staging: the parameters
-/// are fixed, then the carrier is harvested, and only then is any
-/// resolution judgment derived.
+/// The adoption data the checker loads before any resolution.
+///
+/// Loading them is the first stage of the calculus's two-pass staging:
+/// the parameters are fixed, then the carrier is harvested, and only
+/// then is any resolution judgment derived.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Adoption {
     /// The profile signature. Empty in this repository.
@@ -882,10 +893,11 @@ impl Default for Adoption {
 }
 
 impl Adoption {
-    /// This repository's adoption, as ADR-019 records it: both the
-    /// profile signature and the reserved kinds are empty, so every mint
-    /// in the corpus stands on the authorship warrant.
-    pub fn repository() -> Self {
+    /// This repository's adoption, as ADR-019 records it.
+    ///
+    /// Both the profile signature and the reserved kinds are empty, so
+    /// every mint in the corpus stands on the authorship warrant.
+    pub const fn repository() -> Self {
         Self {
             profiles: Vec::new(),
             reserved_kinds: BTreeSet::new(),

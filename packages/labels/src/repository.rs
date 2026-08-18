@@ -923,7 +923,7 @@ fn validate(result: &mut RepositoryLabels) {
 /// answer — while this stands, a registered profile's kinds all fail as
 /// out-of-place, so a profile cannot be registered without the place
 /// detection its census and standard place require being built with it.
-fn standard_place_of(_mint: &LabelMint) -> Option<adoption::StandardPlace> {
+const fn standard_place_of(_mint: &LabelMint) -> Option<adoption::StandardPlace> {
     None
 }
 

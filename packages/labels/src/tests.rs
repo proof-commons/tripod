@@ -2394,7 +2394,7 @@ fn inventory_kind_away_from_the_standard_place_fails() {
     };
     let adoption_data = adoption::Adoption {
         profiles: vec![profile],
-        reserved_kinds: ["test".to_owned()].into_iter().collect(),
+        reserved_kinds: std::iter::once("test".to_owned()).collect(),
     };
     let mints = vec![mint_for(LabelOwner::Model, "test:integration:roundtrip")];
 
