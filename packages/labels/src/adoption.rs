@@ -38,7 +38,7 @@
 //! ADR-020 governs the planning tree, the decision records, the
 //! documentation tree, and the Rust packages. It records, under its
 //! consequences, that the attestation LaTeX surface is not yet in scope and
-//! carries three tokens it adjudicates none of. Kind validation is
+//! still carries two tokens it leaves unadjudicated. Kind validation is
 //! therefore enforcing over the owners the ADR governs and reporting
 //! only over attestation, so the checker states the ADR's recorded position
 //! rather than inventing an adjudication. [`KindScope`] carries the
@@ -1033,6 +1033,7 @@ pub const EXTENSION_KINDS: &[&str] = &[
     "err",
     "leaf",
     "milestone",
+    "motto",
     "obl",
     "op",
     "phase",
@@ -1054,6 +1055,7 @@ pub const EXTENSION_PAIRS: &[(&str, &str)] = &[
     ("Error vocabulary", "err"),
     ("Leaf", "leaf"),
     ("Milestone", "milestone"),
+    ("Motto", "motto"),
     ("Obligation", "obl"),
     ("Operation", "op"),
     ("Phase", "phase"),
