@@ -8,10 +8,9 @@ use crate::{
     RepositoryCensus,
     diagnostic::{LabelDiagnostic, LabelErrorCode},
     label::{Label, LabelShape},
-    markdown::{
-        InlineCodeContext, classify, fence_close, fence_open, nested_fence, nested_fence_diagnostic,
-    },
+    markdown::{InlineCodeContext, classify, nested_fence_diagnostic},
     owner::{ImportedLabel, LabelOwner},
+    participation::{fence_close, fence_open, nested_fence},
     registry::{LabelMint, LabelRegistry},
     repository::{CitationClass, CitationOrigin, LabelCitation},
     source::{SourceLocation, relative_to},

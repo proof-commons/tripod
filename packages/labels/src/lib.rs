@@ -16,6 +16,7 @@ pub mod label;
 pub mod latex;
 pub mod markdown;
 pub mod owner;
+pub mod participation;
 pub mod plans;
 pub mod registry;
 pub mod render;

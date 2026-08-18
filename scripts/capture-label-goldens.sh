@@ -40,9 +40,14 @@ if [ "${1-}" = "--compare" ]; then
       a) source_dir="$2" ;;
       b) source_dir="$3" ;;
     esac
+    # The register generator logs the absolute path it wrote to, which
+    # differs between two captures by construction; resolve each
+    # capture directory so that path can be normalized away.
+    source_dir="$(cd "$source_dir" && pwd)"
     mkdir -p "$normalize_dir/$side"
     for file in "$source_dir"/*; do
-      sed 's/"timestamp":"[^"]*"/"timestamp":"NORMALIZED"/g' \
+      sed -e 's/"timestamp":"[^"]*"/"timestamp":"NORMALIZED"/g' \
+        -e "s|$source_dir|CAPTURE-DIR|g" \
         "$file" >"$normalize_dir/$side/$(basename "$file")"
     done
   done

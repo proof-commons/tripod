@@ -219,10 +219,7 @@ fn harvest_realization(paths: &RepositoryCensus, result: &mut RepositoryLabels) 
     // harvested, so a forward reference resolves like any other.
     let mut pin_refs: Vec<(Label, SourceLocation)> = Vec::new();
     let mut clause_refs: Vec<(u32, SourceLocation)> = Vec::new();
-    for span in scan.code_spans {
-        if span.delimiter_len != 1 {
-            continue;
-        }
+    for span in scan.participating_spans().cloned().collect::<Vec<_>>() {
         if let Some(token) = square(&span.content) {
             // Every square-bracketed token is audited in its own grammar
             // class: attestation body cites are handled by
@@ -538,12 +535,9 @@ fn harvest_adrs(paths: &RepositoryCensus, result: &mut RepositoryLabels) {
             }
         };
         let scan = scan_markdown(&relative, &source);
-        result.diagnostics.extend(scan.diagnostics);
+        result.diagnostics.extend(scan.diagnostics.clone());
         let mut registry = LabelRegistry::default();
-        for span in scan.code_spans {
-            if span.delimiter_len != 1 {
-                continue;
-            }
+        for span in scan.participating_spans().cloned().collect::<Vec<_>>() {
             if let Some(token) = square(&span.content) {
                 if span.context == InlineCodeContext::Parenthesized {
                     import(token, &span.location, LabelOwner::Adr(number), result);
@@ -663,11 +657,8 @@ fn harvest_markdown_owner(
         }
     };
     let scan = scan_markdown(&relative, &source);
-    result.diagnostics.extend(scan.diagnostics);
-    for span in scan.code_spans {
-        if span.delimiter_len != 1 {
-            continue;
-        }
+    result.diagnostics.extend(scan.diagnostics.clone());
+    for span in scan.participating_spans().cloned().collect::<Vec<_>>() {
         if let Some(token) = square(&span.content) {
             if span.context == InlineCodeContext::Parenthesized {
                 import(token, &span.location, owner.owner(), result);
@@ -773,6 +764,15 @@ fn harvest_attestation_citations(
     let mut index_lines = BTreeSet::new();
 
     for (number, line) in source.lines().enumerate() {
+        // The index region is a prose region, so its boundaries are
+        // read from participating lines only. Walking the raw source
+        // let a heading inside a fenced block open or close the region
+        // — a displayed heading silently re-partitioning the document
+        // the span scanner had already partitioned the other way
+        // (DI-F01 resolution 1).
+        if !scan.participation.participates(number + 1) {
+            continue;
+        }
         if line.starts_with("## ") {
             // Matched on the locator mint form so a heading merely
             // citing (`sec:anchors`) cannot open the index region.
@@ -787,11 +787,7 @@ fn harvest_attestation_citations(
         }
     }
 
-    for span in &scan.code_spans {
-        if span.delimiter_len != 1 {
-            continue;
-        }
-
+    for span in scan.participating_spans() {
         let content = span.content.trim();
         let Some(token) = square(content) else {
             if content.starts_with("[A-") {

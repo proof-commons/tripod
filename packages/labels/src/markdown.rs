@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::{
     diagnostic::{LabelDiagnostic, LabelErrorCode},
+    participation::{ProseParticipation, nested_fence},
     source::SourceLocation,
 };
 
@@ -58,22 +59,32 @@ pub struct InlineCodeSpan {
 pub struct MarkdownScan {
     pub code_spans: Vec<InlineCodeSpan>,
     pub diagnostics: Vec<LabelDiagnostic>,
+    /// The line-level participation view this scan was built on, kept
+    /// so a consumer that also reasons about regions — the generated
+    /// index boundary in the Realization harvest, for one — asks the
+    /// same scanner rather than re-walking the raw source.
+    pub participation: ProseParticipation,
+}
+
+impl MarkdownScan {
+    /// The spans a grammar rule may look at: every span on a
+    /// participating line whose delimiter width means it, in the single
+    /// place that decision is made.
+    pub fn participating_spans(&self) -> impl Iterator<Item = &InlineCodeSpan> {
+        self.code_spans.iter().filter(|span| span.participates())
+    }
 }
 
 pub fn scan_markdown(path: &Path, source: &str) -> MarkdownScan {
-    let mut scan = MarkdownScan::default();
-    let mut fence: Option<(char, usize, usize)> = None;
+    let participation = ProseParticipation::of(source);
+    let mut scan = MarkdownScan {
+        participation,
+        ..MarkdownScan::default()
+    };
     let mut home = None;
     for (index, raw) in source.lines().enumerate() {
         let line = index + 1;
-        if let Some((marker, length, _)) = fence {
-            if fence_close(raw, marker, length) {
-                fence = None;
-            }
-            continue;
-        }
-        if let Some((marker, length)) = fence_open(raw) {
-            fence = Some((marker, length, line));
+        if !scan.participation.participates(line) {
             continue;
         }
         if let Some(column) = nested_fence(raw) {
@@ -85,7 +96,7 @@ pub fn scan_markdown(path: &Path, source: &str) -> MarkdownScan {
         }
         scan_line(path, raw, line, home.as_deref(), &mut scan);
     }
-    if let Some((_, _, line)) = fence {
+    if let Some(line) = scan.participation.unclosed_fence() {
         scan.diagnostics.push(LabelDiagnostic::error(
             LabelErrorCode::UnclosedMarkdownFence,
             &SourceLocation::new(path, line, 1),
@@ -93,69 +104,6 @@ pub fn scan_markdown(path: &Path, source: &str) -> MarkdownScan {
         ));
     }
     scan
-}
-
-/// Detect a fence the top-level recognizer cannot see, returning the
-/// one-based column of its marker run.
-///
-/// The accepted Markdown grammar recognizes fences with at most three
-/// leading spaces (ADR-019 fenced material). A fence hidden behind a
-/// blockquote marker, a list bullet, or deeper indentation is outside
-/// that grammar, so its content would be scanned as ordinary prose.
-/// Rather than grow a container parser, the repository rejects such a
-/// fence: a label-shaped token inside one can then never participate
-/// silently, because the document carrying it fails.
-pub(crate) fn nested_fence(line: &str) -> Option<usize> {
-    if fence_open(line).is_some() {
-        return None;
-    }
-    let bytes = line.as_bytes();
-    let mut offset = 0;
-    let mut contained = false;
-    loop {
-        let indent = offset;
-        while bytes.get(offset) == Some(&b' ') {
-            offset += 1;
-        }
-        // Indentation deeper than a top-level fence is itself a
-        // container: a list continuation or an indented block.
-        if offset - indent > 3 {
-            contained = true;
-        }
-        match bytes.get(offset) {
-            Some(b'>') => {
-                offset += 1;
-                contained = true;
-            }
-            Some(b'-' | b'*' | b'+') if bytes.get(offset + 1) == Some(&b' ') => {
-                offset += 2;
-                contained = true;
-            }
-            Some(digit) if digit.is_ascii_digit() => {
-                let mut end = offset;
-                while bytes.get(end).is_some_and(u8::is_ascii_digit) {
-                    end += 1;
-                }
-                if !matches!(bytes.get(end), Some(b'.' | b')')) || bytes.get(end + 1) != Some(&b' ')
-                {
-                    break;
-                }
-                offset = end + 2;
-                contained = true;
-            }
-            _ => break,
-        }
-    }
-    if !contained {
-        return None;
-    }
-    let rest = &line[offset..];
-    let marker = rest.chars().next()?;
-    if !matches!(marker, '`' | '~') {
-        return None;
-    }
-    let length = rest.chars().take_while(|value| *value == marker).count();
-    (length >= 3).then(|| line[..offset].chars().count() + 1)
 }
 
 pub(crate) fn nested_fence_diagnostic(path: &Path, line: usize, column: usize) -> LabelDiagnostic {
@@ -167,29 +115,6 @@ pub(crate) fn nested_fence_diagnostic(path: &Path, line: usize, column: usize) -
     )
 }
 
-pub(crate) fn fence_open(line: &str) -> Option<(char, usize)> {
-    let trimmed = after_fence_indent(line)?;
-    let marker = trimmed.chars().next()?;
-    if !matches!(marker, '`' | '~') {
-        return None;
-    }
-    let length = trimmed.chars().take_while(|value| *value == marker).count();
-    (length >= 3).then_some((marker, length))
-}
-pub(crate) fn fence_close(line: &str, marker: char, length: usize) -> bool {
-    let Some(trimmed) = after_fence_indent(line) else {
-        return false;
-    };
-    let actual = trimmed.chars().take_while(|value| *value == marker).count();
-    actual >= length && trimmed[actual..].trim().is_empty()
-}
-fn after_fence_indent(line: &str) -> Option<&str> {
-    let indent = line
-        .chars()
-        .take_while(|character| *character == ' ')
-        .count();
-    (indent <= 3).then_some(&line[indent..])
-}
 fn heading(line: &str) -> Option<String> {
     let value = line.trim_start();
     let count = value.chars().take_while(|value| *value == '#').count();
