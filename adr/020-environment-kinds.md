@@ -125,6 +125,18 @@ move: Postcondition is still `postc`, so the migration of `post` stands
 as taken, and Requirement is still `req`, so the repository's `req` is
 the registry's own token and needs no decision at all.
 
+**Round three.** The three-part-label migration of 2026-08-18 carried
+the last colliding token off the attestation surface.
+
+| Repository kind | Registry position | Adjudication | Outcome |
+|---|---|---|---|
+| `abs` | Abstract is `abst`, which Synopsis shares | Same genre, two spellings of one abbreviation: the mint is the paper's own abstract environment, exactly what the registry's Abstract names | migrated to `abst` |
+
+The mint is one, in the paper's front matter, and it is not an anchor
+the realization contract cites; the anchor-set pin moved in that
+migration for a different reason, recorded in the backlog with the
+retired value and its reproduction.
+
 ---
 
 ## Recorded extension set X_A · `tab:kinds:extensions`
@@ -136,8 +148,8 @@ the whole registry for token and genre distinctness, and each carries
 first-hand evidence — an occurrence in this corpus, located — as the
 registry requires of an acceptee's own rows. The count is occurrences of
 the token in the tree, mints and citations together, at this record. The
-attestation LaTeX surface is not yet in scope and carries three further
-tokens, named under the consequences below.
+attestation LaTeX surface entered scope with the three-part-label migration,
+recorded under the consequences below.
 
 | Name | Kind | Sense | First-hand evidence |
 |---|---|---|---|
@@ -146,7 +158,7 @@ tokens, named under the consequences below.
 | Error vocabulary | `err` | The enumerated error surface a package presents at its boundary. Near Erratum, `errat`, and a different genre: an erratum corrects a document after publication; this states what a package can return | `err:labels:vocabulary`, `plans/packages/errors/labels.md:1`; 10, one per package |
 | Leaf | `leaf` | A terminal node of a decision or derivation tree | `leaf:authorization:cadence-band`, `docs/attestation/realization.md:1121`; 4 |
 | Milestone | `milestone` | A named point in a delivery schedule, reached or not | `milestone:realization:crate`, `plans/packages/realization.md:272`; 28 |
-| Motto | `motto` | The document's own opening declaration, its thesis in one line, placed once by the front matter. Near two registry rows and neither: Epigraph, `epigraph`, carries another's words; Motto is filed `slogan`, the saying classified by its wording | `motto:motto`, `papers/attestation/sections/00_title.tex:95`; 1 |
+| Motto | `motto` | The document's own opening declaration, its thesis in one line, placed once by the front matter. Near two registry rows and neither: Epigraph, `epigraph`, carries another's words; Motto is filed `slogan`, the saying classified by its wording | `motto:attestation:motto`, `papers/attestation/sections/00_title.tex:95`; 1 |
 | Obligation | `obl` | A standing obligation on an implementation, discharged by evidence rather than satisfied once. Near Requirement, `req`, and distinct: a requirement states what the system must do, an obligation what its builder must keep proving | `obl:oracle:adversary`, `docs/attestation/realization.md:1650`; 26 |
 | Operation | `op` | An operation of the protocol's state machine | `op:realization:compact-ash`, `plans/packages/realization.md:203`; 4 |
 | Phase | `phase` | A numbered stage of the delivery plan, with an entry and an exit | `phase:roadmap:cycle`, `plans/phases/11-cycle.md:1`; 16 |
@@ -245,11 +257,18 @@ view of the same base, derived on each run from the extension table
 above, the registry's Convention tables, and a mint census of the
 corpus, so the evidence for X_A is maintained rather than stated once.
 
-One narrowness remains. Of the four tokens the attestation LaTeX surface
+The narrowness is closed. Of the four tokens the attestation LaTeX surface
 carried unadjudicated, `ver` was settled in round two above and `motto`
-is settled by the X_A entry recorded here. Two are open: `invest`, which
-a macro carries and no label mints, and `abs`, which has one mint. That
-surface therefore stays reported rather than enforced.
+by the X_A entry recorded here; the three-part-label migration settled
+the last two. `abs` migrated to the registry's own `abst`, the kind
+Abstract carries. `invest` is adjudicated by having nothing to
+adjudicate: no label mints it, and its macro was moved to the
+three-part form with the rest, so the token enters the corpus only by a
+first use — which now fails the check until a decision admits the kind,
+which is the fail-closed answer this record wants. Every attestation kind
+in use is therefore registry-carried or X_A-recorded, and that surface
+is enforced rather than reported: the checker's reported-only arm is
+deleted, and an unregistered kind is an error whoever mints it.
 
 ---
 

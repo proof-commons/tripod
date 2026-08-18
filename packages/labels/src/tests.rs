@@ -292,6 +292,25 @@ fn imported_owner_and_local_label_parse() {
 }
 
 #[test]
+fn open_subproblem_optional_label_is_harvested() {
+    let directory = tempfile::tempdir().expect("temporary repository");
+    let root = directory.path();
+    fs::create_dir_all(root.join("papers/attestation/sections"))
+        .expect("attestation sections directory");
+    fs::write(
+        root.join("papers/attestation/main.tex"),
+        "\\OpenSubProblem[inner-case]{An inner case}\n% \\OpenSubProblem[ignored]{Comment}\n",
+    )
+    .expect("attestation source");
+
+    let (registry, diagnostics) = harvest_attestation(&RepositoryCensus::discover(root));
+    assert!(diagnostics.is_empty());
+    assert!(registry.contains(
+        &Label::parse("open:attestation:inner-case", LabelShape::Attestation).expect("valid label")
+    ));
+}
+
+#[test]
 fn duplicate_attestation_mint_diagnostic_names_both_locations() {
     // ADR-019 (F3-007): a duplicate-mint diagnostic identifies both
     // the duplicate occurrence and the first mint, in canonical
@@ -2421,19 +2440,39 @@ fn registry_and_extension_kinds_both_pass() {
     );
 }
 
-/// The Layer-0 LaTeX surface is recorded as not yet in scope, so an
-/// uncatalogued token there is reported and does not fail the gate.
+/// The attestation LaTeX surface is in scope since its last unregistered
+/// token was adjudicated, so an uncatalogued token there fails exactly
+/// as it does under every other owner.
 #[test]
-fn attestation_unknown_kind_reports_without_failing() {
+fn attestation_unknown_kind_fails_like_any_other_owner() {
     let adoption_data = adoption::Adoption::repository();
-    let mints = vec![mint_for(LabelOwner::Attestation, "abs:somewhere")];
+    let mints = vec![mint_for(
+        LabelOwner::Attestation,
+        "abs:attestation:somewhere",
+    )];
     let diagnostics = adoption::validate_warrants(&adoption_data, &mints, &no_place);
     assert_eq!(diagnostics.len(), 1);
     assert!(
-        !diagnostics[0].is_error(),
-        "the surface outside the record's scope reports rather than fails",
+        diagnostics[0].is_error(),
+        "the attestation surface is enforced, not reported",
     );
-    assert!(diagnostics[0].message.contains("awaits adjudication"));
+    assert_eq!(diagnostics[0].code, LabelErrorCode::UnknownKind);
+}
+
+/// The kind the migration adjudicated: the paper's abstract is minted
+/// under the registry's own `abst`, which the checker admits.
+#[test]
+fn attestation_abstract_kind_is_registered() {
+    let adoption_data = adoption::Adoption::repository();
+    let mints = vec![mint_for(
+        LabelOwner::Attestation,
+        "abst:attestation:abstract",
+    )];
+    let diagnostics = adoption::validate_warrants(&adoption_data, &mints, &no_place);
+    assert!(
+        diagnostics.is_empty(),
+        "abst is a registry token: {diagnostics:#?}",
+    );
 }
 
 /// A reserved kind no profile governs admits neither warrant rule, so
