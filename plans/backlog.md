@@ -2031,6 +2031,19 @@ are readable in comments during the migration: the acute participates,
 the backtick spelling only warns, and the sweep of the 198 warned sites
 follows. Goldens over the tree are byte-identical.
 
+That sweep is done: all 198 warned spans are gone. 196 became live
+imported citations, each carrying the registered prefix of the owner
+that mints the label — PLAN for the Guide-10 rules, R13, PA, and
+numbered ADRs elsewhere — and imported citations rose by exactly 196,
+from 211 to 407. Conformance held 132, tapscript 23, architecture 12,
+target-elements 11. Nothing was minted to make a citation resolve: no
+crate mints a label, so every reference was owed elsewhere. Two sites
+quote a label's spelling rather than cite it, in the guard-listing
+weld that parses the document for it; both are double-backtick spans,
+shown rather than meant. Groups that straddled a line were brought
+onto one, a group being read within its own line. The generated
+registers regenerate unchanged, so no anchor set moved.
+
 ### 13.2 Checker findings so far · `tab:backlog:draft-findings`
 
 | ID | Status | Finding |
