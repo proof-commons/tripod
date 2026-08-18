@@ -66,10 +66,10 @@ pub const REALIZATION_REGISTER: &str = "plans/labels/realization.md";
 /// The generated companion attestation register (ADR-020).
 pub const ATTESTATION_REGISTER: &str = "plans/labels/attestation.md";
 
-/// Generated register publications: regenerated outputs, not authored
-/// prose. They carry no per-file weight threshold and their bytes are
-/// accounted against the archive budget rather than the maintained-prose
-/// budget.
+/// Generated register publications: regenerated outputs, not prose.
+///
+/// They carry no per-file weight threshold and their bytes are accounted
+/// against the archive budget rather than the maintained-prose budget.
 ///
 /// This is the one place the register role is stated. `census.rs` builds
 /// its register paths from the same constants, and
