@@ -9,7 +9,7 @@
 //!
 //! # Declassification
 //!
-//! Implements the derivation demanded by `sec:representation` and O9
+//! Implements the derivation demanded by `sec:realization:representation` and O9
 //! `(´[RZ-obl:oracle:disclosure]´)`: each operation's declassification set
 //! D_o is **derived from the manifest's transition read-sets, never
 //! authored**. The manifest is welded to the model bidirectionally
