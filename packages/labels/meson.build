@@ -3,6 +3,7 @@
 # audit fails the build. The parent meson.build accumulates this list
 # into its role group.
 labels_source_files = files(
+  'src/adoption.rs',
   'src/bin/census-audit.rs',
   'src/bin/check-forbidden-text.rs',
   'src/bin/check-labels.rs',
