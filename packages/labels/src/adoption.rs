@@ -658,6 +658,368 @@ pub const REGISTRY_KINDS: &[&str] = &[
     "yoga",
 ];
 
+/// The name-and-kind pairs of the adopted registry: every row of the
+/// Convention tables of the archived draft, the row's attestation dagger
+/// removed from its name as the registry directs. Committed from the
+/// draft and checked against it by [`verify_vocabulary_sources`].
+///
+/// The pairs are the classification relation itself, where
+/// [`REGISTRY_KINDS`] is only its image. A head declares a name and a
+/// kind together, and validating one against the other needs the
+/// relation, not the image: `tab` is a registry kind and Theorem is a
+/// registry name, and the pair of the two is not a registry row.
+pub const REGISTRY_PAIRS: &[(&str, &str)] = &[
+    ("API item", "api"),
+    ("Abstract", "abst"),
+    ("Abuse of notation", "abuse"),
+    ("Acknowledgment", "ack"),
+    ("Activity", "exer"),
+    ("Addendum", "adden"),
+    ("Afterword", "adden"),
+    ("Agenda", "agenda"),
+    ("Alert", "alert"),
+    ("Algorithm", "alg"),
+    ("Amendment", "amend"),
+    ("Anecdote", "story"),
+    ("Annals", "chron"),
+    ("Annex", "app"),
+    ("Annotation", "gloss"),
+    ("Ansatz", "ansatz"),
+    ("Answer", "sol"),
+    ("Appendix", "app"),
+    ("Application", "appl"),
+    ("Argument", "arg"),
+    ("Array", "mat"),
+    ("Aside", "aside"),
+    ("Assertion", "claim"),
+    ("Assignment", "exer"),
+    ("Assumption", "assum"),
+    ("Attribution", "credit"),
+    ("Axiom", "ax"),
+    ("Axiom schema", "axschema"),
+    ("Benchmark", "bench"),
+    ("Bogus proof", "fallacy"),
+    ("Book", "book"),
+    ("Bound", "bound"),
+    ("CLI command", "cli"),
+    ("Calculation", "calc"),
+    ("Caption", "caption"),
+    ("Case", "case"),
+    ("Case study", "casestudy"),
+    ("Catalogue", "reg"),
+    ("Caution", "warn"),
+    ("Caveat", "cav"),
+    ("Challenge", "puzzle"),
+    ("Changelog", "log"),
+    ("Chapter", "chap"),
+    ("Characterization", "crit"),
+    ("Chart", "fig"),
+    ("Check", "verif"),
+    ("Chronicle", "chron"),
+    ("Claim", "claim"),
+    ("Class", "class"),
+    ("Clause", "sec"),
+    ("Code", "listing"),
+    ("Comment", "rem"),
+    ("Computation", "calc"),
+    ("Computational note", "impl"),
+    ("Condition", "cond"),
+    ("Confession", "confess"),
+    ("Conjecture", "conj"),
+    ("Consequence", "cor"),
+    ("Construction", "constr"),
+    ("Convention", "conv"),
+    ("Corollary", "cor"),
+    ("Corollary (of the proof)", "por"),
+    ("Corrigendum", "errat"),
+    ("Counterexample", "cex"),
+    ("Courtesy line", "credit"),
+    ("Credit", "credit"),
+    ("Criterion", "crit"),
+    ("Curiosity", "fact"),
+    ("Data", "data"),
+    ("Dataset", "dataset"),
+    ("Decision", "dec"),
+    ("Dedication", "dedic"),
+    ("Definition", "def"),
+    ("Definition–Proposition", "defprop"),
+    ("Definition–Theorem", "defthm"),
+    ("Demonstration", "ex"),
+    ("Demonstration", "pf"),
+    ("Derivation", "calc"),
+    ("Desideratum", "goal"),
+    ("Diagram", "diag"),
+    ("Diary", "jour"),
+    ("Dictum", "slogan"),
+    ("Digression", "aside"),
+    ("Discussion", "disc"),
+    ("Disproof", "refut"),
+    ("Dossier", "dossier"),
+    ("Dream", "dream"),
+    ("Drill", "exer"),
+    ("Endpoint", "endpoint"),
+    ("Entry", "entry"),
+    ("Environment variable", "envvar"),
+    ("Epigraph", "epigraph"),
+    ("Epilogue", "adden"),
+    ("Equation", "eq"),
+    ("Erratum", "errat"),
+    ("Error code", "errcode"),
+    ("Estimate", "bound"),
+    ("Event", "event"),
+    ("Example", "ex"),
+    ("Excursus", "aside"),
+    ("Exercise", "exer"),
+    ("Exhibit", "exhibit"),
+    ("Expectation", "pred"),
+    ("Experiment", "expt"),
+    ("Explanation", "expl"),
+    ("Exploration", "proj"),
+    ("Fact", "fact"),
+    ("Fallacy", "fallacy"),
+    ("False proof", "fallacy"),
+    ("Fantasy", "dream"),
+    ("Feature flag", "flag"),
+    ("Figure", "fig"),
+    ("Fixture", "fixture"),
+    ("Folklore", "folk"),
+    ("Foreword", "pref"),
+    ("Formulation", "formul"),
+    ("Fun fact", "fact"),
+    ("Function", "func"),
+    ("Fuzz target", "fuzz"),
+    ("Gate", "gate"),
+    ("Generalization", "gen"),
+    ("Given data", "data"),
+    ("Gloss", "gloss"),
+    ("Goal", "goal"),
+    ("Grammar", "gram"),
+    ("Graph", "fig"),
+    ("Guess", "guess"),
+    ("Heuristic", "heur"),
+    ("Heuristic argument", "heur"),
+    ("Hint", "hint"),
+    ("Historical note", "hist"),
+    ("Historical remark", "hist"),
+    ("Homework", "exer"),
+    ("Hope", "hope"),
+    ("Hypothesis", "hyp"),
+    ("Idea of proof", "sketch"),
+    ("Identity", "ident"),
+    ("Illustration", "ex"),
+    ("Illustration", "fig"),
+    ("Image", "fig"),
+    ("Implementation remark", "impl"),
+    ("Indexing convention", "conv"),
+    ("Inequality", "bound"),
+    ("Inference rule", "inf"),
+    ("Insight", "intuit"),
+    ("Interface", "iface"),
+    ("Interlude", "aside"),
+    ("Intermezzo", "aside"),
+    ("Intuition", "intuit"),
+    ("Invariant", "inv"),
+    ("Inventory", "reg"),
+    ("Job", "job"),
+    ("Joke", "joke"),
+    ("Journal", "jour"),
+    ("Judgment", "judg"),
+    ("Justification", "just"),
+    ("Key", "legend"),
+    ("Language", "lang"),
+    ("Law", "law"),
+    ("Lecture", "lect"),
+    ("Ledger", "ledger"),
+    ("Legend", "legend"),
+    ("Legend", "story"),
+    ("Lemma", "lem"),
+    ("Lemma–Definition", "lemdef"),
+    ("Library", "lib"),
+    ("Lint rule", "lint"),
+    ("Listing", "listing"),
+    ("Log", "log"),
+    ("Macro", "macro"),
+    ("Marginal gloss", "gloss"),
+    ("Matrix", "mat"),
+    ("Maxim", "slogan"),
+    ("Memo", "memo"),
+    ("Memorandum", "memo"),
+    ("Meta-conjecture", "metaconj"),
+    ("Meta-question", "metaq"),
+    ("Meta-theorem", "metathm"),
+    ("Metric", "metric"),
+    ("Migration", "migr"),
+    ("Minutes", "minutes"),
+    ("Miracle", "miracle"),
+    ("Misconception", "myth"),
+    ("Model", "constr"),
+    ("Model", "model"),
+    ("Module", "mod"),
+    ("Module", "sec"),
+    ("Moral", "moral"),
+    ("Motivation", "mot"),
+    ("Motto", "slogan"),
+    ("Myth", "myth"),
+    ("N.B.", "rem"),
+    ("Namespace", "ns"),
+    ("Nomenclature", "term"),
+    ("Non-example", "nonex"),
+    ("Notation", "ntn"),
+    ("Note", "rem"),
+    ("Objection", "obj"),
+    ("Observation", "data"),
+    ("Observation", "obs"),
+    ("Open Problem", "open"),
+    ("Open Question", "open"),
+    ("Outline of proof", "sketch"),
+    ("Outlook", "outlook"),
+    ("Overview", "preview"),
+    ("Package", "pkg"),
+    ("Parable", "story"),
+    ("Paradox", "paradox"),
+    ("Paragraph", "para"),
+    ("Part", "part"),
+    ("Perspective", "persp"),
+    ("Philosophy", "persp"),
+    ("Photograph", "fig"),
+    ("Picture", "fig"),
+    ("Pipeline", "pipeline"),
+    ("Pitfall", "warn"),
+    ("Plausibility argument", "heur"),
+    ("Plot", "fig"),
+    ("Porism", "por"),
+    ("Postcondition", "postc"),
+    ("Postmortem", "postmortem"),
+    ("Postscript", "adden"),
+    ("Postulate", "ax"),
+    ("Practice", "exer"),
+    ("Prayer", "hope"),
+    ("Preamble", "pref"),
+    ("Precondition", "pre"),
+    ("Prediction", "pred"),
+    ("Preface", "pref"),
+    ("Preview", "preview"),
+    ("Principle", "prin"),
+    ("Problem", "prob"),
+    ("Problem formulation", "formul"),
+    ("Procedure", "alg"),
+    ("Project", "proj"),
+    ("Prologue", "pref"),
+    ("Promise", "promise"),
+    ("Proof", "pf"),
+    ("Proof idea", "sketch"),
+    ("Proof outline", "sketch"),
+    ("Proof sketch", "sketch"),
+    ("Property", "property"),
+    ("Proposal", "proposal"),
+    ("Proposition", "prop"),
+    ("Protocol", "minutes"),
+    ("Protocol", "proto"),
+    ("Pseudocode", "listing"),
+    ("Punchline", "moral"),
+    ("Puzzle", "puzzle"),
+    ("Query", "query"),
+    ("Question", "q"),
+    ("Quiz", "quiz"),
+    ("Recall", "recall"),
+    ("Record", "rec"),
+    ("Reduction", "red"),
+    ("Refrain", "refrain"),
+    ("Refutation", "refut"),
+    ("Register", "reg"),
+    ("Registry", "reg"),
+    ("Release notes", "relnotes"),
+    ("Remark", "rem"),
+    ("Reminder", "recall"),
+    ("Reply", "reply"),
+    ("Report", "rep"),
+    ("Requirement", "req"),
+    ("Research problem", "open"),
+    ("Research question", "open"),
+    ("Result", "result"),
+    ("Retrospective", "retro"),
+    ("Review", "rep"),
+    ("Review", "sec"),
+    ("Revision", "ver"),
+    ("Riddle", "puzzle"),
+    ("Roadmap", "preview"),
+    ("Role", "role"),
+    ("Route", "endpoint"),
+    ("Rule", "rule"),
+    ("Rule of thumb", "heur"),
+    ("Runnable example", "runex"),
+    ("Sanity check", "verif"),
+    ("Saying", "slogan"),
+    ("Scenario", "scenario"),
+    ("Schema", "dataschema"),
+    ("Schema", "schema"),
+    ("Scheme", "fig"),
+    ("Scheme", "scheme"),
+    ("Scholium", "schol"),
+    ("Script", "script"),
+    ("Section", "sec"),
+    ("Service", "svc"),
+    ("Setting", "setting"),
+    ("Setting", "setup"),
+    ("Setup", "setup"),
+    ("Sidebar", "aside"),
+    ("Sign convention", "conv"),
+    ("Signature", "sig"),
+    ("Simulation", "expt"),
+    ("Situation", "setup"),
+    ("Sketch", "sketch"),
+    ("Sketch of proof", "sketch"),
+    ("Slogan", "slogan"),
+    ("Snapshot", "snapshot"),
+    ("Solution", "sol"),
+    ("Sorites", "sorites"),
+    ("Source line", "credit"),
+    ("Special case", "spcase"),
+    ("Specification", "spec"),
+    ("Speculation", "guess"),
+    ("Standing hypothesis", "assum"),
+    ("Statement", "stmt"),
+    ("Step", "step"),
+    ("Story", "scenario"),
+    ("Story", "story"),
+    ("Strategy", "strat"),
+    ("Struct", "class"),
+    ("Structure", "class"),
+    ("Structure", "constr"),
+    ("Structure", "schema"),
+    ("Suite", "suite"),
+    ("Summary", "summ"),
+    ("Supplement", "adden"),
+    ("Surprise", "miracle"),
+    ("Synopsis", "abst"),
+    ("Table", "tab"),
+    ("Takeaway", "moral"),
+    ("Task", "exer"),
+    ("Task", "job"),
+    ("Terminology", "term"),
+    ("Test", "quiz"),
+    ("Test", "test"),
+    ("Theorem", "thm"),
+    ("Theorem schema", "thmschema"),
+    ("Thesis", "thesis"),
+    ("Thought experiment", "gedanken"),
+    ("Type", "type"),
+    ("Unit", "unit"),
+    ("Upshot", "moral"),
+    ("Use case", "scenario"),
+    ("Variant", "variant"),
+    ("Verification", "verif"),
+    ("Version", "ver"),
+    ("Vignette", "story"),
+    ("Volume", "vol"),
+    ("Warm-up", "exer"),
+    ("Warning", "warn"),
+    ("Wish", "hope"),
+    ("Workflow", "pipeline"),
+    ("Working hypothesis", "assum"),
+    ("Yoga", "yoga"),
+];
+
 /// The recorded extension set `X_A` of ADR-020.
 ///
 /// The kinds this repository adds to the registry's rows as the
@@ -679,6 +1041,26 @@ pub const EXTENSION_KINDS: &[&str] = &[
     "trap",
 ];
 
+/// The name-and-kind pairs of the recorded extension set `X_A`: the
+/// name column and the kind column of every row of the ADR's extension
+/// table. Committed from the ADR and checked against it by
+/// [`verify_vocabulary_sources`].
+pub const EXTENSION_PAIRS: &[(&str, &str)] = &[
+    ("Branch", "branch"),
+    ("Candidate", "candidate"),
+    ("Error vocabulary", "err"),
+    ("Leaf", "leaf"),
+    ("Milestone", "milestone"),
+    ("Obligation", "obl"),
+    ("Operation", "op"),
+    ("Phase", "phase"),
+    ("Pin", "pin"),
+    ("Reference", "ref"),
+    ("Residual risk", "res"),
+    ("Task", "task"),
+    ("Trap", "trap"),
+];
+
 /// The document the registry kinds are committed from.
 pub const REGISTRY_SOURCE: &str = "plans/drafts/environment-kinds.md";
 /// The document the extension kinds are committed from.
@@ -689,6 +1071,31 @@ pub const EXTENSION_SOURCE: &str = "adr/020-environment-kinds.md";
 /// relation ADR-020 writes `C_A`.
 pub fn kind_is_adopted(kind: &str) -> bool {
     REGISTRY_KINDS.contains(&kind) || EXTENSION_KINDS.contains(&kind)
+}
+
+/// The pairs of the effective relation `C_A`: the registry's rows
+/// together with the recorded extension set's.
+pub fn catalogued_pairs() -> impl Iterator<Item = &'static (&'static str, &'static str)> {
+    REGISTRY_PAIRS.iter().chain(EXTENSION_PAIRS.iter())
+}
+
+/// Every kind `C_A` catalogues for a name: its senses, one per distinct
+/// concept the name carries. The comparison ignores case, since a name
+/// heading an environment is capitalized by the format rather than by
+/// the catalogue, and a case-sensitive comparison would reject a head
+/// whose pair the registry carries.
+pub fn catalogued_senses(name: &str) -> Vec<&'static str> {
+    catalogued_pairs()
+        .filter(|(catalogued, _)| catalogued.eq_ignore_ascii_case(name))
+        .map(|(_, kind)| *kind)
+        .collect()
+}
+
+/// Whether `C_A` carries this name-and-kind pair.
+pub fn pair_is_catalogued(name: &str, kind: &str) -> bool {
+    catalogued_pairs().any(|(catalogued, catalogued_kind)| {
+        catalogued.eq_ignore_ascii_case(name) && *catalogued_kind == kind
+    })
 }
 
 /// Whether an owner's kinds are enforced against the vocabulary, or only
@@ -742,10 +1149,70 @@ pub fn parse_registry_source(text: &str) -> BTreeSet<String> {
     kinds
 }
 
+/// Parse the name-and-kind pairs of the archived registry draft.
+///
+/// Every Convention-table row whose kind cell is a token contributes one
+/// pair. Device rows contribute none, having no kind; and the
+/// attestation dagger a row may carry is a status mark on the row, never
+/// a character of the name, so it is stripped before the name is taken.
+pub fn parse_registry_pairs(text: &str) -> BTreeSet<(String, String)> {
+    let mut pairs = BTreeSet::new();
+    let mut in_convention = false;
+    for line in text.lines() {
+        if line.starts_with("**Convention (") {
+            in_convention = true;
+            continue;
+        }
+        if line.starts_with("## ") {
+            in_convention = false;
+            continue;
+        }
+        if !in_convention || !line.starts_with('|') {
+            continue;
+        }
+        let cells = table_cells(line);
+        if cells.len() == 2
+            && let Some(kind) = backticked_token(cells[1])
+        {
+            pairs.insert((catalogue_name(cells[0]), kind));
+        }
+    }
+    pairs
+}
+
+/// Parse the name-and-kind pairs of the ADR's extension table.
+pub fn parse_extension_pairs(text: &str) -> BTreeSet<(String, String)> {
+    let mut pairs = BTreeSet::new();
+    for cells in extension_table_rows(text) {
+        if let Some(kind) = backticked_token(cells[1]) {
+            pairs.insert((catalogue_name(cells[0]), kind));
+        }
+    }
+    pairs
+}
+
+/// The exact catalogue name a table cell carries: the cell's text with
+/// the attestation dagger removed, per the status-mark rule of the
+/// registry's attestation judgment.
+fn catalogue_name(cell: &str) -> String {
+    cell.trim_end_matches('†').trim().to_owned()
+}
+
 /// Parse the recorded extension set from the ADR's extension table: the
 /// kind column of every row of the table the extension section heads.
 pub fn parse_extension_source(text: &str) -> BTreeSet<String> {
     let mut kinds = BTreeSet::new();
+    for cells in extension_table_rows(text) {
+        if let Some(kind) = backticked_token(cells[1]) {
+            kinds.insert(kind);
+        }
+    }
+    kinds
+}
+
+/// The four-celled rows of the ADR's extension table, in document order.
+fn extension_table_rows(text: &str) -> Vec<Vec<&str>> {
+    let mut rows = Vec::new();
     let mut in_table = false;
     for line in text.lines() {
         if line.contains(EXTENSION_TABLE_MINT) {
@@ -760,12 +1227,10 @@ pub fn parse_extension_source(text: &str) -> BTreeSet<String> {
         }
         let cells = table_cells(line);
         if cells.len() == 4 {
-            if let Some(kind) = backticked_token(cells[1]) {
-                kinds.insert(kind);
-            }
+            rows.push(cells);
         }
     }
-    kinds
+    rows
 }
 
 /// The label text heading the ADR's extension table. Held as data rather
@@ -820,7 +1285,40 @@ pub fn verify_vocabulary_sources(root: &Path) -> Vec<LabelDiagnostic> {
         EXTENSION_KINDS,
         &mut diagnostics,
     );
+    check_source(
+        root,
+        REGISTRY_SOURCE,
+        "the adopted registry's name-and-kind pairs",
+        &|text| rendered_pairs(&parse_registry_pairs(text)),
+        &rendered_pair_slice(REGISTRY_PAIRS),
+        &mut diagnostics,
+    );
+    check_source(
+        root,
+        EXTENSION_SOURCE,
+        "the recorded extension set's name-and-kind pairs",
+        &|text| rendered_pairs(&parse_extension_pairs(text)),
+        &rendered_pair_slice(EXTENSION_PAIRS),
+        &mut diagnostics,
+    );
     diagnostics
+}
+
+/// Render a parsed pair set for comparison and for the drift message,
+/// where a pair must name both of its sides to be actionable.
+fn rendered_pairs(pairs: &BTreeSet<(String, String)>) -> BTreeSet<String> {
+    pairs
+        .iter()
+        .map(|(name, kind)| format!("{name} = {kind}"))
+        .collect()
+}
+
+/// The same rendering of a committed pair table.
+fn rendered_pair_slice(pairs: &[(&str, &str)]) -> Vec<String> {
+    pairs
+        .iter()
+        .map(|(name, kind)| format!("{name} = {kind}"))
+        .collect()
 }
 
 fn check_source(
@@ -828,7 +1326,7 @@ fn check_source(
     relative: &str,
     description: &str,
     parse: &dyn Fn(&str) -> BTreeSet<String>,
-    committed: &[&str],
+    committed: &[impl AsRef<str>],
     diagnostics: &mut Vec<LabelDiagnostic>,
 ) {
     let path = root.join(relative);
@@ -837,7 +1335,10 @@ fn check_source(
     };
     let location = SourceLocation::new(relative, 1, 1);
     let parsed = parse(&text);
-    let committed: BTreeSet<String> = committed.iter().map(|kind| (*kind).to_owned()).collect();
+    let committed: BTreeSet<String> = committed
+        .iter()
+        .map(|entry| entry.as_ref().to_owned())
+        .collect();
     if parsed == committed {
         return;
     }
