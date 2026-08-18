@@ -5,20 +5,24 @@
 //! hygiene, phase-gate consistency, and the Markdown weight budget.
 //!
 //! The weight budget is two budgets, because the tree holds two kinds
-//! of document. Load-bearing planning prose — everything outside the
-//! archive directories — is what the combined `adr/` + `plans/` cap
-//! guards: that prose is maintained, so unchecked growth there is
+//! of document, and the split is by role rather than by directory.
+//! Load-bearing planning prose is what the combined `adr/` + `plans/`
+//! cap guards: that prose is maintained, so unchecked growth there is
 //! duplication rather than content, and the cap keeps one fact to one
-//! owner. Archived documents are different in kind: the executed
-//! implementation guides under `plans/guides/`, the static reviews
-//! under `plans/reviews/`, and the adopted-source drafts under
-//! `plans/drafts/` are verbatim records of a named
-//! tree, never edited to fit a budget and never trimmed, so charging
-//! them to the maintained-prose cap would make the guardrail fire on
-//! the one class of file it must not police. Their bytes are excluded
-//! from `combined_bytes` and accounted separately against the much
-//! larger `ARCHIVE_HARD_CAP_BYTES`, which exists only to catch a
-//! runaway paste rather than to shape the archive.
+//! owner. Documents nobody maintains by hand are different in kind. The
+//! executed implementation guides under `plans/guides/`, the static
+//! reviews under `plans/reviews/`, and the adopted-source drafts under
+//! `plans/drafts/` are verbatim records of a named tree, never edited
+//! to fit a budget and never trimmed. The `GENERATED_REGISTERS`
+//! publications under `plans/labels/` are regenerated outputs, sized by
+//! their inputs and rewritten wholesale by their generators. Charging
+//! either class to the maintained-prose cap would make the guardrail
+//! fire on files it must not police — an author asked to shrink them
+//! could only falsify the record or the generator. Their bytes are
+//! excluded from `combined_bytes` and accounted separately against the
+//! much larger `ARCHIVE_HARD_CAP_BYTES`, which exists only to catch a
+//! runaway paste. Authored prose keeps the combined budget wherever it
+//! sits, including `plans/labels/README.md` beside the registers.
 //!
 //! Subject files arrive by argument from the build system (ADR-014);
 //! the checker re-discovers them on disk and hard-fails on any
@@ -55,10 +59,26 @@ const ARCHIVE_HARD_CAP_BYTES: u64 = 4 * 1024 * 1024;
 /// [`ARCHIVE_HARD_CAP_BYTES`] instead.
 const ARCHIVE_DIRECTORIES: [&str; 3] = ["plans/drafts/", "plans/guides/", "plans/reviews/"];
 
-/// Generated register publications carry no per-file weight threshold.
-const GENERATED_REGISTERS: [&str; 2] = [
-    "plans/labels/specification.md",
-    "plans/labels/realization.md",
+/// The generated specification label register (ADR-014).
+pub const SPECIFICATION_REGISTER: &str = "plans/labels/specification.md";
+/// The generated realization label register (ADR-014).
+pub const REALIZATION_REGISTER: &str = "plans/labels/realization.md";
+/// The generated companion attestation register (ADR-020).
+pub const ATTESTATION_REGISTER: &str = "plans/labels/attestation.md";
+
+/// Generated register publications: regenerated outputs, not prose.
+///
+/// They carry no per-file weight threshold and their bytes are accounted
+/// against the archive budget rather than the maintained-prose budget.
+///
+/// This is the one place the register role is stated. `census.rs` builds
+/// its register paths from the same constants, and
+/// `generated_registers_match_the_census` fails loudly if a register is
+/// ever added to the census without being named here.
+pub const GENERATED_REGISTERS: [&str; 3] = [
+    SPECIFICATION_REGISTER,
+    REALIZATION_REGISTER,
+    ATTESTATION_REGISTER,
 ];
 
 /// Paths deleted from the tree; a surviving textual reference is stale.
@@ -131,15 +151,18 @@ pub struct PlansReport {
     pub schema: u32,
     pub files_checked: usize,
     pub adr_bytes: u64,
-    /// Load-bearing `plans/` bytes: the archive directories excluded.
+    /// Load-bearing `plans/` bytes: the archive directories and the
+    /// generated registers excluded.
     pub plans_bytes: u64,
     /// `adr_bytes + plans_bytes`, checked against `hard_cap_bytes`.
     pub combined_bytes: u64,
     pub hard_cap_bytes: u64,
     pub soft_target_bytes: u64,
     pub soft_target_exceeded: bool,
-    /// Verbatim archived-document bytes under `ARCHIVE_DIRECTORIES`,
-    /// checked against `archive_hard_cap_bytes` alone.
+    /// Bytes of documents nobody maintains by hand: verbatim archived
+    /// documents under `ARCHIVE_DIRECTORIES` and the
+    /// `GENERATED_REGISTERS` publications, checked against
+    /// `archive_hard_cap_bytes` alone.
     pub archive_bytes: u64,
     pub archive_hard_cap_bytes: u64,
     pub warnings: usize,
@@ -417,7 +440,11 @@ fn check_file(
 
 /// Per-file weight threshold by tree position; `None` means unbounded.
 fn warn_threshold(relative_path: &str) -> Option<u64> {
-    if GENERATED_REGISTERS.contains(&relative_path) {
+    if is_generated_register(relative_path) {
+        // A regenerated output is sized by its inputs, not by an author,
+        // so a per-file warning could only ask for the generator to lie.
+        // Same reasoning as the verbatim archive below, which is why
+        // both now share the archive budget.
         return None;
     }
     let mut parts = relative_path.split('/');
@@ -678,7 +705,8 @@ struct TreeBytes {
 }
 
 /// Total Markdown bytes for the `adr/` and `plans/` trees, with the
-/// archive directories separated out of the load-bearing totals.
+/// archived documents and generated registers separated out of the
+/// load-bearing totals.
 fn tree_bytes(root: &Path, files: &[PathBuf]) -> anyhow::Result<TreeBytes> {
     let mut totals = TreeBytes {
         adr: 0,
@@ -688,7 +716,7 @@ fn tree_bytes(root: &Path, files: &[PathBuf]) -> anyhow::Result<TreeBytes> {
     for path in files {
         let size = file_bytes(path)?;
         let relative_path = relative(root, path);
-        if is_archive(&relative_path) {
+        if is_archive_weight(&relative_path) {
             totals.archive += size;
         } else if relative_path.starts_with("adr/") {
             totals.adr += size;
@@ -716,6 +744,23 @@ fn is_archive(relative_path: &str) -> bool {
     ARCHIVE_DIRECTORIES
         .iter()
         .any(|directory| relative_path.starts_with(directory))
+}
+
+/// True for a generated register publication.
+fn is_generated_register(relative_path: &str) -> bool {
+    GENERATED_REGISTERS.contains(&relative_path)
+}
+
+/// True for a document charged to the archive budget rather than the
+/// maintained-prose budget.
+///
+/// The test is by role, not by directory: an archived verbatim record,
+/// or a generated register publication. `plans/labels/README.md` is
+/// authored index prose sitting beside the registers, so it stays in the
+/// combined budget — which is why the register set comes from
+/// [`GENERATED_REGISTERS`] and never from the directory it lives in.
+fn is_archive_weight(relative_path: &str) -> bool {
+    is_archive(relative_path) || is_generated_register(relative_path)
 }
 
 fn file_bytes(path: &Path) -> anyhow::Result<u64> {
@@ -1146,6 +1191,98 @@ mod tests {
         assert_eq!(warn_threshold("plans/reviews/review-2-0.2.3-dev.md"), None);
         assert_eq!(warn_threshold("plans/guides/README.md"), Some(16 * 1024));
         assert_eq!(warn_threshold("plans/reviews/README.md"), Some(16 * 1024));
+        // Every generated register is unbounded per file, and the
+        // authored README beside them is not.
+        for register in GENERATED_REGISTERS {
+            assert_eq!(warn_threshold(register), None, "{register}");
+        }
+        assert_eq!(warn_threshold("plans/labels/README.md"), Some(16 * 1024));
+    }
+
+    #[test]
+    fn the_archive_budget_is_a_role_not_a_directory() {
+        for register in GENERATED_REGISTERS {
+            assert!(is_archive_weight(register), "{register}");
+        }
+        for directory in ARCHIVE_DIRECTORIES {
+            assert!(is_archive_weight(&format!("{directory}archived.md")));
+        }
+        // Authored prose beside the registers keeps the maintained
+        // budget: the role decides, not the directory.
+        assert!(!is_archive_weight("plans/labels/README.md"));
+        assert!(!is_archive_weight("plans/backlog.md"));
+        // Weight class and authorship are separate questions: a
+        // register is authored by this repository's generators, so head
+        // validation still governs it.
+        for register in GENERATED_REGISTERS {
+            assert!(!is_archived(register), "{register}");
+        }
+    }
+
+    #[test]
+    fn generated_registers_match_the_census() {
+        // The weld: `census::discover` builds its register paths from
+        // the same constants, so a register added there without being
+        // named in GENERATED_REGISTERS fails here rather than silently
+        // landing in the maintained-prose budget.
+        let dir = fixture();
+        let census = crate::census::RepositoryCensus::discover(dir.path());
+        let root = dir.path();
+        let discovered: BTreeSet<String> = [
+            census.specification_register,
+            census.realization_register,
+            census.attestation_register,
+        ]
+        .iter()
+        .map(|path| relative(root, path))
+        .collect();
+        let declared: BTreeSet<String> = GENERATED_REGISTERS
+            .iter()
+            .map(|register| (*register).to_owned())
+            .collect();
+        assert_eq!(discovered, declared);
+    }
+
+    #[test]
+    fn register_bytes_are_charged_to_the_archive_budget() {
+        let dir = fixture();
+        fs::create_dir_all(dir.path().join("plans/labels")).expect("labels dir");
+        fs::write(
+            dir.path().join("plans/labels/README.md"),
+            "# Labels\n\nspecification.md\n",
+        )
+        .expect("labels readme");
+        let mut register = String::from("# Specification register\n\n");
+        register.push_str(&"x".repeat(64 * 1024));
+        register.push('\n');
+        fs::write(dir.path().join(SPECIFICATION_REGISTER), register).expect("register");
+        let readme = dir.path().join("plans/README.md");
+        let mut index = fs::read_to_string(&readme).expect("plans readme");
+        index.push_str("\nlabels/README.md\n");
+        fs::write(&readme, index).expect("indexed labels");
+
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+        assert!(outcome.report.valid, "{:#?}", outcome.failures);
+        assert!(
+            outcome.report.archive_bytes > 64 * 1024,
+            "register bytes belong to the archive budget: {}",
+            outcome.report.archive_bytes,
+        );
+        // The authored README beside it still counts as plans prose.
+        assert!(outcome.report.plans_bytes > 0);
+        assert!(
+            outcome.report.combined_bytes < 64 * 1024,
+            "combined {} absorbed the register",
+            outcome.report.combined_bytes,
+        );
+        assert!(
+            !outcome
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("labels/specification.md")),
+            "{:#?}",
+            outcome.warnings,
+        );
     }
 
     /// Add an archive directory holding `size` bytes of verbatim

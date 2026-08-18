@@ -22,6 +22,7 @@ use std::{
 
 use crate::{
     diagnostic::{LabelDiagnostic, LabelErrorCode, sort_diagnostics},
+    plans,
     source::{SourceLocation, relative_to},
 };
 
@@ -106,9 +107,12 @@ impl RepositoryCensus {
         let mut census = Self {
             attestation_main: paper.join("main.tex"),
             realization: root.join("docs/attestation/realization.md"),
-            specification_register: root.join("plans/labels/specification.md"),
-            realization_register: root.join("plans/labels/realization.md"),
-            attestation_register: root.join("plans/labels/attestation.md"),
+            // The register paths come from the role constants in
+            // `plans`, so weight classification and census discovery
+            // cannot drift apart.
+            specification_register: root.join(plans::SPECIFICATION_REGISTER),
+            realization_register: root.join(plans::REALIZATION_REGISTER),
+            attestation_register: root.join(plans::ATTESTATION_REGISTER),
             model_labels_json: root.join("packages/model/generated/model_labels.json"),
             root,
             ..Self::default()

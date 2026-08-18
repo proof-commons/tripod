@@ -2078,6 +2078,7 @@ classification, the 196-site sweep, head validation.
 |---|---|---|
 | `CI-001` | DONE | Rewrite the shell CI driver in Python with a typed lane tracker: every lane declared with status and skip reason, every lane and the whole run wall-timed, and a timing report emitted as the success output and on failure alike. Delivered as scripts/ci.py with an eleven-lane registry and the ci.sh shim; the first dataset shows the two test lanes at eighty-four percent of a twenty-minute gate. |
 | `CI-002` | ACTIVE | Move test execution to the meson layer per the user's ruling: no workspace-level cargo test in the gate; each package's test groups run as individual meson-driven lanes, and per-test timing uses the nightly libtest JSON output, which the user has admitted as not affecting what the tests prove. The timing report gains per-package and per-test figures; attribution replaces the aggregate block. Contention on the shared cargo target directory is measured and the chosen serialization or partitioning recorded honestly. |
+| `CI-003` | DONE | User ruling: the generated registers are archive-budget, by role not directory; labels/README.md stays prose. Combined 783755 to 724577 bytes; archive 1168518 to 1228130. |
 
 ## 14. Backlog hygiene · `sec:backlog:hygiene`
 

@@ -114,9 +114,10 @@ plans/
 adr/
 ```
 
-excluding the archive directories below, must remain under the accepted
-documentation budget. That prose is maintained, so unchecked growth there is
-duplication rather than content, and the budget keeps one fact to one owner.
+excluding the archived documents and generated registers below, must remain
+under the accepted documentation budget. That prose is maintained, so
+unchecked growth there is duplication rather than content, and the budget
+keeps one fact to one owner.
 
 Archived documents — the verbatim records under:
 
@@ -131,6 +132,13 @@ archive budget. An archive records a named tree exactly and is never trimmed
 to fit, so charging it to the maintained-prose budget would make the
 guardrail fire on the one class of file it must not police. The archive
 budget is a runaway-paste tripwire, not a shaping force.
+
+The generated label registers under [`labels/`](labels/README.md) are
+accounted against that same archive budget: they are regenerated outputs,
+sized by their inputs and rewritten wholesale, so an author asked to shrink
+one could only falsify the generator. The classification is by role, not by
+directory — authored prose such as [`labels/README.md`](labels/README.md)
+stays in the maintained-prose budget.
 
 The documentation checker reports total bytes, bytes by directory, archive
 bytes against the archive budget, authored-file threshold warnings, and
