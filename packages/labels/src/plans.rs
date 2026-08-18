@@ -699,6 +699,18 @@ fn tree_bytes(root: &Path, files: &[PathBuf]) -> anyhow::Result<TreeBytes> {
     Ok(totals)
 }
 
+/// True for a path inside an archive directory: a verbatim record of a
+/// document this repository did not author.
+///
+/// Public because authorship, not weight, is the question head
+/// validation asks of a plans path, and the answer must come from the
+/// one place the archive is defined rather than from a second list that
+/// could drift from this one.
+#[must_use]
+pub fn is_archived(relative_path: &str) -> bool {
+    is_archive(relative_path)
+}
+
 /// True for a path inside an archive directory.
 fn is_archive(relative_path: &str) -> bool {
     ARCHIVE_DIRECTORIES

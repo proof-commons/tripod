@@ -288,9 +288,9 @@ holds.
 
 That gate carries one further item this record names here rather than
 leaving implied. It asks that every participating authored head
-validate by exactly one exact pair or one reduction. The checker
-validates a label's kind token against the effective relation but never
-the pair a head declares, so no check holds a head's name to its kind.
-The one hundred and forty-six environment heads under `adr/` and
-`plans/` all carry catalogued pairs at this record, read by hand; the
-reading is not a check, and building one is not yet scheduled.
+validate by exactly one exact pair or one reduction. The check is now
+built, over the Markdown owners this record governs: the decision
+records and the authored planning tree, the verbatim archive excluded
+as another author's heads and no such head elsewhere. The one hundred
+and forty-six environment heads under `adr/` and `plans/` all carry
+catalogued pairs; the hand reading is now a check.

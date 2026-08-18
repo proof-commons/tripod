@@ -17,11 +17,13 @@ use crate::{
     adoption::{self, Adoption},
     census::RepositoryCensus,
     diagnostic::{LabelDiagnostic, LabelErrorCode, sort_diagnostics},
+    heads,
     label::{Label, LabelShape},
     latex::harvest_attestation,
     markdown::{InlineCodeContext, MarkdownScan, scan_markdown},
     nearmiss,
     owner::{ImportedLabel, LabelOwner, OwnerParseError},
+    plans,
     registry::{LabelMint, LabelRegistry, RegistrySet},
     render,
     rust_source::{RustHarvest, harvest_crates, harvest_model},
@@ -558,6 +560,9 @@ fn harvest_adrs(paths: &RepositoryCensus, result: &mut RepositoryLabels) {
         let scan = scan_markdown(&relative, &source);
         result.diagnostics.extend(scan.diagnostics.clone());
         nearmiss::prose(&scan, &mut result.diagnostics);
+        result
+            .diagnostics
+            .extend(heads::validate_document(&relative, &source, &scan));
         let mut registry = LabelRegistry::default();
         for span in scan.participating_spans().cloned() {
             if let Some(token) = square(&span.content) {
@@ -617,7 +622,7 @@ fn harvest_adrs(paths: &RepositoryCensus, result: &mut RepositoryLabels) {
 /// the registry and citation-sink dispatch exhaustive: a future owner
 /// must choose destinations explicitly instead of falling into a
 /// catch-all.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum MarkdownOwner {
     Plan,
     Doc,
@@ -681,6 +686,15 @@ fn harvest_markdown_owner(
     let scan = scan_markdown(&relative, &source);
     result.diagnostics.extend(scan.diagnostics.clone());
     nearmiss::prose(&scan, &mut result.diagnostics);
+    // Head validation governs the authored planning tree. The archive
+    // directories hold verbatim records of documents this repository did
+    // not author — the adopted registry draft among them — and an
+    // acceptee validates its own heads, never its authority's.
+    if owner == MarkdownOwner::Plan && !plans::is_archived(&relative.to_string_lossy()) {
+        result
+            .diagnostics
+            .extend(heads::validate_document(&relative, &source, &scan));
+    }
     for span in scan.participating_spans().cloned() {
         if let Some(token) = square(&span.content) {
             if span.context == InlineCodeContext::Parenthesized {
