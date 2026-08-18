@@ -2,15 +2,15 @@
   "publication_status": "final",
   "architecture_schema_version": 17,
   "realization_version": "0.3.0-dev",
-  "semantic_hash_algorithm": "sha256-canonical-json-v2",
-  "semantic_hash": "3974e4d7860d2cddad97c6ab63f5c358e303505a2529bf757d47db462285aa68",
+  "semantic_hash_algorithm": "sha256-canonical-json-v3",
+  "semantic_hash": "c1d0c6716317543c0e6d6376ec69995c5b40078449af5c9eda909d474249f6bb",
   "behavioural_hash_algorithm": "sha256-canonical-json-behavioural-v3",
   "behavioural_hash": "756ea65ce3dc370e76ec70dc001231693facd58e53ebca315d549967f03cf206",
   "architecture": {
     "target_network": "liquid",
     "specification": {
       "version": "1.0.0",
-      "anchor_set_hash": "b0cafaa48ac2ed388984f6a2d757a011a9c8654acf224f5f64516f26a3f7ee35"
+      "anchor_set_hash": "8a7ce765d33c08ee9e5132053a8308edec46d9e192128eb076e257eabbc16e2f"
     },
     "assets": [
       {
