@@ -658,10 +658,12 @@ pub const REGISTRY_KINDS: &[&str] = &[
     "yoga",
 ];
 
-/// The name-and-kind pairs of the adopted registry: every row of the
-/// Convention tables of the archived draft, the row's attestation dagger
-/// removed from its name as the registry directs. Committed from the
-/// draft and checked against it by [`verify_vocabulary_sources`].
+/// The name-and-kind pairs of the adopted registry.
+///
+/// Every row of the Convention tables of the archived draft, the row's
+/// attestation dagger removed from its name as the registry directs.
+/// Committed from the draft and checked against it by
+/// [`verify_vocabulary_sources`].
 ///
 /// The pairs are the classification relation itself, where
 /// [`REGISTRY_KINDS`] is only its image. A head declares a name and a
@@ -1041,9 +1043,10 @@ pub const EXTENSION_KINDS: &[&str] = &[
     "trap",
 ];
 
-/// The name-and-kind pairs of the recorded extension set `X_A`: the
-/// name column and the kind column of every row of the ADR's extension
-/// table. Committed from the ADR and checked against it by
+/// The name-and-kind pairs of the recorded extension set `X_A`.
+///
+/// The name column and the kind column of every row of the ADR's
+/// extension table. Committed from the ADR and checked against it by
 /// [`verify_vocabulary_sources`].
 pub const EXTENSION_PAIRS: &[(&str, &str)] = &[
     ("Branch", "branch"),
@@ -1079,11 +1082,12 @@ pub fn catalogued_pairs() -> impl Iterator<Item = &'static (&'static str, &'stat
     REGISTRY_PAIRS.iter().chain(EXTENSION_PAIRS.iter())
 }
 
-/// Every kind `C_A` catalogues for a name: its senses, one per distinct
-/// concept the name carries. The comparison ignores case, since a name
-/// heading an environment is capitalized by the format rather than by
-/// the catalogue, and a case-sensitive comparison would reject a head
-/// whose pair the registry carries.
+/// Every kind `C_A` catalogues for a name: its senses.
+///
+/// One sense per distinct concept the name carries. The comparison
+/// ignores case, since a name heading an environment is capitalized by
+/// the format rather than by the catalogue, and a case-sensitive
+/// comparison would reject a head whose pair the registry carries.
 pub fn catalogued_senses(name: &str) -> Vec<&'static str> {
     catalogued_pairs()
         .filter(|(catalogued, _)| catalogued.eq_ignore_ascii_case(name))

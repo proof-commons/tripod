@@ -177,7 +177,7 @@ fn reductions(genre: &str) -> BTreeSet<String> {
     let mut frontier = vec![genre.to_owned()];
     for _ in 0..REDUCTION_DEPTH {
         let mut next = Vec::new();
-        for name in frontier.drain(..) {
+        for name in std::mem::take(&mut frontier) {
             for reduced in [strip_sub_prefix(&name), strip_modifier(&name)]
                 .into_iter()
                 .flatten()
@@ -234,10 +234,9 @@ fn strip_modifier(name: &str) -> Option<String> {
 
 fn capitalize(value: &str) -> String {
     let mut characters = value.chars();
-    match characters.next() {
-        Some(first) => first.to_uppercase().chain(characters).collect(),
-        None => String::new(),
-    }
+    characters.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(characters).collect()
+    })
 }
 
 /// Validate every head of one Markdown document.
