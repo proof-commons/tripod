@@ -100,7 +100,7 @@ fn validate_relation_identities(
 /// So the derivation here is the owner's, not the author's: the kind
 /// comes out of the body exhaustively, with no wildcard arm, so a new
 /// `Relation` variant cannot be added without deciding what it is
-/// (Guide-10 `rule:guide10:relation-identity`).
+/// `(´[PLAN-rule:guide10:relation-identity]´)`.
 ///
 /// # What the subject can and cannot be checked against
 ///

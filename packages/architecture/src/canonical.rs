@@ -20,7 +20,7 @@
 //! (the behavioural arrays only). Each applies its own
 //! domain-separation prefix, so the two digests cannot collide across
 //! recipes even over coincidentally identical bytes. The versioning
-//! gate (`pin:pins:denotation`) keys on the latter.
+//! gate `(´[RZ-pin:pins:denotation]´)` keys on the latter.
 //!
 //! Every public identity function takes a
 //! [`ValidatedDraftArchitecture`], never a raw `Architecture`
@@ -51,8 +51,8 @@ pub const SEMANTIC_HASH_ALGORITHM: &str = "sha256-canonical-json-v3";
 /// than inside the hashed input. It was a reviewed exception to the
 /// domain-separated form until the adopted adjudication discipline
 /// required domain separation for every semantic identity; `…-v3`
-/// prefixes the same canonical bytes. See ADR-016
-/// `rule:identity:separation-migration`.
+/// prefixes the same canonical bytes. See
+/// `(´[ADR016-rule:identity:separation-migration]´)`.
 /// The projection and encoding are untouched, so the meaning
 /// identified is unchanged and only the measurement moved. The retired
 /// pinned value is recorded with the migration in ADR-016.
@@ -87,7 +87,7 @@ const BEHAVIOURAL_DOMAIN_PREFIX: &[u8] = b"tripod behavioural JSON v3\n";
 /// Domain-separation prefix for the full-manifest semantic hash input.
 ///
 /// Each prefix folds the domain separator and the recipe identifier of
-/// ADR-016 `rule:identity:classes` into one string, as the behavioural
+/// `(´[ADR016-rule:identity:classes]´)` into one string, as the behavioural
 /// and deployment-profile prefixes already do.
 const MANIFEST_DOMAIN_PREFIX: &[u8] = b"tripod canonical manifest JSON v3\n";
 
@@ -110,7 +110,7 @@ const ANCHOR_SET_DOMAIN_PREFIX: &[u8] = b"tripod layer-0 anchor set v2\n";
 /// Behavioural projection of a bound: identity, cardinality use, and
 /// the frozen calibration classification. A calibrated bound's draft
 /// `default_value` is deployment-profile material outside the abstract
-/// denotation (`def:versioning:denotation-law`), so it is projected
+/// denotation `(´[RZ-def:versioning:denotation-law]´)`, so it is projected
 /// out of the hash input; a fixed (uncalibrated) bound's value is part
 /// of the denotation and stays.
 #[derive(Serialize)]
