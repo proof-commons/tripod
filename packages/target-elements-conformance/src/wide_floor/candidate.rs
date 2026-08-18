@@ -7,7 +7,7 @@
 //! off what any complete schedule for them would have to do, and a lower
 //! bound that already exceeds the taken candidate's measurement settles
 //! the comparison without building the schedule
-//! (Guide-10 `rule:guide10:arithmetic-comparison-stage`).
+//! `(´[PLAN-rule:guide10:arithmetic-comparison-stage]´)`.
 //!
 //! [`ComparisonBasis`] keeps the two apart in the type, because a
 //! projection recorded beside a measurement in an untyped table becomes
@@ -18,7 +18,7 @@
 //! These figures answer whether the prototype is plausible, which
 //! candidate is smaller, and which target limit binds first. They select
 //! no architecture bound, no production tree depth, and no operation
-//! limit (`rule:guide10:no-calibration`).
+//! limit `(´[PLAN-rule:guide10:no-calibration]´)`.
 
 use tapscript::instruction::TapscriptInstruction;
 use target_elements::{OpcodeId, ReviewedElementsTapscriptDefinition};
@@ -32,13 +32,13 @@ use super::schedule;
 #[non_exhaustive]
 pub enum WideFloorCandidate {
     /// Candidate A: every limb derived by the target's own division by
-    /// the base (`candidate:guide10:derived-limbs`).
+    /// the base `(´[PLAN-candidate:guide10:derived-limbs]´)`.
     DerivedLimbs,
     /// Candidate B: limbs, product limbs, and carries supplied as
-    /// witness and checked (`candidate:guide10:witnessed-limbs`).
+    /// witness and checked `(´[PLAN-candidate:guide10:witnessed-limbs]´)`.
     WitnessedLimbs,
     /// Candidate C: `q·d <= a·b < (q+1)·d`, with no remainder witness
-    /// (`candidate:guide10:sandwich`).
+    /// `(´[PLAN-candidate:guide10:sandwich]´)`.
     Sandwich,
 }
 
@@ -250,7 +250,7 @@ pub fn comparison(
 /// witnessed form pays five times the witness for values it then has to
 /// bound-check, and the sandwich pays half again as much arithmetic to
 /// avoid a witness worth nine bytes
-/// (`rule:guide10:arithmetic-comparison-stage`).
+/// `(´[PLAN-rule:guide10:arithmetic-comparison-stage]´)`.
 #[must_use]
 pub const fn selected() -> WideFloorCandidate {
     WideFloorCandidate::DerivedLimbs

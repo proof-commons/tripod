@@ -39,7 +39,7 @@ fn the_grind_puts_the_metadata_leaf_on_the_side_the_program_hashes_it_on() {
     // the metadata leaf first and the static root second, and cannot
     // order them; the creator makes that order the canonical one by
     // advancing the representation nonce
-    // (Guide-10 `rule:guide10:tapbranch-order`).
+    // (´[PLAN-rule:guide10:tapbranch-order]´).
     let reviewed = target();
     let subtree = static_subtree();
     let built = construct_canonically_ordered(
@@ -73,7 +73,7 @@ fn the_grind_puts_the_metadata_leaf_on_the_side_the_program_hashes_it_on() {
 fn the_grind_is_deterministic_and_public() {
     // Anybody holding the object derives the same nonce by the same
     // search, which is what makes the nonce not a secret and not a
-    // thing to be communicated (Guide-10 `rule:guide10:public-data`).
+    // thing to be communicated (´[PLAN-rule:guide10:public-data]´).
     let reviewed = target();
     let subtree = static_subtree();
     let run = || {

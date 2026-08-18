@@ -8,7 +8,7 @@
 //! reviewed target is required to reach. Every expected outcome is
 //! authored here from this package's own constructor oracle and from the
 //! emitted program's stated properties — never from an executor's answer
-//! (Guide-10 `rule:guide10:independent-oracles`).
+//! `(´[PLAN-rule:guide10:independent-oracles]´)`.
 //!
 //! # Where a mutation lives
 //!
@@ -125,7 +125,7 @@ impl fmt::Display for ConstructorMatrixDefect {
     /// of them describes a target: a command reporting one is reporting
     /// that this repository's contract and its oracle disagree, which is
     /// a first-party defect to fix rather than a finding about anything
-    /// executed (ADR-010 `[ADR010-rule:output:data-classification]`).
+    /// executed `(´[ADR010-rule:output:data-classification]´)`.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let text = match self {
             Self::ProgramNotAdmitted => {
@@ -178,7 +178,7 @@ impl Step {
 ///
 /// The parity rides in the leading byte, which is what makes it a
 /// witness the program has to check rather than a fact it may assume
-/// (Guide-10 `rule:guide10:parity`).
+/// `(´[PLAN-rule:guide10:parity]´)`.
 fn compressed(output: &ConstructedOutput) -> Vec<u8> {
     let mut key = Vec::with_capacity(1 + FIELD_ELEMENT_BYTES);
     key.push(2 + output.parity());
@@ -866,7 +866,7 @@ pub fn constructor_matrix(
         // derivation does not reach: it computes the unsorted hash, the
         // target committed to the sorted one, and the derived output key
         // is not the witnessed one
-        // (Guide-10 `rule:guide10:tapbranch-order`).
+        // (´[PLAN-rule:guide10:tapbranch-order]´).
         //
         // That is what is stated below, by grinding for the side the
         // canonical search rejects.
@@ -955,7 +955,7 @@ pub fn constructor_matrix(
 /// The inverse of the fixtures' own claim sets, computed rather than
 /// restated: a claim's bearing cases are exactly the rows that say they
 /// bear on it, and a mapping written by hand could disagree with them
-/// (Guide-10 `rule:guide10:claim-coverage`).
+/// `(´[PLAN-rule:guide10:claim-coverage]´)`.
 #[must_use]
 pub fn bearing_cases(
     matrix: &[CompoundPrototypeFixture],

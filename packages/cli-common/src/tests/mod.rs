@@ -155,7 +155,7 @@ fn partial_stdout_write_during_emit_is_not_reverted() {
     // A pipe that breaks partway through result emission: `emit` surfaces
     // the error, but the prefix it already wrote cannot be un-written.
     // ADR-010 therefore promises empty stdout only *before* result
-    // publication begins, never during it (`rule:output:json`).
+    // publication begins, never during it (´[ADR010-rule:output:json]´).
     let value = serde_json::json!({
         "key": "a moderately long value that exceeds the prefix limit"
     });

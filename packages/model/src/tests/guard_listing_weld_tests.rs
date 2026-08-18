@@ -1,4 +1,4 @@
-//! Guard-listing weld: `listing:domains:guard` is a projection of the
+//! Guard-listing weld: `(´[RZ-listing:domains:guard]´)` is a projection of the
 //! model's failure vocabularies — complete, and inventing nothing.
 //!
 //! Implements `´test:verification:guard-listing-weld´`: the machine
@@ -24,7 +24,7 @@ const REALIZATION_DOCUMENT: &str = include_str!("../../../../docs/attestation/re
 const ALLOWED_NON_VARIANTS: &[&str] = &["Guard", "InvariantError"];
 
 /// Concatenates the ```-fenced blocks that follow the mint line
-/// carrying the backticked `listing:domains:guard` label, up to the next
+/// carrying the backticked ``listing:domains:guard`` label, up to the next
 /// heading.
 fn listing_fences(doc: &str) -> String {
     let mut block = String::new();
@@ -102,7 +102,7 @@ fn projection_violations(block: &str) -> Vec<String> {
     violations
 }
 
-/// The corrected `listing:domains:guard` body: the paste source for the
+/// The corrected ``listing:domains:guard`` body: the paste source for the
 /// document, welded here until the document lands and is welded itself.
 const LISTING_FIXTURE: &str = r"
 `listing:domains:guard`

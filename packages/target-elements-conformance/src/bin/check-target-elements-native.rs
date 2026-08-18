@@ -17,7 +17,7 @@
 //! If the selected executor talks to a node, it owns that conversation.
 //! A regtest node's cookie inside a disposable data directory is public
 //! test-fixture material under
-//! (`[ADR015-rule:security:test-material]`) — generated for a throwaway
+//! `(´[ADR015-rule:security:test-material]´)` — generated for a throwaway
 //! chain, authorizing nothing of value, discarded with the environment —
 //! but it is the *executor's* material either way: this interface
 //! neither accepts a cookie path nor reads one, so the classification

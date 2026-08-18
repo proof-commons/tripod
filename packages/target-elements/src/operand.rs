@@ -13,7 +13,7 @@
 //! without verifying anything.
 //!
 //! Declaring those positions as one exact stack type could not state
-//! either behaviour (Guide-10 `rule:guide10:signature-abstraction`).
+//! either behaviour `(´[PLAN-rule:guide10:signature-abstraction]´)`.
 //! An exact 64-byte signature type excludes the empty item, so the
 //! empty-signature path was refused as a type mismatch before its own
 //! failure effect could apply; declaring the position as the encoded
@@ -74,7 +74,7 @@ pub enum OperandContract {
     /// So the position states that it constrains nothing, and a
     /// validator carries the incoming type through untouched instead of
     /// widening it to bytes and losing it
-    /// (Guide-10 `rule:guide10:primitive-admission`).
+    /// `(´[PLAN-rule:guide10:primitive-admission]´)`.
     AnyItem,
 
     /// Any one of several stack types, with no further structure.
@@ -99,7 +99,7 @@ pub enum OperandContract {
     /// refusing direction. It says the target rejects an item it in fact
     /// accepts, and the rejection lands on precisely the item a program
     /// derives — so a composition the target performs is refused before
-    /// it can be scheduled (Guide-10 `rule:guide10:primitive-admission`).
+    /// it can be scheduled `(´[PLAN-rule:guide10:primitive-admission]´)`.
     ///
     /// # What the intent class is, and is not
     ///

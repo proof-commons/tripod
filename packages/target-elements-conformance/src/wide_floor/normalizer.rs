@@ -6,9 +6,9 @@
 //! because the target then performs three divisions on the quotient side
 //! instead of six. Guide 10 states that side in two stages instead:
 //! normalize `q·d` into `u0..u3`, then add `r`'s limbs through a second
-//! carry cascade (`rule:guide10:remainder-addition`). Reimplementing the
+//! carry cascade `(´[PLAN-rule:guide10:remainder-addition]´)`. Reimplementing the
 //! staged form here and comparing the two is how the fusion is checked
-//! rather than argued (`rule:guide10:limb-oracle-stage`).
+//! rather than argued `(´[PLAN-rule:guide10:limb-oracle-stage]´)`.
 //!
 //! Nothing here is used to build a target program. It exists to disagree
 //! with the oracle if the oracle is wrong, which is a purpose a helper

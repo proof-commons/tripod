@@ -414,7 +414,7 @@ pub const DOCUMENT: DocumentSpec = DocumentSpec {
         // sha256 over the domain prefix and the newline-joined sorted
         // distinct Layer-0 anchor names harvested from the document's
         // §17 index (A- prefix stripped): the pin ceremony of
-        // `rem:overview:anchor-pin` under algorithm
+        // (´[RZ-rem:overview:anchor-pin]´) under algorithm
         // `sha256-anchor-set-v2`. Re-pinned 2026-08-18 by the DI-004
         // recipe migration, which added the domain separator; the
         // anchor set is the same 38 names, so the dependency set

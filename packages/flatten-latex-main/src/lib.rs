@@ -33,14 +33,14 @@ pub struct FlattenOptions {
 /// Because a reference can only ever name a file already on `allowed_files`, an
 /// absolute include (`\input{/etc/passwd}`) and a parent-directory escape
 /// (`\input{../../secret}`) cannot be read or published: the allowlist is what
-/// confines the paths source text may select (`[ADR017-rule:path:derived-references]`).
+/// confines the paths source text may select `(´[ADR017-rule:path:derived-references]´)`.
 ///
 /// The allowlist entries themselves are caller-granted capabilities. Each is
 /// validated as an existing regular file before anything is read or staged,
 /// but that is a role check, not a filesystem boundary: beneath a supplied
 /// entry the host owns what the path resolves to, and the flattener neither
 /// walks ancestors for aliases nor claims to close a
-/// time-of-check/time-of-use race (`[ADR017-rule:path:toctou]`). `main_file`
+/// time-of-check/time-of-use race `(´[ADR017-rule:path:toctou]´)`. `main_file`
 /// is the trusted entry point and need not appear in `allowed_files`.
 ///
 /// The output is **reproducible** (same inputs, byte-identical output —
@@ -107,7 +107,7 @@ pub fn flatten(
 /// reported before anything is read.
 ///
 /// This is a role check, not a filesystem boundary
-/// (`[ADR017-rule:path:explicit-paths]`). The allowlist is what
+/// `(´[ADR017-rule:path:explicit-paths]´)`. The allowlist is what
 /// confines *what source text may select*; beneath a supplied entry
 /// the host owns what the path resolves to. The ancestor-by-ancestor
 /// symlink walk this function once performed has been removed: it
@@ -290,7 +290,7 @@ impl FlattenContext<'_> {
         // finite set of paths: an unbounded chain must repeat a path,
         // and comparing paths therefore terminates every cycle. The
         // former device/inode comparison detected nothing this does
-        // not (`[ADR017-rule:path:output-roles]`).
+        // not (´[ADR017-rule:path:output-roles]´).
         let frame = file_path.to_path_buf();
         if self.include_stack.contains(&frame) {
             let chain = self

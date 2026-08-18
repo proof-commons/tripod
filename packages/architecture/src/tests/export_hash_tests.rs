@@ -128,7 +128,7 @@ fn self_consistent_forgery_passes_envelope_but_fails_expected_identity() {
 fn calibrated_default_mutation_moves_only_the_full_hash() {
     // A bound flagged `requires_deployment_calibration = true` carries
     // a draft default outside the abstract denotation
-    // (`def:versioning:denotation-law`): changing it must move the
+    // (´[RZ-def:versioning:denotation-law]´): changing it must move the
     // semantic (full) hash but leave the behavioural hash fixed.
     let mut modified =
         PublishedArchitecture::from_architecture(&super::validated(&ARCHITECTURE)).unwrap();
@@ -595,7 +595,7 @@ fn anchor_set_hash_matches_the_published_recipe() {
 }
 
 /// Retired identifiers stay retired: reusing one for a new recipe is
-/// the silent redefinition `rule:identity:migration` forbids.
+/// the silent redefinition `(´[ADR016-rule:identity:migration]´)` forbids.
 #[test]
 fn retired_identity_algorithms_stay_retired() {
     assert_eq!(SEMANTIC_HASH_ALGORITHM, "sha256-canonical-json-v3");

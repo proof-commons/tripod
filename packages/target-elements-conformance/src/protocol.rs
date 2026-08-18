@@ -248,7 +248,7 @@ pub enum ExecutorCapability {
     /// received before — the new field is omitted entirely rather than
     /// written as null — and an executor that does not advertise this
     /// gets a typed refusal from the harness instead of a message it
-    /// cannot parse (Guide-10 `rule:guide10:schema-migration`).
+    /// cannot parse `(´[PLAN-rule:guide10:schema-migration]´)`.
     TreeMaterialization,
     /// It accepts a compound-prototype fixture as such.
     ///
@@ -262,7 +262,7 @@ pub enum ExecutorCapability {
     /// it into the primitive request would have meant a primitive case
     /// identity for a case that has none, and a report row that counted
     /// compound coverage as primitive coverage
-    /// (Guide-10 `rule:guide10:compound-fixture`).
+    /// `(´[PLAN-rule:guide10:compound-fixture]´)`.
     ///
     /// So a prototype request is its own record, and this capability is
     /// what keeps the protocol revision at 2: no executor is ever sent
@@ -281,7 +281,7 @@ impl ExecutorHandshake {
     /// one, and this predicate is where that is decided rather than
     /// assumed: a construction goes out only to an executor that said it
     /// can materialize a tree exactly
-    /// (Guide-10 `rule:guide10:schema-migration`).
+    /// `(´[PLAN-rule:guide10:schema-migration]´)`.
     ///
     /// It is the executor's own claim, like every other capability here.
     /// An executor that advertises this and then approximates a tree is

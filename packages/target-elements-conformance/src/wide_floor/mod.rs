@@ -8,7 +8,7 @@
 //!
 //! Those conditions imply `q = floor(a·b / d)`, and the target proof
 //! establishes the complete relation rather than the floor alone
-//! (Guide-10 `rule:guide10:wide-floor-relation`).
+//! `(´[PLAN-rule:guide10:wide-floor-relation]´)`.
 //!
 //! # Three independent opinions
 //!
@@ -18,7 +18,7 @@
 //! plain arbitrary-precision digit extraction that does no carry
 //! reasoning at all. A target-native verdict is the fourth opinion and
 //! belongs to a run rather than to this module
-//! (`rule:guide10:independent-oracles`).
+//! `(´[PLAN-rule:guide10:independent-oracles]´)`.
 //!
 //! # Where the target program lives
 //!

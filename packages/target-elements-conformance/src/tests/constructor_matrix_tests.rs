@@ -9,7 +9,7 @@
 //!
 //! None of it is target evidence. A coherent fixture is a fixture an
 //! executor can be asked to run, and what a target does with it is the
-//! native run's answer (Guide-10 `rule:guide10:validated-native-evidence`).
+//! native run's answer `(´[PLAN-rule:guide10:validated-native-evidence]´)`.
 
 use std::collections::BTreeSet;
 
@@ -37,7 +37,7 @@ fn matrix() -> Vec<CompoundPrototypeFixture> {
 /// The registry carries both prototypes' claims, and a matrix answers
 /// only for its own: demanding a wide-floor bearing case of a
 /// constructor row would be demanding coverage of a relation these rows
-/// do not state (Guide-10 `rule:guide10:claim-coverage`).
+/// do not state `(´[PLAN-rule:guide10:claim-coverage]´)`.
 fn constructor_claims() -> Vec<PrototypeClaim> {
     PrototypeClaim::ALL
         .iter()
@@ -53,7 +53,7 @@ fn every_row_states_a_coherent_case() {
     // program is the one that tree determines, the stated control block
     // is the one it determines, the successor role appears exactly once,
     // and every claim belongs to the relation
-    // (Guide-10 `rule:guide10:fixture-validation`).
+    // (´[PLAN-rule:guide10:fixture-validation]´).
     let target = target();
     for fixture in matrix() {
         assert_eq!(
@@ -76,7 +76,7 @@ fn the_matrix_is_the_stated_size() {
 #[test]
 fn every_case_name_is_distinct() {
     // Duplicate identities would make two rows one row in every report
-    // that indexed them (Guide-10 `rule:guide10:fixture-determinism`).
+    // that indexed them (´[PLAN-rule:guide10:fixture-determinism]´).
     let matrix = matrix();
     let names: BTreeSet<String> = matrix
         .iter()
@@ -100,7 +100,7 @@ fn the_matrix_carries_both_verdicts_and_far_more_refusals() {
     // A matrix of accepting rows would establish that the program can be
     // satisfied and nothing about what it refuses, which is the whole
     // point of a threat matrix
-    // (Guide-10 `tab:guide10:constructor-threats`).
+    // (´[PLAN-tab:guide10:constructor-threats]´).
     let matrix = matrix();
     let accepted = matrix
         .iter()
@@ -196,7 +196,7 @@ fn every_declared_claim_has_a_bearing_case() {
     // The coverage question, answered from the rows themselves. A claim
     // with no bearing case is a corner of the constructor nothing would
     // establish even under a passing run
-    // (Guide-10 `rule:guide10:claim-coverage`).
+    // (´[PLAN-rule:guide10:claim-coverage]´).
     let matrix = matrix();
     let bearing = bearing_cases(&matrix);
 
@@ -246,7 +246,7 @@ fn the_matrix_is_the_same_matrix_every_time() {
     // Fixture determinism, checked rather than assumed: the rows come
     // from a nonce grind and a parity search, and either could have made
     // the set depend on something other than its inputs
-    // (Guide-10 `rule:guide10:fixture-determinism`).
+    // (´[PLAN-rule:guide10:fixture-determinism]´).
     assert_eq!(matrix(), matrix());
 }
 

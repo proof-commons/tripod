@@ -246,7 +246,7 @@ fn harvest_realization(paths: &RepositoryCensus, result: &mut RepositoryLabels) 
             // class: attestation body cites are handled by
             // `harvest_attestation_citations`; template examples are exempted;
             // status tags are audited in place; the rest are imports
-            // (`rem:overview:status-tags`).
+            // (´[RZ-rem:overview:status-tags]´).
             if !token.starts_with("A-")
                 && !is_example_token(token)
                 && !audit_status_tag(token, &span, result, &mut pin_refs, &mut clause_refs)
@@ -283,7 +283,7 @@ fn harvest_realization(paths: &RepositoryCensus, result: &mut RepositoryLabels) 
     resolve_status_tag_refs(pin_refs, clause_refs, result);
 }
 
-/// The declared status-tag family (`rem:overview:status-tags`).
+/// The declared status-tag family `(´[RZ-rem:overview:status-tags]´)`.
 const STATUS_TAGS: [&str; 4] = [
     "accepted residual",
     "liveness, not safety",
@@ -329,7 +329,7 @@ fn audit_status_tag(
     };
 
     // The family is read in place and never round-wrapped, so it cannot
-    // collide with the round-bracket cite rule (`rem:overview:status-tags`).
+    // collide with the round-bracket cite rule (´[RZ-rem:overview:status-tags]´).
     if span.context != InlineCodeContext::Bare {
         result.diagnostics.push(LabelDiagnostic::error(
             LabelErrorCode::InvalidStatusTag,

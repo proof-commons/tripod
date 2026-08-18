@@ -9,7 +9,7 @@
 //! strings, and the constructions that build an ordering out of chunk
 //! comparisons all die on the same wall — a comparison pushes a truth
 //! value, and no reviewed primitive takes one as an operand
-//! (Guide-10 `rule:guide10:tapbranch-order`).
+//! `(´[PLAN-rule:guide10:tapbranch-order]´)`.
 //!
 //! So the prototype's program does not order anything. It hashes the
 //! metadata leaf and then the static subtree root, in that one fixed

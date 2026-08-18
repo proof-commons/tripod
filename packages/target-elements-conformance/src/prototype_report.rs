@@ -9,8 +9,8 @@
 //! statements, and one report type carrying both would produce rows a
 //! reader could not tell apart — which is exactly the outcome the
 //! separate fixture language exists to prevent
-//! (Guide-10 `rule:guide10:compound-fixture`,
-//! `rule:guide10:report-roles`).
+//! `(´[PLAN-rule:guide10:compound-fixture]´)` and
+//! `(´[PLAN-rule:guide10:report-roles]´)`.
 //!
 //! # One relation per report
 //!
@@ -32,7 +32,7 @@
 //! # Every row carries its complete subject
 //!
 //! A case name is a label for a reader, not an identity anything
-//! persists (Guide-10 `rule:guide10:fixture-binding`). Each row
+//! persists `(´[PLAN-rule:guide10:fixture-binding]´)`. Each row
 //! therefore carries the complete fixture projection: the exact script,
 //! the exact initial witness stack, the complete stated construction —
 //! internal key, tree, executing leaf, control block, predecessor
@@ -49,12 +49,12 @@
 //! a temporary path, the executor's path, or an environment value, and
 //! every collection is ordered — cases in the matrix's own canonical
 //! order, claims by claim, bearing cases by case identity
-//! (Guide-10 `rule:guide10:report-determinism`).
+//! `(´[PLAN-rule:guide10:report-determinism]´)`.
 //!
 //! # No identity
 //!
 //! There is no report digest and no field reserved for one
-//! (Guide-10 `rule:guide10:report-no-digest`).
+//! `(´[PLAN-rule:guide10:report-no-digest]´)`.
 
 use std::collections::BTreeSet;
 
@@ -199,7 +199,7 @@ pub struct PrototypeClaimResult {
 /// representable and meaningless — and the whole reason the two reports
 /// are separate types is that a meaningless value in a report is one a
 /// reader has to already know to discount
-/// (Guide-10 `rule:guide10:report-completeness`).
+/// `(´[PLAN-rule:guide10:report-completeness]´)`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]

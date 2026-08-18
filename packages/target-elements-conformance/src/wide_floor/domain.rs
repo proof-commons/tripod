@@ -4,16 +4,16 @@
 //!
 //! The relation is stated over one domain and one limb base, and every
 //! bound the target schedule relies on is a consequence of those two
-//! choices (Guide-10 `rule:guide10:wide-floor-relation`,
-//! `candidate:guide10:derived-limbs`). Writing them as constants rather
-//! than as literals scattered through a builder is what lets a test
-//! compare a measured maximum against the bound it is supposed to
-//! satisfy, instead of against a number somebody retyped.
+//! choices `(´[PLAN-rule:guide10:wide-floor-relation]´)` and
+//! `(´[PLAN-candidate:guide10:derived-limbs]´)`. Writing them as
+//! constants rather than as literals scattered through a builder is
+//! what lets a test compare a measured maximum against the bound it is
+//! supposed to satisfy, instead of against a number somebody retyped.
 //!
 //! # Why the bounds are a typed census
 //!
 //! Guide 10 refuses target emission for any intermediate without a bound
-//! (`rule:guide10:bound-proof-stage`). A prose bound cannot be checked;
+//! `(´[PLAN-rule:guide10:bound-proof-stage]´)`. A prose bound cannot be checked;
 //! [`WideFloorBound`] is the same statement as a value, so the oracle
 //! reports one observation per member and a test walks the census rather
 //! than a hand-written list that could omit the one intermediate nobody
@@ -24,7 +24,7 @@
 /// Twenty-six, because the widest partial product is then
 /// `a0·b0 < 2^26 · 2^26 = 2^52`, which is inside the target's signed
 /// fixed-width arithmetic with room for every carry the normalization
-/// adds (Guide-10 `rule:guide10:derived-limb-bounds`).
+/// adds `(´[PLAN-rule:guide10:derived-limb-bounds]´)`.
 pub const LIMB_BASE_BITS: u32 = 26;
 
 /// The limb base itself.

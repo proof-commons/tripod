@@ -16,7 +16,7 @@
 //! validator then accepts *these bytes'* schedule exactly as it accepted
 //! the hand-written one, which is the property that makes the emitted
 //! program the same construction rather than a second one that happens
-//! to look similar (Guide-10 `rule:guide10:stack-schedule`).
+//! to look similar `(´[PLAN-rule:guide10:stack-schedule]´)`.
 //!
 //! # A research object, and it stays one
 //!
@@ -26,7 +26,7 @@
 //! abstract schedule, and the resource projection — and none of those
 //! checks is evidence that a node accepts the program. The status field
 //! carries that distinction and the constructor never sets the accepting
-//! one on its own (Guide-10 `rule:guide10:no-calibration`).
+//! one on its own `(´[PLAN-rule:guide10:no-calibration]´)`.
 //!
 //! # No identity
 //!
@@ -62,8 +62,8 @@ use crate::wide_floor::schedule::{self as wide_floor_schedule, PACKED_PROOF_BYTE
 /// advanced by this program as readily as one of its own, and the two
 /// families would share a transition rule neither was reviewed for. So
 /// the program compares the domain and the schema against the recipe's
-/// own constants and refuses anything else
-/// (Guide-10 `tab:guide10:constructor-threats`, alternate schema).
+/// own constants and refuses anything else — the alternate-schema row
+/// of `(´[PLAN-tab:guide10:constructor-threats]´)`.
 pub const PROTOTYPE_SCHEMA: u32 = 1;
 
 /// How much of a canonical encoding the recipe pins to a constant.
@@ -140,8 +140,8 @@ pub enum PrototypeKind {
 /// Kept apart from the kind on purpose. The kind is what the program
 /// *is*; the relation is what an accepting verdict would mean, and a
 /// program of one kind that established some other relation would be a
-/// defect rather than a variation (Guide-10
-/// `rule:guide10:relation-identity`).
+/// defect rather than a variation
+/// `(´[PLAN-rule:guide10:relation-identity]´)`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum PrototypeProgramRelation {
@@ -152,7 +152,7 @@ pub enum PrototypeProgramRelation {
     /// the remainder is below it, and that `a·b` and `q·d + r` have the
     /// same canonical base-`B` limbs in all four positions. Those
     /// together imply `q = floor(a·b / d)`, and each on its own does not
-    /// (Guide-10 `rule:guide10:wide-floor-relation`).
+    /// `(´[PLAN-rule:guide10:wide-floor-relation]´)`.
     WideFloorRelation,
     /// One metadata object's constructor derives from its predecessor's
     /// by the stated transition.
@@ -386,7 +386,7 @@ impl PrototypeProgram {
     /// witnessed amounts, one leaf, no tree above it, no hashing, and no
     /// curve operation. What the two share is the admission procedure,
     /// which is deliberate — a second procedure could accept a program
-    /// the first would refuse (Guide-10 `rule:guide10:prototype-state`).
+    /// the first would refuse `(´[PLAN-rule:guide10:prototype-state]´)`.
     ///
     /// # Errors
     ///
@@ -638,7 +638,7 @@ impl ContinuityLiterals {
         leaf_prefix.extend_from_slice(&leaf_head);
 
         // The internal key is a published constant of the construction
-        // rather than a witness (Guide-10 `rule:guide10:internal-key`).
+        // rather than a witness (´[PLAN-rule:guide10:internal-key]´).
         let mut tweak_prefix = tag_prefix(TAP_TWEAK_TAG);
         tweak_prefix.extend_from_slice(&UNSPENDABLE_INTERNAL_KEY);
 
@@ -705,7 +705,7 @@ fn bind_introspected_program(
 /// outlives the whole second derivation; the predecessor half consumes
 /// the one it was handed, which is what binds the two constructors to
 /// the same value by construction rather than by comparing two
-/// witnesses (Guide-10 `rule:guide10:static-root`).
+/// witnesses `(´[PLAN-rule:guide10:static-root]´)`.
 fn derive_constructor(
     target: &ReviewedElementsTapscriptDefinition,
     literals: &ContinuityLiterals,
@@ -764,7 +764,7 @@ fn derive_constructor(
 /// to canonicalize the branch order. There is no second object for a
 /// caller to choose, so the unchanged-field and exact-transition
 /// requirements hold by construction
-/// (Guide-10 `rule:guide10:successor-metadata`).
+/// `(´[PLAN-rule:guide10:successor-metadata]´)`.
 ///
 /// # The counter's domain
 ///
@@ -894,7 +894,7 @@ fn continuity_instructions(
 
     // The created output, read at one stated role rather than searched
     // for among the outputs
-    // (Guide-10 `rule:guide10:successor-constructor`).
+    // (´[PLAN-rule:guide10:successor-constructor]´).
     out.extend([
         op(OpcodeId::Swap),
         number(target, 0)?,
@@ -918,7 +918,7 @@ fn continuity_instructions(
 /// above it. The representation nonce is consumed first, the one
 /// metadata object next, the one static root after it, and the two
 /// output keys last — by then the two derived tweaks are the only
-/// computed values above them (Guide-10 `rule:guide10:static-root`).
+/// computed values above them `(´[PLAN-rule:guide10:static-root]´)`.
 fn continuity_initial_stack() -> AbstractStackState {
     AbstractStackState::from_main(vec![
         StackValueType::Encoded(EncodingClass::CompressedPublicKey),

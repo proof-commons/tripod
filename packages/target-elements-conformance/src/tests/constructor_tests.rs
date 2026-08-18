@@ -8,12 +8,12 @@
 //! this target's tag strings: it was produced by the target's
 //! implementation, not by anything here, and it fixes the tweak, the
 //! tweaked key, the output program, and the exact control blocks
-//! (Guide-10 `rule:guide10:constructor-oracle`).
+//! `(´[PLAN-rule:guide10:constructor-oracle]´)`.
 //!
 //! Provenance for every vector below:
 //! `src/test/data/bip341_wallet_vectors.json`, the `scriptPubKey`
 //! array, transcribed by index. They are public test data
-//! (Guide-10 `rule:guide10:test-material`).
+//! `(´[PLAN-rule:guide10:test-material]´)`.
 //!
 //! Two things about those vectors need saying. Their leaf versions are
 //! `0xc0` and `0xfa`, not this target's reviewed `0xc4`: the version
@@ -314,7 +314,7 @@ fn a_tag_separates_domains() {
 fn the_internal_key_is_the_published_derivation() {
     // The constant is recomputed rather than trusted: it is the digest
     // of the generator's uncompressed encoding
-    // (Guide-10 `rule:guide10:internal-key`).
+    // (´[PLAN-rule:guide10:internal-key]´).
     let generator = crate::constructor::curve::generator();
     assert_eq!(
         sha256(&generator.uncompressed_bytes()),
@@ -397,7 +397,7 @@ fn a_repeated_leaf_determines_no_path() {
     // Two identical leaves have the same hash, so a control path to
     // "the" leaf is not determined. The fixture rule requires the
     // executing leaf to occur exactly once
-    // (Guide-10 `rule:guide10:fixture-validation`).
+    // (´[PLAN-rule:guide10:fixture-validation]´).
     let tree = FixtureTapTree::branch(reviewed_leaf(b"same"), reviewed_leaf(b"same"));
     assert_eq!(
         tree.path_to(&leaf_hash(LeafVersion::TAPSCRIPT, b"same")),
@@ -467,7 +467,7 @@ fn constructing_against_a_leaf_outside_the_tree_is_refused() {
 fn a_tweak_that_is_not_a_scalar_has_no_output_key() {
     // The tweak-totality failure mode, exhibited rather than argued.
     // The group order itself is the smallest value that is not a valid
-    // multiplier (Guide-10 `rule:guide10:tweak-totality`).
+    // multiplier (´[PLAN-rule:guide10:tweak-totality]´).
     let order = digest("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141");
     assert_eq!(
         tweaked_key(&UNSPENDABLE_INTERNAL_KEY, &order),
@@ -673,7 +673,7 @@ fn the_metadata_leaf_commits_to_exactly_the_metadata_bytes() {
 fn a_nonce_is_a_representation_and_not_a_state() {
     // Both halves of what makes the retry policy admissible: two
     // encodings of one state, and a nonce that cannot survive a
-    // transition (Guide-10 `rule:guide10:tweak-totality`).
+    // transition (´[PLAN-rule:guide10:tweak-totality]´).
     let object = representative();
     let rewritten = object.with_nonce(17);
     assert!(object.same_state(&rewritten));
@@ -752,7 +752,7 @@ fn the_corpus_measures_no_retry_and_claims_nothing_about_the_tail() {
     // that even once, so a run of zero is exactly what a correct
     // implementation and a broken one would both produce. The residual
     // stays named rather than measured away
-    // (Guide-10 `rule:guide10:tweak-totality`).
+    // (´[PLAN-rule:guide10:tweak-totality]´).
     let static_leaf = reviewed_leaf(b"operation");
     let mut instances = 0_u32;
     let mut retried = 0_u32;

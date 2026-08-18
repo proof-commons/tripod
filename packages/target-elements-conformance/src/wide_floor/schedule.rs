@@ -13,7 +13,7 @@
 //! value is read back with a constant-width slice, which costs two small
 //! literals, and the deepest read anywhere below is the third item —
 //! `SUBSTR` of a copy while two computed values are live
-//! (Guide-10 `rule:guide10:stack-schedule`).
+//! `(´[PLAN-rule:guide10:stack-schedule]´)`.
 //!
 //! The packing is not a compression trick. It is what makes the reach
 //! bound satisfiable at all for a relation this wide, and it is the
@@ -30,7 +30,7 @@
 //! underconstrained-witness attacks in the threat matrix has nothing to
 //! attack — the rows that state them are refused because the value the
 //! target computes disagrees, not because a bound check caught a witness
-//! (`candidate:guide10:derived-limbs`).
+//! `(´[PLAN-candidate:guide10:derived-limbs]´)`.
 //!
 //! # Every flag is verified on the next instruction
 //!
@@ -39,7 +39,7 @@
 //! one of them is followed immediately by the verification that consumes
 //! its flag, which is the required shape and is what leaves the abstract
 //! validator with no surviving failure state
-//! (`rule:guide10:success-flags`).
+//! `(´[PLAN-rule:guide10:success-flags]´)`.
 
 use tapscript::instruction::{StackItem, TapscriptInstruction};
 use target_elements::{OpcodeId, ReviewedElementsTapscriptDefinition, StackValueType};
@@ -58,7 +58,7 @@ pub const AMOUNT_AT: [usize; 5] = [0, 8, 16, 24, 32];
 ///
 /// The value a composing operation consumes. Stated as its own constant
 /// because it is the pattern's output contract rather than an
-/// implementation detail (`rule:guide10:wide-floor-output`).
+/// implementation detail `(´[PLAN-rule:guide10:wide-floor-output]´)`.
 pub const QUOTIENT_AT: usize = AMOUNT_AT[2];
 
 /// How wide the packed item is once the amounts are packed.
@@ -113,7 +113,7 @@ fn base(target: &ReviewedElementsTapscriptDefinition) -> Option<TapscriptInstruc
 /// Both comparisons take a signed fixed-width operand, so an item of any
 /// other width is refused by the primitive rather than by a width check
 /// this schedule would otherwise have to write
-/// (`rule:guide10:limb-encoding`).
+/// `(´[PLAN-rule:guide10:limb-encoding]´)`.
 fn require_in_domain(
     target: &ReviewedElementsTapscriptDefinition,
 ) -> Option<Vec<TapscriptInstruction>> {
@@ -328,7 +328,7 @@ fn normalize_product(
 /// base-`B` limbs of `a·b` and of `q·d + r` are equal in all four
 /// positions. Those together are the complete relation, and the relation
 /// implies `q = floor(a·b / d)`
-/// (`rule:guide10:wide-floor-relation`).
+/// `(´[PLAN-rule:guide10:wide-floor-relation]´)`.
 ///
 /// # Where the pattern ends and the framing begins
 ///
@@ -338,7 +338,7 @@ fn normalize_product(
 /// pattern's output contract. The remaining instructions are the
 /// standalone framing a spend of this leaf alone needs: the quotient
 /// nothing composes with is dropped and the domain's required true item
-/// is pushed (`rule:guide10:wide-floor-output`).
+/// is pushed `(´[PLAN-rule:guide10:wide-floor-output]´)`.
 pub(crate) fn instructions(
     target: &ReviewedElementsTapscriptDefinition,
 ) -> Option<Vec<TapscriptInstruction>> {

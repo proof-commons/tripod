@@ -105,7 +105,7 @@ impl SuccessCondition {
 /// stack that this contract has no way to know. Naming the *operand*
 /// instead states exactly what the target does — the item is carried
 /// through unchanged — and lets a stack validator resolve the type from
-/// the state it actually has (Guide-10 `rule:guide10:primitive-admission`).
+/// the state it actually has `(´[PLAN-rule:guide10:primitive-admission]´)`.
 ///
 /// [`OpcodeId::Duplicate`]: crate::opcode::OpcodeId::Duplicate
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

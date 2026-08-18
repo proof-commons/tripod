@@ -1168,7 +1168,7 @@ pub struct CheckOutputArgs {
 /// Identity of one output destination for role-uniqueness validation.
 ///
 /// One lexically normalized absolute path
-/// (`[ADR017-rule:path:output-roles]`). Deliberately *not* filesystem
+/// `(´[ADR017-rule:path:output-roles]´)`. Deliberately *not* filesystem
 /// canonicalization, symlink resolution, device/inode comparison,
 /// hard-link detection, or mount identity: those establish no boundary
 /// the repository can hold, because the host may replace or remount a

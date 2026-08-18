@@ -8,7 +8,7 @@
 //! abstract validator computes those states from the primitive
 //! contracts alone; nothing in this file executes anything, and a
 //! passing schedule is a statement about the contracts rather than
-//! about a node (Guide-10 `rule:guide10:stack-schedule`).
+//! about a node `(´[PLAN-rule:guide10:stack-schedule]´)`.
 //!
 //! What each schedule establishes is exactly the list §7.3 asks for:
 //! that every operand exists and is admitted, that every successful
@@ -131,7 +131,7 @@ fn domain_abort() -> BTreeSet<FailureCause> {
 #[test]
 fn a_limb_decomposition_leaves_exactly_two_limbs() {
     // The candidate derives limbs by dividing rather than trusting a
-    // caller to supply them (Guide-10 `candidate:guide10:derived-limbs`).
+    // caller to supply them (´[PLAN-candidate:guide10:derived-limbs]´).
     //
     // Division pushes a remainder, a quotient, and a success flag. The
     // flag must be consumed before anything else can be scheduled on
@@ -297,7 +297,7 @@ fn the_candidate_a_inner_step_holds_its_depth_across_repetition() {
 #[test]
 fn a_reviewed_primitive_does_not_order_two_digests() {
     // The finding that shapes the constructor candidate
-    // (Guide-10 `rule:guide10:tapbranch-order`).
+    // (´[PLAN-rule:guide10:tapbranch-order]´).
     //
     // Branch construction needs the two children in canonical
     // byte-lexicographic order. No reviewed primitive orders byte
@@ -371,7 +371,7 @@ fn a_sliced_chunk_schedules_into_a_width_constrained_operand() {
     // what the target does. Before the width relation existed the
     // contract reported an unconstrained byte string here and the
     // composition was refused, even though no target ever refused it
-    // (Guide-10 `rule:guide10:stack-schedule`).
+    // (´[PLAN-rule:guide10:stack-schedule]´).
     let result = schedule(
         vec![
             number(0),
@@ -505,7 +505,7 @@ fn one_verdict_is_consumed_where_it_is_produced() {
 #[test]
 fn a_witnessed_number_is_pinned_to_one_digest_byte() {
     // The step that replaces the missing widening
-    // (Guide-10 `rule:guide10:tapbranch-order`).
+    // (´[PLAN-rule:guide10:tapbranch-order]´).
     //
     // A single byte of a digest cannot be read as a number: the
     // reviewed widening conversion takes four bytes, and nothing
@@ -641,7 +641,7 @@ fn a_chunk_of_each_digest_is_compared_end_to_end() {
     // This is the whole of canonical ordering except the combination
     // step: applied per chunk and combined so that the first differing
     // chunk decides, it orders two digests with no conditional branch
-    // (Guide-10 `rule:guide10:tapbranch-order`).
+    // (´[PLAN-rule:guide10:tapbranch-order]´).
     let digest = literal(32);
     let initial = AbstractStackState::from_main(vec![digest.clone(), digest]);
     let result = schedule(
@@ -819,7 +819,7 @@ fn predecessor_proof() -> Vec<TapscriptInstruction> {
         op(OpcodeId::Swap),
         op(OpcodeId::Sha256Update),
         // The static root is hashed from a copy, so the authenticated
-        // instance survives (Guide-10 `rule:guide10:static-root`).
+        // instance survives (´[PLAN-rule:guide10:static-root]´).
         op(OpcodeId::Rotate),
         op(OpcodeId::Duplicate),
         op(OpcodeId::Rotate),
@@ -840,7 +840,7 @@ fn predecessor_proof() -> Vec<TapscriptInstruction> {
 ///
 /// Consumes the retained static root rather than a second witnessed
 /// one, which is what makes the composition a continuity proof
-/// (Guide-10 `rule:guide10:static-root`).
+/// `(´[PLAN-rule:guide10:static-root]´)`.
 fn successor_proof() -> Vec<TapscriptInstruction> {
     vec![
         op(OpcodeId::Swap),
@@ -933,7 +933,7 @@ fn reserved_is_zero() -> Vec<TapscriptInstruction> {
 #[test]
 fn the_transition_moves_one_field_and_pins_the_rest() {
     // Stage C6
-    // (Guide-10 `rule:guide10:constructor-transition-stage`).
+    // (´[PLAN-rule:guide10:constructor-transition-stage]´).
     //
     // The schema's field order is what makes this expressible: domain,
     // schema, and object kind are contiguous, so one constant-width
@@ -947,7 +947,7 @@ fn the_transition_moves_one_field_and_pins_the_rest() {
     // verified immediately rather than dropped. An overflowing counter
     // retains both operands and pushes a false, which the verification
     // then ends evaluation on — so a wrapped counter cannot reach the
-    // equality and pass it (Guide-10 `rule:guide10:successor-metadata`).
+    // equality and pass it (´[PLAN-rule:guide10:successor-metadata]´).
     //
     // # Why the nonce is absent
     //
@@ -1054,14 +1054,14 @@ fn the_curve_step_consumes_exactly_its_three_operands() {
 
 #[test]
 fn the_successor_proof_consumes_the_one_authenticated_root() {
-    // Stage C4 (Guide-10 `rule:guide10:constructor-successor-stage`).
+    // Stage C4 (´[PLAN-rule:guide10:constructor-successor-stage]´).
     //
     // The successor half never reads a static root of its own. It
     // begins holding the root the predecessor proof authenticated and
     // retained, and consumes it in its own branch hash, so the two
     // constructors are bound to the same value by construction rather
     // than by comparing two witnesses
-    // (Guide-10 `rule:guide10:static-root`).
+    // (´[PLAN-rule:guide10:static-root]´).
     //
     // # The nonce needs no check here
     //
@@ -1098,7 +1098,7 @@ fn the_successor_binding_names_one_exact_output_role() {
     // The created program is read at one stated role rather than
     // searched for among the outputs, so an instance that puts the
     // successor somewhere else does not satisfy this program
-    // (Guide-10 `rule:guide10:successor-constructor`).
+    // (´[PLAN-rule:guide10:successor-constructor]´).
     let result = schedule(
         output_binding(),
         &AbstractStackState::from_main(vec![
@@ -1121,7 +1121,7 @@ fn the_successor_binding_names_one_exact_output_role() {
 #[test]
 fn the_continuity_composition_carries_one_root_across_both_halves() {
     // Stage C5, the composition
-    // (Guide-10 `rule:guide10:constructor-continuity-stage`).
+    // (´[PLAN-rule:guide10:constructor-continuity-stage]´).
     //
     // The open question was whether the reach bound permits it at all:
     // no reviewed primitive reads below the third item, so a program may
@@ -1168,7 +1168,7 @@ fn the_continuity_composition_carries_one_root_across_both_halves() {
 #[test]
 fn the_predecessor_proof_schedules_and_leaves_one_authenticated_root() {
     // Stage C3, end to end
-    // (Guide-10 `rule:guide10:constructor-predecessor-stage`).
+    // (´[PLAN-rule:guide10:constructor-predecessor-stage]´).
     //
     // # Why no orientation witness appears
     //
@@ -1185,7 +1185,7 @@ fn the_predecessor_proof_schedules_and_leaves_one_authenticated_root() {
     // static root, the same public deterministic retry §9.12 already
     // admits for tweak totality. Nothing is hashed in caller order, no
     // order bit is trusted, and no verdict is combined
-    // (Guide-10 `rule:guide10:tapbranch-order`).
+    // (´[PLAN-rule:guide10:tapbranch-order]´).
     //
     // # Why the witness order is what it is
     //
@@ -1246,7 +1246,7 @@ fn a_derived_digest_is_admitted_as_a_tweak_operand() {
     // is unchanged and is still the target's to decide: the rare
     // instance whose tweak is at or above the group order fails inside
     // the curve arithmetic, which is exactly where the target fails it
-    // (Guide-10 `rule:guide10:tweak-totality`). What changed is that a
+    // (´[PLAN-rule:guide10:tweak-totality]´). What changed is that a
     // refusal the target does not make is no longer made here.
     let result = schedule(
         vec![op(OpcodeId::TweakVerify)],
@@ -1474,7 +1474,7 @@ fn successor_from_derived() -> Vec<TapscriptInstruction> {
         op(OpcodeId::Sha256Update),
         // The root is hashed from a copy, so the one instance survives
         // into the predecessor half
-        // (Guide-10 `rule:guide10:static-root`).
+        // (´[PLAN-rule:guide10:static-root]´).
         op(OpcodeId::Rotate),
         op(OpcodeId::Duplicate),
         op(OpcodeId::Rotate),
@@ -1613,7 +1613,7 @@ fn joined_bytes() -> StackValueType {
 #[test]
 fn the_derivation_builds_one_successor_object_from_the_predecessor() {
     // Stage C6, as a derivation rather than a comparison
-    // (Guide-10 `rule:guide10:constructor-transition-stage`).
+    // (´[PLAN-rule:guide10:constructor-transition-stage]´).
     //
     // The predecessor object survives unconsumed — its own constructor
     // still has to be derived from it — and the successor object is
@@ -1635,7 +1635,7 @@ fn the_derivation_builds_one_successor_object_from_the_predecessor() {
     assert!(result.nonaborting_failure().is_empty());
 
     // The overflow path does not survive: the flag is verified where it
-    // is produced (Guide-10 `rule:guide10:successor-metadata`).
+    // is produced (´[PLAN-rule:guide10:successor-metadata]´).
     let mut expected = domain_abort();
     expected.insert(FailureCause::FalseVerification);
     expected.insert(FailureCause::UnequalOperands);
@@ -1648,8 +1648,8 @@ fn the_derivation_builds_one_successor_object_from_the_predecessor() {
 #[test]
 fn the_composed_proof_carries_continuity_and_transition_together() {
     // Stages C5 and C6 in one program
-    // (Guide-10 `rule:guide10:constructor-continuity-stage`,
-    // `rule:guide10:constructor-transition-stage`).
+    // (´[PLAN-rule:guide10:constructor-continuity-stage]´) and
+    // (´[PLAN-rule:guide10:constructor-transition-stage]´).
     //
     // The order is forced by the reach bound rather than chosen. The
     // successor constructor is derived first, because its metadata is

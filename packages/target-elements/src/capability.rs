@@ -117,7 +117,7 @@ pub enum ElementsCapability {
     /// absence is a stated, evidenced row rather than a gap a reader
     /// has to notice, and so that a construction depending on it must
     /// confront the status instead of assuming a familiar opcode
-    /// (Guide-10 `rule:guide10:primitive-admission`).
+    /// `(´[PLAN-rule:guide10:primitive-admission]´)`.
     CanonicalByteOrdering,
 
     /// The target's rules conserve value across a transaction.
@@ -834,7 +834,7 @@ fn authorization_and_value_capabilities() -> Vec<(ElementsCapability, Capability
 /// construction needing canonical ordering must build it from the
 /// primitives that do exist and prove the construction, which is a
 /// different claim from having the capability
-/// (Guide-10 `rule:guide10:tapbranch-order`).
+/// `(´[PLAN-rule:guide10:tapbranch-order]´)`.
 fn compound_proof_capabilities() -> Vec<(ElementsCapability, CapabilityContract)> {
     use ElementsCapability as P;
     use OpcodeId as O;

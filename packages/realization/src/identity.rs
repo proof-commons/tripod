@@ -84,8 +84,8 @@ pub enum FactId {
 /// the owner validator derives the member from the body. A member with
 /// no body variant could therefore only ever be declared by a relation
 /// that means something else, so members are added with their bodies
-/// and removed when they lose them (Guide-10
-/// `rule:guide10:relation-identity`).
+/// and removed when they lose them
+/// `(´[PLAN-rule:guide10:relation-identity]´)`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RelationKind {
     Cardinality,

@@ -2,7 +2,7 @@
 //!
 //! Every test here is a way a fixture could be satisfied by a
 //! transaction other than the one it means
-//! (Guide-10 `rule:guide10:fixture-validation`).
+//! `(´[PLAN-rule:guide10:fixture-validation]´)`.
 
 use std::collections::BTreeSet;
 
@@ -416,7 +416,7 @@ fn every_prototype_claim_is_required_and_reachable() {
     // executed through it, and every claim has bearing cases among its
     // own matrix's rows -- so there is no corner here the census cannot
     // reach, and recording one as unresolved would say the project did
-    // not attempt what it did (Guide-10 `rule:guide10:claim-registry`).
+    // not attempt what it did (´[PLAN-rule:guide10:claim-registry]´).
     let target = reviewed_elements_tapscript().expect("the reviewed contract validates");
     let constructor = crate::prototype::constructor_case_matrix(&target)
         .expect("the constructor matrix is authored");
@@ -459,7 +459,7 @@ fn a_request_without_a_construction_is_byte_identical_to_a_schema_two_request() 
     // the new field is omitted from the wire entirely rather than
     // written as null, so a schema-2 executor's strict framing sees
     // exactly the message it always saw
-    // (Guide-10 `rule:guide10:schema-migration`).
+    // (´[PLAN-rule:guide10:schema-migration]´).
     let fixture = any_primitive_fixture();
     let request = NativeExecutionRequest {
         schema: NATIVE_PROTOCOL_SCHEMA,
@@ -539,7 +539,7 @@ fn a_tree_survives_a_wire_round_trip() {
 fn a_constructor_fixture_states_no_exact_resource_figure_yet() {
     // What a constructor instance costs is a measurement a later wave
     // takes. An invented figure would fail an honest executor over a
-    // number no contract states (Guide-10 `rule:guide10:no-calibration`).
+    // number no contract states (´[PLAN-rule:guide10:no-calibration]´).
     let target = target();
     let fixture = coherent(&target);
     for expectation in [
