@@ -1,6 +1,9 @@
 use thiserror::Error;
 
-use crate::label::{Label, LabelParseError, LabelShape};
+use crate::{
+    adoption,
+    label::{Label, LabelParseError, LabelShape},
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum LabelOwner {
@@ -11,9 +14,8 @@ pub enum LabelOwner {
     Plan,
     Doc,
     /// One owner per first-party Cargo package other than the model
-    /// crate, named by its `packages/` directory. Crate labels have no
-    /// public import prefix until a real cross-owner citation needs
-    /// one (ADR-019 owner registry).
+    /// crate, named by its `packages/` directory. The import prefix of
+    /// each is registered in the adoption data's package table.
     Crate(String),
 }
 
@@ -26,7 +28,11 @@ impl LabelOwner {
             Self::Model => "MODEL-".to_owned(),
             Self::Plan => "PLAN-".to_owned(),
             Self::Doc => "DOC-".to_owned(),
-            Self::Crate(name) => format!("{name}-"),
+            Self::Crate(name) => format!(
+                "{}-",
+                adoption::package_prefix(name)
+                    .map_or_else(|| adoption::derive_package_prefix(name), str::to_owned)
+            ),
         }
     }
     pub const fn shape(&self) -> LabelShape {
@@ -47,33 +53,18 @@ pub struct ImportedLabel {
 }
 
 impl ImportedLabel {
+    /// Parse an imported-citation token into its owner and label.
+    ///
+    /// The prefix is everything before the first hyphen, which is exact:
+    /// a prefix is capitals and digits only, so the first hyphen is
+    /// always the boundary, and every hyphen after it belongs to the
+    /// label's name segment. The prefix becomes an owner only through
+    /// the adoption signature, so an unregistered prefix has no owner.
     pub fn parse(value: &str) -> Result<Self, OwnerParseError> {
-        let (owner, label) = if let Some(label) = value.strip_prefix("A-") {
-            (LabelOwner::Attestation, label)
-        } else if let Some(label) = value.strip_prefix("RZ-") {
-            (LabelOwner::Realization, label)
-        } else if let Some(label) = value.strip_prefix("MODEL-") {
-            (LabelOwner::Model, label)
-        } else if let Some(label) = value.strip_prefix("PLAN-") {
-            (LabelOwner::Plan, label)
-        } else if let Some(label) = value.strip_prefix("DOC-") {
-            (LabelOwner::Doc, label)
-        } else if let Some(rest) = value.strip_prefix("ADR") {
-            let Some((number, label)) = rest.split_once('-') else {
-                return Err(OwnerParseError::Unknown(value.to_owned()));
-            };
-            if number.len() != 3 {
-                return Err(OwnerParseError::Unknown(value.to_owned()));
-            }
-            (
-                LabelOwner::Adr(
-                    number
-                        .parse()
-                        .map_err(|_| OwnerParseError::Unknown(value.to_owned()))?,
-                ),
-                label,
-            )
-        } else {
+        let Some((prefix, label)) = value.split_once('-') else {
+            return Err(OwnerParseError::Unknown(value.to_owned()));
+        };
+        let Some(owner) = adoption::owner_for_prefix(prefix) else {
             return Err(OwnerParseError::Unknown(value.to_owned()));
         };
         Ok(Self {
