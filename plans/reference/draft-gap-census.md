@@ -136,9 +136,9 @@ something ADR-016 does not.
 | (`crit:identity:benefit`) | divergent | ADR-016 lists rejection grounds but not the benefit criterion as a test. The draft's reviewed-anyhow ground, that a standing review supersedes equality, has no counterpart in ADR-016. |
 | (`alg:identity:adjudication`) | absent | No decision walk exists as a required procedure; admission today is a checklist applied in review. |
 | (`case:identity:no-identity`) | divergent | The register's dormant and provisional statuses record identities awaiting consumers, but no entry records a deliberate refusal to hash as its own documented outcome. |
-| (`def:identity:recipe`), recipe identifiers | divergent | Recipe identifiers exist as algorithm constants for the semantic, behavioural and deployment hashes in `canonical.rs` and `deployment.rs`, with superseded behavioural recipes retained. The Layer-0 anchor-set hash has no identifier constant. |
+| (`def:identity:recipe`), recipe identifiers | implemented | Recipe identifiers exist as algorithm constants for the semantic, behavioural, anchor-set and deployment hashes in `canonical.rs` and `deployment.rs`, with superseded recipes retained beside each. The anchor set gained `ANCHOR_SET_HASH_ALGORITHM` in the DI-004 separation migration; its identifier is a code-side register rather than a manifest field, which the migration record states. |
 | (`rule:identity:recipe-permanence`) | implemented | The superseded behavioural algorithm list in `canonical.rs` is a migration record, and the identifier is published beside every value. |
-| (`tab:identity:properties`), domain separation | divergent | The behavioural and deployment hashes prefix a domain; the architecture semantic hash and the Layer-0 anchor-set hash do not. ADR-016 grandfathers exactly these two; the draft's property table admits no exception. |
+| (`tab:identity:properties`), domain separation | implemented | Every first-party semantic identity prefixes a domain. The two that once did not were migrated together in DI-004 under (`[ADR016-rule:identity:separation-migration]`), which supersedes the grandfather clause; no exception remains for the property table to conflict with. |
 | (`case:identity:artifact`), freshness sub-branch | implemented | Generated publications are compared byte for byte in `check::current` and carry no digest. |
 | (`rule:identity:no-incidentals`), (`rule:identity:immediate-edges`), (`red:identity:mesh-to-chain`), (`red:identity:fields-to-object`) | implemented | ADR-016 and the register forbid local handles in semantic identity, bind the future graph by immediate edges only, and refuse field-level hashing on the draft's own grounds. |
 | (`case:identity:evidence`), (`rule:identity:duties`), (`rule:identity:delegation`), (`case:identity:release`) | absent | No evidence envelope, no release manifest and no release validator exist yet; ADR-016 marks these as activating with their consumers. |
@@ -195,10 +195,13 @@ repository practice. They are recorded as questions, not resolved here.
    domain-separated form and requires it of every future semantic
    identity. Does adoption move the prescription out of the record and
    into recipe records, or does ADR-016 keep it?
-2. The identity draft's property table requires domain separation of
-   every admitted identity, with no exception clause. ADR-016
-   grandfathers the architecture semantic hash and the Layer-0
-   anchor-set hash. Adoption as written would put both in breach.
+2. Settled: the identity draft's property table requires domain
+   separation of every admitted identity, with no exception clause,
+   and ADR-016 once grandfathered the architecture semantic hash and
+   the anchor-set hash. With no exception clause to stand on, both
+   recipes migrate rather than persist as a recorded divergence, and DI-004 carried
+   the migration; the grandfather clause is gone and the ADR records
+   the separation migration in its place.
 3. The kind registry classifies Task as `exer`, while the repository
    uses `task` for work items. The alternative to a rename is to record
    the repository's token as a local extension. Ten further kinds the
