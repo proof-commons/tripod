@@ -34,7 +34,7 @@ fn the_reviewed_contract_is_the_second_revision() {
     // The census and the success algebra both changed, so the reviewed
     // contract is V2 and says so. A reviewed contract still claiming V1
     // would be the silent widening the revision exists to prevent
-    // (Guide-10 `rule:guide10:target-version`).
+    // (´[PLAN-rule:guide10:target-version]´).
     let reviewed = reviewed_elements_tapscript().expect("the reviewed contract validates");
     assert_eq!(reviewed.definition().version(), TargetContractVersion::V2);
     assert_ne!(reviewed.definition().version(), TargetContractVersion::V1);

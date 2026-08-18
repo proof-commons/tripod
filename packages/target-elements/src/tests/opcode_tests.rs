@@ -732,7 +732,7 @@ fn every_primitive_is_gated_to_the_reviewed_domain_and_names_evidence() {
 // the registry, and deliberately in a different shape: an operand
 // count, a consumed count, the results as positions or types, and the
 // complete failure behaviour. Nothing below asks the registry what the
-// answer is (Guide-10 `rule:guide10:stack-oracle`).
+// answer is (´[PLAN-rule:guide10:stack-oracle]´).
 // ---------------------------------------------------------------
 
 /// The expected rearrangement of every reviewed stack operation.
