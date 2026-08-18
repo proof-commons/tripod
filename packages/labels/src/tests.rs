@@ -2024,3 +2024,156 @@ fn index_only_and_body_only_anchors_both_stale_the_index() {
             .any(|diagnostic| diagnostic.code == LabelErrorCode::AttestationIndexStale)
     );
 }
+
+// -------------------------------------------------------------------
+// The shared participation scanner (DI-003).
+// -------------------------------------------------------------------
+
+#[test]
+fn prose_participation_marks_fence_markers_and_interiors_as_displayed() {
+    let participation = crate::participation::ProseParticipation::of(concat!(
+        "prose\n",   // 1
+        "```text\n", // 2
+        "shown\n",   // 3
+        "```\n",     // 4
+        "prose\n",   // 5
+    ));
+
+    assert!(participation.participates(1));
+    // The fence marker line is displayed too: a span cannot straddle a
+    // region boundary if the boundary itself never participates.
+    assert!(!participation.participates(2));
+    assert!(!participation.participates(3));
+    assert!(!participation.participates(4));
+    assert!(participation.participates(5));
+    // Off the end of the source there is no authored text to mean
+    // anything.
+    assert!(!participation.participates(6));
+    assert!(!participation.participates(0));
+    assert_eq!(participation.unclosed_fence(), None);
+}
+
+#[test]
+fn prose_participation_reports_an_unclosed_fence_at_its_opening_line() {
+    let participation =
+        crate::participation::ProseParticipation::of("prose\n\n```text\nshown\nstill shown\n");
+
+    assert_eq!(participation.unclosed_fence(), Some(3));
+    assert!(participation.participates(1));
+    assert!(!participation.participates(4));
+    assert!(!participation.participates(5));
+}
+
+#[test]
+fn blanking_preserves_line_numbering() {
+    let source = "a\n```\nb\n```\nc\n";
+    let participation = crate::participation::ProseParticipation::of(source);
+    let blanked = participation.blanked(source);
+
+    assert_eq!(blanked, "a\n\n\n\nc");
+    // Every participating line keeps its original one-based number, so
+    // a location derived from the blanked text still points at the
+    // right line of the original.
+    assert_eq!(blanked.lines().nth(4), Some("c"));
+}
+
+#[test]
+fn the_line_view_and_the_span_scanner_agree_about_fenced_material() {
+    // The two used to be separate loops. Any label-shaped token inside
+    // a fence must be invisible to both, or a check that consults one
+    // disagrees with a check that consults the other.
+    let source = concat!(
+        "`sec:real`\n",
+        "```text\n",
+        "`sec:fenced`\n",
+        "```\n",
+        "`sec:alsoreal`\n",
+    );
+    let scan = scan_markdown(Path::new("fixture.md"), source);
+
+    let scanned = scan
+        .code_spans
+        .iter()
+        .map(|span| span.content.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(scanned, vec!["sec:real", "sec:alsoreal"]);
+
+    for span in &scan.code_spans {
+        assert!(
+            scan.participation.participates(span.location.line),
+            "the span scanner emitted a span from a line the line view calls displayed",
+        );
+    }
+}
+
+#[test]
+fn double_backtick_spans_are_displayed_not_participating() {
+    let scan = scan_markdown(Path::new("fixture.md"), "``sec:shown`` and `sec:meant`\n");
+
+    // Both are recognized as spans; exactly one participates.
+    assert_eq!(scan.code_spans.len(), 2);
+    let participating = scan
+        .participating_spans()
+        .map(|span| span.content.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(participating, vec!["sec:meant"]);
+    assert_eq!(
+        scan.code_spans[0].displayed(),
+        Some(crate::participation::Displayed::DoubleBacktick),
+    );
+    assert_eq!(scan.code_spans[1].displayed(), None);
+}
+
+#[test]
+fn a_fenced_index_heading_does_not_open_the_generated_index_region() {
+    // DI-F02. The Realization harvest read its index-region
+    // boundary from the raw source while reading its spans from the
+    // participation view, so a displayed heading could re-partition a
+    // document the span scanner had already partitioned the other way.
+    //
+    // Here the fenced heading used to open the index region, which then
+    // stayed open across the fence close and swallowed the real body
+    // citation below it. The anchor set derives from body citations, so
+    // the body citation went missing and the genuine index below was
+    // reported stale. Under the shared scanner the displayed heading is
+    // not a heading at all.
+    let directory = fixture_root(concat!(
+        "# Realization\n",
+        "`sec:fixture`\n",
+        "```text\n",
+        "## §17 Upward-citation index · `sec:realization:anchors`\n",
+        "```\n",
+        "Body cite (`[A-def:model:known]`).\n",
+        "## §17 Upward-citation index · `sec:realization:anchors`\n",
+        "| `[A-def:model:known]` | (`sec:fixture`) |\n",
+    ));
+
+    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(directory.path()));
+
+    assert!(
+        !labels
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == LabelErrorCode::AttestationIndexStale),
+        "the body citation below a displayed index heading must still be a body citation: {:#?}",
+        labels.diagnostics,
+    );
+}
+
+#[test]
+fn latex_participation_strips_comments_and_respects_escaping() {
+    let stripped = crate::participation::latex_participating(concat!(
+        "\\label{def:kept} % dropped\n",
+        "100\\% kept \\label{def:also-kept}\n",
+        "% whole line dropped\n",
+        "\\\\% dropped: the backslash pair escapes itself\n",
+    ));
+
+    assert!(stripped.contains("def:kept"));
+    assert!(stripped.contains("def:also-kept"));
+    assert!(stripped.contains("100\\%"));
+    assert!(!stripped.contains("dropped"));
+    // Line structure survives, so a location derived from the stripped
+    // text still names the authored line.
+    assert_eq!(stripped.lines().count(), 4);
+}

@@ -1714,7 +1714,7 @@ active tree.
 | `DI-001` | ACTIVE | Gap census: map each draft clause onto the present ADR-012/ADR-013 text, the ADR-016 identity rules, and the implemented labels package; classify every clause as already-implemented, divergent, or new; record the checker-engineering findings register. |
 | `DI-002` | DONE | Adopt the corrected label calculus and kind registry as ADRs; delete the ADR text they retire; migrate the eight conflicting kind tokens to the registry forms corpus-wide per the user's ruling, with every citation updated in the same commit; record the hyphenated-area amendment and the local-extension register. |
 | `DI-002b` | DONE | Replace the second-edition adopted drafts with the author's third-edition texts and repair every citation that dangled as a result. The third edition was verified against the audit register before the swap: all 26 findings fixed, the 7 defects among them included, and a mechanical re-audit clean — every per-document citation resolves, every mint is unique, and the kind registry's headline counts of 333 names, 349 rows, 208 kinds, 3 declared hybrids and 4 device classes derive exactly from its tables. Fourteen citations across three plan files were retargeted in the same commit as the swap, per the calculus's same-commit rule. Both adopting records were then refreshed to the editions they adopt: ADR-019 restates all seven adoption parameters and records that the checker implements the authorship warrant species only, ADR-020 names this repository as the registry's acceptee and recasts its extension register as the recorded extension set with located first-hand evidence, and a second kind-migration round settled two further tokens. |
-| `DI-003` | QUEUED | Re-engineer the labels checker to the calculus: a single participation scanner shared by every check (mints, citations, links, hygiene, inline-code discipline), owner signatures with registered prefixes, imported and synthetic citations, anchor harvests, and the kind registry as the checker's kind vocabulary. |
+| `DI-003` | ACTIVE | Re-engineer the labels checker to the calculus: a single participation scanner shared by every check (mints, citations, links, hygiene, inline-code discipline), owner signatures with registered prefixes, imported and synthetic citations, anchor harvests, and the kind registry as the checker's kind vocabulary. W1 landed the participation scanner; the remaining items are unstarted. |
 | `DI-004` | DONE | Adopt the identity-adjudication procedure against ADR-016: classify every existing digest through the benefit criterion with admission records, and MIGRATE the two grandfathered recipes to domain-separated forms per the user's ruling — the architecture semantic and anchor-set hashes change under a recorded recipe migration, superseding the ADR-016 grandfather clause. Both halves delivered: the migration, and a census of the whole tree read from the owning code, recorded as six admission records and eleven stop records in the identities register. |
 | `DI-005` | QUEUED | Interchange conventions: record adoption as the standing wire-format discipline for future externally consumed documents; no implementation until a consumer exists. |
 
@@ -1895,11 +1895,61 @@ no task yet owns; and the executor protocol's stop records the reasoning
 DI-005 will restate when the interchange conventions are adopted as the
 discipline for externally consumed documents.
 
+DI-003 opened with W1, the participation scanner. The survey found the
+judgment re-derived in six places: the Markdown scanner's own fence
+loop, a second fence loop in the plan-tree link check, and the
+double-backtick skip restated inline at each of the four span consumers
+in `packages/labels/src/repository.rs`. All six now consume one module,
+`packages/labels/src/participation.rs`, whose module documentation
+carries the survey as a table — decision site, the logic it used to
+carry, where it lives now — so a seventh recognizer has somewhere to be
+refused. The Rust comment-and-literal segmentation and the LaTeX comment
+strip moved into it as well, making it the single home of the
+scanned-region recognition ADR-019 fixes for all three concrete
+syntaxes.
+
+One genuine disagreement was found and resolved rather than preserved.
+The Realization harvest read its span list from the fence-aware scanner
+but computed the boundaries of the generated upward-citation index by
+walking the raw source, so a section heading displayed inside a fenced
+block could open that index region — and, because the region stayed open
+across the fence close, swallow the real body citation below it. The
+anchor set derives from body citations, so the effect was a body
+citation lost and the genuine index reported stale. The region walk now
+reads participating lines only. The resolution is what the calculus
+requires, since a displayed heading is not authored text and cannot
+partition a document; it is a deliberate behavior change, recorded here
+and reproduced by a test that fails with the fix reverted and passes
+with it in place. No occurrence of the pattern exists in the tree today,
+so no diagnostic moved.
+
+Behavior preservation was measured, not reviewed. A capture script,
+`scripts/capture-label-goldens.sh`, runs all four labels binaries over
+the whole tree with the argv the CI lanes use, writing each stream and
+exit status; the before and after captures are byte-identical once the
+tracing wall-clock field is normalized, which includes both generated
+registers reproduced whole at 17376 and 35384 bytes. The committed
+registers under `plans/labels/` are unchanged. The label census is
+identical across the refactor at 136 Layer-0, 329 realization, 129 ADR,
+307 model, 1206 planning and 6 documentation mints with 211 imported
+citations.
+
+Two classes of site were surveyed and deliberately left alone, both
+recorded in the scanner's module documentation. The forbidden-text audit
+is participation-blind by design — a banned token is banned inside a
+fence and inside a string literal too — so it keeps its whole-tree grep.
+And several plan-tree hygiene checks read raw text: the scaffolding,
+placeholder, confidence, deleted-path and machine-input markers, and the
+backlog's task-status agreement walk. Their subjects are not label
+occurrences, and rewiring them would change what they report, so they
+are recorded as participation-blind rather than quietly converted.
+
 ### 13.2 Checker findings so far · `tab:backlog:draft-findings`
 
 | ID | Status | Finding |
 |---|---|---|
-| `DI-F01` | DONE | The plans-tree link scanner read bracketed patterns inside fenced blocks as Markdown links, so a CDDL regex in an archived draft failed as a broken link. Fenced interiors are now blanked before link scanning; the systematic single-scanner repair remains DI-003. |
+| `DI-F01` | DONE | The plans-tree link scanner read bracketed patterns inside fenced blocks as Markdown links, so a CDDL regex in an archived draft failed as a broken link. Fenced interiors are now blanked before link scanning; the systematic single-scanner repair landed as DI-003 W1, which folded this blanking into the shared scanner. |
+| `DI-F02` | DONE | The Realization harvest computed the boundaries of the generated upward-citation index from the raw source while reading its spans from the fence-aware scanner. A section heading displayed inside a fenced block therefore opened the index region, which stayed open across the fence close and swallowed the body citation below it, losing an anchor and reporting the genuine index stale. The region walk now reads participating lines only. Found and resolved by DI-003 W1; no occurrence existed in the tree, so no diagnostic moved. |
 | `DI-F02` | ACTIVE | Participation is enforced inconsistently across checks: the label scanner honors fences, the link scanner did not, and the scaffolding, placeholder, and confidence hygiene checks still scan fenced material. One participation model must feed every check. |
 | `DI-F03` | ACTIVE | The calculus's owner signatures, imported-citation prefixes, synthetic citations, anchor harvests, and acute-delimiter hard failure are only partially realized in the present checker; the gap census of DI-001 owns the exact delta. |
 

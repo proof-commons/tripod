@@ -335,25 +335,12 @@ fn collect_directories(directory: &Path, directories: &mut Vec<PathBuf>) -> anyh
 
 /// The file's lines with fenced-block interiors and fence markers
 /// blanked, so line-oriented hygiene checks skip displayed material.
+///
+/// This is the shared participation scanner's line view; it used to be
+/// a second, independent fence loop that could drift from the one the
+/// label harvest uses.
 fn without_fenced_lines(text: &str) -> String {
-    let mut fence: Option<(char, usize)> = None;
-    let mut kept = Vec::new();
-    for raw in text.lines() {
-        if let Some((marker, length)) = fence {
-            if crate::markdown::fence_close(raw, marker, length) {
-                fence = None;
-            }
-            kept.push("");
-            continue;
-        }
-        if let Some(open) = crate::markdown::fence_open(raw) {
-            fence = Some(open);
-            kept.push("");
-            continue;
-        }
-        kept.push(raw);
-    }
-    kept.join("\n")
+    crate::participation::ProseParticipation::of(text).blanked(text)
 }
 
 /// Structure and hygiene checks for one Markdown file.
