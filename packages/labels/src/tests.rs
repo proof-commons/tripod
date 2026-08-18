@@ -11,7 +11,7 @@ use crate::{
     label::{Label, LabelParseError, LabelShape},
     latex::harvest_attestation,
     markdown::{InlineCodeContext, scan_markdown},
-    model_labels_json,
+    model_labels_json, nearmiss,
     owner::{ImportedLabel, LabelOwner},
     registry::LabelMint,
     repository::{
@@ -2529,5 +2529,137 @@ fn the_corpus_mints_no_ungoverned_kind() {
     assert!(
         offending.iter().all(|diagnostic| !diagnostic.is_error()),
         "no governed owner may mint an uncatalogued kind: {offending:#?}",
+    );
+}
+
+// ---------------------------------------------------------------------
+// Near-miss warnings.
+// ---------------------------------------------------------------------
+
+/// The three prose families, each classified as itself.
+#[test]
+fn prose_near_miss_families_are_recognized() {
+    assert_eq!(
+        nearmiss::classify("Def:Labels:Total-Resolution"),
+        Some(nearmiss::NearMiss::Casing),
+    );
+    assert_eq!(
+        nearmiss::classify("def: labels: total-resolution"),
+        Some(nearmiss::NearMiss::Spacing),
+    );
+    assert_eq!(
+        nearmiss::classify("(def:labels:total-resolution)"),
+        Some(nearmiss::NearMiss::Brackets),
+    );
+    assert_eq!(
+        nearmiss::classify("{[RZ-sec:realization:representation]}"),
+        Some(nearmiss::NearMiss::Brackets),
+    );
+}
+
+/// A near miss is never an occurrence, and ordinary text is never a
+/// near miss. The repairs are what separate the two: a form the grammar
+/// accepts is unchanged by every repair, so it can never pass a
+/// repaired test.
+#[test]
+fn occurrences_and_ordinary_text_are_not_near_misses() {
+    for content in [
+        // Occurrences of every shape the grammar accepts.
+        "def:labels:total-resolution",
+        "  def:labels:total-resolution  ",
+        "[A-def:model:classes]",
+        "[RZ-sec:realization:representation]",
+        // Text: colon-bearing spans whose first segment names no kind.
+        "12:30:45",
+        "Self::Bare",
+        "note: see below",
+        "UTF-8",
+        "--stamp",
+        // A three-segment shape whose kind is outside the vocabulary.
+        "zzz:labels:total-resolution",
+    ] {
+        assert_eq!(
+            nearmiss::classify(content),
+            None,
+            "{content:?} must not warn"
+        );
+    }
+}
+
+/// Displayed spans are silent: a near miss inside a fence, or in a
+/// double-backtick span, is shown rather than meant.
+#[test]
+fn displayed_near_misses_are_silent() {
+    let scan = scan_markdown(
+        Path::new("fixture.md"),
+        concat!(
+            "``Def:Labels:Shown``\n",
+            "```text\n",
+            "Def:Labels:Fenced\n",
+            "```\n",
+            "and `Def:Labels:Meant`\n",
+        ),
+    );
+    let mut diagnostics = Vec::new();
+    nearmiss::prose(&scan, &mut diagnostics);
+
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
+    assert_eq!(diagnostics[0].line, 5);
+    assert_eq!(diagnostics[0].code, LabelErrorCode::NearMissSpan);
+    assert!(!diagnostics[0].is_error());
+}
+
+/// In scanned comment text the acute carries the label syntax, so a
+/// label-shaped backtick span is a near miss. A fenced documentation
+/// example is displayed, and a string literal is not comment text; both
+/// stay silent.
+#[test]
+fn comment_backtick_spans_warn_where_the_acute_was_meant() {
+    let directory = tempfile::tempdir().expect("temporary repository");
+    let root = directory.path();
+    fs::create_dir_all(root.join("packages/model/src")).expect("fixture directory");
+    let path = root.join("packages/model/src/lib.rs");
+    fs::write(
+        &path,
+        concat!(
+            "//! A citation written with the wrong delimiter:\n",
+            "//! (`rem:overview:status-tags`).\n",
+            "/// ```text\n",
+            "/// `rem:overview:shown`\n",
+            "/// ```\n",
+            "pub const VALUE: &str = \"`rem:overview:literal`\";\n",
+        ),
+    )
+    .expect("fixture source");
+
+    let census = RepositoryCensus {
+        root: root.to_path_buf(),
+        model_sources: vec![path],
+        ..RepositoryCensus::default()
+    };
+    let harvest = harvest_model(&census);
+    let warnings: Vec<&LabelDiagnostic> = harvest
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == LabelErrorCode::NearMissSpan)
+        .collect();
+
+    assert_eq!(warnings.len(), 1, "{:#?}", harvest.diagnostics);
+    assert_eq!(warnings[0].line, 2);
+    assert!(!warnings[0].is_error());
+}
+
+/// The live tree's near misses are warnings, every one of them.
+#[test]
+fn live_tree_near_misses_never_fail_a_check() {
+    let census = RepositoryCensus::discover(repository_root());
+    let labels = RepositoryLabels::harvest_sources(&census);
+    assert!(
+        labels
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == LabelErrorCode::NearMissSpan)
+            .all(|diagnostic| !diagnostic.is_error()),
+        "a near miss must never fail a check",
     );
 }

@@ -95,6 +95,21 @@ fn imported_shaped(value: &str) -> bool {
     ImportedLabel::parse(value.trim()).is_ok()
 }
 
+/// Whether a value is an imported citation, with or without the square
+/// brackets that carry it. Both spellings are near misses where they
+/// appear: the brackets are the imported form's own, and their absence
+/// inside another bracket pair is a second slip, not a different one.
+fn import_shaped(value: &str) -> bool {
+    let value = value.trim();
+    if imported_shaped(value) {
+        return true;
+    }
+    value
+        .strip_prefix('[')
+        .and_then(|inner| inner.strip_suffix(']'))
+        .is_some_and(imported_shaped)
+}
+
 /// The interior of a bracketed value, for bracket pairs that are not
 /// the imported-citation form.
 ///
@@ -134,7 +149,7 @@ pub fn classify(content: &str) -> Option<NearMiss> {
         return Some(NearMiss::Spacing);
     }
     if let Some(interior) = wrapped(content)
-        && (label_shaped(interior) || imported_shaped(interior))
+        && (label_shaped(interior) || import_shaped(interior))
     {
         return Some(NearMiss::Brackets);
     }
@@ -202,12 +217,5 @@ pub fn comment(path: &Path, segment: &CommentSegment, diagnostics: &mut Vec<Labe
 /// or a square-bracketed imported citation. Both forms are written with
 /// acute delimiters in comment text, so both are near misses here.
 fn comment_label_shaped(interior: &str) -> bool {
-    let interior = interior.trim();
-    if label_shaped(interior) {
-        return true;
-    }
-    interior
-        .strip_prefix('[')
-        .and_then(|value| value.strip_suffix(']'))
-        .is_some_and(imported_shaped)
+    label_shaped(interior) || import_shaped(interior)
 }
