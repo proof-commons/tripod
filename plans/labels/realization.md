@@ -7,7 +7,7 @@
 
 | Plan citation | Owner-local label | Owning heading |
 |---|---|---|
-| ``[RZ-app:realization:architecture]`` | ``app:realization:architecture`` | Appendix — Typed architecture manifest |
+| ``[RZ-app:realization:architecture]`` | ``app:architecture`` | Appendix — Typed architecture manifest |
 | ``[RZ-def:representation:sponsor-erasure]`` | ``def:representation:sponsor-erasure`` | §10 Representation conformance and opacity |
 | ``[RZ-def:versioning:denotation-law]`` | ``def:versioning:denotation-law`` | §0.4 The versioning law |
 | ``[RZ-fig:architecture:cluster]`` | ``fig:architecture:cluster`` | §2 Architecture — the bound UTXO set |
@@ -187,6 +187,8 @@
 | ``[RZ-rule:translation:struct]`` | ``rule:translation:struct`` | §11 Translation discipline — model relation ⇒ tapscript |
 | ``[RZ-rule:translation:timelocks]`` | ``rule:translation:timelocks`` | §11 Translation discipline — model relation ⇒ tapscript |
 | ``[RZ-rule:versioning:decision]`` | ``rule:versioning:decision`` | §0.4 The versioning law |
+| ``[RZ-sec:realization:anchors]`` | ``sec:anchors`` | §17 Upward-citation index |
+| ``[RZ-sec:realization:architecture]`` | ``sec:architecture`` | §2 Architecture — the bound UTXO set |
 | ``[RZ-sec:architecture:authorities]`` | ``sec:architecture:authorities`` | §2.5 Authorities off state |
 | ``[RZ-sec:architecture:burn-ledger]`` | ``sec:architecture:burn-ledger`` | §2.8 Burn machinery: ash, records, and no accumulator |
 | ``[RZ-sec:architecture:deposit-pipe]`` | ``sec:architecture:deposit-pipe`` | §2.6 The deposit pipeline |
@@ -197,17 +199,22 @@
 | ``[RZ-sec:architecture:rate-not-materialized]`` | ``sec:architecture:rate-not-materialized`` | §2.9 The floor is never materialized |
 | ``[RZ-sec:architecture:soul-vault]`` | ``sec:architecture:soul-vault`` | §2.4 The pool: STATE and RESV, welded |
 | ``[RZ-sec:architecture:two-clocks]`` | ``sec:architecture:two-clocks`` | §2.10 Two clocks |
+| ``[RZ-sec:realization:arithmetic]`` | ``sec:arithmetic`` | §4 Domains and arithmetic |
 | ``[RZ-sec:arithmetic:domains]`` | ``sec:arithmetic:domains`` | §4.1 Newtypes and bounds |
 | ``[RZ-sec:arithmetic:gadgets]`` | ``sec:arithmetic:gadgets`` | §4.2 The four gadgets — witnessed division, and the sole explicit low-level how |
+| ``[RZ-sec:realization:authorization]`` | ``sec:authorization`` | §7 Authorization |
 | ``[RZ-sec:authorization:cadence]`` | ``sec:authorization:cadence`` | §7.1 The cadence band |
+| ``[RZ-sec:realization:identity]`` | ``sec:identity`` | §9 Recognition and identity |
 | ``[RZ-sec:identity:state-succession]`` | ``sec:identity:state-succession`` | §9.3 STATE reads are succession, never reference |
 | ``[RZ-sec:identity:structural-nonredeem]`` | ``sec:identity:structural-nonredeem`` | §9.2 Structural class asymmetry |
 | ``[RZ-sec:identity:three-keys]`` | ``sec:identity:three-keys`` | §9.1 Owner, recipient, and attestation address are distinct |
+| ``[RZ-sec:realization:invariant]`` | ``sec:invariant`` | §8 The global invariant 𝗜 — the conformance contract |
 | ``[RZ-sec:invariant:clauses]`` | ``sec:invariant:clauses`` | §8.1 State clauses |
 | ``[RZ-sec:invariant:corollaries]`` | ``sec:invariant:corollaries`` | §8.4 G1–G10 are corollaries |
 | ``[RZ-sec:invariant:genesis]`` | ``sec:invariant:genesis`` | §8.3 Genesis establishes 𝗜 |
 | ``[RZ-sec:invariant:terminals]`` | ``sec:invariant:terminals`` | §8.5 Conservative resting states |
 | ``[RZ-sec:invariant:transitions]`` | ``sec:invariant:transitions`` | §8.2 Transition lemmas |
+| ``[RZ-sec:realization:kernel]`` | ``sec:kernel`` | §5 The kernel and the transition certificate |
 | ``[RZ-sec:kernel:builder]`` | ``sec:kernel:builder`` | §5.1 Generic transaction construction |
 | ``[RZ-sec:kernel:canonical-partition]`` | ``sec:kernel:canonical-partition`` | §5.2 The exact canonical partition |
 | ``[RZ-sec:kernel:certificate]`` | ``sec:kernel:certificate`` | §5.4 The transition certificate and separable root edges |
@@ -216,15 +223,18 @@
 | ``[RZ-sec:kernel:recipient]`` | ``sec:kernel:recipient`` | §5.6 Recipient safety is not conservation |
 | ``[RZ-sec:kernel:replay]`` | ``sec:kernel:replay`` | §5.5 Full root-history replay |
 | ``[RZ-sec:kernel:sponsor-opacity]`` | ``sec:kernel:sponsor-opacity`` | §5.8 Sponsor-value opacity |
+| ``[RZ-sec:realization:ledger]`` | ``sec:ledger`` | §12 The off-chain attestation ledger and reader matrix |
 | ``[RZ-sec:ledger:authentication]`` | ``sec:ledger:authentication`` | §12.1 The dual-anchor gate |
 | ``[RZ-sec:ledger:convergence]`` | ``sec:ledger:convergence`` | §12.5 Demand-driven convergence |
 | ``[RZ-sec:ledger:model]`` | ``sec:ledger:model`` | §12.2 Three layers and a hash-bound checkpoint |
 | ``[RZ-sec:ledger:order]`` | ``sec:ledger:order`` | §12.3 Valuation and canonical event order |
 | ``[RZ-sec:ledger:reader-matrix]`` | ``sec:ledger:reader-matrix`` | §12.6 The quantity-reader firewall |
 | ``[RZ-sec:ledger:reorg]`` | ``sec:ledger:reorg`` | §12.4 Reorg sensitivity |
+| ``[RZ-sec:realization:manifest]`` | ``sec:manifest`` | §3 The manifest, and how to read it |
 | ``[RZ-sec:manifest:fields]`` | ``sec:manifest:fields`` | §3.1 Field semantics |
 | ``[RZ-sec:manifest:hash]`` | ``sec:manifest:hash`` | §3.3 Stable identifiers, the hash, the schemas, and the weld |
 | ``[RZ-sec:manifest:wellformed]`` | ``sec:manifest:wellformed`` | §3.2 Well-formedness and closure |
+| ``[RZ-sec:realization:operations]`` | ``sec:operations`` | §6 The operations |
 | ``[RZ-sec:operations:admit]`` | ``sec:operations:admit`` | §6.3 Admit deposits |
 | ``[RZ-sec:operations:announce]`` | ``sec:operations:announce`` | §6.12 Announce maturity |
 | ``[RZ-sec:operations:burn]`` | ``sec:operations:burn`` | §6.9 Burn live receipts |
@@ -238,13 +248,16 @@
 | ``[RZ-sec:operations:request]`` | ``sec:operations:request`` | §6.1 Create a deposit request |
 | ``[RZ-sec:operations:settle]`` | ``sec:operations:settle`` | §6.5 Settle a distribution |
 | ``[RZ-sec:operations:transfer]`` | ``sec:operations:transfer`` | §6.6 Transfer receipts |
+| ``[RZ-sec:realization:oracle]`` | ``sec:oracle`` | §13 The oracle — the conformance obligation |
 | ``[RZ-sec:oracle:boundary]`` | ``sec:oracle:boundary`` | §13.3 Boundary of the oracle |
 | ``[RZ-sec:oracle:obligations]`` | ``sec:oracle:obligations`` | §13.1 The nine obligations |
 | ``[RZ-sec:oracle:reductions-list]`` | ``sec:oracle:reductions-list`` | §13.2 Seeded reductions |
+| ``[RZ-sec:realization:overview]`` | ``sec:overview`` | §0 What this document is |
 | ``[RZ-sec:overview:contract]`` | ``sec:overview:contract`` | §0.2 The citation contract and the reading devices |
 | ``[RZ-sec:overview:neutrality]`` | ``sec:overview:neutrality`` | §0.3 The two neutralities |
 | ``[RZ-sec:overview:position]`` | ``sec:overview:position`` | §0.1 Position beside the specification; the one-directional rule |
 | ``[RZ-sec:overview:registers]`` | ``sec:overview:registers`` | §0.0 The four registers |
+| ``[RZ-sec:realization:pins]`` | ``sec:pins`` | §15 Build pins and code-generation obligations |
 | ``[RZ-sec:pins:arith-value]`` | ``sec:pins:arith-value`` | §15.1 Arithmetic and value pins |
 | ``[RZ-sec:pins:burn]`` | ``sec:pins:burn`` | §15.5 Burn, ASH, clearing, and class pins |
 | ``[RZ-sec:pins:codegen]`` | ``sec:pins:codegen`` | §15.9 Code-generation checklist |
@@ -254,30 +267,17 @@
 | ``[RZ-sec:pins:maturity]`` | ``sec:pins:maturity`` | §15.6 Maturity, clock, and companion pins |
 | ``[RZ-sec:pins:representation]`` | ``sec:pins:representation`` | §15.8 Representation and disclosure pins |
 | ``[RZ-sec:pins:terminal]`` | ``sec:pins:terminal`` | §15.4 Terminal, distribution, and permissionless-path pins |
-| ``[RZ-sec:realization:anchors]`` | ``sec:realization:anchors`` | §17 Upward-citation index |
-| ``[RZ-sec:realization:architecture]`` | ``sec:realization:architecture`` | §2 Architecture — the bound UTXO set |
-| ``[RZ-sec:realization:arithmetic]`` | ``sec:realization:arithmetic`` | §4 Domains and arithmetic |
-| ``[RZ-sec:realization:authorization]`` | ``sec:realization:authorization`` | §7 Authorization |
-| ``[RZ-sec:realization:identity]`` | ``sec:realization:identity`` | §9 Recognition and identity |
-| ``[RZ-sec:realization:invariant]`` | ``sec:realization:invariant`` | §8 The global invariant 𝗜 — the conformance contract |
-| ``[RZ-sec:realization:kernel]`` | ``sec:realization:kernel`` | §5 The kernel and the transition certificate |
-| ``[RZ-sec:realization:ledger]`` | ``sec:realization:ledger`` | §12 The off-chain attestation ledger and reader matrix |
-| ``[RZ-sec:realization:manifest]`` | ``sec:realization:manifest`` | §3 The manifest, and how to read it |
-| ``[RZ-sec:realization:operations]`` | ``sec:realization:operations`` | §6 The operations |
-| ``[RZ-sec:realization:oracle]`` | ``sec:realization:oracle`` | §13 The oracle — the conformance obligation |
-| ``[RZ-sec:realization:overview]`` | ``sec:realization:overview`` | §0 What this document is |
-| ``[RZ-sec:realization:pins]`` | ``sec:realization:pins`` | §15 Build pins and code-generation obligations |
-| ``[RZ-sec:realization:representation]`` | ``sec:realization:representation`` | §10 Representation conformance and opacity |
-| ``[RZ-sec:realization:requirements]`` | ``sec:realization:requirements`` | §1 What the covenant must guarantee |
-| ``[RZ-sec:realization:reviewer]`` | ``sec:realization:reviewer`` | §16 Reviewer's guide |
-| ``[RZ-sec:realization:translation]`` | ``sec:realization:translation`` | §11 Translation discipline — model relation ⇒ tapscript |
-| ``[RZ-sec:realization:trust]`` | ``sec:realization:trust`` | §14 Trust surface, residuals, dependencies, and decisions |
-| ``[RZ-sec:realization:versioning]`` | ``sec:realization:versioning`` | §0.4 The versioning law |
+| ``[RZ-sec:realization:representation]`` | ``sec:representation`` | §10 Representation conformance and opacity |
+| ``[RZ-sec:realization:requirements]`` | ``sec:requirements`` | §1 What the covenant must guarantee |
 | ``[RZ-sec:requirements:discharge-map]`` | ``sec:requirements:discharge-map`` | §1.1 The I₀ discharge map |
+| ``[RZ-sec:realization:reviewer]`` | ``sec:reviewer`` | §16 Reviewer's guide |
+| ``[RZ-sec:realization:translation]`` | ``sec:translation`` | §11 Translation discipline — model relation ⇒ tapscript |
+| ``[RZ-sec:realization:trust]`` | ``sec:trust`` | §14 Trust surface, residuals, dependencies, and decisions |
 | ``[RZ-sec:trust:decisions]`` | ``sec:trust:decisions`` | §14.3 Closed architecture decisions |
 | ``[RZ-sec:trust:out-of-scope]`` | ``sec:trust:out-of-scope`` | §14.4 Out of scope |
 | ``[RZ-sec:trust:residuals]`` | ``sec:trust:residuals`` | §14.1 Named residuals |
 | ``[RZ-sec:trust:verify]`` | ``sec:trust:verify`` | §14.2 Deployment verification surface |
+| ``[RZ-sec:realization:versioning]`` | ``sec:versioning`` | §0.4 The versioning law |
 | ``[RZ-tab:anchors:index]`` | ``tab:anchors:index`` | §17 Upward-citation index |
 | ``[RZ-tab:authorization:band]`` | ``tab:authorization:band`` | §7.1 The cadence band |
 | ``[RZ-tab:codegen:checklist]`` | ``tab:codegen:checklist`` | §15.9 Code-generation checklist |
