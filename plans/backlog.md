@@ -2018,6 +2018,42 @@ empty by decision; Layer-0 kind scope waits on the motto, invest, and
 abs adjudication, entering with that surface; and the interchange
 conventions stay dormant until a consumer exists, which is DI-005.
 
+The acute code syntax now classifies as the calculus fixes it. The
+harvester had paired acutes blindly, one comment line at a time, so
+every acute opened: a lone one used as an apostrophe failed the file
+and a pair swallowed the prose between into a bogus label. Pairing is
+now settled over the logical comment region, an acute opens only where
+label-shaped text follows, and one that opens nothing stays text, while
+an opener whose region ends first still fails hard. No rule anywhere
+banned the acute in Rust sources — the forbidden-text audit knows one
+token and it is not this — so nothing needed repealing. Both syntaxes
+are readable in comments during the migration: the acute participates,
+the backtick spelling only warns, and the sweep of the 198 warned sites
+follows. Goldens over the tree are byte-identical.
+
+That sweep is done: all 198 warned spans are gone. 196 became live
+imported citations, each carrying the registered prefix of the owner
+that mints the label — PLAN for the Guide-10 rules, R13, PA, and
+numbered ADRs elsewhere — and imported citations rose by exactly 196,
+from 211 to 407. Conformance held 132, tapscript 23, architecture 12,
+target-elements 11. Nothing was minted to make a citation resolve: no
+crate mints a label, so every reference was owed elsewhere. Two sites
+quote a label's spelling rather than cite it, in the guard-listing
+weld that parses the document for it; both are double-backtick spans,
+shown rather than meant. Groups that straddled a line were brought
+onto one, a group being read within its own line. The generated
+registers regenerate unchanged, so no anchor set moved.
+
+W3 closed the batch with head validation: each head's name is now held
+to the kind its label declares, over the decision records and the
+authored planning tree. The recognizer finds exactly the 146 heads the
+hand reading counted — 4 authored here, 142 in the archive it does not
+judge — and all validate by an exact pair, so no head or label moved.
+Reduction implements the sub- prefix and the catalogued modifiers only;
+the other devices are unimplemented and untriggered, so a numbered or
+lettered head fails until they are. The three waves: acute
+classification, the 196-site sweep, head validation.
+
 ### 13.2 Checker findings so far · `tab:backlog:draft-findings`
 
 | ID | Status | Finding |

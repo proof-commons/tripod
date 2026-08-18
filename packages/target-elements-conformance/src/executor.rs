@@ -15,7 +15,7 @@
 //! as a typed error carrying a fixed message, the protocol phase, the
 //! child's exit status, and the safe typed case identity — never the
 //! executor's path, its argv, or its output
-//! (`[ADR010-rule:output:data-classification]`).
+//! `(´[ADR010-rule:output:data-classification]´)`.
 //!
 //! There is no argument passthrough. The harness passes the executor no
 //! arguments at all, which is also why no credential can travel through
@@ -81,7 +81,7 @@ use crate::prototype::{CompoundPrototypeFixture, PrototypeCaseId};
 /// primitive census and a compound-prototype matrix are different
 /// questions with different case identities, and a run that could carry
 /// both would produce a transcript whose rows a report could not tell
-/// apart (Guide-10 `rule:guide10:compound-fixture`).
+/// apart `(´[PLAN-rule:guide10:compound-fixture]´)`.
 #[derive(Clone, Copy, Debug)]
 pub enum NativeWorkload<'a> {
     /// The canonical primitive census.
@@ -532,7 +532,7 @@ pub fn execute(
 /// asked whether it reads prototype fixtures before any case is sent,
 /// so an executor that does not is a declined workload rather than a
 /// stream of messages it cannot parse
-/// (Guide-10 `rule:guide10:schema-migration`).
+/// `(´[PLAN-rule:guide10:schema-migration]´)`.
 ///
 /// # Errors
 ///
@@ -650,7 +650,7 @@ fn run_protocol(
     // fails as a handshake failure, always: it is the phase that did not
     // happen that names the failure, and the exit status is what the run
     // reports about a child that *did* speak
-    // (Guide-10 `rule:guide10:protocol-handshake`).
+    // (´[PLAN-rule:guide10:protocol-handshake]´).
     let _handshake_write = write_message(
         &mut stdin,
         &HandshakeRequest::default(),
@@ -1135,7 +1135,7 @@ mod tests {
     /// provoke it under load: the write fails outright and the reader is
     /// already at end of stream, which is exactly what the harness sees
     /// when the child wins the race. The phase that did not happen names
-    /// the failure (Guide-10 `rule:guide10:protocol-handshake`).
+    /// the failure `(´[PLAN-rule:guide10:protocol-handshake]´)`.
     #[test]
     fn a_broken_handshake_write_is_still_a_handshake_failure() {
         let target = reviewed_elements_tapscript().expect("the reviewed contract validates");

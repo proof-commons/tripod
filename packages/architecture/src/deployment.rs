@@ -21,7 +21,7 @@
 //! transaction ABI and configuration its calibrations were measured
 //! under. [`validate_production_deployment_release`] is where that
 //! second question is asked, and under this schema it refuses every
-//! profile (Guide-10 `rule:guide10:profile-state`).
+//! profile `(´[PLAN-rule:guide10:profile-state]´)`.
 //!
 //! This is a trust-state correction, not a deployment feature: no
 //! deployment release is constructed here, and none can be until a
@@ -378,7 +378,7 @@ fn is_zero(hash: &[u8; 32]) -> bool {
 /// transaction shape. That is a limit of the schema rather than of any
 /// profile, which is why the production question is asked separately by
 /// [`validate_production_deployment_release`] and answered there
-/// (Guide-10 `rule:guide10:profile-state`).
+/// `(´[PLAN-rule:guide10:profile-state]´)`.
 pub fn validate_deployment_profile_structure(
     architecture: &Architecture,
     profile: &DeploymentProfile,

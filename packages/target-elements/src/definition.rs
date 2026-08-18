@@ -64,7 +64,7 @@ impl TargetContractVersion {
     /// # What moved
     ///
     /// Two things, either of which alone would have required the bump
-    /// (Guide-10 `rule:guide10:target-version`).
+    /// `(´[PLAN-rule:guide10:target-version]´)`.
     ///
     /// The reviewed primitive census expanded by the compound-proof
     /// substrate: the ordinary stack operations, byte equality and its

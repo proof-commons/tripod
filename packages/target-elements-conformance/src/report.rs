@@ -66,7 +66,7 @@ pub const NATIVE_REPORT_SCHEMA: u32 = 2;
 /// Which prototype census one report answers for.
 ///
 /// A report may carry several roles only if each has its own exact case
-/// and claim census (Guide-10 `rule:guide10:report-roles`). No report
+/// and claim census `(´[PLAN-rule:guide10:report-roles]´)`. No report
 /// this crate writes carries two: a primitive report answers the
 /// primitive role, and each prototype report answers exactly one
 /// relation, because the two matrices have separate case identities and

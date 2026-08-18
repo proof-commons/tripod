@@ -44,6 +44,9 @@ pub enum LabelErrorCode {
     /// The checker's committed kind vocabulary disagrees with the
     /// document it was extracted from.
     KindVocabularyDrift,
+    /// An environment head declares a kind the effective relation does
+    /// not pair with the head's own name, directly or by reduction.
+    UncataloguedHeadPair,
     /// A Cargo package carries no registered owner prefix, or a
     /// registration names no package.
     UnregisteredOwner,

@@ -10,7 +10,7 @@
 //! # Declassification
 //!
 //! Implements the derivation demanded by `sec:representation` and O9
-//! (`obl:oracle:disclosure`): each operation's declassification set
+//! `(´[RZ-obl:oracle:disclosure]´)`: each operation's declassification set
 //! D_o is **derived from the manifest's transition read-sets, never
 //! authored**. The manifest is welded to the model bidirectionally
 //! (O4), so a fact enters D_o only because the transition actually
@@ -30,7 +30,7 @@
 //!   value disclosure.
 //!
 //! **Lateral deltas are deliberately absent**: lateral owner-to-owner
-//! movement is the private membrane (`trap:representation:two-axes`).
+//! movement is the private membrane `(´[RZ-trap:representation:two-axes]´)`.
 //! Transfer, relabel, and compact-ash therefore declassify nothing;
 //! burn declassifies its record and event (the fresh-ASH aggregate),
 //! not source denominations; redeem declassifies its reads and its

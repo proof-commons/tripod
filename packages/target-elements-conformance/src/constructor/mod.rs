@@ -7,8 +7,8 @@
 //! those exact values, and it must not be the thing under test: an
 //! expectation produced by the target program builder would agree with
 //! the target program builder however wrong both were
-//! (Guide-10 `rule:guide10:independent-oracles`,
-//! `rule:guide10:constructor-host`).
+//! `(´[PLAN-rule:guide10:independent-oracles]´)` and
+//! `(´[PLAN-rule:guide10:constructor-host]´)`.
 //!
 //! So this is a second implementation, written from the target's own
 //! source with the provenance recorded beside each constant, using this
@@ -24,7 +24,7 @@
 //! is stated so that it can be read against the upstream functional
 //! framework's construction. A target-native spend verdict is the third
 //! opinion, and it belongs to a run rather than to this module
-//! (Guide-10 `rule:guide10:constructor-oracle`).
+//! `(´[PLAN-rule:guide10:constructor-oracle]´)`.
 //!
 //! # No secret material, at any point
 //!
@@ -32,7 +32,7 @@
 //! The internal key is a published point with no known private scalar,
 //! the tweak is a hash of public data, and the arithmetic is public
 //! point arithmetic. There is no signing here and none may be added
-//! (Guide-10 `rule:guide10:public-data`).
+//! `(´[PLAN-rule:guide10:public-data]´)`.
 
 pub mod canonical;
 pub mod curve;

@@ -9,7 +9,7 @@ use crate::wide_floor::normalizer::{limbs_of, staged_product, staged_quotient_si
 use crate::wide_floor::oracle::{AmountLimbs, WideFloorDefect, WideFloorInstance};
 
 /// The boundary values Guide 10 requires every fixed vector to include
-/// (`tab:guide10:wide-floor-threats`).
+/// `(´[PLAN-tab:guide10:wide-floor-threats]´)`.
 fn boundary_values() -> Vec<u64> {
     vec![
         0,

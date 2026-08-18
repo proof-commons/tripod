@@ -7,7 +7,7 @@
 //! evaluation by checking that exactly one true item remains, and an
 //! initial witness item survives an empty script untouched. A leaf
 //! carrying no script is spendable by anybody who supplies a true
-//! witness item (Guide-10 `rule:guide10:metadata-unspendable`).
+//! witness item `(´[PLAN-rule:guide10:metadata-unspendable]´)`.
 //!
 //! So the leaf carries a script whose every execution ends in an abort,
 //! whatever the witness was.

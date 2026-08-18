@@ -1,4 +1,5 @@
-//! The versioning gate (`pin:pins:denotation` / `rule:versioning:decision`).
+//! The versioning gates `(´[RZ-pin:pins:denotation]´)` /
+//! `(´[RZ-rule:versioning:decision]´)`.
 //!
 //! Two gates enforce the versioning law mechanically.
 //!
@@ -30,8 +31,8 @@
 //! - `sha256-canonical-json-behavioural-v1` (retired): hashed the
 //!   full `BoundExport` rows, so a calibrated bound's draft
 //!   `default_value` moved the hash, contradicting
-//!   `def:versioning:denotation-law`. Pinned release value on the
-//!   schema-17 tree:
+//!   `(´[RZ-def:versioning:denotation-law]´)`. Pinned release value on
+//!   the schema-17 tree:
 //!   `fef2149d90c05a2790b41f73bba72ab4a088bf9912db03b0b497aa2ed34fff18`.
 //! - `sha256-canonical-json-behavioural-v2` (retired): projected
 //!   calibrated draft defaults out of the bound rows, but still hashed

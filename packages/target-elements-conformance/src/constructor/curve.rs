@@ -5,7 +5,7 @@
 //! Nothing here holds, derives, accepts, or produces a secret scalar.
 //! The only scalar this module multiplies by is a taproot tweak, which
 //! is a hash of public data that anybody verifying the output recomputes
-//! (Guide-10 `rule:guide10:public-data`). There is no key generation, no
+//! `(´[PLAN-rule:guide10:public-data]´)`. There is no key generation, no
 //! signing, and no nonce.
 //!
 //! That is also why the implementation is deliberately unhurried and
@@ -17,7 +17,7 @@
 //! # Why first-party rather than a curve library
 //!
 //! The oracle exists to be *independent* of the implementation it
-//! checks (Guide-10 `rule:guide10:independent-oracles`). It is written
+//! checks `(´[PLAN-rule:guide10:independent-oracles]´)`. It is written
 //! from the published curve parameters and the standard affine
 //! formulas, using only arithmetic the workspace already carries. A
 //! library shared with the thing under test would weaken exactly the
@@ -154,7 +154,7 @@ pub fn generator() -> AffinePoint {
 /// Zero and anything at or above the group order are not. The target's
 /// tweak rules reject exactly those, so a construction that produced
 /// one has no output key rather than a wrapped one
-/// (Guide-10 `rule:guide10:tweak-totality`).
+/// `(´[PLAN-rule:guide10:tweak-totality]´)`.
 #[must_use]
 pub fn is_valid_scalar(scalar: &[u8; FIELD_ELEMENT_BYTES]) -> bool {
     let value = BigUint::from_bytes_be(scalar);

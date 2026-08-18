@@ -1624,7 +1624,7 @@ fn curve_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
         // (`src/script/interpreter.cpp:2206-2220`). Declaring it as one
         // exact encoding refused the digest a program actually derives
         // there, which the target accepts
-        // (Guide-10 `rule:guide10:tweak-totality`).
+        // (´[PLAN-rule:guide10:tweak-totality]´).
         spec(
             O::TweakVerify,
             0xe4,
@@ -1888,7 +1888,7 @@ fn rearranging(operands: usize, consumed_operands: usize, results: &[usize]) -> 
 /// constrains nothing and each result names the position it came from,
 /// so a fixed-width integer stays a fixed-width integer across a swap
 /// instead of being widened to an anonymous byte string
-/// (Guide-10 `rule:guide10:primitive-admission`).
+/// `(´[PLAN-rule:guide10:primitive-admission]´)`.
 fn stack_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
     use crate::evidence::TargetEvidenceRequirementId as R;
     use OpcodeId as O;

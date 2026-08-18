@@ -7,7 +7,7 @@
 //! they agree. A mismatch is a finding to triage against its four
 //! possible owners — the fixture, the adapter, the prototype program, or
 //! the target — and never a reason to adopt the observation as the new
-//! expectation (Guide-10 `rule:guide10:compare-verdict`).
+//! expectation `(´[PLAN-rule:guide10:compare-verdict]´)`.
 //!
 //! # What a compound fixture does and does not fix
 //!
@@ -18,13 +18,13 @@
 //! an observation worth recording and not a requirement worth failing an
 //! honest executor over. The observed class is therefore carried into
 //! every row and compared against nothing
-//! (Guide-10 `rule:guide10:compare-failure`).
+//! `(´[PLAN-rule:guide10:compare-failure]´)`.
 //!
 //! The stacks are the same story from the other side. A validating node
 //! exposes no interpreter stack, so both prototype programs reduce their
 //! expected intermediate state to one final truth item and let the
-//! consensus verdict carry the shape — which is the route
-//! Guide-10 `rule:guide10:compare-stack` admits for exactly this case.
+//! consensus verdict carry the shape — which is the route Guide-10
+//! admits for exactly this case `(´[PLAN-rule:guide10:compare-stack]´)`.
 //! Where an executor does report a stack it is recorded; nothing here
 //! invents an expectation to compare it against.
 //!
@@ -34,7 +34,7 @@
 //! ([`crate::prototype::PrototypeClaim`]). A claim passes only when a
 //! case bearing on it passed and none bearing on it failed, and a claim
 //! no case bears on is recorded with its reason rather than absorbed
-//! (Guide-10 `rule:guide10:claim-result`).
+//! `(´[PLAN-rule:guide10:claim-result]´)`.
 //!
 //! # The gate is not the report
 //!
@@ -139,7 +139,7 @@ pub fn evaluate_prototypes(
         // what makes the report's rows answerable: an incoherent row
         // could be satisfied by a transaction other than the one it
         // means, and an executor's agreement with it would establish
-        // nothing (Guide-10 `rule:guide10:fixture-validation`).
+        // nothing (´[PLAN-rule:guide10:fixture-validation]´).
         if let Some(defect) = fixture.defect(target) {
             return Err(NativeConformanceError::IncoherentPrototypeFixture {
                 case: fixture.case.clone(),

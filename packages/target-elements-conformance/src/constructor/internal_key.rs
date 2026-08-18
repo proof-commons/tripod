@@ -8,7 +8,7 @@
 //! claim: not an operator key, not a release key, not a test signing
 //! key, not a generated-and-discarded key, and not a deployment
 //! parameter anybody can change
-//! (Guide-10 `rule:guide10:internal-key`).
+//! `(´[PLAN-rule:guide10:internal-key]´)`.
 //!
 //! # What is claimed, and what is not
 //!

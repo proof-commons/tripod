@@ -8,11 +8,13 @@ use petgraph::Direction;
 use crate::{
     LabelDiagnostic, LabelErrorCode, adoption, attestation, attestation_base,
     census::{CensusGroup, RepositoryCensus},
+    heads,
     label::{Label, LabelParseError, LabelShape},
     latex::harvest_attestation,
     markdown::{InlineCodeContext, scan_markdown},
     model_labels_json, nearmiss,
     owner::{ImportedLabel, LabelOwner},
+    participation,
     registry::LabelMint,
     repository::{
         CitationClass, LabelGraphEdge, LabelGraphNode, RepositoryLabels, generate_registers,
@@ -2298,6 +2300,82 @@ fn vocabulary_drift_fails_loudly_and_names_both_sides() {
     );
 }
 
+/// The committed pair table is pinned to the archived draft, name column
+/// and kind column together. The kind table alone cannot say which name
+/// a kind belongs to, which is the whole of what head validation asks.
+#[test]
+fn committed_registry_pairs_match_the_archived_draft() {
+    let text = fs::read_to_string(repository_root().join(adoption::REGISTRY_SOURCE))
+        .expect("the archived kind registry is readable");
+    let parsed = adoption::parse_registry_pairs(&text);
+    let committed: std::collections::BTreeSet<(String, String)> = adoption::REGISTRY_PAIRS
+        .iter()
+        .map(|(name, kind)| ((*name).to_owned(), (*kind).to_owned()))
+        .collect();
+    assert_eq!(
+        parsed, committed,
+        "the committed pair table must equal the draft's Convention rows",
+    );
+    // The edition in force reports 349 rows over 333 names, which the
+    // extraction must reproduce once the daggers are off the names.
+    assert_eq!(parsed.len(), 349, "the adopted edition carries 349 rows");
+    let names: std::collections::BTreeSet<&String> = parsed.iter().map(|(name, _)| name).collect();
+    assert_eq!(names.len(), 333, "the adopted edition carries 333 names");
+}
+
+/// The committed extension pairs are pinned to the adopting record.
+#[test]
+fn committed_extension_pairs_match_the_adopting_record() {
+    let text = fs::read_to_string(repository_root().join(adoption::EXTENSION_SOURCE))
+        .expect("the adopting record is readable");
+    let parsed = adoption::parse_extension_pairs(&text);
+    let committed: std::collections::BTreeSet<(String, String)> = adoption::EXTENSION_PAIRS
+        .iter()
+        .map(|(name, kind)| ((*name).to_owned(), (*kind).to_owned()))
+        .collect();
+    assert_eq!(
+        parsed, committed,
+        "the committed extension pairs must equal the record's table",
+    );
+}
+
+/// Pair drift is reported in both directions, naming the pair each side
+/// carries alone — a kind that moved to another name is drift the kind
+/// table cannot see, since its token set never changed.
+#[test]
+fn pair_drift_fails_loudly_and_names_both_sides() {
+    let directory = tempfile::tempdir().expect("temporary repository");
+    let root = directory.path();
+    fs::create_dir_all(root.join("plans/drafts")).expect("drafts directory");
+    fs::write(
+        root.join(adoption::REGISTRY_SOURCE),
+        concat!(
+            "**Convention (Doctored)**\n\n",
+            "| Environment | Kind |\n",
+            "| --- | --- |\n",
+            "| Theorem | `tab` |\n",
+        ),
+    )
+    .expect("doctored registry");
+
+    let drift = adoption::verify_vocabulary_sources(root)
+        .into_iter()
+        .find(|diagnostic| diagnostic.message.contains("name-and-kind pairs"))
+        .expect("a doctored pair table is drift");
+    assert!(drift.is_error(), "drift must fail, never warn");
+    assert_eq!(drift.code, LabelErrorCode::KindVocabularyDrift);
+    assert!(
+        drift.message.contains("Theorem = tab"),
+        "the pair the document carries must be named: {}",
+        drift.message,
+    );
+    assert!(
+        drift.message.contains("Theorem = thm"),
+        "the pair the checker carries alone must be named: {}",
+        drift.message,
+    );
+}
+
 /// An absent source is not drift: the synthetic fixture repositories of
 /// this suite carry neither document, and their absence must not be read
 /// as a vocabulary that shrank to nothing.
@@ -2807,6 +2885,192 @@ fn comment_backtick_spans_warn_where_the_acute_was_meant() {
     assert!(!warnings[0].is_error());
 }
 
+// The acute span model: in scanned code text the acute belongs to the
+// label syntax and classifies locally. It opens exactly when
+// label-shaped text follows it; an opening acute unclosed when its
+// region ends is a hard failure; an acute that opens nothing is text.
+
+/// All three occurrence forms parse in the acute syntax, feeding the
+/// same registry and citation list the prose syntax feeds.
+#[test]
+fn the_three_acute_forms_mint_and_cite() {
+    let harvest = rust_fixture_harvest(concat!(
+        "// \u{b4}def:fixture:minted\u{b4}\n",
+        "// see (\u{b4}def:fixture:minted\u{b4})\n",
+        "// and (\u{b4}[RZ-sec:realization:overview]\u{b4})\n",
+    ));
+
+    assert!(
+        harvest
+            .registry
+            .contains(&Label::parse("def:fixture:minted", LabelShape::Model).expect("valid label")),
+        "{:#?}",
+        harvest.diagnostics,
+    );
+    assert_eq!(harvest.citations.len(), 2, "{:#?}", harvest.citations);
+    assert!(harvest.diagnostics.is_empty(), "{:#?}", harvest.diagnostics);
+}
+
+/// An opening acute whose region ends before it closes is a hard
+/// failure, reported at the opening delimiter.
+#[test]
+fn an_unclosed_opening_acute_fails_at_its_delimiter() {
+    let harvest = rust_fixture_harvest(concat!(
+        "// intact \u{b4}def:fixture:closed\u{b4}\n",
+        "// broken \u{b4}def:fixture:dangling\n",
+    ));
+
+    let unclosed: Vec<_> = harvest
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == LabelErrorCode::UnclosedInlineCode)
+        .collect();
+    assert_eq!(unclosed.len(), 1, "{:#?}", harvest.diagnostics);
+    assert_eq!(unclosed[0].line, 2);
+    assert_eq!(unclosed[0].column, 11);
+    assert!(unclosed[0].is_error());
+    // The label the opener declared is not minted: an opening acute is
+    // an intent that failed, never a silent mint.
+    assert!(
+        !harvest.registry.contains(
+            &Label::parse("def:fixture:dangling", LabelShape::Model).expect("valid label")
+        )
+    );
+}
+
+/// An acute that opens nothing is ordinary text. A lone one is an
+/// apostrophe accident and a pair of them must not swallow the prose
+/// between into a label.
+#[test]
+fn acutes_that_open_nothing_are_silent_text() {
+    let harvest = rust_fixture_harvest(concat!(
+        "// it\u{b4}s a plain remark\n",
+        "// don\u{b4}t let this and it\u{b4}s partner pair up\n",
+        "// \u{b4}def:fixture:real\u{b4} still mints\n",
+    ));
+
+    assert!(
+        harvest
+            .registry
+            .contains(&Label::parse("def:fixture:real", LabelShape::Model).expect("valid label")),
+        "{:#?}",
+        harvest.diagnostics,
+    );
+    assert!(harvest.diagnostics.is_empty(), "{:#?}", harvest.diagnostics);
+}
+
+/// A label-shaped interior opens even when it resolves to nothing, so a
+/// misspelled kind is still diagnosed rather than demoted to text.
+#[test]
+fn a_label_shaped_interior_opens_and_is_diagnosed() {
+    let harvest = rust_fixture_harvest("// \u{b4}nosuch:fixture:kind\u{b4}\n");
+
+    assert!(
+        harvest
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == LabelErrorCode::InvalidLabel),
+        "{:#?}",
+        harvest.diagnostics,
+    );
+}
+
+/// A candidate interior that crosses a line break is not label-shaped,
+/// so the acute opens nothing: two lines never fabricate one label.
+#[test]
+fn an_acute_span_never_crosses_a_line_break() {
+    let harvest = rust_fixture_harvest(concat!(
+        "// \u{b4}def:fixture:split\n",
+        "// tail\u{b4} of the region\n",
+    ));
+
+    assert!(
+        !harvest
+            .registry
+            .contains(&Label::parse("def:fixture:split", LabelShape::Model).expect("valid label"))
+    );
+    // The candidate interior runs to the next acute and so carries the
+    // line break: it is not label-shaped, the acute opens nothing, and
+    // the whole thing is text. Neither acute is an unclosed opener.
+    assert!(harvest.diagnostics.is_empty(), "{:#?}", harvest.diagnostics);
+}
+
+/// String literals and fenced documentation examples are not scanned
+/// code text, so an acute occurrence in either is displayed.
+#[test]
+fn acutes_outside_scanned_comment_text_are_displayed() {
+    let harvest = rust_fixture_harvest(concat!(
+        "/// ```text\n",
+        "/// \u{b4}def:fixture:fenced\u{b4}\n",
+        "/// ```\n",
+        "pub const V: &str = \"\u{b4}def:fixture:literal\u{b4}\";\n",
+        "// \u{b4}def:fixture:scanned\u{b4}\n",
+    ));
+
+    let minted: Vec<_> = harvest.registry.labels().map(ToString::to_string).collect();
+    assert_eq!(
+        minted,
+        vec!["def:fixture:scanned".to_owned()],
+        "{:#?}",
+        harvest.diagnostics,
+    );
+    assert!(harvest.diagnostics.is_empty(), "{:#?}", harvest.diagnostics);
+}
+
+/// Both concrete syntaxes may appear in one comment region during the
+/// migration: the acute occurrence is the participating one, and the
+/// backtick spelling of the same label is a near-miss warning that
+/// mints nothing and fails nothing.
+#[test]
+fn a_mixed_syntax_region_harvests_the_acute_and_warns_on_the_backtick() {
+    let harvest = rust_fixture_harvest(concat!(
+        "//! \u{b4}def:fixture:shared\u{b4}\n",
+        "//! cited here (\u{b4}def:fixture:shared\u{b4})\n",
+        "//! and mis-delimited here `def:fixture:shared`\n",
+    ));
+
+    assert!(
+        harvest
+            .registry
+            .contains(&Label::parse("def:fixture:shared", LabelShape::Model).expect("valid label")),
+        "{:#?}",
+        harvest.diagnostics,
+    );
+    assert_eq!(harvest.citations.len(), 1, "{:#?}", harvest.citations);
+    let warnings: Vec<_> = harvest
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == LabelErrorCode::NearMissSpan)
+        .collect();
+    assert_eq!(warnings.len(), 1, "{:#?}", harvest.diagnostics);
+    assert_eq!(warnings[0].line, 3);
+    assert!(!warnings[0].is_error());
+    assert!(
+        harvest
+            .diagnostics
+            .iter()
+            .all(|diagnostic| !diagnostic.is_error()),
+        "{:#?}",
+        harvest.diagnostics,
+    );
+}
+
+/// The opening test is a lexical silhouette, not a resolution.
+#[test]
+fn label_shaped_text_admits_labels_and_imports_only() {
+    assert!(participation::label_shaped_text("def:fixture:name"));
+    assert!(participation::label_shaped_text(
+        "[RZ-sec:realization:overview]"
+    ));
+    assert!(participation::label_shaped_text("nosuch:fixture:kind"));
+    assert!(!participation::label_shaped_text(""));
+    assert!(!participation::label_shaped_text("t"));
+    assert!(!participation::label_shaped_text("s a plain remark"));
+    assert!(!participation::label_shaped_text("def:fixture with space"));
+    assert!(!participation::label_shaped_text("no-colon-here"));
+    assert!(!participation::label_shaped_text("def:fixture:name\nnext"));
+}
+
 /// The live tree's near misses are warnings, every one of them.
 #[test]
 fn live_tree_near_misses_never_fail_a_check() {
@@ -2819,5 +3083,180 @@ fn live_tree_near_misses_never_fail_a_check() {
             .filter(|diagnostic| diagnostic.code == LabelErrorCode::NearMissSpan)
             .all(|diagnostic| !diagnostic.is_error()),
         "a near miss must never fail a check",
+    );
+}
+
+// ---------------------------------------------------------------------
+// Head validation: a head's name against the kind its label declares.
+// ---------------------------------------------------------------------
+
+/// A head whose name and kind are an exact row of the registry.
+#[test]
+fn catalogued_head_pair_validates() {
+    assert!(heads::head_validates("Rule", "rule"));
+    assert!(heads::head_validates("Definition", "def"));
+}
+
+/// A pair of the acceptee's own recorded extension set validates exactly
+/// as a registry row does: the judgment consults the effective relation,
+/// not the registry alone.
+#[test]
+fn extension_pair_validates_and_a_near_neighbour_does_not() {
+    assert!(heads::head_validates("Trap", "trap"));
+    assert!(heads::head_validates("Obligation", "obl"));
+    // Pitfall is `warn` and Trap is `trap`; the record turns on their
+    // being different genres, so the crossed pairs must both fail.
+    assert!(!heads::head_validates("Trap", "warn"));
+    assert!(!heads::head_validates("Pitfall", "trap"));
+}
+
+/// A name carrying several catalogued senses validates under each of
+/// them and under no other: the kind token is the author's declaration
+/// of which sense is meant, and validating it is the point.
+#[test]
+fn homonym_validates_only_under_its_catalogued_senses() {
+    assert!(heads::head_validates("Test", "test"));
+    assert!(heads::head_validates("Test", "quiz"));
+    assert!(!heads::head_validates("Test", "tab"));
+}
+
+/// The iterated sub- prefix is presentation: a subsection is a section
+/// nested, in either spelling and to any depth.
+#[test]
+fn sub_prefix_reduces_to_its_base() {
+    assert!(heads::head_validates("Subsection", "sec"));
+    assert!(heads::head_validates("Sub-section", "sec"));
+    assert!(heads::head_validates("Subsubsection", "sec"));
+}
+
+/// The catalogued emphasis modifiers are presentation, and classify by
+/// their base — but only as whole words, so a name that merely begins
+/// with a modifier's letters reduces to nothing.
+#[test]
+fn catalogued_modifier_reduces_to_its_base() {
+    assert!(heads::head_validates("Main theorem", "thm"));
+    assert!(heads::head_validates("Key lemma", "lem"));
+    assert!(heads::head_validates("Running example", "ex"));
+    assert!(!heads::head_validates("Mainstay", "thm"));
+}
+
+/// An expressly catalogued overriding row takes precedence over the
+/// modifier rule: Working hypothesis reduces to itself and carries the
+/// assumptive kind, so the conjectural kind of its base fails.
+#[test]
+fn overriding_row_beats_the_modifier_rule() {
+    assert!(heads::head_validates("Working hypothesis", "assum"));
+    assert!(heads::head_validates("Standing hypothesis", "assum"));
+    assert!(!heads::head_validates("Working hypothesis", "hyp"));
+    // The base itself is untouched by the override.
+    assert!(heads::head_validates("Hypothesis", "hyp"));
+}
+
+/// A head the catalogue does not pair fails, naming the head, the label,
+/// and what the catalogue does carry for the name, so the author can see
+/// which side is wrong without opening the registry.
+#[test]
+fn uncatalogued_head_pair_fails_and_names_the_senses() {
+    let source = "**Table (The census)** · `rem:fixture:census`\n";
+    let path = Path::new("plans/fixture.md");
+    let scan = scan_markdown(path, source);
+    let diagnostics = heads::validate_document(path, source, &scan);
+    assert_eq!(diagnostics.len(), 1, "one head, one judgment");
+    let failure = &diagnostics[0];
+    assert!(failure.is_error());
+    assert_eq!(failure.code, LabelErrorCode::UncataloguedHeadPair);
+    assert_eq!(failure.line, 1);
+    assert!(
+        failure.message.contains("Table (The census)"),
+        "the head is named: {}",
+        failure.message,
+    );
+    assert!(
+        failure.message.contains("rem:fixture:census"),
+        "the label is named: {}",
+        failure.message,
+    );
+    assert!(
+        failure
+            .message
+            .contains("the catalogued senses of Table are tab"),
+        "the name's senses are named: {}",
+        failure.message,
+    );
+}
+
+/// A name in no catalogue row says so, rather than reporting an empty
+/// list of senses as though the name were known.
+#[test]
+fn uncatalogued_head_name_says_the_name_is_unknown() {
+    let source = "**Widget (A widget)** · `rem:fixture:widget`\n";
+    let path = Path::new("plans/fixture.md");
+    let scan = scan_markdown(path, source);
+    let diagnostics = heads::validate_document(path, source, &scan);
+    assert_eq!(diagnostics.len(), 1);
+    assert!(
+        diagnostics[0].message.contains("no catalogue row"),
+        "an unknown name is reported as unknown: {}",
+        diagnostics[0].message,
+    );
+}
+
+/// Recognition is narrow: bold prose emphasis is not a head, and forms
+/// no judgment. A false rejection here would block an author writing
+/// ordinary prose, which is the failure this check must never have.
+#[test]
+fn bold_prose_is_not_a_head() {
+    assert!(heads::parse_head("**Round two.** The swap widened it.\n").is_none());
+    assert!(heads::parse_head("**Rows that left the set.** Four tokens.\n").is_none());
+    assert!(heads::parse_head("**Status:** Decided\n").is_none());
+    assert!(heads::parse_head("**Rule (Normative source)** without a label\n").is_none());
+    assert!(heads::parse_head("Text before **Rule (X)** · `rule:a:b`\n").is_none());
+    assert!(heads::parse_head("**Rule** · `rule:a:b`\n").is_none());
+}
+
+/// A head is recognized with its genre and its declared kind apart.
+#[test]
+fn head_recognition_splits_genre_from_kind() {
+    let head = heads::parse_head("**Definition (Presentation)** · `def:kinds:presentation`\n")
+        .expect("a well-formed head is recognized");
+    assert_eq!(head.genre, "Definition");
+    assert_eq!(head.title, "Presentation");
+    assert_eq!(head.kind, "def");
+    assert_eq!(head.label, "def:kinds:presentation");
+}
+
+/// A head inside a fenced block is an example, not a head: the same
+/// participation view every other Markdown rule consults says so.
+#[test]
+fn head_inside_a_fence_forms_no_judgment() {
+    let source = concat!(
+        "Example:\n\n",
+        "```markdown\n",
+        "**Table (The census)** · `rem:fixture:census`\n",
+        "```\n",
+    );
+    let path = Path::new("plans/fixture.md");
+    let scan = scan_markdown(path, source);
+    assert!(
+        heads::validate_document(path, source, &scan).is_empty(),
+        "a fenced example forms no head judgment",
+    );
+}
+
+/// Every head of the live governed tree validates, and the check is
+/// live: the corpus this repository authors carries no uncatalogued
+/// pair, and a future one fails the gate rather than passing unseen.
+#[test]
+fn live_tree_carries_no_uncatalogued_head_pair() {
+    let census = RepositoryCensus::discover(repository_root());
+    let labels = RepositoryLabels::harvest_sources(&census);
+    let failures: Vec<&LabelDiagnostic> = labels
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == LabelErrorCode::UncataloguedHeadPair)
+        .collect();
+    assert!(
+        failures.is_empty(),
+        "the governed tree carries an uncatalogued head pair: {failures:?}",
     );
 }

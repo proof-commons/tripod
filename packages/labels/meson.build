@@ -15,6 +15,7 @@ labels_source_files = files(
   'src/check.rs',
   'src/diagnostic.rs',
   'src/forbidden.rs',
+  'src/heads.rs',
   'src/label.rs',
   'src/latex.rs',
   'src/lib.rs',

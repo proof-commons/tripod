@@ -922,7 +922,7 @@ fn opcode(target: &ReviewedElementsTapscriptDefinition, id: OpcodeId) -> &'_ Opc
 /// were previously unreachable: declared as one exact type, the empty
 /// signature and the unknown key were refused here as type mismatches
 /// before the cases describing them could apply
-/// (Guide-10 `rule:guide10:signature-abstraction`).
+/// `(´[PLAN-rule:guide10:signature-abstraction]´)`.
 fn admits(
     target: &ReviewedElementsTapscriptDefinition,
     declared: &OperandContract,
