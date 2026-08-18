@@ -209,7 +209,7 @@ fn insert(
             }
         }
         Err(error) => diagnostics.push(LabelDiagnostic::error(
-            LabelErrorCode::InvalidLabel,
+            error.code(),
             &location,
             error.to_string(),
         )),

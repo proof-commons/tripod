@@ -262,6 +262,14 @@ fn unclosed_inline_code_rejects() {
     );
 }
 
+#[test]
+fn owner_specific_label_shapes_parse() {
+    let attestation = Label::parse("def:model:classes", LabelShape::Attestation);
+    let realization = Label::parse("sec:representation", LabelShape::Realization);
+    let adr = Label::parse("rule:labels:decision", LabelShape::Adr);
+    assert!(attestation.is_ok() && realization.is_ok() && adr.is_ok());
+}
+
 /// The ADR-019 segment amendment, both halves: an area may hyphenate
 /// exactly as a name may, and a kind may not, because the kind ranges
 /// over the ADR-020 registry of words.
