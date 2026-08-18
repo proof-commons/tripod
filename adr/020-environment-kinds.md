@@ -146,7 +146,7 @@ tokens, named under the consequences below.
 | Error vocabulary | `err` | The enumerated error surface a package presents at its boundary. Near Erratum, `errat`, and a different genre: an erratum corrects a document after publication; this states what a package can return | `err:labels:vocabulary`, `plans/packages/errors/labels.md:1`; 10, one per package |
 | Leaf | `leaf` | A terminal node of a decision or derivation tree | `leaf:authorization:cadence-band`, `docs/attestation/realization.md:1121`; 4 |
 | Milestone | `milestone` | A named point in a delivery schedule, reached or not | `milestone:realization:crate`, `plans/packages/realization.md:272`; 28 |
-| Motto | `motto` | The document's own opening declaration, its thesis compressed to one line and placed once by the front matter. Near two registry rows and neither: Epigraph, `epigraph`, is the attested quotation genre, another's words carried in; Motto is filed `slogan`, the portable saying classified by its wording | `motto:motto`, `papers/attestation/sections/00_title.tex:95`; 1 |
+| Motto | `motto` | The document's own opening declaration, its thesis in one line, placed once by the front matter. Near two registry rows and neither: Epigraph, `epigraph`, carries another's words; Motto is filed `slogan`, the saying classified by its wording | `motto:motto`, `papers/attestation/sections/00_title.tex:95`; 1 |
 | Obligation | `obl` | A standing obligation on an implementation, discharged by evidence rather than satisfied once. Near Requirement, `req`, and distinct: a requirement states what the system must do, an obligation what its builder must keep proving | `obl:oracle:adversary`, `docs/attestation/realization.md:1650`; 26 |
 | Operation | `op` | An operation of the protocol's state machine | `op:realization:compact-ash`, `plans/packages/realization.md:203`; 4 |
 | Phase | `phase` | A numbered stage of the delivery plan, with an entry and an exit | `phase:roadmap:cycle`, `plans/phases/11-cycle.md:1`; 16 |
@@ -156,10 +156,9 @@ tokens, named under the consequences below.
 | Task | `task` | A tracked unit of backlog work: kept, statused, cited long after writing, a records-family genre. The registry's Task rows are `exer`, work set for a reader, and `job`, a code asset that runs; both misdescribe a backlog item, and `task` is assigned to nothing | `task:phase2:pilots`, `plans/backlog.md:1231`; 8 |
 | Trap | `trap` | A catalogued way to get the design wrong, stated once at its canonical site and returned to by later arguments. Near Pitfall, `warn`, and distinct: a warning cautions in the flow of the text, where a trap is a named, cited entry of a standing register of design errors | `trap:architecture:two-clocks`, `docs/attestation/realization.md:327`; 165 |
 
-**Motto.** The token is unclaimed, the genre uncatalogued, and this
-record is the acceptee's: the pair is recorded on the evidence above
-under the attestation principle, a local deviation stated rather than
-left silent.
+**Motto.** The token is unclaimed and the genre uncatalogued, so the
+acceptee records the pair on the evidence above, under the attestation
+principle: a local deviation stated, not left silent.
 
 **Rows that left the set.** Four tokens the second edition's register
 carried are rows of the third edition's registry, so they are no longer
@@ -212,10 +211,10 @@ saying so. The register presenting Hom(C_A) in full is generated at
 names, thirty-four pairs. Task is there because this repository's `task`
 joins the registry's `exer` and `job` under that name — a homonymy of
 the effective relation that exists only here, which is why the corpus
-consults its own register and never another's. Motto joins it for the
-same reason, and by decision: the entry recorded above sets this
-corpus's `motto` beside the registry's `slogan` under that name, and
-the kind token at each label says which sense is meant.
+consults its own register and never another's. Motto joins it by
+decision: the entry above sets this corpus's `motto` beside the
+registry's `slogan` under that name, and the kind token says which
+sense a label means.
 
 ## Consequences · `rem:kinds:consequences`
 
