@@ -1714,7 +1714,7 @@ active tree.
 | `DI-001` | ACTIVE | Gap census: map each draft clause onto the present ADR-012/ADR-013 text, the ADR-016 identity rules, and the implemented labels package; classify every clause as already-implemented, divergent, or new; record the checker-engineering findings register. |
 | `DI-002` | DONE | Adopt the corrected label calculus and kind registry as ADRs; delete the ADR text they retire; migrate the eight conflicting kind tokens to the registry forms corpus-wide per the user's ruling, with every citation updated in the same commit; record the hyphenated-area amendment and the local-extension register. |
 | `DI-002b` | DONE | Replace the second-edition adopted drafts with the author's third-edition texts and repair every citation that dangled as a result. The third edition was verified against the audit register before the swap: all 26 findings fixed, the 7 defects among them included, and a mechanical re-audit clean — every per-document citation resolves, every mint is unique, and the kind registry's headline counts of 333 names, 349 rows, 208 kinds, 3 declared hybrids and 4 device classes derive exactly from its tables. Fourteen citations across three plan files were retargeted in the same commit as the swap, per the calculus's same-commit rule. Both adopting records were then refreshed to the editions they adopt: ADR-019 restates all seven adoption parameters and records that the checker implements the authorship warrant species only, ADR-020 names this repository as the registry's acceptee and recasts its extension register as the recorded extension set with located first-hand evidence, and a second kind-migration round settled two further tokens. |
-| `DI-003` | ACTIVE | Re-engineer the labels checker to the calculus: a single participation scanner shared by every check (mints, citations, links, hygiene, inline-code discipline), owner signatures with registered prefixes, imported and synthetic citations, anchor harvests, and the kind registry as the checker's kind vocabulary. W1 landed the participation scanner; the remaining items are unstarted. |
+| `DI-003` | ACTIVE | Re-engineer the labels checker to the calculus: a single participation scanner shared by every check (mints, citations, links, hygiene, inline-code discipline), owner signatures with registered prefixes, imported and synthetic citations, anchor harvests, and the kind registry as the checker's kind vocabulary. W1 landed the participation scanner and W2 the adoption data, the kind vocabulary, and warrant totality; the derivation species and the anchor-harvest and attestation registers remain. |
 | `DI-004` | DONE | Adopt the identity-adjudication procedure against ADR-016: classify every existing digest through the benefit criterion with admission records, and MIGRATE the two grandfathered recipes to domain-separated forms per the user's ruling — the architecture semantic and anchor-set hashes change under a recorded recipe migration, superseding the ADR-016 grandfather clause. Both halves delivered: the migration, and a census of the whole tree read from the owning code, recorded as six admission records and eleven stop records in the identities register. |
 | `DI-005` | QUEUED | Interchange conventions: record adoption as the standing wire-format discipline for future externally consumed documents; no implementation until a consumer exists. |
 
@@ -1943,6 +1943,41 @@ placeholder, confidence, deleted-path and machine-input markers, and the
 backlog's task-status agreement walk. Their subjects are not label
 occurrences, and rewiring them would change what they report, so they
 are recorded as participation-blind rather than quietly converted.
+
+W2 made the adoption parameters typed data. All seven now sit in
+`packages/labels/src/adoption.rs` for comparison against the ADR-019
+table, and the signature drives prefix resolution rather than restating
+it: an imported token splits at its first hyphen, exact because a prefix
+carries none, and becomes an owner only through the signature. The
+package owners are registered there, settling the DI-003 ruling, their
+prefixes derived by rule from the directory name and checked against the
+census, so a new package is a reviewed registration, never a silent
+owner.
+
+The kind vocabulary is now the registry's: the 208 distinct kinds of the
+draft's Convention tables and the 13 recorded extensions, committed
+rather than parsed at check time so an edition swap shows every moved
+token in review, and checked against their documents in each direction
+so the tables cannot go stale unseen. The census found 2113 mints over
+64 distinct kinds, every one governed except `motto` and `abs`, single
+occurrences on the Layer-0 LaTeX surface that ADR-020 already records as
+unadjudicated. That record puts the surface outside its scope, so those
+two report rather than fail, and enforcement over the owners it does
+govern lands with the tree already conformant.
+
+Warrant totality is enforced ahead of its subject. The reserved set and
+the profile signature are empty, so its reserved and inventory arms are
+vacuous, and both are implemented and fixture-tested all the same, so
+the first registered profile finds the enforcement live. Place detection
+is unbuilt and reports no place, which fails closed. Two-pass staging is
+structural: the adoption data load before any source is read, and
+warrant totality derives from completed registries before any citation
+resolves.
+
+One defect surfaced in passing: diagnostics were emitted only when the
+check failed, so no passing run could ever show a warning. Warnings now
+emit on a passing check, which is what makes the two Layer-0 tokens
+visible.
 
 ### 13.2 Checker findings so far · `tab:backlog:draft-findings`
 

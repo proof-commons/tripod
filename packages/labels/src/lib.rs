@@ -8,6 +8,7 @@
     clippy::too_many_lines
 )]
 
+pub mod adoption;
 pub mod census;
 pub mod check;
 pub mod diagnostic;

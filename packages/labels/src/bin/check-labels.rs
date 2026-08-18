@@ -100,10 +100,17 @@ fn main() -> ExitCode {
         || {
             let paths = args.census()?;
             let (report, diagnostics) = labels::check_repository(&paths);
+            // Warnings report facts a recorded decision has placed
+            // outside the enforcing scope, so they are emitted whether
+            // or not the check passes: a warning only raised on failure
+            // is a warning no passing run ever shows.
+            for diagnostic in diagnostics.iter().filter(|d| !d.is_error()) {
+                tracing::warn!(code = ?diagnostic.code, path = %diagnostic.path, line = diagnostic.line, message = %diagnostic.message, "label check warning");
+            }
             if report.valid {
                 return Ok(report);
             }
-            for diagnostic in diagnostics {
+            for diagnostic in diagnostics.iter().filter(|d| d.is_error()) {
                 tracing::error!(code = ?diagnostic.code, path = %diagnostic.path, line = diagnostic.line, message = %diagnostic.message, "label check failed");
             }
             Err("repository label validation failed".to_owned())
