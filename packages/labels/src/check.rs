@@ -42,6 +42,24 @@ pub fn check_repository(paths: &RepositoryCensus) -> (CheckReport, Vec<LabelDiag
         &render::realization_register(&labels.registries.realization),
         &mut labels.diagnostics,
     );
+    // The companion register is checked only when the harvest is
+    // otherwise clean. Its rows carry a mint census, so deriving the
+    // expected bytes from a corpus that does not check would compare
+    // the committed register against a census taken from a broken
+    // tree — a second, misleading failure on top of the real one.
+    if !labels.has_errors() {
+        let census =
+            crate::adoption::kind_census(&crate::repository::registry_mints(&labels.registries));
+        match crate::attestation::derive(&paths.root, census) {
+            Ok(base) => current(
+                paths,
+                &paths.attestation_register,
+                &render::attestation_register(&base),
+                &mut labels.diagnostics,
+            ),
+            Err(diagnostics) => labels.diagnostics.extend(diagnostics),
+        }
+    }
     if let Ok(expected) = render::model_labels_json(&labels.registries.model) {
         current(
             paths,

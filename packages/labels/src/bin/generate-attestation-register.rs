@@ -1,23 +1,24 @@
-//! `check-labels`: the non-writing repository label gate.
+//! `generate-attestation-register`: the companion register writer.
 //!
-//! Every subject file arrives by role-tagged argument (ADR-014): the
-//! build system states census membership, this binary validates shape
-//! and re-verifies the census against the on-disk discovery. On success
-//! the JSON report is published under the active output mode (ADR-014):
-//! direct-mode stdout, or a build-mode report asset plus success stamp.
+//! The acceptee owns this generator (ADR-020). Unlike the two upstream
+//! registers, the derivation is corpus-wide: the evidence rows carry a
+//! mint census, and a census answers to every owner. The census
+//! therefore arrives whole, by role-tagged argument (ADR-014), and the
+//! register output is an argument-supplied asset; the build system
+//! wraps this command with its own stamp.
 
-use std::{path::PathBuf, process::ExitCode};
+use std::{collections::BTreeMap, path::PathBuf, process::ExitCode};
 
 use clap::Parser;
-use cli_common::{BaseArgs, CheckOutputArgs, install_json_panic_hook, run_check_command};
+use cli_common::{BaseArgs, install_json_panic_hook, run_no_stdout_command};
 
-const COMMAND_NAME: &str = "check-labels";
+const COMMAND_NAME: &str = "generate-attestation-register";
 
 #[derive(Parser)]
 #[command(
-    name = "check-labels",
+    name = "generate-attestation-register",
     version,
-    about = "Check repository documentation labels without writing"
+    about = "Generate the companion attestation register"
 )]
 struct Args {
     #[command(flatten)]
@@ -46,7 +47,7 @@ struct Args {
     /// Model crate Rust sources.
     #[arg(long = "model-source", value_name = "FILE")]
     model_sources: Vec<PathBuf>,
-    /// Other first-party crate Rust sources (`packages/<name>/src`).
+    /// Other first-party crate Rust sources.
     #[arg(long = "crate-source", value_name = "FILE")]
     crate_sources: Vec<PathBuf>,
     /// The generated Layer-0 register publication.
@@ -55,14 +56,15 @@ struct Args {
     /// The generated realization register publication.
     #[arg(long, value_name = "FILE")]
     realization_register: PathBuf,
-    /// The generated companion attestation register.
-    #[arg(long, value_name = "FILE")]
-    attestation_register: PathBuf,
     /// The generated model-label publication.
     #[arg(long, value_name = "FILE")]
     model_labels_json: PathBuf,
-    #[command(flatten)]
-    output: CheckOutputArgs,
+    /// The companion attestation register: this generator's one output,
+    /// and its own census entry. The two are the same path by
+    /// construction, so the generator takes the label census unchanged
+    /// and no second spelling of the output can drift from it.
+    #[arg(long, value_name = "FILE")]
+    attestation_register: PathBuf,
 }
 
 impl Args {
@@ -84,9 +86,7 @@ impl Args {
             realization_register: resolve(&self.realization_register),
             attestation_register: resolve(&self.attestation_register),
             model_labels_json: resolve(&self.model_labels_json),
-            // A build-argument census records no traversal of its
-            // own; `verify` supplies the discovered one.
-            traversal: std::collections::BTreeMap::new(),
+            traversal: BTreeMap::new(),
         })
     }
 }
@@ -96,28 +96,23 @@ fn main() -> ExitCode {
     // with a JSON-only record (ADR-010 early-startup rule).
     install_json_panic_hook(COMMAND_NAME);
     let args = cli_common::parse_args_or_exit::<Args>();
-    run_check_command(
-        COMMAND_NAME,
-        args.base.debug,
-        tracing::Level::INFO,
-        &args.output,
-        || {
-            let paths = args.census()?;
-            let (report, diagnostics) = labels::check_repository(&paths);
-            // Warnings report facts a recorded decision has placed
-            // outside the enforcing scope, so they are emitted whether
-            // or not the check passes: a warning only raised on failure
-            // is a warning no passing run ever shows.
-            for diagnostic in diagnostics.iter().filter(|d| !d.is_error()) {
-                tracing::warn!(code = ?diagnostic.code, path = %diagnostic.path, line = diagnostic.line, message = %diagnostic.message, "label check warning");
-            }
-            if report.valid {
-                return Ok(report);
-            }
-            for diagnostic in diagnostics.iter().filter(|d| d.is_error()) {
-                tracing::error!(code = ?diagnostic.code, path = %diagnostic.path, line = diagnostic.line, message = %diagnostic.message, "label check failed");
-            }
-            Err("repository label validation failed".to_owned())
-        },
-    )
+    run_no_stdout_command(COMMAND_NAME, args.base.debug, tracing::Level::INFO, || {
+        let paths = args.census().map_err(|message| {
+            labels::repository::GenerateError::Validation(vec![labels::LabelDiagnostic::error(
+                labels::LabelErrorCode::UnregisteredOwner,
+                &labels::source::SourceLocation::new(std::path::Path::new("Cargo.toml"), 1, 1),
+                message,
+            )])
+        })?;
+        let output = paths.attestation_register.clone();
+        let register = labels::generate_attestation_register(&paths, &output).inspect_err(
+            |error| {
+                for diagnostic in error.diagnostics().iter().filter(|d| d.is_error()) {
+                    tracing::error!(code = ?diagnostic.code, path = %diagnostic.path, line = diagnostic.line, message = %diagnostic.message, "attestation source validation failed");
+                }
+            },
+        )?;
+        tracing::info!(path = %register.path.display(), bytes = register.bytes, "attestation register written");
+        Ok::<(), labels::repository::GenerateError>(())
+    })
 }

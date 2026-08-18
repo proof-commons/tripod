@@ -45,6 +45,12 @@ impl Label {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+    /// The kind segment: the first of the colon-joined triple, and the
+    /// segment the ADR-020 registry governs. Every parsed label has one,
+    /// so the split cannot fail.
+    pub fn kind(&self) -> &str {
+        self.0.split(':').next().unwrap_or(&self.0)
+    }
 }
 
 impl fmt::Display for Label {

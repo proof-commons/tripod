@@ -14,11 +14,13 @@ use petgraph::{
 use thiserror::Error;
 
 use crate::{
+    adoption::{self, Adoption},
     census::RepositoryCensus,
     diagnostic::{LabelDiagnostic, LabelErrorCode, sort_diagnostics},
     label::{Label, LabelShape},
     latex::harvest_attestation,
     markdown::{InlineCodeContext, MarkdownScan, scan_markdown},
+    nearmiss,
     owner::{ImportedLabel, LabelOwner, OwnerParseError},
     registry::{LabelMint, LabelRegistry, RegistrySet},
     render,
@@ -113,6 +115,9 @@ pub struct LabelGraphProjection {
 
 #[derive(Default)]
 pub struct RepositoryLabels {
+    /// The adoption data this harvest was run under, loaded before any
+    /// carrier source was read.
+    pub adoption: Adoption,
     pub registries: RegistrySet,
     pub diagnostics: Vec<LabelDiagnostic>,
     pub graph: DiGraph<LabelGraphNode, LabelGraphEdge, u32>,
@@ -124,7 +129,22 @@ pub struct RepositoryLabels {
 }
 impl RepositoryLabels {
     pub fn harvest_sources(paths: &RepositoryCensus) -> Self {
-        let mut result = Self::default();
+        // Two-pass staging: the adoption data are loaded before any
+        // source is read, so that no harvest and no resolution can
+        // observe a parameter that is still being decided.
+        let mut result = Self {
+            adoption: Adoption::repository(),
+            ..Self::default()
+        };
+        result
+            .diagnostics
+            .extend(adoption::verify_vocabulary_sources(&paths.root));
+        result
+            .diagnostics
+            .extend(adoption::verify_package_registration(
+                paths.crate_sources.keys().map(String::as_str),
+                &SourceLocation::new("packages", 1, 1),
+            ));
         let (attestation, diagnostics) = harvest_attestation(paths);
         result.registries.attestation = attestation;
         result.diagnostics.extend(diagnostics);
@@ -213,16 +233,14 @@ fn harvest_realization(paths: &RepositoryCensus, result: &mut RepositoryLabels) 
     };
     let scan = scan_markdown(&relative, &source);
     result.diagnostics.extend(scan.diagnostics.clone());
+    nearmiss::prose(&scan, &mut result.diagnostics);
     harvest_attestation_citations(&relative, &source, &scan, result);
     // Status-tag references (`[enforced: P-…]`, `[invariant: 𝗜ₙ]`) are
     // resolved after the loop, once every pin and clause mint has been
     // harvested, so a forward reference resolves like any other.
     let mut pin_refs: Vec<(Label, SourceLocation)> = Vec::new();
     let mut clause_refs: Vec<(u32, SourceLocation)> = Vec::new();
-    for span in scan.code_spans {
-        if span.delimiter_len != 1 {
-            continue;
-        }
+    for span in scan.participating_spans().cloned() {
         if let Some(token) = square(&span.content) {
             // Every square-bracketed token is audited in its own grammar
             // class: attestation body cites are handled by
@@ -538,12 +556,10 @@ fn harvest_adrs(paths: &RepositoryCensus, result: &mut RepositoryLabels) {
             }
         };
         let scan = scan_markdown(&relative, &source);
-        result.diagnostics.extend(scan.diagnostics);
+        result.diagnostics.extend(scan.diagnostics.clone());
+        nearmiss::prose(&scan, &mut result.diagnostics);
         let mut registry = LabelRegistry::default();
-        for span in scan.code_spans {
-            if span.delimiter_len != 1 {
-                continue;
-            }
+        for span in scan.participating_spans().cloned() {
             if let Some(token) = square(&span.content) {
                 if span.context == InlineCodeContext::Parenthesized {
                     import(token, &span.location, LabelOwner::Adr(number), result);
@@ -663,11 +679,9 @@ fn harvest_markdown_owner(
         }
     };
     let scan = scan_markdown(&relative, &source);
-    result.diagnostics.extend(scan.diagnostics);
-    for span in scan.code_spans {
-        if span.delimiter_len != 1 {
-            continue;
-        }
+    result.diagnostics.extend(scan.diagnostics.clone());
+    nearmiss::prose(&scan, &mut result.diagnostics);
+    for span in scan.participating_spans().cloned() {
         if let Some(token) = square(&span.content) {
             if span.context == InlineCodeContext::Parenthesized {
                 import(token, &span.location, owner.owner(), result);
@@ -773,6 +787,15 @@ fn harvest_attestation_citations(
     let mut index_lines = BTreeSet::new();
 
     for (number, line) in source.lines().enumerate() {
+        // The index region is a prose region, so its boundaries are
+        // read from participating lines only. Walking the raw source
+        // let a heading inside a fenced block open or close the region
+        // — a displayed heading silently re-partitioning the document
+        // the span scanner had already partitioned the other way
+        // (DI-F02).
+        if !scan.participation.participates(number + 1) {
+            continue;
+        }
         if line.starts_with("## ") {
             // Matched on the locator mint form so a heading merely
             // citing (`sec:anchors`) cannot open the index region.
@@ -787,11 +810,7 @@ fn harvest_attestation_citations(
         }
     }
 
-    for span in &scan.code_spans {
-        if span.delimiter_len != 1 {
-            continue;
-        }
-
+    for span in scan.participating_spans() {
         let content = span.content.trim();
         let Some(token) = square(content) else {
             if content.starts_with("[A-") {
@@ -885,6 +904,12 @@ fn harvest_attestation_citations(
 }
 
 fn validate(result: &mut RepositoryLabels) {
+    // Warrant totality is a judgment about mints, so it is derived once
+    // the minting registries are complete and before any citation is
+    // resolved against them.
+    let mints = registry_mints(&result.registries);
+    let warrants = adoption::validate_warrants(&result.adoption, &mints, &standard_place_of);
+    result.diagnostics.extend(warrants);
     add_architecture_citations(result);
     let citations = std::mem::take(&mut result.pending_citations);
     let (graph, graph_node_by_id) =
@@ -893,6 +918,17 @@ fn validate(result: &mut RepositoryLabels) {
     result.graph_node_by_id = graph_node_by_id;
     validate_attestation_index(result);
     validate_attestation_anchor_pin(result);
+}
+
+/// The standard place a mint occupies, for the derivation warrant.
+///
+/// The checker has no place detection: no profile is registered, so
+/// nothing has ever needed one. Reporting no place is the fail-closed
+/// answer — while this stands, a registered profile's kinds all fail as
+/// out-of-place, so a profile cannot be registered without the place
+/// detection its census and standard place require being built with it.
+const fn standard_place_of(_mint: &LabelMint) -> Option<adoption::StandardPlace> {
+    None
 }
 
 /// Weld the committed §17 upward-citation index to the body anchor
@@ -1081,7 +1117,7 @@ pub fn build_label_graph(
     (graph, node_by_id)
 }
 
-fn registry_mints(registries: &RegistrySet) -> Vec<LabelMint> {
+pub(crate) fn registry_mints(registries: &RegistrySet) -> Vec<LabelMint> {
     registries
         .attestation
         .iter()
@@ -1356,6 +1392,46 @@ pub fn generate_registers(
         })
         .collect())
 }
+/// Derive the companion attestation register from the whole corpus.
+///
+/// Unlike the two upstream registers, this one is not scoped: its
+/// evidence rows carry a mint census, and a census of the corpus is
+/// answerable to every owner in it. The derivation therefore takes the
+/// full harvest, and a corpus-wide defect blocks it — which is right,
+/// because a register asserting coverage over a corpus that does not
+/// check is asserting something it cannot know.
+pub fn attestation_base(
+    paths: &RepositoryCensus,
+) -> Result<crate::attestation::AttestationBase, GenerateError> {
+    let mut labels = RepositoryLabels::harvest_sources(paths);
+    labels
+        .diagnostics
+        .extend(paths.verify(crate::census::CensusGroup::ALL));
+    if labels.has_errors() {
+        return Err(GenerateError::Validation(labels.diagnostics));
+    }
+    let census = adoption::kind_census(&registry_mints(&labels.registries));
+    crate::attestation::derive(&paths.root, census).map_err(GenerateError::Validation)
+}
+
+/// Generate and publish the companion attestation register.
+pub fn generate_attestation_register(
+    paths: &RepositoryCensus,
+    output: &Path,
+) -> Result<GeneratedRegister, GenerateError> {
+    let base = attestation_base(paths)?;
+    let contents = render::attestation_register(&base);
+    cli_common::publish_batch(&[cli_common::PublicationAsset {
+        role: "attestation-register-output",
+        path: output,
+        bytes: contents.as_bytes(),
+    }])?;
+    Ok(GeneratedRegister {
+        path: output.to_path_buf(),
+        bytes: contents.len(),
+    })
+}
+
 pub fn model_labels_json(paths: &RepositoryCensus) -> Result<String, GenerateError> {
     let labels = derive_model_sources(paths);
     if labels.has_errors() {

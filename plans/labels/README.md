@@ -29,9 +29,16 @@ Imported labels are authoritative references and are linted under
 |---|---|---|
 | [Specification](specification.md) | the Attestation specification | `papers/attestation/main.tex` and `sections/*.tex` |
 | [Realization](realization.md) | the realization document | `docs/attestation/realization.md` |
+| [Attestation](attestation.md) | This repository, as acceptee | `plans/drafts/environment-kinds.md`, `adr/020-environment-kinds.md`, and the corpus census |
 
 The registers are derivative indexes. Their source documents remain
 authoritative.
+
+The first two index upstream labels. The third is the companion
+attestation register the adopted kind registry requires of an acceptee:
+it views this repository's evidence base and status map, and presents
+the homonymy of the effective relation. It indexes no labels and is not
+a citation source.
 
 ## Citation prefixes · `rule:labels-index:prefixes`
 
@@ -61,9 +68,14 @@ Run:
 
 ```sh
 meson compile -C build generate-label-registers
+meson compile -C build generate-attestation-register
 ```
 
-Update mode may write only the two owned register files.
+The first may write only the two upstream register files; the second
+only the attestation register. The two generators are separate because
+their derivations are: the upstream registers are scoped to the specification
+and realization sources, while the attestation register's mint census
+answers to the whole corpus.
 
 ## Checking · `rule:labels-index:check`
 

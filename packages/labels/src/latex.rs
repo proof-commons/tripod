@@ -26,7 +26,7 @@ pub fn harvest_attestation(paths: &RepositoryCensus) -> (LabelRegistry, Vec<Labe
             ));
             continue;
         };
-        let stripped = comments(&source);
+        let stripped = crate::participation::latex_participating(&source);
         harvest(
             &relative,
             &stripped,
@@ -56,25 +56,6 @@ pub fn harvest_attestation(paths: &RepositoryCensus) -> (LabelRegistry, Vec<Labe
     (registry, diagnostics)
 }
 
-fn comments(source: &str) -> String {
-    source.lines().fold(String::new(), |mut output, line| {
-        let mut slash = 0;
-        let mut end = line.len();
-        for (index, character) in line.char_indices() {
-            if character == '\\' {
-                slash += 1;
-            } else if character == '%' && slash % 2 == 0 {
-                end = index;
-                break;
-            } else {
-                slash = 0;
-            }
-        }
-        output.push_str(&line[..end]);
-        output.push('\n');
-        output
-    })
-}
 fn harvest(
     path: &Path,
     source: &str,

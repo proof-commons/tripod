@@ -201,9 +201,12 @@ Every pair of X_A is firm on the evidence located above.
 Homonymy is derived, not declared. Of the tokens in use, Test carries
 `quiz` among the examples and `test` among the assets, and this
 repository uses the asset sense throughout, the kind token at each label
-saying so. The register that would present Hom(C_A) in full is
-generated, and its generator is unbuilt; the gap is recorded under the
-consequences.
+saying so. The register presenting Hom(C_A) in full is generated at
+[plans/labels/attestation.md](../plans/labels/attestation.md): fifteen
+names, thirty-two pairs. Task is there because this repository's `task`
+joins the registry's `exer` and `job` under that name — a homonymy of
+the effective relation that exists only here, which is why the corpus
+consults its own register and never another's.
 
 ## Consequences · `rem:kinds:consequences`
 
@@ -224,16 +227,17 @@ as formatting, which is what the calculus demands of a rename. The
 recomputation recipe was checked by reproducing the retired pin exactly
 before the new one was taken.
 
-Three narrownesses remain. The kind vocabulary is still split between a
-realization list and a model list compiled into Rust, with no vocabulary
-at all for the prose owners; making the registry itself the checker's
-vocabulary is backlog DI-003. The companion attestation register the
-third edition requires of an acceptee — its evidence and status rows
-under a total recorded ordering, with Hom(C_A) presented as a view of
-the same base — is not built; it is a generated register with a
-generator, which is DI-003's work, and until it exists the evidence for
-X_A is the located occurrences in this record rather than a maintained
-artifact. And the LaTeX label surface of the attestation paper carries three
+Backlog DI-003 closed two of the three narrownesses this record opened.
+The registry is now the checker's own kind vocabulary, welded in both
+directions to the documents the tables were extracted from, so it
+cannot go stale silently. And the companion attestation register the
+third edition requires of an acceptee is built: its evidence and status
+rows stand under the recorded ordering with Hom(C_A) presented as a
+view of the same base, derived on each run from the extension table
+above, the registry's Convention tables, and a mint census of the
+corpus, so the evidence for X_A is maintained rather than stated once.
+
+One narrowness remains. The LaTeX label surface of the attestation paper carries three
 further tokens the census did not reach — `motto`, a true collision with
 the registry's Motto, `slogan`; `invest`; and `abs` — which the same
 treatment will settle when that surface enters scope. That surface's
@@ -276,9 +280,17 @@ Adoption holds when:
 
 Every item holds as of this record.
 
-The registry's own adoption gate carries one item this record cannot yet
+The registry's own adoption gate carried one item this record could not
 discharge: the companion attestation register, generated, maintained by
-regeneration, and presenting Hom(C_A). It is unbuilt, recorded as such
-under the consequences, and tracked as backlog DI-003. What waits on it
-is the claim that the evidence for X_A is maintained rather than stated
-once.
+regeneration, and presenting Hom(C_A). DI-003 built it, and the claim
+that the evidence for X_A is maintained rather than stated once now
+holds.
+
+That gate carries one further item this record names here rather than
+leaving implied. It asks that every participating authored head
+validate by exactly one exact pair or one reduction. The checker
+validates a label's kind token against the effective relation but never
+the pair a head declares, so no check holds a head's name to its kind.
+The one hundred and forty-six environment heads under `adr/` and
+`plans/` all carry catalogued pairs at this record, read by hand; the
+reading is not a check, and building one is not yet scheduled.
