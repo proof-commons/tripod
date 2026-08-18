@@ -219,7 +219,7 @@ fn harvest_realization(paths: &RepositoryCensus, result: &mut RepositoryLabels) 
     // harvested, so a forward reference resolves like any other.
     let mut pin_refs: Vec<(Label, SourceLocation)> = Vec::new();
     let mut clause_refs: Vec<(u32, SourceLocation)> = Vec::new();
-    for span in scan.participating_spans().cloned().collect::<Vec<_>>() {
+    for span in scan.participating_spans().cloned() {
         if let Some(token) = square(&span.content) {
             // Every square-bracketed token is audited in its own grammar
             // class: attestation body cites are handled by
@@ -537,7 +537,7 @@ fn harvest_adrs(paths: &RepositoryCensus, result: &mut RepositoryLabels) {
         let scan = scan_markdown(&relative, &source);
         result.diagnostics.extend(scan.diagnostics.clone());
         let mut registry = LabelRegistry::default();
-        for span in scan.participating_spans().cloned().collect::<Vec<_>>() {
+        for span in scan.participating_spans().cloned() {
             if let Some(token) = square(&span.content) {
                 if span.context == InlineCodeContext::Parenthesized {
                     import(token, &span.location, LabelOwner::Adr(number), result);
@@ -658,7 +658,7 @@ fn harvest_markdown_owner(
     };
     let scan = scan_markdown(&relative, &source);
     result.diagnostics.extend(scan.diagnostics.clone());
-    for span in scan.participating_spans().cloned().collect::<Vec<_>>() {
+    for span in scan.participating_spans().cloned() {
         if let Some(token) = square(&span.content) {
             if span.context == InlineCodeContext::Parenthesized {
                 import(token, &span.location, owner.owner(), result);
