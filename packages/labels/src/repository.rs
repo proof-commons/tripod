@@ -501,7 +501,7 @@ fn harvest_realization_import(
         }
         Err(OwnerParseError::Label(error)) => {
             result.diagnostics.push(LabelDiagnostic::error(
-                LabelErrorCode::InvalidLabel,
+                error.code(),
                 &span.location,
                 error.to_string(),
             ));
@@ -526,7 +526,7 @@ fn harvest_realization_import(
             }
             Err(error) => {
                 result.diagnostics.push(LabelDiagnostic::error(
-                    LabelErrorCode::InvalidLabel,
+                    error.code(),
                     &span.location,
                     error.to_string(),
                 ));
@@ -873,7 +873,7 @@ fn harvest_attestation_citations(
             }
             Err(OwnerParseError::Label(error)) => {
                 result.diagnostics.push(LabelDiagnostic::error(
-                    LabelErrorCode::InvalidLabel,
+                    error.code(),
                     &span.location,
                     error.to_string(),
                 ));
@@ -993,7 +993,7 @@ fn add_architecture_citations(result: &mut RepositoryLabels) {
                 class: CitationClass::SyntheticArchitecture,
             }),
             Err(error) => result.diagnostics.push(LabelDiagnostic::error(
-                LabelErrorCode::InvalidLabel,
+                error.code(),
                 &architecture_location(),
                 error.to_string(),
             )),
@@ -1012,7 +1012,7 @@ fn add_architecture_citations(result: &mut RepositoryLabels) {
                 class: CitationClass::SyntheticArchitecture,
             }),
             Err(error) => result.diagnostics.push(LabelDiagnostic::error(
-                LabelErrorCode::InvalidLabel,
+                error.code(),
                 &architecture_location(),
                 error.to_string(),
             )),

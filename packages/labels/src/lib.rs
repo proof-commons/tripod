@@ -26,6 +26,7 @@ pub mod registry;
 pub mod render;
 pub mod repository;
 pub mod rust_source;
+pub mod shape;
 pub mod source;
 
 pub use census::{CensusGroup, RepositoryCensus, group_crate_sources};

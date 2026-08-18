@@ -53,6 +53,9 @@ pub enum LabelErrorCode {
     /// A span a reader would take for a label that the grammar reads as
     /// text: a warning, never an occurrence and never a failure.
     NearMissSpan,
+    /// A label-intended occurrence that is not three-part. The rule is
+    /// universal: see the `shape` module for the surfaces it governs.
+    MalformedLabelShape,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]

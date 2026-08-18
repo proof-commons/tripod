@@ -28,6 +28,7 @@ labels_source_files = files(
   'src/render.rs',
   'src/repository.rs',
   'src/rust_source.rs',
+  'src/shape.rs',
   'src/source.rs',
   'src/tests.rs',
 )
