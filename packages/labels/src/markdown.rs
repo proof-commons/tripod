@@ -243,7 +243,7 @@ fn separator(value: &str) -> bool {
         .chars()
         .all(|character| character.is_whitespace() || character == ',')
 }
-fn run(bytes: &[u8], start: usize) -> usize {
+pub(crate) fn run(bytes: &[u8], start: usize) -> usize {
     bytes[start..]
         .iter()
         .take_while(|value| **value == b'`')

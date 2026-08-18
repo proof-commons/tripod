@@ -47,6 +47,9 @@ pub enum LabelErrorCode {
     /// A Cargo package carries no registered owner prefix, or a
     /// registration names no package.
     UnregisteredOwner,
+    /// A span a reader would take for a label that the grammar reads as
+    /// text: a warning, never an occurrence and never a failure.
+    NearMissSpan,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]

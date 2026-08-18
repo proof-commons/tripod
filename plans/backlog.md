@@ -1714,7 +1714,7 @@ active tree.
 | `DI-001` | ACTIVE | Gap census: map each draft clause onto the present ADR-012/ADR-013 text, the ADR-016 identity rules, and the implemented labels package; classify every clause as already-implemented, divergent, or new; record the checker-engineering findings register. |
 | `DI-002` | DONE | Adopt the corrected label calculus and kind registry as ADRs; delete the ADR text they retire; migrate the eight conflicting kind tokens to the registry forms corpus-wide per the user's ruling, with every citation updated in the same commit; record the hyphenated-area amendment and the local-extension register. |
 | `DI-002b` | DONE | Replace the second-edition adopted drafts with the author's third-edition texts and repair every citation that dangled as a result. The third edition was verified against the audit register before the swap: all 26 findings fixed, the 7 defects among them included, and a mechanical re-audit clean — every per-document citation resolves, every mint is unique, and the kind registry's headline counts of 333 names, 349 rows, 208 kinds, 3 declared hybrids and 4 device classes derive exactly from its tables. Fourteen citations across three plan files were retargeted in the same commit as the swap, per the calculus's same-commit rule. Both adopting records were then refreshed to the editions they adopt: ADR-019 restates all seven adoption parameters and records that the checker implements the authorship warrant species only, ADR-020 names this repository as the registry's acceptee and recasts its extension register as the recorded extension set with located first-hand evidence, and a second kind-migration round settled two further tokens. |
-| `DI-003` | ACTIVE | Re-engineer the labels checker to the calculus: a single participation scanner shared by every check (mints, citations, links, hygiene, inline-code discipline), owner signatures with registered prefixes, imported and synthetic citations, anchor harvests, and the kind registry as the checker's kind vocabulary. W1 landed the participation scanner and W2 the adoption data, the kind vocabulary, and warrant totality; the derivation species and the anchor-harvest and attestation registers remain. |
+| `DI-003` | DONE | Re-engineer the labels checker to the calculus: a single participation scanner shared by every check (mints, citations, links, hygiene, inline-code discipline), owner signatures with registered prefixes, imported and synthetic citations, anchor harvests, and the kind registry as the checker's kind vocabulary. W1 landed the participation scanner and the DI-F02 repair, W2 the seven adoption parameters as typed data with the kind vocabulary and warrant totality, and W3 the near-miss warnings, the companion attestation register, and the gate reconciliation across both records. |
 | `DI-004` | DONE | Adopt the identity-adjudication procedure against ADR-016: classify every existing digest through the benefit criterion with admission records, and MIGRATE the two grandfathered recipes to domain-separated forms per the user's ruling — the architecture semantic and anchor-set hashes change under a recorded recipe migration, superseding the ADR-016 grandfather clause. Both halves delivered: the migration, and a census of the whole tree read from the owning code, recorded as six admission records and eleven stop records in the identities register. |
 | `DI-005` | QUEUED | Interchange conventions: record adoption as the standing wire-format discipline for future externally consumed documents; no implementation until a consumer exists. |
 
@@ -1978,6 +1978,45 @@ One defect surfaced in passing: diagnostics were emitted only when the
 check failed, so no passing run could ever show a warning. Warnings now
 emit on a passing check, which is what makes the two Layer-0 tokens
 visible.
+
+W3 closed the batch with the near-miss warnings, in four families and
+warnings only: an interior differing from a label in case, in spacing,
+or in bracketing, and a label-shaped backtick span in scanned comment
+text where the acute carries the label syntax. Each family repairs the
+span before testing it and every repair changes the text, so a form the
+grammar accepts can never reach a warning; displayed spans stay silent
+and no existing error was demoted. The live tree raises 198, all of them
+the comment family — one finding rather than 198, since Rust comments
+cite labels in backticks throughout.
+
+The companion attestation register the acceptee owes is generated at
+plans/labels/attestation.md, 6176 bytes, by its own target: separate
+from the upstream generator because its derivation is corpus-wide where
+theirs is scoped, its evidence rows carrying a mint census that answers
+to every owner. Three views of one base under the recorded ordering —
+the 13 first-hand extension rows with spelling, locator, sense, and
+census; the status map, 349 base rows by reference and the three the
+edition daggers; and Hom(C_A), 32 pairs over 15 names. The derived base
+relation is welded to the registry's published headline counts, so a
+parse that drifts fails rather than re-deriving quietly. Task rows in
+Hom only because this corpus extends it, which is the register's point.
+
+Both records were then walked bullet by bullet. The calculus's
+implementation gate has one unmet bullet left, inventory discipline,
+waiting on the decision that registers the first profile rather than on
+code; two ADR-019 claims had gone stale the other way, package prefixes
+and the profile note, and both now read as built. The registry's
+adoption gate lost its recorded unmet item with the register and gained
+one this walk found: head validation is unimplemented, the checker
+validating a kind token but never the pair a head declares. The 146
+environment heads under adr/ and plans/ were read by hand and all carry
+catalogued pairs, so nothing rests on the gap, and ADR-020 names it.
+
+Three residuals outlive DI-003, none its own to discharge: the
+derivation-warrant machinery waits on a first inventory profile, Π and K
+empty by decision; Layer-0 kind scope waits on the motto, invest, and
+abs adjudication, entering with that surface; and the interchange
+conventions stay dormant until a consumer exists, which is DI-005.
 
 ### 13.2 Checker findings so far · `tab:backlog:draft-findings`
 

@@ -93,6 +93,7 @@ attestation_main_path = fs.relative_to(attestation_main_file[0], source_root)
 realization_path = fs.relative_to(realization_file[0], source_root)
 specification_register_path = fs.relative_to(specification_register_file[0], source_root)
 realization_register_path = fs.relative_to(realization_register_file[0], source_root)
+attestation_register_path = fs.relative_to(attestation_register_file[0], source_root)
 model_labels_json_path = fs.relative_to(model_labels_json_file[0], source_root)
 
 attestation_section_paths = []
@@ -155,6 +156,7 @@ endforeach
 labels_census_args = scoped_census_args + [
   '--specification-register', specification_register_path,
   '--realization-register', realization_register_path,
+  '--attestation-register', attestation_register_path,
   '--model-labels-json', model_labels_json_path,
 ]
 foreach p : adr_paths
@@ -171,7 +173,8 @@ foreach p : crate_source_paths
 endforeach
 
 census_paths = [attestation_main_path, realization_path, specification_register_path,
-                realization_register_path, model_labels_json_path] \
+                realization_register_path, attestation_register_path,
+                model_labels_json_path] \
                + attestation_section_paths + adr_paths + plan_paths + doc_paths \
                + model_source_paths + crate_source_paths + generated_paths
 
@@ -222,6 +225,17 @@ generate_registers_bin = custom_target(
   command: [
     cargo_bin_sync, cargo, cargo_manifest,
     'tripod-labels', 'generate-label-registers', '@OUTPUT@',
+  ],
+  console: true,
+  build_always_stale: true,
+)
+
+generate_attestation_bin = custom_target(
+  'cargo-generate-attestation-register',
+  output: 'generate-attestation-register-bin',
+  command: [
+    cargo_bin_sync, cargo, cargo_manifest,
+    'tripod-labels', 'generate-attestation-register', '@OUTPUT@',
   ],
   console: true,
   build_always_stale: true,
@@ -309,7 +323,7 @@ labels_stamp = custom_target(
   'labels-check',
   input: scoped_census_inputs + adr_files + plan_files + doc_files
          + crate_source_files + specification_register_file + realization_register_file
-         + model_labels_json_file,
+         + attestation_register_file + model_labels_json_file,
   output: ['labels.ok', 'labels-check.json'],
   command: [check_labels_bin] + labels_census_args + [
     '--report', '@OUTPUT1@',
@@ -344,8 +358,10 @@ foreach f : adr_files + plan_files + doc_files
     plans_lane_paths += p
   endif
 endforeach
-plans_lane_files += specification_register_file + realization_register_file
-plans_lane_paths += [specification_register_path, realization_register_path]
+plans_lane_files += specification_register_file + realization_register_file \
+  + attestation_register_file
+plans_lane_paths += [specification_register_path, realization_register_path,
+                     attestation_register_path]
 plans_census_args = []
 foreach p : plans_lane_paths
   plans_census_args += ['--subject', p]
@@ -433,6 +449,21 @@ generate_registers_target = custom_target(
   console: true,
 )
 alias_target('generate-label-registers', generate_registers_target)
+
+# The companion register derives from the whole corpus, not the scoped
+# register slice: its evidence rows carry a mint census, which answers
+# to every owner. Its inputs are therefore the label census.
+generate_attestation_target = custom_target(
+  'run-generate-attestation-register',
+  input: scoped_census_inputs + adr_files + plan_files + doc_files
+         + crate_source_files + model_labels_json_file,
+  output: 'generate-attestation-register.ok',
+  command: generator_wrap + [generate_attestation_bin] + labels_census_args,
+  build_by_default: false,
+  build_always_stale: true,
+  console: true,
+)
+alias_target('generate-attestation-register', generate_attestation_target)
 
 generate_artifacts_target = custom_target(
   'run-generate-artifacts',

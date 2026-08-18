@@ -6,12 +6,12 @@ use std::os::unix::fs::PermissionsExt;
 use petgraph::Direction;
 
 use crate::{
-    LabelDiagnostic, LabelErrorCode, adoption,
+    LabelDiagnostic, LabelErrorCode, adoption, attestation, attestation_base,
     census::{CensusGroup, RepositoryCensus},
     label::{Label, LabelParseError, LabelShape},
     latex::harvest_attestation,
     markdown::{InlineCodeContext, scan_markdown},
-    model_labels_json,
+    model_labels_json, nearmiss,
     owner::{ImportedLabel, LabelOwner},
     registry::LabelMint,
     repository::{
@@ -2529,5 +2529,295 @@ fn the_corpus_mints_no_ungoverned_kind() {
     assert!(
         offending.iter().all(|diagnostic| !diagnostic.is_error()),
         "no governed owner may mint an uncatalogued kind: {offending:#?}",
+    );
+}
+
+// ---------------------------------------------------------------------
+// The companion attestation register.
+// ---------------------------------------------------------------------
+
+/// The base relation derived here is the one the registry states of
+/// itself. The draft publishes its own headline counts, so the parse is
+/// welded to them: a change to either side that is not a change to both
+/// fails here rather than silently re-deriving the register.
+#[test]
+fn derived_base_relation_matches_the_registry_headline_counts() {
+    let base = attestation_fixture();
+    let rows = base
+        .records
+        .iter()
+        .filter(|record| record.key.source == attestation::Source::Base)
+        .collect::<Vec<_>>();
+    let names = rows
+        .iter()
+        .map(|record| record.key.name.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    let kinds = rows
+        .iter()
+        .map(|record| record.key.kind.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+
+    assert_eq!(rows.len(), 349, "rows");
+    assert_eq!(names.len(), 333, "names");
+    assert_eq!(kinds.len(), 208, "kinds");
+}
+
+/// The recorded extension rows carry everything an acceptee's own
+/// evidence record must: the pair, an exact quoted spelling, a locator,
+/// and the sense.
+#[test]
+fn recorded_extensions_carry_first_hand_evidence() {
+    let base = attestation_fixture();
+    let extensions = base.extensions().collect::<Vec<_>>();
+    assert_eq!(extensions.len(), 13);
+    for record in extensions {
+        assert_eq!(record.status, attestation::Status::Firm);
+        assert!(
+            record.spelling.as_deref().is_some_and(|s| s.contains(':')),
+            "{record:#?} needs a quoted spelling",
+        );
+        assert!(
+            record.key.locator.contains(':'),
+            "{record:#?} needs a locator",
+        );
+        assert!(record.sense.is_some(), "{record:#?} needs a sense");
+    }
+}
+
+/// Homonymy is derived from the effective relation, not from the
+/// registry alone: a recorded extension that shares a base row's name
+/// makes that name homonymous in this corpus and nowhere else.
+#[test]
+fn homonymy_is_derived_from_the_effective_relation() {
+    let base = attestation_fixture();
+    let homonyms = base.homonyms();
+    let names = homonyms
+        .iter()
+        .map(|record| record.key.name.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+
+    assert_eq!(homonyms.len(), 32);
+    assert_eq!(names.len(), 15);
+    // The extension row is what puts Task's third sense in Hom.
+    let task = homonyms
+        .iter()
+        .filter(|record| record.key.name == "Task")
+        .map(|record| (record.key.kind.as_str(), record.key.source))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        task,
+        vec![
+            ("exer", attestation::Source::Base),
+            ("job", attestation::Source::Base),
+            ("task", attestation::Source::Extension),
+        ],
+    );
+}
+
+/// The register is totally ordered by name, kind, source, locator, then
+/// the record's sequence in its source table — and the order is the
+/// derived key's own, so no two records tie.
+#[test]
+fn register_records_are_totally_ordered() {
+    let base = attestation_fixture();
+    let keys = base
+        .records
+        .iter()
+        .map(|record| record.key.clone())
+        .collect::<Vec<_>>();
+
+    let mut sorted = keys.clone();
+    sorted.sort();
+    assert_eq!(keys, sorted, "records must be emitted in register order");
+
+    let distinct = keys.iter().collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(distinct.len(), keys.len(), "the ordering must be total");
+}
+
+/// Generation is deterministic: the same sources yield the same bytes,
+/// and the committed publication is those bytes.
+#[test]
+fn attestation_register_generation_is_deterministic() {
+    let census = RepositoryCensus::discover(repository_root());
+    let first = attestation_base(&census).expect("the corpus derives a register");
+    let second = attestation_base(&census).expect("the corpus derives a register");
+    let rendered = crate::render::attestation_register(&first);
+
+    assert_eq!(
+        rendered,
+        crate::render::attestation_register(&second),
+        "two derivations must render the same bytes",
+    );
+    let committed =
+        fs::read_to_string(&census.attestation_register).expect("the register is committed");
+    assert_eq!(
+        committed, rendered,
+        "the committed register must be the generator's current output",
+    );
+}
+
+/// The register presents its rows and nothing else: every token it
+/// copies is displayed, so a register participates in nothing it
+/// indexes and can never sustain its own membership.
+#[test]
+fn the_attestation_register_participates_in_nothing() {
+    let census = RepositoryCensus::discover(repository_root());
+    let source = fs::read_to_string(&census.attestation_register).expect("the register is read");
+    let scan = scan_markdown(Path::new("plans/labels/attestation.md"), &source);
+
+    let minting = scan
+        .participating_spans()
+        .filter(|span| Label::parse(span.content.trim(), LabelShape::Planning).is_ok())
+        .collect::<Vec<_>>();
+    assert!(minting.is_empty(), "{minting:#?}");
+}
+
+/// Every recorded extension is firm on first-hand evidence because the
+/// adopting record says so. The statement is welded here: if the record
+/// stops saying it, the generator's status column has lost its warrant.
+#[test]
+fn the_adopting_record_still_states_that_extensions_are_firm() {
+    let source = fs::read_to_string(repository_root().join(adoption::EXTENSION_SOURCE))
+        .expect("the adopting record is read");
+    assert!(
+        source.contains("Every pair of X_A is firm on the evidence located above."),
+        "the adopting record no longer states the extension statuses",
+    );
+}
+
+fn attestation_fixture() -> attestation::AttestationBase {
+    attestation::derive(&repository_root(), std::collections::BTreeMap::new())
+        .expect("the corpus derives an attestation base")
+}
+
+// ---------------------------------------------------------------------
+// Near-miss warnings.
+// ---------------------------------------------------------------------
+
+/// The three prose families, each classified as itself.
+#[test]
+fn prose_near_miss_families_are_recognized() {
+    assert_eq!(
+        nearmiss::classify("Def:Labels:Total-Resolution"),
+        Some(nearmiss::NearMiss::Casing),
+    );
+    assert_eq!(
+        nearmiss::classify("def: labels: total-resolution"),
+        Some(nearmiss::NearMiss::Spacing),
+    );
+    assert_eq!(
+        nearmiss::classify("(def:labels:total-resolution)"),
+        Some(nearmiss::NearMiss::Brackets),
+    );
+    assert_eq!(
+        nearmiss::classify("{[RZ-sec:realization:representation]}"),
+        Some(nearmiss::NearMiss::Brackets),
+    );
+}
+
+/// A near miss is never an occurrence, and ordinary text is never a
+/// near miss. The repairs are what separate the two: a form the grammar
+/// accepts is unchanged by every repair, so it can never pass a
+/// repaired test.
+#[test]
+fn occurrences_and_ordinary_text_are_not_near_misses() {
+    for content in [
+        // Occurrences of every shape the grammar accepts.
+        "def:labels:total-resolution",
+        "  def:labels:total-resolution  ",
+        "[A-def:model:classes]",
+        "[RZ-sec:realization:representation]",
+        // Text: colon-bearing spans whose first segment names no kind.
+        "12:30:45",
+        "Self::Bare",
+        "note: see below",
+        "UTF-8",
+        "--stamp",
+        // A three-segment shape whose kind is outside the vocabulary.
+        "zzz:labels:total-resolution",
+    ] {
+        assert_eq!(
+            nearmiss::classify(content),
+            None,
+            "{content:?} must not warn"
+        );
+    }
+}
+
+/// Displayed spans are silent: a near miss inside a fence, or in a
+/// double-backtick span, is shown rather than meant.
+#[test]
+fn displayed_near_misses_are_silent() {
+    let scan = scan_markdown(
+        Path::new("fixture.md"),
+        concat!(
+            "``Def:Labels:Shown``\n",
+            "```text\n",
+            "Def:Labels:Fenced\n",
+            "```\n",
+            "and `Def:Labels:Meant`\n",
+        ),
+    );
+    let mut diagnostics = Vec::new();
+    nearmiss::prose(&scan, &mut diagnostics);
+
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
+    assert_eq!(diagnostics[0].line, 5);
+    assert_eq!(diagnostics[0].code, LabelErrorCode::NearMissSpan);
+    assert!(!diagnostics[0].is_error());
+}
+
+/// In scanned comment text the acute carries the label syntax, so a
+/// label-shaped backtick span is a near miss. A fenced documentation
+/// example is displayed, and a string literal is not comment text; both
+/// stay silent.
+#[test]
+fn comment_backtick_spans_warn_where_the_acute_was_meant() {
+    let directory = tempfile::tempdir().expect("temporary repository");
+    let root = directory.path();
+    fs::create_dir_all(root.join("packages/model/src")).expect("fixture directory");
+    let path = root.join("packages/model/src/lib.rs");
+    fs::write(
+        &path,
+        concat!(
+            "//! A citation written with the wrong delimiter:\n",
+            "//! (`rem:overview:status-tags`).\n",
+            "/// ```text\n",
+            "/// `rem:overview:shown`\n",
+            "/// ```\n",
+            "pub const VALUE: &str = \"`rem:overview:literal`\";\n",
+        ),
+    )
+    .expect("fixture source");
+
+    let census = RepositoryCensus {
+        root: root.to_path_buf(),
+        model_sources: vec![path],
+        ..RepositoryCensus::default()
+    };
+    let harvest = harvest_model(&census);
+    let warnings: Vec<&LabelDiagnostic> = harvest
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == LabelErrorCode::NearMissSpan)
+        .collect();
+
+    assert_eq!(warnings.len(), 1, "{:#?}", harvest.diagnostics);
+    assert_eq!(warnings[0].line, 2);
+    assert!(!warnings[0].is_error());
+}
+
+/// The live tree's near misses are warnings, every one of them.
+#[test]
+fn live_tree_near_misses_never_fail_a_check() {
+    let census = RepositoryCensus::discover(repository_root());
+    let labels = RepositoryLabels::harvest_sources(&census);
+    assert!(
+        labels
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == LabelErrorCode::NearMissSpan)
+            .all(|diagnostic| !diagnostic.is_error()),
+        "a near miss must never fail a check",
     );
 }

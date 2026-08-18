@@ -9,6 +9,7 @@
 )]
 
 pub mod adoption;
+pub mod attestation;
 pub mod census;
 pub mod check;
 pub mod diagnostic;
@@ -16,6 +17,7 @@ pub mod forbidden;
 pub mod label;
 pub mod latex;
 pub mod markdown;
+pub mod nearmiss;
 pub mod owner;
 pub mod participation;
 pub mod plans;
@@ -29,7 +31,9 @@ pub use census::{CensusGroup, RepositoryCensus, group_crate_sources};
 pub use check::{CheckReport, check_repository};
 pub use diagnostic::{LabelDiagnostic, LabelErrorCode, Severity};
 pub use label::{Label, LabelShape};
-pub use repository::{generate_registers, model_labels_json};
+pub use repository::{
+    attestation_base, generate_attestation_register, generate_registers, model_labels_json,
+};
 
 #[cfg(test)]
 mod tests;

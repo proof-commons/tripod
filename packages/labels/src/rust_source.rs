@@ -9,6 +9,7 @@ use crate::{
     diagnostic::{LabelDiagnostic, LabelErrorCode},
     label::{Label, LabelShape},
     markdown::{InlineCodeContext, classify, nested_fence_diagnostic},
+    nearmiss,
     owner::{ImportedLabel, LabelOwner},
     participation::{CommentSegment, comment_segments, fence_close, fence_open, nested_fence},
     registry::{LabelMint, LabelRegistry},
@@ -117,6 +118,7 @@ fn harvest_file(path: &Path, source: &str, owner: &LabelOwner, result: &mut Rust
                 segment.column + column - 1,
             ));
         }
+        nearmiss::comment(path, &segment, &mut result.diagnostics);
         harvest_segment(path, &segment, owner, result);
     }
     if fence.is_some() {

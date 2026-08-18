@@ -51,6 +51,7 @@ pub struct RepositoryCensus {
     /// never touch them.
     pub specification_register: PathBuf,
     pub realization_register: PathBuf,
+    pub attestation_register: PathBuf,
     pub model_labels_json: PathBuf,
     /// Traversal failures recorded while discovering this census,
     /// keyed by the group whose walk failed.
@@ -107,6 +108,7 @@ impl RepositoryCensus {
             realization: root.join("docs/attestation/realization.md"),
             specification_register: root.join("plans/labels/specification.md"),
             realization_register: root.join("plans/labels/realization.md"),
+            attestation_register: root.join("plans/labels/attestation.md"),
             model_labels_json: root.join("packages/model/generated/model_labels.json"),
             root,
             ..Self::default()
@@ -132,7 +134,9 @@ impl RepositoryCensus {
         census.plans = markdown_files(&root.join("plans"), &mut walk)
             .into_iter()
             .filter(|path| {
-                *path != census.specification_register && *path != census.realization_register
+                *path != census.specification_register
+                    && *path != census.realization_register
+                    && *path != census.attestation_register
             })
             .collect();
         census.traversal.insert(CensusGroup::Plan, walk.finish());
