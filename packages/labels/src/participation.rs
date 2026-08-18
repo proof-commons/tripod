@@ -2,7 +2,7 @@
 //!
 //! # Why this module exists
 //!
-//! The calculus defines participation once (`judg:labels:participation`):
+//! The calculus defines participation once `(´[PLAN-judg:labels:participation]´)`:
 //! in prose, authored text participates while fenced blocks and
 //! double-backtick spans do not; in code, only comments and
 //! documentation comments are scanned, never string or character
