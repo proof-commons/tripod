@@ -665,15 +665,14 @@ pub fn acute_scan(text: &str) -> AcuteScan {
         let interior = open + ACUTE.len_utf8();
         let next = text[interior..].find(ACUTE).map(|offset| interior + offset);
         if label_shaped_text(&text[interior..next.unwrap_or(text.len())]) {
-            match next {
-                Some(close) => {
-                    scan.spans.push((open, close + ACUTE.len_utf8()));
-                    cursor = close + ACUTE.len_utf8();
-                }
-                None => {
-                    scan.unclosed = Some(open);
-                    return scan;
-                }
+            if let Some(close) = next {
+                scan.spans.push((open, close + ACUTE.len_utf8()));
+                cursor = close + ACUTE.len_utf8();
+            } else {
+                // An opener whose region ended first: intent to mint or
+                // cite, lost. The scan stops at the failure.
+                scan.unclosed = Some(open);
+                return scan;
             }
         } else {
             // Opens nothing, so it is text; the next acute is still a
