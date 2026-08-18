@@ -89,6 +89,7 @@ census_args() {
         case "$path" in
           plans/labels/specification.md) emit_tagged --specification-register "$path" ;;
           plans/labels/realization.md) emit_tagged --realization-register "$path" ;;
+          plans/labels/attestation.md) emit_tagged --attestation-register "$path" ;;
           packages/model/generated/model_labels.json) emit_tagged --model-labels-json "$path" ;;
           plans/*.md) emit_tagged --plan "$path" ;;
           adr/[0-9][0-9][0-9]*.md) emit_tagged --adr "$path" ;;

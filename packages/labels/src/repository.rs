@@ -1117,7 +1117,7 @@ pub fn build_label_graph(
     (graph, node_by_id)
 }
 
-fn registry_mints(registries: &RegistrySet) -> Vec<LabelMint> {
+pub(crate) fn registry_mints(registries: &RegistrySet) -> Vec<LabelMint> {
     registries
         .attestation
         .iter()
@@ -1392,6 +1392,46 @@ pub fn generate_registers(
         })
         .collect())
 }
+/// Derive the companion attestation register from the whole corpus.
+///
+/// Unlike the two upstream registers, this one is not scoped: its
+/// evidence rows carry a mint census, and a census of the corpus is
+/// answerable to every owner in it. The derivation therefore takes the
+/// full harvest, and a corpus-wide defect blocks it — which is right,
+/// because a register asserting coverage over a corpus that does not
+/// check is asserting something it cannot know.
+pub fn attestation_base(
+    paths: &RepositoryCensus,
+) -> Result<crate::attestation::AttestationBase, GenerateError> {
+    let mut labels = RepositoryLabels::harvest_sources(paths);
+    labels
+        .diagnostics
+        .extend(paths.verify(crate::census::CensusGroup::ALL));
+    if labels.has_errors() {
+        return Err(GenerateError::Validation(labels.diagnostics));
+    }
+    let census = adoption::kind_census(&registry_mints(&labels.registries));
+    crate::attestation::derive(&paths.root, census).map_err(GenerateError::Validation)
+}
+
+/// Generate and publish the companion attestation register.
+pub fn generate_attestation_register(
+    paths: &RepositoryCensus,
+    output: &Path,
+) -> Result<GeneratedRegister, GenerateError> {
+    let base = attestation_base(paths)?;
+    let contents = render::attestation_register(&base);
+    cli_common::publish_batch(&[cli_common::PublicationAsset {
+        role: "attestation-register-output",
+        path: output,
+        bytes: contents.as_bytes(),
+    }])?;
+    Ok(GeneratedRegister {
+        path: output.to_path_buf(),
+        bytes: contents.len(),
+    })
+}
+
 pub fn model_labels_json(paths: &RepositoryCensus) -> Result<String, GenerateError> {
     let labels = derive_model_sources(paths);
     if labels.has_errors() {
