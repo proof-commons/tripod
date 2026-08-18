@@ -30,7 +30,9 @@ impl Label {
         if shape == LabelShape::Realization {
             // ADR-020 retired `subsec`: a subsection is a section
             // nested, and the sub- prefix is a presentation device, so
-            // what `subsec` labelled is a three-part `sec`.
+            // what `subsec` labelled is a three-part `sec`. `app` joins
+            // the same list for the same reason: an appendix carries
+            // divisions exactly as a section does.
             let kinds = [
                 "sec", "app", "req", "def", "inv", "lem", "obl", "trap", "rem", "intuit", "rule",
                 "pin", "res", "listing", "fig", "tab", "leaf",

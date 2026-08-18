@@ -3476,7 +3476,11 @@ fn latex_fixture_harvest(body: &str) -> (LabelRegistry, Vec<LabelDiagnostic>) {
 /// label takes.
 #[test]
 fn a_two_segment_latex_label_fails_with_the_expected_form() {
-    let (registry, diagnostics) = latex_fixture_harvest("% front\n\\label{def:classes}\n");
+    // The label argument is assembled rather than written whole: a
+    // two-segment token inside braces is a formatting-argument
+    // silhouette, which the lints refuse in a literal.
+    let body = format!("% front\n\\label{{{}}}\n", "def:classes");
+    let (registry, diagnostics) = latex_fixture_harvest(&body);
     assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
     assert_eq!(diagnostics[0].code, LabelErrorCode::MalformedLabelShape);
     assert!(diagnostics[0].is_error());

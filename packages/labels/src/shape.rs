@@ -24,9 +24,10 @@
 //! | `rust_source::harvest_label` — acute spans whose first segment is a model type | a | a, now coded as a shape defect |
 //! | `rust_source::harvest_label` — acute spans with any other first segment | a | a: unknown Rust label type, unchanged |
 //! | `repository` markdown harvests — bare and parenthesized spans in the realization document, the records, and the planning tree | b | b: unchanged, decided below |
-//! | `repository::harvest_realization_import`, `import` — bracketed imported citations | a | a, now coded as a shape defect |
-//! | `repository::add_architecture_citations` — synthetic citations from typed witness and clause data | a | a, now coded as a shape defect |
+//! | `repository::harvest_realization_import`, `import` — bracketed imported citations | a, except c under the `RZ` prefix, whose shape admitted two segments | a for every owner alike, coded as a shape defect |
+//! | `repository::add_architecture_citations` — synthetic citations from typed witness and clause data | c: the designated classes target `RZ`, so a two-segment tag resolved | a, coded as a shape defect |
 //! | `heads::parse_head` — the delimited label of an environment head | b | b: unchanged, decided below |
+//! | `nearmiss::classify` — repaired candidate spans | b | b: a repair is tested against the three-segment planning shape, so a near miss is warned about and never failed |
 //! | `check`, `render` — generated registers | b | b: registers are compared as bytes and mint nothing |
 //! | `adoption` — the pair and package tables | b | b: those tables carry names and kinds, never labels |
 //!
