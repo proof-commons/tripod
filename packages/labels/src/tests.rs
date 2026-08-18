@@ -13,6 +13,7 @@ use crate::{
     markdown::{InlineCodeContext, scan_markdown},
     model_labels_json, nearmiss,
     owner::{ImportedLabel, LabelOwner},
+    participation,
     registry::LabelMint,
     repository::{
         CitationClass, LabelGraphEdge, LabelGraphNode, RepositoryLabels, generate_registers,
@@ -2805,6 +2806,192 @@ fn comment_backtick_spans_warn_where_the_acute_was_meant() {
     assert_eq!(warnings.len(), 1, "{:#?}", harvest.diagnostics);
     assert_eq!(warnings[0].line, 2);
     assert!(!warnings[0].is_error());
+}
+
+// The acute span model: in scanned code text the acute belongs to the
+// label syntax and classifies locally. It opens exactly when
+// label-shaped text follows it; an opening acute unclosed when its
+// region ends is a hard failure; an acute that opens nothing is text.
+
+/// All three occurrence forms parse in the acute syntax, feeding the
+/// same registry and citation list the prose syntax feeds.
+#[test]
+fn the_three_acute_forms_mint_and_cite() {
+    let harvest = rust_fixture_harvest(concat!(
+        "// \u{b4}def:fixture:minted\u{b4}\n",
+        "// see (\u{b4}def:fixture:minted\u{b4})\n",
+        "// and (\u{b4}[RZ-sec:realization:overview]\u{b4})\n",
+    ));
+
+    assert!(
+        harvest
+            .registry
+            .contains(&Label::parse("def:fixture:minted", LabelShape::Model).expect("valid label")),
+        "{:#?}",
+        harvest.diagnostics,
+    );
+    assert_eq!(harvest.citations.len(), 2, "{:#?}", harvest.citations);
+    assert!(harvest.diagnostics.is_empty(), "{:#?}", harvest.diagnostics);
+}
+
+/// An opening acute whose region ends before it closes is a hard
+/// failure, reported at the opening delimiter.
+#[test]
+fn an_unclosed_opening_acute_fails_at_its_delimiter() {
+    let harvest = rust_fixture_harvest(concat!(
+        "// intact \u{b4}def:fixture:closed\u{b4}\n",
+        "// broken \u{b4}def:fixture:dangling\n",
+    ));
+
+    let unclosed: Vec<_> = harvest
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == LabelErrorCode::UnclosedInlineCode)
+        .collect();
+    assert_eq!(unclosed.len(), 1, "{:#?}", harvest.diagnostics);
+    assert_eq!(unclosed[0].line, 2);
+    assert_eq!(unclosed[0].column, 11);
+    assert!(unclosed[0].is_error());
+    // The label the opener declared is not minted: an opening acute is
+    // an intent that failed, never a silent mint.
+    assert!(
+        !harvest.registry.contains(
+            &Label::parse("def:fixture:dangling", LabelShape::Model).expect("valid label")
+        )
+    );
+}
+
+/// An acute that opens nothing is ordinary text. A lone one is an
+/// apostrophe accident and a pair of them must not swallow the prose
+/// between into a label.
+#[test]
+fn acutes_that_open_nothing_are_silent_text() {
+    let harvest = rust_fixture_harvest(concat!(
+        "// it\u{b4}s a plain remark\n",
+        "// don\u{b4}t let this and it\u{b4}s partner pair up\n",
+        "// \u{b4}def:fixture:real\u{b4} still mints\n",
+    ));
+
+    assert!(
+        harvest
+            .registry
+            .contains(&Label::parse("def:fixture:real", LabelShape::Model).expect("valid label")),
+        "{:#?}",
+        harvest.diagnostics,
+    );
+    assert!(harvest.diagnostics.is_empty(), "{:#?}", harvest.diagnostics);
+}
+
+/// A label-shaped interior opens even when it resolves to nothing, so a
+/// misspelled kind is still diagnosed rather than demoted to text.
+#[test]
+fn a_label_shaped_interior_opens_and_is_diagnosed() {
+    let harvest = rust_fixture_harvest("// \u{b4}nosuch:fixture:kind\u{b4}\n");
+
+    assert!(
+        harvest
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == LabelErrorCode::InvalidLabel),
+        "{:#?}",
+        harvest.diagnostics,
+    );
+}
+
+/// A candidate interior that crosses a line break is not label-shaped,
+/// so the acute opens nothing: two lines never fabricate one label.
+#[test]
+fn an_acute_span_never_crosses_a_line_break() {
+    let harvest = rust_fixture_harvest(concat!(
+        "// \u{b4}def:fixture:split\n",
+        "// tail\u{b4} of the region\n",
+    ));
+
+    assert!(
+        !harvest
+            .registry
+            .contains(&Label::parse("def:fixture:split", LabelShape::Model).expect("valid label"))
+    );
+    // The candidate interior runs to the next acute and so carries the
+    // line break: it is not label-shaped, the acute opens nothing, and
+    // the whole thing is text. Neither acute is an unclosed opener.
+    assert!(harvest.diagnostics.is_empty(), "{:#?}", harvest.diagnostics);
+}
+
+/// String literals and fenced documentation examples are not scanned
+/// code text, so an acute occurrence in either is displayed.
+#[test]
+fn acutes_outside_scanned_comment_text_are_displayed() {
+    let harvest = rust_fixture_harvest(concat!(
+        "/// ```text\n",
+        "/// \u{b4}def:fixture:fenced\u{b4}\n",
+        "/// ```\n",
+        "pub const V: &str = \"\u{b4}def:fixture:literal\u{b4}\";\n",
+        "// \u{b4}def:fixture:scanned\u{b4}\n",
+    ));
+
+    let minted: Vec<_> = harvest.registry.labels().map(ToString::to_string).collect();
+    assert_eq!(
+        minted,
+        vec!["def:fixture:scanned".to_owned()],
+        "{:#?}",
+        harvest.diagnostics,
+    );
+    assert!(harvest.diagnostics.is_empty(), "{:#?}", harvest.diagnostics);
+}
+
+/// Both concrete syntaxes may appear in one comment region during the
+/// migration: the acute occurrence is the participating one, and the
+/// backtick spelling of the same label is a near-miss warning that
+/// mints nothing and fails nothing.
+#[test]
+fn a_mixed_syntax_region_harvests_the_acute_and_warns_on_the_backtick() {
+    let harvest = rust_fixture_harvest(concat!(
+        "//! \u{b4}def:fixture:shared\u{b4}\n",
+        "//! cited here (\u{b4}def:fixture:shared\u{b4})\n",
+        "//! and mis-delimited here `def:fixture:shared`\n",
+    ));
+
+    assert!(
+        harvest
+            .registry
+            .contains(&Label::parse("def:fixture:shared", LabelShape::Model).expect("valid label")),
+        "{:#?}",
+        harvest.diagnostics,
+    );
+    assert_eq!(harvest.citations.len(), 1, "{:#?}", harvest.citations);
+    let warnings: Vec<_> = harvest
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == LabelErrorCode::NearMissSpan)
+        .collect();
+    assert_eq!(warnings.len(), 1, "{:#?}", harvest.diagnostics);
+    assert_eq!(warnings[0].line, 3);
+    assert!(!warnings[0].is_error());
+    assert!(
+        harvest
+            .diagnostics
+            .iter()
+            .all(|diagnostic| !diagnostic.is_error()),
+        "{:#?}",
+        harvest.diagnostics,
+    );
+}
+
+/// The opening test is a lexical silhouette, not a resolution.
+#[test]
+fn label_shaped_text_admits_labels_and_imports_only() {
+    assert!(participation::label_shaped_text("def:fixture:name"));
+    assert!(participation::label_shaped_text(
+        "[RZ-sec:realization:overview]"
+    ));
+    assert!(participation::label_shaped_text("nosuch:fixture:kind"));
+    assert!(!participation::label_shaped_text(""));
+    assert!(!participation::label_shaped_text("t"));
+    assert!(!participation::label_shaped_text("s a plain remark"));
+    assert!(!participation::label_shaped_text("def:fixture with space"));
+    assert!(!participation::label_shaped_text("no-colon-here"));
+    assert!(!participation::label_shaped_text("def:fixture:name\nnext"));
 }
 
 /// The live tree's near misses are warnings, every one of them.

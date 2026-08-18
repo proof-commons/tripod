@@ -604,6 +604,85 @@ pub fn comment_segments(
     segments
 }
 
+// ---------------------------------------------------------------------
+// Acute span model: the code syntax's delimiter classification.
+// ---------------------------------------------------------------------
+
+/// The acute accent, which carries the label syntax in scanned code
+/// text as the backtick carries it in prose.
+pub const ACUTE: char = '\u{b4}';
+
+/// Whether text is shaped like a label or a bracketed import, which is
+/// the condition under which an acute opens.
+///
+/// The test is lexical silhouette, never resolution: a token that is
+/// trying to be a label opens a span and is then diagnosed by the
+/// grammar if it parses as nothing, while text that is not trying is
+/// left alone. Whitespace, an empty interior, characters outside the
+/// label alphabet, and the absence of a colon each disqualify — which
+/// is what separates a real occurrence from an apostrophe accident.
+#[must_use]
+pub fn label_shaped_text(value: &str) -> bool {
+    let core = value
+        .strip_prefix('[')
+        .and_then(|inner| inner.strip_suffix(']'))
+        .unwrap_or(value);
+    !core.is_empty()
+        && core.contains(':')
+        && core.chars().all(|character| {
+            character.is_ascii_alphanumeric() || character == ':' || character == '-'
+        })
+}
+
+/// The acute-delimited spans of one scanned code region.
+#[derive(Clone, Debug, Default)]
+pub struct AcuteScan {
+    /// Each span as (byte offset of the opening acute, byte offset just
+    /// past the closing acute), in source order.
+    pub spans: Vec<(usize, usize)>,
+    /// Byte offset of an opening acute whose region ended before it
+    /// closed. An opening acute declares intent to mint or cite, so its
+    /// loss is a hard failure rather than a silent demotion to text.
+    pub unclosed: Option<usize>,
+}
+
+/// Pair the acute delimiters of one logical code region.
+///
+/// The acute classifies locally: it opens exactly when label-shaped
+/// text follows it, an opening acute unclosed when the region ends is a
+/// hard failure, and an acute that opens nothing is ordinary text. The
+/// candidate interior runs to the next acute, or to the end of the
+/// region when none follows — so the opening decision never depends on
+/// a delimiter being found, which is what lets an unclosed opener be
+/// reported at all. A stray closing acute opens nothing and is
+/// therefore silent: it is overwhelmingly an apostrophe accident.
+#[must_use]
+pub fn acute_scan(text: &str) -> AcuteScan {
+    let mut scan = AcuteScan::default();
+    let mut cursor = 0;
+    while let Some(relative) = text[cursor..].find(ACUTE) {
+        let open = cursor + relative;
+        let interior = open + ACUTE.len_utf8();
+        let next = text[interior..].find(ACUTE).map(|offset| interior + offset);
+        if label_shaped_text(&text[interior..next.unwrap_or(text.len())]) {
+            if let Some(close) = next {
+                scan.spans.push((open, close + ACUTE.len_utf8()));
+                cursor = close + ACUTE.len_utf8();
+            } else {
+                // An opener whose region ended first: intent to mint or
+                // cite, lost. The scan stops at the failure.
+                scan.unclosed = Some(open);
+                return scan;
+            }
+        } else {
+            // Opens nothing, so it is text; the next acute is still a
+            // candidate opener in its own right.
+            cursor = interior;
+        }
+    }
+    scan
+}
+
 /// A string-literal prefix (`r`, `b`, `br`, `c`, `cr`, with optional
 /// `#`s for raw forms) starting at `i`.
 struct StringPrefix {

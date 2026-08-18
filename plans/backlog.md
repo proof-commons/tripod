@@ -2018,6 +2018,19 @@ empty by decision; Layer-0 kind scope waits on the motto, invest, and
 abs adjudication, entering with that surface; and the interchange
 conventions stay dormant until a consumer exists, which is DI-005.
 
+The acute code syntax now classifies as the calculus fixes it. The
+harvester had paired acutes blindly, one comment line at a time, so
+every acute opened: a lone one used as an apostrophe failed the file
+and a pair swallowed the prose between into a bogus label. Pairing is
+now settled over the logical comment region, an acute opens only where
+label-shaped text follows, and one that opens nothing stays text, while
+an opener whose region ends first still fails hard. No rule anywhere
+banned the acute in Rust sources — the forbidden-text audit knows one
+token and it is not this — so nothing needed repealing. Both syntaxes
+are readable in comments during the migration: the acute participates,
+the backtick spelling only warns, and the sweep of the 198 warned sites
+follows. Goldens over the tree are byte-identical.
+
 ### 13.2 Checker findings so far · `tab:backlog:draft-findings`
 
 | ID | Status | Finding |
