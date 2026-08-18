@@ -2018,6 +2018,14 @@ empty by decision; Layer-0 kind scope waits on the motto, invest, and
 abs adjudication, entering with that surface; and the interchange
 conventions stay dormant until a consumer exists, which is DI-005.
 
+One of those three tokens is now settled. On the user's ruling this
+corpus keeps its opening motto apart from the registry's slogan genre,
+so Motto and `motto` enter X_A as its fourteenth entry, on first-hand
+evidence at the title section. ADR-020 records the deviation, the
+checker's kind and pair tables carry it, and the regenerated companion
+register puts Hom(C_A) at 34 pairs over 16 names. Layer-0 stays
+reported: `invest` and `abs` are open.
+
 The acute code syntax now classifies as the calculus fixes it. The
 harvester had paired acutes blindly, one comment line at a time, so
 every acute opened: a lone one used as an apostrophe failed the file

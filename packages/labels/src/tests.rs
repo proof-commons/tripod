@@ -2247,7 +2247,7 @@ fn committed_extension_kinds_match_the_adopting_record() {
         parsed, committed,
         "the committed extension set must equal the record's extension table",
     );
-    assert_eq!(parsed.len(), 13, "the record carries thirteen extensions");
+    assert_eq!(parsed.len(), 14, "the record carries fourteen extensions");
 }
 
 /// No extension may collide with a registry token: the record requires
@@ -2426,7 +2426,7 @@ fn registry_and_extension_kinds_both_pass() {
 #[test]
 fn attestation_unknown_kind_reports_without_failing() {
     let adoption_data = adoption::Adoption::repository();
-    let mints = vec![mint_for(LabelOwner::Attestation, "motto:somewhere")];
+    let mints = vec![mint_for(LabelOwner::Attestation, "abs:somewhere")];
     let diagnostics = adoption::validate_warrants(&adoption_data, &mints, &no_place);
     assert_eq!(diagnostics.len(), 1);
     assert!(
@@ -2647,7 +2647,7 @@ fn derived_base_relation_matches_the_registry_headline_counts() {
 fn recorded_extensions_carry_first_hand_evidence() {
     let base = attestation_fixture();
     let extensions = base.extensions().collect::<Vec<_>>();
-    assert_eq!(extensions.len(), 13);
+    assert_eq!(extensions.len(), 14);
     for record in extensions {
         assert_eq!(record.status, attestation::Status::Firm);
         assert!(
@@ -2674,8 +2674,8 @@ fn homonymy_is_derived_from_the_effective_relation() {
         .map(|record| record.key.name.as_str())
         .collect::<std::collections::BTreeSet<_>>();
 
-    assert_eq!(homonyms.len(), 32);
-    assert_eq!(names.len(), 15);
+    assert_eq!(homonyms.len(), 34);
+    assert_eq!(names.len(), 16);
     // The extension row is what puts Task's third sense in Hom.
     let task = homonyms
         .iter()
@@ -2688,6 +2688,21 @@ fn homonymy_is_derived_from_the_effective_relation() {
             ("exer", attestation::Source::Base),
             ("job", attestation::Source::Base),
             ("task", attestation::Source::Extension),
+        ],
+    );
+
+    // Motto is the deliberate case: the recorded deviation sets this
+    // corpus's own kind beside the registry's under one name.
+    let motto = homonyms
+        .iter()
+        .filter(|record| record.key.name == "Motto")
+        .map(|record| (record.key.kind.as_str(), record.key.source))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        motto,
+        vec![
+            ("motto", attestation::Source::Extension),
+            ("slogan", attestation::Source::Base),
         ],
     );
 }

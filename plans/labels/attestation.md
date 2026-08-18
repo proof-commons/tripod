@@ -21,6 +21,7 @@ tree's mint census of the kind.
 | Error vocabulary | ``err`` | The enumerated error surface a package presents at its boundary. Near Erratum, ``errat``, and a different genre: an erratum corrects a document after publication; this states what a package can return | ``err:labels:vocabulary`` | `plans/packages/errors/labels.md:1` | 11 |
 | Leaf | ``leaf`` | A terminal node of a decision or derivation tree | ``leaf:authorization:cadence-band`` | `docs/attestation/realization.md:1121` | 2 |
 | Milestone | ``milestone`` | A named point in a delivery schedule, reached or not | ``milestone:realization:crate`` | `plans/packages/realization.md:272` | 29 |
+| Motto | ``motto`` | The document's own opening declaration, its thesis in one line, placed once by the front matter. Near two registry rows and neither: Epigraph, ``epigraph``, carries another's words; Motto is filed ``slogan``, the saying classified by its wording | ``motto:motto`` | `papers/attestation/sections/00_title.tex:95` | 1 |
 | Obligation | ``obl`` | A standing obligation on an implementation, discharged by evidence rather than satisfied once. Near Requirement, ``req``, and distinct: a requirement states what the system must do, an obligation what its builder must keep proving | ``obl:oracle:adversary`` | `docs/attestation/realization.md:1650` | 10 |
 | Operation | ``op`` | An operation of the protocol's state machine | ``op:realization:compact-ash`` | `plans/packages/realization.md:203` | 5 |
 | Phase | ``phase`` | A numbered stage of the delivery plan, with an entry and an exit | ``phase:roadmap:cycle`` | `plans/phases/11-cycle.md:1` | 16 |
@@ -49,6 +50,7 @@ here.
 | Error vocabulary | ``err`` | X_A | firm | first-hand |
 | Leaf | ``leaf`` | X_A | firm | first-hand |
 | Milestone | ``milestone`` | X_A | firm | first-hand |
+| Motto | ``motto`` | X_A | firm | first-hand |
 | Obligation | ``obl`` | X_A | firm | first-hand |
 | Operation | ``op`` | X_A | firm | first-hand |
 | Phase | ``phase`` | X_A | firm | first-hand |
@@ -61,7 +63,7 @@ here.
 ## Homonyms
 
 Every pair of the effective relation whose name carries another kind:
-32 pairs over 15 names. A name here needs the kind token at its
+34 pairs over 16 names. A name here needs the kind token at its
 label to fix the catalogued sense. Derived from the rows above,
 declared nowhere.
 
@@ -77,6 +79,8 @@ declared nowhere.
 | Model | ``model`` | C |
 | Module | ``mod`` | C |
 | Module | ``sec`` | C |
+| Motto | ``motto`` | X_A |
+| Motto | ``slogan`` | C |
 | Observation | ``data`` | C |
 | Observation | ``obs`` | C |
 | Protocol | ``minutes`` | C |
