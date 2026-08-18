@@ -24,7 +24,8 @@ pub mod spec;
 pub mod validate;
 
 pub use canonical::{
-    BEHAVIOURAL_HASH_ALGORITHM, RETIRED_BEHAVIOURAL_HASH_ALGORITHMS, SEMANTIC_HASH_ALGORITHM,
+    ANCHOR_SET_HASH_ALGORITHM, BEHAVIOURAL_HASH_ALGORITHM, RETIRED_ANCHOR_SET_HASH_ALGORITHMS,
+    RETIRED_BEHAVIOURAL_HASH_ALGORITHMS, RETIRED_SEMANTIC_HASH_ALGORITHMS, SEMANTIC_HASH_ALGORITHM,
     anchor_set_hash, behavioural_hash, behavioural_hash_hex, canonical_json_bytes, semantic_hash,
     semantic_hash_hex,
 };

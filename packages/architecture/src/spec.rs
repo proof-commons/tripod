@@ -411,16 +411,19 @@ pub const DOCUMENT: DocumentSpec = DocumentSpec {
     status: PublicationStatus::Final,
     specification: SpecificationBinding {
         version: "1.0.0",
-        // sha256 over the newline-joined sorted distinct Layer-0 anchor
-        // names harvested from the document's §17 index (A- prefix
-        // stripped): the pin ceremony of `rem:overview:anchor-pin`.
-        // Recomputed 2026-08-16 for the ADR-020 kind migration: the
-        // anchor set is the same 38 anchors, renamed. A rename of label
-        // values is a source correction, never silent formatting.
+        // sha256 over the domain prefix and the newline-joined sorted
+        // distinct Layer-0 anchor names harvested from the document's
+        // §17 index (A- prefix stripped): the pin ceremony of
+        // `rem:overview:anchor-pin` under algorithm
+        // `sha256-anchor-set-v2`. Re-pinned 2026-08-18 by the DI-004
+        // recipe migration, which added the domain separator; the
+        // anchor set is the same 38 names, so the dependency set
+        // identified did not change, only its measurement. The retired
+        // `…-v1` value is recorded with the migration in ADR-016.
         anchor_set_hash: Some([
-            0xb0, 0xca, 0xfa, 0xa4, 0x8a, 0xc2, 0xed, 0x38, 0x89, 0x84, 0xf6, 0xa2, 0xd7, 0x57,
-            0xa0, 0x11, 0xa9, 0xc8, 0x65, 0x4a, 0xcf, 0x22, 0x4f, 0x5f, 0x64, 0x51, 0x6f, 0x26,
-            0xa3, 0xf7, 0xee, 0x35,
+            0x8a, 0x7c, 0xe7, 0x65, 0xd3, 0x3c, 0x08, 0xee, 0x9e, 0x51, 0x32, 0x05, 0x3a, 0x83,
+            0x08, 0xed, 0xec, 0x46, 0xd9, 0xe1, 0x92, 0x12, 0x8e, 0xb0, 0x76, 0xe2, 0x57, 0xea,
+            0xbb, 0xc1, 0x6e, 0x2f,
         ]),
     },
     target_network: "liquid",
