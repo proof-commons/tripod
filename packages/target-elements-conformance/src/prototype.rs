@@ -6,7 +6,7 @@
 //! fixture asks whether a multi-step construction holds together across
 //! a whole target output: a tree, an internal key, a control path, and a
 //! successor output program. The two are not the same question and are
-//! not one type (Guide-10 `rule:guide10:compound-fixture`).
+//! not one type `(´[PLAN-rule:guide10:compound-fixture]´)`.
 //!
 //! Keeping them apart is what stops a compound claim from being counted
 //! as primitive coverage. A single fixture type with optional tree
@@ -28,7 +28,7 @@
 //!
 //! A stated field is an exact requirement the executor must materialize
 //! or refuse; an absent one is executor-supplied under a documented rule
-//! (Guide-10 `rule:guide10:stated-fields`). Constructor fixtures state
+//! `(´[PLAN-rule:guide10:stated-fields]´)`. Constructor fixtures state
 //! the internal key, the tree, the leaf versions, the scripts, the
 //! successor program, and the successor output role. Funding outpoints
 //! remain executor-supplied: nothing here depends on which coin paid.
@@ -81,7 +81,7 @@ impl PrototypeRelation {
 ///
 /// A relation and an ordinal name. The name is a label for a reader and
 /// is not an identity anything persists: a report binds the complete
-/// fixture, not the case name (Guide-10 `rule:guide10:fixture-binding`).
+/// fixture, not the case name `(´[PLAN-rule:guide10:fixture-binding]´)`.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PrototypeCaseId {
@@ -106,7 +106,7 @@ impl fmt::Display for PrototypeCaseId {
 /// That is the honest state and it is enumerable: a reader can see
 /// exactly which corners of the constructor nothing yet establishes,
 /// rather than inferring it from an absence
-/// (Guide-10 `rule:guide10:claim-registry`).
+/// `(´[PLAN-rule:guide10:claim-registry]´)`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
@@ -302,7 +302,7 @@ impl PrototypeRelation {
     /// that relation carrying a successor output would describe a
     /// transaction its program never reads, and one carrying none was
     /// refused for missing an output nothing in it means
-    /// (Guide-10 `rule:guide10:compound-fixture`).
+    /// `(´[PLAN-rule:guide10:compound-fixture]´)`.
     #[must_use]
     pub const fn required_output_roles(self) -> &'static [OutputRole] {
         match self {
@@ -337,7 +337,7 @@ pub struct PrototypeConstruction {
     /// Stating it is how a fixture checks the executor's own
     /// construction against a value computed elsewhere. Leaving it
     /// absent lets the executor derive it from the tree it built, which
-    /// is the ordinary case (Guide-10 `rule:guide10:stated-fields`).
+    /// is the ordinary case `(´[PLAN-rule:guide10:stated-fields]´)`.
     pub control: Option<Vec<u8>>,
     /// The program the consumed input must carry.
     pub predecessor_program: Vec<u8>,
@@ -435,7 +435,7 @@ impl CompoundPrototypeFixture {
     /// sharpest: a fixture whose tree does not contain its executing
     /// leaf exactly once has no determined control path, so an executor
     /// could authenticate a different leaf and the fixture would have no
-    /// way to notice (Guide-10 `rule:guide10:fixture-validation`).
+    /// way to notice `(´[PLAN-rule:guide10:fixture-validation]´)`.
     #[must_use]
     pub fn defect(
         &self,

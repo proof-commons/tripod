@@ -8,7 +8,7 @@
 //! neither holds for all of them, so the constructor is not total, and
 //! a constructor that did not say what happens in the remaining case
 //! would have chosen a policy silently
-//! (Guide-10 `rule:guide10:tweak-totality`).
+//! `(´[PLAN-rule:guide10:tweak-totality]´)`.
 //!
 //! # No policy is chosen here
 //!

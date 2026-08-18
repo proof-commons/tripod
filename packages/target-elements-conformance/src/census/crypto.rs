@@ -384,7 +384,7 @@ fn transaction_signatures(author: &mut CensusAuthor<'_>) {
         // one a caller is most likely to mistake for a rejection. The
         // signature bytes here are deliberately not a valid signature
         // over anything, because the point is that nothing verifies
-        // them (Guide-10 `rule:guide10:signature-abstraction`).
+        // them (´[PLAN-rule:guide10:signature-abstraction]´).
         let unknown_key = author.item(vec![0x02; 33]);
         let unverified_signature = author.item(vec![0x07; 64]);
         let stack = [unverified_signature, unknown_key];

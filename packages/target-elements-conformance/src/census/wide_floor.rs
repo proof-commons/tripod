@@ -7,7 +7,7 @@
 //! lives in, and the outcome the reviewed target is required to reach.
 //! Every expected outcome is authored from this package's own wide-floor
 //! oracle — never from an executor's answer
-//! (Guide-10 `rule:guide10:independent-oracles`).
+//! `(´[PLAN-rule:guide10:independent-oracles]´)`.
 //!
 //! # Where a mutation lives
 //!
@@ -21,7 +21,7 @@
 //! mutates the *script*, because a schedule that fails to verify a
 //! success flag is not a witness a caller could supply. Guide 10 admits
 //! that row as a static or a target rejection
-//! (`tab:guide10:wide-floor-threats`); it is stated as both, refused by
+//! `(´[PLAN-tab:guide10:wide-floor-threats]´)`; it is stated as both, refused by
 //! the emitter and refused by the target.
 //!
 //! # What this matrix cannot state, and why
@@ -94,7 +94,7 @@ impl fmt::Display for WideFloorMatrixDefect {
     /// this package that did not determine a row, and none describes a
     /// target. A command reporting one is reporting that this
     /// repository's contract and its oracle disagree
-    /// (ADR-010 `[ADR010-rule:output:data-classification]`).
+    /// `(´[ADR010-rule:output:data-classification]´)`.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let text = match self {
             Self::ProgramNotAdmitted => {
@@ -393,7 +393,7 @@ pub fn wide_floor_matrix(
     // one and the divisor is added back into the remainder, so `a·b`
     // still equals `q·d + r` exactly. What fails is `r < d`, which is
     // the condition that makes the quotient the floor rather than merely
-    // *a* quotient (Guide-10 `rule:guide10:wide-floor-relation`).
+    // *a* quotient (´[PLAN-rule:guide10:wide-floor-relation]´).
     for (name, extra) in [
         ("remainder_equals_the_divisor", 0_u64),
         ("remainder_above_the_divisor", 1),
@@ -583,7 +583,7 @@ pub fn wide_floor_matrix(
 /// Which cases bear on each wide-floor claim.
 ///
 /// The inverse of the fixtures' own claim sets, computed rather than
-/// restated (Guide-10 `rule:guide10:claim-coverage`).
+/// restated `(´[PLAN-rule:guide10:claim-coverage]´)`.
 #[must_use]
 pub fn bearing_cases(
     matrix: &[CompoundPrototypeFixture],
@@ -605,7 +605,7 @@ pub fn bearing_cases(
 /// Enumerable rather than inferred from an absence, which is the same
 /// discipline the claim registry follows: a reader can see exactly which
 /// corners of the threat matrix have no case here
-/// (Guide-10 `rule:guide10:claim-registry`).
+/// `(´[PLAN-rule:guide10:claim-registry]´)`.
 #[must_use]
 pub const fn residual_threats() -> &'static [(&'static str, &'static str)] {
     &[

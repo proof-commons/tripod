@@ -7,7 +7,7 @@
 //! source, using this package's own hashing and curve arithmetic. It
 //! asks the typed program builder nothing, and it asks the upstream
 //! functional-test framework nothing
-//! (Guide-10 `rule:guide10:constructor-oracle`).
+//! `(´[PLAN-rule:guide10:constructor-oracle]´)`.
 //!
 //! That independence is the entire value: an expectation computed by
 //! the same code that produces the thing under test agrees with itself
@@ -70,7 +70,7 @@ pub const CONTROL_MAXIMUM_NODES: usize = 128;
 /// tree with that root, and the executor could then materialize a
 /// different tree than the one under test without anything noticing.
 /// The complete tree is stated, and the executor materializes exactly
-/// it (Guide-10 `rule:guide10:taptree-fixture`).
+/// it `(´[PLAN-rule:guide10:taptree-fixture]´)`.
 ///
 /// # The leaf version is a byte here
 ///
@@ -140,7 +140,7 @@ pub enum TweakDefect {
     /// A hash of public data lands here with negligible probability,
     /// and negligible is not never — which is exactly why the
     /// constructor has to state a policy for it
-    /// (Guide-10 `rule:guide10:tweak-totality`).
+    /// `(´[PLAN-rule:guide10:tweak-totality]´)`.
     TweakNotAScalar,
     /// The tweaked key is the identity, which has no x-only encoding.
     ///
@@ -189,7 +189,7 @@ impl ConstructedOutput {
     /// so that a verifier can recover the point, and a verifier that
     /// took it on trust rather than checking the tweak against it would
     /// accept a spend the target rejects
-    /// (Guide-10 `rule:guide10:parity`).
+    /// `(´[PLAN-rule:guide10:parity]´)`.
     #[must_use]
     pub const fn parity(&self) -> u8 {
         self.parity
@@ -365,7 +365,7 @@ pub fn leaf_hash_of_version_byte(version: u8, script: &[u8]) -> Digest32 {
 /// built. Reproducing that ordering is load-bearing rather than
 /// cosmetic: a constructor that hashed children in caller order would
 /// compute a root the target does not agree with, for half of all
-/// inputs (Guide-10 `rule:guide10:tapbranch-order`).
+/// inputs `(´[PLAN-rule:guide10:tapbranch-order]´)`.
 #[must_use]
 pub fn branch_hash(left: &Digest32, right: &Digest32) -> Digest32 {
     let (first, second) = if left <= right {

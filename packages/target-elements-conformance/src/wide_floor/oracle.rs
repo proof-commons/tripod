@@ -6,8 +6,8 @@
 //! Something has to decide what `q` and `r` are, and it must not be the
 //! target schedule: an expectation produced by the schedule builder
 //! would agree with the schedule builder however wrong both were
-//! (Guide-10 `rule:guide10:independent-oracles`,
-//! `rule:guide10:wide-floor-host`).
+//! `(´[PLAN-rule:guide10:independent-oracles]´)` and
+//! `(´[PLAN-rule:guide10:wide-floor-host]´)`.
 //!
 //! So this computes the relation directly, in `u128`, from the
 //! definition — `q = product / d`, `r = product % d` — and separately
@@ -19,7 +19,7 @@
 //!
 //! Guide 10 states the quotient side in two stages: normalize `q·d` into
 //! limbs `u0..u3`, then add `r`'s limbs through a second carry cascade
-//! (`rule:guide10:remainder-addition`). This module folds the two into
+//! `(´[PLAN-rule:guide10:remainder-addition]´)`. This module folds the two into
 //! one cascade, adding `r0` to the first dividend and `r1` to the middle
 //! one. Both compute the canonical base-`B` representation of the same
 //! integer `q·d + r`, and that representation is unique, so the limbs
@@ -27,12 +27,12 @@
 //! target would otherwise perform. The staged form is implemented
 //! independently in [`super::normalizer`] and the two are compared, so
 //! the equivalence is a checked property here rather than an assertion
-//! (Guide-10 `rule:guide10:limb-oracle-stage`).
+//! `(´[PLAN-rule:guide10:limb-oracle-stage]´)`.
 //!
 //! # The oracle is not the witness
 //!
 //! Host-generated `q` and `r` are witnesses, not trusted answers
-//! (`rule:guide10:wide-floor-relation`). [`WideFloorWitness`] is
+//! `(´[PLAN-rule:guide10:wide-floor-relation]´)`. [`WideFloorWitness`] is
 //! therefore a plain record with no coherence requirement at all: a
 //! mutation row states one the relation does not hold for, which is
 //! exactly the case the target must refuse.
@@ -79,7 +79,7 @@ pub enum WideFloorDefect {
 /// limb and the quotient is the high one. Nothing witnesses a limb, so
 /// there is no limb bound for a caller to violate — the bounds below are
 /// consequences of the amount's own domain
-/// (`candidate:guide10:derived-limbs`).
+/// `(´[PLAN-candidate:guide10:derived-limbs]´)`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AmountLimbs {
     low: u64,
@@ -213,7 +213,7 @@ impl NormalizedProduct {
 ///
 /// Deliberately unconstrained. A witness is what a caller supplies, and
 /// every mutation row in the threat matrix is a witness the relation
-/// does not hold for (`tab:guide10:wide-floor-threats`).
+/// does not hold for `(´[PLAN-tab:guide10:wide-floor-threats]´)`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WideFloorWitness {
     /// The first authenticated factor.
@@ -234,7 +234,7 @@ impl WideFloorWitness {
     /// The order is the consumption order reversed: the schedule checks
     /// and packs from the top down, and it needs the divisor immediately
     /// below the remainder so that `r < d` is decidable without reaching
-    /// past the third item (`rule:guide10:stack-schedule`).
+    /// past the third item `(´[PLAN-rule:guide10:stack-schedule]´)`.
     #[must_use]
     pub fn encode(&self) -> Vec<Vec<u8>> {
         [self.a, self.b, self.q, self.d, self.r]
@@ -374,7 +374,7 @@ impl WideFloorInstance {
     /// This is the measurement a bound test compares against
     /// [`WideFloorBound::exclusive_maximum`], which is what makes the
     /// range proof machine-checked rather than asserted
-    /// (`rule:guide10:bound-proof-stage`).
+    /// `(´[PLAN-rule:guide10:bound-proof-stage]´)`.
     #[must_use]
     pub fn observed(&self, bound: WideFloorBound) -> u64 {
         let sides = [&self.product, &self.quotient_side];
@@ -440,7 +440,7 @@ impl WideFloorInstance {
     ///
     /// A second opinion on the `u128` answer, so that a later change to
     /// the domain cannot silently outgrow the primitive width the oracle
-    /// happens to use today (`rule:guide10:wide-floor-host`).
+    /// happens to use today `(´[PLAN-rule:guide10:wide-floor-host]´)`.
     #[must_use]
     pub fn agrees_with_arbitrary_precision(&self) -> bool {
         let product = BigUint::from(self.witness.a) * BigUint::from(self.witness.b);

@@ -12,8 +12,8 @@
 //! # No child detail
 //!
 //! No variant carries the executor's path, its argv, its raw stderr, or
-//! any environment value (ADR-010
-//! `[ADR010-rule:output:data-classification]`). What a failing external
+//! any environment value
+//! `(´[ADR010-rule:output:data-classification]´)`. What a failing external
 //! program is reported as is a fixed message, the protocol phase, the
 //! process status, and the safe typed case identity — never the bytes it
 //! chose to write.
@@ -163,7 +163,7 @@ pub enum NativeConformanceError {
     /// mismatch above: an executor that speaks the primitive exchange
     /// perfectly and reads no prototype record has not failed the
     /// protocol, it has declined a workload
-    /// (Guide-10 `rule:guide10:schema-migration`).
+    /// `(´[PLAN-rule:guide10:schema-migration]´)`.
     #[error("the external executor does not read compound-prototype fixtures")]
     PrototypeFixturesUnsupported,
 

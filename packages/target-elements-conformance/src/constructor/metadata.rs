@@ -5,7 +5,7 @@
 //!
 //! Every width, order, and tag below is a prototype design choice made
 //! to exercise the constructor, and none of it is protocol semantics
-//! (Guide-10 `rule:guide10:prototype-metadata`). It is deliberately
+//! `(´[PLAN-rule:guide10:prototype-metadata]´)`. It is deliberately
 //! shaped like a real object — several independently mutable fields, an
 //! explicit domain, an explicit schema, a canonical field order, exact
 //! widths, and a reserved field required to be zero — so that the
@@ -26,7 +26,7 @@
 /// Sixteen bytes of ASCII, fixed. It names the prototype rather than
 /// any protocol object, which is the point: a constructor fixture may
 /// name a metadata transition and may not name a protocol role
-/// (Guide-10 `rule:guide10:compound-fixture`).
+/// `(´[PLAN-rule:guide10:compound-fixture]´)`.
 pub const METADATA_DOMAIN: [u8; 16] = *b"prototype-object";
 
 /// How many bytes a canonical encoding occupies.
@@ -57,7 +57,7 @@ pub struct PrototypeMetadata {
     /// The nonce exists so that the constructor has an answer when the
     /// target's tweak rules reject a derived value: the encoding is
     /// re-derived with the next nonce, deterministically and publicly
-    /// (Guide-10 `rule:guide10:tweak-totality`). It is part of the
+    /// `(´[PLAN-rule:guide10:tweak-totality]´)`. It is part of the
     /// prototype schema because it must be, and it carries no meaning
     /// whatever.
     ///
@@ -118,7 +118,7 @@ impl PrototypeMetadata {
     ///
     /// Every field but the representation nonce. The nonce is a way of
     /// writing the object down, not something the object is
-    /// (Guide-10 `rule:guide10:tweak-totality`).
+    /// `(´[PLAN-rule:guide10:tweak-totality]´)`.
     #[must_use]
     pub const fn same_state(&self, other: &Self) -> bool {
         self.schema == other.schema
@@ -165,7 +165,7 @@ impl PrototypeMetadata {
     /// Exactly one field of the *state* moves, and it moves by exactly
     /// one. Every other stated field is carried through unchanged,
     /// which is what the constructor's continuity claim is about
-    /// (Guide-10 `rule:guide10:successor-metadata`).
+    /// `(´[PLAN-rule:guide10:successor-metadata]´)`.
     ///
     /// The representation nonce is not carried through: it is reset,
     /// so that the successor's encoding is the one its own policy

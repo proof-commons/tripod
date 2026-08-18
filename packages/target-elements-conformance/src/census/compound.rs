@@ -15,7 +15,7 @@
 //! with what the target produced, and end in one true item — which makes
 //! the accepting verdict itself the assertion about the bytes, rather
 //! than a statement about how many items were left
-//! (Guide-10 `rule:guide10:primitive-admission`).
+//! `(´[PLAN-rule:guide10:primitive-admission]´)`.
 //!
 //! # Expectations are computed here, never observed
 //!
@@ -24,7 +24,7 @@
 //! bitwise results are stated independently of the target and of the
 //! executor, which is the whole point of a case: an expectation the
 //! target supplied would make the comparison a tautology
-//! (Guide-10 `rule:guide10:independent-oracles`).
+//! `(´[PLAN-rule:guide10:independent-oracles]´)`.
 //!
 //! # Why equality is byte equality
 //!

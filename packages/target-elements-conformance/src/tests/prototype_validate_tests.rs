@@ -160,7 +160,7 @@ fn the_report_bytes_are_a_function_of_the_run() {
     // Determinism, checked as bytes rather than as typed equality: the
     // report is compared by both, and a collection ordered by insertion
     // somewhere inside would satisfy one and not the other
-    // (Guide-10 `rule:guide10:report-determinism`).
+    // (´[PLAN-rule:guide10:report-determinism]´).
     let (_target, _matrix, _transcript, first) = report_over(ExecutorTrust::ReviewedNonMock);
     let (_target, _matrix, _transcript, second) = report_over(ExecutorTrust::ReviewedNonMock);
     assert_eq!(

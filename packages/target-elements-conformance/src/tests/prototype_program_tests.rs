@@ -108,7 +108,7 @@ fn the_emitted_program_round_trips_through_the_reviewed_parser() {
     // Determinism and encodability in one check: the bytes parse back
     // into the same typed program, so nothing the emitter pushed is
     // outside the reviewed subset and no push is in a non-minimal form
-    // (Guide-10 `rule:guide10:stack-schedule`).
+    // (´[PLAN-rule:guide10:stack-schedule]´).
     let target = target();
     let program = prototype();
     let script = program.encode(&target);
@@ -304,7 +304,7 @@ fn the_emitted_program_carries_the_metadata_transition() {
 
     // And its success flag is consumed where it is produced: the
     // instruction after the addition is the verification
-    // (Guide-10 `rule:guide10:successor-metadata`).
+    // (´[PLAN-rule:guide10:successor-metadata]´).
     let instructions = program.program().instructions();
     let at = instructions
         .iter()
