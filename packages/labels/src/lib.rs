@@ -16,6 +16,7 @@ pub mod forbidden;
 pub mod label;
 pub mod latex;
 pub mod markdown;
+pub mod nearmiss;
 pub mod owner;
 pub mod participation;
 pub mod plans;

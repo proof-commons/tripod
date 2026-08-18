@@ -20,6 +20,7 @@ use crate::{
     label::{Label, LabelShape},
     latex::harvest_attestation,
     markdown::{InlineCodeContext, MarkdownScan, scan_markdown},
+    nearmiss,
     owner::{ImportedLabel, LabelOwner, OwnerParseError},
     registry::{LabelMint, LabelRegistry, RegistrySet},
     render,
@@ -232,6 +233,7 @@ fn harvest_realization(paths: &RepositoryCensus, result: &mut RepositoryLabels) 
     };
     let scan = scan_markdown(&relative, &source);
     result.diagnostics.extend(scan.diagnostics.clone());
+    nearmiss::prose(&scan, &mut result.diagnostics);
     harvest_attestation_citations(&relative, &source, &scan, result);
     // Status-tag references (`[enforced: P-…]`, `[invariant: 𝗜ₙ]`) are
     // resolved after the loop, once every pin and clause mint has been
@@ -555,6 +557,7 @@ fn harvest_adrs(paths: &RepositoryCensus, result: &mut RepositoryLabels) {
         };
         let scan = scan_markdown(&relative, &source);
         result.diagnostics.extend(scan.diagnostics.clone());
+        nearmiss::prose(&scan, &mut result.diagnostics);
         let mut registry = LabelRegistry::default();
         for span in scan.participating_spans().cloned() {
             if let Some(token) = square(&span.content) {
@@ -677,6 +680,7 @@ fn harvest_markdown_owner(
     };
     let scan = scan_markdown(&relative, &source);
     result.diagnostics.extend(scan.diagnostics.clone());
+    nearmiss::prose(&scan, &mut result.diagnostics);
     for span in scan.participating_spans().cloned() {
         if let Some(token) = square(&span.content) {
             if span.context == InlineCodeContext::Parenthesized {

@@ -17,6 +17,7 @@ labels_source_files = files(
   'src/latex.rs',
   'src/lib.rs',
   'src/markdown.rs',
+  'src/nearmiss.rs',
   'src/owner.rs',
   'src/participation.rs',
   'src/plans.rs',
