@@ -2044,6 +2044,16 @@ shown rather than meant. Groups that straddled a line were brought
 onto one, a group being read within its own line. The generated
 registers regenerate unchanged, so no anchor set moved.
 
+W3 closed the batch with head validation: each head's name is now held
+to the kind its label declares, over the decision records and the
+authored planning tree. The recognizer finds exactly the 146 heads the
+hand reading counted — 4 authored here, 142 in the archive it does not
+judge — and all validate by an exact pair, so no head or label moved.
+Reduction implements the sub- prefix and the catalogued modifiers only;
+the other devices are unimplemented and untriggered, so a numbered or
+lettered head fails until they are. The three waves: acute
+classification, the 196-site sweep, head validation.
+
 ### 13.2 Checker findings so far · `tab:backlog:draft-findings`
 
 | ID | Status | Finding |
