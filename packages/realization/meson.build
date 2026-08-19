@@ -26,6 +26,7 @@ realization_source_files = files(
   'src/tests/disclosure_tests.rs',
   'src/tests/derivation_tests.rs',
   'src/tests/expression_tests.rs',
+  'src/tests/guide11_reproductions.rs',
   'src/tests/lifecycle_tests.rs',
   'src/tests/live_transfer_tests.rs',
   'src/tests/mod.rs',
