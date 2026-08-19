@@ -617,10 +617,13 @@ selection is this section's.
 
 ### Open residuals
 
-- `G11-W11-06` — the stale-evidence lifecycle row does not build. The
-  wallet reports the spend as complete and the target refuses the Schnorr
-  signature as invalid. The row was never sent to the second process, so
-  it is unbuilt rather than failed, and it is undiagnosed.
+- `G11-W11-06` — closed. The stale-evidence row now builds and both
+  passes answer with the refusal it expects. The cause was a digest the
+  wallet computed over an output-witness vector shorter than the one the
+  wire form carries, and the adapter's superseding spend had not in fact
+  been blinded despite being paid to a confidential address. Recorded in
+  the backlog; the upstream half is drafted there for the register that
+  owns it.
 - `G11-H02` — issuance observations carry authority fields the
   realization evaluator does not yet enforce. This stands as a constraint
   rather than a finding of this note: no issuance realization scope may be

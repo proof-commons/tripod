@@ -380,8 +380,7 @@ The next guide consumes this policy rather than reopening it.
 Honest bounds: the conservation, normalization, and lifecycle lanes record
 and do not gate — the executor drivers, published assets, and Meson
 targets that would make them refusable in CI are not built (`G11-W7-08`).
-The stale-evidence lifecycle row does not build and is undiagnosed
-(`G11-W11-06`). Both public-committed conservation rows remain deferred
+Both public-committed conservation rows remain deferred
 (`G11-W7-09`). Policy-resource evidence is `UnresolvedByDesign`. Nothing
 here is an operation, a linked bundle, a transaction ABI, a calibration,
 or production output.
@@ -1025,10 +1024,35 @@ process, and the reading process is held to public chain data alone.
 |---|---:|---|---|
 | `G11-W11-01` | P1 | DONE | §13 boundary is an OS boundary: A publishes and exits, each B is a fresh process and node, three distinct pids; wallet destroyed, chain kept. |
 | `G11-W11-02` | P1 | DONE | The public record is a typed 12-field schema of chain data, with `deny_unknown_fields` and a field-NAME ban. Both tested. |
-| `G11-W11-03` | P1 | DONE | 16/16 rows agree over two passes against `lifecycle::canonical_lifecycle_matrix`, never the run record. |
+| `G11-W11-03` | P1 | DONE | 18/18 rows agree over two passes against `lifecycle::canonical_lifecycle_matrix`, never the run record. All nine canonical rows are now sent; the stale row joined them when `G11-W11-06` closed. |
 | `G11-W11-04` | P1 | DONE | B locates by block locator, parses independently, rebuilds the script by bech32m; it cannot spend the owned object and spends its own funds. |
 | `G11-W11-05` | P1 | DONE | Cache independence: fresh process and node per pass, both identical. The object needed locking against A's coin selection (`G11-W7-07`). |
-| `G11-W11-06` | P2 | OPEN | The stale row does not build: the wallet signs `complete`, the target refuses an invalid Schnorr signature. Unbuilt, not sent to B. Undiagnosed. |
+| `G11-W11-06` | P2 | DONE | Diagnosed and repaired. The taproot digest commits the output-witness vector at its actual length, so an unblinded spend signs one digest and consensus checks another; paying to a single confidential address did not blind it, because the node declines to balance a lone blinded output against an explicit input and says so only if asked. The spend now carries two confidential outputs and refuses a silent non-blinding. The row builds and both passes answer `refused_output_spent`. |
+
+The `G11-W11-06` diagnosis, because the finding outlives the row. The
+target's taproot digest commits the transaction's output-witness vector,
+and it hashes that vector at whatever length the vector has rather than
+at one entry per output. A transaction carrying no witness deserializes
+with that vector empty, and serializing a transaction that has any
+witness grows it to one entry per output — so a wallet asked to sign an
+unblinded transaction signs a digest those same bytes can never produce
+once they are on the wire. The wallet reports the signing complete and
+the target refuses an invalid Schnorr signature.
+
+Proven rather than argued: the signature the wallet produced verifies
+against the digest computed with the vector empty and fails against the
+digest computed with it grown, while a genuinely blinded control spend
+verifies the other way round and is accepted. The check is kept runnable
+at `scripts/diagnose-taproot-output-witness-digest.py`.
+
+The repair is ours and is in the adapter, so the row is closed here. The
+upstream half is a defect worth filing against the target and is drafted
+for the register another lane owns: the signing path builds its constant
+transaction view before growing the output-witness vector, so it computes
+a digest over a shape the wire form cannot have, and reports the result
+complete. It is not a consensus question — every transaction that reaches
+consensus with a taproot spend already carries the grown vector — so the
+correction belongs on the signer's side.
 
 ### T6 — Validate capabilities for external-evidence obligations · `task:review:external-evidence-capability`
 
