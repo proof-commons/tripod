@@ -584,6 +584,98 @@ fn g11_r01_a_case_sent_and_never_answered_is_refused() {
     );
 }
 
+/// `G11-R01` **CLOSED**: a changed expected verdict under a canonical
+/// case identity is refused.
+///
+/// # Which weld catches this one, and why it is not the transcript's
+///
+/// The review lists a changed expectation beside the changed script and
+/// stack, and the answer here is a different one on purpose. An
+/// expectation is not part of the execution subject and does not cross
+/// the wire at all under revision 3, so the transcript has nothing to
+/// compare it against — by construction, which is the point. What refuses
+/// it is the canonical comparison: the evidence path regenerates the
+/// census and compares complete projections, and a projection whose
+/// expectation differs is not the canonical case of that identity.
+///
+/// The two welds are therefore complementary rather than redundant. The
+/// canonical comparison owns what the case *should* do; the transcript
+/// owns what the executor was actually *asked*.
+#[test]
+fn g11_r01_a_changed_expected_verdict_is_refused() {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let canonical = canonical_fixture_set(&target, &binding).expect("the census states");
+
+    // One accepting static case, restated with the opposite verdict and
+    // with every other member — program, stack, context, layer, leaf —
+    // exactly as the canonical census states it.
+    let victim = canonical
+        .iter()
+        .find(|fixture| {
+            fixture.context().is_none()
+                && fixture.expected().is_accepting()
+                && fixture.leaf_version_status() == LeafVersionStatus::Reviewed
+                && fixture.initial_stack().is_empty()
+        })
+        .expect("the census states a static accepting case with no initial stack");
+    let case = victim.case();
+    let flipped = PrimitiveFixture::state(
+        &target,
+        &binding,
+        FixtureStatement {
+            case,
+            script: FixtureScript::DeliberatelyMalformed(victim.script().to_vec()),
+            initial_stack: &[],
+            context: None,
+            expected: ExpectedPrimitiveOutcome::reject(
+                [ObservedFailureClass::EvaluatedFalse],
+                None,
+            ),
+            leaf_version: LeafVersionStatus::Reviewed,
+            unreviewed_leaf_version: None,
+            enforcement_layer: EnforcementLayer::Consensus,
+        },
+    )
+    .expect("the flipped fixture states");
+
+    let mutated = PrimitiveFixtureSet::new(
+        canonical
+            .iter()
+            .filter(|fixture| fixture.case() != case)
+            .cloned()
+            .chain([flipped]),
+    )
+    .expect("the mutated census assembles");
+
+    let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake: nonmock_handshake(),
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: subjects_of(&mutated),
+        responses: answers(&mutated),
+    });
+    let (plan, registry) = plan_and_registry();
+    let refusal = evaluate(
+        &target,
+        &binding,
+        &CanonicalPrimitiveFixtureSet::wrap_for_tests(mutated),
+        &transcript,
+        &plan,
+        &registry,
+    )
+    .expect_err("a changed expectation removes canonical membership");
+    assert!(
+        matches!(
+            refusal,
+            NativeConformanceError::NoncanonicalFixtureSubject(subject) if subject == case,
+        ),
+        "expected a canonical-subject refusal naming the case, got {refusal:?}",
+    );
+}
+
 /// `G11-R01` **CLOSED**: a prototype construction cannot be substituted
 /// under the same case name.
 ///

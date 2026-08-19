@@ -1139,6 +1139,9 @@ equal-width substitution, which defeats the old width-only defence),
 `g11_r01_a_case_that_was_never_sent_is_refused`,
 `g11_r01_a_case_sent_and_never_answered_is_refused`,
 `g11_r01_a_prototype_construction_cannot_be_substituted`,
+`g11_r01_a_changed_expected_verdict_is_refused` (refused by the canonical
+comparison rather than by the transcript, since an expectation is not part
+of the subject and no longer crosses the wire at all),
 `a_request_carries_no_expectation_of_any_kind`, and
 `an_executor_of_the_previous_revision_fails_loudly`.
 
