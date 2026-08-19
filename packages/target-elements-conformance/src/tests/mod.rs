@@ -10,6 +10,7 @@ mod protocol_tests;
 mod prototype_program_tests;
 mod prototype_tests;
 mod prototype_validate_tests;
+mod provenance_tests;
 mod support;
 mod validate_tests;
 mod vocabulary_tests;

@@ -21,6 +21,14 @@ const BINARY: &str = env!("CARGO_BIN_EXE_check-target-elements-native");
 const NETWORK_ID: &str = "1111111111111111111111111111111111111111111111111111111111111111";
 const GENESIS_ID: &str = "2222222222222222222222222222222222222222222222222222222222222222";
 
+/// An ADR-018 provenance expectation, as the command spells one.
+///
+/// Forty lowercase hexadecimal digits each. They name no object in any
+/// repository and do not need to: what these tests exercise is the
+/// command's own argument handling.
+const INTENDED_TIP: &str = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
+const UPSTREAM_BASE: &str = "0123456789abcdef0123456789abcdef01234567";
+
 fn run(args: &[&str]) -> Output {
     Command::new(BINARY)
         .args(args)
@@ -155,13 +163,14 @@ fn a_declared_mock_run_cannot_satisfy_the_gate() {
 }
 
 #[test]
-fn declaring_a_mock_reviewed_leaves_the_lie_in_the_provenance() {
-    // The harness cannot tell a mock from an interpreter, so a
-    // dishonest declaration gets past the mock refusal, and the census
-    // it then "passes" is the census's own expectations, which the mock
-    // holds a copy of. What
-    // the report does carry is what the program said it was, which is
-    // how a reader catches this rather than the gate.
+fn declaring_a_mock_reviewed_no_longer_reaches_the_gate() {
+    // `G11-R06`. The harness still cannot tell a mock from an
+    // interpreter, so a dishonest declaration still gets past the mock
+    // refusal — and the census such a wrapper "passes" is the census's
+    // own expectations, which the mock holds a copy of. What stops it
+    // now is the provenance comparison: the mock reports no revision of
+    // its own, no intended tip, and no upstream base, so it cannot be
+    // the executable the operator declared they built.
     let directory = tempfile::tempdir().expect("tempdir");
     let executor = wrapper(directory.path(), "answer-from-census");
     let output = run(&[
@@ -173,13 +182,47 @@ fn declaring_a_mock_reviewed_leaves_the_lie_in_the_provenance() {
         NETWORK_ID,
         "--genesis-id",
         GENESIS_ID,
+        "--intended-tip",
+        INTENDED_TIP,
+        "--upstream-base",
+        UPSTREAM_BASE,
     ]);
 
-    assert_eq!(output.status.code(), Some(0));
-    let stdout = String::from_utf8(output.stdout).expect("stdout is utf8");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "an unidentified executable is a runtime refusal, not a usage error",
+    );
+    assert!(output.stdout.is_empty(), "a refused run publishes nothing");
+    let stderr = String::from_utf8(output.stderr).expect("stderr is utf8");
     assert!(
-        stdout.contains("mock-native-executor"),
-        "the report must record what the program called itself: {stdout}",
+        stderr.contains("provenance"),
+        "expected the provenance refusal: {stderr}",
+    );
+}
+
+#[test]
+fn a_reviewed_declaration_without_provenance_is_a_configuration_failure() {
+    // `G11-R07`. The class alone does not configure an evidence run:
+    // ADR-018's binding values are required with it, and their absence
+    // is caught before any executor starts.
+    let output = run(&[
+        "--executor",
+        "/nonexistent-executor",
+        "--executor-class",
+        "reviewed-non-mock",
+        "--network-id",
+        NETWORK_ID,
+        "--genesis-id",
+        GENESIS_ID,
+    ]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty(), "a refused run publishes nothing");
+    let stderr = String::from_utf8(output.stderr).expect("stderr is utf8");
+    assert!(
+        stderr.contains("intended executed tip"),
+        "expected the missing-tip refusal: {stderr}",
     );
 }
 

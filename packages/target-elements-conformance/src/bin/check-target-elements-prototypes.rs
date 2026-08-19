@@ -77,6 +77,7 @@ use target_elements_conformance::prototype_report::PrototypeConformanceReport;
 use target_elements_conformance::prototype_validate::{
     PrototypeReportValidationInputs, evaluate_prototypes, prototype_gate, validate_prototype_report,
 };
+use target_elements_conformance::provenance::expected_provenance_from_arguments;
 
 const COMMAND_NAME: &str = "check-target-elements-prototypes";
 
@@ -132,6 +133,21 @@ struct Args {
     /// The public development genesis identifier, as 64 hex digits.
     #[arg(long, value_name = "HEX")]
     genesis_id: String,
+
+    /// The integration tip this executable was built from, as a full
+    /// object identifier. Required for a reviewed nonmock run (ADR-018).
+    #[arg(long, value_name = "REVISION")]
+    intended_tip: Option<String>,
+
+    /// The upstream base that tip derives from, as a full object
+    /// identifier. Required for a reviewed nonmock run (ADR-018).
+    #[arg(long, value_name = "REVISION")]
+    upstream_base: Option<String>,
+
+    /// One local topic branch folded into that tip. Repeatable; stating
+    /// none declares a tip that folded in no local branch.
+    #[arg(long = "local-topic", value_name = "BRANCH")]
+    local_topics: Vec<String>,
 
     #[command(flatten)]
     output: CheckOutputArgs,
@@ -201,7 +217,18 @@ fn run(args: &Args) -> Result<PrototypeConformanceReport, String> {
     };
     let matrix = owned.borrowed();
 
-    let configuration = ExecutorConfiguration::new(
+    // The provenance expectation is settled before the executor is
+    // started: a run that could never be gated should not boot a node
+    // first (ADR-018).
+    let expected_provenance = expected_provenance_from_arguments(
+        args.executor_class == ExecutorClass::ReviewedNonMock,
+        args.intended_tip.as_deref(),
+        args.upstream_base.as_deref(),
+        &args.local_topics,
+    )
+    .map_err(|defect| defect.to_string())?;
+
+    let mut configuration = ExecutorConfiguration::new(
         &args.executor,
         match args.executor_class {
             ExecutorClass::Mock => ExecutorTrust::Mock,
@@ -210,6 +237,9 @@ fn run(args: &Args) -> Result<PrototypeConformanceReport, String> {
         args.executor_timeout_seconds
             .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs),
     );
+    if let Some(expected) = expected_provenance.clone() {
+        configuration = configuration.with_expected_provenance(expected);
+    }
 
     let transcript = execute_canonical_prototypes(&target, &binding, &configuration, matrix)
         .map_err(|error| error.to_string())?;
@@ -235,7 +265,7 @@ fn run(args: &Args) -> Result<PrototypeConformanceReport, String> {
     // The gate decides whether this run is evidence. A refused run
     // publishes nothing: no stdout result, no report asset, and no fresh
     // stamp date.
-    prototype_gate(&validated).map_err(|error| error.to_string())?;
+    prototype_gate(&validated, expected_provenance.as_ref()).map_err(|error| error.to_string())?;
     Ok(validated.into_report())
 }
 

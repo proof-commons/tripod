@@ -54,14 +54,15 @@ use crate::claim::{ClaimRegistry, NativeEvidenceClaim};
 use crate::error::NativeConformanceError;
 use crate::executor::{ExecutionTranscript, ExecutorTrust};
 use crate::fixture::{
-    CanonicalPrimitiveFixtureSet, ExpectedPrimitiveOutcome, ExpectedResourceObservation,
-    LeafVersionStatus, NativeCaseGroup, NativeCaseId, PrimitiveFixture, PrimitiveFixtureSet,
-    ResourceExpectation, canonical_fixture_set,
+    CanonicalPrimitiveFixtureSet, EnforcementLayer, ExpectedPrimitiveOutcome,
+    ExpectedResourceObservation, LeafVersionStatus, NativeCaseGroup, NativeCaseId,
+    PrimitiveFixture, PrimitiveFixtureSet, ResourceExpectation, canonical_fixture_set,
 };
 use crate::protocol::{
     NativeResourceObservation, NativeVerdict, RequestExpectationBoundary, WireEnvironment,
     WireExecutionDomain,
 };
+use crate::provenance::{ExpectedExecutorProvenance, validate_executor_provenance};
 use crate::report::{
     ActivationRecord, CaseStatus, EvidenceDisposition, EvidencePlanClass,
     EvidenceRequirementResult, ExecutorDeclaration, ExecutorProvenance, NATIVE_REPORT_SCHEMA,
@@ -82,7 +83,12 @@ use crate::vocabulary::{capability_name, evidence_requirement_name};
 ///   primitives are not one;
 /// - confidential-value conservation is deferred because it is a
 ///   whole-transaction property, which needs complete transaction
-///   evidence rather than a script-level case.
+///   evidence rather than a script-level case;
+/// - policy resource limits are unresolved because every resource case
+///   this census states is stated at the consensus layer, and a
+///   consensus acceptance is not evidence about what a node's relay
+///   rules decline to forward. The row returns to the required set when
+///   an actual relay-policy matrix exists to establish it.
 const EVIDENCE_PLAN: &[(TargetEvidenceRequirementId, EvidencePlanClass)] = &[
     (
         TargetEvidenceRequirementId::TapscriptExecutionDomain,
@@ -154,7 +160,7 @@ const EVIDENCE_PLAN: &[(TargetEvidenceRequirementId, EvidencePlanClass)] = &[
     ),
     (
         TargetEvidenceRequirementId::PolicyResourceLimits,
-        EvidencePlanClass::Required,
+        EvidencePlanClass::UnresolvedByDesign,
     ),
     // The compound-proof substrate. Every one of these is exercised by
     // static cases with no transaction context, so all three are
@@ -229,6 +235,122 @@ pub fn guide_nine_evidence_plan() -> Result<EvidencePlan, NativeConformanceError
     Ok(EvidencePlan { classes })
 }
 
+/// Why one required evidence row states no required claim of its own.
+///
+/// A typed, documented exception rather than a tolerated absence. The
+/// invariant below exists because a broad required row whose defining
+/// claims are all unresolved can pass on case aggregation alone — the
+/// exact shape that let consensus cases carry the policy resource row —
+/// and an exception to it must therefore say, in the source, which row
+/// is exempt and why claim-level decomposition does not apply to it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClaimDecompositionException {
+    /// The required row that owns no required claim.
+    pub requirement: TargetEvidenceRequirementId,
+    /// Why decomposing it into claims does not apply.
+    pub reason: &'static str,
+}
+
+/// Every required row exempt from claim-level decomposition.
+///
+/// Four rows, each stated with its reason, and the reasons are of two
+/// kinds. Every other row the plan requires is defined by at least one
+/// required claim of its own, which is what makes that row's disposition
+/// a statement about the dimension rather than about whichever cases
+/// happened to be filed under it.
+///
+/// # What an exception is not
+///
+/// It is not permission for the row to pass without evidence. Every row
+/// here is still borne on by cases, still fails when one of them fails,
+/// and — since Wave 3 — sits behind a gate that refuses any failed case
+/// whatever it bears on. What the exception records is that the
+/// claim-level statement about this dimension is written down somewhere
+/// else, named here, rather than being absent.
+const CLAIM_DECOMPOSITION_EXCEPTIONS: &[ClaimDecompositionException] = &[
+    ClaimDecompositionException {
+        requirement: TargetEvidenceRequirementId::EncodingSemantics,
+        reason: "field encoding is decomposed into claims, but under the rows that own the \
+                 cases: the only cases bearing on this row are the input and output \
+                 introspection cases, and their required explicit-form claims are exactly \
+                 the statement that a field decodes to one exact stack form. A claim \
+                 restating that here would be the same observation counted twice, and two \
+                 copies of one observation can disagree",
+    },
+    ClaimDecompositionException {
+        requirement: TargetEvidenceRequirementId::StackRearrangementSemantics,
+        reason: "the row's whole content is that each reviewed rearrangement primitive moves \
+                 the stack exactly as the contract states, which the per-case comparison \
+                 establishes case by case against a stated final stack. Its cases name \
+                 primitives, so they carry the required primitive success and abort claims \
+                 under the opcode row; a further claim would restate the comparison rather \
+                 than decompose the dimension",
+    },
+    ClaimDecompositionException {
+        requirement: TargetEvidenceRequirementId::ByteStringSemantics,
+        reason: "as for stack rearrangement: the dimension is the exact byte-string result of \
+                 each reviewed primitive, established by comparison against a stated final \
+                 stack, and its cases carry the required primitive claims under the opcode \
+                 row",
+    },
+    ClaimDecompositionException {
+        requirement: TargetEvidenceRequirementId::VerificationSemantics,
+        reason: "as for stack rearrangement: the dimension is that each reviewed verification \
+                 primitive continues or aborts exactly where the contract says, established \
+                 by comparison of verdict and failure class, and its cases carry the required \
+                 primitive success and abort claims under the opcode row",
+    },
+];
+
+/// The exceptions, for the crate's own tests.
+#[cfg(test)]
+pub(crate) const fn claim_decomposition_exceptions_for_tests()
+-> &'static [ClaimDecompositionException] {
+    CLAIM_DECOMPOSITION_EXCEPTIONS
+}
+
+/// Whether every required row is defined by at least one required claim.
+///
+/// # What this stops
+///
+/// A row classified `Required` whose owned claims are all unresolved
+/// passes as soon as any case is filed under it, because
+/// `missing_required_claims` is then vacuously empty. The row then reads
+/// as an established dimension while the claim that defines it records
+/// that nothing established it — an internally contradictory report the
+/// gate cannot notice, since it reads the row.
+///
+/// Checked at every report construction rather than only at startup: the
+/// plan and the registry are two tables that can drift apart in one
+/// edit, and the report is where the drift would become a claim.
+///
+/// # Errors
+///
+/// [`NativeConformanceError::RequiredRowWithoutRequiredClaim`] for the
+/// first required row that owns no required claim and has no stated
+/// exception.
+pub fn check_required_rows_own_required_claims(
+    plan: &EvidencePlan,
+    registry: &ClaimRegistry,
+) -> Result<(), NativeConformanceError> {
+    for (id, class) in plan.iter() {
+        if class != EvidencePlanClass::Required {
+            continue;
+        }
+        if !registry.required_claims(id).is_empty() {
+            continue;
+        }
+        if CLAIM_DECOMPOSITION_EXCEPTIONS
+            .iter()
+            .any(|exception| exception.requirement == id && !exception.reason.trim().is_empty())
+        {
+            continue;
+        }
+        return Err(NativeConformanceError::RequiredRowWithoutRequiredClaim(id));
+    }
+    Ok(())
+}
+
 /// Which evidence requirements one fixture group bears on.
 ///
 /// A case exercising a primitive also bears on opcode semantics, which
@@ -246,11 +368,19 @@ pub fn guide_nine_evidence_plan() -> Result<EvidencePlan, NativeConformanceError
 /// primitives whose declared evidence includes the encoding
 /// requirement.
 ///
-/// Resource limits stay split between their two rows deliberately. The
-/// literal-width boundary is the target's own rule and bears on the
-/// consensus row; the nonminimal forms are valid spends that nodes
-/// decline to forward, which is the relay row and nothing else.
-const fn requirements_of(group: NativeCaseGroup) -> &'static [TargetEvidenceRequirementId] {
+/// Resource limits stay split between their two rows deliberately, and
+/// the enforcement layer is what splits them. The literal-width boundary
+/// is the target's own rule and bears on the consensus row; the
+/// nonminimal forms are valid spends that nodes decline to forward,
+/// which is the relay row and nothing else. A group alone cannot say
+/// which of the two a case is about, which is why the layer is a
+/// parameter here rather than a comment: crediting a consensus
+/// acceptance to the relay row would report a policy observation the run
+/// never made.
+const fn requirements_of(
+    group: NativeCaseGroup,
+    layer: EnforcementLayer,
+) -> &'static [TargetEvidenceRequirementId] {
     match group {
         NativeCaseGroup::ExecutionDomain => {
             &[TargetEvidenceRequirementId::TapscriptExecutionDomain]
@@ -291,19 +421,21 @@ const fn requirements_of(group: NativeCaseGroup) -> &'static [TargetEvidenceRequ
             TargetEvidenceRequirementId::IssuanceIntrospection,
             TargetEvidenceRequirementId::InputIntrospectionSemantics,
         ],
-        NativeCaseGroup::Resource => &[
-            TargetEvidenceRequirementId::ConsensusResourceLimits,
-            TargetEvidenceRequirementId::PolicyResourceLimits,
-        ],
+        NativeCaseGroup::Resource => match layer {
+            EnforcementLayer::Consensus => &[TargetEvidenceRequirementId::ConsensusResourceLimits],
+            EnforcementLayer::RelayPolicy => &[TargetEvidenceRequirementId::PolicyResourceLimits],
+        },
     }
 }
 
-/// The requirements one group bears on, for the crate's own tests.
+/// The requirements one group and layer bear on, for the crate's own
+/// tests.
 #[cfg(test)]
 pub(crate) const fn requirements_for_tests(
     group: NativeCaseGroup,
+    layer: EnforcementLayer,
 ) -> &'static [TargetEvidenceRequirementId] {
-    requirements_of(group)
+    requirements_of(group, layer)
 }
 
 /// Builds the report of one canonical run.
@@ -430,6 +562,10 @@ fn evaluate_census(
     registry: &ClaimRegistry,
     role: PrototypeReportRole,
 ) -> Result<NativeConformanceReport, NativeConformanceError> {
+    // The plan and the registry must agree about what a required row
+    // means before either is used to describe a run.
+    check_required_rows_own_required_claims(plan, registry)?;
+
     let definition = target.definition();
     let domain = WireExecutionDomain::of(definition.execution_domain())
         .ok_or(NativeConformanceError::TargetContractMismatch)?;
@@ -460,30 +596,7 @@ fn evaluate_census(
         BTreeMap::new();
 
     for fixture in fixtures {
-        // The leaf version is checked against what the fixture says it
-        // is: a reviewed case must be stated at the contract's leaf, and
-        // an unreviewed one must not be, since a case claiming to
-        // exercise an unreviewed leaf at the reviewed byte would
-        // establish nothing.
-        let leaf_agrees = match fixture.leaf_version_status() {
-            LeafVersionStatus::Reviewed => {
-                fixture.leaf_version() == definition.leaf_version().get()
-            }
-            LeafVersionStatus::Unreviewed => {
-                fixture.leaf_version() != definition.leaf_version().get()
-            }
-        };
-        if fixture.target_contract_version() != definition.version().get()
-            || fixture.execution_domain() != domain
-            || !leaf_agrees
-        {
-            return Err(NativeConformanceError::TargetContractMismatch);
-        }
-        if fixture.network_id() != binding.binding().network_id()
-            || fixture.genesis_id() != binding.binding().genesis_id()
-        {
-            return Err(NativeConformanceError::DevelopmentBindingMismatch);
-        }
+        fixture_states_this_run(fixture, target, binding, domain)?;
 
         let case = fixture.case();
         // The subject being reported must be the subject that was sent.
@@ -513,7 +626,7 @@ fn evaluate_census(
         let status = compare(fixture, &observed);
         let projection = fixture.projection();
 
-        for requirement in bearing_requirements(case) {
+        for requirement in bearing_requirements(fixture) {
             per_requirement.entry(requirement).or_default().push(status);
         }
         for claim in &projection.claims {
@@ -556,6 +669,45 @@ fn evaluate_census(
         claims,
         summary,
     })
+}
+
+/// Whether one fixture is stated against this run's contract and
+/// binding.
+///
+/// The leaf version is checked against what the fixture says it is: a
+/// reviewed case must be stated at the contract's leaf, and an
+/// unreviewed one must not be, since a case claiming to exercise an
+/// unreviewed leaf at the reviewed byte would establish nothing.
+///
+/// # Errors
+///
+/// [`NativeConformanceError::TargetContractMismatch`] for a fixture
+/// stated against another contract revision, domain, or leaf, and
+/// [`NativeConformanceError::DevelopmentBindingMismatch`] for one stated
+/// against another network or genesis.
+fn fixture_states_this_run(
+    fixture: &PrimitiveFixture,
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    domain: WireExecutionDomain,
+) -> Result<(), NativeConformanceError> {
+    let definition = target.definition();
+    let leaf_agrees = match fixture.leaf_version_status() {
+        LeafVersionStatus::Reviewed => fixture.leaf_version() == definition.leaf_version().get(),
+        LeafVersionStatus::Unreviewed => fixture.leaf_version() != definition.leaf_version().get(),
+    };
+    if fixture.target_contract_version() != definition.version().get()
+        || fixture.execution_domain() != domain
+        || !leaf_agrees
+    {
+        return Err(NativeConformanceError::TargetContractMismatch);
+    }
+    if fixture.network_id() != binding.binding().network_id()
+        || fixture.genesis_id() != binding.binding().genesis_id()
+    {
+        return Err(NativeConformanceError::DevelopmentBindingMismatch);
+    }
+    Ok(())
 }
 
 /// Whether this transcript is a run under this contract and this binding.
@@ -665,6 +817,20 @@ impl ValidatedNativeConformanceReport {
     #[must_use]
     pub fn into_report(self) -> NativeConformanceReport {
         self.report
+    }
+
+    /// Asserts the validated state over a raw report, for gate tests.
+    ///
+    /// Test-only, and crate-visible: no caller outside this crate can
+    /// reach it, so it widens nothing. It exists because [`gate`] and
+    /// [`validate_native_report`] are two separate rules, and a test of
+    /// the first must be able to present a report the second would
+    /// refuse — a run whose summary is failed, say, which the
+    /// recomputation path can no longer produce over the canonical
+    /// census because every canonical case bears on a required row.
+    #[cfg(test)]
+    pub(crate) const fn wrap_for_tests(report: NativeConformanceReport) -> Self {
+        Self { report }
     }
 }
 
@@ -827,18 +993,38 @@ pub fn validate_native_report(
 ///
 /// [`NativeConformanceError::MockExecutorCannotSatisfyNativeGate`] for a
 /// declared mock run, checked before anything else, then
+/// [`NativeConformanceError::ExpectedProvenanceUnavailable`] when no
+/// expectation was configured and
+/// [`NativeConformanceError::ExecutorProvenanceUnestablished`] when the
+/// run's provenance is not the expected one, then
 /// [`NativeConformanceError::RequiredClaimMissing`] or
 /// [`NativeConformanceError::RequiredClaimFailed`] for the first required
 /// claim without passing case evidence, and then
 /// [`NativeConformanceError::RequiredEvidenceMissing`],
 /// [`NativeConformanceError::RequiredEvidenceFailed`], or
 /// [`NativeConformanceError::RequiredEvidenceInfrastructureError`] for
-/// the first required row that does not pass.
-pub fn gate(validated: &ValidatedNativeConformanceReport) -> Result<(), NativeConformanceError> {
+/// the first required row that does not pass, then
+/// [`NativeConformanceError::NativeCaseFailed`] or
+/// [`NativeConformanceError::NativeCaseInfrastructureError`] for the
+/// first case that did not pass whatever it bears on, and finally
+/// [`NativeConformanceError::ReportSummaryFailed`] for a report whose
+/// own summary records the run as failed.
+pub fn gate(
+    validated: &ValidatedNativeConformanceReport,
+    expected_provenance: Option<&ExpectedExecutorProvenance>,
+) -> Result<(), NativeConformanceError> {
     let report = &validated.report;
     if report.executor.declaration == ExecutorDeclaration::Mock {
         return Err(NativeConformanceError::MockExecutorCannotSatisfyNativeGate);
     }
+
+    // Which program produced these observations, before what they say
+    // about the target. A run whose executable is not identified is a
+    // run about an unnamed program, and every row below would then be a
+    // statement about nothing in particular (ADR-018).
+    let expected =
+        expected_provenance.ok_or(NativeConformanceError::ExpectedProvenanceUnavailable)?;
+    validate_executor_provenance(&report.executor, expected)?;
 
     // Claims before rows. A row's disposition already accounts for its
     // claims, but naming the claim is what tells a reader which corner of
@@ -884,6 +1070,43 @@ pub fn gate(validated: &ValidatedNativeConformanceReport) -> Result<(), NativeCo
                 return Err(NativeConformanceError::RequiredEvidenceFailed(requirement));
             }
         }
+    }
+
+    // Every case, whatever it bears on. A failure filed under a row the
+    // plan does not require is still a case whose observation was not
+    // what the contract requires, and the canonical census is the
+    // evidence subject as a whole rather than the union of its required
+    // rows. This is the rule the prototype gate has always applied, and
+    // the two gates disagreeing about it was the defect.
+    //
+    // A case whose expected result is rejection is `Passed` when the
+    // target rejected it as expected: `compare` derives the status from
+    // the fixture's own expectation, so this loop asks for agreement
+    // with the contract and not for acceptance by the target.
+    for row in &report.cases {
+        match row.status {
+            CaseStatus::Passed => {}
+            CaseStatus::Failed => {
+                return Err(NativeConformanceError::NativeCaseFailed(row.case()));
+            }
+            CaseStatus::InfrastructureError => {
+                return Err(NativeConformanceError::NativeCaseInfrastructureError(
+                    row.case(),
+                ));
+            }
+        }
+    }
+
+    // The report's own verdict on itself, last. The checks above name
+    // the specific row, claim, or case that failed, and a reader is
+    // better served by that than by the summary line they could have
+    // read themselves; this arm is what catches a failed completeness
+    // arising from anything the loops above do not enumerate. The set of
+    // reports the gate accepts does not depend on the order — a
+    // validated report's summary is recomputed from its own rows — so
+    // the order is chosen for the quality of the refusal.
+    if report.summary.completeness == ReportCompleteness::Failed {
+        return Err(NativeConformanceError::ReportSummaryFailed);
     }
 
     Ok(())
@@ -983,8 +1206,15 @@ pub(crate) fn resources_agree(
 }
 
 /// Which requirements one case bears on.
-fn bearing_requirements(case: NativeCaseId) -> Vec<TargetEvidenceRequirementId> {
-    let mut requirements = requirements_of(case.group()).to_vec();
+///
+/// The complete fixture rather than its case identity: a case identity
+/// carries a group and an opcode, and the enforcement layer a case is
+/// stated at — which is what decides between the two resource rows —
+/// lives in the fixture. Reading the layer from anywhere else would be
+/// reading a value the fixture did not state.
+fn bearing_requirements(fixture: &PrimitiveFixture) -> Vec<TargetEvidenceRequirementId> {
+    let case = fixture.case();
+    let mut requirements = requirements_of(case.group(), fixture.enforcement_layer()).to_vec();
     if case.opcode().is_some()
         && !requirements.contains(&TargetEvidenceRequirementId::OpcodeSemantics)
     {

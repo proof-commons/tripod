@@ -10,8 +10,8 @@ use crate::claim::{ClaimRegistry, NativeEvidenceClaim, claim_registry};
 use crate::error::NativeConformanceError;
 use crate::executor::{ExecutionTranscript, ExecutorTrust, TranscriptParts};
 use crate::fixture::{
-    CanonicalPrimitiveFixtureSet, ExpectedPrimitiveOutcome, NativeCaseGroup, NativeCaseId,
-    canonical_fixture_set,
+    CanonicalPrimitiveFixtureSet, EnforcementLayer, ExpectedPrimitiveOutcome, NativeCaseGroup,
+    NativeCaseId, canonical_fixture_set,
 };
 use crate::protocol::{
     NATIVE_PROTOCOL_SCHEMA, NativeExecutionResponse, NativeResourceObservation, NativeVerdict,
@@ -26,7 +26,8 @@ use crate::validate::{
 };
 
 use super::support::{
-    development_binding, nonmock_handshake, observed_environment, reviewed_target, subjects_of,
+    development_binding, expected_provenance, nonmock_handshake, observed_environment,
+    reviewed_target, subjects_of,
 };
 
 /// Everything one run needs, assembled once per test.
@@ -213,18 +214,87 @@ fn every_fixture_group_bears_on_a_requirement() {
     // establish no evidence at all.
     let plan = guide_nine_evidence_plan().expect("the plan is a partition");
     for group in NativeCaseGroup::ALL {
-        let requirements = crate::validate::requirements_for_tests(*group);
-        assert!(
-            !requirements.is_empty(),
-            "the {} group bears on no requirement",
-            group.wire_name(),
-        );
-        for requirement in requirements {
+        for layer in [EnforcementLayer::Consensus, EnforcementLayer::RelayPolicy] {
+            let requirements = crate::validate::requirements_for_tests(*group, layer);
             assert!(
-                plan.class(*requirement).is_some(),
-                "a group bears on a requirement the plan does not classify",
+                !requirements.is_empty(),
+                "the {} group bears on no requirement at {layer:?}",
+                group.wire_name(),
             );
+            for requirement in requirements {
+                assert!(
+                    plan.class(*requirement).is_some(),
+                    "a group bears on a requirement the plan does not classify",
+                );
+            }
         }
+    }
+}
+
+/// `G11-R04`: every required row is defined by at least one required
+/// claim, so no broad row can pass on case aggregation alone.
+#[test]
+fn every_required_evidence_row_owns_a_required_claim() {
+    let plan = guide_nine_evidence_plan().expect("the plan is a partition");
+    let registry = claim_registry().expect("the claim census is coherent");
+    crate::validate::check_required_rows_own_required_claims(&plan, &registry)
+        .expect("every required row owns a required claim");
+}
+
+/// `G11-R04`: every exception names a required row and states a reason.
+///
+/// An exception naming a row the plan does not require, or carrying a
+/// blank reason, would be an exemption that documents nothing.
+#[test]
+fn the_claim_decomposition_exceptions_are_stated() {
+    let plan = guide_nine_evidence_plan().expect("the plan is a partition");
+    let exceptions = crate::validate::claim_decomposition_exceptions_for_tests();
+    for exception in exceptions {
+        assert_eq!(
+            plan.class(exception.requirement),
+            Some(EvidencePlanClass::Required),
+            "an exception names a row the plan does not require",
+        );
+        assert!(
+            !exception.reason.trim().is_empty(),
+            "an exception states no reason",
+        );
+    }
+    // Exactly the rows the census justifies. A fifth exemption arriving
+    // silently is the invariant being widened rather than satisfied.
+    let exempt: Vec<TargetEvidenceRequirementId> = exceptions
+        .iter()
+        .map(|exception| exception.requirement)
+        .collect();
+    assert_eq!(
+        exempt,
+        vec![
+            TargetEvidenceRequirementId::EncodingSemantics,
+            TargetEvidenceRequirementId::StackRearrangementSemantics,
+            TargetEvidenceRequirementId::ByteStringSemantics,
+            TargetEvidenceRequirementId::VerificationSemantics,
+        ],
+    );
+
+    // And the reasons they state are checkable: each exempt row owns no
+    // claim of its own, and the rows its cases are filed under do state
+    // required claims.
+    let registry = claim_registry().expect("the claim census is coherent");
+    for exception in exceptions {
+        assert!(
+            registry.owned_by(exception.requirement).is_empty(),
+            "an exempt row owns claims, so it is not exempt from decomposition",
+        );
+    }
+    for owner in [
+        TargetEvidenceRequirementId::InputIntrospectionSemantics,
+        TargetEvidenceRequirementId::OutputIntrospectionSemantics,
+        TargetEvidenceRequirementId::OpcodeSemantics,
+    ] {
+        assert!(
+            !registry.required_claims(owner).is_empty(),
+            "the rows the exempt rows' cases are filed under state required claims",
+        );
     }
 }
 
@@ -270,7 +340,7 @@ fn a_complete_run_passes_the_gate_with_its_unresolved_claims_explicit() {
     let report = run.report();
     let validated =
         validate_native_report(report, run.inputs()).expect("an unmutated report validates");
-    gate(&validated).expect("a complete run is evidence");
+    gate(&validated, Some(&expected_provenance())).expect("a complete run is evidence");
 
     let report = validated.report();
     assert_eq!(report.summary.cases_failed, 0);
@@ -527,7 +597,10 @@ fn a_failed_case_cannot_be_removed_to_make_the_run_pass() {
     assert!(honest.summary.cases_failed > 0);
     let validated =
         validate_native_report(honest, run.inputs()).expect("the honest report validates");
-    assert!(gate(&validated).is_err(), "a failing run is not evidence");
+    assert!(
+        gate(&validated, Some(&expected_provenance())).is_err(),
+        "a failing run is not evidence"
+    );
 
     let mut edited = validated.into_report();
     let failed = edited
@@ -588,7 +661,7 @@ fn a_declared_mock_run_can_never_satisfy_the_gate() {
     let report = run.report();
     let validated = validate_native_report(report, run.inputs()).expect("the report validates");
     assert!(matches!(
-        gate(&validated).expect_err("a mock is refused"),
+        gate(&validated, Some(&expected_provenance())).expect_err("a mock is refused"),
         NativeConformanceError::MockExecutorCannotSatisfyNativeGate,
     ));
 }

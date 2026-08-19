@@ -158,6 +158,78 @@ fn run(program: &Path) -> (Result<(), NativeConformanceError>, Duration) {
     (outcome.map(|_| ()), started.elapsed())
 }
 
+/// Every zombie child this process currently has.
+///
+/// Read from the process table rather than waited for: a `wait` would
+/// collect the very evidence the assertion is about, and would also
+/// collect children belonging to other tests running beside this one.
+fn zombie_children() -> Vec<i32> {
+    let ours = std::process::id();
+    let mut zombies = Vec::new();
+    let Ok(entries) = std::fs::read_dir("/proc") else {
+        return zombies;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(pid) = name.to_str().and_then(|text| text.parse::<i32>().ok()) else {
+            continue;
+        };
+        let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
+            continue;
+        };
+        // The fields after the parenthesised command name are the state
+        // letter and then the parent's identifier.
+        let Some((_, rest)) = stat.rsplit_once(") ") else {
+            continue;
+        };
+        let mut fields = rest.split_whitespace();
+        let state = fields.next().unwrap_or_default();
+        let parent = fields.next().and_then(|text| text.parse::<u32>().ok());
+        if state == "Z" && parent == Some(ours) {
+            zombies.push(pid);
+        }
+    }
+    zombies
+}
+
+/// `G11-R13`: a run refused at startup leaves no unreaped child.
+///
+/// The executor here exits the instant it starts, which is the common
+/// shape of the race the finding names: the harness has spawned a
+/// process that is already gone by the time anything is established.
+/// However the run is refused — and it is refused, since nothing
+/// answered the handshake — the process this harness started must have
+/// been both stopped and collected.
+///
+/// The bounded wait is for the host, not for the harness: a child that
+/// has been reaped is gone immediately, while one that was leaked stays
+/// in the table for as long as this process lives, so the loop
+/// distinguishes them without depending on scheduling.
+#[test]
+fn a_run_refused_at_startup_leaves_no_unreaped_child() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let program = script(directory.path(), "exits-at-once", "exit 0\n");
+
+    let (outcome, _elapsed) = run(&program);
+    assert!(
+        outcome.is_err(),
+        "an executor that answers nothing is refused",
+    );
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let zombies = zombie_children();
+        if zombies.is_empty() {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the run left unreaped children behind: {zombies:?}",
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
 /// An executor that ignores graceful termination, forks a descendant
 /// that does the same, and lets that descendant inherit stdout.
 ///

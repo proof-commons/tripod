@@ -156,7 +156,11 @@ fn an_agreeing_run_is_complete_for_its_own_relation() {
 
     let validated =
         revalidate(&target, &matrix, &transcript, report).expect("its own report validates");
-    prototype_gate(&validated).expect("a complete nonmock run is evidence");
+    prototype_gate(
+        &validated,
+        Some(&crate::tests::support::expected_provenance()),
+    )
+    .expect("a complete nonmock run is evidence");
 }
 
 #[test]
@@ -180,7 +184,10 @@ fn a_declared_mock_run_cannot_satisfy_the_prototype_gate() {
         revalidate(&target, &matrix, &transcript, report).expect("a mock report still validates");
     assert!(
         matches!(
-            prototype_gate(&validated),
+            prototype_gate(
+                &validated,
+                Some(&crate::tests::support::expected_provenance())
+            ),
             Err(NativeConformanceError::MockExecutorCannotSatisfyNativeGate),
         ),
         "a mock's answers come from the matrix's own expectations",
@@ -465,7 +472,10 @@ fn a_disagreeing_verdict_fails_its_case_and_its_claims() {
     )
     .expect("a report of a failing run is still an exact report");
     assert!(matches!(
-        prototype_gate(&validated),
+        prototype_gate(
+            &validated,
+            Some(&crate::tests::support::expected_provenance())
+        ),
         Err(NativeConformanceError::RequiredPrototypeClaimFailed(_)),
     ));
 }

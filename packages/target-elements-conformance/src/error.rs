@@ -256,6 +256,11 @@ pub enum NativeConformanceError {
     #[error("required target evidence {} hit executor infrastructure trouble", requirement_text(*.0))]
     RequiredEvidenceInfrastructureError(TargetEvidenceRequirementId),
 
+    /// A required evidence row owns no required claim, so its
+    /// disposition would be decided by case aggregation alone.
+    #[error("required target evidence {} owns no required claim", requirement_text(*.0))]
+    RequiredRowWithoutRequiredClaim(TargetEvidenceRequirementId),
+
     /// The report was written under a revision this harness does not
     /// validate.
     #[error("the report offers schema {offered}, which this harness does not validate")]
@@ -429,6 +434,37 @@ pub enum NativeConformanceError {
     /// A required claim has failing case evidence.
     #[error("a required evidence claim has failing case evidence")]
     RequiredClaimFailed(crate::claim::NativeEvidenceClaim),
+
+    /// One primitive case's observation was not what its fixture
+    /// requires.
+    #[error("case {0} did not observe what its fixture requires")]
+    NativeCaseFailed(NativeCaseId),
+
+    /// One primitive case could not be run by the executor.
+    #[error("case {0} hit executor infrastructure trouble")]
+    NativeCaseInfrastructureError(NativeCaseId),
+
+    /// The report's own summary says the run failed.
+    ///
+    /// A gate that returned success here would certify a document whose
+    /// first line says it did not succeed.
+    #[error("the report's own summary records the run as failed")]
+    ReportSummaryFailed,
+
+    /// The run's reported provenance is not the expected one, so the
+    /// report does not establish which program produced it (ADR-018).
+    #[error("the executor's provenance was not established: {0}")]
+    ExecutorProvenanceUnestablished(crate::provenance::ProvenanceDefect),
+
+    /// The gate was asked to decide a run for which no expected
+    /// provenance was configured.
+    ///
+    /// Fail-closed: an unstated expectation is not a satisfied one, and
+    /// a gate that skipped the comparison when nothing was configured
+    /// would make the check optional for exactly the caller who forgot
+    /// it.
+    #[error("no expected executor provenance was configured for this run")]
+    ExpectedProvenanceUnavailable,
 
     /// The run selected a mock executor, which can never satisfy the
     /// target-native gate.
