@@ -574,7 +574,7 @@ impl CompoundPrototypeFixture {
 /// perfectly coherent, and a caller may attach every claim of a relation
 /// to it. A real node accepts the true script, and the report then
 /// credits a whole relation to a program that computes nothing
-/// `(´[PLAN-rule:guide11:canonical-matrix]´)`.
+///.
 ///
 /// The gate's input is therefore this wrapper rather than a slice, and
 /// only [`constructor_case_matrix`] builds one.
@@ -610,13 +610,13 @@ impl ConstructorPrototypeMatrix {
 
     /// How many rows the matrix holds.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.rows.len()
     }
 
     /// Whether the matrix holds no rows.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.rows.is_empty()
     }
 
@@ -647,13 +647,13 @@ impl WideFloorPrototypeMatrix {
 
     /// How many rows the matrix holds.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.rows.len()
     }
 
     /// Whether the matrix holds no rows.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.rows.is_empty()
     }
 
@@ -672,7 +672,7 @@ impl WideFloorPrototypeMatrix {
 /// validator, which meant a caller could state one relation and hand over
 /// the other's rows; the mismatch was caught, but only because every row
 /// happened to carry its own relation. Here it cannot be stated at all
-/// `(´[PLAN-rule:guide11:canonical-matrix]´)`.
+///.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CanonicalPrototypeMatrix<'a> {
     /// The constructor-continuity matrix.

@@ -1283,7 +1283,7 @@ fn g11_r03_replacing_the_canonical_program_under_the_same_case_name_fails() {
     let case = rows[0].case.clone();
     let substitute = forged_wide_floor_row(&target);
     rows[0].script = substitute.script.clone();
-    rows[0].construction = substitute.construction.clone();
+    rows[0].construction = substitute.construction;
     assert!(
         rows[0].defect(&target).is_none(),
         "the substituted construction is internally coherent",

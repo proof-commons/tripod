@@ -290,7 +290,7 @@ pub enum NativeConformanceError {
     /// path regenerates the census from the reviewed contract and the
     /// binding and compares it, so that a canonical subject is canonical
     /// by recomputation and not only by type
-    /// `(´[PLAN-rule:guide11:canonical-subject]´)`.
+    ///.
     #[error("the offered census is not the canonical fixture census")]
     NoncanonicalFixtureCensus,
 

@@ -93,7 +93,7 @@ pub enum PrototypeReportRole {
     /// that a *serialized* report says what it is. A published JSON
     /// document outlives the type that produced it, and a reader with the
     /// bytes alone must be able to see that the subject was a caller's
-    /// choice `(´[PLAN-rule:guide11:experimental-role]´)`.
+    /// choice.
     ExperimentalPrimitive,
     /// An ad hoc compound-prototype matrix a caller assembled.
     ExperimentalPrototype,

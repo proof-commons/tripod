@@ -1105,7 +1105,7 @@ impl<'a> IntoIterator for &'a PrimitiveFixtureSet {
 /// signature dimension, and every claim below reads the label rather than
 /// the program — so the report states signature evidence for a run in
 /// which no signature primitive executed
-/// `(´[PLAN-rule:guide11:canonical-subject]´)`.
+///.
 ///
 /// The refusal is therefore about *provenance*, not about size or
 /// completeness: a caller-assembled census large enough to fill every

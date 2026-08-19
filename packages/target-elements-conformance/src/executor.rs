@@ -534,7 +534,7 @@ pub fn execute(
 /// [`crate::validate::evaluate`], which accepts only the canonical
 /// wrapper, so [`execute`] stays open to any census and this entry point
 /// exists to make the evidence path read as one canonical sequence from
-/// census to gate `(´[PLAN-rule:guide11:canonical-subject]´)`.
+/// census to gate.
 ///
 /// # Errors
 ///

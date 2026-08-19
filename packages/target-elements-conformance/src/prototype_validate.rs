@@ -93,7 +93,7 @@ impl PrototypeRelation {
 /// [`CanonicalPrototypeMatrix`], and it does not take that wrapper's word
 /// for it: the matrix is regenerated for the run's relation and compared
 /// row for row, in order, including each row's claim set
-/// `(´[PLAN-rule:guide11:canonical-matrix]´)`.
+///.
 ///
 /// # Why coherence was never enough
 ///
@@ -329,7 +329,7 @@ fn evaluate_matrix(
 /// at that point they *are* some typed program's own encoding, which is
 /// what the field says. Anything else is reported as deliberately
 /// malformed, which is the honest answer for bytes the typed language
-/// does not express `(´[PLAN-rule:guide11:script-provenance]´)`.
+/// does not express.
 fn script_source_of(
     target: &ReviewedElementsTapscriptDefinition,
     script: &[u8],
@@ -508,7 +508,7 @@ fn summarize(
 ///
 /// There is no route from here to [`prototype_gate`]: this type has no
 /// validator, and the gate reads only a [`ValidatedPrototypeReport`]
-/// `(´[PLAN-rule:guide11:experimental-role]´)`.
+///.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExperimentalPrototypeReport {
     report: PrototypeConformanceReport,

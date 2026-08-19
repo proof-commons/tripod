@@ -313,7 +313,7 @@ pub(crate) const fn requirements_for_tests(
 /// word for it: the census is regenerated from the reviewed contract and
 /// the binding, and every fixture's complete projection is compared
 /// against the regenerated one before a single claim is derived
-/// `(´[PLAN-rule:guide11:canonical-subject]´)`.
+///.
 ///
 /// # Why the subject is checked rather than the script
 ///
@@ -543,7 +543,7 @@ fn evaluate_census(
 /// faithfully, and the subject was a census the caller chose rather than
 /// the repository's evidence plan — so what the run establishes about the
 /// target is whatever the reader makes of it, and not a claim this
-/// harness certifies `(´[PLAN-rule:guide11:experimental-role]´)`.
+/// harness certifies.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExperimentalPrimitiveReport {
     report: NativeConformanceReport,
@@ -623,7 +623,7 @@ impl ValidatedNativeConformanceReport {
 /// projection against it. A report about a subject that is not the
 /// canonical evidence plan therefore fails here, before any question
 /// about whether the report faithfully describes that subject — which it
-/// may well do `(´[PLAN-rule:guide11:canonical-subject]´)`.
+/// may well do.
 ///
 /// # Errors
 ///
