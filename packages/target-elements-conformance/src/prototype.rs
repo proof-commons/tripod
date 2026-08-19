@@ -367,6 +367,30 @@ pub struct CompoundPrototypeFixture {
     pub expected_resources: ExpectedResourceObservation,
 }
 
+/// Exactly what one executor was handed for one compound case.
+///
+/// The compound counterpart of
+/// [`crate::fixture::PrimitiveExecutionSubject`], and the same split for
+/// the same reason: the construction to materialize, the script, and the
+/// witness stack are the execution, while the expected verdict, the
+/// expected resource figures, and the claim set are what the harness
+/// compares the answer with and keeps to itself
+/// `(´[PLAN-rule:guide11:request-subject]´)`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PrototypeExecutionSubject {
+    /// Which case.
+    pub case: PrototypeCaseId,
+    /// The contract revision the case is stated against.
+    pub target_contract_version: u32,
+    /// The exact script the executing leaf runs.
+    pub script: Vec<u8>,
+    /// The exact initial witness stack, deepest item first.
+    pub initial_stack: Vec<Vec<u8>>,
+    /// The construction the executor must materialize exactly.
+    pub construction: PrototypeConstruction,
+}
+
 /// Why a compound fixture does not state a coherent case.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -542,6 +566,22 @@ impl CompoundPrototypeFixture {
         }
 
         None
+    }
+
+    /// Exactly what the executor is handed, and nothing it is asked to
+    /// agree with.
+    ///
+    /// The protocol revision-3 request payload, and what the transcript
+    /// retains as the request that was actually sent.
+    #[must_use]
+    pub fn subject(&self) -> PrototypeExecutionSubject {
+        PrototypeExecutionSubject {
+            case: self.case.clone(),
+            target_contract_version: self.target_contract_version,
+            script: self.script.clone(),
+            initial_stack: self.initial_stack.clone(),
+            construction: self.construction.clone(),
+        }
     }
 
     /// Whether the fixture states a coherent case.
