@@ -84,6 +84,15 @@ enum Behavior {
     AnswerFromCensus,
     /// Answer the handshake with a schema the harness does not speak.
     WrongHandshakeSchema,
+    /// Answer the handshake as an executor of the previous revision.
+    ///
+    /// Not a variation on the wrong-schema behavior above, which offers a
+    /// revision that never existed. This one is the migration case: a
+    /// working revision-2 adapter, of exactly the kind this workspace ran
+    /// before, meeting a revision-3 harness. It must be refused loudly
+    /// rather than have its records read as revision-3 ones
+    /// `(´[PLAN-rule:guide11:request-subject]´)`.
+    PreviousRevisionHandshake,
     /// Write a line that is not JSON at all.
     MalformedJson,
     /// Write a response carrying a field the protocol does not define.
@@ -376,10 +385,10 @@ fn run(behavior: Behavior, table: &AnswerTable) -> std::io::Result<CommandExit> 
         return Ok(CommandExit::Success);
     }
 
-    let schema = if behavior == Behavior::WrongHandshakeSchema {
-        NATIVE_PROTOCOL_SCHEMA + 1
-    } else {
-        NATIVE_PROTOCOL_SCHEMA
+    let schema = match behavior {
+        Behavior::WrongHandshakeSchema => NATIVE_PROTOCOL_SCHEMA + 1,
+        Behavior::PreviousRevisionHandshake => NATIVE_PROTOCOL_SCHEMA - 1,
+        _ => NATIVE_PROTOCOL_SCHEMA,
     };
     write_json(&mut stdout, &handshake(schema))?;
 

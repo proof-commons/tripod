@@ -128,7 +128,8 @@ validate::evaluate_experimental(..)    -> ExperimentalPrimitiveReport
 Four types have no public constructor, deliberately.
 
 - `ExecutionTranscript` can only be obtained by actually running an executor,
-  so a caller cannot fabricate one.
+  so a caller cannot fabricate one — and it retains the subjects that run
+  sent, so it cannot be re-pointed at a different census or binding either.
 - `ValidatedNativeConformanceReport` can only be obtained from
   `validate_native_report`, which recomputes every field rather than trusting
   the report it was handed.
@@ -334,7 +335,7 @@ the transaction-context types `PrimitiveExecutionContext`, `FixtureInput`,
 ### `protocol` — the secretless wire
 
 ```text
-NATIVE_PROTOCOL_SCHEMA: u32 = 2
+NATIVE_PROTOCOL_SCHEMA: u32 = 3
 MOCK_EXECUTOR_NETWORK_ID: [u8; 32] = [0x11; 32]
 MOCK_EXECUTOR_GENESIS_ID: [u8; 32] = [0x22; 32]
 
@@ -384,7 +385,18 @@ stopped together, with `cleanup_grace` before escalation.
 declaration rather than an observation — nothing here can tell the difference.
 
 `ExecutionTranscript` reads back `handshake()`, `environment()`, `trust()`,
-`responses()`, and `prototype_responses()`. It has no public constructor.
+`target()`, `deployment()`, `requests()`, `responses()`,
+`prototype_requests()`, and `prototype_responses()`. It has no public
+constructor.
+
+The first four of those readers are what makes a transcript *bound*. It
+retains the reviewed contract projection and the deployment projection the run
+was requested under, and the exact subject sent for every case, so a report
+cannot be built against a contract, a binding, or a census the run never
+touched. Evaluation compares them by exact typed equality — no digest — and
+refuses on the first disagreement with `TranscriptTargetRebinding`,
+`TranscriptDeploymentRebinding`, `TranscriptSubjectMismatch`,
+`MissingCaseRequest`, or `UnrequestedCaseResponse`.
 
 ### `claim` — the claim census
 

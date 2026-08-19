@@ -177,7 +177,7 @@ fn a_refused_construction_is_infrastructure_trouble_and_not_a_verdict() {
     // every row comes back as infrastructure trouble, carrying no
     // observation of any kind.
     let matrix = wide_floor_matrix();
-    let transcript = run("echo-expected", &matrix).expect("the exchange completes");
+    let transcript = run("answer-from-census", &matrix).expect("the exchange completes");
     assert_eq!(transcript.prototype_responses().len(), matrix.len());
     for response in transcript.prototype_responses().values() {
         assert_eq!(response.verdict, NativeVerdict::InfrastructureError);

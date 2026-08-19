@@ -596,29 +596,31 @@ fn g11_r01_a_case_sent_and_never_answered_is_refused() {
 fn g11_r01_a_prototype_construction_cannot_be_substituted() {
     let target = reviewed_target();
     let binding = development_binding(&target);
-    let canonical = wide_floor_case_matrix(&target).expect("the wide-floor matrix is authored");
+    // The constructor matrix, whose rows state genuinely different trees:
+    // the wide-floor rows share one construction and vary their witness,
+    // so a construction substitution is not expressible there.
+    let canonical = constructor_case_matrix(&target).expect("the constructor matrix is authored");
 
     // The run: the canonical matrix, honestly executed.
     let transcript = prototype_transcript(&target, &binding, canonical.rows());
 
-    // The report: the same rows with one row's construction replaced by
-    // another canonical row's. Both constructions are real and both are
-    // coherent, so nothing local to the fixture notices.
+    // The report: the same rows with one row's construction and program
+    // replaced by another canonical row's. Both are real constructions
+    // and the result is locally coherent, so nothing about the fixture
+    // itself notices.
     let mut rows = canonical.rows().to_vec();
-    assert!(rows.len() >= 2, "the substitution needs two rows");
-    let donor = rows[1].construction.clone();
-    assert_ne!(
-        rows[0].construction, donor,
-        "the two rows state different constructions",
-    );
+    let donor = rows
+        .iter()
+        .position(|row| row.construction != rows[0].construction)
+        .expect("two constructor rows state different constructions");
     let substituted_case = rows[0].case.clone();
-    rows[0].construction = donor;
-    rows[0].script = rows[1].script.clone();
+    rows[0].construction = rows[donor].construction.clone();
+    rows[0].script = rows[donor].script.clone();
 
     let refusal = evaluate_experimental_prototypes(
         &target,
         &binding,
-        PrototypeRelation::WideFloorRelation,
+        PrototypeRelation::MetadataConstructorContinuity,
         &rows,
         &transcript,
     )

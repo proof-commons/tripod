@@ -129,7 +129,7 @@ fn no_credential_argument_exists() {
 #[test]
 fn a_declared_mock_run_cannot_satisfy_the_gate() {
     let directory = tempfile::tempdir().expect("tempdir");
-    let executor = wrapper(directory.path(), "echo-expected");
+    let executor = wrapper(directory.path(), "answer-from-census");
     let output = run(&[
         "--executor",
         executor.to_str().expect("utf8 path"),
@@ -162,7 +162,7 @@ fn declaring_a_mock_reviewed_leaves_the_lie_in_the_provenance() {
     // the report does carry is what the program said it was, which is
     // how a reader catches this rather than the gate.
     let directory = tempfile::tempdir().expect("tempdir");
-    let executor = wrapper(directory.path(), "echo-expected");
+    let executor = wrapper(directory.path(), "answer-from-census");
     let output = run(&[
         "--executor",
         executor.to_str().expect("utf8 path"),
@@ -185,7 +185,7 @@ fn declaring_a_mock_reviewed_leaves_the_lie_in_the_provenance() {
 #[test]
 fn a_refused_gate_publishes_no_report_and_dates_no_stamp() {
     let directory = tempfile::tempdir().expect("tempdir");
-    let executor = wrapper(directory.path(), "echo-expected");
+    let executor = wrapper(directory.path(), "answer-from-census");
     let report = directory.path().join("report.json");
     let stamp = directory.path().join("stamp.ok");
 
@@ -212,7 +212,7 @@ fn a_refused_gate_publishes_no_report_and_dates_no_stamp() {
 #[test]
 fn a_refused_gate_leaves_an_existing_stamp_untouched() {
     let directory = tempfile::tempdir().expect("tempdir");
-    let executor = wrapper(directory.path(), "echo-expected");
+    let executor = wrapper(directory.path(), "answer-from-census");
     let report = directory.path().join("report.json");
     let stamp = directory.path().join("stamp.ok");
     std::fs::write(&stamp, b"earlier bytes").expect("write stamp");
@@ -250,7 +250,7 @@ fn a_refused_gate_leaves_an_existing_stamp_untouched() {
 #[test]
 fn a_malformed_identifier_is_a_runtime_failure() {
     let directory = tempfile::tempdir().expect("tempdir");
-    let executor = wrapper(directory.path(), "echo-expected");
+    let executor = wrapper(directory.path(), "answer-from-census");
     let output = run(&[
         "--executor",
         executor.to_str().expect("utf8 path"),
