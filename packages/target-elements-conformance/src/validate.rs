@@ -54,8 +54,9 @@ use crate::claim::{ClaimRegistry, NativeEvidenceClaim};
 use crate::error::NativeConformanceError;
 use crate::executor::{ExecutionTranscript, ExecutorTrust};
 use crate::fixture::{
-    ExpectedPrimitiveOutcome, ExpectedResourceObservation, LeafVersionStatus, NativeCaseGroup,
-    NativeCaseId, PrimitiveFixture, PrimitiveFixtureSet, ResourceExpectation,
+    CanonicalPrimitiveFixtureSet, ExpectedPrimitiveOutcome, ExpectedResourceObservation,
+    LeafVersionStatus, NativeCaseGroup, NativeCaseId, PrimitiveFixture, PrimitiveFixtureSet,
+    ResourceExpectation, canonical_fixture_set,
 };
 use crate::protocol::{
     NativeResourceObservation, NativeVerdict, RequestExpectationBoundary, WireEnvironment,
@@ -305,10 +306,32 @@ pub(crate) const fn requirements_for_tests(
     requirements_of(group)
 }
 
-/// Builds the report of one run.
+/// Builds the report of one canonical run.
+///
+/// This is the native evidence path. It accepts only a
+/// [`CanonicalPrimitiveFixtureSet`], and it does not take that wrapper's
+/// word for it: the census is regenerated from the reviewed contract and
+/// the binding, and every fixture's complete projection is compared
+/// against the regenerated one before a single claim is derived
+/// `(´[PLAN-rule:guide11:canonical-subject]´)`.
+///
+/// # Why the subject is checked rather than the script
+///
+/// A caller-chosen census can be made to look like evidence without any
+/// executor misbehaving: the claims below read a case's declared group,
+/// primitive, and stated outcome, so a program that merely pushes a true
+/// literal, filed under a case naming the signature primitive, is
+/// credited with an accepted transaction signature. Checking that the
+/// named primitive *appears* in the script would not close that either —
+/// a script may contain an opcode it never reaches, or reach it in a
+/// context unrelated to the claimed property. Evidence-bearing membership
+/// is therefore defined by the canonical census and by nothing else.
 ///
 /// # Errors
 ///
+/// [`NativeConformanceError::NoncanonicalFixtureCensus`] or
+/// [`NativeConformanceError::NoncanonicalFixtureSubject`] when the
+/// offered census is not the regenerated canonical one,
 /// [`NativeConformanceError::TargetContractMismatch`] or
 /// [`NativeConformanceError::DevelopmentBindingMismatch`] when a fixture
 /// was stated against a different contract or network from the run's,
@@ -317,10 +340,95 @@ pub(crate) const fn requirements_for_tests(
 pub fn evaluate(
     target: &ReviewedElementsTapscriptDefinition,
     binding: &ReviewedDevelopmentBinding,
+    fixtures: &CanonicalPrimitiveFixtureSet,
+    transcript: &ExecutionTranscript,
+    plan: &EvidencePlan,
+    registry: &ClaimRegistry,
+) -> Result<NativeConformanceReport, NativeConformanceError> {
+    let regenerated = canonical_fixture_set(target, binding)?;
+    if regenerated.len() != fixtures.len() {
+        return Err(NativeConformanceError::NoncanonicalFixtureCensus);
+    }
+    // Pairwise in canonical case order, so a census holding the right
+    // cases in a different order is caught as well. Declaration order is
+    // not compared and cannot be: the census is a map keyed by case
+    // identity, so permuting the declarations produces one value.
+    for (offered, canonical) in fixtures.iter().zip(regenerated.iter()) {
+        if offered.case() != canonical.case() {
+            return Err(NativeConformanceError::NoncanonicalFixtureCensus);
+        }
+        // The complete projection, which is every member the invariant
+        // names: program, stack, context, expected outcome, enforcement
+        // layer, leaf version, script provenance, resources, and the
+        // claim set the case owns.
+        if offered.projection() != canonical.projection() {
+            return Err(NativeConformanceError::NoncanonicalFixtureSubject(
+                canonical.case(),
+            ));
+        }
+    }
+
+    evaluate_census(
+        target,
+        binding,
+        fixtures.fixtures(),
+        transcript,
+        plan,
+        registry,
+        PrototypeReportRole::PrimitiveConformance,
+    )
+}
+
+/// Builds the report of one ad hoc run.
+///
+/// An arbitrary census may still be executed and described — that is what
+/// makes the fixture language useful for experiments and for this
+/// harness's own protocol tests. What it may not do is become evidence:
+/// the result is an [`ExperimentalPrimitiveReport`], which no validator
+/// and no gate accepts, and whose recorded role says so in the serialized
+/// document as well as in the type.
+///
+/// # Errors
+///
+/// The errors [`evaluate`] states, other than the two canonical-subject
+/// ones, which cannot arise here.
+pub fn evaluate_experimental(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
     fixtures: &PrimitiveFixtureSet,
     transcript: &ExecutionTranscript,
     plan: &EvidencePlan,
     registry: &ClaimRegistry,
+) -> Result<ExperimentalPrimitiveReport, NativeConformanceError> {
+    Ok(ExperimentalPrimitiveReport {
+        report: evaluate_census(
+            target,
+            binding,
+            fixtures,
+            transcript,
+            plan,
+            registry,
+            PrototypeReportRole::ExperimentalPrimitive,
+        )?,
+    })
+}
+
+/// The report of one run over one census, under a stated role.
+///
+/// The comparison, the claim derivation, and the counting are one body
+/// for both trust states deliberately: an experimental report that
+/// described a run differently from the canonical one would be useless
+/// for the experiments it exists to serve. What differs between the two
+/// paths is which censuses may reach them and what the result can be used
+/// for, and both of those are settled before this is called.
+fn evaluate_census(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    fixtures: &PrimitiveFixtureSet,
+    transcript: &ExecutionTranscript,
+    plan: &EvidencePlan,
+    registry: &ClaimRegistry,
+    role: PrototypeReportRole,
 ) -> Result<NativeConformanceReport, NativeConformanceError> {
     let definition = target.definition();
     let domain = WireExecutionDomain::of(definition.execution_domain())
@@ -403,7 +511,7 @@ pub fn evaluate(
 
     Ok(NativeConformanceReport {
         schema: NATIVE_REPORT_SCHEMA,
-        role: PrototypeReportRole::PrimitiveConformance,
+        role,
         target_contract_version: definition.version().get(),
         expectation_boundary: RequestExpectationBoundary::FixtureCarriesExpectation,
         environment: WireEnvironment::Development,
@@ -426,6 +534,35 @@ pub fn evaluate(
     })
 }
 
+/// The report of an ad hoc run, which is not evidence.
+///
+/// # There is no route from here to the gate
+///
+/// This type has no validator, and [`gate`] does not accept it. That is
+/// the whole of its meaning: the run happened, the report describes it
+/// faithfully, and the subject was a census the caller chose rather than
+/// the repository's evidence plan — so what the run establishes about the
+/// target is whatever the reader makes of it, and not a claim this
+/// harness certifies `(´[PLAN-rule:guide11:experimental-role]´)`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExperimentalPrimitiveReport {
+    report: NativeConformanceReport,
+}
+
+impl ExperimentalPrimitiveReport {
+    /// The report.
+    #[must_use]
+    pub const fn report(&self) -> &NativeConformanceReport {
+        &self.report
+    }
+
+    /// Consumes the wrapper, yielding the raw report.
+    #[must_use]
+    pub fn into_report(self) -> NativeConformanceReport {
+        self.report
+    }
+}
+
 /// Everything the report validator needs to recompute a report.
 #[derive(Clone, Copy, Debug)]
 pub struct NativeReportValidationInputs<'a> {
@@ -433,8 +570,8 @@ pub struct NativeReportValidationInputs<'a> {
     pub target: &'a ReviewedElementsTapscriptDefinition,
     /// The binding welded to that contract.
     pub binding: &'a ReviewedDevelopmentBinding,
-    /// The fixture census that was executed.
-    pub fixtures: &'a PrimitiveFixtureSet,
+    /// The canonical fixture census that was executed.
+    pub fixtures: &'a CanonicalPrimitiveFixtureSet,
     /// The evidence plan.
     pub plan: &'a EvidencePlan,
     /// The typed claim census.
@@ -479,11 +616,21 @@ impl ValidatedNativeConformanceReport {
 /// provenance. Every comparison rejects in both directions: a row the
 /// report omits and a row the report invents are both failures.
 ///
+/// # The subject is recomputed too
+///
+/// The recomputation runs through [`evaluate`], so validating a report
+/// regenerates the canonical census and compares every fixture's complete
+/// projection against it. A report about a subject that is not the
+/// canonical evidence plan therefore fails here, before any question
+/// about whether the report faithfully describes that subject — which it
+/// may well do `(´[PLAN-rule:guide11:canonical-subject]´)`.
+///
 /// # Errors
 ///
 /// [`NativeConformanceError::UnsupportedReportSchema`] for a report
 /// revision this harness does not validate, and then the first typed
-/// mismatch: a case census that is not the fixture census, a duplicated
+/// mismatch: a census that is not the canonical one, a case census that
+/// is not the fixture census, a duplicated
 /// case, a fixture projection that is not the executed fixture, an
 /// observation that is not the transcript's, evidence or claim rows that
 /// are not the recomputed ones, or a summary that is not what the rows

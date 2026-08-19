@@ -66,7 +66,7 @@ use target_elements::{
 };
 
 use crate::error::NativeConformanceError;
-use crate::fixture::{NativeCaseId, PrimitiveFixtureSet};
+use crate::fixture::{CanonicalPrimitiveFixtureSet, NativeCaseId, PrimitiveFixtureSet};
 use crate::protocol::{
     ExecutorCapability, ExecutorEnvironmentObservation, ExecutorHandshake, HandshakeRequest,
     NATIVE_PROTOCOL_SCHEMA, NativeExecutionRequest, NativeExecutionResponse,
@@ -523,6 +523,29 @@ pub fn execute(
         configuration,
         NativeWorkload::Primitives(fixtures),
     )
+}
+
+/// Runs the canonical census through the selected executor.
+///
+/// # Why execution itself is not the trust boundary
+///
+/// Running an arbitrary census is not a way to manufacture evidence: it
+/// is a way to ask a node a question. The boundary sits at
+/// [`crate::validate::evaluate`], which accepts only the canonical
+/// wrapper, so [`execute`] stays open to any census and this entry point
+/// exists to make the evidence path read as one canonical sequence from
+/// census to gate `(´[PLAN-rule:guide11:canonical-subject]´)`.
+///
+/// # Errors
+///
+/// Every protocol failure [`execute`] states.
+pub fn execute_canonical(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    configuration: &ExecutorConfiguration,
+    fixtures: &CanonicalPrimitiveFixtureSet,
+) -> Result<ExecutionTranscript, NativeConformanceError> {
+    execute(target, binding, configuration, fixtures.fixtures())
 }
 
 /// Runs one compound-prototype matrix through the selected executor.

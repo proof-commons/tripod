@@ -29,11 +29,13 @@ use crate::constructor::internal_key::UNSPENDABLE_INTERNAL_KEY;
 use crate::constructor::metadata::PrototypeMetadata;
 use crate::constructor::totality::{TotalityDefect, TweakTotalityPolicy, construct_under_policy};
 use crate::constructor::tree::{FixtureTapTree, construct};
+use crate::error::NativeConformanceError;
 use crate::executor::{ExecutionTranscript, ExecutorTrust};
 use crate::fixture::{
-    EnforcementLayer, ExpectedPrimitiveOutcome, ExpectedResourceObservation, FixtureScript,
-    FixtureScriptSource, FixtureStatement, LeafVersionStatus, NativeCaseGroup, NativeCaseId,
-    PrimitiveFixture, PrimitiveFixtureSet, ResourceExpectation, canonical_fixture_set,
+    CanonicalPrimitiveFixtureSet, EnforcementLayer, ExpectedPrimitiveOutcome,
+    ExpectedResourceObservation, FixtureScript, FixtureScriptSource, FixtureStatement,
+    LeafVersionStatus, NativeCaseGroup, NativeCaseId, PrimitiveFixture, PrimitiveFixtureSet,
+    ResourceExpectation, canonical_fixture_set,
 };
 use crate::protocol::{
     NATIVE_PROTOCOL_SCHEMA, NativeExecutionResponse, NativePrototypeResponse,
@@ -49,7 +51,8 @@ use crate::prototype_validate::{
 };
 use crate::report::{CaseStatus, EvidenceDisposition, EvidencePlanClass, ReportCompleteness};
 use crate::validate::{
-    NativeReportValidationInputs, evaluate, gate, guide_nine_evidence_plan, validate_native_report,
+    NativeReportValidationInputs, evaluate, evaluate_experimental, gate, guide_nine_evidence_plan,
+    validate_native_report,
 };
 
 use super::support::{
@@ -102,11 +105,24 @@ fn contract_answer(case: NativeCaseId, fixture: &PrimitiveFixture) -> NativeExec
 }
 
 /// Every response an honest run over one census would produce.
-fn answers(fixtures: &PrimitiveFixtureSet) -> BTreeMap<NativeCaseId, NativeExecutionResponse> {
+///
+/// Taken as an iterator of fixtures rather than as one census type, so
+/// that the canonical wrapper and a bare census can both be answered.
+fn answers<'a>(
+    fixtures: impl IntoIterator<Item = &'a PrimitiveFixture>,
+) -> BTreeMap<NativeCaseId, NativeExecutionResponse> {
     fixtures
-        .iter()
+        .into_iter()
         .map(|fixture| (fixture.case(), contract_answer(fixture.case(), fixture)))
         .collect()
+}
+
+/// The evidence plan and the claim census, which every run below needs.
+fn plan_and_registry() -> (crate::validate::EvidencePlan, ClaimRegistry) {
+    (
+        guide_nine_evidence_plan().expect("the plan is a partition"),
+        claim_registry().expect("the claim census is coherent"),
+    )
 }
 
 /// Every resource figure recorded and none of them fixed.
@@ -217,6 +233,14 @@ fn g11_r01_a_transcript_rebinds_to_a_deployment_it_never_ran_on() {
 /// expectation is compared against the executor's reported figure, so a
 /// substitution of a *differently sized* script is caught by that
 /// comparison. That is a width check, not a subject binding.
+///
+/// # Why this runs on the experimental path now
+///
+/// Wave 1 closed the arbitrary-census route to the evidence path, so a
+/// two-fixture substitution can no longer be evaluated as evidence. The
+/// defect this test names is not that route: it is that the transcript
+/// retains no request, so nothing anywhere compares what was sent with
+/// what is reported. That is unchanged, and it is what Wave 2 repairs.
 #[test]
 fn g11_r01_a_report_names_a_script_the_executor_never_ran() {
     let target = reviewed_target();
@@ -262,8 +286,9 @@ fn g11_r01_a_report_names_a_script_the_executor_never_ran() {
     let registry = claim_registry().expect("the claim census is coherent");
     let reported =
         PrimitiveFixtureSet::new([substituted.clone()]).expect("one fixture is a census");
-    let report = evaluate(&target, &binding, &reported, &transcript, &plan, &registry)
-        .expect("the defect: the substituted census evaluates against another run's answers");
+    let report = evaluate_experimental(&target, &binding, &reported, &transcript, &plan, &registry)
+        .expect("the defect: the substituted census evaluates against another run's answers")
+        .into_report();
 
     assert_eq!(report.cases.len(), 1);
     assert_eq!(
@@ -350,11 +375,11 @@ fn g11_r02_an_arbitrary_census_reaches_the_evidence_path() {
     )
     .expect("the fixture states");
 
-    let fixtures = PrimitiveFixtureSet::new([fixture.clone()])
-        .expect("the defect: an arbitrary census assembles");
+    let fixtures = PrimitiveFixtureSet::new([fixture.clone()]).expect("a census assembles");
     let canonical = canonical_fixture_set(&target, &binding).expect("the census states");
     assert_ne!(
-        fixtures, canonical,
+        &fixtures,
+        canonical.fixtures(),
         "the arbitrary census is not the canonical one",
     );
 
@@ -364,36 +389,257 @@ fn g11_r02_an_arbitrary_census_reaches_the_evidence_path() {
         ExecutorTrust::ReviewedNonMock,
         BTreeMap::from([(case, contract_answer(case, &fixture))]),
     );
-    let plan = guide_nine_evidence_plan().expect("the plan is a partition");
-    let registry = claim_registry().expect("the claim census is coherent");
-    let report = evaluate(&target, &binding, &fixtures, &transcript, &plan, &registry)
-        .expect("the defect: an arbitrary census produces an evidence report");
+    let (plan, registry) = plan_and_registry();
 
-    let signature = report
-        .evidence
-        .iter()
-        .find(|row| row.requirement == "signature_semantics")
-        .expect("the signature row exists");
-    assert_ne!(
-        signature.cases, 0,
-        "the defect: the signature row counts a case that ran no signature primitive",
+    let refusal = evaluate(
+        &target,
+        &binding,
+        &CanonicalPrimitiveFixtureSet::wrap_for_tests(fixtures),
+        &transcript,
+        &plan,
+        &registry,
+    )
+    .expect_err("the evidence path refuses a census it did not state");
+    assert!(
+        matches!(refusal, NativeConformanceError::NoncanonicalFixtureCensus),
+        "a subject refusal, not a completeness one: {refusal:?}",
     );
+
+    // The old refusal is what the new one replaces: the canonical census
+    // gates, so the harness is not simply refusing everything.
+    let honest = ExecutionTranscript::for_tests(
+        nonmock_handshake(),
+        observed_environment(),
+        ExecutorTrust::ReviewedNonMock,
+        answers(&canonical),
+    );
+    let report = evaluate(&target, &binding, &canonical, &honest, &plan, &registry)
+        .expect("the canonical census evaluates");
     let validated = validate_native_report(
         report,
         NativeReportValidationInputs {
             target: &target,
             binding: &binding,
-            fixtures: &fixtures,
+            fixtures: &canonical,
+            plan: &plan,
+            registry: &registry,
+            transcript: &honest,
+        },
+    )
+    .expect("the canonical report validates");
+    gate(&validated).expect("the canonical census is the evidence subject");
+}
+
+/// `G11-R02` **CLOSED**: changing any member of a canonical fixture
+/// removes gate eligibility.
+///
+/// The invariant is that a canonical case's subject, its exact program and
+/// context, its exact expected outcome, and its exact claim set stand or
+/// fall together. Here one case keeps its identity and loses its program,
+/// and the complete-projection comparison refuses it by name.
+#[test]
+fn g11_r02_changing_a_canonical_fixture_member_removes_gate_eligibility() {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let canonical = canonical_fixture_set(&target, &binding).expect("the census states");
+
+    // A case with no transaction context, so the replacement needs none
+    // either and the only difference is the program.
+    let victim = canonical
+        .iter()
+        .find(|fixture| {
+            fixture.context().is_none()
+                && fixture.expected().is_accepting()
+                && fixture.leaf_version_status() == LeafVersionStatus::Reviewed
+        })
+        .expect("the census states a static accepting case")
+        .case();
+
+    let program = pushes(&target, 0x01);
+    let replacement = PrimitiveFixture::new(
+        &target,
+        &binding,
+        victim,
+        &program,
+        &[],
+        None,
+        ExpectedPrimitiveOutcome::accept(None),
+    )
+    .expect("the replacement states");
+
+    let mutated = PrimitiveFixtureSet::new(
+        canonical
+            .iter()
+            .filter(|fixture| fixture.case() != victim)
+            .cloned()
+            .chain([replacement]),
+    )
+    .expect("the mutated census assembles");
+    assert_eq!(
+        mutated.len(),
+        canonical.len(),
+        "exactly one member changed, and the census is the same size",
+    );
+
+    let transcript = ExecutionTranscript::for_tests(
+        nonmock_handshake(),
+        observed_environment(),
+        ExecutorTrust::ReviewedNonMock,
+        answers(&mutated),
+    );
+    let (plan, registry) = plan_and_registry();
+    let refusal = evaluate(
+        &target,
+        &binding,
+        &CanonicalPrimitiveFixtureSet::wrap_for_tests(mutated),
+        &transcript,
+        &plan,
+        &registry,
+    )
+    .expect_err("a mutated canonical case is not a canonical case");
+    assert_eq!(
+        format!("{refusal:?}"),
+        format!(
+            "{:?}",
+            NativeConformanceError::NoncanonicalFixtureSubject(victim)
+        ),
+        "the refusal names the case whose member changed",
+    );
+}
+
+/// `G11-R02` **CLOSED**: a canonical case whose claim set changes is
+/// refused, even under its own identity.
+///
+/// A primitive fixture carries no claim field: its claims are derived
+/// from the case it answers for, the outcome the reviewed contract
+/// requires, the enforcement layer, and the context. So "one added or
+/// removed claim" is reached by changing one of those — here the required
+/// outcome, which decides between the primitive-success and
+/// primitive-abort claims — while the case identity stays exactly what it
+/// was. The complete projection carries the derived claims, so the
+/// substitution is refused by name.
+#[test]
+fn g11_r02_a_canonical_case_whose_claims_change_is_refused() {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let canonical = canonical_fixture_set(&target, &binding).expect("the census states");
+
+    let victim = canonical
+        .iter()
+        .find(|fixture| {
+            fixture.context().is_none()
+                && fixture.expected().is_accepting()
+                && fixture.case().opcode().is_some()
+                && fixture.leaf_version_status() == LeafVersionStatus::Reviewed
+        })
+        .expect("the census states a static accepting case naming a primitive")
+        .clone();
+
+    // The same case, required to abort rather than to succeed. An
+    // aborting class is what moves the claim set: a case that completes
+    // and is rejected anyway still ran its primitive, so it keeps the
+    // primitive-success claim.
+    let program = pushes(&target, 0x01);
+    let inverted = PrimitiveFixture::new(
+        &target,
+        &binding,
+        victim.case(),
+        &program,
+        &[],
+        None,
+        ExpectedPrimitiveOutcome::reject([ObservedFailureClass::StackUnderflow], None),
+    )
+    .expect("the inverted fixture states");
+    assert_ne!(
+        claims_of(&inverted),
+        claims_of(&victim),
+        "the changed outcome changes the claim set the case bears",
+    );
+
+    let mutated = PrimitiveFixtureSet::new(
+        canonical
+            .iter()
+            .filter(|fixture| fixture.case() != victim.case())
+            .cloned()
+            .chain([inverted]),
+    )
+    .expect("the mutated census assembles");
+    assert_eq!(
+        mutated.len(),
+        canonical.len(),
+        "the case identity is unchanged, so the census is the same size",
+    );
+
+    let transcript = ExecutionTranscript::for_tests(
+        nonmock_handshake(),
+        observed_environment(),
+        ExecutorTrust::ReviewedNonMock,
+        answers(&mutated),
+    );
+    let (plan, registry) = plan_and_registry();
+    let refusal = evaluate(
+        &target,
+        &binding,
+        &CanonicalPrimitiveFixtureSet::wrap_for_tests(mutated),
+        &transcript,
+        &plan,
+        &registry,
+    )
+    .expect_err("a census whose claim sets are not the canonical ones is not evidence");
+    assert_eq!(
+        format!("{refusal:?}"),
+        format!(
+            "{:?}",
+            NativeConformanceError::NoncanonicalFixtureSubject(victim.case())
+        ),
+        "the refusal names the case whose claim set changed",
+    );
+}
+
+/// `G11-R02` **CLOSED**: permuting the canonical declaration order stays
+/// harmless.
+///
+/// The census is keyed by typed case identity, so declaration order is not
+/// part of the value at all. Reversing it produces the same census, which
+/// still evaluates, validates, and gates.
+#[test]
+fn g11_r02_permuting_canonical_declaration_order_is_harmless() {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let canonical = canonical_fixture_set(&target, &binding).expect("the census states");
+
+    let mut reversed: Vec<PrimitiveFixture> = canonical.iter().cloned().collect();
+    reversed.reverse();
+    let permuted = PrimitiveFixtureSet::new(reversed).expect("the permuted census assembles");
+    assert_eq!(
+        &permuted,
+        canonical.fixtures(),
+        "declaration order is not a member of the census",
+    );
+
+    let transcript = ExecutionTranscript::for_tests(
+        nonmock_handshake(),
+        observed_environment(),
+        ExecutorTrust::ReviewedNonMock,
+        answers(&permuted),
+    );
+    let (plan, registry) = plan_and_registry();
+    let wrapped = CanonicalPrimitiveFixtureSet::wrap_for_tests(permuted);
+    let report = evaluate(&target, &binding, &wrapped, &transcript, &plan, &registry)
+        .expect("a permutation of the canonical census is the canonical census");
+    let validated = validate_native_report(
+        report,
+        NativeReportValidationInputs {
+            target: &target,
+            binding: &binding,
+            fixtures: &wrapped,
             plan: &plan,
             registry: &registry,
             transcript: &transcript,
         },
     )
-    .expect("the defect: the arbitrary-census report validates");
-    // The gate refuses this particular run only because a one-case census
-    // leaves every other required row empty, which is a completeness
-    // refusal and not a subject refusal.
-    assert!(gate(&validated).is_err());
+    .expect("the report validates");
+    gate(&validated).expect("a permuted declaration order is still evidence");
 }
 
 // -- G11-R04 -----------------------------------------------------------
@@ -521,17 +767,34 @@ fn g11_r05_the_gate_accepts_a_failed_report() {
         },
     );
 
-    let plan = guide_nine_evidence_plan().expect("the plan is a partition");
-    let registry = claim_registry().expect("the claim census is coherent");
+    let (plan, registry) = plan_and_registry();
     let transcript = ExecutionTranscript::for_tests(
         nonmock_handshake(),
         observed_environment(),
         ExecutorTrust::ReviewedNonMock,
         responses,
     );
-    let report = evaluate(&target, &binding, &fixtures, &transcript, &plan, &registry)
-        .expect("the run evaluates");
 
+    // Half one: the augmented census is no longer an evidence subject.
+    let refusal = evaluate(
+        &target,
+        &binding,
+        &CanonicalPrimitiveFixtureSet::wrap_for_tests(fixtures.clone()),
+        &transcript,
+        &plan,
+        &registry,
+    )
+    .expect_err("an augmented census is not the canonical census");
+    assert!(matches!(
+        refusal,
+        NativeConformanceError::NoncanonicalFixtureCensus
+    ));
+
+    // Half two: the report the run produces is still failed, and the gate
+    // still has no field that would notice. The finding stands.
+    let report = evaluate_experimental(&target, &binding, &fixtures, &transcript, &plan, &registry)
+        .expect("the run evaluates as an experiment")
+        .into_report();
     assert_eq!(
         report.summary.cases_failed, 1,
         "exactly the extra case failed",
@@ -539,22 +802,18 @@ fn g11_r05_the_gate_accepts_a_failed_report() {
     assert_eq!(
         report.summary.completeness,
         ReportCompleteness::Failed,
-        "the summary calls the report failed",
+        "the defect: the summary calls the report failed, and no gate reads that",
     );
-
-    let validated = validate_native_report(
-        report,
-        NativeReportValidationInputs {
-            target: &target,
-            binding: &binding,
-            fixtures: &fixtures,
-            plan: &plan,
-            registry: &registry,
-            transcript: &transcript,
-        },
-    )
-    .expect("the honest report validates");
-    gate(&validated).expect("the defect: a failed report satisfies the native gate");
+    let sighash = report
+        .evidence
+        .iter()
+        .find(|row| row.requirement == "sighash_semantics")
+        .expect("the sighash row exists");
+    assert_ne!(
+        sighash.plan,
+        EvidencePlanClass::Required,
+        "the failing case touches no required row",
+    );
 }
 
 // -- G11-R06 -----------------------------------------------------------

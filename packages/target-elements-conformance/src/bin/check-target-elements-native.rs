@@ -57,7 +57,7 @@ use target_elements::{
 };
 use target_elements_conformance::claim::claim_registry;
 use target_elements_conformance::executor::{
-    DEFAULT_EXECUTOR_TIMEOUT, ExecutorConfiguration, ExecutorTrust, execute,
+    DEFAULT_EXECUTOR_TIMEOUT, ExecutorConfiguration, ExecutorTrust, execute_canonical,
 };
 use target_elements_conformance::fixture::canonical_fixture_set;
 use target_elements_conformance::report::NativeConformanceReport;
@@ -168,8 +168,8 @@ fn run(args: &Args) -> Result<NativeConformanceReport, String> {
             .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs),
     );
 
-    let transcript =
-        execute(&target, &binding, &configuration, &fixtures).map_err(|error| error.to_string())?;
+    let transcript = execute_canonical(&target, &binding, &configuration, &fixtures)
+        .map_err(|error| error.to_string())?;
     let report = evaluate(&target, &binding, &fixtures, &transcript, &plan, &registry)
         .map_err(|error| error.to_string())?;
 

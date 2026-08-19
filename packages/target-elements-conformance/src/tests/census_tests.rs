@@ -62,7 +62,9 @@ const WITHOUT_ABORTING_CASE: &[OpcodeId] = &[OpcodeId::InspectVersion, OpcodeId:
 fn census() -> PrimitiveFixtureSet {
     let target = reviewed_target();
     let binding = development_binding(&target);
-    canonical_fixture_set(&target, &binding).expect("the census is expressible")
+    canonical_fixture_set(&target, &binding)
+        .expect("the census is expressible")
+        .into_fixtures()
 }
 
 #[test]
