@@ -47,6 +47,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use tapscript::TapscriptProgram;
 use target_elements::{ReviewedDevelopmentBinding, ReviewedElementsTapscriptDefinition};
 
 use crate::claim::ClaimRequirement;
@@ -57,8 +58,8 @@ use crate::protocol::{
     NativeVerdict, RequestExpectationBoundary, WireEnvironment, WireExecutionDomain,
 };
 use crate::prototype::{
-    CompoundPrototypeFixture, ExpectedPrototypeOutcome, PrototypeCaseId, PrototypeClaim,
-    PrototypeRelation,
+    CanonicalPrototypeMatrix, CompoundPrototypeFixture, ExpectedPrototypeOutcome, PrototypeCaseId,
+    PrototypeClaim, PrototypeRelation, constructor_case_matrix, wide_floor_case_matrix,
 };
 use crate::prototype_report::{
     PROTOTYPE_REPORT_SCHEMA, PrototypeCaseResult, PrototypeClaimResult, PrototypeConformanceReport,
@@ -86,7 +87,89 @@ impl PrototypeRelation {
     }
 }
 
-/// Builds the report of one prototype run.
+/// Builds the report of one canonical prototype run.
+///
+/// This is the prototype evidence path. It accepts only a
+/// [`CanonicalPrototypeMatrix`], and it does not take that wrapper's word
+/// for it: the matrix is regenerated for the run's relation and compared
+/// row for row, in order, including each row's claim set
+/// `(´[PLAN-rule:guide11:canonical-matrix]´)`.
+///
+/// # Why coherence was never enough
+///
+/// [`CompoundPrototypeFixture::defect`] establishes that a row's tree
+/// contains its executing leaf, that its predecessor program is the one
+/// its own tree determines, and that its claims belong to its own
+/// relation. Every one of those holds for a bare leaf whose script pushes
+/// a true literal and which carries all eleven wide-floor claims. The
+/// node accepts the true script, the claims are copied from the fixture,
+/// and the run reads as a complete relation. What the row does *not*
+/// establish is that it is one of the relation's canonical cases, and
+/// that is the question asked here.
+///
+/// # Errors
+///
+/// [`NativeConformanceError::CanonicalPrototypeMatrixUnavailable`] when
+/// the canonical matrix cannot be regenerated,
+/// [`NativeConformanceError::NoncanonicalPrototypeMatrix`] or
+/// [`NativeConformanceError::NoncanonicalPrototypeCase`] when the offered
+/// matrix is not that one, and then every error
+/// [`evaluate_experimental_prototypes`] states.
+pub fn evaluate_prototypes(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    matrix: CanonicalPrototypeMatrix<'_>,
+    transcript: &ExecutionTranscript,
+) -> Result<PrototypeConformanceReport, NativeConformanceError> {
+    let relation = matrix.relation();
+    let regenerated = regenerate(target, relation)?;
+    let offered = matrix.rows();
+    if offered.len() != regenerated.len() {
+        return Err(NativeConformanceError::NoncanonicalPrototypeMatrix);
+    }
+    // Row for row and in order. The order is part of the subject: the
+    // report's case order is the matrix's own, so a permutation is a
+    // different matrix rather than the same one rearranged.
+    for (row, canonical) in offered.iter().zip(&regenerated) {
+        if row != canonical {
+            return Err(NativeConformanceError::NoncanonicalPrototypeCase(
+                canonical.case.clone(),
+            ));
+        }
+    }
+
+    evaluate_matrix(
+        target,
+        binding,
+        relation,
+        offered,
+        transcript,
+        relation.report_role(),
+    )
+}
+
+/// The canonical matrix of one relation, as rows.
+fn regenerate(
+    target: &ReviewedElementsTapscriptDefinition,
+    relation: PrototypeRelation,
+) -> Result<Vec<CompoundPrototypeFixture>, NativeConformanceError> {
+    match relation {
+        PrototypeRelation::MetadataConstructorContinuity => constructor_case_matrix(target)
+            .map(|matrix| matrix.rows().to_vec())
+            .map_err(|_| NativeConformanceError::CanonicalPrototypeMatrixUnavailable),
+        PrototypeRelation::WideFloorRelation => wide_floor_case_matrix(target)
+            .map(|matrix| matrix.rows().to_vec())
+            .map_err(|_| NativeConformanceError::CanonicalPrototypeMatrixUnavailable),
+    }
+}
+
+/// Builds the report of one ad hoc prototype run.
+///
+/// An arbitrary compound matrix may still be executed and described. What
+/// it may not do is become evidence: the result is an
+/// [`ExperimentalPrototypeReport`], which no validator and no gate
+/// accepts, and whose recorded role says so in the serialized document as
+/// well as in the type.
 ///
 /// # Errors
 ///
@@ -100,12 +183,33 @@ impl PrototypeRelation {
 /// not state a coherent case, and
 /// [`NativeConformanceError::MissingPrototypeResponse`] when the
 /// transcript does not answer a row.
-pub fn evaluate_prototypes(
+pub fn evaluate_experimental_prototypes(
     target: &ReviewedElementsTapscriptDefinition,
     binding: &ReviewedDevelopmentBinding,
     relation: PrototypeRelation,
     matrix: &[CompoundPrototypeFixture],
     transcript: &ExecutionTranscript,
+) -> Result<ExperimentalPrototypeReport, NativeConformanceError> {
+    Ok(ExperimentalPrototypeReport {
+        report: evaluate_matrix(
+            target,
+            binding,
+            relation,
+            matrix,
+            transcript,
+            PrototypeReportRole::ExperimentalPrototype,
+        )?,
+    })
+}
+
+/// The report of one run over one matrix, under a stated role.
+fn evaluate_matrix(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    relation: PrototypeRelation,
+    matrix: &[CompoundPrototypeFixture],
+    transcript: &ExecutionTranscript,
+    role: PrototypeReportRole,
 ) -> Result<PrototypeConformanceReport, NativeConformanceError> {
     let definition = target.definition();
     let domain = WireExecutionDomain::of(definition.execution_domain())
@@ -171,7 +275,7 @@ pub fn evaluate_prototypes(
         }
 
         cases.push(PrototypeCaseResult {
-            fixture: projection(fixture, binding, domain),
+            fixture: projection(target, fixture, binding, domain),
             claims: fixture.claims.clone(),
             observed,
             status,
@@ -184,7 +288,7 @@ pub fn evaluate_prototypes(
 
     Ok(PrototypeConformanceReport {
         schema: PROTOTYPE_REPORT_SCHEMA,
-        role: relation.report_role(),
+        role,
         relation,
         target_contract_version: definition.version().get(),
         expectation_boundary: RequestExpectationBoundary::FixtureCarriesExpectation,
@@ -207,9 +311,39 @@ pub fn evaluate_prototypes(
     })
 }
 
+/// Where one compound row's script bytes actually came from.
+///
+/// # The provenance is established, not asserted
+///
+/// Every compound row used to be stamped
+/// [`FixtureScriptSource::TypedProgram`] unconditionally, though
+/// `CompoundPrototypeFixture::script` is a public byte vector and nothing
+/// in the coherence check establishes that the bytes came from a typed
+/// program. A row could therefore carry bytes no typed program encodes —
+/// a lone push prefix with no payload, say — and the report would call
+/// them a typed program's own encoding.
+///
+/// So the claim is proved instead of stated. The bytes are decoded
+/// through the reviewed contract and re-encoded, and the source is
+/// `TypedProgram` exactly when the round trip returns the original bytes:
+/// at that point they *are* some typed program's own encoding, which is
+/// what the field says. Anything else is reported as deliberately
+/// malformed, which is the honest answer for bytes the typed language
+/// does not express `(´[PLAN-rule:guide11:script-provenance]´)`.
+fn script_source_of(
+    target: &ReviewedElementsTapscriptDefinition,
+    script: &[u8],
+) -> FixtureScriptSource {
+    match TapscriptProgram::decode(target, script) {
+        Ok(program) if program.encode(target) == script => FixtureScriptSource::TypedProgram,
+        _ => FixtureScriptSource::DeliberatelyMalformed,
+    }
+}
+
 /// One fixture's complete subject, plus the run-level facts it is stated
 /// against.
 fn projection(
+    target: &ReviewedElementsTapscriptDefinition,
     fixture: &CompoundPrototypeFixture,
     binding: &ReviewedDevelopmentBinding,
     domain: WireExecutionDomain,
@@ -230,7 +364,7 @@ fn projection(
         leaf_version,
         leaf_version_status: LeafVersionStatus::Reviewed,
         enforcement_layer: EnforcementLayer::Consensus,
-        script_source: FixtureScriptSource::TypedProgram,
+        script_source: script_source_of(target, &fixture.script),
         script: fixture.script.clone(),
         initial_stack: fixture.initial_stack.clone(),
         construction: fixture.construction.clone(),
@@ -370,17 +504,42 @@ fn summarize(
     }
 }
 
+/// The report of an ad hoc prototype run, which is not evidence.
+///
+/// There is no route from here to [`prototype_gate`]: this type has no
+/// validator, and the gate reads only a [`ValidatedPrototypeReport`]
+/// `(´[PLAN-rule:guide11:experimental-role]´)`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExperimentalPrototypeReport {
+    report: PrototypeConformanceReport,
+}
+
+impl ExperimentalPrototypeReport {
+    /// The report.
+    #[must_use]
+    pub const fn report(&self) -> &PrototypeConformanceReport {
+        &self.report
+    }
+
+    /// Consumes the wrapper, yielding the raw report.
+    #[must_use]
+    pub fn into_report(self) -> PrototypeConformanceReport {
+        self.report
+    }
+}
+
 /// Everything the prototype-report validator needs to recompute a report.
+///
+/// The relation is no longer among them: it travels with the matrix, so a
+/// caller cannot state one relation and supply the other's rows.
 #[derive(Clone, Copy, Debug)]
 pub struct PrototypeReportValidationInputs<'a> {
     /// The exact reviewed contract.
     pub target: &'a ReviewedElementsTapscriptDefinition,
     /// The binding welded to that contract.
     pub binding: &'a ReviewedDevelopmentBinding,
-    /// The relation whose matrix ran.
-    pub relation: PrototypeRelation,
-    /// The matrix that was executed, in canonical order.
-    pub matrix: &'a [CompoundPrototypeFixture],
+    /// The canonical matrix that was executed, in canonical order.
+    pub matrix: CanonicalPrototypeMatrix<'a>,
     /// What the executor answered.
     pub transcript: &'a ExecutionTranscript,
 }
@@ -452,7 +611,6 @@ pub fn validate_prototype_report(
     let recomputed = evaluate_prototypes(
         inputs.target,
         inputs.binding,
-        inputs.relation,
         inputs.matrix,
         inputs.transcript,
     )?;

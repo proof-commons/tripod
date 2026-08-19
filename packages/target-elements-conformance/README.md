@@ -110,19 +110,41 @@ material: the first-party interface neither accepts it nor reads it.
 ```text
 reviewed_elements_tapscript()                 the reviewed static contract
 validate_reviewed_development_binding(..)     the development binding
-canonical_fixture_set(&target, &binding)      or hand-built fixtures
+canonical_fixture_set(&target, &binding)   -> CanonicalPrimitiveFixtureSet
 ExecutorConfiguration::new(path, trust, ..)   the caller selects the executor
-executor::execute(..)                -> ExecutionTranscript
+executor::execute_canonical(..)      -> ExecutionTranscript
 validate::evaluate(..)               -> NativeConformanceReport
 validate::validate_native_report(..) -> ValidatedNativeConformanceReport
 validate::gate(&validated)           -> Ok(()) only for a nonmock executor
 ```
 
-Two types have no public constructor, deliberately. `ExecutionTranscript` can
-only be obtained by actually running an executor, so a caller cannot fabricate
-one; and `ValidatedNativeConformanceReport` can only be obtained from
-`validate_native_report`, which recomputes every field rather than trusting the
-report it was handed.
+Hand-built fixtures have their own path, which ends before the gate:
+
+```text
+PrimitiveFixtureSet::new(..)              any fixtures a caller assembles
+validate::evaluate_experimental(..)    -> ExperimentalPrimitiveReport
+```
+
+Four types have no public constructor, deliberately.
+
+- `ExecutionTranscript` can only be obtained by actually running an executor,
+  so a caller cannot fabricate one.
+- `ValidatedNativeConformanceReport` can only be obtained from
+  `validate_native_report`, which recomputes every field rather than trusting
+  the report it was handed.
+- `CanonicalPrimitiveFixtureSet` can only be obtained from
+  `canonical_fixture_set`, and `ConstructorPrototypeMatrix` and
+  `WideFloorPrototypeMatrix` only from their own canonical generators. The
+  evidence path takes these and nothing else, so the subject of a gated report
+  is the repository's evidence plan rather than a census the caller chose. The
+  evaluator regenerates the census and compares complete projections as well,
+  so the guarantee does not rest on the type alone.
+
+An arbitrary census still executes and still produces a faithful report. What
+it cannot become is evidence: `ExperimentalPrimitiveReport` and
+`ExperimentalPrototypeReport` have no validator, no gate accepts them, and the
+role recorded in the serialized document says so for a reader who has only the
+bytes.
 
 ## Quickstart: assemble fixtures, drive the mock executor, validate the report
 
@@ -141,15 +163,20 @@ use target_elements::{
     validate_reviewed_development_binding,
 };
 use target_elements_conformance::claim::claim_registry;
-use target_elements_conformance::executor::{ExecutorConfiguration, ExecutorTrust, execute};
+use target_elements_conformance::executor::{
+    ExecutorConfiguration, ExecutorTrust, execute, execute_canonical,
+};
 use target_elements_conformance::fixture::{
     ExpectedPrimitiveOutcome, NativeCaseGroup, NativeCaseId, PrimitiveFixture, PrimitiveFixtureSet,
+    canonical_fixture_set,
 };
 use target_elements_conformance::protocol::{
     MOCK_EXECUTOR_GENESIS_ID, MOCK_EXECUTOR_NETWORK_ID,
 };
+use target_elements_conformance::report::PrototypeReportRole;
 use target_elements_conformance::validate::{
-    NativeReportValidationInputs, evaluate, guide_nine_evidence_plan, validate_native_report,
+    NativeReportValidationInputs, evaluate, evaluate_experimental, guide_nine_evidence_plan,
+    validate_native_report,
 };
 use target_elements_conformance::NativeConformanceError;
 
@@ -189,9 +216,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             StackItem::signed_le64(&target, 5).bytes().to_vec(),
         ])),
     )?;
-    let fixtures = PrimitiveFixtureSet::new([fixture])?;
-    // Or, for the whole reviewed-primitive census:
-    //   let fixtures = canonical_fixture_set(&target, &binding)?;
+    let assembled = PrimitiveFixtureSet::new([fixture])?;
 
     // The caller selects the executor, and says what it is. Choosing
     // `Mock` here is what the gate will later refuse.
@@ -201,10 +226,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Duration::from_secs(30),
     );
 
-    let transcript = execute(&target, &binding, &configuration, &fixtures)?;
-
     let plan = guide_nine_evidence_plan()?;
     let registry = claim_registry()?;
+
+    // An assembled census runs, and reports, as an experiment. There is
+    // no validator for the result and no gate accepts it: the subject was
+    // a caller's choice, and the recorded role says so.
+    let ad_hoc = execute(&target, &binding, &configuration, &assembled)?;
+    let experiment =
+        evaluate_experimental(&target, &binding, &assembled, &ad_hoc, &plan, &registry)?;
+    assert_eq!(
+        experiment.report().role,
+        PrototypeReportRole::ExperimentalPrimitive,
+    );
+
+    // The evidence path takes the canonical census and nothing else.
+    let fixtures = canonical_fixture_set(&target, &binding)?;
+    let transcript = execute_canonical(&target, &binding, &configuration, &fixtures)?;
     let report = evaluate(&target, &binding, &fixtures, &transcript, &plan, &registry)?;
 
     // Validation recomputes every field rather than trusting the report.
@@ -241,6 +279,8 @@ Fifteen modules, fourteen public. `census` is private; the only things it
 exports outward are `ConstructorMatrixDefect`, `WideFloorMatrixDefect`,
 `bearing_cases`, and `wide_floor_bearing_cases`, all re-exported through
 `prototype`, plus the census itself through `fixture::canonical_fixture_set`.
+Those three generators are also the only constructors of the canonical trust
+states the evidence path accepts.
 `NativeConformanceError` is the only crate-root re-export; everything else is
 reached by module path.
 

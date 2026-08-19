@@ -1,17 +1,38 @@
-//! Guide-11 Wave-0 reproductions of the sixth static review.
+//! Guide-11 reproductions and, where a wave has landed, guarantees.
 //!
-//! # These tests assert the defect, not the repair
+//! # Two kinds of test live here
 //!
-//! Every test here demonstrates a finding from the Guide-11 preflight
-//! register by *passing* while the defect is present: it asserts that the
-//! wrong thing happens. Waves 1 to 4 flip each assertion as they repair
-//! the finding, so a test here failing after a repair is the repair
-//! working rather than a regression.
+//! Every test began as a reproduction: it demonstrated a finding from the
+//! Guide-11 preflight register by *passing* while the defect was present,
+//! asserting that the wrong thing happened. As each wave repairs its
+//! finding it flips the assertions of that finding's tests, which then
+//! stand as the guarantee that the repair holds.
+//!
+//! - `G11-R02` and `G11-R03` are **CLOSED** by Wave 1. Their tests below
+//!   assert the safe behaviour: a caller-authored subject cannot reach an
+//!   evidence gate, and a report cannot claim provenance it does not
+//!   have.
+//! - `G11-R01`, `G11-R04`, `G11-R05`, `G11-R06`, and `G11-R14` are still
+//!   open. Their tests still assert the defect, so one of them failing
+//!   after a later wave is that wave working rather than a regression.
 //!
 //! Each test names its finding identifier in its own documentation. No
 //! test here touches a production code path: they are constructions over
 //! the public and crate-visible surfaces exactly as an external caller or
 //! the existing suites reach them.
+//!
+//! # What Wave 1 changed about the reproductions themselves
+//!
+//! Closing `G11-R02` removed the arbitrary-census route to the evidence
+//! path, and two open findings had reproductions built on that route. The
+//! `G11-R01` script-substitution reproduction now runs on the
+//! experimental path, where it still shows exactly what it showed: the
+//! transcript retains no request, so a report can name a script the
+//! executor was never handed. The `G11-R05` reproduction cannot be
+//! expressed at all any more — its construction added a fixture to the
+//! canonical census — so what stands in its place records that the route
+//! is closed and that the gate defect it named is still open and still
+//! Wave 3's. Neither adaptation repairs the finding it belongs to.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -42,14 +63,18 @@ use crate::protocol::{
     NativeResourceObservation, NativeVerdict, ObservedFailureClass,
 };
 use crate::prototype::{
-    CompoundPrototypeFixture, ExpectedPrototypeOutcome, PrototypeCaseId, PrototypeClaim,
-    PrototypeConstruction, PrototypeRelation, wide_floor_case_matrix,
+    CanonicalPrototypeMatrix, CompoundPrototypeFixture, ConstructorPrototypeMatrix,
+    ExpectedPrototypeOutcome, PrototypeCaseId, PrototypeClaim, PrototypeConstruction,
+    PrototypeRelation, WideFloorPrototypeMatrix, constructor_case_matrix, wide_floor_case_matrix,
 };
 use crate::prototype_report::PrototypeReportCompleteness;
 use crate::prototype_validate::{
-    PrototypeReportValidationInputs, evaluate_prototypes, prototype_gate, validate_prototype_report,
+    PrototypeReportValidationInputs, evaluate_experimental_prototypes, evaluate_prototypes,
+    prototype_gate, validate_prototype_report,
 };
-use crate::report::{CaseStatus, EvidenceDisposition, EvidencePlanClass, ReportCompleteness};
+use crate::report::{
+    CaseStatus, EvidenceDisposition, EvidencePlanClass, PrototypeReportRole, ReportCompleteness,
+};
 use crate::validate::{
     NativeReportValidationInputs, evaluate, evaluate_experimental, gate, guide_nine_evidence_plan,
     validate_native_report,
@@ -303,17 +328,24 @@ fn g11_r01_a_report_names_a_script_the_executor_never_ran() {
     );
 }
 
-// -- G11-R02 -----------------------------------------------------------
+// -- G11-R02 (CLOSED by Wave 1) ---------------------------------------
 
-/// `G11-R02`: signature evidence is derived from case metadata rather
-/// than from the executed script.
+/// `G11-R02` **CLOSED**: a trivial true script labelled as a signature
+/// case cannot satisfy signature evidence.
 ///
-/// A program that only pushes a true literal, filed under a case whose
-/// group is the signature group and whose named primitive is a signature
-/// primitive, produces the signature-accepted claim and the signature
-/// evidence requirement. Nothing inspects the script.
+/// The label still produces the claim — `claims_of` reads the case's
+/// declared group and primitive, and that derivation is what makes the
+/// canonical census's claims meaningful — but the labelled fixture can no
+/// longer be an evidence subject. The census a caller assembles is a
+/// [`PrimitiveFixtureSet`], and the evidence path takes only a
+/// [`CanonicalPrimitiveFixtureSet`], which has no constructor but the
+/// canonical generator.
+///
+/// So the repair is not "inspect the script for the named primitive",
+/// which a script containing an unreached opcode would defeat. It is that
+/// membership in the evidence plan is the repository's to decide.
 #[test]
-fn g11_r02_a_trivial_true_script_bears_signature_claims() {
+fn g11_r02_a_trivial_true_script_cannot_bear_signature_evidence() {
     let target = reviewed_target();
     let binding = development_binding(&target);
     let signature_opcode = target_elements::OpcodeId::CheckSig;
@@ -329,33 +361,64 @@ fn g11_r02_a_trivial_true_script_bears_signature_claims() {
         None,
         ExpectedPrimitiveOutcome::accept(None),
     )
-    .expect("the defect: nothing checks that the script bears on the case");
+    .expect("an experimental fixture still states");
 
+    // The label still derives the claim. That is deliberate: the claim
+    // predicates are canonical policy over canonical cases, not a check
+    // on a caller's honesty.
     let claims = claims_of(&fixture);
-    assert!(
-        claims.contains(&NativeEvidenceClaim::TransactionSignatureAccepted),
-        "the defect: a literal push is credited with an accepted transaction signature",
-    );
-    assert!(
-        claims.contains(&NativeEvidenceClaim::PrimitiveSuccessObserved),
-        "the defect: a literal push is credited with a reviewed primitive succeeding",
-    );
+    assert!(claims.contains(&NativeEvidenceClaim::TransactionSignatureAccepted));
     assert!(
         !fixture
             .script()
             .contains(&target.definition().opcodes()[&signature_opcode].code()),
         "no signature primitive occurs in the script",
     );
+
+    // What has closed is the route from that label to evidence.
+    let fixtures = PrimitiveFixtureSet::new([fixture.clone()]).expect("a census assembles");
+    let (plan, registry) = plan_and_registry();
+    let transcript = ExecutionTranscript::for_tests(
+        nonmock_handshake(),
+        observed_environment(),
+        ExecutorTrust::ReviewedNonMock,
+        BTreeMap::from([(case, contract_answer(case, &fixture))]),
+    );
+
+    // The only report an arbitrary census can produce is the experimental
+    // one, and it says so in the document as well as in the type.
+    let experimental =
+        evaluate_experimental(&target, &binding, &fixtures, &transcript, &plan, &registry)
+            .expect("an arbitrary census is reportable as an experiment");
+    assert_eq!(
+        experimental.report().role,
+        PrototypeReportRole::ExperimentalPrimitive,
+        "the report states that its subject was a caller's choice",
+    );
+
+    // And the second line of defence, reached here only because the
+    // crate's own tests can wrap a census the generator did not state: the
+    // evidence path regenerates the canonical census and refuses this one
+    // on provenance.
+    let forged = CanonicalPrimitiveFixtureSet::wrap_for_tests(fixtures);
+    let refusal = evaluate(&target, &binding, &forged, &transcript, &plan, &registry)
+        .expect_err("a census the generator did not state is not an evidence subject");
+    assert!(
+        matches!(refusal, NativeConformanceError::NoncanonicalFixtureCensus),
+        "the refusal names the subject, not the coverage: {refusal:?}",
+    );
 }
 
-/// `G11-R02`: an arbitrary caller-built census is an evaluation and
-/// validation subject exactly like the canonical one.
+/// `G11-R02` **CLOSED**: an arbitrary census is refused on *provenance*,
+/// which is a different refusal from the one it used to get.
 ///
-/// `PrimitiveFixtureSet::new` is public and checks only that no case
-/// identity repeats. There is no canonical trust state, so the evidence
-/// path admits any set a caller assembles.
+/// This is the distinction the Wave-0 reproduction recorded. A one-case
+/// census used to reach `gate` and be refused there only because every
+/// other required row was empty — a completeness refusal, which a caller
+/// with enough labelled fixtures would have satisfied. It is now refused
+/// before any row is computed, because of where the census came from.
 #[test]
-fn g11_r02_an_arbitrary_census_reaches_the_evidence_path() {
+fn g11_r02_an_arbitrary_census_is_refused_on_provenance_not_completeness() {
     let target = reviewed_target();
     let binding = development_binding(&target);
     let case = NativeCaseId::new(
@@ -710,16 +773,32 @@ fn g11_r04_consensus_resource_cases_pass_the_policy_resource_row() {
 
 // -- G11-R05 -----------------------------------------------------------
 
-/// `G11-R05`: the primitive gate accepts a report whose completeness is
-/// failed.
+/// `G11-R05`: the route this finding was reproduced through is closed,
+/// and the finding itself is not.
 ///
-/// A case in a group whose only evidence requirement sits outside the
-/// required plan, and whose only claim is not required, can fail without
-/// touching a required row or a required claim. `summarize` calls the
-/// report failed; `gate` reads neither the completeness nor the case
-/// statuses and returns success.
+/// # What the reproduction used to do
+///
+/// It added one fixture to the canonical census — a case in a group whose
+/// only evidence requirement sits outside the required plan, and whose
+/// only claim is not required — and answered it with a rejection. The
+/// case failed without touching a required row or a required claim, so
+/// `summarize` called the report failed and `gate`, which reads neither
+/// the completeness nor the case statuses, returned success.
+///
+/// # Why it cannot do that any more
+///
+/// Wave 1 made the census a canonical trust state, so an augmented census
+/// is refused before any row is computed. That is the `G11-R02` repair
+/// doing its work, and it is *not* a repair of this finding: `gate` still
+/// reads neither `summary.completeness` nor the case statuses. What has
+/// changed is only that this particular construction can no longer reach
+/// it, because every canonical case bears on a required row.
+///
+/// So this test records both halves — the closed route, and the summary
+/// that is still failed while nothing at the gate consults it — and Wave
+/// 3 owns finding a route that reaches the gate itself.
 #[test]
-fn g11_r05_the_gate_accepts_a_failed_report() {
+fn g11_r05_the_augmented_census_route_to_the_gate_is_closed() {
     let target = reviewed_target();
     let binding = development_binding(&target);
     let canonical = canonical_fixture_set(&target, &binding).expect("the census states");
@@ -926,24 +1005,18 @@ fn g11_r06_a_contradictory_revision_pair_still_establishes_provenance() {
     gate(&validated).expect("the defect: the gate does not compare the two revisions");
 }
 
-// -- G11-R03 -----------------------------------------------------------
+// -- G11-R03 (CLOSED by Wave 1) ---------------------------------------
 
-/// `G11-R03`: a trivial true leaf carrying every wide-floor claim is
-/// gate-eligible prototype evidence.
+/// One forged wide-floor row: a bare true leaf carrying every claim of
+/// the relation.
 ///
-/// `CompoundPrototypeFixture` has public fields, `defect` checks only
-/// local coherence, and the claim set is copied from the fixture. A bare
-/// leaf whose script pushes one true literal satisfies every coherence
-/// rule the wide-floor relation has — it needs no output of any role —
-/// and the report then credits all eleven wide-floor claims to a program
-/// that computes nothing.
-#[test]
-fn g11_r03_a_trivial_leaf_certifies_the_whole_wide_floor_relation() {
-    let target = reviewed_target();
-    let binding = development_binding(&target);
-    let program = pushes(&target, 0x01);
-    let script = program.encode(&target);
-
+/// Locally coherent in every way the fixture language can check — the
+/// tree contains the executing leaf, the predecessor program is the one
+/// that tree determines, the wide-floor relation requires no output of
+/// any role, and all eleven claims belong to the relation.
+fn forged_wide_floor_row(target: &ReviewedElementsTapscriptDefinition) -> CompoundPrototypeFixture {
+    let program = pushes(target, 0x01);
+    let script = program.encode(target);
     let leaf = FixtureTapTree::leaf(script.clone());
     let built =
         construct(&UNSPENDABLE_INTERNAL_KEY, &leaf, &leaf).expect("the bare leaf is constructible");
@@ -958,12 +1031,11 @@ fn g11_r03_a_trivial_leaf_certifies_the_whole_wide_floor_relation() {
         "the wide-floor relation owns eleven claims"
     );
 
-    let case = PrototypeCaseId {
-        relation: PrototypeRelation::WideFloorRelation,
-        name: "forged".to_owned(),
-    };
-    let forgery = CompoundPrototypeFixture {
-        case: case.clone(),
+    CompoundPrototypeFixture {
+        case: PrototypeCaseId {
+            relation: PrototypeRelation::WideFloorRelation,
+            name: "forged".to_owned(),
+        },
         claims,
         target_contract_version: target.definition().version().get(),
         script,
@@ -978,47 +1050,130 @@ fn g11_r03_a_trivial_leaf_certifies_the_whole_wide_floor_relation() {
         },
         expected: ExpectedPrototypeOutcome::Accepted,
         expected_resources: recorded_only(),
-    };
-    assert!(
-        forgery.defect(&target).is_none(),
-        "the defect: the forgery states a coherent case",
-    );
+    }
+}
 
-    let matrix = vec![forgery];
-    let transcript = ExecutionTranscript::prototypes_for_tests(
+/// A transcript answering every row of one matrix as its fixture requires.
+fn prototype_answers(
+    matrix: &[CompoundPrototypeFixture],
+) -> BTreeMap<PrototypeCaseId, NativePrototypeResponse> {
+    matrix
+        .iter()
+        .map(|fixture| {
+            let verdict = match fixture.expected {
+                ExpectedPrototypeOutcome::Accepted => NativeVerdict::Accepted,
+                ExpectedPrototypeOutcome::Rejected => NativeVerdict::Rejected,
+            };
+            (
+                fixture.case.clone(),
+                NativePrototypeResponse {
+                    schema: NATIVE_PROTOCOL_SCHEMA,
+                    case: fixture.case.clone(),
+                    verdict,
+                    final_stack: None,
+                    final_altstack: None,
+                    observed_failure: None,
+                    resources: NativeResourceObservation::default(),
+                },
+            )
+        })
+        .collect()
+}
+
+/// The run over one matrix, as a transcript.
+fn prototype_transcript(matrix: &[CompoundPrototypeFixture]) -> ExecutionTranscript {
+    ExecutionTranscript::prototypes_for_tests(
         nonmock_handshake(),
         observed_environment(),
         ExecutorTrust::ReviewedNonMock,
-        BTreeMap::from([(
-            case.clone(),
-            NativePrototypeResponse {
-                schema: NATIVE_PROTOCOL_SCHEMA,
-                case,
-                verdict: NativeVerdict::Accepted,
-                final_stack: None,
-                final_altstack: None,
-                observed_failure: None,
-                resources: NativeResourceObservation::default(),
-            },
-        )]),
+        prototype_answers(matrix),
+    )
+}
+
+/// `G11-R03` **CLOSED**: a trivial true leaf cannot certify the
+/// wide-floor relation.
+///
+/// The forgery is still coherent, and still evaluable — as an experiment.
+/// What it cannot be is a matrix: the gate's input is a
+/// [`WideFloorPrototypeMatrix`] whose rows are private and whose only
+/// constructor is the canonical generator, and the evidence path
+/// regenerates that matrix and compares it row for row.
+#[test]
+fn g11_r03_a_trivial_leaf_cannot_certify_the_wide_floor_relation() {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let forgery = forged_wide_floor_row(&target);
+    assert!(
+        forgery.defect(&target).is_none(),
+        "the forgery is locally coherent, which is exactly why coherence was never enough",
     );
 
-    let report = evaluate_prototypes(
+    let matrix = vec![forgery];
+    let transcript = prototype_transcript(&matrix);
+
+    // The experimental path still describes the run, and says what it is.
+    let experimental = evaluate_experimental_prototypes(
         &target,
         &binding,
         PrototypeRelation::WideFloorRelation,
         &matrix,
         &transcript,
     )
-    .expect("the defect: an arbitrary matrix evaluates as prototype evidence");
+    .expect("an ad hoc matrix is reportable as an experiment");
     assert_eq!(
-        report.summary.required_claims_passed, 11,
-        "the defect: every wide-floor claim passes on a literal push",
+        experimental.report().role,
+        PrototypeReportRole::ExperimentalPrototype,
+        "the report states that its subject was a caller's choice",
     );
+
+    // And there is no route from it to the gate: the only report
+    // `prototype_gate` reads is a validated one, and the only matrix the
+    // validator accepts is the canonical wrapper, which refuses this.
+    let forged = WideFloorPrototypeMatrix::wrap_for_tests(matrix.clone());
+    let refusal = evaluate_prototypes(
+        &target,
+        &binding,
+        CanonicalPrototypeMatrix::WideFloor(&forged),
+        &transcript,
+    )
+    .expect_err("a matrix the generator did not state is not an evidence subject");
+    assert!(
+        matches!(
+            refusal,
+            NativeConformanceError::NoncanonicalPrototypeMatrix
+                | NativeConformanceError::NoncanonicalPrototypeCase(_)
+        ),
+        "the refusal names the subject: {refusal:?}",
+    );
+
+    // The canonical matrix is a different value entirely, and now the
+    // evidence path is the thing that compares the two.
+    let canonical = wide_floor_case_matrix(&target).expect("the canonical matrix states");
+    assert_ne!(matrix.as_slice(), canonical.rows());
+}
+
+/// `G11-R03` **CLOSED**: the canonical wide-floor matrix is what gates.
+///
+/// The companion to the refusals below: without this, a harness that
+/// refused every matrix would pass them all.
+#[test]
+fn g11_r03_the_canonical_wide_floor_matrix_is_the_evidence_subject() {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let canonical = wide_floor_case_matrix(&target).expect("the canonical matrix states");
+    let transcript = prototype_transcript(canonical.rows());
+
+    let report = evaluate_prototypes(
+        &target,
+        &binding,
+        CanonicalPrototypeMatrix::WideFloor(&canonical),
+        &transcript,
+    )
+    .expect("the canonical matrix evaluates");
+    assert_eq!(report.role, PrototypeReportRole::WideFloor);
     assert_eq!(
         report.summary.completeness,
         PrototypeReportCompleteness::CompleteForWideFloorPrototype,
-        "the defect: the run reads as a complete wide-floor prototype",
     );
 
     let validated = validate_prototype_report(
@@ -1026,31 +1181,188 @@ fn g11_r03_a_trivial_leaf_certifies_the_whole_wide_floor_relation() {
         PrototypeReportValidationInputs {
             target: &target,
             binding: &binding,
-            relation: PrototypeRelation::WideFloorRelation,
-            matrix: &matrix,
+            matrix: CanonicalPrototypeMatrix::WideFloor(&canonical),
             transcript: &transcript,
         },
     )
-    .expect("the defect: the forged report revalidates against its own matrix");
-    prototype_gate(&validated).expect("the defect: the forged report satisfies the prototype gate");
-
-    // The canonical matrix is a different value entirely, and nothing on
-    // the evidence path compares the two.
-    let canonical = wide_floor_case_matrix(&target).expect("the canonical matrix states");
-    assert_ne!(matrix, canonical);
+    .expect("the canonical report validates");
+    prototype_gate(&validated).expect("the canonical matrix is prototype evidence");
 }
 
-/// `G11-R03`: a prototype report claims typed-program provenance for raw
-/// caller-supplied bytes.
-///
-/// The projection stamps every compound row `TypedProgram`, though
-/// `CompoundPrototypeFixture::script` is a public byte vector and
-/// `defect` never establishes that the bytes came from a typed program.
+/// `G11-R03` **CLOSED**: a canonical case with one added claim fails.
 #[test]
-fn g11_r03_raw_bytes_are_reported_as_a_typed_program() {
+fn g11_r03_a_canonical_case_with_one_added_claim_fails() {
     let target = reviewed_target();
     let binding = development_binding(&target);
-    // Bytes no typed program encodes: a lone push prefix with no payload.
+    let canonical = wide_floor_case_matrix(&target).expect("the canonical matrix states");
+
+    let mut rows = canonical.rows().to_vec();
+    let extra = PrototypeClaim::ALL
+        .iter()
+        .copied()
+        .find(|claim| {
+            claim.relation() == PrototypeRelation::WideFloorRelation
+                && !rows[0].claims.contains(claim)
+        })
+        .expect("some wide-floor claim the first row does not already carry");
+    rows[0].claims.insert(extra);
+    assert!(
+        rows[0].defect(&target).is_none(),
+        "the added claim belongs to the relation, so coherence still holds",
+    );
+
+    let transcript = prototype_transcript(&rows);
+    let case = rows[0].case.clone();
+    let forged = WideFloorPrototypeMatrix::wrap_for_tests(rows);
+    let refusal = evaluate_prototypes(
+        &target,
+        &binding,
+        CanonicalPrototypeMatrix::WideFloor(&forged),
+        &transcript,
+    )
+    .expect_err("a case bearing a claim the canonical case does not is not that case");
+    assert_eq!(
+        format!("{refusal:?}"),
+        format!(
+            "{:?}",
+            NativeConformanceError::NoncanonicalPrototypeCase(case)
+        ),
+    );
+}
+
+/// `G11-R03` **CLOSED**: a canonical case with one removed claim fails.
+#[test]
+fn g11_r03_a_canonical_case_with_one_removed_claim_fails() {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let canonical = wide_floor_case_matrix(&target).expect("the canonical matrix states");
+
+    let mut rows = canonical.rows().to_vec();
+    let index = rows
+        .iter()
+        .position(|row| row.claims.len() > 1)
+        .expect("some canonical row bears on more than one claim");
+    let dropped = *rows[index]
+        .claims
+        .iter()
+        .next()
+        .expect("the row bears on a claim");
+    rows[index].claims.remove(&dropped);
+
+    let transcript = prototype_transcript(&rows);
+    let case = rows[index].case.clone();
+    let forged = WideFloorPrototypeMatrix::wrap_for_tests(rows);
+    let refusal = evaluate_prototypes(
+        &target,
+        &binding,
+        CanonicalPrototypeMatrix::WideFloor(&forged),
+        &transcript,
+    )
+    .expect_err("a case bearing fewer claims than the canonical case is not that case");
+    assert_eq!(
+        format!("{refusal:?}"),
+        format!(
+            "{:?}",
+            NativeConformanceError::NoncanonicalPrototypeCase(case)
+        ),
+    );
+}
+
+/// `G11-R03` **CLOSED**: replacing the canonical prototype program while
+/// retaining the case name fails.
+///
+/// The case name was never the identity — the report binds the complete
+/// fixture — and this is what makes that true of the gate as well.
+#[test]
+fn g11_r03_replacing_the_canonical_program_under_the_same_case_name_fails() {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let canonical = wide_floor_case_matrix(&target).expect("the canonical matrix states");
+
+    let mut rows = canonical.rows().to_vec();
+    let case = rows[0].case.clone();
+    let substitute = forged_wide_floor_row(&target);
+    rows[0].script = substitute.script.clone();
+    rows[0].construction = substitute.construction.clone();
+    assert!(
+        rows[0].defect(&target).is_none(),
+        "the substituted construction is internally coherent",
+    );
+
+    let transcript = prototype_transcript(&rows);
+    let forged = WideFloorPrototypeMatrix::wrap_for_tests(rows);
+    let refusal = evaluate_prototypes(
+        &target,
+        &binding,
+        CanonicalPrototypeMatrix::WideFloor(&forged),
+        &transcript,
+    )
+    .expect_err("a case name is not a subject");
+    assert_eq!(
+        format!("{refusal:?}"),
+        format!(
+            "{:?}",
+            NativeConformanceError::NoncanonicalPrototypeCase(case)
+        ),
+    );
+}
+
+/// `G11-R03` **CLOSED**: replacing the constructor successor program with
+/// an arbitrary nonempty program fails canonical-matrix validation.
+///
+/// The successor's program is the one field a constructor fixture cannot
+/// derive from its own tree — it belongs to the successor's construction —
+/// so `defect` deliberately leaves it free. That is exactly why it has to
+/// be pinned by the canonical comparison instead.
+#[test]
+fn g11_r03_replacing_the_constructor_successor_program_fails() {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let canonical = constructor_case_matrix(&target).expect("the canonical matrix states");
+
+    let mut rows = canonical.rows().to_vec();
+    let index = rows
+        .iter()
+        .position(|row| !row.construction.outputs.is_empty())
+        .expect("a constructor row states a successor output");
+    let case = rows[index].case.clone();
+    rows[index].construction.outputs[0].program = vec![0x51];
+    assert!(
+        rows[index].defect(&target).is_none(),
+        "an arbitrary nonempty successor program is locally coherent",
+    );
+
+    let transcript = prototype_transcript(&rows);
+    let forged = ConstructorPrototypeMatrix::wrap_for_tests(rows);
+    let refusal = evaluate_prototypes(
+        &target,
+        &binding,
+        CanonicalPrototypeMatrix::Constructor(&forged),
+        &transcript,
+    )
+    .expect_err("an arbitrary successor program is not the canonical one");
+    assert_eq!(
+        format!("{refusal:?}"),
+        format!(
+            "{:?}",
+            NativeConformanceError::NoncanonicalPrototypeCase(case)
+        ),
+    );
+}
+
+/// `G11-R03` **CLOSED**: a prototype report does not claim typed-program
+/// provenance for raw caller-supplied bytes.
+///
+/// The projection used to stamp every compound row `TypedProgram`. It now
+/// decodes the bytes through the reviewed contract and re-encodes them,
+/// so the claim holds exactly when the bytes are some typed program's own
+/// encoding. These are not: a lone push prefix with no payload is a
+/// truncated instruction.
+#[test]
+fn g11_r03_raw_bytes_are_not_reported_as_a_typed_program() {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    // Bytes no typed program encodes: a push prefix with no payload.
     let script = vec![0x02, 0x01];
     let leaf = FixtureTapTree::leaf(script.clone());
     let built =
@@ -1094,18 +1406,37 @@ fn g11_r03_raw_bytes_are_reported_as_a_typed_program() {
             },
         )]),
     );
-    let report = evaluate_prototypes(
+    let report = evaluate_experimental_prototypes(
         &target,
         &binding,
         PrototypeRelation::WideFloorRelation,
         &matrix,
         &transcript,
     )
-    .expect("the matrix evaluates");
+    .expect("the matrix evaluates as an experiment");
     assert_eq!(
-        report.cases[0].fixture.script_source,
-        FixtureScriptSource::TypedProgram,
-        "the defect: raw bytes are reported as a typed program",
+        report.report().cases[0].fixture.script_source,
+        FixtureScriptSource::DeliberatelyMalformed,
+        "bytes no typed program encodes are not reported as a typed program",
+    );
+
+    // The canonical rows, whose scripts are emitted programs' own
+    // encodings, still report the provenance they actually have.
+    let canonical = wide_floor_case_matrix(&target).expect("the canonical matrix states");
+    let honest = prototype_transcript(canonical.rows());
+    let canonical_report = evaluate_prototypes(
+        &target,
+        &binding,
+        CanonicalPrototypeMatrix::WideFloor(&canonical),
+        &honest,
+    )
+    .expect("the canonical matrix evaluates");
+    assert!(
+        canonical_report
+            .cases
+            .iter()
+            .all(|case| case.fixture.script_source == FixtureScriptSource::TypedProgram),
+        "every canonical row's bytes are one typed program's own encoding",
     );
 }
 

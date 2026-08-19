@@ -15,12 +15,13 @@ use crate::protocol::{
     ObservedFailureClass,
 };
 use crate::prototype::{
-    CompoundPrototypeFixture, ExpectedPrototypeOutcome, PrototypeCaseId, PrototypeRelation,
-    constructor_case_matrix, wide_floor_case_matrix,
+    CanonicalPrototypeMatrix, CompoundPrototypeFixture, ExpectedPrototypeOutcome, PrototypeCaseId,
+    PrototypeRelation, WideFloorPrototypeMatrix, constructor_case_matrix, wide_floor_case_matrix,
 };
 use crate::prototype_report::{PrototypeConformanceReport, PrototypeReportCompleteness};
 use crate::prototype_validate::{
-    PrototypeReportValidationInputs, evaluate_prototypes, prototype_gate, validate_prototype_report,
+    PrototypeReportValidationInputs, evaluate_experimental_prototypes, evaluate_prototypes,
+    prototype_gate, validate_prototype_report,
 };
 use crate::report::{CaseStatus, EvidenceDisposition, PrototypeReportRole};
 
@@ -31,7 +32,7 @@ use crate::report::{CaseStatus, EvidenceDisposition, PrototypeReportRole};
 /// would be testing the matrix rather than the validator.
 fn matrix(
     target: &target_elements::ReviewedElementsTapscriptDefinition,
-) -> Vec<CompoundPrototypeFixture> {
+) -> WideFloorPrototypeMatrix {
     wide_floor_case_matrix(target).expect("the wide-floor matrix is authored")
 }
 
@@ -85,19 +86,18 @@ fn report_over(
     trust: ExecutorTrust,
 ) -> (
     target_elements::ReviewedElementsTapscriptDefinition,
-    Vec<CompoundPrototypeFixture>,
+    WideFloorPrototypeMatrix,
     ExecutionTranscript,
     PrototypeConformanceReport,
 ) {
     let target = crate::tests::support::reviewed_target();
     let binding = crate::tests::support::development_binding(&target);
     let matrix = matrix(&target);
-    let transcript = agreeing_transcript(&matrix, trust);
+    let transcript = agreeing_transcript(matrix.rows(), trust);
     let report = evaluate_prototypes(
         &target,
         &binding,
-        PrototypeRelation::WideFloorRelation,
-        &matrix,
+        CanonicalPrototypeMatrix::WideFloor(&matrix),
         &transcript,
     )
     .expect("an agreeing run evaluates");
@@ -107,7 +107,7 @@ fn report_over(
 /// Offers one report back to the validator.
 fn revalidate(
     target: &target_elements::ReviewedElementsTapscriptDefinition,
-    matrix: &[CompoundPrototypeFixture],
+    matrix: &WideFloorPrototypeMatrix,
     transcript: &ExecutionTranscript,
     report: PrototypeConformanceReport,
 ) -> Result<crate::prototype_validate::ValidatedPrototypeReport, NativeConformanceError> {
@@ -117,8 +117,7 @@ fn revalidate(
         PrototypeReportValidationInputs {
             target,
             binding: &binding,
-            relation: PrototypeRelation::WideFloorRelation,
-            matrix,
+            matrix: CanonicalPrototypeMatrix::WideFloor(matrix),
             transcript,
         },
     )
@@ -185,41 +184,44 @@ fn a_declared_mock_run_cannot_satisfy_the_prototype_gate() {
 
 #[test]
 fn a_run_of_no_cases_is_not_a_passing_run() {
+    // Two refusals stand between an empty run and the gate, and this
+    // asserts both. The canonical comparison refuses an empty matrix as a
+    // subject, because the relation's canonical matrix is not empty; and
+    // the report an empty run produces is failed on its own terms, every
+    // required claim lacking a bearing case. The gate's own empty-matrix
+    // guard sits behind both and is now unreachable from here, which is
+    // the canonical-subject repair doing its work rather than the guard
+    // becoming unnecessary.
     let target = crate::tests::support::reviewed_target();
     let binding = crate::tests::support::development_binding(&target);
     let empty: Vec<CompoundPrototypeFixture> = Vec::new();
     let transcript = agreeing_transcript(&empty, ExecutorTrust::ReviewedNonMock);
-    let report = evaluate_prototypes(
+
+    let forged = WideFloorPrototypeMatrix::wrap_for_tests(empty.clone());
+    assert!(matches!(
+        evaluate_prototypes(
+            &target,
+            &binding,
+            CanonicalPrototypeMatrix::WideFloor(&forged),
+            &transcript,
+        ),
+        Err(NativeConformanceError::NoncanonicalPrototypeMatrix),
+    ));
+
+    let report = evaluate_experimental_prototypes(
         &target,
         &binding,
         PrototypeRelation::WideFloorRelation,
         &empty,
         &transcript,
     )
-    .expect("an empty run evaluates");
-
-    // Every claim is required and none has a bearing case, so the
-    // completeness is a failure before the gate is ever asked.
+    .expect("an empty run evaluates as an experiment")
+    .into_report();
     assert_eq!(
         report.summary.completeness,
         PrototypeReportCompleteness::Failed,
+        "a run that executed nothing established nothing",
     );
-    let validated = validate_prototype_report(
-        report,
-        PrototypeReportValidationInputs {
-            target: &target,
-            binding: &binding,
-            relation: PrototypeRelation::WideFloorRelation,
-            matrix: &empty,
-            transcript: &transcript,
-        },
-    )
-    .expect("an empty report validates against its own empty matrix");
-    assert!(matches!(
-        prototype_gate(&validated),
-        Err(NativeConformanceError::RequiredPrototypeClaimMissing(_)
-            | NativeConformanceError::EmptyPrototypeMatrix),
-    ));
 }
 
 #[test]
@@ -228,17 +230,23 @@ fn a_matrix_of_the_other_relation_is_refused() {
     // under the wide-floor relation would file its coverage under the
     // wrong role, where a reader counts it as coverage of a relation
     // nothing established.
+    //
+    // On the evidence path this is no longer statable: the relation
+    // travels inside the canonical matrix, so there is no second argument
+    // to disagree with it. The refusal is still needed on the
+    // experimental path, where a caller names the relation, and that is
+    // what is asserted here.
     let target = crate::tests::support::reviewed_target();
     let binding = crate::tests::support::development_binding(&target);
     let constructor = constructor_case_matrix(&target).expect("the constructor matrix is authored");
-    let transcript = agreeing_transcript(&constructor, ExecutorTrust::ReviewedNonMock);
+    let transcript = agreeing_transcript(constructor.rows(), ExecutorTrust::ReviewedNonMock);
 
     assert!(matches!(
-        evaluate_prototypes(
+        evaluate_experimental_prototypes(
             &target,
             &binding,
             PrototypeRelation::WideFloorRelation,
-            &constructor,
+            constructor.rows(),
             &transcript,
         ),
         Err(NativeConformanceError::PrototypeMatrixRelationMismatch { .. }),
@@ -374,12 +382,13 @@ fn a_disagreeing_verdict_fails_its_case_and_its_claims() {
     let binding = crate::tests::support::development_binding(&target);
     let matrix = matrix(&target);
     let refusing = matrix
+        .rows()
         .iter()
         .position(|fixture| fixture.expected == ExpectedPrototypeOutcome::Rejected)
         .expect("the matrix has refusing rows");
 
     let mut responses: BTreeMap<PrototypeCaseId, NativePrototypeResponse> = BTreeMap::new();
-    for (index, fixture) in matrix.iter().enumerate() {
+    for (index, fixture) in matrix.rows().iter().enumerate() {
         let accepted = index == refusing || fixture.expected == ExpectedPrototypeOutcome::Accepted;
         responses.insert(
             fixture.case.clone(),
@@ -412,8 +421,7 @@ fn a_disagreeing_verdict_fails_its_case_and_its_claims() {
     let report = evaluate_prototypes(
         &target,
         &binding,
-        PrototypeRelation::WideFloorRelation,
-        &matrix,
+        CanonicalPrototypeMatrix::WideFloor(&matrix),
         &transcript,
     )
     .expect("a disagreeing run still evaluates");
@@ -423,7 +431,7 @@ fn a_disagreeing_verdict_fails_its_case_and_its_claims() {
         report.summary.completeness,
         PrototypeReportCompleteness::Failed,
     );
-    let failed = &matrix[refusing].case;
+    let failed = &matrix.rows()[refusing].case;
     assert!(
         report
             .claims
@@ -438,8 +446,7 @@ fn a_disagreeing_verdict_fails_its_case_and_its_claims() {
         PrototypeReportValidationInputs {
             target: &target,
             binding: &binding,
-            relation: PrototypeRelation::WideFloorRelation,
-            matrix: &matrix,
+            matrix: CanonicalPrototypeMatrix::WideFloor(&matrix),
             transcript: &transcript,
         },
     )
@@ -461,7 +468,7 @@ fn an_executor_that_could_not_run_a_case_is_not_a_rejection() {
     let matrix = matrix(&target);
 
     let mut responses: BTreeMap<PrototypeCaseId, NativePrototypeResponse> = BTreeMap::new();
-    for (index, fixture) in matrix.iter().enumerate() {
+    for (index, fixture) in matrix.rows().iter().enumerate() {
         let broken = index == 0;
         responses.insert(
             fixture.case.clone(),
@@ -499,8 +506,7 @@ fn an_executor_that_could_not_run_a_case_is_not_a_rejection() {
     let report = evaluate_prototypes(
         &target,
         &binding,
-        PrototypeRelation::WideFloorRelation,
-        &matrix,
+        CanonicalPrototypeMatrix::WideFloor(&matrix),
         &transcript,
     )
     .expect("a troubled run still evaluates");

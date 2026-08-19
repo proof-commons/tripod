@@ -73,7 +73,7 @@ use crate::protocol::{
     NativePrototypeRequest, NativePrototypeResponse, ProtocolLimits, ProtocolPhase,
     WireEnvironment, WireExecutionDomain, validate_response_shape,
 };
-use crate::prototype::{CompoundPrototypeFixture, PrototypeCaseId};
+use crate::prototype::{CanonicalPrototypeMatrix, CompoundPrototypeFixture, PrototypeCaseId};
 
 /// What one run asks the executor about.
 ///
@@ -574,6 +574,25 @@ pub fn execute_prototypes(
         configuration,
         NativeWorkload::Prototypes(fixtures),
     )
+}
+
+/// Runs one canonical prototype matrix through the selected executor.
+///
+/// The trust boundary sits at [`crate::prototype_validate::evaluate_prototypes`]
+/// rather than here, for the reason [`execute_canonical`] gives. This
+/// entry point exists so the evidence path reads as one canonical
+/// sequence from matrix to gate.
+///
+/// # Errors
+///
+/// Every protocol failure [`execute_prototypes`] states.
+pub fn execute_canonical_prototypes(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    configuration: &ExecutorConfiguration,
+    matrix: CanonicalPrototypeMatrix<'_>,
+) -> Result<ExecutionTranscript, NativeConformanceError> {
+    execute_prototypes(target, binding, configuration, matrix.rows())
 }
 
 /// The supervised run, over either workload.
