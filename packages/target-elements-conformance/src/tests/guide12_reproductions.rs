@@ -25,10 +25,18 @@
 //!
 //! `G12-R06`'s reproduction lives beside the report it is about, in
 //! `lifecycle_report.rs`, where that module's own fixtures build the
-//! record. `G12-R03` and the Python lanes (`G12-R04`, `G12-R07`,
-//! `G12-R15`) carry source-read dispositions in the register instead:
-//! the first sits in `src/bin` with no library seam, and the rest need
-//! a live node.
+//! record. `G12-R03`'s lives in `emit_tests.rs`: the row's disposition
+//! was a source read because the commands had no library seam, and
+//! `emit.rs` is now that seam, so the documents are checked without
+//! spawning anything.
+//!
+//! The Python lanes (`G12-R04`, `G12-R07`, `G12-R15`) are repaired and
+//! recorded in the register rather than here, because this crate cannot
+//! host a test for the other side of the protocol. `G12-R07` was
+//! discharged by recomputation over the whole script-error class table
+//! and `G12-R15` by a behavioural probe of the supervision module;
+//! `G12-R04`'s runtime half stays blocked on a live node, which is
+//! stated as a blocker rather than stood in for.
 
 use std::collections::BTreeSet;
 
