@@ -11,28 +11,35 @@
 //! subject and nothing else, so there is no answer in it to read
 //! `(´[PLAN-rule:guide11-exec:request-subject]´)`.
 //!
-//! So this mock builds its own table instead. It constructs the canonical
-//! primitive census and the canonical prototype matrices from the
-//! reviewed contract — its own copies, out of band, over the development
-//! binding it states it observed — and indexes their expected outcomes by
-//! case identity. A request is answered by looking its case identity up
-//! in that table, and a case identity the table does not hold is answered
-//! with the verdict named by this command's own `--unknown-case`
-//! argument.
+//! So this mock keeps its own table instead, and the two halves of it
+//! reach the mock by the two routes the guide admits.
 //!
-//! Each half of the table is authored the first time a request of its
-//! kind arrives rather than at startup. Authoring the constructor matrix
-//! grinds nonces and costs seconds, and paying that before the handshake
-//! made every protocol test wait for a census it never asked about — long
-//! enough that the harness's timeout expired and the mock's own startup
-//! cost was reported as a protocol failure.
+//! Primitive verdicts come from the mock's own copy of the canonical
+//! census, constructed from the reviewed contract over the development
+//! binding it states it observed, and indexed by case identity. It is
+//! authored the first time a primitive request arrives rather than at
+//! startup, so a prototype-only run never pays for it.
 //!
-//! That is still not evidence, and for the same reason as before: the
-//! table is derived from the very expectations the harness will compare
-//! the answers against, so a green run against this mock says only that
-//! the harness can compare a value with itself. What changed is that the
-//! self-comparison now travels out of band, where an honest adapter has
-//! no equivalent to accidentally consult.
+//! Compound verdicts come through this command's own configuration: the
+//! `--prototype-verdicts` file, written by whoever spawns the mock. That
+//! is deliberate rather than symmetric. Authoring the compound matrices
+//! grinds nonces and costs seconds apiece, and several mock processes
+//! doing it at once turned a fast suite slow enough that a loaded machine
+//! could push a run past the harness's timeout — reporting the mock's own
+//! startup cost as a protocol failure.
+//!
+//! Either way a case identity the table does not hold is answered by the
+//! `--unknown-case` policy for a primitive, and refused outright for a
+//! compound one: inventing a spend verdict for a construction nobody
+//! stated an outcome for is exactly the guess the refusal branch exists
+//! to avoid.
+//!
+//! None of this is evidence, and for the same reason as before: the
+//! answers are the very expectations the harness will compare them
+//! against, so a green run against this mock says only that the harness
+//! can compare a value with itself. What changed is that the
+//! self-comparison now travels out of band, through channels no wire
+//! request touches and an honest adapter has no equivalent of.
 //!
 //! It exists so the protocol's failure paths — a malformed line, a wrong
 //! schema, a duplicated, missing, reordered, or unexpected result, a
@@ -79,7 +86,6 @@ use target_elements_conformance::protocol::{
 };
 use target_elements_conformance::prototype::{
     ExpectedPrototypeOutcome, PrototypeCaseId, PrototypeConstruction, PrototypeRelation,
-    constructor_case_matrix, wide_floor_case_matrix,
 };
 
 const COMMAND_NAME: &str = "mock-native-executor";
@@ -259,16 +265,40 @@ enum UnknownCasePolicy {
 /// pays for it.
 struct AnswerTable {
     primitives: std::sync::OnceLock<BTreeMap<NativeCaseId, ExpectedPrimitiveOutcome>>,
-    prototypes: std::sync::OnceLock<BTreeMap<PrototypeCaseId, ExpectedPrototypeOutcome>>,
+    prototypes: BTreeMap<String, ExpectedPrototypeOutcome>,
     unknown: UnknownCasePolicy,
 }
 
 impl AnswerTable {
-    /// An empty table under one unknown-case policy.
-    const fn new(unknown: UnknownCasePolicy) -> Self {
+    /// A table under one unknown-case policy and one compound verdict
+    /// file.
+    ///
+    /// # Why the two halves come from different places
+    ///
+    /// The primitive census is cheap to author and every canonical
+    /// primitive run needs all of it, so the mock authors its own copy.
+    /// The compound matrices are not: authoring the constructor matrix
+    /// grinds nonces, and four mock processes doing it at once turned a
+    /// fast test suite into a slow one that a loaded machine could push
+    /// past the harness's timeout.
+    ///
+    /// So compound verdicts arrive through this command's own
+    /// configuration instead — a file the test that spawns the mock
+    /// writes from the matrix it already holds. That is the other route
+    /// the guide admits, and it is the more honest of the two about what
+    /// a mock is: the answers plainly come from outside, through a
+    /// channel no wire request touches
+    /// `(´[PLAN-rule:guide11-exec:request-subject]´)`.
+    fn new(unknown: UnknownCasePolicy, verdicts: Option<&std::path::Path>) -> Self {
+        let prototypes = verdicts
+            .and_then(|path| std::fs::read_to_string(path).ok())
+            .and_then(|text| {
+                serde_json::from_str::<BTreeMap<String, ExpectedPrototypeOutcome>>(&text).ok()
+            })
+            .unwrap_or_default();
         Self {
             primitives: std::sync::OnceLock::new(),
-            prototypes: std::sync::OnceLock::new(),
+            prototypes,
             unknown,
         }
     }
@@ -291,31 +321,9 @@ impl AnswerTable {
             .get(&case)
     }
 
-    /// What the canonical prototype matrices expect of one case.
+    /// What this mock was told to answer for one compound case.
     fn prototype(&self, case: &PrototypeCaseId) -> Option<ExpectedPrototypeOutcome> {
-        self.prototypes
-            .get_or_init(|| {
-                let mut table = BTreeMap::new();
-                if let Some(target) = reviewed() {
-                    // The two matrices are authored by different
-                    // generators and fail in different ways, so they are
-                    // gathered separately rather than through one
-                    // fallible sequence.
-                    if let Ok(matrix) = constructor_case_matrix(&target) {
-                        for row in matrix.rows() {
-                            table.insert(row.case.clone(), row.expected);
-                        }
-                    }
-                    if let Ok(matrix) = wide_floor_case_matrix(&target) {
-                        for row in matrix.rows() {
-                            table.insert(row.case.clone(), row.expected);
-                        }
-                    }
-                }
-                table
-            })
-            .get(case)
-            .copied()
+        self.prototypes.get(&case.to_string()).copied()
     }
 }
 
@@ -358,6 +366,15 @@ struct Args {
     /// What to answer a case this mock's own table does not hold.
     #[arg(long, value_name = "POLICY", default_value = "accept")]
     unknown_case: UnknownCasePolicy,
+    /// The compound verdicts this mock answers with, as a JSON object
+    /// keyed by the case's `relation::name` spelling.
+    ///
+    /// This command's own configuration, established outside the
+    /// harness's interface exactly as a real adapter's would be. Nothing
+    /// here reaches the wire, and a compound case the file does not name
+    /// is refused rather than guessed.
+    #[arg(long, value_name = "PATH")]
+    prototype_verdicts: Option<std::path::PathBuf>,
 }
 
 fn main() -> ExitCode {
@@ -370,7 +387,7 @@ fn main() -> ExitCode {
         }
     };
 
-    let table = AnswerTable::new(args.unknown_case);
+    let table = AnswerTable::new(args.unknown_case, args.prototype_verdicts.as_deref());
     run(args.behavior, &table)
         .map_or_else(|_| CommandExit::Failure.exit_code(), CommandExit::exit_code)
 }

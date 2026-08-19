@@ -59,15 +59,48 @@ fn development_binding(target: &ReviewedElementsTapscriptDefinition) -> Reviewed
     validate_reviewed_development_binding(target, binding).expect("the binding validates")
 }
 
+/// The compound verdicts the mock is to answer with.
+///
+/// Written here, from the matrix this test already holds, and handed to
+/// the mock through its own configuration. Under protocol revision 3 the
+/// request carries no expectation, so a mock that is to agree with a
+/// matrix has to be told what the matrix says — and being told out of
+/// band, in a file the harness never sees, is what keeps the agreement
+/// from looking like an observation.
+fn verdict_file(directory: &Path, matrix: &[CompoundPrototypeFixture]) -> PathBuf {
+    let path = directory.join("prototype-verdicts.json");
+    let table: std::collections::BTreeMap<String, &'static str> = matrix
+        .iter()
+        .map(|row| {
+            // An outcome this test has not been taught is written as a
+            // refusal, which is the answer that cannot manufacture a
+            // passing row: a fixture expecting something else will
+            // disagree with it and fail loudly.
+            let verdict = match row.expected {
+                ExpectedPrototypeOutcome::Accepted => "accepted",
+                _ => "rejected",
+            };
+            (row.case.to_string(), verdict)
+        })
+        .collect();
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&table).expect("the verdict table encodes"),
+    )
+    .expect("write verdicts");
+    path
+}
+
 /// A wrapper script selecting one mock behaviour.
-fn wrapper(directory: &Path, behavior: &str) -> PathBuf {
+fn wrapper(directory: &Path, behavior: &str, verdicts: &Path) -> PathBuf {
     let path = directory.join(format!("executor-{behavior}.sh"));
     let mut file = std::fs::File::create(&path).expect("create wrapper");
     writeln!(file, "#!/bin/sh").expect("write wrapper");
     writeln!(
         file,
-        "exec {} --behavior {behavior} \"$@\"",
+        "exec {} --behavior {behavior} --prototype-verdicts {} \"$@\"",
         env!("CARGO_BIN_EXE_mock-native-executor"),
+        verdicts.display(),
     )
     .expect("write wrapper");
     let mut permissions = file.metadata().expect("metadata").permissions();
@@ -83,7 +116,8 @@ fn run(
     matrix: &[CompoundPrototypeFixture],
 ) -> Result<ExecutionTranscript, NativeConformanceError> {
     let directory = tempfile::tempdir().expect("tempdir");
-    let program = wrapper(directory.path(), behavior);
+    let verdicts = verdict_file(directory.path(), matrix);
+    let program = wrapper(directory.path(), behavior, &verdicts);
     let configuration =
         ExecutorConfiguration::new(&program, ExecutorTrust::Mock, Duration::from_secs(120));
     let target = reviewed_target();
