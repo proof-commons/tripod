@@ -489,6 +489,57 @@ NORMALIZATION_EXTRA_OUTPUT_SATOSHIS = 5_000
 NORMALIZATION_AMOUNT_DELTA = 1_000_000
 NORMALIZATION_HIDDEN_AMOUNT = 1_000_000
 
+# The schema of the Guide-11 section 13 public handoff record.
+#
+# The whole point of naming it is that a record of another shape is
+# refused rather than read leniently: the record is the entire channel
+# between the creating process and the unrelated one, and a field this
+# schema does not know is either a mistake or a covert channel.
+FRESH_PROCESS_HANDOFF_SCHEMA = "tripod-fresh-process-handoff-1"
+
+# Every field the handoff record may carry. All of it is canonical public
+# chain data or the public encoding of an address. There is no key, no
+# blinding factor, no descriptor, no wallet, no seed, and no data
+# directory, and `FRESH_PROCESS_HANDOFF_BANNED_SUBSTRINGS` refuses one by
+# name so that a future field cannot arrive unnoticed.
+FRESH_PROCESS_HANDOFF_FIELDS = (
+    "schema",
+    "chain_name",
+    "network_id",
+    "genesis_id",
+    "txid",
+    "output_index",
+    "block_hash",
+    "block_height",
+    "raw_transaction",
+    "claimed_explicit_amount",
+    "claimed_explicit_asset",
+    "claimed_owner_address",
+)
+
+# A field whose NAME contains any of these is refused even if it were
+# somehow admitted above. Redundant on purpose: the allow-list is the
+# real rule, and this is the rule that would still fire if somebody
+# widened the allow-list without thinking about what they were widening
+# it for.
+FRESH_PROCESS_HANDOFF_BANNED_SUBSTRINGS = (
+    "key",
+    "blind",
+    "seed",
+    "secret",
+    "priv",
+    "mnemonic",
+    "descriptor",
+    "wallet",
+    "xprv",
+    "nonce",
+    "datadir",
+)
+
+# What the fresh process pays itself in its own future construction.
+# Small: the transaction's value is that it exists and confirms.
+LIFECYCLE_SPONSOR_SPEND_SATOSHIS = 100_000
+
 # Prefixes Elements puts in front of a script error in a rejection reason.
 CONSENSUS_SCRIPT_PREFIX = "mandatory-script-verify-flag-failed ("
 POLICY_SCRIPT_PREFIX = "non-mandatory-script-verify-flag ("
@@ -2728,6 +2779,13 @@ class NormalizationExecutor:
         return {
             "observed_layer": layer,
             "observed_detail": detail,
+            # The address the claim's normalized output pays, in its
+            # canonical public encoding. Reported because the section 13
+            # lane publishes it and for no other reason: it is the one
+            # public projection of the owner, and a party with no
+            # relationship to this process has to be able to rebuild the
+            # output script from it rather than be handed the bytes.
+            "normalized_address": normalized_address,
             "claimed_outputs": claimed_outputs,
             "observed_outputs": self.read_outputs(raw),
             "authorization_profile": profile,
@@ -3017,6 +3075,351 @@ class NormalizationExecutor:
         return outputs
 
 
+class LifecycleExecutor:
+    """Guide-11 section 13's fresh-process lifecycle, on the accepted path.
+
+    # What is being proved, and what the accepted path changes about it
+
+    Section 13 asks whether "public" means *recoverable from canonical
+    public chain data by a party that did not participate in creation*,
+    rather than *still present in the creator's process*. It was written
+    with a capsule in mind, because the representation it anticipated was
+    PublicCommitted: a committed amount is unreadable without an opening,
+    so something has to carry the opening and be bound to the output.
+
+    This wave runs the path that exists. On the normalization path the
+    public output is EXPLICIT, so its amount and asset are on the output
+    itself and there is no capsule, no opening to carry, and no binding
+    to check. `G11-W8-03` already recorded that as the capsule's state --
+    not-applicable rather than deferred -- and this lane inherits it. The
+    reconstruction is therefore: locate the outpoint from chain data,
+    parse the explicit output canonically, and check the amount, the
+    asset, and the owner projection against what the public record
+    claimed.
+
+    # Why Process B does not spend the object, and why that is not a
+    # weakened claim
+
+    Section 13.4's step 6 has Process B construct a future spend. That
+    step assumed a permissionless object -- something any party may take
+    -- which is what a formula-bound payout would be. A normalized output
+    is OWNED, and the owner's key is precisely the creator-local state
+    the destruction boundary destroys. A Process B that could spend it
+    would be evidence of a leak, not of publicness.
+
+    So the future-use proof splits in two, and both halves run:
+
+      readable    B rebuilds the expected output script from the public
+                  address alone, by pure-Python bech32m decoding, and
+                  byte-compares it against what the chain carries. That
+                  is what a future constructor would have to do to cite
+                  this output, and it is done from public data only;
+
+      usable      B constructs and confirms a real spend of ITS OWN
+                  sponsor funds, paying an address derived fresh inside
+                  B. This shows B is a working constructor on this chain
+                  rather than a reader that could not have built
+                  anything.
+
+    The permissionless-future-use case -- B spending the object itself --
+    belongs to the compact ASH work and is out of scope here rather than
+    quietly claimed.
+
+    # The chain persists and the creator does not
+
+    The node is not creator state. The chain data IS the canonical public
+    record, so destroying it between A and B would destroy the evidence
+    the test exists to find. What the boundary destroys is the creator's
+    wallet -- the keys, the blinding factors, and the descriptors -- and
+    the creator's process. That scoping is stated because getting it
+    backwards yields a test that passes for the wrong reason in one
+    direction and fails for the wrong reason in the other.
+    """
+
+    def __init__(self, normalization: "NormalizationExecutor", network_id: str) -> None:
+        self.normalization = normalization
+        self.conservation = normalization.conservation
+        self.executor = normalization.conservation.executor
+        self.node = normalization.node
+        self.messages = normalization.messages
+        self.network_id = network_id.lower()
+        # Imported here rather than at module scope: the framework is
+        # loaded from an explicit path at startup, and this is the module
+        # that decodes an address without asking the node to.
+        from test_framework import address as framework_address
+
+        self.address_module = framework_address
+
+    # -- Process A ---------------------------------------------------------
+
+    def construct(self, subject: dict) -> dict:
+        """Builds the accepted normalization and confirms it in a block.
+
+        The normalization itself is the section 10.4 row with no
+        mutation, run through the same executor the matrix runs, so this
+        lane cannot be passing a transaction the matrix would not
+        recognize. What is added here is confirmation: the matrix judges
+        at the mempool and never mines, and a section 13 handoff has to
+        name a block.
+        """
+        claim = subject["claim"]
+        body = self.normalization.execute(
+            {"normalization": "none"}, {"claim": claim, "mutation": "none"}
+        )
+        if body["observed_layer"] != "accepted":
+            raise ConstructionError(
+                "the unmutated normalization was not accepted, so there is no "
+                "public record to publish: %s (%s)"
+                % (body["observed_layer"], body["observed_detail"])
+            )
+        raw = bytes(body["transaction_bytes"]).hex()
+
+        index = self.locate_normalized_output(body)
+        block_hash = self.node.call(
+            "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw])
+        )["hash"]
+        block = self.node.call("getblock", block_hash)
+        transaction = self.conservation.deserialize(raw)
+        txid = transaction.rehash()
+        if txid not in block.get("tx", []):
+            raise AdapterError(
+                "the block this adapter mined does not carry the transaction it "
+                "was given"
+            )
+
+        claimed = body["claimed_outputs"][index]
+        return {
+            "handoff": {
+                "schema": FRESH_PROCESS_HANDOFF_SCHEMA,
+                "chain_name": self.node.chain,
+                "network_id": self.network_id,
+                "genesis_id": self.node.call("getblockhash", "0"),
+                "txid": txid,
+                "output_index": index,
+                "block_hash": block_hash,
+                "block_height": block["height"],
+                "raw_transaction": raw,
+                "claimed_explicit_amount": claimed["explicit_amount"],
+                "claimed_explicit_asset": bytes(claimed["explicit_asset"]).hex(),
+                "claimed_owner_address": body["normalized_address"],
+            },
+            "authorization_profile": body["authorization_profile"],
+            "observed_witness_sizes": body["observed_witness_sizes"],
+            "observed_outputs": body["observed_outputs"],
+        }
+
+    def locate_normalized_output(self, body: dict) -> int:
+        """Which output of the built transaction is the normalized one.
+
+        Found by matching the claim's own script and amount against what
+        the target's decoder reports, rather than by trusting the order
+        the outputs were declared in: blinding is free to reorder, and a
+        handoff naming the wrong index would be this adapter publishing a
+        false record rather than the target doing anything.
+        """
+        wanted = None
+        for entry in body["claimed_outputs"]:
+            if entry["role"] == "normalized":
+                wanted = entry
+                break
+        if wanted is None:
+            raise AdapterError("the claim states no normalized output")
+        matches = [
+            position
+            for position, observed in enumerate(body["observed_outputs"])
+            if observed["script_pubkey"] == wanted["script_pubkey"]
+            and observed["explicit_amount"] == wanted["explicit_amount"]
+            and observed["explicit_asset"] == wanted["explicit_asset"]
+        ]
+        if len(matches) != 1:
+            raise AdapterError(
+                "the transaction carries %d outputs matching the normalized "
+                "claim, and a public record may name exactly one" % len(matches)
+            )
+        return matches[0]
+
+    # -- Process B ---------------------------------------------------------
+
+    def verify(self, subject: dict) -> dict:
+        """Reconstructs the public fact from the handoff and nothing else.
+
+        Every check records what it looked for and what it found, and
+        none of them decides whether the run passes: that judgement is
+        the typed report's, built in the package that owns the claim from
+        a record this process did not classify.
+        """
+        handoff = subject["handoff"]
+        checks = []
+
+        def record(name, expected, observed):
+            checks.append(
+                {
+                    "check": name,
+                    "expected": expected,
+                    "observed": observed,
+                    "agrees": expected == observed,
+                }
+            )
+
+        # The chain context is settled before any evidence is fetched. A
+        # run that read one chain's transaction while declaring another's
+        # identity would be a false record, and no later check repairs
+        # it: the txid would resolve, the amount would parse, and every
+        # one of them would be about the wrong chain.
+        observed_genesis = self.node.call("getblockhash", "0")
+        record("chain_context_genesis", handoff["genesis_id"], observed_genesis)
+        if handoff["genesis_id"] != observed_genesis:
+            return {
+                "outcome": "refused_wrong_chain_context",
+                "checks": checks,
+                "spend": None,
+            }
+
+        # 1. locate the public evidence, by the block locator the record
+        #    names. A block locator rather than a transaction index,
+        #    because an index is a node configuration and the locator is
+        #    chain data.
+        try:
+            chain_raw = self.node.call(
+                "getrawtransaction", handoff["txid"], "false", handoff["block_hash"]
+            )
+        except AdapterError as error:
+            record("evidence_located", handoff["txid"], None)
+            return {
+                "outcome": "refused_evidence_absent",
+                "checks": checks,
+                "spend": None,
+                "detail": error.note,
+            }
+        record("evidence_located", handoff["txid"], handoff["txid"])
+
+        # The record's own copy of the bytes is checked against the
+        # chain's rather than used in its place. This is what catches a
+        # record built from another transaction's data: the copy would
+        # parse perfectly and disagree with the chain byte for byte.
+        record("evidence_bytes_match_chain", chain_raw, handoff["raw_transaction"])
+        if chain_raw != handoff["raw_transaction"]:
+            return {
+                "outcome": "refused_copied_evidence",
+                "checks": checks,
+                "spend": None,
+            }
+
+        # 2. parse it canonically -- with the framework's own
+        #    deserializer, so the amount does not come from the node's
+        #    opinion of its own transaction.
+        parsed = self.conservation.deserialize(chain_raw)
+        index = handoff["output_index"]
+        if index < 0 or index >= len(parsed.vout):
+            record("output_index_in_range", "0..%d" % len(parsed.vout), index)
+            return {
+                "outcome": "refused_output_absent",
+                "checks": checks,
+                "spend": None,
+            }
+        record("output_index_in_range", True, True)
+        out = parsed.vout[index]
+
+        # 3. bind it to the intended output, and 5. recover the public
+        #    semantic amount. Both are the same read on this path: the
+        #    amount and the asset are ON the output, which is what makes
+        #    the explicit representation need no capsule.
+        try:
+            amount = explicit_amount(bytes(out.nValue.vchCommitment), "output.value")
+            asset = bytes(out.nAsset.vchCommitment)
+        except AdapterError:
+            record("output_is_explicit", True, False)
+            return {
+                "outcome": "refused_output_not_explicit",
+                "checks": checks,
+                "spend": None,
+            }
+        record("output_is_explicit", True, True)
+        record("explicit_amount", handoff["claimed_explicit_amount"], amount)
+        # Stored least-significant-first behind the explicit prefix, and
+        # displayed the other way round.
+        record(
+            "explicit_asset",
+            handoff["claimed_explicit_asset"],
+            asset[1:][::-1].hex() if len(asset) == 33 else asset.hex(),
+        )
+
+        # 4. verify the opening. There is none on this path, and the
+        #    owner projection is checked in its place: the script the
+        #    chain carries is rebuilt from the public address alone,
+        #    without asking the node, and byte-compared.
+        chain_script = bytes(out.scriptPubKey)
+        rebuilt = bytes(
+            self.address_module.address_to_scriptpubkey(
+                handoff["claimed_owner_address"]
+            )
+        )
+        record("owner_projection_bytes", chain_script.hex(), rebuilt.hex())
+
+        # The unspent-output set is asked as well, because a record may
+        # name a transaction that exists and an output that is gone.
+        unspent = self.node.call("gettxout", handoff["txid"], str(index))
+        record("output_unspent", True, unspent is not None)
+        if unspent is not None:
+            record(
+                "utxo_set_amount",
+                handoff["claimed_explicit_amount"],
+                int(round(float(unspent["value"]) * 100_000_000)),
+            )
+
+        # No owner-private witness anywhere in this process. The wallet
+        # this process created is asked whether it can spend the object,
+        # and the answer has to be no: a Process B that could spend it
+        # would be evidence that the boundary leaked, not that the object
+        # is public.
+        self.conservation.prepare()
+        spendable = [
+            entry
+            for entry in self.node.call(
+                "listunspent", "0", "9999999", wallet=self.conservation.WALLET
+            )
+            if entry["txid"] == handoff["txid"] and entry["vout"] == index
+        ]
+        record("owner_object_spendable_by_this_process", False, spendable != [])
+
+        # 6-7. the future construction, of this process's OWN funds,
+        #      paying an address derived fresh here.
+        spend = self.spend_own_funds(handoff)
+        return {"outcome": "verified", "checks": checks, "spend": spend}
+
+    def spend_own_funds(self, handoff: dict) -> dict:
+        """Builds, confirms, and reports one spend of this process's funds.
+
+        The point is not the transaction. It is that the process which
+        read the public record is a working constructor on this chain, so
+        a failure to spend the normalized output would be a statement
+        about ownership rather than about this process's ability to build
+        anything at all.
+        """
+        destination = self.conservation.address(False, NORMALIZATION_ADDRESS_TYPE)
+        program = self.normalization.script_of(destination)
+        amount = LIFECYCLE_SPONSOR_SPEND_SATOSHIS
+        # Captured before the spend, because the outpoint it consumes is
+        # the whole claim being made: this process built a transaction
+        # out of funds it located itself, and none of them is the
+        # owner's object.
+        source = dict(self.executor.change)
+        txid = self.executor.fund(program, amount)
+        if self.node.call("gettxout", txid, "0") is None:
+            raise AdapterError("the spend this process built did not reach the chain")
+        return {
+            "txid": txid,
+            "amount": amount,
+            "destination": destination,
+            "destination_script": program.hex(),
+            "consumed_outpoint": {"txid": source["txid"], "vout": source["vout"]},
+            "consumed_owner_object": (
+                source["txid"] == handoff["txid"]
+                and source["vout"] == handoff["output_index"]
+            ),
+        }
+
+
 def satoshis_to_amount(satoshis: int) -> str:
     """One amount in the decimal form the node's RPC reads."""
     return "%d.%08d" % (satoshis // 100_000_000, satoshis % 100_000_000)
@@ -3160,7 +3563,9 @@ def serve(arguments) -> int:
         if arguments.enable_wallet:
             executor.conservation = ConservationExecutor(executor, arguments.wallet_name)
             executor.normalization = NormalizationExecutor(executor.conservation)
-            executor.lifecycle = LifecycleExecutor(executor.normalization)
+            executor.lifecycle = LifecycleExecutor(
+                executor.normalization, arguments.network_id
+            )
         log("node ready in %.1fs" % (time.monotonic() - started))
 
         write_message(
@@ -3215,6 +3620,16 @@ def serve(arguments) -> int:
                 # set back from the target.
                 + (
                     ["owner_authorized_normalization"]
+                    if arguments.enable_wallet
+                    else []
+                )
+                # The section 13 lane, on the same wallet again. It is a
+                # further claim still: building the object is one thing,
+                # and reading it back from chain data with no relationship
+                # to the process that built it is the thing section 13
+                # actually asks about.
+                + (
+                    ["fresh_process_lifecycle"]
                     if arguments.enable_wallet
                     else []
                 ),
@@ -3273,6 +3688,10 @@ def answer_case(executor: CaseExecutor, line: str) -> None:
     # whose shape differs: it names a mutation and nothing else.
     if isinstance(case, dict) and "normalization" in case:
         answer_normalization_row(executor, request, case)
+        return
+    # A section 13 lifecycle step names its role and nothing else.
+    if isinstance(case, dict) and "lifecycle" in case:
+        answer_lifecycle_step(executor, request, case)
         return
     # The case identity is echoed verbatim, so that the harness correlates
     # against exactly what it sent. Without one there is nothing to answer,
@@ -3473,6 +3892,115 @@ def answer_normalization_row(executor: CaseExecutor, request: dict, case: dict) 
             "authorization_profile": body["authorization_profile"],
             "observed_witness_sizes": body["observed_witness_sizes"],
             "transaction_bytes": body["transaction_bytes"],
+        }
+    )
+
+
+def parse_handoff(raw: object) -> dict:
+    """Reads the section 13 public record strictly, or refuses it.
+
+    Strict because this record is the ENTIRE channel between the process
+    that created the object and the process that had no part in it. A
+    field this schema does not know is either a mistake or a covert
+    channel, and neither may be read leniently: the whole result would be
+    a fresh-process proof conducted over a private side channel.
+
+    The two rules are an allow-list and a name ban, and the redundancy is
+    deliberate. The allow-list is what actually holds; the ban is what
+    would still fire if a later wave widened the allow-list without
+    thinking about what it was widening it for.
+    """
+    handoff = require_object(raw, "request.subject.handoff")
+    for key in handoff:
+        lowered = key.lower()
+        for banned in FRESH_PROCESS_HANDOFF_BANNED_SUBSTRINGS:
+            if banned in lowered:
+                raise AdapterError(
+                    "the public record carries a field named %s, and a public "
+                    "record carries no owner-private material" % key
+                )
+    require_keys(handoff, FRESH_PROCESS_HANDOFF_FIELDS, "request.subject.handoff")
+    if handoff["schema"] != FRESH_PROCESS_HANDOFF_SCHEMA:
+        raise AdapterError(
+            "the public record states a schema this adapter does not read: %s"
+            % handoff["schema"]
+        )
+    for field in (
+        "chain_name",
+        "network_id",
+        "genesis_id",
+        "txid",
+        "block_hash",
+        "raw_transaction",
+        "claimed_explicit_asset",
+        "claimed_owner_address",
+    ):
+        require_string(handoff[field], "request.subject.handoff.%s" % field)
+    for field in ("output_index", "block_height", "claimed_explicit_amount"):
+        require_int(handoff[field], "request.subject.handoff.%s" % field)
+    return handoff
+
+
+def answer_lifecycle_step(executor: CaseExecutor, request: dict, case: dict) -> None:
+    """Answers exactly one Guide-11 section 13 lifecycle step.
+
+    Neither step decides anything. Process A states what it published,
+    Process B states what it looked for and what it found, and the
+    comparison that turns those into a verdict lives in the typed report
+    -- for the reason `G11-W7-06` recorded, and which this lane would be
+    the easiest place in the project to forget.
+    """
+    for key in request:
+        if key not in ("schema", "case", "subject"):
+            raise FatalAdapterError("the harness sent a request field named %s" % key)
+
+    body = None
+    outcome = None
+    try:
+        if request.get("schema") != NATIVE_PROTOCOL_SCHEMA:
+            raise AdapterError("the request carries a protocol revision this adapter does not")
+        if getattr(executor, "lifecycle", None) is None:
+            raise AdapterError(
+                "the request is a lifecycle step, and this adapter advertised no "
+                "fresh-process-lifecycle capability"
+            )
+        subject = request.get("subject")
+        if not isinstance(subject, dict):
+            raise AdapterError("the lifecycle request states no subject")
+        role = case.get("lifecycle")
+        started = time.monotonic()
+        if role == "construct":
+            require_keys(subject, ("claim",), "request.subject")
+            body = executor.lifecycle.construct(subject)
+            outcome = "constructed"
+        elif role == "verify":
+            require_keys(subject, ("handoff",), "request.subject")
+            body = executor.lifecycle.verify({"handoff": parse_handoff(subject["handoff"])})
+            outcome = body["outcome"]
+        else:
+            raise AdapterError("the lifecycle request names no role this adapter runs")
+        log("lifecycle step %s answered in %.2fs as %s"
+            % (role, time.monotonic() - started, outcome))
+    except ConstructionError as error:
+        log("fixture construction failure: %s" % error.note)
+        body = {}
+        outcome = "fixture_construction_failure"
+    except AdapterError as error:
+        log("executor infrastructure failure: %s" % error.note)
+        body = {"detail": error.note}
+        outcome = "executor_infrastructure_failure"
+
+    write_message(
+        {
+            "schema": NATIVE_PROTOCOL_SCHEMA,
+            "case": case,
+            "outcome": outcome,
+            "handoff": body.get("handoff"),
+            "authorization_profile": body.get("authorization_profile"),
+            "observed_witness_sizes": body.get("observed_witness_sizes", []),
+            "checks": body.get("checks", []),
+            "spend": body.get("spend"),
+            "detail": body.get("detail"),
         }
     )
 
