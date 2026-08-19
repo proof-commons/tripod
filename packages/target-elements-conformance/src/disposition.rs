@@ -521,6 +521,34 @@ mod tests {
     }
 
     #[test]
+    fn a_prototyped_disposition_cites_the_run_that_makes_it_true() {
+        // This register once recorded `Prototyped` while no prototype
+        // existed, and the backlog had to carry the correction as a
+        // separate row. The state claims evidence exists, so it has to
+        // name the findings that hold it: a wave that deletes the
+        // prototype now has to delete these citations too, which is
+        // visible, rather than leaving a state that quietly overstates.
+        for entry in candidate_dispositions() {
+            if entry.state != DispositionState::Prototyped {
+                continue;
+            }
+            let cited: BTreeSet<&str> = entry
+                .evidence
+                .iter()
+                .filter_map(|item| match item {
+                    DispositionEvidence::Finding { id, .. } => Some(id.as_str()),
+                    _ => None,
+                })
+                .collect();
+            assert!(
+                cited.contains("G11-W10-01") && cited.contains("G11-W10-02"),
+                "{:?} claims to be prototyped and cites {cited:?}",
+                entry.candidate
+            );
+        }
+    }
+
+    #[test]
     fn every_disposition_cites_something() {
         for entry in candidate_dispositions() {
             assert!(!entry.evidence.is_empty(), "{:?}", entry.candidate);

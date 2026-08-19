@@ -262,10 +262,14 @@ impl std::fmt::Display for RefusalLayer {
 pub enum AuthorizationProfile {
     /// A taproot key-path signature with no trailing sighash byte.
     ///
-    /// The absence of the byte *is* the mode: the reviewed digest reads
-    /// a missing byte as the default, all-outputs, non-anyone-can-pay
-    /// profile, so a 64-byte signature is the profile rather than merely
-    /// consistent with it.
+    /// The absence of the byte *is* the mode, and that is a source fact
+    /// rather than a convention borrowed from elsewhere. The target
+    /// initializes the hash type to the default and overrides it only
+    /// for a 65-byte signature, refusing a trailing byte that spells the
+    /// default explicitly; the default is then mapped to the all-outputs
+    /// mode, and carries no anyone-can-pay bit. So a 64-byte signature
+    /// *is* the profile §10.3 requires rather than merely consistent
+    /// with it.
     SighashDefault,
     /// An explicit all-outputs signature without anyone-can-pay.
     SighashAllNoAnyoneCanPay,
