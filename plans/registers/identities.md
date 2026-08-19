@@ -2,13 +2,14 @@
 
 This register inventories every identity and digest the current tree actually
 produces, and fixes the ownership boundary of those that do not yet exist. The
-immediate policy owner is
-[ADR-016](../../adr/016-semantic-identities-and-evidence-binding.md). This file
+immediate policy owner is the adopted identity adjudication procedure at
+[plans/drafts/identity-adjudication.md](../drafts/identity-adjudication.md),
+adopted by [ADR-021](../../adr/021-identity-adjudication.md). This file
 is a planning aid, not a substitute for typed identity definitions, and is
 never toolchain input.
 
 Admission of any new digest is governed by
-(`[ADR016-rule:identity:admission]`). Every entry below was walked through the
+(`req:identity:admission-record`). Every entry below was walked through the
 adopted adjudication procedure in DI-004: each digest the tree computes was
 found from the owning code, put to the benefit criterion, and recorded either
 as an admission record or as a stop. The classification is per identity class —
@@ -61,7 +62,8 @@ evidence of anything.
 Six identity classes are admitted. Each records its subject, owner, producer,
 consumer, decision, assurance class, stale condition, recipe by identifier,
 migration rule, non-claims, and status — the admission fields the adopted
-procedure requires, in the order ADR-016 states them.
+procedure requires, in the order
+(`req:identity:admission-record`) states them.
 
 ### 2.1 Git commit and tree object IDs
 
@@ -169,7 +171,13 @@ procedure requires, in the order ADR-016 states them.
 - **Migration:** a deliberate anchor-set change re-pins the manifest value in
   the same commit that changes the citations. The recipe itself migrated once,
   in DI-004, when the domain prefix was added; the retired `sha256-anchor-set-v1`
-  and both values are recorded in ADR-016.
+  and both values are recorded in
+  (`[ADR021-rule:identity:separation-migration]`). DI-008: the specification's
+  v1.0.0 release renamed the paper's own-division label area to `attestation`,
+  moving two anchor names; the retired value was
+  reproduced from the pre-rename set before the new value was taken;
+  the recipe and its domain prefix are unchanged (the prefix is a frozen recipe
+  string, not prose).
 - **Non-claims:** it says nothing about what the anchors mean, and it is not an
   architecture identity.
 - **Status:** active.
@@ -201,7 +209,12 @@ procedure requires, in the order ADR-016 states them.
 - **Migration:** the algorithm identifier is carried explicitly beside the
   value, so a recipe change is a visible measurement change. The recipe
   migrated once, in DI-004, when the domain prefix was added; the retired
-  `sha256-canonical-json-v2` and both values are recorded in ADR-016.
+  `sha256-canonical-json-v2` and both values are recorded in
+  (`[ADR021-rule:identity:separation-migration]`). DI-008: the value moved with
+  its body — the specification binding's key, version, and anchor-set pin are
+  body fields — retiring its predecessor; the
+  behavioural hash was unchanged across the same commit, witnessing that the
+  denotation did not move.
 - **Non-claims:** not authenticity, not deployment readiness, not target
   correctness, and not a substitute for validation.
 - **Status:** active.
@@ -427,7 +440,7 @@ procedure's own terms rather than restating it.
   removes nothing.
 - Every admitted class is domain-separated. The two recipes that once were not
   migrated together in DI-004 under
-  (`[ADR016-rule:identity:separation-migration]`), which supersedes the
+  (`[ADR021-rule:identity:separation-migration]`), which supersedes the
   grandfather clause; no exception remains.
 - The census found no unclassified digest and admitted nothing new. Its whole
   yield on the admission side is sharper records; on the stop side it is eight
@@ -443,7 +456,7 @@ and instance identities answer deliberately different provenance questions.
 Petgraph node and edge indices are local in-memory graph positions owned by the
 graph-holding package. They are not semantic identity, not publication
 identity, and not evidence identity, and they must never enter a canonical
-projection — see (`[ADR016-rule:identity:classes]`).
+projection — see (`rule:identity:no-incidentals`).
 
 ## 6. Future immediate-edge identity DAG · `sec:identities:future`
 
@@ -469,7 +482,7 @@ ArchitectureSemanticId
   phase is permission, not a schedule: reaching the phase without the named
   consumer does not activate the identity.
 - A parent binds only its immediate identity dependencies, under
-  (`[ADR016-rule:identity:immediate-edges]`). Transitive upstream identities
+  (`rule:identity:immediate-edges`). Transitive upstream identities
   are never repeated as an all-to-all mesh. A human-readable manifest may
   display the complete chain; authoritative validation follows immediate typed
   edges only.
@@ -482,8 +495,8 @@ ArchitectureSemanticId
 - Every identity carries an explicit recipe identifier from its first
   publication, and any later change of projection, encoding, domain separator,
   algorithm, included fields, or exclusion rules mints a new recipe identifier
-  under (`[ADR016-rule:identity:migration]`) rather than redefining the old
-  one.
+  under (`rule:identity:recipe-permanence`) rather than redefining the
+  old one.
 
 ### 6.2 Edges
 

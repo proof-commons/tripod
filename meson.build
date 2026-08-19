@@ -183,8 +183,13 @@ census_paths = [attestation_main_path, realization_path, specification_register_
 # and binary or data blobs. Same-typed exceptions (a stray .tex or .rs
 # that is deliberately not a subject) are NOT listed here — they live
 # in their directory's explicit exclusion list.
+#
+# The tabular data extension joins the same categorical entry as the
+# other data blobs: a rule table read by a checker is an input to a
+# program, not prose a label could be attached to, and giving it a
+# census list entry would say the opposite.
 census_exclude_pattern = '(^|/)[.]|^archive/|^scripts/|^LICENSE-' \
-  + '|(^|/)meson[.](build|options)$|(^|/)Cargo[.]toml$|[.](bib|txt|zip)$'
+  + '|(^|/)meson[.](build|options)$|(^|/)Cargo[.]toml$|[.](bib|tsv|txt|zip)$'
 
 census_excluded_files = packages_excluded_files \
   + attestation_proj.get_variable('attestation_excluded_files')
@@ -258,6 +263,17 @@ check_forbidden_text_bin = custom_target(
   command: [
     cargo_bin_sync, cargo, cargo_manifest,
     'tripod-labels', 'check-forbidden-text', '@OUTPUT@',
+  ],
+  console: true,
+  build_always_stale: true,
+)
+
+check_hash_citations_bin = custom_target(
+  'cargo-check-hash-citations',
+  output: 'check-hash-citations-bin',
+  command: [
+    cargo_bin_sync, cargo, cargo_manifest,
+    'tripod-labels', 'check-hash-citations', '@OUTPUT@',
   ],
   console: true,
   build_always_stale: true,
@@ -402,6 +418,30 @@ forbidden_text_stamp = custom_target(
   console: true,
 )
 
+# Hash-citation audit (ADR-014 always-fresh repository audit, ADR-021
+# amendment): the binary asks git for the complete tracked set on every
+# build, so it is build_always_stale for the same reason the
+# forbidden-text audit is — a value committed into a new file must be
+# adjudicated at once, not at the next reconfigure. The families table
+# is passed by path like every other checker subject (ADR-014 role-tagged
+# arguments): the binary resolves no repository path from its own
+# location.
+hash_citations_stamp = custom_target(
+  'hash-citations-check',
+  output: ['hash-citations.ok', 'hash-citations.json'],
+  command: [
+    check_hash_citations_bin,
+    '--repository-root', source_root,
+    '--git', git.full_path(),
+    '--families', source_root / 'lint' / 'hash-citation-families.tsv',
+    '--report', '@OUTPUT1@',
+    '--stamp', '@OUTPUT0@',
+  ],
+  build_by_default: true,
+  build_always_stale: true,
+  console: true,
+)
+
 # The census audit is part of the lint alias: it is the single owner of
 # the tracked-entry mode rule, and it covers the complete tracked set
 # rather than the lint subject slice, so a request to lint the
@@ -417,6 +457,7 @@ alias_target(
   generated_stamp,
   plans_stamp,
   forbidden_text_stamp,
+  hash_citations_stamp,
 )
 
 # ---------------------------------------------------------------------------
@@ -750,6 +791,18 @@ test(
   sh,
   args: stamp_probe + [forbidden_text_stamp[0].full_path()],
   depends: forbidden_text_stamp,
+  suite: 'lint',
+  timeout: 60,
+)
+
+# Budget: 0:03, tolerance 0:15. Always stale for the same reason as the
+# check above: it lists the tracked set itself on every build rather than
+# declaring an input list that a new file would silently fall outside.
+test(
+  'hash-citations-check',
+  sh,
+  args: stamp_probe + [hash_citations_stamp[0].full_path()],
+  depends: hash_citations_stamp,
   suite: 'lint',
   timeout: 60,
 )

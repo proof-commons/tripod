@@ -123,7 +123,7 @@ No new digest or digest-bearing field enters merely because an object is
 important.
 
 A proposed identity must satisfy
-(`[ADR016-rule:identity:admission]`) and name:
+(`req:identity:admission-record`) and name:
 
 - the complete typed object or exact bytes;
 - owner and producer;
@@ -577,7 +577,8 @@ credentials, or production authority.
 | `I1-005` | BLOCKED | Deployment-profile migration; waits for bundle, ABI, and evidence types |
 | `I1-006` | BLOCKED | Release root; waits for the release package |
 
-The identity freeze is lifted only under ADR-016 admission. Phase 2 still mints
+The identity freeze is lifted only under
+(`req:identity:admission-record`). Phase 2 still mints
 no public realization or compiler digest without a real consumer.
 
 ---
@@ -1441,7 +1442,8 @@ stable key:
     complete typed semantic identity
 
 digest:
-    optional domain-separated commitment admitted under ADR-016
+    optional domain-separated commitment, admitted per the
+    identity adjudication procedure
 ```
 
 Never use as semantic identity:
@@ -1706,6 +1708,28 @@ active tree.
 | `DI-004` | DONE | Adopt the identity-adjudication procedure against ADR-016: classify every existing digest through the benefit criterion with admission records, and MIGRATE the two grandfathered recipes to domain-separated forms per the user's ruling — the architecture semantic and anchor-set hashes change under a recorded recipe migration, superseding the ADR-016 grandfather clause. Both halves delivered: the migration, and a census of the whole tree read from the owning code, recorded as six admission records and eleven stop records in the identities register. |
 | `DI-005` | TODO | Interchange conventions: record adoption as the standing wire-format discipline for future externally consumed documents; no implementation until a consumer exists. Draft refreshed 2026-08-18 to the forward-compatibility edition: ceiling-based acceptance with downward-closed holding, open-companion tolerant validation, never-assigned stamps rejected as checkably false claims; the fourth-edition audit's two defects and one editorial finding all fixed on resupply, delta purely additive, nothing dangling. |
 | `DI-006` | DONE | Three-part labels: the paper's 16 two-segment labels take the area `attestation`, a division's home being the document itself; `abs` takes the registry's `abst` per the user's ruling. 16 mints and 59 sites moved in one commit; the anchor-set pin moved……, retired value reproduced; the semantic hash followed, the behavioural did not. Layer-0 kinds enforced. W-B holds the arity in one rule over every entry point: a label-intended occurrence that is not three-part fails as `malformed_label_shape`, and the realization's 20 two-segment divisions are frozen by name, not exempted as a surface. |
+| `DI-008` | DONE | Promote the identity-adjudication draft: delete ADR-016 and mint [ADR-021](../adr/021-identity-adjudication.md) as the adopting record, carrying only adoption data — the single local recipe convention, the current-identities table, the concrete identity chain, the recorded separation migration verbatim, the ADR-011 amendment linkage, and three recorded divergences. Every generic mechanism, class, flow, edge, duty, evidence and rejected-alternative section is deleted rather than restated: the draft holds them and is cited at the `PLAN` prefix. Ten imported citations to the retired owner were retargeted in the same commit, seven of them to the draft's own mints and three to ADR-021's local records. |
+
+The user's ruling of 2026-08-19 promoted the identity-adjudication
+draft: ADR-016 is deleted, the draft takes priority as the discipline,
+and a single local-environment convention is added to the adopting
+record for what deletion would otherwise lose. ADR-021 is that record.
+The convention is the domain-separated construction ADR-016 prescribed,
+kept as recipe data rather than as a competing prescription — the draft
+reduces every construction question to its property table and leaves
+the scheme to the recipe record, so the construction is adoption data
+and not an amendment. This settles the first open ruling of the gap
+census, which asked exactly whether the prescription moves into recipe
+records or stays in the record.
+
+Deletion took the overlap with it. The mechanisms table, the admission
+and rejection lists, the identity classes, the three flow diagrams, the
+immediate-edge, migration, verification and evidence rules, the seven
+rejected alternatives and the generic gate items are the draft's, and
+ADR-021 restates none of them. Three divergences are recorded rather
+than reconciled: the adjudication walk is not a standing checked
+requirement on new proposals, the evidence and release surfaces do not
+exist, and the well-founded-graph rule is vacuous with one link built.
 
 The user's integration rulings, 2026-08-16: kind-token conflicts migrate
 to the registry forms; the two grandfathered identity recipes migrate
@@ -2098,7 +2122,8 @@ A new task states:
 - identity and schema impact;
 - dependency impact.
 
-A new digest additionally satisfies ADR-016 admission.
+A new digest additionally satisfies
+(`req:identity:admission-record`).
 
 ### 13.2 Splitting work · `rule:backlog:split`
 

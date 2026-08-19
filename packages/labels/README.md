@@ -416,7 +416,7 @@ place as a defect in it.
 
 ## Binaries
 
-Five binaries, auto-discovered from `src/bin/`. All accept `--debug` and
+Seven binaries, auto-discovered from `src/bin/`. All accept `--debug` and
 `--repository-root <DIR>`; the checking ones accept `--report <FILE>` and
 `--stamp <FILE>` together (each requires the other) and emit one JSON report on
 stdout.
@@ -427,7 +427,9 @@ stdout.
 | `check-plans` | `--subject <FILE>` (repeatable, required) | nothing |
 | `census-audit` | `--git <PROGRAM>`, `--exclude-pattern <REGEX>`, `--excluded <FILE>` (repeatable), and positional `<FILE>...` for the declared census | nothing |
 | `check-forbidden-text` | `--git <PROGRAM>` | nothing |
+| `check-hash-citations` | `--git <PROGRAM>`, `--families <FILE>` for the committed rule table | nothing |
 | `generate-label-registers` | `--attestation-main`, `--attestation-section` (repeatable), `--realization`, `--specification-register-output`, `--realization-register-output` | the two registers |
+| `generate-attestation-register` | the whole label census as `check-labels` takes it, plus `--specification-register`, `--realization-register`, `--model-labels-json`, `--attestation-register` | the attestation register |
 
 `census-audit` is the only binary taking positional arguments.
 

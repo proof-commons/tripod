@@ -36,7 +36,8 @@ generated artifact carries a deployment-profile hash today.
 
 ## Quickstart
 
-Validation precedes identity (ADR-016), so the workflow is fixed: start from
+Validation precedes identity (`[PLAN-rule:identity:admission-order]`), so
+the workflow is fixed: start from
 the typed manifest, validate it, and pass the *validated wrapper* — never a raw
 `Architecture` — to every identity, projection, and publication function.
 

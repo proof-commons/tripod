@@ -48,8 +48,9 @@ num-traits = "0.2"
 # label-graph serialization (noncanonical diagnostics; see the guard test
 # in packages/labels). The former `dot_parser`, `rayon`, `unstable`, and
 # `generate` features were dropped (P2-002 review): none had a first-party
-# consumer, and per the backlog dependency-entry rule / ADR-016 a feature is
-# not carried to advertise intent. `dot_parser` additionally pulled GPL-2.0-or-later
+# consumer, and per the backlog dependency-entry rule and the adopted
+# identity discipline's benefit criterion, a feature is not carried to
+# advertise intent. `dot_parser` additionally pulled GPL-2.0-or-later
 # crates into the first-party build graph, which ADR-011's dependency rule
 # does not admit without a separate policy decision, and `rayon` added
 # nondeterministic parallelism. Consumers use only core petgraph

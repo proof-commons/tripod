@@ -129,6 +129,13 @@ ADR-016 already decides most of this draft, and the register
 draft's admission shape. Deltas are marked where the draft asks for
 something ADR-016 does not.
 
+This reading is dated: on the user's ruling of 2026-08-19 ADR-016 was
+deleted and the draft promoted by
+[ADR-021](../../adr/021-identity-adjudication.md), which keeps only the
+adoption data. The rows below are kept as the reading that justified
+the promotion; where one names ADR-016 as the deciding text, the draft
+now decides and ADR-021 supplies the local recipe convention.
+
 | Clause | Disposition | Evidence |
 |---|---|---|
 | (`rule:identity:admission-order`), (`myth:identity:hashes-validate`) | implemented | ADR-016 states it, and the producers in `packages/architecture/src/canonical.rs` and `deployment.rs` hash validated exports only. |
@@ -138,7 +145,7 @@ something ADR-016 does not.
 | (`case:identity:no-identity`), (`req:identity:stop-record`) | implemented | The register carries eleven stop records, each with its proposal, deciding branch, date and revisit condition, beside six admission records. The dormant and provisional statuses remain, now as the standing of two of the stops rather than as the whole treatment of refusal. |
 | (`def:identity:recipe`), recipe identifiers | implemented | Recipe identifiers exist as algorithm constants for the semantic, behavioural, anchor-set and deployment hashes in `canonical.rs` and `deployment.rs`, with superseded recipes retained beside each. The anchor set gained `ANCHOR_SET_HASH_ALGORITHM` in the DI-004 separation migration; its identifier is a code-side register rather than a manifest field, which the migration record states. |
 | (`rule:identity:recipe-permanence`) | implemented | The superseded behavioural algorithm list in `canonical.rs` is a migration record, and the identifier is published beside every value. |
-| (`tab:identity:properties`), domain separation | implemented | Every first-party semantic identity prefixes a domain. The two that once did not were migrated together in DI-004 under (`[ADR016-rule:identity:separation-migration]`), which supersedes the grandfather clause; no exception remains for the property table to conflict with. |
+| (`tab:identity:properties`), domain separation | implemented | Every first-party semantic identity prefixes a domain. The two that once did not were migrated together in DI-004 under (`[ADR021-rule:identity:separation-migration]`), which supersedes the grandfather clause; no exception remains for the property table to conflict with. |
 | (`case:identity:artifact`), freshness sub-branch | implemented | Generated publications are compared byte for byte in `check::current` and carry no digest. |
 | (`rule:identity:no-incidentals`), (`rule:identity:immediate-edges`), (`red:identity:mesh-to-chain`), (`red:identity:fields-to-object`) | implemented | ADR-016 and the register forbid local handles in semantic identity, bind the future graph by immediate edges only, and refuse field-level hashing on the draft's own grounds. |
 | (`case:identity:evidence`), (`rule:identity:duties`), (`rule:identity:delegation`), (`case:identity:release`) | absent | No evidence envelope, no release manifest and no release validator exist yet; ADR-016 marks these as activating with their consumers. |
@@ -190,11 +197,13 @@ change. The first three are the standing findings from backlog section
 These are contradictions between an adopted draft and current
 repository practice. They are recorded as questions, not resolved here.
 
-1. The identity draft prescribes no hash construction and leaves every
-   scheme to a recipe record, while ADR-016 prescribes the
-   domain-separated form and requires it of every future semantic
-   identity. Does adoption move the prescription out of the record and
-   into recipe records, or does ADR-016 keep it?
+1. Settled: the identity draft prescribes no hash construction and
+   leaves every scheme to a recipe record, while ADR-016 prescribed the
+   domain-separated form and required it of every future semantic
+   identity. ADR-016 is deleted and the draft promoted; ADR-021 keeps
+   the construction as the one local
+   recipe convention, which is adoption data rather than a competing
+   prescription.
 2. Settled: the identity draft's property table requires domain
    separation of every admitted identity, with no exception clause,
    and ADR-016 once grandfathered the architecture semantic hash and
