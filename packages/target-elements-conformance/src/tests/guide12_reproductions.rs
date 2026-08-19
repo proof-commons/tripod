@@ -16,20 +16,28 @@
 //! - `G12-R14` — the shape rules leave an infrastructure response's
 //!   resource observation unread.
 //!
+//! - `G12-R05` — CLOSED: the normalization response census is exact in
+//!   both directions, and the ingestion that decides it now has a
+//!   library seam to be tested through.
+//!
 //! `G12-R06`'s reproduction lives beside the report it is about, in
 //! `lifecycle_report.rs`, where that module's own fixtures build the
-//! record. The rows whose subjects are the shipped binaries
-//! (`G12-R03`, `G12-R05`) and the Python lanes (`G12-R04`, `G12-R07`,
+//! record. `G12-R03` and the Python lanes (`G12-R04`, `G12-R07`,
 //! `G12-R15`) carry source-read dispositions in the register instead:
-//! the first two sit in `src/bin` with no library seam, and the rest
-//! need a live node.
+//! the first sits in `src/bin` with no library seam, and the rest need
+//! a live node.
 
 use std::collections::BTreeSet;
 
 use crate::fixture::{NativeCaseGroup, NativeCaseId};
+use crate::normalization::canonical_mutation_matrix;
+use crate::normalization_report::{
+    NormalizationIngestionDefect, ingest_normalization_responses, mutation_wire_spelling,
+};
 use crate::protocol::{
     ExecutorCapability, NATIVE_PROTOCOL_SCHEMA, NativeConservationResponse,
-    NativeExecutionResponse, NativeResourceObservation, NativeVerdict, validate_response_shape,
+    NativeExecutionResponse, NativeNormalizationResponse, NativeResourceObservation, NativeVerdict,
+    NormalizationCaseId, validate_response_shape,
 };
 use crate::provenance::{
     ExpectedExecutorProvenance, FULL_REVISION_WIDTH, FullRevisionId, MINIMUM_REVISION_PREFIX_WIDTH,
@@ -124,6 +132,79 @@ fn an_abbreviated_expectation_is_refused_before_it_can_be_expected() {
         validate_executor_provenance(&reported, &expected).is_err(),
         "G12-R01: a prefix declared as the intended tip is not the expected tip",
     );
+}
+
+/// `G12-R05`: the response census is exact in both directions.
+///
+/// The row's disposition was a source read, because the ingestion sat
+/// in a binary with no library seam: responses were indexed into a map
+/// keyed by row name, so a second answer for one row replaced the first
+/// silently, and the report loop walked the matrix rather than the
+/// census, so a response naming a row the matrix does not carry was
+/// dropped without a word.
+///
+/// The ingestion now lives in the module that owns the report, which is
+/// what makes this test possible, and it refuses rather than repairs:
+/// a report is a statement about the canonical matrix, so anything but
+/// an exact census is a run the report cannot describe.
+#[test]
+fn a_normalization_run_answers_the_matrix_exactly_once_each() {
+    let matrix = canonical_mutation_matrix();
+    let complete = || {
+        matrix
+            .iter()
+            .map(|row| normalization_response(&mutation_wire_spelling(row.mutation)))
+            .collect::<Vec<_>>()
+    };
+
+    // The honest census is accepted, and is the whole matrix.
+    let answered = ingest_normalization_responses(complete()).expect("a complete census");
+    assert_eq!(answered.len(), matrix.len());
+
+    // A duplicated row is refused rather than resolved by arrival
+    // order, which is the half the map's own insert used to swallow.
+    let first = mutation_wire_spelling(matrix[0].mutation);
+    let mut duplicated = complete();
+    duplicated.push(normalization_response(&first));
+    assert_eq!(
+        ingest_normalization_responses(duplicated),
+        Err(NormalizationIngestionDefect::DuplicateResponse { row: first.clone() }),
+    );
+
+    // A row the matrix does not carry is named rather than dropped,
+    // which is the half the report loop used to walk straight past.
+    let mut unexpected = complete();
+    unexpected.push(normalization_response("not-a-canonical-row"));
+    assert_eq!(
+        ingest_normalization_responses(unexpected),
+        Err(NormalizationIngestionDefect::UnexpectedRow {
+            row: "not-a-canonical-row".to_owned(),
+        }),
+    );
+
+    // And a missing row is still a missing row.
+    let short = complete().into_iter().skip(1).collect::<Vec<_>>();
+    assert_eq!(
+        ingest_normalization_responses(short),
+        Err(NormalizationIngestionDefect::UnansweredRow { row: first }),
+    );
+}
+
+/// One well-formed response answering the named row.
+fn normalization_response(row: &str) -> NativeNormalizationResponse {
+    NativeNormalizationResponse {
+        schema: NATIVE_PROTOCOL_SCHEMA,
+        case: NormalizationCaseId {
+            normalization: row.to_owned(),
+        },
+        observed_layer: crate::protocol::ObservedOutcomeLayer::Accepted,
+        observed_detail: None,
+        claimed_outputs: Vec::new(),
+        observed_outputs: Vec::new(),
+        authorization_profile: None,
+        observed_witness_sizes: Vec::new(),
+        transaction_bytes: None,
+    }
 }
 
 /// `G12-R09`: a revision-3 response its own protocol type cannot read.

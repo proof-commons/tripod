@@ -32,15 +32,19 @@
 //! output sets also break closure, and reporting them as report-layer
 //! refusals would credit the report with work the signature did.
 
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 use crate::conservation_report::{ConservationReportRole, RowVerdict};
 use crate::declassification::Declassification;
 use crate::normalization::{
     AuthorizationProfile, ClosureFinding, NormalizationClaim, NormalizationMutation,
-    PreservationFinding, RefusalLayer, closure_finding, preservation_finding,
+    PreservationFinding, RefusalLayer, canonical_mutation_matrix, closure_finding,
+    preservation_finding,
 };
-use crate::protocol::{NativeNormalizationResponse, ObservedOutcomeLayer};
+use crate::protocol::{NativeNormalizationResponse, ObservedOutcomeLayer, ResponseShapeDefect};
 
 /// What one §10.4 row did.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -169,6 +173,127 @@ fn hex_of(bytes: &[u8]) -> String {
         let _ = write!(text, "{byte:02x}");
         text
     })
+}
+
+/// Why one run record's responses are not a census of the matrix.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum NormalizationIngestionDefect {
+    /// A response contradicts itself under its own shape rules.
+    SelfContradictoryResponse {
+        /// The row the response answered.
+        row: String,
+        /// What the shape rules refused.
+        defect: ResponseShapeDefect,
+    },
+    /// Two responses answered the same row.
+    ///
+    /// Reported rather than resolved: a run that answered one row twice
+    /// has not said which answer is the row's, and keeping either one is
+    /// the harness choosing evidence on the run's behalf.
+    DuplicateResponse {
+        /// The row answered more than once.
+        row: String,
+    },
+    /// A response answered a row the canonical matrix does not carry.
+    UnexpectedRow {
+        /// The row the run named.
+        row: String,
+    },
+    /// The canonical matrix carries a row the run did not answer.
+    UnansweredRow {
+        /// The row nobody answered.
+        row: String,
+    },
+}
+
+impl fmt::Display for NormalizationIngestionDefect {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::SelfContradictoryResponse { row, defect } => {
+                write!(
+                    formatter,
+                    "the response for {row} contradicts itself: {defect:?}"
+                )
+            }
+            Self::DuplicateResponse { row } => {
+                write!(formatter, "the run answered {row} more than once")
+            }
+            Self::UnexpectedRow { row } => write!(
+                formatter,
+                "the run answered {row}, which the canonical mutation matrix does not carry",
+            ),
+            Self::UnansweredRow { row } => {
+                write!(formatter, "the run answered no row for {row}")
+            }
+        }
+    }
+}
+
+/// The wire spelling of one mutation, as a run record writes it.
+#[must_use]
+pub fn mutation_wire_spelling(mutation: NormalizationMutation) -> String {
+    serde_json::to_value(mutation)
+        .ok()
+        .and_then(|value| value.as_str().map(ToOwned::to_owned))
+        .unwrap_or_default()
+}
+
+/// One run's responses, indexed by the row each answers.
+///
+/// # Why the census is exact in both directions
+///
+/// The report is a statement about the canonical matrix, so the run's
+/// answers and the matrix's rows must be the same set. Indexing alone
+/// is not that: a second answer for one row used to replace the first
+/// silently, and a response naming a row the matrix does not carry was
+/// dropped without a word, because the report loop read the matrix and
+/// never the census. Either way the report described a run that did not
+/// happen — one whose duplicate was resolved by arrival order, or one
+/// whose extra answer was never mentioned.
+///
+/// So both directions are checked here and neither is repaired: an
+/// unanswered row, an unexpected row, and a duplicated row are each a
+/// refusal, and the caller emits no report at all.
+///
+/// # Errors
+///
+/// [`NormalizationIngestionDefect`], naming the first row that breaks
+/// one of the rules, in the order the rules are written.
+pub fn ingest_normalization_responses(
+    responses: impl IntoIterator<Item = NativeNormalizationResponse>,
+) -> Result<BTreeMap<String, NativeNormalizationResponse>, NormalizationIngestionDefect> {
+    let mut answered: BTreeMap<String, NativeNormalizationResponse> = BTreeMap::new();
+
+    for response in responses {
+        let row = response.case.normalization.clone();
+        response.validate_shape().map_err(|defect| {
+            NormalizationIngestionDefect::SelfContradictoryResponse {
+                row: row.clone(),
+                defect,
+            }
+        })?;
+        if answered.insert(row.clone(), response).is_some() {
+            return Err(NormalizationIngestionDefect::DuplicateResponse { row });
+        }
+    }
+
+    let expected: BTreeSet<String> = canonical_mutation_matrix()
+        .into_iter()
+        .map(|row| mutation_wire_spelling(row.mutation))
+        .collect();
+
+    // Answered-but-unexpected first: a run naming a row nobody asked
+    // for is describing some other matrix, and saying so is more useful
+    // than reporting the rows of this one it happens to be missing.
+    if let Some(row) = answered.keys().find(|row| !expected.contains(*row)) {
+        return Err(NormalizationIngestionDefect::UnexpectedRow { row: row.clone() });
+    }
+    if let Some(row) = expected.iter().find(|row| !answered.contains_key(*row)) {
+        return Err(NormalizationIngestionDefect::UnansweredRow { row: row.clone() });
+    }
+
+    Ok(answered)
 }
 
 /// What one normalization run established.
