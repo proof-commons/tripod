@@ -2011,15 +2011,29 @@ class ConservationExecutor:
         self.ready = True
 
     def address(self, confidential: bool) -> str:
-        """One wallet address, blinded or not."""
-        plain = self.node.call("getnewaddress", wallet=self.WALLET)
-        if not confidential:
-            return plain
-        info = self.node.call("getaddressinfo", plain, wallet=self.WALLET)
-        blinded = info.get("confidential")
-        if not isinstance(blinded, str) or blinded == "":
-            raise AdapterError("the node reported no confidential form for a wallet address")
-        return blinded
+        """One wallet address, blinded or not.
+
+        # Why the unconfidential form is taken explicitly
+
+        `getnewaddress` returns a BLINDED address by default on this
+        target: `-blindedaddresses` defaults to 1. Returning what it hands
+        back for an explicit output would silently blind every row that
+        said it was explicit, and the transactions would still be valid --
+        so the matrix would report an explicit-to-explicit row that was
+        confidential end to end, and nothing in the result would say so.
+
+        Both forms are therefore taken from `getaddressinfo` by name
+        rather than by default.
+        """
+        fresh = self.node.call("getnewaddress", wallet=self.WALLET)
+        info = self.node.call("getaddressinfo", fresh, wallet=self.WALLET)
+        wanted = info.get("confidential") if confidential else info.get("unconfidential")
+        if not isinstance(wanted, str) or wanted == "":
+            raise AdapterError(
+                "the node reported no %s form for a wallet address"
+                % ("confidential" if confidential else "unconfidential")
+            )
+        return wanted
 
     # -- creating the stated input coins ---------------------------------
 
@@ -2058,6 +2072,21 @@ class ConservationExecutor:
                     raise ConstructionError(
                         "the wallet created an unblinded coin for a confidential input"
                     )
+                if not confidential and entry.get("amountblinder", "00" * 32) != "00" * 32:
+                    raise ConstructionError(
+                        "the wallet created a blinded coin for an explicit input"
+                    )
+                # Locked so the wallet's own coin selection cannot spend it
+                # while funding a later coin of the same row. Without this
+                # the row's transaction names an input the wallet has
+                # already consumed, and the node answers
+                # `bad-txns-inputs-missingorspent` -- which is this
+                # adapter's bookkeeping failing, not a conservation verdict.
+                self.node.call(
+                    "lockunspent", "false",
+                    json.dumps([{"txid": txid, "vout": entry["vout"]}]),
+                    wallet=self.WALLET,
+                )
                 return entry
         raise AdapterError("the wallet did not report the coin this adapter just created")
 
@@ -2178,6 +2207,15 @@ class ConservationExecutor:
         raw = signed.get("hex")
         if not isinstance(raw, str):
             raise ConstructionError("the wallet returned no signed transaction")
+        if signed.get("complete") is not True:
+            # An incompletely signed transaction fails script verification
+            # for a reason that has nothing to do with the row. Reporting
+            # it as a target verdict would file this adapter's inability
+            # to sign as evidence about conservation.
+            raise ConstructionError(
+                "the wallet signed the row's transaction only partially: %s"
+                % one_line(json.dumps(signed.get("errors", [])))[:200]
+            )
 
         if defect in ("malformed_rangeproof", "malformed_surjection_proof"):
             raw = self.corrupt_proof(raw, defect)
@@ -2227,7 +2265,13 @@ class ConservationExecutor:
         """
         transaction = self.deserialize(raw)
         donor = self.create_coin(ADAPTER_FEE_SATOSHIS, True)
-        donor_raw = self.node.call("getrawtransaction", donor["txid"])
+        # `gettransaction` rather than `getrawtransaction`: the donor is a
+        # wallet transaction already confirmed in a block, and the raw
+        # interface needs a block hash or a transaction index the
+        # disposable node does not build.
+        donor_raw = self.node.call(
+            "gettransaction", donor["txid"], wallet=self.WALLET
+        )["hex"]
         donor_transaction = self.deserialize(donor_raw)
         replacement = None
         for out in donor_transaction.vout:
@@ -2254,17 +2298,34 @@ class ConservationExecutor:
     def judge(self, raw: str):
         """Reports WHICH layer refused, from what the node actually did.
 
-        Guide 11 section 8.3's whole point. The order matters and is not
-        arbitrary: `testmempoolaccept` changes no state, so it is asked
-        first, and `generateblock` is asked only where the mempool refused
-        -- which is what separates a transaction that is merely unrelayable
-        from one consensus will not have.
+        Guide 11 section 8.3's whole point. `testmempoolaccept` changes no
+        state, so it is asked first, and it is also the only interface
+        that names a CT failure precisely.
 
-          relay accepts                     -> accepted
-          relay refuses, a block takes it   -> relay-policy rejection
-          a block refuses, naming a script  -> script-path rejection
-          a block refuses otherwise         -> consensus rejection before
-                                               script
+        # Why the block's answer must not be read for the layer
+
+        Block validation runs the amount checks inside the SAME check
+        queue as the script checks, and a failure of either surfaces as
+        `mandatory-script-verify-flag-failed (unknown error)`. So a
+        malformed rangeproof, a broken surjection proof, and a one-unit
+        imbalance all arrive at the block layer wearing a script error's
+        clothes. Classifying on that string attributes a conservation
+        failure to an opening script that never ran -- which is exactly
+        the misattribution section 8.3 exists to prevent, and which an
+        earlier revision of this method committed.
+
+        The mempool distinguishes them: a conservation failure is
+        `bad-txns-in-ne-out`, and a genuine script failure carries the
+        mandatory-script prefix. So the mempool reason decides the layer,
+        and the block is asked only to separate a merely unrelayable
+        transaction from one consensus will not have.
+
+          relay accepts                      -> accepted
+          relay names a mandatory script err  -> script-path rejection
+          relay names any other consensus
+            reason, and a block also refuses  -> consensus rejection
+                                                 before script
+          relay refuses, a block takes it     -> relay-policy rejection
 
         Nothing here consults an expectation, because none was sent.
         """
@@ -2278,19 +2339,17 @@ class ConservationExecutor:
         if not isinstance(relay_reason, str):
             raise AdapterError("the node rejected without naming a reason")
 
+        if relay_reason.startswith(CONSENSUS_SCRIPT_PREFIX):
+            return "script_path_rejection", relay_reason
+
+        # Whether the refusal is consensus or merely standardness is
+        # settled by asking a block to take it, not by reading the string.
         try:
             self.node.call(
                 "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw])
             )
         except AdapterError as error:
-            note = error.note
-            if CONSENSUS_SCRIPT_PREFIX in note:
-                start = note.index(CONSENSUS_SCRIPT_PREFIX) + len(CONSENSUS_SCRIPT_PREFIX)
-                end = note.index(")", start)
-                return "script_path_rejection", note[start:end]
-            return "consensus_rejection_before_script", one_line(note)
-        # A block took what the mempool would not: standardness, and not
-        # consensus.
+            return "consensus_rejection_before_script", relay_reason
         return "relay_policy_rejection", relay_reason
 
     def read_commitments(self, raw: str):
