@@ -25,6 +25,7 @@ target_elements_source_files = files(
   'src/tests/deployment_tests.rs',
   'src/tests/encoding_tests.rs',
   'src/tests/guide11_reproductions.rs',
+  'src/tests/guide12_reproductions.rs',
   'src/tests/mod.rs',
   'src/tests/mutation_tests.rs',
   'src/tests/opcode_tests.rs',

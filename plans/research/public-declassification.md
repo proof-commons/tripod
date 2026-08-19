@@ -608,8 +608,9 @@ Cell by cell, against landed evidence:
   against a real node with 9/9 agreement, and the typed safety report.
   Findings `G11-W10-01` through `G11-W10-03`.
 - Fresh-process lifecycle: a real operating-system process boundary, a
-  typed public handoff schema, and 16/16 row agreement over two passes.
-  Findings `G11-W11-01` through `G11-W11-05`.
+  typed public handoff schema, and 18/18 row agreement over two passes —
+  all nine rows the canonical matrix states, twice. Findings
+  `G11-W11-01` through `G11-W11-06`.
 
 The report roles are `Experimental` throughout. They establish what the
 target does with a matrix, and nothing about a candidate being selected;

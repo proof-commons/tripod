@@ -40,6 +40,7 @@
 mod abstract_oracle_tests;
 mod byte_census_tests;
 mod census_tests;
+mod guide12_reproductions;
 mod mapping_tests;
 mod non_weakening_tests;
 mod parser_tests;

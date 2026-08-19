@@ -12,6 +12,7 @@ tapscript_source_files = files(
   'src/tests/abstract_oracle_tests.rs',
   'src/tests/byte_census_tests.rs',
   'src/tests/census_tests.rs',
+  'src/tests/guide12_reproductions.rs',
   'src/tests/mapping_tests.rs',
   'src/tests/mod.rs',
   'src/tests/non_weakening_tests.rs',

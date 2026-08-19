@@ -5,7 +5,8 @@
 > implemented; the STATE-constructor and wide-arithmetic prototypes are
 > accepted; public declassification has selected an initial policy, with
 > the direct and public-committed paths deferred against named blockers;
-> the exit gate (`gate:phase3:exit`) is not yet checked; prototype-driven
+> the exit gate (`gate:phase3:exit`) is not yet checked; the phase
+> remains prototype-driven.
 > **Entry:** (`gate:phase2:exit`)
 > **Packages:** [`target-elements`](../packages/target-elements.md),
 > [`tapscript`](../packages/tapscript.md)

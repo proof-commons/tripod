@@ -500,255 +500,14 @@ and labels, in [backlog history](history/backlog-history.md), so a
 reference to §5.3 below resolves to the heading of that number there.
 
 
-### 5.6 Sixth-review findings · `tab:backlog:findings-sr6`
+### 5.6 Sixth-review findings
 
-The sixth static review reported two passes over the tree recorded in §2.1.
-First-pass and second-pass findings are consolidated into one SR6 register
-whose identifiers are the Guide-11 preflight identifiers `G11-R01` through
-`G11-R14`, with the two hardening rows carried as `G11-H01` and `G11-H02`.
-The Guide-11 preflight waves own the register; the summaries below are the
-required dispositions recorded in that guide's own preflight table.
+The sixth static review’s finding register stood here. Every row was
+remediated and closed in the Guide-11 preflight and declassification
+waves. It is archived verbatim, with its original numbering and its
+label, in [backlog history](history/backlog-history.md), so a reference
+to §5.6 below resolves to the heading of that number there.
 
-Register state after the batch: **COMPLETE**. All sixteen rows are
-disposed — every numbered row `G11-R01` through `G11-R14` is DONE, and
-`G11-H01` is DONE with the stack resource rows welded. `G11-H02` is not
-a gate item and never was: the guide's gate bullets name no issuance
-condition, and the row's own disposition is a standing prohibition —
-issuance realization scope may not be added until the authority fields
-are enforced or externally evidenced. None is proposed, so the
-constraint stands open by design rather than blocking the gate.
-
-The register closed at the preflight gate, and the batch that followed it
-— the target review, the dependency decision and oracle, the
-confidential-transaction substrate, the candidate dispositions, the
-normalization prototype, and the fresh-process lifecycle — reopened none
-of its rows. The declassification result those waves produced is recorded
-in §2.4, and the research owner is
-[public-declassification.md](research/public-declassification.md).
-
-The review basis is the archived review's own tree, not the working tree: under the
-guide's own rule each finding is a hypothesis until it is reproduced
-against the working tree, and is then either fixed, disproved with a
-typed argument, or reclassified with a narrower assurance claim. The
-Wave-0 column records that adjudication. Wave 0 repaired nothing, so
-every row opened TODO; Wave 1 closed the two claim-laundering rows,
-Wave 2 closed the transcript-rebinding row, Wave 3 closed the gate,
-provenance, and startup-cleanup rows, and Wave 4 closed the remaining
-six: relation subjects, target versions, the signature weld, retry
-classification, the report digests, and this reconciliation.
-
-| ID | Priority | Status | Wave 0 | Finding |
-|---|---:|---|---|---|
-| `G11-R01` | P0 | DONE | CONFIRMED | A transcript can be rebound to another fixture census, prototype matrix, target, or deployment binding; bind the transcript to its exact subjects and requests. |
-| `G11-R02` | P0 | DONE | CONFIRMED | Primitive claims can be manufactured by attaching claim-bearing case metadata to an unrelated script; gate only a canonical validated primitive plan. |
-| `G11-R03` | P0 | DONE | CONFIRMED | Prototype claims are caller-authored and can certify a trivial true script as constructor or wide-floor evidence; gate only relation-specific canonical matrices. |
-| `G11-R04` | P1 | DONE | CONFIRMED | Consensus resource cases are credited to policy-resource evidence because evidence ownership derives from case ID without the enforcement layer; derive evidence from the complete fixture and correct the plan class. |
-| `G11-R05` | P1 | DONE | CONFIRMED | The primitive native gate can accept a report whose summary is failed; gate every canonical case and reject failed completeness. |
-| `G11-R06` | P1 | DONE | CONFIRMED | ADR-018 execution provenance is recorded but not enforced by evidence gates; validate executable provenance before gate eligibility. |
-| `G11-R07` | P1 | DONE | CONFIRMED | Meson defaults an executor to reviewed-non-mock; require explicit caller selection and fail closed. |
-| `G11-R08` | P1/P2 | DONE | CONFIRMED | Relation bodies can admit several semantic relation subjects; derive exactly one canonical subject from each body. |
-| `G11-R09` | P1/P2 | DONE | CONFIRMED | Target V1 is advertised as supported while current validation applies the V2 census and algebra; remove V1 support or implement genuine version dispatch. |
-| `G11-R10` | P1/P2 | DONE | CONFIRMED | The signature weld omits unknown-key behavior and much of the success algebra; weld the complete signature relation. |
-| `G11-R11` | P2 | DONE | CONFIRMED | Bare prototype report digests persist despite the recorded no-report-identity decision; remove them or admit typed retained report references. |
-| `G11-R12` | P2 | DONE | RECLASSIFIED | Current backlog state contradicts recorded Guide-8 through Guide-10 completion and duplicates finding IDs; reconcile current state and enforce unique IDs. |
-| `G11-R13` | P2/P3 | DONE | CONFIRMED | Process-group establishment failure can leave the direct child unreaped; kill and reap on every pre-supervisor failure. |
-| `G11-R14` | P3 | DONE | CONFIRMED | Constructor retry retries internal-key defects no metadata nonce can repair; share a typed retryability predicate. |
-| `G11-H01` | Hardening | DONE | CONFIRMED | Opcode resource stack-growth rows are not generically welded to success and non-aborting failure effects; derive and compare exact maximum stack growth. |
-| `G11-H02` | Future blocker | TODO | CONFIRMED | Issuance observations carry authority fields the realization evaluator does not yet enforce; add no issuance realization scope until enforced or externally evidenced. |
-
-Wave-1 evidence for the two closed rows. `G11-R02`: the evidence path
-takes only `CanonicalPrimitiveFixtureSet`, whose one constructor is
-`canonical_fixture_set`, and `evaluate` regenerates the census and
-compares complete projections — asserted by
-`g11_r02_a_trivial_true_script_cannot_bear_signature_evidence`,
-`g11_r02_an_arbitrary_census_is_refused_on_provenance_not_completeness`,
-`g11_r02_changing_a_canonical_fixture_member_removes_gate_eligibility`,
-`g11_r02_a_canonical_case_whose_claims_change_is_refused`, and
-`g11_r02_permuting_canonical_declaration_order_is_harmless`. `G11-R03`:
-`prototype_gate` reads only a report validated against a
-`ConstructorPrototypeMatrix` or `WideFloorPrototypeMatrix`, whose rows are
-private and whose one constructor each is the canonical generator —
-asserted by `g11_r03_a_trivial_leaf_cannot_certify_the_wide_floor_relation`,
-`g11_r03_the_canonical_wide_floor_matrix_is_the_evidence_subject`,
-`g11_r03_a_canonical_case_with_one_added_claim_fails`,
-`g11_r03_a_canonical_case_with_one_removed_claim_fails`,
-`g11_r03_replacing_the_canonical_program_under_the_same_case_name_fails`,
-`g11_r03_replacing_the_constructor_successor_program_fails`, and
-`g11_r03_raw_bytes_are_not_reported_as_a_typed_program`.
-
-Wave-2 evidence for `G11-R01`. `ExecutionTranscript` retains the target
-projection, the deployment projection, and the exact subject sent for
-every case; `evaluate`, `evaluate_prototypes`, and both report validators
-compare their own inputs against those retained values by exact typed
-equality, and the executor's observed environment is compared a second
-time when a report is built and again at the validator's own boundary.
-Protocol revision 3 removes every expectation from an executor request,
-so the subject a transcript retains is the whole of what crossed the
-wire. Asserted by
-`g11_r01_a_transcript_cannot_rebind_to_a_deployment_it_never_ran_on`,
-`g11_r01_a_report_cannot_name_a_script_the_executor_never_ran` (an
-equal-width substitution, which defeats the old width-only defence),
-`g11_r01_a_report_cannot_name_an_initial_stack_the_executor_never_ran`,
-`g11_r01_a_response_for_a_case_never_sent_is_refused`,
-`g11_r01_a_case_that_was_never_sent_is_refused`,
-`g11_r01_a_case_sent_and_never_answered_is_refused`,
-`g11_r01_a_prototype_construction_cannot_be_substituted`,
-`g11_r01_a_changed_expected_verdict_is_refused` (refused by the canonical
-comparison rather than by the transcript, since an expectation is not part
-of the subject and no longer crosses the wire at all),
-`a_request_carries_no_expectation_of_any_kind`, and
-`an_executor_of_the_previous_revision_fails_loudly`.
-
-Wave 1 also closed the arbitrary-census route that two open rows were
-reproduced through. `G11-R01`'s script-substitution reproduction moved to
-the experimental path, where Wave 2 flipped it: the binding is a property
-of the transcript rather than of the trust state. `G11-R05`'s
-construction added a fixture to the canonical census and is no longer
-expressible; Wave 3 repaired the gate itself, and its test now records
-both halves closed by putting that report at the gate directly.
-
-Wave-3 evidence, beyond the flipped suites listed below. The provenance
-comparison rule is minimum-width exact prefix — a reported revision of at
-least seven lowercase hex digits that is an exact prefix of the expected
-full tip, with equality as its width-forty case — chosen because the
-reviewed adapter reads an abbreviation out of the node's version line and
-a binary embeds no full object identifier. The `G11-R04` invariant found
-four further required rows owning no required claim (encoding, stack
-rearrangement, byte string, verification); each is recorded as a typed
-exception naming where its claim-level decomposition actually lives.
-`G11-R07` has no Rust regression by nature: it is verified by configuring
-all four states, of which two now fail.
-
-`G11-R08` through `G11-R10` are closed, so the bar they set on the
-public-declassification prototype is met.
-
-Wave-4 evidence. `G11-R08`: `expected_relation_subject` is a function of
-the body, and `validate_relation_identity` compares its one result for
-equality — the four flipped `g11_r08_` suites assert that each body's
-former alternatives are now refused, and
-`g11_r08_changing_only_the_relation_subject_fails_derivation` mutates
-the subject alone across five body classes. The internal relation keys
-moved for the two closures and the two operation-wide policies of each
-pilot; `packages/model/generated/` is byte-identical and no pinned
-identity moved, which is the recorded consequence the guide called for.
-`G11-R09`: `SUPPORTED` holds V2 alone, `supported(1)` fails, and
-`validate_target_definition` now checks the offered revision, since the
-crate names revisions as public constants and a caller reaches V1
-without the constructor. `G11-R10`: `weld_signature` derives one
-complete expected behaviour from the subcontract and compares every
-signature opcode against it; six mutations of the reviewed contract are
-refused, each naming the signature weld. `G11-R14`: one `retryable`
-predicate, consulted by both retry implementations, with the canonical
-construction's exact bytes pinned across the change. `G11-R11`: the two
-research files keep their run facts and no digest. `G11-R12`: this
-section, §3.3, the one-line backlog, the duplicate identifier, and
-`DI-F03`, plus a `check-plans` rule that a backticked row identifier
-names one row per table.
-
-`G11-H01` is **DONE**, closed by Wave 5 on source evidence. Wave 4 had
-derived the generic weld and run it before any code changed: fifty-three
-of the fifty-five primitives agreed exactly, and the two verifying
-signature forms declared their branching counterpart's figure instead of
-their surviving one. Source review settled it in the declared rows'
-favour. The interpreter shares one case block between a branching
-primitive and its verifying counterpart, popping the operands, pushing
-the truth value, and only then — if the opcode is the verifying one —
-popping that value again on success and aborting on failure
-(`src/script/interpreter.cpp:1476-1499` for the transaction-signature
-pair and `1689-1734` for the stack-message pair). The verifying form
-therefore transiently occupies its counterpart's depth, which is what
-"at any point during its execution" measures and what a stack scheduler
-must size against.
-
-The weld landed with that transient as a typed term, derived from the
-verifying primitives the signature weld already distinguishes rather
-than from new per-opcode data, so no reviewed row moved. All fifty-five
-rows now agree, altstack growth is checked to stay zero, and the source
-citation is recorded in (`tab:elements-ref:verifying-transient`). The
-regressions refuse a growth row inconsistent with its stack contract, a
-verifying form declaring only its surviving depth, a success form moved
-without its row, and a nonzero altstack claim; the reviewed contract
-validates unmutated as their control.
-
-Wave-0 evidence, one pointer per row. The Rust pointers name the
-crate-internal `guide11_reproductions` suites, which pass by asserting the
-defective behaviour and which the repairing waves invert.
-
-```text
-G11-R01  conformance g11_r01_a_transcript_rebinds_to_a_deployment_it_never_ran_on
-         (Wave 2 flipped: g11_r01_a_transcript_cannot_rebind_to_a_deployment_it_never_ran_on)
-G11-R02  conformance g11_r02_a_trivial_true_script_bears_signature_claims
-         (Wave 1 flipped: g11_r02_a_trivial_true_script_cannot_bear_signature_evidence)
-G11-R03  conformance g11_r03_a_trivial_leaf_certifies_the_whole_wide_floor_relation
-         (Wave 1 flipped: g11_r03_a_trivial_leaf_cannot_certify_the_wide_floor_relation)
-G11-R04  conformance g11_r04_consensus_resource_cases_pass_the_policy_resource_row
-         (Wave 3 flipped: g11_r04_consensus_resource_cases_do_not_reach_the_policy_resource_row)
-G11-R05  conformance g11_r05_the_gate_accepts_a_failed_report
-         (Wave 3 flipped: g11_r05_the_augmented_census_route_to_the_gate_is_closed, plus
-          g11_r05_a_report_whose_summary_says_failed_is_refused and
-          g11_r05_a_failed_canonical_case_never_reaches_evidence)
-G11-R06  conformance g11_r06_the_gate_accepts_a_run_with_no_workspace_provenance
-         (Wave 3 flipped: g11_r06_a_run_with_no_workspace_provenance_is_refused, and the
-          six further provenance regressions beside it)
-G11-R07  meson.options target_native_executor_class, value reviewed-non-mock
-         (Wave 3 closed: the option defaults to unselected, an unclassified executor path
-          and a reviewed class missing its ADR-018 provenance both fail configuration)
-G11-R08  realization g11_r08_one_closure_body_admits_two_subjects
-         (Wave 4 flipped: g11_r08_one_closure_body_has_exactly_the_side_as_its_subject,
-          the root, projection, and delta/open-flow suites beside it, and
-          g11_r08_changing_only_the_relation_subject_fails_derivation)
-G11-R09  target-elements g11_r09_a_v2_body_stamped_v1_validates
-         (Wave 4 flipped: g11_r09_a_v2_body_stamped_v1_is_refused,
-          g11_r09_the_historical_revision_is_not_constructible_by_number,
-          g11_r09_every_supported_revision_has_a_constructible_definition, and
-          g11_r09_a_v2_definition_missing_a_v2_primitive_is_refused)
-G11-R10  target-elements g11_r10_a_contradictory_unknown_key_rule_still_validates
-         (Wave 4 flipped: g11_r10_a_contradictory_unknown_key_rule_is_refused, plus the
-          five further mutations and g11_r10_the_reviewed_signature_contract_remains_valid
-          as their control)
-G11-R11  plans/research/state-constructor.md and wide-arithmetic.md, report digest rows
-         (Wave 4 closed: both rows removed, the run facts kept as narrative, each file
-          stating why no replacement hash follows, and the Guide-10 gate record corrected)
-G11-R12  duplicate DI-F02 rows, DI-F03 active under a DONE parent, and section 3.3
-         still listing both accepted prototypes as not implemented; the opening
-         condition line is already reconciled, so the finding narrows to those three
-         (Wave 4 closed: the incidental defect renumbered DI-F04 so the standing
-          identifier stays with the finding the DI-001 census cites, DI-F02 and DI-F03
-          marked DONE against what the DI-003 narrative delivered, section 3.3 and the
-          one-line backlog naming declassification alone, and check-plans now failing a
-          repeated row identifier within one table)
-G11-R13  executor.rs ExecutorSupervisor::adopt takes the child by value and drops it
-         on the establish failure path, and the standard child destructor neither
-         kills nor waits
-         (Wave 3 closed: an_unadopted_child_is_killed_and_reaped and
-          a_run_refused_at_startup_leaves_no_unreaped_child)
-G11-R14  conformance g11_r14_an_invalid_internal_key_is_retried_to_exhaustion
-         (Wave 4 flipped: g11_r14_an_invalid_internal_key_fails_after_one_attempt,
-          g11_r14_the_canonical_constructor_classifies_the_same_permanent_defect,
-          g11_r14_a_tree_defect_fails_after_one_attempt,
-          g11_r14_only_the_nonce_movable_tweak_defects_are_retryable,
-          g11_r14_exhaustion_reports_the_configured_attempt_count, and
-          g11_r14_the_canonical_construction_is_byte_identical)
-G11-H01  no weld reads OpcodeResourceCost::maximum_stack_growth at all, the timelock
-         weld included, so the field is welded to nothing
-         (Wave 4 derived the weld and ran it without landing it: 53 of 55 primitives
-          agree exactly; CheckSigVerify declares -1 against a surviving -2 and
-          CheckSigFromStackVerify declares -2 against a surviving -3, both carrying
-          their branching counterpart's figure. Wave 5 closed it: source review
-          confirmed the declared rows, the interpreter pushing the truth value and
-          only then popping it for the verifying form, so the weld landed with a
-          typed transient term and all 55 rows agree. Guarantees are
-          g11_h01_every_reviewed_row_matches_its_derived_stack_growth,
-          g11_h01_only_the_verifying_forms_carry_a_transient_above_their_surviving_depth,
-          g11_h01_the_branching_counterparts_declare_their_settling_depth,
-          g11_h01_a_growth_row_inconsistent_with_its_stack_contract_is_refused,
-          g11_h01_a_verifying_form_declaring_its_surviving_growth_is_refused,
-          g11_h01_changing_a_success_form_without_its_growth_row_is_refused,
-          g11_h01_a_nonzero_altstack_growth_row_is_refused, and
-          g11_h01_the_reviewed_contract_remains_valid as their control)
-G11-H02  ObservedIssuance::authority is never read in realization, and authority_input
-         only for referential existence in observation.rs
-```
 
 ### 5.7 Confidential-value target review · `tab:backlog:findings-ct-review`
 
@@ -841,6 +600,44 @@ passed.
 | ID | Priority | Status | Item |
 |---|---:|---|---|
 | `G11-O04` | OPTIONAL | DONE | The oracle derives only the unblinded asset generator. The reviewed recipe also has a blinded form, which prepends a scalar multiple of the base point and is used to check that a reissuance input carries its blinded token. No present consumer needs it, and a wave that reaches reissuance should add it with its own published-vector check rather than by analogy. **Closed by Wave 7, and not by reissuance.** The §8.4 conservation matrix needed it for an ordinary reason the row did not anticipate: every balanced confidential output has a *blinded* asset, so the unblinded generator predicts nothing for exactly the rows the §7.4 comparison matters most for. The check is not by analogy and not a published vector either — it is three commitments observed on a real node, which the oracle reproduces exactly (`G11-W7-04`). |
+
+### 5.9 Seventh-review preflight findings · `tab:backlog:findings-sr7`
+
+The seventh static review reported two passes over the tree recorded in
+§2.1. Its rows are the Guide-12 preflight identifiers `G12-R01` through
+`G12-R16`, and the Guide-12 preflight table owns the required
+dispositions. Guide-12 Wave 0 adjudicated every row against the working
+tree rather than against the review's snapshot: each row below carries a
+disposition, a DONE-or-OPEN state, and the artifact or file location
+that establishes it.
+
+Register state after Wave 0: **ADJUDICATED, ONE ROW CLOSED**. Fifteen
+rows are CONFIRMED and open; `G12-R08` is RECLASSIFIED and DONE,
+because a prose row's reproduction is the textual comparison and its
+repair is the same act. Every other row is open, because Wave 0
+reproduces and does not repair: the reproductions assert the current
+defective behaviour and name the row they belong to, so the wave that
+fixes each one flips its own witness. The blocking rule
+(`gate:guide12-exec:preflight`) therefore stands over the fifteen.
+
+| ID | Priority | Disposition | Evidence and trust boundary |
+|---|---:|---|---|
+| `G12-R01` | P1 | CONFIRMED, OPEN — Wave 1 | `ExpectedExecutorProvenance`'s three fields are public and `RevisionId::new` admits a seven-digit prefix, so a struct literal reaches the gate with an abbreviated expectation that `ExpectedExecutorProvenance::new` would refuse. The whole match then compares prefix against prefix, including `matches_full`, whose full operand is the expectation itself. Boundary: executor provenance, ADR-018 tip attestation. Witness `abbreviated_expectation_bypasses_the_full_width_constructor`. |
+| `G12-R02` | P1 | CONFIRMED, OPEN — Wave 1 | `anchor_set_hash` takes any string iterator and frames by newline join, so one name holding a newline and two names have one preimage. Boundary: Layer-0 anchor-set pin, the manifest value release validation refuses to leave unset. Witness `a_newline_bearing_anchor_name_collides_with_two_names`. In-repo callers pass parsed label names, so the collision is reachable through the package's public API and not through the checker's own path — the row is a type-discipline defect, not a live mismatch. |
+| `G12-R03` | P1 | CONFIRMED, OPEN — Wave 2 | The four `emit-*` binaries in `target-elements-conformance` are absent from every `cli_common` user: no shared panic hook, no stdout TTY refusal, `std::env::args().nth(1)` argv handling, and plain-text stderr diagnostics that interpolate the caller's path. Boundary: shipped-binary subprocess contract, ADR-010. Source-read disposition; the logic sits in `src/bin` with no library seam, so a focused reproduction needs the subprocess harness Wave 2 builds. |
+| `G12-R04` | P1 | CONFIRMED, OPEN — Wave 2 | The executor raises `AdapterError` carrying `one_line(completed.stderr)` from the `elements-cli` child, and that note reaches first-party protocol records as `observed_detail` and `detail`. The module docstring's claim that the harness never reads child stderr describes the harness, not this path. Boundary: target-adapter to first-party diagnostic and report layer. Python lane; source-read disposition, runtime half OPEN with named blocker — reproduction needs a live node. |
+| `G12-R05` | P1/P2 | CONFIRMED, OPEN — Wave 2 | Report ingestion indexes responses into a `BTreeMap` keyed by mutation name, so a second answer for one row silently replaces the first, and the report loop reads the matrix rather than the census, so a response naming a row the matrix does not carry is dropped without a word. Boundary: normalization safety report. Source-read disposition; the ingestion sits in a binary with no library seam. |
+| `G12-R06` | P1/P2 | CONFIRMED, OPEN — Wave 2 | `matrix_is_complete` consults `self.passes.first()` alone, so a later pass may omit rows; it also asks only whether a row is present, so a duplicated row satisfies it. The emitting binary gates on `boundary_holds` and `matrix_is_complete` and never calls `passes_agree`, and `passes_ran_in_distinct_processes` is satisfied by one pass. Boundary: fresh-process lifecycle evidence, the cache-independence claim. Witness `matrix_completeness_reads_only_the_first_pass`. |
+| `G12-R07` | P2 | CONFIRMED, OPEN — Wave 2 | The consensus judgement takes the substring to the first `)` after the wrapper, and two mapped messages carry a `)` of their own, so each truncates to a string the class table does not hold and the rejection loses its class. The relay judgement takes the whole wrapper and is unaffected. Boundary: target failure classification. Python lane; source-read disposition, runtime half OPEN with named blocker. |
+| `G12-R08` | P1/P2 | RECLASSIFIED, DONE | The count disagreement the review saw was already gone from the backlog and the code: the matrix states nine rows and the Wave-11 record states 18 of 18 over two passes. Two statements had not caught up — the declassification research file reported 16 of 16 and stopped its finding list at `G11-W11-05`, and the Phase-3 card's status blockquote broke off mid-clause after the exit-gate sentence. Both are reconciled here, which is the whole of the row: a prose row's reproduction is the textual comparison, so finding it and fixing it are one act. Boundary: active planning-document agreement. Reclassified from a census disagreement to two stale statements. |
+| `G12-R09` | P0/P1 | CONFIRMED, OPEN — Wave 1 | Both sides declare protocol revision 3. The executor writes `observed_openings` on every conservation response and `NativeConservationResponse` carries `deny_unknown_fields` without that field, so the Rust type cannot read the Python's own answers. The lifecycle exchange has no Rust protocol type at all and is read out of an untyped value tree. Boundary: harness-executor protocol. Witness `a_revision_three_conservation_response_is_unreadable_by_its_own_type`. Phase-4 blocker, as the guide states. |
+| `G12-R10` | P1 | CONFIRMED, OPEN — Wave 1 | The nonce field is typed `PointParityConvention::QuadraticResidue` beside a comment saying no parity claim is made, and the enum offers no state for making none. The field's committed prefixes are the compressed-point pair. Boundary: reviewed target facts, the opening-feasibility reasoning that rests on the two conventions differing. Witness `the_nonce_field_claims_a_parity_convention_its_prefixes_do_not_use`. |
+| `G12-R11` | P1 | CONFIRMED, OPEN — Wave 1 | `resource_projection` skips every non-opcode instruction outright, so no push opcode, width prefix, or payload byte reaches the `ScriptBytes` total; opcode script bytes come from the per-primitive cost table and never from an encoded length. Boundary: resource prediction against target bounds. Witness `a_pushed_payload_contributes_no_projected_script_bytes`. Phase-4 blocker, as the guide states. |
+| `G12-R12` | P1 | CONFIRMED, OPEN — Wave 1 | A pushed literal enters the abstract state as a width range, and its value survives only where it is a minimal script number. A single zero byte is not one, so the walk carries no constant, the verifying primitive branches both ways, and the success set gains a state the target cannot reach. Boundary: abstract program validation, any liveness conclusion drawn from the success set. Witness `a_pushed_zero_byte_leaves_a_success_state_the_target_cannot_reach`. Phase-4 blocker, as the guide states. |
+| `G12-R13` | P2 | CONFIRMED, OPEN — Wave 2 | `decode` runs its parse loop to the end of the input and applies the instruction limit only in the constructor it finally calls, so the work and the allocation are unbounded by the limit. Made visible by a script whose bytes pass the limit long before an invalid byte arrives: the parser reports the invalid byte rather than the limit. Boundary: untrusted-script parsing. Witness `decoding_passes_the_work_bound_before_it_notices_the_limit`. |
+| `G12-R14` | P1/P2 | CONFIRMED, OPEN — Wave 1 | The infrastructure arm of the shape rules checks the failure class and the two stacks and returns, leaving the resource observation unread, so a response saying the run never happened may still carry interpreter figures. The conservation response's own `validate_shape` does make the equivalent check, so the defect is the execution and prototype path. Boundary: evidence-layer separation. Witness `an_infrastructure_response_may_still_carry_interpreter_figures`. Phase-4 blocker, as the guide states. |
+| `G12-R15` | P1/P2 | CONFIRMED, OPEN — Wave 2 | The runners read records with an unbounded `readline`, spawn without a new session so the node group is not theirs to kill, carry no total deadline over the row loop, and clean up only on the two handshake refusals — a failure inside the loop leaves the child unkilled and unreaped. The Rust supervisor has the process group, the group kill, the destructor-driven cleanup, and the bounded protocol limits that these lack. Boundary: harness process supervision. Source-read disposition against the Rust supervisor. |
+| `G12-R16` | P2 | CONFIRMED, OPEN — Wave 2 | The evidence-registry module states that every requirement is unresolved and that none has been evidenced against any node, while the readiness statement records development target-native evidence and the crate carries a native evidence path. Boundary: documentation only; no typed value carries a status. |
 
 ### Wave 7 — CT fixtures and the conservation matrix · `task:guide11:conservation`
 
