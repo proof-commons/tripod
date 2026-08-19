@@ -84,11 +84,11 @@ impl Ids {
             sponsor_input_recognition: sponsor_recognition(TransactionSide::Input),
             sponsor_output_recognition: sponsor_recognition(TransactionSide::Output),
             authorization: object_relation(RelationKind::Authorization, TransactionSide::Input),
-            input_closure: object_relation(
+            input_closure: side_relation(
                 RelationKind::AllowedObjectFamilies,
                 TransactionSide::Input,
             ),
-            output_closure: object_relation(
+            output_closure: side_relation(
                 RelationKind::AllowedObjectFamilies,
                 TransactionSide::Output,
             ),
@@ -107,17 +107,10 @@ impl Ids {
                     asset: AssetId::Lbtc,
                 },
             ),
-            open_flow_policy: id(
-                RelationKind::OpenFlowPolicy,
-                RelationSubject::Projection {
-                    projection: ProjectionId::TransitionCertificate,
-                },
-            ),
+            open_flow_policy: id(RelationKind::OpenFlowPolicy, RelationSubject::Operation),
             canonical_delta_policy: id(
                 RelationKind::CanonicalDeltaPolicy,
-                RelationSubject::Projection {
-                    projection: ProjectionId::TransitionCertificate,
-                },
+                RelationSubject::Operation,
             ),
             roots: id(RelationKind::RootPolicy, RelationSubject::Operation),
             projections: id(RelationKind::ProjectionPolicy, RelationSubject::Operation),
@@ -605,6 +598,10 @@ fn object_relation(kind: RelationKind, side: TransactionSide) -> RelationId {
             object: ObjectId::ReceiptLive,
         },
     )
+}
+
+fn side_relation(kind: RelationKind, side: TransactionSide) -> RelationId {
+    id(kind, RelationSubject::TransactionSide { side })
 }
 
 fn sponsor_cardinality(side: TransactionSide) -> RelationId {

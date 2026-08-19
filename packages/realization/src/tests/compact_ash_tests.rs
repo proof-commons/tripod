@@ -1845,6 +1845,13 @@ fn transposed_sponsor_cardinality_sides_fail_derivation() {
         error,
         crate::RealizationError::RelationSubjectMismatch {
             declared: sponsor_input_cardinality(),
+            // The swapped body states the output side, so the subject
+            // it determines is the output family — not the input one
+            // its own ID declares.
+            expected: crate::RelationSubject::ObjectFamily {
+                side: crate::TransactionSide::Output,
+                object: ObjectId::PlainLbtc,
+            },
         },
     );
 }

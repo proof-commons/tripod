@@ -114,6 +114,15 @@ pub enum RelationKind {
 }
 
 /// Typed subject distinguishing relations of one family.
+///
+/// # Exactly one subject per body
+///
+/// The owner validator derives a relation's subject from its body as a
+/// function, so each member here is the subject of some body rather
+/// than one admissible presentation among several. A body constraining
+/// a whole transaction side is subjected to that side; a body fixing an
+/// operation-wide policy is subjected to the operation
+/// `(´[PLAN-rule:guide11-exec:relation-subject]´)`.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RelationSubject {
     Operation,
@@ -121,6 +130,16 @@ pub enum RelationSubject {
     ObjectFamily {
         side: TransactionSide,
         object: ObjectId,
+    },
+
+    /// A whole transaction side.
+    ///
+    /// The subject of a body that constrains which families may appear
+    /// on one side at all. Such a body names no single family — naming
+    /// one of the families it admits would file the closure under a
+    /// member of its own result — so the side itself is the subject.
+    TransactionSide {
+        side: TransactionSide,
     },
 
     Asset {
