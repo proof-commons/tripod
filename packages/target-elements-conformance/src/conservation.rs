@@ -223,6 +223,36 @@ pub enum RowDeferral {
     PublicCommittedCandidateUndecided,
 }
 
+/// An obligation consensus does not discharge.
+///
+/// # Why a row can carry a defect and still expect acceptance
+///
+/// Guide 11 §8.4 states the hidden-confidential-output row as "closure
+/// reject **where claimed**", and the conditional is load-bearing. A
+/// confidential output absorbing value is a perfectly valid transaction:
+/// consensus checks that the commitments balance, and a hidden output
+/// makes them balance. Nothing at the consensus layer is violated.
+///
+/// What such a transaction violates is an *output closure* property — the
+/// claim that the stated output set is the whole output set — and that
+/// claim belongs to a candidate relation, none of which this wave
+/// selects. Writing the row's expectation as a consensus rejection would
+/// therefore have been wrong, and a run would have "failed" against an
+/// expectation the target never owed.
+///
+/// So the row expects acceptance at consensus and records the obligation
+/// by name. That is the finding: value hiding is not policed by
+/// conservation, and any candidate claiming disclosure-completeness has
+/// to police it itself.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum ClosureObligation {
+    /// Consensus admits an unstated confidential output that absorbs
+    /// value; only an output-closure relation refuses it.
+    HiddenValueNotPolicedByConsensus,
+}
+
 /// One row of the Guide 11 §8.4 conservation matrix.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConservationRow {
@@ -238,6 +268,9 @@ pub struct ConservationRow {
     pub expected_layer: ExpectedOutcomeLayer,
     /// Why the row is not executed, where it is not.
     pub deferral: Option<RowDeferral>,
+    /// The obligation consensus leaves undischarged, where the row's
+    /// defect is one consensus does not police.
+    pub closure_obligation: Option<ClosureObligation>,
 }
 
 impl ConservationRow {
@@ -448,6 +481,7 @@ pub fn canonical_conservation_matrix() -> Vec<ConservationRow> {
             defect: ConservationDefect::None,
             expected_layer: ExpectedOutcomeLayer::Accepted,
             deferral: None,
+            closure_obligation: None,
         },
         ConservationRow {
             id: row(2, "confidential-to-confidential-balanced"),
@@ -456,6 +490,7 @@ pub fn canonical_conservation_matrix() -> Vec<ConservationRow> {
             defect: ConservationDefect::None,
             expected_layer: ExpectedOutcomeLayer::Accepted,
             deferral: None,
+            closure_obligation: None,
         },
         ConservationRow {
             id: row(3, "confidential-to-public-committed-balanced"),
@@ -464,6 +499,7 @@ pub fn canonical_conservation_matrix() -> Vec<ConservationRow> {
             defect: ConservationDefect::None,
             expected_layer: ExpectedOutcomeLayer::Accepted,
             deferral: Some(RowDeferral::PublicCommittedCandidateUndecided),
+            closure_obligation: None,
         },
         ConservationRow {
             id: row(4, "confidential-to-explicit-with-private-change"),
@@ -475,6 +511,7 @@ pub fn canonical_conservation_matrix() -> Vec<ConservationRow> {
             defect: ConservationDefect::None,
             expected_layer: ExpectedOutcomeLayer::Accepted,
             deferral: None,
+            closure_obligation: None,
         },
         ConservationRow {
             id: row(5, "several-confidential-to-one-output"),
@@ -486,6 +523,7 @@ pub fn canonical_conservation_matrix() -> Vec<ConservationRow> {
             defect: ConservationDefect::None,
             expected_layer: ExpectedOutcomeLayer::Accepted,
             deferral: None,
+            closure_obligation: None,
         },
         ConservationRow {
             id: row(6, "one-unit-semantic-imbalance"),
@@ -494,6 +532,7 @@ pub fn canonical_conservation_matrix() -> Vec<ConservationRow> {
             defect: ConservationDefect::OneUnitImbalance,
             expected_layer: ExpectedOutcomeLayer::ConsensusRejectionBeforeScript,
             deferral: None,
+            closure_obligation: None,
         },
         ConservationRow {
             id: row(7, "correct-amounts-wrong-blinding-balance"),
@@ -502,6 +541,7 @@ pub fn canonical_conservation_matrix() -> Vec<ConservationRow> {
             defect: ConservationDefect::WrongBlinderSum,
             expected_layer: ExpectedOutcomeLayer::ConsensusRejectionBeforeScript,
             deferral: None,
+            closure_obligation: None,
         },
         ConservationRow {
             id: row(8, "malformed-rangeproof"),
@@ -510,6 +550,7 @@ pub fn canonical_conservation_matrix() -> Vec<ConservationRow> {
             defect: ConservationDefect::MalformedRangeProof,
             expected_layer: ExpectedOutcomeLayer::ConsensusRejectionBeforeScript,
             deferral: None,
+            closure_obligation: None,
         },
         ConservationRow {
             id: row(9, "malformed-surjection-proof"),
@@ -518,6 +559,7 @@ pub fn canonical_conservation_matrix() -> Vec<ConservationRow> {
             defect: ConservationDefect::MalformedSurjectionProof,
             expected_layer: ExpectedOutcomeLayer::ConsensusRejectionBeforeScript,
             deferral: None,
+            closure_obligation: None,
         },
         ConservationRow {
             id: row(10, "wrong-explicit-asset-generator"),
@@ -531,6 +573,7 @@ pub fn canonical_conservation_matrix() -> Vec<ConservationRow> {
             defect: ConservationDefect::WrongExplicitAsset,
             expected_layer: ExpectedOutcomeLayer::ConsensusRejectionBeforeScript,
             deferral: None,
+            closure_obligation: None,
         },
         ConservationRow {
             id: row(11, "copied-commitment-from-another-asset"),
@@ -539,14 +582,22 @@ pub fn canonical_conservation_matrix() -> Vec<ConservationRow> {
             defect: ConservationDefect::CopiedCommitmentFromOtherAsset,
             expected_layer: ExpectedOutcomeLayer::ConsensusRejectionBeforeScript,
             deferral: None,
+            closure_obligation: None,
         },
         ConservationRow {
             id: row(12, "hidden-confidential-output"),
             inputs: vec![confidential(UNIT, "row12-input")],
             outputs: vec![explicit(UNIT / 2)],
             defect: ConservationDefect::HiddenConfidentialOutput,
-            expected_layer: ExpectedOutcomeLayer::ConsensusRejectionBeforeScript,
+            // Not a consensus rejection, and the guide does not claim one:
+            // §8.4 states this row as "closure reject *where claimed*". A
+            // hidden confidential output makes the commitments balance, so
+            // conservation is satisfied and consensus has nothing to
+            // refuse. The obligation belongs to a closure relation, and no
+            // candidate that would own it is selected in this wave.
+            expected_layer: ExpectedOutcomeLayer::Accepted,
             deferral: None,
+            closure_obligation: Some(ClosureObligation::HiddenValueNotPolicedByConsensus),
         },
     ]
 }
@@ -691,10 +742,29 @@ mod tests {
         for entry in canonical_conservation_matrix() {
             if entry.defect.is_benign() {
                 assert_eq!(entry.expected_layer, ExpectedOutcomeLayer::Accepted);
-            } else {
-                assert_ne!(entry.expected_layer, ExpectedOutcomeLayer::Accepted);
+                assert_eq!(entry.closure_obligation, None);
+            } else if entry.expected_layer == ExpectedOutcomeLayer::Accepted {
+                // The one admitted exception, and it has to say why: a
+                // defect consensus does not police names the obligation
+                // that does. Without this the row would read as a target
+                // fact nothing in the row explains.
+                assert!(entry.closure_obligation.is_some());
             }
         }
+    }
+
+    #[test]
+    fn only_the_hidden_output_row_carries_a_closure_obligation() {
+        let matrix = canonical_conservation_matrix();
+        let carrying: Vec<_> = matrix
+            .iter()
+            .filter(|row| row.closure_obligation.is_some())
+            .collect();
+        assert_eq!(carrying.len(), 1);
+        assert_eq!(
+            carrying[0].defect,
+            ConservationDefect::HiddenConfidentialOutput
+        );
     }
 
     #[test]
