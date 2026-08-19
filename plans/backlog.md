@@ -1433,6 +1433,35 @@ target answers every CT conservation failure with one consensus code, so
 | `G11-W7-08` | P2 | OPEN | The conservation lane runs through `run-conservation-matrix.py`, which records and does not gate. The typed report exists and is tested; what is not yet built is the Rust executor driver, the gate, the published report asset, and the Meson target that would make this lane refusable in CI the way the primitive and prototype lanes are. Until then a conservation run is evidence a reader consults, not a gate a build enforces. |
 | `G11-W7-09` | OPTIONAL | OPEN | Both public-committed rows of §8.4 remain deferred against `G11-C03`'s blockers. One of the two is executed in its explicit form (`G11-W7-03`); the public-committed form of both awaits a selected candidate. |
 
+### Waves 8+10 — Candidate dispositions and normalization · `task:guide11:dispositions`
+
+**Priority:** P1
+**Status:** PARTIAL
+
+The typed dispositions the evidence already dictated, and the typed
+disclosure reasons the one live candidate needs. The normalization
+prototype, its threat matrix, and its safety report are **not started**;
+the wave was wound down after the disposition half landed.
+
+**A deferral and a rejection are not the same decision, and §11 is both.**
+Recording only one of them would have stated something the review never
+established, in whichever direction it was collapsed.
+
+| ID | Priority | Status | Finding |
+|---|---:|---|---|
+| `G11-W8-01` | P1 | DONE | **The direct authenticated opening is deferred as a class and refused as a shape, and the register carries both.** §11.4 rejects any candidate that loses parity, and two of the three reviewed blockers are parity facts, so the §11.3 proof outline as instantiated on the reviewed primitives is refused outright under that criterion — as is an opening checked off-script and asserted on-script, under §21's "only a host library verifies the opening". The class is deferred rather than rejected because a pattern proving the normalization or negation §11.4 asks for was not found, which is not the same as shown impossible. Cites `G11-C03`, `G11-C01`, `G11-O02`, `G11-O03`. |
+| `G11-W8-02` | P1 | DONE | **The public-committed representation defers on the same three blockers.** A public committed output exists to publish an amount and opening a later relation can verify; on this target that verification has no on-script form, so an output publishing one would be publishing unauthenticated metadata, which §21 refuses by name. Conservation row 3 already carried the deferral as a typed row rather than as an absence. |
+| `G11-W8-03` | P1 | DONE | **The capsule is not-applicable-while-deferred, which is a third state rather than a deferral of its own.** A capsule's contents are an opening and the fields binding it to one output; with no public committed representation there is no opening to carry and no output to bind it to, so §12.4–§12.6 have no subject. Nothing about the capsule was examined and found wanting. The normalization path supplies no subject either: its public output is explicit, and an explicit amount is already recoverable public chain data. |
+| `G11-W8-04` | P1 | DONE | **Dispositions belong in conformance, not in `target-elements`.** Wave 5 put `OpeningFeasibility` in the target package correctly — whether the reviewed language *can* carry an opening is a target fact. A disposition is this project's decision taken in the light of target facts, and §6.2 puts candidate work in conformance. The blockers a disposition names are Wave 5's own typed values rather than a restatement, reached through a vocabulary spelling table because the target crate is standard-library-only and derives no serialization. |
+| `G11-W8-05` | P1 | DONE | **§14.4's preferred reuse of realization's disclosure types is not available, for two independent reasons.** `realization::DisclosureReason` does express the required distinction. But conformance refuses the realization dependency by decision rather than oversight — the manifest says naming it would import a publication boundary this harness has no asset for — and two of its variants carry an `OperationId` and a `RelationId` that a conformance run does not have. Filling them would mean inventing identities, which in an evidence record is worse than a duplicated enum. The vocabulary is therefore §14.4's own, stated in conformance, with the correspondence documented. |
+| `G11-W8-06` | P1 | DONE | **Every normalization disclosure is deployment policy and none is boundary arithmetic.** The relation does not need the amount in the clear: the §8.4 matrix conserved value over commitments without it. Each non-semantic disclosure states what a deployment that did not want the fact public would do instead, so that a policy choice cannot harden into an apparent necessity across waves. §9.3's rule that an explicit-only result is not disclosure-minimal is what this makes checkable. |
+
+| ID | Priority | Status | Item |
+|---|---:|---|---|
+| `G11-W10-01` | P1 | OPEN | **The normalization prototype is not built.** The variant is private → explicit + private change, which is the constructible one (`G11-W7-03` established that full consumption to explicit-only is not). Needed: the typed normalization claim and mutation matrix, the §10.4 threat rows with expectations written before execution, adapter support for owner-authorized signing over the finalized output set under the Q19 sighash profile, and a native run. The disposition register already records this candidate as `Prototyped`, which the prototype must make true or the register must be corrected. |
+| `G11-W10-02` | P1 | OPEN | **The hidden-output closure check is designed and not implemented.** Wave 7 established that consensus accepts a hidden confidential output, so the row's refusal has to come from the report layer. The design is exact multiset closure — the observed output set must be exactly the outputs the claim names, over an observation the adapter reads back from the target's own decoder — and it must be recorded as report-layer rather than consensus-layer or it repeats `G11-W7-06`'s misattribution. Owner-change is expected to fall in the same class: a transaction paying a different owner is consensus-valid, so only the preservation check refuses it. |
+| `G11-W10-03` | P1 | OPEN | The typed normalization safety report of §14 is not built. Role is experimental, as `ConservationReportRole` is: canonical CT evidence is out of this wave's scope. `declassification::normalization_declassifications` is the disclosure list it must carry. |
+
 ### T6 — Validate capabilities for external-evidence obligations · `task:review:external-evidence-capability`
 
 **Priority:** P1
