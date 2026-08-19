@@ -719,9 +719,11 @@ runs. First native contact surfaced two constructor fixture defects and
 zero program defects; both fixtures were repaired with review
 justification. Measured resources: constructor 699 script and 924
 witness bytes with the 520-byte element bound binding at a fifth of
-maximum; wide floor 523 script and 606 witness bytes. Report digests
-are recorded in the research files; the artifacts themselves are run
-output and are not checked in.
+maximum; wide floor 523 script and 606 witness bytes. The reports
+themselves are run output and are not checked in; the research files
+record the run facts as historical narrative and no digest of any report
+is kept, which is what the identity register's §3.5 stop record calls
+for (G11-R11).
 
 Gate evidence on the merged tree: the working debug lane green through
 every wave with the workspace suite growing from 1913 to 2151 tests;
