@@ -36,6 +36,8 @@
 //! temptation is acute: the runner already knows which record it
 //! corrupted.
 
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 
 use crate::conservation_report::RowVerdict;
@@ -228,14 +230,18 @@ impl FreshProcessLifecycleReport {
 
     /// Whether every pass was made by a different process from the others.
     ///
-    /// §13.5's closing sentence, checked rather than asserted.
+    /// §13.5's closing sentence, checked rather than asserted. Both the
+    /// process identifier and the attempt ordinal must be distinct: two
+    /// passes sharing a pid are two function calls, and two passes
+    /// sharing an ordinal are one pass recorded twice. Either way the
+    /// report would be counting a reading it did not get.
     #[must_use]
     pub fn passes_ran_in_distinct_processes(&self) -> bool {
-        let mut seen: Vec<u32> = self.passes.iter().map(|pass| pass.pid).collect();
-        let total = seen.len();
-        seen.sort_unstable();
-        seen.dedup();
-        seen.len() == total && total > 0
+        let pids: BTreeSet<u32> = self.passes.iter().map(|pass| pass.pid).collect();
+        let attempts: BTreeSet<u32> = self.passes.iter().map(|pass| pass.attempt).collect();
+        !self.passes.is_empty()
+            && pids.len() == self.passes.len()
+            && attempts.len() == self.passes.len()
     }
 
     /// Whether the published record verified.
@@ -299,23 +305,88 @@ impl FreshProcessLifecycleReport {
             .any(|field| names_owner_private_material(field))
     }
 
-    /// Whether every row source stated was either run or recorded unbuilt.
+    /// The rows the run recorded as unbuilt, for every pass alike.
     ///
-    /// A matrix missing a row is not a matrix that passed it.
+    /// Unbuilt is a property of the run, not of a pass: a row whose
+    /// fixture could not be built was not built for anybody. A report
+    /// that let one pass skip a row another answered would be comparing
+    /// two different matrices and calling the result agreement.
+    fn globally_unbuilt_rows(&self) -> BTreeSet<LifecycleRow> {
+        self.unbuilt_rows.iter().map(|row| row.row).collect()
+    }
+
+    /// The rows every pass is required to carry.
+    fn required_rows(&self) -> BTreeSet<LifecycleRow> {
+        let unbuilt = self.globally_unbuilt_rows();
+        canonical_lifecycle_matrix()
+            .into_iter()
+            .map(|expectation| expectation.row)
+            .filter(|row| !unbuilt.contains(row))
+            .collect()
+    }
+
+    /// Whether one pass carries exactly the rows it is required to.
+    ///
+    /// Exactly: no row missing, no row twice, and no row the matrix does
+    /// not state. Presence alone was the old rule and it admitted all
+    /// three.
+    fn pass_census_is_exact(pass: &ReadingPass, required: &BTreeSet<LifecycleRow>) -> bool {
+        let distinct: BTreeSet<LifecycleRow> = pass.rows.iter().map(|row| row.row).collect();
+        distinct.len() == pass.rows.len() && distinct == *required
+    }
+
+    /// Whether every pass answered exactly the rows source stated.
+    ///
+    /// # Why every pass and not the first
+    ///
+    /// The claim this report exists to support is that a party who did
+    /// not participate in creation can recover the record, and that the
+    /// recovery did not come from a cache. That claim is about the
+    /// passes as a set. Reading only the first one let a later pass omit
+    /// rows, or answer one twice, while the report still called the
+    /// matrix complete — so the second reading, which is the entire
+    /// evidence for cache independence, could be empty and unnoticed.
+    ///
+    /// A row recorded unbuilt is excluded for every pass alike, because
+    /// unbuilt is a fact about the run.
     #[must_use]
     pub fn matrix_is_complete(&self) -> bool {
-        let Some(first) = self.passes.first() else {
+        if self.passes.is_empty() {
             return false;
-        };
-        canonical_lifecycle_matrix().into_iter().all(|expectation| {
-            first.rows.iter().any(|row| row.row == expectation.row)
-                || self
-                    .unbuilt_rows
-                    .iter()
-                    .any(|row| row.row == expectation.row)
-        })
+        }
+        let required = self.required_rows();
+        self.passes
+            .iter()
+            .all(|pass| Self::pass_census_is_exact(pass, &required))
+    }
+
+    /// Whether the run establishes that the reading was not cached.
+    ///
+    /// The predicate the emitting binary gates on, and the conjunction
+    /// the cache-independence claim actually needs: a real process
+    /// boundary, at least two passes, each in its own process and under
+    /// its own ordinal, each carrying the exact row census, and all of
+    /// them agreeing row for row.
+    ///
+    /// Stated as one predicate because the parts were separable before
+    /// and the binary consulted two of them: `passes_agree` was never
+    /// called, and a single pass satisfied the process check, so nothing
+    /// required the second complete reading the claim rests on.
+    #[must_use]
+    pub fn cache_independence_established(&self) -> bool {
+        self.boundary_holds()
+            && self.passes.len() >= MINIMUM_COMPLETE_PASSES
+            && self.matrix_is_complete()
+            && self.passes_agree()
     }
 }
+
+/// The fewest complete passes that establish cache independence.
+///
+/// One reading shows the record is readable and says nothing about
+/// whether it was read from a cache; the second is what makes the first
+/// falsifiable.
+pub const MINIMUM_COMPLETE_PASSES: usize = 2;
 
 #[cfg(test)]
 mod tests {
@@ -511,27 +582,21 @@ mod tests {
         assert!(document.matrix_is_complete());
     }
 
-    /// `G12-R06`: completeness is decided by the first pass alone.
+    /// `G12-R06`: completeness is decided by every pass.
     ///
-    /// A Guide-12 preflight reproduction. It asserts the current
-    /// behaviour, not the wanted one, and the wave that repairs the row
-    /// flips it.
+    /// The row was that the check read `passes.first()` and asked, for
+    /// each expectation, whether *some* row of that pass named it. Two
+    /// consequences followed: a later pass could answer fewer rows than
+    /// the matrix states while the report still called the matrix
+    /// complete, and a pass could answer one row twice unnoticed,
+    /// because presence was asked and census equality was not.
     ///
-    /// The check reads `passes.first()` and asks, for each expectation,
-    /// whether *some* row of that pass names it. Two consequences
-    /// follow, and both are shown here: a later pass may answer fewer
-    /// rows than the matrix states and the report still calls the matrix
-    /// complete, and a pass may answer one row twice and nothing
-    /// notices, because presence is asked and census equality is not.
-    ///
-    /// The emitting binary gates on `boundary_holds` and
-    /// `matrix_is_complete` and never calls `passes_agree`, so the
-    /// disagreement these passes would show is not consulted; and
-    /// `passes_ran_in_distinct_processes` is satisfied by a single pass,
-    /// so nothing requires the two complete distinct-process passes the
-    /// cache-independence claim rests on.
+    /// The assertions are now the guarantee. Each pass must carry the
+    /// exact census — every required row, once each, and nothing else —
+    /// and the gate the binary applies is the whole cache-independence
+    /// claim rather than the two parts of it that used to be consulted.
     #[test]
-    fn matrix_completeness_reads_only_the_first_pass() {
+    fn matrix_completeness_is_decided_by_every_pass() {
         let mut complete = report(vec![pass(1, 1, LifecycleOutcome::Verified)]);
         for expectation in canonical_lifecycle_matrix() {
             if expectation.row == LifecycleRow::Accepted {
@@ -544,8 +609,8 @@ mod tests {
         }
         assert!(complete.matrix_is_complete());
 
-        // A second pass that answered nothing at all. The census the
-        // first pass carried is never asked of it.
+        // The row's own regression: pass one complete, pass two empty.
+        // The census the first pass carried is now asked of the second.
         let mut later_pass_is_empty = complete.clone();
         later_pass_is_empty.passes.push(ReadingPass {
             attempt: 2,
@@ -554,26 +619,69 @@ mod tests {
             rows: Vec::new(),
         });
         assert!(
-            later_pass_is_empty.matrix_is_complete(),
-            "G12-R06: a later pass is expected to go unchecked while the row is open",
+            !later_pass_is_empty.matrix_is_complete(),
+            "G12-R06: a pass answering nothing is not a complete pass",
         );
-        assert!(later_pass_is_empty.boundary_holds());
+        assert!(!later_pass_is_empty.cache_independence_established());
 
-        // The first pass answering one row twice. Presence holds, so the
-        // duplicate is invisible to the completeness check.
+        // A pass answering one row twice is refused: presence held, so
+        // the duplicate used to be invisible to the completeness check.
         let mut duplicated = complete.clone();
         let repeated = duplicated.passes[0].rows[0].clone();
         duplicated.passes[0].rows.push(repeated);
         assert_eq!(duplicated.passes[0].rows.len(), 2);
         assert!(
-            duplicated.matrix_is_complete(),
-            "G12-R06: a duplicated row is expected to go unchecked while the row is open",
+            !duplicated.matrix_is_complete(),
+            "G12-R06: a row answered twice is not a census",
         );
 
-        // And one pass alone satisfies the process boundary, so nothing
-        // asks for the second complete pass at all.
+        // A pass carrying a row the matrix does not require is refused
+        // too, which is the third way a census can differ from a
+        // presence check.
+        let mut unexpected = complete.clone();
+        unexpected.passes[0].rows.push(LifecycleRowOutcome::new(
+            LifecycleRow::CopiedEvidence,
+            LifecycleOutcome::RefusedCopiedEvidence,
+            LifecycleOutcome::RefusedCopiedEvidence,
+            Vec::new(),
+        ));
+        assert!(
+            !unexpected.matrix_is_complete(),
+            "G12-R06: a row recorded unbuilt is not one a pass may answer",
+        );
+
+        // One pass alone no longer passes the gate: the second complete
+        // reading is the whole evidence for cache independence.
         assert!(complete.passes_ran_in_distinct_processes());
-        assert!(!complete.passes_agree());
+        assert!(!complete.cache_independence_established());
+
+        // Two complete passes in distinct processes, agreeing, do.
+        let mut both = complete.clone();
+        both.passes.push(pass(2, 2, LifecycleOutcome::Verified));
+        assert!(both.matrix_is_complete());
+        assert!(both.cache_independence_established());
+    }
+
+    /// `G12-R06`: an ordinal is as much a pass identity as a pid is.
+    #[test]
+    fn two_passes_under_one_ordinal_are_one_pass_recorded_twice() {
+        let mut complete = report(vec![
+            pass(1, 1, LifecycleOutcome::Verified),
+            pass(1, 2, LifecycleOutcome::Verified),
+        ]);
+        for expectation in canonical_lifecycle_matrix() {
+            if expectation.row == LifecycleRow::Accepted {
+                continue;
+            }
+            complete.unbuilt_rows.push(UnbuiltRow {
+                row: expectation.row,
+                reason: "not run in this fixture".to_owned(),
+            });
+        }
+        // Distinct processes, but one attempt ordinal between them.
+        assert!(!complete.passes_ran_in_distinct_processes());
+        assert!(!complete.boundary_holds());
+        assert!(!complete.cache_independence_established());
     }
 
     #[test]

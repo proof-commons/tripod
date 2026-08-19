@@ -15,7 +15,6 @@
 //! produces the typed report. The expectations are never read from the
 //! run record, so a run cannot supply the answer it is checked against.
 
-use std::collections::BTreeMap;
 use std::io::{Read as _, Write as _};
 use std::process::ExitCode;
 
@@ -24,7 +23,9 @@ use target_elements_conformance::declassification::normalization_declassificatio
 use target_elements_conformance::normalization::{
     NormalizationClaim, NormalizationMutation, canonical_mutation_matrix,
 };
-use target_elements_conformance::normalization_report::{NormalizationReport, outcome_of};
+use target_elements_conformance::normalization_report::{
+    NormalizationReport, ingest_normalization_responses, mutation_wire_spelling, outcome_of,
+};
 use target_elements_conformance::protocol::NativeNormalizationResponse;
 
 fn main() -> ExitCode {
@@ -75,24 +76,18 @@ fn run() -> Result<String, String> {
             format!("the run record's responses are not this protocol's: {error}")
         })?;
 
-    // Indexed by the mutation each response answers, so a run that
-    // answered rows out of order, or skipped one, is visible as a missing
-    // row rather than as a silent misalignment with the matrix.
-    let mut answered: BTreeMap<String, NativeNormalizationResponse> = BTreeMap::new();
-    for response in responses {
-        response.validate_shape().map_err(|defect| {
-            format!(
-                "a response for {} contradicts itself: {defect:?}",
-                response.case.normalization
-            )
-        })?;
-        answered.insert(response.case.normalization.clone(), response);
-    }
+    // Indexed by the mutation each response answers, with the census
+    // checked exactly in both directions: the report is a statement
+    // about the canonical matrix, so a duplicated row, an unanswered
+    // row, and a row the matrix does not carry are each a refusal
+    // rather than something this command quietly resolves.
+    let answered = ingest_normalization_responses(responses)
+        .map_err(|defect| format!("the run record is not a census of the matrix: {defect}"))?;
 
     let mut rows = Vec::new();
     let mut profile = None;
     for row in canonical_mutation_matrix() {
-        let spelling = wire_spelling(row.mutation);
+        let spelling = mutation_wire_spelling(row.mutation);
         let response = answered
             .get(&spelling)
             .ok_or_else(|| format!("the run answered no row for {spelling}"))?;
@@ -125,13 +120,6 @@ fn run() -> Result<String, String> {
 
     serde_json::to_string_pretty(&report)
         .map_err(|error| format!("the report does not serialize: {error}"))
-}
-
-fn wire_spelling(mutation: NormalizationMutation) -> String {
-    serde_json::to_value(mutation)
-        .ok()
-        .and_then(|value| value.as_str().map(ToOwned::to_owned))
-        .unwrap_or_default()
 }
 
 fn string_at(record: &serde_json::Value, section: &str, field: &str) -> String {

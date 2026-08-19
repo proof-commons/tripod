@@ -968,9 +968,23 @@ fn validate_attestation_anchor_pin(result: &mut RepositoryLabels) {
     let location = SourceLocation::new("packages/architecture/src/spec.rs", 1, 1);
     let architecture = &architecture::ARCHITECTURE;
     if let Some(pinned) = architecture.document.specification.anchor_set_hash {
-        let actual = architecture::anchor_set_hash(
+        // The harvested names are parsed attestation labels, so they are
+        // anchor names already. Building the validated set is how that
+        // is stated rather than assumed: if a name ever reached here
+        // that is not one, the pin is not recomputable and the answer
+        // is a diagnostic, never a digest over whatever was left.
+        let Ok(anchors) = architecture::ValidatedAnchorSet::new(
             result.attestation_anchor_names.iter().map(String::as_str),
-        );
+        ) else {
+            result.diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::AttestationAnchorSetMismatch,
+                &location,
+                "a harvested attestation anchor name is not in the anchor-name grammar, so the \
+                 pinned anchor-set hash cannot be recomputed",
+            ));
+            return;
+        };
+        let actual = architecture::anchor_set_hash(&anchors);
         if actual != pinned {
             result.diagnostics.push(LabelDiagnostic::error(
                 LabelErrorCode::AttestationAnchorSetMismatch,

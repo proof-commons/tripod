@@ -23,7 +23,7 @@ use target_elements_conformance::lifecycle::{
 };
 use target_elements_conformance::lifecycle_report::{
     CheckOutcome, DestroyedFile, DestructionRecord, FreshProcessLifecycleReport,
-    LifecycleReportRole, LifecycleRowOutcome, ReadingPass, UnbuiltRow,
+    LifecycleReportRole, LifecycleRowOutcome, MINIMUM_COMPLETE_PASSES, ReadingPass, UnbuiltRow,
 };
 use target_elements_conformance::normalization::AuthorizationProfile;
 
@@ -155,22 +155,44 @@ fn run() -> Result<String, String> {
             .map(ToOwned::to_owned),
     };
 
-    // Checked here rather than left for a reader. Every other fact in
-    // this report is worthless if the creator was still running, or its
-    // wallet still on disk, while the chain was read.
+    gates_hold(&report)?;
+
+    serde_json::to_string_pretty(&report)
+        .map_err(|error| format!("the report does not serialize: {error}"))
+}
+
+/// Every condition the report must meet before it is emitted at all.
+///
+/// Checked here rather than left for a reader. Every other fact in this
+/// report is worthless if the creator was still running, or its wallet
+/// still on disk, while the chain was read.
+fn gates_hold(report: &FreshProcessLifecycleReport) -> Result<(), String> {
     if !report.boundary_holds() {
         return Err(
             "the run's process boundary does not hold: the creator's wallet or process \
-             survived it, or two reading passes shared one process"
+             survived it, or two reading passes shared one process or one attempt ordinal"
                 .to_owned(),
         );
     }
     if !report.matrix_is_complete() {
-        return Err("the run answered fewer rows than the matrix states".to_owned());
+        return Err(
+            "a reading pass did not answer the matrix exactly: a row is missing, answered \
+             twice, or not one the matrix states"
+                .to_owned(),
+        );
     }
-
-    serde_json::to_string_pretty(&report)
-        .map_err(|error| format!("the report does not serialize: {error}"))
+    // The whole claim, not the two parts the gate used to consult. A
+    // report that reached here with one pass, or with passes that
+    // disagreed, would be offering a reading nothing shows was
+    // uncached.
+    if !report.cache_independence_established() {
+        return Err(format!(
+            "the run does not establish cache independence: it needs at least \
+             {MINIMUM_COMPLETE_PASSES} complete passes, in distinct processes, agreeing row \
+             for row"
+        ));
+    }
+    Ok(())
 }
 
 /// One unsigned field of the run record, refused where it does not fit.
