@@ -546,6 +546,69 @@ impl SupervisedGroup {
     }
 }
 
+/// A spawned child that nothing supervises yet.
+///
+/// # Why a guard rather than a return path
+///
+/// Between the spawn and the supervisor there are several ways to fail:
+/// the pipes may not be there to take, and the process group may not be
+/// establishable. Rust's `Child` destructor neither kills nor waits, so
+/// each of those returns used to drop a live or exited-unreaped process
+/// — a run refused, and the process it started still running or still
+/// occupying a slot in the process table.
+///
+/// The guard makes every one of those paths cleanup-safe without any of
+/// them saying so, which is the property worth having: a path added
+/// later inherits it. On the success path [`Self::adopt`] hands the
+/// child to the supervisor and the guard has nothing left to clean.
+///
+/// # Kill and reap, in that order
+///
+/// Terminating without waiting leaves a zombie until the harness itself
+/// exits; waiting without terminating hangs on a child that has not
+/// finished. Both are done, and the wait is blocking: at this point the
+/// child has just been signalled, has never been written to, and has no
+/// reason to outlive the signal.
+struct UnadoptedChild {
+    child: Option<Child>,
+}
+
+impl UnadoptedChild {
+    /// Takes a freshly spawned child under guard.
+    const fn new(child: Child) -> Self {
+        Self { child: Some(child) }
+    }
+
+    /// The child, while it is still unadopted.
+    fn child(&self) -> Option<&Child> {
+        self.child.as_ref()
+    }
+
+    /// The child, mutably, while it is still unadopted.
+    fn child_mut(&mut self) -> Option<&mut Child> {
+        self.child.as_mut()
+    }
+
+    /// Releases the child to a supervisor that will own its cleanup.
+    fn adopt(&mut self) -> Option<Child> {
+        self.child.take()
+    }
+}
+
+impl Drop for UnadoptedChild {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            // Both results are deliberately discarded: a child that has
+            // already exited answers the kill with an error, and that is
+            // the state the kill was asking for rather than a failure to
+            // report. Nothing here can be reported anyway — a destructor
+            // has no return.
+            let _ignored = child.kill();
+            let _reaped = child.wait();
+        }
+    }
+}
+
 /// One executor run, started and stopped as a whole process tree.
 struct ExecutorSupervisor {
     child: Mutex<Child>,
@@ -562,13 +625,18 @@ struct ExecutorSupervisor {
 
 impl ExecutorSupervisor {
     /// Takes ownership of a spawned child and the group it leads.
-    fn adopt(child: Child) -> Result<Self, NativeConformanceError> {
-        let group = SupervisedGroup::establish(&child)?;
-        Ok(Self {
+    ///
+    /// The group is established by the caller, while the child is still
+    /// under its startup guard: establishment is the last thing that can
+    /// fail before anything is supervised, and a constructor that both
+    /// established and took ownership would be the one place where a
+    /// failure had to drop a child it had already consumed.
+    const fn adopt(child: Child, group: SupervisedGroup) -> Self {
+        Self {
             child: Mutex::new(child),
             group,
             termination: Mutex::new(()),
-        })
+        }
     }
 
     /// Stops the whole run: graceful, bounded wait, forceful.
@@ -740,28 +808,37 @@ fn execute_workload(
     configuration: &ExecutorConfiguration,
     workload: NativeWorkload<'_>,
 ) -> Result<ExecutionTranscript, NativeConformanceError> {
-    let mut child = spawn_executor(&configuration.program)
-        .map_err(|_| NativeConformanceError::ExecutorStartupFailed)?;
+    // Under guard from the spawn onward. Every refusal between here and
+    // the supervisor kills and reaps the process this harness started,
+    // rather than dropping a `Child` whose destructor does neither
+    // (`G11-R13`).
+    let mut spawned = UnadoptedChild::new(
+        spawn_executor(&configuration.program)
+            .map_err(|_| NativeConformanceError::ExecutorStartupFailed)?,
+    );
 
-    let stdin = child
-        .stdin
-        .take()
+    let stdin = spawned
+        .child_mut()
+        .and_then(|child| child.stdin.take())
         .ok_or(NativeConformanceError::ExecutorStartupFailed)?;
-    let stdout = child
-        .stdout
-        .take()
+    let stdout = spawned
+        .child_mut()
+        .and_then(|child| child.stdout.take())
         .ok_or(NativeConformanceError::ExecutorStartupFailed)?;
     let mut reader = BufReader::new(stdout);
 
-    let supervisor = match ExecutorSupervisor::adopt(child) {
-        Ok(supervisor) => Arc::new(supervisor),
-        Err(error) => {
-            // Nothing is supervised, so nothing may be left running: the
-            // pipes are dropped and the run is refused rather than
-            // continued outside the cleanup contract.
-            return Err(error);
-        }
-    };
+    // The last thing that can fail before anything is supervised. A run
+    // that cannot establish its group is refused, and the guard is what
+    // makes the refusal leave nothing behind.
+    let group = SupervisedGroup::establish(
+        spawned
+            .child()
+            .ok_or(NativeConformanceError::ExecutorStartupFailed)?,
+    )?;
+    let child = spawned
+        .adopt()
+        .ok_or(NativeConformanceError::ExecutorStartupFailed)?;
+    let supervisor = Arc::new(ExecutorSupervisor::adopt(child, group));
     let watchdog = Watchdog::start(
         Arc::clone(&supervisor),
         configuration.timeout,
@@ -1321,10 +1398,86 @@ mod tests {
     };
 
     use super::{
-        ExecutorConfiguration, ExecutorTrust, NativeWorkload, PrimitiveFixtureSet, run_protocol,
+        ExecutorConfiguration, ExecutorTrust, NativeWorkload, PrimitiveFixtureSet, UnadoptedChild,
+        run_protocol,
     };
     use crate::error::NativeConformanceError;
     use crate::protocol::{MOCK_EXECUTOR_GENESIS_ID, MOCK_EXECUTOR_NETWORK_ID};
+
+    /// `G11-R13`: a spawned child dropped before adoption is killed and
+    /// reaped, not leaked.
+    ///
+    /// The child here is a long-running sleep that would still be
+    /// running a minute later, so a guard that failed to signal it would
+    /// leave it alive; and the wait is what distinguishes a killed child
+    /// from a collected one, so a guard that signalled without waiting
+    /// would leave a zombie. The assertion reads the second directly:
+    /// once the guard has reaped, the process is no longer this
+    /// process's child at all, and a further wait says so.
+    #[cfg(unix)]
+    #[test]
+    fn an_unadopted_child_is_killed_and_reaped() {
+        use nix::sys::wait::{WaitPidFlag, waitpid};
+
+        let child = std::process::Command::new("/bin/sh")
+            .args(["-c", "sleep 120"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("a sleeping child starts");
+        let pid = nix::unistd::Pid::from_raw(
+            i32::try_from(child.id()).expect("a process identifier is representable"),
+        );
+
+        let guard = UnadoptedChild::new(child);
+        assert!(
+            guard.child().is_some(),
+            "an unadopted guard still holds its child",
+        );
+        drop(guard);
+
+        // No child of this process by that identifier remains, which is
+        // exactly what "reaped" means: an unreaped one — alive or
+        // zombie — would be reported here instead.
+        assert_eq!(
+            waitpid(pid, Some(WaitPidFlag::WNOHANG)),
+            Err(nix::errno::Errno::ECHILD),
+            "the guard left an unreaped child behind",
+        );
+    }
+
+    /// `G11-R13`: an adopted child is the supervisor's, and the guard
+    /// touches it no further.
+    ///
+    /// The other half of the property. A guard that killed on the
+    /// success path too would stop every run at the moment it started.
+    #[cfg(unix)]
+    #[test]
+    fn an_adopted_child_is_left_to_its_supervisor() {
+        let child = std::process::Command::new("/bin/sh")
+            .args(["-c", "sleep 120"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("a sleeping child starts");
+
+        let mut guard = UnadoptedChild::new(child);
+        let mut adopted = guard.adopt().expect("the child is adopted");
+        assert!(
+            guard.child().is_none(),
+            "an adopted guard holds nothing to clean up",
+        );
+        drop(guard);
+
+        assert!(
+            adopted.try_wait().expect("the child is waitable").is_none(),
+            "adoption must not have stopped the child",
+        );
+        adopted.kill().expect("the test stops its own child");
+        adopted.wait().expect("the test reaps its own child");
+    }
 
     /// A pipe whose far end is already gone.
     struct BrokenPipe;
