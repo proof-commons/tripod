@@ -81,8 +81,8 @@ use crate::report::{
     CaseStatus, EvidenceDisposition, EvidencePlanClass, PrototypeReportRole, ReportCompleteness,
 };
 use crate::validate::{
-    NativeReportValidationInputs, evaluate, evaluate_experimental, gate, guide_nine_evidence_plan,
-    validate_native_report,
+    NativeReportValidationInputs, ValidatedNativeConformanceReport, evaluate,
+    evaluate_experimental, gate, guide_nine_evidence_plan, validate_native_report,
 };
 
 use super::support::{
@@ -1121,18 +1121,20 @@ fn g11_r02_permuting_canonical_declaration_order_is_harmless() {
     gate(&validated).expect("a permuted declaration order is still evidence");
 }
 
-// -- G11-R04 -----------------------------------------------------------
+// -- G11-R04 (CLOSED by Wave 3) ----------------------------------------
 
-/// `G11-R04`: consensus resource cases are credited to the policy
-/// resource row.
+/// `G11-R04` **CLOSED**: consensus resource cases are not credited to
+/// the policy resource row.
 ///
-/// `bearing_requirements` receives a case identity, not a fixture, so it
-/// cannot read the enforcement layer. The canonical census states every
-/// resource case at the consensus layer, and the policy row nevertheless
-/// passes on their statuses while the policy claim it owns is recorded
-/// unresolved.
+/// `bearing_requirements` receives the complete fixture, so it reads the
+/// enforcement layer the case is stated at: a consensus case bears on
+/// the consensus row and on nothing else. The canonical census states
+/// every resource case at the consensus layer, so the policy row has no
+/// case at all — and the plan now says so, classifying it unresolved by
+/// design rather than required, which is the honest state until a real
+/// relay-policy matrix exists.
 #[test]
-fn g11_r04_consensus_resource_cases_pass_the_policy_resource_row() {
+fn g11_r04_consensus_resource_cases_do_not_reach_the_policy_resource_row() {
     let target = reviewed_target();
     let binding = development_binding(&target);
     let fixtures = canonical_fixture_set(&target, &binding).expect("the census states");
@@ -1158,20 +1160,36 @@ fn g11_r04_consensus_resource_cases_pass_the_policy_resource_row() {
         "every canonical resource case is stated at the consensus layer",
     );
 
+    let consensus = report
+        .evidence
+        .iter()
+        .find(|row| row.requirement == "consensus_resource_limits")
+        .expect("the consensus resource row exists");
+    assert_eq!(consensus.plan, EvidencePlanClass::Required);
+    assert_eq!(consensus.disposition, EvidenceDisposition::Passed);
+    assert_ne!(
+        consensus.cases, 0,
+        "the consensus cases are counted under the consensus row",
+    );
+
     let policy = report
         .evidence
         .iter()
         .find(|row| row.requirement == "policy_resource_limits")
         .expect("the policy resource row exists");
-    assert_eq!(policy.plan, EvidencePlanClass::Required);
+    assert_eq!(
+        policy.plan,
+        EvidencePlanClass::UnresolvedByDesign,
+        "the row is honestly unresolved until relay-policy cases exist",
+    );
+    assert_eq!(
+        policy.cases, 0,
+        "no consensus case is counted under the policy row",
+    );
     assert_eq!(
         policy.disposition,
-        EvidenceDisposition::Passed,
-        "the defect: a required policy row passes on consensus-layer cases",
-    );
-    assert_ne!(
-        policy.cases, 0,
-        "the defect: consensus cases are counted under the policy row",
+        EvidenceDisposition::UnresolvedByDesign,
+        "an unattempted row is unresolved, which is neither pass nor failure",
     );
 
     let claim = report
@@ -1182,18 +1200,25 @@ fn g11_r04_consensus_resource_cases_pass_the_policy_resource_row() {
     assert_eq!(
         claim.disposition,
         EvidenceDisposition::UnresolvedByDesign,
-        "the defect: the row passes while its defining claim is unresolved",
+        "the claim and the row it defines now agree",
     );
     assert!(
-        !claim.required,
-        "the defect: a required row owns no required claim, so completeness cannot notice",
+        claim.bearing_cases.is_empty(),
+        "no case bears on the policy claim",
+    );
+
+    // The row and its defining claim no longer contradict each other,
+    // and the report says the run left a dimension unattempted rather
+    // than claiming it established one.
+    assert_eq!(
+        report.summary.completeness,
+        ReportCompleteness::PartialUnresolvedClaims,
     );
 }
 
-// -- G11-R05 -----------------------------------------------------------
+// -- G11-R05 (CLOSED by Wave 3) ----------------------------------------
 
-/// `G11-R05`: the route this finding was reproduced through is closed,
-/// and the finding itself is not.
+/// `G11-R05` **CLOSED**: both routes to the gate are shut.
 ///
 /// # What the reproduction used to do
 ///
@@ -1207,15 +1232,26 @@ fn g11_r04_consensus_resource_cases_pass_the_policy_resource_row() {
 /// # Why it cannot do that any more
 ///
 /// Wave 1 made the census a canonical trust state, so an augmented census
-/// is refused before any row is computed. That is the `G11-R02` repair
-/// doing its work, and it is *not* a repair of this finding: `gate` still
-/// reads neither `summary.completeness` nor the case statuses. What has
-/// changed is only that this particular construction can no longer reach
-/// it, because every canonical case bears on a required row.
+/// is refused before any row is computed. That was the `G11-R02` repair
+/// doing its work rather than a repair of this finding, and it left the
+/// gate itself unrepaired: a construction reaching `gate` with a failed
+/// case would still have passed.
 ///
-/// So this test records both halves — the closed route, and the summary
-/// that is still failed while nothing at the gate consults it — and Wave
-/// 3 owns finding a route that reaches the gate itself.
+/// # What Wave 3 changed
+///
+/// The gate now reads every case status and the summary's own
+/// completeness. This test therefore shows both halves closed: the
+/// census route is refused at evaluation, and the report that route used
+/// to produce is refused at the gate when it is put there directly.
+///
+/// # Why the report is wrapped rather than validated
+///
+/// The subject under test is `gate`, and the report it must refuse is
+/// one `validate_native_report` would never produce — that is the point
+/// of the Wave-1 repair. So the report is built by the experimental path
+/// over the very census the old reproduction used, and asserted into the
+/// validated state through the crate-visible test constructor. The two
+/// rules are tested separately because they are two rules.
 #[test]
 fn g11_r05_the_augmented_census_route_to_the_gate_is_closed() {
     let target = reviewed_target();
@@ -1291,8 +1327,7 @@ fn g11_r05_the_augmented_census_route_to_the_gate_is_closed() {
         NativeConformanceError::NoncanonicalFixtureCensus
     ));
 
-    // Half two: the report the run produces is still failed, and the gate
-    // still has no field that would notice. The finding stands.
+    // Half two: the report that route produced is refused at the gate.
     let report = evaluate_experimental(&target, &binding, &fixtures, &transcript, &plan, &registry)
         .expect("the run evaluates as an experiment")
         .into_report();
@@ -1300,11 +1335,7 @@ fn g11_r05_the_augmented_census_route_to_the_gate_is_closed() {
         report.summary.cases_failed, 1,
         "exactly the extra case failed",
     );
-    assert_eq!(
-        report.summary.completeness,
-        ReportCompleteness::Failed,
-        "the defect: the summary calls the report failed, and no gate reads that",
-    );
+    assert_eq!(report.summary.completeness, ReportCompleteness::Failed);
     let sighash = report
         .evidence
         .iter()
@@ -1313,8 +1344,111 @@ fn g11_r05_the_augmented_census_route_to_the_gate_is_closed() {
     assert_ne!(
         sighash.plan,
         EvidencePlanClass::Required,
-        "the failing case touches no required row",
+        "the failing case still touches no required row",
     );
+
+    let refusal = gate(&ValidatedNativeConformanceReport::wrap_for_tests(report))
+        .expect_err("a failed case is refused whatever it bears on");
+    assert!(
+        matches!(refusal, NativeConformanceError::NativeCaseFailed(failed) if failed == case),
+        "the gate names the case that failed",
+    );
+}
+
+/// `G11-R05` **CLOSED**: a report whose only defect is its own summary
+/// is refused.
+///
+/// The case loop and the required-row loop between them catch every
+/// failure this harness can compute, so the completeness check is the
+/// arm that catches anything they do not enumerate. It is reachable
+/// only by presenting a report whose summary disagrees with its rows,
+/// which is why the report is wrapped rather than validated: the
+/// validator recomputes the summary and would refuse this document
+/// first.
+#[test]
+fn g11_r05_a_report_whose_summary_says_failed_is_refused() {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let fixtures = canonical_fixture_set(&target, &binding).expect("the census states");
+    let (plan, registry) = plan_and_registry();
+    let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake: nonmock_handshake(),
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: subjects_of(&fixtures),
+        responses: answers(&fixtures),
+    });
+    let mut report = evaluate(&target, &binding, &fixtures, &transcript, &plan, &registry)
+        .expect("the run evaluates");
+
+    // The run itself passed: every case, every required claim, every
+    // required row.
+    gate(&ValidatedNativeConformanceReport::wrap_for_tests(
+        report.clone(),
+    ))
+    .expect("an honest complete run is evidence");
+
+    report.summary.completeness = ReportCompleteness::Failed;
+    let refusal = gate(&ValidatedNativeConformanceReport::wrap_for_tests(report))
+        .expect_err("no gate returns success for a report whose summary says failed");
+    assert!(matches!(
+        refusal,
+        NativeConformanceError::ReportSummaryFailed
+    ));
+}
+
+/// `G11-R05` **CLOSED**: a failed canonical case is refused on the
+/// ordinary evidence path, with no test constructor involved.
+#[test]
+fn g11_r05_a_failed_canonical_case_never_reaches_evidence() {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let fixtures = canonical_fixture_set(&target, &binding).expect("the census states");
+    let (plan, registry) = plan_and_registry();
+
+    // One case answered with the opposite verdict, and nothing else
+    // touched.
+    let mut responses = answers(&fixtures);
+    let victim = fixtures
+        .iter()
+        .next()
+        .expect("the canonical census is nonempty")
+        .case();
+    let answer = responses.get_mut(&victim).expect("the case was answered");
+    answer.verdict = match answer.verdict {
+        NativeVerdict::Accepted => NativeVerdict::Rejected,
+        _ => NativeVerdict::Accepted,
+    };
+    answer.observed_failure = None;
+
+    let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake: nonmock_handshake(),
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: subjects_of(&fixtures),
+        responses,
+    });
+    let report = evaluate(&target, &binding, &fixtures, &transcript, &plan, &registry)
+        .expect("the run evaluates");
+    assert_eq!(report.summary.cases_failed, 1);
+
+    let validated = validate_native_report(
+        report,
+        NativeReportValidationInputs {
+            target: &target,
+            binding: &binding,
+            fixtures: &fixtures,
+            plan: &plan,
+            registry: &registry,
+            transcript: &transcript,
+        },
+    )
+    .expect("the report faithfully describes the run");
+    gate(&validated).expect_err("a run with a failed case is not evidence");
 }
 
 // -- G11-R06 -----------------------------------------------------------
