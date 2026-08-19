@@ -444,6 +444,15 @@ resources, capabilities, evidence, and the cross-contract welds. The seven
 contract that is internally coherent but disagrees with itself across two of
 its own registries.
 
+The signature weld derives one complete expected behaviour from
+`SignaturePrimitiveContract` and compares every signature opcode against it:
+both operand positions, the recognized-key success form and the unknown-key
+one, the Boolean a branching form pushes and the nothing a verifying form
+pushes, the empty-signature and invalid-signature outcomes, the empty-key
+rejection, the budget, and the evidence. Deriving the whole expectation is the
+point — checking a convenient subset let a definition say unknown keys reject
+in the subcontract and succeed without verification in every opcode.
+
 ## The compound-proof primitive census
 
 Guide 10 required a primitive-needs census before any prototype code: every

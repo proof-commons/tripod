@@ -771,7 +771,7 @@ TargetContractVersion::V1
 
 If V1 remains supported, implement genuine version-specific opcode, capability, evidence, operand, and success-algebra validation. A V2 body stamped V1 must never validate.
 
-## 4.14 Signature weld covers the whole behavior
+## 4.14 Signature weld covers the whole behavior · `rule:guide11-exec:signature-weld`
 
 Extend the signature weld to check:
 

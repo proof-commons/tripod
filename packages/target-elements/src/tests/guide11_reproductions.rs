@@ -23,14 +23,19 @@
 
 use std::collections::BTreeMap;
 
-use crate::authorization::{AuthorizationContract, SignaturePrimitiveContract};
+use crate::authorization::{
+    AuthorizationContract, SignaturePrimitiveContract, UnknownPublicKeyTypeRule,
+};
 use crate::definition::{
     TargetContractVersion, TargetDefinition, TargetDefinitionParts, reviewed_elements_tapscript,
     validate_target_definition,
 };
 use crate::error::TargetError;
-use crate::opcode::{OpcodeId, OpcodeSpec};
-use crate::success::SuccessCondition;
+use crate::opcode::{
+    FailureCause, FailureContract, OpcodeId, OpcodeSpec, StackContract, StackValueType,
+};
+use crate::operand::OperandContract;
+use crate::success::{SuccessCase, SuccessCondition, SuccessContract, SuccessStackEffect};
 
 /// The reviewed contract's parts, as a mutable starting point.
 fn parts() -> TargetDefinitionParts {
@@ -160,46 +165,20 @@ fn g11_r09_a_v2_definition_missing_a_v2_primitive_is_refused() {
 
 // -- G11-R10 -----------------------------------------------------------
 
-/// `G11-R10`: the signature weld ignores the unknown-public-key rule.
-///
-/// The subcontract is changed to say an unknown key type is rejected,
-/// while every signature opcode keeps its unknown-key success case and
-/// its unknown-nonempty-key operand admission. `weld_signature` reads
-/// neither, so the contradictory definition still validates.
-#[test]
-fn g11_r10_a_contradictory_unknown_key_rule_still_validates() {
+/// Every signature primitive, branching and verifying alike.
+const SIGNATURE_OPCODES: &[OpcodeId] = &[
+    OpcodeId::CheckSig,
+    OpcodeId::CheckSigVerify,
+    OpcodeId::CheckSigFromStack,
+    OpcodeId::CheckSigFromStackVerify,
+];
+
+/// The reviewed parts with the signature subcontract's unknown-key rule
+/// replaced, and nothing else touched.
+fn with_unknown_key_rule(rule: UnknownPublicKeyTypeRule) -> TargetDefinitionParts {
     let mut parts = parts();
     let authorization = parts.authorization.clone();
     let signature = authorization.signature();
-    assert_eq!(
-        signature.unknown_public_key_type(),
-        crate::authorization::UnknownPublicKeyTypeRule::SucceedsWithoutVerification,
-        "the reviewed rule is the succeeding one",
-    );
-
-    // Every signature opcode still advertises the unknown-key success
-    // that the changed rule denies.
-    let unknown_key_successes = [
-        OpcodeId::CheckSig,
-        OpcodeId::CheckSigVerify,
-        OpcodeId::CheckSigFromStack,
-        OpcodeId::CheckSigFromStackVerify,
-    ]
-    .into_iter()
-    .filter(|opcode| {
-        parts.opcodes.get(opcode).is_some_and(|spec| {
-            spec.stack()
-                .success()
-                .cases()
-                .iter()
-                .any(|case| case.condition() == SuccessCondition::UnknownKeyTypeUnverified)
-        })
-    })
-    .count();
-    assert!(
-        unknown_key_successes > 0,
-        "at least one signature opcode advertises unknown-key success",
-    );
 
     parts.authorization = AuthorizationContract::new(
         SignaturePrimitiveContract::new(
@@ -207,24 +186,280 @@ fn g11_r10_a_contradictory_unknown_key_rule_still_validates() {
             signature.signature_encoding(),
             signature.empty_signature(),
             signature.invalid_signature(),
-            crate::authorization::UnknownPublicKeyTypeRule::Rejected,
+            rule,
             signature.budget_per_check(),
             signature.evidence().iter().copied(),
         ),
         authorization.sighash().clone(),
         authorization.relative_timelock().clone(),
     );
+    parts
+}
 
-    let validated = validate_target_definition(TargetDefinition::new(parts))
-        .expect("the defect: the contradictory signature contract validates");
-    assert_eq!(
-        validated
-            .definition()
-            .authorization()
-            .signature()
-            .unknown_public_key_type(),
-        crate::authorization::UnknownPublicKeyTypeRule::Rejected,
-        "the defect: the validated contract rejects unknown keys in one view and \
-         succeeds on them in another",
+/// Rebuild one opcode's spec with a new stack contract, leaving its
+/// identity, byte, domains, resources, and evidence alone.
+fn with_stack(parts: &mut TargetDefinitionParts, opcode: OpcodeId, stack: StackContract) {
+    let spec = parts.opcodes.get(&opcode).expect("the opcode is declared");
+    let replaced = OpcodeSpec::new(
+        spec.id(),
+        spec.code(),
+        spec.domains().iter().copied(),
+        stack,
+        spec.resources().clone(),
+        spec.evidence().iter().copied(),
     );
+    parts.opcodes.insert(opcode, replaced);
+}
+
+/// Assert that a mutated definition is refused, and refused *for the
+/// signature weld* rather than for some incidental shape defect.
+#[track_caller]
+fn refused_by_the_signature_weld(parts: TargetDefinitionParts) {
+    let errors = validate_target_definition(TargetDefinition::new(parts))
+        .expect_err("a contradictory signature contract is not a validated contract");
+    assert!(
+        errors.contains(&TargetError::SignatureContractMismatch),
+        "the refusal is the signature weld's, got {errors:?}",
+    );
+}
+
+/// `G11-R10`: the reviewed contract remains valid.
+///
+/// The control for every mutation below. A weld that refused the
+/// reviewed contract would be describing some other target, and each
+/// refusal below would mean nothing.
+#[test]
+fn g11_r10_the_reviewed_signature_contract_remains_valid() {
+    validate_target_definition(TargetDefinition::new(parts()))
+        .expect("the reviewed contract validates unmutated");
+}
+
+/// `G11-R10`: a subcontract rejecting unknown keys cannot coexist with
+/// opcodes that succeed on them.
+///
+/// The finding itself. `weld_signature` never read
+/// `unknown_public_key_type`, so the subcontract could say an unknown
+/// key type is refused while every signature opcode kept its unknown-key
+/// success case and its unknown-nonempty operand admission — a validated
+/// contract contradicting itself about one of the target's sharpest
+/// authorization behaviours.
+#[test]
+fn g11_r10_a_contradictory_unknown_key_rule_is_refused() {
+    let parts = with_unknown_key_rule(UnknownPublicKeyTypeRule::Rejected);
+
+    // The premise: every signature opcode still advertises the
+    // unknown-key success and admission that the changed rule denies.
+    for opcode in SIGNATURE_OPCODES {
+        let spec = parts.opcodes.get(opcode).expect("the opcode is declared");
+        assert!(
+            spec.stack()
+                .success()
+                .cases()
+                .iter()
+                .any(|case| case.condition() == SuccessCondition::UnknownKeyTypeUnverified),
+            "{opcode:?} advertises unknown-key success",
+        );
+        assert!(
+            spec.stack().operands().iter().any(|operand| matches!(
+                operand,
+                OperandContract::PublicKey {
+                    unknown_nonempty_allowed: true,
+                    ..
+                },
+            )),
+            "{opcode:?} admits unknown nonempty keys",
+        );
+    }
+
+    refused_by_the_signature_weld(parts);
+}
+
+/// `G11-R10`: removing the unknown-key success case is refused.
+///
+/// The mirror of the test above, mutating the opcode side instead of
+/// the subcontract side. The rule says unknown keys succeed without
+/// verification; an opcode with no such form denies it.
+#[test]
+fn g11_r10_removing_the_unknown_key_success_case_is_refused() {
+    let mut parts = parts();
+    assert_eq!(
+        parts.authorization.signature().unknown_public_key_type(),
+        UnknownPublicKeyTypeRule::SucceedsWithoutVerification,
+    );
+
+    for opcode in SIGNATURE_OPCODES {
+        let spec = parts.opcodes.get(opcode).expect("the opcode is declared");
+        let cases = spec
+            .stack()
+            .success()
+            .cases()
+            .into_iter()
+            .filter(|case| case.condition() != SuccessCondition::UnknownKeyTypeUnverified)
+            .collect::<Vec<_>>();
+        let stack = StackContract::new(
+            spec.stack().operands().to_vec(),
+            SuccessContract::Alternatives { cases },
+            spec.stack().failure().clone(),
+        );
+        with_stack(&mut parts, *opcode, stack);
+    }
+
+    refused_by_the_signature_weld(parts);
+}
+
+/// `G11-R10`: narrowing the key operand against the rule is refused.
+///
+/// The public-key position can be narrowed to the exact recognized
+/// encoding while the success contract still advertises unknown-key
+/// success. Every remaining local shape check passes; only a weld
+/// reading both views sees it.
+#[test]
+fn g11_r10_refusing_unknown_nonempty_keys_against_the_rule_is_refused() {
+    let mut parts = parts();
+
+    for opcode in SIGNATURE_OPCODES {
+        let spec = parts.opcodes.get(opcode).expect("the opcode is declared");
+        let operands = spec
+            .stack()
+            .operands()
+            .iter()
+            .map(|operand| match operand {
+                OperandContract::PublicKey {
+                    recognized_encoding,
+                    ..
+                } => OperandContract::PublicKey {
+                    recognized_encoding: *recognized_encoding,
+                    unknown_nonempty_allowed: false,
+                },
+                other => other.clone(),
+            })
+            .collect::<Vec<_>>();
+        let stack = StackContract::new(
+            operands,
+            spec.stack().success().clone(),
+            spec.stack().failure().clone(),
+        );
+        with_stack(&mut parts, *opcode, stack);
+    }
+
+    refused_by_the_signature_weld(parts);
+}
+
+/// `G11-R10`: withdrawing empty-signature admission is refused.
+///
+/// The empty-signature *failure effect* is retained: the subcontract
+/// and the opcode both still say what an empty signature does. What is
+/// withdrawn is the operand admission that lets an empty item reach it,
+/// so the named outcome describes behaviour nothing can produce.
+#[test]
+fn g11_r10_withdrawing_empty_signature_admission_is_refused() {
+    let mut parts = parts();
+
+    for opcode in SIGNATURE_OPCODES {
+        let spec = parts.opcodes.get(opcode).expect("the opcode is declared");
+        let operands = spec
+            .stack()
+            .operands()
+            .iter()
+            .map(|operand| match operand {
+                OperandContract::Signature {
+                    nonempty_encoding, ..
+                } => OperandContract::Signature {
+                    nonempty_encoding: *nonempty_encoding,
+                    empty_allowed: false,
+                },
+                other => other.clone(),
+            })
+            .collect::<Vec<_>>();
+        let stack = StackContract::new(
+            operands,
+            spec.stack().success().clone(),
+            spec.stack().failure().clone(),
+        );
+        with_stack(&mut parts, *opcode, stack);
+
+        // The failure effect really is still there.
+        assert!(
+            parts
+                .opcodes
+                .get(opcode)
+                .expect("the opcode is declared")
+                .stack()
+                .failure()
+                .effects()
+                .iter()
+                .any(|effect| effect.cause() == FailureCause::EmptySignature),
+            "{opcode:?} keeps its empty-signature failure effect",
+        );
+    }
+
+    refused_by_the_signature_weld(parts);
+}
+
+/// `G11-R10`: a branching form that pushes nothing is refused.
+///
+/// A branching signature check exists to leave a Boolean a program can
+/// branch on. One that pushes nothing is a verifying form wearing a
+/// branching form's identity, and the difference is invisible to any
+/// check that does not compare the success results against the form.
+#[test]
+fn g11_r10_a_branching_form_pushing_no_boolean_is_refused() {
+    let mut parts = parts();
+    let opcode = OpcodeId::CheckSig;
+    let spec = parts.opcodes.get(&opcode).expect("the opcode is declared");
+
+    // The premise: it pushes exactly one Boolean before the mutation.
+    for case in spec.stack().success().cases() {
+        assert_eq!(case.effect().computed_types(), vec![StackValueType::Bool]);
+    }
+
+    let cases = spec
+        .stack()
+        .success()
+        .cases()
+        .into_iter()
+        .map(|case| {
+            SuccessCase::new(
+                case.condition(),
+                SuccessStackEffect::new(case.effect().consumed_operands(), Vec::new()),
+            )
+        })
+        .collect::<Vec<_>>();
+    let stack = StackContract::new(
+        spec.stack().operands().to_vec(),
+        SuccessContract::Alternatives { cases },
+        spec.stack().failure().clone(),
+    );
+    with_stack(&mut parts, opcode, stack);
+
+    refused_by_the_signature_weld(parts);
+}
+
+/// `G11-R10`: an empty public key stays a rejection of its own.
+///
+/// Emptiness and unrecognized-nonempty are different facts — one is
+/// refused outright, the other succeeds without verifying — and a
+/// contract that dropped the empty-key abort would be saying the
+/// forward-compatibility path swallows emptiness too.
+#[test]
+fn g11_r10_dropping_the_empty_public_key_rejection_is_refused() {
+    let mut parts = parts();
+    let opcode = OpcodeId::CheckSig;
+    let spec = parts.opcodes.get(&opcode).expect("the opcode is declared");
+    let effects = spec
+        .stack()
+        .failure()
+        .effects()
+        .iter()
+        .filter(|effect| effect.cause() != FailureCause::EmptyPublicKey)
+        .cloned()
+        .collect::<Vec<_>>();
+    let stack = StackContract::new(
+        spec.stack().operands().to_vec(),
+        spec.stack().success().clone(),
+        FailureContract::new(effects),
+    );
+    with_stack(&mut parts, opcode, stack);
+
+    refused_by_the_signature_weld(parts);
 }
