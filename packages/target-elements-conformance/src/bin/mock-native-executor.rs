@@ -247,22 +247,23 @@ enum UnknownCasePolicy {
 
 /// This mock's own answers, keyed by case identity.
 ///
-/// Derived from the canonical censuses, and never from a request. A case
-/// the table does not hold is answered by the [`UnknownCasePolicy`], and a
-/// census that cannot be authored at all leaves every case to that policy
-/// — the mock states what it can answer rather than failing a protocol
-/// test over a census it did not need.
+/// Never derived from a request. A primitive case the table does not hold
+/// is answered by the [`UnknownCasePolicy`], and a census that cannot be
+/// authored at all leaves every case to that policy — the mock states what
+/// it can answer rather than failing a protocol test over a census it did
+/// not need. A compound case the table does not hold is refused outright.
 ///
-/// # Why each half is built on first use
+/// # Why the primitive half is authored on first use
 ///
-/// Authoring the constructor matrix grinds nonces, which costs seconds.
-/// Paying that at startup made every protocol test wait for a census it
+/// Every canonical primitive run needs the whole census, so the mock
+/// keeps its own copy — but a prototype-only run needs none of it, and a
+/// protocol test driving two ad hoc cases needs none of it either.
+/// Authoring it before the handshake made both wait for a census they
 /// never asked about, and a run whose executor is still authoring
-/// fixtures when the harness's timeout expires is reported as a timeout
-/// — which is to say, the eager version turned a mock's own startup cost
-/// into a protocol failure. Each half is therefore authored the first
-/// time a request of its kind arrives, and a run of the other kind never
-/// pays for it.
+/// fixtures when the harness's timeout expires is reported as a timeout:
+/// the eager version turned the mock's own startup cost into a protocol
+/// failure. It is therefore authored the first time a primitive request
+/// arrives.
 struct AnswerTable {
     primitives: std::sync::OnceLock<BTreeMap<NativeCaseId, ExpectedPrimitiveOutcome>>,
     prototypes: BTreeMap<String, ExpectedPrototypeOutcome>,
