@@ -4,6 +4,7 @@ mod capability_tests;
 mod definition_tests;
 mod deployment_tests;
 mod encoding_tests;
+mod guide11_reproductions;
 mod mutation_tests;
 mod opcode_tests;
 mod permutation_tests;
