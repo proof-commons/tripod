@@ -23,14 +23,29 @@ use target_elements::{
 };
 
 use crate::claim::{ClaimRegistry, NativeEvidenceClaim, claim_registry, claims_of};
+use crate::constructor::canonical::{CanonicalOrderDefect, construct_canonically_ordered};
+use crate::constructor::curve::FIELD_ELEMENT_BYTES;
+use crate::constructor::internal_key::UNSPENDABLE_INTERNAL_KEY;
+use crate::constructor::metadata::PrototypeMetadata;
+use crate::constructor::totality::{TotalityDefect, TweakTotalityPolicy, construct_under_policy};
+use crate::constructor::tree::{FixtureTapTree, construct};
 use crate::executor::{ExecutionTranscript, ExecutorTrust};
 use crate::fixture::{
-    EnforcementLayer, ExpectedPrimitiveOutcome, FixtureScript, FixtureStatement, LeafVersionStatus,
-    NativeCaseGroup, NativeCaseId, PrimitiveFixture, PrimitiveFixtureSet, canonical_fixture_set,
+    EnforcementLayer, ExpectedPrimitiveOutcome, ExpectedResourceObservation, FixtureScript,
+    FixtureScriptSource, FixtureStatement, LeafVersionStatus, NativeCaseGroup, NativeCaseId,
+    PrimitiveFixture, PrimitiveFixtureSet, ResourceExpectation, canonical_fixture_set,
 };
 use crate::protocol::{
-    NATIVE_PROTOCOL_SCHEMA, NativeExecutionResponse, NativeResourceObservation, NativeVerdict,
-    ObservedFailureClass,
+    NATIVE_PROTOCOL_SCHEMA, NativeExecutionResponse, NativePrototypeResponse,
+    NativeResourceObservation, NativeVerdict, ObservedFailureClass,
+};
+use crate::prototype::{
+    CompoundPrototypeFixture, ExpectedPrototypeOutcome, PrototypeCaseId, PrototypeClaim,
+    PrototypeConstruction, PrototypeRelation, wide_floor_case_matrix,
+};
+use crate::prototype_report::PrototypeReportCompleteness;
+use crate::prototype_validate::{
+    PrototypeReportValidationInputs, evaluate_prototypes, prototype_gate, validate_prototype_report,
 };
 use crate::report::{CaseStatus, EvidenceDisposition, EvidencePlanClass, ReportCompleteness};
 use crate::validate::{
@@ -92,6 +107,30 @@ fn answers(fixtures: &PrimitiveFixtureSet) -> BTreeMap<NativeCaseId, NativeExecu
         .iter()
         .map(|fixture| (fixture.case(), contract_answer(fixture.case(), fixture)))
         .collect()
+}
+
+/// Every resource figure recorded and none of them fixed.
+const fn recorded_only() -> ExpectedResourceObservation {
+    ExpectedResourceObservation {
+        script_bytes: ResourceExpectation::RecordedOnly,
+        initial_stack_items: ResourceExpectation::RecordedOnly,
+        peak_stack_items: ResourceExpectation::RecordedOnly,
+        peak_altstack_items: ResourceExpectation::RecordedOnly,
+        maximum_element_bytes: ResourceExpectation::RecordedOnly,
+        validation_budget_used: ResourceExpectation::RecordedOnly,
+        transaction_weight: ResourceExpectation::RecordedOnly,
+    }
+}
+
+/// One prototype metadata object, at its first nonce.
+const fn metadata() -> PrototypeMetadata {
+    PrototypeMetadata {
+        schema: 1,
+        object_kind: 1,
+        counter: 0,
+        flags: 0,
+        nonce: 0,
+    }
 }
 
 /// A one-instruction program that pushes a nonempty literal.
@@ -626,6 +665,254 @@ fn g11_r06_a_contradictory_revision_pair_still_establishes_provenance() {
     )
     .expect("the report validates");
     gate(&validated).expect("the defect: the gate does not compare the two revisions");
+}
+
+// -- G11-R03 -----------------------------------------------------------
+
+/// `G11-R03`: a trivial true leaf carrying every wide-floor claim is
+/// gate-eligible prototype evidence.
+///
+/// `CompoundPrototypeFixture` has public fields, `defect` checks only
+/// local coherence, and the claim set is copied from the fixture. A bare
+/// leaf whose script pushes one true literal satisfies every coherence
+/// rule the wide-floor relation has — it needs no output of any role —
+/// and the report then credits all eleven wide-floor claims to a program
+/// that computes nothing.
+#[test]
+fn g11_r03_a_trivial_leaf_certifies_the_whole_wide_floor_relation() {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let program = pushes(&target, 0x01);
+    let script = program.encode(&target);
+
+    let leaf = FixtureTapTree::leaf(script.clone());
+    let built =
+        construct(&UNSPENDABLE_INTERNAL_KEY, &leaf, &leaf).expect("the bare leaf is constructible");
+    let claims: BTreeSet<PrototypeClaim> = PrototypeClaim::ALL
+        .iter()
+        .copied()
+        .filter(|claim| claim.relation() == PrototypeRelation::WideFloorRelation)
+        .collect();
+    assert_eq!(
+        claims.len(),
+        11,
+        "the wide-floor relation owns eleven claims"
+    );
+
+    let case = PrototypeCaseId {
+        relation: PrototypeRelation::WideFloorRelation,
+        name: "forged".to_owned(),
+    };
+    let forgery = CompoundPrototypeFixture {
+        case: case.clone(),
+        claims: claims.clone(),
+        target_contract_version: target.definition().version().get(),
+        script,
+        initial_stack: Vec::new(),
+        construction: PrototypeConstruction {
+            internal_key: UNSPENDABLE_INTERNAL_KEY,
+            tree: leaf.clone(),
+            executing_leaf: leaf,
+            control: Some(built.control_block().to_vec()),
+            predecessor_program: built.output_program().to_vec(),
+            outputs: Vec::new(),
+        },
+        expected: ExpectedPrototypeOutcome::Accepted,
+        expected_resources: recorded_only(),
+    };
+    assert!(
+        forgery.defect(&target).is_none(),
+        "the defect: the forgery states a coherent case",
+    );
+
+    let matrix = vec![forgery];
+    let transcript = ExecutionTranscript::prototypes_for_tests(
+        nonmock_handshake(),
+        observed_environment(),
+        ExecutorTrust::ReviewedNonMock,
+        BTreeMap::from([(
+            case.clone(),
+            NativePrototypeResponse {
+                schema: NATIVE_PROTOCOL_SCHEMA,
+                case,
+                verdict: NativeVerdict::Accepted,
+                final_stack: None,
+                final_altstack: None,
+                observed_failure: None,
+                resources: NativeResourceObservation::default(),
+            },
+        )]),
+    );
+
+    let report = evaluate_prototypes(
+        &target,
+        &binding,
+        PrototypeRelation::WideFloorRelation,
+        &matrix,
+        &transcript,
+    )
+    .expect("the defect: an arbitrary matrix evaluates as prototype evidence");
+    assert_eq!(
+        report.summary.required_claims_passed, 11,
+        "the defect: every wide-floor claim passes on a literal push",
+    );
+    assert_eq!(
+        report.summary.completeness,
+        PrototypeReportCompleteness::CompleteForWideFloorPrototype,
+        "the defect: the run reads as a complete wide-floor prototype",
+    );
+
+    let validated = validate_prototype_report(
+        report,
+        PrototypeReportValidationInputs {
+            target: &target,
+            binding: &binding,
+            relation: PrototypeRelation::WideFloorRelation,
+            matrix: &matrix,
+            transcript: &transcript,
+        },
+    )
+    .expect("the defect: the forged report revalidates against its own matrix");
+    prototype_gate(&validated).expect("the defect: the forged report satisfies the prototype gate");
+
+    // The canonical matrix is a different value entirely, and nothing on
+    // the evidence path compares the two.
+    let canonical = wide_floor_case_matrix(&target).expect("the canonical matrix states");
+    assert_ne!(matrix, canonical);
+}
+
+/// `G11-R03`: a prototype report claims typed-program provenance for raw
+/// caller-supplied bytes.
+///
+/// The projection stamps every compound row `TypedProgram`, though
+/// `CompoundPrototypeFixture::script` is a public byte vector and
+/// `defect` never establishes that the bytes came from a typed program.
+#[test]
+fn g11_r03_raw_bytes_are_reported_as_a_typed_program() {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    // Bytes no typed program encodes: a lone push prefix with no payload.
+    let script = vec![0x02, 0x01];
+    let leaf = FixtureTapTree::leaf(script.clone());
+    let built =
+        construct(&UNSPENDABLE_INTERNAL_KEY, &leaf, &leaf).expect("the bare leaf is constructible");
+    let case = PrototypeCaseId {
+        relation: PrototypeRelation::WideFloorRelation,
+        name: "raw-bytes".to_owned(),
+    };
+    let fixture = CompoundPrototypeFixture {
+        case: case.clone(),
+        claims: BTreeSet::from([PrototypeClaim::WideFloorExactDivisionObserved]),
+        target_contract_version: target.definition().version().get(),
+        script,
+        initial_stack: Vec::new(),
+        construction: PrototypeConstruction {
+            internal_key: UNSPENDABLE_INTERNAL_KEY,
+            tree: leaf.clone(),
+            executing_leaf: leaf,
+            control: Some(built.control_block().to_vec()),
+            predecessor_program: built.output_program().to_vec(),
+            outputs: Vec::new(),
+        },
+        expected: ExpectedPrototypeOutcome::Rejected,
+        expected_resources: recorded_only(),
+    };
+    let matrix = vec![fixture];
+    let transcript = ExecutionTranscript::prototypes_for_tests(
+        nonmock_handshake(),
+        observed_environment(),
+        ExecutorTrust::ReviewedNonMock,
+        BTreeMap::from([(
+            case.clone(),
+            NativePrototypeResponse {
+                schema: NATIVE_PROTOCOL_SCHEMA,
+                case,
+                verdict: NativeVerdict::Rejected,
+                final_stack: None,
+                final_altstack: None,
+                observed_failure: None,
+                resources: NativeResourceObservation::default(),
+            },
+        )]),
+    );
+    let report = evaluate_prototypes(
+        &target,
+        &binding,
+        PrototypeRelation::WideFloorRelation,
+        &matrix,
+        &transcript,
+    )
+    .expect("the matrix evaluates");
+    assert_eq!(
+        report.cases[0].fixture.script_source,
+        FixtureScriptSource::TypedProgram,
+        "the defect: raw bytes are reported as a typed program",
+    );
+}
+
+// -- G11-R14 -----------------------------------------------------------
+
+/// `G11-R14`: nonce retry retries an internal key no nonce can repair.
+///
+/// Only a tree defect short-circuits. An internal key that is not a curve
+/// point is invariant under every metadata nonce, and the search runs to
+/// its bound and reports exhaustion rather than the permanent
+/// classification the type documents.
+#[test]
+fn g11_r14_an_invalid_internal_key_is_retried_to_exhaustion() {
+    // Above the field prime, so no x-only lift exists for any nonce.
+    let invalid_key = [0xff_u8; FIELD_ELEMENT_BYTES];
+    let leaf = FixtureTapTree::leaf(vec![0x51]);
+    let attempts = 8;
+
+    let defect = construct_under_policy(
+        &invalid_key,
+        metadata(),
+        &leaf,
+        TweakTotalityPolicy::CanonicalNonceRetry {
+            maximum_attempts: attempts,
+        },
+        |_metadata| leaf.clone(),
+    )
+    .expect_err("an invalid internal key determines no output key");
+
+    assert_eq!(
+        defect,
+        TotalityDefect::RetryExhausted { attempts },
+        "the defect: a permanent failure is reported as an exhausted search",
+    );
+    assert!(
+        !matches!(defect, TotalityDefect::NotRepairableByRetry(_)),
+        "the defect: the documented permanent classification is not used",
+    );
+}
+
+/// `G11-R14`: the canonical ordered constructor has the same gap.
+///
+/// `construct_canonically_ordered` short-circuits on a tree defect and on
+/// nothing else, so an invalid internal key exhausts the search there
+/// too.
+#[test]
+fn g11_r14_the_canonical_constructor_retries_the_same_permanent_defect() {
+    let target = reviewed_target();
+    let invalid_key = [0xff_u8; FIELD_ELEMENT_BYTES];
+    let static_subtree = FixtureTapTree::leaf(vec![0x51]);
+    let attempts = 4;
+
+    let defect = construct_canonically_ordered(
+        &target,
+        &invalid_key,
+        &metadata(),
+        &static_subtree,
+        &static_subtree,
+        attempts,
+    )
+    .expect_err("an invalid internal key determines no output key");
+
+    assert!(
+        matches!(defect, CanonicalOrderDefect::SearchExhausted { .. }),
+        "the defect: a permanent failure is reported as an exhausted search, got {defect:?}",
+    );
 }
 
 /// The registry and plan are stated once here so an unused-import warning
