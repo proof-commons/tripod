@@ -66,14 +66,14 @@ use target_elements::{
 };
 
 use crate::error::NativeConformanceError;
-use crate::fixture::{NativeCaseId, PrimitiveFixtureSet};
+use crate::fixture::{CanonicalPrimitiveFixtureSet, NativeCaseId, PrimitiveFixtureSet};
 use crate::protocol::{
     ExecutorCapability, ExecutorEnvironmentObservation, ExecutorHandshake, HandshakeRequest,
     NATIVE_PROTOCOL_SCHEMA, NativeExecutionRequest, NativeExecutionResponse,
     NativePrototypeRequest, NativePrototypeResponse, ProtocolLimits, ProtocolPhase,
     WireEnvironment, WireExecutionDomain, validate_response_shape,
 };
-use crate::prototype::{CompoundPrototypeFixture, PrototypeCaseId};
+use crate::prototype::{CanonicalPrototypeMatrix, CompoundPrototypeFixture, PrototypeCaseId};
 
 /// What one run asks the executor about.
 ///
@@ -525,6 +525,29 @@ pub fn execute(
     )
 }
 
+/// Runs the canonical census through the selected executor.
+///
+/// # Why execution itself is not the trust boundary
+///
+/// Running an arbitrary census is not a way to manufacture evidence: it
+/// is a way to ask a node a question. The boundary sits at
+/// [`crate::validate::evaluate`], which accepts only the canonical
+/// wrapper, so [`execute`] stays open to any census and this entry point
+/// exists to make the evidence path read as one canonical sequence from
+/// census to gate.
+///
+/// # Errors
+///
+/// Every protocol failure [`execute`] states.
+pub fn execute_canonical(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    configuration: &ExecutorConfiguration,
+    fixtures: &CanonicalPrimitiveFixtureSet,
+) -> Result<ExecutionTranscript, NativeConformanceError> {
+    execute(target, binding, configuration, fixtures.fixtures())
+}
+
 /// Runs one compound-prototype matrix through the selected executor.
 ///
 /// The same exchange, the same supervision, and the same refusals: what
@@ -551,6 +574,25 @@ pub fn execute_prototypes(
         configuration,
         NativeWorkload::Prototypes(fixtures),
     )
+}
+
+/// Runs one canonical prototype matrix through the selected executor.
+///
+/// The trust boundary sits at [`crate::prototype_validate::evaluate_prototypes`]
+/// rather than here, for the reason [`execute_canonical`] gives. This
+/// entry point exists so the evidence path reads as one canonical
+/// sequence from matrix to gate.
+///
+/// # Errors
+///
+/// Every protocol failure [`execute_prototypes`] states.
+pub fn execute_canonical_prototypes(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    configuration: &ExecutorConfiguration,
+    matrix: CanonicalPrototypeMatrix<'_>,
+) -> Result<ExecutionTranscript, NativeConformanceError> {
+    execute_prototypes(target, binding, configuration, matrix.rows())
 }
 
 /// The supervised run, over either workload.

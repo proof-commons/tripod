@@ -1079,14 +1079,14 @@ The review basis is the archived review's own tree, not the working tree: under 
 guide's own rule each finding is a hypothesis until it is reproduced
 against the working tree, and is then either fixed, disproved with a
 typed argument, or reclassified with a narrower assurance claim. The
-Wave-0 column records that adjudication; every row stays TODO because
-Wave 0 repaired nothing.
+Wave-0 column records that adjudication. Wave 0 repaired nothing, so
+every row opened TODO; Wave 1 closed the two claim-laundering rows.
 
 | ID | Priority | Status | Wave 0 | Finding |
 |---|---:|---|---|---|
 | `G11-R01` | P0 | TODO | CONFIRMED | A transcript can be rebound to another fixture census, prototype matrix, target, or deployment binding; bind the transcript to its exact subjects and requests. |
-| `G11-R02` | P0 | TODO | CONFIRMED | Primitive claims can be manufactured by attaching claim-bearing case metadata to an unrelated script; gate only a canonical validated primitive plan. |
-| `G11-R03` | P0 | TODO | CONFIRMED | Prototype claims are caller-authored and can certify a trivial true script as constructor or wide-floor evidence; gate only relation-specific canonical matrices. |
+| `G11-R02` | P0 | DONE | CONFIRMED | Primitive claims can be manufactured by attaching claim-bearing case metadata to an unrelated script; gate only a canonical validated primitive plan. |
+| `G11-R03` | P0 | DONE | CONFIRMED | Prototype claims are caller-authored and can certify a trivial true script as constructor or wide-floor evidence; gate only relation-specific canonical matrices. |
 | `G11-R04` | P1 | TODO | CONFIRMED | Consensus resource cases are credited to policy-resource evidence because evidence ownership derives from case ID without the enforcement layer; derive evidence from the complete fixture and correct the plan class. |
 | `G11-R05` | P1 | TODO | CONFIRMED | The primitive native gate can accept a report whose summary is failed; gate every canonical case and reject failed completeness. |
 | `G11-R06` | P1 | TODO | CONFIRMED | ADR-018 execution provenance is recorded but not enforced by evidence gates; validate executable provenance before gate eligibility. |
@@ -1101,6 +1101,33 @@ Wave 0 repaired nothing.
 | `G11-H01` | Hardening | TODO | CONFIRMED | Opcode resource stack-growth rows are not generically welded to success and non-aborting failure effects; derive and compare exact maximum stack growth. |
 | `G11-H02` | Future blocker | TODO | CONFIRMED | Issuance observations carry authority fields the realization evaluator does not yet enforce; add no issuance realization scope until enforced or externally evidenced. |
 
+Wave-1 evidence for the two closed rows. `G11-R02`: the evidence path
+takes only `CanonicalPrimitiveFixtureSet`, whose one constructor is
+`canonical_fixture_set`, and `evaluate` regenerates the census and
+compares complete projections — asserted by
+`g11_r02_a_trivial_true_script_cannot_bear_signature_evidence`,
+`g11_r02_an_arbitrary_census_is_refused_on_provenance_not_completeness`,
+`g11_r02_changing_a_canonical_fixture_member_removes_gate_eligibility`,
+`g11_r02_a_canonical_case_whose_claims_change_is_refused`, and
+`g11_r02_permuting_canonical_declaration_order_is_harmless`. `G11-R03`:
+`prototype_gate` reads only a report validated against a
+`ConstructorPrototypeMatrix` or `WideFloorPrototypeMatrix`, whose rows are
+private and whose one constructor each is the canonical generator —
+asserted by `g11_r03_a_trivial_leaf_cannot_certify_the_wide_floor_relation`,
+`g11_r03_the_canonical_wide_floor_matrix_is_the_evidence_subject`,
+`g11_r03_a_canonical_case_with_one_added_claim_fails`,
+`g11_r03_a_canonical_case_with_one_removed_claim_fails`,
+`g11_r03_replacing_the_canonical_program_under_the_same_case_name_fails`,
+`g11_r03_replacing_the_constructor_successor_program_fails`, and
+`g11_r03_raw_bytes_are_not_reported_as_a_typed_program`.
+
+Wave 1 also closed the arbitrary-census route that two open rows were
+reproduced through. `G11-R01`'s script-substitution reproduction now runs
+on the experimental path and reproduces the same defect. `G11-R05`'s
+construction added a fixture to the canonical census and is no longer
+expressible; its test records the closed route and the still-open gate
+defect, and Wave 3 owns finding a route that reaches the gate itself.
+
 No public-declassification prototype begins while `G11-R01` through
 `G11-R10` remain open. `G11-R12` owns the full reconciliation of this
 backlog's current state against the recorded Guide-8 through Guide-10
@@ -1114,7 +1141,9 @@ defective behaviour and which the repairing waves invert.
 ```text
 G11-R01  conformance g11_r01_a_transcript_rebinds_to_a_deployment_it_never_ran_on
 G11-R02  conformance g11_r02_a_trivial_true_script_bears_signature_claims
+         (Wave 1 flipped: g11_r02_a_trivial_true_script_cannot_bear_signature_evidence)
 G11-R03  conformance g11_r03_a_trivial_leaf_certifies_the_whole_wide_floor_relation
+         (Wave 1 flipped: g11_r03_a_trivial_leaf_cannot_certify_the_wide_floor_relation)
 G11-R04  conformance g11_r04_consensus_resource_cases_pass_the_policy_resource_row
 G11-R05  conformance g11_r05_the_gate_accepts_a_failed_report
 G11-R06  conformance g11_r06_the_gate_accepts_a_run_with_no_workspace_provenance

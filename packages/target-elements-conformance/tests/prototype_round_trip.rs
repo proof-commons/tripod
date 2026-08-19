@@ -91,12 +91,18 @@ fn run(
 
 /// The constructor matrix.
 fn constructor_matrix() -> Vec<CompoundPrototypeFixture> {
-    constructor_case_matrix(&reviewed_target()).expect("the constructor matrix is determined")
+    constructor_case_matrix(&reviewed_target())
+        .expect("the constructor matrix is determined")
+        .rows()
+        .to_vec()
 }
 
 /// The wide-floor matrix.
 fn wide_floor_matrix() -> Vec<CompoundPrototypeFixture> {
-    wide_floor_case_matrix(&reviewed_target()).expect("the wide-floor matrix is determined")
+    wide_floor_case_matrix(&reviewed_target())
+        .expect("the wide-floor matrix is determined")
+        .rows()
+        .to_vec()
 }
 
 /// Every row is answered once, in order, with the verdict the mock

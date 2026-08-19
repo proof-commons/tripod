@@ -282,6 +282,43 @@ pub enum NativeConformanceError {
     #[error("the report's row for case {0} does not state the observed outcome")]
     ReportCaseOutcomeMismatch(NativeCaseId),
 
+    /// A census offered as canonical is not the census the canonical
+    /// generator states.
+    ///
+    /// The canonical wrapper has one constructor, so an external caller
+    /// cannot reach this. It is the second line of defence: the evidence
+    /// path regenerates the census from the reviewed contract and the
+    /// binding and compares it, so that a canonical subject is canonical
+    /// by recomputation and not only by type
+    ///.
+    #[error("the offered census is not the canonical fixture census")]
+    NoncanonicalFixtureCensus,
+
+    /// One fixture offered as canonical is not, in some member, the
+    /// canonical fixture of that case.
+    ///
+    /// The complete projection is compared — script, stack, context,
+    /// expected outcome, enforcement layer, leaf version, resources, and
+    /// claims — so changing any member of a canonical case removes its
+    /// eligibility rather than editing what the case establishes.
+    #[error("case {0} is not the canonical fixture of that case")]
+    NoncanonicalFixtureSubject(NativeCaseId),
+
+    /// A matrix offered as canonical is not the matrix the canonical
+    /// generator states for its relation.
+    #[error("the offered matrix is not the canonical matrix of its relation")]
+    NoncanonicalPrototypeMatrix,
+
+    /// One prototype row offered as canonical is not, in some member, the
+    /// canonical row of that case.
+    #[error("case {0} is not the canonical prototype case of that name")]
+    NoncanonicalPrototypeCase(PrototypeCaseId),
+
+    /// The canonical matrix of a relation could not be regenerated, so
+    /// no offered matrix can be compared against it.
+    #[error("the canonical matrix of the run's relation could not be regenerated")]
+    CanonicalPrototypeMatrixUnavailable,
+
     /// The report's evidence rows are not the recomputed ones.
     #[error("the report's evidence rows are not the ones the plan and the run produce")]
     ReportEvidenceCensusMismatch,

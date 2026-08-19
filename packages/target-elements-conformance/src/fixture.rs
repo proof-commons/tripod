@@ -1092,12 +1092,107 @@ impl<'a> IntoIterator for &'a PrimitiveFixtureSet {
     }
 }
 
+/// The canonical primitive census, in the one trust state the native
+/// evidence path accepts.
+///
+/// # Why the wrapper exists
+///
+/// [`PrimitiveFixtureSet`] is a public construction surface: any caller
+/// may assemble any fixtures into one. That is useful for experiments and
+/// necessary for the harness's own tests, and it is exactly what must not
+/// be an evidence subject. A caller who may choose the census may file a
+/// program that pushes a true literal under a case whose group names the
+/// signature dimension, and every claim below reads the label rather than
+/// the program — so the report states signature evidence for a run in
+/// which no signature primitive executed
+///.
+///
+/// The refusal is therefore about *provenance*, not about size or
+/// completeness: a caller-assembled census large enough to fill every
+/// required row would still be a census the caller chose. Only
+/// [`canonical_fixture_set`] constructs this wrapper, so the evidence path
+/// asks its question about the repository's own evidence plan and about
+/// nothing else.
+///
+/// # What the wrapper is not
+///
+/// It is not a claim that the census is complete, correct, or sufficient.
+/// It is the single fact that this value came from the canonical
+/// generator rather than from a caller.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CanonicalPrimitiveFixtureSet {
+    fixtures: PrimitiveFixtureSet,
+}
+
+impl CanonicalPrimitiveFixtureSet {
+    /// The census itself.
+    #[must_use]
+    pub const fn fixtures(&self) -> &PrimitiveFixtureSet {
+        &self.fixtures
+    }
+
+    /// Consumes the canonical state, yielding the bare census.
+    #[must_use]
+    pub fn into_fixtures(self) -> PrimitiveFixtureSet {
+        self.fixtures
+    }
+
+    /// The fixtures, in canonical case order.
+    pub fn iter(&self) -> impl Iterator<Item = &PrimitiveFixture> {
+        self.fixtures.iter()
+    }
+
+    /// How many fixtures the census holds.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.fixtures.len()
+    }
+
+    /// Whether the census is empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.fixtures.is_empty()
+    }
+
+    /// Whether the census holds one case.
+    #[must_use]
+    pub fn contains(&self, case: NativeCaseId) -> bool {
+        self.fixtures.contains(case)
+    }
+
+    /// An arbitrary census wrapped as though it were canonical, for the
+    /// crate's own tests.
+    ///
+    /// Not public, and deliberately the only way to reach the state
+    /// without the generator. It exists so the regressions can exercise
+    /// the *second* line of defence — the regeneration comparison in
+    /// [`crate::validate::evaluate`] — rather than only the type. Outside
+    /// this crate the type alone is the boundary, which is why there is
+    /// no public equivalent.
+    #[cfg(test)]
+    pub(crate) const fn wrap_for_tests(fixtures: PrimitiveFixtureSet) -> Self {
+        Self { fixtures }
+    }
+}
+
+impl<'a> IntoIterator for &'a CanonicalPrimitiveFixtureSet {
+    type Item = &'a PrimitiveFixture;
+    type IntoIter = std::collections::btree_map::Values<'a, NativeCaseId, PrimitiveFixture>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.fixtures.into_iter()
+    }
+}
+
 /// The canonical fixture census of this repository.
 ///
 /// The complete primitive matrix, authored against
 /// the reviewed contract and independent published vectors by the
 /// crate-internal census module. Its content, its coverage, and what it
 /// deliberately does not cover are documented there.
+///
+/// This is the only constructor of [`CanonicalPrimitiveFixtureSet`], and
+/// therefore the only route to a gate-eligible primitive subject.
 ///
 /// # Errors
 ///
@@ -1108,6 +1203,8 @@ impl<'a> IntoIterator for &'a PrimitiveFixtureSet {
 pub fn canonical_fixture_set(
     target: &ReviewedElementsTapscriptDefinition,
     binding: &ReviewedDevelopmentBinding,
-) -> Result<PrimitiveFixtureSet, NativeConformanceError> {
-    crate::census::canonical_census(target, binding)
+) -> Result<CanonicalPrimitiveFixtureSet, NativeConformanceError> {
+    Ok(CanonicalPrimitiveFixtureSet {
+        fixtures: crate::census::canonical_census(target, binding)?,
+    })
 }

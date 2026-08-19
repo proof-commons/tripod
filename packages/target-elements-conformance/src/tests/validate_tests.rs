@@ -10,7 +10,7 @@ use crate::claim::{ClaimRegistry, NativeEvidenceClaim, claim_registry};
 use crate::error::NativeConformanceError;
 use crate::executor::{ExecutionTranscript, ExecutorTrust};
 use crate::fixture::{
-    ExpectedPrimitiveOutcome, NativeCaseGroup, NativeCaseId, PrimitiveFixtureSet,
+    CanonicalPrimitiveFixtureSet, ExpectedPrimitiveOutcome, NativeCaseGroup, NativeCaseId,
     canonical_fixture_set,
 };
 use crate::protocol::{
@@ -33,7 +33,7 @@ use super::support::{
 struct Run {
     target: target_elements::ReviewedElementsTapscriptDefinition,
     binding: target_elements::ReviewedDevelopmentBinding,
-    fixtures: PrimitiveFixtureSet,
+    fixtures: CanonicalPrimitiveFixtureSet,
     plan: EvidencePlan,
     registry: ClaimRegistry,
     transcript: ExecutionTranscript,

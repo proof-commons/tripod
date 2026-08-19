@@ -561,6 +561,160 @@ impl CompoundPrototypeFixture {
     }
 }
 
+/// The constructor relation's canonical matrix, in the one trust state
+/// the prototype evidence path accepts.
+///
+/// # Why the rows are private
+///
+/// [`CompoundPrototypeFixture`] states its program, its case identity,
+/// its expected verdict, and — decisively — its own claim set, all in
+/// public fields, and [`CompoundPrototypeFixture::defect`] checks only
+/// that those fields are locally coherent with each other. Coherence is
+/// not bearing: a bare leaf whose script pushes a true literal is
+/// perfectly coherent, and a caller may attach every claim of a relation
+/// to it. A real node accepts the true script, and the report then
+/// credits a whole relation to a program that computes nothing
+///.
+///
+/// The gate's input is therefore this wrapper rather than a slice, and
+/// only [`constructor_case_matrix`] builds one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConstructorPrototypeMatrix {
+    rows: Vec<CompoundPrototypeFixture>,
+}
+
+/// The wide-floor relation's canonical matrix, in the one trust state the
+/// prototype evidence path accepts.
+///
+/// The wide-floor relation is the easier forgery of the two: it requires
+/// no output of any role, so a bare true leaf with no outputs at all
+/// satisfies every coherence rule the relation has. Only
+/// [`wide_floor_case_matrix`] builds this wrapper.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WideFloorPrototypeMatrix {
+    rows: Vec<CompoundPrototypeFixture>,
+}
+
+impl ConstructorPrototypeMatrix {
+    /// The relation this matrix answers for.
+    #[must_use]
+    pub const fn relation(&self) -> PrototypeRelation {
+        PrototypeRelation::MetadataConstructorContinuity
+    }
+
+    /// The rows, in canonical order.
+    #[must_use]
+    pub fn rows(&self) -> &[CompoundPrototypeFixture] {
+        &self.rows
+    }
+
+    /// How many rows the matrix holds.
+    #[must_use]
+    pub const fn len(&self) -> usize {
+        self.rows.len()
+    }
+
+    /// Whether the matrix holds no rows.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.rows.is_empty()
+    }
+
+    /// Arbitrary rows wrapped as though canonical, for the crate's own
+    /// tests.
+    ///
+    /// Not public, and deliberately the only way to reach the state
+    /// without the generator: it exists so the regressions can exercise
+    /// the regeneration comparison rather than only the type.
+    #[cfg(test)]
+    pub(crate) const fn wrap_for_tests(rows: Vec<CompoundPrototypeFixture>) -> Self {
+        Self { rows }
+    }
+}
+
+impl WideFloorPrototypeMatrix {
+    /// The relation this matrix answers for.
+    #[must_use]
+    pub const fn relation(&self) -> PrototypeRelation {
+        PrototypeRelation::WideFloorRelation
+    }
+
+    /// The rows, in canonical order.
+    #[must_use]
+    pub fn rows(&self) -> &[CompoundPrototypeFixture] {
+        &self.rows
+    }
+
+    /// How many rows the matrix holds.
+    #[must_use]
+    pub const fn len(&self) -> usize {
+        self.rows.len()
+    }
+
+    /// Whether the matrix holds no rows.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.rows.is_empty()
+    }
+
+    /// Arbitrary rows wrapped as though canonical, for the crate's own
+    /// tests.
+    #[cfg(test)]
+    pub(crate) const fn wrap_for_tests(rows: Vec<CompoundPrototypeFixture>) -> Self {
+        Self { rows }
+    }
+}
+
+/// One canonical matrix, whichever relation it answers for.
+///
+/// The relation travels *with* the matrix rather than beside it. It used
+/// to be a separate argument to the evaluator and to the report
+/// validator, which meant a caller could state one relation and hand over
+/// the other's rows; the mismatch was caught, but only because every row
+/// happened to carry its own relation. Here it cannot be stated at all
+///.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CanonicalPrototypeMatrix<'a> {
+    /// The constructor-continuity matrix.
+    Constructor(&'a ConstructorPrototypeMatrix),
+    /// The wide-floor matrix.
+    WideFloor(&'a WideFloorPrototypeMatrix),
+}
+
+impl CanonicalPrototypeMatrix<'_> {
+    /// The relation the matrix answers for.
+    #[must_use]
+    pub const fn relation(self) -> PrototypeRelation {
+        match self {
+            Self::Constructor(_) => PrototypeRelation::MetadataConstructorContinuity,
+            Self::WideFloor(_) => PrototypeRelation::WideFloorRelation,
+        }
+    }
+}
+
+impl<'a> CanonicalPrototypeMatrix<'a> {
+    /// The rows, in canonical order.
+    #[must_use]
+    pub fn rows(self) -> &'a [CompoundPrototypeFixture] {
+        match self {
+            Self::Constructor(matrix) => matrix.rows(),
+            Self::WideFloor(matrix) => matrix.rows(),
+        }
+    }
+}
+
+impl<'a> From<&'a ConstructorPrototypeMatrix> for CanonicalPrototypeMatrix<'a> {
+    fn from(matrix: &'a ConstructorPrototypeMatrix) -> Self {
+        Self::Constructor(matrix)
+    }
+}
+
+impl<'a> From<&'a WideFloorPrototypeMatrix> for CanonicalPrototypeMatrix<'a> {
+    fn from(matrix: &'a WideFloorPrototypeMatrix) -> Self {
+        Self::WideFloor(matrix)
+    }
+}
+
 /// Why the constructor matrix could not be authored.
 pub use crate::census::constructor::ConstructorMatrixDefect;
 
@@ -575,14 +729,19 @@ pub use crate::census::constructor::bearing_cases;
 /// What each row states, where a mutation lives, and what the matrix
 /// deliberately cannot state are documented there.
 ///
+/// This is the only constructor of [`ConstructorPrototypeMatrix`], and
+/// therefore the only route to a gate-eligible constructor subject.
+///
 /// # Errors
 ///
 /// [`ConstructorMatrixDefect`] when the reviewed contract and the oracle
 /// do not between them determine every row.
 pub fn constructor_case_matrix(
     target: &ReviewedElementsTapscriptDefinition,
-) -> Result<Vec<CompoundPrototypeFixture>, ConstructorMatrixDefect> {
-    crate::census::constructor::constructor_matrix(target)
+) -> Result<ConstructorPrototypeMatrix, ConstructorMatrixDefect> {
+    Ok(ConstructorPrototypeMatrix {
+        rows: crate::census::constructor::constructor_matrix(target)?,
+    })
 }
 
 /// Why the wide-floor matrix could not be authored.
@@ -596,14 +755,19 @@ pub use crate::census::wide_floor::residual_threats as wide_floor_residual_threa
 /// The §22.6 rows, authored against the reviewed contract and this
 /// package's own wide-floor oracle by the crate-internal census module.
 ///
+/// This is the only constructor of [`WideFloorPrototypeMatrix`], and
+/// therefore the only route to a gate-eligible wide-floor subject.
+///
 /// # Errors
 ///
 /// [`WideFloorMatrixDefect`] when the reviewed contract and the oracle
 /// do not between them determine every row.
 pub fn wide_floor_case_matrix(
     target: &ReviewedElementsTapscriptDefinition,
-) -> Result<Vec<CompoundPrototypeFixture>, WideFloorMatrixDefect> {
-    crate::census::wide_floor::wide_floor_matrix(target)
+) -> Result<WideFloorPrototypeMatrix, WideFloorMatrixDefect> {
+    Ok(WideFloorPrototypeMatrix {
+        rows: crate::census::wide_floor::wide_floor_matrix(target)?,
+    })
 }
 
 /// Which cases bear on each wide-floor claim, as the rows state it.

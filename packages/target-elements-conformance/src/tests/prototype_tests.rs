@@ -424,7 +424,7 @@ fn every_prototype_claim_is_required_and_reachable() {
         .expect("the wide-floor matrix is authored");
 
     let mut borne: BTreeSet<PrototypeClaim> = BTreeSet::new();
-    for fixture in constructor.iter().chain(&wide_floor) {
+    for fixture in constructor.rows().iter().chain(wide_floor.rows()) {
         borne.extend(fixture.claims.iter().copied());
     }
 

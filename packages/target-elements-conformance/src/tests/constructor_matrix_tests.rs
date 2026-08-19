@@ -29,7 +29,10 @@ fn target() -> ReviewedElementsTapscriptDefinition {
 
 /// The authored matrix.
 fn matrix() -> Vec<CompoundPrototypeFixture> {
-    constructor_case_matrix(&target()).expect("the constructor matrix is determined")
+    constructor_case_matrix(&target())
+        .expect("the constructor matrix is determined")
+        .rows()
+        .to_vec()
 }
 
 /// The claims this relation owns.

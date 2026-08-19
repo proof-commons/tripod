@@ -82,6 +82,21 @@ pub enum PrototypeReportRole {
     ConstructorContinuity,
     /// The wide-arithmetic floor matrix.
     WideFloor,
+    /// An ad hoc primitive census a caller assembled.
+    ///
+    /// # Why the role is written into the report
+    ///
+    /// The type system already keeps this run away from the gate: an
+    /// experimental run yields
+    /// [`crate::validate::ExperimentalPrimitiveReport`], which no
+    /// validator and no gate accepts. The role is recorded as well so
+    /// that a *serialized* report says what it is. A published JSON
+    /// document outlives the type that produced it, and a reader with the
+    /// bytes alone must be able to see that the subject was a caller's
+    /// choice.
+    ExperimentalPrimitive,
+    /// An ad hoc compound-prototype matrix a caller assembled.
+    ExperimentalPrototype,
 }
 
 /// What the caller intended the environment to have active.
