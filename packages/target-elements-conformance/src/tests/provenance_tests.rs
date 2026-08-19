@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 
 use crate::provenance::{
-    ExpectedExecutorProvenance, FULL_REVISION_WIDTH, MAXIMUM_TOPIC_NAME_BYTES,
+    ExpectedExecutorProvenance, FULL_REVISION_WIDTH, FullRevisionId, MAXIMUM_TOPIC_NAME_BYTES,
     MINIMUM_REVISION_PREFIX_WIDTH, ProvenanceArgumentDefect, ProvenanceSyntaxDefect, RevisionId,
     TopicName, expected_provenance_from_arguments,
 };
@@ -52,18 +52,75 @@ fn the_admitted_revision_syntax_is_lowercase_hexadecimal_of_bounded_width() {
 
 #[test]
 fn an_expectation_must_be_a_full_identifier_rather_than_a_prefix() {
-    RevisionId::full(FULL).expect("a full identifier is a full identifier");
+    FullRevisionId::new(FULL).expect("a full identifier is a full identifier");
     assert_eq!(
-        RevisionId::full(&FULL[..12]),
+        FullRevisionId::new(&FULL[..12]),
         Err(ProvenanceSyntaxDefect::RevisionNotFullWidth),
         "an expectation stated as an abbreviation compares abbreviations",
+    );
+    // Every width below the full one, refused by the same rule rather
+    // than by the syntax that admits abbreviations generally.
+    for width in MINIMUM_REVISION_PREFIX_WIDTH..FULL_REVISION_WIDTH {
+        assert_eq!(
+            FullRevisionId::new(&FULL[..width]),
+            Err(ProvenanceSyntaxDefect::RevisionNotFullWidth),
+            "a {width}-digit expectation is not a full identifier",
+        );
+        RevisionId::new(&FULL[..width]).expect("the same text is an admitted reported revision");
+    }
+}
+
+/// `G12-R01`: the expectation has no constructible members.
+///
+/// The row was a public-API weakness rather than a logic error: the
+/// members were public, so a caller wrote the struct literal and put an
+/// abbreviation where a full identifier was required. The repair is
+/// structural, and this test states the surface that makes it hold.
+///
+/// Two of the three parts cannot be asserted at runtime, because they
+/// are now compile errors — the struct literal, and passing a
+/// [`RevisionId`] where a [`FullRevisionId`] is required. What is
+/// checked here is that the type is reached only through its
+/// constructor and read only through accessors, so any future edit
+/// restoring a public member or a lenient constructor breaks this test.
+#[test]
+fn an_expectation_is_reachable_only_through_its_validating_constructor() {
+    let expectation = ExpectedExecutorProvenance::new(FULL, OTHER, ["fix/one"])
+        .expect("the full identifiers state an expectation");
+
+    // Read-only accessors, each carrying the width in its type.
+    let tip: &FullRevisionId = expectation.intended_tip();
+    let base: &FullRevisionId = expectation.upstream_base();
+    assert_eq!(tip.as_str(), FULL);
+    assert_eq!(base.as_str(), OTHER);
+    assert_eq!(tip.as_str().len(), FULL_REVISION_WIDTH);
+    assert_eq!(base.as_str().len(), FULL_REVISION_WIDTH);
+    assert_eq!(expectation.included_local_topics().len(), 1);
+
+    // The constructor is total over its refusals: an abbreviation in
+    // either revision position is refused by width, whatever the other
+    // arguments say.
+    for (tip_text, base_text) in [(&FULL[..12], OTHER), (FULL, &OTHER[..7])] {
+        assert_eq!(
+            ExpectedExecutorProvenance::new(tip_text, base_text, ["fix/one"]),
+            Err(ProvenanceSyntaxDefect::RevisionNotFullWidth),
+        );
+    }
+
+    // And the one full-width value a caller can hold is the wrapper, so
+    // the matching rule cannot be handed a prefix as its expectation.
+    let full = FullRevisionId::new(FULL).expect("a full identifier");
+    assert!(
+        RevisionId::new(&FULL[..MINIMUM_REVISION_PREFIX_WIDTH])
+            .expect("an abbreviation is an admitted reported revision")
+            .matches_full(&full),
     );
 }
 
 /// The one matching rule, stated as a test rather than as prose.
 #[test]
 fn the_matching_rule_is_minimum_width_exact_prefix() {
-    let expected = RevisionId::full(FULL).expect("full");
+    let expected = FullRevisionId::new(FULL).expect("full");
 
     // Equality is the width-forty case of the same rule.
     assert!(RevisionId::new(FULL).expect("full").matches_full(&expected));
@@ -135,7 +192,7 @@ fn an_expectation_carries_its_topic_census_as_a_set() {
     let expectation = ExpectedExecutorProvenance::new(FULL, OTHER, ["b/two", "a/one", "b/two"])
         .expect("the expectation states");
     let names: BTreeSet<String> = expectation
-        .included_local_topics
+        .included_local_topics()
         .iter()
         .map(|topic| topic.as_str().to_owned())
         .collect();
@@ -144,8 +201,8 @@ fn an_expectation_carries_its_topic_census_as_a_set() {
         BTreeSet::from(["a/one".to_owned(), "b/two".to_owned()]),
         "a census is a set, so a repeated declaration is one topic",
     );
-    assert_eq!(expectation.intended_tip.as_str(), FULL);
-    assert_eq!(expectation.upstream_base.as_str(), OTHER);
+    assert_eq!(expectation.intended_tip().as_str(), FULL);
+    assert_eq!(expectation.upstream_base().as_str(), OTHER);
 }
 
 // -- G11-R07: the command-argument rule --------------------------------
@@ -199,16 +256,16 @@ fn a_reviewed_run_with_complete_arguments_states_its_expectation() {
         expected_provenance_from_arguments(true, Some(FULL), Some(OTHER), &["fix/one".to_owned()])
             .expect("the arguments state an expectation")
             .expect("a reviewed run always states one");
-    assert_eq!(expectation.intended_tip.as_str(), FULL);
-    assert_eq!(expectation.upstream_base.as_str(), OTHER);
-    assert_eq!(expectation.included_local_topics.len(), 1);
+    assert_eq!(expectation.intended_tip().as_str(), FULL);
+    assert_eq!(expectation.upstream_base().as_str(), OTHER);
+    assert_eq!(expectation.included_local_topics().len(), 1);
 
     // No topic at all is a statement — a tip that folded in no local
     // branch — rather than an omission.
     let none = expected_provenance_from_arguments(true, Some(FULL), Some(OTHER), &[])
         .expect("the arguments state an expectation")
         .expect("a reviewed run always states one");
-    assert!(none.included_local_topics.is_empty());
+    assert!(none.included_local_topics().is_empty());
 }
 
 #[test]

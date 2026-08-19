@@ -122,21 +122,6 @@ impl RevisionId {
         Ok(Self(text.to_owned()))
     }
 
-    /// One full object identifier, refusing a prefix.
-    ///
-    /// # Errors
-    ///
-    /// Everything [`RevisionId::new`] states, and
-    /// [`ProvenanceSyntaxDefect::RevisionNotFullWidth`] for an
-    /// admitted prefix offered where a full identifier is required.
-    pub fn full(text: &str) -> Result<Self, ProvenanceSyntaxDefect> {
-        let revision = Self::new(text)?;
-        if revision.0.len() != FULL_REVISION_WIDTH {
-            return Err(ProvenanceSyntaxDefect::RevisionNotFullWidth);
-        }
-        Ok(revision)
-    }
-
     /// The identifier's digits.
     #[must_use]
     pub fn as_str(&self) -> &str {
@@ -173,14 +158,77 @@ impl RevisionId {
     /// therefore a floor rather than a target: an executor reporting
     /// more digits is compared against more of them.
     #[must_use]
-    pub fn matches_full(&self, full: &Self) -> bool {
-        self.0.len() >= MINIMUM_REVISION_PREFIX_WIDTH && full.0.starts_with(&self.0)
+    pub fn matches_full(&self, full: &FullRevisionId) -> bool {
+        self.0.len() >= MINIMUM_REVISION_PREFIX_WIDTH && full.as_str().starts_with(&self.0)
     }
 }
 
 impl fmt::Display for RevisionId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&self.0)
+    }
+}
+
+/// A revision identifier that is a full object identifier.
+///
+/// # Why the width is a type rather than a check
+///
+/// [`RevisionId`] admits a prefix because a binary reports one. An
+/// *expectation* is the other operand of the comparison, and an
+/// expectation stated as a prefix compares a prefix against a prefix —
+/// a weaker statement than the one the comparison exists to make, and
+/// one no caller can see they have made. Carrying the width in the type
+/// means a value that reaches a matching rule has already been refused
+/// if it is an abbreviation, so no caller and no later edit can restate
+/// the check incorrectly or skip it.
+///
+/// [`FullRevisionId::new`] is the only way to build one, so the
+/// invariant holds for every value of this type that exists.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FullRevisionId(RevisionId);
+
+impl FullRevisionId {
+    /// One full object identifier, refusing a prefix.
+    ///
+    /// # Errors
+    ///
+    /// Everything [`RevisionId::new`] states, and
+    /// [`ProvenanceSyntaxDefect::RevisionNotFullWidth`] for an
+    /// admitted prefix offered where a full identifier is required.
+    pub fn new(text: &str) -> Result<Self, ProvenanceSyntaxDefect> {
+        let revision = RevisionId::new(text)?;
+        if revision.as_str().len() != FULL_REVISION_WIDTH {
+            return Err(ProvenanceSyntaxDefect::RevisionNotFullWidth);
+        }
+        Ok(Self(revision))
+    }
+
+    /// The identifier's digits.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    /// This identifier read as an admitted revision.
+    #[must_use]
+    pub const fn as_revision(&self) -> &RevisionId {
+        &self.0
+    }
+
+    /// Whether the width invariant still holds.
+    ///
+    /// The constructor establishes it and no public API can break it.
+    /// Code inside this module can reach the private member, though, so
+    /// the gate re-asserts this rather than trusting that no future edit
+    /// here ever builds one another way.
+    fn holds_full_width(&self) -> bool {
+        self.0.as_str().len() == FULL_REVISION_WIDTH
+    }
+}
+
+impl fmt::Display for FullRevisionId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
     }
 }
 
@@ -225,14 +273,23 @@ impl fmt::Display for TopicName {
 }
 
 /// What the operator declares the run was meant to execute (ADR-018).
+///
+/// # Why the members are private
+///
+/// The two revisions are full object identifiers, and that is the whole
+/// content of the type: an expectation is the operand a reported
+/// revision is compared *against*, so an abbreviated one silently
+/// weakens every comparison the gate makes. Public members would let a
+/// caller assemble the same type by literal without passing through
+/// [`ExpectedExecutorProvenance::new`], which is how the invariant was
+/// bypassed before. With private members and [`FullRevisionId`] fields,
+/// the constructor is the only way in and the width cannot be weakened
+/// from outside this module at all.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExpectedExecutorProvenance {
-    /// The integration tip the run was meant to execute, in full.
-    pub intended_tip: RevisionId,
-    /// The upstream base that tip derives from, in full.
-    pub upstream_base: RevisionId,
-    /// The local topic branches folded into that tip.
-    pub included_local_topics: BTreeSet<TopicName>,
+    intended_tip: FullRevisionId,
+    upstream_base: FullRevisionId,
+    included_local_topics: BTreeSet<TopicName>,
 }
 
 impl ExpectedExecutorProvenance {
@@ -251,13 +308,31 @@ impl ExpectedExecutorProvenance {
         included_local_topics: impl IntoIterator<Item = &'a str>,
     ) -> Result<Self, ProvenanceSyntaxDefect> {
         Ok(Self {
-            intended_tip: RevisionId::full(intended_tip)?,
-            upstream_base: RevisionId::full(upstream_base)?,
+            intended_tip: FullRevisionId::new(intended_tip)?,
+            upstream_base: FullRevisionId::new(upstream_base)?,
             included_local_topics: included_local_topics
                 .into_iter()
                 .map(TopicName::new)
                 .collect::<Result<BTreeSet<TopicName>, ProvenanceSyntaxDefect>>()?,
         })
+    }
+
+    /// The integration tip the run was meant to execute, in full.
+    #[must_use]
+    pub const fn intended_tip(&self) -> &FullRevisionId {
+        &self.intended_tip
+    }
+
+    /// The upstream base that tip derives from, in full.
+    #[must_use]
+    pub const fn upstream_base(&self) -> &FullRevisionId {
+        &self.upstream_base
+    }
+
+    /// The local topic branches folded into that tip.
+    #[must_use]
+    pub const fn included_local_topics(&self) -> &BTreeSet<TopicName> {
+        &self.included_local_topics
     }
 }
 
@@ -295,6 +370,8 @@ pub enum ProvenanceDefect {
     UpstreamBaseIsNotTheExpectedBase,
     /// The local topic census is not the expected one.
     TopicCensusIsNotTheExpectedCensus,
+    /// An expected revision reached the gate as an abbreviation.
+    ExpectedRevisionIsNotFullWidth,
 }
 
 impl fmt::Display for ProvenanceDefect {
@@ -333,6 +410,10 @@ impl fmt::Display for ProvenanceDefect {
             Self::TopicCensusIsNotTheExpectedCensus => {
                 formatter.write_str("the run's local topic census is not the expected one")
             }
+            Self::ExpectedRevisionIsNotFullWidth => formatter.write_str(
+                "an expected revision reached the gate as an abbreviation rather than a full \
+                 object identifier",
+            ),
         }
     }
 }
@@ -345,26 +426,32 @@ impl fmt::Display for ProvenanceDefect {
 /// as evidence that the recomputation happened.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValidatedExecutorProvenance {
-    intended_tip: RevisionId,
-    upstream_base: RevisionId,
+    intended_tip: FullRevisionId,
+    upstream_base: FullRevisionId,
     binary_reported_revision: RevisionId,
     included_local_topics: BTreeSet<TopicName>,
 }
 
 impl ValidatedExecutorProvenance {
     /// The tip the run executed, as the operator declared it.
+    ///
+    /// Full width, because the comparison that built this value proved
+    /// the reported tip equal to a full expected identifier.
     #[must_use]
-    pub const fn intended_tip(&self) -> &RevisionId {
+    pub const fn intended_tip(&self) -> &FullRevisionId {
         &self.intended_tip
     }
 
-    /// The upstream base that tip derives from.
+    /// The upstream base that tip derives from, in full.
     #[must_use]
-    pub const fn upstream_base(&self) -> &RevisionId {
+    pub const fn upstream_base(&self) -> &FullRevisionId {
         &self.upstream_base
     }
 
     /// The revision the binary reported about itself.
+    ///
+    /// This one may be an abbreviation: it is what the binary embeds,
+    /// and the matching rule is what relates it to the intended tip.
     #[must_use]
     pub const fn binary_reported_revision(&self) -> &RevisionId {
         &self.binary_reported_revision
@@ -396,6 +483,16 @@ pub fn validate_executor_provenance(
     expected: &ExpectedExecutorProvenance,
 ) -> Result<ValidatedExecutorProvenance, NativeConformanceError> {
     let refuse = NativeConformanceError::ExecutorProvenanceUnestablished;
+
+    // The expectation before the report. [`FullRevisionId`] establishes
+    // this at construction and no caller outside this module can build
+    // one another way, so reaching this branch means an edit *here*
+    // broke the invariant. It is checked anyway because the cost of the
+    // check is nothing and the cost of missing it is that every
+    // comparison below silently compares abbreviations.
+    if !expected.intended_tip.holds_full_width() || !expected.upstream_base.holds_full_width() {
+        return Err(refuse(ProvenanceDefect::ExpectedRevisionIsNotFullWidth));
+    }
 
     for (text, defect) in [
         (&reported.adapter_name, ProvenanceDefect::BlankAdapterName),
@@ -437,10 +534,12 @@ pub fn validate_executor_provenance(
 
     // The operator's own declaration first: a run that says it meant to
     // execute some other tip is not this run, whatever its binary says.
-    if intended_tip != expected.intended_tip {
+    // Exact equality against the full expected identifier, not a prefix
+    // rule: what the operator declared is compared digit for digit.
+    if intended_tip != *expected.intended_tip.as_revision() {
         return Err(refuse(ProvenanceDefect::IntendedTipIsNotTheExpectedTip));
     }
-    if upstream_base != expected.upstream_base {
+    if upstream_base != *expected.upstream_base.as_revision() {
         return Err(refuse(ProvenanceDefect::UpstreamBaseIsNotTheExpectedBase));
     }
     if topics != expected.included_local_topics {
@@ -454,9 +553,14 @@ pub fn validate_executor_provenance(
         return Err(refuse(ProvenanceDefect::BinaryRevisionIsNotTheIntendedTip));
     }
 
+    // The two declared revisions are equal to the expected full
+    // identifiers by the checks above, so the validated value carries
+    // the expectation's full-width form rather than the reported text.
+    debug_assert_eq!(intended_tip, *expected.intended_tip.as_revision());
+    debug_assert_eq!(upstream_base, *expected.upstream_base.as_revision());
     Ok(ValidatedExecutorProvenance {
-        intended_tip,
-        upstream_base,
+        intended_tip: expected.intended_tip.clone(),
+        upstream_base: expected.upstream_base.clone(),
         binary_reported_revision: binary,
         included_local_topics: topics,
     })

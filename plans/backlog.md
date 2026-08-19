@@ -612,17 +612,21 @@ disposition, a DONE-or-OPEN state, and the artifact or file location
 that establishes it.
 
 Register state after Wave 0: **ADJUDICATED, ONE ROW CLOSED**. Fifteen
-rows are CONFIRMED and open; `G12-R08` is RECLASSIFIED and DONE,
+rows were CONFIRMED and open; `G12-R08` is RECLASSIFIED and DONE,
 because a prose row's reproduction is the textual comparison and its
-repair is the same act. Every other row is open, because Wave 0
+repair is the same act. Every other row was open, because Wave 0
 reproduces and does not repair: the reproductions assert the current
 defective behaviour and name the row they belong to, so the wave that
-fixes each one flips its own witness. The blocking rule
-(`gate:guide12-exec:preflight`) therefore stands over the fifteen.
+fixes each one flips its own witness.
+
+Wave 1a is closing the identity and evidence-boundary rows. A row
+reaching DONE below carries the flipped witness that now asserts the
+guarantee rather than the defect. The blocking rule
+(`gate:guide12-exec:preflight`) stands over every row still open.
 
 | ID | Priority | Disposition | Evidence and trust boundary |
 |---|---:|---|---|
-| `G12-R01` | P1 | CONFIRMED, OPEN — Wave 1 | `ExpectedExecutorProvenance`'s three fields are public and `RevisionId::new` admits a seven-digit prefix, so a struct literal reaches the gate with an abbreviated expectation that `ExpectedExecutorProvenance::new` would refuse. The whole match then compares prefix against prefix, including `matches_full`, whose full operand is the expectation itself. Boundary: executor provenance, ADR-018 tip attestation. Witness `abbreviated_expectation_bypasses_the_full_width_constructor`. |
+| `G12-R01` | P1 | CONFIRMED, DONE — Wave 1a | The three fields were public and `RevisionId::new` admits a seven-digit prefix, so a struct literal reached the gate with an abbreviated expectation that `ExpectedExecutorProvenance::new` would refuse, and the whole match then compared prefix against prefix. Repaired by making the width a type: `FullRevisionId` has one validating constructor, the expectation's members are private behind read-only accessors, `RevisionId::matches_full` takes the full-width type so a prefix cannot be an expectation, and the gate re-asserts the width before comparing. `RevisionId::full` is replaced by `FullRevisionId::new`, and the validated provenance carries the full identifiers rather than the reported text. Boundary: executor provenance, ADR-018 tip attestation. Witness `an_abbreviated_expectation_is_refused_before_it_can_be_expected`, with the public surface checked by `an_expectation_is_reachable_only_through_its_validating_constructor`. The struct-literal route is now a compile error rather than a runtime refusal. |
 | `G12-R02` | P1 | CONFIRMED, OPEN — Wave 1 | `anchor_set_hash` takes any string iterator and frames by newline join, so one name holding a newline and two names have one preimage. Boundary: Layer-0 anchor-set pin, the manifest value release validation refuses to leave unset. Witness `a_newline_bearing_anchor_name_collides_with_two_names`. In-repo callers pass parsed label names, so the collision is reachable through the package's public API and not through the checker's own path — the row is a type-discipline defect, not a live mismatch. |
 | `G12-R03` | P1 | CONFIRMED, OPEN — Wave 2 | The four `emit-*` binaries in `target-elements-conformance` are absent from every `cli_common` user: no shared panic hook, no stdout TTY refusal, `std::env::args().nth(1)` argv handling, and plain-text stderr diagnostics that interpolate the caller's path. Boundary: shipped-binary subprocess contract, ADR-010. Source-read disposition; the logic sits in `src/bin` with no library seam, so a focused reproduction needs the subprocess harness Wave 2 builds. |
 | `G12-R04` | P1 | CONFIRMED, OPEN — Wave 2 | The executor raises `AdapterError` carrying `one_line(completed.stderr)` from the `elements-cli` child, and that note reaches first-party protocol records as `observed_detail` and `detail`. The module docstring's claim that the harness never reads child stderr describes the harness, not this path. Boundary: target-adapter to first-party diagnostic and report layer. Python lane; source-read disposition, runtime half OPEN with named blocker — reproduction needs a live node. |

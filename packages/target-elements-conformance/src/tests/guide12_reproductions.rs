@@ -1,13 +1,15 @@
 //! Guide-12 preflight reproductions owned by this crate.
 //!
-//! Every test here demonstrates a row of the Guide-12 preflight register
-//! by *passing* while the defect is present: it asserts the wrong thing
-//! happens and names the row it belongs to. Wave 0 reproduces and does
-//! not repair, so the wave that fixes a row flips that row's assertions,
-//! which then stand as the guarantee that the repair holds.
+//! Each test here belongs to a row of the Guide-12 preflight register.
+//! While a row is open its test passes by asserting the wrong thing
+//! happens, which is what Wave 0 recorded: it reproduces and does not
+//! repair. The wave that fixes a row flips that row's assertions, and
+//! they then stand as the guarantee that the repair holds. A row marked
+//! CLOSED below is one whose test has been flipped.
 //!
-//! - `G12-R01` — an abbreviated expectation reaches the provenance gate,
-//!   because the expectation type's fields are public.
+//! - `G12-R01` — CLOSED: an abbreviated expectation can no longer be
+//!   stated, because the width is a type and the expectation's members
+//!   are private.
 //! - `G12-R09` — the executor and this crate both declare protocol
 //!   revision 3 while carrying conservation responses the Rust type
 //!   cannot read.
@@ -30,8 +32,8 @@ use crate::protocol::{
     NativeExecutionResponse, NativeResourceObservation, NativeVerdict, validate_response_shape,
 };
 use crate::provenance::{
-    ExpectedExecutorProvenance, MINIMUM_REVISION_PREFIX_WIDTH, RevisionId,
-    validate_executor_provenance,
+    ExpectedExecutorProvenance, FULL_REVISION_WIDTH, FullRevisionId, MINIMUM_REVISION_PREFIX_WIDTH,
+    ProvenanceSyntaxDefect, validate_executor_provenance,
 };
 use crate::report::{ExecutorDeclaration, ExecutorProvenance};
 
@@ -61,52 +63,67 @@ fn reported_provenance() -> ExecutorProvenance {
     }
 }
 
-/// `G12-R01`: an abbreviated expectation reaches the gate.
+/// `G12-R01`: an abbreviated expectation cannot reach the gate.
 ///
-/// [`ExpectedExecutorProvenance::new`] refuses an abbreviation, and says
-/// why: an expectation stated as a prefix compares a prefix against a
-/// prefix, which is a weaker statement than the type exists to make. The
-/// three fields are public, though, so a caller assembles the same type
-/// by literal without passing through that constructor, and
-/// [`RevisionId::new`] hands out the seven-digit value it needs.
+/// The row was that [`ExpectedExecutorProvenance`] refused an
+/// abbreviation in its constructor and then handed out three public
+/// fields, so a caller assembled the same type by literal and every
+/// comparison in the rule ran between seven digits — a run naming a
+/// different forty-digit object with the same first seven passed.
 ///
-/// What the gate then does is the row. Both equality checks compare the
-/// reported abbreviation with the expected one, and the binary's own
-/// revision is checked with `matches_full` against the *expectation* —
-/// so with a seven-digit expectation, every comparison in the rule is
-/// between seven digits, and a run naming a different forty-digit object
-/// with the same first seven passes.
+/// The repair is that the width is a type. [`FullRevisionId`] has one
+/// validating constructor, the expectation's members are private and
+/// hold that type, and the gate re-asserts the width before comparing
+/// anything. This test states what remains reachable through the public
+/// API, which is only the refusal.
 ///
-/// The assertion is the defect. A wave that makes the fields private, or
-/// that revalidates the expected width at the gate, flips it.
+/// The struct literal the row relied on is now a compile error rather
+/// than a runtime one, so it cannot be written here at all. The public
+/// surface that makes it impossible is checked separately, by the
+/// accessor-only expectation test in `provenance_tests`.
 #[test]
-fn abbreviated_expectation_bypasses_the_full_width_constructor() {
+fn an_abbreviated_expectation_is_refused_before_it_can_be_expected() {
     let abbreviation = &TEST_INTENDED_TIP[..MINIMUM_REVISION_PREFIX_WIDTH];
     assert_eq!(abbreviation, TEST_BINARY_REVISION);
 
-    // The constructor refuses it.
-    assert!(
-        ExpectedExecutorProvenance::new(abbreviation, TEST_UPSTREAM_BASE, [TEST_LOCAL_TOPIC])
-            .is_err()
+    // Every public route to an expectation refuses the abbreviation,
+    // naming the width rather than some generic syntax defect.
+    assert_eq!(
+        ExpectedExecutorProvenance::new(abbreviation, TEST_UPSTREAM_BASE, [TEST_LOCAL_TOPIC]),
+        Err(ProvenanceSyntaxDefect::RevisionNotFullWidth),
+    );
+    assert_eq!(
+        ExpectedExecutorProvenance::new(TEST_INTENDED_TIP, abbreviation, [TEST_LOCAL_TOPIC]),
+        Err(ProvenanceSyntaxDefect::RevisionNotFullWidth),
+    );
+    assert_eq!(
+        FullRevisionId::new(abbreviation),
+        Err(ProvenanceSyntaxDefect::RevisionNotFullWidth),
     );
 
-    // The literal does not.
-    let expected = ExpectedExecutorProvenance {
-        intended_tip: RevisionId::new(abbreviation).expect("an abbreviation is admitted syntax"),
-        upstream_base: RevisionId::full(TEST_UPSTREAM_BASE).expect("a full identifier"),
-        included_local_topics: BTreeSet::from([crate::provenance::TopicName::new(
-            TEST_LOCAL_TOPIC,
-        )
-        .expect("an admitted topic")]),
-    };
+    // The full expectation is the only one that exists, and the gate
+    // accepts the honest run against it: the binary's abbreviation is
+    // compared as a prefix of the full tip, which is the rule.
+    let expected =
+        ExpectedExecutorProvenance::new(TEST_INTENDED_TIP, TEST_UPSTREAM_BASE, [TEST_LOCAL_TOPIC])
+            .expect("the full identifiers state an expectation");
+    assert_eq!(expected.intended_tip().as_str().len(), FULL_REVISION_WIDTH);
 
+    let validated = validate_executor_provenance(&reported_provenance(), &expected)
+        .expect("the honest run matches its expectation");
+    // What the gate carries forward is the full identifier, never the
+    // abbreviation the binary reported.
+    assert_eq!(validated.intended_tip().as_str(), TEST_INTENDED_TIP);
+    assert_eq!(validated.binary_reported_revision().as_str(), abbreviation);
+
+    // And a run declaring the abbreviation as its intended tip is now a
+    // mismatch, because the expectation it is compared against is full.
     let mut reported = reported_provenance();
     reported.intended_executed_tip = Some(abbreviation.to_owned());
-
-    let validated = validate_executor_provenance(&reported, &expected).expect(
-        "G12-R01: the gate is expected to accept a prefix expectation while the row is open",
+    assert!(
+        validate_executor_provenance(&reported, &expected).is_err(),
+        "G12-R01: a prefix declared as the intended tip is not the expected tip",
     );
-    assert_eq!(validated.intended_tip().as_str(), abbreviation);
 }
 
 /// `G12-R09`: a revision-3 response its own protocol type cannot read.
