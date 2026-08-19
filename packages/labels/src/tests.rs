@@ -3606,3 +3606,62 @@ fn the_live_tree_carries_no_malformed_label_shape() {
         .collect();
     assert!(failures.is_empty(), "{failures:?}");
 }
+
+/// A finding identifier names one row, and a second row taking it is a
+/// failure rather than a matter of which one a reader finds first.
+#[test]
+fn two_rows_sharing_one_identifier_under_one_heading_fail() {
+    let markdown = "\
+### 13.2 Checker findings
+
+| ID | Status | Finding |
+|---|---|---|
+| `DI-F02` | DONE | The first thing this number named. |
+| `DI-F02` | ACTIVE | A different thing, under the same number. |
+";
+
+    let failures = crate::plans::duplicate_row_ids(markdown);
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(
+        failures[0].contains("DI-F02") && failures[0].contains("13.2 Checker findings"),
+        "the failure names the identifier and its table: {failures:?}",
+    );
+}
+
+/// The namespaces are per table, so two registers may both number a row
+/// one without either being ambiguous.
+#[test]
+fn one_identifier_in_each_of_two_tables_is_not_a_duplicate() {
+    let markdown = "\
+### Review register
+
+| ID | Status |
+|---|---|
+| `R-01` | DONE |
+
+### Toolchain register
+
+| ID | Status |
+|---|---|
+| `R-01` | ACTIVE |
+";
+
+    assert!(crate::plans::duplicate_row_ids(markdown).is_empty());
+}
+
+/// A backticked cell that is not the row's identifier is data. The
+/// identity table names a path in its second cell for several rows, and
+/// a scan reading any backticked cell would call those duplicates.
+#[test]
+fn a_backticked_cell_after_the_first_is_not_an_identifier() {
+    let markdown = "\
+### Identities
+
+| Identity | Authority |
+|---|---|
+| Attestation version | `papers/attestation/main.tex` |
+| Realization version | `papers/attestation/main.tex` |
+";
+
+    assert!(crate::plans::duplicate_row_ids(markdown).is_empty());
+}

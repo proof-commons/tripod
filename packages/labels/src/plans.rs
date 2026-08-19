@@ -196,6 +196,7 @@ pub fn check_plans(root: &Path, subjects: &[PathBuf]) -> anyhow::Result<PlansOut
     }
     verify_phase_gate(&root, &mut failures)?;
     verify_task_status_agreement(&root, &mut failures)?;
+    verify_unique_row_ids(&root, &mut failures)?;
 
     let TreeBytes {
         adr: adr_bytes,
@@ -695,6 +696,63 @@ fn verify_task_status_agreement(root: &Path, failures: &mut Vec<String>) -> anyh
         }
     }
     Ok(())
+}
+
+/// Every backticked row identifier in one backlog table is distinct.
+///
+/// A finding or task identifier is a permanent key: it names one row for
+/// good, and prose elsewhere cites it. Two rows sharing one identifier
+/// give two answers to what that key names, and a reader following a
+/// citation reaches whichever the reader happened to find first — which
+/// is how a resolved finding and an open one came to share one number
+/// until the sixth static review noticed.
+///
+/// Scoped to one table, because the tables are separate namespaces: a
+/// review register and a toolchain register number their own rows.
+fn verify_unique_row_ids(root: &Path, failures: &mut Vec<String>) -> anyhow::Result<()> {
+    let backlog = read_text(&root.join("plans/backlog.md"))?;
+    failures.extend(duplicate_row_ids(&backlog));
+    Ok(())
+}
+
+/// The duplicate-identifier failures in one Markdown document.
+///
+/// Split from the file read so that the scan itself is testable over
+/// stated text rather than only over the tree it polices.
+pub(crate) fn duplicate_row_ids(markdown: &str) -> Vec<String> {
+    let mut failures = Vec::new();
+    let mut table = String::from("(before any heading)");
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+
+    for line in without_fenced_lines(markdown).lines() {
+        if let Some(rest) = line.strip_prefix("### ") {
+            table = rest.trim().to_owned();
+            seen.clear();
+            continue;
+        }
+        if line.starts_with("## ") {
+            table = line[3..].trim().to_owned();
+            seen.clear();
+            continue;
+        }
+        // The identifier is the row's first cell, and only there: a
+        // backticked path or label further along the row is data.
+        let Some(id) = line
+            .split('|')
+            .nth(1)
+            .map(str::trim)
+            .and_then(|cell| cell.strip_prefix('`'))
+            .and_then(|cell| cell.strip_suffix('`'))
+        else {
+            continue;
+        };
+        if !seen.insert(id.to_owned()) {
+            failures.push(format!(
+                "identifiers: {id} names more than one row under \"{table}\""
+            ));
+        }
+    }
+    failures
 }
 
 /// Markdown bytes for the `adr/` and `plans/` trees, split by budget.
