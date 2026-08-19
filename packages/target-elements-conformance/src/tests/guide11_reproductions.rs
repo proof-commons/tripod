@@ -21,9 +21,11 @@
 //!   the gate reads every case status and the report's own completeness,
 //!   and the run's provenance is compared against an explicit
 //!   expectation before any row is consulted.
-//! - `G11-R14` is still open. Its tests still assert the defect, so one
-//!   of them failing after a later wave is that wave working rather than
-//!   a regression.
+//! - `G11-R14` is **CLOSED** by Wave 4. One shared predicate says which
+//!   defects a different representation nonce could repair, and both
+//!   retry implementations consult it, so a permanent defect is
+//!   reported after one attempt instead of being ground against every
+//!   nonce in the bound and then misreported as exhaustion.
 //!
 //! Each test names its finding identifier in its own documentation. No
 //! test here touches a production code path: they are constructions over
@@ -62,11 +64,14 @@ use target_elements::{
 
 use crate::claim::{ClaimRegistry, NativeEvidenceClaim, claim_registry, claims_of};
 use crate::constructor::canonical::{CanonicalOrderDefect, construct_canonically_ordered};
-use crate::constructor::curve::FIELD_ELEMENT_BYTES;
+use crate::constructor::curve::{FIELD_ELEMENT_BYTES, PointDecodingDefect};
 use crate::constructor::internal_key::UNSPENDABLE_INTERNAL_KEY;
 use crate::constructor::metadata::PrototypeMetadata;
+use crate::constructor::metadata_leaf::metadata_leaf_script;
 use crate::constructor::totality::{TotalityDefect, TweakTotalityPolicy, construct_under_policy};
-use crate::constructor::tree::{FixtureTapTree, construct};
+use crate::constructor::tree::{
+    ConstructionDefect, FixtureTapTree, TreeDefect, TweakDefect, construct, retryable,
+};
 use crate::error::NativeConformanceError;
 use crate::executor::{
     ExecutionTranscript, ExecutorTrust, PrototypeTranscriptParts, TranscriptParts,
@@ -2257,52 +2262,63 @@ fn g11_r03_raw_bytes_are_not_reported_as_a_typed_program() {
 
 // -- G11-R14 -----------------------------------------------------------
 
-/// `G11-R14`: nonce retry retries an internal key no nonce can repair.
+/// The static subtree the byte-comparison below constructs over.
+fn r14_static_subtree() -> FixtureTapTree {
+    FixtureTapTree::leaf(vec![0x51])
+}
+
+/// `G11-R14`: a permanent defect is classified as one, not ground.
 ///
-/// Only a tree defect short-circuits. An internal key that is not a curve
-/// point is invariant under every metadata nonce, and the search runs to
-/// its bound and reports exhaustion rather than the permanent
-/// classification the type documents.
+/// Only a tree defect used to short-circuit. An internal key that is
+/// not a curve point is invariant under every metadata nonce — it is
+/// decoded before the root is consulted at all — so the search ran to
+/// its bound and reported exhaustion, and a caller reading that
+/// diagnostic would raise the retry limit against a failure no limit
+/// can repair.
 #[test]
-fn g11_r14_an_invalid_internal_key_is_retried_to_exhaustion() {
+fn g11_r14_an_invalid_internal_key_fails_after_one_attempt() {
     // Above the field prime, so no x-only lift exists for any nonce.
     let invalid_key = [0xff_u8; FIELD_ELEMENT_BYTES];
-    let leaf = FixtureTapTree::leaf(vec![0x51]);
-    let attempts = 8;
+    let leaf = r14_static_subtree();
+    let seen = std::cell::Cell::new(0_u32);
 
     let defect = construct_under_policy(
         &invalid_key,
         metadata(),
         &leaf,
         TweakTotalityPolicy::CanonicalNonceRetry {
-            maximum_attempts: attempts,
+            maximum_attempts: 8,
         },
-        |_metadata| leaf.clone(),
+        |_metadata| {
+            seen.set(seen.get() + 1);
+            leaf.clone()
+        },
     )
     .expect_err("an invalid internal key determines no output key");
 
-    assert_eq!(
-        defect,
-        TotalityDefect::RetryExhausted { attempts },
-        "the defect: a permanent failure is reported as an exhausted search",
-    );
     assert!(
-        !matches!(defect, TotalityDefect::NotRepairableByRetry(_)),
-        "the defect: the documented permanent classification is not used",
+        matches!(
+            defect,
+            TotalityDefect::NotRepairableByRetry(ConstructionDefect::Tweak(
+                TweakDefect::InternalKeyNotOnCurve(_),
+            )),
+        ),
+        "a permanent defect is classified as permanent, got {defect:?}",
     );
+    // The count is the point of the repair, not a detail of it: the old
+    // behaviour did this work eight times over and then misreported it.
+    assert_eq!(seen.get(), 1, "the search stops after the first attempt");
 }
 
-/// `G11-R14`: the canonical ordered constructor has the same gap.
+/// `G11-R14`: the canonical ordered constructor classifies it too.
 ///
-/// `construct_canonically_ordered` short-circuits on a tree defect and on
-/// nothing else, so an invalid internal key exhausts the search there
-/// too.
+/// The two retry implementations now consult one predicate, so this is
+/// the same fact reached by the other route.
 #[test]
-fn g11_r14_the_canonical_constructor_retries_the_same_permanent_defect() {
+fn g11_r14_the_canonical_constructor_classifies_the_same_permanent_defect() {
     let target = reviewed_target();
     let invalid_key = [0xff_u8; FIELD_ELEMENT_BYTES];
-    let static_subtree = FixtureTapTree::leaf(vec![0x51]);
-    let attempts = 4;
+    let static_subtree = r14_static_subtree();
 
     let defect = construct_canonically_ordered(
         &target,
@@ -2310,14 +2326,214 @@ fn g11_r14_the_canonical_constructor_retries_the_same_permanent_defect() {
         &metadata(),
         &static_subtree,
         &static_subtree,
-        attempts,
+        4,
     )
     .expect_err("an invalid internal key determines no output key");
 
     assert!(
-        matches!(defect, CanonicalOrderDefect::SearchExhausted { .. }),
-        "the defect: a permanent failure is reported as an exhausted search, got {defect:?}",
+        matches!(
+            defect,
+            CanonicalOrderDefect::NotRepairableByRetry(ConstructionDefect::Tweak(
+                TweakDefect::InternalKeyNotOnCurve(_),
+            )),
+        ),
+        "a permanent defect is classified as permanent, got {defect:?}",
     );
+}
+
+/// `G11-R14`: a tree the nonce cannot fix fails after one attempt.
+///
+/// A missing executing leaf and a repeated one are both properties of
+/// the static subtree, which the nonce does not touch. Both were
+/// already short-circuited; both are checked here so the shared
+/// predicate cannot lose them while gaining the internal-key case.
+#[test]
+fn g11_r14_a_tree_defect_fails_after_one_attempt() {
+    let present = FixtureTapTree::leaf(vec![0x51]);
+    let absent = FixtureTapTree::leaf(vec![0x52]);
+    let repeated = FixtureTapTree::branch(present.clone(), present.clone());
+
+    for (tree, executing, expected) in [
+        (
+            present.clone(),
+            absent.clone(),
+            TreeDefect::ExecutingLeafAbsent,
+        ),
+        (
+            repeated.clone(),
+            present.clone(),
+            TreeDefect::ExecutingLeafRepeated,
+        ),
+    ] {
+        let seen = std::cell::Cell::new(0_u32);
+        let defect = construct_under_policy(
+            &UNSPENDABLE_INTERNAL_KEY,
+            metadata(),
+            &executing,
+            TweakTotalityPolicy::CanonicalNonceRetry {
+                maximum_attempts: 8,
+            },
+            |_metadata| {
+                seen.set(seen.get() + 1);
+                tree.clone()
+            },
+        )
+        .expect_err("the tree determines no control path");
+
+        assert_eq!(
+            defect,
+            TotalityDefect::NotRepairableByRetry(ConstructionDefect::Tree(expected)),
+        );
+        assert_eq!(seen.get(), 1, "the search stops after the first attempt");
+    }
+}
+
+/// `G11-R14`: exactly the two nonce-movable tweak defects retry.
+///
+/// The classification stated directly, over every defect the
+/// constructor can produce. Getting it wrong in the other direction
+/// would be worse than the finding: marking every tweak failure
+/// permanent would refuse instances a second nonce would have built,
+/// since the tweak is a hash of a root the nonce moves.
+#[test]
+fn g11_r14_only_the_nonce_movable_tweak_defects_are_retryable() {
+    for defect in [
+        ConstructionDefect::Tweak(TweakDefect::TweakNotAScalar),
+        ConstructionDefect::Tweak(TweakDefect::TweakedKeyIsIdentity),
+    ] {
+        assert!(retryable(defect), "{defect:?} moves with the nonce");
+    }
+
+    for defect in [
+        ConstructionDefect::Tweak(TweakDefect::InternalKeyNotOnCurve(
+            PointDecodingDefect::NotAFieldElement,
+        )),
+        ConstructionDefect::Tweak(TweakDefect::InternalKeyNotOnCurve(
+            PointDecodingDefect::NotOnCurve,
+        )),
+        ConstructionDefect::Tree(TreeDefect::ExecutingLeafAbsent),
+        ConstructionDefect::Tree(TreeDefect::ExecutingLeafIsNotALeaf),
+        ConstructionDefect::Tree(TreeDefect::ExecutingLeafRepeated),
+        ConstructionDefect::Tree(TreeDefect::PathTooDeep { needed: 129 }),
+    ] {
+        assert!(!retryable(defect), "{defect:?} is fixed under the nonce");
+    }
+}
+
+/// `G11-R14`: an exhausted search still reports its configured bound.
+///
+/// The repair narrows what is retried, and must not turn a genuine
+/// exhausted search into something else. The static subtree is chosen
+/// here rather than assumed: a root every nonce in the bound hashes
+/// above is searched for, so the exhaustion is deterministic instead of
+/// being a coin flip the test happens to win.
+#[test]
+fn g11_r14_exhaustion_reports_the_configured_attempt_count() {
+    let target = reviewed_target();
+    let attempts = 3_u32;
+
+    // The metadata leaf hashes the search will produce, in order.
+    let leaves = (0..attempts)
+        .map(|nonce| {
+            let written = metadata().with_nonce(nonce);
+            let script = metadata_leaf_script(&target, &written.encode())
+                .expect("the metadata is expressible");
+            FixtureTapTree::leaf(script).node_hash()
+        })
+        .collect::<Vec<_>>();
+
+    // A static subtree whose root precedes every one of them, so the
+    // MetadataFirst side never holds within the bound.
+    let subtree = (0_u16..4096)
+        .map(|discriminant| {
+            FixtureTapTree::leaf(
+                vec![0x51, 0x01, 0x02, 0x03, 0x04]
+                    .into_iter()
+                    .chain(discriminant.to_be_bytes())
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .find(|candidate| {
+            let root = candidate.node_hash();
+            leaves.iter().all(|leaf| *leaf > root)
+        })
+        .expect("a root below every leaf hash in the bound exists");
+
+    let defect = construct_canonically_ordered(
+        &target,
+        &UNSPENDABLE_INTERNAL_KEY,
+        &metadata(),
+        &subtree,
+        &subtree,
+        attempts,
+    )
+    .expect_err("no nonce in the bound is on the canonical side");
+
+    assert_eq!(
+        defect,
+        CanonicalOrderDefect::SearchExhausted { attempts },
+        "an exhausted search reports exactly the bound it was given",
+    );
+}
+
+/// `G11-R14`: the canonical construction produces identical outputs.
+///
+/// The repair changes which defects are retried and must change nothing
+/// about what a successful construction determines. These values were
+/// read off the constructor before the repair and are compared against
+/// it after: a byte comparison, not a re-derivation, since a value
+/// recomputed by the code under test would agree with itself however it
+/// had moved.
+#[test]
+fn g11_r14_the_canonical_construction_is_byte_identical() {
+    let target = reviewed_target();
+    let subtree = r14_static_subtree();
+
+    let built = construct_canonically_ordered(
+        &target,
+        &UNSPENDABLE_INTERNAL_KEY,
+        &metadata(),
+        &subtree,
+        &subtree,
+        1_000,
+    )
+    .expect("the canonical search finds a nonce");
+    let output = built.output();
+
+    assert_eq!(built.attempts(), 1);
+    assert_eq!(built.metadata().nonce, 0);
+    assert_eq!(
+        hex_of(output.merkle_root()),
+        "36e51d9fba0544e54bf2d5adfbb2aa2f51da649a6f2619cef0413e7ca0233762",
+    );
+    assert_eq!(
+        hex_of(output.tweak()),
+        "f42dc12bf8e91866d7b2150d8e026bb1ce863487f30164aab51cd16496d7c9aa",
+    );
+    assert_eq!(
+        hex_of(output.output_key()),
+        "d3ea922e605c6bf7d0c4a43f863329067ed689003bc63e3964ff53ee45cf182e",
+    );
+    assert_eq!(output.parity(), 1);
+    assert_eq!(
+        hex_of(output.output_program()),
+        "5120d3ea922e605c6bf7d0c4a43f863329067ed689003bc63e3964ff53ee45cf182e",
+    );
+    assert_eq!(
+        hex_of(output.control_block()),
+        "c550929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0\
+         53118bf6314510facb28ffd10dc491df2046d6e59ba3b014be9b03ef1241a404",
+    );
+}
+
+/// Lowercase hex, for comparing exact bytes against a written record.
+fn hex_of(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+
+    bytes.iter().fold(String::new(), |mut out, byte| {
+        let _ = write!(out, "{byte:02x}");
+        out
+    })
 }
 
 /// The registry and plan are stated once here so an unused-import warning

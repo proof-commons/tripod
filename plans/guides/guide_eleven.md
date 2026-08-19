@@ -792,7 +792,7 @@ Extend the signature weld to check:
 
 A subcontract saying unknown keys reject must not coexist with opcodes saying unknown keys succeed without verification.
 
-## 4.15 Constructor retry distinguishes transient and permanent defects
+## 4.15 Constructor retry distinguishes transient and permanent defects · `rule:guide11-exec:retry-classification`
 
 Use one shared predicate:
 

@@ -179,12 +179,13 @@ pub fn construct_canonically_ordered(
                     attempts: attempt.saturating_add(1),
                 });
             }
-            // A tree defect meets the next nonce unchanged: the metadata
-            // leaf moves, but whether the tree contains the executing
-            // leaf, contains it once, and sits within the control depth
-            // are all properties of the static subtree the nonce does
-            // not touch. Retrying would loop over a fixed failure.
-            Err(defect @ ConstructionDefect::Tree(_)) => {
+            // A defect the nonce cannot move meets the next nonce
+            // unchanged, so retrying would loop over a fixed failure.
+            // Which defects those are is `retryable`'s to say, and not
+            // this function's: classifying it here is how an invalid
+            // internal key came to be ground against every nonce in the
+            // bound and then reported as exhaustion.
+            Err(defect) if !crate::constructor::tree::retryable(defect) => {
                 return Err(CanonicalOrderDefect::NotRepairableByRetry(defect));
             }
             Err(_) => {}

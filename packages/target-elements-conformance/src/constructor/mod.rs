@@ -51,5 +51,5 @@ pub use tagged::{DIGEST_BYTES, Digest32, tagged_hash};
 pub use totality::{TotalityDefect, TotalityOutcome, TweakTotalityPolicy, construct_under_policy};
 pub use tree::{
     ConstructedOutput, ConstructionDefect, FixtureTapTree, TreeDefect, TweakDefect, branch_hash,
-    construct, control_block, leaf_hash, output_program, tweak, tweaked_key,
+    construct, control_block, leaf_hash, output_program, retryable, tweak, tweaked_key,
 };

@@ -486,6 +486,47 @@ pub enum ConstructionDefect {
     Tweak(TweakDefect),
 }
 
+/// Whether a different representation nonce could repair this defect.
+///
+/// # What a nonce actually moves
+///
+/// A nonce changes the metadata leaf, and through it the merkle root
+/// and the tweak. Everything downstream of the root can therefore come
+/// out differently on the next attempt, and everything upstream of it
+/// cannot.
+///
+/// So exactly two defects are worth retrying. The tweak is a hash of
+/// the root, so a tweak that is not a scalar is a property of this
+/// root and not of the instance; and the tweaked key being the
+/// identity depends on the same hash. Both are negligibly rare and
+/// both move.
+///
+/// Nothing else does. Every [`TreeDefect`] is a property of the static
+/// subtree and the executing leaf — whether the tree contains that
+/// leaf, contains it once, and sits within the control depth — and the
+/// nonce does not touch any of them. Neither is
+/// [`TweakDefect::InternalKeyNotOnCurve`]: the internal key is an
+/// input, decoded before the root is consulted at all, so no number of
+/// nonces makes it a curve point.
+///
+/// # Why it is one function
+///
+/// Both retry implementations classified this for themselves, and both
+/// short-circuited on tree defects only, so an invalid internal key was
+/// ground against every nonce in the bound and then reported as
+/// exhaustion — a caller reading that diagnostic would raise the retry
+/// limit against a failure no limit can repair. One predicate is what
+/// keeps the two policies from drifting again
+/// `(´[PLAN-rule:guide11-exec:retry-classification]´)`.
+#[must_use]
+pub const fn retryable(defect: ConstructionDefect) -> bool {
+    matches!(
+        defect,
+        ConstructionDefect::Tweak(TweakDefect::TweakNotAScalar)
+            | ConstructionDefect::Tweak(TweakDefect::TweakedKeyIsIdentity)
+    )
+}
+
 /// Every exact value one constructor instance determines.
 ///
 /// # Errors
