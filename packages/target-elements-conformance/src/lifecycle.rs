@@ -224,6 +224,26 @@ impl LifecycleOutcome {
     pub const fn establishes_fact(self) -> bool {
         !matches!(self, Self::FixtureConstructionFailure)
     }
+
+    /// Whether a process actually carried the step out.
+    ///
+    /// Distinct from [`Self::establishes_fact`], and deliberately so.
+    /// That question is about evidence: an infrastructure failure is a
+    /// fact about the run, which is why it is recorded. This one is
+    /// about observation, and both failure outcomes answer it the same
+    /// way — no process reached the chain, so no handoff, check, spend,
+    /// or witness figure can have come from anywhere.
+    ///
+    /// It is the lifecycle spelling of
+    /// [`crate::protocol::ObservedOutcomeLayer::is_target_verdict`], and
+    /// the protocol's response shape rule reads it for the same reason.
+    #[must_use]
+    pub const fn step_ran(self) -> bool {
+        !matches!(
+            self,
+            Self::FixtureConstructionFailure | Self::ExecutorInfrastructureFailure
+        )
+    }
 }
 
 /// One row's expectation, written before the run and owned by source.
