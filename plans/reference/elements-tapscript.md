@@ -648,6 +648,13 @@ load-bearing encoding fact in the review.
 | the range proof binds the output script | the script is passed as the proof's extra commitment, so a proof does not transfer between outputs | `src/script/sigcache.cpp:153`, `src/confidential_validation.cpp:388` |
 | a surjection proof is required exactly when the asset is confidential | an explicit asset carrying one is refused, and the target list is the input generators in order followed by each issuance pseudo-input | `src/confidential_validation.cpp:165-170`, `:393-420` |
 | a coinbase is explicit in both fields and is checked against the fee map | it may carry no output witness at all | `src/confidential_validation.cpp:425-451` |
+| closing the blinding balance is a construction obligation, not a consensus check | the constructing side solves for the final blinding factor so the tally closes over both the value and the asset blinders, and refuses the degenerate cases where that factor would be zero or would unblind its own output; consensus checks only the resulting tally | `src/blind.cpp:575-602` |
+
+The distinction in the last row matters for what may be claimed. The target's
+consensus statement is the exact tally and nothing more. That the blinders sum
+correctly is a property the constructing side arranges, so a deployment
+relying on it is relying on its own construction rather than on a rule the
+target enforces.
 
 #### Introspection of commitments · `tab:elements-ref:ct-introspection`
 
