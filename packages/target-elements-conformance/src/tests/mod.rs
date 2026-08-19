@@ -5,6 +5,7 @@ mod census_tests;
 mod constructor_matrix_tests;
 mod constructor_tests;
 mod fixture_tests;
+mod guide11_reproductions;
 mod protocol_tests;
 mod prototype_program_tests;
 mod prototype_tests;
