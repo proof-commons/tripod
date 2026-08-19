@@ -275,7 +275,7 @@ fn unclosed_inline_code_rejects() {
 #[test]
 fn owner_specific_label_shapes_parse() {
     let attestation = Label::parse("def:model:classes", LabelShape::Attestation);
-    let realization = Label::parse("sec:representation", LabelShape::Realization);
+    let realization = Label::parse("sec:realization:representation", LabelShape::Realization);
     let adr = Label::parse("rule:labels:decision", LabelShape::Adr);
     assert!(attestation.is_ok() && realization.is_ok() && adr.is_ok());
 }
@@ -297,9 +297,10 @@ fn area_may_hyphenate_and_kind_may_not() {
         "a kind may not hyphenate"
     );
 
-    // The realization owner's two-part divisions are unaffected.
-    let two_part = Label::parse("sec:representation", LabelShape::Realization);
-    assert!(two_part.is_ok());
+    // The realization owner's migrated divisions carry the hyphenated
+    // area like any other three-part label.
+    let division = Label::parse("sec:realization:representation", LabelShape::Realization);
+    assert!(division.is_ok(), "a migrated division parses");
 }
 
 #[test]
@@ -404,7 +405,7 @@ fn model_harvest_enforces_owner_relative_forms() {
         concat!(
             "// ´def:fixture:defined´\n",
             "// ´def:fixture:defined´\n",
-            "// ´sec:representation´\n",
+            "// ´sec:realization:representation´\n",
             "// (´[RZ-sec:realization:representation]´)\n",
             "// ´[RZ-sec:realization:representation]´\n",
         ),
@@ -3544,12 +3545,19 @@ fn the_attestation_shape_admits_three_segments_only() {
     assert!(Label::parse("sec:attestation:overview", LabelShape::Attestation).is_ok());
 }
 
-/// The realization contract's twenty divisions are frozen by name, not
-/// admitted by a looser shape: an unlisted two-segment token fails
-/// there exactly as it does anywhere else.
+/// The twenty divisions migrated to the three-part form, so the
+/// realization owner keeps no enumerated residue: a two-segment token
+/// fails there exactly as it does anywhere else — including one that
+/// the retired list used to admit by name.
 #[test]
-fn the_realization_divisions_are_frozen_by_name() {
-    assert!(Label::parse("sec:representation", LabelShape::Realization).is_ok());
+fn the_realization_shape_admits_three_segments_only() {
+    assert!(Label::parse("sec:realization:representation", LabelShape::Realization).is_ok());
+    // A former division: admitted by name before the migration, and
+    // malformed like any other two-segment token after it.
+    assert!(matches!(
+        Label::parse("sec:representation", LabelShape::Realization),
+        Err(LabelParseError::Arity(_)),
+    ));
     assert!(matches!(
         Label::parse("sec:invented", LabelShape::Realization),
         Err(LabelParseError::Arity(_)),

@@ -132,7 +132,8 @@ impl PublishedArchitecture {
 
     /// Canonical presentation rendering of the TOML artifact
     /// (`architecture.toml`). The same bytes are attached verbatim as
-    /// the realization document's `app:realization:architecture` appendix.
+    /// the realization document's appendix
+    /// `(´[RZ-app:realization:architecture]´)`.
     ///
     /// # Errors
     ///

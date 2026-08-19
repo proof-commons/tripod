@@ -76,16 +76,19 @@
 //!
 //! # The realization document's top-level divisions
 //!
-//! The realization contract carries twenty two-segment anchors, its
-//! sections and its one appendix, minted before the shape was settled
-//! and cited across the corpus. They are frozen here by name: the rule
-//! is universal and admits no *surface*, so the residue is enumerated
-//! rather than exempted, and the census cannot grow — a twenty-first
-//! two-segment token in that document fails like any other. Retiring
-//! the twenty is a rename of a released contract's anchors and belongs
-//! to a migration wave, not to this rule.
-
-use crate::label::LabelShape;
+//! The realization contract once carried twenty two-segment anchors,
+//! its sections and its one appendix, minted before the shape was
+//! settled and cited across the corpus. They were frozen here by name
+//! until the migration wave retired them: each takes the document's
+//! own-division area, `realization`, a division's home being the
+//! document itself, exactly as the paper's divisions take
+//! `attestation`. The rule is
+//! therefore total and carries no enumerated residue — a two-segment
+//! token in that document now fails like any other, with no list to
+//! consult. The rename moved no identity: labels are presentation
+//! under the denotation law, and the calculus's presentation
+//! invariance metatheorem is why nothing that hashes the corpus
+//! moved.
 
 /// The form every label takes, quoted in the diagnostic.
 pub const EXPECTED_FORM: &str = "kind:area:name";
@@ -93,46 +96,10 @@ pub const EXPECTED_FORM: &str = "kind:area:name";
 /// The number of colon-separated segments a label carries.
 pub const SEGMENTS: usize = 3;
 
-/// The realization contract's two-segment top-level divisions, frozen.
+/// Whether a token carries an admissible number of segments.
 ///
-/// Sorted, so the membership test is a binary search and a new entry
-/// cannot hide in the middle of the list.
-const REALIZATION_DIVISIONS: [&str; 20] = [
-    "app:architecture",
-    "sec:anchors",
-    "sec:architecture",
-    "sec:arithmetic",
-    "sec:authorization",
-    "sec:identity",
-    "sec:invariant",
-    "sec:kernel",
-    "sec:ledger",
-    "sec:manifest",
-    "sec:operations",
-    "sec:oracle",
-    "sec:overview",
-    "sec:pins",
-    "sec:representation",
-    "sec:requirements",
-    "sec:reviewer",
-    "sec:translation",
-    "sec:trust",
-    "sec:versioning",
-];
-
-/// Whether a value is one of the frozen realization divisions.
-fn is_frozen_division(value: &str) -> bool {
-    REALIZATION_DIVISIONS.binary_search(&value).is_ok()
-}
-
-/// Whether a token of this shape carries an admissible number of
-/// segments.
-///
-/// Every owner answers the same way but one, and that one answers by
-/// name rather than by arity.
-pub fn arity_admitted(value: &str, parts: usize, shape: LabelShape) -> bool {
-    if parts == SEGMENTS {
-        return true;
-    }
-    matches!(shape, LabelShape::Realization) && parts == 2 && is_frozen_division(value)
+/// Every owner answers the same way, by arity alone: there is no
+/// surface exemption and no enumerated residue to consult.
+pub const fn arity_admitted(parts: usize) -> bool {
+    parts == SEGMENTS
 }

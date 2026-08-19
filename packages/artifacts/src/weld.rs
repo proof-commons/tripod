@@ -1,8 +1,9 @@
 //! Document weld: structural extraction of the realization document's
 //! attached manifest and masthead identities.
 //!
-//! `realization.md` claims its `app:realization:architecture` appendix is the
-//! generated `architecture.toml` attached **verbatim**, and its
+//! `realization.md` claims its appendix
+//! `(´[RZ-app:realization:architecture]´)` is the generated
+//! `architecture.toml` attached **verbatim**, and its
 //! masthead states the release identities (schema, hashes, specification
 //! pin). These claims are release-integrity surfaces: the weld tests
 //! in this crate compare them mechanically against the typed
@@ -28,12 +29,13 @@ pub fn masthead(document: &str) -> anyhow::Result<&str> {
 }
 
 /// Extract the verbatim `architecture.toml` bytes attached under the
-/// unique `app:realization:architecture` appendix heading.
+/// unique appendix heading
+/// `(´[RZ-app:realization:architecture]´)`.
 ///
 /// Structural rules enforced:
 ///
 /// 1. exactly one heading line starting with `## Appendix` and citing
-///    `app:realization:architecture`;
+///    `(´[RZ-app:realization:architecture]´)`;
 /// 2. exactly one fenced `toml` block after that heading;
 /// 3. the fence must close.
 ///

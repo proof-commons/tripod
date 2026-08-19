@@ -21,10 +21,10 @@ impl Label {
             return Err(LabelParseError::Malformed(value.to_owned()));
         }
         // The arity rule is one decision, held in `shape` and applied to
-        // every owner alike: a label is three-part, and the realization
-        // contract's frozen divisions are named there rather than
-        // admitted by a looser shape.
-        if !shape::arity_admitted(value, parts.len(), shape) {
+        // every owner alike: a label is three-part, with no surface
+        // exemption and no enumerated residue — the realization
+        // contract's divisions migrated to the three-part form.
+        if !shape::arity_admitted(parts.len()) {
             return Err(LabelParseError::Arity(value.to_owned()));
         }
         if shape == LabelShape::Realization {
