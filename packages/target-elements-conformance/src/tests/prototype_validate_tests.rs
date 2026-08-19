@@ -183,7 +183,7 @@ fn a_declared_mock_run_cannot_satisfy_the_prototype_gate() {
             prototype_gate(&validated),
             Err(NativeConformanceError::MockExecutorCannotSatisfyNativeGate),
         ),
-        "a mock's answers are the matrix's own expectations read back",
+        "a mock's answers come from the matrix's own expectations",
     );
 }
 

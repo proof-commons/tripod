@@ -158,7 +158,8 @@ fn a_declared_mock_run_cannot_satisfy_the_gate() {
 fn declaring_a_mock_reviewed_leaves_the_lie_in_the_provenance() {
     // The harness cannot tell a mock from an interpreter, so a
     // dishonest declaration gets past the mock refusal, and the census
-    // it then "passes" is the census's own expectations read back. What
+    // it then "passes" is the census's own expectations, which the mock
+    // holds a copy of. What
     // the report does carry is what the program said it was, which is
     // how a reader catches this rather than the gate.
     let directory = tempfile::tempdir().expect("tempdir");

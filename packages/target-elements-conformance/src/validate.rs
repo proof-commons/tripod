@@ -40,9 +40,9 @@
 //! all fail there rather than passing here.
 //!
 //! The gate then refuses a declared mock run before anything else: a
-//! mock's answers are the fixture's own expectations read back, so a
-//! green mock report says only that the harness can compare a value with
-//! itself.
+//! mock's answers come from the census's own expectations, obtained out
+//! of band since revision 3 stopped sending them, so a green mock report
+//! says only that the harness can compare a value with itself.
 
 use std::collections::{BTreeMap, BTreeSet};
 

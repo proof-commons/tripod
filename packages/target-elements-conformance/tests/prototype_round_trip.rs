@@ -11,9 +11,11 @@
 //! compound fixture at all.
 //!
 //! It establishes nothing whatever about any target. The mock executes
-//! no script, builds no transaction, and boots no node; its answers are
-//! each fixture's own expectation read back, so the harness would be
-//! comparing a fixture with itself. Every claim both matrices state
+//! no script, builds no transaction, and boots no node; its answers come
+//! from its own copy of the canonical matrices, so the harness would be
+//! comparing a value with itself. Revision 3 stopped sending the
+//! expectation, so the mock holds that copy out of band rather than
+//! reading an answer off the wire. Every claim both matrices state
 //! stays unresolved until a reviewed nonmock executor answers them
 //! (Guide-10 `rule:guide10:validated-native-evidence`).
 
@@ -105,8 +107,8 @@ fn wide_floor_matrix() -> Vec<CompoundPrototypeFixture> {
         .to_vec()
 }
 
-/// Every row is answered once, in order, with the verdict the mock
-/// echoes from the fixture's own expectation.
+/// Every row is answered once, in order, with the verdict the mock finds
+/// for that case identity in its own copy of the canonical matrix.
 fn assert_round_trips(matrix: &[CompoundPrototypeFixture], relation: PrototypeRelation) {
     let transcript = run("materialize-tree", matrix).expect("the exchange completes");
     assert_eq!(transcript.trust(), ExecutorTrust::Mock);
