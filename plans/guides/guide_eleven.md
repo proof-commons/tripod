@@ -754,7 +754,7 @@ A body must not validate under several subjects.
 
 This changes internal relation keys, but no public realization or compiler digest exists. Record that consequence explicitly and update all compiler projections, tests, and diagnostics together.
 
-## 4.13 Target-contract versions describe real schemas
+## 4.13 Target-contract versions describe real schemas · `rule:guide11-exec:target-version-honesty`
 
 Choose one honest state.
 

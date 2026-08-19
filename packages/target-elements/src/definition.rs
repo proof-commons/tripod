@@ -50,13 +50,29 @@ use crate::success::SuccessContractDefect;
 pub struct TargetContractVersion(u32);
 
 impl TargetContractVersion {
-    /// The first typed contract revision.
+    /// The first typed contract revision — historical, not supported.
     ///
     /// The Guide-9 contract: the reviewed primitive census before the
     /// compound-proof substrate, and a success algebra in which every
-    /// result was a value the primitive computed. It remains here as
-    /// the historical revision and is not widened — a consumer pinned
-    /// to it is pinned to what it described.
+    /// result was a value the primitive computed.
+    ///
+    /// # Why it is named but not accepted
+    ///
+    /// This crate does not implement V1. Validation is not
+    /// version-dispatched: it applies the current census, the current
+    /// capability and evidence requirements, and the V2 operand and
+    /// success algebra to whatever definition it is given. Under that
+    /// single validator a V1 number could only ever mean one of two
+    /// dishonest things — a genuine historical V1 contract refused for
+    /// lacking primitives it never had, or a complete V2 body accepted
+    /// while stamped V1 and thereby misdescribing its own shape
+    /// `(´[PLAN-rule:guide11-exec:target-version-honesty]´)`.
+    ///
+    /// So the revision is retained as a historical name, and
+    /// [`Self::SUPPORTED`] holds only revisions for which a complete
+    /// accepted definition can actually be constructed. Implementing V1
+    /// would mean per-revision censuses and a versioned operand and
+    /// success algebra, not adding this constant back to the list.
     pub const V1: Self = Self(1);
 
     /// The second typed contract revision.
@@ -83,7 +99,12 @@ impl TargetContractVersion {
     pub const V2: Self = Self(2);
 
     /// Every contract revision this crate implements.
-    pub const SUPPORTED: &'static [Self] = &[Self::V1, Self::V2];
+    ///
+    /// Membership means a complete definition of that revision can be
+    /// constructed and accepted, not that the number has been used
+    /// before. [`Self::V1`] is named by the crate and is deliberately
+    /// absent.
+    pub const SUPPORTED: &'static [Self] = &[Self::V2];
 
     /// Accepts a contract version number this crate implements.
     ///
@@ -476,15 +497,29 @@ impl TargetProjection {
 pub fn validate_target_definition(
     definition: TargetDefinition,
 ) -> Result<ValidatedTargetDefinition, Vec<TargetError>> {
-    // The contract version and the leaf version are not re-checked
-    // here, and their absence is deliberate. Neither type has a public
-    // unchecked constructor: the only ways to obtain them are
-    // `TargetContractVersion::supported` and `LeafVersion::new`, both
-    // of which refuse an unsupported value. Re-testing them in this
-    // function would add two branches no input can reach, and an
-    // unreachable branch in a validator is worse than no branch at
-    // all — it reads as a check that is running when it is not.
     let mut errors = Vec::new();
+
+    // The leaf version is not re-checked here: `LeafVersion::new` is
+    // the only way to obtain one and it refuses an unsupported value,
+    // so a branch for it would be unreachable, and an unreachable
+    // branch in a validator is worse than no branch at all — it reads
+    // as a check that is running when it is not.
+    //
+    // The contract version is different, and used to be treated the
+    // same way by mistake. `TargetContractVersion::supported` refuses
+    // an unimplemented revision, but the crate also names revisions as
+    // public constants, so a caller reaches an unsupported one without
+    // going through the constructor at all. That is not hypothetical:
+    // stamping a complete V2 body `V1` was exactly how a definition
+    // could claim a shape it did not have. The offered revision is
+    // therefore checked here, against the revisions this crate can
+    // actually validate
+    // `(´[PLAN-rule:guide11-exec:target-version-honesty]´)`.
+    if !TargetContractVersion::SUPPORTED.contains(&definition.version) {
+        errors.push(TargetError::UnsupportedTargetContractVersion {
+            offered: definition.version.get(),
+        });
+    }
 
     validate_opcodes(&definition, &mut errors);
     validate_encodings(&definition, &mut errors);
@@ -761,24 +796,23 @@ fn validate_encodings(definition: &TargetDefinition, errors: &mut Vec<TargetErro
             errors.push(TargetError::SpuriousByteOrder(*key));
         }
 
-        // Under every revision so far the shape of each class is fixed
-        // by the contract. A caller supplies prefixes and evidence
-        // links; it does not get to decide how wide an outpoint index
-        // is or which field group a nonce belongs to. V2 expanded the
-        // primitive census and the success algebra and left the
-        // encoding shapes exactly as V1 stated them, so both revisions
-        // are pinned to the same shapes here rather than V2 being
-        // silently unconstrained.
-        if TargetContractVersion::SUPPORTED.contains(&definition.version) {
-            if spec.domain() != expected.domain() {
-                errors.push(TargetError::EncodingDomainMismatch(*key));
-            }
-            if spec.payload() != expected.payload() {
-                errors.push(TargetError::EncodingWidthMismatch(*key));
-            }
-            if spec.canonicality() != expected.canonicality() {
-                errors.push(TargetError::EncodingCanonicalityMismatch(*key));
-            }
+        // The shape of each class is fixed by the contract. A caller
+        // supplies prefixes and evidence links; it does not get to
+        // decide how wide an outpoint index is or which field group a
+        // nonce belongs to. This was once guarded by a test that the
+        // definition's revision was supported, back when two revisions
+        // were advertised and both pinned the same shapes; the guard
+        // is gone rather than left standing as a condition that is now
+        // always true, since the offered revision is checked once,
+        // above, for the whole definition.
+        if spec.domain() != expected.domain() {
+            errors.push(TargetError::EncodingDomainMismatch(*key));
+        }
+        if spec.payload() != expected.payload() {
+            errors.push(TargetError::EncodingWidthMismatch(*key));
+        }
+        if spec.canonicality() != expected.canonicality() {
+            errors.push(TargetError::EncodingCanonicalityMismatch(*key));
         }
 
         if spec.evidence().is_empty() {
