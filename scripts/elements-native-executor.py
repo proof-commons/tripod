@@ -34,6 +34,21 @@ outside the first-party interface, and carries no credential of any kind
 Everything this script writes on stdout is protocol data. Diagnostics go to
 stderr, which the harness nulls.
 
+The boundary runs in both directions, and the second direction is the one
+that was missing. The harness does not read this process's stderr; this
+process likewise does not read its OWN children's stderr into anything that
+reaches a first-party record. The `elements-cli` child's stderr used to be
+collapsed into an `AdapterError` note, and that note is written to protocol
+records as `observed_detail` and `detail` -- so child bytes arrived in
+first-party evidence by the back door while the contract above appeared to
+forbid exactly that. A note now states the method and the client's exit
+status, both of them fixed and typed, and says that the reason is omitted;
+the reason itself is logged here, on the stderr the harness nulls (G12-R04).
+
+For the same reason no note interpolates a configuration path. Those paths
+are the operator's argv, not the target's answer, and a first-party record
+is not where an operator's directory layout belongs.
+
 Disposable datadir, and who owns the cookie
 -------------------------------------------
 The node runs in a fresh `mkdtemp` directory that this process creates, owns,
@@ -1266,7 +1281,31 @@ class DisposableNode:
         except OSError as error:
             raise AdapterError("could not run the node client: %s" % error.strerror)
         if completed.returncode != 0:
-            raise AdapterError("rpc %s failed: %s" % (method, one_line(completed.stderr)))
+            # The client's stderr is NOT read into this note. The note
+            # becomes observed_detail on a first-party protocol record,
+            # so anything placed here is bytes from a child process
+            # arriving in first-party evidence -- which is precisely
+            # what the no-arguments-from-harness contract above says
+            # does not happen. The contract described the harness
+            # reading THIS process's stderr; it did not describe this
+            # path, and the same bytes were reaching the same place by
+            # the back door (G12-R04).
+            #
+            # What is left is fixed and typed: the method, which the
+            # harness itself named, and the client's exit status. The
+            # omission is stated rather than silent, because a
+            # diagnostic that quietly dropped the reason would be less
+            # honest than one that says where the reason went -- it is
+            # on this adapter's own stderr, which the harness nulls.
+            log(
+                "rpc %s failed with status %d, and the client said: %s"
+                % (method, completed.returncode, one_line(completed.stderr))
+            )
+            raise AdapterError(
+                "rpc %s failed with client exit status %d; the client's stderr is "
+                "omitted from first-party records by contract"
+                % (method, completed.returncode)
+            )
         text = completed.stdout.strip()
         if text == "":
             return None
@@ -1611,9 +1650,19 @@ class CaseExecutor:
         try:
             info = self.script.taproot_construct(construction["internal_key"], items)
         except Exception as error:
+            # The exception's TYPE, which is a fixed and bounded fact,
+            # and not its message. A third-party library's message is
+            # uncontrolled text that can carry a path out of this
+            # operator's filesystem, and observed_detail is a
+            # first-party record rather than a place for it. The full
+            # message goes to the stderr the harness nulls (G12-R04).
+            log(
+                "the framework raised %s building a taproot commitment: %s"
+                % (type(error).__name__, one_line(str(error)))
+            )
             raise AdapterError(
                 "the framework built no taproot commitment for the stated "
-                "tree: %s" % one_line("%s: %s" % (type(error).__name__, error))
+                "tree, raising %s" % type(error).__name__
             )
 
         if bytes(info.internal_pubkey) != construction["internal_key"]:

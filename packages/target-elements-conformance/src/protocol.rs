@@ -11,6 +11,16 @@
 //! stderr is not read at all, so there is no path by which arbitrary child
 //! bytes become first-party diagnostics.
 //!
+//! That closure is transitive, and it did not used to be. This side never
+//! read the executor's stderr, but the reviewed executor collapsed its
+//! *own* child's stderr into the note it then wrote as
+//! [`NativeConservationResponse::observed_detail`], so the same class of
+//! bytes arrived here anyway — through a field this side was reading
+//! rather than through a stream it was not. A detail is now what the
+//! adapter or the target *stated*: a method, a status, a target's own
+//! answer. Neither a child's stderr nor an operator's configuration path
+//! is one `(´[PLAN-rule:guide12-exec:failure-layers]´)`.
+//!
 //! Every record is read under an explicit byte bound
 //! ([`ProtocolLimits`]). At most `maximum + 1` bytes are taken before the
 //! record is refused, so an executor that writes without ever emitting a
