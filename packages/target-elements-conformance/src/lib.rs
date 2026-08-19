@@ -3,6 +3,7 @@
 
 mod census;
 pub mod claim;
+pub mod commitment_oracle;
 pub mod constructor;
 pub mod error;
 pub mod executor;
