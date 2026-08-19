@@ -374,7 +374,16 @@ ADAPTER_VERSION = "2.1.0"
 
 # The protocol revision this adapter speaks. It must match
 # NATIVE_PROTOCOL_SCHEMA in the conformance package.
-NATIVE_PROTOCOL_SCHEMA = 3
+#
+# Revision 4 is where the two sides began describing the same exchange.
+# Under revision 3 this adapter wrote an observed_openings member the
+# conformance package's conservation response did not declare while
+# refusing undeclared members, so the harness could not read the answers
+# this file produced; and the lifecycle step had no typed record over
+# there at all. Revision 4 declares both. The revisions move together --
+# a bump on one side alone would reproduce exactly the disagreement the
+# bump exists to end (G12-R09).
+NATIVE_PROTOCOL_SCHEMA = 4
 
 # The reviewed tapscript leaf version.
 TAPSCRIPT_LEAF_VERSION = 0xC4
@@ -3412,11 +3421,17 @@ class LifecycleExecutor:
         checks = []
 
         def record(name, expected, observed):
+            # The agreement is decided over the values themselves and
+            # the spelling happens afterwards, so nothing is decided by
+            # how a value prints. Both sides are carried as text because
+            # a member that were sometimes a number, sometimes a string,
+            # and sometimes a flag is the untyped value tree revision 4
+            # exists to remove (G12-R09).
             checks.append(
                 {
                     "check": name,
-                    "expected": expected,
-                    "observed": observed,
+                    "expected": str(expected),
+                    "observed": str(observed),
                     "agrees": expected == observed,
                 }
             )

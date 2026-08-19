@@ -224,15 +224,24 @@ fn the_handshake_request_states_this_harnesss_schema() {
 }
 
 #[test]
-fn this_harness_speaks_schema_three_and_no_earlier_one() {
-    // Stated as a value rather than left implicit. Schema 3 removes the
-    // expectation from the request; schema 2 added the environment
-    // observation, the separated provenance roles, and the bounded-record
-    // contract. An executor of either earlier revision answers a question
-    // this one no longer asks, so they are refused for each other rather
-    // than reconciled by reading whichever fields happen to overlap
-    // (´[PLAN-rule:guide11-exec:request-subject]´).
-    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 3);
+fn this_harness_speaks_schema_four_and_no_earlier_one() {
+    // Stated as a value rather than left implicit. Schema 4 declares the
+    // conservation openings and the typed lifecycle records, so that one
+    // revision names one schema rather than two disagreeing ones; schema
+    // 3 removed the expectation from the request; schema 2 added the
+    // environment observation, the separated provenance roles, and the
+    // bounded-record contract. An executor of any earlier revision
+    // answers a question this one no longer asks, or writes a record it
+    // no longer means, so they are refused for each other rather than
+    // reconciled by reading whichever fields happen to overlap
+    // (´[PLAN-rule:guide12-exec:protocol-revision]´).
+    //
+    // This assertion is also the tripwire that keeps the two
+    // implementations moving together: the adapter's constant of the
+    // same name is what it is compared against in the field, and a bump
+    // that reached only one side is the fault G12-R09 recorded.
+    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 4);
+    assert_ne!(NATIVE_PROTOCOL_SCHEMA, 3);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 2);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 1);
 }

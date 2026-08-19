@@ -10,9 +10,10 @@
 //! - `G12-R01` — CLOSED: an abbreviated expectation can no longer be
 //!   stated, because the width is a type and the expectation's members
 //!   are private.
-//! - `G12-R09` — the executor and this crate both declare protocol
-//!   revision 3 while carrying conservation responses the Rust type
-//!   cannot read.
+//! - `G12-R09` — CLOSED: both sides declare protocol revision 4, the
+//!   conservation response declares the openings the adapter writes,
+//!   and the lifecycle step has typed request and response records that
+//!   round-trip the adapter's own wire shape.
 //! - `G12-R14` — CLOSED: the infrastructure arm refuses every
 //!   interpreter figure whatever the executor advertises, and the
 //!   normalization response counts its witness sizes among the
@@ -32,15 +33,17 @@
 use std::collections::BTreeSet;
 
 use crate::fixture::{NativeCaseGroup, NativeCaseId};
+use crate::lifecycle::LifecycleOutcome;
 use crate::normalization::canonical_mutation_matrix;
 use crate::normalization_report::{
     NormalizationIngestionDefect, ingest_normalization_responses, mutation_wire_spelling,
 };
 use crate::protocol::{
-    ExecutorCapability, NATIVE_PROTOCOL_SCHEMA, NativeConservationResponse,
-    NativeExecutionResponse, NativeNormalizationResponse, NativePrototypeResponse,
-    NativeResourceObservation, NativeVerdict, NormalizationCaseId, ResponseShapeDefect,
-    validate_response_shape,
+    ExecutorCapability, LifecycleCheck, LifecycleStepRole, LifecycleSubject,
+    NATIVE_PROTOCOL_SCHEMA, NativeConservationResponse, NativeExecutionResponse,
+    NativeLifecycleRequest, NativeLifecycleResponse, NativeNormalizationResponse,
+    NativePrototypeResponse, NativeResourceObservation, NativeVerdict, NormalizationCaseId,
+    ResponseShapeDefect, validate_response_shape,
 };
 use crate::prototype::{PrototypeCaseId, PrototypeRelation};
 use crate::provenance::{
@@ -460,4 +463,162 @@ fn a_normalization_run_that_did_not_happen_reports_no_witness_sizes() {
             defect: ResponseShapeDefect::InfrastructureResponseCarriesObservation,
         }),
     );
+}
+
+/// `G12-R09`: the adapter's lifecycle answer, read as a typed record.
+///
+/// The lifecycle step was the one workload with no protocol type on this
+/// side at all: the exchange was read out of an untyped value tree, so
+/// the schema was whatever the adapter happened to write that day and
+/// nothing could disagree with it. This is the wire shape
+/// `answer_lifecycle_step` produces for a verifying process, written out
+/// literally rather than built from the type, so that the assertion is
+/// about the adapter's record and not about this crate's own
+/// serialization agreeing with itself.
+#[test]
+fn a_verify_lifecycle_answer_is_read_by_its_protocol_type() {
+    let wire = serde_json::json!({
+        "schema": NATIVE_PROTOCOL_SCHEMA,
+        "case": {"lifecycle": "verify"},
+        "outcome": "verified",
+        "handoff": null,
+        "authorization_profile": null,
+        "observed_witness_sizes": [],
+        "observed_outputs": [],
+        "checks": [
+            {
+                "check": "chain_context_genesis",
+                "expected": "aa",
+                "observed": "aa",
+                "agrees": true,
+            },
+            {
+                "check": "owner_object_spendable_by_this_process",
+                "expected": "False",
+                "observed": "False",
+                "agrees": true,
+            },
+        ],
+        "spend": {
+            "txid": "dd",
+            "amount": 100_000_u64,
+            "destination": "an-address",
+            "destination_script": "51",
+            "consumed_outpoint": {"txid": "ee", "vout": 0},
+            "consumed_owner_object": false,
+        },
+        "superseded_by": null,
+        "supersede_failure": null,
+        "detail": null,
+    });
+
+    let response: NativeLifecycleResponse = serde_json::from_value(wire.clone())
+        .expect("G12-R09: the adapter's lifecycle answer is a record this side declares");
+    assert_eq!(response.outcome, LifecycleOutcome::Verified);
+    assert_eq!(response.checks.len(), 2);
+    assert!(response.validate_shape().is_ok());
+
+    // Both directions, as the revision requires: what this side writes
+    // is what the adapter reads.
+    let round_tripped = serde_json::to_value(&response).expect("the response serializes");
+    assert_eq!(round_tripped, wire, "the record survives both directions");
+}
+
+/// `G12-R09`: a lifecycle step that did not run observed nothing.
+///
+/// The lifecycle spelling of the rule the other response shapes keep. A
+/// handoff names a transaction that reached a block, a check reports
+/// what the chain said, and a spend is a transaction that was confirmed;
+/// a step whose outcome says no process reached the chain produced none
+/// of them. The detail is exempt, because a failure is entitled to a
+/// reason.
+#[test]
+fn an_infrastructure_lifecycle_answer_carries_no_observation() {
+    let refused = serde_json::json!({
+        "schema": NATIVE_PROTOCOL_SCHEMA,
+        "case": {"lifecycle": "construct"},
+        "outcome": "executor_infrastructure_failure",
+        "handoff": null,
+        "authorization_profile": null,
+        "observed_witness_sizes": [],
+        "observed_outputs": [],
+        "checks": [],
+        "spend": null,
+        "superseded_by": null,
+        "supersede_failure": null,
+        "detail": "the adapter reached no node",
+    });
+    let response: NativeLifecycleResponse =
+        serde_json::from_value(refused).expect("the refusal is a record this side declares");
+    assert!(
+        response.validate_shape().is_ok(),
+        "a step that did not run, reporting nothing but its reason, is well formed",
+    );
+
+    let contradictory = NativeLifecycleResponse {
+        checks: vec![LifecycleCheck {
+            check: "chain_context_genesis".to_owned(),
+            expected: "aa".to_owned(),
+            observed: "aa".to_owned(),
+            agrees: true,
+        }],
+        ..response
+    };
+    assert_eq!(
+        contradictory.validate_shape(),
+        Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation),
+        "G12-R09: a check is an observation, and a step that did not run made none",
+    );
+}
+
+/// `G12-R09`: the lifecycle request the runner sends is a typed record.
+///
+/// The role lives in the case identity and the subject shape follows
+/// from it, so the two cannot disagree. The subject is written out as
+/// the runner sends it.
+#[test]
+fn a_lifecycle_request_is_read_by_its_protocol_type() {
+    let verify = serde_json::json!({
+        "schema": NATIVE_PROTOCOL_SCHEMA,
+        "case": {"lifecycle": "verify"},
+        "subject": {"handoff": canonical_handoff_wire()},
+    });
+    let request: NativeLifecycleRequest =
+        serde_json::from_value(verify).expect("G12-R09: the verify request is a declared record");
+    assert_eq!(request.case.lifecycle, LifecycleStepRole::Verify);
+    assert!(
+        matches!(request.subject, LifecycleSubject::Verify(_)),
+        "the subject is read as the role's own shape",
+    );
+
+    // A subject member neither side declares is refused rather than
+    // ignored, which is the property that makes the revision mean
+    // something.
+    let unknown = serde_json::json!({
+        "schema": NATIVE_PROTOCOL_SCHEMA,
+        "case": {"lifecycle": "verify"},
+        "subject": {"handoff": canonical_handoff_wire(), "owner_private_key": "00"},
+    });
+    assert!(
+        serde_json::from_value::<NativeLifecycleRequest>(unknown).is_err(),
+        "an undeclared subject member is refused",
+    );
+}
+
+/// One published record, in the adapter's own wire spelling.
+fn canonical_handoff_wire() -> serde_json::Value {
+    serde_json::json!({
+        "schema": crate::lifecycle::HANDOFF_SCHEMA,
+        "chain_name": "elementsregtest",
+        "network_id": "aa",
+        "genesis_id": "bb",
+        "txid": "cc",
+        "output_index": 0,
+        "block_hash": "dd",
+        "block_height": 101,
+        "raw_transaction": "00",
+        "claimed_explicit_amount": 100_000_u64,
+        "claimed_explicit_asset": "ee",
+        "claimed_owner_address": "an-address",
+    })
 }

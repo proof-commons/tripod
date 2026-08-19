@@ -953,7 +953,7 @@ pub struct NativeConservationRequest {
 ///
 /// The blinding factors are the target's own statement about a
 /// transaction it built on a disposable development chain, and are
-/// evidence rather than credentials `(´[ADR-rule:adr015:test-material]´)`.
+/// evidence rather than credentials `(´[ADR015-rule:security:test-material]´)`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConservationOpening {
@@ -1203,7 +1203,7 @@ pub struct LifecycleConstructSubject {
 /// The handoff and nothing else. The subject is the whole of what
 /// crosses the process boundary, so a member added here would be a
 /// member the lifecycle claim does not actually rest on the public
-/// record `(´[PLAN-rule:guide12-exec:request-subject]´)`.
+/// record `(´[PLAN-rule:guide11-exec:request-subject]´)`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LifecycleVerifySubject {
@@ -1217,19 +1217,24 @@ pub struct LifecycleVerifySubject {
 /// a second discriminator could disagree with the first. The two
 /// variants refuse unknown members and share none of their own, so the
 /// shapes are distinguishable without one.
+///
+/// Both subjects are boxed. Each carries a record of its own — a whole
+/// claim on one side, a whole published handoff on the other — so an
+/// unboxed enum would make every lifecycle request as large as whichever
+/// happened to be bigger. The boxes are invisible on the wire.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum LifecycleSubject {
     /// Process A's subject.
-    Construct(LifecycleConstructSubject),
+    Construct(Box<LifecycleConstructSubject>),
     /// Process B's subject.
-    Verify(LifecycleVerifySubject),
+    Verify(Box<LifecycleVerifySubject>),
 }
 
 /// One lifecycle step, handed to the executor.
 ///
 /// Carries the role and its subject. No expected outcome crosses this
-/// boundary `(´[PLAN-rule:guide12-exec:request-subject]´)`.
+/// boundary `(´[PLAN-rule:guide11-exec:request-subject]´)`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeLifecycleRequest {

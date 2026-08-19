@@ -26,6 +26,7 @@ use target_elements_conformance::lifecycle_report::{
     LifecycleReportRole, LifecycleRowOutcome, MINIMUM_COMPLETE_PASSES, ReadingPass, UnbuiltRow,
 };
 use target_elements_conformance::normalization::AuthorizationProfile;
+use target_elements_conformance::protocol::LifecycleCheck;
 
 fn main() -> ExitCode {
     match run() {
@@ -105,7 +106,7 @@ fn run() -> Result<String, String> {
                 row,
                 expected,
                 observed,
-                checks_of(&answer["checks"]),
+                checks_of(&answer["checks"], name)?,
             ));
         }
         passes.push(ReadingPass {
@@ -208,29 +209,28 @@ fn row_of(name: &str) -> Result<LifecycleRow, String> {
         .map_err(|error| format!("the run names a row this report does not have: {name}: {error}"))
 }
 
-fn checks_of(value: &serde_json::Value) -> Vec<CheckOutcome> {
-    let empty = Vec::new();
-    value
-        .as_array()
-        .unwrap_or(&empty)
-        .iter()
+/// The checks one pass recorded, read as the protocol record they are.
+///
+/// Parsed into [`LifecycleCheck`] rather than picked apart member by
+/// member. The previous reading defaulted: a check whose name was absent
+/// became the empty string and one whose agreement was absent became
+/// `false`, so a malformed record produced a report of well-formed
+/// checks that nobody had made. A check is evidence, and a defaulted one
+/// is evidence of nothing — under revision 4 the record either states
+/// the check or the report is not built `(´[PLAN-rule:guide12-exec:protocol-revision]´)`.
+fn checks_of(value: &serde_json::Value, row: &str) -> Result<Vec<CheckOutcome>, String> {
+    let checks: Vec<LifecycleCheck> = serde_json::from_value(value.clone()).map_err(|error| {
+        format!("the pass recorded a check for {row} this report cannot read: {error}")
+    })?;
+    Ok(checks
+        .into_iter()
         .map(|check| CheckOutcome {
-            check: check["check"].as_str().unwrap_or_default().to_owned(),
-            // Rendered rather than typed. What a check compares differs
-            // by check — a hex string here, an amount there, a boolean
-            // elsewhere — and inventing a union of those would make the
-            // report's shape depend on which checks happened to run.
-            expected: render(&check["expected"]),
-            observed: render(&check["observed"]),
-            agrees: check["agrees"].as_bool().unwrap_or_default(),
+            check: check.check,
+            expected: check.expected,
+            observed: check.observed,
+            agrees: check.agrees,
         })
-        .collect()
-}
-
-fn render(value: &serde_json::Value) -> String {
-    value
-        .as_str()
-        .map_or_else(|| value.to_string(), ToOwned::to_owned)
+        .collect())
 }
 
 fn destruction_of(value: &serde_json::Value) -> Result<DestructionRecord, String> {
