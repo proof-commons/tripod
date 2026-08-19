@@ -100,6 +100,6 @@ pub const SEGMENTS: usize = 3;
 ///
 /// Every owner answers the same way, by arity alone: there is no
 /// surface exemption and no enumerated residue to consult.
-pub fn arity_admitted(parts: usize) -> bool {
+pub const fn arity_admitted(parts: usize) -> bool {
     parts == SEGMENTS
 }
