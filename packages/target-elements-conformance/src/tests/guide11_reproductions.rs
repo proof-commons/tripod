@@ -16,14 +16,28 @@
 //!   transcript is bound to the contract, the binding, and the exact
 //!   subjects it was produced under, so a run cannot be rebound to
 //!   fixtures or a deployment it never touched.
-//! - `G11-R04`, `G11-R05`, `G11-R06`, and `G11-R14` are still open. Their
-//!   tests still assert the defect, so one of them failing after a later
-//!   wave is that wave working rather than a regression.
+//! - `G11-R04`, `G11-R05`, and `G11-R06` are **CLOSED** by Wave 3.
+//!   Resource evidence follows the enforcement layer its fixture states,
+//!   the gate reads every case status and the report's own completeness,
+//!   and the run's provenance is compared against an explicit
+//!   expectation before any row is consulted.
+//! - `G11-R14` is still open. Its tests still assert the defect, so one
+//!   of them failing after a later wave is that wave working rather than
+//!   a regression.
 //!
 //! Each test names its finding identifier in its own documentation. No
 //! test here touches a production code path: they are constructions over
 //! the public and crate-visible surfaces exactly as an external caller or
 //! the existing suites reach them.
+//!
+//! # Two findings whose reproductions are prose rather than tests
+//!
+//! `G11-R07` is a build-system default, so its regressions live where
+//! Meson can fail: configuring an executor path without a class, and a
+//! reviewed class without its ADR-018 provenance, are configuration
+//! errors, checked by configuring. `G11-R13` is a process-lifetime
+//! property, whose regressions are in `executor.rs` and
+//! `tests/executor_supervision.rs`.
 //!
 //! # What Wave 1 changed about the reproductions themselves
 //!

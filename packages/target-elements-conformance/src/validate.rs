@@ -596,30 +596,7 @@ fn evaluate_census(
         BTreeMap::new();
 
     for fixture in fixtures {
-        // The leaf version is checked against what the fixture says it
-        // is: a reviewed case must be stated at the contract's leaf, and
-        // an unreviewed one must not be, since a case claiming to
-        // exercise an unreviewed leaf at the reviewed byte would
-        // establish nothing.
-        let leaf_agrees = match fixture.leaf_version_status() {
-            LeafVersionStatus::Reviewed => {
-                fixture.leaf_version() == definition.leaf_version().get()
-            }
-            LeafVersionStatus::Unreviewed => {
-                fixture.leaf_version() != definition.leaf_version().get()
-            }
-        };
-        if fixture.target_contract_version() != definition.version().get()
-            || fixture.execution_domain() != domain
-            || !leaf_agrees
-        {
-            return Err(NativeConformanceError::TargetContractMismatch);
-        }
-        if fixture.network_id() != binding.binding().network_id()
-            || fixture.genesis_id() != binding.binding().genesis_id()
-        {
-            return Err(NativeConformanceError::DevelopmentBindingMismatch);
-        }
+        fixture_states_this_run(fixture, target, binding, domain)?;
 
         let case = fixture.case();
         // The subject being reported must be the subject that was sent.
@@ -692,6 +669,45 @@ fn evaluate_census(
         claims,
         summary,
     })
+}
+
+/// Whether one fixture is stated against this run's contract and
+/// binding.
+///
+/// The leaf version is checked against what the fixture says it is: a
+/// reviewed case must be stated at the contract's leaf, and an
+/// unreviewed one must not be, since a case claiming to exercise an
+/// unreviewed leaf at the reviewed byte would establish nothing.
+///
+/// # Errors
+///
+/// [`NativeConformanceError::TargetContractMismatch`] for a fixture
+/// stated against another contract revision, domain, or leaf, and
+/// [`NativeConformanceError::DevelopmentBindingMismatch`] for one stated
+/// against another network or genesis.
+fn fixture_states_this_run(
+    fixture: &PrimitiveFixture,
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    domain: WireExecutionDomain,
+) -> Result<(), NativeConformanceError> {
+    let definition = target.definition();
+    let leaf_agrees = match fixture.leaf_version_status() {
+        LeafVersionStatus::Reviewed => fixture.leaf_version() == definition.leaf_version().get(),
+        LeafVersionStatus::Unreviewed => fixture.leaf_version() != definition.leaf_version().get(),
+    };
+    if fixture.target_contract_version() != definition.version().get()
+        || fixture.execution_domain() != domain
+        || !leaf_agrees
+    {
+        return Err(NativeConformanceError::TargetContractMismatch);
+    }
+    if fixture.network_id() != binding.binding().network_id()
+        || fixture.genesis_id() != binding.binding().genesis_id()
+    {
+        return Err(NativeConformanceError::DevelopmentBindingMismatch);
+    }
+    Ok(())
 }
 
 /// Whether this transcript is a run under this contract and this binding.

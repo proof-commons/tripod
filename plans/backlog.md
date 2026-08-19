@@ -1080,24 +1080,25 @@ guide's own rule each finding is a hypothesis until it is reproduced
 against the working tree, and is then either fixed, disproved with a
 typed argument, or reclassified with a narrower assurance claim. The
 Wave-0 column records that adjudication. Wave 0 repaired nothing, so
-every row opened TODO; Wave 1 closed the two claim-laundering rows and
-Wave 2 closed the transcript-rebinding row.
+every row opened TODO; Wave 1 closed the two claim-laundering rows,
+Wave 2 closed the transcript-rebinding row, and Wave 3 closed the gate,
+provenance, and startup-cleanup rows.
 
 | ID | Priority | Status | Wave 0 | Finding |
 |---|---:|---|---|---|
 | `G11-R01` | P0 | DONE | CONFIRMED | A transcript can be rebound to another fixture census, prototype matrix, target, or deployment binding; bind the transcript to its exact subjects and requests. |
 | `G11-R02` | P0 | DONE | CONFIRMED | Primitive claims can be manufactured by attaching claim-bearing case metadata to an unrelated script; gate only a canonical validated primitive plan. |
 | `G11-R03` | P0 | DONE | CONFIRMED | Prototype claims are caller-authored and can certify a trivial true script as constructor or wide-floor evidence; gate only relation-specific canonical matrices. |
-| `G11-R04` | P1 | TODO | CONFIRMED | Consensus resource cases are credited to policy-resource evidence because evidence ownership derives from case ID without the enforcement layer; derive evidence from the complete fixture and correct the plan class. |
-| `G11-R05` | P1 | TODO | CONFIRMED | The primitive native gate can accept a report whose summary is failed; gate every canonical case and reject failed completeness. |
-| `G11-R06` | P1 | TODO | CONFIRMED | ADR-018 execution provenance is recorded but not enforced by evidence gates; validate executable provenance before gate eligibility. |
-| `G11-R07` | P1 | TODO | CONFIRMED | Meson defaults an executor to reviewed-non-mock; require explicit caller selection and fail closed. |
+| `G11-R04` | P1 | DONE | CONFIRMED | Consensus resource cases are credited to policy-resource evidence because evidence ownership derives from case ID without the enforcement layer; derive evidence from the complete fixture and correct the plan class. |
+| `G11-R05` | P1 | DONE | CONFIRMED | The primitive native gate can accept a report whose summary is failed; gate every canonical case and reject failed completeness. |
+| `G11-R06` | P1 | DONE | CONFIRMED | ADR-018 execution provenance is recorded but not enforced by evidence gates; validate executable provenance before gate eligibility. |
+| `G11-R07` | P1 | DONE | CONFIRMED | Meson defaults an executor to reviewed-non-mock; require explicit caller selection and fail closed. |
 | `G11-R08` | P1/P2 | TODO | CONFIRMED | Relation bodies can admit several semantic relation subjects; derive exactly one canonical subject from each body. |
 | `G11-R09` | P1/P2 | TODO | CONFIRMED | Target V1 is advertised as supported while current validation applies the V2 census and algebra; remove V1 support or implement genuine version dispatch. |
 | `G11-R10` | P1/P2 | TODO | CONFIRMED | The signature weld omits unknown-key behavior and much of the success algebra; weld the complete signature relation. |
 | `G11-R11` | P2 | TODO | CONFIRMED | Bare prototype report digests persist despite the recorded no-report-identity decision; remove them or admit typed retained report references. |
 | `G11-R12` | P2 | TODO | RECLASSIFIED | Current backlog state contradicts recorded Guide-8 through Guide-10 completion and duplicates finding IDs; reconcile current state and enforce unique IDs. |
-| `G11-R13` | P2/P3 | TODO | CONFIRMED | Process-group establishment failure can leave the direct child unreaped; kill and reap on every pre-supervisor failure. |
+| `G11-R13` | P2/P3 | DONE | CONFIRMED | Process-group establishment failure can leave the direct child unreaped; kill and reap on every pre-supervisor failure. |
 | `G11-R14` | P3 | TODO | CONFIRMED | Constructor retry retries internal-key defects no metadata nonce can repair; share a typed retryability predicate. |
 | `G11-H01` | Hardening | TODO | CONFIRMED | Opcode resource stack-growth rows are not generically welded to success and non-aborting failure effects; derive and compare exact maximum stack growth. |
 | `G11-H02` | Future blocker | TODO | CONFIRMED | Issuance observations carry authority fields the realization evaluator does not yet enforce; add no issuance realization scope until enforced or externally evidenced. |
@@ -1150,10 +1151,22 @@ reproduced through. `G11-R01`'s script-substitution reproduction moved to
 the experimental path, where Wave 2 flipped it: the binding is a property
 of the transcript rather than of the trust state. `G11-R05`'s
 construction added a fixture to the canonical census and is no longer
-expressible; its test records the closed route and the still-open gate
-defect, and Wave 3 owns finding a route that reaches the gate itself.
+expressible; Wave 3 repaired the gate itself, and its test now records
+both halves closed by putting that report at the gate directly.
 
-No public-declassification prototype begins while `G11-R04` through
+Wave-3 evidence, beyond the flipped suites listed below. The provenance
+comparison rule is minimum-width exact prefix — a reported revision of at
+least seven lowercase hex digits that is an exact prefix of the expected
+full tip, with equality as its width-forty case — chosen because the
+reviewed adapter reads an abbreviation out of the node's version line and
+a binary embeds no full object identifier. The `G11-R04` invariant found
+four further required rows owning no required claim (encoding, stack
+rearrangement, byte string, verification); each is recorded as a typed
+exception naming where its claim-level decomposition actually lives.
+`G11-R07` has no Rust regression by nature: it is verified by configuring
+all four states, of which two now fail.
+
+No public-declassification prototype begins while `G11-R08` through
 `G11-R10` remain open. `G11-R12` owns the full reconciliation of this
 backlog's current state against the recorded Guide-8 through Guide-10
 completions; that reconciliation is deliberately not performed by the
@@ -1171,9 +1184,17 @@ G11-R02  conformance g11_r02_a_trivial_true_script_bears_signature_claims
 G11-R03  conformance g11_r03_a_trivial_leaf_certifies_the_whole_wide_floor_relation
          (Wave 1 flipped: g11_r03_a_trivial_leaf_cannot_certify_the_wide_floor_relation)
 G11-R04  conformance g11_r04_consensus_resource_cases_pass_the_policy_resource_row
+         (Wave 3 flipped: g11_r04_consensus_resource_cases_do_not_reach_the_policy_resource_row)
 G11-R05  conformance g11_r05_the_gate_accepts_a_failed_report
+         (Wave 3 flipped: g11_r05_the_augmented_census_route_to_the_gate_is_closed, plus
+          g11_r05_a_report_whose_summary_says_failed_is_refused and
+          g11_r05_a_failed_canonical_case_never_reaches_evidence)
 G11-R06  conformance g11_r06_the_gate_accepts_a_run_with_no_workspace_provenance
+         (Wave 3 flipped: g11_r06_a_run_with_no_workspace_provenance_is_refused, and the
+          six further provenance regressions beside it)
 G11-R07  meson.options target_native_executor_class, value reviewed-non-mock
+         (Wave 3 closed: the option defaults to unselected, an unclassified executor path
+          and a reviewed class missing its ADR-018 provenance both fail configuration)
 G11-R08  realization g11_r08_one_closure_body_admits_two_subjects
 G11-R09  target-elements g11_r09_a_v2_body_stamped_v1_validates
 G11-R10  target-elements g11_r10_a_contradictory_unknown_key_rule_still_validates
@@ -1184,6 +1205,8 @@ G11-R12  duplicate DI-F02 rows, DI-F03 active under a DONE parent, and section 3
 G11-R13  executor.rs ExecutorSupervisor::adopt takes the child by value and drops it
          on the establish failure path, and the standard child destructor neither
          kills nor waits
+         (Wave 3 closed: an_unadopted_child_is_killed_and_reaped and
+          a_run_refused_at_startup_leaves_no_unreaped_child)
 G11-R14  conformance g11_r14_an_invalid_internal_key_is_retried_to_exhaustion
 G11-H01  no weld reads OpcodeResourceCost::maximum_stack_growth at all, the timelock
          weld included, so the field is welded to nothing

@@ -580,17 +580,17 @@ impl UnadoptedChild {
     }
 
     /// The child, while it is still unadopted.
-    fn child(&self) -> Option<&Child> {
+    const fn child(&self) -> Option<&Child> {
         self.child.as_ref()
     }
 
     /// The child, mutably, while it is still unadopted.
-    fn child_mut(&mut self) -> Option<&mut Child> {
+    const fn child_mut(&mut self) -> Option<&mut Child> {
         self.child.as_mut()
     }
 
     /// Releases the child to a supervisor that will own its cleanup.
-    fn adopt(&mut self) -> Option<Child> {
+    const fn adopt(&mut self) -> Option<Child> {
         self.child.take()
     }
 }
