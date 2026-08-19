@@ -3188,7 +3188,11 @@ class LifecycleExecutor:
             )
 
         claimed = body["claimed_outputs"][index]
+        superseded = None
+        if subject.get("supersede"):
+            superseded = self.supersede(txid, index, claimed["explicit_amount"])
         return {
+            "superseded_by": superseded,
             "handoff": {
                 "schema": FRESH_PROCESS_HANDOFF_SCHEMA,
                 "chain_name": self.node.chain,
@@ -3207,6 +3211,53 @@ class LifecycleExecutor:
             "observed_witness_sizes": body["observed_witness_sizes"],
             "observed_outputs": body["observed_outputs"],
         }
+
+    def supersede(self, txid: str, index: int, amount: int) -> str:
+        """Spends the object just published, while its owner still exists.
+
+        This is the explicit-path form of section 13.5's stale capsule: a
+        public record that was true when it was written and names an
+        output a later transaction has since consumed. It has to be built
+        HERE, inside Process A, because spending an owned output needs
+        the owner's key -- which is precisely what the boundary destroys.
+        A stale record manufactured after the boundary would be a
+        different row wearing this one's name.
+        """
+        destination = self.conservation.address(False, NORMALIZATION_ADDRESS_TYPE)
+        program = self.normalization.script_of(destination)
+        fee = NORMALIZATION_FEE_SATOSHIS
+        transaction = self.messages.CTransaction()
+        transaction.version = 2
+        transaction.vin.append(
+            self.messages.CTxIn(
+                self.messages.COutPoint(txid_to_internal_int(txid), index),
+                nSequence=0xFFFFFFFE,
+            )
+        )
+        transaction.vout.append(self.executor.output(amount - fee, program))
+        transaction.vout.append(self.executor.output(fee, b""))
+        signed = self.node.call(
+            "signrawtransactionwithwallet",
+            transaction.serialize().hex(),
+            wallet=self.conservation.WALLET,
+        )
+        if not signed.get("complete"):
+            raise ConstructionError(
+                "the owner's wallet did not finish the spend that supersedes "
+                "the published object"
+            )
+        self.node.call(
+            "generateblock",
+            "raw(%s)" % ANYONE_CAN_SPEND_HEX,
+            json.dumps([signed["hex"]]),
+        )
+        spent = self.conservation.deserialize(signed["hex"]).rehash()
+        if self.node.call("gettxout", txid, str(index)) is not None:
+            raise ConstructionError(
+                "the published object is still unspent after the transaction "
+                "meant to supersede it"
+            )
+        return spent
 
     def locate_normalized_output(self, body: dict) -> int:
         """Which output of the built transaction is the normalized one.
@@ -3970,7 +4021,7 @@ def answer_lifecycle_step(executor: CaseExecutor, request: dict, case: dict) -> 
         role = case.get("lifecycle")
         started = time.monotonic()
         if role == "construct":
-            require_keys(subject, ("claim",), "request.subject")
+            require_keys(subject, ("claim", "supersede"), "request.subject")
             body = executor.lifecycle.construct(subject)
             outcome = "constructed"
         elif role == "verify":
@@ -4000,6 +4051,7 @@ def answer_lifecycle_step(executor: CaseExecutor, request: dict, case: dict) -> 
             "observed_witness_sizes": body.get("observed_witness_sizes", []),
             "checks": body.get("checks", []),
             "spend": body.get("spend"),
+            "superseded_by": body.get("superseded_by"),
             "detail": body.get("detail"),
         }
     )
