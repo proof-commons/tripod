@@ -441,24 +441,7 @@ fn evaluate_census(
         return Err(NativeConformanceError::TargetContractMismatch);
     }
 
-    // The run this report describes must be a run under this contract and
-    // this binding. The transcript retains both, so the question is
-    // answered by exact typed comparison rather than by the case
-    // identities happening to line up
-    // (´[PLAN-rule:guide11:transcript-binding]´).
-    if transcript.target() != &target.projection() {
-        return Err(NativeConformanceError::TranscriptTargetRebinding);
-    }
-    if transcript.deployment() != &binding.projection() {
-        return Err(NativeConformanceError::TranscriptDeploymentRebinding);
-    }
-    // The environment, a second time. The handshake comparison happened
-    // under whichever binding the *run* was requested with; this one
-    // happens under the binding the *report* is being stated against, so
-    // a rebound transcript fails here even if some unforeseen path
-    // reached evaluation with the two projections agreeing
-    // (´[PLAN-rule:guide11:environment-twice]´).
-    crate::executor::compare_environment(target, binding, transcript.environment())?;
+    transcript_run_binding(target, binding, transcript)?;
     // An answer with no question. A transcript whose two halves do not
     // correspond describes no run at all, and a report built from one
     // would present the responses of some other exchange.
@@ -573,6 +556,45 @@ fn evaluate_census(
         claims,
         summary,
     })
+}
+
+/// Whether this transcript is a run under this contract and this binding.
+///
+/// # The weld, stated once
+///
+/// A transcript retains the target projection and the deployment
+/// projection the run was requested under, so the question is answered by
+/// exact typed comparison rather than by the case identities happening to
+/// line up `(´[PLAN-rule:guide11-exec:transcript-binding]´)`.
+///
+/// The environment is then compared a second time. The first comparison
+/// happened at the handshake, under whichever binding the *run* was
+/// requested with; this one happens under the binding the *report* is
+/// being stated against, so a rebound transcript fails here even if some
+/// unforeseen path reached a report with the two projections agreeing
+/// `(´[PLAN-rule:guide11-exec:environment-twice]´)`.
+///
+/// Shared by the primitive and prototype paths, because a transcript is
+/// bound the same way whichever workload produced it, and two copies of
+/// this would eventually disagree.
+///
+/// # Errors
+///
+/// [`NativeConformanceError::TranscriptTargetRebinding`],
+/// [`NativeConformanceError::TranscriptDeploymentRebinding`], and the
+/// environment refusals [`crate::executor::compare_environment`] states.
+pub(crate) fn transcript_run_binding(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    transcript: &ExecutionTranscript,
+) -> Result<(), NativeConformanceError> {
+    if transcript.target() != &target.projection() {
+        return Err(NativeConformanceError::TranscriptTargetRebinding);
+    }
+    if transcript.deployment() != &binding.projection() {
+        return Err(NativeConformanceError::TranscriptDeploymentRebinding);
+    }
+    crate::executor::compare_environment(target, binding, transcript.environment())
 }
 
 /// The report of an ad hoc run, which is not evidence.
@@ -690,7 +712,7 @@ pub fn validate_native_report(
     // report this harness validates, and saying so by name here is the
     // difference between a loud refusal and a downstream field mismatch
     // that a reader would have to decode
-    // (´[PLAN-rule:guide11:request-subject]´).
+    // (´[PLAN-rule:guide11-exec:request-subject]´).
     if report.expectation_boundary != RequestExpectationBoundary::ExecutorReceivesSubjectOnly {
         return Err(
             NativeConformanceError::UnsupportedRequestExpectationBoundary {
@@ -702,7 +724,7 @@ pub fn validate_native_report(
     // The recomputation would reach it, but only by a path that must stay
     // reachable; this one is stated at the validator's own boundary so
     // that a rebound transcript fails whatever the path
-    // (´[PLAN-rule:guide11:environment-twice]´).
+    // (´[PLAN-rule:guide11-exec:environment-twice]´).
     crate::executor::compare_environment(
         inputs.target,
         inputs.binding,

@@ -375,7 +375,7 @@ pub struct CompoundPrototypeFixture {
 /// witness stack are the execution, while the expected verdict, the
 /// expected resource figures, and the claim set are what the harness
 /// compares the answer with and keeps to itself
-/// `(´[PLAN-rule:guide11:request-subject]´)`.
+/// `(´[PLAN-rule:guide11-exec:request-subject]´)`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PrototypeExecutionSubject {

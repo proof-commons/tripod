@@ -853,7 +853,7 @@ impl PrimitiveFixture {
     /// are all absent, because they are what the harness compares the
     /// executor's answer *with* and an executor that could read them
     /// would be reading the answer
-    /// `(´[PLAN-rule:guide11:request-subject]´)`.
+    /// `(´[PLAN-rule:guide11-exec:request-subject]´)`.
     ///
     /// It is one value with two uses, deliberately. It is the protocol
     /// revision-3 request payload, and it is what the transcript retains
@@ -973,7 +973,7 @@ impl PrimitiveFixture {
 /// revision 3 splits them anyway, and this is the half that crosses the
 /// boundary: everything the executor needs to perform the execution, and
 /// no statement at all about what the result should be
-/// `(´[PLAN-rule:guide11:request-subject]´)`.
+/// `(´[PLAN-rule:guide11-exec:request-subject]´)`.
 ///
 /// The other half never leaves the harness. That is the point: an
 /// executor cannot discard an expectation it was never sent, so the

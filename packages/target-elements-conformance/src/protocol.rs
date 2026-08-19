@@ -68,7 +68,7 @@ use crate::prototype::{PrototypeCaseId, PrototypeConstruction, PrototypeExecutio
 /// included, and asked the executor to discard it before executing. A
 /// revision-3 request carries the execution subject and nothing else, so
 /// there is no expectation for an executor to discard, misread, or echo
-/// `(´[PLAN-rule:guide11:request-subject]´)`.
+/// `(´[PLAN-rule:guide11-exec:request-subject]´)`.
 ///
 /// This is a breaking change and is numbered as one. A revision-2
 /// executor is handed a record whose shape it has never seen and would
@@ -446,7 +446,7 @@ pub struct ExecutorEnvironmentObservation {
 /// to discard the answer before executing, and an adapter was judged
 /// against that requirement. Revision 3 removes the requirement by
 /// removing the field — an executor cannot consult what it was never sent
-/// `(´[PLAN-rule:guide11:request-subject]´)`.
+/// `(´[PLAN-rule:guide11-exec:request-subject]´)`.
 ///
 /// [`Self::FixtureCarriesExpectation`] remains spelled because revision-2
 /// reports exist and say so. It is what those documents state about
@@ -476,7 +476,7 @@ pub enum RequestExpectationBoundary {
 /// verdict, no expected failure class, no expected final stack, no
 /// expected resource figure, no claim set, and no evidence plan class:
 /// under revision 3 the answer stays with the harness
-/// `(´[PLAN-rule:guide11:request-subject]´)`.
+/// `(´[PLAN-rule:guide11-exec:request-subject]´)`.
 ///
 /// # The construction is additive and omitted by default
 ///
@@ -513,7 +513,7 @@ pub struct NativeExecutionRequest {
 ///
 /// Under revision 3 the expected verdict, the expected resource figures,
 /// and the claim set stay with the harness, exactly as they do for a
-/// primitive case `(´[PLAN-rule:guide11:request-subject]´)`.
+/// primitive case `(´[PLAN-rule:guide11-exec:request-subject]´)`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativePrototypeRequest {

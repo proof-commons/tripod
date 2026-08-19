@@ -231,7 +231,7 @@ fn this_harness_speaks_schema_three_and_no_earlier_one() {
     // contract. An executor of either earlier revision answers a question
     // this one no longer asks, so they are refused for each other rather
     // than reconciled by reading whichever fields happen to overlap
-    // (´[PLAN-rule:guide11:request-subject]´).
+    // (´[PLAN-rule:guide11-exec:request-subject]´).
     assert_eq!(NATIVE_PROTOCOL_SCHEMA, 3);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 2);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 1);
@@ -242,7 +242,7 @@ fn a_request_carries_no_expectation_of_any_kind() {
     // The revision-3 boundary, checked over the encoded record rather
     // than over the type: a field added to the subject by a later wave
     // would have to pass this to reach the wire
-    // (´[PLAN-rule:guide11:request-subject]´).
+    // (´[PLAN-rule:guide11-exec:request-subject]´).
     let target = crate::tests::support::reviewed_target();
     let binding = crate::tests::support::development_binding(&target);
     let census = crate::fixture::canonical_fixture_set(&target, &binding)

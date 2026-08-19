@@ -9,16 +9,23 @@
 //! They used to be echoes of the expectation carried in the request.
 //! Protocol revision 3 removed it: a request carries the execution
 //! subject and nothing else, so there is no answer in it to read
-//! `(´[PLAN-rule:guide11:request-subject]´)`.
+//! `(´[PLAN-rule:guide11-exec:request-subject]´)`.
 //!
-//! So this mock builds its own table instead. At startup it constructs
-//! the canonical primitive census and both canonical prototype matrices
-//! from the reviewed contract — its own copies, out of band, over the
-//! development binding it states it observed — and indexes their expected
-//! outcomes by case identity. A request is answered by looking its case
-//! identity up in that table, and a case identity the table does not hold
-//! is answered with the verdict named by this command's own
-//! `--unknown-case` argument.
+//! So this mock builds its own table instead. It constructs the canonical
+//! primitive census and the canonical prototype matrices from the
+//! reviewed contract — its own copies, out of band, over the development
+//! binding it states it observed — and indexes their expected outcomes by
+//! case identity. A request is answered by looking its case identity up
+//! in that table, and a case identity the table does not hold is answered
+//! with the verdict named by this command's own `--unknown-case`
+//! argument.
+//!
+//! Each half of the table is authored the first time a request of its
+//! kind arrives rather than at startup. Authoring the constructor matrix
+//! grinds nonces and costs seconds, and paying that before the handshake
+//! made every protocol test wait for a census it never asked about — long
+//! enough that the harness's timeout expired and the mock's own startup
+//! cost was reported as a protocol failure.
 //!
 //! That is still not evidence, and for the same reason as before: the
 //! table is derived from the very expectations the harness will compare
@@ -91,7 +98,7 @@ enum Behavior {
     /// working revision-2 adapter, of exactly the kind this workspace ran
     /// before, meeting a revision-3 harness. It must be refused loudly
     /// rather than have its records read as revision-3 ones
-    /// `(´[PLAN-rule:guide11:request-subject]´)`.
+    /// `(´[PLAN-rule:guide11-exec:request-subject]´)`.
     PreviousRevisionHandshake,
     /// Write a line that is not JSON at all.
     MalformedJson,
@@ -234,60 +241,102 @@ enum UnknownCasePolicy {
 
 /// This mock's own answers, keyed by case identity.
 ///
-/// Built once at startup from the canonical censuses, and never from a
-/// request. A case the table does not hold is answered by the
-/// [`UnknownCasePolicy`], and a table that cannot be built at all leaves
-/// every case to that policy — the mock states what it can answer rather
-/// than failing a protocol test over a census it did not need.
+/// Derived from the canonical censuses, and never from a request. A case
+/// the table does not hold is answered by the [`UnknownCasePolicy`], and a
+/// census that cannot be authored at all leaves every case to that policy
+/// — the mock states what it can answer rather than failing a protocol
+/// test over a census it did not need.
+///
+/// # Why each half is built on first use
+///
+/// Authoring the constructor matrix grinds nonces, which costs seconds.
+/// Paying that at startup made every protocol test wait for a census it
+/// never asked about, and a run whose executor is still authoring
+/// fixtures when the harness's timeout expires is reported as a timeout
+/// — which is to say, the eager version turned a mock's own startup cost
+/// into a protocol failure. Each half is therefore authored the first
+/// time a request of its kind arrives, and a run of the other kind never
+/// pays for it.
 struct AnswerTable {
-    primitives: BTreeMap<NativeCaseId, ExpectedPrimitiveOutcome>,
-    prototypes: BTreeMap<PrototypeCaseId, ExpectedPrototypeOutcome>,
+    primitives: std::sync::OnceLock<BTreeMap<NativeCaseId, ExpectedPrimitiveOutcome>>,
+    prototypes: std::sync::OnceLock<BTreeMap<PrototypeCaseId, ExpectedPrototypeOutcome>>,
     unknown: UnknownCasePolicy,
 }
 
 impl AnswerTable {
-    /// Builds the table from this package's own canonical censuses.
-    fn build(unknown: UnknownCasePolicy) -> Self {
-        let mut primitives = BTreeMap::new();
-        let mut prototypes = BTreeMap::new();
-
-        if let Ok(target) = reviewed_elements_tapscript() {
-            let declared = DevelopmentDeploymentBinding::new(
-                TargetContractVersion::V2,
-                DeploymentEnvironment::Development,
-                MOCK_EXECUTOR_NETWORK_ID,
-                MOCK_EXECUTOR_GENESIS_ID,
-                ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
-                None,
-            );
-            if let Ok(binding) = validate_reviewed_development_binding(&target, declared)
-                && let Ok(census) = canonical_fixture_set(&target, &binding)
-            {
-                for fixture in census.iter() {
-                    primitives.insert(fixture.case(), fixture.expected().clone());
-                }
-            }
-            // The two matrices are authored by different generators and
-            // fail in different ways, so they are gathered separately
-            // rather than through one fallible sequence.
-            if let Ok(matrix) = constructor_case_matrix(&target) {
-                for row in matrix.rows() {
-                    prototypes.insert(row.case.clone(), row.expected);
-                }
-            }
-            if let Ok(matrix) = wide_floor_case_matrix(&target) {
-                for row in matrix.rows() {
-                    prototypes.insert(row.case.clone(), row.expected);
-                }
-            }
-        }
-
+    /// An empty table under one unknown-case policy.
+    const fn new(unknown: UnknownCasePolicy) -> Self {
         Self {
-            primitives,
-            prototypes,
+            primitives: std::sync::OnceLock::new(),
+            prototypes: std::sync::OnceLock::new(),
             unknown,
         }
     }
+
+    /// What the canonical primitive census expects of one case.
+    fn primitive(&self, case: NativeCaseId) -> Option<&ExpectedPrimitiveOutcome> {
+        self.primitives
+            .get_or_init(|| {
+                let mut table = BTreeMap::new();
+                if let Some(target) = reviewed()
+                    && let Some(binding) = mock_binding(&target)
+                    && let Ok(census) = canonical_fixture_set(&target, &binding)
+                {
+                    for fixture in census.iter() {
+                        table.insert(fixture.case(), fixture.expected().clone());
+                    }
+                }
+                table
+            })
+            .get(&case)
+    }
+
+    /// What the canonical prototype matrices expect of one case.
+    fn prototype(&self, case: &PrototypeCaseId) -> Option<ExpectedPrototypeOutcome> {
+        self.prototypes
+            .get_or_init(|| {
+                let mut table = BTreeMap::new();
+                if let Some(target) = reviewed() {
+                    // The two matrices are authored by different
+                    // generators and fail in different ways, so they are
+                    // gathered separately rather than through one
+                    // fallible sequence.
+                    if let Ok(matrix) = constructor_case_matrix(&target) {
+                        for row in matrix.rows() {
+                            table.insert(row.case.clone(), row.expected);
+                        }
+                    }
+                    if let Ok(matrix) = wide_floor_case_matrix(&target) {
+                        for row in matrix.rows() {
+                            table.insert(row.case.clone(), row.expected);
+                        }
+                    }
+                }
+                table
+            })
+            .get(case)
+            .copied()
+    }
+}
+
+/// The reviewed contract, where it validates.
+fn reviewed() -> Option<target_elements::ReviewedElementsTapscriptDefinition> {
+    reviewed_elements_tapscript().ok()
+}
+
+/// The development binding this mock states it observed.
+fn mock_binding(
+    target: &target_elements::ReviewedElementsTapscriptDefinition,
+) -> Option<target_elements::ReviewedDevelopmentBinding> {
+    let declared = DevelopmentDeploymentBinding::new(
+        TargetContractVersion::V2,
+        DeploymentEnvironment::Development,
+        MOCK_EXECUTOR_NETWORK_ID,
+        MOCK_EXECUTOR_GENESIS_ID,
+        ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+        None,
+    );
+    validate_reviewed_development_binding(target, declared).ok()
 }
 
 /// The fixed text the noisy behavior writes on its stderr.
@@ -321,7 +370,7 @@ fn main() -> ExitCode {
         }
     };
 
-    let table = AnswerTable::build(args.unknown_case);
+    let table = AnswerTable::new(args.unknown_case);
     run(args.behavior, &table)
         .map_or_else(|_| CommandExit::Failure.exit_code(), CommandExit::exit_code)
 }
@@ -531,7 +580,7 @@ fn answer(
         };
     }
 
-    let Some(stated) = table.primitives.get(&request.case) else {
+    let Some(stated) = table.primitive(request.case) else {
         return unknown_primitive(schema, request, resources, table.unknown);
     };
 
@@ -694,7 +743,7 @@ fn answer_prototype(
         ..NativeResourceObservation::default()
     };
 
-    let stated = table.prototypes.get(&request.subject.case);
+    let stated = table.prototype(&request.subject.case);
     if behavior == Behavior::InfrastructureError
         || stated.is_none()
         || !materializes(
@@ -721,10 +770,7 @@ fn answer_prototype(
         };
     }
 
-    match stated
-        .copied()
-        .unwrap_or(ExpectedPrototypeOutcome::Rejected)
-    {
+    match stated.unwrap_or(ExpectedPrototypeOutcome::Rejected) {
         ExpectedPrototypeOutcome::Accepted => NativePrototypeResponse {
             schema,
             case: request.case.clone(),

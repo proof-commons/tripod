@@ -222,17 +222,11 @@ fn evaluate_matrix(
         return Err(NativeConformanceError::TargetContractMismatch);
     }
 
-    // The same three welds the primitive path applies, for the same
-    // reason: a transcript is bound to the contract, the binding, and the
-    // subjects it was produced under
-    // (´[PLAN-rule:guide11:transcript-binding]´).
-    if transcript.target() != &target.projection() {
-        return Err(NativeConformanceError::TranscriptTargetRebinding);
-    }
-    if transcript.deployment() != &binding.projection() {
-        return Err(NativeConformanceError::TranscriptDeploymentRebinding);
-    }
-    crate::executor::compare_environment(target, binding, transcript.environment())?;
+    // The same weld the primitive path applies, for the same reason: a
+    // transcript is bound to the contract, the binding, and the subjects
+    // it was produced under
+    // (´[PLAN-rule:guide11-exec:transcript-binding]´).
+    crate::validate::transcript_run_binding(target, binding, transcript)?;
     if let Some(case) = transcript
         .prototype_responses()
         .keys()
@@ -645,7 +639,7 @@ pub fn validate_prototype_report(
     }
     // A revision-2 prototype report is not a revision-3 one, and is
     // refused by name rather than by a downstream field difference
-    // (´[PLAN-rule:guide11:request-subject]´).
+    // (´[PLAN-rule:guide11-exec:request-subject]´).
     if report.expectation_boundary != RequestExpectationBoundary::ExecutorReceivesSubjectOnly {
         return Err(
             NativeConformanceError::UnsupportedRequestExpectationBoundary {
@@ -654,7 +648,7 @@ pub fn validate_prototype_report(
         );
     }
     // The environment, at the validator's own boundary as well as inside
-    // the recomputation (´[PLAN-rule:guide11:environment-twice]´).
+    // the recomputation (´[PLAN-rule:guide11-exec:environment-twice]´).
     crate::executor::compare_environment(
         inputs.target,
         inputs.binding,

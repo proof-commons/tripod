@@ -350,8 +350,7 @@ fn g11_r01_a_report_cannot_name_a_script_the_executor_never_ran() {
 
     let plan = guide_nine_evidence_plan().expect("the plan is a partition");
     let registry = claim_registry().expect("the claim census is coherent");
-    let reported =
-        PrimitiveFixtureSet::new([substituted.clone()]).expect("one fixture is a census");
+    let reported = PrimitiveFixtureSet::new([substituted]).expect("one fixture is a census");
     let refusal =
         evaluate_experimental(&target, &binding, &reported, &transcript, &plan, &registry)
             .expect_err("the substituted census is refused against another run's answers");

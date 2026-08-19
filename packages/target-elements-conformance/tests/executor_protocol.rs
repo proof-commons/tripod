@@ -58,6 +58,21 @@ fn development_binding(target: &ReviewedElementsTapscriptDefinition) -> Reviewed
     validate_reviewed_development_binding(target, binding).expect("the binding validates")
 }
 
+/// The ordinal the first ad hoc case takes.
+///
+/// Deliberately far outside the canonical census. These fixtures are the
+/// caller's own — two additions of the same two operands — and their case
+/// identities must not collide with a canonical case's, because the mock
+/// answers by looking a case identity up in its own census-derived table.
+/// A collision would have the mock answer these fixtures with whatever the
+/// canonical case of that identity expects, which is a different question
+/// from the one these tests ask.
+///
+/// That is not a wrinkle to work around: it is protocol revision 3 doing
+/// its job. Under revision 2 the mock read the expectation out of the
+/// request and could not help but agree with any fixture it was handed.
+const AD_HOC_ORDINAL: u32 = 900_000;
+
 /// Two fixtures, differing only in ordinal.
 fn fixtures() -> PrimitiveFixtureSet {
     let target = reviewed_target();
@@ -72,7 +87,11 @@ fn fixtures() -> PrimitiveFixtureSet {
         PrimitiveFixture::new(
             &target,
             &binding,
-            NativeCaseId::new(NativeCaseGroup::Arithmetic, Some(OpcodeId::Add64), ordinal),
+            NativeCaseId::new(
+                NativeCaseGroup::Arithmetic,
+                Some(OpcodeId::Add64),
+                AD_HOC_ORDINAL + ordinal,
+            ),
             &program,
             &stack,
             None,

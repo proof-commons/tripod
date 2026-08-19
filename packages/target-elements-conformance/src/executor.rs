@@ -204,7 +204,7 @@ impl ExecutorConfiguration {
 /// the target projection and the deployment projection the run was
 /// requested under, and the exact per-case subject of every request. The
 /// evaluator compares its own inputs against these
-/// `(´[PLAN-rule:guide11:transcript-binding]´)`.
+/// `(´[PLAN-rule:guide11-exec:transcript-binding]´)`.
 ///
 /// Exact typed comparison, and no digest. A digest would answer the same
 /// question less directly and would need its own preimage discipline to
@@ -1060,7 +1060,7 @@ fn run_prototype_cases(
 /// supplied there afresh, so a run observed under one binding could
 /// otherwise be reported under another and the two environments would sit
 /// side by side in the document, disagreeing, with nothing comparing them
-/// `(´[PLAN-rule:guide11:environment-twice]´)`.
+/// `(´[PLAN-rule:guide11-exec:environment-twice]´)`.
 ///
 /// One body for both, because two copies of these five comparisons would
 /// eventually disagree, and the half that disagreed would be the half
