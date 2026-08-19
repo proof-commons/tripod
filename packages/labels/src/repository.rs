@@ -812,7 +812,8 @@ fn harvest_attestation_citations(
         }
         if line.starts_with("## ") {
             // Matched on the locator mint form so a heading merely
-            // citing (`sec:realization:anchors`) cannot open the index region.
+            // citing `(´[RZ-sec:realization:anchors]´)` cannot
+            // open the index region.
             in_index = line.contains(" · `sec:realization:anchors`");
             if in_index {
                 index_location = SourceLocation::new(path, number + 1, 1);
