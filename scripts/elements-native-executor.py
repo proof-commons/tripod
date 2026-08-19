@@ -1080,6 +1080,22 @@ class DisposableNode:
     `stop`. Nothing outside this class ever names it, and no credential
     leaves it: `elements-cli` is given the same `-datadir` and resolves the
     cookie itself.
+
+    # One lane owns a directory this process did not create
+
+    The Guide-11 section 13 fresh-process lane needs the CHAIN to outlive
+    the process that built on it, because that is the entire question it
+    asks: whether public evidence is recoverable by a party that did not
+    participate in creation. A disposable directory answers that question
+    by destroying the evidence along with the creator, which is not a
+    proof of anything.
+
+    So `datadir` names a directory the caller owns, and `retain` keeps it
+    after `stop`. Both are off by default and every other lane keeps the
+    directory it always had. What persists is chain data -- the canonical
+    public record. Creator-local state is a wallet inside that directory,
+    and destroying it is the lane's own step rather than a side effect of
+    the node exiting.
     """
 
     def __init__(
@@ -1089,6 +1105,8 @@ class DisposableNode:
         chain: str,
         boot_timeout: float,
         enable_wallet: bool = False,
+        datadir=None,
+        retain: bool = False,
     ) -> None:
         self.elementsd = elementsd
         self.elements_cli = elements_cli
@@ -1106,7 +1124,16 @@ class DisposableNode:
         # same free coin the adapter already spends rather than by a block
         # subsidy or a connected genesis output.
         self.enable_wallet = enable_wallet
-        self.datadir = tempfile.mkdtemp(prefix="tripod-native-executor-")
+        if datadir is None:
+            self.datadir = tempfile.mkdtemp(prefix="tripod-native-executor-")
+            self.retain = retain
+        else:
+            os.makedirs(datadir, exist_ok=True)
+            self.datadir = os.path.abspath(datadir)
+            # A directory this process did not create is never deleted by
+            # it, whatever the flag says. Deleting a caller's chain would
+            # be destroying the public record the lane exists to read.
+            self.retain = True
         self.rpc_port = free_loopback_port()
         self.process = None
         self.node_log = None
@@ -1208,7 +1235,8 @@ class DisposableNode:
         if self.node_log is not None:
             self.node_log.close()
             self.node_log = None
-        shutil.rmtree(self.datadir, ignore_errors=True)
+        if not self.retain:
+            shutil.rmtree(self.datadir, ignore_errors=True)
 
 
 def one_line(text: str) -> str:
@@ -1313,9 +1341,24 @@ class CaseExecutor:
         # started rather than written by hand, on the same reasoning as
         # every other capability here.
         self.conservation = None
+        # The section 13 lane, present on the same condition and for the
+        # same reason: it builds on the normalization claim, which builds
+        # on the wallet.
+        self.lifecycle = None
 
     def prime(self) -> None:
-        """Locates the chain's free-coin output and confirms one block."""
+        """Locates a spendable free-coin output and confirms one block.
+
+        On a chain this process just created, that output is the genesis
+        free coin and the search ends there. On a chain a previous
+        process already built on -- the Guide-11 section 13 lane's only
+        difference -- the genesis coin is long spent, and taking it
+        anyway would name an outpoint the chain no longer has. The
+        spentness is asked of the node rather than assumed, and the
+        replacement is found by scanning the public UTXO set for the same
+        anyone-can-spend program, which is chain data and nobody's
+        secret.
+        """
         # The descriptor the maturity blocks are mined to, checksummed by the
         # node so that a hand-written checksum cannot drift from the script.
         self.mining_descriptor = self.node.call(
@@ -1340,8 +1383,37 @@ class CaseExecutor:
                     "amount": amount,
                 }
                 self.mock_time = self.node.call("getblockchaininfo")["mediantime"]
+                if self.node.call(
+                    "gettxout", transaction["txid"], str(output["n"])
+                ) is None:
+                    self.change = self.rescan_free_coin()
                 return
         raise FatalAdapterError("the chain carries no anyone-can-spend free-coin output")
+
+    def rescan_free_coin(self) -> dict:
+        """The largest unspent anyone-can-spend output the chain carries.
+
+        Public data end to end: an unspent-output scan for a program
+        whose spending condition is "anyone", which is what makes it a
+        sponsor source a party with no relationship to any previous
+        process can use.
+        """
+        answer = self.node.call(
+            "scantxoutset", "start",
+            json.dumps(["raw(%s)" % ANYONE_CAN_SPEND_HEX]),
+        )
+        found = None
+        for entry in (answer or {}).get("unspents", []):
+            amount = int(round(float(entry["amount"]) * 100_000_000))
+            if amount <= 0:
+                continue
+            if found is None or amount > found["amount"]:
+                found = {"txid": entry["txid"], "vout": entry["vout"], "amount": amount}
+        if found is None:
+            raise FatalAdapterError(
+                "the chain carries no unspent anyone-can-spend output to fund from"
+            )
+        return found
 
     # -- chain maturity ---------------------------------------------------
 
@@ -2029,11 +2101,16 @@ class ConservationExecutor:
 
     WALLET = "guide11-conservation"
 
-    def __init__(self, executor: "CaseExecutor") -> None:
+    def __init__(self, executor: "CaseExecutor", wallet_name=None) -> None:
         self.executor = executor
         self.node = executor.node
         self.messages = executor.messages
         self.ready = False
+        # Shadows the class default so that two processes sharing one
+        # chain directory cannot end up sharing one wallet -- which would
+        # make a fresh-process boundary a fiction.
+        if wallet_name is not None:
+            self.WALLET = wallet_name
 
     # -- the disposable wallet -------------------------------------------
 
@@ -3060,6 +3137,7 @@ def serve(arguments) -> int:
     node = DisposableNode(
         arguments.elementsd, arguments.elements_cli, arguments.chain,
         arguments.boot_timeout_seconds, arguments.enable_wallet,
+        arguments.datadir,
     )
     closing = {"done": False}
 
@@ -3080,8 +3158,9 @@ def serve(arguments) -> int:
         executor = CaseExecutor(node, messages, script)
         executor.prime()
         if arguments.enable_wallet:
-            executor.conservation = ConservationExecutor(executor)
+            executor.conservation = ConservationExecutor(executor, arguments.wallet_name)
             executor.normalization = NormalizationExecutor(executor.conservation)
+            executor.lifecycle = LifecycleExecutor(executor.normalization)
         log("node ready in %.1fs" % (time.monotonic() - started))
 
         write_message(
@@ -3447,6 +3526,23 @@ def parse_arguments(argv):
         "confidential-conservation capability. The wallet is created by this "
         "adapter on a disposable regtest chain and is test-fixture material "
         "under ADR-015; no wallet, seed, or key crosses this interface",
+    )
+    parser.add_argument(
+        "--datadir",
+        default=None,
+        help="a chain directory the CALLER owns, used instead of the disposable "
+        "one this adapter would create and never deleted by it. For the "
+        "Guide-11 section 13 fresh-process lane, whose question is whether "
+        "public evidence outlives the process that created it; no credential "
+        "crosses this boundary, and the node's cookie still lives and dies "
+        "inside the directory",
+    )
+    parser.add_argument(
+        "--wallet-name",
+        default=None,
+        help="the name of the disposable wallet this process creates, so that "
+        "two processes sharing one chain directory cannot share one wallet. "
+        "A name, never a credential",
     )
     parser.add_argument("--chain", default="elementsregtest", help="the disposable chain name")
     parser.add_argument(
