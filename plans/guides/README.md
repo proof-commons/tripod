@@ -26,6 +26,7 @@ weight rule in [the plans README](../README.md).
 | [guide_eight.md](guide_eight.md) | Typed Elements target contract and capability adapters |
 | [guide_nine.md](guide_nine.md) | Target-native primitive conformance and tapscript instruction core |
 | [guide_ten.md](guide_ten.md) | STATE constructor and exact wide-arithmetic prototypes |
+| [guide_eleven.md](guide_eleven.md) | Guide-11 preflight register and public declassification |
 
 ## Concept guides · `tab:guides:concepts`
 
@@ -36,6 +37,7 @@ weight rule in [the plans README](../README.md).
 | [guide_nine_concept.md](guide_nine_concept.md) | Target-native primitive conformance |
 | [guide_ten_concept.md](guide_ten_concept.md) | STATE constructor and wide-arithmetic prototypes |
 | [guide_eleven_concept.md](guide_eleven_concept.md) | Public declassification and confidential-to-public lifecycle |
+| [guide_twelve_concept.md](guide_twelve_concept.md) | Phase-4 end-to-end compact ASH |
 
 A concept guide and the executed guide of the same number are different
 documents: the concept is the earlier sketch, the executed guide is what the

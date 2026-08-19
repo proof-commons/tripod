@@ -17,7 +17,7 @@ tree's mint census of the kind.
 | Name | Kind | Sense | Spelling | Locator | Mints |
 |---|---|---|---|---|---|
 | Branch | ``branch`` | A named control-flow branch of a typed source, cited by the tests that cover it | ``branch:operations:settle-distribution`` | `packages/model/src/ops/settlement.rs:23` | 11 |
-| Candidate | ``candidate`` | A proposed option under evaluation, before selection | ``candidate:guide11:explicit-only`` | `plans/guides/guide_eleven_concept.md:990` | 37 |
+| Candidate | ``candidate`` | A proposed option under evaluation, before selection | ``candidate:guide11:explicit-only`` | `plans/guides/guide_eleven_concept.md:990` | 42 |
 | Error vocabulary | ``err`` | The enumerated error surface a package presents at its boundary. Near Erratum, ``errat``, and a different genre: an erratum corrects a document after publication; this states what a package can return | ``err:labels:vocabulary`` | `plans/packages/errors/labels.md:1` | 11 |
 | Leaf | ``leaf`` | A terminal node of a decision or derivation tree | ``leaf:authorization:cadence-band`` | `docs/attestation/realization.md:1121` | 2 |
 | Milestone | ``milestone`` | A named point in a delivery schedule, reached or not | ``milestone:realization:crate`` | `plans/packages/realization.md:272` | 29 |
