@@ -32,6 +32,7 @@ repository itself.
 | [ADR-019](019-label-calculus.md) | Decided and implemented; checker re-engineering tracked as DI-003 | Adoption of the archived label calculus as normative, with this repository's adoption parameters and the hyphenated-area amendment. |
 | [ADR-020](020-environment-kinds.md) | Decided and implemented | Adoption of the archived environment-kind registry as the kind vocabulary, with the migration adjudication and the recorded extension set. |
 | [ADR-021](021-identity-adjudication.md) | Decided and implemented for current identity policy; the evidence and release surfaces activate with their consumers | Adoption of the archived identity adjudication procedure as normative, with this repository's local recipe convention, current identities, recorded separation migration, and recorded divergences. |
+| [ADR-022](022-interchange-conventions.md) | Decided; normative now and unimplemented by design until an externally consumed document exists | Adoption of the archived interchange conventions as the wire-format discipline for externally consumed documents, with the boundary against ADR-010, the executor-protocol stop, the alignment records, and the no-implementation standing. |
 
 ## Numbering · `rule:adr:numbering`
 
@@ -57,6 +58,13 @@ The identity adjudication procedure is adopted the same way by
 with the `PLAN` prefix, at the draft; ADR-021 is cited for this
 repository's recipe convention, its current identities, or the recorded
 separation migration.
+
+The interchange conventions are adopted the same way by
+(`[ADR022-dec:interchange:adoption]`). A clause of the conventions is
+cited with the `PLAN` prefix, at the draft; ADR-022 is cited for the
+boundary against ADR-010, the executor-protocol stop, the alignment
+records, or the no-implementation standing. The namespace labels that
+draft governs are not documentation labels and are never cited as any.
 
 A plan citing an ADR label uses the ADR owner prefix, for example:
 
