@@ -20,35 +20,40 @@
 //! Deferred rows appear in `rows` and never in `requests`: a row this
 //! wave established it cannot materialize is not asked of a target.
 
-use std::io::Write;
+//! # The document is the library's, and the contract is this file's
+//!
+//! What this command publishes is built by
+//! [`target_elements_conformance::emit::conservation_matrix_document`],
+//! where it is testable without spawning anything. What remains here is
+//! the part that cannot be: argument parsing, the shared panic hook, the
+//! terminal refusal, and the write to stdout — the ADR-010 subprocess
+//! contract `(´[ADR010-rule:output:streams]´)`.
 
-use target_elements_conformance::conservation::canonical_conservation_matrix;
-use target_elements_conformance::protocol::NATIVE_PROTOCOL_SCHEMA;
+use std::process::ExitCode;
 
-fn main() {
-    let matrix = canonical_conservation_matrix();
+use clap::Parser;
+use cli_common::{BaseArgs, install_json_panic_hook, run_stdout_json_command};
+use target_elements_conformance::emit::conservation_matrix_document;
 
-    let requests: Vec<_> = matrix
-        .iter()
-        .filter(|row| row.is_executed())
-        .map(|row| {
-            serde_json::json!({
-                "schema": NATIVE_PROTOCOL_SCHEMA,
-                "case": row.id,
-                "subject": row.subject(),
-            })
-        })
-        .collect();
+const COMMAND_NAME: &str = "emit-conservation-matrix";
 
-    let document = serde_json::json!({
-        "schema": NATIVE_PROTOCOL_SCHEMA,
-        "rows": matrix,
-        "requests": requests,
-    });
+#[derive(Parser)]
+#[command(
+    name = "emit-conservation-matrix",
+    version,
+    about = "Emit the canonical confidential-conservation matrix as JSON"
+)]
+struct Args {
+    #[command(flatten)]
+    base: BaseArgs,
+}
 
-    let rendered = serde_json::to_string_pretty(&document).expect("the matrix serializes");
-    let mut out = std::io::stdout();
-    out.write_all(rendered.as_bytes())
-        .and_then(|()| out.write_all(b"\n"))
-        .expect("stdout accepts the matrix");
+fn main() -> ExitCode {
+    // Installed before parsing so an early panic still fails closed with
+    // a JSON-only record (ADR-010 early-startup rule).
+    install_json_panic_hook(COMMAND_NAME);
+    let args = cli_common::parse_args_or_exit::<Args>();
+    run_stdout_json_command(COMMAND_NAME, args.base.debug, tracing::Level::INFO, || {
+        Ok::<_, std::convert::Infallible>(conservation_matrix_document())
+    })
 }

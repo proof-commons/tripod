@@ -9,6 +9,7 @@ pub mod conservation_report;
 pub mod constructor;
 pub mod declassification;
 pub mod disposition;
+pub mod emit;
 pub mod error;
 pub mod executor;
 pub mod fixture;
