@@ -20,6 +20,7 @@ target_elements_source_files = files(
   'src/success.rs',
   'src/weld.rs',
   'src/tests/capability_tests.rs',
+  'src/tests/confidential_review_tests.rs',
   'src/tests/definition_tests.rs',
   'src/tests/deployment_tests.rs',
   'src/tests/encoding_tests.rs',
