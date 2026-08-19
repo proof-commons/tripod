@@ -46,8 +46,10 @@ fn committed_prefixes_are_distinct_across_the_fields() {
 
 #[test]
 fn committed_prefix_pairs_differ_in_the_low_bit_only() {
-    // The encoder writes a constant exclusive-or the squareness of the
-    // y coordinate, so the pair is always adjacent.
+    // The encoder writes a per-field constant exclusive-or one bit
+    // about the y coordinate, so the pair is always adjacent. Which
+    // bit it is differs by field, which is why the pair is tested here
+    // and the convention separately below.
     let facts = reviewed_confidential_review_facts();
     for field in [facts.value(), facts.asset(), facts.nonce()] {
         let (square, non_square) = field.committed_prefixes();
@@ -65,6 +67,15 @@ fn confidential_encodings_record_squareness_not_oddness() {
         assert_eq!(field.parity(), PointParityConvention::QuadraticResidue);
         assert_ne!(field.parity(), PointParityConvention::CompressedOddness);
     }
+    // The nonce is the table's own instance of the other convention:
+    // the target transports the point rather than committing to it, so
+    // it is written with the compressed pair the curve primitives
+    // accept. A table that recorded squareness here would erase the
+    // disagreement the opening blockers rest on.
+    assert_eq!(
+        facts.nonce().parity(),
+        PointParityConvention::CompressedOddness
+    );
 }
 
 #[test]

@@ -226,14 +226,25 @@ pub enum PointParityConvention {
     ImpliedEvenY,
 }
 
+/// The two bytes a standard compressed curve point is written with.
+///
+/// The same pair the encoding registry gives its compressed
+/// public-key class, restated here because this table is transcribed
+/// from the reviewed target rather than derived from the registry. The
+/// `G12-R10` witness pins the two against each other.
+const COMPRESSED_POINT_PREFIXES: (u8, u8) = (2, 3);
+
 /// The reviewed encoding of one confidential field.
+///
+/// The convention the committed prefix follows is not stated
+/// separately: it is read off the prefix pair, so a field cannot claim
+/// a convention its bytes do not use.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConfidentialFieldEncoding {
     explicit_width: usize,
     committed_width: usize,
     explicit_prefix: u8,
     committed_prefixes: (u8, u8),
-    parity: PointParityConvention,
 }
 
 impl ConfidentialFieldEncoding {
@@ -244,14 +255,12 @@ impl ConfidentialFieldEncoding {
         committed_width: usize,
         explicit_prefix: u8,
         committed_prefixes: (u8, u8),
-        parity: PointParityConvention,
     ) -> Self {
         Self {
             explicit_width,
             committed_width,
             explicit_prefix,
             committed_prefixes,
-            parity,
         }
     }
 
@@ -275,17 +284,34 @@ impl ConfidentialFieldEncoding {
 
     /// The two bytes marking the committed form.
     ///
-    /// The pair is ordered as the encoder emits it: the first marks a
-    /// square y and the second a non-square one.
+    /// The pair is ordered as the encoder emits it, low bit clear
+    /// first. What that bit records is the field's own convention,
+    /// reported by [`Self::parity`].
     #[must_use]
     pub const fn committed_prefixes(&self) -> (u8, u8) {
         self.committed_prefixes
     }
 
     /// Which y the committed prefix selects.
+    ///
+    /// Read off the prefix pair rather than asserted alongside it. A
+    /// field the target commits to itself carries a per-field constant
+    /// exclusive-or the squareness of y; a point the target only
+    /// transports carries the standard compressed pair instead, whose
+    /// low bit records oddness. The pair therefore settles the
+    /// convention, and no field can name the one its bytes do not use.
+    ///
+    /// [`PointParityConvention::ImpliedEvenY`] never arises here: it
+    /// belongs to an encoding that carries no prefix at all.
     #[must_use]
     pub const fn parity(&self) -> PointParityConvention {
-        self.parity
+        if self.committed_prefixes.0 == COMPRESSED_POINT_PREFIXES.0
+            && self.committed_prefixes.1 == COMPRESSED_POINT_PREFIXES.1
+        {
+            PointParityConvention::CompressedOddness
+        } else {
+            PointParityConvention::QuadraticResidue
+        }
     }
 
     /// Whether a byte is one this field admits.
@@ -764,21 +790,17 @@ pub fn reviewed_confidential_review_facts() -> ConfidentialReviewFacts {
     ConfidentialReviewFacts::new(
         // Prefix, then eight bytes of amount; or a commitment point
         // whose prefix records the squareness of its y coordinate.
-        ConfidentialFieldEncoding::new(9, 33, 1, (8, 9), PointParityConvention::QuadraticResidue),
+        ConfidentialFieldEncoding::new(9, 33, 1, (8, 9)),
         // Prefix, then the thirty-two byte identifier; or a generator
         // under the same squareness convention, shifted by two.
-        ConfidentialFieldEncoding::new(
-            33,
-            33,
-            1,
-            (10, 11),
-            PointParityConvention::QuadraticResidue,
-        ),
-        // The nonce shares the shape. Its committed form is a
-        // transported point rather than a commitment this contract
-        // reasons about, so no parity claim is made beyond the
-        // encoding it shares.
-        ConfidentialFieldEncoding::new(33, 33, 1, (2, 3), PointParityConvention::QuadraticResidue),
+        ConfidentialFieldEncoding::new(33, 33, 1, (10, 11)),
+        // The nonce shares the shape but not the convention. Its
+        // committed form is a point the target transports rather than
+        // one it commits to, written with the standard compressed
+        // pair, so its prefix records oddness. This field is the
+        // reviewed table's own instance of the mismatch the opening
+        // blockers rest on.
+        ConfidentialFieldEncoding::new(33, 33, 1, (2, 3)),
         // Two tagged hashes over the same identifier, each mapped to
         // the curve, then added. The blinded form prepends a multiple
         // of the base point, which is why a second addition exists
