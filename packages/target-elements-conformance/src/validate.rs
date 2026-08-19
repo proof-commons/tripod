@@ -62,6 +62,7 @@ use crate::protocol::{
     NativeResourceObservation, NativeVerdict, RequestExpectationBoundary, WireEnvironment,
     WireExecutionDomain,
 };
+use crate::provenance::{ExpectedExecutorProvenance, validate_executor_provenance};
 use crate::report::{
     ActivationRecord, CaseStatus, EvidenceDisposition, EvidencePlanClass,
     EvidenceRequirementResult, ExecutorDeclaration, ExecutorProvenance, NATIVE_REPORT_SCHEMA,
@@ -976,6 +977,10 @@ pub fn validate_native_report(
 ///
 /// [`NativeConformanceError::MockExecutorCannotSatisfyNativeGate`] for a
 /// declared mock run, checked before anything else, then
+/// [`NativeConformanceError::ExpectedProvenanceUnavailable`] when no
+/// expectation was configured and
+/// [`NativeConformanceError::ExecutorProvenanceUnestablished`] when the
+/// run's provenance is not the expected one, then
 /// [`NativeConformanceError::RequiredClaimMissing`] or
 /// [`NativeConformanceError::RequiredClaimFailed`] for the first required
 /// claim without passing case evidence, and then
@@ -988,11 +993,22 @@ pub fn validate_native_report(
 /// first case that did not pass whatever it bears on, and finally
 /// [`NativeConformanceError::ReportSummaryFailed`] for a report whose
 /// own summary records the run as failed.
-pub fn gate(validated: &ValidatedNativeConformanceReport) -> Result<(), NativeConformanceError> {
+pub fn gate(
+    validated: &ValidatedNativeConformanceReport,
+    expected_provenance: Option<&ExpectedExecutorProvenance>,
+) -> Result<(), NativeConformanceError> {
     let report = &validated.report;
     if report.executor.declaration == ExecutorDeclaration::Mock {
         return Err(NativeConformanceError::MockExecutorCannotSatisfyNativeGate);
     }
+
+    // Which program produced these observations, before what they say
+    // about the target. A run whose executable is not identified is a
+    // run about an unnamed program, and every row below would then be a
+    // statement about nothing in particular (ADR-018).
+    let expected =
+        expected_provenance.ok_or(NativeConformanceError::ExpectedProvenanceUnavailable)?;
+    validate_executor_provenance(&report.executor, expected)?;
 
     // Claims before rows. A row's disposition already accounts for its
     // claims, but naming the claim is what tells a reader which corner of

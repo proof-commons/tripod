@@ -65,6 +65,7 @@ use crate::prototype_report::{
     PROTOTYPE_REPORT_SCHEMA, PrototypeCaseResult, PrototypeClaimResult, PrototypeConformanceReport,
     PrototypeFixtureProjection, PrototypeReportCompleteness, PrototypeReportSummary,
 };
+use crate::provenance::ExpectedExecutorProvenance;
 use crate::report::{
     CaseStatus, EvidenceDisposition, ExecutorDeclaration, ObservedEnvironment,
     ObservedNativeOutcome, PrototypeReportRole,
@@ -747,6 +748,10 @@ pub fn validate_prototype_report(
 ///
 /// [`NativeConformanceError::MockExecutorCannotSatisfyNativeGate`] for a
 /// declared mock run, checked before anything else;
+/// [`NativeConformanceError::ExpectedProvenanceUnavailable`] when no
+/// expectation was configured, and
+/// [`NativeConformanceError::ExecutorProvenanceUnestablished`] when the
+/// run's provenance is not the expected one;
 /// [`NativeConformanceError::EmptyPrototypeMatrix`] for a run with no
 /// cases at all; then
 /// [`NativeConformanceError::RequiredPrototypeClaimMissing`] or
@@ -755,11 +760,21 @@ pub fn validate_prototype_report(
 /// [`NativeConformanceError::PrototypeCaseFailed`] or
 /// [`NativeConformanceError::PrototypeCaseInfrastructureError`] for the
 /// first case that did not pass.
-pub fn prototype_gate(validated: &ValidatedPrototypeReport) -> Result<(), NativeConformanceError> {
+pub fn prototype_gate(
+    validated: &ValidatedPrototypeReport,
+    expected_provenance: Option<&ExpectedExecutorProvenance>,
+) -> Result<(), NativeConformanceError> {
     let report = &validated.report;
     if report.executor.declaration == ExecutorDeclaration::Mock {
         return Err(NativeConformanceError::MockExecutorCannotSatisfyNativeGate);
     }
+
+    // The same ADR-018 comparison the primitive gate makes, and for the
+    // same reason: a compound relation certified by an unidentified
+    // program is a statement about no particular program.
+    let expected =
+        expected_provenance.ok_or(NativeConformanceError::ExpectedProvenanceUnavailable)?;
+    crate::provenance::validate_executor_provenance(&report.executor, expected)?;
     // A run of nothing is not a passing run. Without this the gate would
     // accept an empty matrix, whose every required claim would be
     // vacuously absent rather than failed only because there were no

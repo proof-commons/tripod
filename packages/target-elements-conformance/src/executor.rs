@@ -79,6 +79,7 @@ use crate::protocol::{
 use crate::prototype::{
     CanonicalPrototypeMatrix, CompoundPrototypeFixture, PrototypeCaseId, PrototypeExecutionSubject,
 };
+use crate::provenance::ExpectedExecutorProvenance;
 
 /// What one run asks the executor about.
 ///
@@ -132,6 +133,7 @@ pub struct ExecutorConfiguration {
     trust: ExecutorTrust,
     limits: ProtocolLimits,
     cleanup_grace: Duration,
+    expected_provenance: Option<ExpectedExecutorProvenance>,
 }
 
 impl ExecutorConfiguration {
@@ -144,7 +146,30 @@ impl ExecutorConfiguration {
             trust,
             limits: ProtocolLimits::DEFAULT,
             cleanup_grace: DEFAULT_EXECUTOR_CLEANUP_GRACE,
+            expected_provenance: None,
         }
+    }
+
+    /// The same selection under an explicit ADR-018 provenance
+    /// expectation.
+    ///
+    /// The expectation travels with the executor selection because it is
+    /// part of what the operator selected: a path plus a declaration of
+    /// what that path was built from. The gate takes it separately, so
+    /// that a report obtained by some other route is compared against an
+    /// expectation just the same.
+    #[must_use]
+    pub fn with_expected_provenance(self, expected: ExpectedExecutorProvenance) -> Self {
+        Self {
+            expected_provenance: Some(expected),
+            ..self
+        }
+    }
+
+    /// What the operator declared this executor was built from.
+    #[must_use]
+    pub const fn expected_provenance(&self) -> Option<&ExpectedExecutorProvenance> {
+        self.expected_provenance.as_ref()
     }
 
     /// The same selection under explicit record bounds.

@@ -66,8 +66,8 @@ failure-path tests, and it can never satisfy the target-native gate. The rule is
 enforced in exactly two places:
 
 ```text
-validate::gate(&validated)                     -> Err(MockExecutorCannotSatisfyNativeGate)
-prototype_validate::prototype_gate(&validated) -> Err(MockExecutorCannotSatisfyNativeGate)
+validate::gate(&validated, expected)                     -> Err(MockExecutorCannotSatisfyNativeGate)
+prototype_validate::prototype_gate(&validated, expected) -> Err(MockExecutorCannotSatisfyNativeGate)
 ```
 
 In both, the check is the **first** thing evaluated, before every other
@@ -115,7 +115,9 @@ ExecutorConfiguration::new(path, trust, ..)   the caller selects the executor
 executor::execute_canonical(..)      -> ExecutionTranscript
 validate::evaluate(..)               -> NativeConformanceReport
 validate::validate_native_report(..) -> ValidatedNativeConformanceReport
-validate::gate(&validated)           -> Ok(()) only for a nonmock executor
+validate::gate(&validated, Some(&expected_provenance))
+                                     -> Ok(()) only for a nonmock executor whose
+                                        reported provenance is the expected one
 ```
 
 Hand-built fixtures have their own path, which ends before the gate:
@@ -261,9 +263,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The mock produced a complete, validated report — and still
     // establishes nothing. The gate refuses it first, before any other
-    // condition.
+    // condition, including the provenance comparison a reviewed run
+    // would face next.
     assert!(matches!(
-        target_elements_conformance::validate::gate(&validated),
+        target_elements_conformance::validate::gate(&validated, None),
         Err(NativeConformanceError::MockExecutorCannotSatisfyNativeGate),
     ));
     Ok(())
@@ -276,7 +279,7 @@ That is what `./mock-executor-wrapper.sh` stands for above.
 
 ## Public-API tour
 
-Fifteen modules, fourteen public. `census` is private; the only things it
+Sixteen modules, fifteen public. `census` is private; the only things it
 exports outward are `ConstructorMatrixDefect`, `WideFloorMatrixDefect`,
 `bearing_cases`, and `wide_floor_bearing_cases`, all re-exported through
 `prototype`, plus the census itself through `fixture::canonical_fixture_set`.
@@ -370,6 +373,7 @@ DEFAULT_EXECUTOR_CLEANUP_GRACE: Duration = 5s
 ExecutorConfiguration::new(program: &Path, trust: ExecutorTrust, timeout: Duration) -> Self
 ExecutorConfiguration::with_limits(self, limits: ProtocolLimits) -> Self
 ExecutorConfiguration::with_cleanup_grace(self, cleanup_grace: Duration) -> Self
+ExecutorConfiguration::with_expected_provenance(self, expected: ExpectedExecutorProvenance) -> Self
 
 execute(target, binding, configuration: &ExecutorConfiguration, fixtures: &PrimitiveFixtureSet)
     -> Result<ExecutionTranscript, NativeConformanceError>
@@ -413,6 +417,50 @@ unresolved rather than being omitted.
 `ClaimRegistry` offers `record`, `iter`, `owned_by`, `required_claims`, `len`,
 and `is_empty`.
 
+### `provenance` — what the operator meant to run
+
+```text
+MINIMUM_REVISION_PREFIX_WIDTH: usize = 7
+FULL_REVISION_WIDTH: usize = 40
+
+RevisionId::new(text: &str)  -> Result<Self, ProvenanceSyntaxDefect>   an admitted prefix
+RevisionId::full(text: &str) -> Result<Self, ProvenanceSyntaxDefect>   a full identifier
+RevisionId::matches_full(&self, full: &RevisionId) -> bool
+TopicName::new(text: &str)   -> Result<Self, ProvenanceSyntaxDefect>
+
+ExpectedExecutorProvenance::new(intended_tip: &str, upstream_base: &str,
+                                included_local_topics: impl IntoIterator<Item = &str>)
+    -> Result<Self, ProvenanceSyntaxDefect>
+
+validate_executor_provenance(reported: &ExecutorProvenance,
+                             expected: &ExpectedExecutorProvenance)
+    -> Result<ValidatedExecutorProvenance, NativeConformanceError>
+
+expected_provenance_from_arguments(reviewed_non_mock: bool, intended_tip: Option<&str>,
+                                   upstream_base: Option<&str>, local_topics: &[String])
+    -> Result<Option<ExpectedExecutorProvenance>, ProvenanceArgumentDefect>
+```
+
+ADR-018 assigns the gate one comparison: the executable that ran must be the one
+the operator meant to run. The report's provenance fields are what the executor
+*said*, so the comparison needs a second operand this repository supplies — an
+`ExpectedExecutorProvenance`, which both gates require and refuse to proceed
+without.
+
+**The matching rule, stated once.** A binary's reported revision matches the
+expected tip when it is at least `MINIMUM_REVISION_PREFIX_WIDTH` lowercase hex
+digits and is an *exact prefix* of the expected full identifier; equality is the
+width-40 case of that same rule. The prefix form is what the reviewed adapter
+actually reads — a node binary embeds an abbreviation in its version line, not a
+full object identifier — so a full-equality rule would refuse every honest run,
+and an arbitrary-text-equality rule would accept a run naming a different object.
+The operator's own declarations (`intended_executed_tip`, `upstream_base`) are
+compared for full equality instead, and the topic census for set equality in both
+directions: a tip that folded in an unexpected branch is not the reviewed tip.
+
+No value here is ever derived from a working tree. A checkout's `HEAD` identifies
+intended source; the binary's embedded revision identifies the program.
+
 ### `validate` — plan, evaluate, validate, gate
 
 ```text
@@ -422,7 +470,11 @@ evaluate(target, binding, fixtures, transcript, plan, registry)
 validate_native_report(report: NativeConformanceReport,
                        inputs: NativeReportValidationInputs<'_>)
     -> Result<ValidatedNativeConformanceReport, NativeConformanceError>
-gate(validated: &ValidatedNativeConformanceReport) -> Result<(), NativeConformanceError>
+gate(validated: &ValidatedNativeConformanceReport,
+     expected_provenance: Option<&ExpectedExecutorProvenance>)
+    -> Result<(), NativeConformanceError>
+check_required_rows_own_required_claims(plan: &EvidencePlan, registry: &ClaimRegistry)
+    -> Result<(), NativeConformanceError>
 ```
 
 `NativeReportValidationInputs` is a `Copy` parts struct with six public

@@ -451,6 +451,21 @@ pub enum NativeConformanceError {
     #[error("the report's own summary records the run as failed")]
     ReportSummaryFailed,
 
+    /// The run's reported provenance is not the expected one, so the
+    /// report does not establish which program produced it (ADR-018).
+    #[error("the executor's provenance was not established: {0}")]
+    ExecutorProvenanceUnestablished(crate::provenance::ProvenanceDefect),
+
+    /// The gate was asked to decide a run for which no expected
+    /// provenance was configured.
+    ///
+    /// Fail-closed: an unstated expectation is not a satisfied one, and
+    /// a gate that skipped the comparison when nothing was configured
+    /// would make the check optional for exactly the caller who forgot
+    /// it.
+    #[error("no expected executor provenance was configured for this run")]
+    ExpectedProvenanceUnavailable,
+
     /// The run selected a mock executor, which can never satisfy the
     /// target-native gate.
     ///

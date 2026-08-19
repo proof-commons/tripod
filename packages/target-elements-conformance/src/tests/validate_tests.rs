@@ -26,7 +26,8 @@ use crate::validate::{
 };
 
 use super::support::{
-    development_binding, nonmock_handshake, observed_environment, reviewed_target, subjects_of,
+    development_binding, expected_provenance, nonmock_handshake, observed_environment,
+    reviewed_target, subjects_of,
 };
 
 /// Everything one run needs, assembled once per test.
@@ -339,7 +340,7 @@ fn a_complete_run_passes_the_gate_with_its_unresolved_claims_explicit() {
     let report = run.report();
     let validated =
         validate_native_report(report, run.inputs()).expect("an unmutated report validates");
-    gate(&validated).expect("a complete run is evidence");
+    gate(&validated, Some(&expected_provenance())).expect("a complete run is evidence");
 
     let report = validated.report();
     assert_eq!(report.summary.cases_failed, 0);
@@ -596,7 +597,10 @@ fn a_failed_case_cannot_be_removed_to_make_the_run_pass() {
     assert!(honest.summary.cases_failed > 0);
     let validated =
         validate_native_report(honest, run.inputs()).expect("the honest report validates");
-    assert!(gate(&validated).is_err(), "a failing run is not evidence");
+    assert!(
+        gate(&validated, Some(&expected_provenance())).is_err(),
+        "a failing run is not evidence"
+    );
 
     let mut edited = validated.into_report();
     let failed = edited
@@ -657,7 +661,7 @@ fn a_declared_mock_run_can_never_satisfy_the_gate() {
     let report = run.report();
     let validated = validate_native_report(report, run.inputs()).expect("the report validates");
     assert!(matches!(
-        gate(&validated).expect_err("a mock is refused"),
+        gate(&validated, Some(&expected_provenance())).expect_err("a mock is refused"),
         NativeConformanceError::MockExecutorCannotSatisfyNativeGate,
     ));
 }

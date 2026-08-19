@@ -77,6 +77,7 @@ use crate::prototype_validate::{
     PrototypeReportValidationInputs, evaluate_experimental_prototypes, evaluate_prototypes,
     prototype_gate, validate_prototype_report,
 };
+use crate::provenance::{ProvenanceDefect, ProvenanceSyntaxDefect};
 use crate::report::{
     CaseStatus, EvidenceDisposition, EvidencePlanClass, PrototypeReportRole, ReportCompleteness,
 };
@@ -86,8 +87,8 @@ use crate::validate::{
 };
 
 use super::support::{
-    development_binding, nonmock_handshake, observed_environment, prototype_subjects_of,
-    reviewed_target, subjects_of,
+    TEST_BINARY_REVISION, TEST_INTENDED_TIP, development_binding, expected_provenance,
+    nonmock_handshake, observed_environment, prototype_subjects_of, reviewed_target, subjects_of,
 };
 
 /// A second development binding, on a different network and genesis.
@@ -897,7 +898,8 @@ fn g11_r02_an_arbitrary_census_is_refused_on_provenance_not_completeness() {
         },
     )
     .expect("the canonical report validates");
-    gate(&validated).expect("the canonical census is the evidence subject");
+    gate(&validated, Some(&expected_provenance()))
+        .expect("the canonical census is the evidence subject");
 }
 
 /// `G11-R02` **CLOSED**: changing any member of a canonical fixture
@@ -1118,7 +1120,8 @@ fn g11_r02_permuting_canonical_declaration_order_is_harmless() {
         },
     )
     .expect("the report validates");
-    gate(&validated).expect("a permuted declaration order is still evidence");
+    gate(&validated, Some(&expected_provenance()))
+        .expect("a permuted declaration order is still evidence");
 }
 
 // -- G11-R04 (CLOSED by Wave 3) ----------------------------------------
@@ -1347,8 +1350,11 @@ fn g11_r05_the_augmented_census_route_to_the_gate_is_closed() {
         "the failing case still touches no required row",
     );
 
-    let refusal = gate(&ValidatedNativeConformanceReport::wrap_for_tests(report))
-        .expect_err("a failed case is refused whatever it bears on");
+    let refusal = gate(
+        &ValidatedNativeConformanceReport::wrap_for_tests(report),
+        Some(&expected_provenance()),
+    )
+    .expect_err("a failed case is refused whatever it bears on");
     assert!(
         matches!(refusal, NativeConformanceError::NativeCaseFailed(failed) if failed == case),
         "the gate names the case that failed",
@@ -1385,14 +1391,18 @@ fn g11_r05_a_report_whose_summary_says_failed_is_refused() {
 
     // The run itself passed: every case, every required claim, every
     // required row.
-    gate(&ValidatedNativeConformanceReport::wrap_for_tests(
-        report.clone(),
-    ))
+    gate(
+        &ValidatedNativeConformanceReport::wrap_for_tests(report.clone()),
+        Some(&expected_provenance()),
+    )
     .expect("an honest complete run is evidence");
 
     report.summary.completeness = ReportCompleteness::Failed;
-    let refusal = gate(&ValidatedNativeConformanceReport::wrap_for_tests(report))
-        .expect_err("no gate returns success for a report whose summary says failed");
+    let refusal = gate(
+        &ValidatedNativeConformanceReport::wrap_for_tests(report),
+        Some(&expected_provenance()),
+    )
+    .expect_err("no gate returns success for a report whose summary says failed");
     assert!(matches!(
         refusal,
         NativeConformanceError::ReportSummaryFailed
@@ -1448,89 +1458,29 @@ fn g11_r05_a_failed_canonical_case_never_reaches_evidence() {
         },
     )
     .expect("the report faithfully describes the run");
-    gate(&validated).expect_err("a run with a failed case is not evidence");
+    gate(&validated, Some(&expected_provenance()))
+        .expect_err("a run with a failed case is not evidence");
 }
 
-// -- G11-R06 -----------------------------------------------------------
+// -- G11-R06 (CLOSED by Wave 3) ----------------------------------------
 
-/// `G11-R06`: the gate accepts a report that records no binary
-/// provenance.
+/// One run whose handshake has been altered, taken as far as the gate.
 ///
-/// `ExecutorProvenance::establishes_workspace_provenance` exists and is
-/// never called by either gate. A handshake with no binary revision, no
-/// intended tip, and no upstream base still produces a gate-eligible
-/// report; so does one whose revision strings are blank.
-#[test]
-fn g11_r06_the_gate_accepts_a_run_with_no_workspace_provenance() {
+/// The alteration is applied to the provenance the executor reports;
+/// everything else is the honest canonical run. So a refusal here is the
+/// gate's provenance comparison and nothing else — the census, the
+/// subjects, the answers, and the environment are all the ones the
+/// passing case uses.
+fn gate_with_handshake(
+    alter: impl FnOnce(&mut crate::protocol::ExecutorHandshake),
+) -> Result<(), NativeConformanceError> {
     let target = reviewed_target();
     let binding = development_binding(&target);
     let fixtures = canonical_fixture_set(&target, &binding).expect("the census states");
-    let plan = guide_nine_evidence_plan().expect("the plan is a partition");
-    let registry = claim_registry().expect("the claim census is coherent");
-
-    for blank in [false, true] {
-        let mut handshake = nonmock_handshake();
-        if blank {
-            handshake.binary_reported_revision = Some(String::new());
-            handshake.intended_executed_tip = Some(String::new());
-            handshake.upstream_base = Some(String::new());
-        } else {
-            handshake.binary_reported_revision = None;
-            handshake.intended_executed_tip = None;
-            handshake.upstream_base = None;
-        }
-        handshake.included_local_topics = BTreeSet::new();
-
-        let transcript = ExecutionTranscript::for_tests(TranscriptParts {
-            target: &target,
-            binding: &binding,
-            handshake,
-            environment: observed_environment(),
-            trust: ExecutorTrust::ReviewedNonMock,
-            requests: subjects_of(&fixtures),
-            responses: answers(&fixtures),
-        });
-        let report = evaluate(&target, &binding, &fixtures, &transcript, &plan, &registry)
-            .expect("the run evaluates");
-        assert_eq!(
-            report.executor.establishes_workspace_provenance(),
-            blank,
-            "blank strings satisfy the predicate; absent ones do not",
-        );
-
-        let validated = validate_native_report(
-            report,
-            NativeReportValidationInputs {
-                target: &target,
-                binding: &binding,
-                fixtures: &fixtures,
-                plan: &plan,
-                registry: &registry,
-                transcript: &transcript,
-            },
-        )
-        .expect("the report validates");
-        gate(&validated).expect("the defect: provenance is never a gate condition");
-    }
-}
-
-/// `G11-R06`: a report whose binary revision contradicts its intended tip
-/// is gate-eligible.
-///
-/// The predicate compares nothing: three `Some` values satisfy it
-/// whatever they say.
-#[test]
-fn g11_r06_a_contradictory_revision_pair_still_establishes_provenance() {
-    let target = reviewed_target();
-    let binding = development_binding(&target);
-    let fixtures = canonical_fixture_set(&target, &binding).expect("the census states");
-    let plan = guide_nine_evidence_plan().expect("the plan is a partition");
-    let registry = claim_registry().expect("the claim census is coherent");
+    let (plan, registry) = plan_and_registry();
 
     let mut handshake = nonmock_handshake();
-    handshake.binary_reported_revision =
-        Some("0000000000000000000000000000000000000000".to_owned());
-    handshake.intended_executed_tip = Some("ffffffffffffffffffffffffffffffffffffffff".to_owned());
+    alter(&mut handshake);
 
     let transcript = ExecutionTranscript::for_tests(TranscriptParts {
         target: &target,
@@ -1543,15 +1493,243 @@ fn g11_r06_a_contradictory_revision_pair_still_establishes_provenance() {
     });
     let report = evaluate(&target, &binding, &fixtures, &transcript, &plan, &registry)
         .expect("the run evaluates");
-    assert_ne!(
-        report.executor.binary_reported_revision,
-        report.executor.intended_executed_tip,
+    let validated = validate_native_report(
+        report,
+        NativeReportValidationInputs {
+            target: &target,
+            binding: &binding,
+            fixtures: &fixtures,
+            plan: &plan,
+            registry: &registry,
+            transcript: &transcript,
+        },
+    )
+    .expect("the report faithfully describes the run");
+    gate(&validated, Some(&expected_provenance()))
+}
+
+/// Whether a refusal is the provenance comparison refusing.
+fn is_provenance_refusal(result: &Result<(), NativeConformanceError>, expected: ProvenanceDefect) {
+    match result {
+        Err(NativeConformanceError::ExecutorProvenanceUnestablished(defect)) => {
+            assert_eq!(*defect, expected);
+        }
+        other => panic!("expected a provenance refusal naming {expected:?}, got {other:?}"),
+    }
+}
+
+/// `G11-R06` **CLOSED**: a run that records no binary provenance is
+/// refused, whether the fields are absent or blank.
+///
+/// `establishes_workspace_provenance` used to be the whole of the
+/// harness's opinion here, and no gate called it. It was also too weak
+/// to be worth calling: three `Some` values satisfied it whatever they
+/// held, so `Some("")` passed. The gate now compares typed values
+/// against an explicit expectation, and both shapes fail — the absent
+/// one as a missing field, the blank one as a field whose contents are
+/// not a revision.
+#[test]
+fn g11_r06_a_run_with_no_workspace_provenance_is_refused() {
+    is_provenance_refusal(
+        &gate_with_handshake(|handshake| {
+            handshake.binary_reported_revision = None;
+            handshake.intended_executed_tip = None;
+            handshake.upstream_base = None;
+            handshake.included_local_topics = BTreeSet::new();
+        }),
+        ProvenanceDefect::MissingBinaryRevision,
     );
-    assert!(
-        report.executor.establishes_workspace_provenance(),
-        "the defect: two contradictory revisions establish workspace provenance",
+    is_provenance_refusal(
+        &gate_with_handshake(|handshake| {
+            handshake.binary_reported_revision = Some(String::new());
+            handshake.intended_executed_tip = Some(String::new());
+            handshake.upstream_base = Some(String::new());
+            handshake.included_local_topics = BTreeSet::new();
+        }),
+        ProvenanceDefect::MalformedBinaryRevision(ProvenanceSyntaxDefect::RevisionTooShort),
+    );
+}
+
+/// `G11-R06` **CLOSED**: each provenance field is required on its own.
+///
+/// The guide's regression list, one field at a time: a run missing any
+/// one of them is refused naming that one, rather than passing because
+/// the others were present.
+#[test]
+fn g11_r06_each_missing_provenance_field_is_refused_by_name() {
+    is_provenance_refusal(
+        &gate_with_handshake(|handshake| handshake.binary_reported_revision = None),
+        ProvenanceDefect::MissingBinaryRevision,
+    );
+    is_provenance_refusal(
+        &gate_with_handshake(|handshake| handshake.intended_executed_tip = None),
+        ProvenanceDefect::MissingIntendedTip,
+    );
+    is_provenance_refusal(
+        &gate_with_handshake(|handshake| handshake.upstream_base = None),
+        ProvenanceDefect::MissingUpstreamBase,
+    );
+}
+
+/// `G11-R06` **CLOSED**: a blank name or version is refused.
+///
+/// Five provenance roles, and a blank string in any of the four naming
+/// ones is an executor that did not answer the question.
+#[test]
+fn g11_r06_a_blank_name_or_version_is_refused() {
+    is_provenance_refusal(
+        &gate_with_handshake(|handshake| handshake.adapter_name = String::new()),
+        ProvenanceDefect::BlankAdapterName,
+    );
+    is_provenance_refusal(
+        &gate_with_handshake(|handshake| handshake.adapter_version = "   ".to_owned()),
+        ProvenanceDefect::BlankAdapterVersion,
+    );
+    is_provenance_refusal(
+        &gate_with_handshake(|handshake| handshake.node_name = String::new()),
+        ProvenanceDefect::BlankNodeName,
+    );
+    is_provenance_refusal(
+        &gate_with_handshake(|handshake| handshake.node_version = "\t".to_owned()),
+        ProvenanceDefect::BlankNodeVersion,
+    );
+}
+
+/// `G11-R06` **CLOSED**: a binary revision contradicting the intended
+/// tip is refused.
+///
+/// This is the case ADR-018 names outright: a binary whose embedded
+/// revision does not match the intended tip is refused for evidence.
+#[test]
+fn g11_r06_a_contradictory_revision_pair_is_refused() {
+    is_provenance_refusal(
+        &gate_with_handshake(|handshake| {
+            handshake.binary_reported_revision =
+                Some("0000000000000000000000000000000000000000".to_owned());
+        }),
+        ProvenanceDefect::BinaryRevisionIsNotTheIntendedTip,
     );
 
+    // And a prefix that is *nearly* the tip: one digit different at the
+    // last position of the abbreviation, which arbitrary text equality
+    // would also have caught but which a "starts with something" rule
+    // would not.
+    let mut near = TEST_BINARY_REVISION.to_owned();
+    near.pop();
+    near.push('f');
+    assert_ne!(near, TEST_BINARY_REVISION);
+    is_provenance_refusal(
+        &gate_with_handshake(|handshake| handshake.binary_reported_revision = Some(near)),
+        ProvenanceDefect::BinaryRevisionIsNotTheIntendedTip,
+    );
+}
+
+/// `G11-R06` **CLOSED**: an intended tip or upstream base that is not
+/// the expected one is refused.
+#[test]
+fn g11_r06_a_run_against_another_tip_or_base_is_refused() {
+    is_provenance_refusal(
+        &gate_with_handshake(|handshake| {
+            handshake.intended_executed_tip =
+                Some("ffffffffffffffffffffffffffffffffffffffff".to_owned());
+        }),
+        ProvenanceDefect::IntendedTipIsNotTheExpectedTip,
+    );
+    is_provenance_refusal(
+        &gate_with_handshake(|handshake| {
+            handshake.upstream_base = Some("ffffffffffffffffffffffffffffffffffffffff".to_owned());
+        }),
+        ProvenanceDefect::UpstreamBaseIsNotTheExpectedBase,
+    );
+
+    // An abbreviated intended tip is refused as well. The expectation is
+    // a full identifier and the operator's own declaration is compared
+    // against it exactly: the prefix rule exists for what the *binary*
+    // reports, which is the one field that cannot carry more.
+    is_provenance_refusal(
+        &gate_with_handshake(|handshake| {
+            handshake.intended_executed_tip = Some(TEST_BINARY_REVISION.to_owned());
+        }),
+        ProvenanceDefect::IntendedTipIsNotTheExpectedTip,
+    );
+}
+
+/// `G11-R06` **CLOSED**: a topic census that is not the expected one is
+/// refused, in either direction.
+///
+/// Equality rather than containment. A tip that folded in an extra local
+/// branch is not the tip that was reviewed, and one that folded in fewer
+/// is not it either.
+#[test]
+fn g11_r06_a_wrong_topic_census_is_refused() {
+    is_provenance_refusal(
+        &gate_with_handshake(|handshake| {
+            handshake.included_local_topics = BTreeSet::new();
+        }),
+        ProvenanceDefect::TopicCensusIsNotTheExpectedCensus,
+    );
+    is_provenance_refusal(
+        &gate_with_handshake(|handshake| {
+            handshake
+                .included_local_topics
+                .insert("fix/unexpected".to_owned());
+        }),
+        ProvenanceDefect::TopicCensusIsNotTheExpectedCensus,
+    );
+    is_provenance_refusal(
+        &gate_with_handshake(|handshake| {
+            handshake.included_local_topics = BTreeSet::from(["fix/other".to_owned()]);
+        }),
+        ProvenanceDefect::TopicCensusIsNotTheExpectedCensus,
+    );
+}
+
+/// `G11-R06` **CLOSED**: the honest run passes, by prefix and in full.
+///
+/// The positive half of the regression list. The default handshake
+/// reports the narrowest admitted abbreviation, which is the shape a
+/// real node binary embeds; the same run reporting the full identifier
+/// passes too, because equality is the width-forty case of the one
+/// prefix rule rather than a second rule.
+#[test]
+fn g11_r06_a_correct_revision_passes_abbreviated_and_in_full() {
+    gate_with_handshake(|_| {}).expect("the honest run is evidence");
+    gate_with_handshake(|handshake| {
+        handshake.binary_reported_revision = Some(TEST_INTENDED_TIP.to_owned());
+    })
+    .expect("a binary reporting the full identifier is evidence");
+
+    // And an abbreviation wider than the minimum, which is compared
+    // against more digits rather than fewer.
+    gate_with_handshake(|handshake| {
+        handshake.binary_reported_revision = Some(TEST_INTENDED_TIP[..12].to_owned());
+    })
+    .expect("a wider abbreviation is evidence");
+}
+
+/// `G11-R06` **CLOSED**: a run with no configured expectation cannot be
+/// gated at all.
+///
+/// Fail-closed. A caller who configured no expectation has not satisfied
+/// the comparison; they have skipped it, and the gate says so rather
+/// than treating an absent operand as an agreeing one.
+#[test]
+fn g11_r06_a_run_with_no_expectation_is_refused() {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let fixtures = canonical_fixture_set(&target, &binding).expect("the census states");
+    let (plan, registry) = plan_and_registry();
+    let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake: nonmock_handshake(),
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: subjects_of(&fixtures),
+        responses: answers(&fixtures),
+    });
+    let report = evaluate(&target, &binding, &fixtures, &transcript, &plan, &registry)
+        .expect("the run evaluates");
     let validated = validate_native_report(
         report,
         NativeReportValidationInputs {
@@ -1564,7 +1742,57 @@ fn g11_r06_a_contradictory_revision_pair_still_establishes_provenance() {
         },
     )
     .expect("the report validates");
-    gate(&validated).expect("the defect: the gate does not compare the two revisions");
+
+    assert!(matches!(
+        gate(&validated, None).expect_err("an unstated expectation is not a satisfied one"),
+        NativeConformanceError::ExpectedProvenanceUnavailable,
+    ));
+}
+
+/// `G11-R06` **CLOSED**: an experimental run keeps incomplete provenance
+/// and still reaches no gate.
+///
+/// The last item of the guide's regression list. An experiment may
+/// record whatever provenance it has — that is what makes it useful —
+/// and the type system is what keeps it away from the gate: the
+/// experimental path yields a report with no validator, so there is no
+/// value the gate would accept.
+#[test]
+fn g11_r06_an_experimental_run_may_keep_incomplete_provenance() {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let fixtures = canonical_fixture_set(&target, &binding).expect("the census states");
+    let (plan, registry) = plan_and_registry();
+
+    let mut handshake = nonmock_handshake();
+    handshake.binary_reported_revision = None;
+    handshake.intended_executed_tip = None;
+    handshake.upstream_base = None;
+
+    let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake,
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: subjects_of(&fixtures),
+        responses: answers(&fixtures),
+    });
+    let experimental = evaluate_experimental(
+        &target,
+        &binding,
+        fixtures.fixtures(),
+        &transcript,
+        &plan,
+        &registry,
+    )
+    .expect("the experiment evaluates");
+    let report = experimental.report();
+    assert!(
+        !report.executor.establishes_workspace_provenance(),
+        "the experiment records that its provenance is incomplete",
+    );
+    assert_eq!(report.role, PrototypeReportRole::ExperimentalPrimitive);
 }
 
 // -- G11-R03 (CLOSED by Wave 1) ---------------------------------------
@@ -1755,7 +1983,8 @@ fn g11_r03_the_canonical_wide_floor_matrix_is_the_evidence_subject() {
         },
     )
     .expect("the canonical report validates");
-    prototype_gate(&validated).expect("the canonical matrix is prototype evidence");
+    prototype_gate(&validated, Some(&expected_provenance()))
+        .expect("the canonical matrix is prototype evidence");
 }
 
 /// `G11-R03` **CLOSED**: a canonical case with one added claim fails.

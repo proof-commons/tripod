@@ -12,6 +12,7 @@ pub mod prototype;
 pub mod prototype_program;
 pub mod prototype_report;
 pub mod prototype_validate;
+pub mod provenance;
 pub mod report;
 pub mod validate;
 pub mod vocabulary;
