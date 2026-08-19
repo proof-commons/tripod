@@ -342,6 +342,16 @@ pub enum TargetError {
     /// consensus and policy dimensions do not agree.
     ResourceContractMismatch,
 
+    /// A primitive's declared maximum stack growth is not the growth
+    /// its own success and non-aborting failure effects imply, or it
+    /// claims an alternate-stack growth no reviewed behavior produces.
+    ///
+    /// Separate from [`Self::ResourceContractMismatch`] because the
+    /// budget dimensions and the depth dimension are welded against
+    /// different views: the budget against the signature subcontract,
+    /// the depth against each primitive's own stack algebra.
+    StackGrowthContractMismatch,
+
     /// A subcontract names no evidence requirement, or names one the
     /// registry does not declare.
     EvidenceContractMismatch,
@@ -597,6 +607,12 @@ impl fmt::Display for TargetError {
             }
             Self::ResourceContractMismatch => {
                 write!(f, "the resource views do not agree")
+            }
+            Self::StackGrowthContractMismatch => {
+                write!(
+                    f,
+                    "a declared stack growth does not match the primitive's stack contract"
+                )
             }
             Self::EvidenceContractMismatch => {
                 write!(f, "a subcontract names no declared evidence")

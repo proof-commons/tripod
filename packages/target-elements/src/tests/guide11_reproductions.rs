@@ -16,6 +16,11 @@
 //!   unknown-public-key rule and most of the success algebra; it now
 //!   derives one complete expected behaviour from the subcontract and
 //!   compares every signature opcode against it.
+//! - `G11-H01` is **CLOSED** by Wave 5. The declared maximum stack
+//!   growth was welded to nothing; every row is now derived from the
+//!   primitive's own success and non-aborting failure effects, plus the
+//!   transient the two verifying signature forms hold before their
+//!   implicit verification consumes it.
 //!
 //! No production code path is touched: these are constructions over the
 //! public and crate-visible surfaces exactly as an external caller
@@ -32,7 +37,8 @@ use crate::definition::{
 };
 use crate::error::TargetError;
 use crate::opcode::{
-    FailureCause, FailureContract, OpcodeId, OpcodeSpec, StackContract, StackValueType,
+    FailureCause, FailureContract, OpcodeId, OpcodeResourceCost, OpcodeSpec, StackContract,
+    StackValueType,
 };
 use crate::operand::OperandContract;
 use crate::success::{SuccessCase, SuccessCondition, SuccessContract, SuccessStackEffect};
@@ -465,4 +471,231 @@ fn g11_r10_dropping_the_empty_public_key_rejection_is_refused() {
     with_stack(&mut parts, opcode, stack);
 
     refused_by_the_signature_weld(parts);
+}
+
+/// Restates one primitive's resource cost.
+fn with_resources(
+    parts: &mut TargetDefinitionParts,
+    opcode: OpcodeId,
+    resources: OpcodeResourceCost,
+) {
+    let spec = parts.opcodes.get(&opcode).expect("the opcode is declared");
+    let replacement = OpcodeSpec::new(
+        spec.id(),
+        spec.code(),
+        spec.domains().iter().copied(),
+        spec.stack().clone(),
+        resources,
+        spec.evidence().iter().copied(),
+    );
+    parts.opcodes.insert(opcode, replacement);
+}
+
+/// The reviewed cost of one primitive, with its stack growth replaced.
+fn growth_replaced(
+    parts: &TargetDefinitionParts,
+    opcode: OpcodeId,
+    growth: i64,
+) -> OpcodeResourceCost {
+    let cost = parts
+        .opcodes
+        .get(&opcode)
+        .expect("the opcode is declared")
+        .resources();
+    OpcodeResourceCost::new(
+        cost.script_bytes(),
+        cost.operation_cost(),
+        cost.validation_budget(),
+        growth,
+        cost.maximum_altstack_growth(),
+    )
+}
+
+/// Runs the validator and requires the stack-growth weld to refuse.
+fn refused_by_the_stack_growth_weld(parts: TargetDefinitionParts) {
+    let errors = validate_target_definition(TargetDefinition::new(parts))
+        .expect_err("the mutation must be rejected");
+    assert!(errors.contains(&TargetError::StackGrowthContractMismatch));
+}
+
+/// `G11-H01`: every declared stack-growth row is the growth its own
+/// stack contract implies.
+///
+/// The census, not a sample. The finding was that the field was welded
+/// to nothing at all, so the guarantee has to be that every row is
+/// reached, and the count is asserted so that a primitive dropped from
+/// the registry cannot quietly shrink the census this test walks.
+#[test]
+fn g11_h01_every_reviewed_row_matches_its_derived_stack_growth() {
+    let reviewed = reviewed_elements_tapscript().expect("the reviewed contract validates");
+    let opcodes = reviewed.definition().opcodes();
+    assert_eq!(opcodes.len(), 55);
+
+    for (id, spec) in opcodes {
+        assert_eq!(
+            spec.resources().maximum_stack_growth(),
+            crate::weld::derived_stack_growth(*id, spec.stack()),
+            "{id:?} declares a stack growth its stack contract does not imply"
+        );
+        assert_eq!(
+            spec.resources().maximum_altstack_growth(),
+            0,
+            "{id:?} claims an alternate-stack growth no reviewed primitive produces"
+        );
+    }
+}
+
+/// `G11-H01`: the transient term applies to the verifying forms and to
+/// nothing else.
+///
+/// This is the test that would have caught the wave's open question in
+/// either direction. Fifty-three primitives settle at the depth they
+/// declare; the two verifying signature forms declare one item above
+/// where they settle, because the target pushes a truth value and only
+/// then consumes it. If a later reviewer decided the declared rows were
+/// wrong instead, this test — not the weld's silence — is what would
+/// have to be argued with.
+#[test]
+fn g11_h01_only_the_verifying_forms_carry_a_transient_above_their_surviving_depth() {
+    let reviewed = reviewed_elements_tapscript().expect("the reviewed contract validates");
+    let verifying = [
+        (OpcodeId::CheckSigVerify, -2, -1),
+        (OpcodeId::CheckSigFromStackVerify, -3, -2),
+    ];
+
+    for (id, spec) in reviewed.definition().opcodes() {
+        let surviving = crate::weld::surviving_stack_growth(spec.stack());
+        let derived = crate::weld::derived_stack_growth(*id, spec.stack());
+        match verifying.iter().find(|(opcode, ..)| opcode == id) {
+            Some((_, expected_surviving, expected_declared)) => {
+                assert_eq!(surviving, *expected_surviving, "{id:?} surviving depth");
+                assert_eq!(derived, *expected_declared, "{id:?} transient peak");
+                assert_eq!(
+                    derived,
+                    surviving + 1,
+                    "{id:?} carries exactly one transient"
+                );
+            }
+            None => assert_eq!(
+                derived, surviving,
+                "{id:?} carries a transient the reviewed target does not justify"
+            ),
+        }
+    }
+}
+
+/// `G11-H01`: the branching counterparts settle where they peak.
+///
+/// The transient rule is stated over the verifying forms, so the claim
+/// that the branching forms need no such term is asserted rather than
+/// left implied by the census test's non-verifying arm.
+#[test]
+fn g11_h01_the_branching_counterparts_declare_their_settling_depth() {
+    let reviewed = reviewed_elements_tapscript().expect("the reviewed contract validates");
+    for (id, expected) in [(OpcodeId::CheckSig, -1), (OpcodeId::CheckSigFromStack, -2)] {
+        let spec = reviewed
+            .definition()
+            .opcodes()
+            .get(&id)
+            .expect("the opcode is declared");
+        assert_eq!(crate::weld::surviving_stack_growth(spec.stack()), expected);
+        assert_eq!(spec.resources().maximum_stack_growth(), expected);
+    }
+}
+
+/// `G11-H01`: a growth row inconsistent with its own stack contract is
+/// refused.
+///
+/// The finding itself. No weld read the field, so a row transcribed
+/// from the wrong primitive validated.
+#[test]
+fn g11_h01_a_growth_row_inconsistent_with_its_stack_contract_is_refused() {
+    let mut parts = parts();
+    let cost = growth_replaced(&parts, OpcodeId::CheckSig, 3);
+    with_resources(&mut parts, OpcodeId::CheckSig, cost);
+
+    refused_by_the_stack_growth_weld(parts);
+}
+
+/// `G11-H01`: a verifying form declaring only its surviving depth is
+/// refused.
+///
+/// The adjudication, made enforceable. The surviving figure is the one
+/// a derivation without the transient rule produces, and it is exactly
+/// the value a scheduler must not size the stack from.
+#[test]
+fn g11_h01_a_verifying_form_declaring_its_surviving_growth_is_refused() {
+    for (opcode, surviving) in [
+        (OpcodeId::CheckSigVerify, -2),
+        (OpcodeId::CheckSigFromStackVerify, -3),
+    ] {
+        let mut parts = parts();
+        let cost = growth_replaced(&parts, opcode, surviving);
+        with_resources(&mut parts, opcode, cost);
+
+        refused_by_the_stack_growth_weld(parts);
+    }
+}
+
+/// `G11-H01`: moving a primitive's stack arithmetic without its growth
+/// row is refused.
+///
+/// The mirror of the row mutation. The weld has to hold whichever side
+/// of the repetition moves, or it only checks that one view was left
+/// alone.
+#[test]
+fn g11_h01_changing_a_success_form_without_its_growth_row_is_refused() {
+    let mut parts = parts();
+    let opcode = OpcodeId::CheckSig;
+    let spec = parts.opcodes.get(&opcode).expect("the opcode is declared");
+    let stack = StackContract::new(
+        spec.stack().operands().to_vec(),
+        SuccessContract::Fixed {
+            consumed_operands: 2,
+            results: vec![StackValueType::Bool, StackValueType::Bool],
+        },
+        spec.stack().failure().clone(),
+    );
+    with_stack(&mut parts, opcode, stack);
+
+    refused_by_the_stack_growth_weld(parts);
+}
+
+/// `G11-H01`: an alternate-stack claim no reviewed primitive produces
+/// is refused.
+///
+/// Altstack growth stays zero until a reviewed primitive changes it,
+/// and "stays zero" is a checked property here rather than a sentence
+/// in the guide.
+#[test]
+fn g11_h01_a_nonzero_altstack_growth_row_is_refused() {
+    let mut parts = parts();
+    let cost = parts
+        .opcodes
+        .get(&OpcodeId::CheckSig)
+        .expect("the opcode is declared")
+        .resources();
+    with_resources(
+        &mut parts,
+        OpcodeId::CheckSig,
+        OpcodeResourceCost::new(
+            cost.script_bytes(),
+            cost.operation_cost(),
+            cost.validation_budget(),
+            cost.maximum_stack_growth(),
+            1,
+        ),
+    );
+
+    refused_by_the_stack_growth_weld(parts);
+}
+
+/// `G11-H01`: the reviewed contract remains valid under the new weld.
+///
+/// The control. A weld that refused the reviewed contract would be a
+/// finding about the weld, not about the target.
+#[test]
+fn g11_h01_the_reviewed_contract_remains_valid() {
+    validate_target_definition(TargetDefinition::new(parts()))
+        .expect("the reviewed contract validates unmutated");
 }

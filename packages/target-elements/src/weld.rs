@@ -38,7 +38,7 @@ use crate::definition::TargetDefinition;
 use crate::encoding::EncodingClass;
 use crate::error::TargetError;
 use crate::evidence::TargetEvidenceRequirementId;
-use crate::opcode::{FailureCause, FailureOutcome, OpcodeId, StackValueType};
+use crate::opcode::{FailureCause, FailureOutcome, OpcodeId, StackContract, StackValueType};
 use crate::operand::OperandContract;
 use crate::push::PushPayloadPredicate;
 use crate::resource::{ResourceBound, ResourceDimension};
@@ -59,6 +59,7 @@ pub fn validate_welds(definition: &TargetDefinition, errors: &mut Vec<TargetErro
     weld_issuance(definition, errors);
     weld_confidential(definition, errors);
     weld_resources(definition, errors);
+    weld_stack_growth(definition, errors);
     weld_evidence(definition, errors);
 }
 
@@ -672,6 +673,114 @@ fn weld_resources(definition: &TargetDefinition, errors: &mut Vec<TargetError>) 
     if disagrees {
         errors.push(TargetError::ResourceContractMismatch);
     }
+}
+
+/// Every primitive's declared stack growth must be the growth its own
+/// stack contract implies.
+///
+/// # Why the field needed a weld at all
+///
+/// [`OpcodeResourceCost::maximum_stack_growth`] is the one resource
+/// dimension a downstream stack scheduler reads directly, and until
+/// this weld it was compared against nothing: the resource weld reads
+/// the budget dimensions, and the success algebra states the depth
+/// arithmetic, but no check made the two say the same thing. A row
+/// transcribed from the wrong primitive would validate.
+///
+/// # The transient the surviving depth does not show
+///
+/// The obvious derivation — the greatest depth change over every
+/// surviving outcome — is wrong for two of the fifty-five primitives,
+/// and wrong in the direction that matters. The field is documented as
+/// the greatest increase *at any point during execution*, not the
+/// increase the primitive settles at, and the reviewed target reaches
+/// a deeper stack mid-primitive than it leaves behind.
+///
+/// The target implements a verifying signature primitive as its
+/// branching counterpart followed by an implicit verification: it pops
+/// the operands, pushes the truth value, and only then pops that value
+/// again, aborting instead if it was false. So a verifying form
+/// transiently occupies exactly its branching counterpart's depth, one
+/// item above where it settles, and a scheduler sizing the stack from
+/// the surviving figure alone would size it one too shallow.
+///
+/// That is a fact about the target, recorded with its source location
+/// in the tapscript reference. It is derived here from the verifying
+/// primitives the signature weld already distinguishes, rather than
+/// carried as a per-opcode number, because a per-opcode number is
+/// another transcription for a later weld to check.
+///
+/// [`OpcodeResourceCost::maximum_stack_growth`]:
+///     crate::opcode::OpcodeResourceCost::maximum_stack_growth
+fn weld_stack_growth(definition: &TargetDefinition, errors: &mut Vec<TargetError>) {
+    let mut disagrees = false;
+
+    for (id, spec) in definition.opcodes() {
+        if spec.resources().maximum_stack_growth() != derived_stack_growth(*id, spec.stack()) {
+            disagrees = true;
+        }
+        // No reviewed primitive touches the alternate stack. A nonzero
+        // row here is a claim no reviewed behavior supports.
+        if spec.resources().maximum_altstack_growth() != 0 {
+            disagrees = true;
+        }
+    }
+
+    if disagrees {
+        errors.push(TargetError::StackGrowthContractMismatch);
+    }
+}
+
+/// The greatest main-stack depth one primitive's contract can reach,
+/// relative to the depth it started at.
+///
+/// Aborting failures contribute nothing: evaluation ends, so there is
+/// no surviving depth for a later primitive to stand on. The two
+/// pushing failure outcomes do contribute, and they do not agree with
+/// each other — consuming the operands leaves a shallower stack than
+/// the successful path, retaining them leaves a deeper one — which is
+/// the reason the maximum is taken over outcomes rather than read off
+/// the successful form.
+pub(crate) fn derived_stack_growth(id: OpcodeId, stack: &StackContract) -> i64 {
+    let surviving = surviving_stack_growth(stack);
+    if VERIFYING_SIGNATURE_OPCODES.contains(&id) {
+        // The transient peak: the branching counterpart's depth, held
+        // until the implicit verification consumes the truth value.
+        surviving + 1
+    } else {
+        surviving
+    }
+}
+
+/// The greatest depth one primitive can *leave behind*, over every
+/// outcome a later primitive could stand on.
+///
+/// This is the whole derivation for fifty-three of the fifty-five
+/// reviewed primitives, and it is kept separate from the transient term
+/// so that the two verifying forms' extra item is visible as its own
+/// claim rather than folded into an arithmetic no test can point at.
+pub(crate) fn surviving_stack_growth(stack: &StackContract) -> i64 {
+    let declared_operands = i64::try_from(stack.operands().len()).unwrap_or(i64::MAX);
+
+    let surviving_failures =
+        stack
+            .failure()
+            .effects()
+            .iter()
+            .filter_map(|effect| match effect.outcome() {
+                FailureOutcome::AbortEvaluation => None,
+                FailureOutcome::ConsumeOperandsPushFalse => Some(1 - declared_operands),
+                FailureOutcome::RetainOperandsPushFalse => Some(1),
+            });
+
+    stack
+        .success()
+        .cases()
+        .iter()
+        .map(|case| case.effect().depth_change())
+        .chain(surviving_failures)
+        .max()
+        .unwrap_or(0)
 }
 
 /// Every subcontract that is not an opcode must name declared evidence.
