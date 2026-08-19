@@ -95,7 +95,7 @@ impl MutationOutcome {
 /// distinguishes them by [`MutationOutcome::establishes_fact`] rather
 /// than by reading a layer that would be a fiction.
 #[must_use]
-pub fn derive_refusal(
+pub const fn derive_refusal(
     target_layer: ObservedOutcomeLayer,
     closure: &ClosureFinding,
     preservation: &PreservationFinding,
@@ -111,8 +111,9 @@ pub fn derive_refusal(
         ObservedOutcomeLayer::ScriptPathRejection => Some(RefusalLayer::TargetSignature),
         // A transaction the target would not relay is not a refusal of
         // the claim, and is reported as its own thing rather than folded
-        // into either neighbour.
-        ObservedOutcomeLayer::RelayPolicyRejection => Some(RefusalLayer::TargetConsensus),
+        // into either neighbour: no row expects it, so it surfaces as a
+        // disagreement instead of passing as a consensus refusal.
+        ObservedOutcomeLayer::RelayPolicyRejection => Some(RefusalLayer::TargetRelayPolicy),
         ObservedOutcomeLayer::Accepted => {
             if closure.holds() && preservation.holds() {
                 Some(RefusalLayer::NotRefused)

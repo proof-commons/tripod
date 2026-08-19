@@ -63,6 +63,7 @@ target_elements_conformance_source_files = files(
   'src/tests/fixture_tests.rs',
   'src/tests/guide11_reproductions.rs',
   'src/tests/mod.rs',
+  'src/tests/normalization_matrix_tests.rs',
   'src/tests/protocol_tests.rs',
   'src/tests/provenance_tests.rs',
   'src/tests/prototype_program_tests.rs',

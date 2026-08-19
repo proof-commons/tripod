@@ -209,6 +209,16 @@ pub enum RefusalLayer {
     TargetConsensus,
     /// The target ran the signature check and it failed.
     TargetSignature,
+    /// The target would not relay it, though consensus would have it.
+    ///
+    /// No row expects this, and that is exactly why it exists. A
+    /// post-signing row is evidence about the signature only because the
+    /// target named a script failure; the same row refused for its fee
+    /// would be evidence about relay policy wearing a signature's name.
+    /// Folding this into [`Self::TargetConsensus`] would make that
+    /// substitution invisible, which is `G11-W7-06`'s mistake in a
+    /// smaller costume.
+    TargetRelayPolicy,
     /// The target accepted it, and the report layer refuses the claim.
     ReportLayer,
 }
@@ -217,7 +227,10 @@ impl RefusalLayer {
     /// Whether this refusal is one the target itself made.
     #[must_use]
     pub const fn is_target_verdict(&self) -> bool {
-        matches!(self, Self::TargetConsensus | Self::TargetSignature)
+        matches!(
+            self,
+            Self::TargetConsensus | Self::TargetSignature | Self::TargetRelayPolicy
+        )
     }
 }
 
@@ -227,6 +240,7 @@ impl std::fmt::Display for RefusalLayer {
             Self::NotRefused => "not refused",
             Self::TargetConsensus => "target consensus",
             Self::TargetSignature => "target signature",
+            Self::TargetRelayPolicy => "target relay policy",
             Self::ReportLayer => "report layer",
         };
         formatter.write_str(text)
@@ -236,7 +250,8 @@ impl std::fmt::Display for RefusalLayer {
 /// The sighash profile Guide 11 §10.3 requires of the authorization.
 ///
 /// Wave 5 reviewed the target's own digest and recorded which modes
-/// commit to what (`tab:elements-ref:ct-sighash`). Only the default and
+/// commit to what, in the reference's output-committing signature
+/// profile table. Only the default and
 /// all-outputs modes without anyone-can-pay commit every output, every
 /// output value commitment, every output script, and every output
 /// witness at once, which is what makes a post-signing edit detectable
@@ -519,14 +534,20 @@ pub fn closure_finding(claimed: &[ClaimedOutput], observed: &[ObservedOutput]) -
     let mut unclaimed = Vec::new();
     let mut missing = Vec::new();
     for (fingerprint, balance) in counts {
-        if balance < 0 {
-            for _ in 0..-balance {
-                unclaimed.push(fingerprint.clone());
+        match balance.cmp(&0) {
+            // The target carries it more often than the claim names it.
+            std::cmp::Ordering::Less => {
+                for _ in 0..-balance {
+                    unclaimed.push(fingerprint.clone());
+                }
             }
-        } else if balance > 0 {
-            for _ in 0..balance {
-                missing.push(fingerprint.clone());
+            // The claim names it more often than the target carries it.
+            std::cmp::Ordering::Greater => {
+                for _ in 0..balance {
+                    missing.push(fingerprint.clone());
+                }
             }
+            std::cmp::Ordering::Equal => {}
         }
     }
 
@@ -837,6 +858,7 @@ mod tests {
         assert!(!RefusalLayer::NotRefused.is_target_verdict());
         assert!(RefusalLayer::TargetConsensus.is_target_verdict());
         assert!(RefusalLayer::TargetSignature.is_target_verdict());
+        assert!(RefusalLayer::TargetRelayPolicy.is_target_verdict());
     }
 
     #[test]

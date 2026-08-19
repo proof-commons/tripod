@@ -293,6 +293,24 @@ pub fn candidate_dispositions() -> Vec<CandidateDisposition> {
                            change variant is the constructible one."
                         .to_owned(),
                 },
+                DispositionEvidence::Finding {
+                    id: "G11-W10-01".to_owned(),
+                    note: "The prototype is built and run: the unmutated claim is \
+                           accepted by a real node, and every input is authorized \
+                           by a taproot key-path signature carrying no sighash \
+                           byte, which is the default all-outputs \
+                           non-anyone-can-pay profile §10.3 requires."
+                        .to_owned(),
+                },
+                DispositionEvidence::Finding {
+                    id: "G11-W10-02".to_owned(),
+                    note: "All nine §10.4 mutations were executed against that \
+                           node and every one met the layer expected of it before \
+                           the run. Three are consensus-valid transactions the \
+                           report layer alone refuses, which is why the closure \
+                           check exists rather than being left to consensus."
+                        .to_owned(),
+                },
             ],
         },
         CandidateDisposition {

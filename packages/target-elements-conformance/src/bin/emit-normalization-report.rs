@@ -17,6 +17,7 @@
 
 use std::collections::BTreeMap;
 use std::io::{Read as _, Write as _};
+use std::process::ExitCode;
 
 use target_elements_conformance::conservation_report::ConservationReportRole;
 use target_elements_conformance::declassification::normalization_declassifications;
@@ -26,44 +27,65 @@ use target_elements_conformance::normalization::{
 use target_elements_conformance::normalization_report::{NormalizationReport, outcome_of};
 use target_elements_conformance::protocol::NativeNormalizationResponse;
 
-fn main() {
-    let mut arguments = std::env::args().skip(1);
-    let Some(path) = arguments.next() else {
-        eprintln!("usage: emit-normalization-report RUN-RECORD");
-        std::process::exit(2);
-    };
+fn main() -> ExitCode {
+    match run() {
+        Ok(rendered) => {
+            let mut out = std::io::stdout();
+            match out
+                .write_all(rendered.as_bytes())
+                .and_then(|()| out.write_all(b"\n"))
+            {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) => fail(&format!("stdout refused the report: {error}")),
+            }
+        }
+        Err(note) => fail(&note),
+    }
+}
+
+/// Writes one refusal and reports the failing status.
+///
+/// Written through a stderr handle rather than a printing macro, which
+/// this crate does not admit: a command's diagnostics are an ordinary
+/// write whose failure is ignorable, and a macro that panicked on a
+/// closed pipe would turn a reporting failure into a crash.
+fn fail(note: &str) -> ExitCode {
+    drop(writeln!(
+        std::io::stderr(),
+        "emit-normalization-report: {note}"
+    ));
+    ExitCode::FAILURE
+}
+
+fn run() -> Result<String, String> {
+    let path = std::env::args()
+        .nth(1)
+        .ok_or_else(|| "usage: emit-normalization-report RUN-RECORD".to_owned())?;
 
     let mut text = String::new();
     std::fs::File::open(&path)
         .and_then(|mut file| file.read_to_string(&mut text))
-        .unwrap_or_else(|error| {
-            eprintln!("the run record at {path} could not be read: {error}");
-            std::process::exit(1);
-        });
+        .map_err(|error| format!("the run record at {path} could not be read: {error}"))?;
 
-    let record: serde_json::Value = serde_json::from_str(&text).unwrap_or_else(|error| {
-        eprintln!("the run record is not JSON: {error}");
-        std::process::exit(1);
-    });
+    let record: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|error| format!("the run record is not JSON: {error}"))?;
 
     let responses: Vec<NativeNormalizationResponse> =
-        serde_json::from_value(record["responses"].clone()).unwrap_or_else(|error| {
-            eprintln!("the run record's responses are not this protocol's: {error}");
-            std::process::exit(1);
-        });
+        serde_json::from_value(record["responses"].clone()).map_err(|error| {
+            format!("the run record's responses are not this protocol's: {error}")
+        })?;
 
     // Indexed by the mutation each response answers, so a run that
     // answered rows out of order, or skipped one, is visible as a missing
     // row rather than as a silent misalignment with the matrix.
     let mut answered: BTreeMap<String, NativeNormalizationResponse> = BTreeMap::new();
     for response in responses {
-        response.validate_shape().unwrap_or_else(|defect| {
-            eprintln!(
+        response.validate_shape().map_err(|defect| {
+            format!(
                 "a response for {} contradicts itself: {defect:?}",
                 response.case.normalization
-            );
-            std::process::exit(1);
-        });
+            )
+        })?;
         answered.insert(response.case.normalization.clone(), response);
     }
 
@@ -71,10 +93,9 @@ fn main() {
     let mut profile = None;
     for row in canonical_mutation_matrix() {
         let spelling = wire_spelling(row.mutation);
-        let Some(response) = answered.get(&spelling) else {
-            eprintln!("the run answered no row for {spelling}");
-            std::process::exit(1);
-        };
+        let response = answered
+            .get(&spelling)
+            .ok_or_else(|| format!("the run answered no row for {spelling}"))?;
         let outcome = outcome_of(row.mutation, row.expected, response);
         // The profile the run observed, taken from the unmutated row: it
         // is the one row whose signature was never disturbed, so it is
@@ -102,19 +123,15 @@ fn main() {
         rows,
     };
 
-    let rendered = serde_json::to_string_pretty(&report).expect("the report serializes");
-    let mut out = std::io::stdout();
-    out.write_all(rendered.as_bytes())
-        .and_then(|()| out.write_all(b"\n"))
-        .expect("stdout accepts the report");
+    serde_json::to_string_pretty(&report)
+        .map_err(|error| format!("the report does not serialize: {error}"))
 }
 
 fn wire_spelling(mutation: NormalizationMutation) -> String {
     serde_json::to_value(mutation)
-        .expect("a mutation serializes")
-        .as_str()
-        .expect("a mutation is a string")
-        .to_owned()
+        .ok()
+        .and_then(|value| value.as_str().map(ToOwned::to_owned))
+        .unwrap_or_default()
 }
 
 fn string_at(record: &serde_json::Value, section: &str, field: &str) -> String {
