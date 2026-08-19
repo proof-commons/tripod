@@ -28,21 +28,18 @@ read every clause of that draft against the tree and found no
 implementation at all — correctly, because nothing here encodes CBOR or
 CDDL and the draft names no consumer.
 
-The edition in force is the author's fourth, supplied 2026-08-18. It
+The edition in force is the author's fourth, supplied 2026-08-18, which
 adds forward compatibility as a construction rather than a hope:
 ceiling-based acceptance over downward-closed holding, tolerant
 validation against the floor's open companion, and stamps naming a
 never-assigned coordinate rejected as checkably false claims. Within a
-held major no conforming document is ever rejected, and a major boundary
-is the only boundary that strands a reader.
+held major no conforming document is ever rejected.
 
-Adoption before a consumer is the point rather than a defect of timing.
-The draft fixes each of its conventions once for the whole system
-(`[PLAN-req:interchange:fixed-once]`), and a discipline settled only
-when the first document needs it is settled under that document's
-pressure. The user ruled on 2026-08-19 that the draft is adopted
-wholesale, takes priority, and that overlapping text is deleted rather
-than maintained beside it.
+The user ruled on 2026-08-19 that the draft is adopted wholesale, takes
+priority, and that overlapping text is deleted rather than maintained
+beside it. Adopting it before a consumer is the point rather than a
+defect of timing: the draft fixes each convention once for the whole
+system (`[PLAN-req:interchange:fixed-once]`).
 
 ---
 
@@ -100,11 +97,10 @@ a document: it has exactly one reader, fixed at invocation; it carries no
 namespace label and no version triple; it is dispatched by nothing,
 because the caller already knows what it asked for; and it is not
 archived, so nothing later validates it against a theory assigned today.
-A document is the converse in every one of those respects, which is what
-the envelope and the registry exist to serve. Neither record amends the
-other, and neither is read onto the other's surface. A surface that ever
-falls under both is adjudicated at that moment and recorded, never
-assumed into one of them.
+A document is the converse in each respect, which is what the envelope
+and the registry exist to serve. Neither record amends the other or is
+read onto the other's surface, and a surface that ever falls under both
+is adjudicated at that moment, never assumed into one of them.
 
 ---
 
@@ -117,21 +113,21 @@ it.
 
 The reasoning is the stop record DI-004 wrote at section 3.10 of
 [the identity register](../plans/registers/identities.md), restated here
-as this record's own because the register's subject was a digest and this
-record's is the wire format. A digest or signature over the protocol's
-frames was proposed; no consumer's decision would change, because the
-protocol is a line-delimited JSON pipe between two first-party processes
-in one repository, with no archive, no third-party reader and no version
-negotiation, and ADR-010 owns its shape. The revisit condition is the
-register's and is unchanged: a frame stream that becomes archived, read
-by a third party, or consumed by a release as evidence stops satisfying
-the branch, and is then walked again — at which point it has become an
-externally consumed document and this record, not the exclusion, applies
-to it.
+as this record's own because the register's subject was a digest and
+this record's is the wire format. A digest or signature over the
+protocol's frames was proposed; no consumer's decision would change,
+because the protocol is a line-delimited JSON pipe between two
+first-party processes in one repository, with no archive, no
+third-party reader and no version negotiation, and ADR-010 owns its
+shape. The revisit condition is the register's and is unchanged: a frame
+stream that becomes archived, read by a third party, or consumed by a
+release as evidence stops satisfying the branch and is walked again — at
+which point it has become an externally consumed document, and this
+record rather than the exclusion applies to it.
 
-The protocol's revision counter is internal versioning of that pipe. It
-is not a version in the adopted sense (`[PLAN-def:interchange:versions]`)
-and claims none of that definition's consequences.
+The protocol's revision counter versions that pipe internally. It is not
+a version in the adopted sense (`[PLAN-def:interchange:versions]`) and
+claims none of that definition's consequences.
 
 ---
 
@@ -150,7 +146,7 @@ as the draft itself disclaims: only the word is shared. This corpus
 records that it means the disclaimer. A namespace label never names a
 documentation environment, no documentation label is ever an envelope
 value, and neither grammar constrains the other — the label checker has
-no jurisdiction over a namespace label, and the namespace registry would
+no jurisdiction over a namespace label, and a namespace registry would
 have none over a mint.
 
 **Identity.** Byte equality of canonical names
@@ -160,8 +156,8 @@ identity and this adoption admits none. A digest over an interchange
 document is an identity question, owned by the procedure adopted at
 (`[ADR021-dec:identity:adoption]`) and constructed under
 (`[ADR021-rule:identity:recipes]`). The first such document proposing a
-digest walks the adjudication and takes an admission record in the
-identity register, exactly as any other proposal does.
+digest walks that adjudication and takes an admission record in the
+identity register, as any other proposal does.
 
 ---
 
@@ -176,18 +172,18 @@ nothing, there being no assignment to allocate, consolidate or preserve
 meaning across.
 
 What adoption buys before that day is that the first such document
-arrives at a settled discipline instead of inventing one: the envelope,
-the version triple, the acceptance rule and the additive minor regime are
-already fixed, so the open question at that moment is the document's
-content alone.
+arrives at a settled discipline instead of inventing one under its own
+pressure: the envelope, the version triple, the acceptance rule and the
+additive minor regime are already fixed, so the open question at that
+moment is the document's content alone.
 
 The expected first consumer class is the externally consumed artifacts of
 the compact-attestation era that begins at Guide 12 — attestation-shaped
 documents leaving this repository for a reader that is not this
-workspace. Naming the class charters nothing. No such artifact is
-specified, scheduled, or required by this record; the first one actually
-proposed carries the registry, allocation and encoder work with it, and
-that work is chartered there, not here.
+workspace. Naming the class charters nothing: no such artifact is
+specified, scheduled, or required by this record, and the first one
+actually proposed carries the registry, allocation and encoder work with
+it, chartered there rather than here.
 
 ---
 
