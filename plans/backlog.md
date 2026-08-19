@@ -1075,35 +1075,66 @@ whose identifiers are the Guide-11 preflight identifiers `G11-R01` through
 The Guide-11 preflight waves own the register; the summaries below are the
 required dispositions recorded in that guide's own preflight table.
 
-Every row is QUEUED. The review basis is the archived review's own tree, not the working
-tree: under the guide's own rule each finding is a hypothesis until it is
-reproduced against the working tree, and is then either fixed, disproved
-with a typed argument, or reclassified with a narrower assurance claim.
+The review basis is the archived review's own tree, not the working tree: under the
+guide's own rule each finding is a hypothesis until it is reproduced
+against the working tree, and is then either fixed, disproved with a
+typed argument, or reclassified with a narrower assurance claim. The
+Wave-0 column records that adjudication; every row stays TODO because
+Wave 0 repaired nothing.
 
-| ID | Priority | Status | Finding |
-|---|---:|---|---|
-| `G11-R01` | P0 | TODO | A transcript can be rebound to another fixture census, prototype matrix, target, or deployment binding; bind the transcript to its exact subjects and requests. |
-| `G11-R02` | P0 | TODO | Primitive claims can be manufactured by attaching claim-bearing case metadata to an unrelated script; gate only a canonical validated primitive plan. |
-| `G11-R03` | P0 | TODO | Prototype claims are caller-authored and can certify a trivial true script as constructor or wide-floor evidence; gate only relation-specific canonical matrices. |
-| `G11-R04` | P1 | TODO | Consensus resource cases are credited to policy-resource evidence because evidence ownership derives from case ID without the enforcement layer; derive evidence from the complete fixture and correct the plan class. |
-| `G11-R05` | P1 | TODO | The primitive native gate can accept a report whose summary is failed; gate every canonical case and reject failed completeness. |
-| `G11-R06` | P1 | TODO | ADR-018 execution provenance is recorded but not enforced by evidence gates; validate executable provenance before gate eligibility. |
-| `G11-R07` | P1 | TODO | Meson defaults an executor to reviewed-non-mock; require explicit caller selection and fail closed. |
-| `G11-R08` | P1/P2 | TODO | Relation bodies can admit several semantic relation subjects; derive exactly one canonical subject from each body. |
-| `G11-R09` | P1/P2 | TODO | Target V1 is advertised as supported while current validation applies the V2 census and algebra; remove V1 support or implement genuine version dispatch. |
-| `G11-R10` | P1/P2 | TODO | The signature weld omits unknown-key behavior and much of the success algebra; weld the complete signature relation. |
-| `G11-R11` | P2 | TODO | Bare prototype report digests persist despite the recorded no-report-identity decision; remove them or admit typed retained report references. |
-| `G11-R12` | P2 | TODO | Current backlog state contradicts recorded Guide-8 through Guide-10 completion and duplicates finding IDs; reconcile current state and enforce unique IDs. |
-| `G11-R13` | P2/P3 | TODO | Process-group establishment failure can leave the direct child unreaped; kill and reap on every pre-supervisor failure. |
-| `G11-R14` | P3 | TODO | Constructor retry retries internal-key defects no metadata nonce can repair; share a typed retryability predicate. |
-| `G11-H01` | Hardening | TODO | Opcode resource stack-growth rows are not generically welded to success and non-aborting failure effects; derive and compare exact maximum stack growth. |
-| `G11-H02` | Future blocker | TODO | Issuance observations carry authority fields the realization evaluator does not yet enforce; add no issuance realization scope until enforced or externally evidenced. |
+| ID | Priority | Status | Wave 0 | Finding |
+|---|---:|---|---|---|
+| `G11-R01` | P0 | TODO | CONFIRMED | A transcript can be rebound to another fixture census, prototype matrix, target, or deployment binding; bind the transcript to its exact subjects and requests. |
+| `G11-R02` | P0 | TODO | CONFIRMED | Primitive claims can be manufactured by attaching claim-bearing case metadata to an unrelated script; gate only a canonical validated primitive plan. |
+| `G11-R03` | P0 | TODO | CONFIRMED | Prototype claims are caller-authored and can certify a trivial true script as constructor or wide-floor evidence; gate only relation-specific canonical matrices. |
+| `G11-R04` | P1 | TODO | CONFIRMED | Consensus resource cases are credited to policy-resource evidence because evidence ownership derives from case ID without the enforcement layer; derive evidence from the complete fixture and correct the plan class. |
+| `G11-R05` | P1 | TODO | CONFIRMED | The primitive native gate can accept a report whose summary is failed; gate every canonical case and reject failed completeness. |
+| `G11-R06` | P1 | TODO | CONFIRMED | ADR-018 execution provenance is recorded but not enforced by evidence gates; validate executable provenance before gate eligibility. |
+| `G11-R07` | P1 | TODO | CONFIRMED | Meson defaults an executor to reviewed-non-mock; require explicit caller selection and fail closed. |
+| `G11-R08` | P1/P2 | TODO | CONFIRMED | Relation bodies can admit several semantic relation subjects; derive exactly one canonical subject from each body. |
+| `G11-R09` | P1/P2 | TODO | CONFIRMED | Target V1 is advertised as supported while current validation applies the V2 census and algebra; remove V1 support or implement genuine version dispatch. |
+| `G11-R10` | P1/P2 | TODO | CONFIRMED | The signature weld omits unknown-key behavior and much of the success algebra; weld the complete signature relation. |
+| `G11-R11` | P2 | TODO | CONFIRMED | Bare prototype report digests persist despite the recorded no-report-identity decision; remove them or admit typed retained report references. |
+| `G11-R12` | P2 | TODO | RECLASSIFIED | Current backlog state contradicts recorded Guide-8 through Guide-10 completion and duplicates finding IDs; reconcile current state and enforce unique IDs. |
+| `G11-R13` | P2/P3 | TODO | CONFIRMED | Process-group establishment failure can leave the direct child unreaped; kill and reap on every pre-supervisor failure. |
+| `G11-R14` | P3 | TODO | CONFIRMED | Constructor retry retries internal-key defects no metadata nonce can repair; share a typed retryability predicate. |
+| `G11-H01` | Hardening | TODO | CONFIRMED | Opcode resource stack-growth rows are not generically welded to success and non-aborting failure effects; derive and compare exact maximum stack growth. |
+| `G11-H02` | Future blocker | TODO | CONFIRMED | Issuance observations carry authority fields the realization evaluator does not yet enforce; add no issuance realization scope until enforced or externally evidenced. |
 
 No public-declassification prototype begins while `G11-R01` through
 `G11-R10` remain open. `G11-R12` owns the full reconciliation of this
 backlog's current state against the recorded Guide-8 through Guide-10
 completions; that reconciliation is deliberately not performed by the
 chartering import that opened this register.
+
+Wave-0 evidence, one pointer per row. The Rust pointers name the
+crate-internal `guide11_reproductions` suites, which pass by asserting the
+defective behaviour and which the repairing waves invert.
+
+```text
+G11-R01  conformance g11_r01_a_transcript_rebinds_to_a_deployment_it_never_ran_on
+G11-R02  conformance g11_r02_a_trivial_true_script_bears_signature_claims
+G11-R03  conformance g11_r03_a_trivial_leaf_certifies_the_whole_wide_floor_relation
+G11-R04  conformance g11_r04_consensus_resource_cases_pass_the_policy_resource_row
+G11-R05  conformance g11_r05_the_gate_accepts_a_failed_report
+G11-R06  conformance g11_r06_the_gate_accepts_a_run_with_no_workspace_provenance
+G11-R07  meson.options target_native_executor_class, value reviewed-non-mock
+G11-R08  realization g11_r08_one_closure_body_admits_two_subjects
+G11-R09  target-elements g11_r09_a_v2_body_stamped_v1_validates
+G11-R10  target-elements g11_r10_a_contradictory_unknown_key_rule_still_validates
+G11-R11  plans/research/state-constructor.md and wide-arithmetic.md, report digest rows
+G11-R12  duplicate DI-F02 rows, DI-F03 active under a DONE parent, and section 3.3
+         still listing both accepted prototypes as not implemented; the opening
+         condition line is already reconciled, so the finding narrows to those three
+G11-R13  executor.rs ExecutorSupervisor::adopt takes the child by value and drops it
+         on the establish failure path, and the standard child destructor neither
+         kills nor waits
+G11-R14  conformance g11_r14_an_invalid_internal_key_is_retried_to_exhaustion
+G11-H01  no weld reads OpcodeResourceCost::maximum_stack_growth at all, the timelock
+         weld included, so the field is welded to nothing
+G11-H02  ObservedIssuance::authority is never read in realization, and authority_input
+         only for referential existence in observation.rs
+```
 
 ### T6 — Validate capabilities for external-evidence obligations · `task:review:external-evidence-capability`
 

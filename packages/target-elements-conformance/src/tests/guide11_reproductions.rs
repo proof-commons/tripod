@@ -705,7 +705,7 @@ fn g11_r03_a_trivial_leaf_certifies_the_whole_wide_floor_relation() {
     };
     let forgery = CompoundPrototypeFixture {
         case: case.clone(),
-        claims: claims.clone(),
+        claims,
         target_contract_version: target.definition().version().get(),
         script,
         initial_stack: Vec::new(),
