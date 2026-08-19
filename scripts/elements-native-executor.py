@@ -424,6 +424,19 @@ MEDIAN_TIME_BLOCKS = 11
 # adapter creates spendable by the adapter and by nobody who cares.
 MINING_DESCRIPTOR = "raw(%s)" % ANYONE_CAN_SPEND_HEX
 
+# Every defect this adapter implements. A row naming anything else is
+# refused rather than run undamaged.
+KNOWN_CONSERVATION_DEFECTS = (
+    "none",
+    "one_unit_imbalance",
+    "wrong_blinder_sum",
+    "malformed_range_proof",
+    "malformed_surjection_proof",
+    "wrong_explicit_asset",
+    "copied_commitment_from_other_asset",
+    "hidden_confidential_output",
+)
+
 # An asset identifier the disposable chain never issued, used by the
 # wrong-asset conservation row. A transaction paying it is constructible
 # and cannot balance, which is exactly what that row states.
@@ -2103,6 +2116,16 @@ class ConservationExecutor:
         inputs = subject["inputs"]
         outputs = subject["outputs"]
         defect = subject["defect"]
+        # Fail closed. A defect name this adapter does not implement used
+        # to fall through every branch and produce an undamaged
+        # transaction, which the target then accepted -- and the row was
+        # recorded as the target accepting a broken proof. One misspelled
+        # constant was all it took, so an unknown defect is now refused by
+        # name rather than silently skipped.
+        if defect not in KNOWN_CONSERVATION_DEFECTS:
+            raise ConstructionError(
+                "this adapter does not implement the defect %r" % defect
+            )
 
         # The coins the row consumes. A confidential input is a blinded
         # coin whose blinders the wallet reports; an explicit one is not
@@ -2217,7 +2240,7 @@ class ConservationExecutor:
                 % one_line(json.dumps(signed.get("errors", [])))[:200]
             )
 
-        if defect in ("malformed_rangeproof", "malformed_surjection_proof"):
+        if defect in ("malformed_range_proof", "malformed_surjection_proof"):
             raw = self.corrupt_proof(raw, defect)
         if defect == "copied_commitment_from_other_asset":
             raw = self.copy_commitment(raw)
@@ -2235,26 +2258,54 @@ class ConservationExecutor:
     # -- deliberate defects -----------------------------------------------
 
     def corrupt_proof(self, raw: str, defect: str) -> str:
-        """Flips one bit of the first proof of the named kind."""
+        """Flips one bit of the first proof of the named kind.
+
+        The result is checked to actually differ from what went in. A
+        mutation that a serialization round trip quietly discards would
+        leave a perfectly valid transaction wearing a malformed row's
+        name, and the target accepting it would be recorded as the target
+        accepting a broken proof -- a false and alarming claim produced
+        entirely by this adapter.
+        """
         transaction = self.deserialize(raw)
-        for witness in transaction.wit.vtxoutwit:
+        # The round trip itself must be faithful before any mutation is
+        # read into it.
+        if transaction.serialize().hex() != raw:
+            raise ConstructionError(
+                "this adapter's transaction round trip is not byte-faithful, so a "
+                "corrupted proof cannot be attributed to the target"
+            )
+        # Every proof of the kind, not just the first. A transaction may
+        # carry several, and corrupting one of them leaves the rest
+        # verifying -- which is a weaker case than the row states and, if
+        # the target accepts it, an acceptance the row cannot explain.
+        corrupted_indices = []
+        for index, witness in enumerate(transaction.wit.vtxoutwit):
             field = (
                 witness.vchRangeproof
-                if defect == "malformed_rangeproof"
+                if defect == "malformed_range_proof"
                 else witness.vchSurjectionproof
             )
             if len(field) == 0:
                 continue
             mutated = bytearray(bytes(field))
             mutated[len(mutated) // 2] ^= 0x01
-            if defect == "malformed_rangeproof":
+            if defect == "malformed_range_proof":
                 witness.vchRangeproof = bytes(mutated)
             else:
                 witness.vchSurjectionproof = bytes(mutated)
-            return transaction.serialize().hex()
-        raise ConstructionError(
-            "the materialized transaction carries no %s to corrupt" % defect
-        )
+            corrupted_indices.append(index)
+        if not corrupted_indices:
+            raise ConstructionError(
+                "the materialized transaction carries no %s to corrupt" % defect
+            )
+        corrupted = transaction.serialize().hex()
+        if corrupted == raw:
+            raise ConstructionError(
+                "the %s mutation did not survive serialization" % defect
+            )
+        log("corrupted %s on outputs %s" % (defect, corrupted_indices))
+        return corrupted
 
     def copy_commitment(self, raw: str) -> str:
         """Replaces one output's value commitment with another output's.
