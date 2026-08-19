@@ -551,6 +551,44 @@ pub fn canonical_conservation_matrix() -> Vec<ConservationRow> {
     ]
 }
 
+/// Exactly what an executor is asked to materialize and judge.
+///
+/// # The answer stays with the harness
+///
+/// The subject carries the transaction to build and the defect to
+/// introduce. It does not carry [`ConservationRow::expected_layer`], and
+/// it never will: under protocol revision 3 a request carries the
+/// execution subject alone, so there is no expectation for an executor to
+/// consult, echo, or drift toward
+/// `(´[PLAN-rule:guide11-exec:request-subject]´)`.
+///
+/// This matters more here than for a primitive case. A conservation row's
+/// whole content is *where* the target refused, and an adapter that knew
+/// which layer was wanted could report that layer for a transaction that
+/// never reached it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConservationSubject {
+    /// What the transaction consumes.
+    pub inputs: Vec<TestAmount>,
+    /// What the transaction creates, fee aside.
+    pub outputs: Vec<TestAmount>,
+    /// The deliberate defect to introduce.
+    pub defect: ConservationDefect,
+}
+
+impl ConservationRow {
+    /// The part of this row an executor is allowed to see.
+    #[must_use]
+    pub fn subject(&self) -> ConservationSubject {
+        ConservationSubject {
+            inputs: self.inputs.clone(),
+            outputs: self.outputs.clone(),
+            defect: self.defect,
+        }
+    }
+}
+
 /// Names one row.
 fn row(ordinal: u32, name: &str) -> ConservationRowId {
     ConservationRowId {
