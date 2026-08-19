@@ -3247,15 +3247,37 @@ class LifecycleExecutor:
         A stale record manufactured after the boundary would be a
         different row wearing this one's name.
         """
-        # Paid to a CONFIDENTIAL address, so the transaction goes through
-        # blinding on its way to the signer. That is not a preference
-        # about where the money lands -- this output is never read again
-        # -- it is the path the normalization row already proves the
-        # wallet signs correctly, and a fully explicit transaction on
-        # this target reaches the signer with its output witness
-        # structures unpopulated and produces a complete signature that
-        # no block will take.
-        destination = self.conservation.address(True, NORMALIZATION_ADDRESS_TYPE)
+        # TWO confidential outputs, and the count is the whole point.
+        #
+        # This target's taproot digest commits the transaction's OUTPUT
+        # WITNESS vector, and it hashes that vector at whatever length it
+        # happens to have rather than at one entry per output. A
+        # transaction that carries no witness at all therefore hashes its
+        # output witnesses as the empty string while signing, and the
+        # same bytes on the wire hash one empty witness per output --
+        # because serialization grows the vector to match the outputs on
+        # the way out and deserialization grows it again on the way in.
+        # The wallet signs the first digest, consensus checks the second,
+        # and the spend is refused as an invalid Schnorr signature after
+        # the wallet has already reported the signing complete.
+        #
+        # So this spend has to reach the signer already carrying output
+        # witnesses, which means it has to be genuinely blinded. One
+        # confidential output is not enough to do that: with an explicit
+        # input there is no input blinding factor to balance against, so
+        # a lone blinded output would need a zero blinder, and the node
+        # declines to blind at all. It declines QUIETLY -- the blinding
+        # RPC's ignore-failure behaviour is on by default -- and hands
+        # back a transaction that is still fully explicit, which is how
+        # an earlier revision of this method paid to a confidential
+        # address and still produced an unsignable spend.
+        #
+        # Two confidential outputs give the blinder sum something to
+        # close against. Neither output is ever read again; what the row
+        # needs from them is only that the transaction the wallet signs
+        # is the transaction consensus verifies.
+        first = self.conservation.address(True, NORMALIZATION_ADDRESS_TYPE)
+        second = self.conservation.address(True, NORMALIZATION_ADDRESS_TYPE)
         fee = NORMALIZATION_FEE_SATOSHIS
         # Built by the node rather than by hand. Everything else in this
         # adapter constructs its own bytes on purpose -- a fixture states
@@ -3272,20 +3294,15 @@ class LifecycleExecutor:
             # units, and routing it through a float to get there is how a
             # transaction ends up off by a satoshi that nothing in the
             # code says it should be off by.
-            '[{"%s":%s},{"fee":%s}]'
+            '[{"%s":%s},{"%s":%s},{"fee":%s}]'
             % (
-                destination,
-                satoshis_to_amount(amount - fee),
+                first,
+                satoshis_to_amount(amount - fee - (amount - fee) // 2),
+                second,
+                satoshis_to_amount((amount - fee) // 2),
                 satoshis_to_amount(fee),
             ),
         )
-        # The spent output is stated rather than left to be looked up.
-        # A taproot signature commits to the value and the program of
-        # what it spends, and this interface documents the amount as
-        # REQUIRED for a non-confidential segwit output; a lookup that
-        # silently supplied a different one produces a complete
-        # signature that no block will take, which is what the first
-        # revision of this method observed.
         # Unlocked again, because this row exists to spend it. The lock
         # is against accidental consumption by coin selection, not
         # against the owner deciding to spend the object on purpose.
@@ -3300,9 +3317,28 @@ class LifecycleExecutor:
                 "the object this row means to supersede is not in the "
                 "unspent-output set"
             )
+        # Blinding is asked for LOUDLY. The default is to hand back an
+        # unblinded transaction when the blinding cannot be balanced,
+        # which is silent, and a silent one is what produced a complete
+        # signature no block would take. Refusing here means a future
+        # change to this transaction's shape fails as a blinding error
+        # naming its own cause rather than as an invalid signature three
+        # steps later.
         blinded = self.node.call(
-            "blindrawtransaction", unsigned, wallet=self.conservation.WALLET
+            "blindrawtransaction", unsigned, "false",
+            wallet=self.conservation.WALLET,
         )
+        # And checked, rather than trusted. The RPC could report success
+        # while leaving the outputs explicit, and the whole reason this
+        # spend is blinded at all is that the digest the wallet signs
+        # depends on the output witnesses being there.
+        decoded = self.node.call("decoderawtransaction", blinded)
+        if not any(output.get("valuecommitment") for output in decoded["vout"]):
+            raise ConstructionError(
+                "the node reported a blinded transaction whose outputs are all "
+                "explicit, so the spend would reach the signer with no output "
+                "witnesses and produce a signature consensus refuses"
+            )
         signed = self.node.call(
             "signrawtransactionwithwallet",
             blinded,
