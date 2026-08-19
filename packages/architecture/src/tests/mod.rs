@@ -34,6 +34,7 @@ fn validated(architecture: &Architecture) -> ValidatedDraftArchitecture<'_> {
 mod conformance_tests;
 mod deployment_tests;
 mod export_hash_tests;
+mod guide12_reproductions;
 mod mutation_tests;
 mod validation_tests;
 mod versioning_gate_tests;

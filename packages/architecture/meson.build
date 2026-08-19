@@ -12,6 +12,7 @@ architecture_source_files = files(
   'src/tests/conformance_tests.rs',
   'src/tests/deployment_tests.rs',
   'src/tests/export_hash_tests.rs',
+  'src/tests/guide12_reproductions.rs',
   'src/tests/mod.rs',
   'src/tests/mutation_tests.rs',
   'src/tests/validation_tests.rs',

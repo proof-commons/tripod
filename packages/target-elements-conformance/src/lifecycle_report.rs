@@ -511,6 +511,71 @@ mod tests {
         assert!(document.matrix_is_complete());
     }
 
+    /// `G12-R06`: completeness is decided by the first pass alone.
+    ///
+    /// A Guide-12 preflight reproduction. It asserts the current
+    /// behaviour, not the wanted one, and the wave that repairs the row
+    /// flips it.
+    ///
+    /// The check reads `passes.first()` and asks, for each expectation,
+    /// whether *some* row of that pass names it. Two consequences
+    /// follow, and both are shown here: a later pass may answer fewer
+    /// rows than the matrix states and the report still calls the matrix
+    /// complete, and a pass may answer one row twice and nothing
+    /// notices, because presence is asked and census equality is not.
+    ///
+    /// The emitting binary gates on `boundary_holds` and
+    /// `matrix_is_complete` and never calls `passes_agree`, so the
+    /// disagreement these passes would show is not consulted; and
+    /// `passes_ran_in_distinct_processes` is satisfied by a single pass,
+    /// so nothing requires the two complete distinct-process passes the
+    /// cache-independence claim rests on.
+    #[test]
+    fn matrix_completeness_reads_only_the_first_pass() {
+        let mut complete = report(vec![pass(1, 1, LifecycleOutcome::Verified)]);
+        for expectation in canonical_lifecycle_matrix() {
+            if expectation.row == LifecycleRow::Accepted {
+                continue;
+            }
+            complete.unbuilt_rows.push(UnbuiltRow {
+                row: expectation.row,
+                reason: "not run in this fixture".to_owned(),
+            });
+        }
+        assert!(complete.matrix_is_complete());
+
+        // A second pass that answered nothing at all. The census the
+        // first pass carried is never asked of it.
+        let mut later_pass_is_empty = complete.clone();
+        later_pass_is_empty.passes.push(ReadingPass {
+            attempt: 2,
+            pid: 2,
+            wallet_name: "b2".to_owned(),
+            rows: Vec::new(),
+        });
+        assert!(
+            later_pass_is_empty.matrix_is_complete(),
+            "G12-R06: a later pass is expected to go unchecked while the row is open",
+        );
+        assert!(later_pass_is_empty.boundary_holds());
+
+        // The first pass answering one row twice. Presence holds, so the
+        // duplicate is invisible to the completeness check.
+        let mut duplicated = complete.clone();
+        let repeated = duplicated.passes[0].rows[0].clone();
+        duplicated.passes[0].rows.push(repeated);
+        assert_eq!(duplicated.passes[0].rows.len(), 2);
+        assert!(
+            duplicated.matrix_is_complete(),
+            "G12-R06: a duplicated row is expected to go unchecked while the row is open",
+        );
+
+        // And one pass alone satisfies the process boundary, so nothing
+        // asks for the second complete pass at all.
+        assert!(complete.passes_ran_in_distinct_processes());
+        assert!(!complete.passes_agree());
+    }
+
     #[test]
     fn the_role_admits_no_canonical_claim() {
         assert_eq!(report(Vec::new()).role, LifecycleReportRole::Experimental);
