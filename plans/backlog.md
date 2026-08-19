@@ -1400,7 +1400,38 @@ passed.
 
 | ID | Priority | Status | Item |
 |---|---:|---|---|
-| `G11-O04` | OPTIONAL | OPEN | The oracle derives only the unblinded asset generator. The reviewed recipe also has a blinded form, which prepends a scalar multiple of the base point and is used to check that a reissuance input carries its blinded token. No present consumer needs it, and a wave that reaches reissuance should add it with its own published-vector check rather than by analogy. |
+| `G11-O04` | OPTIONAL | DONE | The oracle derives only the unblinded asset generator. The reviewed recipe also has a blinded form, which prepends a scalar multiple of the base point and is used to check that a reissuance input carries its blinded token. No present consumer needs it, and a wave that reaches reissuance should add it with its own published-vector check rather than by analogy. **Closed by Wave 7, and not by reissuance.** The §8.4 conservation matrix needed it for an ordinary reason the row did not anticipate: every balanced confidential output has a *blinded* asset, so the unblinded generator predicts nothing for exactly the rows the §7.4 comparison matters most for. The check is not by analogy and not a published vector either — it is three commitments observed on a real node, which the oracle reproduces exactly (`G11-W7-04`). |
+
+### Wave 7 — CT fixtures and the conservation matrix · `task:guide11:conservation`
+
+**Priority:** P1
+**Status:** DONE
+
+The §8 fixture language, a generic confidential-transaction
+materializer, and the §8.4 matrix run against a real node. The report
+role is **experimental** and the type has one variant: §8 establishes the
+CT substrate and the consensus facts, and nothing about a candidate, an
+opening prototype, or a normalization policy. A canonical role belongs to
+whichever wave earns it.
+
+**The matrix's discriminating power is the layer, not the class.** This
+target answers every CT conservation failure with one consensus code, so
+§8.3's six layers are what a row can actually distinguish.
+
+| ID | Priority | Status | Finding |
+|---|---:|---|---|
+| `G11-W7-01` | P1 | DONE | **Byte-level determinism is not achievable through this materializer, and §8.2 is met one level down.** Confidential value on this target can only be produced by the node: the upstream Python framework carries no Pedersen commitment, range proof, or surjection proof. `BlindTransaction` draws every output blinding factor from `GetStrongRandBytes` and generates a fresh ephemeral nonce key, and no RPC on the path takes a seed — `rawblindrawtransaction` included. Established by reading the source and by blinding one identical raw transaction twice and comparing. So the fixture's own inputs are fully determined and reproducible, the transaction bytes are recorded per run, and the level is typed as `FixtureInputsOnly` so a later materializer that can seed its blinding reports a different value rather than quietly improving. |
+| `G11-W7-02` | P1 | DONE | **Ten of eleven executed rows agree with expectations written before the target was asked.** Rows 1, 2, 4 accept; 6, 7, 8, 9, 10, 11 are consensus rejections before script; 12 accepts. The one row that reached no verdict is `G11-W7-03`. |
+| `G11-W7-03` | P1 | DONE | **Several confidential inputs to a single explicit output is not constructible**, which is the exact evidence §10.2 said it required and refused to take from algebra. The node answers "Add another output to blind in order to complete the blinding": residual blinding has nowhere to go without a blinded output to absorb it. Recorded as a fixture-construction failure, which establishes no target verdict — the target was never asked — and is a finding about the candidate rather than a defect of the row. |
+| `G11-W7-04` | P1 | DONE | **The §7.4 third leg lands.** The oracle predicts, and the target produces, the same commitment bytes for three observed openings. Both the asset identifier and the blinding factors are printed reversed from the order the arithmetic reads them; the convention was settled by trying all four combinations against a real observation, and only one reproduces the target's commitment. The construction-library leg stays absent and is reported as absent: the node built these transactions, no third-party library did. |
+| `G11-W7-05` | P1 | DONE | **Consensus does not police a hidden confidential output.** §8.4 states the row as "closure reject *where claimed*", and the conditional is load-bearing: a hidden output makes the commitments balance, so conservation is satisfied and consensus has nothing to refuse. The row expects acceptance and names the obligation — any candidate claiming disclosure-completeness has to police it itself. Writing it as a consensus rejection would have failed the run against an expectation the target never owed. |
+| `G11-W7-06` | P1 | DONE | **Block validation cannot be read for the layer.** Amount checks run in the same check queue as script checks, so a malformed range proof, a broken surjection proof, and a one-unit imbalance all reach the block layer as `mandatory-script-verify-flag-failed (unknown error)`. Classifying on that string attributes a conservation failure to an opening script that never ran, which is the exact misattribution §8.3 exists to prevent and which the first revision of the adapter's `judge` committed. The mempool names these precisely, so the mempool reason decides the layer and the block only separates unrelayable from consensus-invalid. |
+| `G11-W7-07` | P2 | DONE | **Four adapter faults produced false target facts before they were caught**, all in the first run and all recorded here because each is a way a harness manufactures evidence. `getnewaddress` returns a blinded address by default, so every row that said it was explicit was confidential end to end and nothing in the result said so. The wallet's coin selection spent a row's own freshly created coin while funding the next, and `bad-txns-inputs-missingorspent` was recorded as a conservation verdict. A partially signed transaction was judged as if it were the row. And `MalformedRangeProof` serializes as `malformed_range_proof` while the adapter compared against `malformed_rangeproof`, so the branch never fired, the transaction ran undamaged, and *the target accepting a valid transaction was recorded as the target accepting a malformed range proof*. An unknown defect is now refused by name rather than falling through every branch. |
+
+| ID | Priority | Status | Item |
+|---|---:|---|---|
+| `G11-W7-08` | P2 | OPEN | The conservation lane runs through `run-conservation-matrix.py`, which records and does not gate. The typed report exists and is tested; what is not yet built is the Rust executor driver, the gate, the published report asset, and the Meson target that would make this lane refusable in CI the way the primitive and prototype lanes are. Until then a conservation run is evidence a reader consults, not a gate a build enforces. |
+| `G11-W7-09` | OPTIONAL | OPEN | Both public-committed rows of §8.4 remain deferred against `G11-C03`'s blockers. One of the two is executed in its explicit form (`G11-W7-03`); the public-committed form of both awaits a selected candidate. |
 
 ### T6 — Validate capabilities for external-evidence obligations · `task:review:external-evidence-capability`
 
