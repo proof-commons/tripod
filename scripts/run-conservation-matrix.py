@@ -134,6 +134,10 @@ def main(argv):
                 bytes(value).hex()
                 for value in response.get("observed_asset_commitments", [])
             ],
+            # The openings the target reported for what it created. These
+            # are what the commitment oracle predicts from; without them
+            # the three-way comparison has nothing to meet at.
+            "observed_openings": response.get("observed_openings", []),
         })
         print("  %-2d %-42s %-34s %s"
               % (row["id"]["ordinal"], name, observed, verdict), flush=True)

@@ -2253,7 +2253,52 @@ class ConservationExecutor:
             "transaction_bytes": list(bytes.fromhex(raw)),
             "observed_value_commitments": value_commitments,
             "observed_asset_commitments": asset_commitments,
+            "observed_openings": self.read_openings(raw) if layer == "accepted" else [],
         }
+
+    def read_openings(self, raw: str):
+        """The openings the node reports for the outputs it just created.
+
+        # Why the target has to supply these
+
+        The oracle predicts a commitment from an amount and two blinding
+        factors. This materializer does not choose those factors -- the
+        node draws them -- so without reading them back there is nothing
+        for the oracle to predict, and the three-way comparison of section
+        7.4 has no second point to meet at.
+
+        The transaction is confirmed and the created coins are looked up,
+        which is the only interface that reports them. What comes back is
+        the target's own statement of what it committed to, and the
+        comparison then runs one way: the oracle predicts bytes from these
+        openings and the prediction is checked against the commitment the
+        transaction actually carries. No expected value is rewritten to
+        match an observation.
+        """
+        try:
+            self.node.call(
+                "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw])
+            )
+        except AdapterError as error:
+            log("the accepted transaction was not confirmable: %s" % error.note)
+            return []
+        decoded = self.node.call("decoderawtransaction", raw)
+        txid = decoded["txid"]
+        openings = []
+        for entry in self.node.call("listunspent", "0", "9999999", wallet=self.WALLET):
+            if entry["txid"] != txid:
+                continue
+            blinder = entry.get("amountblinder", "00" * 32)
+            if blinder == "00" * 32:
+                continue
+            openings.append({
+                "vout": entry["vout"],
+                "amount_satoshis": int(round(float(entry["amount"]) * 100_000_000)),
+                "asset": entry["asset"],
+                "amount_blinder": blinder,
+                "asset_blinder": entry.get("assetblinder", "00" * 32),
+            })
+        return openings
 
     # -- deliberate defects -----------------------------------------------
 
@@ -2771,6 +2816,7 @@ def answer_conservation_row(executor: CaseExecutor, request: dict, case: dict) -
             "transaction_bytes": None,
             "observed_value_commitments": [],
             "observed_asset_commitments": [],
+            "observed_openings": [],
         }
     except AdapterError as error:
         log("executor infrastructure failure: %s" % error.note)
@@ -2780,6 +2826,7 @@ def answer_conservation_row(executor: CaseExecutor, request: dict, case: dict) -
             "transaction_bytes": None,
             "observed_value_commitments": [],
             "observed_asset_commitments": [],
+            "observed_openings": [],
         }
 
     write_message(
@@ -2791,6 +2838,7 @@ def answer_conservation_row(executor: CaseExecutor, request: dict, case: dict) -
             "transaction_bytes": body["transaction_bytes"],
             "observed_value_commitments": body["observed_value_commitments"],
             "observed_asset_commitments": body["observed_asset_commitments"],
+            "observed_openings": body["observed_openings"],
         }
     )
 
