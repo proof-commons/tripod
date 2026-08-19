@@ -1310,6 +1310,50 @@ G11-H02  ObservedIssuance::authority is never read in realization, and authority
          only for referential existence in observation.rs
 ```
 
+### 5.7 Confidential-value target review · `tab:backlog:findings-ct-review`
+
+The Guide-11 §5 target review read the confidential-value machinery at
+merged tip `78499c2`, upstream base `b7fc5d0`, and landed its accepted
+facts as typed Rust in `packages/target-elements/src/confidential.rs`
+with human provenance in (`tab:elements-ref:review-ct`). The twenty
+questions the guide sets are all answered from source.
+
+The review's own numbering note: the preflight arc in §5.6 already
+spends the label "Wave 5" on the row that closed `G11-H01`. This record
+belongs to the guide's §5 execution, a different arc, and is filed by
+content rather than by wave number.
+
+Three dispositions come out of it, and one is a negative result that the
+guide asks not to be softened.
+
+| ID | Priority | Status | Finding |
+|---|---:|---|---|
+| `G11-C01` | P1 | DONE | The confidential encodings record whether the y coordinate is a quadratic residue, while the curve-checking primitives accept only the compressed public-key prefixes, which record whether y is odd. The two conventions select different points, so no pattern may be carried from one to the other by analogy. Typed as `PointParityConvention`. |
+| `G11-C02` | P1 | DONE | The commitment relation is the conceptual one with both terms positive: the blinder multiplies the base point and the amount multiplies the asset generator. The opening scalar is thirty-two bytes big-endian, refused at or above the group order, admitted at zero. Typed as `CommitmentRelation`. |
+| `G11-C03` | P0 | OPEN | An authenticated public opening has no complete on-script form under the reviewed revision. Three independent blockers are named and typed as `OpeningBlocker`; the capability stays `Unsupported` for that reason. This is the §11 disposition input and it is a review result, not a scope decision. |
+
+`G11-C03` is the row every later declassification candidate must be
+judged against. The blockers are that the asset generator cannot be
+derived on-script, that the confidential and curve-primitive encoding
+domains do not meet, and that a witness-supplied parity byte is bound to
+nothing, so a relation a program could verify holds for a point or its
+negation. Candidate C in the guide names parity as load-bearing; this
+review supplies the source reason.
+
+Two questions are recorded as OPTIONAL follow-ups rather than as
+findings, because neither changes a typed fact.
+
+| ID | Priority | Status | Item |
+|---|---:|---|---|
+| `G11-C04` | OPTIONAL | OPEN | The capability contract calls commitment equality `Unsupported`, which is exact for a primitive: no reviewed instruction compares two commitments. Byte equality over the exposed canonical items is nonetheless a composition a backend might build, and the guide's disposition vocabulary has a name for that state which the typed enum does not carry. Deciding whether `ConfidentialCapabilityState` should gain the backend-pattern and named-blocker states belongs to a wave that owns the contract shape, since the states are part of the versioned schema. |
+| `G11-C05` | OPTIONAL | OPEN | Value introspection presents an absent value as an explicit zero, prefix `0x01` over eight zero bytes, so a program cannot distinguish an absent field from a zero one at that primitive. No current pattern depends on the difference. Recorded so that one which does is not written in the belief that the distinction survives. |
+
+The typed facts are deliberately not wired into `TargetDefinition`.
+Growing that schema is a versioned change under
+(`rule:guide11-exec:target-version-honesty`), and this review states
+facts rather than revising a contract shape; the contract version did
+not move.
+
 ### T6 — Validate capabilities for external-evidence obligations · `task:review:external-evidence-capability`
 
 **Priority:** P1
