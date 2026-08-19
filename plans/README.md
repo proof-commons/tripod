@@ -73,6 +73,7 @@ Imported citations are linted under
 | [`drafts/`](drafts/README.md) | Archived adopted-source normative drafts awaiting integration. |
 | [`guides/`](guides/README.md) | Archived executed and concept implementation guides. |
 | [`reviews/`](reviews/README.md) | Archived static reviews of named repository trees. |
+| [`history/`](history/README.md) | Archived closed records moved out of maintained planning documents. |
 
 ## Root files · `tab:plans:root-files`
 
@@ -124,6 +125,7 @@ Archived documents — the verbatim records under:
 ```text
 plans/drafts/
 plans/guides/
+plans/history/
 plans/reviews/
 ```
 
@@ -132,6 +134,14 @@ archive budget. An archive records a named tree exactly and is never trimmed
 to fit, so charging it to the maintained-prose budget would make the
 guardrail fire on the one class of file it must not police. The archive
 budget is a runaway-paste tripwire, not a shaping force.
+
+[`history/`](history/README.md) belongs to that class by role rather than by
+provenance. The other three hold documents the project received; history holds
+records the project wrote and then closed — a completed gate record, the
+finding register of a remediated review — moved verbatim out of a maintained
+document once their batch was done. They stop being maintained prose at that
+moment, and charging them to the maintained budget would force an author to
+trim settled history to make room for current work.
 
 The generated label registers under [`labels/`](labels/README.md) are
 accounted against that same archive budget: they are regenerated outputs,
@@ -154,8 +164,15 @@ cross-package direction; a package contract for typed package boundaries; a
 phase card for sequencing and gate; a research note for unresolved prototype;
 a reference for external facts; and the backlog for current work.
 
-Git history is the archive. Superseded long prose is deleted rather than copied
-into another planning folder.
+Git history is the archive for superseded prose: prose that a later document
+replaced is deleted rather than copied into another planning folder, because
+keeping it would leave two answers to one question.
+
+A closed record is not superseded prose. A completed gate record and the
+finding register of a remediated review stay true about the tree they name;
+nothing replaced them, they simply stopped being live work. Those move
+verbatim into [`history/`](history/README.md) rather than being deleted,
+leaving a stub at the origin that points to the move.
 
 ## Status vocabulary · `tab:plans:status`
 
@@ -177,7 +194,9 @@ into another planning folder.
 A replacement receives a new durable decision or ADR identity where needed,
 names what it supersedes, updates the old status and nearest-folder indexes,
 updates package and roadmap consumers, and removes stale active claims. Git
-history preserves old prose; plans do not keep duplicate archives.
+history preserves old prose; plans do not keep duplicate archives. Moving a
+closed record into [`history/`](history/README.md) is not a duplicate: the
+record exists in exactly one place before and after.
 
 ## Verification · `gate:plans:verification`
 
