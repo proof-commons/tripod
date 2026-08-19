@@ -122,7 +122,10 @@ fn g11_r09_the_historical_revision_is_not_constructible_by_number() {
 /// complete definition stamped with it validates.
 #[test]
 fn g11_r09_every_supported_revision_has_a_constructible_definition() {
-    assert!(!TargetContractVersion::SUPPORTED.is_empty());
+    assert_eq!(
+        TargetContractVersion::SUPPORTED,
+        &[TargetContractVersion::V2]
+    );
 
     for revision in TargetContractVersion::SUPPORTED {
         assert_eq!(
@@ -205,7 +208,7 @@ fn with_stack(parts: &mut TargetDefinitionParts, opcode: OpcodeId, stack: StackC
         spec.code(),
         spec.domains().iter().copied(),
         stack,
-        spec.resources().clone(),
+        spec.resources(),
         spec.evidence().iter().copied(),
     );
     parts.opcodes.insert(opcode, replaced);
@@ -452,7 +455,7 @@ fn g11_r10_dropping_the_empty_public_key_rejection_is_refused() {
         .effects()
         .iter()
         .filter(|effect| effect.cause() != FailureCause::EmptyPublicKey)
-        .cloned()
+        .copied()
         .collect::<Vec<_>>();
     let stack = StackContract::new(
         spec.stack().operands().to_vec(),

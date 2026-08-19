@@ -300,52 +300,8 @@ fn weld_signature(definition: &TargetDefinition, errors: &mut Vec<TargetError>) 
         }
 
         // -- Success algebra -------------------------------------
-        //
-        // Verification against a recognized key is the primitive's
-        // reason for existing, so its form is present exactly once. The
-        // unknown-key form is present exactly when the rule permits it,
-        // and absent when the rule does not: an opcode advertising it
-        // under a rejecting rule is the contradiction this weld exists
-        // to catch, in the direction the review found it.
-        let cases = spec.stack().success().cases();
-        let expected_results: Vec<StackValueType> = if verifying {
-            // A verifying form leaves no branchable result.
-            Vec::new()
-        } else {
-            // A branching form pushes exactly one Boolean, which is the
-            // whole of what a caller branches on.
-            vec![StackValueType::Bool]
-        };
-
-        let mut expected_conditions = vec![SuccessCondition::RecognizedKeyVerifiedSignature];
-        if unknown_key_succeeds {
-            expected_conditions.push(SuccessCondition::UnknownKeyTypeUnverified);
-        }
-
-        for condition in [
-            SuccessCondition::RecognizedKeyVerifiedSignature,
-            SuccessCondition::UnknownKeyTypeUnverified,
-        ] {
-            let matching = cases
-                .iter()
-                .filter(|case| case.condition() == condition)
-                .collect::<Vec<_>>();
-            let expected_count = usize::from(expected_conditions.contains(&condition));
-
-            if matching.len() != expected_count {
-                disagrees = true;
-                continue;
-            }
-
-            // Both admitted forms leave the same thing behind: the
-            // unknown-key path succeeds without verifying, but it is
-            // still a success of this primitive and pushes what this
-            // primitive's successes push.
-            for case in matching {
-                if case.effect().computed_types() != expected_results {
-                    disagrees = true;
-                }
-            }
+        if signature_success_disagrees(spec, verifying, unknown_key_succeeds) {
+            disagrees = true;
         }
 
         // -- Shared numbers and evidence --------------------------
@@ -368,6 +324,63 @@ fn weld_signature(definition: &TargetDefinition, errors: &mut Vec<TargetError>) 
     if disagrees {
         errors.push(TargetError::SignatureContractMismatch);
     }
+}
+
+/// Whether one signature opcode's successful forms disagree with the
+/// behavior the subcontract states.
+///
+/// Verification against a recognized key is the primitive's reason for
+/// existing, so its form is present exactly once. The unknown-key form
+/// is present exactly when the rule permits it, and absent when it does
+/// not: an opcode advertising it under a rejecting rule is the
+/// contradiction this weld exists to catch, in the direction the review
+/// found it.
+fn signature_success_disagrees(
+    spec: &crate::opcode::OpcodeSpec,
+    verifying: bool,
+    unknown_key_succeeds: bool,
+) -> bool {
+    // A verifying form leaves no branchable result; a branching form
+    // pushes exactly one Boolean, which is the whole of what a caller
+    // branches on.
+    let expected_results: Vec<StackValueType> = if verifying {
+        Vec::new()
+    } else {
+        vec![StackValueType::Bool]
+    };
+
+    let cases = spec.stack().success().cases();
+    let mut disagrees = false;
+
+    for condition in [
+        SuccessCondition::RecognizedKeyVerifiedSignature,
+        SuccessCondition::UnknownKeyTypeUnverified,
+    ] {
+        let expected_count = usize::from(
+            condition == SuccessCondition::RecognizedKeyVerifiedSignature || unknown_key_succeeds,
+        );
+        let matching = cases
+            .iter()
+            .filter(|case| case.condition() == condition)
+            .collect::<Vec<_>>();
+
+        if matching.len() != expected_count {
+            disagrees = true;
+            continue;
+        }
+
+        // Both admitted forms leave the same thing behind: the
+        // unknown-key path succeeds without verifying, but it is still a
+        // success of this primitive and pushes what this primitive's
+        // successes push.
+        for case in matching {
+            if case.effect().computed_types() != expected_results {
+                disagrees = true;
+            }
+        }
+    }
+
+    disagrees
 }
 
 /// The timelock primitive, the relative-timelock contract, the version

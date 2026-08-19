@@ -2354,16 +2354,8 @@ fn g11_r14_a_tree_defect_fails_after_one_attempt() {
     let repeated = FixtureTapTree::branch(present.clone(), present.clone());
 
     for (tree, executing, expected) in [
-        (
-            present.clone(),
-            absent.clone(),
-            TreeDefect::ExecutingLeafAbsent,
-        ),
-        (
-            repeated.clone(),
-            present.clone(),
-            TreeDefect::ExecutingLeafRepeated,
-        ),
+        (present.clone(), absent, TreeDefect::ExecutingLeafAbsent),
+        (repeated, present, TreeDefect::ExecutingLeafRepeated),
     ] {
         let seen = std::cell::Cell::new(0_u32);
         let defect = construct_under_policy(

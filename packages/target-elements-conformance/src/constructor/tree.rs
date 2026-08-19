@@ -522,8 +522,7 @@ pub enum ConstructionDefect {
 pub const fn retryable(defect: ConstructionDefect) -> bool {
     matches!(
         defect,
-        ConstructionDefect::Tweak(TweakDefect::TweakNotAScalar)
-            | ConstructionDefect::Tweak(TweakDefect::TweakedKeyIsIdentity)
+        ConstructionDefect::Tweak(TweakDefect::TweakNotAScalar | TweakDefect::TweakedKeyIsIdentity)
     )
 }
 

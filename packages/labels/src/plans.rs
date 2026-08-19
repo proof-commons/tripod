@@ -725,13 +725,12 @@ pub(crate) fn duplicate_row_ids(markdown: &str) -> Vec<String> {
     let mut seen: BTreeSet<String> = BTreeSet::new();
 
     for line in without_fenced_lines(markdown).lines() {
-        if let Some(rest) = line.strip_prefix("### ") {
-            table = rest.trim().to_owned();
-            seen.clear();
-            continue;
-        }
-        if line.starts_with("## ") {
-            table = line[3..].trim().to_owned();
+        if let Some(rest) = line
+            .strip_prefix("### ")
+            .or_else(|| line.strip_prefix("## "))
+        {
+            table.clear();
+            table.push_str(rest.trim());
             seen.clear();
             continue;
         }
