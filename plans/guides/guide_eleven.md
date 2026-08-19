@@ -719,7 +719,7 @@ If process-group establishment fails:
 
 No startup failure path may drop a live or exited unreaped `Child`.
 
-## 4.12 Relation identity is one-to-one with its body
+## 4.12 Relation identity is one-to-one with its body · `rule:guide11-exec:relation-subject`
 
 `validate_relation_identity` must derive exactly one expected kind and subject from each body.
 
