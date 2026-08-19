@@ -611,13 +611,14 @@ tree rather than against the review's snapshot: each row below carries a
 disposition, a DONE-or-OPEN state, and the artifact or file location
 that establishes it.
 
-Register state after Wave 0: **ADJUDICATED, NOT REMEDIATED**. Fifteen
-rows are CONFIRMED and one is RECLASSIFIED. No row is DONE, because
-Wave 0 reproduces and does not repair; the reproductions assert the
-current defective behaviour and name the row they belong to, so the
-wave that fixes each one flips its own witness. The blocking rule
-(`gate:guide12-exec:preflight`) therefore still stands over the whole
-register.
+Register state after Wave 0: **ADJUDICATED, ONE ROW CLOSED**. Fifteen
+rows are CONFIRMED and open; `G12-R08` is RECLASSIFIED and DONE,
+because a prose row's reproduction is the textual comparison and its
+repair is the same act. Every other row is open, because Wave 0
+reproduces and does not repair: the reproductions assert the current
+defective behaviour and name the row they belong to, so the wave that
+fixes each one flips its own witness. The blocking rule
+(`gate:guide12-exec:preflight`) therefore stands over the fifteen.
 
 | ID | Priority | Disposition | Evidence and trust boundary |
 |---|---:|---|---|
@@ -628,7 +629,7 @@ register.
 | `G12-R05` | P1/P2 | CONFIRMED, OPEN — Wave 2 | Report ingestion indexes responses into a `BTreeMap` keyed by mutation name, so a second answer for one row silently replaces the first, and the report loop reads the matrix rather than the census, so a response naming a row the matrix does not carry is dropped without a word. Boundary: normalization safety report. Source-read disposition; the ingestion sits in a binary with no library seam. |
 | `G12-R06` | P1/P2 | CONFIRMED, OPEN — Wave 2 | `matrix_is_complete` consults `self.passes.first()` alone, so a later pass may omit rows; it also asks only whether a row is present, so a duplicated row satisfies it. The emitting binary gates on `boundary_holds` and `matrix_is_complete` and never calls `passes_agree`, and `passes_ran_in_distinct_processes` is satisfied by one pass. Boundary: fresh-process lifecycle evidence, the cache-independence claim. Witness `matrix_completeness_reads_only_the_first_pass`. |
 | `G12-R07` | P2 | CONFIRMED, OPEN — Wave 2 | The consensus judgement takes the substring to the first `)` after the wrapper, and two mapped messages carry a `)` of their own, so each truncates to a string the class table does not hold and the rejection loses its class. The relay judgement takes the whole wrapper and is unaffected. Boundary: target failure classification. Python lane; source-read disposition, runtime half OPEN with named blocker. |
-| `G12-R08` | P1/P2 | RECLASSIFIED, OPEN — Wave 1 | The count disagreement the review saw is gone from the backlog and the code: the matrix states nine rows and the Wave-11 record states 18 of 18 over two passes. Two statements have not caught up. The declassification research file still reports 16 of 16 and still stops its finding list at `G11-W11-05`, and the Phase-3 card's status blockquote breaks off mid-clause after the exit-gate sentence. Boundary: active planning-document agreement. Reclassified from a census disagreement to two stale statements in active documents. |
+| `G12-R08` | P1/P2 | RECLASSIFIED, DONE | The count disagreement the review saw was already gone from the backlog and the code: the matrix states nine rows and the Wave-11 record states 18 of 18 over two passes. Two statements had not caught up — the declassification research file reported 16 of 16 and stopped its finding list at `G11-W11-05`, and the Phase-3 card's status blockquote broke off mid-clause after the exit-gate sentence. Both are reconciled here, which is the whole of the row: a prose row's reproduction is the textual comparison, so finding it and fixing it are one act. Boundary: active planning-document agreement. Reclassified from a census disagreement to two stale statements. |
 | `G12-R09` | P0/P1 | CONFIRMED, OPEN — Wave 1 | Both sides declare protocol revision 3. The executor writes `observed_openings` on every conservation response and `NativeConservationResponse` carries `deny_unknown_fields` without that field, so the Rust type cannot read the Python's own answers. The lifecycle exchange has no Rust protocol type at all and is read out of an untyped value tree. Boundary: harness-executor protocol. Witness `a_revision_three_conservation_response_is_unreadable_by_its_own_type`. Phase-4 blocker, as the guide states. |
 | `G12-R10` | P1 | CONFIRMED, OPEN — Wave 1 | The nonce field is typed `PointParityConvention::QuadraticResidue` beside a comment saying no parity claim is made, and the enum offers no state for making none. The field's committed prefixes are the compressed-point pair. Boundary: reviewed target facts, the opening-feasibility reasoning that rests on the two conventions differing. Witness `the_nonce_field_claims_a_parity_convention_its_prefixes_do_not_use`. |
 | `G12-R11` | P1 | CONFIRMED, OPEN — Wave 1 | `resource_projection` skips every non-opcode instruction outright, so no push opcode, width prefix, or payload byte reaches the `ScriptBytes` total; opcode script bytes come from the per-primitive cost table and never from an encoded length. Boundary: resource prediction against target bounds. Witness `a_pushed_payload_contributes_no_projected_script_bytes`. Phase-4 blocker, as the guide states. |
