@@ -2,7 +2,7 @@
 
 > **Status:** ACTIVE
 > **Current gate:** Phase 3 — Elements target and foundational prototypes
-> **Current condition:** Phases 1 and 2 are complete. The target-independent compiler constructs one deterministic, validated scoped analyzed program for the complete pilot scope, factorized per operation, with relation-owned requirements, a corruption-resistant assembly validator, and independent assembly oracles; the Phase-2 exit gate record is in §2.11, including passed document reproducibility. The next work is the Guide-8 typed Elements target contract and capability-adapter foundation.
+> **Current condition:** Phases 1 and 2 are complete. The target-independent compiler constructs one deterministic, validated scoped analyzed program for the complete pilot scope, factorized per operation, with relation-owned requirements, a corruption-resistant assembly validator, and independent assembly oracles; the Phase-2 exit gate record is in §2.11, including passed document reproducibility. The next work is the Guide-11 preflight register in §5.6. This condition line is otherwise unreconciled against the recorded Guide-8 through Guide-10 completions; `G11-R12` owns that reconciliation.
 > **Next gate:** Phase 4 — compact-ash end-to-end pipeline
 > **Authority:** Current execution queue only. The specification, the realization document, typed architecture, implemented ADRs, accepted decisions, package contracts, phase cards, and accepted research results take precedence.
 
@@ -144,7 +144,7 @@ No named consumer means no digest. No distinct decision means no digest.
 
 ### 2.1 Latest static review · `tab:backlog:review-basis`
 
-The current review is the fifth static review, performed in two independent
+The current review is the sixth static review, performed in two independent
 passes over the supplied concatenation of the tree:
 
 ```text
@@ -152,22 +152,19 @@ tree:
    
 
 selected files:
-    266
+    220
 ```
 
-The supplied filter excluded, among other things:
+The supplied filter excluded 352 files, among them:
 
 ```text
 Cargo.lock
-licence files
 the paper sources
-packages/artifacts/
-packages/cli-common/
-packages/document-stamps/
-packages/execwrap/
-packages/labels/
-most unit and integration test directories
-some generated files
+most unit and integration tests
+most compiler implementation files
+most executable-model implementation files
+the label-tool implementation
+several build/tooling packages and scripts
 ```
 
 No Cargo, Meson, TeX, the native executor, advisory, or reproducibility
@@ -182,21 +179,20 @@ Therefore:
 - licence compatibility was not independently checked;
 - historical gate records remain historical evidence only.
 
-Its findings are recorded in §5.5; the review found no obvious valid-world
-route in the selected model code for unauthorized issuance, reserve
-extraction, receipt-class escape, sponsor-funded payout substitution,
-recipient redirection, post-sealing pool revival, or history residue
-influencing monetary computation. Its central verdict is that the native
-evidence layer can currently say passed without proving the complete claimed
-subject was present and covered, and that the static signature abstraction
-cannot represent the target's documented empty-signature and unknown-key-type
-paths; both must be repaired before Guide-10 prototype evidence is recorded.
-The review text is archived at
-[plans/reviews/review-5-0.3.3-dev.md](reviews/review-5-0.3.3-dev.md).
+Its findings are recorded in §5.6. Its central verdict is that the native
+evidence layer still does not bind evidence to its subject: an execution
+transcript retains neither the requested subjects nor the exact fixtures
+sent to the child, so it can be rebound to a census, matrix, target, or
+deployment that was never executed; and the claim a fixture files under is
+caller-authored, so claim-bearing metadata can be attached to an unrelated
+or trivially true script. Both passes rank those as release-blocking for
+that subsystem, and no public-declassification prototype begins while they
+remain open. The review text is archived at
+[plans/reviews/review-6-0.3.4-dev.md](reviews/review-6-0.3.4-dev.md).
 
 ### 2.2 Earlier review basis
 
-The repository retains six earlier reviewed trees as historical context:
+The repository retains seven earlier reviewed trees as historical context:
 
 ```text
 initial reviewed tree:
@@ -216,10 +212,13 @@ third-review tree:
 
 fourth-review tree:
    
+
+fifth-review tree:
+   
 ```
 
 Those reviews and their findings are evidence about their exact trees. They are
-not current-checkout execution evidence. The second through fifth review
+not current-checkout execution evidence. The second through sixth review
 texts are archived under [plans/reviews/](reviews/README.md).
 
 ### 2.3 Historical Phase-1 gate · `gate:backlog:phase1`
@@ -1066,6 +1065,45 @@ the owning repairs: accepted responses are not protocol-shape validated
 against the advertised handshake capabilities, public fixture construction
 does little semantic context validation, and the Python adapter tolerates an
 empty context script path where the fixture script is nonempty.
+
+### 5.6 Sixth-review findings · `tab:backlog:findings-sr6`
+
+The sixth static review reported two passes over the tree recorded in §2.1.
+First-pass and second-pass findings are consolidated into one SR6 register
+whose identifiers are the Guide-11 preflight identifiers `G11-R01` through
+`G11-R14`, with the two hardening rows carried as `G11-H01` and `G11-H02`.
+The Guide-11 preflight waves own the register; the summaries below are the
+required dispositions recorded in that guide's own preflight table.
+
+Every row is QUEUED. The review basis is the archived review's own tree, not the working
+tree: under the guide's own rule each finding is a hypothesis until it is
+reproduced against the working tree, and is then either fixed, disproved
+with a typed argument, or reclassified with a narrower assurance claim.
+
+| ID | Priority | Status | Finding |
+|---|---:|---|---|
+| `G11-R01` | P0 | QUEUED | A transcript can be rebound to another fixture census, prototype matrix, target, or deployment binding; bind the transcript to its exact subjects and requests. |
+| `G11-R02` | P0 | QUEUED | Primitive claims can be manufactured by attaching claim-bearing case metadata to an unrelated script; gate only a canonical validated primitive plan. |
+| `G11-R03` | P0 | QUEUED | Prototype claims are caller-authored and can certify a trivial true script as constructor or wide-floor evidence; gate only relation-specific canonical matrices. |
+| `G11-R04` | P1 | QUEUED | Consensus resource cases are credited to policy-resource evidence because evidence ownership derives from case ID without the enforcement layer; derive evidence from the complete fixture and correct the plan class. |
+| `G11-R05` | P1 | QUEUED | The primitive native gate can accept a report whose summary is failed; gate every canonical case and reject failed completeness. |
+| `G11-R06` | P1 | QUEUED | ADR-018 execution provenance is recorded but not enforced by evidence gates; validate executable provenance before gate eligibility. |
+| `G11-R07` | P1 | QUEUED | Meson defaults an executor to reviewed-non-mock; require explicit caller selection and fail closed. |
+| `G11-R08` | P1/P2 | QUEUED | Relation bodies can admit several semantic relation subjects; derive exactly one canonical subject from each body. |
+| `G11-R09` | P1/P2 | QUEUED | Target V1 is advertised as supported while current validation applies the V2 census and algebra; remove V1 support or implement genuine version dispatch. |
+| `G11-R10` | P1/P2 | QUEUED | The signature weld omits unknown-key behavior and much of the success algebra; weld the complete signature relation. |
+| `G11-R11` | P2 | QUEUED | Bare prototype report digests persist despite the recorded no-report-identity decision; remove them or admit typed retained report references. |
+| `G11-R12` | P2 | QUEUED | Current backlog state contradicts recorded Guide-8 through Guide-10 completion and duplicates finding IDs; reconcile current state and enforce unique IDs. |
+| `G11-R13` | P2/P3 | QUEUED | Process-group establishment failure can leave the direct child unreaped; kill and reap on every pre-supervisor failure. |
+| `G11-R14` | P3 | QUEUED | Constructor retry retries internal-key defects no metadata nonce can repair; share a typed retryability predicate. |
+| `G11-H01` | Hardening | QUEUED | Opcode resource stack-growth rows are not generically welded to success and non-aborting failure effects; derive and compare exact maximum stack growth. |
+| `G11-H02` | Future blocker | QUEUED | Issuance observations carry authority fields the realization evaluator does not yet enforce; add no issuance realization scope until enforced or externally evidenced. |
+
+No public-declassification prototype begins while `G11-R01` through
+`G11-R10` remain open. `G11-R12` owns the full reconciliation of this
+backlog's current state against the recorded Guide-8 through Guide-10
+completions; that reconciliation is deliberately not performed by the
+chartering import that opened this register.
 
 ### T6 — Validate capabilities for external-evidence obligations · `task:review:external-evidence-capability`
 
