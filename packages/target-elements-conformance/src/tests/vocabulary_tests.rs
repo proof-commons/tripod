@@ -8,11 +8,13 @@
 
 use std::collections::BTreeSet;
 
+use target_elements::confidential::OpeningBlocker;
 use target_elements::{ElementsCapability, OpcodeId, TargetEvidenceRequirementId};
 
 use crate::vocabulary::{
     capability_from_name, capability_name, evidence_requirement_from_name,
-    evidence_requirement_name, opcode_from_name, opcode_name,
+    evidence_requirement_name, opcode_from_name, opcode_name, opening_blocker_from_name,
+    opening_blocker_name,
 };
 
 #[test]
@@ -82,8 +84,28 @@ fn every_evidence_requirement_has_one_spelling() {
 }
 
 #[test]
+fn every_opening_blocker_has_one_spelling() {
+    let mut spellings = BTreeSet::new();
+    for blocker in OpeningBlocker::ALL {
+        let name = opening_blocker_name(*blocker).expect("every blocker is spelled");
+        assert!(spellings.insert(name), "duplicate blocker spelling {name}");
+        assert_eq!(
+            opening_blocker_from_name(name),
+            Some(*blocker),
+            "the spelling {name} must name back its own blocker",
+        );
+    }
+    assert_eq!(
+        spellings.len(),
+        OpeningBlocker::ALL.len(),
+        "the blocker table states exactly the reviewed census",
+    );
+}
+
+#[test]
 fn an_unknown_spelling_names_nothing() {
     assert_eq!(opcode_from_name("not_a_reviewed_primitive"), None);
     assert_eq!(capability_from_name("not_a_capability"), None);
     assert_eq!(evidence_requirement_from_name("not_a_requirement"), None);
+    assert_eq!(opening_blocker_from_name("not_a_blocker"), None);
 }
