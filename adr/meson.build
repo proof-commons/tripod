@@ -6,7 +6,6 @@ adr_record_files = files(
   '011-toolchain-and-dependency-policy.md',
   '014-meson-lint-census-and-stamps.md',
   '015-public-data-and-execution-trust.md',
-  '016-semantic-identities-and-evidence-binding.md',
   '017-path-scope-and-host-filesystem-trust.md',
   '018-upstream-elements-workspace.md',
   '019-label-calculus.md',

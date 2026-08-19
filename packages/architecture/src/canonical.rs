@@ -24,7 +24,8 @@
 //!
 //! Every public identity function takes a
 //! [`ValidatedDraftArchitecture`], never a raw `Architecture`
-//! (R2-N03). ADR-016 puts validation before identity, and rehashing is
+//! (R2-N03). The adopted discipline puts validation before identity
+//! `(´[PLAN-rule:identity:admission-order]´)`, and rehashing is
 //! explicitly not revalidation, so an architecture with duplicate
 //! declarations or a missing root must not be able to acquire a
 //! semantic hash through any public path. The unchecked projections
@@ -52,10 +53,10 @@ pub const SEMANTIC_HASH_ALGORITHM: &str = "sha256-canonical-json-v3";
 /// domain-separated form until the adopted adjudication discipline
 /// required domain separation for every semantic identity; `…-v3`
 /// prefixes the same canonical bytes. See
-/// `(´[ADR016-rule:identity:separation-migration]´)`.
+/// `(´[ADR021-rule:identity:separation-migration]´)`.
 /// The projection and encoding are untouched, so the meaning
 /// identified is unchanged and only the measurement moved. The retired
-/// pinned value is recorded with the migration in ADR-016.
+/// pinned value is recorded with the migration in ADR-021.
 pub const RETIRED_SEMANTIC_HASH_ALGORITHMS: &[&str] = &["sha256-canonical-json-v2"];
 
 pub const BEHAVIOURAL_HASH_ALGORITHM: &str = "sha256-canonical-json-behavioural-v3";
@@ -87,7 +88,7 @@ const BEHAVIOURAL_DOMAIN_PREFIX: &[u8] = b"tripod behavioural JSON v3\n";
 /// Domain-separation prefix for the full-manifest semantic hash input.
 ///
 /// Each prefix folds the domain separator and the recipe identifier of
-/// `(´[ADR016-rule:identity:classes]´)` into one string, as the behavioural
+/// `(´[ADR021-rule:identity:recipes]´)` into one string, as the behavioural
 /// and deployment-profile prefixes already do.
 const MANIFEST_DOMAIN_PREFIX: &[u8] = b"tripod canonical manifest JSON v3\n";
 

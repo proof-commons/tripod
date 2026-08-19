@@ -48,7 +48,8 @@ Nothing in this package is hashed: there is no report digest, no
 fixture-set digest, no executor digest, and no field reserved for one. A
 report is compared by its typed content and its exact bytes, and no
 persistent report identity is admitted until a cross-process release
-consumer exists (Guide-9 section 1.8, ADR-016).
+consumer exists (Guide-9 section 1.8,
+(`[PLAN-case:identity:no-identity]`)).
 
 ## The executor has authority, and the harness does not check it
 
@@ -746,7 +747,7 @@ green.
   digest, no executor digest, and no field reserved for one. A report is
   compared by its typed content and its exact bytes, and no persistent report
   identity is admitted until a cross-process release consumer exists (Guide-9
-  §1.8, ADR-016).
+  §1.8, (`[PLAN-case:identity:no-identity]`)).
 - **It accepts no secret.** See *Secrets* above; the list is exhaustive and
   closed.
 - **It never reports a skipped case as a passing one.** `CaseStatus` has no

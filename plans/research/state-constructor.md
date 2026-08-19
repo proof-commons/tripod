@@ -471,7 +471,8 @@ The largest element sits at 19.8% of its limit, which is the binding one.
 This table is a historical record of a run, not a locator for one. The report
 itself is not retained in the repository, and no digest of it is kept: a bare
 hash with no retained bytes, no typed reference, and no consumer able to
-revalidate it from the repository is the weakest form ADR-016 warns against,
+revalidate it from the repository is the weakest form the adopted identity
+discipline warns against (`case:identity:evidence`),
 and it would contradict the stop record in the identity register, §3.5, which
 declines to mint a native conformance report identity. Reports are compared by
 typed content and exact bytes in process, where they exist.

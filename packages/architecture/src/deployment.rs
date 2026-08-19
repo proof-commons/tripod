@@ -31,7 +31,8 @@
 //! algorithm identifier; the architecture hash algorithm is never
 //! reused for profile bytes.
 //!
-//! Validation precedes identity (ADR-016). The profile hash is defined
+//! Validation precedes identity
+//! `(´[PLAN-rule:identity:admission-order]´)`. The profile hash is defined
 //! only over a [`ValidatedPreReleaseDeploymentProfile`], which
 //! [`validate_deployment_profile`] alone constructs, so "hashable"
 //! cannot be mistaken for "valid" once a release consumer appears. The
@@ -399,8 +400,9 @@ pub fn validate_deployment_profile_structure(
         },
 
         // An unreleasable architecture has no architecture identity to
-        // compare the binding against (ADR-016 puts validation before
-        // identity), so no binding verdict is claimed here; the profile
+        // compare the binding against (the adopted discipline puts
+        // validation before identity), so no binding verdict is claimed
+        // here; the profile
         // already fails closed on `ArchitectureNotReleasable`.
         Err(_) => errors.push(DeploymentError::ArchitectureNotReleasable),
     }
@@ -793,7 +795,8 @@ fn profile_value(profile: &DeploymentProfile) -> Value {
 /// A deployment profile that has passed structural validation.
 ///
 /// The wrapper is the type-level record of the identity rule stated in
-/// ADR-016: a complete typed object is validated first, then projected
+/// `(´[PLAN-rule:identity:admission-order]´)`: a complete typed object
+/// is validated first, then projected
 /// canonically, and only then does it bear an identity. Because the
 /// only constructor is [`validate_deployment_profile`], holding one of
 /// these is proof that
@@ -857,7 +860,8 @@ pub fn validate_deployment_profile<'a>(
 /// binds each calibration to the emitted script bundle it measured but
 /// not to the transaction ABI and configuration it measured under, so
 /// bundle equality alone does not establish that the measured
-/// transaction shape used the final ABI — the residual ADR-016 and the
+/// transaction shape used the final ABI — the residual
+/// `(´[PLAN-rule:identity:provenance-containment]´)` and the
 /// calibration type both record.
 ///
 /// The function exists rather than being omitted because omitting it
