@@ -57,7 +57,11 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
+use crate::conservation::{ConservationRowId, ConservationSubject};
 use crate::fixture::{NativeCaseId, PrimitiveExecutionSubject};
+use crate::normalization::{
+    AuthorizationProfile, ClaimedOutput, NormalizationSubject, ObservedOutput,
+};
 use crate::prototype::{PrototypeCaseId, PrototypeConstruction, PrototypeExecutionSubject};
 
 /// The protocol revision this harness speaks.
@@ -261,6 +265,42 @@ pub enum ExecutorCapability {
     /// instead of a message it cannot parse
     /// `(´[PLAN-rule:guide10:schema-migration]´)`.
     TreeMaterialization,
+    /// It materializes a generic confidential transaction and reports
+    /// which layer refused it.
+    ///
+    /// # Why this is a capability rather than a revision
+    ///
+    /// A conservation request is a record shape an executor need not have
+    /// seen, and strict framing would refuse the whole message. The same
+    /// gate that protects the tree-bearing and compound records protects
+    /// this one: it is sent only to an executor that said it reads them
+    /// `(´[PLAN-rule:guide10:schema-migration]´)`.
+    ///
+    /// The claim is specifically about *materialization plus layer
+    /// attribution*. An executor that can build a confidential
+    /// transaction but reports one undifferentiated rejection cannot
+    /// answer a conservation row, because the row's whole content is
+    /// which layer refused.
+    ConfidentialConservation,
+    /// It builds an owner-authorized normalization and reports both what
+    /// the claim named and what the target's decoder read back.
+    ///
+    /// # Why the two observations are one capability
+    ///
+    /// A normalization row is refused by the report layer in three of its
+    /// nine cases, and a report-layer refusal is a disagreement between
+    /// the claim and the transaction. An executor that reported only a
+    /// verdict could not produce one, and an executor that reported only
+    /// the outputs it *meant* to write could never disagree with itself.
+    /// So the capability is the pair: the claim's own outputs, stated
+    /// before any mutation, and the observed outputs read back from the
+    /// target `(´[PLAN-rule:guide10:schema-migration]´)`.
+    ///
+    /// It also entails the signing profile. §10.3 requires authorization
+    /// committing to the finalized output set, and an executor that
+    /// signed under a narrower profile would answer the three
+    /// post-signing rows with a refusal that establishes nothing.
+    OwnerAuthorizedNormalization,
     /// It accepts a compound-prototype fixture as such.
     ///
     /// # Why the fixture could not be projected onto a primitive one
@@ -322,6 +362,33 @@ impl ExecutorHandshake {
         self.capabilities
             .contains(&ExecutorCapability::CompoundPrototypeFixtures)
             && self.materializes_trees()
+    }
+
+    /// Whether this executor may be sent a conservation row.
+    ///
+    /// The same gate once more. Unlike the prototype predicate this
+    /// requires no tree capability: a conservation row states a value
+    /// flow rather than a taproot commitment, and demanding a tree an
+    /// executor does not need would refuse a runner that can answer the
+    /// row perfectly well.
+    #[must_use]
+    pub fn runs_conservation_rows(&self) -> bool {
+        self.capabilities
+            .contains(&ExecutorCapability::ConfidentialConservation)
+    }
+
+    /// Whether this executor may be sent a normalization row.
+    ///
+    /// The same gate again, and it requires the conservation capability
+    /// as well: a normalization row is a confidential transaction whose
+    /// refusing layer has to be attributed, so an executor that could not
+    /// answer a conservation row could not answer this one either. The
+    /// normalization claim is the further capability on top.
+    #[must_use]
+    pub fn runs_normalization_rows(&self) -> bool {
+        self.capabilities
+            .contains(&ExecutorCapability::OwnerAuthorizedNormalization)
+            && self.runs_conservation_rows()
     }
 }
 
@@ -733,6 +800,266 @@ fn validate_observation_shape(
     }
 
     Ok(())
+}
+
+/// Where one conservation execution actually ended up.
+///
+/// # Guide 11 §8.3, and the failure this vocabulary exists to prevent
+///
+/// A conservation row's entire content is *where* the target refused. A
+/// malformed range proof refused before any script runs is CT consensus
+/// evidence; the same refusal reported as a script-path rejection would
+/// be evidence about an opening script that never executed. And a
+/// transaction the adapter failed to build is not a target rejection at
+/// all — recording it as one manufactures a consensus fact out of a bug
+/// in the test harness.
+///
+/// So the six layers stay distinct, and the classification is the
+/// adapter's *observation* — which RPC refused, at what stage — never the
+/// row's expectation. The executor is never told what was expected, so it
+/// has nothing to classify toward.
+///
+/// # Two of these are not target verdicts
+///
+/// [`Self::FixtureConstructionFailure`] and
+/// [`Self::ExecutorInfrastructureFailure`] say the run did not happen.
+/// They are reported so a reader can see the row was attempted and why it
+/// produced nothing, and a gate must never read either as a rejection the
+/// target made.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum ObservedOutcomeLayer {
+    /// The adapter could not build the stated transaction at all.
+    ///
+    /// Not a target rejection. The target was never asked.
+    FixtureConstructionFailure,
+    /// The adapter's environment failed around the execution.
+    ///
+    /// Not a target rejection either, and kept apart from a construction
+    /// failure because they are fixed by different people: one is the
+    /// fixture or the materializer, the other is the node or the host.
+    ExecutorInfrastructureFailure,
+    /// The target refused the transaction before running any script.
+    ///
+    /// This is where value conservation lives: amounts, commitments,
+    /// range proofs, and surjection proofs are checked here, and a script
+    /// never runs if they fail.
+    ConsensusRejectionBeforeScript,
+    /// The target ran the script path and it failed.
+    ScriptPathRejection,
+    /// The target would relay-refuse an otherwise consensus-valid
+    /// transaction.
+    RelayPolicyRejection,
+    /// The target accepted the transaction.
+    Accepted,
+}
+
+impl ObservedOutcomeLayer {
+    /// Whether this layer is a verdict the target actually reached.
+    ///
+    /// The two non-verdicts are the whole reason the vocabulary is six
+    /// values rather than four, and every consumer that turns a layer
+    /// into evidence must ask this first.
+    #[must_use]
+    pub const fn is_target_verdict(&self) -> bool {
+        match self {
+            Self::FixtureConstructionFailure | Self::ExecutorInfrastructureFailure => false,
+            Self::ConsensusRejectionBeforeScript
+            | Self::ScriptPathRejection
+            | Self::RelayPolicyRejection
+            | Self::Accepted => true,
+        }
+    }
+}
+
+impl std::fmt::Display for ObservedOutcomeLayer {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let text = match self {
+            Self::FixtureConstructionFailure => "fixture construction failure",
+            Self::ExecutorInfrastructureFailure => "executor infrastructure failure",
+            Self::ConsensusRejectionBeforeScript => "consensus rejection before script",
+            Self::ScriptPathRejection => "script-path rejection",
+            Self::RelayPolicyRejection => "relay-policy rejection",
+            Self::Accepted => "accepted",
+        };
+        formatter.write_str(text)
+    }
+}
+
+/// One conservation row, handed to the executor.
+///
+/// Carries the row's identity and its subject. No expected layer crosses
+/// this boundary `(´[PLAN-rule:guide11-exec:request-subject]´)`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeConservationRequest {
+    /// The protocol revision.
+    pub schema: u32,
+    /// The row being asked about.
+    pub case: ConservationRowId,
+    /// Exactly what to materialize and judge.
+    pub subject: ConservationSubject,
+}
+
+/// What the target did with one conservation row.
+///
+/// # Why this response carries bytes
+///
+/// Every other response in this protocol reports a verdict and some
+/// figures. This one also reports the transaction the adapter built and
+/// the output commitments the node read back out of it, for two reasons
+/// the wave established:
+///
+/// - the materializer cannot produce the same bytes twice, so the bytes
+///   have to be recorded per run or the row is not reproducible as
+///   evidence at all;
+/// - the observed commitments are the third leg of the §7.4 three-way
+///   comparison, and they have to arrive from the target rather than
+///   from the harness's own arithmetic or the comparison is circular.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeConservationResponse {
+    /// The protocol revision.
+    pub schema: u32,
+    /// The row answered.
+    pub case: ConservationRowId,
+    /// Where the execution ended up, as the adapter observed it.
+    pub observed_layer: ObservedOutcomeLayer,
+    /// What the target or the adapter said, verbatim and unmapped.
+    ///
+    /// Recorded rather than classified. This target answers every
+    /// conservation failure with one consensus code, and paraphrasing it
+    /// into a richer class would invent a distinction the target does not
+    /// make.
+    pub observed_detail: Option<String>,
+    /// The transaction the adapter materialized, where it built one.
+    pub transaction_bytes: Option<Vec<u8>>,
+    /// The output value commitments the node read back, in output order.
+    ///
+    /// Empty where the transaction carries no confidential output, or
+    /// where it was never built.
+    pub observed_value_commitments: Vec<Vec<u8>>,
+    /// The output asset commitments the node read back, in output order.
+    pub observed_asset_commitments: Vec<Vec<u8>>,
+}
+
+impl NativeConservationResponse {
+    /// Whether this response contradicts itself.
+    ///
+    /// A response saying the run never happened must carry no target
+    /// observation, on exactly the reasoning
+    /// [`ResponseShapeDefect::InfrastructureResponseCarriesObservation`]
+    /// encodes for the other record shapes: bytes and commitments
+    /// describe a transaction that was built and judged, and a
+    /// construction failure built nothing.
+    ///
+    /// # Errors
+    ///
+    /// [`ResponseShapeDefect`] where the response is not a shape the
+    /// protocol defines.
+    pub const fn validate_shape(&self) -> Result<(), ResponseShapeDefect> {
+        if !self.observed_layer.is_target_verdict()
+            && (self.transaction_bytes.is_some()
+                || !self.observed_value_commitments.is_empty()
+                || !self.observed_asset_commitments.is_empty())
+        {
+            return Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation);
+        }
+        Ok(())
+    }
+}
+
+/// One normalization row's identity.
+///
+/// A single field, and deliberately not the shape any other record
+/// carries: a primitive case is a group and an ordinal, a compound one a
+/// relation and a name, a conservation row an ordinal and a name. The
+/// adapter tells the four apart by shape alone, so a fifth record that
+/// reused one of those shapes would be answered by the wrong handler.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NormalizationCaseId {
+    /// The mutation this row applies, by its wire spelling.
+    pub normalization: String,
+}
+
+/// One normalization row, handed to the executor.
+///
+/// Carries the claim and the mutation. No expected layer crosses this
+/// boundary `(´[PLAN-rule:guide11-exec:request-subject]´)`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeNormalizationRequest {
+    /// The protocol revision.
+    pub schema: u32,
+    /// The row being asked about.
+    pub case: NormalizationCaseId,
+    /// Exactly what to build and judge.
+    pub subject: NormalizationSubject,
+}
+
+/// What the target did with one normalization row.
+///
+/// # Why the claim's outputs come back with the observation
+///
+/// The report layer refuses a row by finding the claim and the
+/// transaction in disagreement, so it needs both sides. The claimed side
+/// cannot be computed by the harness — which script an owner holds is
+/// learned when the coin is created — and the observed side must not be,
+/// or the comparison is the harness checking its own intent against
+/// itself. So the adapter reports the claim's outputs as it resolved
+/// them *before* applying any mutation, and the observed outputs as the
+/// target's own decoder read them back.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeNormalizationResponse {
+    /// The protocol revision.
+    pub schema: u32,
+    /// The row answered.
+    pub case: NormalizationCaseId,
+    /// Where the execution ended up, as the adapter observed it.
+    pub observed_layer: ObservedOutcomeLayer,
+    /// What the target or the adapter said, verbatim and unmapped.
+    pub observed_detail: Option<String>,
+    /// The outputs the claim named, resolved before any mutation.
+    pub claimed_outputs: Vec<ClaimedOutput>,
+    /// The outputs the target's decoder reported.
+    pub observed_outputs: Vec<ObservedOutput>,
+    /// The authorization profile the owner's signature actually used.
+    ///
+    /// Reported rather than assumed. §10.3's prerequisite is a claim
+    /// about the signature that was made, and an adapter that merely
+    /// intended the profile would leave the three post-signing rows
+    /// resting on an intention.
+    pub authorization_profile: Option<AuthorizationProfile>,
+    /// The witness item sizes of each input, in input order.
+    ///
+    /// The evidence behind the profile: a single 64-byte item is a
+    /// taproot key-path signature carrying no sighash byte, which the
+    /// reviewed digest reads as the default all-outputs mode.
+    pub observed_witness_sizes: Vec<Vec<usize>>,
+    /// The transaction the adapter materialized, where it built one.
+    pub transaction_bytes: Option<Vec<u8>>,
+}
+
+impl NativeNormalizationResponse {
+    /// Whether this response contradicts itself.
+    ///
+    /// # Errors
+    ///
+    /// [`ResponseShapeDefect`] where the response is not a shape the
+    /// protocol defines.
+    pub const fn validate_shape(&self) -> Result<(), ResponseShapeDefect> {
+        if !self.observed_layer.is_target_verdict()
+            && (self.transaction_bytes.is_some()
+                || !self.observed_outputs.is_empty()
+                || self.authorization_profile.is_some())
+        {
+            return Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation);
+        }
+        Ok(())
+    }
 }
 
 /// What the target did with one case.

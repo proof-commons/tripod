@@ -3,8 +3,9 @@
 > **Status:** Active — typed target contract, capability adapter, typed
 > instruction core, and development target-native primitive evidence
 > implemented; the STATE-constructor and wide-arithmetic prototypes are
-> accepted; public declassification remains the open foundational
-> prototype; prototype-driven
+> accepted; public declassification has selected an initial policy, with
+> the direct and public-committed paths deferred against named blockers;
+> the exit gate (`gate:phase3:exit`) is not yet checked; prototype-driven
 > **Entry:** (`gate:phase2:exit`)
 > **Packages:** [`target-elements`](../packages/target-elements.md),
 > [`tapscript`](../packages/tapscript.md)
@@ -135,6 +136,26 @@ closure before direct confidential burn/redemption support is accepted.
 
 Result handoff:
 [public declassification research](../research/public-declassification.md).
+
+Initial policy selected. The boundary is explicit, reached from a private
+value by owner-authorized normalization to an explicit output carrying
+private change. Public committed representation and direct authenticated
+opening are deferred against three named target blockers — the asset
+generator is not derivable on script, the confidential encodings and the
+curve primitives disagree about which y a prefix selects, and a
+witness-supplied parity byte is bound to nothing — and the public opening
+capsule is not applicable while they are. Evidence is 11 executed
+conservation rows, 9 of 9 normalization mutations, and 8 lifecycle rows
+over two passes, each against a reviewed node and each agreeing with
+expectations committed before the run. Permissionless future *use* is
+demonstrated: an unrelated fresh process locates, parses, and verifies the
+object from public chain data alone. Permissionless future *maintenance*
+is not, and full private consumption could not be constructed at all —
+residual blinding has nowhere to go without a blinded output to absorb it,
+which is why the normalized form carries private change. Direct
+confidential burn and redemption support is therefore not accepted; the
+matrix, the disclosure record, and the residuals are in the research file
+and the gate record is in [the backlog](../backlog.md).
 
 ## Evidence · `sec:phase3:evidence`
 

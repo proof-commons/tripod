@@ -1,6 +1,6 @@
 # Research Question: Confidential-to-Public Value Synchronization · `q:representation:public-opening`
 
-> **Status:** Open; prototype required
+> **Status:** Initial policy selected — see (`sec:public-opening:result`)
 > **Blocks:** direct private burn to public ASH; direct private redemption;
 > complete private-live-receipt lifecycle
 > **Does not block:** explicit boundary operations; confidential lateral transfer
@@ -461,20 +461,203 @@ script can be measured rather than assumed.
 
 ## Result · `sec:public-opening:result`
 
-Pending.
+Selected 2026-08-19 by the Guide-11 batch. The initial policy is an
+**explicit-only public boundary**, reached from a private value by
+**owner-authorized normalization to an explicit output carrying private
+change**. A public committed representation and a direct authenticated
+opening are both **deferred against three named blockers**, and the public
+opening capsule is **not applicable while they are deferred**.
+
+This is a target and backend policy. It is not a claim that the semantic
+relation requires an explicit amount, and it is not a disclosure-minimal
+result. The conservation matrix conserved value over commitments without
+reading any amount in the clear, so the explicit boundary is a choice made
+in the light of what the reviewed target can authenticate, not an
+arithmetic necessity. Every fact the normalization path publishes is typed
+`DeploymentPolicy` and carries the alternative a deployment that wanted it
+private would have to take.
+
+### The three blockers
+
+The review of the target's confidential-value machinery named three
+independent reasons an authenticated opening has no complete on-script
+form under the reviewed revision. They are typed as `OpeningBlocker` and
+they are what every deferral below cites:
+
+1. `GeneratorNotDerivableOnScript` — the asset-generator recipe needs two
+   curve maps and a point addition, and the reviewed language performs
+   neither, so a program cannot derive the generator it would have to open
+   against.
+2. `EncodingDomainMismatch` — the confidential encodings record whether
+   the y coordinate is a quadratic residue, while the curve-checking
+   primitives accept only the compressed public-key prefixes, which record
+   whether y is odd. No reviewed primitive converts between the two
+   conventions.
+3. `SuppliedParityUnbound` — a program can assemble an operand from an
+   exposed x coordinate, but the parity byte it supplies is bound to
+   nothing, so the relation holds for the point or for its negation.
+
+Two of the three are parity facts, which is why the candidate proof
+outline as instantiated on the reviewed primitives is refused outright
+rather than merely postponed: a candidate that loses parity is rejected.
+The class is deferred and not rejected, because a pattern proving the
+normalization or negation the criterion asks for was not found — which is
+not the same as shown impossible.
+
+### Final representation policy matrix
+
+Each cell states the status of the representation named by its column for
+the use named by its row, about evidence that landed in this batch.
+
+- **supported directly** — a transaction in that representation
+  performing that use was constructed and accepted by a real node.
+- **supported through normalization** — the same, reached only after an
+  owner-authorized representation transition.
+- **explicit only** — the policy for that use requires explicit
+  representation, and no prototype of the use itself exists to say more.
+  The uses in question are protocol operations, and operations are owned
+  by later phases.
+- **unsupported** — an attempt was made and could not be constructed.
+- **deferred with named blocker** — the three blockers above.
+- **not applicable** — the guide's own pre-filled cell.
+
+| Object/use | Explicit | PublicCommitted | Private direct | Normalize first |
+|---|---|---|---|---|
+| lateral value transfer | supported directly | deferred with named blocker | supported directly | not applicable |
+| public ownerless maintenance object | explicit only | deferred with named blocker | forbidden | not applicable |
+| owner-authorized amount-dependent boundary | supported directly | deferred with named blocker | deferred with named blocker | supported through normalization |
+| permissionless future maintenance | explicit only | deferred with named blocker | forbidden | not applicable |
+| formula-bound payout boundary | explicit only | deferred with named blocker | deferred with named blocker | explicit only |
+| full private input consumption | unsupported | deferred with named blocker | deferred with named blocker | unsupported |
+| partial private consumption with private change | supported directly | deferred with named blocker | deferred with named blocker | supported through normalization |
+
+Cell by cell, against landed evidence:
+
+- **lateral value transfer.** Explicit rests on conservation row 1,
+  explicit to explicit, accepted. Private direct rests on conservation
+  row 2, confidential to confidential, accepted: a private lateral
+  transfer is target-native confidential value and needs no boundary at
+  all. The public-committed cell is the general deferral; the
+  normalize-first cell is the guide's own `not applicable`, and it is
+  right, because a lateral transfer has no public side to reach.
+
+- **public ownerless maintenance object.** The private-direct cell is
+  forbidden by the guide itself and is not a finding of this batch. The
+  explicit cell is `explicit only` rather than `supported directly`: the
+  fresh-process lifecycle proof did show an unrelated process locating,
+  parsing, and reading an explicit output from public chain data alone,
+  but it did not maintain that object — the second process could not
+  spend it and spent its own funds. No maintenance operation exists yet
+  to evidence more.
+
+- **owner-authorized amount-dependent boundary.** The explicit cell is
+  the accepted explicit output of conservation rows 1 and 4. The
+  normalize-first cell is the wave's substantive result: the
+  private-to-explicit-with-private-change variant is constructible, was
+  built, and its nine-row mutation matrix agreed with expectations
+  written and committed before the run. Both private cells are deferred
+  on the three blockers.
+
+- **permissionless future maintenance.** Same shape as public ownerless
+  maintenance, and for the same reason: the lifecycle proof establishes
+  that public chain data suffices to locate, parse, and verify an
+  explicit object without any of the original owner's private material,
+  and it does not establish that a later party can maintain the object.
+
+- **formula-bound payout boundary.** No payout operation exists to
+  construct, so no cell can claim a built use. The policy is that the
+  boundary reads an explicit value; where the source is private, the
+  reaching path is normalization first, and the representation transition
+  that path needs is the evidenced one. The operation itself belongs to
+  Guide 12 and later.
+
+- **full private input consumption.** The one earned `unsupported` in the
+  matrix, and it is a constructibility finding rather than a target
+  verdict: conservation row 5, several confidential inputs paying a single
+  explicit output, could not be built at all. Residual blinding has
+  nowhere to go without a blinded output to absorb it, and the node says
+  so — it asks for another output to blind. The target was never asked to
+  judge the row, so nothing here is a rejection by the target. The
+  normalize-first cell is the same construction and fails the same way:
+  normalization to an explicit-only result is not available, and the
+  constructible variant carries private change.
+
+- **partial private consumption with private change.** The explicit cell
+  is conservation row 4, accepted. The normalize-first cell is the nine
+  row matrix again. This row and the owner-authorized boundary row are
+  the two the selected policy actually rests on.
+
+### Evidence
+
+- Target review of the confidential-value machinery: the commitment
+  relation with both terms positive and a thirty-two-byte big-endian
+  opening scalar, the two parity conventions, and the three opening
+  blockers. Findings `G11-C01`, `G11-C02`, `G11-C03`.
+- Independent commitment oracle: sixty-eight upstream low-level vectors
+  reproduce exactly, and the oracle predicts the same commitment bytes a
+  real node produced for three observed openings. Findings `G11-O01`
+  through `G11-O04`.
+- Conservation matrix: twelve rows stated, eleven executed against a real
+  node, one deferred as a typed row. Ten executed rows agreed with
+  expectations written before the target was asked; the eleventh, row 5,
+  reached no verdict because it could not be constructed. Findings
+  `G11-W7-01` through `G11-W7-07`.
+- Candidate dispositions and typed disclosure reasons. Findings
+  `G11-W8-01` through `G11-W8-06`.
+- Normalization prototype: the claim, the nine-row mutation matrix run
+  against a real node with 9/9 agreement, and the typed safety report.
+  Findings `G11-W10-01` through `G11-W10-03`.
+- Fresh-process lifecycle: a real operating-system process boundary, a
+  typed public handoff schema, and 16/16 row agreement over two passes.
+  Findings `G11-W11-01` through `G11-W11-05`.
+
+The report roles are `Experimental` throughout. They establish what the
+target does with a matrix, and nothing about a candidate being selected;
+selection is this section's.
+
+### Open residuals
+
+- `G11-W11-06` — the stale-evidence lifecycle row does not build. The
+  wallet reports the spend as complete and the target refuses the Schnorr
+  signature as invalid. The row was never sent to the second process, so
+  it is unbuilt rather than failed, and it is undiagnosed.
+- `G11-H02` — issuance observations carry authority fields the
+  realization evaluator does not yet enforce. This stands as a constraint
+  rather than a finding of this note: no issuance realization scope may be
+  added until it is enforced or externally evidenced.
+- Policy-resource evidence for these paths is `UnresolvedByDesign`. The
+  measurement table below is not filled, because the paths that would fill
+  it are the deferred ones; the explicit path's cost is an ordinary
+  transaction cost and carries no opening verifier to measure.
+- `G11-W7-08` — the conservation lane records and does not gate. The
+  typed report exists and is tested; the executor driver, the gate, the
+  published asset, and the Meson target that would make the lane
+  refusable in CI are not built.
+- `G11-W7-09` — both public-committed rows of the conservation matrix
+  remain deferred, one of them executed only in its explicit form.
 
 ## Handoff · `sec:public-opening:handoff`
 
-The result must select an operation-specific initial matrix:
+The operation-specific initial matrix, projected from
+(`sec:public-opening:result`). Operation names are owned by later phases,
+so each cell states the representation policy that operation inherits, not
+a built operation:
 
 | Operation | Explicit | Private direct | Normalize first |
 |---|---:|---:|---:|
-| live transfer | | | n/a |
-| burn | | | |
+| live transfer | supported directly | supported directly | n/a |
+| burn | explicit only | deferred with named blocker | supported through normalization |
 | compact ASH | public only | n/a | n/a |
 | clear | public only | n/a | n/a |
-| redemption | | | |
+| redemption | explicit only | deferred with named blocker | supported through normalization |
 
-It then updates typed representation alternatives, target capability status,
-backend patterns, transaction ABI, vectors, client claims, calibration, and
-release reports.
+Live transfer is the one operation whose representation question this
+batch answers with a built transaction on both sides. Burn and redemption
+inherit the explicit boundary and the normalization path that reaches it;
+neither operation is constructed here.
+
+The remaining handoff — typed representation alternatives, target
+capability status, backend patterns, transaction ABI, vectors, client
+claims, calibration, and release reports — is consumed rather than
+reopened by the next guide, which builds the first complete
+compiler-to-target operation.

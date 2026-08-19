@@ -13,7 +13,11 @@
 //! executed implementation guides under `plans/guides/`, the static
 //! reviews under `plans/reviews/`, and the adopted-source drafts under
 //! `plans/drafts/` are verbatim records of a named tree, never edited
-//! to fit a budget and never trimmed. The `GENERATED_REGISTERS`
+//! to fit a budget and never trimmed. The closed records under
+//! `plans/history/` join them by role rather than by provenance: they
+//! are this repository's own finished gate and finding registers, cut
+//! verbatim out of a maintained document once the work they describe
+//! closed, and never edited again. The `GENERATED_REGISTERS`
 //! publications under `plans/labels/` are regenerated outputs, sized by
 //! their inputs and rewritten wholesale by their generators. Charging
 //! either class to the maintained-prose cap would make the guardrail
@@ -57,7 +61,21 @@ const ARCHIVE_HARD_CAP_BYTES: u64 = 4 * 1024 * 1024;
 /// Directories holding verbatim archived documents, excluded from the
 /// load-bearing combined budget and accounted against
 /// [`ARCHIVE_HARD_CAP_BYTES`] instead.
-const ARCHIVE_DIRECTORIES: [&str; 3] = ["plans/drafts/", "plans/guides/", "plans/reviews/"];
+///
+/// `plans/history/` differs from the other three in provenance but not
+/// in role. The others hold documents this repository received; history
+/// holds records it wrote itself and then closed — completed gate
+/// records and the finding registers of remediated reviews, moved
+/// verbatim out of the backlog once their batches were done. What every
+/// member shares is that the bytes are a finished record nobody edits
+/// again, so charging them to the maintained-prose budget would force
+/// an author to trim settled history to make room for current work.
+const ARCHIVE_DIRECTORIES: [&str; 4] = [
+    "plans/drafts/",
+    "plans/guides/",
+    "plans/history/",
+    "plans/reviews/",
+];
 
 /// The generated specification label register (ADR-014).
 pub const SPECIFICATION_REGISTER: &str = "plans/labels/specification.md";
@@ -784,8 +802,14 @@ fn tree_bytes(root: &Path, files: &[PathBuf]) -> anyhow::Result<TreeBytes> {
     Ok(totals)
 }
 
-/// True for a path inside an archive directory: a verbatim record of a
-/// document this repository did not author.
+/// True for a path inside an archive directory: a verbatim record,
+/// either of a document this repository did not author or of its own
+/// closed history under `plans/history/`.
+///
+/// Head validation is what asks this question, and it is skipped for
+/// both: an acceptee validates its own heads, never its authority's,
+/// and a closed record is evidence of the structure that held when it
+/// was written rather than a claim about the structure in force now.
 ///
 /// Public because authorship, not weight, is the question head
 /// validation asks of a plans path, and the answer must come from the

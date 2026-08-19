@@ -20,7 +20,31 @@
 //! those, and this table would be an unreviewed second one if it carried
 //! any.
 
+use target_elements::confidential::OpeningBlocker;
 use target_elements::{ElementsCapability, OpcodeId, TargetEvidenceRequirementId};
+
+/// The wire spelling of every reviewed opening blocker.
+///
+/// The blockers are Wave 5's own review results, and a disposition record
+/// names them rather than restating them. They reach a report through
+/// this table for the same reason every other identity here does: the
+/// owning crate is standard-library-only by decision (Guide 11 §6.1), so
+/// it derives no serialization, and a spelling invented at the point of
+/// use would be one this package could not test.
+const OPENING_BLOCKER_NAMES: &[(OpeningBlocker, &str)] = &[
+    (
+        OpeningBlocker::GeneratorNotDerivableOnScript,
+        "generator_not_derivable_on_script",
+    ),
+    (
+        OpeningBlocker::EncodingDomainMismatch,
+        "encoding_domain_mismatch",
+    ),
+    (
+        OpeningBlocker::SuppliedParityUnbound,
+        "supplied_parity_unbound",
+    ),
+];
 
 /// The wire spelling of every reviewed primitive.
 const OPCODE_NAMES: &[(OpcodeId, &str)] = &[
@@ -396,6 +420,18 @@ pub fn evidence_requirement_name(id: TargetEvidenceRequirementId) -> Option<&'st
 #[must_use]
 pub fn evidence_requirement_from_name(name: &str) -> Option<TargetEvidenceRequirementId> {
     lookup_value(EVIDENCE_NAMES, name)
+}
+
+/// The spelling one reviewed opening blocker travels under.
+#[must_use]
+pub fn opening_blocker_name(blocker: OpeningBlocker) -> Option<&'static str> {
+    lookup_name(OPENING_BLOCKER_NAMES, blocker)
+}
+
+/// The reviewed opening blocker one spelling names.
+#[must_use]
+pub fn opening_blocker_from_name(name: &str) -> Option<OpeningBlocker> {
+    lookup_value(OPENING_BLOCKER_NAMES, name)
 }
 
 /// The spelling a table states for one identity.

@@ -1,6 +1,7 @@
 //! Crate-private test modules for the typed target contract.
 
 mod capability_tests;
+mod confidential_review_tests;
 mod definition_tests;
 mod deployment_tests;
 mod encoding_tests;
