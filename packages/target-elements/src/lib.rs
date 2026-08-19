@@ -26,8 +26,11 @@ pub use capability::{
     status_closure_violations, transitive_prerequisites,
 };
 pub use confidential::{
-    ConfidentialCapabilityState, ConfidentialValueCapability, ConfidentialValueContract,
-    IssuanceContract, IssuanceField,
+    AssetGeneratorDerivation, CommitmentRelation, CommitmentTermRoles, ConfidentialCapabilityState,
+    ConfidentialFieldEncoding, ConfidentialReviewFacts, ConfidentialValueCapability,
+    ConfidentialValueContract, ConservationContract, ConservationForm, IssuanceContract,
+    IssuanceField, OpeningBlocker, OpeningFeasibility, PointParityConvention, ProofRequirements,
+    ScalarByteOrder, reviewed_confidential_review_facts,
 };
 pub use definition::{
     ReviewedElementsTapscriptDefinition, TargetContractVersion, TargetDefinition,

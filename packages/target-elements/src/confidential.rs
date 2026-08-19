@@ -201,6 +201,625 @@ impl IssuanceContract {
     }
 }
 
+/// How a curve point's encoding selects between the two y values that
+/// share an x coordinate.
+///
+/// The distinction is the reason a pattern may not be carried over from
+/// one family of primitives to the other by analogy: the two
+/// conventions pick the same y only by coincidence.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum PointParityConvention {
+    /// The prefix records whether y is a quadratic residue.
+    ///
+    /// This is what the target's own confidential encodings use, for
+    /// both value commitments and asset generators.
+    QuadraticResidue,
+    /// The prefix records whether y is odd.
+    ///
+    /// This is what a compressed public key uses, and therefore what
+    /// the curve-checking primitives accept.
+    CompressedOddness,
+    /// No prefix is carried and the even y is implied.
+    ///
+    /// This is what an x-only key uses.
+    ImpliedEvenY,
+}
+
+/// The reviewed encoding of one confidential field.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ConfidentialFieldEncoding {
+    explicit_width: usize,
+    committed_width: usize,
+    explicit_prefix: u8,
+    committed_prefixes: (u8, u8),
+    parity: PointParityConvention,
+}
+
+impl ConfidentialFieldEncoding {
+    /// States one field's encoding.
+    #[must_use]
+    pub const fn new(
+        explicit_width: usize,
+        committed_width: usize,
+        explicit_prefix: u8,
+        committed_prefixes: (u8, u8),
+        parity: PointParityConvention,
+    ) -> Self {
+        Self {
+            explicit_width,
+            committed_width,
+            explicit_prefix,
+            committed_prefixes,
+            parity,
+        }
+    }
+
+    /// The serialized width of the explicit form, prefix included.
+    #[must_use]
+    pub const fn explicit_width(&self) -> usize {
+        self.explicit_width
+    }
+
+    /// The serialized width of the committed form, prefix included.
+    #[must_use]
+    pub const fn committed_width(&self) -> usize {
+        self.committed_width
+    }
+
+    /// The byte marking the explicit form.
+    #[must_use]
+    pub const fn explicit_prefix(&self) -> u8 {
+        self.explicit_prefix
+    }
+
+    /// The two bytes marking the committed form.
+    ///
+    /// The pair is ordered as the encoder emits it: the first marks a
+    /// square y and the second a non-square one.
+    #[must_use]
+    pub const fn committed_prefixes(&self) -> (u8, u8) {
+        self.committed_prefixes
+    }
+
+    /// Which y the committed prefix selects.
+    #[must_use]
+    pub const fn parity(&self) -> PointParityConvention {
+        self.parity
+    }
+
+    /// Whether a byte is one this field admits.
+    #[must_use]
+    pub const fn admits_prefix(&self, prefix: u8) -> bool {
+        prefix == 0
+            || prefix == self.explicit_prefix
+            || prefix == self.committed_prefixes.0
+            || prefix == self.committed_prefixes.1
+    }
+}
+
+/// The reviewed recipe taking an asset identifier to its generator.
+///
+/// Stated so a consumer can see what a program would have to perform to
+/// derive a generator on-script, and therefore why it cannot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AssetGeneratorDerivation {
+    identifier_width: usize,
+    hash_prefix_width: usize,
+    curve_map_evaluations: usize,
+    point_additions: usize,
+    blinded_form_adds_base_multiple: bool,
+}
+
+impl AssetGeneratorDerivation {
+    /// States the derivation.
+    #[must_use]
+    pub const fn new(
+        identifier_width: usize,
+        hash_prefix_width: usize,
+        curve_map_evaluations: usize,
+        point_additions: usize,
+        blinded_form_adds_base_multiple: bool,
+    ) -> Self {
+        Self {
+            identifier_width,
+            hash_prefix_width,
+            curve_map_evaluations,
+            point_additions,
+            blinded_form_adds_base_multiple,
+        }
+    }
+
+    /// The width of the asset identifier the recipe consumes.
+    #[must_use]
+    pub const fn identifier_width(&self) -> usize {
+        self.identifier_width
+    }
+
+    /// The width of each generation's tagged hash prefix.
+    #[must_use]
+    pub const fn hash_prefix_width(&self) -> usize {
+        self.hash_prefix_width
+    }
+
+    /// How many times the recipe maps a field element to the curve.
+    #[must_use]
+    pub const fn curve_map_evaluations(&self) -> usize {
+        self.curve_map_evaluations
+    }
+
+    /// How many point additions the recipe performs.
+    #[must_use]
+    pub const fn point_additions(&self) -> usize {
+        self.point_additions
+    }
+
+    /// Whether the blinded form adds a multiple of the base point.
+    #[must_use]
+    pub const fn blinded_form_adds_base_multiple(&self) -> bool {
+        self.blinded_form_adds_base_multiple
+    }
+}
+
+/// Which term of the commitment relation carries which generator.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum CommitmentTermRoles {
+    /// The blinding scalar multiplies the conventional base point and
+    /// the amount multiplies the asset generator, and the two are
+    /// added.
+    ///
+    /// This is the reviewed convention. Both terms are positive.
+    BlindOnBaseAmountOnAssetGenerator,
+    /// The roles are exchanged.
+    BlindOnAssetGeneratorAmountOnBase,
+}
+
+/// How the opening scalar is read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum ScalarByteOrder {
+    /// Most significant byte first.
+    BigEndian,
+    /// Least significant byte first.
+    LittleEndian,
+}
+
+/// The reviewed commitment relation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CommitmentRelation {
+    roles: CommitmentTermRoles,
+    scalar_width: usize,
+    scalar_order: ScalarByteOrder,
+    admits_zero_scalar: bool,
+    rejects_scalar_at_or_above_group_order: bool,
+    rejects_identity_result: bool,
+}
+
+impl CommitmentRelation {
+    /// States the relation.
+    #[must_use]
+    pub const fn new(
+        roles: CommitmentTermRoles,
+        scalar_width: usize,
+        scalar_order: ScalarByteOrder,
+        admits_zero_scalar: bool,
+        rejects_scalar_at_or_above_group_order: bool,
+        rejects_identity_result: bool,
+    ) -> Self {
+        Self {
+            roles,
+            scalar_width,
+            scalar_order,
+            admits_zero_scalar,
+            rejects_scalar_at_or_above_group_order,
+            rejects_identity_result,
+        }
+    }
+
+    /// Which generator each term uses.
+    #[must_use]
+    pub const fn roles(&self) -> CommitmentTermRoles {
+        self.roles
+    }
+
+    /// The width of the opening scalar.
+    #[must_use]
+    pub const fn scalar_width(&self) -> usize {
+        self.scalar_width
+    }
+
+    /// How the opening scalar's bytes are ordered.
+    #[must_use]
+    pub const fn scalar_order(&self) -> ScalarByteOrder {
+        self.scalar_order
+    }
+
+    /// Whether an all-zero scalar is admitted.
+    ///
+    /// It is, and consensus relies on it: an explicit amount enters the
+    /// balance as a commitment under a zero blinder.
+    #[must_use]
+    pub const fn admits_zero_scalar(&self) -> bool {
+        self.admits_zero_scalar
+    }
+
+    /// Whether a scalar at or above the group order is refused.
+    #[must_use]
+    pub const fn rejects_scalar_at_or_above_group_order(&self) -> bool {
+        self.rejects_scalar_at_or_above_group_order
+    }
+
+    /// Whether a commitment landing on the identity is refused.
+    #[must_use]
+    pub const fn rejects_identity_result(&self) -> bool {
+        self.rejects_identity_result
+    }
+}
+
+/// How the target closes its confidential-value balance.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum ConservationForm {
+    /// Inputs less outputs must be the identity exactly, with no
+    /// excess term and no kernel.
+    ExactTallyToIdentity,
+    /// A non-zero excess is carried and separately authorized.
+    ExcessCarried,
+}
+
+/// When the target demands a proof alongside a blinded field, and what
+/// that proof binds.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProofRequirements {
+    range_proof_required_for: BTreeSet<EncodingClass>,
+    range_proof_binds_output_script: bool,
+    range_proof_excludes_zero_when_spendable: bool,
+    surjection_proof_required_for: BTreeSet<EncodingClass>,
+}
+
+impl ProofRequirements {
+    /// States the proof requirements.
+    #[must_use]
+    pub fn new(
+        range_proof_required_for: impl IntoIterator<Item = EncodingClass>,
+        range_proof_binds_output_script: bool,
+        range_proof_excludes_zero_when_spendable: bool,
+        surjection_proof_required_for: impl IntoIterator<Item = EncodingClass>,
+    ) -> Self {
+        Self {
+            range_proof_required_for: range_proof_required_for.into_iter().collect(),
+            range_proof_binds_output_script,
+            range_proof_excludes_zero_when_spendable,
+            surjection_proof_required_for: surjection_proof_required_for.into_iter().collect(),
+        }
+    }
+
+    /// The value encodings a range proof is required for.
+    ///
+    /// The requirement is exact in both directions: the reviewed target
+    /// also refuses a range proof attached to an encoding absent here.
+    #[must_use]
+    pub const fn range_proof_required_for(&self) -> &BTreeSet<EncodingClass> {
+        &self.range_proof_required_for
+    }
+
+    /// Whether the range proof commits to the output script.
+    #[must_use]
+    pub const fn range_proof_binds_output_script(&self) -> bool {
+        self.range_proof_binds_output_script
+    }
+
+    /// Whether a proven minimum of zero is refused for a spendable
+    /// output.
+    #[must_use]
+    pub const fn range_proof_excludes_zero_when_spendable(&self) -> bool {
+        self.range_proof_excludes_zero_when_spendable
+    }
+
+    /// The asset encodings a surjection proof is required for.
+    #[must_use]
+    pub const fn surjection_proof_required_for(&self) -> &BTreeSet<EncodingClass> {
+        &self.surjection_proof_required_for
+    }
+}
+
+/// The reviewed whole-transaction conservation rule.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConservationContract {
+    form: ConservationForm,
+    explicit_values_join_as_zero_blinded: bool,
+    issuance_contributes_to_input_side: bool,
+    unspendable_zero_output_leaves_tally: bool,
+    proofs: ProofRequirements,
+}
+
+impl ConservationContract {
+    /// States the conservation contract.
+    #[must_use]
+    pub const fn new(
+        form: ConservationForm,
+        explicit_values_join_as_zero_blinded: bool,
+        issuance_contributes_to_input_side: bool,
+        unspendable_zero_output_leaves_tally: bool,
+        proofs: ProofRequirements,
+    ) -> Self {
+        Self {
+            form,
+            explicit_values_join_as_zero_blinded,
+            issuance_contributes_to_input_side,
+            unspendable_zero_output_leaves_tally,
+            proofs,
+        }
+    }
+
+    /// The shape of the balance check.
+    #[must_use]
+    pub const fn form(&self) -> ConservationForm {
+        self.form
+    }
+
+    /// Whether an explicit amount joins the tally as a zero-blinded
+    /// commitment rather than being handled separately.
+    #[must_use]
+    pub const fn explicit_values_join_as_zero_blinded(&self) -> bool {
+        self.explicit_values_join_as_zero_blinded
+    }
+
+    /// Whether an issuance adds pseudo-inputs to the input side.
+    #[must_use]
+    pub const fn issuance_contributes_to_input_side(&self) -> bool {
+        self.issuance_contributes_to_input_side
+    }
+
+    /// Whether an admitted zero-value explicit output is omitted from
+    /// the tally rather than committed into it.
+    #[must_use]
+    pub const fn unspendable_zero_output_leaves_tally(&self) -> bool {
+        self.unspendable_zero_output_leaves_tally
+    }
+
+    /// The proofs a blinded field must carry.
+    #[must_use]
+    pub const fn proofs(&self) -> &ProofRequirements {
+        &self.proofs
+    }
+}
+
+/// One reason the reviewed target cannot carry an authenticated public
+/// opening inside a program.
+///
+/// These are review results, not design intent. Each names a specific
+/// missing correspondence rather than a general difficulty, so a later
+/// candidate can be judged against them one at a time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum OpeningBlocker {
+    /// No primitive maps an asset identifier to its generator.
+    ///
+    /// The recipe needs two curve maps and a point addition, and the
+    /// reviewed language performs neither.
+    GeneratorNotDerivableOnScript,
+    /// The confidential encodings and the curve primitives disagree
+    /// about which y a prefix selects.
+    ///
+    /// Commitments and generators record whether y is a quadratic
+    /// residue; the curve primitives accept only the compressed
+    /// public-key prefixes, which record whether y is odd. No reviewed
+    /// primitive converts between them.
+    EncodingDomainMismatch,
+    /// Nothing binds a witness-supplied parity byte to the point the
+    /// commitment names.
+    ///
+    /// A program can assemble an operand from an exposed x coordinate,
+    /// but the parity it supplies is unchecked, so the relation holds
+    /// for the point or its negation.
+    SuppliedParityUnbound,
+}
+
+impl OpeningBlocker {
+    /// The complete census of reviewed blockers.
+    pub const ALL: &'static [Self] = &[
+        Self::GeneratorNotDerivableOnScript,
+        Self::EncodingDomainMismatch,
+        Self::SuppliedParityUnbound,
+    ];
+}
+
+/// What the review established about carrying an opening on-script.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OpeningFeasibility {
+    reachable: bool,
+    blockers: BTreeSet<OpeningBlocker>,
+    candidate_primitives: BTreeSet<OpcodeId>,
+}
+
+impl OpeningFeasibility {
+    /// States the feasibility result.
+    #[must_use]
+    pub fn new(
+        reachable: bool,
+        blockers: impl IntoIterator<Item = OpeningBlocker>,
+        candidate_primitives: impl IntoIterator<Item = OpcodeId>,
+    ) -> Self {
+        Self {
+            reachable,
+            blockers: blockers.into_iter().collect(),
+            candidate_primitives: candidate_primitives.into_iter().collect(),
+        }
+    }
+
+    /// Whether the reviewed language can carry a complete opening.
+    #[must_use]
+    pub const fn reachable(&self) -> bool {
+        self.reachable
+    }
+
+    /// Every blocker the review named.
+    #[must_use]
+    pub const fn blockers(&self) -> &BTreeSet<OpeningBlocker> {
+        &self.blockers
+    }
+
+    /// The primitives a candidate would draw on.
+    ///
+    /// Their presence is not a claim that a pattern exists: it is the
+    /// list a later candidate must build from, and the blockers state
+    /// why the list is not yet sufficient.
+    #[must_use]
+    pub const fn candidate_primitives(&self) -> &BTreeSet<OpcodeId> {
+        &self.candidate_primitives
+    }
+}
+
+/// The reviewed confidential-value facts that are not capability
+/// claims.
+///
+/// These are target facts held apart from [`TargetDefinition`], which
+/// this review does not extend: growing that schema is a versioned
+/// change, and this wave states facts rather than revising a contract
+/// shape.
+///
+/// [`TargetDefinition`]: crate::definition::TargetDefinition
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConfidentialReviewFacts {
+    value: ConfidentialFieldEncoding,
+    asset: ConfidentialFieldEncoding,
+    nonce: ConfidentialFieldEncoding,
+    generator: AssetGeneratorDerivation,
+    relation: CommitmentRelation,
+    conservation: ConservationContract,
+    opening: OpeningFeasibility,
+}
+
+impl ConfidentialReviewFacts {
+    /// States the reviewed facts.
+    #[must_use]
+    pub const fn new(
+        value: ConfidentialFieldEncoding,
+        asset: ConfidentialFieldEncoding,
+        nonce: ConfidentialFieldEncoding,
+        generator: AssetGeneratorDerivation,
+        relation: CommitmentRelation,
+        conservation: ConservationContract,
+        opening: OpeningFeasibility,
+    ) -> Self {
+        Self {
+            value,
+            asset,
+            nonce,
+            generator,
+            relation,
+            conservation,
+            opening,
+        }
+    }
+
+    /// The value field's encoding.
+    #[must_use]
+    pub const fn value(&self) -> ConfidentialFieldEncoding {
+        self.value
+    }
+
+    /// The asset field's encoding.
+    #[must_use]
+    pub const fn asset(&self) -> ConfidentialFieldEncoding {
+        self.asset
+    }
+
+    /// The nonce field's encoding.
+    #[must_use]
+    pub const fn nonce(&self) -> ConfidentialFieldEncoding {
+        self.nonce
+    }
+
+    /// The asset generator recipe.
+    #[must_use]
+    pub const fn generator(&self) -> AssetGeneratorDerivation {
+        self.generator
+    }
+
+    /// The commitment relation.
+    #[must_use]
+    pub const fn relation(&self) -> CommitmentRelation {
+        self.relation
+    }
+
+    /// The conservation rule.
+    #[must_use]
+    pub const fn conservation(&self) -> &ConservationContract {
+        &self.conservation
+    }
+
+    /// The on-script opening result.
+    #[must_use]
+    pub const fn opening(&self) -> &OpeningFeasibility {
+        &self.opening
+    }
+}
+
+/// Builds the reviewed confidential-value facts.
+#[must_use]
+pub fn reviewed_confidential_review_facts() -> ConfidentialReviewFacts {
+    ConfidentialReviewFacts::new(
+        // Prefix, then eight bytes of amount; or a commitment point
+        // whose prefix records the squareness of its y coordinate.
+        ConfidentialFieldEncoding::new(9, 33, 1, (8, 9), PointParityConvention::QuadraticResidue),
+        // Prefix, then the thirty-two byte identifier; or a generator
+        // under the same squareness convention, shifted by two.
+        ConfidentialFieldEncoding::new(
+            33,
+            33,
+            1,
+            (10, 11),
+            PointParityConvention::QuadraticResidue,
+        ),
+        // The nonce shares the shape. Its committed form is a
+        // transported point rather than a commitment this contract
+        // reasons about, so no parity claim is made beyond the
+        // encoding it shares.
+        ConfidentialFieldEncoding::new(33, 33, 1, (2, 3), PointParityConvention::QuadraticResidue),
+        // Two tagged hashes over the same identifier, each mapped to
+        // the curve, then added. The blinded form prepends a multiple
+        // of the base point, which is why a second addition exists
+        // there and not here.
+        AssetGeneratorDerivation::new(32, 16, 2, 1, true),
+        CommitmentRelation::new(
+            CommitmentTermRoles::BlindOnBaseAmountOnAssetGenerator,
+            32,
+            ScalarByteOrder::BigEndian,
+            true,
+            true,
+            true,
+        ),
+        ConservationContract::new(
+            ConservationForm::ExactTallyToIdentity,
+            true,
+            true,
+            true,
+            ProofRequirements::new(
+                [EncodingClass::ConfidentialValue],
+                true,
+                true,
+                [EncodingClass::ConfidentialAsset],
+            ),
+        ),
+        OpeningFeasibility::new(
+            false,
+            OpeningBlocker::ALL.iter().copied(),
+            [
+                OpcodeId::InspectInputValue,
+                OpcodeId::InspectOutputValue,
+                OpcodeId::InspectInputAsset,
+                OpcodeId::InspectOutputAsset,
+                OpcodeId::EcMulScalarVerify,
+                OpcodeId::TweakVerify,
+                OpcodeId::Concatenate,
+            ],
+        ),
+    )
+}
+
 /// Builds the reviewed confidential-value contract.
 pub(crate) fn reviewed_confidential_values() -> ConfidentialValueContract {
     use ConfidentialCapabilityState as S;
