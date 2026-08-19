@@ -7,8 +7,9 @@
 //! executor adapter takes.
 //!
 //! A mock proves the *protocol*. It proves nothing about any target: its
-//! answers are the fixture's own expectations read back, and the gate
-//! refuses a mock run for exactly that reason.
+//! answers come from a table it built for itself out of the very censuses
+//! the harness compares them against, and the gate refuses a mock run for
+//! exactly that reason.
 
 #![cfg(unix)]
 
@@ -31,8 +32,8 @@ use target_elements_conformance::fixture::{
     ExpectedPrimitiveOutcome, NativeCaseGroup, NativeCaseId, PrimitiveFixture, PrimitiveFixtureSet,
 };
 use target_elements_conformance::protocol::{
-    MOCK_EXECUTOR_GENESIS_ID, MOCK_EXECUTOR_NETWORK_ID, NativeVerdict, ProtocolLimits,
-    ProtocolPhase, ResponseShapeDefect,
+    MOCK_EXECUTOR_GENESIS_ID, MOCK_EXECUTOR_NETWORK_ID, NATIVE_PROTOCOL_SCHEMA, NativeVerdict,
+    ProtocolLimits, ProtocolPhase, ResponseShapeDefect,
 };
 
 /// The string the noisy mock writes on its stderr.
@@ -57,6 +58,21 @@ fn development_binding(target: &ReviewedElementsTapscriptDefinition) -> Reviewed
     validate_reviewed_development_binding(target, binding).expect("the binding validates")
 }
 
+/// The ordinal the first ad hoc case takes.
+///
+/// Deliberately far outside the canonical census. These fixtures are the
+/// caller's own — two additions of the same two operands — and their case
+/// identities must not collide with a canonical case's, because the mock
+/// answers by looking a case identity up in its own census-derived table.
+/// A collision would have the mock answer these fixtures with whatever the
+/// canonical case of that identity expects, which is a different question
+/// from the one these tests ask.
+///
+/// That is not a wrinkle to work around: it is protocol revision 3 doing
+/// its job. Under revision 2 the mock read the expectation out of the
+/// request and could not help but agree with any fixture it was handed.
+const AD_HOC_ORDINAL: u32 = 900_000;
+
 /// Two fixtures, differing only in ordinal.
 fn fixtures() -> PrimitiveFixtureSet {
     let target = reviewed_target();
@@ -71,7 +87,11 @@ fn fixtures() -> PrimitiveFixtureSet {
         PrimitiveFixture::new(
             &target,
             &binding,
-            NativeCaseId::new(NativeCaseGroup::Arithmetic, Some(OpcodeId::Add64), ordinal),
+            NativeCaseId::new(
+                NativeCaseGroup::Arithmetic,
+                Some(OpcodeId::Add64),
+                AD_HOC_ORDINAL + ordinal,
+            ),
             &program,
             &stack,
             None,
@@ -130,7 +150,7 @@ fn run_with(
 
 #[test]
 fn a_well_behaved_executor_answers_every_case_once() {
-    let transcript = run("echo-expected").expect("the exchange completes");
+    let transcript = run("answer-from-census").expect("the exchange completes");
     assert_eq!(transcript.responses().len(), 2);
     assert_eq!(transcript.trust(), ExecutorTrust::Mock);
     assert_eq!(transcript.handshake().node_name, "mock-native-executor");
@@ -154,6 +174,24 @@ fn a_handshake_schema_this_harness_does_not_speak_fails_closed() {
         error,
         NativeConformanceError::UnsupportedProtocolSchema { .. },
     ));
+}
+
+#[test]
+fn an_executor_of_the_previous_revision_fails_loudly() {
+    // The migration case, driven through a real subprocess rather than
+    // argued about. A revision-2 adapter answers a question revision 3 no
+    // longer asks — its requests carried the expectation — so it is
+    // refused at the handshake by name, before any case is sent and long
+    // before any record of its could be read as a revision-3 one.
+    let error = run("previous-revision-handshake").expect_err("the old revision is refused");
+    assert!(
+        matches!(
+            error,
+            NativeConformanceError::UnsupportedProtocolSchema { offered }
+                if offered == NATIVE_PROTOCOL_SCHEMA - 1,
+        ),
+        "expected the previous revision to be named, got {error}",
+    );
 }
 
 #[test]
@@ -355,7 +393,7 @@ fn a_record_at_exactly_the_bound_is_accepted() {
     // a record within it. An off-by-one here would refuse honest
     // executors at the boundary the protocol documents.
     let handshake_bytes = {
-        let transcript = run("echo-expected").expect("the exchange completes");
+        let transcript = run("answer-from-census").expect("the exchange completes");
         serde_json::to_vec(transcript.handshake())
             .expect("a handshake serializes")
             .len()
@@ -364,14 +402,14 @@ fn a_record_at_exactly_the_bound_is_accepted() {
         maximum_handshake_bytes: handshake_bytes,
         ..ProtocolLimits::DEFAULT
     };
-    run_with("echo-expected", Duration::from_secs(30), limits)
+    run_with("answer-from-census", Duration::from_secs(30), limits)
         .expect("a record of exactly the maximum is within the bound");
 
     let limits = ProtocolLimits {
         maximum_handshake_bytes: handshake_bytes - 1,
         ..ProtocolLimits::DEFAULT
     };
-    let error = run_with("echo-expected", Duration::from_secs(30), limits)
+    let error = run_with("answer-from-census", Duration::from_secs(30), limits)
         .expect_err("one byte past the bound is refused");
     assert!(
         matches!(

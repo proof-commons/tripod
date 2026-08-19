@@ -11,9 +11,11 @@
 //! compound fixture at all.
 //!
 //! It establishes nothing whatever about any target. The mock executes
-//! no script, builds no transaction, and boots no node; its answers are
-//! each fixture's own expectation read back, so the harness would be
-//! comparing a fixture with itself. Every claim both matrices state
+//! no script, builds no transaction, and boots no node; its answers come
+//! from its own copy of the canonical matrices, so the harness would be
+//! comparing a value with itself. Revision 3 stopped sending the
+//! expectation, so the mock holds that copy out of band rather than
+//! reading an answer off the wire. Every claim both matrices state
 //! stays unresolved until a reviewed nonmock executor answers them
 //! (Guide-10 `rule:guide10:validated-native-evidence`).
 
@@ -57,15 +59,48 @@ fn development_binding(target: &ReviewedElementsTapscriptDefinition) -> Reviewed
     validate_reviewed_development_binding(target, binding).expect("the binding validates")
 }
 
+/// The compound verdicts the mock is to answer with.
+///
+/// Written here, from the matrix this test already holds, and handed to
+/// the mock through its own configuration. Under protocol revision 3 the
+/// request carries no expectation, so a mock that is to agree with a
+/// matrix has to be told what the matrix says — and being told out of
+/// band, in a file the harness never sees, is what keeps the agreement
+/// from looking like an observation.
+fn verdict_file(directory: &Path, matrix: &[CompoundPrototypeFixture]) -> PathBuf {
+    let path = directory.join("prototype-verdicts.json");
+    let table: std::collections::BTreeMap<String, &'static str> = matrix
+        .iter()
+        .map(|row| {
+            // An outcome this test has not been taught is written as a
+            // refusal, which is the answer that cannot manufacture a
+            // passing row: a fixture expecting something else will
+            // disagree with it and fail loudly.
+            let verdict = match row.expected {
+                ExpectedPrototypeOutcome::Accepted => "accepted",
+                _ => "rejected",
+            };
+            (row.case.to_string(), verdict)
+        })
+        .collect();
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&table).expect("the verdict table encodes"),
+    )
+    .expect("write verdicts");
+    path
+}
+
 /// A wrapper script selecting one mock behaviour.
-fn wrapper(directory: &Path, behavior: &str) -> PathBuf {
+fn wrapper(directory: &Path, behavior: &str, verdicts: &Path) -> PathBuf {
     let path = directory.join(format!("executor-{behavior}.sh"));
     let mut file = std::fs::File::create(&path).expect("create wrapper");
     writeln!(file, "#!/bin/sh").expect("write wrapper");
     writeln!(
         file,
-        "exec {} --behavior {behavior} \"$@\"",
+        "exec {} --behavior {behavior} --prototype-verdicts {} \"$@\"",
         env!("CARGO_BIN_EXE_mock-native-executor"),
+        verdicts.display(),
     )
     .expect("write wrapper");
     let mut permissions = file.metadata().expect("metadata").permissions();
@@ -81,7 +116,8 @@ fn run(
     matrix: &[CompoundPrototypeFixture],
 ) -> Result<ExecutionTranscript, NativeConformanceError> {
     let directory = tempfile::tempdir().expect("tempdir");
-    let program = wrapper(directory.path(), behavior);
+    let verdicts = verdict_file(directory.path(), matrix);
+    let program = wrapper(directory.path(), behavior, &verdicts);
     let configuration =
         ExecutorConfiguration::new(&program, ExecutorTrust::Mock, Duration::from_secs(120));
     let target = reviewed_target();
@@ -105,8 +141,8 @@ fn wide_floor_matrix() -> Vec<CompoundPrototypeFixture> {
         .to_vec()
 }
 
-/// Every row is answered once, in order, with the verdict the mock
-/// echoes from the fixture's own expectation.
+/// Every row is answered once, in order, with the verdict the mock finds
+/// for that case identity in its own copy of the canonical matrix.
 fn assert_round_trips(matrix: &[CompoundPrototypeFixture], relation: PrototypeRelation) {
     let transcript = run("materialize-tree", matrix).expect("the exchange completes");
     assert_eq!(transcript.trust(), ExecutorTrust::Mock);
@@ -177,7 +213,7 @@ fn a_refused_construction_is_infrastructure_trouble_and_not_a_verdict() {
     // every row comes back as infrastructure trouble, carrying no
     // observation of any kind.
     let matrix = wide_floor_matrix();
-    let transcript = run("echo-expected", &matrix).expect("the exchange completes");
+    let transcript = run("answer-from-census", &matrix).expect("the exchange completes");
     assert_eq!(transcript.prototype_responses().len(), matrix.len());
     for response in transcript.prototype_responses().values() {
         assert_eq!(response.verdict, NativeVerdict::InfrastructureError);

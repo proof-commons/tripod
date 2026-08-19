@@ -319,6 +319,80 @@ pub enum NativeConformanceError {
     #[error("the canonical matrix of the run's relation could not be regenerated")]
     CanonicalPrototypeMatrixUnavailable,
 
+    /// The report is being built against a contract the run was not
+    /// requested under.
+    ///
+    /// Exact typed equality over the whole retained target projection,
+    /// never revision equality: two contracts at one revision are two
+    /// contracts, and a run requested under either would otherwise report
+    /// as a run under the other.
+    #[error("the transcript was not produced under the contract this report is stated against")]
+    TranscriptTargetRebinding,
+
+    /// The report is being built against a deployment binding the run was
+    /// not requested under.
+    ///
+    /// The rebinding this closes: a transcript obtained on one
+    /// development network could be evaluated, validated, and gated
+    /// against another, and the resulting report stated one network as
+    /// declared while carrying the other as observed.
+    #[error("the transcript was not produced under the binding this report is stated against")]
+    TranscriptDeploymentRebinding,
+
+    /// A case being reported was never sent to the executor.
+    ///
+    /// The transcript retains what was requested, so a fixture with no
+    /// retained request is a case this run never asked about — whatever
+    /// answers the transcript happens to hold under that case identity.
+    #[error("case {0} was never sent to the executor of this run")]
+    MissingCaseRequest(NativeCaseId),
+
+    /// The subject being reported for a case is not the subject that case
+    /// was executed with.
+    ///
+    /// Exact typed comparison of the complete subject — script, initial
+    /// stack, transaction context, enforcement layer, leaf version, and
+    /// the facts the case is stated against. Not a width comparison: two
+    /// different scripts of one length are two different scripts, and the
+    /// exact `script_bytes` expectation that used to catch a substitution
+    /// caught only the ones that changed size.
+    #[error("case {0} was executed with a different subject from the one being reported")]
+    TranscriptSubjectMismatch(NativeCaseId),
+
+    /// The transcript answers a case it was never asked about.
+    ///
+    /// Distinct from the protocol-phase refusal of the same shape: that
+    /// one is an executor answering out of turn during an exchange, and
+    /// this is a transcript whose two halves do not correspond by the
+    /// time a report is built from it.
+    #[error("the transcript answers case {0}, which it holds no request for")]
+    UnrequestedCaseResponse(NativeCaseId),
+
+    /// A compound case being reported was never sent to the executor.
+    #[error("prototype case {0} was never sent to the executor of this run")]
+    MissingPrototypeRequest(PrototypeCaseId),
+
+    /// The construction or program being reported for a compound case is
+    /// not the one that case was executed with.
+    #[error("prototype case {0} was executed with a different subject from the one being reported")]
+    PrototypeTranscriptSubjectMismatch(PrototypeCaseId),
+
+    /// The transcript answers a compound case it was never asked about.
+    #[error("the transcript answers prototype case {0}, which it holds no request for")]
+    UnrequestedPrototypeResponse(PrototypeCaseId),
+
+    /// The report states a request/expectation boundary this harness does
+    /// not produce.
+    ///
+    /// A revision-2 report states that its requests carried the fixture's
+    /// expectation. That document remains what it was; it is not a
+    /// revision-3 report and is not validated as one.
+    #[error("the report states a request boundary this harness does not produce")]
+    UnsupportedRequestExpectationBoundary {
+        /// The boundary the report states.
+        offered: crate::protocol::RequestExpectationBoundary,
+    },
+
     /// The report's evidence rows are not the recomputed ones.
     #[error("the report's evidence rows are not the ones the plan and the run produce")]
     ReportEvidenceCensusMismatch,

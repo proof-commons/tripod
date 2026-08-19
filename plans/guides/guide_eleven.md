@@ -496,7 +496,7 @@ Changing any member invalidates canonical eligibility.
 
 Checking only that a named opcode appears in a script is insufficient. A script can contain an irrelevant opcode or execute it in a context unrelated to the claimed property.
 
-## 4.4 Transcripts bind exactly what was sent
+## 4.4 Transcripts bind exactly what was sent · `rule:guide11-exec:transcript-binding`
 
 A canonical transcript retains:
 
@@ -531,7 +531,7 @@ At minimum, report validation rejects:
 
 No digest is needed. Exact typed comparison is the correct mechanism.
 
-## 4.5 Protocol revision 3 removes expectations from executor requests
+## 4.5 Protocol revision 3 removes expectations from executor requests · `rule:guide11-exec:request-subject`
 
 The executor should receive the execution subject, not the answer.
 
@@ -569,7 +569,7 @@ Revision-2 reports remain historical. They are not silently parsed as revision 3
 
 The test mock may still have explicit test behavior, but it must not obtain the expected answer by reading it from the request. A mock remains unable to satisfy an evidence gate regardless.
 
-## 4.6 Environment binding is checked twice
+## 4.6 Environment binding is checked twice · `rule:guide11-exec:environment-twice`
 
 The harness compares the executor’s observed environment with the reviewed deployment binding:
 

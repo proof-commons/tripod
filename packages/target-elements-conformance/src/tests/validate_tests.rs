@@ -8,7 +8,7 @@ use target_elements::{
 
 use crate::claim::{ClaimRegistry, NativeEvidenceClaim, claim_registry};
 use crate::error::NativeConformanceError;
-use crate::executor::{ExecutionTranscript, ExecutorTrust};
+use crate::executor::{ExecutionTranscript, ExecutorTrust, TranscriptParts};
 use crate::fixture::{
     CanonicalPrimitiveFixtureSet, ExpectedPrimitiveOutcome, NativeCaseGroup, NativeCaseId,
     canonical_fixture_set,
@@ -26,7 +26,7 @@ use crate::validate::{
 };
 
 use super::support::{
-    development_binding, nonmock_handshake, observed_environment, reviewed_target,
+    development_binding, nonmock_handshake, observed_environment, reviewed_target, subjects_of,
 };
 
 /// Everything one run needs, assembled once per test.
@@ -73,12 +73,15 @@ impl Run {
             let answer = change(case, &contract_answer).unwrap_or(contract_answer);
             responses.insert(case, answer);
         }
-        let transcript = ExecutionTranscript::for_tests(
-            nonmock_handshake(),
-            observed_environment(),
+        let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+            target: &target,
+            binding: &binding,
+            handshake: nonmock_handshake(),
+            environment: observed_environment(),
             trust,
+            requests: subjects_of(&fixtures),
             responses,
-        );
+        });
 
         Self {
             target,

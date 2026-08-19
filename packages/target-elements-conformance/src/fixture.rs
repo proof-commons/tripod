@@ -841,6 +841,43 @@ impl PrimitiveFixture {
         }
     }
 
+    /// Exactly what the executor is handed, and nothing it is asked to
+    /// agree with.
+    ///
+    /// # The subject without the answer
+    ///
+    /// This is the projection minus the expectation: the script, the
+    /// initial stack, the transaction context, the enforcement layer, the
+    /// leaf version, and the facts the case is stated against. The
+    /// expected outcome, the expected resource figures, and the claim set
+    /// are all absent, because they are what the harness compares the
+    /// executor's answer *with* and an executor that could read them
+    /// would be reading the answer
+    /// `(´[PLAN-rule:guide11-exec:request-subject]´)`.
+    ///
+    /// It is one value with two uses, deliberately. It is the protocol
+    /// revision-3 request payload, and it is what the transcript retains
+    /// as the request that was actually sent — so the thing compared at
+    /// evaluation is the thing that went over the wire, rather than a
+    /// second description of it.
+    #[must_use]
+    pub fn subject(&self) -> PrimitiveExecutionSubject {
+        PrimitiveExecutionSubject {
+            case: self.case,
+            target_contract_version: self.target_contract_version,
+            network_id: self.network_id,
+            genesis_id: self.genesis_id,
+            execution_domain: self.execution_domain,
+            leaf_version: self.leaf_version,
+            leaf_version_status: self.leaf_version_status,
+            enforcement_layer: self.enforcement_layer,
+            script_source: self.script_source,
+            script: self.script.clone(),
+            initial_stack: self.initial_stack.clone(),
+            context: self.context.clone(),
+        }
+    }
+
     /// Whether the fixture is stated at the reviewed leaf version.
     #[must_use]
     pub const fn leaf_version_status(&self) -> LeafVersionStatus {
@@ -924,6 +961,51 @@ impl PrimitiveFixture {
     pub const fn expected(&self) -> &ExpectedPrimitiveOutcome {
         &self.expected
     }
+}
+
+/// Exactly what one executor was handed for one case.
+///
+/// # Why this is a type and not a filtered view
+///
+/// The execution subject and the expectation used to travel as one value,
+/// because a fixture is one value and splitting it risked the harness and
+/// the executor holding two different notions of what ran. Protocol
+/// revision 3 splits them anyway, and this is the half that crosses the
+/// boundary: everything the executor needs to perform the execution, and
+/// no statement at all about what the result should be
+/// `(´[PLAN-rule:guide11-exec:request-subject]´)`.
+///
+/// The other half never leaves the harness. That is the point: an
+/// executor cannot discard an expectation it was never sent, so the
+/// discipline is a property of the protocol rather than of an adapter's
+/// good behaviour.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PrimitiveExecutionSubject {
+    /// Which case.
+    pub case: NativeCaseId,
+    /// The contract revision the case is stated against.
+    pub target_contract_version: u32,
+    /// The network the case is stated against.
+    pub network_id: [u8; 32],
+    /// The genesis identifier the case is stated against.
+    pub genesis_id: [u8; 32],
+    /// The execution domain.
+    pub execution_domain: WireExecutionDomain,
+    /// The leaf version byte.
+    pub leaf_version: u8,
+    /// Whether that byte is the reviewed one.
+    pub leaf_version_status: LeafVersionStatus,
+    /// Which rule the case is to be answered at.
+    pub enforcement_layer: EnforcementLayer,
+    /// Where the exact script bytes came from.
+    pub script_source: FixtureScriptSource,
+    /// The exact script bytes.
+    pub script: Vec<u8>,
+    /// The exact initial stack.
+    pub initial_stack: Vec<Vec<u8>>,
+    /// The transaction context, where the case needs one.
+    pub context: Option<PrimitiveExecutionContext>,
 }
 
 /// The complete comparison form of one fixture.

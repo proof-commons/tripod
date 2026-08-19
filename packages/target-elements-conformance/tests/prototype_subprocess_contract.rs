@@ -118,7 +118,7 @@ fn no_credential_argument_exists() {
 fn a_declared_mock_run_cannot_satisfy_the_prototype_gate() {
     for relation in ["constructor-continuity", "wide-floor"] {
         let directory = tempfile::tempdir().expect("tempdir");
-        let executor = wrapper(directory.path(), "echo-expected");
+        let executor = wrapper(directory.path(), "answer-from-census");
         let output = run(&[
             "--relation",
             relation,
@@ -152,7 +152,7 @@ fn a_declared_mock_run_cannot_satisfy_the_prototype_gate() {
 #[test]
 fn a_refused_gate_publishes_no_report_and_dates_no_stamp() {
     let directory = tempfile::tempdir().expect("tempdir");
-    let executor = wrapper(directory.path(), "echo-expected");
+    let executor = wrapper(directory.path(), "answer-from-census");
     let report = directory.path().join("report.json");
     let stamp = directory.path().join("stamp.ok");
 

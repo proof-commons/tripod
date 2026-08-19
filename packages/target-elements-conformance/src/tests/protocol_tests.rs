@@ -224,14 +224,53 @@ fn the_handshake_request_states_this_harnesss_schema() {
 }
 
 #[test]
-fn this_harness_speaks_schema_two_and_not_schema_one() {
-    // Stated as a value rather than left implicit. Schema 2 adds the
-    // environment observation, the separated provenance roles, and the
-    // bounded-record contract; a schema-1 executor establishes none of
-    // them, so the two are refused for each other rather than reconciled
-    // by reading whichever fields happen to overlap.
-    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 2);
+fn this_harness_speaks_schema_three_and_no_earlier_one() {
+    // Stated as a value rather than left implicit. Schema 3 removes the
+    // expectation from the request; schema 2 added the environment
+    // observation, the separated provenance roles, and the bounded-record
+    // contract. An executor of either earlier revision answers a question
+    // this one no longer asks, so they are refused for each other rather
+    // than reconciled by reading whichever fields happen to overlap
+    // (´[PLAN-rule:guide11-exec:request-subject]´).
+    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 3);
+    assert_ne!(NATIVE_PROTOCOL_SCHEMA, 2);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 1);
+}
+
+#[test]
+fn a_request_carries_no_expectation_of_any_kind() {
+    // The revision-3 boundary, checked over the encoded record rather
+    // than over the type: a field added to the subject by a later wave
+    // would have to pass this to reach the wire
+    // (´[PLAN-rule:guide11-exec:request-subject]´).
+    let target = crate::tests::support::reviewed_target();
+    let binding = crate::tests::support::development_binding(&target);
+    let census = crate::fixture::canonical_fixture_set(&target, &binding)
+        .expect("the canonical census states");
+    let fixture = census.iter().next().expect("the census is not empty");
+
+    let request = crate::protocol::NativeExecutionRequest {
+        schema: NATIVE_PROTOCOL_SCHEMA,
+        case: fixture.case(),
+        subject: fixture.subject(),
+        construction: None,
+    };
+    let encoded = serde_json::to_string(&request).expect("the request encodes");
+
+    for forbidden in [
+        "expected",
+        "expected_resources",
+        "claims",
+        "static_final_stack",
+        "static_final_altstack",
+        "classes",
+        "evidence",
+    ] {
+        assert!(
+            !encoded.contains(forbidden),
+            "a revision-3 request must not carry {forbidden}: {encoded}",
+        );
+    }
 }
 
 #[test]
