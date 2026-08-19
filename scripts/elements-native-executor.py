@@ -667,11 +667,22 @@ class AdapterError(Exception):
 
     Every instance becomes one `infrastructure_error` response. It is never
     a target verdict: the two are kept apart on purpose (Guide-9 section 11.6).
+
+    `client_detail` is what the `elements-cli` child wrote on its stderr,
+    and it is deliberately NOT part of the note. The note is written to
+    first-party protocol records, and a child's stderr is not first-party
+    evidence (G12-R04). The detail exists because one caller has a
+    legitimate need for those bytes -- the consensus judgement reads the
+    target's script error out of them -- and that caller CLASSIFIES them
+    into the typed failure vocabulary rather than propagating them. An
+    unmapped message becomes no class at all; it never becomes a record's
+    text by another route.
     """
 
-    def __init__(self, note: str) -> None:
+    def __init__(self, note: str, client_detail: str = "") -> None:
         super().__init__(note)
         self.note = note
+        self.client_detail = client_detail
 
 
 class FatalAdapterError(Exception):
@@ -1304,7 +1315,8 @@ class DisposableNode:
             raise AdapterError(
                 "rpc %s failed with client exit status %d; the client's stderr is "
                 "omitted from first-party records by contract"
-                % (method, completed.returncode)
+                % (method, completed.returncode),
+                client_detail=one_line(completed.stderr),
             )
         text = completed.stdout.strip()
         if text == "":
@@ -2139,17 +2151,23 @@ class CaseExecutor:
         return self.judge_in_block(raw)
 
     def judge_in_block(self, raw: str) -> dict:
-        """Judges at consensus, which is what block validation enforces."""
+        """Judges at consensus, which is what block validation enforces.
+
+        The script error is read from the client's stderr, which is the
+        only place block validation states it. Those bytes are read for
+        CLASSIFICATION and go no further: what leaves this method is a
+        member of the typed failure vocabulary or nothing at all, never
+        the target's text (G12-R04).
+        """
         try:
             self.node.call("generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw]))
         except AdapterError as error:
-            if CONSENSUS_SCRIPT_PREFIX in error.note:
-                start = error.note.index(CONSENSUS_SCRIPT_PREFIX) + len(CONSENSUS_SCRIPT_PREFIX)
-                end = error.note.index(")", start)
-                return rejection(error.note[start:end])
+            message = script_error_in(error.client_detail, CONSENSUS_SCRIPT_PREFIX)
+            if message is not None:
+                return rejection(message)
             raise AdapterError(
-                "the node refused the block for a reason that is not a script "
-                "verdict: %s" % error.note
+                "the node refused the block for a reason that is not a script verdict",
+                client_detail=error.client_detail,
             )
         return {"verdict": "accepted", "observed_failure": None}
 
@@ -2165,8 +2183,12 @@ class CaseExecutor:
         if not isinstance(reason, str):
             raise AdapterError("the node rejected without naming a reason")
         for prefix in (POLICY_SCRIPT_PREFIX, CONSENSUS_SCRIPT_PREFIX):
-            if reason.startswith(prefix):
-                return rejection(reason[len(prefix) : -1])
+            message = script_error_in(reason, prefix)
+            if message is not None:
+                return rejection(message)
+        # The reject reason is the node's structured RPC answer rather
+        # than a child's stderr, so it is the target speaking and may be
+        # recorded.
         raise AdapterError(
             "the node refused the transaction for a reason that is not a script "
             "verdict: %s" % reason
@@ -3662,6 +3684,51 @@ def satoshis_to_amount(satoshis: int) -> str:
 def satoshis_to_amount_float(amount) -> float:
     """One RPC-reported amount, passed back unchanged in value."""
     return float(amount)
+
+
+def script_error_in(text: str, prefix: str):
+    """The script error a wrapper carries, or None if it carries none.
+
+    # Why this counts depth instead of finding a parenthesis
+
+    The consensus judgement used to take the substring up to the FIRST
+    `)` after the wrapper opened. Two of the messages the class table
+    holds carry a parenthesis of their own --
+    `Signature must be zero for failed CHECK(MULTI)SIG operation` and
+    `OP_CHECKMULTISIG(VERIFY) is not available in tapscript` -- so each
+    truncated to a string the table does not hold, the lookup missed,
+    and a rejection the target had classified precisely arrived with no
+    class at all. Nothing failed loudly: a lost class reads as a target
+    that refused for an unclassified reason (G12-R07).
+
+    So the wrapper is closed by matching the parenthesis it opened,
+    which is what "the exact outer wrapper" means when the payload may
+    contain parentheses. The relay judgement's whole-wrapper reading was
+    already correct and is now expressed through this same function,
+    because two spellings of one rule are two things that can disagree.
+
+    Returns None where the wrapper is absent or never closes, so a
+    caller distinguishes "not a script verdict" from "a script verdict
+    naming nothing".
+    """
+    opening = prefix.rindex("(")
+    head = prefix[:opening]
+    position = text.find(head + "(")
+    if position < 0:
+        return None
+    start = position + len(head) + 1
+    depth = 1
+    for index in range(start, len(text)):
+        if text[index] == "(":
+            depth += 1
+        elif text[index] == ")":
+            depth -= 1
+            if depth == 0:
+                return text[start:index]
+    # An unbalanced wrapper is not a verdict this adapter can read. It
+    # is reported as unreadable rather than repaired by guessing where
+    # the message ended.
+    return None
 
 
 def rejection(script_error: str) -> dict:
