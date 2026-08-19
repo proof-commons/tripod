@@ -27,6 +27,7 @@ weight rule in [the plans README](../README.md).
 | [guide_nine.md](guide_nine.md) | Target-native primitive conformance and tapscript instruction core |
 | [guide_ten.md](guide_ten.md) | STATE constructor and exact wide-arithmetic prototypes |
 | [guide_eleven.md](guide_eleven.md) | Guide-11 preflight register and public declassification |
+| [guide_twelve.md](guide_twelve.md) | Guide-12 preflight register and end-to-end compact ASH |
 
 ## Concept guides · `tab:guides:concepts`
 

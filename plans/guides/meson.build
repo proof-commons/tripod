@@ -16,5 +16,6 @@ plans_guides_files = files(
   'guide_six.md',
   'guide_ten.md',
   'guide_ten_concept.md',
+  'guide_twelve.md',
   'guide_twelve_concept.md',
 )

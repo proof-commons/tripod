@@ -22,6 +22,7 @@ weight rule in [the plans README](../README.md).
 | [review-4-0.3.2-dev.md](review-4-0.3.2-dev.md) | 0.3.2-dev | backlog §5.4 (R2) | Guide 9 |
 | [review-5-0.3.3-dev.md](review-5-0.3.3-dev.md) | 0.3.3-dev | backlog §5.5 (SR5) | Guide 10 |
 | [review-6-0.3.4-dev.md](review-6-0.3.4-dev.md) | 0.3.4-dev | backlog §5.6 (SR6) | Guide 11 |
+| [review-7-0.3.6-dev.md](review-7-0.3.6-dev.md) | 0.3.6-dev | Guide-12 preflight register (guide §3) | Guide 12 |
 
 ## Review rule · `rule:reviews:authority`
 
