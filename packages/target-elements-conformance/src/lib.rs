@@ -7,6 +7,8 @@ pub mod commitment_oracle;
 pub mod conservation;
 pub mod conservation_report;
 pub mod constructor;
+pub mod declassification;
+pub mod disposition;
 pub mod error;
 pub mod executor;
 pub mod fixture;

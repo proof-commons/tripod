@@ -37,6 +37,8 @@ target_elements_conformance_source_files = files(
   'src/constructor/tagged.rs',
   'src/constructor/totality.rs',
   'src/constructor/tree.rs',
+  'src/declassification.rs',
+  'src/disposition.rs',
   'src/error.rs',
   'src/executor.rs',
   'src/fixture.rs',
