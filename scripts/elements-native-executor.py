@@ -3,10 +3,21 @@
 
 This program speaks the newline-delimited JSON executor protocol owned by
 `tripod-target-elements-conformance` on its stdin and stdout, and
-answers each case by executing the fixture's exact script bytes through a real
+answers each case by executing the subject's exact script bytes through a real
 Elements node: a disposable `elementsregtest` `elementsd` instance that this
 process boots, drives over JSON-RPC, and destroys. Nothing here interprets a
 script; the verdict is the node's.
+
+The request carries no answer
+-----------------------------
+This adapter speaks protocol revision 3, in which a request carries the
+execution subject and nothing about what the result should be: no expected
+verdict, no expected failure class, no expected final stack, no expected
+resource figure, no claim set, and no evidence class. Earlier revisions sent
+the whole fixture and required an executor to discard the expectation before
+executing, and this adapter did; revision 3 makes the discipline unnecessary
+by removing the field, and the two revisions are refused for each other at
+the handshake rather than reconciled.
 
 No-arguments-from-harness contract
 ----------------------------------
@@ -362,7 +373,7 @@ ADAPTER_VERSION = "2.1.0"
 
 # The protocol revision this adapter speaks. It must match
 # NATIVE_PROTOCOL_SCHEMA in the conformance package.
-NATIVE_PROTOCOL_SCHEMA = 2
+NATIVE_PROTOCOL_SCHEMA = 3
 
 # The reviewed tapscript leaf version.
 TAPSCRIPT_LEAF_VERSION = 0xC4
@@ -596,24 +607,26 @@ def require_string(value: object, path: str) -> str:
     return value
 
 
-def parse_fixture(raw: object) -> dict:
-    """Decodes one fixture strictly, naming any field this adapter cannot read.
+def parse_subject(raw: object) -> dict:
+    """Decodes one execution subject strictly, naming any field this adapter
+    cannot read.
 
-    The `expected` member is checked for shape and then discarded. This
-    adapter never reads what the fixture expects: an executor that consults
-    the expectation is comparing a fixture with itself (Guide-9 section 10.6).
+    Under protocol revision 3 there is no expectation here to discard. The
+    request carries what to execute and nothing about what the result should
+    be, so the discipline this adapter used to keep -- validate the expected
+    outcome for shape and then look away from it -- is now a property of the
+    message rather than of the adapter's restraint.
 
-    Four members are validated and then discarded for a different reason:
-    `leaf_version_status`, `script_source`, and `expected_resources` describe
-    how the fixture came to be stated and what the harness will compare, none
-    of which changes what a node is asked; and `enforcement_layer` is checked
-    against the one layer this adapter answers at rather than ignored, since
-    answering a relay question with a consensus verdict would be a different
-    answer wearing the right shape.
+    Two members are validated and then discarded: `leaf_version_status` and
+    `script_source` describe how the case came to be stated, which does not
+    change what a node is asked. `enforcement_layer` is checked against the
+    one layer this adapter answers at rather than ignored, since answering a
+    relay question with a consensus verdict would be a different answer
+    wearing the right shape.
     """
-    fixture = require_object(raw, "fixture")
+    subject = require_object(raw, "subject")
     require_keys(
-        fixture,
+        subject,
         (
             "case",
             "target_contract_version",
@@ -627,35 +640,31 @@ def parse_fixture(raw: object) -> dict:
             "script",
             "initial_stack",
             "context",
-            "expected",
-            "expected_resources",
         ),
-        "fixture",
+        "subject",
     )
-    check_expected_shape(fixture["expected"])
-    check_resource_expectation_shape(fixture["expected_resources"])
     check_enumeration(
-        fixture["leaf_version_status"],
+        subject["leaf_version_status"],
         ("reviewed", "unreviewed"),
-        "fixture.leaf_version_status",
+        "subject.leaf_version_status",
     )
     check_enumeration(
-        fixture["script_source"],
+        subject["script_source"],
         ("typed_program", "deliberately_malformed"),
-        "fixture.script_source",
+        "subject.script_source",
     )
     layer = check_enumeration(
-        fixture["enforcement_layer"],
+        subject["enforcement_layer"],
         ("consensus", "relay_policy"),
-        "fixture.enforcement_layer",
+        "subject.enforcement_layer",
     )
     return {
         "enforcement_layer": layer,
-        "execution_domain": fixture["execution_domain"],
-        "leaf_version": require_int(fixture["leaf_version"], "fixture.leaf_version"),
-        "script": require_bytes(fixture["script"], "fixture.script"),
-        "initial_stack": require_byte_vectors(fixture["initial_stack"], "fixture.initial_stack"),
-        "context": parse_context(fixture["context"]),
+        "execution_domain": subject["execution_domain"],
+        "leaf_version": require_int(subject["leaf_version"], "subject.leaf_version"),
+        "script": require_bytes(subject["script"], "subject.script"),
+        "initial_stack": require_byte_vectors(subject["initial_stack"], "subject.initial_stack"),
+        "context": parse_context(subject["context"]),
     }
 
 
@@ -667,84 +676,39 @@ def check_enumeration(raw: object, admitted: tuple, path: str) -> str:
     return text
 
 
-def check_expected_shape(raw: object) -> None:
-    """Validates the expectation's shape without reading its content."""
-    expected = require_object(raw, "fixture.expected")
-    if len(expected) != 1:
-        raise AdapterError("fixture.expected is not a single-variant enum")
-    for name, body in expected.items():
-        if name == "accept":
-            require_keys(
-                require_object(body, "fixture.expected.accept"),
-                ("static_final_stack", "static_final_altstack"),
-                "fixture.expected.accept",
-            )
-        elif name == "reject":
-            require_keys(
-                require_object(body, "fixture.expected.reject"),
-                ("classes", "static_final_stack", "static_final_altstack"),
-                "fixture.expected.reject",
-            )
-        else:
-            raise AdapterError("unknown field: fixture.expected.%s" % name)
-
-
-# The rows a fixture's resource expectation carries, in the order the
-# harness declares them. Each is either an exact figure or the
-# recorded-only marker; this adapter validates the shape and reports its
-# own observations, and never reads the expectation into an answer.
-RESOURCE_EXPECTATION_ROWS = (
-    "script_bytes",
-    "initial_stack_items",
-    "peak_stack_items",
-    "peak_altstack_items",
-    "maximum_element_bytes",
-    "validation_budget_used",
-    "transaction_weight",
-)
-
-
-def check_resource_expectation_shape(raw: object) -> None:
-    """Validates the resource expectation's shape, without reading a figure."""
-    expected = require_object(raw, "fixture.expected_resources")
-    require_keys(expected, RESOURCE_EXPECTATION_ROWS, "fixture.expected_resources")
-    for row in RESOURCE_EXPECTATION_ROWS:
-        path = "fixture.expected_resources.%s" % row
-        entry = expected[row]
-        if entry == "recorded_only":
-            continue
-        body = require_object(entry, path)
-        if len(body) != 1 or "exact" not in body:
-            raise AdapterError("unknown resource expectation at %s" % path)
-        require_int(body["exact"], path + ".exact")
+# Revision 3 sends no expectation of any kind, so the shape checks that
+# used to validate `expected` and `expected_resources` without reading them
+# are gone with the fields. A request that carries one now meets
+# `require_keys`, which refuses an unknown member outright -- a stricter
+# answer than looking away from it was.
 
 
 def parse_context(raw: object):
     """Decodes the generic transaction context, or None where there is none."""
     if raw is None:
         return None
-    context = require_object(raw, "fixture.context")
+    context = require_object(raw, "subject.context")
     require_keys(
         context,
         ("version", "locktime", "current_input_index", "inputs", "outputs", "script_path"),
-        "fixture.context",
+        "subject.context",
     )
     inputs = context["inputs"]
     outputs = context["outputs"]
     if not isinstance(inputs, list) or not isinstance(outputs, list):
-        raise AdapterError("fixture.context inputs and outputs must be arrays")
+        raise AdapterError("subject.context inputs and outputs must be arrays")
     return {
-        "version": require_int(context["version"], "fixture.context.version"),
-        "locktime": require_int(context["locktime"], "fixture.context.locktime"),
+        "version": require_int(context["version"], "subject.context.version"),
+        "locktime": require_int(context["locktime"], "subject.context.locktime"),
         "current_input_index": require_int(
-            context["current_input_index"], "fixture.context.current_input_index"
+            context["current_input_index"], "subject.context.current_input_index"
         ),
         "inputs": [
-            parse_input(item, "fixture.context.inputs[%d]" % index)
+            parse_input(item, "subject.context.inputs[%d]" % index)
             for index, item in enumerate(inputs)
         ],
         "outputs": [
-            parse_output(item, "fixture.context.outputs[%d]" % index)
+            parse_output(item, "subject.context.outputs[%d]" % index)
             for index, item in enumerate(outputs)
         ],
         "script_path": parse_script_path(context["script_path"]),
@@ -809,17 +773,17 @@ def parse_output(raw: object, path: str) -> dict:
 
 def parse_script_path(raw: object) -> dict:
     """Decodes the declared script path."""
-    value = require_object(raw, "fixture.context.script_path")
+    value = require_object(raw, "subject.context.script_path")
     require_keys(
-        value, ("leaf_version", "script", "control"), "fixture.context.script_path"
+        value, ("leaf_version", "script", "control"), "subject.context.script_path"
     )
     return {
         "leaf_version": require_int(
-            value["leaf_version"], "fixture.context.script_path.leaf_version"
+            value["leaf_version"], "subject.context.script_path.leaf_version"
         ),
-        "script": require_bytes(value["script"], "fixture.context.script_path.script"),
+        "script": require_bytes(value["script"], "subject.context.script_path.script"),
         "control": require_optional_bytes(
-            value["control"], "fixture.context.script_path.control"
+            value["control"], "subject.context.script_path.control"
         ),
     }
 
@@ -943,42 +907,36 @@ def parse_prototype_fixture(raw: object) -> tuple:
                           a mempool verdict would report an unrelayable but
                           perfectly valid spend as an invalid one.
 
-    `claims`, `target_contract_version`, `expected`, and
-    `expected_resources` are validated for shape and then discarded.
-    `expected` is discarded for the reason every expectation is: an
-    executor that consults it is comparing a fixture with itself.
+    `target_contract_version` is validated and then discarded. The expected
+    verdict, the expected resource figures, and the claim set are not
+    discarded here: under revision 3 they never arrive, which is what makes
+    the boundary a property of the protocol rather than of this adapter.
     """
-    fixture = require_object(raw, "fixture")
+    subject = require_object(raw, "subject")
     require_keys(
-        fixture,
+        subject,
         (
             "case",
-            "claims",
             "target_contract_version",
             "script",
             "initial_stack",
             "construction",
-            "expected",
-            "expected_resources",
         ),
-        "fixture",
+        "subject",
     )
-    require_int(fixture["target_contract_version"], "fixture.target_contract_version")
-    check_prototype_case_shape(fixture["case"])
-    check_prototype_claims_shape(fixture["claims"])
-    check_enumeration(fixture["expected"], ("accepted", "rejected"), "fixture.expected")
-    check_resource_expectation_shape(fixture["expected_resources"])
+    require_int(subject["target_contract_version"], "subject.target_contract_version")
+    check_prototype_case_shape(subject["case"])
 
-    construction = parse_construction(fixture["construction"], "fixture.construction")
+    construction = parse_construction(subject["construction"], "subject.construction")
     executing = construction["executing_leaf"]
     if executing["kind"] != "leaf":
         raise AdapterError(
-            "fixture.construction.executing_leaf is a branch, and a spend "
+            "subject.construction.executing_leaf is a branch, and a spend "
             "executes a leaf"
         )
     if executing["version"] != TAPSCRIPT_LEAF_VERSION:
         raise AdapterError(
-            "fixture.construction.executing_leaf.version is %d, and this "
+            "subject.construction.executing_leaf.version is %d, and this "
             "adapter advertised only leaf version %d"
             % (executing["version"], TAPSCRIPT_LEAF_VERSION)
         )
@@ -987,9 +945,9 @@ def parse_prototype_fixture(raw: object) -> tuple:
             "enforcement_layer": "consensus",
             "execution_domain": "tapscript",
             "leaf_version": executing["version"],
-            "script": require_bytes(fixture["script"], "fixture.script"),
+            "script": require_bytes(subject["script"], "subject.script"),
             "initial_stack": require_byte_vectors(
-                fixture["initial_stack"], "fixture.initial_stack"
+                subject["initial_stack"], "subject.initial_stack"
             ),
             "context": None,
         },
@@ -1005,28 +963,20 @@ def check_prototype_case_shape(raw: object) -> None:
     one this adapter thinks it is: a case naming no relation would have been
     routed here by the relation key alone.
     """
-    case = require_object(raw, "fixture.case")
-    require_keys(case, ("relation", "name"), "fixture.case")
+    case = require_object(raw, "subject.case")
+    require_keys(case, ("relation", "name"), "subject.case")
     check_enumeration(
         case["relation"],
         ("metadata_constructor_continuity", "wide_floor_relation"),
-        "fixture.case.relation",
+        "subject.case.relation",
     )
-    require_string(case["name"], "fixture.case.name")
+    require_string(case["name"], "subject.case.name")
 
 
-def check_prototype_claims_shape(raw: object) -> None:
-    """Validates the claim set's shape, without reading a claim.
-
-    What a passing case would establish is the harness's accounting and
-    changes nothing about what the node is asked. The shape is checked
-    anyway, because a claim set this adapter could not read is a drift
-    between the harness's fixture type and this adapter's reading of it.
-    """
-    if not isinstance(raw, list) or not raw:
-        raise AdapterError("fixture.claims is not a nonempty array")
-    for index, claim in enumerate(raw):
-        require_string(claim, "fixture.claims[%d]" % index)
+# The claim set used to be validated for shape here and then discarded.
+# Revision 3 does not send one, so there is nothing left to look away
+# from: what a passing case would establish is the harness's accounting
+# and never crossed the boundary usefully.
 
 
 # --------------------------------------------------------------------------
@@ -1389,12 +1339,12 @@ class CaseExecutor:
         if executing["script"] != fixture["script"]:
             raise AdapterError(
                 "request.construction.executing_leaf.script disagrees with "
-                "fixture.script"
+                "subject.script"
             )
         if executing["version"] != fixture["leaf_version"]:
             raise AdapterError(
                 "request.construction.executing_leaf.version disagrees with "
-                "fixture.leaf_version"
+                "subject.leaf_version"
             )
 
         leaves = []
@@ -1711,10 +1661,10 @@ class CaseExecutor:
         inputs = context["inputs"]
         index = context["current_input_index"]
         if not inputs:
-            raise AdapterError("fixture.context declares no inputs")
+            raise AdapterError("subject.context declares no inputs")
         if index >= len(inputs):
             raise AdapterError(
-                "fixture.context.current_input_index names no declared input"
+                "subject.context.current_input_index names no declared input"
             )
         declared_path = context["script_path"]
         # Exact equality, in both directions. Tolerating an empty declared
@@ -1724,11 +1674,11 @@ class CaseExecutor:
         # protocol is what stands between this adapter and a sender.
         if declared_path["script"] != fixture["script"]:
             raise AdapterError(
-                "fixture.context.script_path.script disagrees with fixture.script"
+                "subject.context.script_path.script disagrees with subject.script"
             )
         if declared_path["control"] is not None:
             raise AdapterError(
-                "fixture.context.script_path.control is stated, and this adapter "
+                "subject.context.script_path.control is stated, and this adapter "
                 "derives the control block from the leaf it built"
             )
 
@@ -2145,13 +2095,13 @@ def answer_case(executor: CaseExecutor, line: str) -> None:
     if not isinstance(case, dict):
         raise FatalAdapterError("the harness sent a request naming no case")
     # A compound-prototype request carries no separate construction field:
-    # the fixture states its own. Admitting one here would admit a message
+    # the subject states its own. Admitting one here would admit a message
     # stating two constructions.
     compound = "relation" in case
-    allowed = ("schema", "case", "fixture") if compound else (
+    allowed = ("schema", "case", "subject") if compound else (
         "schema",
         "case",
-        "fixture",
+        "subject",
         "construction",
     )
     for key in request:
@@ -2172,9 +2122,9 @@ def answer_case(executor: CaseExecutor, line: str) -> None:
                     "the request is a compound-prototype fixture, and this "
                     "adapter advertised no compound-prototype capability"
                 )
-            fixture, construction = parse_prototype_fixture(request.get("fixture"))
+            fixture, construction = parse_prototype_fixture(request.get("subject"))
         else:
-            fixture = parse_fixture(request.get("fixture"))
+            fixture = parse_subject(request.get("subject"))
             construction = request.get("construction")
             if construction is not None:
                 # A construction sent to an adapter that advertised no tree

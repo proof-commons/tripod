@@ -256,6 +256,11 @@ pub enum NativeConformanceError {
     #[error("required target evidence {} hit executor infrastructure trouble", requirement_text(*.0))]
     RequiredEvidenceInfrastructureError(TargetEvidenceRequirementId),
 
+    /// A required evidence row owns no required claim, so its
+    /// disposition would be decided by case aggregation alone.
+    #[error("required target evidence {} owns no required claim", requirement_text(*.0))]
+    RequiredRowWithoutRequiredClaim(TargetEvidenceRequirementId),
+
     /// The report was written under a revision this harness does not
     /// validate.
     #[error("the report offers schema {offered}, which this harness does not validate")]
@@ -281,6 +286,117 @@ pub enum NativeConformanceError {
     /// observed, or what that observation compares to.
     #[error("the report's row for case {0} does not state the observed outcome")]
     ReportCaseOutcomeMismatch(NativeCaseId),
+
+    /// A census offered as canonical is not the census the canonical
+    /// generator states.
+    ///
+    /// The canonical wrapper has one constructor, so an external caller
+    /// cannot reach this. It is the second line of defence: the evidence
+    /// path regenerates the census from the reviewed contract and the
+    /// binding and compares it, so that a canonical subject is canonical
+    /// by recomputation and not only by type
+    ///.
+    #[error("the offered census is not the canonical fixture census")]
+    NoncanonicalFixtureCensus,
+
+    /// One fixture offered as canonical is not, in some member, the
+    /// canonical fixture of that case.
+    ///
+    /// The complete projection is compared — script, stack, context,
+    /// expected outcome, enforcement layer, leaf version, resources, and
+    /// claims — so changing any member of a canonical case removes its
+    /// eligibility rather than editing what the case establishes.
+    #[error("case {0} is not the canonical fixture of that case")]
+    NoncanonicalFixtureSubject(NativeCaseId),
+
+    /// A matrix offered as canonical is not the matrix the canonical
+    /// generator states for its relation.
+    #[error("the offered matrix is not the canonical matrix of its relation")]
+    NoncanonicalPrototypeMatrix,
+
+    /// One prototype row offered as canonical is not, in some member, the
+    /// canonical row of that case.
+    #[error("case {0} is not the canonical prototype case of that name")]
+    NoncanonicalPrototypeCase(PrototypeCaseId),
+
+    /// The canonical matrix of a relation could not be regenerated, so
+    /// no offered matrix can be compared against it.
+    #[error("the canonical matrix of the run's relation could not be regenerated")]
+    CanonicalPrototypeMatrixUnavailable,
+
+    /// The report is being built against a contract the run was not
+    /// requested under.
+    ///
+    /// Exact typed equality over the whole retained target projection,
+    /// never revision equality: two contracts at one revision are two
+    /// contracts, and a run requested under either would otherwise report
+    /// as a run under the other.
+    #[error("the transcript was not produced under the contract this report is stated against")]
+    TranscriptTargetRebinding,
+
+    /// The report is being built against a deployment binding the run was
+    /// not requested under.
+    ///
+    /// The rebinding this closes: a transcript obtained on one
+    /// development network could be evaluated, validated, and gated
+    /// against another, and the resulting report stated one network as
+    /// declared while carrying the other as observed.
+    #[error("the transcript was not produced under the binding this report is stated against")]
+    TranscriptDeploymentRebinding,
+
+    /// A case being reported was never sent to the executor.
+    ///
+    /// The transcript retains what was requested, so a fixture with no
+    /// retained request is a case this run never asked about — whatever
+    /// answers the transcript happens to hold under that case identity.
+    #[error("case {0} was never sent to the executor of this run")]
+    MissingCaseRequest(NativeCaseId),
+
+    /// The subject being reported for a case is not the subject that case
+    /// was executed with.
+    ///
+    /// Exact typed comparison of the complete subject — script, initial
+    /// stack, transaction context, enforcement layer, leaf version, and
+    /// the facts the case is stated against. Not a width comparison: two
+    /// different scripts of one length are two different scripts, and the
+    /// exact `script_bytes` expectation that used to catch a substitution
+    /// caught only the ones that changed size.
+    #[error("case {0} was executed with a different subject from the one being reported")]
+    TranscriptSubjectMismatch(NativeCaseId),
+
+    /// The transcript answers a case it was never asked about.
+    ///
+    /// Distinct from the protocol-phase refusal of the same shape: that
+    /// one is an executor answering out of turn during an exchange, and
+    /// this is a transcript whose two halves do not correspond by the
+    /// time a report is built from it.
+    #[error("the transcript answers case {0}, which it holds no request for")]
+    UnrequestedCaseResponse(NativeCaseId),
+
+    /// A compound case being reported was never sent to the executor.
+    #[error("prototype case {0} was never sent to the executor of this run")]
+    MissingPrototypeRequest(PrototypeCaseId),
+
+    /// The construction or program being reported for a compound case is
+    /// not the one that case was executed with.
+    #[error("prototype case {0} was executed with a different subject from the one being reported")]
+    PrototypeTranscriptSubjectMismatch(PrototypeCaseId),
+
+    /// The transcript answers a compound case it was never asked about.
+    #[error("the transcript answers prototype case {0}, which it holds no request for")]
+    UnrequestedPrototypeResponse(PrototypeCaseId),
+
+    /// The report states a request/expectation boundary this harness does
+    /// not produce.
+    ///
+    /// A revision-2 report states that its requests carried the fixture's
+    /// expectation. That document remains what it was; it is not a
+    /// revision-3 report and is not validated as one.
+    #[error("the report states a request boundary this harness does not produce")]
+    UnsupportedRequestExpectationBoundary {
+        /// The boundary the report states.
+        offered: crate::protocol::RequestExpectationBoundary,
+    },
 
     /// The report's evidence rows are not the recomputed ones.
     #[error("the report's evidence rows are not the ones the plan and the run produce")]
@@ -318,6 +434,37 @@ pub enum NativeConformanceError {
     /// A required claim has failing case evidence.
     #[error("a required evidence claim has failing case evidence")]
     RequiredClaimFailed(crate::claim::NativeEvidenceClaim),
+
+    /// One primitive case's observation was not what its fixture
+    /// requires.
+    #[error("case {0} did not observe what its fixture requires")]
+    NativeCaseFailed(NativeCaseId),
+
+    /// One primitive case could not be run by the executor.
+    #[error("case {0} hit executor infrastructure trouble")]
+    NativeCaseInfrastructureError(NativeCaseId),
+
+    /// The report's own summary says the run failed.
+    ///
+    /// A gate that returned success here would certify a document whose
+    /// first line says it did not succeed.
+    #[error("the report's own summary records the run as failed")]
+    ReportSummaryFailed,
+
+    /// The run's reported provenance is not the expected one, so the
+    /// report does not establish which program produced it (ADR-018).
+    #[error("the executor's provenance was not established: {0}")]
+    ExecutorProvenanceUnestablished(crate::provenance::ProvenanceDefect),
+
+    /// The gate was asked to decide a run for which no expected
+    /// provenance was configured.
+    ///
+    /// Fail-closed: an unstated expectation is not a satisfied one, and
+    /// a gate that skipped the comparison when nothing was configured
+    /// would make the check optional for exactly the caller who forgot
+    /// it.
+    #[error("no expected executor provenance was configured for this run")]
+    ExpectedProvenanceUnavailable,
 
     /// The run selected a mock executor, which can never satisfy the
     /// target-native gate.

@@ -62,7 +62,9 @@ const WITHOUT_ABORTING_CASE: &[OpcodeId] = &[OpcodeId::InspectVersion, OpcodeId:
 fn census() -> PrimitiveFixtureSet {
     let target = reviewed_target();
     let binding = development_binding(&target);
-    canonical_fixture_set(&target, &binding).expect("the census is expressible")
+    canonical_fixture_set(&target, &binding)
+        .expect("the census is expressible")
+        .into_fixtures()
 }
 
 #[test]
@@ -139,7 +141,7 @@ fn every_required_evidence_row_has_bearing_cases() {
     for fixture in &census {
         let case = fixture.case();
         let mut requirements: BTreeSet<TargetEvidenceRequirementId> =
-            requirements_for_tests(case.group())
+            requirements_for_tests(case.group(), fixture.enforcement_layer())
                 .iter()
                 .copied()
                 .collect();
@@ -169,7 +171,9 @@ fn the_rows_outside_the_required_plan_stay_unattempted() {
     let plan = guide_nine_evidence_plan().expect("the plan is a partition");
     let census = census();
     for fixture in &census {
-        for requirement in requirements_for_tests(fixture.case().group()) {
+        for requirement in
+            requirements_for_tests(fixture.case().group(), fixture.enforcement_layer())
+        {
             assert_eq!(
                 plan.class(*requirement),
                 Some(EvidencePlanClass::Required),

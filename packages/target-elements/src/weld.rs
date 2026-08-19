@@ -29,6 +29,7 @@
 
 use std::collections::BTreeSet;
 
+use crate::authorization::UnknownPublicKeyTypeRule;
 use crate::capability::{ElementsCapability, StaticCapabilityStatus};
 use crate::confidential::{
     ConfidentialCapabilityState, ConfidentialValueCapability, IssuanceField,
@@ -37,7 +38,8 @@ use crate::definition::TargetDefinition;
 use crate::encoding::EncodingClass;
 use crate::error::TargetError;
 use crate::evidence::TargetEvidenceRequirementId;
-use crate::opcode::{FailureCause, FailureOutcome, OpcodeId, StackValueType};
+use crate::opcode::{FailureCause, FailureOutcome, OpcodeId, StackContract, StackValueType};
+use crate::operand::OperandContract;
 use crate::push::PushPayloadPredicate;
 use crate::resource::{ResourceBound, ResourceDimension};
 use crate::success::{SuccessCondition, SuccessContract};
@@ -57,6 +59,7 @@ pub fn validate_welds(definition: &TargetDefinition, errors: &mut Vec<TargetErro
     weld_issuance(definition, errors);
     weld_confidential(definition, errors);
     weld_resources(definition, errors);
+    weld_stack_growth(definition, errors);
     weld_evidence(definition, errors);
 }
 
@@ -75,17 +78,6 @@ fn outcome_of(
         .iter()
         .find(|effect| effect.cause() == cause)
         .map(|effect| effect.outcome())
-}
-
-/// The encoding classes one primitive names among its operands.
-fn operand_classes(definition: &TargetDefinition, opcode: OpcodeId) -> BTreeSet<EncodingClass> {
-    definition
-        .opcodes()
-        .get(&opcode)
-        .into_iter()
-        .flat_map(|spec| spec.stack().operands().iter())
-        .flat_map(crate::operand::OperandContract::named_encodings)
-        .collect()
 }
 
 /// The results one primitive pushes under one condition.
@@ -181,58 +173,143 @@ fn weld_pushes(definition: &TargetDefinition, errors: &mut Vec<TargetError>) {
     }
 }
 
-/// Signature opcodes, the signature primitive contract, the per-check
-/// budget, the operand encodings, and the evidence link must agree.
+/// The signature subcontract's whole behavior, compared against every
+/// signature opcode.
+///
+/// # One expectation, derived and compared
+///
+/// The subcontract states the key and signature encodings, what an
+/// empty signature does, what an invalid one does, what an unknown key
+/// type does, the per-check budget, and the evidence the behavior
+/// rests on. Each of those also appears on the opcodes, as an operand
+/// admission, a success case, or a failure effect. This derives one
+/// complete expected behavior from the subcontract and compares every
+/// signature opcode against it, rather than checking whichever fields
+/// happen to be convenient: the earlier form never read
+/// `unknown_public_key_type` at all, so a definition could say unknown
+/// keys reject and succeed unverified at once.
 fn weld_signature(definition: &TargetDefinition, errors: &mut Vec<TargetError>) {
     let signature = definition.authorization().signature();
+
+    // The whole expected behavior, derived once from the subcontract,
+    // and then compared against every signature opcode. Deriving it
+    // once is the point: the weld's earlier form read some of the
+    // subcontract's fields and left others — the unknown-public-key
+    // rule above all — so a definition could say unknown keys reject in
+    // the subcontract and succeed unverified in every opcode, and
+    // nothing looked at both `(´[PLAN-rule:guide11-exec:signature-weld]´)`.
+    let unknown_key_succeeds = matches!(
+        signature.unknown_public_key_type(),
+        UnknownPublicKeyTypeRule::SucceedsWithoutVerification
+    );
     let mut disagrees = false;
 
-    for opcode in BRANCHING_SIGNATURE_OPCODES {
-        // The branchable forms are the ones the contract's
-        // empty-signature field describes.
-        if outcome_of(definition, *opcode, FailureCause::EmptySignature)
-            != Some(signature.empty_signature())
-        {
-            disagrees = true;
-        }
-    }
+    // The subcontract names what an empty signature does, and that
+    // outcome is only reachable if the operand admits the empty item.
+    // A position refusing it as a malformed operand would put the
+    // documented path outside the primitive's domain, so the named
+    // outcome would describe behavior nothing could produce.
+    let expected_signature_operand = OperandContract::Signature {
+        nonempty_encoding: signature.signature_encoding(),
+        empty_allowed: true,
+    };
+    // The key position admits unknown nonempty forms exactly when the
+    // rule says they succeed. If the rule rejects them, admitting them
+    // would leave the operand describing a path the subcontract denies.
+    let expected_public_key_operand = OperandContract::PublicKey {
+        recognized_encoding: signature.public_key_encoding(),
+        unknown_nonempty_allowed: unknown_key_succeeds,
+    };
 
-    for opcode in VERIFYING_SIGNATURE_OPCODES {
-        // The verifying forms turn the branchable result into an
-        // abort. A contract that let them push a false would be
-        // describing a primitive that does not exist.
-        if outcome_of(definition, *opcode, FailureCause::EmptySignature)
-            != Some(FailureOutcome::AbortEvaluation)
-        {
-            disagrees = true;
-        }
-    }
-
-    for opcode in BRANCHING_SIGNATURE_OPCODES
+    for (opcode, verifying) in BRANCHING_SIGNATURE_OPCODES
         .iter()
-        .chain(VERIFYING_SIGNATURE_OPCODES)
+        .map(|opcode| (opcode, false))
+        .chain(VERIFYING_SIGNATURE_OPCODES.iter().map(|o| (o, true)))
     {
+        let Some(spec) = definition.opcodes().get(opcode) else {
+            disagrees = true;
+            continue;
+        };
+
+        // -- Failure behavior ------------------------------------
+        //
+        // The branchable forms are the ones the subcontract's
+        // empty-signature field describes. The verifying forms turn
+        // that branchable result into an abort: a contract letting them
+        // push a false would be describing a primitive that does not
+        // exist.
+        let expected_empty = if verifying {
+            FailureOutcome::AbortEvaluation
+        } else {
+            signature.empty_signature()
+        };
+        if outcome_of(definition, *opcode, FailureCause::EmptySignature) != Some(expected_empty) {
+            disagrees = true;
+        }
+
         if outcome_of(definition, *opcode, FailureCause::InvalidSignature)
             != Some(signature.invalid_signature())
         {
             disagrees = true;
         }
 
-        let Some(spec) = definition.opcodes().get(opcode) else {
-            disagrees = true;
-            continue;
-        };
-
-        // One number, two views: the budget a check can charge is a
-        // resource cost and a signature-contract field alike.
-        if spec.resources().validation_budget() != signature.budget_per_check() {
+        // An empty key is refused outright, and that refusal is a
+        // different fact from the unknown-nonempty rule: one is a
+        // rejection, the other a success without verification. A
+        // contract that dropped the empty-key abort would be saying the
+        // forward-compatibility path swallows emptiness too.
+        if outcome_of(definition, *opcode, FailureCause::EmptyPublicKey)
+            != Some(FailureOutcome::AbortEvaluation)
+        {
             disagrees = true;
         }
 
-        let operands = operand_classes(definition, *opcode);
-        if !operands.contains(&signature.signature_encoding())
-            || !operands.contains(&signature.public_key_encoding())
+        // Where an unknown key succeeds without verifying, an invalid
+        // signature must abort rather than push a false. A branchable
+        // "verification failed" would be indistinguishable on the stack
+        // from the empty-signature false, on a primitive whose other
+        // path already succeeds without verifying anything — so a
+        // consumer reading the result could not tell which of three
+        // things happened.
+        if unknown_key_succeeds
+            && outcome_of(definition, *opcode, FailureCause::InvalidSignature)
+                != Some(FailureOutcome::AbortEvaluation)
         {
+            disagrees = true;
+        }
+
+        // -- Operand admission -----------------------------------
+        //
+        // Exactly one position of each kind, each matching the derived
+        // expectation. Counting rather than searching: a primitive with
+        // two signature positions states a shape the subcontract cannot
+        // describe.
+        let operands = spec.stack().operands();
+        let signature_positions = operands
+            .iter()
+            .filter(|operand| matches!(operand, OperandContract::Signature { .. }))
+            .collect::<Vec<_>>();
+        let key_positions = operands
+            .iter()
+            .filter(|operand| matches!(operand, OperandContract::PublicKey { .. }))
+            .collect::<Vec<_>>();
+
+        if signature_positions.as_slice() != [&expected_signature_operand]
+            || key_positions.as_slice() != [&expected_public_key_operand]
+        {
+            disagrees = true;
+        }
+
+        // -- Success algebra -------------------------------------
+        if signature_success_disagrees(spec, verifying, unknown_key_succeeds) {
+            disagrees = true;
+        }
+
+        // -- Shared numbers and evidence --------------------------
+        //
+        // One number, two views: the budget a check can charge is a
+        // resource cost and a signature-contract field alike.
+        if spec.resources().validation_budget() != signature.budget_per_check() {
             disagrees = true;
         }
 
@@ -248,6 +325,63 @@ fn weld_signature(definition: &TargetDefinition, errors: &mut Vec<TargetError>) 
     if disagrees {
         errors.push(TargetError::SignatureContractMismatch);
     }
+}
+
+/// Whether one signature opcode's successful forms disagree with the
+/// behavior the subcontract states.
+///
+/// Verification against a recognized key is the primitive's reason for
+/// existing, so its form is present exactly once. The unknown-key form
+/// is present exactly when the rule permits it, and absent when it does
+/// not: an opcode advertising it under a rejecting rule is the
+/// contradiction this weld exists to catch, in the direction the review
+/// found it.
+fn signature_success_disagrees(
+    spec: &crate::opcode::OpcodeSpec,
+    verifying: bool,
+    unknown_key_succeeds: bool,
+) -> bool {
+    // A verifying form leaves no branchable result; a branching form
+    // pushes exactly one Boolean, which is the whole of what a caller
+    // branches on.
+    let expected_results: Vec<StackValueType> = if verifying {
+        Vec::new()
+    } else {
+        vec![StackValueType::Bool]
+    };
+
+    let cases = spec.stack().success().cases();
+    let mut disagrees = false;
+
+    for condition in [
+        SuccessCondition::RecognizedKeyVerifiedSignature,
+        SuccessCondition::UnknownKeyTypeUnverified,
+    ] {
+        let expected_count = usize::from(
+            condition == SuccessCondition::RecognizedKeyVerifiedSignature || unknown_key_succeeds,
+        );
+        let matching = cases
+            .iter()
+            .filter(|case| case.condition() == condition)
+            .collect::<Vec<_>>();
+
+        if matching.len() != expected_count {
+            disagrees = true;
+            continue;
+        }
+
+        // Both admitted forms leave the same thing behind: the
+        // unknown-key path succeeds without verifying, but it is still a
+        // success of this primitive and pushes what this primitive's
+        // successes push.
+        for case in matching {
+            if case.effect().computed_types() != expected_results {
+                disagrees = true;
+            }
+        }
+    }
+
+    disagrees
 }
 
 /// The timelock primitive, the relative-timelock contract, the version
@@ -539,6 +673,114 @@ fn weld_resources(definition: &TargetDefinition, errors: &mut Vec<TargetError>) 
     if disagrees {
         errors.push(TargetError::ResourceContractMismatch);
     }
+}
+
+/// Every primitive's declared stack growth must be the growth its own
+/// stack contract implies.
+///
+/// # Why the field needed a weld at all
+///
+/// [`OpcodeResourceCost::maximum_stack_growth`] is the one resource
+/// dimension a downstream stack scheduler reads directly, and until
+/// this weld it was compared against nothing: the resource weld reads
+/// the budget dimensions, and the success algebra states the depth
+/// arithmetic, but no check made the two say the same thing. A row
+/// transcribed from the wrong primitive would validate.
+///
+/// # The transient the surviving depth does not show
+///
+/// The obvious derivation — the greatest depth change over every
+/// surviving outcome — is wrong for two of the fifty-five primitives,
+/// and wrong in the direction that matters. The field is documented as
+/// the greatest increase *at any point during execution*, not the
+/// increase the primitive settles at, and the reviewed target reaches
+/// a deeper stack mid-primitive than it leaves behind.
+///
+/// The target implements a verifying signature primitive as its
+/// branching counterpart followed by an implicit verification: it pops
+/// the operands, pushes the truth value, and only then pops that value
+/// again, aborting instead if it was false. So a verifying form
+/// transiently occupies exactly its branching counterpart's depth, one
+/// item above where it settles, and a scheduler sizing the stack from
+/// the surviving figure alone would size it one too shallow.
+///
+/// That is a fact about the target, recorded with its source location
+/// in the tapscript reference. It is derived here from the verifying
+/// primitives the signature weld already distinguishes, rather than
+/// carried as a per-opcode number, because a per-opcode number is
+/// another transcription for a later weld to check.
+///
+/// [`OpcodeResourceCost::maximum_stack_growth`]:
+///     crate::opcode::OpcodeResourceCost::maximum_stack_growth
+fn weld_stack_growth(definition: &TargetDefinition, errors: &mut Vec<TargetError>) {
+    let mut disagrees = false;
+
+    for (id, spec) in definition.opcodes() {
+        if spec.resources().maximum_stack_growth() != derived_stack_growth(*id, spec.stack()) {
+            disagrees = true;
+        }
+        // No reviewed primitive touches the alternate stack. A nonzero
+        // row here is a claim no reviewed behavior supports.
+        if spec.resources().maximum_altstack_growth() != 0 {
+            disagrees = true;
+        }
+    }
+
+    if disagrees {
+        errors.push(TargetError::StackGrowthContractMismatch);
+    }
+}
+
+/// The greatest main-stack depth one primitive's contract can reach,
+/// relative to the depth it started at.
+///
+/// Aborting failures contribute nothing: evaluation ends, so there is
+/// no surviving depth for a later primitive to stand on. The two
+/// pushing failure outcomes do contribute, and they do not agree with
+/// each other — consuming the operands leaves a shallower stack than
+/// the successful path, retaining them leaves a deeper one — which is
+/// the reason the maximum is taken over outcomes rather than read off
+/// the successful form.
+pub fn derived_stack_growth(id: OpcodeId, stack: &StackContract) -> i64 {
+    let surviving = surviving_stack_growth(stack);
+    if VERIFYING_SIGNATURE_OPCODES.contains(&id) {
+        // The transient peak: the branching counterpart's depth, held
+        // until the implicit verification consumes the truth value.
+        surviving + 1
+    } else {
+        surviving
+    }
+}
+
+/// The greatest depth one primitive can *leave behind*, over every
+/// outcome a later primitive could stand on.
+///
+/// This is the whole derivation for fifty-three of the fifty-five
+/// reviewed primitives, and it is kept separate from the transient term
+/// so that the two verifying forms' extra item is visible as its own
+/// claim rather than folded into an arithmetic no test can point at.
+pub fn surviving_stack_growth(stack: &StackContract) -> i64 {
+    let declared_operands = i64::try_from(stack.operands().len()).unwrap_or(i64::MAX);
+
+    let surviving_failures =
+        stack
+            .failure()
+            .effects()
+            .iter()
+            .filter_map(|effect| match effect.outcome() {
+                FailureOutcome::AbortEvaluation => None,
+                FailureOutcome::ConsumeOperandsPushFalse => Some(1 - declared_operands),
+                FailureOutcome::RetainOperandsPushFalse => Some(1),
+            });
+
+    stack
+        .success()
+        .cases()
+        .iter()
+        .map(|case| case.effect().depth_change())
+        .chain(surviving_failures)
+        .max()
+        .unwrap_or(0)
 }
 
 /// Every subcontract that is not an opcode must name declared evidence.

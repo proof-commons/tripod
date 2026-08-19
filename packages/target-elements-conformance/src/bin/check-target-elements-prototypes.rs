@@ -67,15 +67,17 @@ use target_elements::{
     TargetContractVersion, reviewed_elements_tapscript, validate_reviewed_development_binding,
 };
 use target_elements_conformance::executor::{
-    DEFAULT_EXECUTOR_TIMEOUT, ExecutorConfiguration, ExecutorTrust, execute_prototypes,
+    DEFAULT_EXECUTOR_TIMEOUT, ExecutorConfiguration, ExecutorTrust, execute_canonical_prototypes,
 };
 use target_elements_conformance::prototype::{
-    PrototypeRelation, constructor_case_matrix, wide_floor_case_matrix,
+    CanonicalPrototypeMatrix, ConstructorPrototypeMatrix, WideFloorPrototypeMatrix,
+    constructor_case_matrix, wide_floor_case_matrix,
 };
 use target_elements_conformance::prototype_report::PrototypeConformanceReport;
 use target_elements_conformance::prototype_validate::{
     PrototypeReportValidationInputs, evaluate_prototypes, prototype_gate, validate_prototype_report,
 };
+use target_elements_conformance::provenance::expected_provenance_from_arguments;
 
 const COMMAND_NAME: &str = "check-target-elements-prototypes";
 
@@ -95,16 +97,6 @@ enum Relation {
     ConstructorContinuity,
     /// The wide-arithmetic floor matrix.
     WideFloor,
-}
-
-impl Relation {
-    /// The typed relation this selection names.
-    const fn relation(self) -> PrototypeRelation {
-        match self {
-            Self::ConstructorContinuity => PrototypeRelation::MetadataConstructorContinuity,
-            Self::WideFloor => PrototypeRelation::WideFloorRelation,
-        }
-    }
 }
 
 #[derive(Parser)]
@@ -141,6 +133,21 @@ struct Args {
     /// The public development genesis identifier, as 64 hex digits.
     #[arg(long, value_name = "HEX")]
     genesis_id: String,
+
+    /// The integration tip this executable was built from, as a full
+    /// object identifier. Required for a reviewed nonmock run (ADR-018).
+    #[arg(long, value_name = "REVISION")]
+    intended_tip: Option<String>,
+
+    /// The upstream base that tip derives from, as a full object
+    /// identifier. Required for a reviewed nonmock run (ADR-018).
+    #[arg(long, value_name = "REVISION")]
+    upstream_base: Option<String>,
+
+    /// One local topic branch folded into that tip. Repeatable; stating
+    /// none declares a tip that folded in no local branch.
+    #[arg(long = "local-topic", value_name = "BRANCH")]
+    local_topics: Vec<String>,
 
     #[command(flatten)]
     output: CheckOutputArgs,
@@ -195,17 +202,33 @@ fn run(args: &Args) -> Result<PrototypeConformanceReport, String> {
     // catch-all could do is run one relation's matrix for the other's
     // name, which is exactly what the role and relation being recorded
     // separately exists to make impossible.
-    let relation = args.relation.relation();
-    let matrix = match args.relation {
-        Relation::ConstructorContinuity => {
-            constructor_case_matrix(&target).map_err(|error| error.to_string())?
-        }
-        Relation::WideFloor => {
-            wide_floor_case_matrix(&target).map_err(|error| error.to_string())?
-        }
+    //
+    // Each relation's canonical matrix is now its own type, and the
+    // borrowed view handed to the evaluator carries the relation with it,
+    // so the relation is no longer a separate argument that could name
+    // one matrix while another was supplied.
+    let owned = match args.relation {
+        Relation::ConstructorContinuity => OwnedCanonicalMatrix::Constructor(
+            constructor_case_matrix(&target).map_err(|error| error.to_string())?,
+        ),
+        Relation::WideFloor => OwnedCanonicalMatrix::WideFloor(
+            wide_floor_case_matrix(&target).map_err(|error| error.to_string())?,
+        ),
     };
+    let matrix = owned.borrowed();
 
-    let configuration = ExecutorConfiguration::new(
+    // The provenance expectation is settled before the executor is
+    // started: a run that could never be gated should not boot a node
+    // first (ADR-018).
+    let expected_provenance = expected_provenance_from_arguments(
+        args.executor_class == ExecutorClass::ReviewedNonMock,
+        args.intended_tip.as_deref(),
+        args.upstream_base.as_deref(),
+        &args.local_topics,
+    )
+    .map_err(|defect| defect.to_string())?;
+
+    let mut configuration = ExecutorConfiguration::new(
         &args.executor,
         match args.executor_class {
             ExecutorClass::Mock => ExecutorTrust::Mock,
@@ -214,10 +237,13 @@ fn run(args: &Args) -> Result<PrototypeConformanceReport, String> {
         args.executor_timeout_seconds
             .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs),
     );
+    if let Some(expected) = expected_provenance.clone() {
+        configuration = configuration.with_expected_provenance(expected);
+    }
 
-    let transcript = execute_prototypes(&target, &binding, &configuration, &matrix)
+    let transcript = execute_canonical_prototypes(&target, &binding, &configuration, matrix)
         .map_err(|error| error.to_string())?;
-    let report = evaluate_prototypes(&target, &binding, relation, &matrix, &transcript)
+    let report = evaluate_prototypes(&target, &binding, matrix, &transcript)
         .map_err(|error| error.to_string())?;
 
     // The report this command just built goes back through the validator
@@ -230,8 +256,7 @@ fn run(args: &Args) -> Result<PrototypeConformanceReport, String> {
         PrototypeReportValidationInputs {
             target: &target,
             binding: &binding,
-            relation,
-            matrix: &matrix,
+            matrix,
             transcript: &transcript,
         },
     )
@@ -240,8 +265,31 @@ fn run(args: &Args) -> Result<PrototypeConformanceReport, String> {
     // The gate decides whether this run is evidence. A refused run
     // publishes nothing: no stdout result, no report asset, and no fresh
     // stamp date.
-    prototype_gate(&validated).map_err(|error| error.to_string())?;
+    prototype_gate(&validated, expected_provenance.as_ref()).map_err(|error| error.to_string())?;
     Ok(validated.into_report())
+}
+
+/// One relation's canonical matrix, owned for the length of the run.
+///
+/// The evaluator and the validator take a borrowed
+/// [`CanonicalPrototypeMatrix`], which carries its relation with it. The
+/// owner has to outlive both, and the two matrices are different types,
+/// so this is where the selected one lives.
+enum OwnedCanonicalMatrix {
+    /// The constructor-continuity matrix.
+    Constructor(ConstructorPrototypeMatrix),
+    /// The wide-floor matrix.
+    WideFloor(WideFloorPrototypeMatrix),
+}
+
+impl OwnedCanonicalMatrix {
+    /// The borrowed view the evidence path accepts.
+    const fn borrowed(&self) -> CanonicalPrototypeMatrix<'_> {
+        match self {
+            Self::Constructor(matrix) => CanonicalPrototypeMatrix::Constructor(matrix),
+            Self::WideFloor(matrix) => CanonicalPrototypeMatrix::WideFloor(matrix),
+        }
+    }
 }
 
 /// One 32-byte public identifier, from 64 hex digits.

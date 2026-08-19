@@ -841,6 +841,43 @@ impl PrimitiveFixture {
         }
     }
 
+    /// Exactly what the executor is handed, and nothing it is asked to
+    /// agree with.
+    ///
+    /// # The subject without the answer
+    ///
+    /// This is the projection minus the expectation: the script, the
+    /// initial stack, the transaction context, the enforcement layer, the
+    /// leaf version, and the facts the case is stated against. The
+    /// expected outcome, the expected resource figures, and the claim set
+    /// are all absent, because they are what the harness compares the
+    /// executor's answer *with* and an executor that could read them
+    /// would be reading the answer
+    /// `(´[PLAN-rule:guide11-exec:request-subject]´)`.
+    ///
+    /// It is one value with two uses, deliberately. It is the protocol
+    /// revision-3 request payload, and it is what the transcript retains
+    /// as the request that was actually sent — so the thing compared at
+    /// evaluation is the thing that went over the wire, rather than a
+    /// second description of it.
+    #[must_use]
+    pub fn subject(&self) -> PrimitiveExecutionSubject {
+        PrimitiveExecutionSubject {
+            case: self.case,
+            target_contract_version: self.target_contract_version,
+            network_id: self.network_id,
+            genesis_id: self.genesis_id,
+            execution_domain: self.execution_domain,
+            leaf_version: self.leaf_version,
+            leaf_version_status: self.leaf_version_status,
+            enforcement_layer: self.enforcement_layer,
+            script_source: self.script_source,
+            script: self.script.clone(),
+            initial_stack: self.initial_stack.clone(),
+            context: self.context.clone(),
+        }
+    }
+
     /// Whether the fixture is stated at the reviewed leaf version.
     #[must_use]
     pub const fn leaf_version_status(&self) -> LeafVersionStatus {
@@ -924,6 +961,51 @@ impl PrimitiveFixture {
     pub const fn expected(&self) -> &ExpectedPrimitiveOutcome {
         &self.expected
     }
+}
+
+/// Exactly what one executor was handed for one case.
+///
+/// # Why this is a type and not a filtered view
+///
+/// The execution subject and the expectation used to travel as one value,
+/// because a fixture is one value and splitting it risked the harness and
+/// the executor holding two different notions of what ran. Protocol
+/// revision 3 splits them anyway, and this is the half that crosses the
+/// boundary: everything the executor needs to perform the execution, and
+/// no statement at all about what the result should be
+/// `(´[PLAN-rule:guide11-exec:request-subject]´)`.
+///
+/// The other half never leaves the harness. That is the point: an
+/// executor cannot discard an expectation it was never sent, so the
+/// discipline is a property of the protocol rather than of an adapter's
+/// good behaviour.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PrimitiveExecutionSubject {
+    /// Which case.
+    pub case: NativeCaseId,
+    /// The contract revision the case is stated against.
+    pub target_contract_version: u32,
+    /// The network the case is stated against.
+    pub network_id: [u8; 32],
+    /// The genesis identifier the case is stated against.
+    pub genesis_id: [u8; 32],
+    /// The execution domain.
+    pub execution_domain: WireExecutionDomain,
+    /// The leaf version byte.
+    pub leaf_version: u8,
+    /// Whether that byte is the reviewed one.
+    pub leaf_version_status: LeafVersionStatus,
+    /// Which rule the case is to be answered at.
+    pub enforcement_layer: EnforcementLayer,
+    /// Where the exact script bytes came from.
+    pub script_source: FixtureScriptSource,
+    /// The exact script bytes.
+    pub script: Vec<u8>,
+    /// The exact initial stack.
+    pub initial_stack: Vec<Vec<u8>>,
+    /// The transaction context, where the case needs one.
+    pub context: Option<PrimitiveExecutionContext>,
 }
 
 /// The complete comparison form of one fixture.
@@ -1092,12 +1174,107 @@ impl<'a> IntoIterator for &'a PrimitiveFixtureSet {
     }
 }
 
+/// The canonical primitive census, in the one trust state the native
+/// evidence path accepts.
+///
+/// # Why the wrapper exists
+///
+/// [`PrimitiveFixtureSet`] is a public construction surface: any caller
+/// may assemble any fixtures into one. That is useful for experiments and
+/// necessary for the harness's own tests, and it is exactly what must not
+/// be an evidence subject. A caller who may choose the census may file a
+/// program that pushes a true literal under a case whose group names the
+/// signature dimension, and every claim below reads the label rather than
+/// the program — so the report states signature evidence for a run in
+/// which no signature primitive executed
+///.
+///
+/// The refusal is therefore about *provenance*, not about size or
+/// completeness: a caller-assembled census large enough to fill every
+/// required row would still be a census the caller chose. Only
+/// [`canonical_fixture_set`] constructs this wrapper, so the evidence path
+/// asks its question about the repository's own evidence plan and about
+/// nothing else.
+///
+/// # What the wrapper is not
+///
+/// It is not a claim that the census is complete, correct, or sufficient.
+/// It is the single fact that this value came from the canonical
+/// generator rather than from a caller.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CanonicalPrimitiveFixtureSet {
+    fixtures: PrimitiveFixtureSet,
+}
+
+impl CanonicalPrimitiveFixtureSet {
+    /// The census itself.
+    #[must_use]
+    pub const fn fixtures(&self) -> &PrimitiveFixtureSet {
+        &self.fixtures
+    }
+
+    /// Consumes the canonical state, yielding the bare census.
+    #[must_use]
+    pub fn into_fixtures(self) -> PrimitiveFixtureSet {
+        self.fixtures
+    }
+
+    /// The fixtures, in canonical case order.
+    pub fn iter(&self) -> impl Iterator<Item = &PrimitiveFixture> {
+        self.fixtures.iter()
+    }
+
+    /// How many fixtures the census holds.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.fixtures.len()
+    }
+
+    /// Whether the census is empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.fixtures.is_empty()
+    }
+
+    /// Whether the census holds one case.
+    #[must_use]
+    pub fn contains(&self, case: NativeCaseId) -> bool {
+        self.fixtures.contains(case)
+    }
+
+    /// An arbitrary census wrapped as though it were canonical, for the
+    /// crate's own tests.
+    ///
+    /// Not public, and deliberately the only way to reach the state
+    /// without the generator. It exists so the regressions can exercise
+    /// the *second* line of defence — the regeneration comparison in
+    /// [`crate::validate::evaluate`] — rather than only the type. Outside
+    /// this crate the type alone is the boundary, which is why there is
+    /// no public equivalent.
+    #[cfg(test)]
+    pub(crate) const fn wrap_for_tests(fixtures: PrimitiveFixtureSet) -> Self {
+        Self { fixtures }
+    }
+}
+
+impl<'a> IntoIterator for &'a CanonicalPrimitiveFixtureSet {
+    type Item = &'a PrimitiveFixture;
+    type IntoIter = std::collections::btree_map::Values<'a, NativeCaseId, PrimitiveFixture>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.fixtures.into_iter()
+    }
+}
+
 /// The canonical fixture census of this repository.
 ///
 /// The complete primitive matrix, authored against
 /// the reviewed contract and independent published vectors by the
 /// crate-internal census module. Its content, its coverage, and what it
 /// deliberately does not cover are documented there.
+///
+/// This is the only constructor of [`CanonicalPrimitiveFixtureSet`], and
+/// therefore the only route to a gate-eligible primitive subject.
 ///
 /// # Errors
 ///
@@ -1108,6 +1285,8 @@ impl<'a> IntoIterator for &'a PrimitiveFixtureSet {
 pub fn canonical_fixture_set(
     target: &ReviewedElementsTapscriptDefinition,
     binding: &ReviewedDevelopmentBinding,
-) -> Result<PrimitiveFixtureSet, NativeConformanceError> {
-    crate::census::canonical_census(target, binding)
+) -> Result<CanonicalPrimitiveFixtureSet, NativeConformanceError> {
+    Ok(CanonicalPrimitiveFixtureSet {
+        fixtures: crate::census::canonical_census(target, binding)?,
+    })
 }

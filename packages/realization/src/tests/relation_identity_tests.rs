@@ -118,50 +118,51 @@ fn a_conservation_relation_filed_under_another_asset_rejects() {
 }
 
 #[test]
-fn a_closure_relation_filed_under_a_family_it_forbids_rejects() {
-    let declaration = declaration(
-        id(
-            RelationKind::AllowedObjectFamilies,
-            family(TransactionSide::Input, ObjectId::PlainLbtc),
-        ),
-        Relation::AllowedObjectFamilies {
-            side: ObservedSide::Input,
-            allowed: BTreeSet::from([ObjectId::ReceiptLive]),
-        },
-    );
-    let error =
-        validate_relation_identity(&declaration).expect_err("the excluded family is refused");
-    assert!(
-        matches!(error, RealizationError::RelationSubjectMismatch { .. }),
-        "a forbidden family is a subject mismatch, got {error}",
-    );
+fn a_closure_relation_filed_under_any_family_rejects() {
+    // A closure constrains a side, not a family, so no family is its
+    // subject — neither one it forbids nor one it admits. Admitting the
+    // members was the old defect: every admitted family did equally
+    // well, so the key was a choice rather than an identity.
+    for object in [ObjectId::PlainLbtc, ObjectId::ReceiptLive] {
+        let declaration = declaration(
+            id(
+                RelationKind::AllowedObjectFamilies,
+                family(TransactionSide::Input, object),
+            ),
+            Relation::AllowedObjectFamilies {
+                side: ObservedSide::Input,
+                allowed: BTreeSet::from([ObjectId::ReceiptLive]),
+            },
+        );
+        let error =
+            validate_relation_identity(&declaration).expect_err("no family is a closure's subject");
+        assert!(
+            matches!(error, RealizationError::RelationSubjectMismatch { .. }),
+            "a family subject on a closure is a subject mismatch, got {error}",
+        );
+    }
 }
 
 #[test]
-fn a_root_policy_filed_under_a_root_it_does_not_govern_rejects() {
+fn a_root_policy_filed_under_any_root_rejects() {
+    // A root policy fixes what the whole operation may do with every
+    // root, so it singles out none of them. Governed and ungoverned
+    // roots alike are refused; only the operation remains.
     let expected = BTreeMap::from([(RootId::ALL[0], RootUse::Forbidden)]);
-    let ungoverned = RootId::ALL
-        .iter()
-        .copied()
-        .find(|root| !expected.contains_key(root));
-    let Some(ungoverned) = ungoverned else {
-        // One root in the vocabulary means every root is governed by
-        // any policy at all, and there is nothing to transpose.
-        return;
-    };
-    let declaration = declaration(
-        id(
-            RelationKind::RootPolicy,
-            RelationSubject::Root { root: ungoverned },
-        ),
-        Relation::RootPolicy { expected },
-    );
-    let error =
-        validate_relation_identity(&declaration).expect_err("the ungoverned root is refused");
-    assert!(
-        matches!(error, RealizationError::RelationSubjectMismatch { .. }),
-        "an ungoverned root is a subject mismatch, got {error}",
-    );
+    for root in RootId::ALL.iter().copied() {
+        let declaration = declaration(
+            id(RelationKind::RootPolicy, RelationSubject::Root { root }),
+            Relation::RootPolicy {
+                expected: expected.clone(),
+            },
+        );
+        let error =
+            validate_relation_identity(&declaration).expect_err("no root is a policy's subject");
+        assert!(
+            matches!(error, RealizationError::RelationSubjectMismatch { .. }),
+            "a root subject on a root policy is a subject mismatch, got {error}",
+        );
+    }
 }
 
 #[test]
@@ -247,19 +248,33 @@ fn a_surplus_architecture_family_relation_rejects() {
 }
 
 #[test]
-fn a_projection_policy_filed_under_a_projection_it_governs_passes() {
+fn a_projection_policy_is_subjected_to_the_operation_and_not_to_a_projection_it_governs() {
     let expected = BTreeMap::from([(
         ProjectionId::TransitionCertificate,
         architecture::ProjectionRule::Required,
     )]);
-    let declaration = declaration(
-        id(
-            RelationKind::ProjectionPolicy,
-            RelationSubject::Projection {
-                projection: ProjectionId::TransitionCertificate,
+    let policy = |subject| {
+        declaration(
+            id(RelationKind::ProjectionPolicy, subject),
+            Relation::ProjectionPolicy {
+                expected: expected.clone(),
             },
-        ),
-        Relation::ProjectionPolicy { expected },
+        )
+    };
+
+    validate_relation_identity(&policy(RelationSubject::Operation))
+        .expect("the operation whose projections are fixed is the subject");
+
+    // Governing a projection is not being about it. The policy governs
+    // every projection in the vocabulary — by requiring, permitting, or
+    // forbidding each — so a governed projection is no more its subject
+    // than an ungoverned one.
+    let error = validate_relation_identity(&policy(RelationSubject::Projection {
+        projection: ProjectionId::TransitionCertificate,
+    }))
+    .expect_err("no projection is a projection policy's subject");
+    assert!(
+        matches!(error, RealizationError::RelationSubjectMismatch { .. }),
+        "a projection subject on a projection policy is a subject mismatch, got {error}",
     );
-    validate_relation_identity(&declaration).expect("the governed projection agrees");
 }

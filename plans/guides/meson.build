@@ -5,6 +5,7 @@ plans_guides_files = files(
   'README.md',
   'guide_eight.md',
   'guide_eight_concept.md',
+  'guide_eleven.md',
   'guide_eleven_concept.md',
   'guide_five.md',
   'guide_four.md',
@@ -15,4 +16,5 @@ plans_guides_files = files(
   'guide_six.md',
   'guide_ten.md',
   'guide_ten_concept.md',
+  'guide_twelve_concept.md',
 )

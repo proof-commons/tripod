@@ -62,18 +62,24 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use target_elements::{
-    DeploymentEnvironment, ReviewedDevelopmentBinding, ReviewedElementsTapscriptDefinition,
+    DeploymentEnvironment, DeploymentProjection, ReviewedDevelopmentBinding,
+    ReviewedElementsTapscriptDefinition, TargetProjection,
 };
 
 use crate::error::NativeConformanceError;
-use crate::fixture::{NativeCaseId, PrimitiveFixtureSet};
+use crate::fixture::{
+    CanonicalPrimitiveFixtureSet, NativeCaseId, PrimitiveExecutionSubject, PrimitiveFixtureSet,
+};
 use crate::protocol::{
     ExecutorCapability, ExecutorEnvironmentObservation, ExecutorHandshake, HandshakeRequest,
     NATIVE_PROTOCOL_SCHEMA, NativeExecutionRequest, NativeExecutionResponse,
     NativePrototypeRequest, NativePrototypeResponse, ProtocolLimits, ProtocolPhase,
     WireEnvironment, WireExecutionDomain, validate_response_shape,
 };
-use crate::prototype::{CompoundPrototypeFixture, PrototypeCaseId};
+use crate::prototype::{
+    CanonicalPrototypeMatrix, CompoundPrototypeFixture, PrototypeCaseId, PrototypeExecutionSubject,
+};
+use crate::provenance::ExpectedExecutorProvenance;
 
 /// What one run asks the executor about.
 ///
@@ -127,6 +133,7 @@ pub struct ExecutorConfiguration {
     trust: ExecutorTrust,
     limits: ProtocolLimits,
     cleanup_grace: Duration,
+    expected_provenance: Option<ExpectedExecutorProvenance>,
 }
 
 impl ExecutorConfiguration {
@@ -139,7 +146,30 @@ impl ExecutorConfiguration {
             trust,
             limits: ProtocolLimits::DEFAULT,
             cleanup_grace: DEFAULT_EXECUTOR_CLEANUP_GRACE,
+            expected_provenance: None,
         }
+    }
+
+    /// The same selection under an explicit ADR-018 provenance
+    /// expectation.
+    ///
+    /// The expectation travels with the executor selection because it is
+    /// part of what the operator selected: a path plus a declaration of
+    /// what that path was built from. The gate takes it separately, so
+    /// that a report obtained by some other route is compared against an
+    /// expectation just the same.
+    #[must_use]
+    pub fn with_expected_provenance(self, expected: ExpectedExecutorProvenance) -> Self {
+        Self {
+            expected_provenance: Some(expected),
+            ..self
+        }
+    }
+
+    /// What the operator declared this executor was built from.
+    #[must_use]
+    pub const fn expected_provenance(&self) -> Option<&ExpectedExecutorProvenance> {
+        self.expected_provenance.as_ref()
     }
 
     /// The same selection under explicit record bounds.
@@ -182,17 +212,81 @@ impl ExecutorConfiguration {
     }
 }
 
-/// Everything one executor run observed.
+/// Everything one executor run asked and observed.
+///
+/// # A transcript is bound to its own subject
+///
+/// It used to retain only the answers, keyed by case identity. That made
+/// the case identity the whole of the correspondence between a run and a
+/// report, and a case identity is a navigation key rather than a subject:
+/// a transcript obtained by executing one census could be evaluated
+/// against a different census with the same keys, and the report would
+/// present fixtures the executor was never handed as "the complete
+/// fixture the executor was handed". The same omission let a run observed
+/// under one deployment binding be evaluated under another.
+///
+/// So the transcript retains what was *sent* as well as what came back:
+/// the target projection and the deployment projection the run was
+/// requested under, and the exact per-case subject of every request. The
+/// evaluator compares its own inputs against these
+/// `(´[PLAN-rule:guide11-exec:transcript-binding]´)`.
+///
+/// Exact typed comparison, and no digest. A digest would answer the same
+/// question less directly and would need its own preimage discipline to
+/// stay meaningful; the values themselves are already here.
+///
+/// # Every transcript is bound, not only a gate-eligible one
+///
+/// The binding is not a property of the trust state. An experimental run
+/// describes a real execution too, and a report that named a script its
+/// executor never ran would be wrong there in exactly the same way — it
+/// simply could not be gated afterwards. So the retention and the
+/// comparison are unconditional, and what the experimental path keeps is
+/// what it was for: executing an arbitrary census and describing *that*.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExecutionTranscript {
+    target: TargetProjection,
+    deployment: DeploymentProjection,
     handshake: ExecutorHandshake,
     environment: ExecutorEnvironmentObservation,
     trust: ExecutorTrust,
+    requests: BTreeMap<NativeCaseId, PrimitiveExecutionSubject>,
     responses: BTreeMap<NativeCaseId, NativeExecutionResponse>,
+    prototype_requests: BTreeMap<PrototypeCaseId, PrototypeExecutionSubject>,
     prototype_responses: BTreeMap<PrototypeCaseId, NativePrototypeResponse>,
 }
 
 impl ExecutionTranscript {
+    /// The reviewed contract this run was requested under.
+    #[must_use]
+    pub const fn target(&self) -> &TargetProjection {
+        &self.target
+    }
+
+    /// The deployment binding this run was requested under.
+    #[must_use]
+    pub const fn deployment(&self) -> &DeploymentProjection {
+        &self.deployment
+    }
+
+    /// The exact subject sent for each primitive case, in canonical case
+    /// order.
+    ///
+    /// What the executor was handed, expectation excluded — there was
+    /// never an expectation to exclude, under revision 3.
+    #[must_use]
+    pub const fn requests(&self) -> &BTreeMap<NativeCaseId, PrimitiveExecutionSubject> {
+        &self.requests
+    }
+
+    /// The exact subject sent for each compound-prototype case.
+    #[must_use]
+    pub const fn prototype_requests(
+        &self,
+    ) -> &BTreeMap<PrototypeCaseId, PrototypeExecutionSubject> {
+        &self.prototype_requests
+    }
+
     /// What the executor said about itself.
     #[must_use]
     pub const fn handshake(&self) -> &ExecutorHandshake {
@@ -229,21 +323,27 @@ impl ExecutionTranscript {
 
     /// A transcript assembled directly, for the crate's own tests.
     ///
-    /// Not public: a transcript is what an executor said, and a caller
-    /// able to state one without an executor could hand the evaluator a
-    /// run that never happened.
+    /// Not public: a transcript is what an executor was asked and said,
+    /// and a caller able to state one without an executor could hand the
+    /// evaluator a run that never happened.
+    ///
+    /// The requests are stated separately from the fixtures they came
+    /// from, rather than derived from them, because the regressions need
+    /// to state a transcript whose requests and responses do *not*
+    /// correspond — a response for a case never sent, a case sent and
+    /// never answered — and a constructor that derived one from the other
+    /// could not express either.
     #[cfg(test)]
-    pub(crate) const fn for_tests(
-        handshake: ExecutorHandshake,
-        environment: ExecutorEnvironmentObservation,
-        trust: ExecutorTrust,
-        responses: BTreeMap<NativeCaseId, NativeExecutionResponse>,
-    ) -> Self {
+    pub(crate) fn for_tests(parts: TranscriptParts<'_>) -> Self {
         Self {
-            handshake,
-            environment,
-            trust,
-            responses,
+            target: parts.target.projection(),
+            deployment: parts.binding.projection(),
+            handshake: parts.handshake,
+            environment: parts.environment,
+            trust: parts.trust,
+            requests: parts.requests,
+            responses: parts.responses,
+            prototype_requests: BTreeMap::new(),
             prototype_responses: BTreeMap::new(),
         }
     }
@@ -251,25 +351,63 @@ impl ExecutionTranscript {
     /// A compound-prototype transcript assembled directly, for the
     /// crate's own tests.
     ///
-    /// Not public, for the same reason as the primitive one: a
-    /// transcript is what an executor said, and a caller able to state
-    /// one without an executor could hand the evaluator a run that never
-    /// happened.
+    /// Not public, for the same reason as the primitive one.
     #[cfg(test)]
-    pub(crate) const fn prototypes_for_tests(
-        handshake: ExecutorHandshake,
-        environment: ExecutorEnvironmentObservation,
-        trust: ExecutorTrust,
-        prototype_responses: BTreeMap<PrototypeCaseId, NativePrototypeResponse>,
-    ) -> Self {
+    pub(crate) fn prototypes_for_tests(parts: PrototypeTranscriptParts<'_>) -> Self {
         Self {
-            handshake,
-            environment,
-            trust,
+            target: parts.target.projection(),
+            deployment: parts.binding.projection(),
+            handshake: parts.handshake,
+            environment: parts.environment,
+            trust: parts.trust,
+            requests: BTreeMap::new(),
             responses: BTreeMap::new(),
-            prototype_responses,
+            prototype_requests: parts.requests,
+            prototype_responses: parts.responses,
         }
     }
+}
+
+/// One stated primitive transcript, gathered for construction.
+///
+/// A parts struct rather than a long argument list: a transcript now
+/// binds seven values, and a positional call site could transpose two of
+/// them without any type noticing.
+#[cfg(test)]
+pub(crate) struct TranscriptParts<'a> {
+    /// The contract the run was requested under.
+    pub target: &'a ReviewedElementsTapscriptDefinition,
+    /// The binding the run was requested under.
+    pub binding: &'a ReviewedDevelopmentBinding,
+    /// What the executor said about itself.
+    pub handshake: ExecutorHandshake,
+    /// What the executor said it ran on.
+    pub environment: ExecutorEnvironmentObservation,
+    /// What the caller declared the executor to be.
+    pub trust: ExecutorTrust,
+    /// The exact subjects sent.
+    pub requests: BTreeMap<NativeCaseId, PrimitiveExecutionSubject>,
+    /// The answers.
+    pub responses: BTreeMap<NativeCaseId, NativeExecutionResponse>,
+}
+
+/// One stated compound-prototype transcript, gathered for construction.
+#[cfg(test)]
+pub(crate) struct PrototypeTranscriptParts<'a> {
+    /// The contract the run was requested under.
+    pub target: &'a ReviewedElementsTapscriptDefinition,
+    /// The binding the run was requested under.
+    pub binding: &'a ReviewedDevelopmentBinding,
+    /// What the executor said about itself.
+    pub handshake: ExecutorHandshake,
+    /// What the executor said it ran on.
+    pub environment: ExecutorEnvironmentObservation,
+    /// What the caller declared the executor to be.
+    pub trust: ExecutorTrust,
+    /// The exact subjects sent.
+    pub requests: BTreeMap<PrototypeCaseId, PrototypeExecutionSubject>,
+    /// The answers.
+    pub responses: BTreeMap<PrototypeCaseId, NativePrototypeResponse>,
 }
 
 /// Spawn the executor, absorbing the Linux fork/exec text-busy race.
@@ -408,6 +546,69 @@ impl SupervisedGroup {
     }
 }
 
+/// A spawned child that nothing supervises yet.
+///
+/// # Why a guard rather than a return path
+///
+/// Between the spawn and the supervisor there are several ways to fail:
+/// the pipes may not be there to take, and the process group may not be
+/// establishable. Rust's `Child` destructor neither kills nor waits, so
+/// each of those returns used to drop a live or exited-unreaped process
+/// — a run refused, and the process it started still running or still
+/// occupying a slot in the process table.
+///
+/// The guard makes every one of those paths cleanup-safe without any of
+/// them saying so, which is the property worth having: a path added
+/// later inherits it. On the success path [`Self::adopt`] hands the
+/// child to the supervisor and the guard has nothing left to clean.
+///
+/// # Kill and reap, in that order
+///
+/// Terminating without waiting leaves a zombie until the harness itself
+/// exits; waiting without terminating hangs on a child that has not
+/// finished. Both are done, and the wait is blocking: at this point the
+/// child has just been signalled, has never been written to, and has no
+/// reason to outlive the signal.
+struct UnadoptedChild {
+    child: Option<Child>,
+}
+
+impl UnadoptedChild {
+    /// Takes a freshly spawned child under guard.
+    const fn new(child: Child) -> Self {
+        Self { child: Some(child) }
+    }
+
+    /// The child, while it is still unadopted.
+    const fn child(&self) -> Option<&Child> {
+        self.child.as_ref()
+    }
+
+    /// The child, mutably, while it is still unadopted.
+    const fn child_mut(&mut self) -> Option<&mut Child> {
+        self.child.as_mut()
+    }
+
+    /// Releases the child to a supervisor that will own its cleanup.
+    const fn adopt(&mut self) -> Option<Child> {
+        self.child.take()
+    }
+}
+
+impl Drop for UnadoptedChild {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            // Both results are deliberately discarded: a child that has
+            // already exited answers the kill with an error, and that is
+            // the state the kill was asking for rather than a failure to
+            // report. Nothing here can be reported anyway — a destructor
+            // has no return.
+            let _ignored = child.kill();
+            let _reaped = child.wait();
+        }
+    }
+}
+
 /// One executor run, started and stopped as a whole process tree.
 struct ExecutorSupervisor {
     child: Mutex<Child>,
@@ -424,13 +625,18 @@ struct ExecutorSupervisor {
 
 impl ExecutorSupervisor {
     /// Takes ownership of a spawned child and the group it leads.
-    fn adopt(child: Child) -> Result<Self, NativeConformanceError> {
-        let group = SupervisedGroup::establish(&child)?;
-        Ok(Self {
+    ///
+    /// The group is established by the caller, while the child is still
+    /// under its startup guard: establishment is the last thing that can
+    /// fail before anything is supervised, and a constructor that both
+    /// established and took ownership would be the one place where a
+    /// failure had to drop a child it had already consumed.
+    const fn adopt(child: Child, group: SupervisedGroup) -> Self {
+        Self {
             child: Mutex::new(child),
             group,
             termination: Mutex::new(()),
-        })
+        }
     }
 
     /// Stops the whole run: graceful, bounded wait, forceful.
@@ -525,6 +731,29 @@ pub fn execute(
     )
 }
 
+/// Runs the canonical census through the selected executor.
+///
+/// # Why execution itself is not the trust boundary
+///
+/// Running an arbitrary census is not a way to manufacture evidence: it
+/// is a way to ask a node a question. The boundary sits at
+/// [`crate::validate::evaluate`], which accepts only the canonical
+/// wrapper, so [`execute`] stays open to any census and this entry point
+/// exists to make the evidence path read as one canonical sequence from
+/// census to gate.
+///
+/// # Errors
+///
+/// Every protocol failure [`execute`] states.
+pub fn execute_canonical(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    configuration: &ExecutorConfiguration,
+    fixtures: &CanonicalPrimitiveFixtureSet,
+) -> Result<ExecutionTranscript, NativeConformanceError> {
+    execute(target, binding, configuration, fixtures.fixtures())
+}
+
 /// Runs one compound-prototype matrix through the selected executor.
 ///
 /// The same exchange, the same supervision, and the same refusals: what
@@ -553,6 +782,25 @@ pub fn execute_prototypes(
     )
 }
 
+/// Runs one canonical prototype matrix through the selected executor.
+///
+/// The trust boundary sits at [`crate::prototype_validate::evaluate_prototypes`]
+/// rather than here, for the reason [`execute_canonical`] gives. This
+/// entry point exists so the evidence path reads as one canonical
+/// sequence from matrix to gate.
+///
+/// # Errors
+///
+/// Every protocol failure [`execute_prototypes`] states.
+pub fn execute_canonical_prototypes(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    configuration: &ExecutorConfiguration,
+    matrix: CanonicalPrototypeMatrix<'_>,
+) -> Result<ExecutionTranscript, NativeConformanceError> {
+    execute_prototypes(target, binding, configuration, matrix.rows())
+}
+
 /// The supervised run, over either workload.
 fn execute_workload(
     target: &ReviewedElementsTapscriptDefinition,
@@ -560,28 +808,37 @@ fn execute_workload(
     configuration: &ExecutorConfiguration,
     workload: NativeWorkload<'_>,
 ) -> Result<ExecutionTranscript, NativeConformanceError> {
-    let mut child = spawn_executor(&configuration.program)
-        .map_err(|_| NativeConformanceError::ExecutorStartupFailed)?;
+    // Under guard from the spawn onward. Every refusal between here and
+    // the supervisor kills and reaps the process this harness started,
+    // rather than dropping a `Child` whose destructor does neither
+    // (`G11-R13`).
+    let mut spawned = UnadoptedChild::new(
+        spawn_executor(&configuration.program)
+            .map_err(|_| NativeConformanceError::ExecutorStartupFailed)?,
+    );
 
-    let stdin = child
-        .stdin
-        .take()
+    let stdin = spawned
+        .child_mut()
+        .and_then(|child| child.stdin.take())
         .ok_or(NativeConformanceError::ExecutorStartupFailed)?;
-    let stdout = child
-        .stdout
-        .take()
+    let stdout = spawned
+        .child_mut()
+        .and_then(|child| child.stdout.take())
         .ok_or(NativeConformanceError::ExecutorStartupFailed)?;
     let mut reader = BufReader::new(stdout);
 
-    let supervisor = match ExecutorSupervisor::adopt(child) {
-        Ok(supervisor) => Arc::new(supervisor),
-        Err(error) => {
-            // Nothing is supervised, so nothing may be left running: the
-            // pipes are dropped and the run is refused rather than
-            // continued outside the cleanup contract.
-            return Err(error);
-        }
-    };
+    // The last thing that can fail before anything is supervised. A run
+    // that cannot establish its group is refused, and the guard is what
+    // makes the refusal leave nothing behind.
+    let group = SupervisedGroup::establish(
+        spawned
+            .child()
+            .ok_or(NativeConformanceError::ExecutorStartupFailed)?,
+    )?;
+    let child = spawned
+        .adopt()
+        .ok_or(NativeConformanceError::ExecutorStartupFailed)?;
+    let supervisor = Arc::new(ExecutorSupervisor::adopt(child, group));
     let watchdog = Watchdog::start(
         Arc::clone(&supervisor),
         configuration.timeout,
@@ -705,7 +962,10 @@ fn run_protocol(
             .ok_or(NativeConformanceError::MissingEnvironmentObservation)?;
     compare_environment(target, binding, &environment)?;
 
+    let mut requests: BTreeMap<NativeCaseId, PrimitiveExecutionSubject> = BTreeMap::new();
     let mut responses: BTreeMap<NativeCaseId, NativeExecutionResponse> = BTreeMap::new();
+    let mut prototype_requests: BTreeMap<PrototypeCaseId, PrototypeExecutionSubject> =
+        BTreeMap::new();
     let mut prototype_responses: BTreeMap<PrototypeCaseId, NativePrototypeResponse> =
         BTreeMap::new();
     match workload {
@@ -715,6 +975,7 @@ fn run_protocol(
             limits,
             &mut stdin,
             reader,
+            &mut requests,
             &mut responses,
         )?,
         NativeWorkload::Prototypes(matrix) => run_prototype_cases(
@@ -723,6 +984,7 @@ fn run_protocol(
             limits,
             &mut stdin,
             reader,
+            &mut prototype_requests,
             &mut prototype_responses,
         )?,
     }
@@ -740,10 +1002,14 @@ fn run_protocol(
     expect_end_of_stream(reader, limits)?;
 
     Ok(ExecutionTranscript {
+        target: target.projection(),
+        deployment: binding.projection(),
         handshake,
         environment,
         trust: configuration.trust,
+        requests,
         responses,
+        prototype_requests,
         prototype_responses,
     })
 }
@@ -755,20 +1021,25 @@ fn run_primitive_cases(
     limits: ProtocolLimits,
     stdin: &mut impl Write,
     reader: &mut impl BufRead,
+    requests: &mut BTreeMap<NativeCaseId, PrimitiveExecutionSubject>,
     responses: &mut BTreeMap<NativeCaseId, NativeExecutionResponse>,
 ) -> Result<(), NativeConformanceError> {
     for fixture in fixtures {
         let case = fixture.case();
+        let subject = fixture.subject();
         let request = NativeExecutionRequest {
             schema: NATIVE_PROTOCOL_SCHEMA,
             case,
-            fixture: fixture.clone(),
+            subject: subject.clone(),
             // A primitive fixture bears no construction, and the field
             // is omitted from the wire entirely rather than written as
-            // null, so this request is byte-identical to the one a
-            // schema-2 executor has always received.
+            // null.
             construction: None,
         };
+        // Retained before the write, so what the transcript says was sent
+        // is the value the request was built from rather than a second
+        // description assembled after the fact.
+        requests.insert(case, subject);
         // A failed write means the pipe is gone. What that was — a
         // timeout, an early exit, or an executor that simply stopped
         // answering — is decided by the read below and by the child's
@@ -823,15 +1094,18 @@ fn run_prototype_cases(
     limits: ProtocolLimits,
     stdin: &mut impl Write,
     reader: &mut impl BufRead,
+    requests: &mut BTreeMap<PrototypeCaseId, PrototypeExecutionSubject>,
     responses: &mut BTreeMap<PrototypeCaseId, NativePrototypeResponse>,
 ) -> Result<(), NativeConformanceError> {
     for fixture in matrix {
         let case = fixture.case.clone();
+        let subject = fixture.subject();
         let request = NativePrototypeRequest {
             schema: NATIVE_PROTOCOL_SCHEMA,
             case: case.clone(),
-            fixture: fixture.clone(),
+            subject: subject.clone(),
         };
+        requests.insert(case.clone(), subject);
         // A failed write means the pipe is gone. What that was is
         // decided by the read below and by the child's status.
         let _write = write_message(&mut *stdin, &request, ProtocolPhase::Request);
@@ -875,12 +1149,34 @@ fn run_prototype_cases(
 
 /// Whether the executor ran the chain the binding names.
 ///
-/// Compared before any case executes. A run whose executor observed a
-/// different chain from the one the fixtures are stated against has not
-/// produced weak evidence about the bound network; it has produced
-/// evidence about some other network, and continuing would attach that
-/// evidence to this one.
-fn compare_environment(
+/// # Checked twice, against two different failures
+///
+/// The first check happens before any case executes, and it is about the
+/// run: an executor that observed a different chain from the one the
+/// fixtures are stated against has not produced weak evidence about the
+/// bound network, it has produced evidence about some other network, and
+/// continuing would attach that evidence to this one.
+///
+/// The second happens when a report is constructed or validated, and it
+/// is about the *transcript*: the binding a report is built against is
+/// supplied there afresh, so a run observed under one binding could
+/// otherwise be reported under another and the two environments would sit
+/// side by side in the document, disagreeing, with nothing comparing them
+/// `(´[PLAN-rule:guide11-exec:environment-twice]´)`.
+///
+/// One body for both, because two copies of these five comparisons would
+/// eventually disagree, and the half that disagreed would be the half
+/// nobody was reading.
+///
+/// # Errors
+///
+/// [`NativeConformanceError::EnvironmentBindingMismatch`] for a
+/// disagreeing environment class, chain, or network,
+/// [`NativeConformanceError::GenesisObservationMismatch`] for a
+/// disagreeing genesis, and
+/// [`NativeConformanceError::ActivationObservationMismatch`] where the
+/// reviewed domain or leaf version is not active.
+pub(crate) fn compare_environment(
     target: &ReviewedElementsTapscriptDefinition,
     binding: &ReviewedDevelopmentBinding,
     observation: &ExecutorEnvironmentObservation,
@@ -1102,10 +1398,86 @@ mod tests {
     };
 
     use super::{
-        ExecutorConfiguration, ExecutorTrust, NativeWorkload, PrimitiveFixtureSet, run_protocol,
+        ExecutorConfiguration, ExecutorTrust, NativeWorkload, PrimitiveFixtureSet, UnadoptedChild,
+        run_protocol,
     };
     use crate::error::NativeConformanceError;
     use crate::protocol::{MOCK_EXECUTOR_GENESIS_ID, MOCK_EXECUTOR_NETWORK_ID};
+
+    /// `G11-R13`: a spawned child dropped before adoption is killed and
+    /// reaped, not leaked.
+    ///
+    /// The child here is a long-running sleep that would still be
+    /// running a minute later, so a guard that failed to signal it would
+    /// leave it alive; and the wait is what distinguishes a killed child
+    /// from a collected one, so a guard that signalled without waiting
+    /// would leave a zombie. The assertion reads the second directly:
+    /// once the guard has reaped, the process is no longer this
+    /// process's child at all, and a further wait says so.
+    #[cfg(unix)]
+    #[test]
+    fn an_unadopted_child_is_killed_and_reaped() {
+        use nix::sys::wait::{WaitPidFlag, waitpid};
+
+        let child = std::process::Command::new("/bin/sh")
+            .args(["-c", "sleep 120"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("a sleeping child starts");
+        let pid = nix::unistd::Pid::from_raw(
+            i32::try_from(child.id()).expect("a process identifier is representable"),
+        );
+
+        let guard = UnadoptedChild::new(child);
+        assert!(
+            guard.child().is_some(),
+            "an unadopted guard still holds its child",
+        );
+        drop(guard);
+
+        // No child of this process by that identifier remains, which is
+        // exactly what "reaped" means: an unreaped one — alive or
+        // zombie — would be reported here instead.
+        assert_eq!(
+            waitpid(pid, Some(WaitPidFlag::WNOHANG)),
+            Err(nix::errno::Errno::ECHILD),
+            "the guard left an unreaped child behind",
+        );
+    }
+
+    /// `G11-R13`: an adopted child is the supervisor's, and the guard
+    /// touches it no further.
+    ///
+    /// The other half of the property. A guard that killed on the
+    /// success path too would stop every run at the moment it started.
+    #[cfg(unix)]
+    #[test]
+    fn an_adopted_child_is_left_to_its_supervisor() {
+        let child = std::process::Command::new("/bin/sh")
+            .args(["-c", "sleep 120"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("a sleeping child starts");
+
+        let mut guard = UnadoptedChild::new(child);
+        let mut adopted = guard.adopt().expect("the child is adopted");
+        assert!(
+            guard.child().is_none(),
+            "an adopted guard holds nothing to clean up",
+        );
+        drop(guard);
+
+        assert!(
+            adopted.try_wait().expect("the child is waitable").is_none(),
+            "adoption must not have stopped the child",
+        );
+        adopted.kill().expect("the test stops its own child");
+        adopted.wait().expect("the test reaps its own child");
+    }
 
     /// A pipe whose far end is already gone.
     struct BrokenPipe;

@@ -534,6 +534,21 @@ the format defines, which the target refuses before reaching a version byte to
 judge. A rejection carrying none of these would previously have been read as a
 malformed response rather than as the verdict it is.
 
+### Transient stack occupancy of the verifying forms · `tab:elements-ref:verifying-transient`
+
+The Guide-11 stack-resource weld found the two verifying signature primitives
+declaring their branching counterpart's maximum stack growth rather than the
+depth they settle at. Source review confirmed the declared rows and located the
+transient the success algebra does not represent.
+
+| Confirmation | Detail |
+|---|---|
+| verifying forms push before they verify | the interpreter shares one case block between a branching primitive and its verifying counterpart. It pops the operands, pushes the truth value, and only then, if the opcode is the verifying one, pops that value again on success and aborts on failure. The verifying form therefore transiently occupies its branching counterpart's depth before the implicit verification consumes the result (`src/script/interpreter.cpp:1476-1499` for the transaction-signature pair, `src/script/interpreter.cpp:1689-1734` for the stack-message pair) |
+
+The typed consequence is stated once, over the verifying primitives the
+signature weld already names, as a transient term above the surviving depth.
+Neither reviewed row moved.
+
 ### Target-native tests still required · `rule:elements-ref:review-required-tests`
 
 The Guide-9 development conformance run resolved the required primitive

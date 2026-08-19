@@ -152,8 +152,10 @@ where
                 });
             }
             // A defect the metadata cannot move is not retried: the
-            // next nonce would meet it again unchanged.
-            Err(defect @ ConstructionDefect::Tree(_)) => {
+            // next nonce would meet it again unchanged. The same
+            // predicate the canonical search uses, so the two policies
+            // cannot drift apart again.
+            Err(defect) if !crate::constructor::tree::retryable(defect) => {
                 return Err(TotalityDefect::NotRepairableByRetry(defect));
             }
             Err(defect) => last = Some(defect),

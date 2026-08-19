@@ -25,9 +25,9 @@ option(
 option(
   'target_native_executor_class',
   type: 'combo',
-  choices: ['mock', 'reviewed-non-mock'],
-  value: 'reviewed-non-mock',
-  description: 'What the caller declares the selected executor to be; a mock declaration can never satisfy the target-native gate',
+  choices: ['unselected', 'mock', 'reviewed-non-mock'],
+  value: 'unselected',
+  description: 'What the caller declares the selected executor to be; the build system makes no such declaration on the caller\'s behalf, so selecting an executor without classifying it fails configuration. A mock declaration can never satisfy the target-native gate',
 )
 option(
   'target_native_network_id',
@@ -40,4 +40,22 @@ option(
   type: 'string',
   value: '',
   description: 'Public development genesis identifier (64 hex digits) for the target-elements-native-check target',
+)
+option(
+  'target_native_intended_tip',
+  type: 'string',
+  value: '',
+  description: 'ADR-018: the integration tip the selected executable was built from, as a full 40-digit object identifier. Required when the executor class is reviewed-non-mock',
+)
+option(
+  'target_native_upstream_base',
+  type: 'string',
+  value: '',
+  description: 'ADR-018: the upstream base that tip derives from, as a full 40-digit object identifier. Required when the executor class is reviewed-non-mock',
+)
+option(
+  'target_native_local_topics',
+  type: 'array',
+  value: [],
+  description: 'ADR-018: the local topic branches folded into that tip. An empty census is a statement — a tip that folded in no local branch — rather than an omission',
 )

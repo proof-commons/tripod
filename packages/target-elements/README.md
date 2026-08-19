@@ -233,17 +233,26 @@ exposes one `const fn` accessor per field.
 `TargetContractVersion` is an opaque revision key, not a digest:
 
 ```text
-TargetContractVersion::V1          the historical Guide-9 contract
+TargetContractVersion::V1          the historical Guide-9 contract, not supported
 TargetContractVersion::V2          the compound-proof contract this crate derives
-TargetContractVersion::SUPPORTED   the two-element census
+TargetContractVersion::SUPPORTED   the one-element census
 TargetContractVersion::supported(value: u32) -> Result<Self, TargetError>
 TargetContractVersion::get(self) -> u32
 ```
 
 A caller selects one by naming the constant, or admits a number at run time
-with `supported`. V1 remains implemented and is not widened; V2 carries the
-compound-proof primitive census together with the widened operand and success
-algebra.
+with `supported`. V2 carries the compound-proof primitive census together with
+the widened operand and success algebra, and is the only revision this crate
+implements.
+
+V1 is named but not supported, and `supported(1)` fails. Validation here is not
+version-dispatched: one census, one operand and success algebra, both V2's.
+Advertising V1 under that validator could only mean one of two dishonest things
+— a genuine historical V1 contract refused for lacking primitives it never had,
+or a complete V2 body accepted while stamped V1. The offered revision is
+checked when a definition is validated, so a body cannot travel under a number
+this crate cannot check it against. Implementing V1 would mean per-revision
+censuses and a versioned algebra, not returning the constant to the list.
 
 `TargetProjection` is the stable comparison form, reached by `projection()` on
 either trust state. It carries no provenance and no digest, and its accessors
@@ -435,6 +444,15 @@ resources, capabilities, evidence, and the cross-contract welds. The seven
 contract that is internally coherent but disagrees with itself across two of
 its own registries.
 
+The signature weld derives one complete expected behaviour from
+`SignaturePrimitiveContract` and compares every signature opcode against it:
+both operand positions, the recognized-key success form and the unknown-key
+one, the Boolean a branching form pushes and the nothing a verifying form
+pushes, the empty-signature and invalid-signature outcomes, the empty-key
+rejection, the budget, and the evidence. Deriving the whole expectation is the
+point — checking a convenient subset let a definition say unknown keys reject
+in the subcontract and succeed without verification in every opcode.
+
 ## The compound-proof primitive census
 
 Guide 10 required a primitive-needs census before any prototype code: every
@@ -573,9 +591,11 @@ Implemented:
 
 - the crate boundary and its no-dependency rule;
 - the typed error root;
-- the target-contract version and its supported census, now two revisions:
-  V1 remains the historical Guide-9 contract and V2 carries the compound-proof
-  primitive census together with the widened operand and success algebra;
+- the target-contract version and its supported census, which holds the one
+  revision this crate implements: V2, carrying the compound-proof primitive
+  census together with the widened operand and success algebra. V1 is retained
+  as the historical Guide-9 name and is not accepted, since no validator here
+  implements it;
 - the tapscript execution domain and the validated leaf version;
 - the reviewed primitive registry, with complete operand, result, failure,
   and resource contracts for every admitted primitive, including the

@@ -2,7 +2,7 @@
 
 > **Status:** ACTIVE
 > **Current gate:** Phase 3 — Elements target and foundational prototypes
-> **Current condition:** Phases 1 and 2 are complete. The target-independent compiler constructs one deterministic, validated scoped analyzed program for the complete pilot scope, factorized per operation, with relation-owned requirements, a corruption-resistant assembly validator, and independent assembly oracles; the Phase-2 exit gate record is in §2.11, including passed document reproducibility. The next work is the Guide-8 typed Elements target contract and capability-adapter foundation.
+> **Current condition:** Phases 1 and 2 are complete. The target-independent compiler constructs one deterministic, validated scoped analyzed program for the complete pilot scope, factorized per operation, with relation-owned requirements, a corruption-resistant assembly validator, and independent assembly oracles; the Phase-2 exit gate record is in §2.11, including passed document reproducibility. Phase 3 then delivered the Guide-8 target foundation, the Guide-9 native primitive gate, and the Guide-10 constructor and wide-floor prototypes, each with its own gate record. The open blocker is public declassification: the Guide-11 preflight register in §5.6 is complete, and the next work is the Guide-11 confidential-value target review and prototypes.
 > **Next gate:** Phase 4 — compact-ash end-to-end pipeline
 > **Authority:** Current execution queue only. The specification, the realization document, typed architecture, implemented ADRs, accepted decisions, package contracts, phase cards, and accepted research results take precedence.
 
@@ -144,7 +144,7 @@ No named consumer means no digest. No distinct decision means no digest.
 
 ### 2.1 Latest static review · `tab:backlog:review-basis`
 
-The current review is the fifth static review, performed in two independent
+The current review is the sixth static review, performed in two independent
 passes over the supplied concatenation of the tree:
 
 ```text
@@ -152,22 +152,19 @@ tree:
    
 
 selected files:
-    266
+    220
 ```
 
-The supplied filter excluded, among other things:
+The supplied filter excluded 352 files, among them:
 
 ```text
 Cargo.lock
-licence files
 the paper sources
-packages/artifacts/
-packages/cli-common/
-packages/document-stamps/
-packages/execwrap/
-packages/labels/
-most unit and integration test directories
-some generated files
+most unit and integration tests
+most compiler implementation files
+most executable-model implementation files
+the label-tool implementation
+several build/tooling packages and scripts
 ```
 
 No Cargo, Meson, TeX, the native executor, advisory, or reproducibility
@@ -182,21 +179,20 @@ Therefore:
 - licence compatibility was not independently checked;
 - historical gate records remain historical evidence only.
 
-Its findings are recorded in §5.5; the review found no obvious valid-world
-route in the selected model code for unauthorized issuance, reserve
-extraction, receipt-class escape, sponsor-funded payout substitution,
-recipient redirection, post-sealing pool revival, or history residue
-influencing monetary computation. Its central verdict is that the native
-evidence layer can currently say passed without proving the complete claimed
-subject was present and covered, and that the static signature abstraction
-cannot represent the target's documented empty-signature and unknown-key-type
-paths; both must be repaired before Guide-10 prototype evidence is recorded.
-The review text is archived at
-[plans/reviews/review-5-0.3.3-dev.md](reviews/review-5-0.3.3-dev.md).
+Its findings are recorded in §5.6. Its central verdict is that the native
+evidence layer still does not bind evidence to its subject: an execution
+transcript retains neither the requested subjects nor the exact fixtures
+sent to the child, so it can be rebound to a census, matrix, target, or
+deployment that was never executed; and the claim a fixture files under is
+caller-authored, so claim-bearing metadata can be attached to an unrelated
+or trivially true script. Both passes rank those as release-blocking for
+that subsystem, and no public-declassification prototype begins while they
+remain open. The review text is archived at
+[plans/reviews/review-6-0.3.4-dev.md](reviews/review-6-0.3.4-dev.md).
 
 ### 2.2 Earlier review basis
 
-The repository retains six earlier reviewed trees as historical context:
+The repository retains seven earlier reviewed trees as historical context:
 
 ```text
 initial reviewed tree:
@@ -216,10 +212,13 @@ third-review tree:
 
 fourth-review tree:
    
+
+fifth-review tree:
+   
 ```
 
 Those reviews and their findings are evidence about their exact trees. They are
-not current-checkout execution evidence. The second through fifth review
+not current-checkout execution evidence. The second through sixth review
 texts are archived under [plans/reviews/](reviews/README.md).
 
 ### 2.3 Historical Phase-1 gate · `gate:backlog:phase1`
@@ -720,9 +719,11 @@ runs. First native contact surfaced two constructor fixture defects and
 zero program defects; both fixtures were repaired with review
 justification. Measured resources: constructor 699 script and 924
 witness bytes with the 520-byte element bound binding at a fifth of
-maximum; wide floor 523 script and 606 witness bytes. Report digests
-are recorded in the research files; the artifacts themselves are run
-output and are not checked in.
+maximum; wide floor 523 script and 606 witness bytes. The reports
+themselves are run output and are not checked in; the research files
+record the run facts as historical narrative and no digest of any report
+is kept, which is what the identity register's §3.5 stop record calls
+for (G11-R11).
 
 Gate evidence on the merged tree: the working debug lane green through
 every wave with the workspace suite growing from 1913 to 2151 tests;
@@ -850,7 +851,7 @@ Architecture finality does not imply:
 public complete compiler-analysis API beyond the target-requirement boundary
 compiler-plan identity
 backend proof patterns
-STATE-constructor, wide-arithmetic, and declassification prototypes
+public declassification prototype
 production target-native evidence
 
 tripod-linker
@@ -1066,6 +1067,248 @@ the owning repairs: accepted responses are not protocol-shape validated
 against the advertised handshake capabilities, public fixture construction
 does little semantic context validation, and the Python adapter tolerates an
 empty context script path where the fixture script is nonempty.
+
+### 5.6 Sixth-review findings · `tab:backlog:findings-sr6`
+
+The sixth static review reported two passes over the tree recorded in §2.1.
+First-pass and second-pass findings are consolidated into one SR6 register
+whose identifiers are the Guide-11 preflight identifiers `G11-R01` through
+`G11-R14`, with the two hardening rows carried as `G11-H01` and `G11-H02`.
+The Guide-11 preflight waves own the register; the summaries below are the
+required dispositions recorded in that guide's own preflight table.
+
+Preflight state after Wave 5: the gate is **COMPLETE**. All sixteen rows
+are disposed — every numbered row `G11-R01` through `G11-R14` is DONE,
+and `G11-H01` is DONE with the stack resource rows welded. `G11-H02` is
+not a gate item and never was: the guide's gate bullets name no issuance
+condition, and the row's own disposition is a standing prohibition —
+issuance realization scope may not be added until the authority fields
+are enforced or externally evidenced. None is proposed, so the
+constraint stands open by design rather than blocking the gate.
+
+The review basis is the archived review's own tree, not the working tree: under the
+guide's own rule each finding is a hypothesis until it is reproduced
+against the working tree, and is then either fixed, disproved with a
+typed argument, or reclassified with a narrower assurance claim. The
+Wave-0 column records that adjudication. Wave 0 repaired nothing, so
+every row opened TODO; Wave 1 closed the two claim-laundering rows,
+Wave 2 closed the transcript-rebinding row, Wave 3 closed the gate,
+provenance, and startup-cleanup rows, and Wave 4 closed the remaining
+six: relation subjects, target versions, the signature weld, retry
+classification, the report digests, and this reconciliation.
+
+| ID | Priority | Status | Wave 0 | Finding |
+|---|---:|---|---|---|
+| `G11-R01` | P0 | DONE | CONFIRMED | A transcript can be rebound to another fixture census, prototype matrix, target, or deployment binding; bind the transcript to its exact subjects and requests. |
+| `G11-R02` | P0 | DONE | CONFIRMED | Primitive claims can be manufactured by attaching claim-bearing case metadata to an unrelated script; gate only a canonical validated primitive plan. |
+| `G11-R03` | P0 | DONE | CONFIRMED | Prototype claims are caller-authored and can certify a trivial true script as constructor or wide-floor evidence; gate only relation-specific canonical matrices. |
+| `G11-R04` | P1 | DONE | CONFIRMED | Consensus resource cases are credited to policy-resource evidence because evidence ownership derives from case ID without the enforcement layer; derive evidence from the complete fixture and correct the plan class. |
+| `G11-R05` | P1 | DONE | CONFIRMED | The primitive native gate can accept a report whose summary is failed; gate every canonical case and reject failed completeness. |
+| `G11-R06` | P1 | DONE | CONFIRMED | ADR-018 execution provenance is recorded but not enforced by evidence gates; validate executable provenance before gate eligibility. |
+| `G11-R07` | P1 | DONE | CONFIRMED | Meson defaults an executor to reviewed-non-mock; require explicit caller selection and fail closed. |
+| `G11-R08` | P1/P2 | DONE | CONFIRMED | Relation bodies can admit several semantic relation subjects; derive exactly one canonical subject from each body. |
+| `G11-R09` | P1/P2 | DONE | CONFIRMED | Target V1 is advertised as supported while current validation applies the V2 census and algebra; remove V1 support or implement genuine version dispatch. |
+| `G11-R10` | P1/P2 | DONE | CONFIRMED | The signature weld omits unknown-key behavior and much of the success algebra; weld the complete signature relation. |
+| `G11-R11` | P2 | DONE | CONFIRMED | Bare prototype report digests persist despite the recorded no-report-identity decision; remove them or admit typed retained report references. |
+| `G11-R12` | P2 | DONE | RECLASSIFIED | Current backlog state contradicts recorded Guide-8 through Guide-10 completion and duplicates finding IDs; reconcile current state and enforce unique IDs. |
+| `G11-R13` | P2/P3 | DONE | CONFIRMED | Process-group establishment failure can leave the direct child unreaped; kill and reap on every pre-supervisor failure. |
+| `G11-R14` | P3 | DONE | CONFIRMED | Constructor retry retries internal-key defects no metadata nonce can repair; share a typed retryability predicate. |
+| `G11-H01` | Hardening | TODO | CONFIRMED | Opcode resource stack-growth rows are not generically welded to success and non-aborting failure effects; derive and compare exact maximum stack growth. |
+| `G11-H02` | Future blocker | TODO | CONFIRMED | Issuance observations carry authority fields the realization evaluator does not yet enforce; add no issuance realization scope until enforced or externally evidenced. |
+
+Wave-1 evidence for the two closed rows. `G11-R02`: the evidence path
+takes only `CanonicalPrimitiveFixtureSet`, whose one constructor is
+`canonical_fixture_set`, and `evaluate` regenerates the census and
+compares complete projections — asserted by
+`g11_r02_a_trivial_true_script_cannot_bear_signature_evidence`,
+`g11_r02_an_arbitrary_census_is_refused_on_provenance_not_completeness`,
+`g11_r02_changing_a_canonical_fixture_member_removes_gate_eligibility`,
+`g11_r02_a_canonical_case_whose_claims_change_is_refused`, and
+`g11_r02_permuting_canonical_declaration_order_is_harmless`. `G11-R03`:
+`prototype_gate` reads only a report validated against a
+`ConstructorPrototypeMatrix` or `WideFloorPrototypeMatrix`, whose rows are
+private and whose one constructor each is the canonical generator —
+asserted by `g11_r03_a_trivial_leaf_cannot_certify_the_wide_floor_relation`,
+`g11_r03_the_canonical_wide_floor_matrix_is_the_evidence_subject`,
+`g11_r03_a_canonical_case_with_one_added_claim_fails`,
+`g11_r03_a_canonical_case_with_one_removed_claim_fails`,
+`g11_r03_replacing_the_canonical_program_under_the_same_case_name_fails`,
+`g11_r03_replacing_the_constructor_successor_program_fails`, and
+`g11_r03_raw_bytes_are_not_reported_as_a_typed_program`.
+
+Wave-2 evidence for `G11-R01`. `ExecutionTranscript` retains the target
+projection, the deployment projection, and the exact subject sent for
+every case; `evaluate`, `evaluate_prototypes`, and both report validators
+compare their own inputs against those retained values by exact typed
+equality, and the executor's observed environment is compared a second
+time when a report is built and again at the validator's own boundary.
+Protocol revision 3 removes every expectation from an executor request,
+so the subject a transcript retains is the whole of what crossed the
+wire. Asserted by
+`g11_r01_a_transcript_cannot_rebind_to_a_deployment_it_never_ran_on`,
+`g11_r01_a_report_cannot_name_a_script_the_executor_never_ran` (an
+equal-width substitution, which defeats the old width-only defence),
+`g11_r01_a_report_cannot_name_an_initial_stack_the_executor_never_ran`,
+`g11_r01_a_response_for_a_case_never_sent_is_refused`,
+`g11_r01_a_case_that_was_never_sent_is_refused`,
+`g11_r01_a_case_sent_and_never_answered_is_refused`,
+`g11_r01_a_prototype_construction_cannot_be_substituted`,
+`g11_r01_a_changed_expected_verdict_is_refused` (refused by the canonical
+comparison rather than by the transcript, since an expectation is not part
+of the subject and no longer crosses the wire at all),
+`a_request_carries_no_expectation_of_any_kind`, and
+`an_executor_of_the_previous_revision_fails_loudly`.
+
+Wave 1 also closed the arbitrary-census route that two open rows were
+reproduced through. `G11-R01`'s script-substitution reproduction moved to
+the experimental path, where Wave 2 flipped it: the binding is a property
+of the transcript rather than of the trust state. `G11-R05`'s
+construction added a fixture to the canonical census and is no longer
+expressible; Wave 3 repaired the gate itself, and its test now records
+both halves closed by putting that report at the gate directly.
+
+Wave-3 evidence, beyond the flipped suites listed below. The provenance
+comparison rule is minimum-width exact prefix — a reported revision of at
+least seven lowercase hex digits that is an exact prefix of the expected
+full tip, with equality as its width-forty case — chosen because the
+reviewed adapter reads an abbreviation out of the node's version line and
+a binary embeds no full object identifier. The `G11-R04` invariant found
+four further required rows owning no required claim (encoding, stack
+rearrangement, byte string, verification); each is recorded as a typed
+exception naming where its claim-level decomposition actually lives.
+`G11-R07` has no Rust regression by nature: it is verified by configuring
+all four states, of which two now fail.
+
+`G11-R08` through `G11-R10` are closed, so the bar they set on the
+public-declassification prototype is met.
+
+Wave-4 evidence. `G11-R08`: `expected_relation_subject` is a function of
+the body, and `validate_relation_identity` compares its one result for
+equality — the four flipped `g11_r08_` suites assert that each body's
+former alternatives are now refused, and
+`g11_r08_changing_only_the_relation_subject_fails_derivation` mutates
+the subject alone across five body classes. The internal relation keys
+moved for the two closures and the two operation-wide policies of each
+pilot; `packages/model/generated/` is byte-identical and no pinned
+identity moved, which is the recorded consequence the guide called for.
+`G11-R09`: `SUPPORTED` holds V2 alone, `supported(1)` fails, and
+`validate_target_definition` now checks the offered revision, since the
+crate names revisions as public constants and a caller reaches V1
+without the constructor. `G11-R10`: `weld_signature` derives one
+complete expected behaviour from the subcontract and compares every
+signature opcode against it; six mutations of the reviewed contract are
+refused, each naming the signature weld. `G11-R14`: one `retryable`
+predicate, consulted by both retry implementations, with the canonical
+construction's exact bytes pinned across the change. `G11-R11`: the two
+research files keep their run facts and no digest. `G11-R12`: this
+section, §3.3, the one-line backlog, the duplicate identifier, and
+`DI-F03`, plus a `check-plans` rule that a backticked row identifier
+names one row per table.
+
+`G11-H01` is **DONE**, closed by Wave 5 on source evidence. Wave 4 had
+derived the generic weld and run it before any code changed: fifty-three
+of the fifty-five primitives agreed exactly, and the two verifying
+signature forms declared their branching counterpart's figure instead of
+their surviving one. Source review settled it in the declared rows'
+favour. The interpreter shares one case block between a branching
+primitive and its verifying counterpart, popping the operands, pushing
+the truth value, and only then — if the opcode is the verifying one —
+popping that value again on success and aborting on failure
+(`src/script/interpreter.cpp:1476-1499` for the transaction-signature
+pair and `1689-1734` for the stack-message pair). The verifying form
+therefore transiently occupies its counterpart's depth, which is what
+"at any point during its execution" measures and what a stack scheduler
+must size against.
+
+The weld landed with that transient as a typed term, derived from the
+verifying primitives the signature weld already distinguishes rather
+than from new per-opcode data, so no reviewed row moved. All fifty-five
+rows now agree, altstack growth is checked to stay zero, and the source
+citation is recorded in (`tab:elements-ref:verifying-transient`). The
+regressions refuse a growth row inconsistent with its stack contract, a
+verifying form declaring only its surviving depth, a success form moved
+without its row, and a nonzero altstack claim; the reviewed contract
+validates unmutated as their control.
+
+Wave-0 evidence, one pointer per row. The Rust pointers name the
+crate-internal `guide11_reproductions` suites, which pass by asserting the
+defective behaviour and which the repairing waves invert.
+
+```text
+G11-R01  conformance g11_r01_a_transcript_rebinds_to_a_deployment_it_never_ran_on
+         (Wave 2 flipped: g11_r01_a_transcript_cannot_rebind_to_a_deployment_it_never_ran_on)
+G11-R02  conformance g11_r02_a_trivial_true_script_bears_signature_claims
+         (Wave 1 flipped: g11_r02_a_trivial_true_script_cannot_bear_signature_evidence)
+G11-R03  conformance g11_r03_a_trivial_leaf_certifies_the_whole_wide_floor_relation
+         (Wave 1 flipped: g11_r03_a_trivial_leaf_cannot_certify_the_wide_floor_relation)
+G11-R04  conformance g11_r04_consensus_resource_cases_pass_the_policy_resource_row
+         (Wave 3 flipped: g11_r04_consensus_resource_cases_do_not_reach_the_policy_resource_row)
+G11-R05  conformance g11_r05_the_gate_accepts_a_failed_report
+         (Wave 3 flipped: g11_r05_the_augmented_census_route_to_the_gate_is_closed, plus
+          g11_r05_a_report_whose_summary_says_failed_is_refused and
+          g11_r05_a_failed_canonical_case_never_reaches_evidence)
+G11-R06  conformance g11_r06_the_gate_accepts_a_run_with_no_workspace_provenance
+         (Wave 3 flipped: g11_r06_a_run_with_no_workspace_provenance_is_refused, and the
+          six further provenance regressions beside it)
+G11-R07  meson.options target_native_executor_class, value reviewed-non-mock
+         (Wave 3 closed: the option defaults to unselected, an unclassified executor path
+          and a reviewed class missing its ADR-018 provenance both fail configuration)
+G11-R08  realization g11_r08_one_closure_body_admits_two_subjects
+         (Wave 4 flipped: g11_r08_one_closure_body_has_exactly_the_side_as_its_subject,
+          the root, projection, and delta/open-flow suites beside it, and
+          g11_r08_changing_only_the_relation_subject_fails_derivation)
+G11-R09  target-elements g11_r09_a_v2_body_stamped_v1_validates
+         (Wave 4 flipped: g11_r09_a_v2_body_stamped_v1_is_refused,
+          g11_r09_the_historical_revision_is_not_constructible_by_number,
+          g11_r09_every_supported_revision_has_a_constructible_definition, and
+          g11_r09_a_v2_definition_missing_a_v2_primitive_is_refused)
+G11-R10  target-elements g11_r10_a_contradictory_unknown_key_rule_still_validates
+         (Wave 4 flipped: g11_r10_a_contradictory_unknown_key_rule_is_refused, plus the
+          five further mutations and g11_r10_the_reviewed_signature_contract_remains_valid
+          as their control)
+G11-R11  plans/research/state-constructor.md and wide-arithmetic.md, report digest rows
+         (Wave 4 closed: both rows removed, the run facts kept as narrative, each file
+          stating why no replacement hash follows, and the Guide-10 gate record corrected)
+G11-R12  duplicate DI-F02 rows, DI-F03 active under a DONE parent, and section 3.3
+         still listing both accepted prototypes as not implemented; the opening
+         condition line is already reconciled, so the finding narrows to those three
+         (Wave 4 closed: the incidental defect renumbered DI-F04 so the standing
+          identifier stays with the finding the DI-001 census cites, DI-F02 and DI-F03
+          marked DONE against what the DI-003 narrative delivered, section 3.3 and the
+          one-line backlog naming declassification alone, and check-plans now failing a
+          repeated row identifier within one table)
+G11-R13  executor.rs ExecutorSupervisor::adopt takes the child by value and drops it
+         on the establish failure path, and the standard child destructor neither
+         kills nor waits
+         (Wave 3 closed: an_unadopted_child_is_killed_and_reaped and
+          a_run_refused_at_startup_leaves_no_unreaped_child)
+G11-R14  conformance g11_r14_an_invalid_internal_key_is_retried_to_exhaustion
+         (Wave 4 flipped: g11_r14_an_invalid_internal_key_fails_after_one_attempt,
+          g11_r14_the_canonical_constructor_classifies_the_same_permanent_defect,
+          g11_r14_a_tree_defect_fails_after_one_attempt,
+          g11_r14_only_the_nonce_movable_tweak_defects_are_retryable,
+          g11_r14_exhaustion_reports_the_configured_attempt_count, and
+          g11_r14_the_canonical_construction_is_byte_identical)
+G11-H01  no weld reads OpcodeResourceCost::maximum_stack_growth at all, the timelock
+         weld included, so the field is welded to nothing
+         (Wave 4 derived the weld and ran it without landing it: 53 of 55 primitives
+          agree exactly; CheckSigVerify declares -1 against a surviving -2 and
+          CheckSigFromStackVerify declares -2 against a surviving -3, both carrying
+          their branching counterpart's figure. Wave 5 closed it: source review
+          confirmed the declared rows, the interpreter pushing the truth value and
+          only then popping it for the verifying form, so the weld landed with a
+          typed transient term and all 55 rows agree. Guarantees are
+          g11_h01_every_reviewed_row_matches_its_derived_stack_growth,
+          g11_h01_only_the_verifying_forms_carry_a_transient_above_their_surviving_depth,
+          g11_h01_the_branching_counterparts_declare_their_settling_depth,
+          g11_h01_a_growth_row_inconsistent_with_its_stack_contract_is_refused,
+          g11_h01_a_verifying_form_declaring_its_surviving_growth_is_refused,
+          g11_h01_changing_a_success_form_without_its_growth_row_is_refused,
+          g11_h01_a_nonzero_altstack_growth_row_is_refused, and
+          g11_h01_the_reviewed_contract_remains_valid as their control)
+G11-H02  ObservedIssuance::authority is never read in realization, and authority_input
+         only for referential existence in observation.rs
+```
 
 ### T6 — Validate capabilities for external-evidence obligations · `task:review:external-evidence-capability`
 
@@ -1716,7 +1959,7 @@ active tree.
 | `DI-002b` | DONE | Replace the second-edition adopted drafts with the author's third-edition texts and repair every citation that dangled as a result. The third edition was verified against the audit register before the swap: all 26 findings fixed, the 7 defects among them included, and a mechanical re-audit clean — every per-document citation resolves, every mint is unique, and the kind registry's headline counts of 333 names, 349 rows, 208 kinds, 3 declared hybrids and 4 device classes derive exactly from its tables. Fourteen citations across three plan files were retargeted in the same commit as the swap, per the calculus's same-commit rule. Both adopting records were then refreshed to the editions they adopt: ADR-019 restates all seven adoption parameters and records that the checker implements the authorship warrant species only, ADR-020 names this repository as the registry's acceptee and recasts its extension register as the recorded extension set with located first-hand evidence, and a second kind-migration round settled two further tokens. |
 | `DI-003` | DONE | Re-engineer the labels checker to the calculus: a single participation scanner shared by every check (mints, citations, links, hygiene, inline-code discipline), owner signatures with registered prefixes, imported and synthetic citations, anchor harvests, and the kind registry as the checker's kind vocabulary. W1 landed the participation scanner and the DI-F02 repair, W2 the seven adoption parameters as typed data with the kind vocabulary and warrant totality, and W3 the near-miss warnings, the companion attestation register, and the gate reconciliation across both records. |
 | `DI-004` | DONE | Adopt the identity-adjudication procedure against ADR-016: classify every existing digest through the benefit criterion with admission records, and MIGRATE the two grandfathered recipes to domain-separated forms per the user's ruling — the architecture semantic and anchor-set hashes change under a recorded recipe migration, superseding the ADR-016 grandfather clause. Both halves delivered: the migration, and a census of the whole tree read from the owning code, recorded as six admission records and eleven stop records in the identities register. |
-| `DI-005` | QUEUED | Interchange conventions: record adoption as the standing wire-format discipline for future externally consumed documents; no implementation until a consumer exists. Draft refreshed 2026-08-18 to the forward-compatibility edition: ceiling-based acceptance with downward-closed holding, open-companion tolerant validation, never-assigned stamps rejected as checkably false claims; the fourth-edition audit's two defects and one editorial finding all fixed on resupply, delta purely additive, nothing dangling. |
+| `DI-005` | TODO | Interchange conventions: record adoption as the standing wire-format discipline for future externally consumed documents; no implementation until a consumer exists. Draft refreshed 2026-08-18 to the forward-compatibility edition: ceiling-based acceptance with downward-closed holding, open-companion tolerant validation, never-assigned stamps rejected as checkably false claims; the fourth-edition audit's two defects and one editorial finding all fixed on resupply, delta purely additive, nothing dangling. |
 | `DI-006` | DONE | Three-part labels: the paper's 16 two-segment labels take the area `attestation`, a division's home being the document itself; `abs` takes the registry's `abst` per the user's ruling. 16 mints and 59 sites moved in one commit; the anchor-set pin moved……, retired value reproduced; the semantic hash followed, the behavioural did not. Layer-0 kinds enforced. W-B holds the arity in one rule over every entry point: a label-intended occurrence that is not three-part fails as `malformed_label_shape`, and the realization's 20 two-segment divisions are frozen by name, not exempted as a surface. |
 
 The user's integration rulings, 2026-08-16: kind-token conflicts migrate
@@ -2065,12 +2308,24 @@ classification, the 196-site sweep, head validation.
 
 ### 13.2 Checker findings so far · `tab:backlog:draft-findings`
 
+A finding identifier is a permanent key. It names one finding for good,
+so a resolved row stays here with its status rather than being deleted
+into git history, and a resolved identifier is never reissued.
+
+Two rows once shared `DI-F02`. The one still numbered so is the standing
+finding the DI-001 gap census restates under that identifier; the other
+was a narrower defect found while repairing it, which took the same
+number by accident and now carries the next free one, `DI-F04`. Renaming
+the standing finding instead would have moved an identifier the census
+already cites (G11-R12).
+
 | ID | Status | Finding |
 |---|---|---|
 | `DI-F01` | DONE | The plans-tree link scanner read bracketed patterns inside fenced blocks as Markdown links, so a CDDL regex in an archived draft failed as a broken link. Fenced interiors are now blanked before link scanning; the systematic single-scanner repair landed as DI-003 W1, which folded this blanking into the shared scanner. |
-| `DI-F02` | DONE | The Realization harvest computed the boundaries of the generated upward-citation index from the raw source while reading its spans from the fence-aware scanner. A section heading displayed inside a fenced block therefore opened the index region, which stayed open across the fence close and swallowed the body citation below it, losing an anchor and reporting the genuine index stale. The region walk now reads participating lines only. Found and resolved by DI-003 W1; no occurrence existed in the tree, so no diagnostic moved. |
-| `DI-F02` | ACTIVE | Participation is enforced inconsistently across checks: the label scanner honors fences, the link scanner did not, and the scaffolding, placeholder, and confidence hygiene checks still scan fenced material. One participation model must feed every check. |
-| `DI-F03` | ACTIVE | The calculus's owner signatures, imported-citation prefixes, synthetic citations, anchor harvests, and acute-delimiter hard failure are only partially realized in the present checker; the gap census of DI-001 owns the exact delta. |
+| `DI-F04` | DONE | The Realization harvest computed the boundaries of the generated upward-citation index from the raw source while reading its spans from the fence-aware scanner. A section heading displayed inside a fenced block therefore opened the index region, which stayed open across the fence close and swallowed the body citation below it, losing an anchor and reporting the genuine index stale. The region walk now reads participating lines only. Found and resolved by DI-003 W1; no occurrence existed in the tree, so no diagnostic moved. |
+| `DI-F02` | DONE | Participation is enforced inconsistently across checks: the label scanner honors fences, the link scanner did not, and the scaffolding, placeholder, and confidence hygiene checks still scan fenced material. One participation model must feed every check. Closed by DI-003 W1, which landed exactly that single shared scanner. |
+| `DI-F05` | OPTIONAL | Wave 4 observed that the DI-001 gap census and this table describe `DI-F01` through `DI-F03` in different terms, so a reader reconciling them must infer which wording is authoritative. The identifiers and statuses agree; the drift is semantic, in what each row is said to be about. Optional cleanup: state one wording as the finding and let the other cite it. No diagnostic and no gate depends on the difference. |
+| `DI-F03` | DONE | The calculus's owner signatures, imported-citation prefixes, synthetic citations, anchor harvests, and acute-delimiter hard failure are only partially realized in the present checker; the gap census of DI-001 owns the exact delta. Closed by DI-003: W1 and W2 landed the owner signatures with registered prefixes, the imported and synthetic citations, the anchor harvests, and the kind registry as the checker's kind vocabulary; the acute-delimiter hard failure is enforced in `participation.rs` and asserted by `an_unclosed_opening_acute_fails_at_its_delimiter`. |
 
 ### 13.3 Toolchain engineering · `tab:backlog:toolchain-tasks`
 
@@ -2138,4 +2393,4 @@ After a phase or remediation series:
 
 ## 15. One-line backlog · `rem:backlog:one-line`
 
-> Settle the STATE-constructor, wide-arithmetic, and declassification prototypes on the evidenced primitive substrate, without emitting operations, completing backend patterns, minting speculative identities, or claiming production activation.
+> Settle the public declassification prototype on the evidenced primitive substrate — the STATE-constructor and wide-floor prototypes are accepted in §2.14 — without emitting operations, completing backend patterns, minting speculative identities, or claiming production activation.

@@ -26,7 +26,7 @@ use std::{
     sync::LazyLock,
 };
 
-use architecture::{AssetId, ObjectId, OperationId, ProjectionId};
+use architecture::{AssetId, ObjectId, OperationId};
 use realization::{
     ExternalEvidenceRequirement, ProofKind, RelationId, RelationKind, RelationSubject,
     RepresentationMode, TransactionSide,
@@ -226,9 +226,10 @@ fn family(side: TransactionSide, object: ObjectId) -> RelationSubject {
     RelationSubject::ObjectFamily { side, object }
 }
 
-const TRANSITION_CERTIFICATE: RelationSubject = RelationSubject::Projection {
-    projection: ProjectionId::TransitionCertificate,
-};
+/// A whole transaction side, which is what a closure relation is about.
+const fn whole_side(side: TransactionSide) -> RelationSubject {
+    RelationSubject::TransactionSide { side }
+}
 
 /// The §19.1 compact-ASH relation list and its requirements.
 ///
@@ -309,13 +310,13 @@ fn compact_ash_rows() -> Vec<AcceptanceRow> {
         // Input and output family closure.
         at(
             Kind::AllowedObjectFamilies,
-            family(TransactionSide::Input, ObjectId::Ash),
+            whole_side(TransactionSide::Input),
             shape,
             &recognition,
         ),
         at(
             Kind::AllowedObjectFamilies,
-            family(TransactionSide::Output, ObjectId::Ash),
+            whole_side(TransactionSide::Output),
             shape,
             &recognition,
         ),
@@ -345,7 +346,7 @@ fn compact_ash_rows() -> Vec<AcceptanceRow> {
         // open-flow policy.
         at(
             Kind::CanonicalDeltaPolicy,
-            TRANSITION_CERTIFICATE,
+            RelationSubject::Operation,
             shape,
             &[
                 Needs::AuthenticatedObjectRecognition,
@@ -354,7 +355,7 @@ fn compact_ash_rows() -> Vec<AcceptanceRow> {
         ),
         at(
             Kind::OpenFlowPolicy,
-            TRANSITION_CERTIFICATE,
+            RelationSubject::Operation,
             shape,
             &[
                 Needs::AuthenticatedObjectRecognition,
@@ -521,13 +522,13 @@ fn transfer_live_rows() -> Vec<AcceptanceRow> {
         ),
         at(
             Kind::AllowedObjectFamilies,
-            family(TransactionSide::Input, object),
+            whole_side(TransactionSide::Input),
             shape,
             &recognition,
         ),
         at(
             Kind::AllowedObjectFamilies,
-            family(TransactionSide::Output, object),
+            whole_side(TransactionSide::Output),
             shape,
             &recognition,
         ),
@@ -540,7 +541,7 @@ fn transfer_live_rows() -> Vec<AcceptanceRow> {
         ),
         at(
             Kind::CanonicalDeltaPolicy,
-            TRANSITION_CERTIFICATE,
+            RelationSubject::Operation,
             shape,
             &[
                 Needs::AuthenticatedObjectRecognition,
@@ -549,7 +550,7 @@ fn transfer_live_rows() -> Vec<AcceptanceRow> {
         ),
         at(
             Kind::OpenFlowPolicy,
-            TRANSITION_CERTIFICATE,
+            RelationSubject::Operation,
             shape,
             &[
                 Needs::AuthenticatedObjectRecognition,

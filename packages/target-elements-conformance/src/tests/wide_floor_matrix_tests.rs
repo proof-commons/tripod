@@ -15,6 +15,8 @@ fn matrix() -> Vec<CompoundPrototypeFixture> {
     let target = reviewed_target();
     wide_floor_case_matrix(&target)
         .expect("the reviewed contract and the oracle determine the rows")
+        .rows()
+        .to_vec()
 }
 
 /// The wide-floor claims, which are exactly those of the relation.
