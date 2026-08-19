@@ -1086,14 +1086,42 @@ fn whole_field_range(
 /// The resource cost one program can charge, by dimension.
 ///
 /// A projection rather than a bound: it states what the reviewed
-/// contracts say the primitives in this program can consume, and
-/// nothing here compares it against a deployment.
+/// contracts say this program can consume, and nothing here compares it
+/// against a deployment.
+///
+/// # Script bytes are the program's own length, not a tally of costs
+///
+/// A script's size is decided by its serialization and by nothing else,
+/// so [`ResourceDimension::ScriptBytes`] is
+/// [`TapscriptProgram::encoded_length`] and not the sum of the
+/// per-primitive `script_bytes` figures. Summing those omitted every
+/// literal a program pushes — the push opcode, any width prefix, and the
+/// whole payload — which is most of the size of a program that pushes a
+/// key or a digest, and it undercounted in exactly the direction that
+/// makes a program look admissible against a target bound it exceeds
+/// `(´[PLAN-rule:guide12-exec:program-resources]´)`.
+///
+/// The other dimensions stay a tally over the primitives, because they
+/// are what the reviewed contracts price and a literal charges neither.
+///
+/// # Every dimension is stated
+///
+/// All three are present whatever the program holds, so a program that
+/// pushes and calls nothing reports zero cost rather than an absent
+/// dimension a caller would have to read as one.
 #[must_use]
 pub fn resource_projection(
     target: &ReviewedElementsTapscriptDefinition,
     program: &TapscriptProgram,
 ) -> BTreeMap<ResourceDimension, u64> {
-    let mut totals: BTreeMap<ResourceDimension, u64> = BTreeMap::new();
+    let mut totals: BTreeMap<ResourceDimension, u64> = BTreeMap::from([
+        (
+            ResourceDimension::ScriptBytes,
+            program.encoded_length(target),
+        ),
+        (ResourceDimension::OperationCost, 0),
+        (ResourceDimension::ValidationBudget, 0),
+    ]);
     for instruction in program.instructions() {
         let TapscriptInstruction::Opcode(id) = instruction else {
             continue;
@@ -1103,7 +1131,6 @@ pub fn resource_projection(
         // is visibly pinned where a wrapped one would read as small and
         // honest.
         for (dimension, units) in [
-            (ResourceDimension::ScriptBytes, cost.script_bytes()),
             (ResourceDimension::OperationCost, cost.operation_cost()),
             (
                 ResourceDimension::ValidationBudget,

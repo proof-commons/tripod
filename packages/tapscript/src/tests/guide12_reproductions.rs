@@ -8,8 +8,8 @@
 //! CLOSED below is one whose test has been flipped. Nothing here reaches
 //! a crate-private constructor an external caller could not use.
 //!
-//! - `G12-R11` — the resource projection omits every byte a literal
-//!   occupies.
+//! - `G12-R11` — CLOSED: script bytes are the program's exact encoded
+//!   length, so every byte a literal occupies is projected.
 //! - `G12-R12` — a pushed literal's exact bytes are not retained, so a
 //!   verifying primitive over a byte the target reads as false keeps a
 //!   success state.
@@ -17,7 +17,7 @@
 //!   itself, so a script above the bound is refused by the bound rather
 //!   than by whatever its later bytes happen to be.
 
-use target_elements::{OpcodeId, ResourceDimension};
+use target_elements::{OpcodeId, ResourceDimension, ReviewedElementsTapscriptDefinition};
 
 use crate::error::TapscriptError;
 use crate::instruction::{StackItem, TapscriptInstruction};
@@ -26,19 +26,24 @@ use crate::stack::{AbstractLimits, AbstractStackState, resource_projection, vali
 
 use super::reviewed_target;
 
-/// `G12-R11`: a literal's bytes do not reach the projected script size.
+/// `G12-R11`: a literal's bytes reach the projected script size.
 ///
-/// The projection walks the instruction sequence and skips every
-/// instruction that is not a primitive, so the push opcode, any width
-/// prefix, and the whole payload contribute nothing. What remains is a
-/// per-primitive tally, and the gap against the program's own encoded
-/// length is the size of the payloads.
+/// The projection used to walk the instruction sequence and skip every
+/// instruction that was not a primitive, so the push opcode, any width
+/// prefix, and the whole payload contributed nothing; what remained was
+/// a per-primitive tally, and the gap against the program's own encoded
+/// length was the size of the payloads.
 ///
-/// The assertion is the defect: `ScriptBytes` is the primitive count
-/// while the encoded program is two payloads longer. A wave that derives
-/// script bytes from the exact encoded length flips it.
+/// The assertion is now the guarantee, in two independent ways. The
+/// first program's expected length is arithmetic done here rather than
+/// read from the encoder — a sixty-four-byte and a thirty-two-byte
+/// literal each cost their payload and one opcode byte, and the
+/// signature check costs one — so a projection agreeing with a broken
+/// encoder would still fail. The rest are a census of push forms whose
+/// projection is compared with the bytes the program actually
+/// serializes to.
 #[test]
-fn a_pushed_payload_contributes_no_projected_script_bytes() {
+fn every_pushed_payload_reaches_the_projected_script_bytes() {
     let target = reviewed_target();
     let program = TapscriptProgram::new(vec![
         TapscriptInstruction::Push(
@@ -51,20 +56,44 @@ fn a_pushed_payload_contributes_no_projected_script_bytes() {
     ])
     .expect("three instructions are within the limit");
 
-    let projected = resource_projection(&target, &program)
+    // (64 + 1) + (32 + 1) + 1, computed here and not asked of the
+    // encoder.
+    assert_eq!(projected_script_bytes(&target, &program), 99);
+    assert_eq!(program.encoded_length(&target), 99);
+
+    // Every push form the reviewed rule can choose: a payload carried in
+    // the opcode, a direct push, and each width-prefixed form. Widths
+    // are chosen either side of the form boundaries rather than at round
+    // numbers, so a projection that priced one form's prefix wrongly
+    // could not hide behind another's.
+    for width in [0, 1, 32, 64, 75, 76, 77, 254, 255, 256, 520] {
+        let program = TapscriptProgram::new(vec![
+            TapscriptInstruction::Push(
+                StackItem::new(&target, vec![0x5a; width])
+                    .expect("every width here is within the literal bound"),
+            ),
+            TapscriptInstruction::Opcode(OpcodeId::Verify),
+        ])
+        .expect("two instructions are within the limit");
+
+        let encoded = u64::try_from(program.encode(&target).len()).expect("the program is small");
+        assert_eq!(
+            projected_script_bytes(&target, &program),
+            encoded,
+            "G12-R11: a {width}-byte literal must be projected at the bytes it serializes to",
+        );
+    }
+}
+
+/// The script bytes one program is projected to occupy.
+fn projected_script_bytes(
+    target: &ReviewedElementsTapscriptDefinition,
+    program: &TapscriptProgram,
+) -> u64 {
+    resource_projection(target, program)
         .get(&ResourceDimension::ScriptBytes)
         .copied()
-        .expect("the projection states the dimension");
-    let encoded = u64::try_from(program.encode(&target).len()).expect("the program is small");
-
-    // One primitive is priced, and the ninety-eight bytes the two
-    // literals occupy are not.
-    assert_eq!(projected, 1);
-    assert_eq!(encoded, 99);
-    assert!(
-        projected < encoded,
-        "G12-R11: the projection is expected to undercount while the row is open",
-    );
+        .expect("the projection states the dimension")
 }
 
 /// `G12-R12`: a pushed zero byte leaves an unreachable success state.

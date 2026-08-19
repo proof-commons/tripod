@@ -127,12 +127,35 @@ impl TapscriptProgram {
     pub fn encode(&self, target: &ReviewedElementsTapscriptDefinition) -> Vec<u8> {
         let mut bytes = Vec::new();
         for instruction in &self.instructions {
-            match instruction {
-                TapscriptInstruction::Opcode(id) => bytes.push(opcode_byte(target, *id)),
-                TapscriptInstruction::Push(item) => encode_push(target, item, &mut bytes),
-            }
+            encode_instruction(target, instruction, &mut bytes);
         }
         bytes
+    }
+
+    /// How many target bytes the program's exact encoding occupies.
+    ///
+    /// # The same encoding, counted rather than kept
+    ///
+    /// This is [`Self::encode`] measured, not a second account of what an
+    /// encoding costs. One instruction is laid out at a time into a
+    /// buffer that is reused, so the figure is the encoding's own by
+    /// construction and cannot drift from it, and the program is never
+    /// assembled in full to be measured.
+    ///
+    /// Saturating: the figure is diagnostic, and a saturated one is
+    /// visibly pinned where a wrapped one would read as a small honest
+    /// program.
+    #[must_use]
+    pub fn encoded_length(&self, target: &ReviewedElementsTapscriptDefinition) -> u64 {
+        let mut instruction_bytes = Vec::new();
+        let mut total = 0_u64;
+        for instruction in &self.instructions {
+            instruction_bytes.clear();
+            encode_instruction(target, instruction, &mut instruction_bytes);
+            total =
+                total.saturating_add(u64::try_from(instruction_bytes.len()).unwrap_or(u64::MAX));
+        }
+        total
     }
 
     /// Parses exactly the reviewed subset of target script.
@@ -255,6 +278,22 @@ fn opcode_byte(target: &ReviewedElementsTapscriptDefinition, id: OpcodeId) -> u8
         .get(&id)
         .expect("the reviewed contract states a byte for every primitive")
         .code()
+}
+
+/// Appends the exact encoding of one typed instruction.
+///
+/// The single place the layout of an instruction is decided, so the
+/// bytes a program writes and the bytes it is measured at are the same
+/// bytes.
+fn encode_instruction(
+    target: &ReviewedElementsTapscriptDefinition,
+    instruction: &TapscriptInstruction,
+    bytes: &mut Vec<u8>,
+) {
+    match instruction {
+        TapscriptInstruction::Opcode(id) => bytes.push(opcode_byte(target, *id)),
+        TapscriptInstruction::Push(item) => encode_push(target, item, bytes),
+    }
 }
 
 /// Appends the minimal encoding of one literal.
