@@ -293,6 +293,24 @@ pub fn candidate_dispositions() -> Vec<CandidateDisposition> {
                            change variant is the constructible one."
                         .to_owned(),
                 },
+                DispositionEvidence::Finding {
+                    id: "G11-W10-01".to_owned(),
+                    note: "The prototype is built and run: the unmutated claim is \
+                           accepted by a real node, and every input is authorized \
+                           by a taproot key-path signature carrying no sighash \
+                           byte, which is the default all-outputs \
+                           non-anyone-can-pay profile §10.3 requires."
+                        .to_owned(),
+                },
+                DispositionEvidence::Finding {
+                    id: "G11-W10-02".to_owned(),
+                    note: "All nine §10.4 mutations were executed against that \
+                           node and every one met the layer expected of it before \
+                           the run. Three are consensus-valid transactions the \
+                           report layer alone refuses, which is why the closure \
+                           check exists rather than being left to consensus."
+                        .to_owned(),
+                },
             ],
         },
         CandidateDisposition {
@@ -500,6 +518,34 @@ mod tests {
             .map(|entry| entry.candidate)
             .collect();
         assert_eq!(unblocked, vec![Candidate::OwnerAuthorizedNormalization]);
+    }
+
+    #[test]
+    fn a_prototyped_disposition_cites_the_run_that_makes_it_true() {
+        // This register once recorded `Prototyped` while no prototype
+        // existed, and the backlog had to carry the correction as a
+        // separate row. The state claims evidence exists, so it has to
+        // name the findings that hold it: a wave that deletes the
+        // prototype now has to delete these citations too, which is
+        // visible, rather than leaving a state that quietly overstates.
+        for entry in candidate_dispositions() {
+            if entry.state != DispositionState::Prototyped {
+                continue;
+            }
+            let cited: BTreeSet<&str> = entry
+                .evidence
+                .iter()
+                .filter_map(|item| match item {
+                    DispositionEvidence::Finding { id, .. } => Some(id.as_str()),
+                    _ => None,
+                })
+                .collect();
+            assert!(
+                cited.contains("G11-W10-01") && cited.contains("G11-W10-02"),
+                "{:?} claims to be prototyped and cites {cited:?}",
+                entry.candidate
+            );
+        }
     }
 
     #[test]
