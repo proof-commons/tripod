@@ -169,6 +169,40 @@ Neither substitutes for the other.
 This table guides implementation. Typed realization and accepted research
 results remain authoritative over the final backend plan.
 
+## Initial declassification policy · `rem:representation:declassification`
+
+Recorded 2026-08-19 from the Guide-11 result in
+[public-declassification.md](../research/public-declassification.md). The
+two cells above that read *prototype-dependent* now have an answer, and
+the answer does not change this decision — it selects among the proof
+alternatives (`rule:representation:proofs`) already admits.
+
+The initial public boundary is **explicit**, reached from a private value
+by **owner-authorized normalization to an explicit output carrying private
+change**. Public committed representation and direct authenticated opening
+are **deferred** against three named target blockers: the asset generator
+is not derivable on script, the confidential encodings and the curve
+primitives disagree about which y a prefix selects, and a
+witness-supplied parity byte is bound to nothing. The public opening
+capsule is not applicable while they are deferred, since it exists to
+carry an opening there is none of.
+
+Two limits on how this may be read. It is target and backend policy, not
+semantic necessity: the target conserves value over commitments without
+any amount in the clear, so nothing in the semantic relation requires the
+explicit encoding. And it is not disclosure-minimal — every fact the
+normalization path publishes is deployment-policy disclosure under
+(`rule:representation:disclosure`), each recorded with the alternative a
+deployment that wanted it private would have to take. This decision's
+limit against *blanket explicit values while claiming minimality*
+(`sec:representation:limits`) is what that separation keeps honest.
+
+The full private consumption path — several private inputs paying one
+explicit output with no private change — could not be constructed at all:
+residual blinding has nowhere to go without a blinded output to absorb it.
+That is a constructibility finding and not a target verdict, and it is why
+the normalized form carries private change.
+
 ## Sponsor-value opacity · `rule:representation:sponsor-value-opacity`
 
 Decided 2026-07-24 (closing finding F2-006); the load-bearing statement lives
