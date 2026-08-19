@@ -75,9 +75,8 @@ fn live_output_closure() -> realization::RelationId {
     relation_id(
         architecture::OperationId::TransferLive,
         realization::RelationKind::AllowedObjectFamilies,
-        realization::RelationSubject::ObjectFamily {
+        realization::RelationSubject::TransactionSide {
             side: realization::TransactionSide::Output,
-            object: architecture::ObjectId::ReceiptLive,
         },
     )
 }

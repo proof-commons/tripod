@@ -102,19 +102,23 @@ fn validate_relation_identities(
 /// `Relation` variant cannot be added without deciding what it is
 /// `(´[PLAN-rule:guide10:relation-identity]´)`.
 ///
-/// # What the subject can and cannot be checked against
+/// # One subject, derived and compared for equality
 ///
-/// Where the body names its own subject — a family's side and object,
-/// an asset, a represented object, a lifecycle exit — the declared
-/// subject must be exactly that. Where the body fixes a policy for the
-/// whole operation, the body names no single subject, and what is
-/// checked is the subject's class plus membership where the body has
-/// members to check: a root policy may be subjected to the operation or
-/// to a root the policy governs, and never to a root it does not. The
-/// canonical-delta and open-flow policies name assets and flow kinds
-/// rather than projections, so a projection subject is admitted by
-/// class alone; that residual is stated rather than hidden behind a
-/// check that would only appear to hold.
+/// The subject is derived the same way, and by the same argument. It
+/// was once a predicate asking whether a declared subject was *among*
+/// those a body could plausibly be filed under, and several bodies
+/// admitted several: a closure over two families could be subjected to
+/// either family, a root or projection policy to the operation or to
+/// any member it governed, and the canonical-delta and open-flow
+/// policies — which name no projection at all — to any projection in
+/// the vocabulary. Admitting alternatives means the key can move while
+/// the body stays identical, which is exactly what a complete typed key
+/// must not permit.
+///
+/// So [`expected_relation_subject`] returns one subject and this
+/// compares it for equality. A body constraining a whole side is
+/// subjected to that side, and a body fixing operation-wide policy to
+/// the operation `(´[PLAN-rule:guide11-exec:relation-subject]´)`.
 ///
 /// # Errors
 ///
@@ -132,9 +136,11 @@ pub fn validate_relation_identity(
             expected,
         });
     }
-    if !subject_describes_body(&declaration.relation, declaration.id.subject()) {
+    let expected_subject = expected_relation_subject(&declaration.relation);
+    if *declaration.id.subject() != expected_subject {
         return Err(RealizationError::RelationSubjectMismatch {
             declared: declaration.id.clone(),
+            expected: expected_subject,
         });
     }
 
@@ -170,77 +176,61 @@ const fn expected_relation_kind(relation: &Relation) -> crate::RelationKind {
     }
 }
 
-/// Whether one declared subject is the subject the body constrains.
+/// The one subject a body constrains.
 ///
-/// Exhaustive in the same way, and for the same reason.
-fn subject_describes_body(relation: &Relation, subject: &crate::RelationSubject) -> bool {
+/// Exhaustive in the same way, and for the same reason. This is a
+/// function of the body rather than a predicate over candidate
+/// subjects: a predicate can admit several keys for one body, and then
+/// the key is a presentation choice rather than an identity
+/// `(´[PLAN-rule:guide11-exec:relation-subject]´)`.
+fn expected_relation_subject(relation: &Relation) -> crate::RelationSubject {
     use crate::RelationSubject as Subject;
 
-    let family = |side: crate::ObservedSide, object: ObjectId| match subject {
-        Subject::ObjectFamily {
-            side: declared,
-            object: declared_object,
-        } => *declared == transaction_side(side) && *declared_object == object,
-        _ => false,
+    let family = |side: crate::ObservedSide, object: ObjectId| Subject::ObjectFamily {
+        side: transaction_side(side),
+        object,
     };
 
     match relation {
         Relation::Cardinality { side, object, .. } | Relation::Recognition { side, object, .. } => {
             family(*side, *object)
         }
-        // The closure relation constrains a whole side, and the subject
-        // names one family on that side. The named family must be one
-        // the closure admits: a closure subjected to a family it forbids
-        // would be filed under the object it exists to exclude.
-        Relation::AllowedObjectFamilies { side, allowed } => match subject {
-            Subject::ObjectFamily {
-                side: declared,
-                object,
-            } => *declared == transaction_side(*side) && allowed.contains(object),
-            _ => false,
+        // The closure constrains a whole side. Subjecting it to one of
+        // the families it admits would file the closure under a member
+        // of its own result, and any other member would do as well; the
+        // side is what the body is actually about.
+        Relation::AllowedObjectFamilies { side, .. } => Subject::TransactionSide {
+            side: transaction_side(*side),
         },
         // Owners are committed by an input family, which is the side
         // the authorization is about.
         Relation::OwnerAuthorization { object } => family(crate::ObservedSide::Input, *object),
-        Relation::PermissionlessAuthorization | Relation::Constructibility { .. } => {
-            matches!(subject, Subject::Operation)
-        }
         Relation::AmountConservation { asset, .. } | Relation::SubstrateConservation { asset } => {
-            matches!(subject, Subject::Asset { asset: declared } if declared == asset)
+            Subject::Asset { asset: *asset }
         }
         Relation::SponsorIsolation | Relation::SponsorEnvelopeMultiplicity { .. } => {
-            matches!(subject, Subject::Sponsor)
+            Subject::Sponsor
         }
-        Relation::RootPolicy { expected } => match subject {
-            Subject::Operation => true,
-            Subject::Root { root } => expected.contains_key(root),
-            _ => false,
+        Relation::Representation { object, .. } => Subject::Representation { object: *object },
+        Relation::LifecycleExit { object, exit } => Subject::LifecycleExit {
+            object: *object,
+            exit: *exit,
         },
-        Relation::ProjectionPolicy { expected } => match subject {
-            Subject::Operation => true,
-            Subject::Projection { projection } => expected.contains_key(projection),
-            _ => false,
-        },
-        // Named by class only: neither body names a projection, so
-        // there is no membership to check and none is pretended.
-        Relation::CanonicalDeltaPolicy { .. } | Relation::OpenFlowPolicy { .. } => {
-            matches!(subject, Subject::Operation | Subject::Projection { .. })
-        }
-        Relation::Representation { object, .. } => {
-            matches!(subject, Subject::Representation { object: declared } if declared == object)
-        }
-        Relation::LifecycleExit { object, exit } => matches!(
-            subject,
-            Subject::LifecycleExit {
-                object: declared_object,
-                exit: declared_exit,
-            } if declared_object == object && declared_exit == exit
-        ),
-        // An expression predicate is owned by its operation. The
-        // subject vocabulary has no expression member, and inventing
-        // one for a relation nothing declares yet would be minting
-        // identity ahead of need.
-        Relation::ExpressionPredicate { .. } => matches!(subject, Subject::Operation),
+        // Operation-wide policies. Each fixes what the whole operation
+        // may do — which roots it may use, which projections it may
+        // derive, which canonical deltas and open flows it admits — and
+        // none singles out a root or projection to be subjected to. An
+        // expression predicate is owned by its operation for the same
+        // reason: the subject vocabulary has no expression member, and
+        // inventing one for a relation nothing declares yet would be
+        // minting identity ahead of need.
+        Relation::PermissionlessAuthorization
+        | Relation::Constructibility { .. }
+        | Relation::RootPolicy { .. }
+        | Relation::ProjectionPolicy { .. }
+        | Relation::CanonicalDeltaPolicy { .. }
+        | Relation::OpenFlowPolicy { .. }
+        | Relation::ExpressionPredicate { .. } => Subject::Operation,
     }
 }
 

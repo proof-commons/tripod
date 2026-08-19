@@ -59,11 +59,15 @@ fn the_contract_version_is_publicly_decidable() {
         .expect("the declared revision is implemented");
     assert_eq!(version, TargetContractVersion::V2);
 
-    // The historical revision stays implemented and stays distinct.
-    let historical = TargetContractVersion::supported(TargetContractVersion::V1.get())
-        .expect("the historical revision is still implemented");
-    assert_eq!(historical, TargetContractVersion::V1);
-    assert_ne!(historical, version);
+    // The historical revision stays named and stays distinct, and is
+    // refused by number: the crate implements one validator and that
+    // validator is V2's, so accepting revision one would be accepting
+    // a body under a revision nothing here can check it against.
+    assert_ne!(TargetContractVersion::V1, version);
+    assert_eq!(
+        TargetContractVersion::supported(TargetContractVersion::V1.get()),
+        Err(TargetError::UnsupportedTargetContractVersion { offered: 1 })
+    );
 
     assert_eq!(
         TargetContractVersion::supported(3),

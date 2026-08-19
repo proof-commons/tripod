@@ -719,7 +719,7 @@ If process-group establishment fails:
 
 No startup failure path may drop a live or exited unreaped `Child`.
 
-## 4.12 Relation identity is one-to-one with its body
+## 4.12 Relation identity is one-to-one with its body · `rule:guide11-exec:relation-subject`
 
 `validate_relation_identity` must derive exactly one expected kind and subject from each body.
 
@@ -754,7 +754,7 @@ A body must not validate under several subjects.
 
 This changes internal relation keys, but no public realization or compiler digest exists. Record that consequence explicitly and update all compiler projections, tests, and diagnostics together.
 
-## 4.13 Target-contract versions describe real schemas
+## 4.13 Target-contract versions describe real schemas · `rule:guide11-exec:target-version-honesty`
 
 Choose one honest state.
 
@@ -771,7 +771,7 @@ TargetContractVersion::V1
 
 If V1 remains supported, implement genuine version-specific opcode, capability, evidence, operand, and success-algebra validation. A V2 body stamped V1 must never validate.
 
-## 4.14 Signature weld covers the whole behavior
+## 4.14 Signature weld covers the whole behavior · `rule:guide11-exec:signature-weld`
 
 Extend the signature weld to check:
 
@@ -792,7 +792,7 @@ Extend the signature weld to check:
 
 A subcontract saying unknown keys reject must not coexist with opcodes saying unknown keys succeed without verification.
 
-## 4.15 Constructor retry distinguishes transient and permanent defects
+## 4.15 Constructor retry distinguishes transient and permanent defects · `rule:guide11-exec:retry-classification`
 
 Use one shared predicate:
 

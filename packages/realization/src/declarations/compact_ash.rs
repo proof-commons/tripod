@@ -101,16 +101,14 @@ impl Ids {
             permissionless: relation_id(RelationKind::Authorization, RelationSubject::Operation),
             input_closure: relation_id(
                 RelationKind::AllowedObjectFamilies,
-                RelationSubject::ObjectFamily {
+                RelationSubject::TransactionSide {
                     side: TransactionSide::Input,
-                    object: ObjectId::Ash,
                 },
             ),
             output_closure: relation_id(
                 RelationKind::AllowedObjectFamilies,
-                RelationSubject::ObjectFamily {
+                RelationSubject::TransactionSide {
                     side: TransactionSide::Output,
-                    object: ObjectId::Ash,
                 },
             ),
             sponsor: relation_id(RelationKind::SponsorIsolation, RelationSubject::Sponsor),
@@ -124,17 +122,10 @@ impl Ids {
                     asset: AssetId::Lbtc,
                 },
             ),
-            open_flow_policy: relation_id(
-                RelationKind::OpenFlowPolicy,
-                RelationSubject::Projection {
-                    projection: ProjectionId::TransitionCertificate,
-                },
-            ),
+            open_flow_policy: relation_id(RelationKind::OpenFlowPolicy, RelationSubject::Operation),
             canonical_delta_policy: relation_id(
                 RelationKind::CanonicalDeltaPolicy,
-                RelationSubject::Projection {
-                    projection: ProjectionId::TransitionCertificate,
-                },
+                RelationSubject::Operation,
             ),
             roots: relation_id(RelationKind::RootPolicy, RelationSubject::Operation),
             projections: relation_id(RelationKind::ProjectionPolicy, RelationSubject::Operation),

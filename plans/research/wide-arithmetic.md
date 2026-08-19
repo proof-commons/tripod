@@ -415,10 +415,11 @@ none of the per-check validation budget.
 | claims | 11 of 11 covered |
 | completeness | `complete_for_wide_floor_prototype` |
 | determinism | two gated runs byte-identical |
-| report digest | `2ab1b75b87a5706be70e21760f3f53b314e38c928361adf9374e0749c1119ca3` |
 
 Node and workspace provenance are the same run recorded in the constructor
-research.
+research, and so is the reason no report digest appears here: the table records
+a run that happened, and is not a locator for a report the repository does not
+retain.
 
 ### Residuals · `sec:wide-arithmetic:residuals`
 

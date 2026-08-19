@@ -17,7 +17,7 @@ use std::{
     sync::LazyLock,
 };
 
-use architecture::{AssetId, ObjectId, OperationId, ProjectionId};
+use architecture::{AssetId, ObjectId, OperationId};
 use realization::{
     Relation, RelationDeclaration, RelationId, RelationKind, RelationSubject, RepresentationMode,
     TransactionSide,
@@ -184,6 +184,11 @@ fn family(side: TransactionSide, object: ObjectId) -> RelationSubject {
     RelationSubject::ObjectFamily { side, object }
 }
 
+/// A whole transaction side, which is what a closure relation is about.
+const fn whole_side(side: TransactionSide) -> RelationSubject {
+    RelationSubject::TransactionSide { side }
+}
+
 /// The Guide-6 §15.1 compact-ASH matrix.
 ///
 /// One row per relation, written out rather than folded into a loop: a
@@ -257,13 +262,13 @@ fn compact_ash_matrix() -> Vec<MatrixRow> {
         // Input and output closure.
         at(
             Kind::AllowedObjectFamilies,
-            family(TransactionSide::Input, ObjectId::Ash),
+            whole_side(TransactionSide::Input),
             &runtime,
             All,
         ),
         at(
             Kind::AllowedObjectFamilies,
-            family(TransactionSide::Output, ObjectId::Ash),
+            whole_side(TransactionSide::Output),
             &runtime,
             All,
         ),
@@ -278,17 +283,13 @@ fn compact_ash_matrix() -> Vec<MatrixRow> {
         ),
         at(
             Kind::CanonicalDeltaPolicy,
-            RelationSubject::Projection {
-                projection: ProjectionId::TransitionCertificate,
-            },
+            RelationSubject::Operation,
             &runtime,
             All,
         ),
         at(
             Kind::OpenFlowPolicy,
-            RelationSubject::Projection {
-                projection: ProjectionId::TransitionCertificate,
-            },
+            RelationSubject::Operation,
             &runtime,
             All,
         ),
@@ -440,13 +441,13 @@ fn transfer_live_matrix() -> Vec<MatrixRow> {
         ),
         at(
             Kind::AllowedObjectFamilies,
-            family(TransactionSide::Input, object),
+            whole_side(TransactionSide::Input),
             &runtime,
             All,
         ),
         at(
             Kind::AllowedObjectFamilies,
-            family(TransactionSide::Output, object),
+            whole_side(TransactionSide::Output),
             &runtime,
             All,
         ),
@@ -458,17 +459,13 @@ fn transfer_live_matrix() -> Vec<MatrixRow> {
         ),
         at(
             Kind::CanonicalDeltaPolicy,
-            RelationSubject::Projection {
-                projection: ProjectionId::TransitionCertificate,
-            },
+            RelationSubject::Operation,
             &runtime,
             All,
         ),
         at(
             Kind::OpenFlowPolicy,
-            RelationSubject::Projection {
-                projection: ProjectionId::TransitionCertificate,
-            },
+            RelationSubject::Operation,
             &runtime,
             All,
         ),

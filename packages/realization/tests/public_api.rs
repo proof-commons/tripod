@@ -50,9 +50,8 @@ fn stable_relation_keys_use_architecture_owned_ids() {
     let output_relation = RelationId::new(
         OperationId::CompactAsh,
         RelationKind::AllowedObjectFamilies,
-        RelationSubject::ObjectFamily {
+        RelationSubject::TransactionSide {
             side: realization::TransactionSide::Output,
-            object: ObjectId::Ash,
         },
     );
 

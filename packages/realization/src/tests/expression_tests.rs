@@ -182,9 +182,7 @@ fn dependency_cycle_is_rejected_in_stable_order() {
     let second_relation = RelationId::new(
         OperationId::TransferLive,
         RelationKind::ProjectionPolicy,
-        RelationSubject::Projection {
-            projection: ProjectionId::TransitionCertificate,
-        },
+        RelationSubject::Operation,
     );
     let first = ExprId::relation(first_relation, crate::ExpressionRole::Predicate);
     let second = ExprId::relation(second_relation, crate::ExpressionRole::Predicate);

@@ -467,7 +467,14 @@ The largest element sits at 19.8% of its limit, which is the binding one.
 | node | Elements Core daemon v28.99.0-0b3bffd93138 |
 | workspace | ADR-018 merged tip `0b3bffd`, upstream base `b7fc5d0`, topics `fix/tapscript-opcodes` and notes |
 | determinism | two gated runs byte-identical |
-| report digest | `edebb1b3855436ff33246025aa9584d87151b05d933e2ac57af2dfb1cc0ff739` |
+
+This table is a historical record of a run, not a locator for one. The report
+itself is not retained in the repository, and no digest of it is kept: a bare
+hash with no retained bytes, no typed reference, and no consumer able to
+revalidate it from the repository is the weakest form ADR-016 warns against,
+and it would contradict the stop record in the identity register, §3.5, which
+declines to mint a native conformance report identity. Reports are compared by
+typed content and exact bytes in process, where they exist.
 
 First contact with the node found two defects, both in fixtures and neither in
 the program: a nonce-grinding discard that the fixture failed to apply, and a

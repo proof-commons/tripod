@@ -337,14 +337,20 @@ pub enum RealizationError {
         expected: RelationKind,
     },
 
-    /// A relation's declared subject does not describe its body.
+    /// A relation's declared subject is not the subject its body
+    /// constrains.
     ///
     /// The kind may agree while the subject names another family,
     /// asset, root, projection, or lifecycle exit than the one the body
     /// constrains — a transposed input/output side being the sharpest
-    /// case, since both sides exist and both are well typed.
-    #[error("relation {declared:?} has a body whose subject is not the declared one")]
-    RelationSubjectMismatch { declared: RelationId },
+    /// case, since both sides exist and both are well typed. The body
+    /// determines exactly one subject, so the expected one is reported
+    /// alongside the declared one rather than left to the reader.
+    #[error("relation {declared:?} has a body whose subject is {expected:?}")]
+    RelationSubjectMismatch {
+        declared: RelationId,
+        expected: RelationSubject,
+    },
 
     /// An object family named by an architecture operation row has no
     /// object specification.
