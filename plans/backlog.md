@@ -1077,13 +1077,14 @@ whose identifiers are the Guide-11 preflight identifiers `G11-R01` through
 The Guide-11 preflight waves own the register; the summaries below are the
 required dispositions recorded in that guide's own preflight table.
 
-Preflight state after Wave 4: every numbered row `G11-R01` through
-`G11-R14` is DONE. The gate is **not** complete, because it also requires
-that stack resource rows be welded, and `G11-H01` is open on a
-disagreement between the reviewed contract's declared rows and the
-derived ones that a wave must not resolve by itself. `G11-H02` remains a
-future blocker rather than gate work: it forbids issuance realization
-scope, and none is proposed.
+Preflight state after Wave 5: the gate is **COMPLETE**. All sixteen rows
+are disposed — every numbered row `G11-R01` through `G11-R14` is DONE,
+and `G11-H01` is DONE with the stack resource rows welded. `G11-H02` is
+not a gate item and never was: the guide's gate bullets name no issuance
+condition, and the row's own disposition is a standing prohibition —
+issuance realization scope may not be added until the authority fields
+are enforced or externally evidenced. None is proposed, so the
+constraint stands open by design rather than blocking the gate.
 
 The review basis is the archived review's own tree, not the working tree: under the
 guide's own rule each finding is a hypothesis until it is reproduced
@@ -1204,23 +1205,30 @@ section, §3.3, the one-line backlog, the duplicate identifier, and
 `DI-F03`, plus a `check-plans` rule that a backticked row identifier
 names one row per table.
 
-`G11-H01` is **not** closed, and the preflight gate is not complete
-while it stands. The generic weld was derived and run against the
-reviewed contract before any code changed, as the wave's own rule
-required, and fifty-three of the fifty-five primitives agree exactly.
-Two disagree: `CheckSigVerify` declares a maximum stack growth of −1
-where its surviving effects give −2, and `CheckSigFromStackVerify`
-declares −2 where they give −3. Both verifying forms carry their
-branching counterpart's figure. The likely reading is that the declared
-row is right and the derivation incomplete — the target implements a
-verifying check as the branching check followed by a verify, so the
-depth after the implicit check is one above the depth the primitive
-settles at, and the field's own documentation says "at any point during
-its execution". That is a transient the success algebra does not
-represent, which §4.16 anticipates as a separately documented
-transient-resource rule. Deciding it either way moves a reviewed target
-fact or the derivation's meaning, so no weld was landed and no row was
-edited; the finding is recorded here for adjudication.
+`G11-H01` is **DONE**, closed by Wave 5 on source evidence. Wave 4 had
+derived the generic weld and run it before any code changed: fifty-three
+of the fifty-five primitives agreed exactly, and the two verifying
+signature forms declared their branching counterpart's figure instead of
+their surviving one. Source review settled it in the declared rows'
+favour. The interpreter shares one case block between a branching
+primitive and its verifying counterpart, popping the operands, pushing
+the truth value, and only then — if the opcode is the verifying one —
+popping that value again on success and aborting on failure
+(`src/script/interpreter.cpp:1476-1499` for the transaction-signature
+pair and `1689-1734` for the stack-message pair). The verifying form
+therefore transiently occupies its counterpart's depth, which is what
+"at any point during its execution" measures and what a stack scheduler
+must size against.
+
+The weld landed with that transient as a typed term, derived from the
+verifying primitives the signature weld already distinguishes rather
+than from new per-opcode data, so no reviewed row moved. All fifty-five
+rows now agree, altstack growth is checked to stay zero, and the source
+citation is recorded in (`tab:elements-ref:verifying-transient`). The
+regressions refuse a growth row inconsistent with its stack contract, a
+verifying form declaring only its surviving depth, a success form moved
+without its row, and a nonzero altstack claim; the reviewed contract
+validates unmutated as their control.
 
 Wave-0 evidence, one pointer per row. The Rust pointers name the
 crate-internal `guide11_reproductions` suites, which pass by asserting the
@@ -1286,9 +1294,18 @@ G11-H01  no weld reads OpcodeResourceCost::maximum_stack_growth at all, the time
          (Wave 4 derived the weld and ran it without landing it: 53 of 55 primitives
           agree exactly; CheckSigVerify declares -1 against a surviving -2 and
           CheckSigFromStackVerify declares -2 against a surviving -3, both carrying
-          their branching counterpart's figure. Open for adjudication: the declared
-          rows may be right and the derivation incomplete, the verifying forms having
-          a transient depth the success algebra does not represent)
+          their branching counterpart's figure. Wave 5 closed it: source review
+          confirmed the declared rows, the interpreter pushing the truth value and
+          only then popping it for the verifying form, so the weld landed with a
+          typed transient term and all 55 rows agree. Guarantees are
+          g11_h01_every_reviewed_row_matches_its_derived_stack_growth,
+          g11_h01_only_the_verifying_forms_carry_a_transient_above_their_surviving_depth,
+          g11_h01_the_branching_counterparts_declare_their_settling_depth,
+          g11_h01_a_growth_row_inconsistent_with_its_stack_contract_is_refused,
+          g11_h01_a_verifying_form_declaring_its_surviving_growth_is_refused,
+          g11_h01_changing_a_success_form_without_its_growth_row_is_refused,
+          g11_h01_a_nonzero_altstack_growth_row_is_refused, and
+          g11_h01_the_reviewed_contract_remains_valid as their control)
 G11-H02  ObservedIssuance::authority is never read in realization, and authority_input
          only for referential existence in observation.rs
 ```
@@ -2307,6 +2324,7 @@ already cites (G11-R12).
 | `DI-F01` | DONE | The plans-tree link scanner read bracketed patterns inside fenced blocks as Markdown links, so a CDDL regex in an archived draft failed as a broken link. Fenced interiors are now blanked before link scanning; the systematic single-scanner repair landed as DI-003 W1, which folded this blanking into the shared scanner. |
 | `DI-F04` | DONE | The Realization harvest computed the boundaries of the generated upward-citation index from the raw source while reading its spans from the fence-aware scanner. A section heading displayed inside a fenced block therefore opened the index region, which stayed open across the fence close and swallowed the body citation below it, losing an anchor and reporting the genuine index stale. The region walk now reads participating lines only. Found and resolved by DI-003 W1; no occurrence existed in the tree, so no diagnostic moved. |
 | `DI-F02` | DONE | Participation is enforced inconsistently across checks: the label scanner honors fences, the link scanner did not, and the scaffolding, placeholder, and confidence hygiene checks still scan fenced material. One participation model must feed every check. Closed by DI-003 W1, which landed exactly that single shared scanner. |
+| `DI-F05` | OPTIONAL | Wave 4 observed that the DI-001 gap census and this table describe `DI-F01` through `DI-F03` in different terms, so a reader reconciling them must infer which wording is authoritative. The identifiers and statuses agree; the drift is semantic, in what each row is said to be about. Optional cleanup: state one wording as the finding and let the other cite it. No diagnostic and no gate depends on the difference. |
 | `DI-F03` | DONE | The calculus's owner signatures, imported-citation prefixes, synthetic citations, anchor harvests, and acute-delimiter hard failure are only partially realized in the present checker; the gap census of DI-001 owns the exact delta. Closed by DI-003: W1 and W2 landed the owner signatures with registered prefixes, the imported and synthetic citations, the anchor harvests, and the kind registry as the checker's kind vocabulary; the acute-delimiter hard failure is enforced in `participation.rs` and asserted by `an_unclosed_opening_acute_fails_at_its_delimiter`. |
 
 ### 13.3 Toolchain engineering · `tab:backlog:toolchain-tasks`

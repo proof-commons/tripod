@@ -741,7 +741,7 @@ fn weld_stack_growth(definition: &TargetDefinition, errors: &mut Vec<TargetError
 /// the successful path, retaining them leaves a deeper one — which is
 /// the reason the maximum is taken over outcomes rather than read off
 /// the successful form.
-pub(crate) fn derived_stack_growth(id: OpcodeId, stack: &StackContract) -> i64 {
+pub fn derived_stack_growth(id: OpcodeId, stack: &StackContract) -> i64 {
     let surviving = surviving_stack_growth(stack);
     if VERIFYING_SIGNATURE_OPCODES.contains(&id) {
         // The transient peak: the branching counterpart's depth, held
@@ -759,7 +759,7 @@ pub(crate) fn derived_stack_growth(id: OpcodeId, stack: &StackContract) -> i64 {
 /// reviewed primitives, and it is kept separate from the transient term
 /// so that the two verifying forms' extra item is visible as its own
 /// claim rather than folded into an arithmetic no test can point at.
-pub(crate) fn surviving_stack_growth(stack: &StackContract) -> i64 {
+pub fn surviving_stack_growth(stack: &StackContract) -> i64 {
     let declared_operands = i64::try_from(stack.operands().len()).unwrap_or(i64::MAX);
 
     let surviving_failures =
