@@ -15,7 +15,9 @@
 //! is checked against the observed bytes. Nothing here rewrites an
 //! expectation to match an observation: the oracle's recipe is Wave 6's,
 //! written before any of these bytes existed, and a disagreement would be
-//! reported rather than absorbed `(´[PLAN-rule:guide11-exec:three-way]´)`.
+//! reported rather than absorbed. That is Guide 11 §7.4's own rule: a
+//! disagreement stops the batch, and expected values are not rewritten to
+//! match target observations without triage.
 //!
 //! # Byte order, established rather than assumed
 //!

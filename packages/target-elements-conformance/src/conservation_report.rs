@@ -56,7 +56,8 @@ pub enum RowVerdict {
     /// The target reached a different layer.
     ///
     /// A disagreement is reported, never absorbed by rewriting the
-    /// expectation `(´[PLAN-rule:guide11-exec:three-way]´)`.
+    /// expectation, which is Guide 11 §7.4's standing requirement: a
+    /// disagreement stops the batch and is triaged rather than fitted.
     Disagrees,
     /// The run produced no target verdict at all.
     NotTargetEvidence,
