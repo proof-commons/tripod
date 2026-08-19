@@ -5,10 +5,21 @@
 //! gives each one its subject, claim class, required environment, and
 //! staleness conditions.
 //!
-//! Every requirement in the registry is unresolved. None has been
-//! evidenced against any node. The registry states what a
-//! target-native test would have to demonstrate; it does not stand in
-//! for having demonstrated it.
+//! # The registry states requirements, never their status
+//!
+//! No entry here records whether evidence has been produced for it,
+//! and that is the design rather than a gap waiting to be filled: an
+//! entry is immutable, so producing evidence about one does not change
+//! it and failing to produce evidence about one does not change it
+//! either. The registry states what a target-native test would have to
+//! demonstrate; it does not stand in for having demonstrated it, and
+//! it does not report on it afterwards.
+//!
+//! Whether evidence has been produced is a question for the harness
+//! that produces it, `tripod-target-elements-conformance`,
+//! which has recorded development native evidence. Production target
+//! evidence remains absent. Neither fact is readable from here, and
+//! nothing in this crate should be read as asserting either.
 
 use std::collections::{BTreeMap, BTreeSet};
 
