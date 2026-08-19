@@ -542,6 +542,163 @@ package entered the graph.
 
 ---
 
+### 2.4 Guide-11 declassification gate · `gate:backlog:guide11`
+
+The Guide-11 batch closed the sixth-review register (§5.6, all sixteen
+rows), redesigned the evidence boundary, reviewed the target's
+confidential-value machinery, built an independent commitment oracle, and
+answered the last open Phase-3 foundational prototype question with a
+selected initial representation policy. Starting revision 0.3.5-dev, tree
+clean; the Guide-10 constructor and wide-floor decisions stood accepted
+and were not reopened; the public-declassification note opened at *Open;
+prototype required*.
+
+Preflight (§5.6 owns the register): all fourteen numbered rows are DONE,
+thirteen CONFIRMED and one RECLASSIFIED, and `G11-H01` is DONE with
+fifty-five of fifty-five opcodes welded. `G11-H02` is not a gate item and
+is not closed — it is a standing prohibition against adding issuance
+realization scope until the authority fields are enforced or externally
+evidenced, and none is proposed.
+
+Evidence boundary: canonical wrappers for all three matrices; ad hoc
+reports demoted below any gate; transcripts bound to their exact subjects
+and requests; expectations removed from executor requests, which is what
+made the protocol schema **3** — a breaking change, numbered as one, with
+revision 2 kept as a historical value nothing parses as revision 3.
+Primitive report schema 2, prototype report schema 1, and a string schema
+of its own for the fresh-process handoff. Exact case, claim, and evidence
+censuses; environment rechecked after the run as well as before; failed
+completeness refused; report bytes deterministic over two consecutive
+runs. Provenance is Elements Core at the ADR-018 merged tip on
+`elementsregtest`, with adapter, framework, node, binary revision,
+intended tip, upstream base, local topics, observed network, and observed
+genesis each a separate field; the executor class is explicitly selected
+and fails closed, and Meson declares no trust by default.
+
+Target review (§5.7 carries the rows): the commitment relation is the
+conceptual one with both terms positive, over a thirty-two-byte big-endian
+scalar; conservation closes as an exact tally to the identity with no
+excess term; commitment equality has no reviewed primitive and is exactly
+`Unsupported`. The decisive result is that authenticated opening has **no
+complete on-script form**, for three independent reasons: the generator is
+not derivable on script, the encoding domains disagree, and a
+witness-supplied parity byte is bound to nothing. The selected sighash
+profile is the default all-outputs non-anyone-can-pay key-path spend, read
+out of the witness rather than asserted. The target-contract version did
+not move: these are facts about the reviewed revision, not a change to the
+algebra.
+
+Dependency and oracle (§5.8 carries the rows): nothing was added, and
+`Cargo.lock` is unchanged across the batch. The bindings to the
+zero-knowledge secp256k1 fork were refused on independence — they wrap the
+same C library the node vendors, so their agreement would be a tautology —
+and `target-elements` stays standard-library-only. Sixty-eight upstream
+vectors reproduce exactly, every pinned byte string was independently
+recomputed in another language, and the oracle predicts the same
+commitment bytes a real node produced for three observed openings. The
+construction-library leg stays **absent** and is reported as absent.
+
+Confidential transactions: twelve rows stated, eleven executed, one
+deferred as a typed row. Ten of the eleven agreed with expectations
+written before the target was asked — three accepted, six rejected at
+consensus before script, and the hidden-confidential-output row accepted,
+which is its stated expectation and the finding that consensus does not
+police hidden value. The eleventh, several confidential inputs to one
+explicit output, **could not be constructed** and reached no target
+verdict: residual blinding has nowhere to go without a blinded output.
+Randomness is `FixtureInputsOnly`, since the node's blinding cannot be
+seeded. Failure layers are decided by the mempool reason, because block
+validation answers every amount and script failure with one string.
+
+Deferrals: no opening prototype was built, and the public-committed
+representation defers on the same three blockers, so no amount domain,
+relation, parity coverage, durable public evidence, or resource
+measurement exists for either. Two shapes are refused outright — the proof
+outline as instantiated on the reviewed primitives, under the parity-loss
+criterion, and an opening checked off-script and asserted on-script, under
+the rule against a host library being the only verifier — while the class
+is deferred rather than rejected, because a pattern proving the required
+normalization or negation was not found, which is not the same as shown
+impossible. The capsule is not applicable while they are deferred: it
+carries an opening and the fields binding it to one output, and there is
+neither.
+
+Normalization: private to explicit with private change is **built and
+run**; full consumption is not constructible, per the conservation row
+above. Owner authorization is real and output-committing — every consumed
+input carried a single sixty-four-byte witness item, a Schnorr signature
+with no trailing sighash byte. Amount, owner, explicit asset, and object
+role are preserved and checked, and the explicit and normalized semantic
+projections agree over those properties. Closure is exact multiset
+equality in both directions, because a subset test passes a hidden output
+and a count test passes a swap. Nine of nine mutation rows agreed with
+expectations committed before the run; three of them are consensus-valid
+transactions the report layer alone refuses, and the target accepted all
+three, which is the substantive finding rather than a gap. Resources are
+not measured: the path adds no verifier program to measure.
+
+Fresh-process lifecycle: a real operating-system boundary — the
+constructing process publishes and exits, each reading process is a fresh
+process and node with a distinct pid, the wallet destroyed and the chain
+kept. The public record is a typed twelve-field schema refusing unknown
+fields and banning field *names* that denote owner-private material.
+Sixteen of sixteen rows agreed over two passes against the canonical
+matrix rather than the run record. The reading process locates by block
+locator, parses with its own deserializer, rebuilds the output script from
+the public address alone, and spends its own funds — it cannot spend the
+owned object, so permissionless future *use* is demonstrated and
+permissionless future *maintenance* is not.
+
+Final representation policy: the boundary is **explicit**, reached from a
+private value by **owner-authorized normalization to an explicit output
+carrying private change**. Lateral transfer is supported directly in both
+representations and needs no boundary; public and permissionless
+maintenance and formula-bound payout are explicit only; direct private
+support and public-committed representation are deferred with named
+blockers; full private consumption is unsupported, which is a
+constructibility finding rather than a target rejection. The matrix, cell
+by cell against landed evidence, is in
+[the research owner](../research/public-declassification.md).
+
+Reports carry the `Experimental` role throughout: they establish what the
+target does and nothing about a candidate being selected. Minimality is
+**not** claimed and no minimality report exists — the result is explicitly
+not disclosure-minimal, and the normalization path's three
+declassifications are every one `DeploymentPolicy`, each stating the
+alternative a deployment that wanted the fact private would have to take.
+Zero failed canonical cases and zero required infrastructure errors. The
+reports are run output, are not checked in, and no digest of any is kept.
+
+Identity impact: nothing moved. Across the whole batch the diff touches no
+file under `packages/model/generated`, `packages/architecture`, `papers/`,
+or `docs/`, so the Attestation version, realization major and letter,
+architecture schema, architecture semantic hash, architecture behavioural
+hash, anchor-set hash, and generated architecture publications are
+all unchanged. No realization, compiler, target, opening-pattern, capsule,
+or report identity was minted. The deployment-profile identity remains
+dormant and not production-release-valid. The target-contract version
+stays at V2, with V1 removed from the supported set in preflight rather
+than bumped. The only schema that moved is the native executor protocol,
+to revision 3. Two new modules compute hashes and neither mints an
+identity: the oracle's generator derivation is the reviewed upstream
+recipe evaluated as arithmetic, and the conservation module's
+fixture-scalar derivation is domain-separated disposable-chain test
+material that authorizes nothing.
+
+Planning handoff: the research note is closed with a selected initial
+policy and its residuals, D005 records that policy under the proof
+alternatives it already admitted, the Phase-3 card records the result
+without claiming the exit, and both package READMEs carry the new modules.
+The next guide consumes this policy rather than reopening it.
+
+Honest bounds: the conservation, normalization, and lifecycle lanes record
+and do not gate — the executor drivers, published assets, and Meson
+targets that would make them refusable in CI are not built (`G11-W7-08`).
+Both public-committed conservation rows remain deferred
+(`G11-W7-09`). Policy-resource evidence is `UnresolvedByDesign`. Nothing
+here is an operation, a linked bundle, a transaction ABI, a calibration,
+or production output.
+
 ## Closed review registers
 
 Moved from [the backlog](../backlog.md) §5.2–5.5 on 2026-08-19: the
