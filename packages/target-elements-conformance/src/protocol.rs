@@ -57,18 +57,30 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::fixture::{NativeCaseId, PrimitiveFixture};
-use crate::prototype::{CompoundPrototypeFixture, PrototypeCaseId, PrototypeConstruction};
+use crate::fixture::{NativeCaseId, PrimitiveExecutionSubject};
+use crate::prototype::{PrototypeCaseId, PrototypeConstruction, PrototypeExecutionSubject};
 
 /// The protocol revision this harness speaks.
 ///
-/// Revision 2 adds the environment observation, the separated executor
-/// provenance roles, the bounded-record contract, and strict framing. It
-/// is not revision 1 with fields appended: a revision-1 executor states
-/// provenance this harness can no longer interpret and observes no
-/// environment at all, so the two are refused for each other rather than
-/// reconciled.
-pub const NATIVE_PROTOCOL_SCHEMA: u32 = 2;
+/// # Revision 3 removes the answer from the question
+///
+/// A revision-2 request carried the complete fixture, expectation
+/// included, and asked the executor to discard it before executing. A
+/// revision-3 request carries the execution subject and nothing else, so
+/// there is no expectation for an executor to discard, misread, or echo
+/// `(´[PLAN-rule:guide11:request-subject]´)`.
+///
+/// This is a breaking change and is numbered as one. A revision-2
+/// executor is handed a record whose shape it has never seen and would
+/// answer from a field that is no longer there, so the two revisions are
+/// refused for each other at the handshake rather than reconciled: a
+/// revision-2 record is historical, and nothing here parses one as a
+/// revision-3 record.
+///
+/// Revision 2 itself added the environment observation, the separated
+/// executor provenance roles, the bounded-record contract, and strict
+/// framing, and was refused for revision 1 on the same ground.
+pub const NATIVE_PROTOCOL_SCHEMA: u32 = 3;
 
 /// Which part of the exchange the harness was in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -236,51 +248,51 @@ pub enum ExecutorCapability {
     ///
     /// # Why this is a capability and not a schema bump
     ///
-    /// A tree-bearing request carries a field a schema-2 executor has
-    /// never seen, and its strict framing would reject the whole
-    /// request. That is not a schema incompatibility as long as no
-    /// schema-2 executor is ever sent one, and this capability is what
+    /// A tree-bearing request carries a field an executor of the current
+    /// revision need not have seen, and its strict framing would reject
+    /// the whole request. That is not a schema incompatibility as long as
+    /// no such executor is ever sent one, and this capability is what
     /// makes that true: the harness sends a tree-bearing request only to
     /// an executor that advertised the ability to materialize a tree.
     ///
-    /// So the protocol revision stays at 2. Every request a schema-2
-    /// executor can receive is byte-identical to the requests it
-    /// received before — the new field is omitted entirely rather than
-    /// written as null — and an executor that does not advertise this
-    /// gets a typed refusal from the harness instead of a message it
-    /// cannot parse `(´[PLAN-rule:guide10:schema-migration]´)`.
+    /// So a construction adds no revision of its own. The field is
+    /// omitted entirely rather than written as null, and an executor that
+    /// does not advertise this gets a typed refusal from the harness
+    /// instead of a message it cannot parse
+    /// `(´[PLAN-rule:guide10:schema-migration]´)`.
     TreeMaterialization,
     /// It accepts a compound-prototype fixture as such.
     ///
     /// # Why the fixture could not be projected onto a primitive one
     ///
-    /// A primitive request carries a primitive fixture and a primitive
-    /// case identity. A compound fixture is neither: its case is a
-    /// relation and a name rather than a group and an ordinal, its
-    /// outcome is a spend verdict rather than a stack shape, and its
-    /// construction is a requirement to build one exact tree. Squeezing
-    /// it into the primitive request would have meant a primitive case
-    /// identity for a case that has none, and a report row that counted
-    /// compound coverage as primitive coverage
+    /// A primitive request carries a primitive subject and a primitive
+    /// case identity. A compound case is neither: its case is a relation
+    /// and a name rather than a group and an ordinal, its outcome is a
+    /// spend verdict rather than a stack shape, and its construction is a
+    /// requirement to build one exact tree. Squeezing it into the
+    /// primitive request would have meant a primitive case identity for a
+    /// case that has none, and a report row that counted compound
+    /// coverage as primitive coverage
     /// `(´[PLAN-rule:guide10:compound-fixture]´)`.
     ///
     /// So a prototype request is its own record, and this capability is
-    /// what keeps the protocol revision at 2: no executor is ever sent
-    /// one unless it said it reads them.
+    /// what keeps it from being sent to an executor that cannot read it:
+    /// no executor is ever handed one unless it said it reads them.
     CompoundPrototypeFixtures,
 }
 
 impl ExecutorHandshake {
     /// Whether this executor may be sent a tree-bearing request.
     ///
-    /// # The gate that keeps the protocol revision at 2
+    /// # The gate that keeps a construction from an executor that cannot
+    /// read one
     ///
-    /// A tree-bearing request carries a field a schema-2 executor has
-    /// never seen, and its strict framing would reject the whole
-    /// message. That is only safe because no such executor is ever sent
-    /// one, and this predicate is where that is decided rather than
-    /// assumed: a construction goes out only to an executor that said it
-    /// can materialize a tree exactly
+    /// A tree-bearing request carries a field an executor need not have
+    /// seen, and its strict framing would reject the whole message. That
+    /// is only safe because no such executor is ever sent one, and this
+    /// predicate is where that is decided rather than assumed: a
+    /// construction goes out only to an executor that said it can
+    /// materialize a tree exactly
     /// `(´[PLAN-rule:guide10:schema-migration]´)`.
     ///
     /// It is the executor's own claim, like every other capability here.
@@ -297,7 +309,7 @@ impl ExecutorHandshake {
     /// Whether this executor may be sent a compound-prototype request.
     ///
     /// The same gate, for the same reason: a prototype request is a
-    /// record shape a schema-2 executor has never seen, and its strict
+    /// record shape an executor need not have seen, and its strict
     /// framing would refuse the whole message. It is only ever sent to
     /// an executor that said it reads them.
     ///
@@ -427,32 +439,51 @@ pub struct ExecutorEnvironmentObservation {
 
 /// Where the expected outcome sits in the exchange.
 ///
-/// The preferred design hands a native executor only the execution
-/// subject, so that nothing it consults could be the answer. This
-/// protocol does not reach it: the request carries the complete fixture
-/// DTO, expectation included, because the fixture is one typed value and
-/// splitting it would give the harness and the executor two different
-/// notions of what was executed. The boundary is therefore stated rather
-/// than assumed, is recorded in the report, and is what an adapter's
-/// discard-before-execution discipline is judged against.
+/// # The boundary moved, and the old position is kept spelled
+///
+/// A revision-2 request carried the complete fixture DTO, expectation
+/// included, and the boundary was a discipline: the executor was required
+/// to discard the answer before executing, and an adapter was judged
+/// against that requirement. Revision 3 removes the requirement by
+/// removing the field — an executor cannot consult what it was never sent
+/// `(´[PLAN-rule:guide11:request-subject]´)`.
+///
+/// [`Self::FixtureCarriesExpectation`] remains spelled because revision-2
+/// reports exist and say so. It is what those documents state about
+/// themselves, not a position this harness still offers: nothing here
+/// produces it, and report validation refuses a report carrying it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum RequestExpectationBoundary {
-    /// The request carries the fixture's stated expectation, and the
-    /// executor is required to discard it before executing.
+    /// The request carried the fixture's stated expectation, and the
+    /// executor was required to discard it before executing.
+    ///
+    /// Historical: revision 2 only.
     FixtureCarriesExpectation,
+    /// The request carries the execution subject alone. No expected
+    /// verdict, failure class, final stack, resource figure, claim, or
+    /// evidence class crosses the boundary.
+    ExecutorReceivesSubjectOnly,
 }
 
 /// One case, handed to the executor.
 ///
+/// # What it carries, and what it deliberately does not
+///
+/// The case identity, the execution subject, and — where the case bears
+/// one — the taproot construction to materialize. It carries no expected
+/// verdict, no expected failure class, no expected final stack, no
+/// expected resource figure, no claim set, and no evidence plan class:
+/// under revision 3 the answer stays with the harness
+/// `(´[PLAN-rule:guide11:request-subject]´)`.
+///
 /// # The construction is additive and omitted by default
 ///
-/// A primitive request serializes exactly as it did before this field
-/// existed: `skip_serializing_if` leaves it out entirely rather than
-/// writing a null, so a schema-2 executor's strict framing sees the
-/// message it has always seen. A tree-bearing request carries it, and
-/// goes only to an executor that advertised
+/// `skip_serializing_if` leaves the construction out entirely rather than
+/// writing a null, so a request for a case bearing none is the shorter
+/// record. A tree-bearing request carries it, and goes only to an
+/// executor that advertised
 /// [`ExecutorCapability::TreeMaterialization`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -461,8 +492,8 @@ pub struct NativeExecutionRequest {
     pub schema: u32,
     /// The case being asked about.
     pub case: NativeCaseId,
-    /// The complete public fixture.
-    pub fixture: PrimitiveFixture,
+    /// Exactly what to execute.
+    pub subject: PrimitiveExecutionSubject,
     /// The taproot construction the executor must materialize exactly,
     /// where the case bears one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -473,13 +504,16 @@ pub struct NativeExecutionRequest {
 ///
 /// # A record of its own, not a primitive request with extras
 ///
-/// The fixture carries its own case identity, script, witness stack,
-/// construction, expectation, and resource expectations, so the executor
-/// receives one typed value rather than a primitive request whose
-/// meaning depends on which optional fields are present. The top-level
-/// case restates the fixture's own, exactly as the primitive request
-/// restates its fixture's: it is what the lock-step exchange matches
-/// responses against, and a fixture whose two disagree is refused.
+/// The subject carries its own case identity, script, witness stack, and
+/// construction, so the executor receives one typed value rather than a
+/// primitive request whose meaning depends on which optional fields are
+/// present. The top-level case restates the subject's own, exactly as the
+/// primitive request restates its subject's: it is what the lock-step
+/// exchange matches responses against.
+///
+/// Under revision 3 the expected verdict, the expected resource figures,
+/// and the claim set stay with the harness, exactly as they do for a
+/// primitive case `(´[PLAN-rule:guide11:request-subject]´)`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativePrototypeRequest {
@@ -487,8 +521,8 @@ pub struct NativePrototypeRequest {
     pub schema: u32,
     /// The case being asked about.
     pub case: PrototypeCaseId,
-    /// The complete public fixture, construction included.
-    pub fixture: CompoundPrototypeFixture,
+    /// Exactly what to execute, construction included.
+    pub subject: PrototypeExecutionSubject,
 }
 
 /// What the target did with one compound-prototype case.

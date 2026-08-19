@@ -4,12 +4,14 @@
 //! development values. They name nothing, authorize nothing, and are not
 //! secret material of any kind.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
+use crate::fixture::{NativeCaseId, PrimitiveExecutionSubject, PrimitiveFixture};
 use crate::protocol::{
     ExecutorCapability, ExecutorEnvironmentObservation, ExecutorHandshake, NATIVE_PROTOCOL_SCHEMA,
     WireEnvironment, WireExecutionDomain,
 };
+use crate::prototype::{CompoundPrototypeFixture, PrototypeCaseId, PrototypeExecutionSubject};
 use target_elements::{
     ActivationDeclaration, DeploymentEnvironment, DevelopmentDeploymentBinding, LeafVersion,
     ReviewedDevelopmentBinding, ReviewedElementsTapscriptDefinition, TargetContractVersion,
@@ -56,6 +58,28 @@ pub fn observed_environment() -> ExecutorEnvironmentObservation {
         active_domains: BTreeSet::from([WireExecutionDomain::Tapscript]),
         active_leaf_versions: BTreeSet::from([LeafVersion::TAPSCRIPT.get()]),
     }
+}
+
+/// The requests an honest run over these fixtures would have sent.
+///
+/// Taken as an iterator of fixtures rather than as one census type, so
+/// that the canonical wrapper and a bare census can both be described.
+pub fn subjects_of<'a>(
+    fixtures: impl IntoIterator<Item = &'a PrimitiveFixture>,
+) -> BTreeMap<NativeCaseId, PrimitiveExecutionSubject> {
+    fixtures
+        .into_iter()
+        .map(|fixture| (fixture.case(), fixture.subject()))
+        .collect()
+}
+
+/// The requests an honest run over these compound rows would have sent.
+pub fn prototype_subjects_of(
+    rows: &[CompoundPrototypeFixture],
+) -> BTreeMap<PrototypeCaseId, PrototypeExecutionSubject> {
+    rows.iter()
+        .map(|row| (row.case.clone(), row.subject()))
+        .collect()
 }
 
 /// A handshake from a well-behaved nonmock executor.

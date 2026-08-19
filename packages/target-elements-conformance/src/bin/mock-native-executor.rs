@@ -2,10 +2,30 @@
 //! protocol badly on purpose.
 //!
 //! This is NOT an Elements executor. It runs no interpreter, executes no
-//! script, and observes nothing about any target. Its answers are echoes
-//! of the fixture's own stated expectation, which is precisely why a run
-//! against it can never be target-native evidence: the harness would be
-//! comparing a fixture with itself.
+//! script, and observes nothing about any target.
+//!
+//! # Where its answers come from, now that the request has none
+//!
+//! They used to be echoes of the expectation carried in the request.
+//! Protocol revision 3 removed it: a request carries the execution
+//! subject and nothing else, so there is no answer in it to read
+//! `(´[PLAN-rule:guide11:request-subject]´)`.
+//!
+//! So this mock builds its own table instead. At startup it constructs
+//! the canonical primitive census and both canonical prototype matrices
+//! from the reviewed contract — its own copies, out of band, over the
+//! development binding it states it observed — and indexes their expected
+//! outcomes by case identity. A request is answered by looking its case
+//! identity up in that table, and a case identity the table does not hold
+//! is answered with the verdict named by this command's own
+//! `--unknown-case` argument.
+//!
+//! That is still not evidence, and for the same reason as before: the
+//! table is derived from the very expectations the harness will compare
+//! the answers against, so a green run against this mock says only that
+//! the harness can compare a value with itself. What changed is that the
+//! self-comparison now travels out of band, where an honest adapter has
+//! no equivalent to accidentally consult.
 //!
 //! It exists so the protocol's failure paths — a malformed line, a wrong
 //! schema, a duplicated, missing, reordered, or unexpected result, a
@@ -20,14 +40,14 @@
 //! this package's own oracle and comparing the stated predecessor
 //! program and control block against what that oracle determines — no
 //! transaction is built and no target is consulted, so the answer is
-//! still the fixture's own expectation and still not evidence. A
+//! still the table's and still not evidence. A
 //! construction that does not check out, and every construction under
 //! the refusing behavior, is refused rather than answered.
 //!
 //! Under ADR-010 this command's stdout is protocol data, in the NDJSON
 //! form the harness's protocol documents.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::process::ExitCode;
 
@@ -35,7 +55,14 @@ use clap::{Parser, ValueEnum};
 use cli_common::{
     CommandExit, emit_control_plane_record, install_json_panic_hook, parse_args_from,
 };
+use target_elements::{
+    ActivationDeclaration, DeploymentEnvironment, DevelopmentDeploymentBinding, LeafVersion,
+    TargetContractVersion, reviewed_elements_tapscript, validate_reviewed_development_binding,
+};
 use target_elements_conformance::constructor::tree::construct;
+use target_elements_conformance::fixture::{
+    ExpectedPrimitiveOutcome, NativeCaseId, canonical_fixture_set,
+};
 use target_elements_conformance::protocol::{
     ExecutorCapability, ExecutorEnvironmentObservation, ExecutorHandshake,
     MOCK_EXECUTOR_GENESIS_ID, MOCK_EXECUTOR_NETWORK_ID, NATIVE_PROTOCOL_SCHEMA,
@@ -44,7 +71,8 @@ use target_elements_conformance::protocol::{
     WireEnvironment, WireExecutionDomain,
 };
 use target_elements_conformance::prototype::{
-    ExpectedPrototypeOutcome, PrototypeConstruction, PrototypeRelation,
+    ExpectedPrototypeOutcome, PrototypeCaseId, PrototypeConstruction, PrototypeRelation,
+    constructor_case_matrix, wide_floor_case_matrix,
 };
 
 const COMMAND_NAME: &str = "mock-native-executor";
@@ -52,8 +80,8 @@ const COMMAND_NAME: &str = "mock-native-executor";
 /// How the mock misbehaves.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 enum Behavior {
-    /// Answer every case with the fixture's own stated expectation.
-    EchoExpected,
+    /// Answer every case from this mock's own census-derived table.
+    AnswerFromCensus,
     /// Answer the handshake with a schema the harness does not speak.
     WrongHandshakeSchema,
     /// Write a line that is not JSON at all.
@@ -176,6 +204,83 @@ fn environment(behavior: Behavior) -> ExecutorEnvironmentObservation {
 /// The leaf version byte the reviewed contract fixes.
 const TAPSCRIPT_LEAF_VERSION: u8 = 0xc4;
 
+/// What this mock answers a case its own table does not hold.
+///
+/// The protocol tests drive the exchange with small ad hoc censuses whose
+/// case identities belong to no canonical census, and those tests are
+/// about framing rather than about verdicts. Naming the answer as an
+/// argument keeps it out of the wire request: it is this command's own
+/// configuration, chosen by the wrapper script that selects the mock,
+/// which is exactly the out-of-band channel a real adapter would use for
+/// its own settings.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum UnknownCasePolicy {
+    /// Answer that the target accepted the spend.
+    Accept,
+    /// Answer that the target rejected the spend.
+    Reject,
+    /// Answer that the case could not be run at all.
+    Refuse,
+}
+
+/// This mock's own answers, keyed by case identity.
+///
+/// Built once at startup from the canonical censuses, and never from a
+/// request. A case the table does not hold is answered by the
+/// [`UnknownCasePolicy`], and a table that cannot be built at all leaves
+/// every case to that policy — the mock states what it can answer rather
+/// than failing a protocol test over a census it did not need.
+struct AnswerTable {
+    primitives: BTreeMap<NativeCaseId, ExpectedPrimitiveOutcome>,
+    prototypes: BTreeMap<PrototypeCaseId, ExpectedPrototypeOutcome>,
+    unknown: UnknownCasePolicy,
+}
+
+impl AnswerTable {
+    /// Builds the table from this package's own canonical censuses.
+    fn build(unknown: UnknownCasePolicy) -> Self {
+        let mut primitives = BTreeMap::new();
+        let mut prototypes = BTreeMap::new();
+
+        if let Ok(target) = reviewed_elements_tapscript() {
+            let declared = DevelopmentDeploymentBinding::new(
+                TargetContractVersion::V2,
+                DeploymentEnvironment::Development,
+                MOCK_EXECUTOR_NETWORK_ID,
+                MOCK_EXECUTOR_GENESIS_ID,
+                ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+                None,
+            );
+            if let Ok(binding) = validate_reviewed_development_binding(&target, declared)
+                && let Ok(census) = canonical_fixture_set(&target, &binding)
+            {
+                for fixture in census.iter() {
+                    primitives.insert(fixture.case(), fixture.expected().clone());
+                }
+            }
+            // The two matrices are authored by different generators and
+            // fail in different ways, so they are gathered separately
+            // rather than through one fallible sequence.
+            if let Ok(matrix) = constructor_case_matrix(&target) {
+                for row in matrix.rows() {
+                    prototypes.insert(row.case.clone(), row.expected);
+                }
+            }
+            if let Ok(matrix) = wide_floor_case_matrix(&target) {
+                for row in matrix.rows() {
+                    prototypes.insert(row.case.clone(), row.expected);
+                }
+            }
+        }
+
+        Self {
+            primitives,
+            prototypes,
+            unknown,
+        }
+    }
+}
+
 /// The fixed text the noisy behavior writes on its stderr.
 ///
 /// The harness must never relay it. It is a test-only string and names
@@ -192,6 +297,9 @@ struct Args {
     /// How the mock misbehaves.
     #[arg(long, value_name = "BEHAVIOR")]
     behavior: Behavior,
+    /// What to answer a case this mock's own table does not hold.
+    #[arg(long, value_name = "POLICY", default_value = "accept")]
+    unknown_case: UnknownCasePolicy,
 }
 
 fn main() -> ExitCode {
@@ -204,7 +312,9 @@ fn main() -> ExitCode {
         }
     };
 
-    run(args.behavior).map_or_else(|_| CommandExit::Failure.exit_code(), CommandExit::exit_code)
+    let table = AnswerTable::build(args.unknown_case);
+    run(args.behavior, &table)
+        .map_or_else(|_| CommandExit::Failure.exit_code(), CommandExit::exit_code)
 }
 
 /// Writes one record the strict framing defines nothing for.
@@ -239,7 +349,7 @@ fn malformed_record(stdout: &mut impl Write, behavior: Behavior) -> std::io::Res
 }
 
 /// Speaks the protocol in the selected way.
-fn run(behavior: Behavior) -> std::io::Result<CommandExit> {
+fn run(behavior: Behavior, table: &AnswerTable) -> std::io::Result<CommandExit> {
     if behavior == Behavior::DieEarly {
         return Ok(CommandExit::Failure);
     }
@@ -292,13 +402,13 @@ fn run(behavior: Behavior) -> std::io::Result<CommandExit> {
         // misbehaviors below are all statements about a primitive case
         // identity and so do not apply to it.
         if let Ok(request) = serde_json::from_str::<NativePrototypeRequest>(&line) {
-            write_json(&mut stdout, &echo_prototype(&request, behavior))?;
+            write_json(&mut stdout, &answer_prototype(&request, behavior, table))?;
             continue;
         }
         let Ok(request) = serde_json::from_str::<NativeExecutionRequest>(&line) else {
             return Ok(CommandExit::Failure);
         };
-        let response = echo(&request, behavior);
+        let response = answer(&request, behavior, table);
 
         match behavior {
             Behavior::UnknownField => {
@@ -346,10 +456,18 @@ fn run(behavior: Behavior) -> std::io::Result<CommandExit> {
     })
 }
 
-/// The fixture's own stated expectation, echoed back.
-fn echo(request: &NativeExecutionRequest, behavior: Behavior) -> NativeExecutionResponse {
-    use target_elements_conformance::fixture::ExpectedPrimitiveOutcome;
-
+/// This mock's own answer for one case.
+///
+/// The case identity is looked up in the table this mock built for
+/// itself. Nothing in the request is consulted for the *answer*: the
+/// subject supplies the script and the stack, which are restatements of
+/// what was handed over and not observations, and the construction is
+/// checked rather than believed.
+fn answer(
+    request: &NativeExecutionRequest,
+    behavior: Behavior,
+    table: &AnswerTable,
+) -> NativeExecutionResponse {
     let schema = if behavior == Behavior::WrongResponseSchema {
         NATIVE_PROTOCOL_SCHEMA + 7
     } else {
@@ -375,17 +493,19 @@ fn echo(request: &NativeExecutionRequest, behavior: Behavior) -> NativeExecution
         return refusal(schema, request);
     }
 
-    // The fixture's own figures, echoed like everything else: the mock
-    // measures nothing, and a run against it is not evidence.
+    // The subject's own figures. These are the two exact rows, and both
+    // are restatements of what the executor was handed rather than
+    // measurements of an execution — which is why a mock that measures
+    // nothing may still state them.
     let resources = NativeResourceObservation {
-        script_bytes: request.fixture.script().len() as u64,
-        initial_stack_items: request.fixture.initial_stack().len() as u64,
+        script_bytes: request.subject.script.len() as u64,
+        initial_stack_items: request.subject.initial_stack.len() as u64,
         ..NativeResourceObservation::default()
     };
 
     // This mock advertises stack reporting, so every answer states both
-    // stacks. Where the fixture fixes none, the mock states the empty
-    // one: it measured nothing either way, and a response that advertised
+    // stacks. Where the table fixes none, the mock states the empty one:
+    // it measured nothing either way, and a response that advertised
     // stack reporting and then omitted the stack would be malformed
     // protocol rather than a weak observation.
     let stack = |stated: &Option<Vec<Vec<u8>>>| Some(stated.clone().unwrap_or_default());
@@ -402,7 +522,11 @@ fn echo(request: &NativeExecutionRequest, behavior: Behavior) -> NativeExecution
         };
     }
 
-    match request.fixture.expected() {
+    let Some(stated) = table.primitives.get(&request.case) else {
+        return unknown_primitive(schema, request, resources, table.unknown);
+    };
+
+    match stated {
         ExpectedPrimitiveOutcome::Accept {
             static_final_stack,
             static_final_altstack,
@@ -425,11 +549,43 @@ fn echo(request: &NativeExecutionRequest, behavior: Behavior) -> NativeExecution
             verdict: NativeVerdict::Rejected,
             final_stack: stack(static_final_stack),
             final_altstack: stack(static_final_altstack),
-            // The first class the fixture admits, which is the only one
-            // a mock could pick without measuring anything.
+            // The first class the table admits, which is the only one a
+            // mock could pick without measuring anything.
             observed_failure: classes.iter().next().copied(),
             resources,
         },
+    }
+}
+
+/// One case this mock's table does not hold, answered by its policy.
+fn unknown_primitive(
+    schema: u32,
+    request: &NativeExecutionRequest,
+    resources: NativeResourceObservation,
+    policy: UnknownCasePolicy,
+) -> NativeExecutionResponse {
+    match policy {
+        UnknownCasePolicy::Accept => NativeExecutionResponse {
+            schema,
+            case: request.case,
+            verdict: NativeVerdict::Accepted,
+            final_stack: Some(Vec::new()),
+            final_altstack: Some(Vec::new()),
+            observed_failure: None,
+            resources,
+        },
+        UnknownCasePolicy::Reject => NativeExecutionResponse {
+            schema,
+            case: request.case,
+            verdict: NativeVerdict::Rejected,
+            final_stack: Some(Vec::new()),
+            final_altstack: Some(Vec::new()),
+            // The one class a refused spend always exhibits from
+            // outside, since this mock distinguishes none it observed.
+            observed_failure: Some(ObservedFailureClass::NonSingletonFinalStack),
+            resources,
+        },
+        UnknownCasePolicy::Refuse => refusal(schema, request),
     }
 }
 
@@ -506,13 +662,17 @@ fn materializes(
     })
 }
 
-/// One compound-prototype case, answered from its own expectation.
+/// One compound-prototype case, answered from this mock's own table.
 ///
-/// The same echo the primitive path performs, over the same
+/// The same lookup the primitive path performs, over the same
 /// construction check. Nothing is executed here either: what the mock
 /// establishes is that the record round-trips and that the stated
 /// construction is the one the oracle determines.
-fn echo_prototype(request: &NativePrototypeRequest, behavior: Behavior) -> NativePrototypeResponse {
+fn answer_prototype(
+    request: &NativePrototypeRequest,
+    behavior: Behavior,
+    table: &AnswerTable,
+) -> NativePrototypeResponse {
     let schema = if behavior == Behavior::WrongResponseSchema {
         NATIVE_PROTOCOL_SCHEMA + 7
     } else {
@@ -520,18 +680,27 @@ fn echo_prototype(request: &NativePrototypeRequest, behavior: Behavior) -> Nativ
     };
 
     let resources = NativeResourceObservation {
-        script_bytes: request.fixture.script.len() as u64,
-        initial_stack_items: request.fixture.initial_stack.len() as u64,
+        script_bytes: request.subject.script.len() as u64,
+        initial_stack_items: request.subject.initial_stack.len() as u64,
         ..NativeResourceObservation::default()
     };
 
+    let stated = table.prototypes.get(&request.subject.case);
     if behavior == Behavior::InfrastructureError
+        || stated.is_none()
         || !materializes(
-            &request.fixture.construction,
-            request.fixture.case.relation,
+            &request.subject.construction,
+            request.subject.case.relation,
             behavior,
         )
     {
+        // A compound case this mock's table does not hold is refused
+        // rather than answered under the unknown-case policy: the
+        // primitive policy exists for the protocol tests' ad hoc
+        // censuses, and every prototype exchange in this workspace runs a
+        // canonical matrix. Inventing a spend verdict for a construction
+        // nobody stated an outcome for would be the invention the refusal
+        // branch exists to avoid.
         return NativePrototypeResponse {
             schema,
             case: request.case.clone(),
@@ -543,7 +712,10 @@ fn echo_prototype(request: &NativePrototypeRequest, behavior: Behavior) -> Nativ
         };
     }
 
-    match request.fixture.expected {
+    match stated
+        .copied()
+        .unwrap_or(ExpectedPrototypeOutcome::Rejected)
+    {
         ExpectedPrototypeOutcome::Accepted => NativePrototypeResponse {
             schema,
             case: request.case.clone(),
@@ -585,10 +757,7 @@ fn echo_prototype(request: &NativePrototypeRequest, behavior: Behavior) -> Nativ
 }
 
 /// The requested case, with its ordinal moved on by one.
-const fn shifted_case(
-    request: &NativeExecutionRequest,
-) -> target_elements_conformance::fixture::NativeCaseId {
-    use target_elements_conformance::fixture::NativeCaseId;
+const fn shifted_case(request: &NativeExecutionRequest) -> NativeCaseId {
     NativeCaseId::new(
         request.case.group(),
         request.case.opcode(),
@@ -597,8 +766,8 @@ const fn shifted_case(
 }
 
 /// A case no census declares.
-const fn unknown_case() -> target_elements_conformance::fixture::NativeCaseId {
-    use target_elements_conformance::fixture::{NativeCaseGroup, NativeCaseId};
+const fn unknown_case() -> NativeCaseId {
+    use target_elements_conformance::fixture::NativeCaseGroup;
     NativeCaseId::new(NativeCaseGroup::Resource, None, u32::MAX)
 }
 

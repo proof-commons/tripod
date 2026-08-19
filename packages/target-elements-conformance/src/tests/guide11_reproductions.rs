@@ -12,9 +12,13 @@
 //!   assert the safe behaviour: a caller-authored subject cannot reach an
 //!   evidence gate, and a report cannot claim provenance it does not
 //!   have.
-//! - `G11-R01`, `G11-R04`, `G11-R05`, `G11-R06`, and `G11-R14` are still
-//!   open. Their tests still assert the defect, so one of them failing
-//!   after a later wave is that wave working rather than a regression.
+//! - `G11-R01` is **CLOSED** by Wave 2. Its tests assert that a
+//!   transcript is bound to the contract, the binding, and the exact
+//!   subjects it was produced under, so a run cannot be rebound to
+//!   fixtures or a deployment it never touched.
+//! - `G11-R04`, `G11-R05`, `G11-R06`, and `G11-R14` are still open. Their
+//!   tests still assert the defect, so one of them failing after a later
+//!   wave is that wave working rather than a regression.
 //!
 //! Each test names its finding identifier in its own documentation. No
 //! test here touches a production code path: they are constructions over
@@ -25,14 +29,13 @@
 //!
 //! Closing `G11-R02` removed the arbitrary-census route to the evidence
 //! path, and two open findings had reproductions built on that route. The
-//! `G11-R01` script-substitution reproduction now runs on the
-//! experimental path, where it still shows exactly what it showed: the
-//! transcript retains no request, so a report can name a script the
-//! executor was never handed. The `G11-R05` reproduction cannot be
-//! expressed at all any more — its construction added a fixture to the
-//! canonical census — so what stands in its place records that the route
-//! is closed and that the gate defect it named is still open and still
-//! Wave 3's. Neither adaptation repairs the finding it belongs to.
+//! `G11-R01` script-substitution reproduction moved to the experimental
+//! path, where Wave 2 has now flipped it: the binding is a property of
+//! the transcript rather than of the trust state, so the substitution is
+//! refused there too. The `G11-R05` reproduction cannot be expressed at
+//! all any more — its construction added a fixture to the canonical
+//! census — so what stands in its place records that the route is closed
+//! and that the gate defect it named is still open and still Wave 3's.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -51,7 +54,9 @@ use crate::constructor::metadata::PrototypeMetadata;
 use crate::constructor::totality::{TotalityDefect, TweakTotalityPolicy, construct_under_policy};
 use crate::constructor::tree::{FixtureTapTree, construct};
 use crate::error::NativeConformanceError;
-use crate::executor::{ExecutionTranscript, ExecutorTrust};
+use crate::executor::{
+    ExecutionTranscript, ExecutorTrust, PrototypeTranscriptParts, TranscriptParts,
+};
 use crate::fixture::{
     CanonicalPrimitiveFixtureSet, EnforcementLayer, ExpectedPrimitiveOutcome,
     ExpectedResourceObservation, FixtureScript, FixtureScriptSource, FixtureStatement,
@@ -81,7 +86,8 @@ use crate::validate::{
 };
 
 use super::support::{
-    development_binding, nonmock_handshake, observed_environment, reviewed_target,
+    development_binding, nonmock_handshake, observed_environment, prototype_subjects_of,
+    reviewed_target, subjects_of,
 };
 
 /// A second development binding, on a different network and genesis.
@@ -181,18 +187,18 @@ fn pushes(target: &ReviewedElementsTapscriptDefinition, byte: u8) -> TapscriptPr
         .expect("a one-instruction program is admitted")
 }
 
-// -- G11-R01 -----------------------------------------------------------
+// -- G11-R01 (CLOSED by Wave 2) ---------------------------------------
 
-/// `G11-R01`: a transcript observed under one deployment binding
-/// evaluates, validates, and gates under a different one.
+/// `G11-R01` **CLOSED**: a transcript observed under one deployment
+/// binding cannot be evaluated under a different one.
 ///
-/// The transcript retains the executor's environment observation but not
-/// the binding the run was requested under, and `evaluate` never compares
-/// the two. The report therefore states one network and genesis as
-/// declared while carrying the other as observed, and the gate accepts
-/// it.
+/// The transcript retains the deployment projection the run was requested
+/// under, and evaluation compares it against the binding the report is
+/// being stated against. A report whose declared network and observed
+/// network disagree is therefore not a report that gets built and then
+/// gated; it is a report that does not exist.
 #[test]
-fn g11_r01_a_transcript_rebinds_to_a_deployment_it_never_ran_on() {
+fn g11_r01_a_transcript_cannot_rebind_to_a_deployment_it_never_ran_on() {
     let target = reviewed_target();
     let requested = development_binding(&target);
     let substituted = other_binding(&target);
@@ -200,19 +206,22 @@ fn g11_r01_a_transcript_rebinds_to_a_deployment_it_never_ran_on() {
     // The run: an honest executor answering the census stated against the
     // requested binding, and reporting the environment of that binding.
     let executed = canonical_fixture_set(&target, &requested).expect("the census states");
-    let transcript = ExecutionTranscript::for_tests(
-        nonmock_handshake(),
-        observed_environment(),
-        ExecutorTrust::ReviewedNonMock,
-        answers(&executed),
-    );
+    let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+        target: &target,
+        binding: &requested,
+        handshake: nonmock_handshake(),
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: subjects_of(&executed),
+        responses: answers(&executed),
+    });
 
     // The evaluation: the same transcript, against the census and binding
     // of a network the executor never saw.
     let rebound = canonical_fixture_set(&target, &substituted).expect("the census states");
     let plan = guide_nine_evidence_plan().expect("the plan is a partition");
     let registry = claim_registry().expect("the claim census is coherent");
-    let report = evaluate(
+    let refusal = evaluate(
         &target,
         &substituted,
         &rebound,
@@ -220,19 +229,31 @@ fn g11_r01_a_transcript_rebinds_to_a_deployment_it_never_ran_on() {
         &plan,
         &registry,
     )
-    .expect("the defect: a cross-binding evaluation is not refused");
-
-    assert_ne!(
-        report.network_id, report.observed_environment.network_id,
-        "the defect: declared and observed networks differ in one report",
-    );
-    assert_ne!(
-        report.genesis_id, report.observed_environment.genesis_id,
-        "the defect: declared and observed genesis differ in one report",
+    .expect_err("a cross-binding evaluation is refused");
+    assert!(
+        matches!(
+            refusal,
+            NativeConformanceError::TranscriptDeploymentRebinding,
+        ),
+        "expected a deployment rebinding refusal, got {refusal:?}",
     );
 
-    let validated = validate_native_report(
-        report,
+    // And again at validation, which is the second of the two places the
+    // guide requires the environment to be compared. A caller reaching
+    // the validator directly with a report from elsewhere meets the same
+    // refusal, by a path that does not depend on the recomputation being
+    // the one that catches it.
+    let honest = evaluate(
+        &target,
+        &requested,
+        &executed,
+        &transcript,
+        &plan,
+        &registry,
+    )
+    .expect("the run under its own binding evaluates");
+    let refusal = validate_native_report(
+        honest,
         NativeReportValidationInputs {
             target: &target,
             binding: &substituted,
@@ -242,32 +263,42 @@ fn g11_r01_a_transcript_rebinds_to_a_deployment_it_never_ran_on() {
             transcript: &transcript,
         },
     )
-    .expect("the defect: the cross-binding report revalidates");
-    gate(&validated).expect("the defect: the cross-binding report gates");
+    .expect_err("a cross-binding validation is refused");
+    assert!(
+        matches!(
+            refusal,
+            NativeConformanceError::EnvironmentBindingMismatch
+                | NativeConformanceError::GenesisObservationMismatch,
+        ),
+        "expected an environment refusal at validation, got {refusal:?}",
+    );
 }
 
-/// `G11-R01`: a report names a script the executor was never handed.
+/// `G11-R01` **CLOSED**: a report cannot name a script the executor was
+/// never handed.
 ///
-/// The transcript keys responses by case identity alone and retains no
-/// request, so a fixture with the same case identity, the same encoded
-/// width, and a compatible expectation takes the executed fixture's place
-/// in the report. The row then presents the substituted script as the
-/// complete subject the executor was handed.
+/// The transcript retains the exact subject sent for each case, and
+/// evaluation compares it against the fixture being reported. A fixture
+/// with the same case identity, the same encoded width, and a compatible
+/// expectation no longer takes the executed fixture's place.
 ///
-/// The equal width matters: the fixture's exact `script_bytes`
-/// expectation is compared against the executor's reported figure, so a
-/// substitution of a *differently sized* script is caught by that
-/// comparison. That is a width check, not a subject binding.
+/// # The width is the point
 ///
-/// # Why this runs on the experimental path now
+/// The two scripts here are the same length deliberately. The only thing
+/// that used to stand between a substitution and a report was the exact
+/// `script_bytes` resource expectation, which compares *widths* — so a
+/// substitution that preserved the width sailed through it. Exact typed
+/// comparison of the subject is what makes the width irrelevant.
 ///
-/// Wave 1 closed the arbitrary-census route to the evidence path, so a
-/// two-fixture substitution can no longer be evaluated as evidence. The
-/// defect this test names is not that route: it is that the transcript
-/// retains no request, so nothing anywhere compares what was sent with
-/// what is reported. That is unchanged, and it is what Wave 2 repairs.
+/// # Both paths, not only the evidence one
+///
+/// This runs on the experimental path, where Wave 1 left it. That is not
+/// a weaker statement: the binding is a property of the transcript rather
+/// than of the trust state, so an experimental report cannot name an
+/// unexecuted script either. What the experimental path keeps is
+/// describing a run that did happen over a census the caller chose.
 #[test]
-fn g11_r01_a_report_names_a_script_the_executor_never_ran() {
+fn g11_r01_a_report_cannot_name_a_script_the_executor_never_ran() {
     let target = reviewed_target();
     let binding = development_binding(&target);
     let case = NativeCaseId::new(NativeCaseGroup::Comparison, None, 0);
@@ -299,32 +330,306 @@ fn g11_r01_a_report_names_a_script_the_executor_never_ran() {
         "the two scripts have the same encoded width",
     );
     assert_ne!(executed.script(), substituted.script());
-
-    let transcript = ExecutionTranscript::for_tests(
-        nonmock_handshake(),
-        observed_environment(),
-        ExecutorTrust::ReviewedNonMock,
-        BTreeMap::from([(case, contract_answer(case, &executed))]),
+    // The width-only defence would have passed this substitution: the one
+    // figure that used to be compared agrees exactly.
+    assert_eq!(
+        executed.expected_resources().script_bytes,
+        substituted.expected_resources().script_bytes,
+        "the substitution is invisible to the resource comparison",
     );
+
+    let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake: nonmock_handshake(),
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: subjects_of([&executed]),
+        responses: BTreeMap::from([(case, contract_answer(case, &executed))]),
+    });
 
     let plan = guide_nine_evidence_plan().expect("the plan is a partition");
     let registry = claim_registry().expect("the claim census is coherent");
     let reported =
         PrimitiveFixtureSet::new([substituted.clone()]).expect("one fixture is a census");
-    let report = evaluate_experimental(&target, &binding, &reported, &transcript, &plan, &registry)
-        .expect("the defect: the substituted census evaluates against another run's answers")
-        .into_report();
-
-    assert_eq!(report.cases.len(), 1);
-    assert_eq!(
-        report.cases[0].status,
-        CaseStatus::Passed,
-        "the defect: the substituted subject passes",
+    let refusal =
+        evaluate_experimental(&target, &binding, &reported, &transcript, &plan, &registry)
+            .expect_err("the substituted census is refused against another run's answers");
+    assert!(
+        matches!(
+            refusal,
+            NativeConformanceError::TranscriptSubjectMismatch(reported) if reported == case,
+        ),
+        "expected a subject mismatch for the substituted case, got {refusal:?}",
     );
+
+    // The executed fixture still evaluates, so the refusal is a binding
+    // and not a blanket one.
+    let honest = PrimitiveFixtureSet::new([executed]).expect("one fixture is a census");
+    let report = evaluate_experimental(&target, &binding, &honest, &transcript, &plan, &registry)
+        .expect("the executed census evaluates against its own run")
+        .into_report();
+    assert_eq!(report.cases.len(), 1);
+    assert_eq!(report.cases[0].status, CaseStatus::Passed);
+}
+
+/// `G11-R01` **CLOSED**: a substituted initial stack is refused too.
+///
+/// The script is one member of the subject and the stack is another. A
+/// repair that compared only the program would leave the same
+/// substitution available one field along.
+#[test]
+fn g11_r01_a_report_cannot_name_an_initial_stack_the_executor_never_ran() {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let case = NativeCaseId::new(NativeCaseGroup::Comparison, None, 0);
+    let program = pushes(&target, 0x01);
+
+    let state = |stack: &[StackItem]| {
+        PrimitiveFixture::state(
+            &target,
+            &binding,
+            FixtureStatement {
+                case,
+                script: FixtureScript::Typed(&program),
+                initial_stack: stack,
+                context: None,
+                expected: ExpectedPrimitiveOutcome::accept(None),
+                leaf_version: LeafVersionStatus::Reviewed,
+                unreviewed_leaf_version: None,
+                enforcement_layer: EnforcementLayer::Consensus,
+            },
+        )
+        .expect("the fixture states")
+    };
+    let item = |byte: u8| StackItem::new(&target, vec![byte]).expect("a one-byte item is admitted");
+    let executed = state(&[item(0x07)]);
+    let substituted = state(&[item(0x09)]);
+    // One item either way, so the exact `initial_stack_items` expectation
+    // agrees and sees nothing.
     assert_eq!(
-        report.cases[0].fixture.script,
-        substituted.script().to_vec(),
-        "the defect: the report names the script that was never run",
+        executed.expected_resources().initial_stack_items,
+        substituted.expected_resources().initial_stack_items,
+    );
+
+    let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake: nonmock_handshake(),
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: subjects_of([&executed]),
+        responses: BTreeMap::from([(case, contract_answer(case, &executed))]),
+    });
+
+    let (plan, registry) = plan_and_registry();
+    let reported = PrimitiveFixtureSet::new([substituted]).expect("one fixture is a census");
+    let refusal =
+        evaluate_experimental(&target, &binding, &reported, &transcript, &plan, &registry)
+            .expect_err("the substituted stack is refused");
+    assert!(
+        matches!(
+            refusal,
+            NativeConformanceError::TranscriptSubjectMismatch(reported) if reported == case,
+        ),
+        "expected a subject mismatch, got {refusal:?}",
+    );
+}
+
+/// `G11-R01` **CLOSED**: a transcript answering a case it never asked
+/// about is refused.
+///
+/// A transcript whose two halves do not correspond describes no run. This
+/// is the half the per-case comparison cannot reach: a response with no
+/// request is not a fixture being reported wrongly, it is an answer that
+/// belongs to some other exchange.
+#[test]
+fn g11_r01_a_response_for_a_case_never_sent_is_refused() {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let case = NativeCaseId::new(NativeCaseGroup::Comparison, None, 0);
+    let stray = NativeCaseId::new(NativeCaseGroup::Comparison, None, 1);
+
+    let program = pushes(&target, 0x01);
+    let fixture = PrimitiveFixture::new(
+        &target,
+        &binding,
+        case,
+        &program,
+        &[],
+        None,
+        ExpectedPrimitiveOutcome::accept(None),
+    )
+    .expect("the fixture states");
+
+    let mut responses = BTreeMap::from([(case, contract_answer(case, &fixture))]);
+    responses.insert(stray, contract_answer(stray, &fixture));
+    let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake: nonmock_handshake(),
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: subjects_of([&fixture]),
+        responses,
+    });
+
+    let (plan, registry) = plan_and_registry();
+    let fixtures = PrimitiveFixtureSet::new([fixture]).expect("one fixture is a census");
+    let refusal =
+        evaluate_experimental(&target, &binding, &fixtures, &transcript, &plan, &registry)
+            .expect_err("an answer with no question is refused");
+    assert!(
+        matches!(
+            refusal,
+            NativeConformanceError::UnrequestedCaseResponse(answered) if answered == stray,
+        ),
+        "expected an unrequested-response refusal naming the stray case, got {refusal:?}",
+    );
+}
+
+/// `G11-R01` **CLOSED**: a case with no retained request is refused
+/// before its answer is read.
+///
+/// The pre-existing missing-response refusal is a different statement: it
+/// says the executor did not answer. This one says the executor was never
+/// asked, which is what a report built from another run's transcript
+/// looks like when the case identities happen to line up.
+#[test]
+fn g11_r01_a_case_that_was_never_sent_is_refused() {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let case = NativeCaseId::new(NativeCaseGroup::Comparison, None, 0);
+
+    let program = pushes(&target, 0x01);
+    let fixture = PrimitiveFixture::new(
+        &target,
+        &binding,
+        case,
+        &program,
+        &[],
+        None,
+        ExpectedPrimitiveOutcome::accept(None),
+    )
+    .expect("the fixture states");
+
+    // An answer for the case, and no record of ever having asked.
+    let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake: nonmock_handshake(),
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: BTreeMap::new(),
+        responses: BTreeMap::from([(case, contract_answer(case, &fixture))]),
+    });
+
+    let (plan, registry) = plan_and_registry();
+    let fixtures = PrimitiveFixtureSet::new([fixture]).expect("one fixture is a census");
+    let refusal =
+        evaluate_experimental(&target, &binding, &fixtures, &transcript, &plan, &registry)
+            .expect_err("a case that was never sent is refused");
+    assert!(
+        matches!(
+            refusal,
+            NativeConformanceError::UnrequestedCaseResponse(answered) if answered == case,
+        ),
+        "expected the unanswered half to be named, got {refusal:?}",
+    );
+}
+
+/// `G11-R01` **CLOSED**: a case sent and never answered is still refused.
+///
+/// Checked because the repair added a request map beside the response
+/// map, and a repair that read only the new one would have lost the old
+/// refusal.
+#[test]
+fn g11_r01_a_case_sent_and_never_answered_is_refused() {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let case = NativeCaseId::new(NativeCaseGroup::Comparison, None, 0);
+
+    let program = pushes(&target, 0x01);
+    let fixture = PrimitiveFixture::new(
+        &target,
+        &binding,
+        case,
+        &program,
+        &[],
+        None,
+        ExpectedPrimitiveOutcome::accept(None),
+    )
+    .expect("the fixture states");
+
+    let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake: nonmock_handshake(),
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: subjects_of([&fixture]),
+        responses: BTreeMap::new(),
+    });
+
+    let (plan, registry) = plan_and_registry();
+    let fixtures = PrimitiveFixtureSet::new([fixture]).expect("one fixture is a census");
+    let refusal =
+        evaluate_experimental(&target, &binding, &fixtures, &transcript, &plan, &registry)
+            .expect_err("an unanswered case is refused");
+    assert!(
+        matches!(
+            refusal,
+            NativeConformanceError::MissingCaseResponse(unanswered) if unanswered == case,
+        ),
+        "expected a missing-response refusal, got {refusal:?}",
+    );
+}
+
+/// `G11-R01` **CLOSED**: a prototype construction cannot be substituted
+/// under the same case name.
+///
+/// The compound counterpart, and the sharpest of the substitutions: a
+/// row's whole claim is that one exact tree held together, so a report
+/// naming a construction the executor never built would credit the
+/// relation to a tree nobody materialized.
+#[test]
+fn g11_r01_a_prototype_construction_cannot_be_substituted() {
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let canonical = wide_floor_case_matrix(&target).expect("the wide-floor matrix is authored");
+
+    // The run: the canonical matrix, honestly executed.
+    let transcript = prototype_transcript(&target, &binding, canonical.rows());
+
+    // The report: the same rows with one row's construction replaced by
+    // another canonical row's. Both constructions are real and both are
+    // coherent, so nothing local to the fixture notices.
+    let mut rows = canonical.rows().to_vec();
+    assert!(rows.len() >= 2, "the substitution needs two rows");
+    let donor = rows[1].construction.clone();
+    assert_ne!(
+        rows[0].construction, donor,
+        "the two rows state different constructions",
+    );
+    let substituted_case = rows[0].case.clone();
+    rows[0].construction = donor;
+    rows[0].script = rows[1].script.clone();
+
+    let refusal = evaluate_experimental_prototypes(
+        &target,
+        &binding,
+        PrototypeRelation::WideFloorRelation,
+        &rows,
+        &transcript,
+    )
+    .expect_err("a substituted construction is refused");
+    assert!(
+        matches!(
+            refusal,
+            NativeConformanceError::PrototypeTranscriptSubjectMismatch(ref case)
+                if *case == substituted_case,
+        ),
+        "expected a prototype subject mismatch, got {refusal:?}",
     );
 }
 
@@ -378,12 +683,15 @@ fn g11_r02_a_trivial_true_script_cannot_bear_signature_evidence() {
     // What has closed is the route from that label to evidence.
     let fixtures = PrimitiveFixtureSet::new([fixture.clone()]).expect("a census assembles");
     let (plan, registry) = plan_and_registry();
-    let transcript = ExecutionTranscript::for_tests(
-        nonmock_handshake(),
-        observed_environment(),
-        ExecutorTrust::ReviewedNonMock,
-        BTreeMap::from([(case, contract_answer(case, &fixture))]),
-    );
+    let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake: nonmock_handshake(),
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: subjects_of([&fixture]),
+        responses: BTreeMap::from([(case, contract_answer(case, &fixture))]),
+    });
 
     // The only report an arbitrary census can produce is the experimental
     // one, and it says so in the document as well as in the type.
@@ -446,12 +754,15 @@ fn g11_r02_an_arbitrary_census_is_refused_on_provenance_not_completeness() {
         "the arbitrary census is not the canonical one",
     );
 
-    let transcript = ExecutionTranscript::for_tests(
-        nonmock_handshake(),
-        observed_environment(),
-        ExecutorTrust::ReviewedNonMock,
-        BTreeMap::from([(case, contract_answer(case, &fixture))]),
-    );
+    let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake: nonmock_handshake(),
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: subjects_of([&fixture]),
+        responses: BTreeMap::from([(case, contract_answer(case, &fixture))]),
+    });
     let (plan, registry) = plan_and_registry();
 
     let refusal = evaluate(
@@ -470,12 +781,15 @@ fn g11_r02_an_arbitrary_census_is_refused_on_provenance_not_completeness() {
 
     // The old refusal is what the new one replaces: the canonical census
     // gates, so the harness is not simply refusing everything.
-    let honest = ExecutionTranscript::for_tests(
-        nonmock_handshake(),
-        observed_environment(),
-        ExecutorTrust::ReviewedNonMock,
-        answers(&canonical),
-    );
+    let honest = ExecutionTranscript::for_tests(TranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake: nonmock_handshake(),
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: subjects_of(&canonical),
+        responses: answers(&canonical),
+    });
     let report = evaluate(&target, &binding, &canonical, &honest, &plan, &registry)
         .expect("the canonical census evaluates");
     let validated = validate_native_report(
@@ -544,12 +858,15 @@ fn g11_r02_changing_a_canonical_fixture_member_removes_gate_eligibility() {
         "exactly one member changed, and the census is the same size",
     );
 
-    let transcript = ExecutionTranscript::for_tests(
-        nonmock_handshake(),
-        observed_environment(),
-        ExecutorTrust::ReviewedNonMock,
-        answers(&mutated),
-    );
+    let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake: nonmock_handshake(),
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: subjects_of(&mutated),
+        responses: answers(&mutated),
+    });
     let (plan, registry) = plan_and_registry();
     let refusal = evaluate(
         &target,
@@ -633,12 +950,15 @@ fn g11_r02_a_canonical_case_whose_claims_change_is_refused() {
         "the case identity is unchanged, so the census is the same size",
     );
 
-    let transcript = ExecutionTranscript::for_tests(
-        nonmock_handshake(),
-        observed_environment(),
-        ExecutorTrust::ReviewedNonMock,
-        answers(&mutated),
-    );
+    let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake: nonmock_handshake(),
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: subjects_of(&mutated),
+        responses: answers(&mutated),
+    });
     let (plan, registry) = plan_and_registry();
     let refusal = evaluate(
         &target,
@@ -680,12 +1000,15 @@ fn g11_r02_permuting_canonical_declaration_order_is_harmless() {
         "declaration order is not a member of the census",
     );
 
-    let transcript = ExecutionTranscript::for_tests(
-        nonmock_handshake(),
-        observed_environment(),
-        ExecutorTrust::ReviewedNonMock,
-        answers(&permuted),
-    );
+    let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake: nonmock_handshake(),
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: subjects_of(&permuted),
+        responses: answers(&permuted),
+    });
     let (plan, registry) = plan_and_registry();
     let wrapped = CanonicalPrimitiveFixtureSet::wrap_for_tests(permuted);
     let report = evaluate(&target, &binding, &wrapped, &transcript, &plan, &registry)
@@ -722,12 +1045,15 @@ fn g11_r04_consensus_resource_cases_pass_the_policy_resource_row() {
     let fixtures = canonical_fixture_set(&target, &binding).expect("the census states");
     let plan = guide_nine_evidence_plan().expect("the plan is a partition");
     let registry = claim_registry().expect("the claim census is coherent");
-    let transcript = ExecutionTranscript::for_tests(
-        nonmock_handshake(),
-        observed_environment(),
-        ExecutorTrust::ReviewedNonMock,
-        answers(&fixtures),
-    );
+    let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake: nonmock_handshake(),
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: subjects_of(&fixtures),
+        responses: answers(&fixtures),
+    });
     let report = evaluate(&target, &binding, &fixtures, &transcript, &plan, &registry)
         .expect("the run evaluates");
 
@@ -847,12 +1173,15 @@ fn g11_r05_the_augmented_census_route_to_the_gate_is_closed() {
     );
 
     let (plan, registry) = plan_and_registry();
-    let transcript = ExecutionTranscript::for_tests(
-        nonmock_handshake(),
-        observed_environment(),
-        ExecutorTrust::ReviewedNonMock,
+    let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake: nonmock_handshake(),
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: subjects_of(&fixtures),
         responses,
-    );
+    });
 
     // Half one: the augmented census is no longer an evidence subject.
     let refusal = evaluate(
@@ -925,12 +1254,15 @@ fn g11_r06_the_gate_accepts_a_run_with_no_workspace_provenance() {
         }
         handshake.included_local_topics = BTreeSet::new();
 
-        let transcript = ExecutionTranscript::for_tests(
+        let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+            target: &target,
+            binding: &binding,
             handshake,
-            observed_environment(),
-            ExecutorTrust::ReviewedNonMock,
-            answers(&fixtures),
-        );
+            environment: observed_environment(),
+            trust: ExecutorTrust::ReviewedNonMock,
+            requests: subjects_of(&fixtures),
+            responses: answers(&fixtures),
+        });
         let report = evaluate(&target, &binding, &fixtures, &transcript, &plan, &registry)
             .expect("the run evaluates");
         assert_eq!(
@@ -973,12 +1305,15 @@ fn g11_r06_a_contradictory_revision_pair_still_establishes_provenance() {
         Some("0000000000000000000000000000000000000000".to_owned());
     handshake.intended_executed_tip = Some("ffffffffffffffffffffffffffffffffffffffff".to_owned());
 
-    let transcript = ExecutionTranscript::for_tests(
+    let transcript = ExecutionTranscript::for_tests(TranscriptParts {
+        target: &target,
+        binding: &binding,
         handshake,
-        observed_environment(),
-        ExecutorTrust::ReviewedNonMock,
-        answers(&fixtures),
-    );
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: subjects_of(&fixtures),
+        responses: answers(&fixtures),
+    });
     let report = evaluate(&target, &binding, &fixtures, &transcript, &plan, &registry)
         .expect("the run evaluates");
     assert_ne!(
@@ -1081,13 +1416,20 @@ fn prototype_answers(
 }
 
 /// The run over one matrix, as a transcript.
-fn prototype_transcript(matrix: &[CompoundPrototypeFixture]) -> ExecutionTranscript {
-    ExecutionTranscript::prototypes_for_tests(
-        nonmock_handshake(),
-        observed_environment(),
-        ExecutorTrust::ReviewedNonMock,
-        prototype_answers(matrix),
-    )
+fn prototype_transcript(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    matrix: &[CompoundPrototypeFixture],
+) -> ExecutionTranscript {
+    ExecutionTranscript::prototypes_for_tests(PrototypeTranscriptParts {
+        target,
+        binding,
+        handshake: nonmock_handshake(),
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: prototype_subjects_of(matrix),
+        responses: prototype_answers(matrix),
+    })
 }
 
 /// `G11-R03` **CLOSED**: a trivial true leaf cannot certify the
@@ -1109,7 +1451,7 @@ fn g11_r03_a_trivial_leaf_cannot_certify_the_wide_floor_relation() {
     );
 
     let matrix = vec![forgery];
-    let transcript = prototype_transcript(&matrix);
+    let transcript = prototype_transcript(&target, &binding, &matrix);
 
     // The experimental path still describes the run, and says what it is.
     let experimental = evaluate_experimental_prototypes(
@@ -1161,7 +1503,7 @@ fn g11_r03_the_canonical_wide_floor_matrix_is_the_evidence_subject() {
     let target = reviewed_target();
     let binding = development_binding(&target);
     let canonical = wide_floor_case_matrix(&target).expect("the canonical matrix states");
-    let transcript = prototype_transcript(canonical.rows());
+    let transcript = prototype_transcript(&target, &binding, canonical.rows());
 
     let report = evaluate_prototypes(
         &target,
@@ -1211,7 +1553,7 @@ fn g11_r03_a_canonical_case_with_one_added_claim_fails() {
         "the added claim belongs to the relation, so coherence still holds",
     );
 
-    let transcript = prototype_transcript(&rows);
+    let transcript = prototype_transcript(&target, &binding, &rows);
     let case = rows[0].case.clone();
     let forged = WideFloorPrototypeMatrix::wrap_for_tests(rows);
     let refusal = evaluate_prototypes(
@@ -1249,7 +1591,7 @@ fn g11_r03_a_canonical_case_with_one_removed_claim_fails() {
         .expect("the row bears on a claim");
     rows[index].claims.remove(&dropped);
 
-    let transcript = prototype_transcript(&rows);
+    let transcript = prototype_transcript(&target, &binding, &rows);
     let case = rows[index].case.clone();
     let forged = WideFloorPrototypeMatrix::wrap_for_tests(rows);
     let refusal = evaluate_prototypes(
@@ -1289,7 +1631,7 @@ fn g11_r03_replacing_the_canonical_program_under_the_same_case_name_fails() {
         "the substituted construction is internally coherent",
     );
 
-    let transcript = prototype_transcript(&rows);
+    let transcript = prototype_transcript(&target, &binding, &rows);
     let forged = WideFloorPrototypeMatrix::wrap_for_tests(rows);
     let refusal = evaluate_prototypes(
         &target,
@@ -1332,7 +1674,7 @@ fn g11_r03_replacing_the_constructor_successor_program_fails() {
         "an arbitrary nonempty successor program is locally coherent",
     );
 
-    let transcript = prototype_transcript(&rows);
+    let transcript = prototype_transcript(&target, &binding, &rows);
     let forged = ConstructorPrototypeMatrix::wrap_for_tests(rows);
     let refusal = evaluate_prototypes(
         &target,
@@ -1389,11 +1731,14 @@ fn g11_r03_raw_bytes_are_not_reported_as_a_typed_program() {
         expected_resources: recorded_only(),
     };
     let matrix = vec![fixture];
-    let transcript = ExecutionTranscript::prototypes_for_tests(
-        nonmock_handshake(),
-        observed_environment(),
-        ExecutorTrust::ReviewedNonMock,
-        BTreeMap::from([(
+    let transcript = ExecutionTranscript::prototypes_for_tests(PrototypeTranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake: nonmock_handshake(),
+        environment: observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: prototype_subjects_of(&matrix),
+        responses: BTreeMap::from([(
             case.clone(),
             NativePrototypeResponse {
                 schema: NATIVE_PROTOCOL_SCHEMA,
@@ -1405,7 +1750,7 @@ fn g11_r03_raw_bytes_are_not_reported_as_a_typed_program() {
                 resources: NativeResourceObservation::default(),
             },
         )]),
-    );
+    });
     let report = evaluate_experimental_prototypes(
         &target,
         &binding,
@@ -1423,7 +1768,7 @@ fn g11_r03_raw_bytes_are_not_reported_as_a_typed_program() {
     // The canonical rows, whose scripts are emitted programs' own
     // encodings, still report the provenance they actually have.
     let canonical = wide_floor_case_matrix(&target).expect("the canonical matrix states");
-    let honest = prototype_transcript(canonical.rows());
+    let honest = prototype_transcript(&target, &binding, canonical.rows());
     let canonical_report = evaluate_prototypes(
         &target,
         &binding,

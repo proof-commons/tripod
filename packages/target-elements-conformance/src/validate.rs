@@ -441,6 +441,35 @@ fn evaluate_census(
         return Err(NativeConformanceError::TargetContractMismatch);
     }
 
+    // The run this report describes must be a run under this contract and
+    // this binding. The transcript retains both, so the question is
+    // answered by exact typed comparison rather than by the case
+    // identities happening to line up
+    // (´[PLAN-rule:guide11:transcript-binding]´).
+    if transcript.target() != &target.projection() {
+        return Err(NativeConformanceError::TranscriptTargetRebinding);
+    }
+    if transcript.deployment() != &binding.projection() {
+        return Err(NativeConformanceError::TranscriptDeploymentRebinding);
+    }
+    // The environment, a second time. The handshake comparison happened
+    // under whichever binding the *run* was requested with; this one
+    // happens under the binding the *report* is being stated against, so
+    // a rebound transcript fails here even if some unforeseen path
+    // reached evaluation with the two projections agreeing
+    // (´[PLAN-rule:guide11:environment-twice]´).
+    crate::executor::compare_environment(target, binding, transcript.environment())?;
+    // An answer with no question. A transcript whose two halves do not
+    // correspond describes no run at all, and a report built from one
+    // would present the responses of some other exchange.
+    if let Some(case) = transcript
+        .responses()
+        .keys()
+        .find(|case| !transcript.requests().contains_key(case))
+    {
+        return Err(NativeConformanceError::UnrequestedCaseResponse(*case));
+    }
+
     let mut cases = Vec::new();
     let mut per_requirement: BTreeMap<TargetEvidenceRequirementId, Vec<CaseStatus>> =
         BTreeMap::new();
@@ -474,6 +503,18 @@ fn evaluate_census(
         }
 
         let case = fixture.case();
+        // The subject being reported must be the subject that was sent.
+        // The expectation is deliberately not compared and could not be:
+        // under protocol revision 3 it never left this process, which is
+        // what makes the comparison below a comparison of the *question*
+        // rather than of the answer.
+        let requested = transcript
+            .requests()
+            .get(&case)
+            .ok_or(NativeConformanceError::MissingCaseRequest(case))?;
+        if requested != &fixture.subject() {
+            return Err(NativeConformanceError::TranscriptSubjectMismatch(case));
+        }
         let response = transcript
             .responses()
             .get(&case)
@@ -513,7 +554,7 @@ fn evaluate_census(
         schema: NATIVE_REPORT_SCHEMA,
         role,
         target_contract_version: definition.version().get(),
-        expectation_boundary: RequestExpectationBoundary::FixtureCarriesExpectation,
+        expectation_boundary: RequestExpectationBoundary::ExecutorReceivesSubjectOnly,
         environment: WireEnvironment::Development,
         network_id: binding.binding().network_id(),
         genesis_id: binding.binding().genesis_id(),
@@ -644,6 +685,29 @@ pub fn validate_native_report(
             offered: report.schema,
         });
     }
+    // A revision-2 report is a document about a run whose executor was
+    // handed the answer. It remains exactly that; what it is not is a
+    // report this harness validates, and saying so by name here is the
+    // difference between a loud refusal and a downstream field mismatch
+    // that a reader would have to decode
+    // (´[PLAN-rule:guide11:request-subject]´).
+    if report.expectation_boundary != RequestExpectationBoundary::ExecutorReceivesSubjectOnly {
+        return Err(
+            NativeConformanceError::UnsupportedRequestExpectationBoundary {
+                offered: report.expectation_boundary,
+            },
+        );
+    }
+    // The environment, checked here as well as inside the recomputation.
+    // The recomputation would reach it, but only by a path that must stay
+    // reachable; this one is stated at the validator's own boundary so
+    // that a rebound transcript fails whatever the path
+    // (´[PLAN-rule:guide11:environment-twice]´).
+    crate::executor::compare_environment(
+        inputs.target,
+        inputs.binding,
+        inputs.transcript.environment(),
+    )?;
 
     let recomputed = evaluate(
         inputs.target,

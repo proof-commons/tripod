@@ -222,6 +222,27 @@ fn evaluate_matrix(
         return Err(NativeConformanceError::TargetContractMismatch);
     }
 
+    // The same three welds the primitive path applies, for the same
+    // reason: a transcript is bound to the contract, the binding, and the
+    // subjects it was produced under
+    // (´[PLAN-rule:guide11:transcript-binding]´).
+    if transcript.target() != &target.projection() {
+        return Err(NativeConformanceError::TranscriptTargetRebinding);
+    }
+    if transcript.deployment() != &binding.projection() {
+        return Err(NativeConformanceError::TranscriptDeploymentRebinding);
+    }
+    crate::executor::compare_environment(target, binding, transcript.environment())?;
+    if let Some(case) = transcript
+        .prototype_responses()
+        .keys()
+        .find(|case| !transcript.prototype_requests().contains_key(case))
+    {
+        return Err(NativeConformanceError::UnrequestedPrototypeResponse(
+            case.clone(),
+        ));
+    }
+
     let mut cases = Vec::new();
     let mut seen: BTreeSet<PrototypeCaseId> = BTreeSet::new();
     let mut per_claim: BTreeMap<PrototypeClaim, Vec<(PrototypeCaseId, CaseStatus)>> =
@@ -251,6 +272,21 @@ fn evaluate_matrix(
             });
         }
 
+        // The construction, the program, and the witness stack being
+        // reported must be the ones that case was executed with. A
+        // substituted construction is the sharpest of these: a row's
+        // whole claim is that one exact tree held together, and a report
+        // naming a tree the executor never built would credit the
+        // relation to a construction nobody ran.
+        let requested = transcript
+            .prototype_requests()
+            .get(&fixture.case)
+            .ok_or_else(|| NativeConformanceError::MissingPrototypeRequest(fixture.case.clone()))?;
+        if requested != &fixture.subject() {
+            return Err(NativeConformanceError::PrototypeTranscriptSubjectMismatch(
+                fixture.case.clone(),
+            ));
+        }
         let response = transcript
             .prototype_responses()
             .get(&fixture.case)
@@ -291,7 +327,7 @@ fn evaluate_matrix(
         role,
         relation,
         target_contract_version: definition.version().get(),
-        expectation_boundary: RequestExpectationBoundary::FixtureCarriesExpectation,
+        expectation_boundary: RequestExpectationBoundary::ExecutorReceivesSubjectOnly,
         environment: WireEnvironment::Development,
         network_id: binding.binding().network_id(),
         genesis_id: binding.binding().genesis_id(),
@@ -607,6 +643,23 @@ pub fn validate_prototype_report(
     if report.role != report.relation.report_role() {
         return Err(NativeConformanceError::PrototypeReportRoleMismatch);
     }
+    // A revision-2 prototype report is not a revision-3 one, and is
+    // refused by name rather than by a downstream field difference
+    // (´[PLAN-rule:guide11:request-subject]´).
+    if report.expectation_boundary != RequestExpectationBoundary::ExecutorReceivesSubjectOnly {
+        return Err(
+            NativeConformanceError::UnsupportedRequestExpectationBoundary {
+                offered: report.expectation_boundary,
+            },
+        );
+    }
+    // The environment, at the validator's own boundary as well as inside
+    // the recomputation (´[PLAN-rule:guide11:environment-twice]´).
+    crate::executor::compare_environment(
+        inputs.target,
+        inputs.binding,
+        inputs.transcript.environment(),
+    )?;
 
     let recomputed = evaluate_prototypes(
         inputs.target,

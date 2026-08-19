@@ -9,7 +9,7 @@
 use std::collections::BTreeMap;
 
 use crate::error::NativeConformanceError;
-use crate::executor::{ExecutionTranscript, ExecutorTrust};
+use crate::executor::{ExecutionTranscript, ExecutorTrust, PrototypeTranscriptParts};
 use crate::protocol::{
     NATIVE_PROTOCOL_SCHEMA, NativePrototypeResponse, NativeResourceObservation, NativeVerdict,
     ObservedFailureClass,
@@ -44,6 +44,8 @@ fn matrix(
 /// tests below use it only as the fixed input the validator recomputes
 /// from.
 fn agreeing_transcript(
+    target: &target_elements::ReviewedElementsTapscriptDefinition,
+    binding: &target_elements::ReviewedDevelopmentBinding,
     matrix: &[CompoundPrototypeFixture],
     trust: ExecutorTrust,
 ) -> ExecutionTranscript {
@@ -73,12 +75,15 @@ fn agreeing_transcript(
             },
         );
     }
-    ExecutionTranscript::prototypes_for_tests(
-        crate::tests::support::nonmock_handshake(),
-        crate::tests::support::observed_environment(),
+    ExecutionTranscript::prototypes_for_tests(PrototypeTranscriptParts {
+        target,
+        binding,
+        handshake: crate::tests::support::nonmock_handshake(),
+        environment: crate::tests::support::observed_environment(),
         trust,
+        requests: crate::tests::support::prototype_subjects_of(matrix),
         responses,
-    )
+    })
 }
 
 /// One evaluated report over the wide-floor matrix.
@@ -93,7 +98,7 @@ fn report_over(
     let target = crate::tests::support::reviewed_target();
     let binding = crate::tests::support::development_binding(&target);
     let matrix = matrix(&target);
-    let transcript = agreeing_transcript(matrix.rows(), trust);
+    let transcript = agreeing_transcript(&target, &binding, matrix.rows(), trust);
     let report = evaluate_prototypes(
         &target,
         &binding,
@@ -195,7 +200,7 @@ fn a_run_of_no_cases_is_not_a_passing_run() {
     let target = crate::tests::support::reviewed_target();
     let binding = crate::tests::support::development_binding(&target);
     let empty: Vec<CompoundPrototypeFixture> = Vec::new();
-    let transcript = agreeing_transcript(&empty, ExecutorTrust::ReviewedNonMock);
+    let transcript = agreeing_transcript(&target, &binding, &empty, ExecutorTrust::ReviewedNonMock);
 
     let forged = WideFloorPrototypeMatrix::wrap_for_tests(empty.clone());
     assert!(matches!(
@@ -239,7 +244,12 @@ fn a_matrix_of_the_other_relation_is_refused() {
     let target = crate::tests::support::reviewed_target();
     let binding = crate::tests::support::development_binding(&target);
     let constructor = constructor_case_matrix(&target).expect("the constructor matrix is authored");
-    let transcript = agreeing_transcript(constructor.rows(), ExecutorTrust::ReviewedNonMock);
+    let transcript = agreeing_transcript(
+        &target,
+        &binding,
+        constructor.rows(),
+        ExecutorTrust::ReviewedNonMock,
+    );
 
     assert!(matches!(
         evaluate_experimental_prototypes(
@@ -411,12 +421,15 @@ fn a_disagreeing_verdict_fails_its_case_and_its_claims() {
             },
         );
     }
-    let transcript = ExecutionTranscript::prototypes_for_tests(
-        crate::tests::support::nonmock_handshake(),
-        crate::tests::support::observed_environment(),
-        ExecutorTrust::ReviewedNonMock,
+    let transcript = ExecutionTranscript::prototypes_for_tests(PrototypeTranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake: crate::tests::support::nonmock_handshake(),
+        environment: crate::tests::support::observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: crate::tests::support::prototype_subjects_of(matrix.rows()),
         responses,
-    );
+    });
 
     let report = evaluate_prototypes(
         &target,
@@ -496,12 +509,15 @@ fn an_executor_that_could_not_run_a_case_is_not_a_rejection() {
             },
         );
     }
-    let transcript = ExecutionTranscript::prototypes_for_tests(
-        crate::tests::support::nonmock_handshake(),
-        crate::tests::support::observed_environment(),
-        ExecutorTrust::ReviewedNonMock,
+    let transcript = ExecutionTranscript::prototypes_for_tests(PrototypeTranscriptParts {
+        target: &target,
+        binding: &binding,
+        handshake: crate::tests::support::nonmock_handshake(),
+        environment: crate::tests::support::observed_environment(),
+        trust: ExecutorTrust::ReviewedNonMock,
+        requests: crate::tests::support::prototype_subjects_of(matrix.rows()),
         responses,
-    );
+    });
 
     let report = evaluate_prototypes(
         &target,

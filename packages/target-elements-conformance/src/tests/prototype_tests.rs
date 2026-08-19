@@ -454,17 +454,17 @@ fn the_claim_census_has_no_repetitions() {
 // -- The protocol boundary ----------------------------------------
 
 #[test]
-fn a_request_without_a_construction_is_byte_identical_to_a_schema_two_request() {
-    // The whole justification for keeping the protocol revision at 2:
-    // the new field is omitted from the wire entirely rather than
-    // written as null, so a schema-2 executor's strict framing sees
-    // exactly the message it always saw
+fn a_request_without_a_construction_omits_the_field_entirely() {
+    // The whole justification for the construction adding no revision of
+    // its own: the field is omitted from the wire entirely rather than
+    // written as null, so an executor that never advertised tree
+    // materialization sees a record its strict framing accepts
     // (´[PLAN-rule:guide10:schema-migration]´).
     let fixture = any_primitive_fixture();
     let request = NativeExecutionRequest {
         schema: NATIVE_PROTOCOL_SCHEMA,
         case: fixture.case(),
-        fixture,
+        subject: fixture.subject(),
         construction: None,
     };
 
@@ -482,7 +482,7 @@ fn a_tree_bearing_request_round_trips() {
     let request = NativeExecutionRequest {
         schema: NATIVE_PROTOCOL_SCHEMA,
         case: fixture.case(),
-        fixture,
+        subject: fixture.subject(),
         construction: Some(coherent(&target).construction),
     };
 
@@ -495,9 +495,10 @@ fn a_tree_bearing_request_round_trips() {
 
 #[test]
 fn an_executor_that_did_not_advertise_a_tree_is_not_sent_one() {
-    // The gate that keeps the protocol revision at 2, exercised rather
-    // than described. Without it the additive field would reach an
-    // executor whose strict framing rejects the whole message.
+    // The gate that keeps a construction away from an executor that
+    // cannot read one, exercised rather than described. Without it the
+    // additive field would reach an executor whose strict framing rejects
+    // the whole message.
     let mut handshake = crate::tests::support::nonmock_handshake();
     handshake
         .capabilities
@@ -513,8 +514,8 @@ fn an_executor_that_did_not_advertise_a_tree_is_not_sent_one() {
 #[test]
 fn tree_materialization_is_an_advertised_capability() {
     // A tree-bearing request goes only to an executor that said it can
-    // build one. That is what makes the additive field safe for a
-    // schema-2 executor rather than merely convenient.
+    // build one. That is what makes the additive field safe for an
+    // executor that never advertised it, rather than merely convenient.
     let encoded = serde_json::to_string(&ExecutorCapability::TreeMaterialization)
         .expect("the capability encodes");
     assert_eq!(encoded, "\"tree_materialization\"");
