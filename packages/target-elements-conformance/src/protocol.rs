@@ -11,6 +11,16 @@
 //! stderr is not read at all, so there is no path by which arbitrary child
 //! bytes become first-party diagnostics.
 //!
+//! That closure is transitive, and it did not used to be. This side never
+//! read the executor's stderr, but the reviewed executor collapsed its
+//! *own* child's stderr into the note it then wrote as
+//! [`NativeConservationResponse::observed_detail`], so the same class of
+//! bytes arrived here anyway — through a field this side was reading
+//! rather than through a stream it was not. A detail is now what the
+//! adapter or the target *stated*: a method, a status, a target's own
+//! answer. Neither a child's stderr nor an operator's configuration path
+//! is one `(´[PLAN-rule:guide12-exec:failure-layers]´)`.
+//!
 //! Every record is read under an explicit byte bound
 //! ([`ProtocolLimits`]). At most `maximum + 1` bytes are taken before the
 //! record is refused, so an executor that writes without ever emitting a
@@ -59,14 +69,40 @@ use serde::{Deserialize, Serialize};
 
 use crate::conservation::{ConservationRowId, ConservationSubject};
 use crate::fixture::{NativeCaseId, PrimitiveExecutionSubject};
+use crate::lifecycle::{LifecycleOutcome, PublicHandoff};
 use crate::normalization::{
-    AuthorizationProfile, ClaimedOutput, NormalizationSubject, ObservedOutput,
+    AuthorizationProfile, ClaimedOutput, NormalizationClaim, NormalizationSubject, ObservedOutput,
 };
 use crate::prototype::{PrototypeCaseId, PrototypeConstruction, PrototypeExecutionSubject};
 
 /// The protocol revision this harness speaks.
 ///
-/// # Revision 3 removes the answer from the question
+/// # Revision 4 makes both sides describe the same exchange
+///
+/// Revision 3 was declared by two implementations that did not agree on
+/// what it was. The adapter wrote an `observed_openings` member on every
+/// conservation response and the typed reader here declared no such
+/// field while refusing unknown ones, so the harness could not parse the
+/// answers its own executor produced; and the lifecycle exchange had no
+/// typed record on this side at all, so the one workload whose evidence
+/// is a public record was read out of an untyped value tree. Neither is
+/// a difference of opinion a version number can hold: one revision means
+/// one schema, and revision 3 named two
+/// `(´[PLAN-rule:guide12-exec:protocol-revision]´)`.
+///
+/// So revision 4 states the union both sides were already implementing:
+/// the openings are a declared member of
+/// [`NativeConservationResponse`], and the lifecycle step has a request
+/// and a response type here like every other workload. Nothing is
+/// tolerated that was not declared, and the two implementations bump
+/// together — a revision that only one side moved to would reproduce
+/// the fault it exists to close.
+///
+/// This is a breaking change and is numbered as one. A revision-3
+/// executor is refused at the handshake rather than reconciled, on the
+/// same ground revision 2 was.
+///
+/// # Revision 3 removed the answer from the question
 ///
 /// A revision-2 request carried the complete fixture, expectation
 /// included, and asked the executor to discard it before executing. A
@@ -84,7 +120,7 @@ use crate::prototype::{PrototypeCaseId, PrototypeConstruction, PrototypeExecutio
 /// Revision 2 itself added the environment observation, the separated
 /// executor provenance roles, the bounded-record contract, and strict
 /// framing, and was refused for revision 1 on the same ground.
-pub const NATIVE_PROTOCOL_SCHEMA: u32 = 3;
+pub const NATIVE_PROTOCOL_SCHEMA: u32 = 4;
 
 /// Which part of the exchange the harness was in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -912,6 +948,37 @@ pub struct NativeConservationRequest {
     pub subject: ConservationSubject,
 }
 
+/// One confidential output's opening, as the target reported it.
+///
+/// # Why the target supplies these rather than the harness
+///
+/// The oracle predicts a commitment from an amount and two blinding
+/// factors. The materializer does not choose those factors — the node
+/// draws them — so without reading them back there is nothing for the
+/// oracle to predict, and §7.4's three-way comparison has no second
+/// point to meet at. The comparison then runs one way: the oracle
+/// predicts bytes from these openings, and the prediction is checked
+/// against the commitment the transaction actually carries. No expected
+/// value is ever rewritten to match an observation.
+///
+/// The blinding factors are the target's own statement about a
+/// transaction it built on a disposable development chain, and are
+/// evidence rather than credentials `(´[ADR015-rule:security:test-material]´)`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConservationOpening {
+    /// Which output of the materialized transaction this opens.
+    pub vout: u32,
+    /// The explicit amount the output commits to.
+    pub amount_satoshis: u64,
+    /// The asset the output commits to, in the node's own spelling.
+    pub asset: String,
+    /// The amount blinding factor the node drew.
+    pub amount_blinder: String,
+    /// The asset blinding factor the node drew.
+    pub asset_blinder: String,
+}
+
 /// What the target did with one conservation row.
 ///
 /// # Why this response carries bytes
@@ -952,6 +1019,12 @@ pub struct NativeConservationResponse {
     pub observed_value_commitments: Vec<Vec<u8>>,
     /// The output asset commitments the node read back, in output order.
     pub observed_asset_commitments: Vec<Vec<u8>>,
+    /// The openings the node reported for the outputs it created.
+    ///
+    /// Empty where the transaction was never built, where the target did
+    /// not accept it, or where it carries no confidential output whose
+    /// blinding factors the node holds.
+    pub observed_openings: Vec<ConservationOpening>,
 }
 
 impl NativeConservationResponse {
@@ -964,6 +1037,17 @@ impl NativeConservationResponse {
     /// describe a transaction that was built and judged, and a
     /// construction failure built nothing.
     ///
+    /// The openings are counted among those, and are the clearest case
+    /// of the rule rather than a borderline one. An opening is read back
+    /// out of a transaction the node created and confirmed, by looking
+    /// up the coins that transaction made; a run that reached no target
+    /// verdict created no such transaction, so there was nothing to look
+    /// up and no factor for the node to have drawn. A blinding factor
+    /// beside a layer saying the execution never happened is therefore
+    /// not an unusually detailed failure report — it is a value with no
+    /// possible provenance, and admitting it would let §7.4's
+    /// three-way comparison rest on one.
+    ///
     /// # Errors
     ///
     /// [`ResponseShapeDefect`] where the response is not a shape the
@@ -972,7 +1056,8 @@ impl NativeConservationResponse {
         if !self.observed_layer.is_target_verdict()
             && (self.transaction_bytes.is_some()
                 || !self.observed_value_commitments.is_empty()
-                || !self.observed_asset_commitments.is_empty())
+                || !self.observed_asset_commitments.is_empty()
+                || !self.observed_openings.is_empty())
         {
             return Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation);
         }
@@ -1077,6 +1162,230 @@ impl NativeNormalizationResponse {
                 || !self.observed_outputs.is_empty()
                 || self.authorization_profile.is_some()
                 || !self.observed_witness_sizes.is_empty())
+        {
+            return Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation);
+        }
+        Ok(())
+    }
+}
+
+/// Which half of the §13 lifecycle a step is.
+///
+/// The two roles are not two configurations of one step. Process A holds
+/// owner-private material and publishes; Process B holds none and reads.
+/// Naming them in the case identity is what lets the adapter dispatch on
+/// the role rather than on which optional subject member happens to be
+/// present.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum LifecycleStepRole {
+    /// Process A: build the object and publish the record.
+    Construct,
+    /// Process B: read the record and reconstruct the public fact.
+    Verify,
+}
+
+/// One lifecycle step's identity.
+///
+/// A single member, and deliberately not the shape any other record
+/// carries, on the reasoning [`NormalizationCaseId`] states: the adapter
+/// tells the record kinds apart by shape alone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LifecycleCaseId {
+    /// Which role this step is.
+    pub lifecycle: LifecycleStepRole,
+}
+
+/// What Process A is asked to build and publish.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LifecycleConstructSubject {
+    /// The claim whose normalized output becomes the published object.
+    pub claim: NormalizationClaim,
+    /// Whether to spend the object afterwards, building the stale row.
+    pub supersede: bool,
+}
+
+/// What Process B is asked to read.
+///
+/// The handoff and nothing else. The subject is the whole of what
+/// crosses the process boundary, so a member added here would be a
+/// member the lifecycle claim does not actually rest on the public
+/// record `(´[PLAN-rule:guide11-exec:request-subject]´)`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LifecycleVerifySubject {
+    /// The public record, exactly as Process A published it.
+    pub handoff: PublicHandoff,
+}
+
+/// The subject of one lifecycle step.
+///
+/// Untagged because the role is already stated in the case identity, and
+/// a second discriminator could disagree with the first. The two
+/// variants refuse unknown members and share none of their own, so the
+/// shapes are distinguishable without one.
+///
+/// Both subjects are boxed. Each carries a record of its own — a whole
+/// claim on one side, a whole published handoff on the other — so an
+/// unboxed enum would make every lifecycle request as large as whichever
+/// happened to be bigger. The boxes are invisible on the wire.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum LifecycleSubject {
+    /// Process A's subject.
+    Construct(Box<LifecycleConstructSubject>),
+    /// Process B's subject.
+    Verify(Box<LifecycleVerifySubject>),
+}
+
+/// One lifecycle step, handed to the executor.
+///
+/// Carries the role and its subject. No expected outcome crosses this
+/// boundary `(´[PLAN-rule:guide11-exec:request-subject]´)`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeLifecycleRequest {
+    /// The protocol revision.
+    pub schema: u32,
+    /// The step being asked about.
+    pub case: LifecycleCaseId,
+    /// Exactly what to build or read.
+    pub subject: LifecycleSubject,
+}
+
+/// One thing Process B looked for, and what it found.
+///
+/// # Neither side of a check is a verdict
+///
+/// A check records an expectation and an observation and whether they
+/// agree, and stops there. Whether a run passes is the typed report's
+/// judgement, made in the package that owns the matrix — for the reason
+/// `G11-W7-06` recorded. An executor that decided a row here would be
+/// supplying the answer it is graded against.
+///
+/// Both sides are carried as text. The values compared are of several
+/// kinds — an identifier, an amount, a flag — and a member that were
+/// sometimes a number and sometimes a string is the untyped value tree
+/// this revision exists to remove. The agreement is determined by the
+/// adapter over the values themselves, before either is spelled, so
+/// nothing is decided by how they print.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LifecycleCheck {
+    /// What was checked.
+    pub check: String,
+    /// What the record led Process B to expect.
+    pub expected: String,
+    /// What the chain actually said.
+    pub observed: String,
+    /// Whether the two agree, as the adapter compared them.
+    pub agrees: bool,
+}
+
+/// One outpoint.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LifecycleOutpoint {
+    /// The transaction.
+    pub txid: String,
+    /// The output index.
+    pub vout: u32,
+}
+
+/// The spend Process B built out of its own funds.
+///
+/// # What this is evidence of
+///
+/// Not ownership of the published object — the opposite. Process B
+/// builds a transaction from funds it located itself, so that a failure
+/// to spend the owner's object is a statement about ownership rather
+/// than about a process that could not build anything at all.
+/// [`Self::consumed_owner_object`] is the member that would falsify the
+/// lane, and it is reported rather than assumed.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LifecycleSpend {
+    /// The transaction Process B built and confirmed.
+    pub txid: String,
+    /// What it paid, in satoshis.
+    pub amount: u64,
+    /// The address it paid, derived fresh in this process.
+    pub destination: String,
+    /// That address's script.
+    pub destination_script: String,
+    /// The outpoint it actually consumed.
+    pub consumed_outpoint: LifecycleOutpoint,
+    /// Whether that outpoint was the owner's published object.
+    pub consumed_owner_object: bool,
+}
+
+/// What one lifecycle step did.
+///
+/// # One record for both roles
+///
+/// Process A reports a handoff and what it published; Process B reports
+/// checks and a spend. They are one type because they are one exchange,
+/// and because the members each role leaves empty are exactly what
+/// [`Self::validate_shape`] can then hold to.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeLifecycleResponse {
+    /// The protocol revision.
+    pub schema: u32,
+    /// The step answered.
+    pub case: LifecycleCaseId,
+    /// What the step did.
+    pub outcome: LifecycleOutcome,
+    /// The record Process A published, where it published one.
+    pub handoff: Option<PublicHandoff>,
+    /// The authorization profile the owner's signature used.
+    pub authorization_profile: Option<AuthorizationProfile>,
+    /// The witness item sizes of each input, in input order.
+    pub observed_witness_sizes: Vec<Vec<usize>>,
+    /// The outputs the target's decoder reported.
+    pub observed_outputs: Vec<ObservedOutput>,
+    /// What Process B looked for, in the order it looked.
+    pub checks: Vec<LifecycleCheck>,
+    /// The spend Process B built, where it got that far.
+    pub spend: Option<LifecycleSpend>,
+    /// The transaction that consumed the object, where one was built.
+    pub superseded_by: Option<String>,
+    /// Why the stale row was not built, where it was not.
+    pub supersede_failure: Option<String>,
+    /// What the adapter said, where the step did not run.
+    pub detail: Option<String>,
+}
+
+impl NativeLifecycleResponse {
+    /// Whether this response contradicts itself.
+    ///
+    /// A step that did not run observed nothing, on exactly the
+    /// reasoning [`NativeConservationResponse::validate_shape`] states:
+    /// a handoff names a transaction that reached a block, a check
+    /// reports what the chain said, and a spend is a transaction that
+    /// was confirmed. A step that reached no verdict produced none of
+    /// them, so any of them beside such an outcome is a value with no
+    /// possible provenance.
+    ///
+    /// The detail is not counted. It is what the adapter said about the
+    /// failure, and a failure is entitled to a reason.
+    ///
+    /// # Errors
+    ///
+    /// [`ResponseShapeDefect`] where the response is not a shape the
+    /// protocol defines.
+    pub const fn validate_shape(&self) -> Result<(), ResponseShapeDefect> {
+        if !self.outcome.step_ran()
+            && (self.handoff.is_some()
+                || self.authorization_profile.is_some()
+                || !self.observed_witness_sizes.is_empty()
+                || !self.observed_outputs.is_empty()
+                || !self.checks.is_empty()
+                || self.spend.is_some()
+                || self.superseded_by.is_some())
         {
             return Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation);
         }

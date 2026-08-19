@@ -48,9 +48,14 @@ import argparse
 import json
 import os
 import shutil
-import subprocess
 import sys
 import time
+
+from executor_supervision import (
+    DEFAULT_TOTAL_DEADLINE_SECONDS,
+    Deadline,
+    SupervisedExecutor,
+)
 
 # Kept in step with the adapter's constant of the same name. Stated here
 # as well because a runner that read whatever the adapter sent would not
@@ -64,13 +69,6 @@ FRESH_PROCESS_HANDOFF_SCHEMA = "tripod-fresh-process-handoff-1"
 FOREIGN_GENESIS_ID = "de" * 32
 
 
-def read_record(stream, what):
-    line = stream.readline()
-    if line == "":
-        raise SystemExit("the executor closed its output before the %s" % what)
-    return json.loads(line)
-
-
 class AdapterProcess:
     """One adapter process, its handshake, and its environment observation.
 
@@ -78,19 +76,28 @@ class AdapterProcess:
     operating-system process that starts its own node, answers, and is
     waited on until it has exited -- so a step cannot accidentally be
     served by a process a previous step left running.
+
+    The supervision itself is `SupervisedExecutor`'s: this lane spawns a
+    node-starting child exactly as the matrix runners do, and the
+    bounded reads, the process group, the total deadline, and the
+    cleanup on every exit path are stated once there rather than three
+    times (G12-R15). What remains here is what is particular to this
+    lane -- the three arguments that distinguish one process from
+    another, and the capability the handshake must advertise.
     """
 
-    def __init__(self, executor, chain_dir, wallet_name, schema):
+    def __init__(self, executor, chain_dir, wallet_name, schema, deadline):
         self.executor = executor
         self.chain_dir = chain_dir
         self.wallet_name = wallet_name
         self.schema = schema
-        self.child = None
+        self.deadline = deadline
+        self.supervised = None
         self.handshake = None
         self.environment = None
 
     def __enter__(self):
-        self.child = subprocess.Popen(
+        self.supervised = SupervisedExecutor(
             [
                 self.executor,
                 # This lane is not the conformance harness and does not
@@ -101,38 +108,50 @@ class AdapterProcess:
                 "--datadir", self.chain_dir,
                 "--wallet-name", self.wallet_name,
             ],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=None,
-            text=True,
+            self.deadline,
+            label="lifecycle adapter (%s)" % self.wallet_name,
         )
-        self.send({"schema": self.schema})
-        self.handshake = read_record(self.child.stdout, "handshake")
-        self.environment = read_record(self.child.stdout, "environment observation")
-        if "fresh_process_lifecycle" not in self.handshake.get("capabilities", []):
-            self.child.kill()
-            raise SystemExit(
-                "the executor advertised no fresh-process-lifecycle capability; "
-                "the launcher must pass --enable-wallet"
-            )
+        self.supervised.__enter__()
+        try:
+            self.handshake, self.environment = self.supervised.handshake(self.schema)
+            if "fresh_process_lifecycle" not in self.handshake.get("capabilities", []):
+                raise self.supervised.refuse(
+                    "the executor advertised no fresh-process-lifecycle capability; "
+                    "the launcher must pass --enable-wallet"
+                )
+        except BaseException:
+            # A failure during the opening exchange leaves a child this
+            # block never entered, so it is cleaned up here rather than
+            # by a context manager the caller never got.
+            self.supervised.__exit__()
+            raise
         return self
 
     def __exit__(self, *_ignored):
-        if self.child.poll() is None:
-            self.child.stdin.close()
-            self.child.wait(timeout=180)
+        self.supervised.__exit__()
+        return False
 
     def send(self, value):
-        self.child.stdin.write(json.dumps(value, separators=(",", ":")) + "\n")
-        self.child.stdin.flush()
+        self.supervised.send(value)
 
     def ask(self, role, subject):
         self.send({"schema": self.schema, "case": {"lifecycle": role}, "subject": subject})
-        return read_record(self.child.stdout, "response for %s" % role)
+        return self.supervised.read("response for %s" % role)
 
     @property
     def pid(self):
-        return self.child.pid
+        return self.supervised.pid
+
+    @property
+    def exit_status(self):
+        """How the process ended, readable after the block that owned it.
+
+        The boundary claim rests on this: a creator that had not exited
+        when the wallet was destroyed means the boundary did not hold,
+        and the report gate refuses the run on it. `None` means the
+        process was still running.
+        """
+        return self.supervised.exit_status
 
     def genesis(self):
         return bytes(self.environment["genesis_id"]).hex()
@@ -267,11 +286,21 @@ def main(argv):
     parser.add_argument("--report", required=True)
     parser.add_argument("--expect-network-id", default=None)
     parser.add_argument("--expect-genesis-id", default=None)
+    parser.add_argument(
+        "--total-deadline-seconds",
+        type=float,
+        default=DEFAULT_TOTAL_DEADLINE_SECONDS,
+        help="the bound on the whole run, not on any single step",
+    )
     arguments = parser.parse_args(argv)
 
     with open(arguments.matrix) as handle:
         matrix = json.load(handle)
     schema = matrix["schema"]
+    # One deadline over the whole lane, shared by every process this run
+    # starts: two reading passes each just under a per-process bound
+    # would otherwise be unbounded together (G12-R15).
+    deadline = Deadline(arguments.total_deadline_seconds)
     claim = claim_of(matrix)
 
     chain_dir = os.path.abspath(arguments.chain_dir)
@@ -288,7 +317,7 @@ def main(argv):
     # ---- Process A ------------------------------------------------------
     print("Process A: constructing", flush=True)
     a_wallet = "guide11-lifecycle-a"
-    with AdapterProcess(arguments.executor, chain_dir, a_wallet, schema) as process_a:
+    with AdapterProcess(arguments.executor, chain_dir, a_wallet, schema, deadline) as process_a:
         observed_genesis = process_a.genesis()
         observed_network = bytes(process_a.environment["network_id"]).hex()
         for expected, observed, role in (
@@ -332,7 +361,7 @@ def main(argv):
     # ---- the destruction boundary ---------------------------------------
     print("boundary: destroying creator-local state", flush=True)
     shutil.rmtree(wallet_path, ignore_errors=True)
-    exit_status = process_a.child.poll()
+    exit_status = process_a.exit_status
     record["destruction"] = {
         # Scoping, stated rather than implied. The node is not creator
         # state: chain data IS the canonical public record, and this lane
@@ -416,7 +445,9 @@ def main(argv):
     for attempt, wallet in enumerate(("guide11-lifecycle-b1", "guide11-lifecycle-b2"), 1):
         print("Process B run %d: verifying from the public record" % attempt, flush=True)
         answers = []
-        with AdapterProcess(arguments.executor, chain_dir, wallet, schema) as process_b:
+        with AdapterProcess(
+            arguments.executor, chain_dir, wallet, schema, deadline
+        ) as process_b:
             b_pid = process_b.pid
             b_genesis = process_b.genesis()
             for row in rows:

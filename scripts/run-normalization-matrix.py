@@ -21,16 +21,14 @@ Nothing here accepts a credential, and none may be added.
 """
 import argparse
 import json
-import subprocess
 import sys
 import time
 
-
-def read_record(stream, what):
-    line = stream.readline()
-    if line == "":
-        raise SystemExit("the executor closed its output before the %s" % what)
-    return json.loads(line)
+from executor_supervision import (
+    DEFAULT_TOTAL_DEADLINE_SECONDS,
+    Deadline,
+    SupervisedExecutor,
+)
 
 
 def main(argv):
@@ -40,31 +38,32 @@ def main(argv):
     parser.add_argument("--report", required=True)
     parser.add_argument("--expect-network-id", default=None)
     parser.add_argument("--expect-genesis-id", default=None)
+    parser.add_argument(
+        "--total-deadline-seconds",
+        type=float,
+        default=DEFAULT_TOTAL_DEADLINE_SECONDS,
+        help="the bound on the whole run, not on any single row",
+    )
     arguments = parser.parse_args(argv)
 
     with open(arguments.matrix) as handle:
         matrix = json.load(handle)
 
     started = time.monotonic()
-    child = subprocess.Popen(
-        [arguments.executor],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=None,
-        text=True,
-    )
+    deadline = Deadline(arguments.total_deadline_seconds)
+    # Every path out of this block kills the executor's group and reaps
+    # it, including the refusals below and any exception a row raises
+    # (G12-R15).
+    with SupervisedExecutor([arguments.executor], deadline) as executor:
+        return run_matrix(arguments, matrix, executor, started)
 
-    def send(value):
-        child.stdin.write(json.dumps(value, separators=(",", ":")) + "\n")
-        child.stdin.flush()
 
-    send({"schema": matrix["schema"]})
-    handshake = read_record(child.stdout, "handshake")
-    environment = read_record(child.stdout, "environment observation")
+def run_matrix(arguments, matrix, executor, started):
+    """Drives the whole matrix through one supervised executor."""
+    handshake, environment = executor.handshake(matrix["schema"])
 
     if "owner_authorized_normalization" not in handshake.get("capabilities", []):
-        child.kill()
-        raise SystemExit(
+        raise executor.refuse(
             "the executor advertised no owner-authorized-normalization "
             "capability; the launcher must pass --enable-wallet"
         )
@@ -82,8 +81,7 @@ def main(argv):
         (arguments.expect_genesis_id, observed_genesis, "genesis"),
     ):
         if expected is not None and expected.lower() != observed:
-            child.kill()
-            raise SystemExit(
+            raise executor.refuse(
                 "the executor ran on a chain whose %s identity is %s, and the run "
                 "was declared against %s" % (role, observed, expected)
             )
@@ -92,8 +90,8 @@ def main(argv):
     for request in matrix["requests"]:
         name = request["case"]["normalization"]
         row_started = time.monotonic()
-        send(request)
-        response = read_record(child.stdout, "response for %s" % name)
+        executor.send(request)
+        response = executor.read("response for %s" % name)
         elapsed = time.monotonic() - row_started
         responses.append(response)
         # Printed for a watching operator only. The layer named here is the
@@ -102,8 +100,10 @@ def main(argv):
         print("  %-36s target-layer %-34s %.1fs"
               % (name, response["observed_layer"], elapsed), flush=True)
 
-    child.stdin.close()
-    child.wait(timeout=180)
+    # The orderly shutdown. The context manager guarantees the child is
+    # gone either way, so this is the well-behaved path rather than the
+    # only one.
+    executor.close()
 
     record = {
         "handshake": handshake,

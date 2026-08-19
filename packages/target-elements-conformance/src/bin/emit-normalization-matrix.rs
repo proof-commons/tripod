@@ -20,50 +20,47 @@
 //! target, and an executor that knew which ones could report a
 //! disagreement it never observed.
 
-use std::io::Write;
+//! # The document is the library's, and the contract is this file's
+//!
+//! What this command publishes is built by
+//! [`target_elements_conformance::emit::normalization_matrix_document`],
+//! where it is testable without spawning anything. What remains here is
+//! the part that cannot be: argument parsing, the shared panic hook, the
+//! terminal refusal, and the write to stdout — the ADR-010 subprocess
+//! contract `(´[ADR010-rule:output:streams]´)`.
+//!
+//! The claim's conservation was an assertion inside this command, which
+//! is to say a crash. It is now a refusal the library returns, which is
+//! both a better diagnostic and the reason it can be checked at all.
 
-use target_elements_conformance::normalization::{
-    NormalizationClaim, NormalizationSubject, canonical_mutation_matrix,
-};
-use target_elements_conformance::protocol::{NATIVE_PROTOCOL_SCHEMA, NormalizationCaseId};
+use std::process::ExitCode;
 
-fn main() {
-    let matrix = canonical_mutation_matrix();
-    let claim = NormalizationClaim::canonical();
-    assert!(
-        claim.conserves(),
-        "the canonical claim conserves the value it consumes"
-    );
+use clap::Parser;
+use cli_common::{BaseArgs, install_json_panic_hook, run_stdout_json_command};
+use target_elements_conformance::emit::normalization_matrix_document;
 
-    let requests: Vec<_> = matrix
-        .iter()
-        .map(|row| {
-            let spelling = serde_json::to_value(row.mutation)
-                .expect("a mutation serializes")
-                .as_str()
-                .expect("a mutation is a string")
-                .to_owned();
-            serde_json::json!({
-                "schema": NATIVE_PROTOCOL_SCHEMA,
-                "case": NormalizationCaseId { normalization: spelling },
-                "subject": NormalizationSubject {
-                    claim: claim.clone(),
-                    mutation: row.mutation,
-                },
-            })
-        })
-        .collect();
+const COMMAND_NAME: &str = "emit-normalization-matrix";
 
-    let document = serde_json::json!({
-        "schema": NATIVE_PROTOCOL_SCHEMA,
-        "claim": claim,
-        "rows": matrix,
-        "requests": requests,
-    });
+#[derive(Parser)]
+#[command(
+    name = "emit-normalization-matrix",
+    version,
+    about = "Emit the canonical owner-authorized normalization matrix as JSON"
+)]
+struct Args {
+    #[command(flatten)]
+    base: BaseArgs,
+}
 
-    let rendered = serde_json::to_string_pretty(&document).expect("the matrix serializes");
-    let mut out = std::io::stdout();
-    out.write_all(rendered.as_bytes())
-        .and_then(|()| out.write_all(b"\n"))
-        .expect("stdout accepts the matrix");
+fn main() -> ExitCode {
+    // Installed before parsing so an early panic still fails closed with
+    // a JSON-only record (ADR-010 early-startup rule).
+    install_json_panic_hook(COMMAND_NAME);
+    let args = cli_common::parse_args_or_exit::<Args>();
+    run_stdout_json_command(
+        COMMAND_NAME,
+        args.base.debug,
+        tracing::Level::INFO,
+        normalization_matrix_document,
+    )
 }
