@@ -2,7 +2,7 @@
 
 > **Status:** ACTIVE
 > **Current gate:** Phase 3 — Elements target and foundational prototypes
-> **Current condition:** Phases 1 and 2 are complete. The target-independent compiler constructs one deterministic, validated scoped analyzed program for the complete pilot scope, factorized per operation, with relation-owned requirements, a corruption-resistant assembly validator, and independent assembly oracles; the Phase-2 exit gate record is in §2.11, including passed document reproducibility. Phase 3 then delivered the Guide-8 target foundation, the Guide-9 native primitive gate, and the Guide-10 constructor and wide-floor prototypes, each with its own gate record. The open blocker is public declassification: the Guide-11 preflight register in §5.6 is complete, and the next work is the Guide-11 confidential-value target review and prototypes.
+> **Current condition:** Phases 1 and 2 are complete. The target-independent compiler constructs one deterministic, validated scoped analyzed program for the complete pilot scope, factorized per operation, with relation-owned requirements, a corruption-resistant assembly validator, and independent assembly oracles; the Phase-2 exit gate record is in §2.11, including passed document reproducibility. Phase 3 then delivered the Guide-8 target foundation, the Guide-9 native primitive gate, the Guide-10 constructor and wide-floor prototypes, and the Guide-11 declassification result, each with its own gate record. Public declassification is no longer an open blocker: an initial policy is selected — an explicit boundary reached by owner-authorized normalization, with the direct and public-committed paths deferred against three named target blockers — and the gate record is in §2.4. Phase-3 exit now turns on that recorded result together with the standing contract and infrastructure conditions in (`gate:phase3:exit`), which are checked at merge and are not claimed here. The next work is the first complete compiler-to-target operation, compact ASH, which consumes the declassification policy rather than reopening it.
 > **Next gate:** Phase 4 — compact-ash end-to-end pipeline
 > **Authority:** Current execution queue only. The specification, the realization document, typed architecture, implemented ADRs, accepted decisions, package contracts, phase cards, and accepted research results take precedence.
 
@@ -229,6 +229,163 @@ They are archived verbatim, with their original numbering and labels, in
 [backlog history](history/backlog-history.md), so a reference to §2.8 or
 §2.11 anywhere below resolves to the heading of that number there.
 
+### 2.4 Guide-11 declassification gate · `gate:backlog:guide11`
+
+The Guide-11 batch closed the sixth-review register (§5.6, all sixteen
+rows), redesigned the evidence boundary, reviewed the target's
+confidential-value machinery, built an independent commitment oracle, and
+answered the last open Phase-3 foundational prototype question with a
+selected initial representation policy. Starting with the tree clean; the Guide-10 constructor and wide-floor decisions stood accepted
+and were not reopened; the public-declassification note opened at *Open;
+prototype required*.
+
+Preflight (§5.6 owns the register): all fourteen numbered rows are DONE,
+thirteen CONFIRMED and one RECLASSIFIED, and `G11-H01` is DONE with
+fifty-five of fifty-five opcodes welded. `G11-H02` is not a gate item and
+is not closed — it is a standing prohibition against adding issuance
+realization scope until the authority fields are enforced or externally
+evidenced, and none is proposed.
+
+Evidence boundary: canonical wrappers for all three matrices; ad hoc
+reports demoted below any gate; transcripts bound to their exact subjects
+and requests; expectations removed from executor requests, which is what
+made the protocol schema **3** — a breaking change, numbered as one, with
+revision 2 kept as a historical value nothing parses as revision 3.
+Primitive report schema 2, prototype report schema 1, and a string schema
+of its own for the fresh-process handoff. Exact case, claim, and evidence
+censuses; environment rechecked after the run as well as before; failed
+completeness refused; report bytes deterministic over two consecutive
+runs. Provenance is Elements Core at the ADR-018 merged tip on
+`elementsregtest`, with adapter, framework, node, binary revision,
+intended tip, upstream base, local topics, observed network, and observed
+genesis each a separate field; the executor class is explicitly selected
+and fails closed, and Meson declares no trust by default.
+
+Target review (§5.7 carries the rows): the commitment relation is the
+conceptual one with both terms positive, over a thirty-two-byte big-endian
+scalar; conservation closes as an exact tally to the identity with no
+excess term; commitment equality has no reviewed primitive and is exactly
+`Unsupported`. The decisive result is that authenticated opening has **no
+complete on-script form**, for three independent reasons: the generator is
+not derivable on script, the encoding domains disagree, and a
+witness-supplied parity byte is bound to nothing. The selected sighash
+profile is the default all-outputs non-anyone-can-pay key-path spend, read
+out of the witness rather than asserted. The target-contract version did
+not move: these are facts about the reviewed revision, not a change to the
+algebra.
+
+Dependency and oracle (§5.8 carries the rows): nothing was added, and
+`Cargo.lock` is unchanged across the batch. The bindings to the
+zero-knowledge secp256k1 fork were refused on independence — they wrap the
+same C library the node vendors, so their agreement would be a tautology —
+and `target-elements` stays standard-library-only. Sixty-eight upstream
+vectors reproduce exactly, every pinned byte string was independently
+recomputed in another language, and the oracle predicts the same
+commitment bytes a real node produced for three observed openings. The
+construction-library leg stays **absent** and is reported as absent.
+
+Confidential transactions: twelve rows stated, eleven executed, one
+deferred as a typed row. Ten of the eleven agreed with expectations
+written before the target was asked — three accepted, six rejected at
+consensus before script, and the hidden-confidential-output row accepted,
+which is its stated expectation and the finding that consensus does not
+police hidden value. The eleventh, several confidential inputs to one
+explicit output, **could not be constructed** and reached no target
+verdict: residual blinding has nowhere to go without a blinded output.
+Randomness is `FixtureInputsOnly`, since the node's blinding cannot be
+seeded. Failure layers are decided by the mempool reason, because block
+validation answers every amount and script failure with one string.
+
+Deferrals: no opening prototype was built, and the public-committed
+representation defers on the same three blockers, so no amount domain,
+relation, parity coverage, durable public evidence, or resource
+measurement exists for either. Two shapes are refused outright — the proof
+outline as instantiated on the reviewed primitives, under the parity-loss
+criterion, and an opening checked off-script and asserted on-script, under
+the rule against a host library being the only verifier — while the class
+is deferred rather than rejected, because a pattern proving the required
+normalization or negation was not found, which is not the same as shown
+impossible. The capsule is not applicable while they are deferred: it
+carries an opening and the fields binding it to one output, and there is
+neither.
+
+Normalization: private to explicit with private change is **built and
+run**; full consumption is not constructible, per the conservation row
+above. Owner authorization is real and output-committing — every consumed
+input carried a single sixty-four-byte witness item, a Schnorr signature
+with no trailing sighash byte. Amount, owner, explicit asset, and object
+role are preserved and checked, and the explicit and normalized semantic
+projections agree over those properties. Closure is exact multiset
+equality in both directions, because a subset test passes a hidden output
+and a count test passes a swap. Nine of nine mutation rows agreed with
+expectations committed before the run; three of them are consensus-valid
+transactions the report layer alone refuses, and the target accepted all
+three, which is the substantive finding rather than a gap. Resources are
+not measured: the path adds no verifier program to measure.
+
+Fresh-process lifecycle: a real operating-system boundary — the
+constructing process publishes and exits, each reading process is a fresh
+process and node with a distinct pid, the wallet destroyed and the chain
+kept. The public record is a typed twelve-field schema refusing unknown
+fields and banning field *names* that denote owner-private material.
+Sixteen of sixteen rows agreed over two passes against the canonical
+matrix rather than the run record. The reading process locates by block
+locator, parses with its own deserializer, rebuilds the output script from
+the public address alone, and spends its own funds — it cannot spend the
+owned object, so permissionless future *use* is demonstrated and
+permissionless future *maintenance* is not.
+
+Final representation policy: the boundary is **explicit**, reached from a
+private value by **owner-authorized normalization to an explicit output
+carrying private change**. Lateral transfer is supported directly in both
+representations and needs no boundary; public and permissionless
+maintenance and formula-bound payout are explicit only; direct private
+support and public-committed representation are deferred with named
+blockers; full private consumption is unsupported, which is a
+constructibility finding rather than a target rejection. The matrix, cell
+by cell against landed evidence, is in
+[the research owner](research/public-declassification.md).
+
+Reports carry the `Experimental` role throughout: they establish what the
+target does and nothing about a candidate being selected. Minimality is
+**not** claimed and no minimality report exists — the result is explicitly
+not disclosure-minimal, and the normalization path's three
+declassifications are every one `DeploymentPolicy`, each stating the
+alternative a deployment that wanted the fact private would have to take.
+Zero failed canonical cases and zero required infrastructure errors. The
+reports are run output, are not checked in, and no digest of any is kept.
+
+Identity impact: nothing moved. Across the whole batch the diff touches no
+file under `packages/model/generated`, `packages/architecture`, `papers/`,
+or `docs/`, so the Layer-0 version, realization version,
+architecture schema, architecture semantic hash, architecture behavioural
+hash, Layer-0 anchor-set hash, and generated architecture publications are
+all unchanged. No realization, compiler, target, opening-pattern, capsule,
+or report identity was minted. The deployment-profile identity remains
+dormant and not production-release-valid. The target-contract version
+stays at V2, with V1 removed from the supported set in preflight rather
+than bumped. The only schema that moved is the native executor protocol,
+to revision 3. Two new modules compute hashes and neither mints an
+identity: the oracle's generator derivation is the reviewed upstream
+recipe evaluated as arithmetic, and the conservation module's
+fixture-scalar derivation is domain-separated disposable-chain test
+material that authorizes nothing.
+
+Planning handoff: the research note is closed with a selected initial
+policy and its residuals, D005 records that policy under the proof
+alternatives it already admitted, the Phase-3 card records the result
+without claiming the exit, and both package READMEs carry the new modules.
+The next guide consumes this policy rather than reopening it.
+
+Honest bounds: the conservation, normalization, and lifecycle lanes record
+and do not gate — the executor drivers, published assets, and Meson
+targets that would make them refusable in CI are not built (`G11-W7-08`).
+The stale-evidence lifecycle row does not build and is undiagnosed
+(`G11-W11-06`). Both public-committed conservation rows remain deferred
+(`G11-W7-09`). Policy-resource evidence is `UnresolvedByDesign`. Nothing
+here is an operation, a linked bundle, a transaction ABI, a calibration,
+or production output.
+
 ### The verification harness's two standing hazards · `rem:backlog:verification-harness`
 
 A verdict is read from the report wrapper's own report line, never from a pipeline's shell status: the wrapper propagates its exit code faithfully, and a pipe to a filter truncates the status to the last stage's. And a single shared build-target directory is poisoned when checkouts of two different commits build the same crates into it, so a lane that moves between commits pins a target directory of its own.
@@ -333,7 +490,8 @@ Architecture finality does not imply:
 public complete compiler-analysis API beyond the target-requirement boundary
 compiler-plan identity
 backend proof patterns
-public declassification prototype
+direct authenticated opening and public-committed representation
+public opening capsule
 production target-native evidence
 
 tripod-linker
@@ -461,14 +619,22 @@ whose identifiers are the Guide-11 preflight identifiers `G11-R01` through
 The Guide-11 preflight waves own the register; the summaries below are the
 required dispositions recorded in that guide's own preflight table.
 
-Preflight state after Wave 5: the gate is **COMPLETE**. All sixteen rows
-are disposed — every numbered row `G11-R01` through `G11-R14` is DONE,
-and `G11-H01` is DONE with the stack resource rows welded. `G11-H02` is
-not a gate item and never was: the guide's gate bullets name no issuance
+Register state after the batch: **COMPLETE**. All sixteen rows are
+disposed — every numbered row `G11-R01` through `G11-R14` is DONE, and
+`G11-H01` is DONE with the stack resource rows welded. `G11-H02` is not
+a gate item and never was: the guide's gate bullets name no issuance
 condition, and the row's own disposition is a standing prohibition —
 issuance realization scope may not be added until the authority fields
 are enforced or externally evidenced. None is proposed, so the
 constraint stands open by design rather than blocking the gate.
+
+The register closed at the preflight gate, and the batch that followed it
+— the target review, the dependency decision and oracle, the
+confidential-transaction substrate, the candidate dispositions, the
+normalization prototype, and the fresh-process lifecycle — reopened none
+of its rows. The declassification result those waves produced is recorded
+in §2.4, and the research owner is
+[public-declassification.md](research/public-declassification.md).
 
 The review basis is the archived review's own tree, not the working tree: under the
 guide's own rule each finding is a hypothesis until it is reproduced
@@ -497,7 +663,7 @@ classification, the report digests, and this reconciliation.
 | `G11-R12` | P2 | DONE | RECLASSIFIED | Current backlog state contradicts recorded Guide-8 through Guide-10 completion and duplicates finding IDs; reconcile current state and enforce unique IDs. |
 | `G11-R13` | P2/P3 | DONE | CONFIRMED | Process-group establishment failure can leave the direct child unreaped; kill and reap on every pre-supervisor failure. |
 | `G11-R14` | P3 | DONE | CONFIRMED | Constructor retry retries internal-key defects no metadata nonce can repair; share a typed retryability predicate. |
-| `G11-H01` | Hardening | TODO | CONFIRMED | Opcode resource stack-growth rows are not generically welded to success and non-aborting failure effects; derive and compare exact maximum stack growth. |
+| `G11-H01` | Hardening | DONE | CONFIRMED | Opcode resource stack-growth rows are not generically welded to success and non-aborting failure effects; derive and compare exact maximum stack growth. |
 | `G11-H02` | Future blocker | TODO | CONFIRMED | Issuance observations carry authority fields the realization evaluator does not yet enforce; add no issuance realization scope until enforced or externally evidenced. |
 
 Wave-1 evidence for the two closed rows. `G11-R02`: the evidence path
@@ -845,6 +1011,15 @@ established, in whichever direction it was collapsed.
 | `G11-W10-01` | P1 | DONE | **The normalization prototype is built, and the disposition it was recorded under is now true.** The claim is private → explicit + private change, the constructible variant. The owner's coin and every destination are taproot, so the wallet signs a key-path spend: both inputs carried a single 64-byte witness item on the run, which is a Schnorr signature with no trailing sighash byte — the default all-outputs non-anyone-can-pay profile §10.3 requires, per the reviewed output-committing signature profile table. The profile is read out of the witness by the adapter rather than asserted, so a narrower signature is a construction failure instead of silent evidence. The unmutated claim was accepted by a real node at the declared tip, with closure and preservation both holding. |
 | `G11-W10-02` | P1 | DONE | **The closure check is implemented as exact multiset equality in both directions, and all nine §10.4 rows agree with expectations written and committed before the run.** Three rows are consensus-valid transactions the report layer alone refuses — amount changed with the change compensating, owner changed, and a hidden private output — and the target accepted all three, which is the wave's substantive finding rather than a gap. The hidden-output row is what justifies the shape of the check: the owner is paid exactly right so preservation holds, the value comes out of the blinded change so no amount is observable, and the only evidence is an output the claim never named. A subset test would have passed it and a count test would have passed a swap, which is why neither is used. The layer is recorded as report-layer and never as consensus, so `G11-W7-06`'s misattribution is not repeated. A relay-policy refusal now has its own refusal layer as well: no row expects one, so a post-signing row refused for its fee would surface as a disagreement rather than pass as a signature refusal. |
 | `G11-W10-03` | P1 | DONE | **The typed §14 safety report is built.** Role is `Experimental`, as `ConservationReportRole` is: it establishes what the target does with the §10.4 matrix and nothing about a candidate being selected, which is §24's question. It carries `declassification::normalization_declassifications` — three disclosures, every one `DeploymentPolicy` and none claiming semantic necessity — the observed authorization profile, the genesis and network the run was bound to, the declared tip and the revision the node binary reported about itself, and every row's expected against observed layer. The judgement lives in the crate that owns the claim: the runner records responses verbatim and `emit-normalization-report` rebuilds the expectations from source, so a run cannot supply the answer it is checked against. |
+
+### Wave 11 — Fresh-process lifecycle · `task:guide11:lifecycle`
+
+**Priority:** P1
+**Status:** DONE
+
+The §13 proof that public evidence survives its creator. The boundary is
+an operating-system boundary rather than a reset of state inside one
+process, and the reading process is held to public chain data alone.
 
 | ID | Priority | Status | Item |
 |---|---:|---|---|
@@ -1437,12 +1612,13 @@ Phase-3 task state is:
 | `T3-007` | DONE | Typed tapscript instruction foundation, gate record §2.13 |
 | `T3-008` | DONE | STATE-constructor prototype accepted, gate record §2.14 |
 | `T3-009` | DONE | Exact wide floor-arithmetic prototype accepted, gate record §2.14 |
+| `T3-010` | DONE | Public-declassification initial policy selected, gate record §2.4 |
 
 Current blockers are:
 
 ```text
 Phase-3 work:
-    public declassification prototype
+    the exit gate itself, checked at merge against gate:phase3:exit
 ```
 
 Standing rules that survive the phase exit:
@@ -1470,9 +1646,9 @@ Standing rules that survive the phase exit:
 Execute in this order unless reproduction changes dependencies:
 
 ```text
-1. Charter the public-declassification prototype, the remaining
-   Phase-3 foundational question; the constructor and wide-floor
-   prototypes are accepted with gate record 2.14.
+1. Check the Phase-3 exit gate; all three foundational questions are
+   answered, with the constructor and wide-floor prototypes accepted in
+   gate record 2.14 and the declassification policy in 2.4.
 2. Keep target types out of compiler core; the target packages consume
    the analyzed boundary, never the reverse.
 3. Mint no target hash and claim no production activation without a real
@@ -1939,4 +2115,4 @@ After a phase or remediation series:
 
 ## 15. One-line backlog · `rem:backlog:one-line`
 
-> Settle the public declassification prototype on the evidenced primitive substrate — the STATE-constructor and wide-floor prototypes are accepted in §2.14 — without emitting operations, completing backend patterns, minting speculative identities, or claiming production activation.
+> Check the Phase-3 exit gate now that all three foundational questions are answered — the STATE-constructor and wide-floor prototypes accepted in §2.14, the declassification policy selected in §2.4 — then begin the first complete compiler-to-target operation without reopening the policy, minting speculative identities, or claiming production activation.

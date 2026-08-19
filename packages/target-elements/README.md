@@ -376,6 +376,42 @@ transposition hazard worth checking at every call site.
 `Unsupported`) is a different vocabulary from `StaticCapabilityStatus` and must
 not be conflated with it.
 
+`confidential` also carries the Guide-11 review facts, gathered under
+`ConfidentialReviewFacts`. They are facts about the reviewed revision, stated
+so a consumer can check a pattern against them rather than reason by analogy:
+
+- `PointParityConvention` — three conventions, and the reason a pattern does
+  not carry between primitive families. The target's own confidential
+  encodings record whether y is a **quadratic residue**; a compressed public
+  key, and therefore every curve-checking primitive, records whether y is
+  **odd**; an x-only key implies the even y. The two prefixed conventions pick
+  the same y only by coincidence.
+- `ConfidentialFieldEncoding` — the explicit and committed widths, the
+  explicit prefix, the pair of committed prefixes, and the parity convention,
+  for each of value, asset, and nonce.
+- `AssetGeneratorDerivation` — the recipe taking an asset identifier to its
+  generator, counted rather than described: how many curve-map evaluations and
+  point additions it needs, and whether the blinded form prepends a base
+  multiple. It is stated so a reader can see what a program would have to
+  perform on-script, and therefore why it cannot.
+- `CommitmentRelation` — the reviewed convention is
+  `BlindOnBaseAmountOnAssetGenerator`, both terms positive. The opening scalar
+  is thirty-two bytes `BigEndian`, admits zero, and is refused at or above the
+  group order.
+- `ConservationContract` and `ProofRequirements` — the balance closes as
+  `ExactTallyToIdentity`, with no excess term, and the contract states which
+  encoding classes demand a range proof or a surjection proof, whether the
+  range proof binds the output script, and whether it excludes zero.
+- `OpeningFeasibility` and `OpeningBlocker` — the review's conclusion. An
+  authenticated public opening has **no complete on-script form** under the
+  reviewed revision, for three independent reasons:
+  `GeneratorNotDerivableOnScript`, `EncodingDomainMismatch`, and
+  `SuppliedParityUnbound`. The blockers are censused in `OpeningBlocker::ALL`
+  and are what every deferral downstream cites.
+
+These are target facts. What this project decided in the light of them is a
+disposition, and dispositions live in the conformance package.
+
 `ResourceContract` keeps consensus and policy separate and offers three
 `Option`-returning validators — `missing_consensus_dimension`, `zero_bound`, and
 `policy_looser_than_consensus` — which feed the three corresponding

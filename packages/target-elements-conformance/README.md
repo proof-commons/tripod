@@ -279,7 +279,7 @@ That is what `./mock-executor-wrapper.sh` stands for above.
 
 ## Public-API tour
 
-Sixteen modules, fifteen public. `census` is private; the only things it
+Twenty-five modules, twenty-four public. `census` is private; the only things it
 exports outward are `ConstructorMatrixDefect`, `WideFloorMatrixDefect`,
 `bearing_cases`, and `wide_floor_bearing_cases`, all re-exported through
 `prototype`, plus the census itself through `fixture::canonical_fixture_set`.
@@ -540,6 +540,57 @@ point arithmetic only — no secret scalar appears anywhere in it.
 `wide_floor` re-exports the domain constants, the `WideFloorInstance` oracle and
 its `WideFloorWitness`, the staged normalizer, and the candidate comparison.
 
+### The declassification lane
+
+Six modules answering the confidential-to-public representation question.
+They are research modules: their reports carry the `Experimental` role, and
+they establish what the target does with a matrix rather than that a
+candidate was selected. Selection is the plan tree's, and it is recorded in
+`plans/research/public-declassification.md`.
+
+`commitment_oracle` is the independent reference, in four parts: `curve`
+(field and point arithmetic, both parity conventions kept distinct), `generator`
+(the two-generation asset-generator recipe over tagged digests), `commitment`
+(the value commitment, with the blinder on the base point and the amount on the
+asset generator), and `vector` (the pinned upstream low-level vectors). It
+computes commitments as arithmetic and mints no identity of its own; it exists
+so that the target's bytes can be predicted by something that is not the target.
+
+`conservation` carries the confidential-transaction fixture language,
+`ConservationRow`, `ConservationDefect`, `RowDeferral`, `ClosureObligation`, and
+`canonical_conservation_matrix()` — twelve rows, eleven of them executable, one
+deferred as a typed row rather than dropped. `test_scalar` derives fixture
+blinding factors deterministically from a domain-separated label; it is
+disposable-chain test material and authorizes nothing. `conservation_report` is
+the typed report, with `ConservationReportRole` carrying its single
+`Experimental` variant.
+
+`normalization` carries the owner-authorized transition: `NormalizationClaim`,
+`OutputRole`, `PreservedProperty`, `AuthorizationProfile`, `RefusalLayer`, the
+`closure_finding` and `preservation_finding` predicates, and
+`canonical_mutation_matrix()` — nine mutations plus the unmutated row. Closure
+is exact multiset equality in both directions, because a subset test passes a
+hidden output and a count test passes a swap. `normalization_report` is its
+safety report.
+
+`lifecycle` carries the fresh-process boundary: `PublicHandoff` (a twelve-field
+schema with `deny_unknown_fields` and a ban on field *names* that denote
+owner-private material), `LifecycleRow`, `LifecycleOutcome`, and
+`canonical_lifecycle_matrix()`. `lifecycle_report` is its report.
+
+`disposition` is where the candidates stand — `Candidate`, `DispositionState`
+(`Prototyped`, `DeferredWithNamedBlocker`, `NotApplicableWhileDeferred`),
+`RejectionCriterion`, `RejectedShape`, and `candidate_dispositions()`. A
+disposition is this project's decision taken in the light of target facts, which
+is why it lives here and not in `target-elements`.
+
+`declassification` carries `DeclassificationReason` — six variants, with
+`is_semantic_necessity` separating the four that assert the relation needs the
+fact public from the two that do not — and `normalization_declassifications()`.
+Every entry there is `DeploymentPolicy` and every one states the alternative a
+deployment that wanted the fact private would have to take, so that a policy
+choice cannot harden into an apparent necessity across waves.
+
 ### `vocabulary` — wire spellings
 
 Six functions pairing each reviewed identity with its explicit wire name, in
@@ -556,7 +607,7 @@ silently change a wire format.
 
 ## Error handling
 
-`NativeConformanceError` is the crate's single error root, has **68**
+`NativeConformanceError` is the crate's single error root, has **88**
 `#[non_exhaustive]` variants declared in `src/error.rs`, and derives
 `thiserror::Error`. Every variant is a branch that runs — there is no catch-all
 — and none carries child-process detail that could leak an executor's
@@ -581,13 +632,24 @@ about the wrong network.
 
 ## Binaries
 
-Three, auto-discovered from `src/bin/`.
+Seven, auto-discovered from `src/bin/`.
 
 | Binary | Purpose |
 |---|---|
 | `check-target-elements-native` | The primitive gate: canonical census, executor, evaluate, validate, gate, publish (one JSON result, ADR-010) |
 | `check-target-elements-prototypes` | The prototype gate: one relation's matrix through the same contract |
 | `mock-native-executor` | The protocol and failure-path mock, selected by `--behavior <BEHAVIOR>`; echoes each fixture's own expectation back |
+| `emit-conservation-matrix` | The canonical conservation matrix as JSON: `rows` for a reader and the report, `requests` for the executor |
+| `emit-normalization-matrix` | The canonical normalization claim and mutation matrix, split the same way |
+| `emit-normalization-report` | The normalization safety report, rebuilt from a run record |
+| `emit-lifecycle-report` | The fresh-process lifecycle report, rebuilt from a run record |
+
+The four `emit-` commands exist so that the matrices and the claims have
+exactly one home. A runner that restated a claim in another language would be a
+second implementation of it, free to drift — and a drifted claim agrees with
+whatever it is compared against. So the runners are transport: they record the
+adapter's responses verbatim, and the expectations are rebuilt here from the
+crate's own source.
 
 The checking binaries take `--executor <PROGRAM>` and
 `--executor-class mock | reviewed-non-mock`, plus the network and genesis
@@ -615,6 +677,22 @@ ADR-010 contract as the primitive lane. Both matrices agreed with the
 executor on every row. Those programs are prototypes and are held to the
 prototype status: no operation emits them, and nothing here converts one
 into release output.
+
+Also implemented: the Guide-11 declassification lane — the independent
+commitment oracle, the confidential-transaction fixture language and its
+conservation matrix, the owner-authorized normalization claim with its
+mutation matrix and safety report, the fresh-process lifecycle with its
+public handoff schema, and the candidate dispositions with their typed
+disclosure reasons. Eleven conservation rows, nine normalization mutations,
+and eight lifecycle rows over two passes ran against a real node and agreed
+with expectations committed before the runs. Those reports carry the
+`Experimental` role: they establish what the target does, and the policy
+selected in the light of them lives in the plan tree, not here.
+
+The conservation, normalization, and lifecycle lanes record and do not
+gate. Their typed reports exist and are tested; the executor drivers that
+would make them refusable in CI the way the primitive and prototype lanes
+are, are not built.
 
 What a case can establish is bounded by what a validating node reports.
 It answers whether a spend was valid and, coarsely, why not; it exposes

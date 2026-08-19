@@ -15,7 +15,7 @@ Research notes do not define production policy.
 | [optimization-solvers.md](optimization-solvers.md) | Open; exact prototype required | Proof, placement, calibration, and external solver policy. |
 | [state-constructor.md](state-constructor.md) | Prototype required | STATE-spending backend operations. |
 | [wide-arithmetic.md](wide-arithmetic.md) | Prototype and measurement required | Redemption, settlement, and cycle arithmetic. |
-| [public-declassification.md](public-declassification.md) | Open; prototype required | Confidential-to-public lifecycle paths. |
+| [public-declassification.md](public-declassification.md) | Initial policy selected — explicit-only boundary reached by owner-authorized normalization | Direct and public-committed private-to-public paths, deferred against three named opening blockers. |
 | [settlement-layout.md](settlement-layout.md) | Open; prototype required | Settlement ABI and calibrated batch size. |
 | [attestation-floor-bounds.md](../history/attestation-floor-bounds.md) | Resolved | Attestation containment and seigniorage claims, and the SP5 capacity export. |
 | [notation-semantic-census.md](../history/notation-semantic-census.md) | Resolved — over-scoped; the existing label graph is sufficient | Nothing further; surviving work is attestation label minting and editorial repair. |
