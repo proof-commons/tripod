@@ -1080,11 +1080,12 @@ guide's own rule each finding is a hypothesis until it is reproduced
 against the working tree, and is then either fixed, disproved with a
 typed argument, or reclassified with a narrower assurance claim. The
 Wave-0 column records that adjudication. Wave 0 repaired nothing, so
-every row opened TODO; Wave 1 closed the two claim-laundering rows.
+every row opened TODO; Wave 1 closed the two claim-laundering rows and
+Wave 2 closed the transcript-rebinding row.
 
 | ID | Priority | Status | Wave 0 | Finding |
 |---|---:|---|---|---|
-| `G11-R01` | P0 | TODO | CONFIRMED | A transcript can be rebound to another fixture census, prototype matrix, target, or deployment binding; bind the transcript to its exact subjects and requests. |
+| `G11-R01` | P0 | DONE | CONFIRMED | A transcript can be rebound to another fixture census, prototype matrix, target, or deployment binding; bind the transcript to its exact subjects and requests. |
 | `G11-R02` | P0 | DONE | CONFIRMED | Primitive claims can be manufactured by attaching claim-bearing case metadata to an unrelated script; gate only a canonical validated primitive plan. |
 | `G11-R03` | P0 | DONE | CONFIRMED | Prototype claims are caller-authored and can certify a trivial true script as constructor or wide-floor evidence; gate only relation-specific canonical matrices. |
 | `G11-R04` | P1 | TODO | CONFIRMED | Consensus resource cases are credited to policy-resource evidence because evidence ownership derives from case ID without the enforcement layer; derive evidence from the complete fixture and correct the plan class. |
@@ -1121,14 +1122,35 @@ asserted by `g11_r03_a_trivial_leaf_cannot_certify_the_wide_floor_relation`,
 `g11_r03_replacing_the_constructor_successor_program_fails`, and
 `g11_r03_raw_bytes_are_not_reported_as_a_typed_program`.
 
+Wave-2 evidence for `G11-R01`. `ExecutionTranscript` retains the target
+projection, the deployment projection, and the exact subject sent for
+every case; `evaluate`, `evaluate_prototypes`, and both report validators
+compare their own inputs against those retained values by exact typed
+equality, and the executor's observed environment is compared a second
+time when a report is built and again at the validator's own boundary.
+Protocol revision 3 removes every expectation from an executor request,
+so the subject a transcript retains is the whole of what crossed the
+wire. Asserted by
+`g11_r01_a_transcript_cannot_rebind_to_a_deployment_it_never_ran_on`,
+`g11_r01_a_report_cannot_name_a_script_the_executor_never_ran` (an
+equal-width substitution, which defeats the old width-only defence),
+`g11_r01_a_report_cannot_name_an_initial_stack_the_executor_never_ran`,
+`g11_r01_a_response_for_a_case_never_sent_is_refused`,
+`g11_r01_a_case_that_was_never_sent_is_refused`,
+`g11_r01_a_case_sent_and_never_answered_is_refused`,
+`g11_r01_a_prototype_construction_cannot_be_substituted`,
+`a_request_carries_no_expectation_of_any_kind`, and
+`an_executor_of_the_previous_revision_fails_loudly`.
+
 Wave 1 also closed the arbitrary-census route that two open rows were
-reproduced through. `G11-R01`'s script-substitution reproduction now runs
-on the experimental path and reproduces the same defect. `G11-R05`'s
+reproduced through. `G11-R01`'s script-substitution reproduction moved to
+the experimental path, where Wave 2 flipped it: the binding is a property
+of the transcript rather than of the trust state. `G11-R05`'s
 construction added a fixture to the canonical census and is no longer
 expressible; its test records the closed route and the still-open gate
 defect, and Wave 3 owns finding a route that reaches the gate itself.
 
-No public-declassification prototype begins while `G11-R01` through
+No public-declassification prototype begins while `G11-R04` through
 `G11-R10` remain open. `G11-R12` owns the full reconciliation of this
 backlog's current state against the recorded Guide-8 through Guide-10
 completions; that reconciliation is deliberately not performed by the
@@ -1140,6 +1162,7 @@ defective behaviour and which the repairing waves invert.
 
 ```text
 G11-R01  conformance g11_r01_a_transcript_rebinds_to_a_deployment_it_never_ran_on
+         (Wave 2 flipped: g11_r01_a_transcript_cannot_rebind_to_a_deployment_it_never_ran_on)
 G11-R02  conformance g11_r02_a_trivial_true_script_bears_signature_claims
          (Wave 1 flipped: g11_r02_a_trivial_true_script_cannot_bear_signature_evidence)
 G11-R03  conformance g11_r03_a_trivial_leaf_certifies_the_whole_wide_floor_relation
