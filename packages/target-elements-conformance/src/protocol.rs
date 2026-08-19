@@ -778,8 +778,18 @@ fn validate_observation_shape(
         }
         NativeVerdict::InfrastructureError => {
             // A run that did not happen observed nothing, so every field
-            // describing what the target did must be absent.
-            if names_failure || reports_stack || reports_altstack {
+            // describing what the target did must be absent. The
+            // interpreter figures are part of that, and the line between
+            // them and the fixture's own restated script size and
+            // initial depth is already drawn by `observes_interpreter`
+            // rather than redrawn here.
+            //
+            // The advertised-observation rule below never sees this arm,
+            // so the refusal cannot be left to it: an executor that
+            // advertises resource observation would otherwise be allowed
+            // to report a peak stack depth for a run it never made.
+            if names_failure || reports_stack || reports_altstack || observed.observes_interpreter()
+            {
                 return Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation);
             }
             return Ok(());
@@ -1046,6 +1056,17 @@ pub struct NativeNormalizationResponse {
 impl NativeNormalizationResponse {
     /// Whether this response contradicts itself.
     ///
+    /// A response saying the run never happened must carry no target
+    /// observation. The witness sizes are counted among those: they are
+    /// read out of the transaction the adapter built, and they are the
+    /// evidence the authorization profile rests on, so admitting them
+    /// beside a refused profile would leave the profile's own support
+    /// standing where the profile may not.
+    ///
+    /// The claimed outputs are not counted. They are resolved from the
+    /// claim before any mutation is applied, so they describe what was
+    /// asked rather than what the target did.
+    ///
     /// # Errors
     ///
     /// [`ResponseShapeDefect`] where the response is not a shape the
@@ -1054,7 +1075,8 @@ impl NativeNormalizationResponse {
         if !self.observed_layer.is_target_verdict()
             && (self.transaction_bytes.is_some()
                 || !self.observed_outputs.is_empty()
-                || self.authorization_profile.is_some())
+                || self.authorization_profile.is_some()
+                || !self.observed_witness_sizes.is_empty())
         {
             return Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation);
         }

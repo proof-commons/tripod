@@ -13,8 +13,10 @@
 //! - `G12-R09` — the executor and this crate both declare protocol
 //!   revision 3 while carrying conservation responses the Rust type
 //!   cannot read.
-//! - `G12-R14` — the shape rules leave an infrastructure response's
-//!   resource observation unread.
+//! - `G12-R14` — CLOSED: the infrastructure arm refuses every
+//!   interpreter figure whatever the executor advertises, and the
+//!   normalization response counts its witness sizes among the
+//!   observations a run that did not happen may not carry.
 //!
 //! - `G12-R05` — CLOSED: the normalization response census is exact in
 //!   both directions, and the ingestion that decides it now has a
@@ -36,9 +38,11 @@ use crate::normalization_report::{
 };
 use crate::protocol::{
     ExecutorCapability, NATIVE_PROTOCOL_SCHEMA, NativeConservationResponse,
-    NativeExecutionResponse, NativeNormalizationResponse, NativeResourceObservation, NativeVerdict,
-    NormalizationCaseId, validate_response_shape,
+    NativeExecutionResponse, NativeNormalizationResponse, NativePrototypeResponse,
+    NativeResourceObservation, NativeVerdict, NormalizationCaseId, ResponseShapeDefect,
+    validate_response_shape,
 };
+use crate::prototype::{PrototypeCaseId, PrototypeRelation};
 use crate::provenance::{
     ExpectedExecutorProvenance, FULL_REVISION_WIDTH, FullRevisionId, MINIMUM_REVISION_PREFIX_WIDTH,
     ProvenanceSyntaxDefect, validate_executor_provenance,
@@ -248,24 +252,27 @@ fn a_revision_three_conservation_response_is_unreadable_by_its_own_type() {
     );
 }
 
-/// `G12-R14`: an infrastructure response keeps its interpreter figures.
+/// `G12-R14`: an infrastructure response carries no interpreter figures.
 ///
 /// The infrastructure arm of the shape rules states that a run which did
-/// not happen observed nothing, and then checks the failure class and
-/// the two stacks and returns. The resource observation is the one field
-/// it never reads, so a response saying the execution never occurred may
-/// still carry a peak stack depth, a spent validation budget, and a
-/// transaction weight — figures only a run that happened could produce.
+/// not happen observed nothing, and it used to check the failure class
+/// and the two stacks and return. The resource observation was the one
+/// field it never read, so a response saying the execution never
+/// occurred could still carry a peak stack depth, a spent validation
+/// budget, and a transaction weight — figures only a run that happened
+/// could produce.
 ///
-/// The capability set makes no difference: the arm returns before the
-/// advertised-observation check that would otherwise refuse them, so an
-/// executor that says it observes no interpreter figure passes too. Both
-/// are asserted. The conservation response's own `validate_shape` does
-/// make the equivalent check, which is why the row is about the
-/// execution and prototype path.
+/// The capability set makes no difference, and that is the point of
+/// checking both here. The arm returns before the
+/// advertised-observation rule, so leaving the refusal to that rule
+/// would have let an executor that advertises resource observation
+/// report figures for a run it never made. The arm now refuses them
+/// itself.
 ///
-/// The assertions are the defect. A wave that rejects every target
-/// observation on a non-target outcome flips them.
+/// Where the line falls is `observes_interpreter`'s to say rather than
+/// this arm's: the script's size and the initial stack's depth are the
+/// fixture's own, restated by every executor, and are not observations
+/// of anything. They stay legal here, which the last assertion pins.
 #[test]
 fn an_infrastructure_response_may_still_carry_interpreter_figures() {
     let observed = NativeResourceObservation {
@@ -295,8 +302,95 @@ fn an_infrastructure_response_may_still_carry_interpreter_figures() {
     ] {
         assert_eq!(
             validate_response_shape(&response, &capabilities),
-            Ok(()),
-            "G12-R14: the shape rules are expected to admit the figures while the row is open",
+            Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation),
+            "G12-R14: a run that did not happen may report no interpreter figure, \
+             whatever the executor advertises",
+        );
+
+        // The same rule, reached through the prototype path, which
+        // shares the shape rules rather than restating them.
+        let prototype = NativePrototypeResponse {
+            schema: NATIVE_PROTOCOL_SCHEMA,
+            case: PrototypeCaseId {
+                relation: PrototypeRelation::WideFloorRelation,
+                name: "shape".to_owned(),
+            },
+            verdict: NativeVerdict::InfrastructureError,
+            final_stack: None,
+            final_altstack: None,
+            observed_failure: None,
+            resources: observed,
+        };
+        assert_eq!(
+            prototype.validate_shape(&capabilities),
+            Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation),
         );
     }
+
+    // The fixture's own figures are not observations and stay legal: a
+    // response that restates the script it was handed still says the run
+    // never happened.
+    let restated = NativeExecutionResponse {
+        resources: NativeResourceObservation {
+            script_bytes: 33,
+            initial_stack_items: 1,
+            ..NativeResourceObservation::default()
+        },
+        ..response
+    };
+    assert!(!restated.resources.observes_interpreter());
+    assert_eq!(validate_response_shape(&restated, &BTreeSet::new()), Ok(()));
+}
+
+/// `G12-R14`, the normalization half: witness sizes are an observation.
+///
+/// The normalization response already refused a transaction, observed
+/// outputs, and an authorization profile on a run that did not happen.
+/// The witness sizes were left out, although they are read from the very
+/// transaction the response may not claim to have built, and although
+/// they are the evidence the authorization profile rests on — so the
+/// profile could be refused while its own support was admitted beside
+/// it.
+///
+/// The rule is enforced rather than merely stated: every response
+/// reaching `ingest_normalization_responses` is shape-checked before it
+/// is filed, which the second half asserts by ingesting one.
+#[test]
+fn a_normalization_run_that_did_not_happen_reports_no_witness_sizes() {
+    let row = mutation_wire_spelling(
+        canonical_mutation_matrix()
+            .first()
+            .expect("the matrix carries at least one row")
+            .mutation,
+    );
+
+    let mut response = normalization_response(&row);
+    response.observed_layer = crate::protocol::ObservedOutcomeLayer::ExecutorInfrastructureFailure;
+    assert_eq!(response.validate_shape(), Ok(()));
+
+    response.observed_witness_sizes = vec![vec![64]];
+    assert_eq!(
+        response.validate_shape(),
+        Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation),
+    );
+
+    // The same refusal, reached the way a run reaches it.
+    let responses: Vec<_> = canonical_mutation_matrix()
+        .into_iter()
+        .map(|entry| {
+            let spelling = mutation_wire_spelling(entry.mutation);
+            if spelling == row {
+                response.clone()
+            } else {
+                normalization_response(&spelling)
+            }
+        })
+        .collect();
+    assert_eq!(
+        ingest_normalization_responses(responses),
+        Err(NormalizationIngestionDefect::SelfContradictoryResponse {
+            row,
+            defect: ResponseShapeDefect::InfrastructureResponseCarriesObservation,
+        }),
+    );
 }
