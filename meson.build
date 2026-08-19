@@ -801,8 +801,72 @@ test(
 # checker defines no credential argument, and an executor that must
 # authenticate to a node establishes that boundary outside this process
 # (ADR-015, Guide-9 §17.6).
+#
+# The build system makes no trust declaration on the caller's behalf
+# (`G11-R07`). Selecting an executor path says which program to run; it
+# does not say what that program is, and the class option therefore
+# defaults to `unselected` and fails configuration rather than resolving
+# to the answer that would make the run evidence. A caller who wants a
+# gate must ask for one in as many words.
 target_native_executor = get_option('target_native_executor')
+target_native_executor_class = get_option('target_native_executor_class')
+target_native_intended_tip = get_option('target_native_intended_tip')
+target_native_upstream_base = get_option('target_native_upstream_base')
+target_native_local_topics = get_option('target_native_local_topics')
+
+if target_native_executor != '' and target_native_executor_class == 'unselected'
+  error(
+    'target_native_executor names a program but target_native_executor_class is '
+    + '"unselected". The build system does not classify an executor for you: pass '
+    + '-Dtarget_native_executor_class=mock for a run that can never be evidence, or '
+    + '-Dtarget_native_executor_class=reviewed-non-mock to declare the reviewed runner '
+    + 'and supply its ADR-018 provenance.',
+  )
+endif
+
+# A reviewed nonmock target is a target configured to produce evidence,
+# so every value the evidence gate needs is required at configuration
+# time rather than discovered when the command refuses hours later.
+if target_native_executor != '' and target_native_executor_class == 'reviewed-non-mock'
+  foreach required : [
+    ['target_native_network_id', get_option('target_native_network_id')],
+    ['target_native_genesis_id', get_option('target_native_genesis_id')],
+    ['target_native_intended_tip', target_native_intended_tip],
+    ['target_native_upstream_base', target_native_upstream_base],
+  ]
+    if required[1] == ''
+      error(
+        'a reviewed-non-mock target-native executor requires an explicit '
+        + required[0]
+        + '. An evidence run states the chain it ran on and the source its binary was '
+        + 'built from (ADR-018); the build system supplies neither by default.',
+      )
+    endif
+  endforeach
+endif
+
 if target_native_executor != ''
+  # Assembled once and shared by the primitive and prototype lanes, so
+  # the two cannot drift into declaring different provenance for one
+  # executable. The provenance arguments appear only for a reviewed
+  # nonmock run: the commands refuse them for a mock, since no
+  # expectation makes a mock evidence.
+  target_native_common_args = [
+    '--executor', target_native_executor,
+    '--executor-class', target_native_executor_class,
+    '--network-id', get_option('target_native_network_id'),
+    '--genesis-id', get_option('target_native_genesis_id'),
+  ]
+  if target_native_executor_class == 'reviewed-non-mock'
+    target_native_common_args += [
+      '--intended-tip', target_native_intended_tip,
+      '--upstream-base', target_native_upstream_base,
+    ]
+    foreach topic : target_native_local_topics
+      target_native_common_args += ['--local-topic', topic]
+    endforeach
+  endif
+
   check_target_native_bin = custom_target(
     'cargo-check-target-elements-native',
     output: 'check-target-elements-native-bin',
@@ -821,11 +885,7 @@ if target_native_executor != ''
   target_native_check = custom_target(
     'target-elements-native',
     output: ['target-elements-native.ok', 'target-elements-native.json'],
-    command: [check_target_native_bin,
-      '--executor', target_native_executor,
-      '--executor-class', get_option('target_native_executor_class'),
-      '--network-id', get_option('target_native_network_id'),
-      '--genesis-id', get_option('target_native_genesis_id'),
+    command: [check_target_native_bin] + target_native_common_args + [
       '--report', '@OUTPUT1@',
       '--stamp', '@OUTPUT0@',
     ],
@@ -865,12 +925,8 @@ if target_native_executor != ''
         'target-elements-prototype-' + relation + '.ok',
         'target-elements-prototype-' + relation + '.json',
       ],
-      command: [check_target_prototypes_bin,
-        '--relation', relation,
-        '--executor', target_native_executor,
-        '--executor-class', get_option('target_native_executor_class'),
-        '--network-id', get_option('target_native_network_id'),
-        '--genesis-id', get_option('target_native_genesis_id'),
+      command: [check_target_prototypes_bin, '--relation', relation]
+        + target_native_common_args + [
         '--report', '@OUTPUT1@',
         '--stamp', '@OUTPUT0@',
       ],
