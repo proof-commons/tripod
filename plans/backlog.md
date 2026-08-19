@@ -1706,7 +1706,7 @@ active tree.
 | `DI-002b` | DONE | Replace the second-edition adopted drafts with the author's third-edition texts and repair every citation that dangled as a result. The third edition was verified against the audit register before the swap: all 26 findings fixed, the 7 defects among them included, and a mechanical re-audit clean — every per-document citation resolves, every mint is unique, and the kind registry's headline counts of 333 names, 349 rows, 208 kinds, 3 declared hybrids and 4 device classes derive exactly from its tables. Fourteen citations across three plan files were retargeted in the same commit as the swap, per the calculus's same-commit rule. Both adopting records were then refreshed to the editions they adopt: ADR-019 restates all seven adoption parameters and records that the checker implements the authorship warrant species only, ADR-020 names this repository as the registry's acceptee and recasts its extension register as the recorded extension set with located first-hand evidence, and a second kind-migration round settled two further tokens. |
 | `DI-003` | DONE | Re-engineer the labels checker to the calculus: a single participation scanner shared by every check (mints, citations, links, hygiene, inline-code discipline), owner signatures with registered prefixes, imported and synthetic citations, anchor harvests, and the kind registry as the checker's kind vocabulary. W1 landed the participation scanner and the DI-F02 repair, W2 the seven adoption parameters as typed data with the kind vocabulary and warrant totality, and W3 the near-miss warnings, the companion attestation register, and the gate reconciliation across both records. |
 | `DI-004` | DONE | Adopt the identity-adjudication procedure against ADR-016: classify every existing digest through the benefit criterion with admission records, and MIGRATE the two grandfathered recipes to domain-separated forms per the user's ruling — the architecture semantic and anchor-set hashes change under a recorded recipe migration, superseding the ADR-016 grandfather clause. Both halves delivered: the migration, and a census of the whole tree read from the owning code, recorded as six admission records and eleven stop records in the identities register. |
-| `DI-005` | TODO | Interchange conventions: record adoption as the standing wire-format discipline for future externally consumed documents; no implementation until a consumer exists. Draft refreshed 2026-08-18 to the forward-compatibility edition: ceiling-based acceptance with downward-closed holding, open-companion tolerant validation, never-assigned stamps rejected as checkably false claims; the fourth-edition audit's two defects and one editorial finding all fixed on resupply, delta purely additive, nothing dangling. |
+| `DI-005` | DONE | Interchange conventions: promoted wholesale per the user's ruling of 2026-08-19 and adopted by [ADR-022](../adr/022-interchange-conventions.md) as the standing wire-format discipline for externally consumed documents. The edition adopted is the fourth, refreshed 2026-08-18: ceiling-based acceptance with downward-closed holding, open-companion tolerant validation, never-assigned stamps rejected as checkably false claims; the fourth-edition audit's two defects and one editorial finding all fixed on resupply, delta purely additive, nothing dangling. ADR-022 carries adoption data only — the boundary against ADR-010, the restated executor stop, the labeling and identity alignment records, and the no-implementation standing — and restates no clause of the discipline. Nothing is built: normative now, unimplemented by design. |
 | `DI-006` | DONE | Three-part labels: the paper's 16 two-segment labels take the area `attestation`, a division's home being the document itself; `abs` takes the registry's `abst` per the user's ruling. 16 mints and 59 sites moved in one commit; the anchor-set pin moved……, retired value reproduced; the semantic hash followed, the behavioural did not. Layer-0 kinds enforced. W-B holds the arity in one rule over every entry point: a label-intended occurrence that is not three-part fails as `malformed_label_shape`, and the realization's 20 two-segment divisions are frozen by name, not exempted as a surface. |
 | `DI-008` | DONE | Promote the identity-adjudication draft: delete ADR-016 and mint [ADR-021](../adr/021-identity-adjudication.md) as the adopting record, carrying only adoption data — the single local recipe convention, the current-identities table, the concrete identity chain, the recorded separation migration verbatim, the ADR-011 amendment linkage, and three recorded divergences. Every generic mechanism, class, flow, edge, duty, evidence and rejected-alternative section is deleted rather than restated: the draft holds them and is cited at the `PLAN` prefix. Ten imported citations to the retired owner were retargeted in the same commit, seven of them to the draft's own mints and three to ADR-021's local records. |
 
@@ -1730,6 +1730,26 @@ ADR-021 restates none of them. Three divergences are recorded rather
 than reconciled: the adjudication walk is not a standing checked
 requirement on new proposals, the evidence and release surfaces do not
 exist, and the well-founded-graph rule is vacuous with one link built.
+
+The same ruling promoted the interchange conventions, and DI-005 closes
+on ADR-022. No separate promotion identifier was minted: unlike the
+identity draft, the conventions never had a repository record to retire,
+so DI-005 was always the promotion itself and DI-009 stays unclaimed.
+ADR-022 restates no clause and mints no overlap — the two languages, the
+satisfaction judgment, the base theory, acceptance and the open
+companion, the assignable fragment, the registry signature, the four
+invariants, the Law, the six meta-theorems and the caveats stay the
+draft's, cited at the `PLAN` prefix from outside `plans/` and in the
+local parenthesized form within it. What the record adds is the boundary
+against ADR-010, which owns first-party command-line streams while
+ADR-022 owns externally consumed documents; the executor protocol's stop
+from section 3.10 of the identities register, restated for the wire
+format rather than for a digest, with the register's revisit condition
+unchanged; the two alignment records the draft's preamble leaves to its
+adopting corpus, on documentation labels and on identity recipes; and
+the standing that adoption is normative now and builds nothing until a
+real externally consumed document exists. That first consumer class is
+named but not chartered.
 
 The user's integration rulings, 2026-08-16: kind-token conflicts migrate
 to the registry forms; the two grandfathered identity recipes migrate
@@ -1905,8 +1925,8 @@ conditions bound to the release surface, not to this batch; the benefit
 walk as a standing requirement on new proposals, rather than as the
 one-time census just taken, is a change to ADR-016's admission rule that
 no task yet owns; and the executor protocol's stop records the reasoning
-DI-005 will restate when the interchange conventions are adopted as the
-discipline for externally consumed documents.
+DI-005 restated in ADR-022 when the interchange conventions were adopted
+as the discipline for externally consumed documents.
 
 DI-003 opened with W1, the participation scanner. The survey found the
 judgment re-derived in six places: the Markdown scanner's own fence

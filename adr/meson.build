@@ -11,6 +11,7 @@ adr_record_files = files(
   '019-label-calculus.md',
   '020-environment-kinds.md',
   '021-identity-adjudication.md',
+  '022-interchange-conventions.md',
 )
 
 # Non-numbered documentation in this directory (DOC owner).
