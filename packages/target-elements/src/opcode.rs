@@ -479,6 +479,15 @@ impl OpcodeResourceCost {
     /// cause at any point during its execution.
     ///
     /// Negative values mean the primitive can only shrink the stack.
+    ///
+    /// "At any point during its execution" is not the same as the depth
+    /// the primitive settles at, and for two reviewed primitives the
+    /// two figures differ. A verifying signature form reaches its
+    /// branching counterpart's depth before the implicit verification
+    /// consumes the truth value, so it declares one item above where it
+    /// leaves the stack — which is the figure a scheduler must size
+    /// against. The transient rule and its target source location are
+    /// stated with the weld that derives this field.
     #[must_use]
     pub const fn maximum_stack_growth(self) -> i64 {
         self.maximum_stack_growth
