@@ -14,6 +14,7 @@ pub mod census;
 pub mod check;
 pub mod diagnostic;
 pub mod forbidden;
+pub mod hashcite;
 pub mod heads;
 pub mod label;
 pub mod latex;

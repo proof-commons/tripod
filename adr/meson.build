@@ -11,6 +11,7 @@ adr_record_files = files(
   '018-upstream-elements-workspace.md',
   '019-label-calculus.md',
   '020-environment-kinds.md',
+  '021-identity-adjudication.md',
 )
 
 # Non-numbered documentation in this directory (DOC owner).

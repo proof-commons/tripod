@@ -16,7 +16,7 @@ the weight rule in [the plans README](../README.md).
 |---|---|---|
 | [label-calculus.md](label-calculus.md) | The documentation/source label calculus as one mint rule under two warrants, authorship and derivation, parametric in inventory profiles and reserved kinds | adopted as normative by [ADR-019](../../adr/019-label-calculus.md) |
 | [environment-kinds.md](environment-kinds.md) | The environment kind registry: 333 names into 208 kinds | adopted as normative by [ADR-020](../../adr/020-environment-kinds.md) |
-| [identity-adjudication.md](identity-adjudication.md) | The digest/identity adjudication procedure | backlog §13 (refines ADR-016) |
+| [identity-adjudication.md](identity-adjudication.md) | The digest/identity adjudication procedure | adopted as normative by [ADR-021](../../adr/021-identity-adjudication.md) |
 | [interchange-conventions.md](interchange-conventions.md) | Deterministic CBOR/CDDL interchange: envelope, registry, satisfaction, forward-compatible minors by floor and open companion | backlog §13 |
 
 ## Draft rule · `rule:drafts:authority`

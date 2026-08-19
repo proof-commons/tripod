@@ -1,0 +1,107 @@
+id	match_kind	match_value	group	verification	referent	generation_program	notes
+# Families for the hash-citation audit: every hexadecimal value the tracked tree
+# carries is described here by what it measures and by the program that writes
+# it. Rules are tried IN FILE ORDER and the first match wins, so specific rules
+# precede general ones. Eight tab-separated columns, no exceptions; a row with
+# any other count is a hard error rather than a skipped line.
+#
+# Columns
+#   group          INTERNAL (the value derives from this repository's own
+#                  material) or EXTERNAL (it names something outside).
+#   verification   how a READER establishes the value. This audit establishes
+#                  none of them itself: it checks that a value is described and
+#                  that its rule declares a way of being checked, not that the
+#                  value is right. Recomputing a manifest here would be a
+#                  second opinion about the same computation, and it would fail
+#                  for reasons that are not lint failures.
+#
+#                  Every word below names something a reader can do. A rule
+#                  declaring anything else is refused, because a value offered
+#                  as a digest or identifier that nothing regenerates and
+#                  nothing resolves is thirty-two bytes on the author's word.
+#                  That is why RECORDED, CAPTURE-RUN and NODE-REPORTED are no
+#                  longer among them: each named where a value came from, and
+#                  none of them told a reader how to check it.
+#                    RECOMPUTABLE    this tree carries the bytes and names the
+#                                    algorithm that regenerate it
+#                    CARRIED         its bytes stand verbatim inside a
+#                                    transaction the corpus publishes
+#                    SIGNATURE-VERIFIED  a published witness signature
+#                                    verifies against it under a published key
+#                    HEX-TEXT-DECODES  length-prefixed hexadecimal text that
+#                                    decodes to the string it declares
+#                    RESOLVABLE      it names a commit a reader can resolve
+#                    SOURCE-STATED   a constant in this workspace states it and
+#                                    a test binds that constant to the corpus
+#                    VECTORS-SUITE   the vectors suite reads the value back
+#                    MODULE-TEST     a test in the module that owns the value
+#                    CARGO-TEST      the assertion in the source itself
+#                    MODEL-EXPORT    re-running the architecture model export
+#                    DOCUMENT-BUILD  the document build that stamps it
+#                    EXTERNAL-ELEMENTS  the upstream project's history
+#                    DERIVED         an authored constant published beside the
+#                                    string it is the digest of
+#                    AUTHORED        an authored input something other than the
+#                                    author fixes: a specification, a published
+#                                    algorithm, mathematics, or a visible
+#                                    pattern that is its own definition
+#   referent       what the value measures — the thing it would stop being
+#                  true about.
+#   generation_program  what writes it. Mandatory for an INTERNAL row. A value
+#                  whose generator is not named cannot be regenerated once its
+#                  subject moves, and becomes a claim about the tree that
+#                  nothing maintains. "None" is a real answer and a strong one:
+#                  it says the value is authored rather than measured, and an
+#                  authored value has nothing to drift from.
+#
+# The audit's contract, stated here because these rows are read against it
+#   - A hexadecimal run of 7 to 64 characters standing free of any longer
+#     identifier is a value. Seven is the floor because seven is what git
+#     abbreviates to by default, so an eight-digit floor would be blind to the
+#     commonest short form there is. The ceiling is the point past which a run
+#     is no longer any digest this tree writes.
+#   - An all-digit run is an ordinary number and is not a value: decimal digits
+#     are hexadecimal digits, so form alone cannot separate a count from a
+#     digest, and the audit yields to the reading that does not invent one.
+#   - A value no rule describes fails the audit. That is its only failure mode,
+#     and it is the one it exists for: a new digest arriving with no named
+#     generator, which is the moment at which the tree stops being able to say
+#     where its own numbers come from.
+#   - A rule that describes nothing is reported and never enforced.
+#
+# Growth is one-way for a kind of value the tree still carries. Rows are added
+# when a value needs one, and are not removed merely because today's tree has
+# no occurrence of that kind: a row is a standing claim about a kind of value
+# rather than an inventory. The consequence is the property worth having: this
+# audit can only ever fail as "a value nothing describes", never as "a value
+# that used to be allowed". A row whose kind of value the tree no longer
+# carries at all is a different case and goes with it, because a rule that
+# describes nothing is a stale claim rather than a standing one.
+#
+# --- upstream pins cited in the record ------------------------------------------------------
+upstream-elements-required-tip	prefixof	b7fc5d080a7e9ccc0ef48c3ba11db243e794bdb0	EXTERNAL	RESOLVABLE	The upstream Elements commit the native runs required their daemon to be built from.	Declared by the harness configuration and cited in the record of every run taken against it.	A citation of another project's history, resolving once the fork is published. The rule states the longest form this repository cites and admits its abbreviations, because a sentence cites a commit at whatever length it wanted. It states the longest form rather than the full identifier so that the rule names a value this tree actually carries: writing out a commit the tree never cites would be authoring one.
+upstream-elements-merged-tip	prefixof	78499c2064751b7662357ff93660c0dcc0f2f1b4	EXTERNAL	RESOLVABLE	The upstream Elements commit the adaptation work was merged over.	The upstream project's history; this repository cites the commit and never renumbers it.	A citation of another project's history, resolving once the fork is published. The rule states the longest form this repository cites and admits its abbreviations, because a sentence cites a commit at whatever length it wanted. It states the longest form rather than the full identifier so that the rule names a value this tree actually carries: writing out a commit the tree never cites would be authoring one.
+upstream-elements-adaptation-base	prefixof	6f43e3ffe7308589f3cbaaec9115ce7456b1bf99	EXTERNAL	RESOLVABLE	The upstream Elements commit an adaptation branch was taken from.	The upstream project's history, as above.	A citation of another project's history, resolving once the fork is published. The rule states the longest form this repository cites and admits its abbreviations, because a sentence cites a commit at whatever length it wanted. It states the longest form rather than the full identifier so that the rule names a value this tree actually carries: writing out a commit the tree never cites would be authoring one.
+upstream-elements-friction-base	prefixof	0b3bffd93138	EXTERNAL	RESOLVABLE	The upstream Elements commit a recorded friction was observed at.	The upstream project's history, as above.	A citation of another project's history, resolving once the fork is published. The rule states the longest form this repository cites and admits its abbreviations, because a sentence cites a commit at whatever length it wanted. It states the longest form rather than the full identifier so that the rule names a value this tree actually carries: writing out a commit the tree never cites would be authoring one.
+# --- the model export -------------------------------------------------------------------------
+model-export-hash	regex	(semantic[_ ]hash|behavioural[_ ]hash|anchor[_ ]set[_ ]hash|behavioral[_ ]hash)	INTERNAL	MODEL-EXPORT	The canonical model export: its semantic content, its behaviour, or its anchor set.	The architecture model export, which writes packages/model/generated/architecture.json and .toml and stamps the realization document.	A value the export computes from the model, so the export is the only thing that may write it and re-running the export is the only way to move it.
+generated-model-artifact	pathglob	packages/model/generated/*	INTERNAL	MODEL-EXPORT	A value the generated artifact records about the model it was built from.	The architecture model export.	A generated file: never hand-edited, always regenerated. Most of its values carry a key an earlier rule claims by name, which is why this rule is the residual rather than the first word on the directory.
+# --- behavioural fingerprints -------------------------------------------------------------------
+fingerprint-grounds	token	0x053e_323b_8934_f2b5	INTERNAL	MODULE-TEST	The grounds fingerprint of the still-required row set.	grounds_fingerprint() in packages/vectors/src/live_negative_half.rs, asserted by the test in that module.	The test that owns the function is the verifier. An audit that recomputed the hash would be reimplementing the thing it checks, and would then agree with itself rather than with the code.
+# --- authored constants and specimens ---------------------------------------------------------
+authored-placeholder	shape	low-entropy	INTERNAL	AUTHORED	Itself: a placeholder drawn from a handful of characters so a reader sees at a glance that it is not a measurement.	None. Somebody typed it.	Forms like 0000..., cccc..., aa11aa11... and ffff... A real digest does not draw from a four-character alphabet, so the form is the whole argument.
+authored-derived-constant	token	50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0	INTERNAL	DERIVED	The taproot internal key, chosen so that the key path is unspendable.	sha256 of the uncompressed encoding of the secp256k1 generator, stated beside every use.	The pattern the amendment asks every authored constant to follow: the value is the digest of a stated input, so a reader recomputes it instead of trusting the choice.
+authored-curve-constant	pathglob	packages/target-elements-conformance/src/*/curve.rs	INTERNAL	AUTHORED	Itself: a fixed parameter of the secp256k1 curve.	None. The constant is published by the curve's specification and transcribed here.	Not a pointer to any artifact, so there is nothing to resolve and nothing to regenerate.
+authored-proptest-seed	pathglob	*/proptest-regressions/*	INTERNAL	DERIVED	The generator seed a regression file carries.	sha256 of the string the file publishes beside it.	The counterexamples these files used to replay are written down as named tests stating their inputs. The seed that remains is derived rather than recorded, and the file says so.
+authored-hex-digit-table	token	0123456789abcdef	INTERNAL	AUTHORED	Itself: the lower-case hexadecimal alphabet, used as a digit lookup table.	None. An authored constant.	The alphabet a digest is written in rather than a digest.
+authored-staged-tip	token	0123456789abcdef0123456789abcdef01234567	INTERNAL	AUTHORED	Itself: a staged stand-in commit id in a report test.	None. An authored test constant.	Written in ascending digit order so a reader cannot mistake it for a measured value.
+authored-revision-specimen	token	A1B2C3D	INTERNAL	AUTHORED	Itself: a specimen revision string, written upper case in the provenance test and lower case as the test binary revision.	None. An authored test constant.	Value matching is case-insensitive, so one rule covers both spellings.
+authored-revision-specimen-full	token	a1b2c3d4e5f60718293a4b5c6d7e8f9012345678	INTERNAL	AUTHORED	Itself: the full-length specimen revision the provenance test truncates.	None. An authored test constant.	The full form exists so the test can show what truncation does to it.
+authored-revision-specimen-short	token	abcdef0	INTERNAL	AUTHORED	Itself: a short revision specimen fed to the revision-id parser.	None. An authored test constant.	Seven characters, which is the parser's own floor, so the specimen sits exactly on the boundary it exercises.
+authored-bit-flag	shape	underscored	INTERNAL	AUTHORED	Itself: a constant written into the source, not a measurement of anything.	None. Bit flags, hash primes and offset bases are authored values.	Thirty-two-bit flag forms and the sixty-four-bit multiplier and offset constants. A value in this form that is a real measurement is claimed by one of the fingerprint rules above, which is why those precede this one.
+# --- values a build computes and a test asserts -------------------------------------------------
+rust-test-expectation	pathglob	packages/*/src/*	INTERNAL	CARGO-TEST	The value the surrounding code computes and asserts, or the material a test constructs it from.	The cargo test or module that computes it; the assertion in the source is the check.	The assertion is what keeps the value true, so an audit that checked it too would be a second opinion about one computation rather than a new one.
+# --- records: measurements transcribed into narrative -------------------------------------------
+docs-record	pathglob	docs/*	INTERNAL	DOCUMENT-BUILD	A measurement stamped into the published document.	The architecture model export and the document build.	The realization document carries the export triple in its own envelope, where the build writes it and no author does.
+executor-confidential-golden	pathglob	scripts/elements-native-executor.py	INTERNAL	MODULE-TEST	A fixture transcript and its digest, held as the golden the two implementations agree on.	The conformance suite recomputes both from the fixture manifest and asserts them against these values.	Read out of this file by name from the Rust side, so the constant is one half of a cross-implementation agreement rather than a number nothing consumes.
+script-record	pathglob	scripts/*	INTERNAL	AUTHORED	A constant a capture or gate script carries: an expected tip, a timeout, a count.	Authored in the script, or declared as the upstream pin an earlier rule claims.	The upstream revision these scripts pin is matched by the external rule above, so what this rule is left with is the script's own authored constants.
