@@ -422,7 +422,7 @@ pub const CHAIN_POLICY_ASSET: [u8; 32] = [0_u8; 32];
 pub const FOREIGN_TEST_ASSET: [u8; 32] = [0x5a_u8; 32];
 
 /// One explicit amount of the chain's policy asset.
-fn explicit(amount: u64) -> TestAmount {
+const fn explicit(amount: u64) -> TestAmount {
     TestAmount {
         value: TestValueRepresentation::Explicit { amount },
         asset: TestAssetRepresentation::Explicit {
@@ -467,6 +467,10 @@ fn confidential(amount: u64, label: &str) -> TestAmount {
 /// So: eleven rows are executed and one is deferred, and the deferral is
 /// a typed row in the matrix rather than an absence.
 #[must_use]
+// One literal per row, in the guide's own order. Splitting this to satisfy
+// a line count would scatter twelve statements a reader checks against one
+// table across several functions, which costs more than it saves.
+#[allow(clippy::too_many_lines)]
 pub fn canonical_conservation_matrix() -> Vec<ConservationRow> {
     // A single funding amount keeps every row's arithmetic legible: a
     // reader checking a row does not also have to check that its totals
@@ -770,11 +774,13 @@ mod tests {
     #[test]
     fn the_confidential_rows_are_actually_confidential() {
         let matrix = canonical_conservation_matrix();
-        let confidential_rows: Vec<_> = matrix
-            .iter()
-            .filter(|row| row.involves_confidential_value())
-            .collect();
         // Rows 2, 3, 4, 5, 7, 8, 9, 11, 12 carry confidential value.
-        assert_eq!(confidential_rows.len(), 9);
+        assert_eq!(
+            matrix
+                .iter()
+                .filter(|row| row.involves_confidential_value())
+                .count(),
+            9
+        );
     }
 }

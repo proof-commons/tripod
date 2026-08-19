@@ -95,6 +95,16 @@ fn hex(text: &str) -> Vec<u8> {
         .collect()
 }
 
+/// One byte string as hex, for a failure message.
+fn rendered(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+
+    bytes.iter().fold(String::new(), |mut text, byte| {
+        let _ = write!(text, "{byte:02x}");
+        text
+    })
+}
+
 /// One printed `uint256`, in the order the arithmetic reads it.
 ///
 /// Applies to asset identifiers and to blinding factors alike: the node
@@ -124,10 +134,7 @@ fn the_oracle_predicts_every_observed_commitment() {
                 "the oracle and the target disagree on {}: {mismatch:?}\n  \
                  predicted {}\n  observed  {}",
                 opening.row,
-                predicted
-                    .iter()
-                    .map(|byte| format!("{byte:02x}"))
-                    .collect::<String>(),
+                rendered(&predicted),
                 opening.observed_commitment,
             );
         }

@@ -922,7 +922,7 @@ impl NativeConservationResponse {
     ///
     /// [`ResponseShapeDefect`] where the response is not a shape the
     /// protocol defines.
-    pub fn validate_shape(&self) -> Result<(), ResponseShapeDefect> {
+    pub const fn validate_shape(&self) -> Result<(), ResponseShapeDefect> {
         if !self.observed_layer.is_target_verdict()
             && (self.transaction_bytes.is_some()
                 || !self.observed_value_commitments.is_empty()
