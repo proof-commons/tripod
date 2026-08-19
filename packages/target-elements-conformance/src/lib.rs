@@ -12,6 +12,8 @@ pub mod disposition;
 pub mod error;
 pub mod executor;
 pub mod fixture;
+pub mod lifecycle;
+pub mod lifecycle_report;
 pub mod normalization;
 pub mod normalization_report;
 pub mod protocol;
