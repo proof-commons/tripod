@@ -557,21 +557,23 @@ fn generated_artifacts_use_companion_authorization_vocabulary() {
 
 #[test]
 fn anchor_set_hash_is_order_and_duplication_insensitive() {
-    let sorted = [
+    let sorted = ValidatedAnchorSet::new([
         "def:model:classes",
-        "open:leverage-timing",
+        "open:model:leverage-timing",
         "rem:model:calibration",
-    ];
-    let shuffled_with_repeats = [
+    ])
+    .expect("three anchor names");
+    let shuffled_with_repeats = ValidatedAnchorSet::new([
         "rem:model:calibration",
         "def:model:classes",
-        "open:leverage-timing",
+        "open:model:leverage-timing",
         "def:model:classes",
-    ];
+    ])
+    .expect("the same three anchor names");
 
     assert_eq!(
-        anchor_set_hash(sorted),
-        anchor_set_hash(shuffled_with_repeats),
+        anchor_set_hash(&sorted),
+        anchor_set_hash(&shuffled_with_repeats),
     );
 }
 
@@ -579,19 +581,33 @@ fn anchor_set_hash_is_order_and_duplication_insensitive() {
 fn anchor_set_hash_matches_the_published_recipe() {
     // sha256 of the domain prefix "tripod layer-0 anchor set
     // v2\n" followed by
-    // "def:model:classes\nopen:leverage-timing\nrem:model:calibration".
+    // "def:model:classes\nopen:model:leverage-timing\nrem:model:calibration",
+    // computed independently of this crate:
+    //
+    //   printf 'tripod layer-0 anchor set v2\n\
+    //   def:model:classes\nopen:model:leverage-timing\n\
+    //   rem:model:calibration' | sha256sum
+    //
     // Re-pinned by the DI-004 recipe migration; the retired `…-v1`
-    // recipe hashed the joined names alone and returned
-    // 7cf117528af2ae36e507b58ef1d0659c3b3976323e8e6deb9e96279533e347fb.
-    let expected = "331071bbade9fce3fb4cc1386e5e7ff5701b6185e0e05e9b11143f9b26b00dd1";
+    // recipe hashed the joined names alone.
+    //
+    // The vector's middle name gained its area segment when `G12-R02`
+    // made the anchor-name grammar a type: the old two-part `open:…`
+    // string is not an anchor name and never was one, so a recipe test
+    // could no longer stand on it. The recipe itself did not move —
+    // the same command over the *old* vector still returns the digest
+    // this test carried before, 331071bbade9fce3fb4cc1386e5e7ff5701b\
+    // 6185e0e05e9b11143f9b26b00dd1.
+    let expected = "577cee1e2a1901f4ae7d956c6e7845fdb8b2b3fed78a943da87b032410efa812";
 
-    let digest = anchor_set_hash([
-        "open:leverage-timing",
+    let anchors = ValidatedAnchorSet::new([
+        "open:model:leverage-timing",
         "rem:model:calibration",
         "def:model:classes",
-    ]);
+    ])
+    .expect("three anchor names");
 
-    assert_eq!(canonical::hex(&digest), expected);
+    assert_eq!(canonical::hex(&anchor_set_hash(&anchors)), expected);
 }
 
 /// Retired identifiers stay retired: reusing one for a new recipe is

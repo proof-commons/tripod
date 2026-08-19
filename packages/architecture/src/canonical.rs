@@ -32,6 +32,9 @@
 //! remain crate-private for the mutation tests, which deliberately
 //! build invalid architectures.
 
+use std::collections::BTreeSet;
+use std::fmt;
+
 use serde::Serialize;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
@@ -332,25 +335,209 @@ fn manifest_digest(canonical_bytes: &[u8]) -> [u8; 32] {
     result
 }
 
-/// The Layer-0 anchor-set hash recipe ([`ANCHOR_SET_HASH_ALGORITHM`]):
+/// Why one offered string is not an anchor name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum AnchorNameDefect {
+    /// The name holds the byte the anchor-set framing joins with.
+    ///
+    /// Named separately from the general character rule because it is
+    /// the defect that would make the framing ambiguous rather than
+    /// merely admit an unpronounceable name.
+    HoldsTheSetSeparator,
+    /// The name is not the three-part `kind:area:name` form.
+    NotThreePart,
+    /// One of the three segments is empty.
+    SegmentEmpty,
+    /// A segment holds a byte outside lowercase letters, digits, and
+    /// the hyphen.
+    SegmentCharacterNotAdmitted,
+    /// A segment opens or closes with a hyphen.
+    SegmentEdgeHyphen,
+    /// A segment holds two hyphens in a row.
+    SegmentDoubleHyphen,
+    /// The kind segment is hyphenated, which the kind registry admits
+    /// for no member.
+    KindHyphenated,
+}
+
+impl fmt::Display for AnchorNameDefect {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let text = match self {
+            Self::HoldsTheSetSeparator => {
+                "the anchor name holds the newline the anchor-set framing joins with"
+            }
+            Self::NotThreePart => "the anchor name is not written kind:area:name",
+            Self::SegmentEmpty => "a segment of the anchor name is empty",
+            Self::SegmentCharacterNotAdmitted => {
+                "a segment holds a byte outside lowercase letters, digits, and the hyphen"
+            }
+            Self::SegmentEdgeHyphen => "a segment opens or closes with a hyphen",
+            Self::SegmentDoubleHyphen => "a segment holds two hyphens in a row",
+            Self::KindHyphenated => "the kind segment is hyphenated",
+        };
+        formatter.write_str(text)
+    }
+}
+
+/// One specification anchor name, in the label grammar.
+///
+/// An anchor name is a specification label the realization document cites,
+/// without the consumer prefix: the three-part `kind:area:name` form,
+/// each segment written in lowercase letters, digits, and interior
+/// hyphens, with an unhyphenated kind.
+///
+/// # Why this is a type
+///
+/// [`anchor_set_hash`] frames its members by newline join, so a name
+/// holding a newline would make two different sets share one preimage.
+/// The grammar excludes the separator, but a function taking plain
+/// strings does not *say* so, and the safety of the identity then rests
+/// on caller discipline rather than on the API. Validation before
+/// identity is the repository's rule
+/// `(´[PLAN-rule:identity:admission-order]´)`, and this type is how the
+/// anchor-set identity keeps it.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AnchorName(String);
+
+impl AnchorName {
+    /// One anchor name, or why the text is not one.
+    ///
+    /// # Errors
+    ///
+    /// [`AnchorNameDefect`], naming the first rule the text breaks. The
+    /// separator is reported before the general character rule, so a
+    /// name holding a newline says what is actually wrong with it.
+    pub fn new(text: &str) -> Result<Self, AnchorNameDefect> {
+        if text.contains('\n') {
+            return Err(AnchorNameDefect::HoldsTheSetSeparator);
+        }
+
+        let segments = text.split(':').collect::<Vec<_>>();
+        if segments.len() != ANCHOR_NAME_SEGMENTS {
+            return Err(AnchorNameDefect::NotThreePart);
+        }
+
+        for segment in &segments {
+            if segment.is_empty() {
+                return Err(AnchorNameDefect::SegmentEmpty);
+            }
+            if !segment
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+            {
+                return Err(AnchorNameDefect::SegmentCharacterNotAdmitted);
+            }
+            if segment.starts_with('-') || segment.ends_with('-') {
+                return Err(AnchorNameDefect::SegmentEdgeHyphen);
+            }
+            if segment.contains("--") {
+                return Err(AnchorNameDefect::SegmentDoubleHyphen);
+            }
+        }
+
+        // The kind ranges over a registry of words, and a registry of
+        // words admits no hyphenated member.
+        if segments[0].contains('-') {
+            return Err(AnchorNameDefect::KindHyphenated);
+        }
+
+        Ok(Self(text.to_owned()))
+    }
+
+    /// The name.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for AnchorName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// The number of colon-separated segments in an anchor name.
+const ANCHOR_NAME_SEGMENTS: usize = 3;
+
+/// A specification anchor set every member of which is an anchor name.
+///
+/// The set is the identity input: sorted and deduplicated, because a
+/// set is what the recipe hashes and an occurrence order is not part of
+/// it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ValidatedAnchorSet(BTreeSet<AnchorName>);
+
+impl ValidatedAnchorSet {
+    /// One anchor set, from names in any order with repeats.
+    ///
+    /// # Errors
+    ///
+    /// [`AnchorNameDefect`] for the first offered string that is not an
+    /// anchor name. The set is all-or-nothing: a set holding one name
+    /// that is not an anchor name is not an anchor set, and hashing the
+    /// rest of it would mint an identity for a census nobody stated.
+    pub fn new<'a>(
+        anchor_names: impl IntoIterator<Item = &'a str>,
+    ) -> Result<Self, AnchorNameDefect> {
+        anchor_names
+            .into_iter()
+            .map(AnchorName::new)
+            .collect::<Result<BTreeSet<AnchorName>, AnchorNameDefect>>()
+            .map(Self)
+    }
+
+    /// The distinct names, in canonical order.
+    pub fn iter(&self) -> impl Iterator<Item = &AnchorName> {
+        self.0.iter()
+    }
+
+    /// How many distinct names the set holds.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Whether the set holds no name at all.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+/// The specification anchor-set hash recipe ([`ANCHOR_SET_HASH_ALGORITHM`]):
 /// `sha256( domain_prefix || join("\n", sorted(distinct anchor names)) )`.
 ///
-/// Anchor names are the Layer-0 labels the realization document cites,
-/// without the `A-` consumer prefix. Sorting and deduplication happen
-/// here, so the input may be any occurrence order with repeats. The
-/// result is the value pinned as the manifest's
-/// `SpecificationBinding::anchor_set_hash`; release validation refuses a
-/// manifest that leaves it unset.
+/// Anchor names are the specification labels the realization document cites,
+/// without the `A-` consumer prefix. Sorting and deduplication are
+/// [`ValidatedAnchorSet`]'s, so the names offered to it may be in any
+/// occurrence order with repeats. The result is the value pinned as the
+/// manifest's `SpecificationBinding::anchor_set_hash`; release validation
+/// refuses a manifest that leaves it unset.
+///
+/// # The recipe is unchanged
+///
+/// Requiring a [`ValidatedAnchorSet`] is input validation, not a recipe
+/// migration. The domain prefix is the same prefix, the join is the
+/// same newline join over the same sorted distinct names, and every
+/// anchor set that could honestly be offered before hashes to exactly
+/// what it hashed before — so the pinned manifest value and
+/// [`ANCHOR_SET_HASH_ALGORITHM`] both stand. What changed is which
+/// inputs can be offered at all: a name holding the separator gave two
+/// different sets one preimage, and that name is now not an anchor
+/// name.
 ///
 /// The prefix is the only difference from the retired `…-v1` recipe:
 /// the identified dependency set and its canonical ordering are
 /// unchanged.
-pub fn anchor_set_hash<'a>(anchor_names: impl IntoIterator<Item = &'a str>) -> [u8; 32] {
-    let distinct = anchor_names
-        .into_iter()
-        .collect::<std::collections::BTreeSet<_>>();
-
-    let joined = distinct.into_iter().collect::<Vec<_>>().join("\n");
+#[must_use]
+pub fn anchor_set_hash(anchors: &ValidatedAnchorSet) -> [u8; 32] {
+    let joined = anchors
+        .iter()
+        .map(AnchorName::as_str)
+        .collect::<Vec<_>>()
+        .join("\n");
 
     let mut hasher = Sha256::new();
     hasher.update(ANCHOR_SET_DOMAIN_PREFIX);

@@ -1,36 +1,65 @@
 //! Guide-12 preflight reproductions owned by this crate.
 //!
-//! The test here demonstrates its register row by *passing* while the
-//! defect is present. Wave 0 reproduces and does not repair, so the wave
-//! that fixes the row flips the assertion.
+//! The test here belongs to its register row. While the row is open the
+//! test passes by asserting the defect; the wave that fixes the row
+//! flips the assertion, which then stands as the guarantee.
 //!
-//! - `G12-R02` — the anchor-set hash frames an unvalidated string set by
-//!   newline join, so one name holding a newline and two names have one
-//!   preimage.
+//! - `G12-R02` — CLOSED: the anchor-set hash takes a validated set, so
+//!   no name can hold the separator the framing joins with.
 
-use crate::canonical::anchor_set_hash;
+use crate::canonical::{AnchorName, AnchorNameDefect, ValidatedAnchorSet, anchor_set_hash};
 
-/// `G12-R02`: two different anchor sets share one preimage.
+/// `G12-R02`: no two anchor sets share one preimage.
 ///
 /// The recipe sorts, deduplicates, joins with a newline, and hashes. The
-/// separator is admitted inside a member, so a set holding the single
-/// name `a\nb` and a set holding the two names `a` and `b` produce the
-/// same joined text and therefore the same digest. Neither the function
-/// nor its parameter type refuses a name that is not an anchor name at
-/// all, which is the second half of the row: an arbitrary string can
-/// acquire an attestation anchor identity.
+/// separator used to be admitted inside a member, so a set holding the
+/// single name `a\nb` and a set holding the two names `a` and `b`
+/// produced the same joined text and therefore the same digest. Neither
+/// the function nor its parameter type refused a name that was not an
+/// anchor name at all, so an arbitrary string could acquire an attestation
+/// anchor identity.
 ///
-/// The assertion is the defect. A wave that hashes a validated
-/// anchor-set type — which no such name can inhabit — flips it, and does
-/// so without disturbing the recipe: the framing that the pin was
-/// computed under stays exactly as it is.
+/// The repair is a validated set that no such name can inhabit, and it
+/// leaves the recipe alone: the framing the pin was computed under is
+/// exactly what it was, which the published-recipe test still checks
+/// against its own independently computed digest.
 #[test]
-fn a_newline_bearing_anchor_name_collides_with_two_names() {
-    let one_name = anchor_set_hash(["a\nb"]);
-    let two_names = anchor_set_hash(["a", "b"]);
-
+fn no_anchor_name_can_hold_the_separator_the_framing_joins_with() {
+    // The collision the row was about cannot be built: the newline is
+    // refused by name, before any general character rule.
     assert_eq!(
-        one_name, two_names,
-        "G12-R02: the framing is expected to be ambiguous while the row is open",
+        AnchorName::new("a\nb"),
+        Err(AnchorNameDefect::HoldsTheSetSeparator),
     );
+    assert_eq!(
+        ValidatedAnchorSet::new(["a\nb"]),
+        Err(AnchorNameDefect::HoldsTheSetSeparator),
+    );
+
+    // The two names of the former collision are not anchor names
+    // either, which is the row's second half: an arbitrary string can no
+    // longer acquire an anchor identity.
+    for arbitrary in ["a", "b", "not a label", "def:model", "DEF:MODEL:CLASSES"] {
+        assert!(
+            AnchorName::new(arbitrary).is_err(),
+            "{arbitrary:?} is not an anchor name",
+        );
+    }
+
+    // What the hash does take is a set of real anchor names, and
+    // distinct sets of them keep distinct preimages.
+    let one = ValidatedAnchorSet::new(["def:model:classes"]).expect("an anchor name");
+    let two = ValidatedAnchorSet::new(["def:model:classes", "rem:model:calibration"])
+        .expect("two anchor names");
+    assert_ne!(anchor_set_hash(&one), anchor_set_hash(&two));
+
+    // And the set is a set: order and repetition are not part of it.
+    let repeated = ValidatedAnchorSet::new([
+        "rem:model:calibration",
+        "def:model:classes",
+        "def:model:classes",
+    ])
+    .expect("two anchor names");
+    assert_eq!(anchor_set_hash(&two), anchor_set_hash(&repeated));
+    assert_eq!(repeated.len(), 2);
 }
