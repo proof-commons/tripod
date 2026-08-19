@@ -2,6 +2,7 @@
 
 mod canonical_tests;
 mod census_tests;
+mod commitment_oracle_tests;
 mod constructor_matrix_tests;
 mod constructor_tests;
 mod fixture_tests;

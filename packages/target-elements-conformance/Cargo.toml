@@ -37,6 +37,28 @@ name = "target_elements_conformance"
 # independent of the implementation it checks, the operations needed are
 # public-point arithmetic over published constants, and no secret scalar
 # exists here for a constant-time implementation to protect.
+#
+# The confidential-value oracle (Guide-11 §6, §7) reaches the same
+# answer for the same reasons, and one further reason that is decisive
+# rather than merely sufficient. The target materializes confidential
+# transactions with the zero-knowledge secp256k1 fork the node vendors
+# in-tree. The Rust bindings to that library — `secp256k1` and
+# `secp256k1-zkp` — are FFI wrappers around that same C code, so
+# adopting either would make the oracle and the thing it checks one
+# opinion wearing two hats, and any agreement they reported would be a
+# tautology rather than evidence (Guide-11 §6.3). A pure-Rust curve
+# crate would avoid that specific collapse, but it would also add a
+# cryptographic dependency, its transitive graph, and its advisory
+# surface to a workspace that needs none of it: what the oracle computes
+# is a curve map, two point additions, and two scalar multiplications
+# over published constants, all of it public and none of it
+# performance-bound.
+#
+# So the confidential oracle is first-party arithmetic over the same
+# bignum, and the independence claim is unqualified: no library is
+# shared with the materializer, so §6.3's fallback of recording a shared
+# dependency and narrowing the claim does not arise. Nothing entered
+# `target-elements`, which stays standard-library-only (§6.1).
 [dependencies]
 cli-common = { workspace = true }
 tapscript = { workspace = true }
