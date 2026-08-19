@@ -442,6 +442,53 @@ KNOWN_CONSERVATION_DEFECTS = (
 # and cannot balance, which is exactly what that row states.
 FOREIGN_ASSET_HEX = "5a" * 32
 
+# Every mutation of the Guide-11 section 10.4 threat matrix this adapter
+# implements. Refused by name rather than skipped, for the reason
+# `G11-W7-07` records: a misspelled defect constant once ran a row
+# undamaged and the target accepting a valid transaction was filed as the
+# target accepting a broken one.
+KNOWN_NORMALIZATION_MUTATIONS = (
+    "none",
+    "amount_changed",
+    "owner_changed",
+    "asset_changed",
+    "wrong_blinding_balance",
+    "hidden_private_output",
+    "extra_output_after_signing",
+    "output_mutated_after_signing",
+    "unauthorized_representation_change",
+)
+
+# The address type every normalization coin and destination uses.
+#
+# Taproot, and not by preference. Guide 11 section 10.3 requires the
+# owner's authorization to commit to the finalized output set, and the
+# reviewed digest reaches that profile only on the taproot path
+# (`tab:elements-ref:ct-sighash`). A key-path spend of this address type
+# is signed with a bare 64-byte Schnorr signature carrying no trailing
+# sighash byte, and the reviewed digest reads a missing byte as the
+# default all-outputs non-anyone-can-pay mode -- so the profile is
+# observable in the witness rather than asserted by this adapter.
+NORMALIZATION_ADDRESS_TYPE = "bech32m"
+
+# The fee a normalization transaction declares.
+#
+# Deliberately larger than `ADAPTER_FEE_SATOSHIS`. The row that appends an
+# output after signing funds it from the declared fee so that value still
+# conserves -- and the remaining fee has to stay comfortably relayable, or
+# the transaction would be refused for its fee rate and the signature
+# evidence the row exists for would never be reached.
+NORMALIZATION_FEE_SATOSHIS = 20_000
+
+# What an output appended after signing takes from the declared fee.
+NORMALIZATION_EXTRA_OUTPUT_SATOSHIS = 5_000
+
+# How much an amount-changing mutation moves, and how much a hidden output
+# absorbs. Both are stated by the fixture; these are the adapter's own
+# refusal to guess when a fixture omits one.
+NORMALIZATION_AMOUNT_DELTA = 1_000_000
+NORMALIZATION_HIDDEN_AMOUNT = 1_000_000
+
 # Prefixes Elements puts in front of a script error in a rejection reason.
 CONSENSUS_SCRIPT_PREFIX = "mandatory-script-verify-flag-failed ("
 POLICY_SCRIPT_PREFIX = "non-mandatory-script-verify-flag ("
@@ -2023,8 +2070,14 @@ class ConservationExecutor:
         self.executor.fund(program, self.WALLET_ENDOWMENT_SATOSHIS)
         self.ready = True
 
-    def address(self, confidential: bool) -> str:
+    def address(self, confidential: bool, address_type=None) -> str:
         """One wallet address, blinded or not.
+
+        `address_type` is passed through to the node when given, and
+        omitted otherwise so that the conservation rows keep the wallet's
+        own default exactly as they had it. The normalization lane asks
+        for taproot by name, because its signing profile depends on the
+        address type rather than merely tolerating it.
 
         # Why the unconfidential form is taken explicitly
 
@@ -2038,7 +2091,10 @@ class ConservationExecutor:
         Both forms are therefore taken from `getaddressinfo` by name
         rather than by default.
         """
-        fresh = self.node.call("getnewaddress", wallet=self.WALLET)
+        if address_type is None:
+            fresh = self.node.call("getnewaddress", wallet=self.WALLET)
+        else:
+            fresh = self.node.call("getnewaddress", "", address_type, wallet=self.WALLET)
         info = self.node.call("getaddressinfo", fresh, wallet=self.WALLET)
         wanted = info.get("confidential") if confidential else info.get("unconfidential")
         if not isinstance(wanted, str) or wanted == "":
@@ -2050,7 +2106,7 @@ class ConservationExecutor:
 
     # -- creating the stated input coins ---------------------------------
 
-    def create_coin(self, amount: int, confidential: bool) -> dict:
+    def create_coin(self, amount: int, confidential: bool, address_type=None) -> dict:
         """Creates one coin the wallet owns, and returns what it knows.
 
         A confidential coin is one paid to a blinded address: the wallet
@@ -2064,7 +2120,7 @@ class ConservationExecutor:
         ancestor-limit refusal is not a conservation verdict and would
         arrive looking like one.
         """
-        destination = self.address(confidential)
+        destination = self.address(confidential, address_type)
         try:
             txid = self.node.call(
                 "sendtoaddress", destination, satoshis_to_amount(amount),
@@ -2471,6 +2527,419 @@ class ConservationExecutor:
         return values, assets
 
 
+class NormalizationExecutor:
+    """Builds and judges one Guide-11 section 10.4 normalization row.
+
+    The claim is owner-authorized normalization: a private coin the owner
+    holds is consumed, half its value is republished in the clear, and a
+    blinded change output absorbs the rest along with the residual
+    blinding. Wave 7 established that the fully explicit variant is not
+    constructible at all (`G11-W7-03`), so this is the shape that exists.
+
+    # What this adapter reports, and what it must not decide
+
+    Three of the nine rows are transactions the target ACCEPTS and the
+    claim must still refuse. Their refusal is a disagreement between what
+    the claim named and what the transaction carries, and neither side may
+    be manufactured here:
+
+      claimed    resolved from the claim BEFORE any mutation is applied,
+                 so a mutation cannot quietly move the claim to wherever
+                 the transaction ended up;
+
+      observed   read back out of the node's own decoder, so the harness
+                 is never comparing its intent with itself.
+
+    The comparison itself is not made here. This adapter reports both
+    sides and the layer the node answered at; which layer refused is
+    decided by the typed report, from data it did not generate.
+
+    # The signing profile is observed rather than asserted
+
+    Section 10.3 requires authorization committing to the finalized output
+    set. This adapter uses taproot addresses so the wallet produces a
+    key-path signature, and reports the witness item sizes it actually
+    found. A bare 64-byte item is a Schnorr signature with no trailing
+    sighash byte, which the reviewed digest reads as the default
+    all-outputs non-anyone-can-pay mode. A reader checks the profile
+    against those sizes rather than against this docstring.
+    """
+
+    def __init__(self, conservation: "ConservationExecutor") -> None:
+        self.conservation = conservation
+        self.node = conservation.node
+        self.messages = conservation.messages
+
+    # -- resolving the claim ----------------------------------------------
+
+    def script_of(self, address: str) -> bytes:
+        """The scriptPubKey an address pays, as the node states it."""
+        info = self.node.call(
+            "getaddressinfo", address, wallet=self.conservation.WALLET
+        )
+        program = info.get("scriptPubKey")
+        if not isinstance(program, str):
+            raise AdapterError("the node reported no scriptPubKey for an address")
+        return bytes.fromhex(program)
+
+    def execute(self, case: dict, subject: dict) -> dict:
+        """Builds one normalization row and reports what happened to it."""
+        mutation = subject["mutation"]
+        if mutation not in KNOWN_NORMALIZATION_MUTATIONS:
+            raise ConstructionError(
+                "this adapter does not implement the mutation %r" % mutation
+            )
+        claim = subject["claim"]
+        consumed = claim["consumed"]["value"]["amount"]
+        normalized = claim["normalized"]["value"]["amount"]
+        change = claim["change"]["value"]["amount"]
+        if consumed != normalized + change:
+            raise ConstructionError(
+                "the claim does not conserve the value it consumes: %d into %d and %d"
+                % (consumed, normalized, change)
+            )
+
+        self.conservation.prepare()
+        kind = NORMALIZATION_ADDRESS_TYPE
+
+        # The owner's private coin, and a separate explicit coin for the
+        # fee so the claim's own amounts state the question and nothing
+        # else. An explicit value joins the tally zero-blinded.
+        owner_coin = self.conservation.create_coin(consumed, True, kind)
+        if owner_coin.get("amountblinder", "00" * 32) == "00" * 32:
+            raise ConstructionError(
+                "the owner's coin is not blinded, so there is no private value "
+                "to normalize"
+            )
+        fee_coin = self.conservation.create_coin(NORMALIZATION_FEE_SATOSHIS, False, kind)
+        coins = [owner_coin, fee_coin]
+
+        # The claim's own destinations, resolved once and before any
+        # mutation touches anything.
+        normalized_address = self.conservation.address(False, kind)
+        change_address = self.conservation.address(True, kind)
+        normalized_script = self.script_of(self.conservation.plain_form(normalized_address))
+        change_script = self.script_of(self.conservation.plain_form(change_address))
+        policy_asset = owner_coin["asset"]
+        claimed_outputs = [
+            {
+                "role": "normalized",
+                "script_pubkey": list(normalized_script),
+                "explicit_amount": normalized,
+                "explicit_asset": list(bytes.fromhex(policy_asset)),
+            },
+            {
+                "role": "private_change",
+                "script_pubkey": list(change_script),
+                # A blinded output publishes neither, and the claim does
+                # not pretend otherwise: what it asserts about this output
+                # is that it exists and is the owner's.
+                "explicit_amount": None,
+                "explicit_asset": None,
+            },
+        ]
+
+        raw = self.build(
+            claim, mutation, coins, normalized_address, change_address, policy_asset
+        )
+        raw = self.blind(raw, coins, mutation)
+        raw = self.sign(raw)
+        profile, witness_sizes = self.read_authorization(raw)
+        raw = self.mutate_after_signing(raw, mutation)
+
+        layer, detail = self.conservation.judge(raw)
+        return {
+            "observed_layer": layer,
+            "observed_detail": detail,
+            "claimed_outputs": claimed_outputs,
+            "observed_outputs": self.read_outputs(raw),
+            "authorization_profile": profile,
+            "observed_witness_sizes": witness_sizes,
+            "transaction_bytes": list(bytes.fromhex(raw)),
+        }
+
+    # -- building ----------------------------------------------------------
+
+    def build(self, claim, mutation, coins, normalized_address, change_address,
+              policy_asset) -> str:
+        """The unsigned transaction, with any pre-signing mutation applied."""
+        normalized = claim["normalized"]["value"]["amount"]
+        change = claim["change"]["value"]["amount"]
+
+        if mutation == "amount_changed":
+            # Compensated on purpose: the change absorbs exactly what the
+            # normalized output gains, so the transaction still conserves
+            # value and consensus has nothing to refuse. The uncompensated
+            # form is already a consensus rejection (conservation row 6).
+            normalized += NORMALIZATION_AMOUNT_DELTA
+            change -= NORMALIZATION_AMOUNT_DELTA
+
+        destination = normalized_address
+        if mutation == "owner_changed":
+            # A script the claim does not name. Every amount stays right,
+            # so the transaction is consensus-valid and pays the wrong
+            # party -- which no target check has any opinion about.
+            destination = self.conservation.address(False, NORMALIZATION_ADDRESS_TYPE)
+
+        first = {destination: satoshis_to_amount(normalized)}
+        if mutation == "asset_changed":
+            # An asset the chain never issued. Unlike the owner and the
+            # amount, this one cannot be changed while conserving value.
+            first["asset"] = FOREIGN_ASSET_HEX
+
+        declared = [first]
+
+        if mutation == "hidden_private_output":
+            # The value comes out of the private change, which is blinded,
+            # so nothing observable shrinks. Only the presence of an
+            # output the claim does not name gives it away.
+            change -= NORMALIZATION_HIDDEN_AMOUNT
+            declared.append({change_address: satoshis_to_amount(change)})
+            declared.append({
+                self.conservation.address(True, NORMALIZATION_ADDRESS_TYPE):
+                    satoshis_to_amount(NORMALIZATION_HIDDEN_AMOUNT)
+            })
+        else:
+            declared.append({change_address: satoshis_to_amount(change)})
+
+        declared.append({"fee": satoshis_to_amount(NORMALIZATION_FEE_SATOSHIS)})
+
+        spend_inputs = [{"txid": c["txid"], "vout": c["vout"]} for c in coins]
+        try:
+            return self.node.call(
+                "createrawtransaction",
+                json.dumps(spend_inputs),
+                json.dumps(declared),
+            )
+        except AdapterError as error:
+            raise ConstructionError(
+                "the node built no raw transaction for this row: %s" % error.note
+            )
+
+    def blind(self, raw: str, coins, mutation: str) -> str:
+        """Blinds the transaction, honouring the wrong-balance mutation."""
+        blinders = []
+        for coin in coins:
+            blinder = coin.get("amountblinder", "00" * 32)
+            if mutation == "wrong_blinding_balance" and blinder != "00" * 32:
+                # A blinder the chain does not agree with. The amounts stay
+                # right and the blinding balance does not close.
+                blinder = "11" * 32
+            blinders.append(blinder)
+        try:
+            return self.node.call(
+                "rawblindrawtransaction",
+                raw,
+                json.dumps(blinders),
+                json.dumps([satoshis_to_amount_float(c["amount"]) for c in coins]),
+                json.dumps([c["asset"] for c in coins]),
+                json.dumps([c.get("assetblinder", "00" * 32) for c in coins]),
+            )
+        except AdapterError as error:
+            raise ConstructionError(
+                "the node blinded no transaction for this row: %s" % error.note
+            )
+
+    def sign(self, raw: str) -> str:
+        """The owner's authorization over the finalized output set."""
+        try:
+            signed = self.node.call(
+                "signrawtransactionwithwallet", raw, wallet=self.conservation.WALLET
+            )
+        except AdapterError as error:
+            raise ConstructionError("the wallet signed no transaction: %s" % error.note)
+        if signed.get("complete") is not True:
+            # A partially signed transaction fails verification for a
+            # reason that has nothing to do with the row, and reporting it
+            # would file this adapter's inability to sign as evidence
+            # about authorization.
+            raise ConstructionError(
+                "the wallet signed the row's transaction only partially: %s"
+                % one_line(json.dumps(signed.get("errors", [])))[:200]
+            )
+        raw = signed.get("hex")
+        if not isinstance(raw, str):
+            raise ConstructionError("the wallet returned no signed transaction")
+        return raw
+
+    def read_authorization(self, raw: str):
+        """The signing profile, read out of the witness rather than assumed.
+
+        A taproot key-path spend carries exactly one witness item. Sixty-
+        four bytes means no trailing sighash byte, and the reviewed digest
+        reads its absence as the default all-outputs non-anyone-can-pay
+        mode; sixty-five means the mode is the trailing byte's, and only
+        an explicit all-outputs byte without anyone-can-pay qualifies.
+
+        Anything else is refused rather than described. A row whose
+        signature did not commit to the output set would answer the three
+        post-signing mutations with a refusal that establishes nothing,
+        and reporting the profile as unknown while still running them
+        would produce exactly that.
+        """
+        transaction = self.conservation.deserialize(raw)
+        sizes = []
+        profiles = set()
+        for witness in transaction.wit.vtxinwit:
+            stack = [bytes(item) for item in witness.scriptWitness.stack]
+            sizes.append([len(item) for item in stack])
+            if len(stack) != 1:
+                raise ConstructionError(
+                    "an input's witness carries %d items, so this spend is not the "
+                    "key-path taproot authorization section 10.3 requires"
+                    % len(stack)
+                )
+            signature = stack[0]
+            if len(signature) == 64:
+                profiles.add("sighash_default")
+            elif len(signature) == 65 and signature[64] == 0x01:
+                profiles.add("sighash_all_no_anyone_can_pay")
+            else:
+                raise ConstructionError(
+                    "an input is signed with a %d-byte witness item whose profile is "
+                    "not one section 10.3 admits" % len(signature)
+                )
+        if len(profiles) != 1:
+            raise ConstructionError(
+                "the inputs are signed under %d different profiles, so the "
+                "authorization has no single profile to report" % len(profiles)
+            )
+        return profiles.pop(), sizes
+
+    # -- mutations applied after the owner signed --------------------------
+
+    def mutate_after_signing(self, raw: str, mutation: str) -> str:
+        """Applies a post-signing mutation, or returns the bytes unchanged."""
+        if mutation not in (
+            "extra_output_after_signing",
+            "output_mutated_after_signing",
+            "unauthorized_representation_change",
+        ):
+            return raw
+
+        transaction = self.conservation.deserialize(raw)
+        # The round trip must be faithful before any mutation is read into
+        # it, on `G11-W7-07`'s reasoning: a mutation a serialization
+        # quietly discards would leave a valid transaction wearing a
+        # mutated row's name.
+        if transaction.serialize().hex() != raw:
+            raise ConstructionError(
+                "this adapter's transaction round trip is not byte-faithful, so a "
+                "post-signing mutation cannot be attributed to the target"
+            )
+
+        if mutation == "extra_output_after_signing":
+            self.append_output(transaction)
+        elif mutation == "output_mutated_after_signing":
+            self.repoint_output(transaction)
+        else:
+            self.strip_owner_witness(transaction)
+
+        mutated = transaction.serialize().hex()
+        if mutated == raw:
+            raise ConstructionError(
+                "the %s mutation did not survive serialization" % mutation
+            )
+        return mutated
+
+    def append_output(self, transaction) -> None:
+        """Appends an output, funded from the declared fee.
+
+        Funded from the fee so that value still conserves: a row that also
+        unbalanced the transaction would be refused by the tally, and the
+        signature -- the thing the row exists to test -- would never be
+        reached. The remaining fee stays well above any relay threshold
+        for the same reason.
+        """
+        messages = self.messages
+        fee_index = None
+        for index, out in enumerate(transaction.vout):
+            if len(bytes(out.scriptPubKey)) == 0:
+                fee_index = index
+                break
+        if fee_index is None:
+            raise ConstructionError("this row's transaction declares no fee output")
+        fee_out = transaction.vout[fee_index]
+        fee_amount = explicit_amount(bytes(fee_out.nValue.vchCommitment), "the fee output")
+        remaining = fee_amount - NORMALIZATION_EXTRA_OUTPUT_SATOSHIS
+        if remaining <= 0:
+            raise ConstructionError(
+                "the declared fee cannot fund an appended output"
+            )
+        asset_field = bytes(fee_out.nAsset.vchCommitment)
+        fee_out.nValue = messages.CTxOutValue(remaining)
+        appended = messages.CTxOut(
+            nValue=messages.CTxOutValue(NORMALIZATION_EXTRA_OUTPUT_SATOSHIS),
+            scriptPubKey=bytes.fromhex(ANYONE_CAN_SPEND_HEX),
+            nAsset=messages.CTxOutAsset(asset_field),
+        )
+        # Before the fee, because Elements expects the fee output last.
+        transaction.vout.insert(fee_index, appended)
+
+    def repoint_output(self, transaction) -> None:
+        """Pays the normalized output to a different script, amount intact.
+
+        No amount is touched, so conservation still closes exactly and the
+        only thing wrong with the transaction is that the owner did not
+        sign for this recipient.
+        """
+        for out in transaction.vout:
+            program = bytes(out.scriptPubKey)
+            if len(program) == 0:
+                continue
+            commitment = bytes(out.nValue.vchCommitment)
+            if len(commitment) == 33:
+                # Blinded: this is the change, not the normalized output.
+                continue
+            out.scriptPubKey = bytes.fromhex(ANYONE_CAN_SPEND_HEX)
+            return
+        raise ConstructionError(
+            "this row's transaction carries no explicit output to repoint"
+        )
+
+    def strip_owner_witness(self, transaction) -> None:
+        """Removes the owner's authorization entirely."""
+        if not transaction.wit.vtxinwit:
+            raise ConstructionError("this row's transaction carries no input witness")
+        transaction.wit.vtxinwit[0].scriptWitness.stack = []
+
+    # -- what the target says it carries -----------------------------------
+
+    def read_outputs(self, raw: str):
+        """The outputs the node's own decoder reports.
+
+        Read from the target rather than remembered, because the checks
+        these feed exist to catch a transaction that is not what the claim
+        says -- and an observation this adapter generated from its own
+        intent could never disagree with that intent.
+        """
+        try:
+            decoded = self.node.call("decoderawtransaction", raw)
+        except AdapterError as error:
+            raise AdapterError(
+                "the node did not decode the transaction this row built: %s"
+                % error.note
+            )
+        outputs = []
+        for out in decoded.get("vout", []):
+            program = out.get("scriptPubKey", {}).get("hex", "")
+            amount = out.get("value")
+            asset = out.get("asset")
+            outputs.append({
+                "script_pubkey": list(bytes.fromhex(program)),
+                "explicit_amount": (
+                    None if amount is None
+                    else int(round(float(amount) * 100_000_000))
+                ),
+                "explicit_asset": (
+                    None if not isinstance(asset, str) else list(bytes.fromhex(asset))
+                ),
+                "is_fee": out.get("scriptPubKey", {}).get("type") == "fee"
+                or program == "",
+            })
+        return outputs
+
+
 def satoshis_to_amount(satoshis: int) -> str:
     """One amount in the decimal form the node's RPC reads."""
     return "%d.%08d" % (satoshis // 100_000_000, satoshis % 100_000_000)
@@ -2612,6 +3081,7 @@ def serve(arguments) -> int:
         executor.prime()
         if arguments.enable_wallet:
             executor.conservation = ConservationExecutor(executor)
+            executor.normalization = NormalizationExecutor(executor.conservation)
         log("node ready in %.1fs" % (time.monotonic() - started))
 
         write_message(
@@ -2656,6 +3126,16 @@ def serve(arguments) -> int:
                 # row to an adapter that could only refuse it.
                 + (
                     ["confidential_conservation"]
+                    if arguments.enable_wallet
+                    else []
+                )
+                # The normalization claim rests on the same wallet, and is
+                # a further claim on top of it: an executor that can build
+                # a confidential transaction still has to resolve a claim,
+                # sign under the section 10.3 profile, and read the output
+                # set back from the target.
+                + (
+                    ["owner_authorized_normalization"]
                     if arguments.enable_wallet
                     else []
                 ),
@@ -2709,6 +3189,11 @@ def answer_case(executor: CaseExecutor, line: str) -> None:
     # conservation row is an ordinal and a name.
     if isinstance(case, dict) and "ordinal" in case and "name" in case:
         answer_conservation_row(executor, request, case)
+        return
+    # A normalization row is told apart the same way, by the one field
+    # whose shape differs: it names a mutation and nothing else.
+    if isinstance(case, dict) and "normalization" in case:
+        answer_normalization_row(executor, request, case)
         return
     # The case identity is echoed verbatim, so that the harness correlates
     # against exactly what it sent. Without one there is nothing to answer,
@@ -2839,6 +3324,76 @@ def answer_conservation_row(executor: CaseExecutor, request: dict, case: dict) -
             "observed_value_commitments": body["observed_value_commitments"],
             "observed_asset_commitments": body["observed_asset_commitments"],
             "observed_openings": body["observed_openings"],
+        }
+    )
+
+
+def answer_normalization_row(executor: CaseExecutor, request: dict, case: dict) -> None:
+    """Answers exactly one Guide-11 section 10.4 normalization row.
+
+    The two layers that are not target verdicts are produced here and
+    nowhere else, from what actually went wrong. Neither is chosen from
+    an expectation, because the request carries none -- and this record
+    in particular must not, since three of its rows are answered by the
+    report layer and an adapter that knew which ones could report a
+    disagreement it never observed.
+    """
+    for key in request:
+        if key not in ("schema", "case", "subject"):
+            raise FatalAdapterError("the harness sent a request field named %s" % key)
+
+    body = None
+    try:
+        if request.get("schema") != NATIVE_PROTOCOL_SCHEMA:
+            raise AdapterError("the request carries a protocol revision this adapter does not")
+        if getattr(executor, "normalization", None) is None:
+            raise AdapterError(
+                "the request is a normalization row, and this adapter advertised no "
+                "owner-authorized-normalization capability"
+            )
+        subject = request.get("subject")
+        if not isinstance(subject, dict):
+            raise AdapterError("the normalization request states no subject")
+        require_keys(subject, ("claim", "mutation"), "request.subject")
+        started = time.monotonic()
+        body = executor.normalization.execute(case, subject)
+        log("normalization row %s answered in %.2fs as %s"
+            % (case.get("normalization"), time.monotonic() - started,
+               body["observed_layer"]))
+    except ConstructionError as error:
+        log("fixture construction failure: %s" % error.note)
+        body = {
+            "observed_layer": "fixture_construction_failure",
+            "observed_detail": error.note,
+            "claimed_outputs": [],
+            "observed_outputs": [],
+            "authorization_profile": None,
+            "observed_witness_sizes": [],
+            "transaction_bytes": None,
+        }
+    except AdapterError as error:
+        log("executor infrastructure failure: %s" % error.note)
+        body = {
+            "observed_layer": "executor_infrastructure_failure",
+            "observed_detail": error.note,
+            "claimed_outputs": [],
+            "observed_outputs": [],
+            "authorization_profile": None,
+            "observed_witness_sizes": [],
+            "transaction_bytes": None,
+        }
+
+    write_message(
+        {
+            "schema": NATIVE_PROTOCOL_SCHEMA,
+            "case": case,
+            "observed_layer": body["observed_layer"],
+            "observed_detail": body["observed_detail"],
+            "claimed_outputs": body["claimed_outputs"],
+            "observed_outputs": body["observed_outputs"],
+            "authorization_profile": body["authorization_profile"],
+            "observed_witness_sizes": body["observed_witness_sizes"],
+            "transaction_bytes": body["transaction_bytes"],
         }
     )
 

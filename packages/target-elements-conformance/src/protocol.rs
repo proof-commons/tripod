@@ -59,6 +59,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::conservation::{ConservationRowId, ConservationSubject};
 use crate::fixture::{NativeCaseId, PrimitiveExecutionSubject};
+use crate::normalization::{
+    AuthorizationProfile, ClaimedOutput, NormalizationSubject, ObservedOutput,
+};
 use crate::prototype::{PrototypeCaseId, PrototypeConstruction, PrototypeExecutionSubject};
 
 /// The protocol revision this harness speaks.
@@ -279,6 +282,25 @@ pub enum ExecutorCapability {
     /// answer a conservation row, because the row's whole content is
     /// which layer refused.
     ConfidentialConservation,
+    /// It builds an owner-authorized normalization and reports both what
+    /// the claim named and what the target's decoder read back.
+    ///
+    /// # Why the two observations are one capability
+    ///
+    /// A normalization row is refused by the report layer in three of its
+    /// nine cases, and a report-layer refusal is a disagreement between
+    /// the claim and the transaction. An executor that reported only a
+    /// verdict could not produce one, and an executor that reported only
+    /// the outputs it *meant* to write could never disagree with itself.
+    /// So the capability is the pair: the claim's own outputs, stated
+    /// before any mutation, and the observed outputs read back from the
+    /// target `(´[PLAN-rule:guide10:schema-migration]´)`.
+    ///
+    /// It also entails the signing profile. §10.3 requires authorization
+    /// committing to the finalized output set, and an executor that
+    /// signed under a narrower profile would answer the three
+    /// post-signing rows with a refusal that establishes nothing.
+    OwnerAuthorizedNormalization,
     /// It accepts a compound-prototype fixture as such.
     ///
     /// # Why the fixture could not be projected onto a primitive one
@@ -353,6 +375,20 @@ impl ExecutorHandshake {
     pub fn runs_conservation_rows(&self) -> bool {
         self.capabilities
             .contains(&ExecutorCapability::ConfidentialConservation)
+    }
+
+    /// Whether this executor may be sent a normalization row.
+    ///
+    /// The same gate again, and it requires the conservation capability
+    /// as well: a normalization row is a confidential transaction whose
+    /// refusing layer has to be attributed, so an executor that could not
+    /// answer a conservation row could not answer this one either. The
+    /// normalization claim is the further capability on top.
+    #[must_use]
+    pub fn runs_normalization_rows(&self) -> bool {
+        self.capabilities
+            .contains(&ExecutorCapability::OwnerAuthorizedNormalization)
+            && self.runs_conservation_rows()
     }
 }
 
@@ -927,6 +963,98 @@ impl NativeConservationResponse {
             && (self.transaction_bytes.is_some()
                 || !self.observed_value_commitments.is_empty()
                 || !self.observed_asset_commitments.is_empty())
+        {
+            return Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation);
+        }
+        Ok(())
+    }
+}
+
+/// One normalization row's identity.
+///
+/// A single field, and deliberately not the shape any other record
+/// carries: a primitive case is a group and an ordinal, a compound one a
+/// relation and a name, a conservation row an ordinal and a name. The
+/// adapter tells the four apart by shape alone, so a fifth record that
+/// reused one of those shapes would be answered by the wrong handler.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NormalizationCaseId {
+    /// The mutation this row applies, by its wire spelling.
+    pub normalization: String,
+}
+
+/// One normalization row, handed to the executor.
+///
+/// Carries the claim and the mutation. No expected layer crosses this
+/// boundary `(´[PLAN-rule:guide11-exec:request-subject]´)`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeNormalizationRequest {
+    /// The protocol revision.
+    pub schema: u32,
+    /// The row being asked about.
+    pub case: NormalizationCaseId,
+    /// Exactly what to build and judge.
+    pub subject: NormalizationSubject,
+}
+
+/// What the target did with one normalization row.
+///
+/// # Why the claim's outputs come back with the observation
+///
+/// The report layer refuses a row by finding the claim and the
+/// transaction in disagreement, so it needs both sides. The claimed side
+/// cannot be computed by the harness — which script an owner holds is
+/// learned when the coin is created — and the observed side must not be,
+/// or the comparison is the harness checking its own intent against
+/// itself. So the adapter reports the claim's outputs as it resolved
+/// them *before* applying any mutation, and the observed outputs as the
+/// target's own decoder read them back.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeNormalizationResponse {
+    /// The protocol revision.
+    pub schema: u32,
+    /// The row answered.
+    pub case: NormalizationCaseId,
+    /// Where the execution ended up, as the adapter observed it.
+    pub observed_layer: ObservedOutcomeLayer,
+    /// What the target or the adapter said, verbatim and unmapped.
+    pub observed_detail: Option<String>,
+    /// The outputs the claim named, resolved before any mutation.
+    pub claimed_outputs: Vec<ClaimedOutput>,
+    /// The outputs the target's decoder reported.
+    pub observed_outputs: Vec<ObservedOutput>,
+    /// The authorization profile the owner's signature actually used.
+    ///
+    /// Reported rather than assumed. §10.3's prerequisite is a claim
+    /// about the signature that was made, and an adapter that merely
+    /// intended the profile would leave the three post-signing rows
+    /// resting on an intention.
+    pub authorization_profile: Option<AuthorizationProfile>,
+    /// The witness item sizes of each input, in input order.
+    ///
+    /// The evidence behind the profile: a single 64-byte item is a
+    /// taproot key-path signature carrying no sighash byte, which the
+    /// reviewed digest reads as the default all-outputs mode.
+    pub observed_witness_sizes: Vec<Vec<usize>>,
+    /// The transaction the adapter materialized, where it built one.
+    pub transaction_bytes: Option<Vec<u8>>,
+}
+
+impl NativeNormalizationResponse {
+    /// Whether this response contradicts itself.
+    ///
+    /// # Errors
+    ///
+    /// [`ResponseShapeDefect`] where the response is not a shape the
+    /// protocol defines.
+    pub fn validate_shape(&self) -> Result<(), ResponseShapeDefect> {
+        if !self.observed_layer.is_target_verdict()
+            && (self.transaction_bytes.is_some()
+                || !self.observed_outputs.is_empty()
+                || self.authorization_profile.is_some())
         {
             return Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation);
         }
