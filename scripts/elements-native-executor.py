@@ -354,6 +354,7 @@ Measured against `v28.99.0-6f43e3ffe730`.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import re
@@ -422,6 +423,24 @@ MEDIAN_TIME_BLOCKS = 11
 # program the chain's free coins sit behind, which keeps every coin this
 # adapter creates spendable by the adapter and by nobody who cares.
 MINING_DESCRIPTOR = "raw(%s)" % ANYONE_CAN_SPEND_HEX
+
+# Every defect this adapter implements. A row naming anything else is
+# refused rather than run undamaged.
+KNOWN_CONSERVATION_DEFECTS = (
+    "none",
+    "one_unit_imbalance",
+    "wrong_blinder_sum",
+    "malformed_range_proof",
+    "malformed_surjection_proof",
+    "wrong_explicit_asset",
+    "copied_commitment_from_other_asset",
+    "hidden_confidential_output",
+)
+
+# An asset identifier the disposable chain never issued, used by the
+# wrong-asset conservation row. A transaction paying it is constructible
+# and cannot balance, which is exactly what that row states.
+FOREIGN_ASSET_HEX = "5a" * 32
 
 # Prefixes Elements puts in front of a script error in a rejection reason.
 CONSENSUS_SCRIPT_PREFIX = "mandatory-script-verify-flag-failed ("
@@ -503,6 +522,22 @@ FAILURE_CLASS_BY_SCRIPT_ERROR = {
     # refused-leaf-version class.
     "Invalid Taproot control block size": "malformed_control_block",
 }
+
+
+class ConstructionError(Exception):
+    """The adapter could not build the stated transaction.
+
+    Kept apart from `AdapterError` because Guide 11 section 8.3 requires a
+    report to distinguish a fixture that could not be built from an
+    environment that failed around a run, and both from a target verdict.
+    A construction failure means the target was never asked -- reporting it
+    as a rejection would manufacture a consensus fact out of a limitation
+    of this materializer.
+    """
+
+    def __init__(self, note: str) -> None:
+        super().__init__(note)
+        self.note = note
 
 
 class AdapterError(Exception):
@@ -1000,11 +1035,30 @@ class DisposableNode:
     cookie itself.
     """
 
-    def __init__(self, elementsd: str, elements_cli: str, chain: str, boot_timeout: float) -> None:
+    def __init__(
+        self,
+        elementsd: str,
+        elements_cli: str,
+        chain: str,
+        boot_timeout: float,
+        enable_wallet: bool = False,
+    ) -> None:
         self.elementsd = elementsd
         self.elements_cli = elements_cli
         self.chain = chain
         self.boot_timeout = boot_timeout
+        # Off unless a lane needs it, so the primitive and compound lanes
+        # boot exactly the node they have always booted. It is enabled only
+        # for the conservation lane, which needs a wallet for one reason:
+        # a confidential coin whose blinding factors are KNOWN. The node
+        # reports those in `listunspent`, and no non-wallet interface does.
+        #
+        # No chain parameter changes with it. That is not a preference: the
+        # genesis identifier is what the harness binds the run to, and a
+        # chain parameter would move it, so the wallet is funded from the
+        # same free coin the adapter already spends rather than by a block
+        # subsidy or a connected genesis output.
+        self.enable_wallet = enable_wallet
         self.datadir = tempfile.mkdtemp(prefix="tripod-native-executor-")
         self.rpc_port = free_loopback_port()
         self.process = None
@@ -1025,7 +1079,7 @@ class DisposableNode:
             "-rpcbind=127.0.0.1",
             "-rpcallowip=127.0.0.1",
             "-rpcport=%d" % self.rpc_port,
-            "-disablewallet=1",
+            "-disablewallet=%d" % (0 if self.enable_wallet else 1),
             "-validatepegin=0",
             "-minrelaytxfee=0",
             "-blockmintxfee=0",
@@ -1053,15 +1107,23 @@ class DisposableNode:
                     raise FatalAdapterError("the node did not answer RPC before the boot timeout")
                 time.sleep(0.2)
 
-    def call(self, method: str, *arguments: str):
-        """Issues one JSON-RPC call through `elements-cli`."""
+    def call(self, method: str, *arguments: str, wallet=None):
+        """Issues one JSON-RPC call through `elements-cli`.
+
+        `wallet` routes the call at a named wallet. It is the wallet's
+        NAME and never a credential: the node's cookie stays inside the
+        disposable datadir and is resolved by `elements-cli` from the same
+        `-datadir`, exactly as for every other call here.
+        """
         command = [
             self.elements_cli,
             "-datadir=" + self.datadir,
             "-chain=" + self.chain,
             "-rpcport=%d" % self.rpc_port,
-            method,
         ]
+        if wallet is not None:
+            command.append("-rpcwallet=" + wallet)
+        command.append(method)
         command.extend(arguments)
         try:
             completed = subprocess.run(
@@ -1199,6 +1261,11 @@ class CaseExecutor:
         # an adapter advertising a capability whose machinery it lacks would
         # be sent precisely the work only it could refuse.
         self.prototype_fixtures = self.tree_materialization
+        # Present only where the wallet the conservation lane needs was
+        # enabled at boot. Derived from the node this adapter actually
+        # started rather than written by hand, on the same reasoning as
+        # every other capability here.
+        self.conservation = None
 
     def prime(self) -> None:
         """Locates the chain's free-coin output and confirms one block."""
@@ -1878,6 +1945,542 @@ class CaseExecutor:
         )
 
 
+class ConservationExecutor:
+    """Materializes and judges one Guide-11 section 8.4 conservation row.
+
+    Confidential value on this target is produced by the node, not by the
+    upstream Python framework: the framework offers no Pedersen
+    commitment, range proof, or surjection proof, and the only interfaces
+    that build one are `blindrawtransaction` and `rawblindrawtransaction`.
+    Both draw every output blinding factor from `GetStrongRandBytes` and
+    generate a fresh ephemeral nonce key, and neither takes a seed.
+
+    Two consequences, both recorded rather than worked around:
+
+      determinism   equal fixture inputs do NOT yield equal transaction
+                    bytes. The fixture's own inputs are fully determined,
+                    the produced bytes are reported per run, and
+                    byte-level reproducibility is stated as unachievable
+                    through this materializer;
+
+      blinders      a confidential coin whose blinders are known has to
+                    come from the wallet, which reports them in
+                    `listunspent`. That wallet is disposable test-network
+                    material under ADR-015's test-material rule: it is
+                    created on a regtest chain whose assets have no value,
+                    lives inside the datadir this process deletes, and is
+                    never derived from or reused as production material.
+                    Guide 11 section 1.7 bans a production wallet from the
+                    command interface, and none appears there: this wallet
+                    is created by the adapter and named by nobody.
+
+    Nothing here changes a chain parameter. The wallet is funded from the
+    same free coin the primitive lane already spends, because the genesis
+    identifier is what the run is bound to and a chain parameter would
+    move it.
+    """
+
+    WALLET = "guide11-conservation"
+
+    def __init__(self, executor: "CaseExecutor") -> None:
+        self.executor = executor
+        self.node = executor.node
+        self.messages = executor.messages
+        self.ready = False
+
+    # -- the disposable wallet -------------------------------------------
+
+    # How much of the chain's free coin the wallet is given once, up front.
+    # Generous on purpose: every row funds its own coins from it, and a
+    # wallet that ran dry mid-matrix would turn later rows into
+    # construction failures for a reason that is not the row's.
+    WALLET_ENDOWMENT_SATOSHIS = 10_000_000_000
+
+    def prepare(self) -> None:
+        """Creates the disposable wallet and endows it, once per process.
+
+        The endowment is one raw transaction spending the chain's free
+        coin -- the same coin the primitive lane spends -- so no chain
+        parameter, block subsidy, or connected genesis output is involved
+        and the genesis identifier the run is bound to does not move.
+
+        After this the wallet owns the money and manages its own change,
+        which is what makes a confidential coin obtainable at all: the
+        blinding key belongs to the wallet, so the node can report the
+        blinding factors this matrix needs.
+        """
+        if self.ready:
+            return
+        try:
+            self.node.call("createwallet", self.WALLET)
+        except AdapterError as error:
+            if "already exists" not in error.note:
+                raise
+
+        address = self.node.call("getnewaddress", wallet=self.WALLET)
+        info = self.node.call("getaddressinfo", address, wallet=self.WALLET)
+        program = bytes.fromhex(info["scriptPubKey"])
+        self.executor.fund(program, self.WALLET_ENDOWMENT_SATOSHIS)
+        self.ready = True
+
+    def address(self, confidential: bool) -> str:
+        """One wallet address, blinded or not.
+
+        # Why the unconfidential form is taken explicitly
+
+        `getnewaddress` returns a BLINDED address by default on this
+        target: `-blindedaddresses` defaults to 1. Returning what it hands
+        back for an explicit output would silently blind every row that
+        said it was explicit, and the transactions would still be valid --
+        so the matrix would report an explicit-to-explicit row that was
+        confidential end to end, and nothing in the result would say so.
+
+        Both forms are therefore taken from `getaddressinfo` by name
+        rather than by default.
+        """
+        fresh = self.node.call("getnewaddress", wallet=self.WALLET)
+        info = self.node.call("getaddressinfo", fresh, wallet=self.WALLET)
+        wanted = info.get("confidential") if confidential else info.get("unconfidential")
+        if not isinstance(wanted, str) or wanted == "":
+            raise AdapterError(
+                "the node reported no %s form for a wallet address"
+                % ("confidential" if confidential else "unconfidential")
+            )
+        return wanted
+
+    # -- creating the stated input coins ---------------------------------
+
+    def create_coin(self, amount: int, confidential: bool) -> dict:
+        """Creates one coin the wallet owns, and returns what it knows.
+
+        A confidential coin is one paid to a blinded address: the wallet
+        blinds the transaction on the way out, and because the blinding
+        key is the wallet's own, `listunspent` reports the amount and
+        asset blinding factors. Those factors are what every confidential
+        row needs and what no non-wallet interface offers.
+
+        The coin is confirmed in a block of its own so no row's
+        transaction is ever subject to mempool ancestor policy -- an
+        ancestor-limit refusal is not a conservation verdict and would
+        arrive looking like one.
+        """
+        destination = self.address(confidential)
+        try:
+            txid = self.node.call(
+                "sendtoaddress", destination, satoshis_to_amount(amount),
+                wallet=self.WALLET,
+            )
+        except AdapterError as error:
+            raise ConstructionError(
+                "the wallet paid no coin of %d: %s" % (amount, error.note)
+            )
+        self.node.call(
+            "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([txid])
+        )
+
+        plain = self.plain_form(destination)
+        for entry in self.node.call("listunspent", "1", "9999999", wallet=self.WALLET):
+            if entry["txid"] == txid and entry.get("address") == plain:
+                if confidential and entry.get("amountblinder", "00" * 32) == "00" * 32:
+                    raise ConstructionError(
+                        "the wallet created an unblinded coin for a confidential input"
+                    )
+                if not confidential and entry.get("amountblinder", "00" * 32) != "00" * 32:
+                    raise ConstructionError(
+                        "the wallet created a blinded coin for an explicit input"
+                    )
+                # Locked so the wallet's own coin selection cannot spend it
+                # while funding a later coin of the same row. Without this
+                # the row's transaction names an input the wallet has
+                # already consumed, and the node answers
+                # `bad-txns-inputs-missingorspent` -- which is this
+                # adapter's bookkeeping failing, not a conservation verdict.
+                self.node.call(
+                    "lockunspent", "false",
+                    json.dumps([{"txid": txid, "vout": entry["vout"]}]),
+                    wallet=self.WALLET,
+                )
+                return entry
+        raise AdapterError("the wallet did not report the coin this adapter just created")
+
+    def plain_form(self, address: str) -> str:
+        """The unconfidential form of an address, as the node states it."""
+        info = self.node.call("getaddressinfo", address, wallet=self.WALLET)
+        return info.get("unconfidential", address)
+
+    # -- one row ----------------------------------------------------------
+
+    def execute(self, case: dict, subject: dict) -> dict:
+        """Materializes one row and reports the layer that answered it."""
+        self.prepare()
+        inputs = subject["inputs"]
+        outputs = subject["outputs"]
+        defect = subject["defect"]
+        # Fail closed. A defect name this adapter does not implement used
+        # to fall through every branch and produce an undamaged
+        # transaction, which the target then accepted -- and the row was
+        # recorded as the target accepting a broken proof. One misspelled
+        # constant was all it took, so an unknown defect is now refused by
+        # name rather than silently skipped.
+        if defect not in KNOWN_CONSERVATION_DEFECTS:
+            raise ConstructionError(
+                "this adapter does not implement the defect %r" % defect
+            )
+
+        # The coins the row consumes. A confidential input is a blinded
+        # coin whose blinders the wallet reports; an explicit one is not
+        # blinded at all.
+        coins = []
+        for index, declared in enumerate(inputs):
+            confidential = declared["value"]["representation"] == "confidential"
+            try:
+                coins.append(self.create_coin(declared["value"]["amount"], confidential))
+            except ConstructionError:
+                raise
+            except AdapterError as error:
+                raise ConstructionError(
+                    "input %d could not be created: %s" % (index, error.note)
+                )
+
+        # A dedicated explicit coin pays the fee, so that the row's own
+        # amounts state the conservation question and nothing else. An
+        # explicit value joins the tally zero-blinded, so it perturbs no
+        # blinding balance.
+        fee_coin = self.create_coin(ADAPTER_FEE_SATOSHIS, False)
+        coins.append(fee_coin)
+
+        spend_inputs = [
+            {"txid": coin["txid"], "vout": coin["vout"]} for coin in coins
+        ]
+
+        declared_outputs = []
+        for declared in outputs:
+            amount = declared["value"]["amount"]
+            if defect == "one_unit_imbalance":
+                amount += 1
+            confidential = declared["value"]["representation"] == "confidential"
+            if defect == "wrong_explicit_asset":
+                # An asset the chain never issued. The transaction is
+                # constructible and cannot balance, which is the row.
+                declared_outputs.append({
+                    self.address(False): satoshis_to_amount(amount),
+                    "asset": FOREIGN_ASSET_HEX,
+                })
+            else:
+                declared_outputs.append(
+                    {self.address(confidential): satoshis_to_amount(amount)}
+                )
+
+        if defect == "hidden_confidential_output":
+            # The unstated output that absorbs the value the stated set
+            # does not account for. Consensus admits it; that is the row.
+            hidden = sum(entry["value"]["amount"] for entry in inputs) - sum(
+                entry["value"]["amount"] for entry in outputs
+            )
+            if hidden > 0:
+                declared_outputs.append(
+                    {self.address(True): satoshis_to_amount(hidden)}
+                )
+
+        declared_outputs.append({"fee": satoshis_to_amount(ADAPTER_FEE_SATOSHIS)})
+
+        try:
+            raw = self.node.call(
+                "createrawtransaction",
+                json.dumps(spend_inputs),
+                json.dumps(declared_outputs),
+            )
+        except AdapterError as error:
+            raise ConstructionError("the node built no raw transaction: %s" % error.note)
+
+        # Blinding, where any coin or any stated output is confidential.
+        needs_blinding = any(
+            coin.get("amountblinder", "00" * 32) != "00" * 32 for coin in coins
+        ) or any(entry["value"]["representation"] == "confidential" for entry in outputs)
+        if needs_blinding:
+            blinders = []
+            for coin in coins:
+                blinder = coin.get("amountblinder", "00" * 32)
+                if defect == "wrong_blinder_sum" and blinder != "00" * 32:
+                    # Declare a blinder the chain does not agree with. The
+                    # amounts stay right and the blinding balance does not
+                    # close, which is exactly the row.
+                    blinder = "11" * 32
+                blinders.append(blinder)
+            try:
+                raw = self.node.call(
+                    "rawblindrawtransaction",
+                    raw,
+                    json.dumps(blinders),
+                    json.dumps([satoshis_to_amount_float(coin["amount"]) for coin in coins]),
+                    json.dumps([coin["asset"] for coin in coins]),
+                    json.dumps([coin.get("assetblinder", "00" * 32) for coin in coins]),
+                )
+            except AdapterError as error:
+                raise ConstructionError(
+                    "the node blinded no transaction for this row: %s" % error.note
+                )
+
+        try:
+            signed = self.node.call(
+                "signrawtransactionwithwallet", raw, wallet=self.WALLET
+            )
+        except AdapterError as error:
+            raise ConstructionError("the wallet signed no transaction: %s" % error.note)
+        raw = signed.get("hex")
+        if not isinstance(raw, str):
+            raise ConstructionError("the wallet returned no signed transaction")
+        if signed.get("complete") is not True:
+            # An incompletely signed transaction fails script verification
+            # for a reason that has nothing to do with the row. Reporting
+            # it as a target verdict would file this adapter's inability
+            # to sign as evidence about conservation.
+            raise ConstructionError(
+                "the wallet signed the row's transaction only partially: %s"
+                % one_line(json.dumps(signed.get("errors", [])))[:200]
+            )
+
+        if defect in ("malformed_range_proof", "malformed_surjection_proof"):
+            raw = self.corrupt_proof(raw, defect)
+        if defect == "copied_commitment_from_other_asset":
+            raw = self.copy_commitment(raw)
+
+        layer, detail = self.judge(raw)
+        value_commitments, asset_commitments = self.read_commitments(raw)
+        return {
+            "observed_layer": layer,
+            "observed_detail": detail,
+            "transaction_bytes": list(bytes.fromhex(raw)),
+            "observed_value_commitments": value_commitments,
+            "observed_asset_commitments": asset_commitments,
+            "observed_openings": self.read_openings(raw) if layer == "accepted" else [],
+        }
+
+    def read_openings(self, raw: str):
+        """The openings the node reports for the outputs it just created.
+
+        # Why the target has to supply these
+
+        The oracle predicts a commitment from an amount and two blinding
+        factors. This materializer does not choose those factors -- the
+        node draws them -- so without reading them back there is nothing
+        for the oracle to predict, and the three-way comparison of section
+        7.4 has no second point to meet at.
+
+        The transaction is confirmed and the created coins are looked up,
+        which is the only interface that reports them. What comes back is
+        the target's own statement of what it committed to, and the
+        comparison then runs one way: the oracle predicts bytes from these
+        openings and the prediction is checked against the commitment the
+        transaction actually carries. No expected value is rewritten to
+        match an observation.
+        """
+        try:
+            self.node.call(
+                "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw])
+            )
+        except AdapterError as error:
+            log("the accepted transaction was not confirmable: %s" % error.note)
+            return []
+        decoded = self.node.call("decoderawtransaction", raw)
+        txid = decoded["txid"]
+        openings = []
+        for entry in self.node.call("listunspent", "0", "9999999", wallet=self.WALLET):
+            if entry["txid"] != txid:
+                continue
+            blinder = entry.get("amountblinder", "00" * 32)
+            if blinder == "00" * 32:
+                continue
+            openings.append({
+                "vout": entry["vout"],
+                "amount_satoshis": int(round(float(entry["amount"]) * 100_000_000)),
+                "asset": entry["asset"],
+                "amount_blinder": blinder,
+                "asset_blinder": entry.get("assetblinder", "00" * 32),
+            })
+        return openings
+
+    # -- deliberate defects -----------------------------------------------
+
+    def corrupt_proof(self, raw: str, defect: str) -> str:
+        """Flips one bit of the first proof of the named kind.
+
+        The result is checked to actually differ from what went in. A
+        mutation that a serialization round trip quietly discards would
+        leave a perfectly valid transaction wearing a malformed row's
+        name, and the target accepting it would be recorded as the target
+        accepting a broken proof -- a false and alarming claim produced
+        entirely by this adapter.
+        """
+        transaction = self.deserialize(raw)
+        # The round trip itself must be faithful before any mutation is
+        # read into it.
+        if transaction.serialize().hex() != raw:
+            raise ConstructionError(
+                "this adapter's transaction round trip is not byte-faithful, so a "
+                "corrupted proof cannot be attributed to the target"
+            )
+        # Every proof of the kind, not just the first. A transaction may
+        # carry several, and corrupting one of them leaves the rest
+        # verifying -- which is a weaker case than the row states and, if
+        # the target accepts it, an acceptance the row cannot explain.
+        corrupted_indices = []
+        for index, witness in enumerate(transaction.wit.vtxoutwit):
+            field = (
+                witness.vchRangeproof
+                if defect == "malformed_range_proof"
+                else witness.vchSurjectionproof
+            )
+            if len(field) == 0:
+                continue
+            mutated = bytearray(bytes(field))
+            mutated[len(mutated) // 2] ^= 0x01
+            if defect == "malformed_range_proof":
+                witness.vchRangeproof = bytes(mutated)
+            else:
+                witness.vchSurjectionproof = bytes(mutated)
+            corrupted_indices.append(index)
+        if not corrupted_indices:
+            raise ConstructionError(
+                "the materialized transaction carries no %s to corrupt" % defect
+            )
+        corrupted = transaction.serialize().hex()
+        if corrupted == raw:
+            raise ConstructionError(
+                "the %s mutation did not survive serialization" % defect
+            )
+        log("corrupted %s on outputs %s" % (defect, corrupted_indices))
+        return corrupted
+
+    def copy_commitment(self, raw: str) -> str:
+        """Replaces one output's value commitment with another output's.
+
+        The donor is an output of a different asset, created here for the
+        purpose. Copying a commitment leaves the amounts stated correctly
+        and the tally unsatisfiable, which is the row.
+        """
+        transaction = self.deserialize(raw)
+        donor = self.create_coin(ADAPTER_FEE_SATOSHIS, True)
+        # `gettransaction` rather than `getrawtransaction`: the donor is a
+        # wallet transaction already confirmed in a block, and the raw
+        # interface needs a block hash or a transaction index the
+        # disposable node does not build.
+        donor_raw = self.node.call(
+            "gettransaction", donor["txid"], wallet=self.WALLET
+        )["hex"]
+        donor_transaction = self.deserialize(donor_raw)
+        replacement = None
+        for out in donor_transaction.vout:
+            commitment = bytes(out.nValue.vchCommitment)
+            if len(commitment) == 33:
+                replacement = commitment
+                break
+        if replacement is None:
+            raise ConstructionError("no donor output carried a value commitment")
+        for out in transaction.vout:
+            if len(bytes(out.nValue.vchCommitment)) == 33:
+                out.nValue.vchCommitment = replacement
+                return transaction.serialize().hex()
+        raise ConstructionError("this row's transaction carries no commitment to replace")
+
+    def deserialize(self, raw: str):
+        """One transaction, from its hex."""
+        transaction = self.messages.CTransaction()
+        transaction.deserialize(io.BytesIO(bytes.fromhex(raw)))
+        return transaction
+
+    # -- the layer that answered ------------------------------------------
+
+    def judge(self, raw: str):
+        """Reports WHICH layer refused, from what the node actually did.
+
+        Guide 11 section 8.3's whole point. `testmempoolaccept` changes no
+        state, so it is asked first, and it is also the only interface
+        that names a CT failure precisely.
+
+        # Why the block's answer must not be read for the layer
+
+        Block validation runs the amount checks inside the SAME check
+        queue as the script checks, and a failure of either surfaces as
+        `mandatory-script-verify-flag-failed (unknown error)`. So a
+        malformed rangeproof, a broken surjection proof, and a one-unit
+        imbalance all arrive at the block layer wearing a script error's
+        clothes. Classifying on that string attributes a conservation
+        failure to an opening script that never ran -- which is exactly
+        the misattribution section 8.3 exists to prevent, and which an
+        earlier revision of this method committed.
+
+        The mempool distinguishes them: a conservation failure is
+        `bad-txns-in-ne-out`, and a genuine script failure carries the
+        mandatory-script prefix. So the mempool reason decides the layer,
+        and the block is asked only to separate a merely unrelayable
+        transaction from one consensus will not have.
+
+          relay accepts                      -> accepted
+          relay names a mandatory script err  -> script-path rejection
+          relay names any other consensus
+            reason, and a block also refuses  -> consensus rejection
+                                                 before script
+          relay refuses, a block takes it     -> relay-policy rejection
+
+        Nothing here consults an expectation, because none was sent.
+        """
+        answer = self.node.call("testmempoolaccept", json.dumps([raw]))
+        if not isinstance(answer, list) or len(answer) != 1:
+            raise AdapterError("the node did not answer testmempoolaccept with one result")
+        result = answer[0]
+        if result.get("allowed") is True:
+            return "accepted", None
+        relay_reason = result.get("reject-reason")
+        if not isinstance(relay_reason, str):
+            raise AdapterError("the node rejected without naming a reason")
+
+        if relay_reason.startswith(CONSENSUS_SCRIPT_PREFIX):
+            return "script_path_rejection", relay_reason
+
+        # Whether the refusal is consensus or merely standardness is
+        # settled by asking a block to take it, not by reading the string.
+        try:
+            self.node.call(
+                "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw])
+            )
+        except AdapterError as error:
+            return "consensus_rejection_before_script", relay_reason
+        return "relay_policy_rejection", relay_reason
+
+    def read_commitments(self, raw: str):
+        """The output commitments the node reads back out of the bytes.
+
+        The third leg of the section 7.4 comparison. Read from the node's
+        own decoding rather than recomputed here, because a leg the
+        harness computed would be comparing the oracle with itself.
+        """
+        values = []
+        assets = []
+        try:
+            decoded = self.node.call("decoderawtransaction", raw)
+        except AdapterError:
+            return values, assets
+        for out in decoded.get("vout", []):
+            commitment = out.get("valuecommitment")
+            if isinstance(commitment, str):
+                values.append(list(bytes.fromhex(commitment)))
+            commitment = out.get("assetcommitment")
+            if isinstance(commitment, str):
+                assets.append(list(bytes.fromhex(commitment)))
+        return values, assets
+
+
+def satoshis_to_amount(satoshis: int) -> str:
+    """One amount in the decimal form the node's RPC reads."""
+    return "%d.%08d" % (satoshis // 100_000_000, satoshis % 100_000_000)
+
+
+def satoshis_to_amount_float(amount) -> float:
+    """One RPC-reported amount, passed back unchanged in value."""
+    return float(amount)
+
+
 def rejection(script_error: str) -> dict:
     """Builds a rejection body, naming any script error the table cannot map."""
     text = script_error.strip()
@@ -1986,7 +2589,8 @@ def serve(arguments) -> int:
         raise FatalAdapterError("the harness spoke a protocol revision this adapter does not")
 
     node = DisposableNode(
-        arguments.elementsd, arguments.elements_cli, arguments.chain, arguments.boot_timeout_seconds
+        arguments.elementsd, arguments.elements_cli, arguments.chain,
+        arguments.boot_timeout_seconds, arguments.enable_wallet,
     )
     closing = {"done": False}
 
@@ -2006,6 +2610,8 @@ def serve(arguments) -> int:
         node.start()
         executor = CaseExecutor(node, messages, script)
         executor.prime()
+        if arguments.enable_wallet:
+            executor.conservation = ConservationExecutor(executor)
         log("node ready in %.1fs" % (time.monotonic() - started))
 
         write_message(
@@ -2043,6 +2649,14 @@ def serve(arguments) -> int:
                 + (
                     ["compound_prototype_fixtures"]
                     if executor.prototype_fixtures
+                    else []
+                )
+                # Advertised only where the wallet the conservation lane
+                # needs is actually enabled, so the harness never sends a
+                # row to an adapter that could only refuse it.
+                + (
+                    ["confidential_conservation"]
+                    if arguments.enable_wallet
                     else []
                 ),
             }
@@ -2089,6 +2703,13 @@ def answer_case(executor: CaseExecutor, line: str) -> None:
     if not isinstance(request, dict):
         raise FatalAdapterError("the harness sent a request that is not an object")
     case = request.get("case")
+    # A conservation row is told apart the same way the other two records
+    # are: by the one field whose shape differs. A primitive case is a
+    # group and an ordinal, a compound one is a relation and a name, and a
+    # conservation row is an ordinal and a name.
+    if isinstance(case, dict) and "ordinal" in case and "name" in case:
+        answer_conservation_row(executor, request, case)
+        return
     # The case identity is echoed verbatim, so that the harness correlates
     # against exactly what it sent. Without one there is nothing to answer,
     # and answering the wrong case would be worse than not answering.
@@ -2156,6 +2777,72 @@ def answer_case(executor: CaseExecutor, line: str) -> None:
     )
 
 
+def answer_conservation_row(executor: CaseExecutor, request: dict, case: dict) -> None:
+    """Answers exactly one Guide-11 section 8.4 conservation row.
+
+    The three failure layers that are not target verdicts are produced
+    here and nowhere else, from what actually went wrong: a fixture this
+    adapter could not build, an environment that failed around the run,
+    and -- in `ConservationExecutor.judge` -- the layer the node itself
+    answered at. None of them is chosen from an expectation, because the
+    request carries none.
+    """
+    for key in request:
+        if key not in ("schema", "case", "subject"):
+            raise FatalAdapterError("the harness sent a request field named %s" % key)
+
+    body = None
+    try:
+        if request.get("schema") != NATIVE_PROTOCOL_SCHEMA:
+            raise AdapterError("the request carries a protocol revision this adapter does not")
+        if executor.conservation is None:
+            raise AdapterError(
+                "the request is a conservation row, and this adapter advertised no "
+                "confidential-conservation capability"
+            )
+        subject = request.get("subject")
+        if not isinstance(subject, dict):
+            raise AdapterError("the conservation request states no subject")
+        require_keys(subject, ("inputs", "outputs", "defect"), "request.subject")
+        started = time.monotonic()
+        body = executor.conservation.execute(case, subject)
+        log("row %s answered in %.2fs as %s"
+            % (case.get("name"), time.monotonic() - started, body["observed_layer"]))
+    except ConstructionError as error:
+        log("fixture construction failure: %s" % error.note)
+        body = {
+            "observed_layer": "fixture_construction_failure",
+            "observed_detail": error.note,
+            "transaction_bytes": None,
+            "observed_value_commitments": [],
+            "observed_asset_commitments": [],
+            "observed_openings": [],
+        }
+    except AdapterError as error:
+        log("executor infrastructure failure: %s" % error.note)
+        body = {
+            "observed_layer": "executor_infrastructure_failure",
+            "observed_detail": error.note,
+            "transaction_bytes": None,
+            "observed_value_commitments": [],
+            "observed_asset_commitments": [],
+            "observed_openings": [],
+        }
+
+    write_message(
+        {
+            "schema": NATIVE_PROTOCOL_SCHEMA,
+            "case": case,
+            "observed_layer": body["observed_layer"],
+            "observed_detail": body["observed_detail"],
+            "transaction_bytes": body["transaction_bytes"],
+            "observed_value_commitments": body["observed_value_commitments"],
+            "observed_asset_commitments": body["observed_asset_commitments"],
+            "observed_openings": body["observed_openings"],
+        }
+    )
+
+
 def parse_arguments(argv):
     """Reads this adapter's own explicit, credential-free configuration."""
     parser = argparse.ArgumentParser(
@@ -2197,6 +2884,14 @@ def parse_arguments(argv):
         action="append",
         default=None,
         help="one local topic branch folded into that tip; repeatable (ADR-018)",
+    )
+    parser.add_argument(
+        "--enable-wallet",
+        action="store_true",
+        help="boot the node with its wallet enabled and advertise the "
+        "confidential-conservation capability. The wallet is created by this "
+        "adapter on a disposable regtest chain and is test-fixture material "
+        "under ADR-015; no wallet, seed, or key crosses this interface",
     )
     parser.add_argument("--chain", default="elementsregtest", help="the disposable chain name")
     parser.add_argument(

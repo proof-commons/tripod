@@ -137,6 +137,64 @@ pub fn commitment(
     Ok(curve::encode_prefixed_point(&point, COMMITMENT_PREFIX_BASE))
 }
 
+/// The blinded generator of one asset.
+///
+/// # Why a blinded generator is needed at all
+///
+/// [`asset_generator`] derives the generator an *explicit* asset names.
+/// A confidential output does not use it: the asset is itself blinded,
+/// and the generator the value commitment is taken against is
+///
+/// ```text
+/// H' = H(asset) + assetblinder · G
+/// ```
+///
+/// Without this, the oracle can predict a commitment only for an output
+/// whose asset is in the clear — and the balanced confidential rows of
+/// the §8.4 matrix have no such output. The three-way comparison of §7.4
+/// would then have nothing to compare on exactly the rows it matters
+/// most for.
+///
+/// # Errors
+///
+/// [`CommitmentDefect`] when the asset, the scalar, or the sum is
+/// refused.
+pub fn blinded_asset_generator(
+    asset_id: &[u8],
+    asset_blinding_factor: &[u8],
+) -> Result<Point, CommitmentDefect> {
+    let generator = asset_generator(asset_id).map_err(CommitmentDefect::Generator)?;
+    let scalar = read_scalar(asset_blinding_factor).map_err(CommitmentDefect::Scalar)?;
+
+    let offset = curve::multiply_point(&scalar, &curve::base_point());
+    match curve::add(&Group::Affine(generator), &offset) {
+        Group::Affine(point) => Ok(point),
+        Group::Identity => Err(CommitmentDefect::IdentityResult),
+    }
+}
+
+/// The serialized value commitment of one fully confidential output.
+///
+/// Both blinders are the output's own: the asset blinder determines the
+/// generator, and the value blinder the commitment taken against it. This
+/// is what the target's own openings — the amount and the two blinding
+/// factors it reports for an output it created — are checked against.
+///
+/// # Errors
+///
+/// [`CommitmentDefect`] when the asset, either scalar, or a result is
+/// refused.
+pub fn blinded_commitment(
+    asset_id: &[u8],
+    amount: u64,
+    asset_blinding_factor: &[u8],
+    value_blinding_factor: &[u8],
+) -> Result<[u8; PREFIXED_POINT_BYTES], CommitmentDefect> {
+    let generator = blinded_asset_generator(asset_id, asset_blinding_factor)?;
+    let point = commitment_point(value_blinding_factor, amount, &generator)?;
+    Ok(curve::encode_prefixed_point(&point, COMMITMENT_PREFIX_BASE))
+}
+
 /// Reads a serialized commitment.
 ///
 /// # Errors
