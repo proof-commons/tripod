@@ -3,8 +3,7 @@
 //! A vector states its own inputs and the bytes the oracle predicts for
 //! them. Nothing here reads a target observation as an expected value:
 //! the comparison runs one way, from a stated expectation to an observed
-//! string, and a disagreement is reported rather than absorbed
-//! `(´[PLAN-rule:guide11:no-expectation-rewrite]´)`.
+//! string, and a disagreement is reported rather than absorbed.
 
 use super::commitment::{CommitmentDefect, commitment};
 use super::curve::PREFIXED_POINT_BYTES;

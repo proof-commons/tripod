@@ -6,7 +6,7 @@
 //! pinned: once by this crate's oracle, and once by a separate
 //! implementation written independently in Python from the same
 //! source-cited recipe. A value entered this file only where both agreed
-//! byte for byte `(´[PLAN-rule:guide11:two-derivations]´)`.
+//! byte for byte `(´[PLAN-rule:guide10:independent-oracles]´)`.
 //!
 //! Better than either, the vendored curve library carries its own
 //! published fixed vectors, and they are reproduced here as the outside

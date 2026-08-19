@@ -11,12 +11,13 @@
 //! point built from both coordinates, negation, and a curve map. Adding
 //! those there would blur a boundary the target itself draws, since the
 //! disagreement between the two parity conventions is precisely the
-//! reviewed blocker `(´[PLAN-rule:guide11:parity-domains]´)`.
+//! reviewed blocker the target review named.
 //!
 //! # Public data only
 //!
 //! Nothing here holds or produces a secret. A blinding factor reaching
-//! this module is test material stated in the open, so the arithmetic is
+//! this module is test material stated in the open
+//! `(´[PLAN-rule:guide10:public-data]´)`, so the arithmetic is
 //! plainly written rather than constant-time. A module that ever needed
 //! to be constant-time would be a different module with a different
 //! review.

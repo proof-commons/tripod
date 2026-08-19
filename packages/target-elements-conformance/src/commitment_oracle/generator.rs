@@ -14,7 +14,7 @@
 //! the library names after Shallue and van de Woestijne. The reviewed
 //! contract in `target-elements` states the shape of this recipe — two
 //! tagged hashes, two curve maps, one point addition — and this module
-//! is what performs it `(´[PLAN-rule:guide11:generator-recipe]´)`.
+//! is what performs it.
 
 use num_bigint::BigUint;
 use num_traits::One;

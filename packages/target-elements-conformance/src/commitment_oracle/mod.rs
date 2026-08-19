@@ -8,7 +8,7 @@
 //! without the tapscript opening pattern, without the native executor's
 //! answer, without a report row, and without reading a target
 //! observation as an expected value
-//! `(´[PLAN-rule:guide11:independent-oracle]´)`.
+//! `(´[PLAN-rule:guide10:independent-oracles]´)`.
 //!
 //! # Why it is first-party
 //!
