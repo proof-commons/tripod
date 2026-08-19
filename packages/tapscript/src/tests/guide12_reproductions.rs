@@ -1,20 +1,21 @@
 //! Guide-12 preflight reproductions owned by this crate.
 //!
-//! Every test here demonstrates a row of the Guide-12 preflight register
-//! by *passing* while the defect is present: it asserts the wrong thing
-//! happens and names the row it belongs to. Wave 0 reproduces and does
-//! not repair, so the wave that fixes a row flips that row's assertions,
-//! which then stand as the guarantee that the repair holds. Nothing here
-//! reaches a crate-private constructor an external caller could not use.
+//! Each test here belongs to a row of the Guide-12 preflight register.
+//! While a row is open its test passes by asserting the wrong thing
+//! happens, which is what Wave 0 recorded: it reproduces and does not
+//! repair. The wave that fixes a row flips that row's assertions, and
+//! they then stand as the guarantee that the repair holds. A row marked
+//! CLOSED below is one whose test has been flipped. Nothing here reaches
+//! a crate-private constructor an external caller could not use.
 //!
 //! - `G12-R11` — the resource projection omits every byte a literal
 //!   occupies.
 //! - `G12-R12` — a pushed literal's exact bytes are not retained, so a
 //!   verifying primitive over a byte the target reads as false keeps a
 //!   success state.
-//! - `G12-R13` — decoding runs its parse loop over the whole input and
-//!   applies the instruction limit only in the constructor it finally
-//!   calls.
+//! - `G12-R13` — CLOSED: the parse loop applies the instruction limit
+//!   itself, so a script above the bound is refused by the bound rather
+//!   than by whatever its later bytes happen to be.
 
 use target_elements::{OpcodeId, ResourceDimension};
 
@@ -104,20 +105,20 @@ fn a_pushed_zero_byte_leaves_a_success_state_the_target_cannot_reach() {
     );
 }
 
-/// `G12-R13`: decoding passes the work bound before it notices the limit.
+/// `G12-R13`: decoding stops at the work bound before it reads further.
 ///
-/// The parse loop runs to the end of the input and the instruction limit
-/// is applied only by the constructor the loop finally calls, so a script
-/// far above the limit is parsed and allocated in full before it is
-/// refused. The witness is a script whose bytes pass the limit long
-/// before an unreadable byte arrives: a parser that stopped at the work
-/// bound would report the limit, and this one reports the byte, which it
-/// can only have reached by continuing.
+/// The parse loop used to run to the end of the input, the instruction
+/// limit being applied only by the constructor the loop finally called,
+/// so a script far above the limit was parsed and allocated in full
+/// before it was refused. The witness is a script whose bytes pass the
+/// limit long before an unreadable byte arrives: a parser that stops at
+/// the work bound reports the limit, and one that reports the byte can
+/// only have reached it by continuing past the bound.
 ///
-/// The assertion is the defect. A wave that stops at the bound flips it
-/// to [`TapscriptError::InstructionLimitExceeded`].
+/// The assertion is now the guarantee: the limit is what comes back, so
+/// the unreadable byte at the end was never read.
 #[test]
-fn decoding_passes_the_work_bound_before_it_notices_the_limit() {
+fn decoding_stops_at_the_work_bound_before_it_reads_further() {
     let target = reviewed_target();
 
     // Resolved from the contract rather than restated: one primitive's
@@ -144,7 +145,9 @@ fn decoding_passes_the_work_bound_before_it_notices_the_limit() {
 
     assert_eq!(
         TapscriptProgram::decode(&target, &script),
-        Err(TapscriptError::UnknownOpcodeByte(unreadable)),
-        "G12-R13: the parser is expected to run past the limit while the row is open",
+        Err(TapscriptError::InstructionLimitExceeded {
+            maximum: MAXIMUM_PROGRAM_INSTRUCTIONS,
+        }),
+        "G12-R13: the parse stops at the work bound, so the trailing byte is never read",
     );
 }

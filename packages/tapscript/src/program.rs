@@ -39,6 +39,15 @@
 //! refuses it always. That is stricter than consensus on purpose: a
 //! first-party program that no node forwards is of no use, and the
 //! round-trip property below only holds for the minimal form.
+//!
+//! # The work bound binds the parse, not the result
+//!
+//! [`MAXIMUM_PROGRAM_INSTRUCTIONS`] is checked inside the parse loop, so
+//! the work and the allocation a script can cause are bounded by the
+//! limit rather than by the script's own length. Checking it only on the
+//! finished sequence would make the limit a property of the answer
+//! instead of a property of the parse, and an oversized script would pay
+//! for itself in full before being refused.
 
 use std::collections::BTreeMap;
 
@@ -149,6 +158,21 @@ impl TapscriptProgram {
         let mut offset = 0;
 
         while offset < bytes.len() {
+            // The work bound is enforced here rather than by the
+            // constructor at the end. A script arrives from an untrusted
+            // source, and a parser that read all of it before applying
+            // its own limit would let the input decide how much work and
+            // how much allocation the limit was supposed to bound. There
+            // are still bytes left and the program is already full, so
+            // the answer cannot change: it is the limit, whatever those
+            // bytes turn out to be.
+            if u64::try_from(instructions.len()).unwrap_or(u64::MAX) >= MAXIMUM_PROGRAM_INSTRUCTIONS
+            {
+                return Err(TapscriptError::InstructionLimitExceeded {
+                    maximum: MAXIMUM_PROGRAM_INSTRUCTIONS,
+                });
+            }
+
             let opcode = bytes[offset];
             offset += 1;
 
