@@ -93,6 +93,11 @@ class AdapterProcess:
         self.child = subprocess.Popen(
             [
                 self.executor,
+                # This lane is not the conformance harness and does not
+                # pretend to be: the harness spawns an executor with no
+                # arguments, and these three are what make one process
+                # distinguishable from another. None is a credential.
+                "--enable-wallet",
                 "--datadir", self.chain_dir,
                 "--wallet-name", self.wallet_name,
             ],
@@ -368,9 +373,28 @@ def main(argv):
         raise SystemExit("the published transaction carries no private change output")
 
     rows = [{"row": "accepted", "handoff": handoff, "expected_outcome": "verified"}]
-    rows.append(
-        {"row": "stale_evidence", "handoff": stale_handoff, "expected_outcome": "verified"}
-    )
+    # The stale row exists only if Process A could actually spend the
+    # object it published. Where it could not, the row is recorded as
+    # unbuilt with the target's own words and is NOT sent: an unspent
+    # object verifying successfully would be filed as a stale record
+    # passing, which is a false fact and the exact shape of mistake
+    # `G11-W7-07` catalogues.
+    stale_failure = record["process_a"]["stale"].get("supersede_failure")
+    record["stale_row"] = {
+        "constructed": stale_failure is None,
+        "superseded_by": record["process_a"]["stale"].get("superseded_by"),
+        "unbuilt_reason": stale_failure,
+    }
+    if stale_failure is None:
+        rows.append(
+            {
+                "row": "stale_evidence",
+                "handoff": stale_handoff,
+                "expected_outcome": "refused_output_spent",
+            }
+        )
+    else:
+        print("  %-34s not built: %s" % ("stale_evidence", stale_failure), flush=True)
     rows.extend(perturbations(handoff, decoy_handoff, change_index))
 
     # The chain-context row is refused here as well, before the record is

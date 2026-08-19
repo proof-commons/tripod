@@ -3187,12 +3187,36 @@ class LifecycleExecutor:
                 "was given"
             )
 
+        # Locked against this wallet's own coin selection. The published
+        # object is ordinary wallet money, and a later construction
+        # funding itself would spend it -- which showed up as the
+        # published record verifying as SPENT, a false fact of exactly
+        # the kind `G11-W7-07`'s second fault records. Locking is the
+        # discipline `create_coin` already keeps, for the same reason.
+        self.node.call(
+            "lockunspent", "false",
+            json.dumps([{"txid": txid, "vout": index}]),
+            wallet=self.conservation.WALLET,
+        )
+
         claimed = body["claimed_outputs"][index]
         superseded = None
+        supersede_failure = None
         if subject.get("supersede"):
-            superseded = self.supersede(txid, index, claimed["explicit_amount"])
+            # A failure here does not fail the step. What the caller
+            # asked for is a public record, and it has one either way;
+            # what it does NOT then have is a record whose object was
+            # later spent. Reported as an unbuilt row with the target's
+            # own words, on `G11-W7-03`'s precedent -- a row that reached
+            # no verdict establishes nothing and is a finding about the
+            # candidate rather than a defect of the row.
+            try:
+                superseded = self.supersede(txid, index, claimed["explicit_amount"])
+            except (ConstructionError, AdapterError) as error:
+                supersede_failure = error.note
         return {
             "superseded_by": superseded,
+            "supersede_failure": supersede_failure,
             "handoff": {
                 "schema": FRESH_PROCESS_HANDOFF_SCHEMA,
                 "chain_name": self.node.chain,
@@ -3223,41 +3247,90 @@ class LifecycleExecutor:
         A stale record manufactured after the boundary would be a
         different row wearing this one's name.
         """
-        destination = self.conservation.address(False, NORMALIZATION_ADDRESS_TYPE)
-        program = self.normalization.script_of(destination)
+        # Paid to a CONFIDENTIAL address, so the transaction goes through
+        # blinding on its way to the signer. That is not a preference
+        # about where the money lands -- this output is never read again
+        # -- it is the path the normalization row already proves the
+        # wallet signs correctly, and a fully explicit transaction on
+        # this target reaches the signer with its output witness
+        # structures unpopulated and produces a complete signature that
+        # no block will take.
+        destination = self.conservation.address(True, NORMALIZATION_ADDRESS_TYPE)
         fee = NORMALIZATION_FEE_SATOSHIS
-        transaction = self.messages.CTransaction()
-        transaction.version = 2
-        transaction.vin.append(
-            self.messages.CTxIn(
-                self.messages.COutPoint(txid_to_internal_int(txid), index),
-                nSequence=0xFFFFFFFE,
-            )
+        # Built by the node rather than by hand. Everything else in this
+        # adapter constructs its own bytes on purpose -- a fixture states
+        # what it means and the adapter must not improve on it -- but
+        # this transaction is not a fixture. It exists only to make an
+        # earlier output spent, and building it here would put this
+        # adapter's serialization between the wallet and the sighash it
+        # signs for no benefit the row cares about.
+        unsigned = self.node.call(
+            "createrawtransaction",
+            json.dumps([{"txid": txid, "vout": index}]),
+            # Written as JSON text rather than encoded from Python
+            # numbers. An amount here is a decimal quantity of whole
+            # units, and routing it through a float to get there is how a
+            # transaction ends up off by a satoshi that nothing in the
+            # code says it should be off by.
+            '[{"%s":%s},{"fee":%s}]'
+            % (
+                destination,
+                satoshis_to_amount(amount - fee),
+                satoshis_to_amount(fee),
+            ),
         )
-        transaction.vout.append(self.executor.output(amount - fee, program))
-        transaction.vout.append(self.executor.output(fee, b""))
+        # The spent output is stated rather than left to be looked up.
+        # A taproot signature commits to the value and the program of
+        # what it spends, and this interface documents the amount as
+        # REQUIRED for a non-confidential segwit output; a lookup that
+        # silently supplied a different one produces a complete
+        # signature that no block will take, which is what the first
+        # revision of this method observed.
+        # Unlocked again, because this row exists to spend it. The lock
+        # is against accidental consumption by coin selection, not
+        # against the owner deciding to spend the object on purpose.
+        self.node.call(
+            "lockunspent", "true",
+            json.dumps([{"txid": txid, "vout": index}]),
+            wallet=self.conservation.WALLET,
+        )
+        spent = self.node.call("gettxout", txid, str(index))
+        if spent is None:
+            raise ConstructionError(
+                "the object this row means to supersede is not in the "
+                "unspent-output set"
+            )
+        blinded = self.node.call(
+            "blindrawtransaction", unsigned, wallet=self.conservation.WALLET
+        )
         signed = self.node.call(
             "signrawtransactionwithwallet",
-            transaction.serialize().hex(),
+            blinded,
             wallet=self.conservation.WALLET,
         )
         if not signed.get("complete"):
             raise ConstructionError(
                 "the owner's wallet did not finish the spend that supersedes "
-                "the published object"
+                "the published object: %s" % json.dumps(signed.get("errors"))
+            )
+        relay = self.node.call("testmempoolaccept", json.dumps([signed["hex"]]))
+        if relay[0].get("allowed") is not True:
+            raise ConstructionError(
+                "the owner's wallet produced a complete signature the target "
+                "refuses: %s" % relay[0].get("reject-reason")
             )
         self.node.call(
             "generateblock",
             "raw(%s)" % ANYONE_CAN_SPEND_HEX,
             json.dumps([signed["hex"]]),
         )
-        spent = self.conservation.deserialize(signed["hex"]).rehash()
+        successor = self.conservation.deserialize(signed["hex"]).rehash()
         if self.node.call("gettxout", txid, str(index)) is not None:
             raise ConstructionError(
                 "the published object is still unspent after the transaction "
                 "meant to supersede it"
             )
-        return spent
+        return successor
 
     def locate_normalized_output(self, body: dict) -> int:
         """Which output of the built transaction is the normalized one.
@@ -3411,12 +3484,22 @@ class LifecycleExecutor:
         # name a transaction that exists and an output that is gone.
         unspent = self.node.call("gettxout", handoff["txid"], str(index))
         record("output_unspent", True, unspent is not None)
-        if unspent is not None:
-            record(
-                "utxo_set_amount",
-                handoff["claimed_explicit_amount"],
-                int(round(float(unspent["value"]) * 100_000_000)),
-            )
+        if unspent is None:
+            # The transaction is still in the chain and every byte of it
+            # still parses. What is gone is the object: a later
+            # transaction consumed it, so a record naming it is true
+            # about the past and false about what can be used now. This
+            # is the explicit-path form of section 13.5's stale capsule.
+            return {
+                "outcome": "refused_output_spent",
+                "checks": checks,
+                "spend": None,
+            }
+        record(
+            "utxo_set_amount",
+            handoff["claimed_explicit_amount"],
+            int(round(float(unspent["value"]) * 100_000_000)),
+        )
 
         # No owner-private witness anywhere in this process. The wallet
         # this process created is asked whether it can spend the object,
@@ -4049,9 +4132,11 @@ def answer_lifecycle_step(executor: CaseExecutor, request: dict, case: dict) -> 
             "handoff": body.get("handoff"),
             "authorization_profile": body.get("authorization_profile"),
             "observed_witness_sizes": body.get("observed_witness_sizes", []),
+            "observed_outputs": body.get("observed_outputs", []),
             "checks": body.get("checks", []),
             "spend": body.get("spend"),
             "superseded_by": body.get("superseded_by"),
+            "supersede_failure": body.get("supersede_failure"),
             "detail": body.get("detail"),
         }
     )
