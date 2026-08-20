@@ -146,6 +146,7 @@ pub const PACKAGE_OWNERS: &[(&str, &str)] = &[
     ("EXECWRAP", "execwrap"),
     ("FLATTENLATEXMAIN", "flatten-latex-main"),
     ("LABELS", "labels"),
+    ("LINKER", "linker"),
     ("REALIZATION", "realization"),
     ("TAPSCRIPT", "tapscript"),
     ("TARGETELEMENTS", "target-elements"),

@@ -1,0 +1,54 @@
+[package]
+name = "tripod-linker"
+description = "Resolves typed relocatable backend bundles into deterministic candidate linked bundles"
+
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[lib]
+name = "linker"
+
+# Guide-12 §14.1 admits exactly `tapscript` and `target-elements` as
+# direct first-party dependencies, and forbids `model`, `transaction`,
+# `vectors`, `release`, and `artifacts`. Both admitted packages are
+# present and no forbidden one is.
+#
+# `compiler` is neither admitted nor forbidden by §14.1, and it is
+# absent here on purpose. Carrier closure (§14.6) compares the
+# compiler-required carriers with the backend-emitted ones, and the
+# compiler-required side reaches this crate already — inside the
+# validated operation plan the bundle carries — through `tapscript`'s
+# public surface. Naming `compiler` directly would let the linker read
+# a plan the bundle was not emitted for, which is the one comparison
+# §14.6 exists to make impossible.
+#
+# `petgraph` is the workspace's existing graph dependency and §14.4
+# names it for the strongly-connected-component computation. Only the
+# core graph and visit API is used, matching the workspace note on the
+# dependency entry.
+#
+# Nothing else has a consumer: this crate serializes nothing and parses
+# nothing, and its refusal root is hand-written, which keeps `thiserror`
+# out as it is kept out of `tapscript`.
+[dependencies]
+petgraph = { workspace = true }
+tapscript = { workspace = true }
+target-elements = { workspace = true }
+
+# Test-only. A link needs a bundle, and the only way to obtain a real
+# one is `tapscript::emit_candidate_bundle` over a real validated
+# operation plan, which the compiler's own public constructor produces
+# from an architecture body and a derived realization. A test that
+# hand-assembled a bundle would be linking something no backend
+# emitted.
+[dev-dependencies]
+architecture = { workspace = true }
+compiler = { workspace = true }
+realization = { workspace = true }
+
+[lints]
+workspace = true

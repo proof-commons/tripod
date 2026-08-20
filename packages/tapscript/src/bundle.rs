@@ -2383,6 +2383,29 @@ fn resource_formulas(
     formulas
 }
 
+/// Fit the affine model of one measurement table (§13.3).
+///
+/// Public because the linker refits it. Substitution changes the
+/// pushed literals' widths, so the exact encoded byte length of every
+/// linked program differs from the pre-link one and the coefficients
+/// read off the pre-link table no longer describe anything. §1.12
+/// keeps one authored source per semantic object, so the linker calls
+/// this rather than reimplementing the fit and risking two answers to
+/// one question.
+#[must_use]
+pub fn fit_shape_model(measurements: &BTreeMap<CompactAshShape, u64>) -> ResourceModel {
+    fit_model(measurements)
+}
+
+/// What one fitted model predicts at one shape, where a model exists.
+///
+/// The companion of [`fit_shape_model`], public for the same reason:
+/// a refitted model has to be checkable by whoever refitted it.
+#[must_use]
+pub fn predict_shape_model(model: ResourceModel, shape: CompactAshShape) -> Option<i64> {
+    predict_model(model, shape)
+}
+
 /// The affine model of one measurement table, or none.
 ///
 /// The coefficients are exact differences taken inside the table, and

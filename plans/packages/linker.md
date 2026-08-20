@@ -1,6 +1,6 @@
 # Linker · `pkg:linker:contract`
 
-> **Status:** Planned
+> **Status:** Candidate — first bundle delivered, exit gate partly met
 > **Phase:** [Phase 4](../phases/04-compact-ash.md) onward
 > **Package:** `tripod-linker`
 > **Library:** `linker`
@@ -130,10 +130,24 @@ References are classified as:
 
 The linker computes deterministic SCCs and a condensation DAG.
 
-A cycle is not accepted merely because it belongs to one SCC. Every cyclic edge
-requires an explicit authenticated resolution strategy.
+A cycle is not accepted merely because it belongs to one SCC. A cycle is
+resolved when at least one of its edges carries an explicit authenticated
+resolution strategy, and refused when any edge carries none. Requiring every
+cyclic edge to be cycle-resolving would refuse every cycle without exception:
+a constructor binding its own leaves is an ordinary static reference, cyclic
+only because something else closes the loop.
 
 Arbitrary repeated hashing until bytes stabilize is prohibited.
+
+The first delivered link found one component. The compact-ASH constructor's
+witness program is the taproot output committing to the tree over the leaves,
+and those leaves carry that program as a link-time literal, so the symbol's
+value is a function of itself. With no strategy stated the link refuses as an
+impossible static fixed point. Of the two strategies that cut the edge, the
+sound one — the referring program obtaining the identity by introspecting the
+input it is spending — is checked rather than believed, and the emitted leaves
+currently contradict it; the other cuts by external authentication and leaves
+the commitment equality as a recorded, undischarged obligation.
 
 ## Relocations · `rule:linker:relocations`
 
@@ -260,6 +274,10 @@ It does not establish:
 
 ## Exit gate · `gate:linker:first-bundle`
 
+Met by the first delivered link except for the last clause, which waits on the
+transaction package, and except that the self-commitment resolves only under an
+explicit authenticated strategy rather than by construction.
+
 The first candidate compact-ASH bundle exits when:
 
 - every symbol and mandatory relocation resolves;
@@ -277,7 +295,9 @@ See [`errors/linker.md`](errors/linker.md).
 ## Open questions · `sec:linker:open`
 
 - Which linked-artifact roles are truly backend-neutral?
-- What deterministic, possibly length-limited taptree algorithm is selected?
+- What length-limited taptree algorithm replaces the plain minimum-weighted-depth
+  construction, which minimizes cost and refuses rather than rebalances when a
+  declared depth bound is exceeded?
 - What is the canonical bundle archive format?
 - Does calibration remain in release or later move to a dedicated package?
 - Which package owns genesis and issuance ceremony construction?
