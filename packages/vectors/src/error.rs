@@ -86,6 +86,9 @@ pub enum VectorError {
     MissingRelation(RelationId),
     /// Two coverage requirements claimed one identity.
     DuplicateCoverageRequirement,
+    /// A vector could not be decoded and re-encoded to its own bytes,
+    /// so no mutation of it would carry exactly one difference.
+    UnmutatableVector(TargetVectorId),
     /// A negative coverage requirement's evidence role names no place
     /// its refusal could be observed.
     ///

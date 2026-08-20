@@ -8,6 +8,7 @@ pub mod error;
 pub mod fixture;
 pub mod materialize;
 pub mod matrix;
+pub mod mutation;
 pub mod operation;
 pub mod plan;
 pub mod projection;
