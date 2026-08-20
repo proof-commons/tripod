@@ -1344,7 +1344,7 @@ evidence and the batch gate record extends §2.6:
 | ID | Status | Task |
 |---|---|---|
 | `T4-001` | DONE | Validated compact-ASH target operation plan — compiler `operation_plan` public boundary, projections recomputed against the analysis (23 relations, 2 cases, 46 relation-cases, 69 layout requirements), Guide-11 representation stated, nine corruption oracles |
-| `T4-002` | TODO | Target transaction-form and dependency review (Guide 12 Wave 5) |
+| `T4-002` | DONE | Target transaction-form and dependency review — target-elements `transaction_form`, fee role recognized by form, both forms consensus-admitted, sponsor asset explicit and value uninspected, first-party substrate selected awaiting dependency ratification, three requirements deferred to transaction evidence |
 | `T4-003` | TODO | Static target assessment and typed tapscript proof patterns (Wave 6) |
 | `T4-004` | TODO | Candidate relocatable bundle (Wave 7) |
 | `T4-005` | TODO | Linker foundation (Wave 8) |

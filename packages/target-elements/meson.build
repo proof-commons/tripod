@@ -18,6 +18,7 @@ target_elements_source_files = files(
   'src/push.rs',
   'src/resource.rs',
   'src/success.rs',
+  'src/transaction_form.rs',
   'src/weld.rs',
   'src/tests/capability_tests.rs',
   'src/tests/confidential_review_tests.rs',
@@ -33,6 +34,7 @@ target_elements_source_files = files(
   'src/tests/push_tests.rs',
   'src/tests/registry_mutation_tests.rs',
   'src/tests/status_closure_tests.rs',
+  'src/tests/transaction_form_tests.rs',
   'src/tests/weld_tests.rs',
 )
 

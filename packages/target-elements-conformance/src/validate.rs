@@ -189,6 +189,24 @@ const EVIDENCE_PLAN: &[(TargetEvidenceRequirementId, EvidencePlanClass)] = &[
         TargetEvidenceRequirementId::ConfidentialValueConservation,
         EvidencePlanClass::DeferredToTransactionEvidence,
     ),
+    // The transaction forms. Every one of them needs a complete
+    // transaction in front of a node, and this harness executes
+    // programs rather than submitting transactions, so all three are
+    // deferred rather than required. Deferring them is a statement that
+    // the project has not attempted them, which is what the class
+    // means, and not a statement that they hold.
+    (
+        TargetEvidenceRequirementId::FeeOutputForm,
+        EvidencePlanClass::DeferredToTransactionEvidence,
+    ),
+    (
+        TargetEvidenceRequirementId::ExplicitZeroValueOutputRule,
+        EvidencePlanClass::DeferredToTransactionEvidence,
+    ),
+    (
+        TargetEvidenceRequirementId::FeelessTransactionAdmission,
+        EvidencePlanClass::DeferredToTransactionEvidence,
+    ),
 ];
 
 /// The Guide-9 partition of the target evidence census.

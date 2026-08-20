@@ -55,6 +55,13 @@ pub enum TargetEvidenceSubject {
     Issuance,
     /// Resource bounds.
     Resources,
+    /// The shape a whole transaction must take.
+    ///
+    /// Separate from the encodings because a field encoding is what one
+    /// output carries, while a transaction form is a rule over the
+    /// whole vector of them, and only the latter needs a complete
+    /// transaction to demonstrate.
+    TransactionForm,
 }
 
 /// What kind of claim a requirement makes.
@@ -77,6 +84,9 @@ pub enum EvidenceClaimClass {
     Conservation,
     /// That a bound is enforced at the described figure.
     ResourceBound,
+    /// That a structural role is recognized by the described terms, and
+    /// by no others.
+    RoleRecognition,
 }
 
 /// Where evidence for a requirement must be produced.
@@ -429,6 +439,57 @@ fn contract_requirements() -> Vec<(TargetEvidenceRequirementId, TargetEvidenceRe
     ]
 }
 
+/// Requirements about the shape of a whole transaction.
+///
+/// Their own group rather than a tail of the contract group: each one
+/// needs a complete transaction in front of a node to demonstrate,
+/// while every requirement above can be demonstrated by executing a
+/// program. That is a difference in what would have to exist to answer
+/// them, so it is a difference worth keeping visible here.
+fn transaction_form_requirements() -> Vec<(TargetEvidenceRequirementId, TargetEvidenceRequirement)>
+{
+    use EvidenceClaimClass as K;
+    use EvidenceStaleCondition as X;
+    use RequiredEvidenceEnvironment::{AnyNetwork, DevelopmentNetwork};
+    use TargetEvidenceRequirementId as R;
+    use TargetEvidenceSubject as S;
+
+    vec![
+        entry(
+            R::FeeOutputForm,
+            S::TransactionForm,
+            K::RoleRecognition,
+            AnyNetwork,
+            CONTRACT_OR_NODE,
+        ),
+        entry(
+            R::ExplicitZeroValueOutputRule,
+            S::TransactionForm,
+            K::Conservation,
+            AnyNetwork,
+            CONTRACT_OR_NODE,
+        ),
+        // Two answers under one identity, and they part company at the
+        // layer: consensus admission is a target property evidenceable
+        // anywhere, while the refusal to relay is a deployment's
+        // setting. The requirement is filed against the network whose
+        // policy the project controls, because the pair is only
+        // demonstrable where both halves can be observed at once.
+        entry(
+            R::FeelessTransactionAdmission,
+            S::TransactionForm,
+            K::RoleRecognition,
+            DevelopmentNetwork,
+            &[
+                X::TargetContractChange,
+                X::NodeUpgrade,
+                X::PolicyChange,
+                X::NetworkChange,
+            ],
+        ),
+    ]
+}
+
 /// Builds the reviewed evidence-requirement registry.
 pub(crate) fn reviewed_evidence_requirements()
 -> BTreeMap<TargetEvidenceRequirementId, TargetEvidenceRequirement> {
@@ -436,6 +497,7 @@ pub(crate) fn reviewed_evidence_requirements()
         execution_requirements(),
         encoding_requirements(),
         contract_requirements(),
+        transaction_form_requirements(),
     ]
     .into_iter()
     .flatten()

@@ -378,6 +378,18 @@ const EVIDENCE_NAMES: &[(TargetEvidenceRequirementId, &str)] = &[
         TargetEvidenceRequirementId::PolicyResourceLimits,
         "policy_resource_limits",
     ),
+    (
+        TargetEvidenceRequirementId::FeeOutputForm,
+        "fee_output_form",
+    ),
+    (
+        TargetEvidenceRequirementId::ExplicitZeroValueOutputRule,
+        "explicit_zero_value_output_rule",
+    ),
+    (
+        TargetEvidenceRequirementId::FeelessTransactionAdmission,
+        "feeless_transaction_admission",
+    ),
 ];
 
 /// The spelling one reviewed primitive travels under.
