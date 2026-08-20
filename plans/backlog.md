@@ -339,6 +339,43 @@ not discharged: the pinned output key is unverified against the tree,
 internal-key unspendability is unverified, the clear lifecycle exit is
 outstanding, and no target has executed anything.
 
+The reference-oracle cross-check wave is the first consumer of the
+adopted crates. Fifteen tests in
+`packages/target-elements-conformance` compare a first-party
+computation against the reference implementation of the same object,
+each stating the claim class in one line: reference-implementation
+conformance, not independent evidence. Byte-equal on every comparison
+made — all nine sponsorless fixture transactions round-trip through
+the reference decoder and re-encode identically, their structure and
+version agree under both decoders, the reference txid and wtxid are
+the double digests of the first-party witness-stripped and full
+encodings, the two unrelated weight formulas and both virtual-size
+rules agree, all nine reference txids stay distinct, every committed
+leaf hash equals the reference tapleaf hash under the reviewed leaf
+version, every leaf path folds to the first-party merkle root under
+reference branch hashing, every control block parses and
+re-serializes byte-identically, the reference verifier accepts the
+first-party taproot commitment for every leaf, and the first-party
+confidential oracle matches the reference library on two asset
+generators and six Pedersen commitments. The merkle root and the
+reference output key are pinned as vectors in `src/reference.rs`.
+
+Two defects the cross-check found, both recorded by tests that fail
+if the defect is repaired, and neither repaired here because the fix
+changes every fixture's exact bytes and is a substrate decision.
+First, the fixture bundle's pinned witness program is not a curve
+point, so no control block can ever satisfy the reference verifier
+against it and an output created at that program is unspendable by
+construction. Second, the fixture declares even output-key parity
+while the tweak of the fixture internal key by the fixture merkle
+root produces odd parity, so a control block built from the declared
+bit states the wrong y coordinate. Both are the same root cause: the
+pin is declared rather than derived. Both block the Wave-11 funding
+ceremony that would discharge the pinned-output-key obligation, and
+the minted reference output key is the value that would work. Pinning
+that key does not itself discharge the obligation, which still needs
+an output a real node created and a spend it accepted.
+
 ### The verification harness's two standing hazards · `rem:backlog:verification-harness`
 
 A verdict is read from the report wrapper's own report line, never from a pipeline's shell status: the wrapper propagates its exit code faithfully, and a pipe to a filter truncates the status to the last stage's. And a single shared build-target directory is poisoned when checkouts of two different commits build the same crates into it, so a lane that moves between commits pins a target directory of its own.
