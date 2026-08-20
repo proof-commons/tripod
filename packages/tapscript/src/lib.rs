@@ -4,6 +4,7 @@
 pub mod capability;
 pub mod error;
 pub mod instruction;
+pub mod operation_assessment;
 pub mod pattern;
 pub mod policy;
 pub mod program;
@@ -18,6 +19,10 @@ pub use capability::{
 };
 pub use error::TapscriptError;
 pub use instruction::{StackItem, TapscriptInstruction};
+pub use operation_assessment::{
+    EmissionRefusal, OperationAssessmentSet, OperationRequirement, OperationVerdict, VerdictGround,
+    assess_operation_plan,
+};
 pub use pattern::{
     AUTHORIZATION_PRIMITIVES, AbiAssumption, BackendPattern, CompactAshSymbols, MutationOutcome,
     PatternFailure, PatternMutation, PatternOwner, PatternResources, PatternStackContract,

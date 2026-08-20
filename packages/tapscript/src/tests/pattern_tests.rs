@@ -56,23 +56,12 @@ use crate::shape::{
     CompactAshShape, CompactAshShapeBounds, SponsorChangePresence, demonstration_shape_set,
 };
 use crate::stack::{AbstractLimits, AbstractStackState, validate_program};
-use crate::tests::reviewed_target;
+use crate::tests::{pattern_symbols, reviewed_target};
 
 /// Placeholder link-time symbols, each byte string distinct so a
 /// fragment that compared against the wrong one would be visible.
 fn symbols() -> CompactAshSymbols {
-    let target = reviewed_target();
-    CompactAshSymbols::new(
-        &target,
-        vec![0x11; 32],
-        vec![0x22; 32],
-        vec![0x33; 32],
-        1,
-        vec![0x44; 20],
-        0,
-        vec![0x55; 32],
-    )
-    .expect("the placeholder symbols are the reviewed widths")
+    pattern_symbols(&reviewed_target())
 }
 
 /// A shape with `ash` sources, `sponsors` sponsor inputs, and `change`.
