@@ -49,6 +49,7 @@ use vectors::comparison::{compare, read_accepted};
 use vectors::fixture::{OPERATION, positive_semantic_census};
 use vectors::materialize::{TargetVectorId, vector_id};
 use vectors::operation::{CompactAshOperationPlanner, OperationTranscript};
+use vectors::plan::{ProjectionComparison, derive_evidence_plan};
 
 fn environment(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|value| !value.is_empty())
@@ -104,7 +105,7 @@ fn hex(bytes: &[u8]) -> String {
 /// transaction that never reached the first.
 fn compare_projections(
     transcript: &OperationTranscript,
-) -> BTreeMap<TargetVectorId, (bool, String)> {
+) -> BTreeMap<TargetVectorId, (ProjectionComparison, String)> {
     let mut verdicts = BTreeMap::new();
     let (Some(program), Some(asset)) =
         (transcript.constructor_program(), transcript.issued_asset())
@@ -142,14 +143,24 @@ fn compare_projections(
             .unwrap_or_default();
 
         let verdict = match read_accepted(submission.bytes(), &mine, asset, program, OPERATION) {
-            Err(refusal) => (false, format!("unreadable: {refusal:?}")),
+            // A transaction that could not be read has not disagreed
+            // about anything, so the comparison was not performed. It
+            // must not be recorded as a difference, which would file a
+            // reading failure as a protocol finding.
+            Err(refusal) => (
+                ProjectionComparison::NotPerformed,
+                format!("unreadable: {refusal:?}"),
+            ),
             Ok(observed) => {
                 let differed = compare(case.expected(), &observed);
                 if differed.is_empty() {
-                    (true, "matched".to_owned())
+                    (ProjectionComparison::Matched, "matched".to_owned())
                 } else {
                     let names: Vec<&str> = differed.iter().map(|term| term.name()).collect();
-                    (false, format!("differed: {}", names.join(" ")))
+                    (
+                        ProjectionComparison::Differed,
+                        format!("differed: {}", names.join(" ")),
+                    )
                 }
             }
         };
@@ -159,11 +170,43 @@ fn compare_projections(
 }
 
 /// Write everything the run established, and nothing it did not.
+/// How many §19 coverage rows this run's outcomes actually discharge.
+///
+/// The plan decides, not this lane: each outcome states a vector, the
+/// layer the target put it at, and what the projection comparison found,
+/// and `CoverageObservation::is_discharged` is what turns the triple
+/// into coverage or refuses to. An acceptance whose projection was never
+/// compared discharges nothing, which is why the comparison above
+/// distinguishes not-performed from differed.
+fn coverage(
+    transcript: &OperationTranscript,
+    projections: &BTreeMap<TargetVectorId, (ProjectionComparison, String)>,
+) -> (usize, usize, usize) {
+    let bundle = vectors::bundle::fixture_bundle().expect("the fixture bundle builds");
+    let mut plan = derive_evidence_plan(&bundle).expect("the evidence plan derives");
+    let outcomes: Vec<_> = transcript
+        .submissions()
+        .iter()
+        .map(|submission| {
+            let projection = projections
+                .get(&submission.vector())
+                .map_or(ProjectionComparison::NotPerformed, |(verdict, _)| *verdict);
+            (submission.vector(), submission.layer(), projection)
+        })
+        .collect();
+    plan.discharge(&outcomes);
+    (
+        plan.census().coverage_requirements(),
+        plan.observed_rows(),
+        plan.discharged_rows(),
+    )
+}
+
 fn render(
     transcript: &OperationTranscript,
     wall: Duration,
     outcome_text: &str,
-    projections: &BTreeMap<TargetVectorId, (bool, String)>,
+    projections: &BTreeMap<TargetVectorId, (ProjectionComparison, String)>,
 ) -> String {
     let mut out = String::new();
     out.push_str("{\n");
@@ -196,7 +239,15 @@ fn render(
         out,
         "  \"projections_compared\": {}, \"projections_matched\": {},",
         projections.len(),
-        projections.values().filter(|(matched, _)| *matched).count()
+        projections
+            .values()
+            .filter(|(verdict, _)| *verdict == ProjectionComparison::Matched)
+            .count()
+    );
+    let (requirements, observed, discharged) = coverage(transcript, projections);
+    let _ = writeln!(
+        out,
+        "  \"coverage_requirements\": {requirements}, \"coverage_observed\": {observed}, \"coverage_discharged\": {discharged},"
     );
 
     // The rows this target's own money bound forbids, and what it said
