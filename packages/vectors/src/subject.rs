@@ -64,13 +64,9 @@ pub struct CanonicalSubject<T> {
 impl<T> CanonicalSubject<T> {
     /// Admit a subject. Reachable only from inside this crate, and only
     /// from a path that has already validated the plan it belongs to.
-    //
-    // The allow is scoped to this one function and is temporary: the
-    // evidence plan is the caller, and it lands in the following commit
-    // of this same wave. Widening it to the module would hide the next
-    // unused item too, which is the opposite of what the census
-    // discipline is for.
-    #[allow(dead_code)]
+    ///
+    /// Today that path is [`crate::plan::derive_evidence_plan`], and it
+    /// is the only one.
     pub(crate) const fn admit(subject: T) -> Self {
         Self { subject }
     }
