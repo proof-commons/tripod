@@ -27,6 +27,7 @@ use target_elements_conformance::protocol::ObservedOutcomeLayer;
 use transaction::FundingCeremonyStep;
 
 use crate::bundle::FixtureBundle;
+use crate::divergence::target_amount_standing;
 use crate::error::VectorError;
 use crate::fixture::{CompactAshSemanticCase, positive_semantic_census};
 use crate::materialize::{
@@ -221,6 +222,8 @@ pub struct PlanCensus {
     matrix_classes: usize,
     semantic_cases: usize,
     materialized_vectors: usize,
+    submittable_vectors: usize,
+    divergent_vectors: usize,
 }
 
 impl PlanCensus {
@@ -279,9 +282,36 @@ impl PlanCensus {
     }
 
     /// Target vectors materialized to exact bytes.
+    ///
+    /// Every sponsorless positive case, including one this target
+    /// cannot be asked to accept. The bytes exist either way — they are
+    /// what the reference cross-checks decode — and whether a target
+    /// can be handed them is [`Self::submittable_vectors`].
     #[must_use]
     pub const fn materialized_vectors(&self) -> usize {
         self.materialized_vectors
+    }
+
+    /// Materialized vectors this target could be asked to accept.
+    ///
+    /// The count a live run's submissions is measured against. It is
+    /// smaller than [`Self::materialized_vectors`] exactly when the
+    /// target's own stated-amount bound forbids a row the protocol's
+    /// amount domain admits.
+    #[must_use]
+    pub const fn submittable_vectors(&self) -> usize {
+        self.submittable_vectors
+    }
+
+    /// Materialized vectors the target's money bound forbids.
+    ///
+    /// Counted separately and never folded into either of the two
+    /// above, so that no reading of this census can take a documented
+    /// divergence for a live acceptance or for a vector that was simply
+    /// not run yet.
+    #[must_use]
+    pub const fn divergent_vectors(&self) -> usize {
+        self.divergent_vectors
     }
 }
 
@@ -322,6 +352,24 @@ pub enum RequiredTargetWork {
     FundingCeremony(FundingCeremonyStep),
     /// One materialized target vector, handed to the target.
     VectorSubmission(TargetVectorId),
+    /// One row this target cannot be asked to accept, and why.
+    ///
+    /// # Why an impossible submission is still work
+    ///
+    /// The row's amounts are inside the protocol's domain and outside
+    /// this target's, so no ceremony on this target can create the
+    /// coins it spends and no submission of it can exist. Dropping it
+    /// from the workload would make the plan's census say the wave got
+    /// everything it asked for, which is not what happened. Leaving it
+    /// as a submission would make the workload permanently unfinishable
+    /// with nothing saying why.
+    ///
+    /// So the item stays, renamed to what is actually required: ask the
+    /// target for the one coin the bound forbids and record the answer.
+    /// Its discharge criterion is that refusal, and it is *not* the
+    /// criterion any other item has — an acceptance here would discharge
+    /// nothing and would falsify the reviewed bound instead.
+    TargetAmountDivergence(TargetVectorId),
 }
 
 /// The canonical compact-ASH evidence plan.
@@ -653,27 +701,40 @@ pub fn derive_evidence_plan(
     // reference cross-checks and name coins no chain created; the
     // executed plan is built from a ceremony's own answers instead.
     let mut target_cases = Vec::new();
+    // Which of them this target could be asked to accept. Derived from
+    // the reviewed target bound rather than marked on a row, so the
+    // classification changes when the target does and not when somebody
+    // remembers to edit a list.
+    let mut divergent = BTreeSet::new();
     for case in semantic.iter().filter(|case| is_materializable(case)) {
-        let funding = AshFunding::unexecutable_placeholder(vector_id(case));
+        let id = vector_id(case);
+        if target_amount_standing(case).is_unfundable() {
+            divergent.insert(id);
+        }
+        let funding = AshFunding::unexecutable_placeholder(id);
         target_cases.push(CanonicalSubject::admit(materialize(
             fixture, case, &funding,
         )?));
     }
 
-    // The ceremony's whole census, then one submission per vector this
-    // plan actually materialized. Derived rather than stated: a list
-    // written out here could name a vector the plan does not hold, or
-    // miss one it does.
+    // The ceremony's whole census, then one item per vector this plan
+    // materialized: a submission for a vector the target can be handed,
+    // and a divergence probe for one it cannot. Derived rather than
+    // stated: a list written out here could name a vector the plan does
+    // not hold, or miss one it does.
     let mut required_target_work: Vec<RequiredTargetWork> = FundingCeremonyStep::ALL
         .iter()
         .copied()
         .map(RequiredTargetWork::FundingCeremony)
         .collect();
-    required_target_work.extend(
-        target_cases
-            .iter()
-            .map(|subject| RequiredTargetWork::VectorSubmission(subject.subject().id())),
-    );
+    required_target_work.extend(target_cases.iter().map(|subject| {
+        let id = subject.subject().id();
+        if divergent.contains(&id) {
+            RequiredTargetWork::TargetAmountDivergence(id)
+        } else {
+            RequiredTargetWork::VectorSubmission(id)
+        }
+    }));
 
     let census = PlanCensus {
         relations: relations.len(),
@@ -686,6 +747,17 @@ pub fn derive_evidence_plan(
         matrix_classes: class_count(),
         semantic_cases: semantic.len(),
         materialized_vectors: target_cases.len(),
+        // Counted off the work items rather than off the set above, so
+        // the census and the workload cannot disagree about which rows
+        // a target will actually be asked for.
+        submittable_vectors: required_target_work
+            .iter()
+            .filter(|work| matches!(work, RequiredTargetWork::VectorSubmission(_)))
+            .count(),
+        divergent_vectors: required_target_work
+            .iter()
+            .filter(|work| matches!(work, RequiredTargetWork::TargetAmountDivergence(_)))
+            .count(),
     };
 
     Ok(CompactAshEvidencePlan {
@@ -856,6 +928,40 @@ mod tests {
     }
 
     #[test]
+    fn one_materialized_vector_is_beyond_this_targets_money_bound() {
+        // The exact accounting, pinned. Eight of the nine sponsorless
+        // vectors can be handed to this target; the ninth states an
+        // amount the target cannot encode, and is counted in its own
+        // column rather than folded into either of the others. A reader
+        // adding up this census cannot reach nine live submissions.
+        let plan = plan();
+        let census = plan.census();
+        assert_eq!(census.submittable_vectors(), 8);
+        assert_eq!(census.divergent_vectors(), 1);
+        assert_eq!(
+            census.submittable_vectors() + census.divergent_vectors(),
+            census.materialized_vectors(),
+            "a materialized vector is one or the other and never both or neither"
+        );
+
+        // And it is the row §18.1 asks for at the protocol's own
+        // ceiling, not some arbitrary one.
+        let divergent: Vec<_> = plan
+            .required_target_work()
+            .iter()
+            .filter_map(|work| match work {
+                super::RequiredTargetWork::TargetAmountDivergence(id) => Some(*id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(divergent.len(), 1);
+        assert_eq!(
+            divergent[0].fixture().name(),
+            "values-summing-to-two-pow-51-minus-one"
+        );
+    }
+
+    #[test]
     fn everything_the_plan_admits_carries_canonical_standing() {
         let plan = plan();
         for subject in plan.semantic_cases() {
@@ -898,16 +1004,18 @@ mod tests {
             .iter()
             .filter_map(|work| match work {
                 super::RequiredTargetWork::FundingCeremony(step) => Some(*step),
-                super::RequiredTargetWork::VectorSubmission(_) => None,
+                super::RequiredTargetWork::VectorSubmission(_)
+                | super::RequiredTargetWork::TargetAmountDivergence(_) => None,
             })
             .collect();
         assert_eq!(ceremony, super::FundingCeremonyStep::ALL.to_vec());
 
-        let submitted: Vec<_> = plan
+        let per_vector: Vec<_> = plan
             .required_target_work()
             .iter()
             .filter_map(|work| match work {
-                super::RequiredTargetWork::VectorSubmission(id) => Some(*id),
+                super::RequiredTargetWork::VectorSubmission(id)
+                | super::RequiredTargetWork::TargetAmountDivergence(id) => Some(*id),
                 super::RequiredTargetWork::FundingCeremony(_) => None,
             })
             .collect();
@@ -916,10 +1024,10 @@ mod tests {
             .iter()
             .map(|subject| subject.subject().id())
             .collect();
-        assert_eq!(submitted, materialized);
+        assert_eq!(per_vector, materialized);
         assert_eq!(
-            submitted.iter().copied().collect::<BTreeSet<_>>().len(),
-            submitted.len(),
+            per_vector.iter().copied().collect::<BTreeSet<_>>().len(),
+            per_vector.len(),
             "a vector named twice would be submitted twice",
         );
     }
@@ -932,7 +1040,13 @@ mod tests {
         let first_submission = plan
             .required_target_work()
             .iter()
-            .position(|work| matches!(work, super::RequiredTargetWork::VectorSubmission(_)))
+            .position(|work| {
+                matches!(
+                    work,
+                    super::RequiredTargetWork::VectorSubmission(_)
+                        | super::RequiredTargetWork::TargetAmountDivergence(_)
+                )
+            })
             .expect("the plan submits something");
         assert!(
             plan.required_target_work()[..first_submission]

@@ -388,6 +388,97 @@ pub fn reviewed_explicit_zero_value_rule() -> BTreeSet<ExplicitZeroValueRule> {
     ExplicitZeroValueRule::ALL.iter().copied().collect()
 }
 
+/// Where the target checks a stated amount against its money bound.
+///
+/// Two separate refusals, because they are two separate comparisons and
+/// a builder that only knew about the first would still produce a
+/// transaction the target refuses.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum StatedAmountCheck {
+    /// One output's own explicit value is compared against the bound.
+    SingleOutputValue,
+    /// The running total of explicit output values is compared against
+    /// it as each output is added.
+    RunningOutputTotal,
+}
+
+impl StatedAmountCheck {
+    /// The complete census of the reviewed checks.
+    pub const ALL: &'static [Self] = &[Self::SingleOutputValue, Self::RunningOutputTotal];
+}
+
+/// The greatest value the target admits in an explicit amount field.
+///
+/// # Why this is a target fact and not a protocol one
+///
+/// The protocol's own amount domain and this bound are two different
+/// ceilings, and neither is derived from the other. A world the
+/// protocol admits may state an amount this target refuses to encode at
+/// all, which is a divergence between the two domains rather than a
+/// defect in either. Recording the bound here — beside the other
+/// reviewed facts about what a transaction must look like to be
+/// accepted — is what lets a planner derive that divergence instead of
+/// discovering it as an unexplained refusal.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StatedAmountBound {
+    maximum: u64,
+}
+
+impl StatedAmountBound {
+    /// A bound no target published, for asking what a different
+    /// ceiling would classify.
+    ///
+    /// Named to be conspicuous at a call site. Nothing that judges a
+    /// real target may build one of these: the reviewed bound is the
+    /// only one that says anything about the target, and a caller
+    /// passing its own number would be judging the target against a
+    /// ceiling it does not have.
+    #[must_use]
+    pub const fn hypothetical(maximum: u64) -> Self {
+        Self { maximum }
+    }
+
+    /// The greatest admissible value of one explicit amount field.
+    #[must_use]
+    pub const fn maximum(self) -> u64 {
+        self.maximum
+    }
+
+    /// Whether the target admits an amount of this size.
+    #[must_use]
+    pub const fn admits(self, amount: u64) -> bool {
+        amount <= self.maximum
+    }
+}
+
+/// The reviewed stated-amount bound.
+///
+/// Source, in the reviewed target checkout: `MAX_MONEY` in
+/// `src/consensus/amount.h`, which is `21000000 * COIN` with `COIN` at
+/// `100000000`, and the explicit-output loop of `CheckTransaction` in
+/// `src/consensus/tx_check.cpp`, which refuses one output above the
+/// bound as `bad-txns-vout-toolarge` and a running explicit total above
+/// it as `bad-txns-txouttotal-toolarge`.
+///
+/// The bound is stated once, as a number, rather than as the two
+/// diagnostics: a caller that matched on the spellings would be
+/// asserting which of the target's several gates answers first, and on
+/// a funding path an adapter's own reserve arithmetic can answer ahead
+/// of all of them.
+#[must_use]
+pub const fn reviewed_stated_amount_bound() -> StatedAmountBound {
+    StatedAmountBound {
+        maximum: 21_000_000 * 100_000_000,
+    }
+}
+
+/// The reviewed census of where that bound is checked.
+#[must_use]
+pub fn reviewed_stated_amount_checks() -> BTreeSet<StatedAmountCheck> {
+    StatedAmountCheck::ALL.iter().copied().collect()
+}
+
 /// Which field of a sponsor input the coordinator reads.
 ///
 /// The census is short on purpose. Each entry is a field the protocol

@@ -10,10 +10,11 @@ use std::collections::BTreeSet;
 use crate::{
     DecisionStatus, EvidenceClaimClass, ExplicitZeroValueRule, FeeRecognitionTerm, FieldForm,
     FormAdmission, FormConstraint, SponsorAuthorizationSource, SponsorInspectedField,
-    SubstrateSelection, TargetEvidenceRequirementId, TargetEvidenceSubject, TransactionForm,
-    ZeroFeeRepresentation, reviewed_elements_tapscript, reviewed_explicit_zero_value_rule,
-    reviewed_fee_output_contract, reviewed_sponsor_input_profile, reviewed_substrate_decision,
-    reviewed_transaction_forms, transaction_form_evidence,
+    StatedAmountCheck, SubstrateSelection, TargetEvidenceRequirementId, TargetEvidenceSubject,
+    TransactionForm, ZeroFeeRepresentation, reviewed_elements_tapscript,
+    reviewed_explicit_zero_value_rule, reviewed_fee_output_contract,
+    reviewed_sponsor_input_profile, reviewed_stated_amount_bound, reviewed_stated_amount_checks,
+    reviewed_substrate_decision, reviewed_transaction_forms, transaction_form_evidence,
 };
 
 #[test]
@@ -117,6 +118,40 @@ fn a_zero_valued_spendable_output_is_refused_by_consensus() {
     assert!(rule.contains(&ExplicitZeroValueRule::SpendableRefused));
     assert!(rule.contains(&ExplicitZeroValueRule::UnspendableAdmitted));
     assert_eq!(rule.len(), ExplicitZeroValueRule::ALL.len());
+}
+
+#[test]
+fn the_stated_amount_bound_is_the_targets_own_arithmetic() {
+    // Recomputed from the two constants the reviewed source multiplies,
+    // rather than compared against a literal copied out of it: a
+    // transcription slip in either factor separates the two.
+    let bound = reviewed_stated_amount_bound();
+    let coin: u64 = 100_000_000;
+    let supply: u64 = 21_000_000;
+    assert_eq!(bound.maximum(), supply * coin);
+    assert_eq!(bound.maximum(), 2_100_000_000_000_000);
+
+    assert!(
+        bound.admits(bound.maximum()),
+        "the bound itself is admitted"
+    );
+    assert!(!bound.admits(bound.maximum() + 1));
+    assert!(bound.admits(0));
+
+    // The protocol's own amount domain reaches further than this
+    // target's bound, which is the whole reason the two are recorded
+    // separately: a world stating this much value is model-valid and
+    // unencodable here at once.
+    let protocol_domain_maximum: u64 = (1 << 51) - 1;
+    assert!(
+        !bound.admits(protocol_domain_maximum),
+        "the two ceilings would not need separate records if one contained the other"
+    );
+
+    let checks = reviewed_stated_amount_checks();
+    assert!(checks.contains(&StatedAmountCheck::SingleOutputValue));
+    assert!(checks.contains(&StatedAmountCheck::RunningOutputTotal));
+    assert_eq!(checks.len(), StatedAmountCheck::ALL.len());
 }
 
 #[test]

@@ -75,11 +75,12 @@ pub use transaction_form::{
     DecisionStatus, DelegatedCapability, ExplicitZeroValueRule, FeeOutputContract,
     FeeRecognitionTerm, FieldForm, FirstPartyCapability, FormAdmission, FormConstraint,
     RelayCondition, SponsorAuthorizationSource, SponsorInputProfile, SponsorInspectedField,
-    SponsorProgramClass, SubstrateGround, SubstrateRevisitTrigger, SubstrateSelection,
-    ThirdPartySubstrateReview, TransactionForm, TransactionFormReview,
-    TransactionSubstrateDecision, ZeroFeeRepresentation, reviewed_explicit_zero_value_rule,
-    reviewed_fee_output_contract, reviewed_sponsor_input_profile, reviewed_substrate_decision,
-    reviewed_transaction_forms, transaction_form_evidence,
+    SponsorProgramClass, StatedAmountBound, StatedAmountCheck, SubstrateGround,
+    SubstrateRevisitTrigger, SubstrateSelection, ThirdPartySubstrateReview, TransactionForm,
+    TransactionFormReview, TransactionSubstrateDecision, ZeroFeeRepresentation,
+    reviewed_explicit_zero_value_rule, reviewed_fee_output_contract,
+    reviewed_sponsor_input_profile, reviewed_stated_amount_bound, reviewed_stated_amount_checks,
+    reviewed_substrate_decision, reviewed_transaction_forms, transaction_form_evidence,
 };
 
 #[cfg(test)]
