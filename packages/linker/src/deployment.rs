@@ -65,6 +65,17 @@ pub enum SelfCommitmentStrategy {
     /// which no part of this wave discharges. The obligation is carried
     /// structurally, so a bundle linked this way cannot be read as one
     /// whose commitment was checked.
+    ///
+    /// The obligation is worse than open, and saying so is the point of
+    /// this paragraph. While the referring leaves carry the program as
+    /// a literal, no supplied value can satisfy the equality: it would
+    /// have to be a taproot output key whose own bytes appear inside
+    /// the leaves the tree commits to, and finding one is as hard as
+    /// finding a hash preimage. So this variant is a way to keep
+    /// building against the rest of the design, not a resolution. The
+    /// resolution is [`Self::IdentityIntrospection`], and it becomes
+    /// available when the recognition fragments read the spending
+    /// input's own program instead of pushing a literal for it.
     ExternallyAuthenticatedCommitment,
 }
 
