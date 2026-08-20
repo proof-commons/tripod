@@ -294,17 +294,39 @@ pub fn resolve_references(
             .map(|entry| entry.binding())
         {
             Some(SymbolBinding::ResolvedAtLink) => ReferenceClass::DeploymentRelocation,
-            Some(SymbolBinding::DefinedByBundle) | None => ReferenceClass::StaticLinkTimeConstant,
+            Some(SymbolBinding::DefinedByBundle | SymbolBinding::ReadFromTargetAtSpendTime)
+            | None => ReferenceClass::StaticLinkTimeConstant,
         };
 
         let entry = collected.entry((from, to)).or_insert((class, 0));
         entry.1 = entry.1.saturating_add(relocation.multiplicity().get());
     }
 
-    // The self-commitment edge. Added unconditionally: the emitted
-    // programs push the ASH constructor's witness program as a literal,
-    // and that program is the taproot output over the very leaves the
-    // constructor binds. The caller's strategy classifies the edge; it
+    // The reads. A leaf that fetches a symbol from the target depends
+    // on it exactly as a leaf that carries a literal for it does, and
+    // the dependency has to reach the graph from somewhere or the loop
+    // it closes disappears the moment the literal does. The bundle
+    // records these from its own emitted instructions, so the edges
+    // below are evidence rather than a design claim restated here.
+    for reference in bundle.introspections() {
+        let from = ReferenceNode::Symbol(leaf_symbol(reference.leaf()));
+        let to = ReferenceNode::Symbol(reference.symbol());
+        if !nodes.contains(&to) {
+            return Err(LinkRefusal::UnknownReferenceTarget(ReferenceEdgeId(
+                collected.len(),
+            )));
+        }
+
+        let entry = collected
+            .entry((from, to))
+            .or_insert((ReferenceClass::IdentityIntrospection, 0));
+        entry.1 = entry.1.saturating_add(reference.sites().get());
+    }
+
+    // The self-commitment edge. Added unconditionally: the ASH
+    // constructor's witness program is the taproot output over the very
+    // leaves the constructor binds, whether or not any program carries
+    // a literal for it. The caller's strategy classifies the edge; it
     // does not decide whether the dependency exists.
     let self_commitment = (
         ReferenceNode::Symbol(BundleSymbol::AshConstructorProgram),

@@ -135,12 +135,21 @@ pub enum AbiAssumption {
 /// reviewed contract fixes for the field it will be compared with, so a
 /// symbol of the wrong shape is refused here rather than producing a
 /// fragment that could never match anything.
+///
+/// # No ASH constructor program
+///
+/// There is no field for the ASH family's own witness program or for
+/// the version it is read at, and the absence is structural. That
+/// program is the taproot output over the taptree these very fragments
+/// live in, so no caller can supply it and no fragment pushes it; the
+/// fragments read it from the input they are spending instead (see
+/// [`require_program_matches_this_input`]). A field reserved for it
+/// would be a link-time parameter nothing consumes, which §1.10
+/// refuses.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompactAshSymbols {
     closed_asset: StackItem,
     reserve_asset: StackItem,
-    ash_program: StackItem,
-    ash_program_version: i64,
     sponsor_change_program: StackItem,
     sponsor_change_version: i64,
     fee_program_digest: StackItem,
@@ -153,17 +162,10 @@ impl CompactAshSymbols {
     ///
     /// [`TapscriptError::MalformedEncodedItem`] when an item is not the
     /// width its encoding class admits.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "one argument per link-time symbol; grouping them would hide which \
-                  symbol a width refusal names"
-    )]
     pub fn new(
         target: &ReviewedElementsTapscriptDefinition,
         closed_asset: Vec<u8>,
         reserve_asset: Vec<u8>,
-        ash_program: Vec<u8>,
-        ash_program_version: i64,
         sponsor_change_program: Vec<u8>,
         sponsor_change_version: i64,
         fee_program_digest: Vec<u8>,
@@ -171,8 +173,6 @@ impl CompactAshSymbols {
         Ok(Self {
             closed_asset: StackItem::encoded(target, EncodingClass::ExplicitAsset, closed_asset)?,
             reserve_asset: StackItem::encoded(target, EncodingClass::ExplicitAsset, reserve_asset)?,
-            ash_program: StackItem::encoded(target, EncodingClass::WitnessProgram, ash_program)?,
-            ash_program_version,
             sponsor_change_program: StackItem::encoded(
                 target,
                 EncodingClass::WitnessProgram,
@@ -197,18 +197,6 @@ impl CompactAshSymbols {
     #[must_use]
     pub const fn reserve_asset(&self) -> &StackItem {
         &self.reserve_asset
-    }
-
-    /// The ASH constructor's witness program.
-    #[must_use]
-    pub const fn ash_program(&self) -> &StackItem {
-        &self.ash_program
-    }
-
-    /// The version the ASH constructor's witness program is read at.
-    #[must_use]
-    pub const fn ash_program_version(&self) -> i64 {
-        self.ash_program_version
     }
 
     /// The sponsor-change role's witness program.
@@ -716,6 +704,11 @@ fn require_asset(
 
 /// Require the program at `index` on `side` to be exactly this witness
 /// program at this version.
+///
+/// For a program the deployment settles from outside the ASH family —
+/// the sponsor-change role's. The ASH constructor's own program is not
+/// settleable this way and uses
+/// [`require_program_matches_this_input`] instead.
 fn require_program(
     target: &ReviewedElementsTapscriptDefinition,
     inspect: OpcodeId,
@@ -733,11 +726,67 @@ fn require_program(
     ])
 }
 
+/// Require the program at `index` on `side` to be the program of the
+/// input this leaf is spending, version and payload alike.
+///
+/// # Why no literal
+///
+/// The ASH constructor's witness program is the taproot output that
+/// commits to the taptree over the very leaves that would carry it, so
+/// a literal for it is a value whose bytes must appear inside the thing
+/// that computes them. Searching for that fixed point is finding a hash
+/// preimage, and no deployment can supply one. A leaf that pushed such
+/// a literal could therefore never be part of a linkable bundle at all.
+///
+/// The program does not need the literal. A leaf executes inside an
+/// input, and that input's own witness program is on the target's
+/// introspection surface, so the leaf can read the constructor's
+/// program instead of carrying it. What the comparison then establishes
+/// is *sameness* rather than a named value: the compared field carries
+/// whatever program this input carries. That is the property the family
+/// actually rests on — every ASH object and the successor share one
+/// constructor — and it is established without any layer settling what
+/// that constructor's bytes are.
+///
+/// # The schedule
+///
+/// Both introspections push the payload first and the version above it,
+/// so the four items are, deepest first, this input's program, this
+/// input's version, the compared program, the compared version. One
+/// rotation brings this input's version to the top, above the compared
+/// version, and the two equalities then run in the order the items
+/// stand in. Each equality is a verifying form, so neither Boolean
+/// survives to be read as truth (§12.11).
+fn require_program_matches_this_input(
+    target: &ReviewedElementsTapscriptDefinition,
+    inspect: OpcodeId,
+    index: i64,
+) -> Result<Vec<TapscriptInstruction>, TapscriptError> {
+    Ok(vec![
+        op(OpcodeId::PushCurrentInputIndex),
+        op(OpcodeId::InspectInputScriptPubKey),
+        number(target, index)?,
+        op(inspect),
+        op(OpcodeId::Rotate),
+        op(OpcodeId::EqualVerify),
+        op(OpcodeId::EqualVerify),
+    ])
+}
+
 /// Recognize one ASH input and leave its amount on the stack (§12.1).
 ///
 /// Asset, program, explicit value encoding, and the amount domain. The
 /// amount is left because the aggregate consumes it: recomputing it
 /// would introspect the same field twice and pay for it twice.
+///
+/// The program test is against the input this leaf is spending rather
+/// than against a literal — see [`require_program_matches_this_input`]
+/// for why the literal is unobtainable and what sameness establishes
+/// instead. At `index` zero the coordinator's own input is compared
+/// with itself and the test is vacuous; that is not a hole but the
+/// reason the whole scheme is sound, because the coordinator leaf runs
+/// at input 0 (§10.3) and so the family's constructor is exactly the
+/// program every other test is measured against.
 ///
 /// # Errors
 ///
@@ -758,12 +807,10 @@ pub fn ash_input_recognition_fragment(
         index,
         symbols.closed_asset(),
     )?;
-    instructions.extend(require_program(
+    instructions.extend(require_program_matches_this_input(
         target,
         OpcodeId::InspectInputScriptPubKey,
         index,
-        symbols.ash_program_version,
-        symbols.ash_program(),
     )?);
     instructions.extend([number(target, index)?, op(OpcodeId::InspectInputValue)]);
     instructions.extend(require_explicit(target, EncodingClass::ExplicitValue)?);
@@ -777,6 +824,13 @@ pub fn ash_input_recognition_fragment(
 ///
 /// Asset, program, explicit encoding, and the amount domain, leaving
 /// the successor's amount for the aggregate comparison.
+///
+/// The program test compares output 0 with the input this leaf is
+/// spending (see [`require_program_matches_this_input`]), which is what
+/// makes the successor a member of the same family rather than an
+/// object under some separately named program. This is the fragment
+/// where the comparison carries its full content: nothing else in the
+/// candidate ties an output back to the constructor.
 ///
 /// # Errors
 ///
@@ -795,12 +849,10 @@ pub fn successor_recognition_fragment(
         0,
         symbols.closed_asset(),
     )?;
-    instructions.extend(require_program(
+    instructions.extend(require_program_matches_this_input(
         target,
         OpcodeId::InspectOutputScriptPubKey,
         0,
-        symbols.ash_program_version,
-        symbols.ash_program(),
     )?);
     instructions.extend([number(target, 0)?, op(OpcodeId::InspectOutputValue)]);
     instructions.extend(require_explicit(target, EncodingClass::ExplicitValue)?);
@@ -1103,10 +1155,19 @@ pub fn member_program(
 ) -> Result<TapscriptProgram, TapscriptError> {
     let mut instructions = member_role_fragment(target, shape)?.instructions().to_vec();
 
-    // The member's own asset and program, at whichever input it is
-    // spending. The index is the target's own current-input index
-    // rather than a compiled-in position, so one member leaf serves
-    // every member position of the shape.
+    // The member's own asset, at whichever input it is spending. The
+    // index is the target's own current-input index rather than a
+    // compiled-in position, so one member leaf serves every member
+    // position of the shape.
+    //
+    // There is no program test here, and its absence is a result rather
+    // than an omission. A member leaf has one input to look at — its
+    // own — so the only program test it could schedule compares that
+    // input's program with itself. The coordinator's fragments compare
+    // *other* positions against the input they run in, which is what
+    // gives them content; a member has no other position in view. What
+    // binds this leaf to the family is that it executes at all: a leaf
+    // runs only from a taptree its input's program commits to.
     instructions.extend([
         op(OpcodeId::PushCurrentInputIndex),
         op(OpcodeId::InspectInputAsset),
@@ -1114,12 +1175,6 @@ pub fn member_program(
     instructions.extend(require_explicit(target, EncodingClass::ExplicitAsset)?);
     instructions.extend([
         TapscriptInstruction::Push(symbols.closed_asset().clone()),
-        op(OpcodeId::EqualVerify),
-        op(OpcodeId::PushCurrentInputIndex),
-        op(OpcodeId::InspectInputScriptPubKey),
-        number(target, symbols.ash_program_version)?,
-        op(OpcodeId::EqualVerify),
-        TapscriptInstruction::Push(symbols.ash_program().clone()),
         op(OpcodeId::EqualVerify),
     ]);
     instructions.extend_from_slice(final_truth_fragment(target)?.instructions());
@@ -1337,7 +1392,15 @@ pub fn operation_patterns(
         BTreeSet::from([S::AuthenticatedInputObject]),
         introspection
             .into_iter()
-            .chain([R::InputIntrospectionSemantics, R::ComparisonSemantics])
+            .chain([
+                R::InputIntrospectionSemantics,
+                R::ComparisonSemantics,
+                // The program test reads this leaf's own input and then
+                // rotates the four introspected items into comparison
+                // order, so the rearrangement primitives' semantics are
+                // now part of what this pattern rests on.
+                R::StackRearrangementSemantics,
+            ])
             .collect(),
     )?);
 

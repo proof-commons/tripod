@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use tapscript::BundleSymbol;
+use tapscript::{BundleSymbol, LeafRole};
 
 use crate::graph::{apply_cycle_policy, resolve_references};
 use crate::tests::relocatable_bundle;
@@ -56,10 +56,18 @@ fn resolution_is_deterministic_across_repeated_runs() {
 }
 
 #[test]
-fn every_leaf_symbol_refers_to_the_ash_program_and_the_constructor_binds_every_leaf() {
+fn the_coordinator_leaves_refer_to_the_ash_program_and_the_constructor_binds_every_leaf() {
     // The two edge families that close the loop, checked as census
-    // rather than as an example: all twelve leaves push the ASH
-    // program, and the constructor binds all twelve leaves.
+    // rather than as an example: the nine coordinator leaves depend on
+    // the ASH program, and the constructor binds all twelve leaves.
+    //
+    // The three member leaves are deliberately absent from the first
+    // family. A member has only its own input to look at, so it makes
+    // no comparison against the constructor's program and carries no
+    // dependency on it; the loop runs through the coordinators.
+    //
+    // Every edge here is an introspection reference rather than a
+    // relocation, because no leaf carries a literal for the program.
     let bundle = relocatable_bundle();
     let graph = resolve_references(&bundle, SelfCommitmentStrategy::NotStated).expect("resolves");
 
@@ -71,11 +79,23 @@ fn every_leaf_symbol_refers_to_the_ash_program_and_the_constructor_binds_every_l
         .collect();
     assert_eq!(leaves.len(), 12);
 
+    let coordinators: BTreeSet<ReferenceNode> = bundle
+        .constructor()
+        .leaves()
+        .keys()
+        .filter(|leaf| matches!(leaf, LeafRole::Coordinator { .. }))
+        .map(|leaf| ReferenceNode::Symbol(leaf_symbol(*leaf)))
+        .collect();
+    assert_eq!(coordinators.len(), 9);
+
     let to_ash: BTreeSet<ReferenceNode> = graph
         .referrers(ReferenceNode::Symbol(BundleSymbol::AshConstructorProgram))
         .map(|edge| edge.referrer())
         .collect();
-    assert_eq!(to_ash, leaves);
+    assert_eq!(to_ash, coordinators);
+    for edge in graph.referrers(ReferenceNode::Symbol(BundleSymbol::AshConstructorProgram)) {
+        assert_eq!(edge.class(), ReferenceClass::IdentityIntrospection);
+    }
 
     for leaf in &leaves {
         assert!(

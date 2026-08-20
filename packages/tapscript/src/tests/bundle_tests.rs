@@ -25,10 +25,10 @@ use target_elements::{OpcodeId, ResourceDimension};
 
 use crate::bundle::{
     BackendArtifactStatus, BundleRefusal, BundleSymbol, CandidateRelocatableTapscriptBundle,
-    ConcreteCarrierSite, FieldSide, InputRole, InternalKeyPolicy, KeyPathPolicy, LeafRole,
-    OutputRole, ProgramRole, Relocation, RelocationEncoding, RelocationSite, ResourceModel,
-    SharingGround, SubstitutionMode, SymbolBinding, SymbolWidth, TargetRole, WitnessComponent,
-    emit_candidate_bundle,
+    ConcreteCarrierSite, FieldSide, InputRole, InternalKeyPolicy, IntrospectionReference,
+    KeyPathPolicy, LeafRole, OutputRole, ProgramRole, Relocation, RelocationEncoding,
+    RelocationSite, ResourceModel, SharingGround, SubstitutionMode, SymbolBinding, SymbolWidth,
+    TargetRole, WitnessComponent, emit_candidate_bundle,
 };
 use crate::instruction::{StackItem, TapscriptInstruction};
 use crate::pattern::{carries_authorization, coordinator_program, member_program};
@@ -241,12 +241,8 @@ fn every_relocation_site_holds_the_symbol_it_names() {
         Some(match symbol {
             BundleSymbol::ClosedAsset => symbols.closed_asset().clone(),
             BundleSymbol::ReserveAsset => symbols.reserve_asset().clone(),
-            BundleSymbol::AshConstructorProgram => symbols.ash_program().clone(),
             BundleSymbol::SponsorChangeProgram => symbols.sponsor_change_program().clone(),
             BundleSymbol::TargetFeeRoleProgramDigest => symbols.fee_program_digest().clone(),
-            BundleSymbol::AshConstructorProgramVersion => {
-                StackItem::script_number(&target, symbols.ash_program_version()).ok()?
-            }
             BundleSymbol::SponsorChangeProgramVersion => {
                 StackItem::script_number(&target, symbols.sponsor_change_version()).ok()?
             }
@@ -293,7 +289,6 @@ fn no_wide_symbol_occurrence_is_left_without_a_relocation() {
     let wide = [
         (BundleSymbol::ClosedAsset, symbols.closed_asset()),
         (BundleSymbol::ReserveAsset, symbols.reserve_asset()),
-        (BundleSymbol::AshConstructorProgram, symbols.ash_program()),
         (
             BundleSymbol::SponsorChangeProgram,
             symbols.sponsor_change_program(),
@@ -345,7 +340,6 @@ fn the_symbol_table_is_exactly_the_guide_list_and_every_relocation_is_backed() {
         BundleSymbol::ClosedAsset,
         BundleSymbol::ReserveAsset,
         BundleSymbol::AshConstructorProgram,
-        BundleSymbol::AshConstructorProgramVersion,
         BundleSymbol::SponsorChangeProgram,
         BundleSymbol::SponsorChangeProgramVersion,
         BundleSymbol::TargetFeeRoleProgramDigest,
@@ -363,20 +357,39 @@ fn the_symbol_table_is_exactly_the_guide_list_and_every_relocation_is_backed() {
 
     let carried: BTreeSet<BundleSymbol> = bundle.symbols().keys().copied().collect();
     assert_eq!(carried, expected);
-    assert_eq!(bundle.symbols().len(), 11 + 9 + 3);
+    assert_eq!(bundle.symbols().len(), 10 + 9 + 3);
 
+    // Every symbol is placed somewhere, but not every symbol is
+    // *relocated*: the ASH constructor's program is read from the
+    // target instead, so it is backed by an introspection reference and
+    // by no relocation at all. The two censuses partition the table.
     let relocated: BTreeSet<BundleSymbol> = bundle
         .relocations()
         .iter()
         .map(Relocation::symbol)
         .collect();
+    let introspected: BTreeSet<BundleSymbol> = bundle
+        .introspections()
+        .iter()
+        .map(IntrospectionReference::symbol)
+        .collect();
     assert_eq!(
-        relocated, expected,
+        introspected,
+        BTreeSet::from([BundleSymbol::AshConstructorProgram]),
+    );
+    assert!(relocated.is_disjoint(&introspected));
+    assert_eq!(
+        relocated
+            .union(&introspected)
+            .copied()
+            .collect::<BTreeSet<_>>(),
+        expected,
         "a symbol nobody places is not a symbol"
     );
 
-    // The eight symbols a later layer settles, and the rest this bundle
-    // settles itself. The split is what the linker's work is.
+    // The seven symbols a later layer settles, the one no layer settles
+    // at all, and the rest this bundle settles itself. The split is
+    // what the linker's work is.
     let unresolved: BTreeSet<BundleSymbol> = bundle
         .symbols()
         .iter()
@@ -388,14 +401,20 @@ fn the_symbol_table_is_exactly_the_guide_list_and_every_relocation_is_backed() {
         BTreeSet::from([
             BundleSymbol::ClosedAsset,
             BundleSymbol::ReserveAsset,
-            BundleSymbol::AshConstructorProgram,
-            BundleSymbol::AshConstructorProgramVersion,
             BundleSymbol::SponsorChangeProgram,
             BundleSymbol::SponsorChangeProgramVersion,
             BundleSymbol::TargetFeeRoleProgramDigest,
             BundleSymbol::UnspendableInternalKey,
         ]),
     );
+
+    let read: BTreeSet<BundleSymbol> = bundle
+        .symbols()
+        .iter()
+        .filter(|(_, entry)| entry.binding() == SymbolBinding::ReadFromTargetAtSpendTime)
+        .map(|(symbol, _)| *symbol)
+        .collect();
+    assert_eq!(read, BTreeSet::from([BundleSymbol::AshConstructorProgram]),);
 }
 
 #[test]
@@ -558,13 +577,19 @@ fn the_contract_fixed_widths_come_from_the_reviewed_contract() {
     // it, so a resolution may be a different width and no patch can be
     // stated against it.
     assert!(matches!(
-        table[&BundleSymbol::AshConstructorProgram].width(),
+        table[&BundleSymbol::SponsorChangeProgram].width(),
         SymbolWidth::ValueDetermined { .. },
     ));
     assert!(matches!(
-        table[&BundleSymbol::AshConstructorProgramVersion].width(),
+        table[&BundleSymbol::SponsorChangeProgramVersion].width(),
         SymbolWidth::ValueDetermined { .. },
     ));
+    // The ASH constructor's program occupies no field of this bundle at
+    // all, which is a stronger statement than a width nobody fixed.
+    assert_eq!(
+        table[&BundleSymbol::AshConstructorProgram].width(),
+        SymbolWidth::Unserialized,
+    );
     assert_eq!(
         table[&BundleSymbol::CandidateAshBound].width(),
         SymbolWidth::Unserialized,
@@ -865,15 +890,15 @@ fn the_measured_shape_of_the_candidate_is_exactly_this() {
     assert_eq!(
         per_shape,
         BTreeMap::from([
-            ((2, 0, false), 334),
-            ((2, 1, false), 448),
-            ((2, 1, true), 512),
-            ((3, 0, false), 443),
-            ((3, 1, false), 557),
-            ((3, 1, true), 621),
-            ((4, 0, false), 552),
-            ((4, 1, false), 666),
-            ((4, 1, true), 730),
+            ((2, 0, false), 241),
+            ((2, 1, false), 355),
+            ((2, 1, true), 419),
+            ((3, 0, false), 319),
+            ((3, 1, false), 433),
+            ((3, 1, true), 497),
+            ((4, 0, false), 397),
+            ((4, 1, false), 511),
+            ((4, 1, true), 575),
         ]),
     );
 
@@ -881,11 +906,18 @@ fn the_measured_shape_of_the_candidate_is_exactly_this() {
     // costs a recognition fragment and an addition; the first sponsor
     // input costs an isolation test and the fee role it forces; the
     // change role costs its own asset and program tests.
+    //
+    // The per-source figure is thirty-one bytes below what a literal
+    // for the constructor's program would cost, and the base is lower
+    // by the same amount for the successor's test. Reading the program
+    // off the spending input is three opcodes where the literal was a
+    // version push and a thirty-two byte payload — so the sound design
+    // is also the cheaper one, at every shape.
     assert_eq!(
         bundle.formulas()[&ProgramRole::Coordinator][&ResourceDimension::ScriptBytes].model(),
         ResourceModel::Affine {
-            base: 116,
-            per_ash_input: 109,
+            base: 85,
+            per_ash_input: 78,
             per_sponsor_input: 114,
             per_sponsor_change: 64,
         },
@@ -894,11 +926,11 @@ fn the_measured_shape_of_the_candidate_is_exactly_this() {
     // The member leaf does not vary with the shape's byte count at all:
     // its only shape-dependent literal is the batch bound, carried as a
     // fixed-width signed integer, so every batch size costs the same
-    // hundred and two bytes while remaining a distinct program.
+    // sixty-four bytes while remaining a distinct program.
     assert_eq!(
         bundle.formulas()[&ProgramRole::Member][&ResourceDimension::ScriptBytes].model(),
         ResourceModel::Affine {
-            base: 102,
+            base: 64,
             per_ash_input: 0,
             per_sponsor_input: 0,
             per_sponsor_change: 0,
@@ -912,10 +944,11 @@ fn the_measured_shape_of_the_candidate_is_exactly_this() {
                 .expect("a member leaf")
                 .resources()
                 .charged(ResourceDimension::ScriptBytes),
-            Some(102),
+            Some(64),
         );
     }
 
-    assert_eq!(bundle.total_script_bytes(), 5169);
-    assert_eq!(bundle.relocations().len(), 103);
+    assert_eq!(bundle.total_script_bytes(), 3939);
+    assert_eq!(bundle.relocations().len(), 61);
+    assert_eq!(bundle.introspections().len(), 9);
 }

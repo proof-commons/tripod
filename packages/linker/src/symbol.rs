@@ -180,9 +180,7 @@ pub const fn declared_type(symbol: BundleSymbol) -> SymbolType {
         BundleSymbol::AshConstructorProgram | BundleSymbol::SponsorChangeProgram => {
             SymbolType::WitnessProgram
         }
-        BundleSymbol::AshConstructorProgramVersion | BundleSymbol::SponsorChangeProgramVersion => {
-            SymbolType::ScriptNumber
-        }
+        BundleSymbol::SponsorChangeProgramVersion => SymbolType::ScriptNumber,
         BundleSymbol::TargetFeeRoleProgramDigest => SymbolType::ProgramDigest,
         BundleSymbol::UnspendableInternalKey => SymbolType::XOnlyPublicKey,
         BundleSymbol::TargetLeafVersion => SymbolType::LeafVersion,
@@ -220,6 +218,19 @@ pub fn collect_definitions(
         let supplied = deployment_value(*symbol, deployment);
         let defined = bundle_value(*symbol, bundle);
 
+        // A symbol the programs read from the target has no definition
+        // to collect, and that is its whole content. A value offered
+        // for one is refused rather than ignored: it would be a
+        // link-time resolution for something no site consumes, and
+        // accepting it silently is how a caller comes to believe the
+        // commitment was settled here.
+        if entry.binding() == SymbolBinding::ReadFromTargetAtSpendTime {
+            if supplied.is_some() || defined.is_some() {
+                return Err(LinkRefusal::AmbiguousSymbol(*symbol));
+            }
+            continue;
+        }
+
         let (value, origin) = match (supplied, defined) {
             (Some(_), Some(_)) => return Err(LinkRefusal::AmbiguousSymbol(*symbol)),
             (Some(value), None) => (value, DefinitionOrigin::DeploymentParameters),
@@ -233,7 +244,9 @@ pub fn collect_definitions(
         // describing different link boundaries.
         let expected_origin = match entry.binding() {
             SymbolBinding::ResolvedAtLink => DefinitionOrigin::DeploymentParameters,
-            SymbolBinding::DefinedByBundle => DefinitionOrigin::Bundle,
+            SymbolBinding::DefinedByBundle | SymbolBinding::ReadFromTargetAtSpendTime => {
+                DefinitionOrigin::Bundle
+            }
         };
         if origin != expected_origin {
             return Err(LinkRefusal::AmbiguousSymbol(*symbol));
@@ -276,12 +289,6 @@ fn deployment_value(
     Some(match symbol {
         BundleSymbol::ClosedAsset => SymbolValue::Asset(resolved.closed_asset().clone()),
         BundleSymbol::ReserveAsset => SymbolValue::Asset(resolved.reserve_asset().clone()),
-        BundleSymbol::AshConstructorProgram => {
-            SymbolValue::WitnessProgram(resolved.ash_program().clone())
-        }
-        BundleSymbol::AshConstructorProgramVersion => {
-            SymbolValue::ScriptNumber(resolved.ash_program_version())
-        }
         BundleSymbol::SponsorChangeProgram => {
             SymbolValue::WitnessProgram(resolved.sponsor_change_program().clone())
         }

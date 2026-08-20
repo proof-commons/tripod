@@ -16,12 +16,13 @@ pub mod upstream;
 pub use bundle::{
     BackendArtifactStatus, BundleRefusal, BundleSymbol, CandidateRelocatableTapscriptBundle,
     ConcreteCarrierSite, ConcreteLayout, ConcreteRelationPlacement, ConstructorAssumption,
-    ExplicitValuePolicy, FieldSide, InputPlacement, InputRole, InternalKeyPolicy, KeyPathPolicy,
-    LeafProgram, LeafRole, OutputPlacement, OutputRole, OutstandingLifecycle, ProgramResources,
-    ProgramRole, Relocation, RelocationEncoding, RelocationSite, ResourceModel, ResourceObligation,
-    ShapeResourceFormula, SharedLeafProof, SharingGround, StaticAshConstructor, SubstitutionMode,
-    SymbolBinding, SymbolEntry, SymbolWidth, TargetRole, WitnessComponent, WitnessRole,
-    emit_candidate_bundle, fit_shape_model, predict_shape_model,
+    ExplicitValuePolicy, FieldSide, InputPlacement, InputRole, InternalKeyPolicy,
+    IntrospectionReference, KeyPathPolicy, LeafProgram, LeafRole, OutputPlacement, OutputRole,
+    OutstandingLifecycle, ProgramResources, ProgramRole, Relocation, RelocationEncoding,
+    RelocationSite, ResourceModel, ResourceObligation, ShapeResourceFormula, SharedLeafProof,
+    SharingGround, StaticAshConstructor, SubstitutionMode, SymbolBinding, SymbolEntry, SymbolWidth,
+    TargetRole, WitnessComponent, WitnessRole, emit_candidate_bundle, fit_shape_model,
+    predict_shape_model,
 };
 pub use capability::{
     AssessmentDisposition, AssessmentProjection, BackendFoundationRequirement, BackendPatternId,
