@@ -2421,6 +2421,15 @@ class OperationExecutor:
         base.vout.append(executor.output(remainder, executor.anyone_can_spend))
         base.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
 
+        # What the chain says the coin this transaction spends is worth,
+        # rather than what this adapter believes. Diagnostics on stderr;
+        # nothing from here reaches a first-party record.
+        held = node.call("gettxout", source["txid"], str(source["vout"]))
+        log(
+            "issuance spends %s:%d which this adapter believes holds %d and the "
+            "chain reports as %s"
+            % (source["txid"], source["vout"], source["amount"], json.dumps(held))
+        )
         address = node.call("getnewaddress", wallet=self.wallet_name)
         answer = node.call(
             "rawissueasset",
