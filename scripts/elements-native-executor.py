@@ -2919,13 +2919,19 @@ class OperationExecutor:
             # Bottom item first: the authorization, then the key it is
             # checked against, which is the stack the admitted program
             # class takes.
+            #
+            # Written as arrays of octets, which is how every other byte
+            # field crosses this boundary -- `require_bytes` reads one
+            # from the harness and the harness reads one back. Hex here
+            # would be a second encoding for one kind of value, and the
+            # harness would refuse the record rather than misread it.
             "sponsor_witness": [
-                (signature + bytes([SPONSOR_SIGHASH_ALL])).hex(),
-                pubkey.hex(),
+                list(signature + bytes([SPONSOR_SIGHASH_ALL])),
+                list(pubkey),
             ],
             # Echoed rather than asserted. The caller compares these with
             # what it sent, byte for byte.
-            "signature_bound_to": raw.hex(),
+            "signature_bound_to": list(raw),
         }
 
     # -- submission -------------------------------------------------------
