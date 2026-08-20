@@ -660,6 +660,7 @@ cargo_test_packages = [
   ['target-elements', 'tripod-target-elements'],
   ['target-elements-conformance', 'tripod-target-elements-conformance'],
   ['transaction', 'tripod-transaction'],
+  ['vectors', 'tripod-vectors'],
 ]
 
 cargo_test_lane_dirs = []
