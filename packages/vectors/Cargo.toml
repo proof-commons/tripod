@@ -26,29 +26,38 @@ name = "vectors"
 # - `linker` owns the linked bundle those all bind to;
 # - `architecture` is needed to build the fixture bundle at all.
 #
-# `model` and `target-elements` are deliberately absent from the runtime
-# dependency set this wave: no fixture yet executes the model path (the
-# approved test-only synthetic-ASH fixture of §17.1 is not minted here),
-# and no fixture yet executes a target. Both enter when Wave 11 gives them
-# something to do, which keeps the dependency edge honest about what has
-# actually been built rather than what is planned.
+# `model` is deliberately absent this wave. No fixture yet executes the
+# model path: §17.1's approved test-only synthetic-ASH fixture is not
+# minted here, and adding the edge before there is a call would advertise
+# a reach this wave has not earned. It enters when Wave 11 or a later
+# wave gives it something to do.
+#
+# `tapscript` is listed even though the package contract says no direct
+# tapscript dependency is *required* "when final programs and provenance
+# are exposed through `linker`". That condition holds for reading a
+# bundle and fails for building one: `LinkDeploymentParameters::new`
+# takes a `CompactAshSymbols`, and the backend entry point that produces
+# a relocatable bundle at all is `tapscript::emit_candidate_bundle`.
+# Neither is reachable through `linker`. The transaction and linker
+# crates take the same edge as a dev-dependency because their fixture
+# bundle is test input; here the bundle is the substrate a later wave
+# executes against a real node, and a substrate reachable only from a
+# cfg-gated module cannot be executed by anything.
 #
 # `target-elements-conformance` is absent for the reason §16.2 gives: it
 # owns target-generic process supervision, and this package must not be
 # able to obtain an expectation from the same component that will later
-# produce the observation it is judged against.
+# produce the observation it is judged against. Wave 11 must either widen
+# that package's workload boundary or extract a shared executor package;
+# it must not be reached around from here.
 [dependencies]
 architecture = { workspace = true }
 compiler = { workspace = true }
 linker = { workspace = true }
 realization = { workspace = true }
-transaction = { workspace = true }
-
-# Test-only. Exact bytes need a real linked bundle, and the only way to
-# obtain one is to run the compiler, the backend, and the linker over a
-# real architecture body, exactly as the transaction crate's own tests do.
-[dev-dependencies]
 tapscript = { workspace = true }
+target-elements = { workspace = true }
+transaction = { workspace = true }
 
 [lints]
 workspace = true
