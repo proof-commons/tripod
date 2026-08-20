@@ -1058,7 +1058,12 @@ fn execute_workload(
 }
 
 /// The protocol exchange itself.
-fn run_protocol(
+///
+/// Crate-visible so the boundary suites can drive one exchange against a
+/// written script rather than a spawned process: what those tests are
+/// about is which record this side sends and what it refuses, and a real
+/// child would answer that through scheduling that is not the property.
+pub(crate) fn run_protocol(
     target: &ReviewedElementsTapscriptDefinition,
     binding: &ReviewedDevelopmentBinding,
     configuration: &ExecutorConfiguration,
