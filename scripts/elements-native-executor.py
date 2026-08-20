@@ -2567,8 +2567,14 @@ class OperationExecutor:
 
         wanted = subject["amount_per_output"] * subject["outputs"]
         if wanted > reserve["amount"]:
+            # Named in satoshis, because whether this is a fixture asking
+            # for more than the target's money bound or a run that simply
+            # issued too little is the whole question, and a message that
+            # states neither amount cannot tell the two apart.
             raise AdapterError(
-                "the step asks for more of the asset than this run holds"
+                "the step asks for more of the asset than this run holds: "
+                "wanted %d, reserve holds %d, this run issued %d"
+                % (wanted, reserve["amount"], ISSUED_ASSET_UNITS * 100_000_000)
             )
         remainder = source["amount"] - ADAPTER_FEE_SATOSHIS
         if remainder < 0:
