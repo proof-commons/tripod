@@ -1,12 +1,17 @@
 # Phase 3 — Elements Target and Foundational Prototypes · `phase:roadmap:target-foundation`
 
-> **Status:** Active — typed target contract, capability adapter, typed
+> **Status:** Exited — typed target contract, capability adapter, typed
 > instruction core, and development target-native primitive evidence
 > implemented; the STATE-constructor and wide-arithmetic prototypes are
-> accepted; public declassification has selected an initial policy, with
-> the direct and public-committed paths deferred against named blockers;
-> the exit gate (`gate:phase3:exit`) is not yet checked; the phase
-> remains prototype-driven.
+> accepted; public declassification selected an initial policy, with
+> the direct and public-committed paths deferred against named
+> blockers; the exit gate (`gate:phase3:exit`) was checked 2026-08-20
+> on the tree carrying the closed Guide-12 preflight register, with the
+> full gate green and the evidence state recorded in the backlog
+> (`gate:backlog:guide12-preflight`). Development native evidence was
+> produced under protocol revisions up to three; the harness-executor
+> protocol is unified at revision four, and the next native run
+> reproduces under it.
 > **Entry:** (`gate:phase2:exit`)
 > **Packages:** [`target-elements`](../packages/target-elements.md),
 > [`tapscript`](../packages/tapscript.md)
@@ -215,3 +220,13 @@ Phase 3 exits when:
 - prototype code cannot enter release output silently;
 - package contracts and research notes reflect results;
 - workspace checks remain green and clean.
+
+Checked 2026-08-20, after the Guide-12 preflight register closed all
+sixteen seventh-review rows: each criterion above holds on that tree,
+with the full-gate lane results, the wall times, and the exact native
+evidence state recorded in the backlog gate record
+(`gate:backlog:guide12-preflight`). The one bounded residue is
+recorded rather than waved past: the runtime half of one register row
+awaits a live node, and the recorded development native evidence
+predates the revision-four protocol unification, which the next native
+run reproduces under.

@@ -1,6 +1,8 @@
 # Phase 4 — End-to-End Compact ASH · `phase:roadmap:compact-ash`
 
-> **Status:** Planned
+> **Status:** Active — both entry gates are satisfied: Phase 3 exited
+> 2026-08-20 with the Guide-12 preflight register closed; Guide 12
+> charters this phase and its Wave 4 begins the compiler target plan.
 > **Entry:** (`gate:phase2:exit`), (`gate:phase3:exit`)
 > **Packages:** compiler, target-elements, tapscript, linker, transaction,
 > vectors

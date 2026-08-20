@@ -1,6 +1,6 @@
 project(
   'tripod',
-  version: '0.3.0-dev',
+  version: '0.4.0-dev',
   meson_version: '>=1.3.0',
   subproject_dir: 'papers',
 )

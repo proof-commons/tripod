@@ -39,7 +39,7 @@ The order is intentional:
 ## Status · `phase:roadmap:current`
 
 ```text
-Current: Phase 3 - Elements target and foundational prototypes
+Current: Phase 4 - End-to-end compact ASH
 ```
 
 ## Phase index · `tab:roadmap:phases`

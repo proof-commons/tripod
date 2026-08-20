@@ -1,8 +1,8 @@
 # Tripod Implementation Backlog
 
 > **Status:** ACTIVE
-> **Current gate:** Phase 3 — Elements target and foundational prototypes
-> **Current condition:** Phases 1 and 2 are complete. The target-independent compiler constructs one deterministic, validated scoped analyzed program for the complete pilot scope, factorized per operation, with relation-owned requirements, a corruption-resistant assembly validator, and independent assembly oracles; the Phase-2 exit gate record is in §2.11, including passed document reproducibility. Phase 3 then delivered the Guide-8 target foundation, the Guide-9 native primitive gate, the Guide-10 constructor and wide-floor prototypes, and the Guide-11 declassification result, each with its own gate record. Public declassification is no longer an open blocker: an initial policy is selected — an explicit boundary reached by owner-authorized normalization, with the direct and public-committed paths deferred against three named target blockers — and the gate record is in §2.4. Phase-3 exit now turns on that recorded result together with the standing contract and infrastructure conditions in (`gate:phase3:exit`), which are checked at merge and are not claimed here. The next work is the first complete compiler-to-target operation, compact ASH, which consumes the declassification policy rather than reopening it.
+> **Current gate:** Phase 4 — End-to-end compact ASH
+> **Current condition:** Phases 1 and 2 are complete. The target-independent compiler constructs one deterministic, validated scoped analyzed program for the complete pilot scope, factorized per operation, with relation-owned requirements, a corruption-resistant assembly validator, and independent assembly oracles; the Phase-2 exit gate record is in §2.11, including passed document reproducibility. Phase 3 then delivered the Guide-8 target foundation, the Guide-9 native primitive gate, the Guide-10 constructor and wide-floor prototypes, and the Guide-11 declassification result, each with its own gate record. Public declassification is no longer an open blocker: an initial policy is selected — an explicit boundary reached by owner-authorized normalization, with the direct and public-committed paths deferred against three named target blockers — and the gate record is in §2.4. Phase-3 exit is recorded: the Guide-12 preflight register closed all sixteen seventh-review rows, and (`gate:phase3:exit`) was checked green on that tree with the record in §2.6. The current work is the first complete compiler-to-target operation, compact ASH, which consumes the declassification policy rather than reopening it.
 > **Next gate:** Phase 4 — compact-ash end-to-end pipeline
 > **Authority:** Current execution queue only. The specification, the realization document, typed architecture, implemented ADRs, accepted decisions, package contracts, phase cards, and accepted research results take precedence.
 
@@ -275,6 +275,36 @@ proceed past a red checker — it did once here, caught on the next run;
 the archival also taught that a block moved into history must have its
 relative links re-based, which the checker catches as broken links.
 
+### 2.6 Guide-12 preflight and Phase-3 exit gate · `gate:backlog:guide12-preflight`
+
+The Guide-12 preflight campaign closed the seventh review's register in
+three waves of one Opus lane each: Wave 1a repaired the identity and
+evidence-boundary rows, Wave 1b unified both protocol sides on revision
+four and brought the Python runners to the Rust supervisor's
+guarantees, and Wave 2 corrected the tapscript projection, the abstract
+literal walk, and the bounded decode, then proved the emit subprocess
+contract. Every merge was audited against the worker's own gated tree
+and each landed byte-identical, so the lane evidence transferred
+verbatim; the register itself, complete at sixteen rows, moved to
+[backlog history](history/backlog-history.md) under the CI-004 pattern
+when the byte budget fell to 523 bytes mid-wave, and the §5.9 stub
+carries the satisfied gate verdict (`gate:guide12-exec:preflight`).
+
+With the register closed, the Phase-3 exit gate was evaluated on the
+current tree per Guide 12 Wave 3. Full gate, wall-timed: the CI
+registry passed 13 of 13 lanes in 16 m 46 s, meson compiled warm in
+2 s, and the meson suite passed 36 of 36 lanes in 5 m 25 s. Native
+evidence state, recorded exactly: the development target-native
+evidence cited by the readiness statement was produced under protocol
+revisions up to three; the executor and the typed protocol moved to
+revision four together in Wave 1b, so the next native run reproduces
+that evidence under the unified revision, and the runtime half of
+`G12-R04` stays blocked on a live node and is recorded as blocked. The
+package contracts state resources and protocol at a level the wave did
+not move, verified by inspection rather than assumed. The Phase-3 card
+records the exit; Phase 4 is chartered by Guide 12 and its core waves
+are unblocked by the closed register.
+
 ### The verification harness's two standing hazards · `rem:backlog:verification-harness`
 
 A verdict is read from the report wrapper's own report line, never from a pipeline's shell status: the wrapper propagates its exit code faithfully, and a pipe to a filter truncates the status to the last stage's. And a single shared build-target directory is poisoned when checkouts of two different commits build the same crates into it, so a lane that moves between commits pins a target directory of its own.
@@ -437,7 +467,8 @@ credentials, or production authority.
 | Phase 0 | HISTORICAL | the recorded baseline and identities on [the Phase-0 card](phases/00-baseline.md) |
 | Phase 1 | HISTORICAL | the completion evidence on [the Phase-1 card](phases/01-realization.md), and the gate record in [the backlog archive](history/backlog-history.md) §2.3 |
 | Phase 2 | HISTORICAL | Guide-4 through Guide-7 gate records, §2.8–§2.11 |
-| Phase 3 | Active | current backlog and Phase-3 card |
+| Phase 3 | HISTORICAL | exit recorded in §2.6 and the Phase-3 card |
+| Phase 4 | Active | current backlog, Guide 12, and the Phase-4 card |
 
 ### 4.2 Historical finding families · `tab:backlog:historical-findings`
 
@@ -1285,8 +1316,10 @@ correctness check, not malicious-code containment.
 
 ## 11. Current gate · `gate:backlog:current`
 
-The Phase-2 gate is **passed**; the record is §2.11. The current gate is
-Phase 3 — Elements target and foundational prototypes.
+The Phase-2 gate is **passed** (§2.11) and the Phase-3 gate is
+**passed** (§2.6 with the Phase-3 card). The current gate is Phase 4 —
+end-to-end compact ASH, chartered by Guide 12; its preflight register
+is closed and its core waves are unblocked.
 
 The Guide-8 target foundation is complete; the gate record is §2.12. The
 Phase-3 task state is:
