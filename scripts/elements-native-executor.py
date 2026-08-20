@@ -2366,6 +2366,7 @@ class OperationExecutor:
         empty entry is emitted per input and per output, which is what a
         node's own serializer produces for the same transaction.
         """
+        messages = self.executor.messages
         transaction.wit.vtxinwit = [messages.CTxInWitness() for _ in transaction.vin]
         transaction.wit.vtxoutwit = [messages.CTxOutWitness() for _ in transaction.vout]
         raw = transaction.version.to_bytes(4, "little")
