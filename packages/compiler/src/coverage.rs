@@ -222,7 +222,11 @@ pub enum CollateralPolicy {
 ///
 /// The closure itself is derived from the coverage dependency graph,
 /// which is a later stage: this value carries the policy and an empty
-/// closure until [`bind_dependency_collateral`] fills it. An empty
+/// closure until the crate-private `bind_dependency_collateral` stage
+/// fills it — named rather than linked, because this type is now
+/// published through the operation-plan boundary and its documentation
+/// must not point an external reader at an item they cannot see. An
+/// empty
 /// closure is therefore "not yet derived", never "proved independent",
 /// and no requirement here claims a mutation is isolated.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
