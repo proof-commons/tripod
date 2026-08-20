@@ -2362,6 +2362,17 @@ class OperationExecutor:
             )
         except AdapterError:
             log("the %s transaction this adapter built was refused: %s" % (note, raw))
+            # The mempool's structured reason, which names the rule; the
+            # block error names only the check that reported it.
+            try:
+                log(
+                    "the mempool says: %s"
+                    % json.dumps(
+                        self.executor.node.call("testmempoolaccept", json.dumps([raw]))
+                    )
+                )
+            except AdapterError:
+                pass
             raise
         return transaction.rehash()
 
