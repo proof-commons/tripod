@@ -409,110 +409,96 @@ fn every_leaf_verifies_against_the_reference_output_key() {
     // path, applies the tweak, and checks the tweaked key — all inside
     // reference code, against a control block the first party built.
     //
-    // The control block is rebuilt here with the *reference-derived*
-    // parity rather than the fixture's pinned one, because the fixture
-    // pins a parity it did not derive; the disagreement between the
-    // two is recorded by its own test below rather than hidden here.
+    // The control blocks are the fixture's own, unmodified. An earlier
+    // revision had to rebuild them with the reference-derived parity
+    // because the fixture declared a parity it had not derived; the pin
+    // now carries the derived bit, so rebuilding would only weaken what
+    // this test covers.
     let tree = committed_tree();
     let pin = fixture_pin();
     let secp = Secp256k1::verification_only();
-    let (key, parity) = reference_output_key();
+    let (key, _) = reference_output_key();
     let internal = XOnlyPublicKey::from_slice(&INTERNAL_KEY).expect("the internal key lifts");
     let output_key = XOnlyPublicKey::from_slice(&key).expect("the output key lifts");
     let output_key = elements::schnorr::TweakedPublicKey::new(output_key);
 
-    for (role, script) in tree.leaf_programs() {
-        let first_party = tree
-            .control_block(*role, &pin)
-            .expect("every committed leaf has a control block");
-        let mut rebuilt = first_party.clone();
-        rebuilt[0] = (REVIEWED_LEAF_VERSION & 0xfe) | parity;
-        let block = ControlBlock::from_slice(&rebuilt).expect("the control block parses");
-        assert_eq!(
-            block.internal_key, internal,
-            "{role:?}: the rebuilt block changed the internal key"
-        );
-        assert!(
-            block.verify_taproot_commitment(&secp, &output_key, &Script::from(script.clone())),
-            "{role:?}: the reference verifier rejects the first-party commitment"
-        );
-    }
-}
-
-#[test]
-fn the_fixture_pins_a_program_and_a_parity_it_did_not_derive() {
-    // Reference-implementation conformance, not independent evidence.
-    //
-    // This test records a DEFECT rather than asserting the code is
-    // right, and it is written so that fixing the defect fails it.
-    //
-    // `vectors::bundle::PINNED_PROGRAM` is the witness program every
-    // fixture ASH input pays to and the successor pays back to. It is a
-    // fixed byte pattern, and it is not the taproot output key of the
-    // fixture tree — it is not a curve point at all, so it cannot be
-    // the tweak of any internal key by any merkle root. An output
-    // created at this program is unspendable by construction: no
-    // control block can ever satisfy the reference verifier against it.
-    //
-    // The consequence is that the funding ceremony a later wave needs,
-    // in order to discharge `PinnedOutputKeyUnverifiedAgainstTree`,
-    // cannot succeed while the pin holds this value. The value that
-    // would work is `FIXTURE_REFERENCE_OUTPUT_KEY`, minted above.
-    //
-    // Recorded rather than repaired here: changing the pin changes
-    // every fixture's exact bytes, which is a substrate decision and
-    // not a test-lane one.
-    assert!(
-        XOnlyPublicKey::from_slice(&PINNED_PROGRAM).is_err(),
-        "the pinned program became a curve point; re-examine this recorded defect"
-    );
-    let (key, parity) = reference_output_key();
-    assert_ne!(
-        PINNED_PROGRAM, key,
-        "the pinned program is now the derived output key; this defect is fixed and the test should be retired"
-    );
-    // The same defect in its second half, and the sharper half.
-    //
-    // The fixture declares even parity. The tweak of the fixture
-    // internal key by the fixture merkle root produces ODD parity. A
-    // control block built from the declared bit therefore states the
-    // wrong y coordinate, and `VerifyTaprootCommitment` rejects it even
-    // when every hash in the path is right.
-    //
-    // This is recorded, not repaired: the parity is not a free
-    // parameter to flip, it is a *derived* fact the fixture currently
-    // declares, and the repair is to derive it — which is the same
-    // substrate change as replacing the pinned program.
-    let pinned_parity = fixture_pin().parity().bit();
-    assert_eq!(
-        pinned_parity, 0,
-        "the fixture no longer declares even parity; re-examine this recorded defect"
-    );
-    assert_ne!(
-        pinned_parity, parity,
-        "the fixture's declared parity now matches the derived one; this defect is fixed and the test should be retired"
-    );
-
-    // And the consequence, stated as a fact rather than an inference:
-    // the control block the fixture actually produces is rejected by
-    // the reference verifier for every leaf, against the very output
-    // key the tree commits to.
-    let tree = committed_tree();
-    let pin = fixture_pin();
-    let secp = Secp256k1::verification_only();
-    let output_key = elements::schnorr::TweakedPublicKey::new(
-        XOnlyPublicKey::from_slice(&key).expect("the output key lifts"),
-    );
+    let mut verified = 0_usize;
     for (role, script) in tree.leaf_programs() {
         let bytes = tree
             .control_block(*role, &pin)
             .expect("every committed leaf has a control block");
         let block = ControlBlock::from_slice(&bytes).expect("the control block parses");
-        assert!(
-            !block.verify_taproot_commitment(&secp, &output_key, &Script::from(script.clone())),
-            "{role:?}: the fixture's declared parity now verifies; this defect is fixed and the test should be retired"
+        assert_eq!(
+            block.internal_key, internal,
+            "{role:?}: the control block names a different internal key"
         );
+        assert!(
+            block.verify_taproot_commitment(&secp, &output_key, &Script::from(script.clone())),
+            "{role:?}: the reference verifier rejects the first-party commitment"
+        );
+        verified += 1;
     }
+    assert_eq!(
+        verified, COMMITTED_LEAVES,
+        "fewer leaves were verified than the tree carries"
+    );
+}
+
+#[test]
+fn the_fixture_pin_is_the_output_key_this_tree_derives() {
+    // Reference-implementation conformance, not independent evidence.
+    //
+    // This is the guard that makes the fixture pin *derived* rather
+    // than declared, and it is the only thing standing between the two
+    // sides.
+    //
+    // `vectors::bundle::PINNED_PROGRAM` is the witness program every
+    // fixture ASH input pays to and the successor pays back to. It
+    // states the taproot output key of the fixture's own committed tree
+    // as a literal, because the vectors package must not depend on this
+    // one — §16.2 fixes that direction and this package dev-depends on
+    // vectors, so the reverse edge would close a cycle. A literal on
+    // the far side of a boundary is only as good as the check that it
+    // still equals what it claims to be, and this is that check: the
+    // key is recomputed here from the fixture's internal key and its
+    // merkle root, through the reference bindings, and compared.
+    //
+    // The two halves an earlier revision got wrong are both covered.
+    // The program must be a curve point at all — a fixed byte pattern
+    // is not, and an output at one is unspendable by construction,
+    // since no control block can satisfy a commitment check against a
+    // program that is not a key. And the parity must be the derived
+    // bit, not a chosen one: a control block states that bit, an
+    // x-only program cannot, and a wrong guess is rejected for every
+    // leaf even when every hash in the path is right.
+    let (key, parity) = reference_output_key();
+
+    let pinned = XOnlyPublicKey::from_slice(&PINNED_PROGRAM)
+        .expect("the pinned program is a curve point; an output at it must be spendable at all");
+    assert_eq!(
+        pinned.serialize(),
+        PINNED_PROGRAM,
+        "the pinned program does not round-trip through the reference key parser"
+    );
+    assert_eq!(
+        PINNED_PROGRAM, key,
+        "the pinned program is not the output key this tree derives; the fixture pin has drifted from the tree"
+    );
+    assert_eq!(
+        PINNED_PROGRAM, FIXTURE_REFERENCE_OUTPUT_KEY,
+        "the pinned program and the recorded reference vector disagree"
+    );
+
+    assert_eq!(
+        fixture_pin().parity().bit(),
+        parity,
+        "the fixture's pinned parity is not the derived one; its control blocks state the wrong y coordinate"
+    );
+
+    // None of this discharges `PinnedOutputKeyUnverifiedAgainstTree`.
+    // A derived pin makes the funding ceremony *possible*; discharging
+    // still needs a real node to have created an output at this program
+    // and accepted a spend of it.
 }
 
 // --- (d) Confidential primitives --------------------------------------
