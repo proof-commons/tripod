@@ -44,6 +44,7 @@ mod guide12_reproductions;
 mod mapping_tests;
 mod non_weakening_tests;
 mod parser_tests;
+mod pattern_tests;
 mod policy_tests;
 mod public_api_tests;
 mod push_census_tests;

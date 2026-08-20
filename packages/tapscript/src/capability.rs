@@ -126,16 +126,75 @@ impl BackendFoundationRequirement {
 
 /// A stable key naming one approved complete backend proof pattern.
 ///
-/// The type is uninhabited, and that is the point. No backend proof
-/// pattern has been approved, so there is no value of this type, so
-/// [`StaticCapabilityAssessment::CompleteBackendPattern`] cannot be
-/// constructed — by anyone, including a future careless caller inside
-/// this crate. Guide-8 §16.5 states that no complete pattern may be
-/// claimed here; stating it in the type system rather than in a comment
-/// means the prohibition cannot be forgotten. Approving the first real
-/// pattern is the act of giving this enum its first variant.
+/// # Why these variants exist and no others
+///
+/// The type was uninhabited through Guide 8 and Guide 11, and that was
+/// the point: no backend proof pattern had been approved, so no value
+/// of this type existed and
+/// [`StaticCapabilityAssessment::CompleteBackendPattern`] could not be
+/// constructed by anyone. Guide-12 §8.4 is what admits the first
+/// variants, and it admits them one at a time: a variant appears here
+/// exactly where [`crate::pattern::operation_patterns`] carries a
+/// complete [`crate::pattern::BackendPattern`] record for it — semantic
+/// owner, target prerequisites, typed instruction fragment, stack
+/// contract, failure behaviour, ABI assumptions, source requirements,
+/// resource formula, positive and negative vectors, and the operation
+/// evidence its correctness depends on.
+///
+/// Every one of these was earned by walking its fragment through the
+/// abstract validator and requiring the resulting success, non-aborting
+/// failure, and abort sets to be exactly the pattern's claim. A pattern
+/// that could not be scheduled, or whose walk did not settle its claim,
+/// has no variant here at all — not a variant marked provisional, which
+/// would be an identity for something that does not exist (§1.10).
+///
+/// # What a variant does not claim
+///
+/// It does not claim a node ran anything. The vectors behind these are
+/// abstract vectors over the reviewed primitive contracts;
+/// relation-indexed target evidence is a later layer's obligation and
+/// remains outstanding for every one of them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum BackendPatternId {}
+pub enum BackendPatternId {
+    /// §10.3: the coordinator leaf spends the canonical anchor and
+    /// aborts anywhere else.
+    CompactAshCoordinatorRoleV1,
+    /// §10.3, §12.7: a member leaf lies in the shape's member range.
+    CompactAshMemberRoleV1,
+    /// §12.1, §12.2: an ASH object is the linked asset and program, in
+    /// the explicit form, inside the semantic amount domain.
+    CompactAshObjectRecognitionV1,
+    /// §12.3: the target's own input and output counts are exactly the
+    /// shape's.
+    CompactAshShapeV1,
+    /// §12.4: the exact explicit sum, every arithmetic flag consumed,
+    /// compared byte for byte with the successor's amount.
+    CompactAshExplicitSumV1,
+    /// §12.5, §12.6, §12.10: every admitted position accounted for by
+    /// role, which is what makes root and specialized-event absence
+    /// structural.
+    CompactAshCanonicalPartitionV1,
+    /// §12.9: the sponsor region is exactly the suffix, carries the
+    /// reserve asset, and is never read for an amount.
+    CompactAshSponsorIsolationV1,
+    /// §12.8: the emitted protocol leaves carry no authorization or
+    /// cadence primitive at all.
+    CompactAshPermissionlessPathV1,
+}
+
+impl BackendPatternId {
+    /// The complete census of approved patterns, in canonical order.
+    pub const ALL: &'static [Self] = &[
+        Self::CompactAshCoordinatorRoleV1,
+        Self::CompactAshMemberRoleV1,
+        Self::CompactAshObjectRecognitionV1,
+        Self::CompactAshShapeV1,
+        Self::CompactAshExplicitSumV1,
+        Self::CompactAshCanonicalPartitionV1,
+        Self::CompactAshSponsorIsolationV1,
+        Self::CompactAshPermissionlessPathV1,
+    ];
+}
 
 /// Why the reviewed target contract cannot support a capability.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -204,12 +263,22 @@ pub enum StaticCapabilityAssessment {
 
     /// An approved complete backend pattern establishes it.
     ///
-    /// Unreachable: see [`BackendPatternId`].
+    /// The censuses are carried here for the same reason they are
+    /// carried on the two backend dispositions: a discharged obligation
+    /// whose prerequisites were dropped would stop responding to the
+    /// target losing them, and an assessment that degrades when the
+    /// target does is the whole non-weakening property.
     CompleteBackendPattern {
         /// The compiler capability, retained.
         required: RequiredCapability,
         /// The approved pattern.
         pattern: BackendPatternId,
+        /// Target primitives the pattern is built from.
+        primitives: BTreeSet<ElementsCapability>,
+        /// Structural facts the pattern rests on.
+        structural: BTreeSet<BackendFoundationRequirement>,
+        /// Target evidence the pattern's correctness depends on.
+        evidence: BTreeSet<TargetEvidenceRequirementId>,
     },
 }
 
@@ -274,6 +343,12 @@ impl StaticCapabilityAssessment {
                 structural,
                 evidence,
                 ..
+            }
+            | Self::CompleteBackendPattern {
+                primitives,
+                structural,
+                evidence,
+                ..
             } => (primitives.clone(), structural.clone(), evidence.clone()),
             Self::BackendStructural {
                 primitives,
@@ -282,16 +357,6 @@ impl StaticCapabilityAssessment {
             } => (primitives.clone(), requirements.clone(), BTreeSet::new()),
             Self::ExternalEvidenceRequired { evidence, .. } => {
                 (BTreeSet::new(), BTreeSet::new(), evidence.clone())
-            }
-            // Unreachable: [`BackendPatternId`] is uninhabited, so this
-            // variant has no value. The arm is written rather than
-            // elided because a match behind a reference must still list
-            // it, and it yields empty censuses rather than reading the
-            // pattern — dereferencing a reference to an uninhabited
-            // type is undefined behavior even where the code cannot
-            // run.
-            Self::CompleteBackendPattern { .. } => {
-                (BTreeSet::new(), BTreeSet::new(), BTreeSet::new())
             }
         };
 
