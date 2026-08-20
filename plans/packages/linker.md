@@ -275,8 +275,24 @@ It does not establish:
 ## Exit gate · `gate:linker:first-bundle`
 
 Met by the first delivered link except for the last clause, which waits on the
-transaction package, and except that the self-commitment resolves only under an
-explicit authenticated strategy rather than by construction.
+transaction package.
+
+The self-commitment now resolves by identity introspection. The ASH
+constructor's witness program is the taproot output over the taptree the
+emitted leaves are committed in, so no layer can supply its bytes; the
+coordinator leaves read it off the input they are spending instead of
+carrying a literal for it, and the comparison establishes that the compared
+position shares this input's program rather than that it equals a named value.
+The symbol is therefore declared and settled by nobody — bound
+`ReadFromTargetAtSpendTime`, backed by an introspection-reference census
+beside the relocation census — and a deployment offering a value for it is
+refused. Under that strategy the demonstration bundle links with no
+self-commitment equality outstanding; with no strategy stated the same cycle
+is still unclassified and still refuses. Evidence is in
+`packages/linker/src/tests/link_tests.rs` (the sound strategy links and owes
+no equality; a literal reaching a leaf still contradicts it) and
+`packages/linker/src/tests/graph_tests.rs` (the nine coordinator leaves carry
+the introspection edges that close the loop).
 
 The first candidate compact-ASH bundle exits when:
 
