@@ -1225,6 +1225,7 @@ pub enum BundleRefusal {
 /// and the outstanding clear lifecycle.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CandidateRelocatableTapscriptBundle {
+    plan: ValidatedTargetOperationPlan,
     policy: CompactAshBackendPolicy,
     assessment: OperationAssessmentSet,
     constructor: StaticAshConstructor,
@@ -1242,6 +1243,17 @@ pub struct CandidateRelocatableTapscriptBundle {
 }
 
 impl CandidateRelocatableTapscriptBundle {
+    /// The validated operation plan this bundle was emitted for.
+    ///
+    /// Carried whole rather than named, for the same reason the plan
+    /// carries its own typed source: a reference to a plan would be a
+    /// plan this value cannot check, and every consumer would have to
+    /// trust that the thing referred to still said what it said.
+    #[must_use]
+    pub const fn plan(&self) -> &ValidatedTargetOperationPlan {
+        &self.plan
+    }
+
     /// The backend policy this bundle was emitted under.
     #[must_use]
     pub const fn policy(&self) -> &CompactAshBackendPolicy {
@@ -1472,6 +1484,7 @@ pub fn emit_candidate_bundle(
     };
 
     Ok(CandidateRelocatableTapscriptBundle {
+        plan: plan.clone(),
         policy,
         assessment,
         constructor,

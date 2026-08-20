@@ -742,7 +742,12 @@ fn the_bundle_is_a_candidate_and_says_so_in_its_types() {
     assert_eq!(bundle.status(), BackendArtifactStatus::Prototype);
     assert_eq!(bundle.outstanding_lifecycle().count(), NonZeroUsize::MIN);
     assert_eq!(bundle.outstanding_lifecycle().requirements().count(), 1);
-    assert!(!compact_ash_plan().lifecycle().release_complete());
+    assert!(!bundle.plan().lifecycle().release_complete());
+
+    // The plan is carried whole, so the bundle can be checked against
+    // its own source rather than against a plan a reader supplies.
+    assert_eq!(bundle.plan(), &compact_ash_plan());
+    assert_eq!(bundle.plan().carriers().count(), bundle.placements().len());
 }
 
 #[test]
