@@ -43,6 +43,7 @@ use crate::materialize::{
     AshFunding, MaterializedTargetVector, SponsorCoin, SponsorSigningTask, TargetVectorId,
     has_candidate_program, materialize, materialize_sponsored, sponsor_signing_requests, vector_id,
 };
+use crate::mutation::{MutatedVector, NegativeMutation, apply};
 
 /// What each ceremony output carries while the asset is being issued.
 ///
@@ -266,6 +267,62 @@ impl ObservedDivergence {
     }
 }
 
+/// What one submitted mutation produced.
+///
+/// # Why this is not a [`SubmissionOutcome`]
+///
+/// A submission outcome answers a positive row, and
+/// `CompactAshEvidencePlan::discharge` reads those to move positive
+/// coverage. A mutation answers a negative requirement and must never
+/// be able to move a positive row by being mistaken for one, so it is a
+/// different type in a different list rather than a flag on the same
+/// one.
+///
+/// The expected boundary is not stored. It is a function of the
+/// mutation, which is stored, and a copy taken at submission time could
+/// disagree with the matrix later — which is exactly the drift the
+/// lookup exists to prevent.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MutantOutcome {
+    origin: TargetVectorId,
+    mutation: NegativeMutation,
+    layer: ObservedOutcomeLayer,
+    detail: Option<String>,
+    bytes: Vec<u8>,
+}
+
+impl MutantOutcome {
+    /// The accepted vector this mutation was made from.
+    #[must_use]
+    pub const fn origin(&self) -> TargetVectorId {
+        self.origin
+    }
+
+    /// What was changed.
+    #[must_use]
+    pub const fn mutation(&self) -> NegativeMutation {
+        self.mutation
+    }
+
+    /// Where the target put the mutated transaction.
+    #[must_use]
+    pub const fn layer(&self) -> ObservedOutcomeLayer {
+        self.layer
+    }
+
+    /// What the target or the adapter said, verbatim and unmapped.
+    #[must_use]
+    pub fn detail(&self) -> Option<&str> {
+        self.detail.as_deref()
+    }
+
+    /// The exact bytes that were submitted.
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
 /// Everything one operation run established.
 ///
 /// Built only by [`CompactAshOperationPlanner`], and only from answers
@@ -278,6 +335,7 @@ pub struct OperationTranscript {
     funded: BTreeMap<TargetVectorId, Vec<Outpoint>>,
     coins: BTreeMap<Outpoint, u64>,
     submissions: Vec<SubmissionOutcome>,
+    mutants: Vec<MutantOutcome>,
     divergences: Vec<ObservedDivergence>,
     refusal: Option<PlanRefusal>,
 }
@@ -332,6 +390,17 @@ impl OperationTranscript {
     #[must_use]
     pub fn submissions(&self) -> &[SubmissionOutcome] {
         &self.submissions
+    }
+
+    /// What each submitted mutation produced, in submission order.
+    ///
+    /// Empty for a run that accepted nothing: a mutation is made from an
+    /// accepted transaction, so a run with no acceptance has nothing to
+    /// mutate and says so by carrying no negative results rather than by
+    /// carrying unattributable ones.
+    #[must_use]
+    pub fn mutants(&self) -> &[MutantOutcome] {
+        &self.mutants
     }
 
     /// Every row the target's own bound refused to fund.
@@ -412,6 +481,12 @@ enum Stage {
     Sign(usize),
     /// Work through the materialized vectors.
     Submit(usize),
+    /// Work through the mutations of whatever the target accepted.
+    ///
+    /// After the positive submissions rather than among them, because a
+    /// mutation is made from an accepted transaction and the acceptance
+    /// is what this run is still in the middle of establishing.
+    SubmitMutant(usize),
     /// Nothing left to ask.
     Done,
 }
@@ -469,6 +544,9 @@ pub struct CompactAshOperationPlanner {
     /// the funding schedule is.
     sign_schedule: Vec<(usize, usize)>,
     vectors: Vec<MaterializedTargetVector>,
+    /// The mutated transactions this run will submit, settled once the
+    /// positive submissions have said which vector was accepted.
+    mutants: Vec<MutatedVector>,
     transcript: OperationTranscript,
 }
 
@@ -508,6 +586,7 @@ impl CompactAshOperationPlanner {
             pending: Vec::new(),
             sign_schedule: Vec::new(),
             vectors: Vec::new(),
+            mutants: Vec::new(),
             transcript: OperationTranscript::default(),
         })
     }
@@ -1031,6 +1110,82 @@ impl CompactAshOperationPlanner {
         Ok(())
     }
 
+    /// Build the mutations, from a transaction this run's target took.
+    ///
+    /// # Why the accepted vector is chosen and not the planned one
+    ///
+    /// The negative half's argument is that the un-mutated sibling was
+    /// accepted, and only the transcript knows which vector that was. A
+    /// mutation built from a vector the target refused would carry two
+    /// reasons to be refused and would establish neither, so a run that
+    /// accepted nothing stages nothing and the negative rows stay
+    /// outstanding — which is the honest outcome, not a gap.
+    ///
+    /// The widest accepted row is preferred because a mutation like
+    /// reversing the input order needs at least two ASH inputs to do
+    /// anything; arms with nothing to act on are recorded as fixture
+    /// construction failures rather than skipped.
+    fn stage_mutants(&mut self) {
+        let Some(asset) = self.transcript.issued_asset else {
+            return;
+        };
+        let accepted: BTreeSet<TargetVectorId> = self
+            .transcript
+            .submissions
+            .iter()
+            .filter(|outcome| outcome.layer == ObservedOutcomeLayer::Accepted)
+            .map(|outcome| outcome.vector)
+            .collect();
+        let Some(subject) = self
+            .vectors
+            .iter()
+            .filter(|vector| accepted.contains(&vector.id()))
+            .max_by_key(|vector| vector.id().ash_inputs())
+            .cloned()
+        else {
+            return;
+        };
+
+        for mutation in NegativeMutation::ALL {
+            match apply(&subject, asset, *mutation) {
+                Ok(mutant) => self.mutants.push(mutant),
+                // The arm had nothing to act on in this shape. Recorded
+                // as a construction failure, which is what it is: no
+                // target was asked, so no target refused, and the row it
+                // would have answered stays outstanding.
+                Err(_) => self.transcript.mutants.push(MutantOutcome {
+                    origin: subject.id(),
+                    mutation: *mutation,
+                    layer: ObservedOutcomeLayer::FixtureConstructionFailure,
+                    detail: Some("the accepted shape gave this mutation nothing to act on".into()),
+                    bytes: Vec::new(),
+                }),
+            }
+        }
+    }
+
+    fn mutant_step(&self, index: usize) -> Option<OperationStep> {
+        let mutant = self.mutants.get(index)?;
+        Some(OperationStep::new(
+            &format!("submit-mutant/{}", mutant.mutation().class_name()),
+            OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+                transaction_bytes: mutant.bytes().to_vec(),
+            })),
+        ))
+    }
+
+    fn settle_mutant(&mut self, index: usize, response: &NativeOperationResponse) {
+        if let Some(mutant) = self.mutants.get(index) {
+            self.transcript.mutants.push(MutantOutcome {
+                origin: mutant.origin(),
+                mutation: mutant.mutation(),
+                layer: response.observed_layer,
+                detail: response.observed_detail.clone(),
+                bytes: mutant.bytes().to_vec(),
+            });
+        }
+    }
+
     fn settle_submission(&mut self, index: usize, response: &NativeOperationResponse) {
         // A submission answer is never a refusal. Every layer the target
         // can reach is a fact about the target, and the two that are not
@@ -1115,6 +1270,23 @@ impl TargetOperationPlanner for CompactAshOperationPlanner {
                     self.stage = if next < self.vectors.len() {
                         Stage::Submit(next)
                     } else {
+                        // Every positive row has now been answered, so
+                        // the transcript can say which transaction the
+                        // mutations are allowed to be made from.
+                        self.stage_mutants();
+                        if self.mutants.is_empty() {
+                            Stage::Done
+                        } else {
+                            Stage::SubmitMutant(0)
+                        }
+                    };
+                }
+                Stage::SubmitMutant(index) => {
+                    self.settle_mutant(index, response);
+                    let next = index + 1;
+                    self.stage = if next < self.mutants.len() {
+                        Stage::SubmitMutant(next)
+                    } else {
                         Stage::Done
                     };
                 }
@@ -1129,6 +1301,7 @@ impl TargetOperationPlanner for CompactAshOperationPlanner {
             Stage::Fund(index) => self.fund_step(index),
             Stage::Sign(index) => self.sign_step(index),
             Stage::Submit(index) => self.submit_step(index),
+            Stage::SubmitMutant(index) => self.mutant_step(index),
             Stage::Done => None,
         })
     }
@@ -1366,6 +1539,17 @@ mod tests {
                     response.signature_bound_to = Some(signing.finalized_transaction.clone());
                 }
                 OperationSubject::Submission(_) => {
+                    // A submission is offered to the same decision as
+                    // every other step, so a run in which the target
+                    // refuses what it is handed can be staged. The
+                    // amount is zero because a submission asks for no
+                    // coin; the case is what a decision distinguishes.
+                    if let Answer::Refuse(layer) = (self.decide)(case, 0) {
+                        response.observed_layer = layer;
+                        response.observed_detail =
+                            Some("this run refuses the transaction it was handed".to_owned());
+                        return response;
+                    }
                     response.accepted_txid = Some(ISSUED.to_owned());
                 }
             }
@@ -1399,6 +1583,82 @@ mod tests {
                 .expect("the fake target answers in a shape the protocol defines");
             previous = Some((step.case().clone(), response));
         }
+    }
+
+    #[test]
+    fn a_run_that_accepts_something_submits_every_mutation_of_it() {
+        // The negative half, end to end against a fake target: once a
+        // positive row is accepted, each mutation is submitted and each
+        // answer is recorded against the mutation that produced it.
+        let (planner, finished) = run(refuse_beyond_bound);
+        assert!(finished, "the plan ran out of steps rather than refusing");
+        let transcript = planner.transcript();
+
+        let staged = super::NegativeMutation::ALL.len();
+        assert_eq!(
+            transcript.mutants().len(),
+            staged,
+            "every mutation must produce an outcome, applied or refused",
+        );
+        // Each one names the mutation it was made from, and no mutation
+        // is recorded twice.
+        let named: std::collections::BTreeSet<_> = transcript
+            .mutants()
+            .iter()
+            .map(super::MutantOutcome::mutation)
+            .collect();
+        assert_eq!(named.len(), staged, "a mutation was recorded twice");
+
+        // And a mutation never lands among the positive submissions,
+        // which is what keeps it from discharging a positive row.
+        let submitted: Vec<_> = transcript
+            .submissions()
+            .iter()
+            .map(super::SubmissionOutcome::bytes)
+            .collect();
+        for mutant in transcript.mutants() {
+            if mutant.layer() == ObservedOutcomeLayer::FixtureConstructionFailure {
+                continue;
+            }
+            assert!(
+                !submitted.contains(&mutant.bytes()),
+                "a mutated transaction was recorded as a positive submission",
+            );
+        }
+    }
+
+    #[test]
+    fn a_run_that_accepts_nothing_stages_no_mutation_at_all() {
+        // The honesty property of the whole negative half. A mutation is
+        // an accepted transaction with one change; if the target
+        // accepted nothing, there is nothing to change, and the negative
+        // rows must stay outstanding rather than be answered by a
+        // refusal that had two possible causes.
+        let (planner, finished) = run(|case, amount| {
+            if case.operation == OperationStepKind::Submit {
+                Answer::Refuse(ObservedOutcomeLayer::ScriptPathRejection)
+            } else {
+                refuse_beyond_bound(case, amount)
+            }
+        });
+        assert!(finished, "the plan ran out of steps rather than refusing");
+        let transcript = planner.transcript();
+
+        assert!(
+            !transcript.submissions().is_empty(),
+            "the run submitted nothing, so it tests nothing",
+        );
+        assert!(
+            transcript
+                .submissions()
+                .iter()
+                .all(|outcome| outcome.layer() != ObservedOutcomeLayer::Accepted),
+            "the target was meant to refuse every submission",
+        );
+        assert!(
+            transcript.mutants().is_empty(),
+            "mutations were staged from a transaction no target accepted",
+        );
     }
 
     /// The answer a run gives to a step the reviewed bound forbids.
