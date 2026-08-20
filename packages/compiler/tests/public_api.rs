@@ -326,3 +326,247 @@ fn the_public_boundary_is_deterministic_and_target_free() {
 
     assert!(!capabilities.is_empty() && !evidence.is_empty());
 }
+
+// --- Guide-12 §7.4: the public compact-ASH target-operation plan ---
+
+use compiler::operation_plan::{
+    LayoutRequirement, OperandRole, RepresentationNarrowing, ValidatedTargetOperationPlan,
+    plan_compact_ash_target_operation,
+};
+
+/// The erased sponsor region's object family, named rather than
+/// inferred: the assertion below is about that family and not about
+/// whichever family a plan happened to place first.
+const ORDINARY_LBTC: architecture::ObjectId = architecture::ObjectId::PlainLbtc;
+
+/// The plan module's own source, read as an external consumer sees the
+/// crate rather than as the crate sees itself.
+const PLAN_SOURCE: &str = include_str!("../src/operation_plan.rs");
+
+fn pilot_plan(operations: &[OperationId]) -> ValidatedTargetOperationPlan {
+    let scope = CompilationScope::from_operations(operations.iter().copied()).expect("pilot scope");
+    let input = bind_input(
+        &architecture::ARCHITECTURE,
+        phase1_realization(),
+        scope,
+        test_policy(),
+    )
+    .expect("bind input");
+
+    plan_compact_ash_target_operation(&input, placement_limits()).expect("pilot plan")
+}
+
+#[test]
+fn the_operation_plan_comes_only_from_a_completed_analysis() {
+    // There is no public constructor, no `Default`, and no builder:
+    // this call is the only route to the type, and it runs the complete
+    // analysis, that analysis's own validator, the Phase-4 policy
+    // filter, and the plan's independent assembly validator before
+    // returning. A plan assembled from arbitrary fields would be a
+    // request rather than an analysis, and nothing downstream could
+    // tell the two apart once they shared a type.
+    let plan = pilot_plan(&[OperationId::CompactAsh, OperationId::TransferLive]);
+
+    assert_eq!(plan.operation(), OperationId::CompactAsh);
+    assert_eq!(plan.relations().count(), 23);
+    assert_eq!(plan.cases().count(), 2);
+    assert_eq!(plan.layout().count(), 69);
+    assert!(plan.carriers().count() > 0 && plan.coverage().count() > 0);
+}
+
+#[test]
+fn an_incomplete_analysis_publishes_no_plan() {
+    let scope = CompilationScope::from_operations([OperationId::CompactAsh]).expect("pilot scope");
+    let input = bind_input(
+        &architecture::ARCHITECTURE,
+        phase1_realization(),
+        scope,
+        test_policy(),
+    )
+    .expect("bind input");
+    let truncated = PlacementSearchLimits::new(
+        std::num::NonZeroU64::new(1).expect("nonzero"),
+        std::num::NonZeroU64::new(1).expect("nonzero"),
+    );
+
+    assert!(
+        plan_compact_ash_target_operation(&input, truncated).is_err(),
+        "a truncated search is a typed failure, never a smaller plan",
+    );
+}
+
+#[test]
+fn equal_inputs_and_declaration_permutations_produce_equal_projections() {
+    let first = pilot_plan(&[OperationId::CompactAsh, OperationId::TransferLive]);
+    let permuted = pilot_plan(&[OperationId::TransferLive, OperationId::CompactAsh]);
+
+    assert_eq!(first, permuted);
+    assert_eq!(
+        first,
+        pilot_plan(&[OperationId::CompactAsh, OperationId::TransferLive]),
+    );
+}
+
+#[test]
+fn the_plan_states_the_explicit_phase4_representation_selection() {
+    let plan = pilot_plan(&[OperationId::CompactAsh]);
+    let policy = plan.representation();
+
+    assert_eq!(
+        policy.selection(architecture::ObjectId::Ash),
+        Some(realization::RepresentationMode::Explicit),
+        "Guide 11 fixes the Phase-4 candidate to an explicit public boundary",
+    );
+    assert_eq!(
+        policy.narrowing(architecture::ObjectId::Ash),
+        Some(RepresentationNarrowing::DeploymentPolicy),
+        "the alternative set was narrowed by policy, not by semantic necessity",
+    );
+    assert!(
+        policy
+            .approved(architecture::ObjectId::Ash)
+            .is_some_and(|approved| approved.len() > 1),
+        "the approved set records what the realization allows, not what policy chose",
+    );
+
+    // §5.7: the candidate is lifecycle-incomplete and says so.
+    assert!(!plan.lifecycle().release_complete());
+    assert_eq!(
+        plan.lifecycle().implemented().collect::<Vec<_>>(),
+        [OperationId::CompactAsh],
+    );
+    assert!(
+        plan.lifecycle()
+            .outstanding()
+            .all(|requirement| requirement.exit == OperationId::Clear),
+    );
+}
+
+#[test]
+fn no_sponsor_amount_enters_any_public_plan_field() {
+    // Structural rather than textual: every published layout
+    // requirement and every published source row is matched against the
+    // erased sponsor family by name.
+    //
+    // The *amount* is what is erased. Membership, cardinality,
+    // authorization, and disjointness over the sponsor family are
+    // required relations of §5.5, so an authenticated census of the
+    // ordinary L-BTC family is expected here and is not a leak.
+    let plan = pilot_plan(&[OperationId::CompactAsh, OperationId::TransferLive]);
+    let names_sponsor_amount = |requirement: &LayoutRequirement| {
+        matches!(
+            requirement,
+            LayoutRequirement::MakeSourceAvailable { source, .. }
+                if matches!(
+                    source.operand.role(),
+                    OperandRole::ObjectFamilyAmount { object: ORDINARY_LBTC, .. },
+                )
+        )
+    };
+
+    for requirement in plan.layout() {
+        assert!(!names_sponsor_amount(requirement), "{requirement:?}");
+    }
+
+    for source in plan
+        .relations()
+        .flat_map(|relation| relation.source_requirements.iter())
+        .chain(
+            plan.relations()
+                .flat_map(|relation| relation.cases.values())
+                .flat_map(|case| case.active_sources.iter()),
+        )
+    {
+        assert!(
+            !matches!(
+                source.operand.role(),
+                OperandRole::ObjectFamilyAmount {
+                    object: ORDINARY_LBTC,
+                    ..
+                },
+            ),
+            "{source:?}",
+        );
+    }
+}
+
+#[test]
+fn the_public_plan_surface_carries_no_digest_and_no_graph_handle() {
+    // §1.10 mints no plan digest and reserves no field for a future
+    // one; §7.2 admits no Petgraph index. Both are properties of the
+    // published source rather than of any one value, so the source is
+    // what is checked — a field added later fails here even if no test
+    // happens to read it.
+    //
+    // Comment lines are excluded deliberately. The module documents
+    // that it carries no digest, and a scan that could not tell the
+    // prohibition from a violation would forbid saying so.
+    let code = PLAN_SOURCE
+        .lines()
+        .filter(|line| {
+            let line = line.trim_start();
+
+            !(line.starts_with("//") || line.starts_with("///") || line.starts_with("//!"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    for banned in [
+        "digest",
+        "Digest",
+        "NodeIndex",
+        "EdgeIndex",
+        "petgraph",
+        "DiGraph",
+        "PlanHash",
+    ] {
+        assert!(
+            !code.contains(banned),
+            "the published plan surface must not name {banned}",
+        );
+    }
+
+    // The corruption handles the in-crate oracles need are compiled out
+    // of every non-test build, so no mutable route to a published field
+    // survives into a consumer's copy of this crate.
+    for line in PLAN_SOURCE.lines() {
+        let line = line.trim_start();
+
+        assert!(
+            !(line.starts_with("pub fn") || line.starts_with("pub const fn"))
+                || !line.contains("_mut("),
+            "no public mutable accessor may exist: {line}",
+        );
+    }
+}
+
+#[test]
+fn no_internal_analysis_container_is_re_exported() {
+    // The analysis containers live in unexported modules, so this is a
+    // second lock rather than the only one: a re-export added later
+    // would make one nameable from outside, and this census is what
+    // fails first.
+    let block = PLAN_SOURCE
+        .split("pub use crate::{")
+        .nth(1)
+        .and_then(|rest| rest.split("\n};").next())
+        .expect("the module's re-export block");
+
+    for container in [
+        "ScopedAnalyzedProgram",
+        "AnalyzedProofPlan",
+        "AnalyzedOperation",
+        "AnalyzedSource",
+        "RelationCaseRequirements",
+        "OperationPlacementAnalysis",
+        "PlacementCandidate",
+        "CoverageGraphProjection",
+        "PlanCoverageAnalysis",
+        "CompilerRelationAnalysis",
+    ] {
+        assert!(
+            !block.contains(container),
+            "{container} must not be re-exported",
+        );
+    }
+}

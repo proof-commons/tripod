@@ -1331,4 +1331,83 @@ pub enum CompileError {
         /// The repeated, misordered, or uncensused role.
         role: crate::target::ExternalEvidenceRole,
     },
+
+    /// A target operation plan was requested for an operation the bound
+    /// compiler scope does not analyze.
+    #[error("target operation plan requested for out-of-scope operation {operation:?}")]
+    TargetOperationOutOfScope {
+        /// The operation the plan would have been about.
+        operation: OperationId,
+    },
+
+    /// No retained feasible plan survives the Phase-4 policy filter.
+    ///
+    /// A typed failure rather than an empty plan: an operation plan
+    /// with no admissible alternative is not a smaller plan, it is the
+    /// absence of one.
+    #[error("no feasible plan of {operation:?} satisfies the Phase-4 policy")]
+    NoAdmissiblePhase4Plan {
+        /// The operation whose policy filter retained nothing.
+        operation: OperationId,
+    },
+
+    /// Several admissible plans disagree about the planned operation.
+    ///
+    /// The compiler states no tie-break: selecting one concrete
+    /// candidate among semantically different alternatives is a backend
+    /// decision under its own typed policy.
+    #[error("admissible plans of {operation:?} disagree about the operation")]
+    AmbiguousTargetOperationPlan {
+        /// The operation whose survivors disagree.
+        operation: OperationId,
+    },
+
+    /// The published relation census is not the analyzed one.
+    #[error("target plan relation census defect at {relation:?}")]
+    TargetPlanRelationCensusMismatch {
+        /// The relation missing from one side or unowned on the other.
+        relation: realization::RelationId,
+    },
+
+    /// One published relation's requirements are not the analyzed ones.
+    #[error("target plan relation requirements are not the analyzed requirements")]
+    TargetPlanRelationRequirementMismatch,
+
+    /// The published typed source is not the analysis's own.
+    #[error("target plan source is not the analyzed source")]
+    TargetPlanSourceMismatch,
+
+    /// The published execution-case census is not the analyzed one.
+    #[error("target plan execution-case census is not the analyzed census")]
+    TargetPlanCaseCensusMismatch,
+
+    /// The published abstract carrier census is not the analyzed one.
+    #[error("target plan carrier census is not the analyzed census")]
+    TargetPlanCarrierCensusMismatch,
+
+    /// The published layout census is not the analyzed one.
+    #[error("target plan layout census is not the analyzed census")]
+    TargetPlanLayoutCensusMismatch,
+
+    /// The published coverage census is not the analyzed one.
+    #[error("target plan coverage census is not the analyzed census")]
+    TargetPlanCoverageCensusMismatch,
+
+    /// Two coverage rows claim one requirement identity.
+    #[error("target plan coverage requirement {requirement:?} occurs more than once")]
+    DuplicateTargetCoverageRequirement {
+        /// The repeated coverage identity.
+        requirement: crate::coverage::CoverageRequirementId,
+    },
+
+    /// The published representation policy is not the Phase-4 selection.
+    #[error("target plan representation policy is not the Phase-4 selection for {object:?}")]
+    TargetPlanRepresentationMismatch {
+        /// The object family whose published selection is wrong.
+        object: architecture::ObjectId,
+    },
+
+    /// The published lifecycle status is not the analyzed one.
+    #[error("target plan lifecycle status is not the analyzed status")]
+    TargetPlanLifecycleMismatch,
 }
