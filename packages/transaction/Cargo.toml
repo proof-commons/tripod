@@ -1,0 +1,55 @@
+[package]
+name = "tripod-transaction"
+description = "Derives the candidate compact-ASH transaction ABI and constructs exact target transaction bytes"
+
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[lib]
+name = "transaction"
+
+# Guide-12 §15.1 names `linker` and `target-elements` as this package's
+# direct dependencies, and the package contract forbids `model`,
+# `compiler`, `vectors`, `release`, and `artifacts`. Both named packages
+# are present and no forbidden one is.
+#
+# `tapscript` is not named directly and is not listed: every backend
+# type this crate reads — shapes, layouts, witness roles, leaf roles —
+# reaches it through the linked bundle's own public surface, which is
+# the only bundle it is allowed to build against. Naming the backend
+# directly would let a caller hand this crate a layout that no link
+# produced.
+#
+# `target-elements-conformance` is deliberately absent, and its absence
+# is load-bearing rather than incidental. That package is the
+# independent host oracle the operation evidence compares this crate's
+# output against; a builder that computed its expectation by calling the
+# oracle would be producing one opinion and counting it twice, which is
+# the collapse the confidential-value review already refused once.
+#
+# `sha2` is the workspace's existing pure-Rust digest and adds no
+# lock-file entry. The witness bytes carry control blocks, a control
+# block carries the merkle path of the committed tree, and those path
+# elements are tagged SHA-256 hashes of the linked programs. Without it
+# this crate could state a witness layout but not a witness.
+[dependencies]
+linker = { workspace = true }
+sha2 = { workspace = true }
+target-elements = { workspace = true }
+
+# Test-only. Exact bytes need a real linked bundle, and the only way to
+# obtain one is to run the compiler, the backend, and the linker over a
+# real architecture body, the same way the linker's own tests obtain a
+# real relocatable bundle.
+[dev-dependencies]
+architecture = { workspace = true }
+compiler = { workspace = true }
+realization = { workspace = true }
+tapscript = { workspace = true }
+
+[lints]
+workspace = true
