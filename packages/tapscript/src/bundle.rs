@@ -643,7 +643,12 @@ impl IntrospectionReference {
         self.leaf
     }
 
-    /// What the read value is used as.
+    /// What the read value is, and which side it is read from.
+    ///
+    /// The side is the read's, not the comparison's. Every read here is
+    /// of the leaf's own input, including the ones whose result is
+    /// compared against an output — the successor's program test reads
+    /// an input and compares an output with it.
     #[must_use]
     pub const fn role(&self) -> TargetRole {
         self.role
