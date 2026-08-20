@@ -7,7 +7,9 @@ tapscript_source_files = files(
   'src/error.rs',
   'src/instruction.rs',
   'src/lib.rs',
+  'src/policy.rs',
   'src/program.rs',
+  'src/shape.rs',
   'src/stack.rs',
   'src/tests/abstract_oracle_tests.rs',
   'src/tests/byte_census_tests.rs',
@@ -17,9 +19,11 @@ tapscript_source_files = files(
   'src/tests/mod.rs',
   'src/tests/non_weakening_tests.rs',
   'src/tests/parser_tests.rs',
+  'src/tests/policy_tests.rs',
   'src/tests/public_api_tests.rs',
   'src/tests/push_census_tests.rs',
   'src/tests/schedule_tests.rs',
+  'src/tests/shape_tests.rs',
   'src/tests/stack_tests.rs',
 )
 

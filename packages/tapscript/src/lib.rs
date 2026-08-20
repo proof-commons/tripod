@@ -4,7 +4,9 @@
 pub mod capability;
 pub mod error;
 pub mod instruction;
+pub mod policy;
 pub mod program;
+pub mod shape;
 pub mod stack;
 
 pub use capability::{
@@ -15,7 +17,16 @@ pub use capability::{
 };
 pub use error::TapscriptError;
 pub use instruction::{StackItem, TapscriptInstruction};
+pub use policy::{
+    AshRepresentationSelection, CompactAshBackendPolicy, ConcreteCandidate, ExactTargetProjection,
+    LayoutFamily, SelectionObjective, SelectionRefusal, SemanticEquivalence, TieBreak,
+    reviewed_target_projection,
+};
 pub use program::{MAXIMUM_PROGRAM_INSTRUCTIONS, TapscriptProgram};
+pub use shape::{
+    CandidateShapeSet, CompactAshShape, CompactAshShapeBounds, MINIMUM_ASH_INPUTS, ShapeRejection,
+    SponsorChangePresence, UsefulCandidateCondition, demonstration_shape_set,
+};
 pub use stack::{
     AbstractExecutionResult, AbstractLimits, AbstractStackState, resource_projection,
     validate_program,
