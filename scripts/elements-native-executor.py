@@ -2801,9 +2801,15 @@ class OperationExecutor:
         )
         for _ in range(outputs):
             transaction.vout.append(executor.output(amount, program))
-        transaction.vout.append(
-            executor.output(remainder, executor.anyone_can_spend_witness)
-        )
+        # The change goes back to the BARE anyone-can-spend program, not
+        # the witness-carrying form. The two are not interchangeable:
+        # the witness form has to be spent with its own program on the
+        # stack, and every later step here spends this coin without
+        # pushing one. Only the issuance needs the witness form, because
+        # only an issuance is checked solely when its transaction
+        # carries a witness section (T4-012), and `issue` has already
+        # consumed it by the time this step runs.
+        transaction.vout.append(executor.output(remainder, executor.anyone_can_spend))
         transaction.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
 
         txid = self.mine(transaction, "sponsor funding")
