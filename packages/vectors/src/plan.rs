@@ -19,17 +19,18 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use compiler::operation_plan::{
-    CoverageRequirementId, EvidenceRole, RelationActivity, RelationCaseKey,
+    CoverageRequirementId, EvidenceRole, RelationActivity, RelationCaseKey, SponsorCase,
     TargetCoverageObligation, TargetCoverageRequirement,
 };
 use realization::RelationId;
+use target_elements_conformance::protocol::ObservedOutcomeLayer;
 use transaction::FundingCeremonyStep;
 
 use crate::bundle::FixtureBundle;
 use crate::error::VectorError;
 use crate::fixture::{CompactAshSemanticCase, positive_semantic_census};
 use crate::materialize::{
-    MaterializedTargetVector, TargetVectorId, is_materializable, materialize,
+    AshFunding, MaterializedTargetVector, TargetVectorId, is_materializable, materialize, vector_id,
 };
 use crate::matrix::class_count;
 use crate::subject::CanonicalSubject;
@@ -54,25 +55,100 @@ pub enum OutstandingReason {
 
 /// What is known about one coverage requirement.
 ///
-/// One variant today. It is an enum rather than an `Option` so that Wave
-/// 11 adds an observed arm instead of filling a hole, and so that no
-/// row can be read as satisfied by being absent.
+/// Two variants: nothing observed, or one target run that answered it.
+/// It is an enum rather than an `Option` so that the observed arm was
+/// *added* rather than filling a hole, and so that no row can be read
+/// as satisfied by being absent.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum CoverageObservation {
     /// Nothing has been observed for this requirement.
     Outstanding(OutstandingReason),
+    /// One target run answered this requirement.
+    ///
+    /// # Every field here came off a transcript
+    ///
+    /// §19.1's positive coverage needs an accepted target transaction
+    /// *and* a matched semantic projection, and §1.4 keeps the two
+    /// verdicts apart. So a discharged row records which vector was
+    /// submitted, what the target made of it, and whether the accepted
+    /// projection compared equal — three separate facts, none of which
+    /// can be inferred from the others.
+    ///
+    /// A row is never built from a plan's intention. The only
+    /// constructor is [`CompactAshEvidencePlan::discharge`], which reads
+    /// submissions the executor recorded.
+    Observed(ObservedCoverage),
+}
+
+/// What one target run established about one requirement.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ObservedCoverage {
+    vector: TargetVectorId,
+    layer: ObservedOutcomeLayer,
+    projection: ProjectionComparison,
+}
+
+impl ObservedCoverage {
+    /// The vector whose submission answered this requirement.
+    #[must_use]
+    pub const fn vector(&self) -> TargetVectorId {
+        self.vector
+    }
+
+    /// Where the target put that submission.
+    #[must_use]
+    pub const fn layer(&self) -> ObservedOutcomeLayer {
+        self.layer
+    }
+
+    /// What the accepted-projection comparison found.
+    #[must_use]
+    pub const fn projection(&self) -> ProjectionComparison {
+        self.projection
+    }
+}
+
+/// The result of §17.4's accepted-projection comparison.
+///
+/// §1.4 makes acceptance and semantic agreement two verdicts, and this
+/// is the second one. It is not a boolean: a comparison that was never
+/// performed — because the target never accepted anything — is a third
+/// state, and collapsing it into `false` would make an unaccepted
+/// transaction look like a semantic disagreement.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
+pub enum ProjectionComparison {
+    /// The target accepted, and every §17.4 term compared equal.
+    Matched,
+    /// The target accepted, and some §17.4 term differed.
+    Differed,
+    /// No comparison was performed, because nothing was accepted.
+    NotPerformed,
 }
 
 impl CoverageObservation {
     /// Whether this observation discharges its requirement.
     ///
-    /// Always false today, and deliberately a method rather than a
-    /// pattern match at each call site, so that the one place that
-    /// decides cannot be forgotten in a later wave.
+    /// §19.1 is the bar and both halves of it are checked here: the
+    /// target accepted the transaction, and the accepted projection
+    /// matched. Acceptance alone is not a pass
+    /// `(´[PLAN-rule:guide12-exec:two-verdicts]´)`.
+    ///
+    /// Deliberately a method rather than a pattern match at each call
+    /// site, so that the one place that decides cannot be forgotten.
     #[must_use]
     pub const fn is_discharged(self) -> bool {
-        false
+        match self {
+            Self::Outstanding(_) => false,
+            Self::Observed(observed) => matches!(
+                (observed.layer, observed.projection),
+                (
+                    ObservedOutcomeLayer::Accepted,
+                    ProjectionComparison::Matched
+                )
+            ),
+        }
     }
 }
 
@@ -300,13 +376,101 @@ impl CompactAshEvidencePlan {
 
     /// Whether every coverage requirement is discharged.
     ///
-    /// False in this wave, and it says so through the rows rather than
-    /// through a flag someone could set.
+    /// It says so through the rows rather than through a flag someone
+    /// could set.
     #[must_use]
     pub fn coverage_complete(&self) -> bool {
         self.relation_coverage
             .values()
             .all(|row| row.observation().is_discharged())
+    }
+
+    /// How many rows carry an observation of any kind.
+    #[must_use]
+    pub fn observed_rows(&self) -> usize {
+        self.relation_coverage
+            .values()
+            .filter(|row| matches!(row.observation(), CoverageObservation::Observed(_)))
+            .count()
+    }
+
+    /// How many rows are discharged.
+    #[must_use]
+    pub fn discharged_rows(&self) -> usize {
+        self.relation_coverage
+            .values()
+            .filter(|row| row.observation().is_discharged())
+            .count()
+    }
+
+    /// Move rows from outstanding to observed, from a run's outcomes.
+    ///
+    /// # What a submission can and cannot answer
+    ///
+    /// One accepted sponsorless transaction is evidence about the
+    /// relation-cases that transaction actually exercised: the ones
+    /// whose execution case is the sponsorless one, whose relation is
+    /// active there, and whose evidence role is target execution. It is
+    /// evidence about nothing else, and this function refuses to spread
+    /// it further:
+    ///
+    /// - a compiler-static or backend-structural requirement is left
+    ///   alone, because §19.1 answers those with structural evidence and
+    ///   inventing a target run for them would be the opposite of what
+    ///   that rule says;
+    /// - an external-report requirement is left alone, because §19.4
+    ///   keeps whole-transaction conservation external;
+    /// - a negative requirement is left alone, because nothing in this
+    ///   wave submits a mutation;
+    /// - a sponsored-case requirement is left alone, because no
+    ///   sponsored transaction was built.
+    ///
+    /// # Nothing is discharged by intent
+    ///
+    /// Each outcome states a vector, the layer the target put it at, and
+    /// what the projection comparison found. All three come off a
+    /// transcript, and [`CoverageObservation::is_discharged`] is what
+    /// decides whether the triple amounts to coverage — so a row can
+    /// carry an observation and still not be discharged, which is
+    /// exactly what a rejected or unmatched submission should produce.
+    pub fn discharge(
+        &mut self,
+        outcomes: &[(TargetVectorId, ObservedOutcomeLayer, ProjectionComparison)],
+    ) {
+        let Some(&(vector, layer, projection)) = outcomes.first() else {
+            return;
+        };
+        // The strongest outcome the run produced, preferring one that
+        // actually discharges. A run with one acceptance and eight
+        // refusals has established the acceptance; a run with none has
+        // established a refusal, and the row records that instead.
+        let chosen = outcomes
+            .iter()
+            .copied()
+            .find(|&(_, layer, projection)| {
+                CoverageObservation::Observed(ObservedCoverage {
+                    vector: outcomes[0].0,
+                    layer,
+                    projection,
+                })
+                .is_discharged()
+            })
+            .unwrap_or((vector, layer, projection));
+
+        for row in self.relation_coverage.values_mut() {
+            if !row.positive
+                || row.role != EvidenceRole::TargetExecution
+                || row.activity != RelationActivity::Active
+                || row.key.case.sponsor != SponsorCase::Absent
+            {
+                continue;
+            }
+            row.observation = CoverageObservation::Observed(ObservedCoverage {
+                vector: chosen.0,
+                layer: chosen.1,
+                projection: chosen.2,
+            });
+        }
     }
 }
 
@@ -484,9 +648,16 @@ pub fn derive_evidence_plan(
         }
     }
 
+    // The canonical plan materializes against placeholder funding, and
+    // says so in the name. Its vectors carry exact bytes for the
+    // reference cross-checks and name coins no chain created; the
+    // executed plan is built from a ceremony's own answers instead.
     let mut target_cases = Vec::new();
     for case in semantic.iter().filter(|case| is_materializable(case)) {
-        target_cases.push(CanonicalSubject::admit(materialize(fixture, case)?));
+        let funding = AshFunding::unexecutable_placeholder(vector_id(case));
+        target_cases.push(CanonicalSubject::admit(materialize(
+            fixture, case, &funding,
+        )?));
     }
 
     // The ceremony's whole census, then one submission per vector this
@@ -584,13 +755,69 @@ mod tests {
     }
 
     #[test]
-    fn no_coverage_row_is_discharged_in_this_wave() {
-        // The whole point of the wave's honesty bar: fixtures exist, and
-        // nothing has been executed against a target.
+    fn a_freshly_derived_plan_discharges_nothing() {
+        // Deriving a plan is not executing one. Every row starts
+        // outstanding, and only a transcript moves one.
         let plan = plan();
         assert!(!plan.coverage_complete());
         for row in plan.relation_coverage().values() {
             assert!(!row.observation().is_discharged());
+        }
+    }
+
+    #[test]
+    fn acceptance_alone_does_not_discharge_a_row() {
+        // §1.4's two verdicts, as a property of the type rather than of
+        // a convention: an accepted transaction whose projection was not
+        // compared, or compared and differed, discharges nothing.
+        use super::{ObservedCoverage, ProjectionComparison};
+        use crate::materialize::vector_id;
+        use target_elements_conformance::protocol::ObservedOutcomeLayer;
+
+        let case = crate::fixture::positive_semantic_census()
+            .expect("the positive census builds")
+            .into_iter()
+            .find(crate::materialize::is_materializable)
+            .expect("a sponsorless case exists");
+        let vector = vector_id(&case);
+
+        for (layer, projection, discharged) in [
+            (
+                ObservedOutcomeLayer::Accepted,
+                ProjectionComparison::Matched,
+                true,
+            ),
+            (
+                ObservedOutcomeLayer::Accepted,
+                ProjectionComparison::Differed,
+                false,
+            ),
+            (
+                ObservedOutcomeLayer::Accepted,
+                ProjectionComparison::NotPerformed,
+                false,
+            ),
+            (
+                ObservedOutcomeLayer::ScriptPathRejection,
+                ProjectionComparison::NotPerformed,
+                false,
+            ),
+            (
+                ObservedOutcomeLayer::ExecutorInfrastructureFailure,
+                ProjectionComparison::NotPerformed,
+                false,
+            ),
+        ] {
+            let observation = CoverageObservation::Observed(ObservedCoverage {
+                vector,
+                layer,
+                projection,
+            });
+            assert_eq!(
+                observation.is_discharged(),
+                discharged,
+                "{layer:?} with {projection:?} discharged the wrong way"
+            );
         }
     }
 
@@ -602,8 +829,9 @@ mod tests {
         let reasons: BTreeSet<OutstandingReason> = plan
             .relation_coverage()
             .values()
-            .map(|row| match row.observation() {
-                CoverageObservation::Outstanding(reason) => reason,
+            .filter_map(|row| match row.observation() {
+                CoverageObservation::Outstanding(reason) => Some(reason),
+                CoverageObservation::Observed(_) => None,
             })
             .collect();
         assert!(

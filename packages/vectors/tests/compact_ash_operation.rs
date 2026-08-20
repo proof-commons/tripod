@@ -1,0 +1,197 @@
+//! The Wave-11 operation lane: one compact-ASH run against a real node.
+//!
+//! # Why this is an ignored test rather than a command
+//!
+//! It needs a live Elements node, so it cannot run in an ordinary lane,
+//! and what it produces is a transcript rather than a gate verdict. An
+//! ADR-010 command would have to state a report contract this wave has
+//! not settled; an ignored test states its inputs as environment,
+//! writes what happened to a file, and asserts only what a run that
+//! happened at all must satisfy.
+//!
+//! Run it as:
+//!
+//! ```text
+//! TRIPOD_OPERATION_EXECUTOR=<adapter> \
+//! TRIPOD_OPERATION_NETWORK_ID=<64 hex> \
+//! TRIPOD_OPERATION_GENESIS_ID=<64 hex> \
+//! TRIPOD_OPERATION_REPORT=<path> \
+//!   cargo test -p tripod-vectors --test compact_ash_operation -- --ignored --nocapture
+//! ```
+//!
+//! # Nothing here decides what the run should have found
+//!
+//! The assertions are about the *shape* of a completed run: that the
+//! ceremony reached the target, that every submission was answered, and
+//! that the transcript records the same number of outcomes as vectors
+//! submitted. Whether the target accepted anything is written down, not
+//! asserted: a wave that asserted acceptance would fail rather than
+//! report when the honest answer is a refusal
+//! `(´[PLAN-rule:guide12-exec:failure-layers]´)`.
+
+use std::fmt::Write as _;
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+use target_elements::{
+    ActivationDeclaration, DeploymentEnvironment, DevelopmentDeploymentBinding, LeafVersion,
+    reviewed_elements_tapscript, validate_reviewed_development_binding,
+};
+use target_elements_conformance::executor::{
+    DEFAULT_EXECUTOR_TIMEOUT, ExecutorConfiguration, ExecutorTrust, execute_operations,
+};
+use vectors::operation::CompactAshOperationPlanner;
+
+fn environment(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|value| !value.is_empty())
+}
+
+fn identifier(text: &str) -> [u8; 32] {
+    let mut bytes = [0_u8; 32];
+    let raw = text.as_bytes();
+    let (pairs, _) = raw.as_chunks::<2>();
+    for (slot, pair) in bytes.iter_mut().zip(pairs) {
+        let digits = std::str::from_utf8(pair).expect("the identifier is hex");
+        *slot = u8::from_str_radix(digits, 16).expect("the identifier is hex");
+    }
+    bytes
+}
+
+fn quote(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('"');
+    for character in text.chars() {
+        match character {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            other if (other as u32) < 0x20 => {
+                let _ = write!(out, "\\u{:04x}", other as u32);
+            }
+            other => out.push(other),
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn hex(bytes: &[u8]) -> String {
+    let mut text = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        let _ = write!(text, "{byte:02x}");
+    }
+    text
+}
+
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn compact_ash_runs_against_a_real_target() {
+    let executor = environment("TRIPOD_OPERATION_EXECUTOR")
+        .expect("TRIPOD_OPERATION_EXECUTOR names the adapter to run");
+    let network = environment("TRIPOD_OPERATION_NETWORK_ID")
+        .expect("TRIPOD_OPERATION_NETWORK_ID states the bound development network");
+    let genesis = environment("TRIPOD_OPERATION_GENESIS_ID")
+        .expect("TRIPOD_OPERATION_GENESIS_ID states the chain the run is bound to");
+    let report = environment("TRIPOD_OPERATION_REPORT")
+        .map(PathBuf::from)
+        .expect("TRIPOD_OPERATION_REPORT names where the transcript is written");
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            identifier(&network),
+            identifier(&genesis),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+
+    let timeout = environment("TRIPOD_OPERATION_TIMEOUT_SECONDS")
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        std::path::Path::new(&executor),
+        // The trust declaration is the operator's and establishes nothing
+        // about the program; this lane produces a transcript rather than
+        // a gate verdict, so it declares the adapter it was pointed at.
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+    );
+
+    let mut planner = CompactAshOperationPlanner::new().expect("the planner builds");
+    let started = Instant::now();
+    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let wall = started.elapsed();
+
+    let transcript = planner.transcript();
+    let mut out = String::new();
+    out.push_str("{\n");
+    let _ = writeln!(out, "  \"wall_seconds\": {:.1},", wall.as_secs_f64());
+    let _ = writeln!(
+        out,
+        "  \"run\": {},",
+        match &outcome {
+            Ok(_) => quote("completed"),
+            Err(error) => quote(&format!("refused: {error}")),
+        }
+    );
+    let _ = writeln!(
+        out,
+        "  \"plan_refusal\": {},",
+        transcript.refusal().map_or_else(
+            || "null".to_owned(),
+            |refusal| quote(&format!("{refusal:?}"))
+        )
+    );
+    let _ = writeln!(
+        out,
+        "  \"issued_asset\": {},",
+        transcript
+            .issued_asset()
+            .map_or_else(|| "null".to_owned(), |asset| quote(&hex(&asset)))
+    );
+    let _ = writeln!(
+        out,
+        "  \"constructor_program\": {},",
+        transcript
+            .constructor_program()
+            .map_or_else(|| "null".to_owned(), |program| quote(&hex(program)))
+    );
+    let _ = writeln!(out, "  \"funded_vectors\": {},", transcript.funded().len());
+    out.push_str("  \"submissions\": [\n");
+    for (index, submission) in transcript.submissions().iter().enumerate() {
+        if index > 0 {
+            out.push_str(",\n");
+        }
+        let _ = write!(
+            out,
+            "    {{\"ordinal\": {}, \"ash_inputs\": {}, \"layer\": {}, \"txid\": {}, \"detail\": {}, \"bytes\": {}}}",
+            submission.vector().fixture().ordinal(),
+            submission.vector().ash_inputs(),
+            quote(&submission.layer().to_string()),
+            submission
+                .accepted_txid()
+                .map_or_else(|| "null".to_owned(), quote),
+            submission.detail().map_or_else(|| "null".to_owned(), quote),
+            submission.bytes().len(),
+        );
+    }
+    out.push_str("\n  ]\n}\n");
+    std::fs::write(&report, &out).expect("the transcript is written");
+
+    // A run that reached the target at all answered every step it asked
+    // for. Nothing here says what the answers were.
+    if outcome.is_ok() {
+        assert_eq!(
+            transcript.submissions().len(),
+            planner.vectors().len(),
+            "a submission went unanswered"
+        );
+    }
+}

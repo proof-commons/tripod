@@ -33,7 +33,9 @@ use tapscript::bundle::LeafRole;
 use transaction::{PinnedAshInstance, TargetTransaction, commit_tree};
 use vectors::bundle::{INTERNAL_KEY, PINNED_PROGRAM, fixture_bundle};
 use vectors::fixture::positive_semantic_census;
-use vectors::materialize::{MaterializedTargetVector, is_materializable, materialize};
+use vectors::materialize::{
+    AshFunding, MaterializedTargetVector, is_materializable, materialize, vector_id,
+};
 
 use crate::reference::{
     FIXTURE_MERKLE_ROOT, FIXTURE_REFERENCE_OUTPUT_KEY, FIXTURE_REFERENCE_OUTPUT_KEY_PARITY_BIT,
@@ -67,7 +69,11 @@ fn materialized() -> Vec<MaterializedTargetVector> {
         .iter()
         .filter(|case| is_materializable(case))
         .map(|case| {
-            materialize(&fixture, case)
+            // The canonical fixtures are cross-checked as artifacts, not
+            // executed: their inputs are the named placeholder coins,
+            // which is what makes these exact bytes reproducible here.
+            let funding = AshFunding::unexecutable_placeholder(vector_id(case));
+            materialize(&fixture, case, &funding)
                 .unwrap_or_else(|error| panic!("{:?} did not materialize: {error:?}", case.id()))
         })
         .collect();
@@ -90,7 +96,7 @@ fn fixture_pin() -> PinnedAshInstance {
     fixture_bundle()
         .expect("the fixture bundle builds")
         .pin()
-        .expect("the fixture pin is well formed")
+        .clone()
 }
 
 // --- (a) Transaction encoding ----------------------------------------

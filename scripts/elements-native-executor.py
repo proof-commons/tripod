@@ -428,6 +428,32 @@ EXPLICIT_PREFIX = 0x01
 CASE_FUNDING_SATOSHIS = 100_000
 ADAPTER_FEE_SATOSHIS = 1_000
 
+# How many whole units the Guide-12 section 16.2 funding ceremony issues
+# its disposable asset in.
+#
+# One percent of the target's own money bound. The bound itself was the
+# first choice and the target refused it: a transaction's outputs may not
+# total more than the bound, and the chain's free coin already holds the
+# whole of it, so an issuance of the full supply cannot share a
+# transaction with the coin that pays its fee. `prepare` parks all but a
+# working slice of that coin for the same reason.
+#
+# A hundredth of the bound is far above every amount the sponsorless
+# fixture census asks for except one, and that one asks for more than the
+# bound itself -- which is a fact about the fixture and is left to be
+# refused by the target rather than papered over by issuing more.
+#
+# The issuance is a single transaction on a disposable chain and the
+# units authorize nothing `(ADR-015 rule test-material)`.
+ISSUED_ASSET_UNITS = 210_000
+
+# The policy-asset slice the operation lane keeps spendable, in satoshis.
+#
+# Large enough to pay the fee of every transaction the lane builds, and
+# small enough that it plus an issuance stays inside the target's money
+# bound with room to spare.
+OPERATION_WORKING_SATOSHIS = 1_000_000_000
+
 # The boundary between a lock time counted in blocks and one counted in
 # seconds, and the bit layout of a sequence field's relative lock. All four
 # are the target's own constants, restated here because the adapter has to
@@ -1456,6 +1482,15 @@ class CaseExecutor:
         # same reason: it builds on the normalization claim, which builds
         # on the wallet.
         self.lifecycle = None
+        # The Guide-12 section 16.2 operation lane. Present only where the
+        # wallet was enabled, and the reason is narrow rather than
+        # inherited: an issuance has to send the issued asset somewhere,
+        # `rawissueasset` names that somewhere by address, and this
+        # adapter has no way to spell an address without a wallet. The
+        # submission half needs no wallet at all, but the two capabilities
+        # are advertised together because a submission with nothing funded
+        # to spend is a step that could only be refused.
+        self.operations = None
 
     def prime(self) -> None:
         """Locates a spendable free-coin output and confirms one block.
@@ -2193,6 +2228,439 @@ class CaseExecutor:
             "the node refused the transaction for a reason that is not a script "
             "verdict: %s" % reason
         )
+
+
+class OperationExecutor:
+    """Performs one Guide-12 section 16.2 operation step against the node.
+
+    # What this class knows, and what it deliberately does not
+
+    Two things: how to create spendable outputs at a witness program a
+    caller named, and how to hand the node a complete transaction and
+    report what it did with it. Neither is compact-ASH vocabulary. It
+    does not know what an ASH is, which outputs an operation will spend,
+    what a relation is, or what any answer is evidence of -- all of that
+    lives with the caller, which is the whole content of the section 16.2
+    boundary.
+
+    # Why funding is raw rather than wallet-driven
+
+    The wallet is used for exactly one thing: spelling an address, which
+    `rawissueasset` requires and which cannot be produced without one.
+    Every transaction this class builds is assembled here and confirmed
+    by mining it directly, for the reason `CaseExecutor.fund` states: an
+    unconfirmed parent is invisible to `generateblock`, which pulls
+    nothing from the mempool, so a chain of unconfirmed funding would
+    leave every later step spending coins the block it is judged in
+    cannot see.
+
+    No key, seed, or signature is involved. The funding source is the
+    chain's anyone-can-spend free coin, which is public data and nobody's
+    secret `(ADR-015 rule test-material)`.
+    """
+
+    def __init__(self, executor: "CaseExecutor", wallet_name=None) -> None:
+        self.executor = executor
+        self.wallet_name = wallet_name or "operations"
+        self.prepared = False
+        # One retained reserve output per issued asset, so that later
+        # funding steps have something of that asset to spend. Public
+        # chain data; the key is the target's own spelling of the asset.
+        self.reserves = {}
+
+    def prepare(self) -> None:
+        """Creates the wallet, and parks all but a working slice of the
+        free coin.
+
+        # Why the free coin has to be split before anything is issued
+
+        The chain's free coin holds the target's entire money bound, and
+        the target refuses a transaction whose outputs total more than
+        that bound. A transaction that spent the free coin *and* created
+        an issued asset would therefore be refused for
+        `bad-txns-txouttotal-toolarge` no matter how little of the asset
+        it issued: the policy side alone is already the whole bound.
+
+        So the free coin is split once, in a transaction that moves only
+        the policy asset and is inside the bound by construction, into a
+        small working coin this lane spends and a parked remainder it
+        never touches. Every later transaction spends the working coin,
+        so the policy side of an issuance is a rounding error rather than
+        the whole supply.
+
+        The parked output sits at the same anyone-can-spend program the
+        free coin did. It is not hidden, reserved, or owned: it is public
+        chain data any party could spend, and this lane simply does not.
+        """
+        if self.prepared:
+            return
+        executor = self.executor
+        messages = executor.messages
+        node = executor.node
+        try:
+            node.call("createwallet", self.wallet_name)
+        except AdapterError:
+            # Already present on a chain directory a previous process
+            # built. Loading it is the same wallet either way.
+            try:
+                node.call("loadwallet", self.wallet_name)
+            except AdapterError:
+                pass
+
+        source = executor.change
+        if source is None:
+            raise AdapterError("the adapter has no spendable change output")
+        working = OPERATION_WORKING_SATOSHIS
+        parked = source["amount"] - working - ADAPTER_FEE_SATOSHIS
+        if parked < 0:
+            raise AdapterError("the free coin cannot be split into a working slice")
+
+        transaction = messages.CTransaction()
+        transaction.version = 2
+        transaction.vin.append(
+            messages.CTxIn(
+                messages.COutPoint(txid_to_internal_int(source["txid"]), source["vout"]),
+                nSequence=0xFFFFFFFE,
+            )
+        )
+        transaction.vout.append(executor.output(working, executor.anyone_can_spend))
+        transaction.vout.append(executor.output(parked, executor.anyone_can_spend))
+        transaction.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
+        txid = self.mine(transaction, "free-coin split")
+        executor.change = {"txid": txid, "vout": 0, "amount": working}
+        self.prepared = True
+
+    # -- helpers ----------------------------------------------------------
+
+    def asset_field(self, printed: str) -> bytes:
+        """The explicit asset field for an identity the target printed.
+
+        A target prints an asset identity in the reverse of the order it
+        commits to it in, and a transaction carries the committed order.
+        The reversal happens here, at the boundary.
+        """
+        return bytes([EXPLICIT_PREFIX]) + bytes.fromhex(printed)[::-1]
+
+    def printed_asset(self, field: bytes) -> str:
+        """The target's own spelling of an explicit asset field."""
+        return field[1:][::-1].hex()
+
+    def mine(self, transaction, note: str = "") -> str:
+        """Confirms one transaction by mining exactly it.
+
+        A refusal here is the adapter failing to build something the
+        chain accepts, which is an infrastructure failure and never a
+        target verdict. The transaction this adapter built is logged to
+        stderr so the failure can be diagnosed; stderr is diagnostics the
+        harness discards, and nothing from it reaches a first-party
+        record (G12-R04).
+        """
+        raw = transaction.serialize().hex()
+        try:
+            self.executor.node.call(
+                "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw])
+            )
+        except AdapterError:
+            log("the %s transaction this adapter built was refused: %s" % (note, raw))
+            # The mempool's structured reason, which names the rule; the
+            # block error names only the check that reported it.
+            try:
+                log(
+                    "the mempool says: %s"
+                    % json.dumps(
+                        self.executor.node.call("testmempoolaccept", json.dumps([raw]))
+                    )
+                )
+            except AdapterError:
+                pass
+            raise
+        return transaction.rehash()
+
+    def created(self, txid: str, index: int) -> dict:
+        """One funded output, read back from the node rather than echoed.
+
+        The amount and the script are what the node stored, not what this
+        adapter asked for. An adapter that echoed the request would be
+        reporting its own intention as a chain fact, and the caller has
+        no way to tell the two apart from the outside.
+        """
+        entry = self.executor.node.call("gettxout", txid, str(index))
+        if entry is None:
+            raise AdapterError(
+                "the node does not hold the output this step just created"
+            )
+        return {
+            "outpoint": {"txid": txid, "vout": index},
+            "asset": entry["asset"],
+            "amount_satoshis": int(round(float(entry["value"]) * 100_000_000)),
+            "script": entry["scriptPubKey"]["hex"],
+        }
+
+    # -- funding ----------------------------------------------------------
+
+    def issue(self, subject: dict) -> dict:
+        """Issues the disposable asset and creates the asked-for output.
+
+        The asset identity is the target's, and this is the step whose
+        whole content is learning it: an Elements asset identifier is
+        derived from the issuing input's outpoint and the contract hash,
+        so no caller can choose one and no adapter can predict one.
+        """
+        executor = self.executor
+        messages = executor.messages
+        node = executor.node
+        # Before the change output is read: preparing splits the free
+        # coin and replaces it, so a source read first would name a coin
+        # this transaction is no longer allowed to spend.
+        self.prepare()
+        source = executor.change
+        if source is None:
+            raise AdapterError("the adapter has no spendable change output")
+
+        remainder = source["amount"] - ADAPTER_FEE_SATOSHIS
+        if remainder < 0:
+            raise AdapterError("the adapter's change output cannot fund an issuance")
+
+        base = messages.CTransaction()
+        base.version = 2
+        base.vin.append(
+            messages.CTxIn(
+                messages.COutPoint(txid_to_internal_int(source["txid"]), source["vout"]),
+                nSequence=0xFFFFFFFE,
+            )
+        )
+        base.vout.append(executor.output(remainder, executor.anyone_can_spend))
+        base.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
+
+        address = node.call("getnewaddress", wallet=self.wallet_name)
+        answer = node.call(
+            "rawissueasset",
+            base.serialize().hex(),
+            json.dumps(
+                [
+                    {
+                        "asset_amount": ISSUED_ASSET_UNITS,
+                        "asset_address": address,
+                        "blind": False,
+                    }
+                ]
+            ),
+        )
+        if not isinstance(answer, list) or len(answer) != 1:
+            raise AdapterError("the node did not answer rawissueasset with one issuance")
+        issuance = answer[0]
+        printed = issuance.get("asset")
+        if not isinstance(printed, str):
+            raise AdapterError("the node issued an asset and named none")
+
+        # The identity is fixed by the issuing input and the contract
+        # hash, so the outputs may be rebuilt freely: what the caller
+        # asked for at its own program, a reserve this adapter retains so
+        # later steps have something of the asset to spend, and the
+        # policy change and fee the base transaction already carried.
+        issued = messages.CTransaction()
+        issued.deserialize(io.BytesIO(bytes.fromhex(issuance["hex"])))
+        field = self.asset_field(printed)
+        total = ISSUED_ASSET_UNITS * 100_000_000
+        wanted = subject["amount_per_output"] * subject["outputs"]
+        if wanted > total:
+            raise AdapterError(
+                "the step asks for more of the asset than the issuance creates"
+            )
+        issued.vout = []
+        for _ in range(subject["outputs"]):
+            issued.vout.append(
+                executor.output(
+                    subject["amount_per_output"], subject["output_program"], field
+                )
+            )
+        issued.vout.append(
+            executor.output(total - wanted, executor.anyone_can_spend, field)
+        )
+        issued.vout.append(executor.output(remainder, executor.anyone_can_spend))
+        issued.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
+
+        txid = self.mine(issued, "issuance")
+        reserve_index = subject["outputs"]
+        self.reserves[printed] = {
+            "txid": txid,
+            "vout": reserve_index,
+            "amount": total - wanted,
+            "field": field,
+        }
+        executor.change = {
+            "txid": txid,
+            "vout": reserve_index + 1,
+            "amount": remainder,
+        }
+        return {
+            "issued_asset": printed,
+            "funded_outputs": [
+                self.created(txid, index) for index in range(subject["outputs"])
+            ],
+        }
+
+    def pay(self, subject: dict) -> dict:
+        """Creates outputs of an already-issued asset at a stated program."""
+        executor = self.executor
+        messages = executor.messages
+        printed = subject["asset"]
+        if printed is None:
+            raise AdapterError("a non-issuing funding step named no asset")
+        reserve = self.reserves.get(printed)
+        if reserve is None:
+            raise AdapterError("no earlier step of this run issued that asset")
+        source = executor.change
+        if source is None:
+            raise AdapterError("the adapter has no spendable change output")
+
+        wanted = subject["amount_per_output"] * subject["outputs"]
+        if wanted > reserve["amount"]:
+            raise AdapterError(
+                "the step asks for more of the asset than this run holds"
+            )
+        remainder = source["amount"] - ADAPTER_FEE_SATOSHIS
+        if remainder < 0:
+            raise AdapterError("the adapter's change output cannot pay the fee")
+
+        transaction = messages.CTransaction()
+        transaction.version = 2
+        transaction.vin.append(
+            messages.CTxIn(
+                messages.COutPoint(
+                    txid_to_internal_int(reserve["txid"]), reserve["vout"]
+                ),
+                nSequence=0xFFFFFFFE,
+            )
+        )
+        transaction.vin.append(
+            messages.CTxIn(
+                messages.COutPoint(txid_to_internal_int(source["txid"]), source["vout"]),
+                nSequence=0xFFFFFFFE,
+            )
+        )
+        field = reserve["field"]
+        for _ in range(subject["outputs"]):
+            transaction.vout.append(
+                executor.output(
+                    subject["amount_per_output"], subject["output_program"], field
+                )
+            )
+        transaction.vout.append(
+            executor.output(
+                reserve["amount"] - wanted, executor.anyone_can_spend, field
+            )
+        )
+        transaction.vout.append(executor.output(remainder, executor.anyone_can_spend))
+        transaction.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
+
+        txid = self.mine(transaction, "asset payment")
+        reserve_index = subject["outputs"]
+        self.reserves[printed] = {
+            "txid": txid,
+            "vout": reserve_index,
+            "amount": reserve["amount"] - wanted,
+            "field": field,
+        }
+        executor.change = {
+            "txid": txid,
+            "vout": reserve_index + 1,
+            "amount": remainder,
+        }
+        return {
+            "issued_asset": None,
+            "funded_outputs": [
+                self.created(txid, index) for index in range(subject["outputs"])
+            ],
+        }
+
+    # -- submission -------------------------------------------------------
+
+    def submit(self, subject: dict) -> dict:
+        """Hands the target a complete transaction and reports the layer.
+
+        # Why the mempool is asked first and the block second
+
+        The two questions are different rules, and which one refused is
+        the answer this step exists to produce. A transaction the mempool
+        allows is consensus-valid and relayable; one it refuses may still
+        be consensus-valid, and the only way to tell standardness from a
+        consensus rule is to ask consensus separately. So a mempool
+        refusal that is not a script verdict is retried at consensus, and
+        the retry is what separates `relay_policy_rejection` from
+        `consensus_rejection_before_script`.
+
+        A script verdict is neither: the script ran and failed, which is
+        the same fact at either layer.
+        """
+        raw = subject["transaction_bytes"].hex()
+        answer = self.executor.node.call("testmempoolaccept", json.dumps([raw]))
+        if not isinstance(answer, list) or len(answer) != 1:
+            raise AdapterError("the node did not answer testmempoolaccept with one result")
+        result = answer[0]
+
+        if result.get("allowed") is True:
+            # Confirmed rather than left in the mempool, so that an
+            # acceptance is an acceptance by block validation too and the
+            # coins it creates are visible to any later step.
+            try:
+                self.executor.node.call(
+                    "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw])
+                )
+            except AdapterError as error:
+                return self.refused_at_consensus(error)
+            return {
+                "observed_layer": "accepted",
+                "observed_detail": None,
+                "accepted_txid": result.get("txid"),
+            }
+
+        reason = result.get("reject-reason")
+        if not isinstance(reason, str):
+            raise AdapterError("the node rejected without naming a reason")
+        for prefix in (POLICY_SCRIPT_PREFIX, CONSENSUS_SCRIPT_PREFIX):
+            if script_error_in(reason, prefix) is not None:
+                return {
+                    "observed_layer": "script_path_rejection",
+                    "observed_detail": reason,
+                    "accepted_txid": None,
+                }
+
+        # Not a script verdict. Ask consensus directly: a transaction a
+        # block accepts was refused by standardness, and one a block also
+        # refuses was refused before any script ran.
+        try:
+            self.executor.node.call(
+                "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw])
+            )
+        except AdapterError as error:
+            return self.refused_at_consensus(error, mempool_reason=reason)
+        return {
+            "observed_layer": "relay_policy_rejection",
+            "observed_detail": reason,
+            "accepted_txid": None,
+        }
+
+    def refused_at_consensus(self, error, mempool_reason=None) -> dict:
+        """Classifies a block-validation refusal.
+
+        The client's stderr is read for CLASSIFICATION only. What leaves
+        this method is either the mempool's own structured reason, which
+        is the target speaking through an RPC answer, or nothing --
+        never the child's text (G12-R04).
+        """
+        detail = mempool_reason
+        if script_error_in(error.client_detail, CONSENSUS_SCRIPT_PREFIX) is not None:
+            return {
+                "observed_layer": "script_path_rejection",
+                "observed_detail": detail,
+                "accepted_txid": None,
+            }
+        return {
+            "observed_layer": "consensus_rejection_before_script",
+            "observed_detail": detail,
+            "accepted_txid": None,
+        }
 
 
 class ConservationExecutor:
@@ -3867,6 +4335,13 @@ def serve(arguments) -> int:
             executor.lifecycle = LifecycleExecutor(
                 executor.normalization, arguments.network_id
             )
+            # A wallet of its own, named apart from the conservation
+            # lane's, so two lanes sharing one chain directory cannot
+            # share one wallet.
+            executor.operations = OperationExecutor(
+                executor,
+                None if arguments.wallet_name is None else arguments.wallet_name + "-ops",
+            )
         log("node ready in %.1fs" % (time.monotonic() - started))
 
         write_message(
@@ -3932,6 +4407,22 @@ def serve(arguments) -> int:
                 + (
                     ["fresh_process_lifecycle"]
                     if arguments.enable_wallet
+                    else []
+                )
+                # The Guide-12 section 16.2 operation lane, and the one
+                # place two capabilities are advertised on one condition.
+                # They are still two claims: creating spendable outputs at
+                # a caller's program and judging a caller's complete
+                # transaction are different work. What ties them to one
+                # condition is that this adapter's issuance needs an
+                # address, an address needs a wallet, and a submission
+                # step with nothing funded to spend could only be
+                # refused -- so advertising the second without the first
+                # would be advertising work this adapter cannot usefully
+                # be asked for.
+                + (
+                    ["test_funding_ceremony", "target_transaction_submission"]
+                    if executor.operations is not None
                     else []
                 ),
             }
@@ -4315,28 +4806,73 @@ def answer_lifecycle_step(executor: CaseExecutor, request: dict, case: dict) -> 
     )
 
 
+def parse_operation_subject(raw: object, kind: str) -> dict:
+    """Reads one operation subject, refusing anything it does not define.
+
+    The two subjects share no member, which is what lets the kind stated
+    in the case identity decide which one is admitted: a record carrying
+    the other kind's members is a request whose two halves disagree, and
+    is refused here rather than answered by whichever half parsed.
+    """
+    subject = require_object(raw, "request.subject")
+    if kind == "submit":
+        require_keys(subject, ("transaction_bytes",), "request.subject")
+        return {"transaction_bytes": require_bytes(
+            subject.get("transaction_bytes"), "request.subject.transaction_bytes"
+        )}
+
+    require_keys(
+        subject,
+        ("issue_asset", "asset", "output_program", "outputs", "amount_per_output"),
+        "request.subject",
+    )
+    issue = subject.get("issue_asset")
+    if not isinstance(issue, bool):
+        raise FatalAdapterError("request.subject.issue_asset is not a boolean")
+    asset = subject.get("asset")
+    if asset is not None and not isinstance(asset, str):
+        raise FatalAdapterError("request.subject.asset is not a string")
+    # The one cross-member rule the protocol states: a step that issues
+    # cannot also name the asset, because the target has not chosen it.
+    if issue and asset is not None:
+        raise FatalAdapterError("an issuing funding step also named an asset")
+    if not issue and asset is None:
+        raise FatalAdapterError("a non-issuing funding step named no asset")
+    outputs = require_int(subject.get("outputs"), "request.subject.outputs")
+    if outputs < 1 or outputs > 255:
+        raise FatalAdapterError("request.subject.outputs is not a byte count of outputs")
+    return {
+        "issue_asset": issue,
+        "asset": asset,
+        "output_program": require_bytes(
+            subject.get("output_program"), "request.subject.output_program"
+        ),
+        "outputs": outputs,
+        "amount_per_output": require_int(
+            subject.get("amount_per_output"), "request.subject.amount_per_output"
+        ),
+    }
+
+
 def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> None:
     """Answers exactly one Guide-12 section 16.2 operation step.
 
-    This adapter performs neither kind of operation work yet, and this is
-    the named seam where it will. What lives here now is the honest
-    state: the record is recognized, its shape is checked, and the step is
-    refused as an infrastructure failure -- which is what a step that did
-    not happen is, and is deliberately not a target verdict of any kind
-    (section 1.5).
+    # The three answers, and why they are not the same answer
 
-    The refusal is normally unreachable, and that is the design rather
-    than an accident: this adapter advertises neither
-    `test_funding_ceremony` nor `target_transaction_submission`, so the
-    harness refuses the step before sending it. The branch exists so that
-    a mis-sent record gets a typed answer instead of being read as a
-    request naming no case, and so the two halves of the seam are already
-    in the same shape when the work lands.
+    A step either did what it was asked, or the target refused it, or it
+    never happened. The third is an `executor_infrastructure_failure` and
+    is NOT a target verdict of any kind (section 1.5): a node that could
+    not be reached, a reserve this run does not hold, an adapter that was
+    handed a step it never advertised. Reporting one of those as a
+    rejection would manufacture a consensus fact out of a broken
+    environment, which is the failure the six-layer vocabulary exists to
+    prevent.
 
-    Implementing the work is Wave 11's, and needs a live node: issuing the
-    disposable test asset, paying the constructor's output program, and
-    submitting the fixture transactions are all things only a real chain
-    can do.
+    A funding step reports what it created and never an accepted
+    identity; a submission reports an identity and never created outputs.
+    The harness checks that separation on the way in, and this function
+    produces records that satisfy it by construction rather than by
+    remembering to.
     """
     for key in request:
         if key not in ("schema", "case", "subject"):
@@ -4344,22 +4880,84 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
     kind = case.get("operation")
     if kind not in ("fund", "submit"):
         raise FatalAdapterError("the harness sent an operation step of an unknown kind")
+    subject = parse_operation_subject(request.get("subject"), kind)
 
-    note = (
-        "this adapter recognizes operation steps and performs none: the "
-        "funding ceremony and transaction submission are not implemented"
-    )
-    log("executor infrastructure failure: %s" % note)
+    operations = executor.operations
+    if operations is None:
+        # Normally unreachable: without a wallet this adapter advertises
+        # neither operation capability, so the harness refuses the step
+        # before sending it. The branch stays so a mis-sent record gets a
+        # typed answer rather than an exception.
+        note = (
+            "this adapter was booted without a wallet and advertised no "
+            "operation capability"
+        )
+        log("executor infrastructure failure: %s" % note)
+        write_operation_failure(case, note)
+        return
+
+    try:
+        if kind == "fund":
+            body = (
+                operations.issue(subject)
+                if subject["issue_asset"]
+                else operations.pay(subject)
+            )
+            body.setdefault("accepted_txid", None)
+        else:
+            body = operations.submit(subject)
+            body.setdefault("issued_asset", None)
+            body.setdefault("funded_outputs", [])
+    except AdapterError as error:
+        # The adapter could not perform the step. That is not a statement
+        # about the transaction and must not be recorded as one.
+        log("executor infrastructure failure: %s" % error)
+        write_operation_failure(case, str(error))
+        return
+
+    body.setdefault("observed_layer", "accepted")
+    body.setdefault("observed_detail", None)
     write_message(
         {
             "schema": NATIVE_PROTOCOL_SCHEMA,
             "case": case,
-            # Not a target verdict. The target was never asked.
+            "observed_layer": body["observed_layer"],
+            "observed_detail": body["observed_detail"],
+            "issued_asset": body["issued_asset"],
+            "funded_outputs": body["funded_outputs"],
+            "accepted_txid": body["accepted_txid"],
+            # No interpreter observation is made for an operation step.
+            # The node reports no per-script resource figures for a
+            # transaction it validated as a whole, and inventing them
+            # here would be this adapter reporting its own arithmetic as
+            # the target's accounting.
+            "resources": {
+                "script_bytes": 0,
+                "initial_stack_items": 0,
+                "peak_stack_items": None,
+                "peak_altstack_items": None,
+                "maximum_element_bytes": None,
+                "validation_budget_used": None,
+                "transaction_weight": None,
+            },
+        }
+    )
+
+
+def write_operation_failure(case: dict, note: str) -> None:
+    """Reports a step that did not happen, with every observation empty.
+
+    Which is what the harness's own shape check requires of one: an
+    outpoint is a coin the target created, an issued asset is an identity
+    the target chose, and a transaction identity is one the target
+    computed over bytes it accepted. None exists here.
+    """
+    write_message(
+        {
+            "schema": NATIVE_PROTOCOL_SCHEMA,
+            "case": case,
             "observed_layer": "executor_infrastructure_failure",
             "observed_detail": note,
-            # Every observation member stays empty, which is what the
-            # harness's own shape check requires of a step that did not
-            # run: an outpoint is a coin the target created, and none was.
             "issued_asset": None,
             "funded_outputs": [],
             "accepted_txid": None,
