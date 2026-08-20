@@ -31,6 +31,7 @@ tapscript_source_files = files(
   'src/tests/schedule_tests.rs',
   'src/tests/shape_tests.rs',
   'src/tests/stack_tests.rs',
+  'src/upstream.rs',
 )
 
 # Crate documentation (DOC owner).

@@ -11,6 +11,7 @@ pub mod policy;
 pub mod program;
 pub mod shape;
 pub mod stack;
+pub mod upstream;
 
 pub use bundle::{
     BackendArtifactStatus, BundleRefusal, BundleSymbol, CandidateRelocatableTapscriptBundle,
@@ -20,7 +21,7 @@ pub use bundle::{
     ProgramRole, Relocation, RelocationEncoding, RelocationSite, ResourceModel, ResourceObligation,
     ShapeResourceFormula, SharedLeafProof, SharingGround, StaticAshConstructor, SubstitutionMode,
     SymbolBinding, SymbolEntry, SymbolWidth, TargetRole, WitnessComponent, WitnessRole,
-    emit_candidate_bundle,
+    emit_candidate_bundle, fit_shape_model, predict_shape_model,
 };
 pub use capability::{
     AssessmentDisposition, AssessmentProjection, BackendFoundationRequirement, BackendPatternId,
