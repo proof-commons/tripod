@@ -15,5 +15,5 @@ pub use matrix::{
     EvidenceBoundary, MutationLayer, VectorClass, VectorFamily, VectorPolarity, all_classes,
     class_count, family_census,
 };
-pub use plan::{CompactAshEvidencePlan, PlanCensus, derive_evidence_plan};
+pub use plan::{CompactAshEvidencePlan, PlanCensus, RequiredTargetWork, derive_evidence_plan};
 pub use subject::{CanonicalSubject, ExperimentalSubject, SubjectStanding};

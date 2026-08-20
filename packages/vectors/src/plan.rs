@@ -23,11 +23,14 @@ use compiler::operation_plan::{
     TargetCoverageObligation, TargetCoverageRequirement,
 };
 use realization::RelationId;
+use transaction::FundingCeremonyStep;
 
 use crate::bundle::FixtureBundle;
 use crate::error::VectorError;
 use crate::fixture::{CompactAshSemanticCase, positive_semantic_census};
-use crate::materialize::{MaterializedTargetVector, is_materializable, materialize};
+use crate::materialize::{
+    MaterializedTargetVector, TargetVectorId, is_materializable, materialize,
+};
 use crate::matrix::class_count;
 use crate::subject::CanonicalSubject;
 
@@ -206,6 +209,45 @@ impl PlanCensus {
     }
 }
 
+/// One piece of target work this plan needs done.
+///
+/// # Why the plan names its own workload
+///
+/// Every coverage row below is outstanding for want of a target, and a
+/// plan that could not say *what* it was waiting for would leave the
+/// wait unfalsifiable: a wave could execute something, discharge
+/// nothing, and no row would be able to tell that it had executed the
+/// wrong thing.
+///
+/// # Why nothing here is an executor record
+///
+/// The names are this package's own and the vocabulary they are stated
+/// in is already authored elsewhere: the ceremony steps are
+/// [`FundingCeremonyStep`]'s census, minted in `transaction` where the
+/// synthetic origin lives, and a submission is identified by the
+/// [`TargetVectorId`] this plan already materialized. Nothing is
+/// restated, so there is no second authored spelling of either
+/// `(´[PLAN-rule:guide12-exec:typed-source]´)`.
+///
+/// The executor's own vocabulary — the wire records, the step kinds, the
+/// capabilities — lives in the package that owns process supervision and
+/// protocol framing, and none of it appears here. Mapping one of these
+/// onto one of those is what a Wave-11 plan implementation does, once,
+/// in this package `(´[PLAN-rule:guide12-exec:executor-ownership]´)`.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
+pub enum RequiredTargetWork {
+    /// One step of the §15.9 test-only funding ceremony.
+    ///
+    /// The whole census is required, in its stated order. The ceremony
+    /// creates the outputs every materialized vector spends, so a wave
+    /// that skipped a step would be submitting transactions against
+    /// coins that do not exist.
+    FundingCeremony(FundingCeremonyStep),
+    /// One materialized target vector, handed to the target.
+    VectorSubmission(TargetVectorId),
+}
+
 /// The canonical compact-ASH evidence plan.
 ///
 /// Private fields, no public constructor, no `Default`, no builder: the
@@ -216,6 +258,7 @@ pub struct CompactAshEvidencePlan {
     semantic_cases: Vec<CanonicalSubject<CompactAshSemanticCase>>,
     target_cases: Vec<CanonicalSubject<MaterializedTargetVector>>,
     relation_coverage: BTreeMap<CoverageRequirementId, RelationCoverageRow>,
+    required_target_work: Vec<RequiredTargetWork>,
     census: PlanCensus,
 }
 
@@ -242,6 +285,17 @@ impl CompactAshEvidencePlan {
     #[must_use]
     pub const fn census(&self) -> PlanCensus {
         self.census
+    }
+
+    /// What a target must do before any coverage row can be discharged.
+    ///
+    /// The ceremony first, in its own census order, then one submission
+    /// per materialized vector in the order the vectors were
+    /// materialized. The order is the dependency: the coins have to exist
+    /// before anything can spend them.
+    #[must_use]
+    pub fn required_target_work(&self) -> &[RequiredTargetWork] {
+        &self.required_target_work
     }
 
     /// Whether every coverage requirement is discharged.
@@ -435,6 +489,21 @@ pub fn derive_evidence_plan(
         target_cases.push(CanonicalSubject::admit(materialize(fixture, case)?));
     }
 
+    // The ceremony's whole census, then one submission per vector this
+    // plan actually materialized. Derived rather than stated: a list
+    // written out here could name a vector the plan does not hold, or
+    // miss one it does.
+    let mut required_target_work: Vec<RequiredTargetWork> = FundingCeremonyStep::ALL
+        .iter()
+        .copied()
+        .map(RequiredTargetWork::FundingCeremony)
+        .collect();
+    required_target_work.extend(
+        target_cases
+            .iter()
+            .map(|subject| RequiredTargetWork::VectorSubmission(subject.subject().id())),
+    );
+
     let census = PlanCensus {
         relations: relations.len(),
         cases: cases.len(),
@@ -452,6 +521,7 @@ pub fn derive_evidence_plan(
         semantic_cases: semantic.into_iter().map(CanonicalSubject::admit).collect(),
         target_cases,
         relation_coverage,
+        required_target_work,
         census,
     })
 }
@@ -572,5 +642,75 @@ mod tests {
     #[test]
     fn the_plan_is_the_same_plan_every_time() {
         assert_eq!(plan(), plan());
+    }
+
+    #[test]
+    fn the_plan_names_the_target_work_it_is_waiting_for() {
+        // §16.2, from this side: the wait is falsifiable. The whole
+        // ceremony census plus one submission per materialized vector,
+        // and the exact figure pinned so a wave that quietly lost a
+        // vector fails here rather than discharging fewer rows.
+        let plan = plan();
+        let work = plan.required_target_work();
+        assert_eq!(work.len(), 13);
+        assert_eq!(
+            work.len(),
+            super::FundingCeremonyStep::ALL.len() + plan.census().materialized_vectors(),
+        );
+    }
+
+    #[test]
+    fn every_ceremony_step_and_every_vector_is_named_exactly_once() {
+        // A step missing from the plan would be a step nobody performs,
+        // and a step named twice would be one performed twice against a
+        // chain that has already moved on.
+        let plan = plan();
+        let ceremony: Vec<_> = plan
+            .required_target_work()
+            .iter()
+            .filter_map(|work| match work {
+                super::RequiredTargetWork::FundingCeremony(step) => Some(*step),
+                super::RequiredTargetWork::VectorSubmission(_) => None,
+            })
+            .collect();
+        assert_eq!(ceremony, super::FundingCeremonyStep::ALL.to_vec());
+
+        let submitted: Vec<_> = plan
+            .required_target_work()
+            .iter()
+            .filter_map(|work| match work {
+                super::RequiredTargetWork::VectorSubmission(id) => Some(*id),
+                super::RequiredTargetWork::FundingCeremony(_) => None,
+            })
+            .collect();
+        let materialized: Vec<_> = plan
+            .target_cases()
+            .iter()
+            .map(|subject| subject.subject().id())
+            .collect();
+        assert_eq!(submitted, materialized);
+        assert_eq!(
+            submitted.iter().copied().collect::<BTreeSet<_>>().len(),
+            submitted.len(),
+            "a vector named twice would be submitted twice",
+        );
+    }
+
+    #[test]
+    fn the_ceremony_comes_before_anything_that_spends_it() {
+        // The order is the dependency, not a presentation choice: the
+        // coins have to exist before a transaction can spend them.
+        let plan = plan();
+        let first_submission = plan
+            .required_target_work()
+            .iter()
+            .position(|work| matches!(work, super::RequiredTargetWork::VectorSubmission(_)))
+            .expect("the plan submits something");
+        assert!(
+            plan.required_target_work()[..first_submission]
+                .iter()
+                .all(|work| matches!(work, super::RequiredTargetWork::FundingCeremony(_))),
+            "a submission is planned before the ceremony that funds it",
+        );
     }
 }
