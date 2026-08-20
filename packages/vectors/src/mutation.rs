@@ -121,6 +121,12 @@ pub enum NegativeMutation {
     /// never declared, keeping the family total fixed.
     RouteUnitIntoUndeclaredOutput,
     /// Change one input's sequence field.
+    ///
+    /// A run records this arm without building it, because the class's
+    /// boundary is the constructor's and the target has no rule to
+    /// refuse a changed sequence by. It remains an arm because
+    /// [`apply`] still builds the bytes on demand, which is what a
+    /// first-party conformance check over the ABI would be handed.
     ChangeInputSequence,
     /// Change the transaction version.
     ChangeTransactionVersion,
@@ -442,10 +448,17 @@ mod tests {
                 crate::matrix::VectorPolarity::Negative,
                 "{mutation:?} stages a class that does not expect a refusal",
             );
+            // An arm's boundary is either one a submission can reach or
+            // one that happens before the target is asked, and the run
+            // withholds the second kind rather than submitting it. What
+            // is refused is a boundary in neither camp: an arm may not
+            // stage a class whose verdict is an infrastructure failure,
+            // because no mutation of any bytes produces one.
             let boundary = mutation.expected_boundary().expect("the class is named");
-            assert!(
+            assert_ne!(
                 boundary.requires_target_execution(),
-                "{mutation:?} expects a boundary no submission could reach",
+                boundary.is_pre_target(),
+                "{mutation:?} expects a boundary that is neither reachable nor pre-target",
             );
         }
     }
