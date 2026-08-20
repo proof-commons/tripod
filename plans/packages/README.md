@@ -51,7 +51,7 @@ its realization dependency is for post-execution conformance projection.
 | [tapscript.md](tapscript.md) | Active — static adapter, typed instruction core, and abstract stack validator implemented; backend patterns absent | First production target backend. |
 | target-elements-conformance | Active — native fixture census, secretless executor protocol, and gate command implemented; contract prose lives in the package README | Development target-native primitive evidence harness. |
 | [simplicity.md](simplicity.md) | Parked | Future second backend. |
-| [linker.md](linker.md) | Planned | Constructor, relocation, and bundle resolution. |
+| [linker.md](linker.md) | Candidate | Constructor, relocation, and bundle resolution. |
 | [transaction.md](transaction.md) | Planned | Canonical transaction and witness ABI. |
 | [vectors.md](vectors.md) | Planned | Translation-validation evidence. |
 | [release.md](release.md) | Planned | Final evidence/profile/publication gate. |
