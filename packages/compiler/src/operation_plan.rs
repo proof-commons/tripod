@@ -1078,3 +1078,65 @@ fn validate_against_factor(
 
     Ok(())
 }
+
+/// Test-only corruption handles.
+///
+/// The published fields are private and there is no public route to
+/// them, which is the property §7.4 requires. The corruption oracles
+/// nevertheless have to damage a validated plan the way a defect in the
+/// join could, so the handles exist for tests alone and are compiled
+/// out of every other build.
+#[cfg(test)]
+impl ValidatedTargetOperationPlan {
+    pub(crate) const fn source_mut(&mut self) -> &mut TargetOperationSource {
+        &mut self.source
+    }
+
+    pub(crate) const fn representation_mut(&mut self) -> &mut TargetRepresentationPolicy {
+        &mut self.representation
+    }
+
+    pub(crate) const fn cases_mut(
+        &mut self,
+    ) -> &mut BTreeMap<ExecutionCaseId, TargetExecutionCase> {
+        &mut self.cases
+    }
+
+    pub(crate) const fn relations_mut(
+        &mut self,
+    ) -> &mut BTreeMap<RelationId, TargetRelationRequirement> {
+        &mut self.relations
+    }
+
+    pub(crate) const fn carriers_mut(&mut self) -> &mut BTreeSet<AbstractCarrierRequirement> {
+        &mut self.carriers
+    }
+
+    pub(crate) const fn layout_mut(&mut self) -> &mut BTreeSet<LayoutRequirement> {
+        &mut self.layout
+    }
+
+    pub(crate) const fn coverage_mut(
+        &mut self,
+    ) -> &mut BTreeMap<CoverageRequirementId, TargetCoverageRequirement> {
+        &mut self.coverage
+    }
+
+    pub(crate) const fn lifecycle_mut(&mut self) -> &mut TargetLifecycleStatus {
+        &mut self.lifecycle
+    }
+}
+
+#[cfg(test)]
+impl TargetRepresentationPolicy {
+    pub(crate) const fn selected_mut(&mut self) -> &mut BTreeMap<ObjectId, RepresentationMode> {
+        &mut self.selected
+    }
+}
+
+#[cfg(test)]
+impl TargetLifecycleStatus {
+    pub(crate) fn clear_outstanding(&mut self) {
+        self.outstanding.clear();
+    }
+}
