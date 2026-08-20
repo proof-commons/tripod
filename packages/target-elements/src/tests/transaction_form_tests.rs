@@ -168,13 +168,13 @@ fn the_reviewed_candidate_is_pinned_rather_than_described() {
 
     assert_eq!(candidate.package(), "elements");
     assert_eq!(candidate.version(), "0.27.0");
-    assert!(!candidate.version().is_empty());
-    assert!(!candidate.licence().is_empty());
-    assert!(!candidate.minimum_rust().is_empty());
+    assert_ne!(candidate.version(), "");
+    assert_ne!(candidate.licence(), "");
+    assert_ne!(candidate.minimum_rust(), "");
 
     // The native-linked entries are the decisive finding, so their
     // presence is a test rather than a comment.
-    assert!(!candidate.native_linked().is_empty());
+    assert_ne!(candidate.native_linked(), [] as [&str; 0]);
     assert!(candidate.lockfile_entries_added());
     assert!(candidate.required_direct().contains(&"secp256k1-zkp"));
 }

@@ -328,7 +328,7 @@ fn a_claimed_complete_architecture_scope_is_rejected() {
     };
 
     assert_eq!(missing.len(), 12);
-    assert!(unexpected.is_empty());
+    assert_eq!(unexpected, [] as [OperationId; 0]);
 }
 
 #[test]
@@ -351,7 +351,7 @@ fn an_omitted_missing_architecture_operation_is_rejected() {
     };
 
     assert_eq!(missing.len(), 1);
-    assert!(unexpected.is_empty());
+    assert_eq!(unexpected, [] as [OperationId; 0]);
 }
 
 #[test]
@@ -372,7 +372,7 @@ fn an_analyzed_operation_named_missing_is_rejected() {
         panic!("an analyzed operation named missing is not reported as a status defect");
     };
 
-    assert!(missing.is_empty());
+    assert_eq!(missing, [] as [OperationId; 0]);
     assert_eq!(unexpected, vec![OperationId::CompactAsh]);
 }
 
@@ -660,7 +660,7 @@ fn a_removed_relation_requirement_is_rejected() {
     };
 
     assert_eq!(missing, vec![relation]);
-    assert!(unexpected.is_empty());
+    assert_eq!(unexpected, [] as [RelationId; 0]);
 }
 
 #[test]
@@ -703,7 +703,7 @@ fn an_unexpected_relation_requirement_is_rejected() {
         panic!("an unexpected relation requirement is not reported as a census defect");
     };
 
-    assert!(missing.is_empty());
+    assert_eq!(missing, [] as [RelationId; 0]);
     assert_eq!(unexpected, vec![unexpected_relation]);
 }
 
@@ -2315,7 +2315,7 @@ fn a_removed_operation_factor_is_rejected() {
     };
 
     assert_eq!(missing, vec![OperationId::TransferLive]);
-    assert!(unexpected.is_empty());
+    assert_eq!(unexpected, [] as [OperationId; 0]);
 }
 
 #[test]

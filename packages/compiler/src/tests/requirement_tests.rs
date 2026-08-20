@@ -499,7 +499,7 @@ fn every_pilot_plan_closes_its_capability_source_and_evidence_aggregates() {
         vec![OperationId::CompactAsh, OperationId::TransferLive],
     ] {
         let fixture = fixture(&scope);
-        assert!(!fixture.candidates.is_empty());
+        assert_ne!(fixture.candidates, [] as [ProofPlanCandidate; 0]);
 
         for candidate in &fixture.candidates {
             let requirements = fixture.closed(candidate);

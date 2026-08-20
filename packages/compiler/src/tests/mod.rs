@@ -93,7 +93,10 @@ fn foundation_projection_equals_its_component_projections() {
 
     // The pilots declare no expressions, so the folded projection is
     // empty — and every relation in compiler scope is represented.
-    assert!(projection.expressions.nodes.is_empty());
+    assert_eq!(
+        projection.expressions.nodes,
+        [] as [crate::expression::CompilerExpressionNodeProjection; 0]
+    );
     assert_eq!(
         projection.relations.nodes.len(),
         input.realization().project().relations.nodes.len(),

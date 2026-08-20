@@ -103,8 +103,14 @@ fn empty_pilot_expression_graph_is_valid() {
         let input = bound_input(&scope);
         let analysis = build_expression_analysis(&input).expect("builds");
 
-        assert!(analysis.project().nodes.is_empty());
-        assert!(analysis.project().edges.is_empty());
+        assert_eq!(
+            analysis.project().nodes,
+            [] as [crate::expression::CompilerExpressionNodeProjection; 0]
+        );
+        assert_eq!(
+            analysis.project().edges,
+            [] as [crate::expression::CompilerExpressionDependencyProjection; 0]
+        );
 
         // The complete foundation also builds on the real pilots.
         analyze_foundation(&input).expect("foundation builds");

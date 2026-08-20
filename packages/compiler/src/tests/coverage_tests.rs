@@ -57,7 +57,7 @@ fn analyze(operation: OperationId) -> Coverage {
         .expect("feasible plans")
         .candidates;
 
-    assert!(!candidates.is_empty());
+    assert_ne!(candidates, [] as [ProofPlanCandidate; 0]);
 
     let analyzed = candidates
         .iter()
@@ -549,7 +549,7 @@ fn an_inactive_relation_case_states_exactly_one_inactive_valid_requirement() {
             }
 
             inactive += 1;
-            assert!(plan.negative.is_empty());
+            assert_eq!(plan.negative, [] as [NegativeCoverageRequirement; 0]);
             assert_eq!(plan.positive.len(), plan.boundaries.len());
             assert!(
                 plan.positive
@@ -1487,7 +1487,10 @@ fn each_boundary_projects_its_own_subject() {
                             ProjectionSubject::CompilerSelectionResult,
                         );
                         assert!(!requirement.compare_relation_verdict);
-                        assert!(requirement.sources.is_empty());
+                        assert_eq!(
+                            requirement.sources,
+                            [] as [crate::source::SourceRequirement; 0]
+                        );
                     }
                     CoverageBoundary::BackendStructural => {
                         assert_eq!(
@@ -1495,7 +1498,10 @@ fn each_boundary_projects_its_own_subject() {
                             ProjectionSubject::EmittedStructuralFact
                         );
                         assert!(!requirement.compare_relation_verdict);
-                        assert!(requirement.sources.is_empty());
+                        assert_eq!(
+                            requirement.sources,
+                            [] as [crate::source::SourceRequirement; 0]
+                        );
                     }
                     CoverageBoundary::ExternalEvidence => {
                         assert_eq!(

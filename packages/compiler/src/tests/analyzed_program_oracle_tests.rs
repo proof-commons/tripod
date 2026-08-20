@@ -1743,10 +1743,22 @@ fn permuted_expression_declarations_analyze_equally() {
     for analyzed in scopes() {
         let source = analyzed.input.realization().project();
 
-        assert!(source.expressions.nodes.is_empty());
-        assert!(source.expressions.edges.is_empty());
-        assert!(analyzed.projection.foundation.expressions.nodes.is_empty());
-        assert!(analyzed.projection.foundation.expressions.edges.is_empty());
+        assert_eq!(
+            source.expressions.nodes,
+            [] as [realization::ExpressionDeclaration; 0]
+        );
+        assert_eq!(
+            source.expressions.edges,
+            [] as [realization::ExpressionDependencyProjection; 0]
+        );
+        assert_eq!(
+            analyzed.projection.foundation.expressions.nodes,
+            [] as [crate::expression::CompilerExpressionNodeProjection; 0]
+        );
+        assert_eq!(
+            analyzed.projection.foundation.expressions.edges,
+            [] as [crate::expression::CompilerExpressionDependencyProjection; 0]
+        );
 
         let mut nodes = source.expressions.nodes;
         nodes.reverse();
@@ -1814,7 +1826,7 @@ fn the_layout_census_of_one_factor_is_canonical() {
             resorted.sort();
 
             assert_eq!(census, resorted);
-            assert!(!census.is_empty());
+            assert_ne!(census, [] as [LayoutRequirement; 0]);
         }
     }
 }

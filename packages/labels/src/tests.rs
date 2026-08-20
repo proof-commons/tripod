@@ -31,7 +31,7 @@ fn single_backtick_label_is_a_bare_span() {
         Path::new("fixture.md"),
         "# Fixture · `sec:fixture:division`\n",
     );
-    assert!(scan.diagnostics.is_empty());
+    assert_eq!(scan.diagnostics, [] as [LabelDiagnostic; 0]);
     assert_eq!(scan.code_spans.len(), 1);
     assert_eq!(scan.code_spans[0].context, InlineCodeContext::Bare);
     assert_eq!(scan.code_spans[0].delimiter_len, 1);
@@ -43,7 +43,7 @@ fn parenthesized_import_is_one_span() {
         Path::new("fixture.md"),
         "See (`[RZ-sec:realization:representation]`).\n",
     );
-    assert!(scan.diagnostics.is_empty());
+    assert_eq!(scan.diagnostics, [] as [LabelDiagnostic; 0]);
     assert_eq!(scan.code_spans[0].context, InlineCodeContext::Parenthesized);
     assert_eq!(
         scan.code_spans[0].content,
@@ -57,7 +57,7 @@ fn parenthesized_citation_groups_mark_every_span_as_internal() {
         Path::new("fixture.md"),
         "See (`sec:fixture:division`, `sec:fixture:detail`).\n",
     );
-    assert!(scan.diagnostics.is_empty());
+    assert_eq!(scan.diagnostics, [] as [LabelDiagnostic; 0]);
     assert!(
         scan.code_spans
             .iter()
@@ -115,7 +115,7 @@ fn multiple_citation_groups_on_one_line_are_each_parenthesized() {
         Path::new("fixture.md"),
         "Both (`sec:first`) and (`sec:second`, `sec:third`) cite.\n",
     );
-    assert!(scan.diagnostics.is_empty());
+    assert_eq!(scan.diagnostics, [] as [LabelDiagnostic; 0]);
     assert_eq!(scan.code_spans.len(), 3);
     assert!(
         scan.code_spans
@@ -179,7 +179,7 @@ fn fences_and_double_backticks_hide_examples() {
         Path::new("fixture.md"),
         "```text\n`sec:not:a-label`\n```\n`` (`sec:not:a-label`) ``\n",
     );
-    assert!(scan.diagnostics.is_empty());
+    assert_eq!(scan.diagnostics, [] as [LabelDiagnostic; 0]);
     assert_eq!(scan.code_spans.len(), 1);
     assert_eq!(scan.code_spans[0].delimiter_len, 2);
 }
@@ -257,7 +257,7 @@ fn fence_close_must_match_the_opening_delimiter_length() {
         Path::new("fixture.md"),
         "````text\n`sec:ignored`\n```\n````\n`sec:visible`\n",
     );
-    assert!(scan.diagnostics.is_empty());
+    assert_eq!(scan.diagnostics, [] as [LabelDiagnostic; 0]);
     assert_eq!(scan.code_spans.len(), 1);
     assert_eq!(scan.code_spans[0].content, "sec:visible");
 }
@@ -323,7 +323,7 @@ fn open_subproblem_optional_label_is_harvested() {
     .expect("attestation source");
 
     let (registry, diagnostics) = harvest_attestation(&RepositoryCensus::discover(root));
-    assert!(diagnostics.is_empty());
+    assert_eq!(diagnostics, [] as [LabelDiagnostic; 0]);
     assert!(registry.contains(
         &Label::parse("open:attestation:inner-case", LabelShape::Attestation).expect("valid label")
     ));
@@ -679,7 +679,7 @@ fn absent_and_empty_directories_are_equally_clean_empty_groups() {
 
     for root in [absent.path(), empty.path()] {
         let census = RepositoryCensus::discover(root);
-        assert!(census.adrs.is_empty());
+        assert_eq!(census.adrs, [] as [std::path::PathBuf; 0]);
         assert!(
             census
                 .traversal
@@ -688,7 +688,10 @@ fn absent_and_empty_directories_are_equally_clean_empty_groups() {
             "{:#?}",
             census.traversal,
         );
-        assert!(census.verify(&[CensusGroup::Adr]).is_empty());
+        assert_eq!(
+            census.verify(&[CensusGroup::Adr]),
+            [] as [LabelDiagnostic; 0]
+        );
     }
 }
 
@@ -710,7 +713,7 @@ fn register_generation_is_deterministic_in_explicit_outputs() {
     let first_specification =
         fs::read(&specification_output).expect("generated specification register");
     let first_realization = fs::read(&realization_output).expect("generated realization register");
-    assert!(!first_specification.is_empty());
+    assert_ne!(first_specification, [] as [u8; 0]);
 
     generate_registers(&paths, &specification_output, &realization_output)
         .expect("second register generation");
@@ -755,7 +758,10 @@ fn stale_census_is_a_hard_failure_naming_the_path() {
     // Scoped verification ignores the unrelated planning group.
     let paths = RepositoryCensus::discover(root);
     fs::write(root.join("plans/other.md"), "# Other\n").expect("other plan");
-    assert!(paths.verify(CensusGroup::SCOPED).is_empty());
+    assert_eq!(
+        paths.verify(CensusGroup::SCOPED),
+        [] as [LabelDiagnostic; 0]
+    );
 }
 
 #[test]
@@ -1039,7 +1045,7 @@ fn petgraph_serde_feature_is_available_for_noncanonical_diagnostics() {
 
     let rendered = serde_json::to_string(&graph).unwrap();
 
-    assert!(!rendered.is_empty());
+    assert_ne!(rendered, "");
 }
 
 fn citation_to(label: &Label, line: usize) -> LabelCitation {
@@ -1365,7 +1371,7 @@ fn rust_malformed_citation_never_becomes_the_only_mint_of_a_label() {
     let harvest = rust_fixture_harvest("// only occurrence (´def:fixture:home´ and prose)\n");
 
     assert!(harvest.registry.labels().next().is_none());
-    assert!(harvest.citations.is_empty());
+    assert_eq!(harvest.citations, [] as [LabelCitation; 0]);
     assert!(
         harvest
             .diagnostics
@@ -3646,7 +3652,7 @@ fn one_identifier_in_each_of_two_tables_is_not_a_duplicate() {
 | `R-01` | ACTIVE |
 ";
 
-    assert!(crate::plans::duplicate_row_ids(markdown).is_empty());
+    assert_eq!(crate::plans::duplicate_row_ids(markdown), [] as [String; 0]);
 }
 
 /// A backticked cell that is not the row's identifier is data. The
@@ -3663,5 +3669,5 @@ fn a_backticked_cell_after_the_first_is_not_an_identifier() {
 | Realization version | `papers/attestation/main.tex` |
 ";
 
-    assert!(crate::plans::duplicate_row_ids(markdown).is_empty());
+    assert_eq!(crate::plans::duplicate_row_ids(markdown), [] as [String; 0]);
 }

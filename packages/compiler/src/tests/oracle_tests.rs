@@ -312,7 +312,7 @@ fn the_oracle_independently_blocks_a_missing_whole_transaction_capability() {
         let production = enumerate_feasible_plans(&input, &view).expect("plans");
         let oracle = oracle_enumerate(&input, &view).expect("oracle");
 
-        assert!(!oracle.is_empty());
+        assert_ne!(oracle, [] as [ProofPlanCandidate; 0]);
         assert_eq!(production.candidates, oracle, "scope {scope:?}");
     }
 }
@@ -322,7 +322,7 @@ fn the_oracle_creates_no_proof_variable_for_a_representation_relation() {
     let input = bound_input(&[OperationId::CompactAsh, OperationId::TransferLive]);
     let oracle = oracle_enumerate(&input, &CapabilityView::Unconstrained).expect("oracle");
 
-    assert!(!oracle.is_empty());
+    assert_ne!(oracle, [] as [ProofPlanCandidate; 0]);
 
     for candidate in &oracle {
         assert!(

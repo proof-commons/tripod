@@ -1251,7 +1251,7 @@ mod tests {
             reports.push(phase_failures(&outcome));
         }
         assert_eq!(reports[0], reports[1]);
-        assert!(!reports[0].is_empty());
+        assert_ne!(reports[0], [] as [String; 0]);
     }
 
     #[test]

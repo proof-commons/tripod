@@ -739,7 +739,7 @@ fn an_obligation_with_no_eligible_carrier_is_rejected() {
     )];
     let (plans, eligibility) = instance(&obligations);
 
-    assert!(agree(&plans, &eligibility).is_empty());
+    assert_eq!(agree(&plans, &eligibility), [] as [PlacementCandidate; 0]);
     assert!(matches!(
         enumerate_feasible_placements(&plans, &eligibility, limits()),
         Err(CompileError::NoEligibleCarrier { .. }),
@@ -793,7 +793,7 @@ fn an_unconditional_relation_with_only_an_optional_carrier_is_rejected() {
     )];
     let (plans, eligibility) = instance(&obligations);
 
-    assert!(agree(&plans, &eligibility).is_empty());
+    assert_eq!(agree(&plans, &eligibility), [] as [PlacementCandidate; 0]);
     assert!(matches!(
         enumerate_feasible_placements(&plans, &eligibility, limits()),
         Err(CompileError::UnconditionalRelationOnOptionalCarrier { .. }),
@@ -856,7 +856,7 @@ fn a_member_local_relation_missing_its_member_role_keeps_only_the_complete_famil
     )];
     let (plans, eligibility) = instance(&obligations);
 
-    assert!(agree(&plans, &eligibility).is_empty());
+    assert_eq!(agree(&plans, &eligibility), [] as [PlacementCandidate; 0]);
 }
 
 #[test]
@@ -884,7 +884,7 @@ fn a_transaction_global_relation_offered_only_a_local_carrier_is_rejected() {
     )];
     let (plans, eligibility) = instance(&obligations);
 
-    assert!(agree(&plans, &eligibility).is_empty());
+    assert_eq!(agree(&plans, &eligibility), [] as [PlacementCandidate; 0]);
     assert!(matches!(
         enumerate_feasible_placements(&plans, &eligibility, limits()),
         Err(CompileError::GlobalRelationHasOnlyLocalCarrier { .. }),
@@ -1012,7 +1012,7 @@ fn an_external_evidence_relation_given_a_runtime_carrier_is_a_census_defect() {
         }]),
     )];
 
-    assert!(agree(&plans, &eligibility).is_empty());
+    assert_eq!(agree(&plans, &eligibility), [] as [PlacementCandidate; 0]);
     assert!(matches!(
         enumerate_feasible_placements(&plans, &eligibility, limits()),
         Err(CompileError::PlacementCensusMismatch { .. }),
@@ -1046,7 +1046,7 @@ fn a_compiler_static_relation_given_a_runtime_carrier_is_a_census_defect() {
         BTreeSet::new(),
     )];
 
-    assert!(agree(&plans, &eligibility).is_empty());
+    assert_eq!(agree(&plans, &eligibility), [] as [PlacementCandidate; 0]);
     assert!(matches!(
         enumerate_feasible_placements(&plans, &eligibility, limits()),
         Err(CompileError::PlacementCensusMismatch { .. }),

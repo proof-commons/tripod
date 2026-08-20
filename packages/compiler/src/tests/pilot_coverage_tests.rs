@@ -72,7 +72,7 @@ fn analyze(operations: &[OperationId]) -> Pilot {
         .expect("feasible plans")
         .candidates;
 
-    assert!(!candidates.is_empty());
+    assert_ne!(candidates, [] as [ProofPlanCandidate; 0]);
 
     let placed =
         place_feasible_proof_plans(&relations, &candidates, limits()).expect("placement analysis");
@@ -902,7 +902,10 @@ fn active_and_inactive_relation_cases_state_their_required_coverage() {
                     // runtime carrier, and no rejection demanded of a
                     // branch this case never exercises.
                     assert_eq!(plan.positive.len(), plan.boundaries.len());
-                    assert!(plan.negative.is_empty());
+                    assert_eq!(
+                        plan.negative,
+                        [] as [crate::coverage::NegativeCoverageRequirement; 0]
+                    );
                     assert!(plan.carrier.is_none());
                 }
             }

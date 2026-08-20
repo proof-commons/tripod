@@ -229,7 +229,10 @@ fn the_closure_does_not_depend_on_registry_insertion_order() {
         status_closure_violations(&forward),
         status_closure_violations(&reverse)
     );
-    assert!(!status_closure_violations(&forward).is_empty());
+    assert_ne!(
+        status_closure_violations(&forward),
+        [] as [(ElementsCapability, ElementsCapability); 0]
+    );
 }
 
 #[test]

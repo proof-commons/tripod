@@ -230,7 +230,7 @@ fn the_sponsored_form_carries_a_suffix_a_change_role_and_a_fee_role() {
     assert_eq!(outputs[1].value(), ValueField::Explicit(490));
     assert_eq!(outputs[2].value(), ValueField::Explicit(500));
     assert!(outputs[2].is_fee());
-    assert!(outputs[2].program().is_empty());
+    assert_eq!(outputs[2].program(), [] as [u8; 0]);
     assert_eq!(
         built.report().roles().outputs().get(&2),
         Some(&OutputRole::TargetFee)

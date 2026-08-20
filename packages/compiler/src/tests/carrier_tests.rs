@@ -223,7 +223,10 @@ fn input_recognition_admits_a_member_or_a_complete_family_proof_coordinator() {
             coordinator.quantification,
             CarrierQuantification::CompleteFamilyProof,
         );
-        assert!(!coordinator.layout_provided().is_empty());
+        assert_ne!(
+            coordinator.layout_provided(),
+            [] as [&crate::carrier::SourceRouting; 0]
+        );
     }
 }
 
