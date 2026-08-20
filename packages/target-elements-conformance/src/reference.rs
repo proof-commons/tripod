@@ -71,7 +71,11 @@ pub const FIXTURE_REFERENCE_OUTPUT_KEY: [u8; REFERENCE_KEY_BYTES] = [
 /// coordinate, as the reference implementation reports it.
 ///
 /// A control block carries this bit and an x-only program cannot state
-/// it, so a spend that guesses it wrong fails. The fixture bundle pins
-/// a parity of its own choosing rather than deriving one; the test
-/// lane records whether the two agree instead of assuming they do.
+/// it, so a spend that guesses it wrong fails.
+///
+/// This is **odd**, and the fixture bundle declares **even**. The
+/// fixture declares a parity rather than deriving one, so its own
+/// control blocks are rejected by the reference verifier for every
+/// leaf. A later wave repairing the pin must take this bit from here
+/// rather than restating a choice.
 pub const FIXTURE_REFERENCE_OUTPUT_KEY_PARITY_BIT: u8 = 1;
