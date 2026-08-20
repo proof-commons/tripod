@@ -373,6 +373,35 @@ pub enum ExecutorCapability {
     /// what keeps it from being sent to an executor that cannot read it:
     /// no executor is ever handed one unless it said it reads them.
     CompoundPrototypeFixtures,
+    /// It can be driven through the Guide-11 §13 fresh-process
+    /// lifecycle: build a public object in one process, and read it back
+    /// from chain data in another that shares no state with the first.
+    ///
+    /// # Why this variant was missing, and what that broke
+    ///
+    /// The lifecycle lane is driven from `run-fresh-process-lifecycle.py`
+    /// rather than from this harness, so no Rust code ever *sent* a
+    /// lifecycle record and the capability had no consumer here. The
+    /// adapter advertised it anyway, because the handshake is one list
+    /// and an adapter states everything its interface offers.
+    ///
+    /// That made the two halves of one protocol disagree about the
+    /// vocabulary. [`ExecutorHandshake`] refuses unknown members and a
+    /// capability list is parsed as a set of *known* values, so any
+    /// wallet-enabled adapter — the only kind that advertises this —
+    /// produced a handshake this harness could not read at all. The
+    /// failure surfaced as `malformed message during the handshake
+    /// phase`, which named the symptom and not the missing word, and it
+    /// stayed hidden because the one Rust lane that speaks to a real
+    /// adapter never enables a wallet.
+    ///
+    /// Adding the variant is the fix rather than dropping the
+    /// advertisement: the adapter's claim is true, and the harness not
+    /// having a use for a capability is not a reason to be unable to
+    /// hear it. The revision does not move, on the protocol's own rule
+    /// that an added capability is how this vocabulary grows
+    /// `(´[PLAN-rule:guide10:schema-migration]´)`.
+    FreshProcessLifecycle,
     /// It creates spendable outputs at a stated witness program, and
     /// reports where they landed.
     ///
