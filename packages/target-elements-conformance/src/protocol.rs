@@ -1571,12 +1571,21 @@ pub enum OperationStepKind {
 }
 
 impl std::fmt::Display for OperationStepKind {
+    /// # One spelling, and why it has to be the wire's
+    ///
+    /// The serde representation of this enum is snake case, and an
+    /// adapter reads the kind out of the record's own field. A
+    /// `Display` that rendered a kind differently would be a second
+    /// authored spelling of one word — harmless while a reader is
+    /// human, and not harmless at all the moment anything compares the
+    /// two `(´[PLAN-rule:guide12-exec:typed-source]´)`. The census test
+    /// below holds them equal for every variant.
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let text = match self {
             Self::Fund => "fund",
             Self::Submit => "submit",
-            Self::FundSponsor => "fund-sponsor",
-            Self::SignSponsor => "sign-sponsor",
+            Self::FundSponsor => "fund_sponsor",
+            Self::SignSponsor => "sign_sponsor",
         };
         formatter.write_str(text)
     }

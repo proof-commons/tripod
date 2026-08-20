@@ -549,6 +549,36 @@ fn every_operation_subject_round_trips_to_its_own_variant() {
     }
 }
 
+/// A step kind is spelled one way, on the wire and in a diagnostic.
+///
+/// The defect this closes was found by a live node and not by a test: a
+/// `Display` spelling the two sponsor kinds with hyphens while serde
+/// spelled them with underscores meant the adapter, which reads the
+/// kind out of the record, refused every sponsor step as being of an
+/// unknown kind. Nothing compared the two spellings until an adapter
+/// did.
+#[test]
+fn a_step_kind_renders_the_way_it_serializes() {
+    use crate::protocol::OperationStepKind;
+
+    for kind in [
+        OperationStepKind::Fund,
+        OperationStepKind::Submit,
+        OperationStepKind::FundSponsor,
+        OperationStepKind::SignSponsor,
+    ] {
+        let wire = serde_json::to_string(&kind).expect("the kind serializes");
+        // The serialized form is a JSON string, so the quotes come off
+        // before the comparison; what is compared is the word itself.
+        let wire = wire.trim_matches('"');
+        assert_eq!(
+            kind.to_string(),
+            wire,
+            "the kind renders and serializes differently",
+        );
+    }
+}
+
 /// The sponsor steps are gated, and gated together.
 #[test]
 fn a_sponsor_step_is_refused_by_an_executor_that_did_not_advertise_one() {

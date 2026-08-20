@@ -5188,7 +5188,7 @@ def parse_operation_subject(raw: object, kind: str) -> dict:
             subject.get("transaction_bytes"), "request.subject.transaction_bytes"
         )}
 
-    if kind == "fund-sponsor":
+    if kind == "fund_sponsor":
         require_keys(
             subject,
             ("sponsor_outputs", "amount_per_sponsor_output"),
@@ -5209,7 +5209,7 @@ def parse_operation_subject(raw: object, kind: str) -> dict:
             ),
         }
 
-    if kind == "sign-sponsor":
+    if kind == "sign_sponsor":
         require_keys(
             subject,
             (
@@ -5312,7 +5312,7 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
         if key not in ("schema", "case", "subject"):
             raise FatalAdapterError("the harness sent a request field named %s" % key)
     kind = case.get("operation")
-    if kind not in ("fund", "submit", "fund-sponsor", "sign-sponsor"):
+    if kind not in ("fund", "submit", "fund_sponsor", "sign_sponsor"):
         raise FatalAdapterError("the harness sent an operation step of an unknown kind")
     subject = parse_operation_subject(request.get("subject"), kind)
 
@@ -5338,9 +5338,9 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
                 else operations.pay(subject)
             )
             body.setdefault("accepted_txid", None)
-        elif kind == "fund-sponsor":
+        elif kind == "fund_sponsor":
             body = operations.fund_sponsor(subject)
-        elif kind == "sign-sponsor":
+        elif kind == "sign_sponsor":
             body = operations.sign_sponsor(subject)
         else:
             body = operations.submit(subject)
