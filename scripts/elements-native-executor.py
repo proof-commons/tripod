@@ -2326,7 +2326,7 @@ class OperationExecutor:
         transaction.vout.append(executor.output(working, executor.anyone_can_spend))
         transaction.vout.append(executor.output(parked, executor.anyone_can_spend))
         transaction.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
-        txid = self.mine(transaction)
+        txid = self.mine(transaction, "free-coin split")
         executor.change = {"txid": txid, "vout": 0, "amount": working}
         self.prepared = True
 
@@ -2345,13 +2345,24 @@ class OperationExecutor:
         """The target's own spelling of an explicit asset field."""
         return field[1:][::-1].hex()
 
-    def mine(self, transaction) -> str:
-        """Confirms one transaction by mining exactly it."""
-        self.executor.node.call(
-            "generateblock",
-            "raw(%s)" % ANYONE_CAN_SPEND_HEX,
-            json.dumps([transaction.serialize().hex()]),
-        )
+    def mine(self, transaction, note: str = "") -> str:
+        """Confirms one transaction by mining exactly it.
+
+        A refusal here is the adapter failing to build something the
+        chain accepts, which is an infrastructure failure and never a
+        target verdict. The transaction this adapter built is logged to
+        stderr so the failure can be diagnosed; stderr is diagnostics the
+        harness discards, and nothing from it reaches a first-party
+        record (G12-R04).
+        """
+        raw = transaction.serialize().hex()
+        try:
+            self.executor.node.call(
+                "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw])
+            )
+        except AdapterError:
+            log("the %s transaction this adapter built was refused: %s" % (note, raw))
+            raise
         return transaction.rehash()
 
     def created(self, txid: str, index: int) -> dict:
@@ -2458,7 +2469,7 @@ class OperationExecutor:
         issued.vout.append(executor.output(remainder, executor.anyone_can_spend))
         issued.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
 
-        txid = self.mine(issued)
+        txid = self.mine(issued, "issuance")
         reserve_index = subject["outputs"]
         self.reserves[printed] = {
             "txid": txid,
@@ -2532,7 +2543,7 @@ class OperationExecutor:
         transaction.vout.append(executor.output(remainder, executor.anyone_can_spend))
         transaction.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
 
-        txid = self.mine(transaction)
+        txid = self.mine(transaction, "asset payment")
         reserve_index = subject["outputs"]
         self.reserves[printed] = {
             "txid": txid,
