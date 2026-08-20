@@ -13,9 +13,10 @@ use target_elements::{
     FieldForm, SponsorInspectedField, SponsorProgramClass, TransactionForm, ZeroFeeRepresentation,
 };
 
+use crate::capability::BackendPatternId;
 use crate::policy::{
     AshRepresentationSelection, CompactAshBackendPolicy, ConcreteCandidate, LayoutFamily,
-    SelectionObjective, SelectionRefusal, SemanticEquivalence, TieBreak,
+    SelectionObjective, SelectionRefusal, SemanticEquivalence, TieBreak, demonstration_policy,
     reviewed_target_projection,
 };
 use crate::shape::{CandidateShapeSet, demonstration_shape_set};
@@ -75,10 +76,39 @@ fn the_policy_states_every_ground_section_seven_three_lists() {
         "the profile is read from the projection, not stored twice",
     );
 
-    // No pattern is preferred yet where none has been admitted: a
-    // preference naming a pattern that does not exist would be the
-    // speculative identity §1.10 refuses.
+    // This fixture states no preference; the demonstration policy does,
+    // and every identity it names is one the pattern census carries.
     assert_eq!(policy.pattern_preference(), []);
+}
+
+#[test]
+fn the_demonstration_policy_prefers_only_admitted_patterns() {
+    // §7.3's seventh ground, now that identities exist to name. A
+    // preference for a pattern nobody minted would be a decision made
+    // on something that does not exist (§1.10), so the whole census is
+    // required to back it — in both directions, since a preference
+    // that silently omitted a pattern would leave a backend with no
+    // stated order for it.
+    let policy = demonstration_policy();
+    let admitted = BackendPatternId::ALL.iter().copied().collect();
+
+    assert!(policy.preference_is_backed(&admitted));
+    assert_eq!(
+        policy
+            .pattern_preference()
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>(),
+        admitted,
+    );
+    assert_eq!(
+        policy.pattern_preference().len(),
+        BackendPatternId::ALL.len()
+    );
+    assert_eq!(policy.tie_break(), least_key());
+
+    // And an unbacked preference is refused rather than tolerated.
+    assert!(!policy.preference_is_backed(&BTreeSet::new()));
 }
 
 #[test]

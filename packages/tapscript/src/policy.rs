@@ -39,7 +39,7 @@ use target_elements::{
 };
 
 use crate::capability::BackendPatternId;
-use crate::shape::CandidateShapeSet;
+use crate::shape::{CandidateShapeSet, demonstration_shape_set};
 
 /// The exact reviewed target facts a compact-ASH backend projects onto.
 ///
@@ -322,6 +322,19 @@ impl CompactAshBackendPolicy {
         self.tie_break
     }
 
+    /// Whether this policy's preference names only admitted patterns.
+    ///
+    /// A preference for an identity nobody minted would be a decision
+    /// made on something that does not exist, so the check is offered
+    /// rather than left to a reader: a policy is only as good as the
+    /// patterns it can actually reach.
+    #[must_use]
+    pub fn preference_is_backed(&self, admitted: &BTreeSet<BackendPatternId>) -> bool {
+        self.patterns
+            .iter()
+            .all(|pattern| admitted.contains(pattern))
+    }
+
     /// Select one concrete candidate, or refuse and say why.
     ///
     /// The candidates are measured by the caller under
@@ -383,4 +396,40 @@ impl CompactAshBackendPolicy {
             .min()
             .ok_or(SelectionRefusal::NoCandidates)
     }
+}
+
+/// The Phase-4 demonstration policy.
+///
+/// The reviewed target projection, the explicit representation Guide 11
+/// fixed, the demonstration shape set, the one candidate layout family,
+/// every admitted proof pattern in the order a coordinator schedules
+/// them, encoded program bytes as the objective, and the stated
+/// least-key tie-break.
+///
+/// The preference order is the schedule order rather than a ranking of
+/// quality: the shape is authenticated before anything is introspected,
+/// the successor before the sources it will be compared with, and the
+/// permissionless audit covers the whole program, so it comes last.
+#[must_use]
+pub fn demonstration_policy() -> CompactAshBackendPolicy {
+    CompactAshBackendPolicy::new(
+        reviewed_target_projection(),
+        AshRepresentationSelection::Explicit,
+        demonstration_shape_set(),
+        LayoutFamily::CoordinatorPrefixedSponsorSuffix,
+        vec![
+            BackendPatternId::CompactAshCoordinatorRoleV1,
+            BackendPatternId::CompactAshShapeV1,
+            BackendPatternId::CompactAshObjectRecognitionV1,
+            BackendPatternId::CompactAshExplicitSumV1,
+            BackendPatternId::CompactAshCanonicalPartitionV1,
+            BackendPatternId::CompactAshSponsorIsolationV1,
+            BackendPatternId::CompactAshMemberRoleV1,
+            BackendPatternId::CompactAshPermissionlessPathV1,
+        ],
+        SelectionObjective::EncodedProgramBytes,
+        TieBreak::LexicographicLeastKey {
+            objective: SelectionObjective::EncodedProgramBytes,
+        },
+    )
 }

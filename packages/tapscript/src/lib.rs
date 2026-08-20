@@ -31,7 +31,7 @@ pub use pattern::{
 pub use policy::{
     AshRepresentationSelection, CompactAshBackendPolicy, ConcreteCandidate, ExactTargetProjection,
     LayoutFamily, SelectionObjective, SelectionRefusal, SemanticEquivalence, TieBreak,
-    reviewed_target_projection,
+    demonstration_policy, reviewed_target_projection,
 };
 pub use program::{MAXIMUM_PROGRAM_INSTRUCTIONS, TapscriptProgram};
 pub use shape::{

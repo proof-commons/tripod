@@ -3,12 +3,16 @@
 > **Status:** Active — static capability and evidence-role adapter over the
 > reviewed contract, typed instruction values, canonical opcode/push
 > encoding, the supported-subset parser, and the abstract stack and
-> failure-state validator implemented; backend proof patterns, protocol
-> stack scheduling, and constructors not implemented and prototype-dependent
+> failure-state validator implemented; the concrete shape policy, the
+> backend selection policy, eight machine-checked compact-ASH proof
+> patterns, and the operation-plan assessment implemented; the ASH
+> constructor and the relocatable bundle not implemented
 > **Phases:** [Phase 3](../phases/03-target-foundation.md) onward
 > **Package:** `tripod-tapscript`
 > **Library:** `tapscript`
 > **Direct dependencies:** `compiler`, `target-elements`
+> (`architecture` and `realization` are test-only, to build a plan
+> through the compiler's own constructor)
 > **Decisions:** [D003](../decisions/003-tapscript-first.md),
 > [D004](../decisions/004-translation-validation.md),
 > [D005](../decisions/005-value-representation.md),
