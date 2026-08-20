@@ -552,11 +552,12 @@ fn a_resource_projection_states_each_unit_separately() {
 
     let projection = resource_projection(&target, &program);
 
-    // Two primitives, one of which can charge the per-check budget. The
-    // literals occupy script bytes the target contract does not price
-    // per primitive, which is why this is a projection over primitives
-    // rather than a script size.
-    assert_eq!(projection.get(&ResourceDimension::ScriptBytes), Some(&2));
+    // Two primitives, one of which can charge the per-check budget, and
+    // two literals that charge neither. Script bytes are the program's
+    // own encoded length and so count all four instructions: two
+    // payloads of sixty-four and thirty-two bytes, their two push
+    // opcodes, and the two primitive bytes.
+    assert_eq!(projection.get(&ResourceDimension::ScriptBytes), Some(&100));
     assert_eq!(
         projection.get(&ResourceDimension::ValidationBudget),
         Some(&50),

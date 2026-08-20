@@ -96,6 +96,7 @@ target_elements_conformance_source_files = files(
 # subjects. The census audit accepts the exclusion only because it is
 # declared here.
 target_elements_conformance_excluded_files = files(
+  'tests/emit_subprocess_contract.rs',
   'tests/executor_protocol.rs',
   'tests/executor_supervision.rs',
   'tests/prototype_round_trip.rs',

@@ -39,6 +39,15 @@
 //! refuses it always. That is stricter than consensus on purpose: a
 //! first-party program that no node forwards is of no use, and the
 //! round-trip property below only holds for the minimal form.
+//!
+//! # The work bound binds the parse, not the result
+//!
+//! [`MAXIMUM_PROGRAM_INSTRUCTIONS`] is checked inside the parse loop, so
+//! the work and the allocation a script can cause are bounded by the
+//! limit rather than by the script's own length. Checking it only on the
+//! finished sequence would make the limit a property of the answer
+//! instead of a property of the parse, and an oversized script would pay
+//! for itself in full before being refused.
 
 use std::collections::BTreeMap;
 
@@ -118,12 +127,35 @@ impl TapscriptProgram {
     pub fn encode(&self, target: &ReviewedElementsTapscriptDefinition) -> Vec<u8> {
         let mut bytes = Vec::new();
         for instruction in &self.instructions {
-            match instruction {
-                TapscriptInstruction::Opcode(id) => bytes.push(opcode_byte(target, *id)),
-                TapscriptInstruction::Push(item) => encode_push(target, item, &mut bytes),
-            }
+            encode_instruction(target, instruction, &mut bytes);
         }
         bytes
+    }
+
+    /// How many target bytes the program's exact encoding occupies.
+    ///
+    /// # The same encoding, counted rather than kept
+    ///
+    /// This is [`Self::encode`] measured, not a second account of what an
+    /// encoding costs. One instruction is laid out at a time into a
+    /// buffer that is reused, so the figure is the encoding's own by
+    /// construction and cannot drift from it, and the program is never
+    /// assembled in full to be measured.
+    ///
+    /// Saturating: the figure is diagnostic, and a saturated one is
+    /// visibly pinned where a wrapped one would read as a small honest
+    /// program.
+    #[must_use]
+    pub fn encoded_length(&self, target: &ReviewedElementsTapscriptDefinition) -> u64 {
+        let mut instruction_bytes = Vec::new();
+        let mut total = 0_u64;
+        for instruction in &self.instructions {
+            instruction_bytes.clear();
+            encode_instruction(target, instruction, &mut instruction_bytes);
+            total =
+                total.saturating_add(u64::try_from(instruction_bytes.len()).unwrap_or(u64::MAX));
+        }
+        total
     }
 
     /// Parses exactly the reviewed subset of target script.
@@ -149,6 +181,21 @@ impl TapscriptProgram {
         let mut offset = 0;
 
         while offset < bytes.len() {
+            // The work bound is enforced here rather than by the
+            // constructor at the end. A script arrives from an untrusted
+            // source, and a parser that read all of it before applying
+            // its own limit would let the input decide how much work and
+            // how much allocation the limit was supposed to bound. There
+            // are still bytes left and the program is already full, so
+            // the answer cannot change: it is the limit, whatever those
+            // bytes turn out to be.
+            if u64::try_from(instructions.len()).unwrap_or(u64::MAX) >= MAXIMUM_PROGRAM_INSTRUCTIONS
+            {
+                return Err(TapscriptError::InstructionLimitExceeded {
+                    maximum: MAXIMUM_PROGRAM_INSTRUCTIONS,
+                });
+            }
+
             let opcode = bytes[offset];
             offset += 1;
 
@@ -231,6 +278,22 @@ fn opcode_byte(target: &ReviewedElementsTapscriptDefinition, id: OpcodeId) -> u8
         .get(&id)
         .expect("the reviewed contract states a byte for every primitive")
         .code()
+}
+
+/// Appends the exact encoding of one typed instruction.
+///
+/// The single place the layout of an instruction is decided, so the
+/// bytes a program writes and the bytes it is measured at are the same
+/// bytes.
+fn encode_instruction(
+    target: &ReviewedElementsTapscriptDefinition,
+    instruction: &TapscriptInstruction,
+    bytes: &mut Vec<u8>,
+) {
+    match instruction {
+        TapscriptInstruction::Opcode(id) => bytes.push(opcode_byte(target, *id)),
+        TapscriptInstruction::Push(item) => encode_push(target, item, bytes),
+    }
 }
 
 /// Appends the minimal encoding of one literal.
