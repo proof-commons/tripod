@@ -190,6 +190,66 @@ fn the_ash_witness_is_the_leaf_program_then_the_control_block() {
     );
 }
 
+/// The sequence field is fixed here or nowhere.
+///
+/// No emitted program inspects a sequence, no signature covers an ASH
+/// input, and a sequence one below final engages neither a relative
+/// timelock nor replaceability — so the target accepts whatever it is
+/// given and cannot be the thing that pins this. The constructor is,
+/// and a request carries no field to argue with it. That makes this
+/// test the whole enforcement of `SequenceConstraint`, not a
+/// restatement of something checked downstream.
+#[test]
+fn every_constructed_input_carries_the_abi_sequence() {
+    let target = reviewed_target();
+    let abi = candidate_abi();
+    let first = outpoint(0xaa, 0);
+    let second = outpoint(0xbb, 1);
+    let sponsor_input = outpoint(0xdd, 2);
+
+    // The value the ABI names, checked against the target's own final
+    // sequence rather than against a literal repeated from the ABI.
+    assert_eq!(
+        abi.sequence().sequence(),
+        0xffff_ffff,
+        "the ABI's sequence is the final one"
+    );
+
+    let sponsorless = view([
+        ash_view(&target, first, 120),
+        ash_view(&target, second, 180),
+    ]);
+    let request = CompactAshRequest::new([first, second], false).expect("a two-input request");
+    let built = construct(&target, &abi, &request, &sponsorless, None).expect("the construction");
+    for input in built.transaction().inputs() {
+        assert_eq!(
+            input.sequence(),
+            abi.sequence().sequence(),
+            "an ASH input left the constructor with another sequence"
+        );
+    }
+
+    // The sponsor input is written by the same rule, so a sponsored
+    // form cannot be the one that leaks a different sequence.
+    let sponsored_view = view([
+        ash_view(&target, first, 120),
+        ash_view(&target, second, 180),
+        sponsor_view(sponsor_input, 1_000),
+    ]);
+    let sponsored = CompactAshRequest::new([first, second], true).expect("a sponsored request");
+    let sponsor = FixtureSponsor::new(500, Some(ValueField::Explicit(490)));
+    let built = construct(&target, &abi, &sponsored, &sponsored_view, Some(&sponsor))
+        .expect("the sponsored form constructs");
+    assert_eq!(built.transaction().inputs().len(), 3);
+    for input in built.transaction().inputs() {
+        assert_eq!(
+            input.sequence(),
+            abi.sequence().sequence(),
+            "an input of the sponsored form left the constructor with another sequence"
+        );
+    }
+}
+
 #[test]
 fn the_sponsored_form_carries_a_suffix_a_change_role_and_a_fee_role() {
     let target = reviewed_target();

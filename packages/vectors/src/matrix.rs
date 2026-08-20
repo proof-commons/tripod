@@ -1085,11 +1085,20 @@ pub const ABI: &[VectorClass] = &[
         L::TargetTransaction,
         B::ConsensusRejectionBeforeScript,
     ),
+    // The sequence field is an ABI convention and nothing else. No
+    // emitted program inspects it, no signature covers an ASH input, and
+    // a final-minus-one sequence engages neither a relative timelock nor
+    // replaceability — so the target has no rule to refuse it by and
+    // accepting it is correct. What fixes the field is the safe
+    // constructor, which writes the ABI's sequence and offers no request
+    // field for another. The boundary is therefore the constructor's,
+    // like the two other rows whose mutation only first-party code
+    // catches.
     negative(
         F::Abi,
         "wrong-sequence",
         L::TargetTransaction,
-        B::ScriptPathRejection,
+        B::AbiConstructionRejection,
     ),
     negative(
         F::Abi,

@@ -1184,6 +1184,17 @@ impl CompactAshOperationPlanner {
     /// act on in this shape is recorded as a fixture construction
     /// failure, which is what it is: no target was asked, so no target
     /// refused, and the row it would have answered stays outstanding.
+    ///
+    /// # An arm whose boundary is before the target is not submitted
+    ///
+    /// A class whose §1.5 boundary is a pre-target one expects
+    /// first-party code to refuse the shape, so no answer the target
+    /// could give would satisfy it: submitting it asks a question whose
+    /// every answer is the wrong one. Worse, the target has no rule to
+    /// refuse such a transaction by and will accept it — spending the
+    /// subject's coins and taking every later arm down with it. Filtering
+    /// here is what keeps one misplaced boundary from costing the rest of
+    /// the run.
     fn stage_mutants(&mut self) {
         let Some(asset) = self.transcript.issued_asset else {
             return;
@@ -1197,6 +1208,32 @@ impl CompactAshOperationPlanner {
         };
 
         for mutation in NegativeMutation::ALL {
+            // A class this module cannot look up is a drift between the
+            // matrix and the arms, and staging past it would submit a
+            // vector nothing states an expectation for.
+            let Ok(boundary) = mutation.expected_boundary() else {
+                self.transcript.mutants.push(MutantOutcome {
+                    origin: subject.id(),
+                    mutation: *mutation,
+                    layer: ObservedOutcomeLayer::FixtureConstructionFailure,
+                    detail: Some("§18 names no class by this arm's name".into()),
+                    bytes: Vec::new(),
+                });
+                continue;
+            };
+            if boundary.is_pre_target() {
+                self.transcript.mutants.push(MutantOutcome {
+                    origin: subject.id(),
+                    mutation: *mutation,
+                    layer: ObservedOutcomeLayer::FixtureConstructionFailure,
+                    detail: Some(
+                        "not submitted: the class expects a refusal before the target is asked"
+                            .into(),
+                    ),
+                    bytes: Vec::new(),
+                });
+                continue;
+            }
             match apply(&subject, asset, *mutation) {
                 Ok(mutant) => self.mutants.push(mutant),
                 Err(_) => self.transcript.mutants.push(MutantOutcome {
@@ -1709,6 +1746,39 @@ mod tests {
             assert!(
                 !submitted.contains(&mutant.bytes()),
                 "a mutated transaction was recorded as a positive submission",
+            );
+        }
+    }
+
+    #[test]
+    fn a_mutation_whose_boundary_precedes_the_target_is_never_offered() {
+        // Wave 13's finding, kept from recurring. The wrong-sequence arm
+        // expects the constructor to refuse the shape, and the target has
+        // no rule to refuse it by — so offering it would buy an
+        // acceptance that spends the subject and abandons every arm
+        // behind it. The row is still recorded, carrying the reason.
+        let (planner, finished) = run(refuse_beyond_bound);
+        assert!(finished, "the plan ran out of steps rather than refusing");
+        let transcript = planner.transcript();
+
+        for mutation in super::NegativeMutation::ALL {
+            let boundary = mutation.expected_boundary().expect("the class is named");
+            if !boundary.is_pre_target() {
+                continue;
+            }
+            let outcome = transcript
+                .mutants()
+                .iter()
+                .find(|mutant| mutant.mutation() == *mutation)
+                .unwrap_or_else(|| panic!("{mutation:?} has no recorded outcome"));
+            assert_eq!(
+                outcome.layer(),
+                ObservedOutcomeLayer::FixtureConstructionFailure,
+                "{mutation:?} reached the target despite a pre-target boundary",
+            );
+            assert!(
+                outcome.bytes().is_empty(),
+                "{mutation:?} carries bytes, which only a submitted arm does",
             );
         }
     }
