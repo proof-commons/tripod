@@ -21,6 +21,7 @@ compiler_source_files = files(
   'src/layout.rs',
   'src/lib.rs',
   'src/lifecycle.rs',
+  'src/operation_plan.rs',
   'src/placement.rs',
   'src/proof.rs',
   'src/relation.rs',

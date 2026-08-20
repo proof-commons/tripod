@@ -79,7 +79,7 @@ impl ExternalEvidenceRole {
     /// Exhaustive with no wildcard arm: a realization requirement class
     /// added later stops this crate compiling until its role is stated,
     /// which is the only mechanism that keeps the census complete.
-    const fn of(requirement: &ExternalEvidenceRequirement) -> Self {
+    pub(crate) const fn of(requirement: &ExternalEvidenceRequirement) -> Self {
         match requirement {
             ExternalEvidenceRequirement::SubstrateConservation { .. } => {
                 Self::SubstrateConservation

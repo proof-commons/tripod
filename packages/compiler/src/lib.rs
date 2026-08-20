@@ -18,6 +18,7 @@ mod foundation;
 pub mod input;
 mod layout;
 mod lifecycle;
+pub mod operation_plan;
 mod placement;
 mod proof;
 mod relation;
