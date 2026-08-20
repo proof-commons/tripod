@@ -2345,7 +2345,38 @@ class OperationExecutor:
         """The target's own spelling of an explicit asset field."""
         return field[1:][::-1].hex()
 
-    def mine(self, transaction, note: str = "") -> str:
+    def with_witness_section(self, transaction) -> str:
+        """Serializes a transaction with an explicit, empty witness.
+
+        # Why an issuance cannot be serialized without one
+
+        The framework writes a witness section only when some entry is
+        non-null, and every entry of an explicit issuance IS null: no
+        range proof, no inflation-keys proof, no script witness. So the
+        transaction went to the target with no witness section at all,
+        and the target does not count an issuance whose witness is
+        absent -- the issued asset then has outputs and no inputs, which
+        it reports as `bad-txns-in-ne-out` on a transaction whose every
+        amount balances.
+
+        That was observed rather than reasoned: the target refused its
+        own `rawissueasset` output, unmodified, for the same rule.
+
+        So the section is written by hand: the flag byte is set and one
+        empty entry is emitted per input and per output, which is what a
+        node's own serializer produces for the same transaction.
+        """
+        transaction.wit.vtxinwit = [messages.CTxInWitness() for _ in transaction.vin]
+        transaction.wit.vtxoutwit = [messages.CTxOutWitness() for _ in transaction.vout]
+        raw = transaction.version.to_bytes(4, "little")
+        raw += b"\x01"
+        raw += messages.ser_vector(transaction.vin)
+        raw += messages.ser_vector(transaction.vout)
+        raw += transaction.nLockTime.to_bytes(4, "little")
+        raw += transaction.wit.serialize()
+        return raw.hex()
+
+    def mine(self, transaction, note: str = "", raw=None) -> str:
         """Confirms one transaction by mining exactly it.
 
         A refusal here is the adapter failing to build something the
@@ -2355,7 +2386,7 @@ class OperationExecutor:
         harness discards, and nothing from it reaches a first-party
         record (G12-R04).
         """
-        raw = transaction.serialize().hex()
+        raw = transaction.serialize().hex() if raw is None else raw
         try:
             self.executor.node.call(
                 "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw])
@@ -2431,6 +2462,7 @@ class OperationExecutor:
         )
         base.vout.append(executor.output(remainder, executor.anyone_can_spend))
         base.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
+        base_hex = self.with_witness_section(base)
 
         # What the chain says the coin this transaction spends is worth,
         # rather than what this adapter believes. Diagnostics on stderr;
@@ -2444,7 +2476,7 @@ class OperationExecutor:
         address = node.call("getnewaddress", wallet=self.wallet_name)
         answer = node.call(
             "rawissueasset",
-            base.serialize().hex(),
+            base_hex,
             json.dumps(
                 [
                     {
@@ -2511,7 +2543,7 @@ class OperationExecutor:
         issued.wit.vtxinwit = [messages.CTxInWitness() for _ in issued.vin]
         issued.wit.vtxoutwit = [messages.CTxOutWitness() for _ in issued.vout]
 
-        txid = self.mine(issued, "issuance")
+        txid = self.mine(issued, "issuance", self.with_witness_section(issued))
         reserve_index = subject["outputs"]
         self.reserves[printed] = {
             "txid": txid,
