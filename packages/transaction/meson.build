@@ -3,7 +3,16 @@
 # audit fails the build. The parent meson.build accumulates this list
 # into its role group.
 transaction_source_files = files(
+  'src/abi.rs',
+  'src/bytes.rs',
+  'src/construct.rs',
+  'src/error.rs',
   'src/lib.rs',
+  'src/request.rs',
+  'src/sponsor.rs',
+  'src/synthetic.rs',
+  'src/taproot.rs',
+  'src/view.rs',
 )
 
 # Crate documentation (DOC owner).
