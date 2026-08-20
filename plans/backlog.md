@@ -1337,11 +1337,30 @@ Phase-3 task state is:
 | `T3-009` | DONE | Exact wide floor-arithmetic prototype accepted, gate record §2.14 |
 | `T3-010` | DONE | Public-declassification initial policy selected, gate record §2.4 |
 
+The Phase-4 task state follows Guide 12's wave plan, from
+(`task:guide12-exec:wave4`) onward; each wave lands with its own
+evidence and the batch gate record extends §2.6:
+
+| ID | Status | Task |
+|---|---|---|
+| `T4-001` | DONE | Validated compact-ASH target operation plan — compiler `operation_plan` public boundary, projections recomputed against the analysis (23 relations, 2 cases, 46 relation-cases, 69 layout requirements), Guide-11 representation stated, nine corruption oracles |
+| `T4-002` | TODO | Target transaction-form and dependency review (Guide 12 Wave 5) |
+| `T4-003` | TODO | Static target assessment and typed tapscript proof patterns (Wave 6) |
+| `T4-004` | TODO | Candidate relocatable bundle (Wave 7) |
+| `T4-005` | TODO | Linker foundation (Wave 8) |
+| `T4-006` | TODO | Candidate transaction ABI (Wave 9) |
+| `T4-007` | TODO | Canonical semantic and target fixtures (Wave 10) |
+| `T4-008` | TODO | Real target execution (Wave 11; needs a live node — also unblocks the `G12-R04` runtime half) |
+| `T4-009` | TODO | Negative relation coverage (Wave 12) |
+| `T4-010` | TODO | Candidate resource study (Wave 13) |
+| `T4-011` | TODO | Phase-4 gate and handoff (Wave 14) |
+
 Current blockers are:
 
 ```text
-Phase-3 work:
-    the exit gate itself, checked at merge against gate:phase3:exit
+Phase-4 work:
+    real target execution (T4-008) waits on a live node; everything
+    before it is buildable without one
 ```
 
 Standing rules that survive the phase exit:
@@ -1369,9 +1388,9 @@ Standing rules that survive the phase exit:
 Execute in this order unless reproduction changes dependencies:
 
 ```text
-1. Check the Phase-3 exit gate; all three foundational questions are
-   answered, with the constructor and wide-floor prototypes accepted in
-   gate record 2.14 and the declassification policy in 2.4.
+1. Follow Guide 12's wave order for Phase 4; no later wave begins
+   before Wave 3's recorded Phase-3 exit, which is §2.6, and no wave
+   skips its predecessor's typed handoff.
 2. Keep target types out of compiler core; the target packages consume
    the analyzed boundary, never the reverse.
 3. Mint no target hash and claim no production activation without a real
