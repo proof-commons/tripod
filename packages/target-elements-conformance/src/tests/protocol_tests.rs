@@ -650,7 +650,10 @@ fn a_response_without_the_sponsor_members_still_parses() {
     }"#;
     let parsed: NativeOperationResponse =
         serde_json::from_str(written).expect("a pre-sponsor response still reads");
-    assert!(parsed.sponsor_witness.is_empty());
+    assert!(
+        parsed.sponsor_witness.is_empty(),
+        "a revision-4 response defaults to no sponsor witness"
+    );
     assert_eq!(parsed.signature_bound_to, None);
 }
 
