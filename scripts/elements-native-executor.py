@@ -2488,6 +2488,18 @@ class OperationExecutor:
         )
         issued.vout.append(executor.output(remainder, executor.anyone_can_spend))
         issued.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
+        # An Elements transaction carries one witness entry per output as
+        # well as per input, and this transaction was DESERIALIZED with a
+        # different output count than it now has. The serializer writes
+        # exactly as many entries as the list holds and the deserializer
+        # reads exactly as many as there are outputs, so a stale list
+        # writes a short witness section and the target reads the
+        # following bytes as the missing entry -- which decodes into a
+        # transaction that is not the one built here. The observed
+        # symptom was `bad-txns-in-ne-out` on a transaction that balances
+        # exactly, which is what a misparse looks like from the far side.
+        issued.wit.vtxinwit = [messages.CTxInWitness() for _ in issued.vin]
+        issued.wit.vtxoutwit = [messages.CTxOutWitness() for _ in issued.vout]
 
         txid = self.mine(issued, "issuance")
         reserve_index = subject["outputs"]
