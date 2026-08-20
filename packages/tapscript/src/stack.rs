@@ -32,9 +32,17 @@
 //! target might do. Insufficient operands is decided here — the state
 //! says how deep the stack is — and so is an operand of the wrong
 //! width, once every operand's abstract type fixes one width. Both are
-//! reported as validation failures of the program instead. Every other
-//! declared cause is recorded, because nothing in the abstract state
-//! rules it out.
+//! reported as validation failures of the program instead.
+//!
+//! # Two more the program's own literals decide
+//!
+//! Where a program pushed an operand itself, the walk holds its bytes,
+//! and the target's reading of those bytes settles what no abstract type
+//! could. A verified literal the target reads as false removes the
+//! successful form; one it reads as true removes the false-verification
+//! abort; two compared literals settle the inequality abort and the
+//! successful form the same way. Anything a literal does not settle
+//! stays recorded, because nothing else rules it out.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU64;
@@ -42,8 +50,8 @@ use std::num::NonZeroU64;
 use target_elements::{
     EncodingClass, FailureCause, FailureOutcome, OpcodeId, OpcodeSpec, OperandContract,
     PayloadWidth, PublicKeyOperandFacts, ResourceBound, ResourceDimension, ResultValue,
-    ReviewedElementsTapscriptDefinition, SignatureOperandFacts, StackValueType, SuccessCase,
-    SuccessCondition,
+    ReviewedElementsTapscriptDefinition, SignatureOperandFacts, StackContract, StackValueType,
+    SuccessCase, SuccessCondition,
 };
 
 use crate::error::TapscriptError;
@@ -275,8 +283,7 @@ const fn admit_state(visited: &mut u64, maximum: u64) -> Result<(), u64> {
     Ok(())
 }
 
-/// The literal script numbers a program pushed, by main-stack
-/// position.
+/// The exact literals a program pushed, by main-stack position.
 ///
 /// # Why this is not part of the abstract state
 ///
@@ -288,27 +295,46 @@ const fn admit_state(visited: &mut u64, maximum: u64) -> Result<(), u64> {
 ///
 /// It is nonetheless carried alongside the state during the walk rather
 /// than merged into it, because merging would be unsound: two paths can
-/// reach the same shape carrying different constants, and collapsing
-/// them would let a width proved on one path be claimed on the other.
+/// reach the same shape carrying different literals, and collapsing
+/// them would let a value proved on one path be claimed on the other.
 /// Paired with the state, the two stay separate states of the walk and
 /// only collapse when they agree.
 ///
+/// # Bytes, not numbers
+///
+/// The item's own bytes are kept, not the number they would denote.
+/// Reading a literal as a script number first was the defect
+/// `G12-R12` records: `0x00` is a byte the target reads as false and is
+/// not a *minimal* script number, so a walk that only retained minimal
+/// numbers carried nothing for it, and the verifying primitive over it
+/// kept a successful path the target cannot reach. Truth and equality
+/// are questions about bytes, and the number is derived where a number
+/// is what a contract asks for.
+///
 /// # Only what a program itself fixed
 ///
-/// A position is known only where a literal push put a canonical script
-/// number there, and the knowledge travels only where the reviewed
-/// contract says the item itself travels — an operand copied through by
-/// a stack operation. Nothing is inferred, and every unknown stays
-/// unknown.
+/// A position is known only where a literal push put an item there, and
+/// the knowledge travels only where the reviewed contract says the item
+/// itself travels — an operand copied through by a stack operation.
+/// Nothing is inferred, and every unknown stays unknown.
+///
+/// # What it can cost
+///
+/// The declared limits bound this: a map holds at most one entry per
+/// main-stack position, so `maximum_stack_depth` bounds its entries, the
+/// target's literal bound is the width of each, and `maximum_states`
+/// bounds how many maps one validation admits. It is a heavier state
+/// than a map of numbers would be, which is the price of deciding a
+/// question about bytes.
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-struct KnownConstants {
-    values: BTreeMap<usize, i64>,
+struct KnownLiterals {
+    values: BTreeMap<usize, StackItem>,
 }
 
-impl KnownConstants {
-    /// The constant at one main-stack position, where there is one.
-    fn at(&self, position: usize) -> Option<i64> {
-        self.values.get(&position).copied()
+impl KnownLiterals {
+    /// The literal at one main-stack position, where there is one.
+    fn at(&self, position: usize) -> Option<&StackItem> {
+        self.values.get(&position)
     }
 
     /// Forgets every position at or above `depth`.
@@ -318,16 +344,16 @@ impl KnownConstants {
                 .values
                 .iter()
                 .filter(|(position, _)| **position < depth)
-                .map(|(position, value)| (*position, *value))
+                .map(|(position, item)| (*position, item.clone()))
                 .collect(),
         }
     }
 
     /// Records what a newly pushed item at `position` carries.
-    fn record(&mut self, position: usize, value: Option<i64>) {
-        match value {
-            Some(value) => {
-                self.values.insert(position, value);
+    fn record(&mut self, position: usize, item: Option<StackItem>) {
+        match item {
+            Some(item) => {
+                self.values.insert(position, item);
             }
             None => {
                 self.values.remove(&position);
@@ -337,7 +363,7 @@ impl KnownConstants {
 }
 
 /// One reached state, and what the walk still knows about it.
-type Reached = (AbstractStackState, KnownConstants);
+type Reached = (AbstractStackState, KnownLiterals);
 
 /// What one instruction does to one incoming state.
 #[derive(Clone, Debug, Default)]
@@ -381,14 +407,14 @@ pub fn validate_program(
     // A state is live together with whether it was reached through a
     // non-aborting failure. The same stack shape can be reached both
     // ways, and the two are different findings about the program.
-    let mut live: BTreeSet<(AbstractStackState, bool, KnownConstants)> = BTreeSet::new();
-    live.insert((initial.clone(), false, KnownConstants::default()));
+    let mut live: BTreeSet<(AbstractStackState, bool, KnownLiterals)> = BTreeSet::new();
+    live.insert((initial.clone(), false, KnownLiterals::default()));
     let mut aborts: BTreeSet<FailureCause> = BTreeSet::new();
     let mut visited = 0_u64;
     check_depth(initial, limits)?;
 
     for (index, instruction) in program.instructions().iter().enumerate() {
-        let mut next: BTreeSet<(AbstractStackState, bool, KnownConstants)> = BTreeSet::new();
+        let mut next: BTreeSet<(AbstractStackState, bool, KnownLiterals)> = BTreeSet::new();
         for (state, failed, constants) in &live {
             let transfer = step(target, instruction, state, constants, index, limits)?;
             aborts.extend(transfer.aborts);
@@ -436,8 +462,8 @@ pub fn validate_program(
 
 /// Records one reached state against the state budget.
 fn admit(
-    next: &mut BTreeSet<(AbstractStackState, bool, KnownConstants)>,
-    reached: (AbstractStackState, bool, KnownConstants),
+    next: &mut BTreeSet<(AbstractStackState, bool, KnownLiterals)>,
+    reached: (AbstractStackState, bool, KnownLiterals),
     visited: &mut u64,
     limits: AbstractLimits,
 ) -> Result<(), TapscriptError> {
@@ -462,7 +488,7 @@ fn step(
     target: &ReviewedElementsTapscriptDefinition,
     instruction: &TapscriptInstruction,
     state: &AbstractStackState,
-    constants: &KnownConstants,
+    constants: &KnownLiterals,
     index: usize,
     limits: AbstractLimits,
 ) -> Result<Transfer, TapscriptError> {
@@ -473,10 +499,11 @@ fn step(
             main.push(literal_type(item));
             let reached = AbstractStackState::new(main, state.alternate().to_vec());
             check_depth(&reached, limits)?;
-            // A literal push is the one place a constant enters: the
-            // program itself fixed it.
+            // A literal push is the one place a known literal enters:
+            // the program itself fixed it, exactly, whatever the bytes
+            // happen to denote.
             let mut constants = constants.clone();
-            constants.record(position, item.script_number_value(target));
+            constants.record(position, Some(item.clone()));
             Ok(Transfer {
                 success: vec![(reached, constants)],
                 ..Transfer::default()
@@ -505,7 +532,7 @@ fn apply_opcode(
     target: &ReviewedElementsTapscriptDefinition,
     id: OpcodeId,
     state: &AbstractStackState,
-    constants: &KnownConstants,
+    constants: &KnownLiterals,
     index: usize,
     limits: AbstractLimits,
 ) -> Result<Transfer, TapscriptError> {
@@ -540,26 +567,18 @@ fn apply_opcode(
 
     let mut transfer = Transfer::default();
 
+    // What the exact literals the walk knows settle about this
+    // primitive: whether a verified operand is the target's false or one
+    // of its true values, and whether two compared operands agree.
+    let literals = LiteralFacts::observe(target, stack, state, constants, base);
+
     // Every compatible alternative is retained. The condition selecting
     // one is generally a property of the target value that was read,
     // which no abstract state can settle — except where the operand
     // types themselves rule a branch out, which is exactly the
     // signature case.
-    // A primitive that aborts on a false operand has no successful form
-    // when the operand can only be the false item. Nothing else in the
-    // state settles a truth value: a nonempty byte string may still be
-    // false — the target reads a zero payload as one — so only this
-    // direction narrows, and the other stays open.
-    let definitely_false = stack
-        .failure()
-        .effects()
-        .iter()
-        .any(|effect| effect.cause() == FailureCause::FalseVerification)
-        && operands.len() == 1
-        && is_definitely_false(target, &state.main()[base]);
-
     for case in stack.success().cases() {
-        if definitely_false || !authorization.admits_success(case.condition()) {
+        if !literals.admits_success() || !authorization.admits_success(case.condition()) {
             continue;
         }
         let (reached, reached_constants) = apply_case(target, state, constants, &case, base);
@@ -568,7 +587,8 @@ fn apply_opcode(
     }
 
     for effect in stack.failure().effects() {
-        if !authorization.admits_failure(effect.cause()) {
+        if !literals.admits_failure(effect.cause()) || !authorization.admits_failure(effect.cause())
+        {
             continue;
         }
         match effect.outcome() {
@@ -598,6 +618,139 @@ fn apply_opcode(
     }
 
     Ok(transfer)
+}
+
+/// What the exact literals the walk knows settle about one primitive.
+///
+/// # Both directions, and only where the bytes are known
+///
+/// Where a program pushed an operand itself, the walk holds the operand
+/// byte for byte, and a question the target answers from those bytes is
+/// answered here too — in *both* directions, which is what makes this
+/// different from the width reasoning around it. A verified operand the
+/// target reads as false removes the successful form, and one it reads
+/// as true removes the false-verification abort. Two compared operands
+/// that differ remove the successful form, and two that agree remove the
+/// inequality abort.
+///
+/// Removing an abort is a claim, so it is made only from exact bytes. An
+/// abstract type never licenses it: a nonempty byte string of unsettled
+/// content may be either truth value, since the target reads an all-zero
+/// payload as false. The one narrowing available without the bytes is
+/// the other direction — a type admitting no width but zero admits no
+/// value but the false one — and that is kept.
+///
+/// # Why this is not the contract's job
+///
+/// The reviewed contract states the *types* a primitive takes and the
+/// causes it can fail on. It does not state the reading the target gives
+/// a byte string, because that reading is not a property of any one
+/// primitive. So the rule is stated once, in [`reads_as_false`], and
+/// applied where a literal is known.
+#[derive(Clone, Copy, Debug, Default)]
+struct LiteralFacts {
+    verified: SettledTruth,
+    compared: SettledEquality,
+}
+
+/// What the walk settles about the value a primitive verifies.
+///
+/// Three states rather than a Boolean, because "not known false" and
+/// "known true" are different findings and only the second licenses
+/// dropping the abort.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum SettledTruth {
+    #[default]
+    Unsettled,
+    False,
+    True,
+}
+
+/// What the walk settles about the operands a primitive compares.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum SettledEquality {
+    #[default]
+    Unsettled,
+    Equal,
+    Unequal,
+}
+
+impl LiteralFacts {
+    /// Reads the verified and compared positions of one instruction.
+    ///
+    /// A primitive declaring neither cause gets every fact false, which
+    /// admits every case and every effect: this narrows truth and
+    /// equality and nothing else.
+    fn observe(
+        target: &ReviewedElementsTapscriptDefinition,
+        stack: &StackContract,
+        state: &AbstractStackState,
+        literals: &KnownLiterals,
+        base: usize,
+    ) -> Self {
+        let mut facts = Self::default();
+        let operands = stack.operands();
+        let declares = |cause| {
+            stack
+                .failure()
+                .effects()
+                .iter()
+                .any(|effect| effect.cause() == cause)
+        };
+
+        if declares(FailureCause::FalseVerification) && operands.len() == 1 {
+            facts.verified = match literals.at(base) {
+                Some(item) if reads_as_false(item.bytes()) => SettledTruth::False,
+                Some(_) => SettledTruth::True,
+                None if is_definitely_false(target, &state.main()[base]) => SettledTruth::False,
+                None => SettledTruth::Unsettled,
+            };
+        }
+
+        if declares(FailureCause::UnequalOperands)
+            && operands.len() == 2
+            && let (Some(left), Some(right)) = (literals.at(base), literals.at(base + 1))
+        {
+            facts.compared = if left == right {
+                SettledEquality::Equal
+            } else {
+                SettledEquality::Unequal
+            };
+        }
+
+        facts
+    }
+
+    /// Whether any successful form is still reachable.
+    fn admits_success(self) -> bool {
+        self.verified != SettledTruth::False && self.compared != SettledEquality::Unequal
+    }
+
+    /// Whether one failure cause is still reachable.
+    fn admits_failure(self, cause: FailureCause) -> bool {
+        match cause {
+            FailureCause::FalseVerification => self.verified != SettledTruth::True,
+            FailureCause::UnequalOperands => self.compared != SettledEquality::Equal,
+            _ => true,
+        }
+    }
+}
+
+/// Whether the target reads a byte string as its false value.
+///
+/// The target's own reading, restated here for the reason
+/// [`LiteralFacts`] gives: a value is false when every byte is zero,
+/// except that the last byte may instead carry the sign bit alone, which
+/// is the negative zero the arithmetic encoding produces. The empty item
+/// is false by the same rule, having no nonzero byte.
+///
+/// Exact bytes only. There is no abstract-type form of this question,
+/// and inventing one would be the unsound direction.
+fn reads_as_false(bytes: &[u8]) -> bool {
+    let [rest @ .., last] = bytes else {
+        return true;
+    };
+    rest.iter().all(|byte| *byte == 0) && (*last == 0x00 || *last == 0x80)
 }
 
 /// What the incoming operands settle about a signature primitive.
@@ -803,13 +956,13 @@ const fn statically_excluded(cause: FailureCause, widths_decided: bool) -> bool 
 fn apply_case(
     target: &ReviewedElementsTapscriptDefinition,
     state: &AbstractStackState,
-    constants: &KnownConstants,
+    constants: &KnownLiterals,
     case: &SuccessCase,
     base: usize,
 ) -> Reached {
     let effect = case.effect();
     let operands = state.main()[base..].to_vec();
-    let operand_constants: Vec<Option<i64>> = (base..state.main().len())
+    let operand_literals: Vec<Option<&StackItem>> = (base..state.main().len())
         .map(|at| constants.at(at))
         .collect();
     let mut main = state.main().to_vec();
@@ -836,18 +989,24 @@ fn apply_case(
                 // knew about it travels with it.
                 reached.record(
                     main.len() - 1,
-                    operand_constants.get(*index).copied().flatten(),
+                    operand_literals.get(*index).copied().flatten().cloned(),
                 );
             }
             ResultValue::ComputedWidthFromOperand {
                 width_operand,
                 unsettled,
             } => {
-                main.push(settled_width(
-                    target,
-                    unsettled,
-                    operand_constants.get(*width_operand).copied().flatten(),
-                ));
+                // A width is a number, so the literal is read as one
+                // here — and only here. An item that is not a canonical
+                // script number settles nothing, which is the target's
+                // own answer: it would abort rather than read a width
+                // out of it.
+                let width = operand_literals
+                    .get(*width_operand)
+                    .copied()
+                    .flatten()
+                    .and_then(|item| item.script_number_value(target));
+                main.push(settled_width(target, unsettled, width));
             }
         }
     }
@@ -888,7 +1047,7 @@ fn settled_width(
 }
 
 /// The state a non-aborting failure leaves behind, truncated to `keep`.
-fn with_false(state: &AbstractStackState, constants: &KnownConstants, keep: usize) -> Reached {
+fn with_false(state: &AbstractStackState, constants: &KnownLiterals, keep: usize) -> Reached {
     let mut main = state.main().to_vec();
     main.truncate(keep);
     let mut reached = constants.truncated(main.len());
