@@ -305,6 +305,36 @@ not move, verified by inspection rather than assumed. The Phase-3 card
 records the exit; Phase 4 is chartered by Guide 12 and its core waves
 are unblocked by the closed register.
 
+### 2.7 Guide-12 build boundary · `gate:backlog:guide12-build`
+
+The six build waves after the Phase-3 exit delivered the complete
+compact-ASH pipeline up to the live-node boundary, one Opus lane per
+wave, every merge tree-identical to the worker's gated tree: the
+validated compiler operation plan (Wave 4), the transaction-form and
+substrate review (Wave 5, first-party selection recorded with the
+third-party review of record awaiting ratification), the static
+assessment and eight operation-proven proof patterns (Wave 6), the
+candidate relocatable bundle (Wave 7), the linker foundation (Wave 8),
+and the candidate transaction ABI (Wave 9) and canonical fixtures
+(Wave 10). The linker wave proved the Wave-7 bundle unlinkable — the
+recognition fragments pushed the constructor program as a literal, a
+preimage-hard self-commitment — and a dedicated fix wave resolved it
+by identity introspection, re-deriving every census the change
+touched; the refusal vocabulary stays covered by constructed
+fixtures.
+
+Full gate on the boundary tree, wall-timed: the CI registry passed 16
+of 16 lanes in 21 m 57 s, meson compiled warm in 2 s, and the meson
+suite passed 42 of 42 lanes in 7 m 13 s. Weight: the closed §13.1
+integration queue moved to history mid-batch, combined markdown
+745826 of the 786432 cap. Waves 11 through 14 are blocked on a live
+target node and are recorded as blocked in §11: execution, negative
+relation coverage against the target, the resource observations, and
+the Phase-4 gate that consumes them. Standing obligations carried,
+not discharged: the pinned output key is unverified against the tree,
+internal-key unspendability is unverified, the clear lifecycle exit is
+outstanding, and no target has executed anything.
+
 ### The verification harness's two standing hazards · `rem:backlog:verification-harness`
 
 A verdict is read from the report wrapper's own report line, never from a pipeline's shell status: the wrapper propagates its exit code faithfully, and a pipe to a filter truncates the status to the last stage's. And a single shared build-target directory is poisoned when checkouts of two different commits build the same crates into it, so a lane that moves between commits pins a target directory of its own.
