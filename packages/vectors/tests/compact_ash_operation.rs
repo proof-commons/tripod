@@ -342,7 +342,36 @@ fn render_divergences(transcript: &OperationTranscript) -> String {
 /// consensus before any script runs, so a script-path expectation is
 /// unreachable for it whatever the covenant would have said.
 fn render_mutations(transcript: &OperationTranscript) -> String {
-    let mut out = String::from("  \"mutations\": [\n");
+    // The control first, because every row below depends on it. A
+    // mutation refused while its control was also refused is not
+    // evidence about the mutation: both could have failed for the same
+    // unrelated reason, and the reader has to be able to see that
+    // before reading a single mutation row.
+    let subject = transcript.mutation_subject();
+    let control = subject.and_then(|id| {
+        transcript
+            .submissions()
+            .iter()
+            .find(|submission| submission.vector() == id)
+    });
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "  \"mutation_control\": {{\"subject_ordinal\": {}, \"layer\": {}, \"mutations_attributable\": {}}},",
+        subject.map_or_else(
+            || "null".to_owned(),
+            |id| id.fixture().ordinal().to_string()
+        ),
+        control.map_or_else(
+            || "null".to_owned(),
+            |submission| quote(&submission.layer().to_string())
+        ),
+        // The whole negative half's licence, stated once: the control
+        // was accepted, so the mutations submitted before it differ from
+        // an accepted transaction by exactly what each one changed.
+        control.is_some_and(|submission| submission.layer() == ObservedOutcomeLayer::Accepted),
+    );
+    out.push_str("  \"mutations\": [\n");
     for (index, mutant) in transcript.mutants().iter().enumerate() {
         if index > 0 {
             out.push_str(",\n");
