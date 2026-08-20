@@ -48,6 +48,7 @@ use target_elements_conformance::protocol::ObservedOutcomeLayer;
 use vectors::comparison::{compare, read_accepted};
 use vectors::fixture::{OPERATION, positive_semantic_census};
 use vectors::materialize::{TargetVectorId, vector_id};
+use vectors::matrix::EvidenceBoundary;
 use vectors::operation::{CompactAshOperationPlanner, OperationTranscript};
 use vectors::plan::{ProjectionComparison, derive_evidence_plan};
 
@@ -266,33 +267,7 @@ fn render(
         "  \"coverage_requirements\": {requirements}, \"coverage_observed\": {observed}, \"coverage_discharged\": {discharged},"
     );
 
-    // The rows this target's own money bound forbids, and what it said
-    // when it was asked for one anyway. Written apart from the
-    // submissions and never among them: nothing was built for these, so
-    // nothing was judged, and a reader must not be able to count one as
-    // a result.
-    out.push_str("  \"target_amount_divergences\": [\n");
-    for (index, divergence) in transcript.divergences().iter().enumerate() {
-        if index > 0 {
-            out.push_str(",\n");
-        }
-        let _ = write!(
-            out,
-            "    {{\"ordinal\": {}, \"fixture\": {}, \"stated\": {}, \"bound\": {}, \"excess\": {}, \"layer\": {}, \"target_verdict\": {}, \"detail\": {}}}",
-            divergence.vector().fixture().ordinal(),
-            quote(divergence.vector().fixture().name()),
-            divergence.beyond().stated(),
-            divergence.beyond().bound(),
-            divergence.beyond().excess(),
-            quote(&divergence.layer().to_string()),
-            // §1.5, stated rather than left to be inferred from the
-            // layer's name: an adapter that could not perform a step has
-            // not told anyone what the target thinks of it.
-            divergence.layer().is_target_verdict(),
-            divergence.detail().map_or_else(|| "null".to_owned(), quote),
-        );
-    }
-    out.push_str("\n  ],\n");
+    out.push_str(&render_divergences(transcript));
 
     out.push_str("  \"submissions\": [\n");
     for (index, submission) in transcript.submissions().iter().enumerate() {
@@ -316,8 +291,119 @@ fn render(
             submission.bytes().len(),
         );
     }
-    out.push_str("\n  ]\n}\n");
+    out.push_str("\n  ],\n");
+    out.push_str(&render_mutations(transcript));
+    out.push_str("}\n");
     out
+}
+
+/// The rows this target's own money bound forbids.
+///
+/// What the target said when it was asked for one anyway, written apart
+/// from the submissions and never among them: nothing was built for
+/// these, so nothing was judged, and a reader must not be able to count
+/// one as a result.
+fn render_divergences(transcript: &OperationTranscript) -> String {
+    let mut out = String::from("  \"target_amount_divergences\": [\n");
+    for (index, divergence) in transcript.divergences().iter().enumerate() {
+        if index > 0 {
+            out.push_str(",\n");
+        }
+        let _ = write!(
+            out,
+            "    {{\"ordinal\": {}, \"fixture\": {}, \"stated\": {}, \"bound\": {}, \"excess\": {}, \"layer\": {}, \"target_verdict\": {}, \"detail\": {}}}",
+            divergence.vector().fixture().ordinal(),
+            quote(divergence.vector().fixture().name()),
+            divergence.beyond().stated(),
+            divergence.beyond().bound(),
+            divergence.beyond().excess(),
+            quote(&divergence.layer().to_string()),
+            // §1.5, stated rather than left to be inferred from the
+            // layer's name: an adapter that could not perform a step has
+            // not told anyone what the target thinks of it.
+            divergence.layer().is_target_verdict(),
+            divergence.detail().map_or_else(|| "null".to_owned(), quote),
+        );
+    }
+    out.push_str("\n  ],\n");
+    out
+}
+
+/// The negative half of the report.
+///
+/// Each row states the mutation, the §1.5 boundary the §18 class it
+/// stages expects, the layer the target actually answered at, and
+/// whether those two agree — as separate fields, because a row
+/// recording only the agreement would hide which way a disagreement
+/// went.
+///
+/// Whether the mutation could even reach its expected boundary is a
+/// further fact: an arm that unbalances the closed asset is answered by
+/// consensus before any script runs, so a script-path expectation is
+/// unreachable for it whatever the covenant would have said.
+fn render_mutations(transcript: &OperationTranscript) -> String {
+    let mut out = String::from("  \"mutations\": [\n");
+    for (index, mutant) in transcript.mutants().iter().enumerate() {
+        if index > 0 {
+            out.push_str(",\n");
+        }
+        let expected = mutant
+            .mutation()
+            .expected_boundary()
+            .expect("the mutation stages a class §18 names");
+        let observed = mutant.layer();
+        let _ = write!(
+            out,
+            "    {{\"mutation\": {}, \"class\": {}, \"origin_ordinal\": {}, \"expected_boundary\": {}, \"observed_layer\": {}, \"boundary_matched\": {}, \"target_verdict\": {}, \"preserves_value_balance\": {}, \"detail\": {}, \"bytes\": {}}}",
+            quote(&format!("{:?}", mutant.mutation())),
+            quote(mutant.mutation().class_name()),
+            mutant.origin().fixture().ordinal(),
+            quote(&format!("{expected:?}")),
+            quote(&observed.to_string()),
+            matches_boundary(expected, observed),
+            observed.is_target_verdict(),
+            mutant.mutation().preserves_value_balance(),
+            mutant.detail().map_or_else(|| "null".to_owned(), quote),
+            mutant.bytes().len(),
+        );
+    }
+    out.push_str("\n  ]\n");
+    out
+}
+
+/// Whether an observed layer is the §1.5 boundary a class expected.
+///
+/// The two vocabularies are different types and this is the only place
+/// they are put side by side. It is a total function over the observed
+/// layer rather than a lookup with a fallback, so a layer nobody
+/// considered fails to match rather than matching by accident.
+fn matches_boundary(expected: EvidenceBoundary, observed: ObservedOutcomeLayer) -> bool {
+    // Exhaustive over the expected side, which is this workspace's own
+    // vocabulary: a boundary added to §1.5 has to be given an
+    // observable layer here or this stops compiling. The observed side
+    // is then a single equality, so no layer can satisfy a boundary by
+    // falling through a wildcard.
+    let required = match expected {
+        EvidenceBoundary::ConsensusRejectionBeforeScript => {
+            ObservedOutcomeLayer::ConsensusRejectionBeforeScript
+        }
+        EvidenceBoundary::ScriptPathRejection => ObservedOutcomeLayer::ScriptPathRejection,
+        EvidenceBoundary::RelayPolicyRejection => ObservedOutcomeLayer::RelayPolicyRejection,
+        EvidenceBoundary::AcceptedTransaction => ObservedOutcomeLayer::Accepted,
+        // Boundaries no submission reaches. A pre-target refusal happens
+        // before a target is asked, an infrastructure failure is not a
+        // target fact, and a report-layer verdict is made after
+        // acceptance rather than by the target — so no observed layer
+        // satisfies one of these.
+        EvidenceBoundary::SemanticRequestRejection
+        | EvidenceBoundary::CompilerPlanRejection
+        | EvidenceBoundary::BackendEmissionRejection
+        | EvidenceBoundary::LinkerRejection
+        | EvidenceBoundary::AbiConstructionRejection
+        | EvidenceBoundary::ExecutorInfrastructureFailure
+        | EvidenceBoundary::ReportSemanticProjectionRejection => return false,
+    };
+    observed == required
 }
 
 #[test]
@@ -428,6 +514,44 @@ fn compact_ash_runs_against_a_real_target() {
             projections.len(),
             accepted,
             "an accepted transaction went uncompared"
+        );
+
+        check_negative_half(transcript, accepted);
+    }
+}
+
+/// The negative half's shape, and nothing about its verdicts.
+///
+/// A run that accepted something must have staged every mutation —
+/// applied, or refused for want of material in the accepted shape — so
+/// a wave that silently dropped an arm fails here rather than reporting
+/// a smaller matrix. What each mutation actually produced is written to
+/// the transcript and asserted nowhere.
+fn check_negative_half(transcript: &OperationTranscript, accepted: usize) {
+    if accepted > 0 {
+        assert_eq!(
+            transcript.mutants().len(),
+            vectors::mutation::NegativeMutation::ALL.len(),
+            "a mutation went unstaged"
+        );
+    } else {
+        assert!(
+            transcript.mutants().is_empty(),
+            "mutations were staged from a transaction no target accepted"
+        );
+    }
+
+    // Every mutation that was actually submitted carries the bytes it
+    // was submitted as. A row with no bytes and a target verdict would
+    // claim an answer to something nobody sent.
+    for mutant in transcript.mutants() {
+        if mutant.layer() == ObservedOutcomeLayer::FixtureConstructionFailure {
+            continue;
+        }
+        assert!(
+            !mutant.bytes().is_empty(),
+            "a submitted mutation recorded no bytes: {:?}",
+            mutant.mutation()
         );
     }
 }
