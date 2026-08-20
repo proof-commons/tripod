@@ -24,10 +24,11 @@
 //! The assertions are about the *shape* of a completed run: that the
 //! ceremony reached the target, that every submission was answered, and
 //! that the transcript records the same number of outcomes as vectors
-//! submitted. Whether the target accepted anything is written down, not
-//! asserted: a wave that asserted acceptance would fail rather than
-//! report when the honest answer is a refusal
-//! `(´[PLAN-rule:guide12-exec:failure-layers]´)`.
+//! submitted, and that the run met exactly the money-bound divergences
+//! the plan's census derived before it started. Whether the target
+//! accepted anything is written down, not asserted: a wave that asserted
+//! acceptance would fail rather than report when the honest answer is a
+//! refusal `(´[PLAN-rule:guide12-exec:failure-layers]´)`.
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -40,7 +41,7 @@ use target_elements::{
 use target_elements_conformance::executor::{
     DEFAULT_EXECUTOR_TIMEOUT, ExecutorConfiguration, ExecutorTrust, execute_operations,
 };
-use vectors::operation::CompactAshOperationPlanner;
+use vectors::operation::{CompactAshOperationPlanner, OperationTranscript};
 
 fn environment(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|value| !value.is_empty())
@@ -83,6 +84,82 @@ fn hex(bytes: &[u8]) -> String {
         let _ = write!(text, "{byte:02x}");
     }
     text
+}
+
+/// Write everything the run established, and nothing it did not.
+fn render(transcript: &OperationTranscript, wall: Duration, outcome_text: &str) -> String {
+    let mut out = String::new();
+    out.push_str("{\n");
+    let _ = writeln!(out, "  \"wall_seconds\": {:.1},", wall.as_secs_f64());
+    let _ = writeln!(out, "  \"run\": {outcome_text},");
+    let _ = writeln!(
+        out,
+        "  \"plan_refusal\": {},",
+        transcript.refusal().map_or_else(
+            || "null".to_owned(),
+            |refusal| quote(&format!("{refusal:?}"))
+        )
+    );
+    let _ = writeln!(
+        out,
+        "  \"issued_asset\": {},",
+        transcript
+            .issued_asset()
+            .map_or_else(|| "null".to_owned(), |asset| quote(&hex(&asset)))
+    );
+    let _ = writeln!(
+        out,
+        "  \"constructor_program\": {},",
+        transcript
+            .constructor_program()
+            .map_or_else(|| "null".to_owned(), |program| quote(&hex(program)))
+    );
+    let _ = writeln!(out, "  \"funded_vectors\": {},", transcript.funded().len());
+
+    // The rows this target's own money bound forbids, and what it said
+    // when it was asked for one anyway. Written apart from the
+    // submissions and never among them: nothing was built for these, so
+    // nothing was judged, and a reader must not be able to count one as
+    // a result.
+    out.push_str("  \"target_amount_divergences\": [\n");
+    for (index, divergence) in transcript.divergences().iter().enumerate() {
+        if index > 0 {
+            out.push_str(",\n");
+        }
+        let _ = write!(
+            out,
+            "    {{\"ordinal\": {}, \"fixture\": {}, \"stated\": {}, \"bound\": {}, \"excess\": {}, \"layer\": {}, \"detail\": {}}}",
+            divergence.vector().fixture().ordinal(),
+            quote(divergence.vector().fixture().name()),
+            divergence.beyond().stated(),
+            divergence.beyond().bound(),
+            divergence.beyond().excess(),
+            quote(&divergence.layer().to_string()),
+            divergence.detail().map_or_else(|| "null".to_owned(), quote),
+        );
+    }
+    out.push_str("\n  ],\n");
+
+    out.push_str("  \"submissions\": [\n");
+    for (index, submission) in transcript.submissions().iter().enumerate() {
+        if index > 0 {
+            out.push_str(",\n");
+        }
+        let _ = write!(
+            out,
+            "    {{\"ordinal\": {}, \"ash_inputs\": {}, \"layer\": {}, \"txid\": {}, \"detail\": {}, \"bytes\": {}}}",
+            submission.vector().fixture().ordinal(),
+            submission.vector().ash_inputs(),
+            quote(&submission.layer().to_string()),
+            submission
+                .accepted_txid()
+                .map_or_else(|| "null".to_owned(), quote),
+            submission.detail().map_or_else(|| "null".to_owned(), quote),
+            submission.bytes().len(),
+        );
+    }
+    out.push_str("\n  ]\n}\n");
+    out
 }
 
 #[test]
@@ -130,59 +207,11 @@ fn compact_ash_runs_against_a_real_target() {
     let wall = started.elapsed();
 
     let transcript = planner.transcript();
-    let mut out = String::new();
-    out.push_str("{\n");
-    let _ = writeln!(out, "  \"wall_seconds\": {:.1},", wall.as_secs_f64());
-    let _ = writeln!(
-        out,
-        "  \"run\": {},",
-        match &outcome {
-            Ok(_) => quote("completed"),
-            Err(error) => quote(&format!("refused: {error}")),
-        }
-    );
-    let _ = writeln!(
-        out,
-        "  \"plan_refusal\": {},",
-        transcript.refusal().map_or_else(
-            || "null".to_owned(),
-            |refusal| quote(&format!("{refusal:?}"))
-        )
-    );
-    let _ = writeln!(
-        out,
-        "  \"issued_asset\": {},",
-        transcript
-            .issued_asset()
-            .map_or_else(|| "null".to_owned(), |asset| quote(&hex(&asset)))
-    );
-    let _ = writeln!(
-        out,
-        "  \"constructor_program\": {},",
-        transcript
-            .constructor_program()
-            .map_or_else(|| "null".to_owned(), |program| quote(&hex(program)))
-    );
-    let _ = writeln!(out, "  \"funded_vectors\": {},", transcript.funded().len());
-    out.push_str("  \"submissions\": [\n");
-    for (index, submission) in transcript.submissions().iter().enumerate() {
-        if index > 0 {
-            out.push_str(",\n");
-        }
-        let _ = write!(
-            out,
-            "    {{\"ordinal\": {}, \"ash_inputs\": {}, \"layer\": {}, \"txid\": {}, \"detail\": {}, \"bytes\": {}}}",
-            submission.vector().fixture().ordinal(),
-            submission.vector().ash_inputs(),
-            quote(&submission.layer().to_string()),
-            submission
-                .accepted_txid()
-                .map_or_else(|| "null".to_owned(), quote),
-            submission.detail().map_or_else(|| "null".to_owned(), quote),
-            submission.bytes().len(),
-        );
-    }
-    out.push_str("\n  ]\n}\n");
+    let outcome_text = match &outcome {
+        Ok(_) => quote("completed"),
+        Err(error) => quote(&format!("refused: {error}")),
+    };
+    let out = render(transcript, wall, &outcome_text);
     std::fs::write(&report, &out).expect("the transcript is written");
 
     // A run that reached the target at all answered every step it asked
@@ -192,6 +221,24 @@ fn compact_ash_runs_against_a_real_target() {
             transcript.submissions().len(),
             planner.vectors().len(),
             "a submission went unanswered"
+        );
+
+        // And the run did what the plan's own census said it would.
+        // The census is derived from the reviewed target bound before
+        // anything runs; the transcript is what the target answered.
+        // A disagreement means one of the two is describing a different
+        // wave than the other.
+        let bundle = vectors::bundle::fixture_bundle().expect("the fixture bundle builds");
+        let plan = vectors::derive_evidence_plan(&bundle).expect("the evidence plan derives");
+        assert_eq!(
+            transcript.submissions().len(),
+            plan.census().submittable_vectors(),
+            "the run submitted a different number of vectors than the plan admits"
+        );
+        assert_eq!(
+            transcript.divergences().len(),
+            plan.census().divergent_vectors(),
+            "the run met a different number of money-bound divergences than the plan derived"
         );
     }
 }

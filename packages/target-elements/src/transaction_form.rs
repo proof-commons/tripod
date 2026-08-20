@@ -426,6 +426,19 @@ pub struct StatedAmountBound {
 }
 
 impl StatedAmountBound {
+    /// A bound no target published, for asking what a different
+    /// ceiling would classify.
+    ///
+    /// Named to be conspicuous at a call site. Nothing that judges a
+    /// real target may build one of these: the reviewed bound is the
+    /// only one that says anything about the target, and a caller
+    /// passing its own number would be judging the target against a
+    /// ceiling it does not have.
+    #[must_use]
+    pub const fn hypothetical(maximum: u64) -> Self {
+        Self { maximum }
+    }
+
     /// The greatest admissible value of one explicit amount field.
     #[must_use]
     pub const fn maximum(self) -> u64 {

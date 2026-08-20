@@ -25,7 +25,7 @@
 //! bundle decides the constructor's output program, and the outpoints the
 //! target reported decide what each vector spends.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
 use target_elements_conformance::protocol::{
@@ -35,6 +35,7 @@ use target_elements_conformance::protocol::{
 use transaction::{FundingCeremonyStep, Outpoint, Txid};
 
 use crate::bundle::{FixtureBundle, ceremony_bundle};
+use crate::divergence::{AmountBeyondTargetBound, target_amount_standing};
 use crate::error::VectorError;
 use crate::fixture::{CompactAshSemanticCase, positive_semantic_census};
 use crate::materialize::{
@@ -67,6 +68,22 @@ pub enum PlanRefusal {
     IssuedAssetUnreadable(String),
     /// A funding step reached no target verdict.
     FundingDidNotHappen(ObservedOutcomeLayer),
+    /// The target created a coin its own bound says it cannot state.
+    ///
+    /// The opposite surprise to a funding failure, and refused just as
+    /// hard. A row is asked for only because the reviewed bound says
+    /// the target cannot hold that amount; a target that holds it
+    /// anyway has falsified the reviewed fact the classification was
+    /// derived from, and continuing would build a run on a reading of
+    /// the target that is known to be wrong.
+    AmountBeyondBoundWasFunded {
+        /// The vector the coin was cut for.
+        vector: TargetVectorId,
+        /// The amount the step asked the target to state.
+        stated: u64,
+        /// The bound the reviewed target facts publish.
+        bound: u64,
+    },
     /// A funding step created a different number of outputs than asked.
     FundingCardinalityWrong {
         /// How many outputs the step asked for.
@@ -137,6 +154,57 @@ impl SubmissionOutcome {
     }
 }
 
+/// One target-bound divergence, as the target answered it.
+///
+/// # Why the answer is recorded and not just the classification
+///
+/// The classification is a comparison of two numbers this workspace
+/// holds, and on its own it establishes nothing about a running node.
+/// The divergence becomes a fact about the target when the target is
+/// asked to create the coin and does not. Both halves are therefore
+/// kept: what was derived, and what came back.
+///
+/// The layer is deliberately not constrained to one value. The reviewed
+/// bound says the amount cannot be stated; which of the target's gates
+/// says so first is the target's business, and on this path an
+/// adapter's own reserve arithmetic can answer ahead of every one of
+/// them. What is required is that the step did not succeed, and the
+/// layer and detail record which way it failed
+/// `(´[PLAN-rule:guide12-exec:failure-layers]´)`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ObservedDivergence {
+    vector: TargetVectorId,
+    beyond: AmountBeyondTargetBound,
+    layer: ObservedOutcomeLayer,
+    detail: Option<String>,
+}
+
+impl ObservedDivergence {
+    /// The vector whose funding the target's bound forbids.
+    #[must_use]
+    pub const fn vector(&self) -> TargetVectorId {
+        self.vector
+    }
+
+    /// The amount, its place in the row, and the bound it overshoots.
+    #[must_use]
+    pub const fn beyond(&self) -> AmountBeyondTargetBound {
+        self.beyond
+    }
+
+    /// Where the target put the step that was asked anyway.
+    #[must_use]
+    pub const fn layer(&self) -> ObservedOutcomeLayer {
+        self.layer
+    }
+
+    /// What the target or the adapter said, verbatim and unmapped.
+    #[must_use]
+    pub fn detail(&self) -> Option<&str> {
+        self.detail.as_deref()
+    }
+}
+
 /// Everything one operation run established.
 ///
 /// Built only by [`CompactAshOperationPlanner`], and only from answers
@@ -147,6 +215,7 @@ pub struct OperationTranscript {
     constructor_program: Option<Vec<u8>>,
     funded: BTreeMap<TargetVectorId, Vec<Outpoint>>,
     submissions: Vec<SubmissionOutcome>,
+    divergences: Vec<ObservedDivergence>,
     refusal: Option<PlanRefusal>,
 }
 
@@ -179,6 +248,17 @@ impl OperationTranscript {
         &self.submissions
     }
 
+    /// Every row the target's own bound refused to fund.
+    ///
+    /// Empty for a run whose census the target admits whole. A
+    /// non-empty list is evidence of a divergence between the
+    /// protocol's amount domain and this target's, and is never a
+    /// submission result: nothing was built, so nothing was judged.
+    #[must_use]
+    pub fn divergences(&self) -> &[ObservedDivergence] {
+        &self.divergences
+    }
+
     /// Why the plan stopped, where it stopped early.
     #[must_use]
     pub const fn refusal(&self) -> Option<&PlanRefusal> {
@@ -186,12 +266,36 @@ impl OperationTranscript {
     }
 }
 
+/// What the ceremony is asking a funding step for.
+///
+/// # Why an expectation exists here and nowhere near the step
+///
+/// The [`OperationStep`] this produces carries an identity and a
+/// subject, exactly as before: no expected layer crosses the boundary,
+/// and the executor is told nothing about which answer would be the
+/// interesting one. The expectation is the planner's own reading of
+/// what it is about to ask, kept on this side so that an answer can be
+/// compared against something rather than merely recorded.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FundingExpectation {
+    /// A coin the vector will spend.
+    Coin,
+    /// A coin the reviewed target bound says the target cannot state.
+    ///
+    /// Asked anyway, and asked exactly once per divergent row. The
+    /// classification is arithmetic over two numbers this workspace
+    /// holds; without putting it to the target there is no observation
+    /// behind the claim, only a calculation asserting one.
+    BeyondBound(AmountBeyondTargetBound),
+}
+
 /// One funding request the schedule holds.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 struct PlannedFunding {
     vector: TargetVectorId,
     member: usize,
     amount: u64,
+    expectation: FundingExpectation,
 }
 
 /// Where the planner is.
@@ -213,10 +317,12 @@ enum Stage {
 ///
 /// # How the thirteen work items map
 ///
-/// The plan's [`RequiredTargetWork`] census is four ceremony steps and
-/// nine vector submissions. The submissions map one-to-one onto
-/// submission steps. The ceremony does not, and the mismatch is
-/// deliberate rather than an approximation:
+/// The plan's [`RequiredTargetWork`] census is four ceremony steps, one
+/// per sponsorless vector after that, and — for a row the reviewed
+/// target bound forbids — a divergence probe in the submission's place.
+/// The submissions map one-to-one onto submission steps. The ceremony
+/// does not, and the mismatch is deliberate rather than an
+/// approximation:
 ///
 /// - `IssueDisposableTestAsset` is one funding step that issues.
 /// - `DeriveConstructorOutputProgram` is one funding step at the program
@@ -225,7 +331,10 @@ enum Stage {
 /// - `FundEachAshInput` is *many* funding steps, which is what the
 ///   census entry says: once per ASH input the fixture needs. A single
 ///   step could not express it, because a funding step states one amount
-///   and the fixtures state different amounts per input.
+///   and the fixtures state different amounts per input. A row the
+///   reviewed target bound cannot state gets one step instead of one
+///   per input, and that step's whole purpose is the refusal it
+///   collects `(´[PLAN-rule:guide12-exec:failure-layers]´)`.
 /// - `RecordPublicView` is no step at all. Recording the outpoints and
 ///   their public fields is what this planner does with what the target
 ///   already reported; asking the target to do it would be asking it to
@@ -236,6 +345,7 @@ pub struct CompactAshOperationPlanner {
     stage: Stage,
     cases: Vec<CompactAshSemanticCase>,
     schedule: Vec<PlannedFunding>,
+    unfundable: BTreeSet<TargetVectorId>,
     bundle: Option<FixtureBundle>,
     probe_program: Vec<u8>,
     program: Vec<u8>,
@@ -267,6 +377,7 @@ impl CompactAshOperationPlanner {
             stage: Stage::Issue,
             cases,
             schedule: Vec::new(),
+            unfundable: BTreeSet::new(),
             bundle: None,
             probe_program,
             program: Vec::new(),
@@ -400,22 +511,39 @@ impl CompactAshOperationPlanner {
         // One funding request per ASH input, in fixture order and then
         // member order, because materialization pairs the coins with the
         // amounts in exactly that order.
-        self.schedule = self
-            .cases
-            .iter()
-            .flat_map(|case| {
-                let vector = vector_id(case);
-                case.inputs()
-                    .iter()
-                    .enumerate()
-                    .map(move |(member, amount)| PlannedFunding {
+        //
+        // Except for a row the reviewed target bound says cannot be
+        // funded at all. That row gets exactly one step — the first
+        // input the bound forbids — and none of the rest, because the
+        // remaining coins would be cut for a transaction that is never
+        // built. The one step is asked so that the divergence is
+        // observed rather than assumed.
+        self.schedule.clear();
+        self.unfundable.clear();
+        for case in &self.cases {
+            let vector = vector_id(case);
+            match target_amount_standing(case).unfundable_input() {
+                Some((member, beyond)) => {
+                    self.unfundable.insert(vector);
+                    self.schedule.push(PlannedFunding {
                         vector,
                         member,
-                        amount: amount.get(),
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect();
+                        amount: beyond.stated(),
+                        expectation: FundingExpectation::BeyondBound(beyond),
+                    });
+                }
+                None => {
+                    for (member, amount) in case.inputs().iter().enumerate() {
+                        self.schedule.push(PlannedFunding {
+                            vector,
+                            member,
+                            amount: amount.get(),
+                            expectation: FundingExpectation::Coin,
+                        });
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
@@ -444,11 +572,40 @@ impl CompactAshOperationPlanner {
     }
 
     /// Record one funded coin against the vector it was cut for.
+    ///
+    /// # Why one row's refusal is not the run's refusal
+    ///
+    /// An unexpected funding failure still stops everything: the coins
+    /// a later step depends on would not exist, and continuing would
+    /// submit transactions against outputs no chain holds. The one
+    /// exception is a step the reviewed target bound already said could
+    /// not succeed. There the refusal is the answer the step was asked
+    /// for, the row it belongs to is excluded from everything
+    /// downstream, and the rest of the census carries on — which is the
+    /// difference between a target that cannot state one amount and a
+    /// ceremony that has broken.
     fn settle_funding(
         &mut self,
         index: usize,
         response: &NativeOperationResponse,
     ) -> Result<(), PlanRefusal> {
+        let planned = self.schedule[index];
+        if let FundingExpectation::BeyondBound(beyond) = planned.expectation {
+            if response.observed_layer == ObservedOutcomeLayer::Accepted {
+                return Err(PlanRefusal::AmountBeyondBoundWasFunded {
+                    vector: planned.vector,
+                    stated: beyond.stated(),
+                    bound: beyond.bound(),
+                });
+            }
+            self.transcript.divergences.push(ObservedDivergence {
+                vector: planned.vector,
+                beyond,
+                layer: response.observed_layer,
+                detail: response.observed_detail.clone(),
+            });
+            return Ok(());
+        }
         if response.observed_layer != ObservedOutcomeLayer::Accepted {
             return Err(PlanRefusal::FundingDidNotHappen(response.observed_layer));
         }
@@ -470,7 +627,12 @@ impl CompactAshOperationPlanner {
         Ok(())
     }
 
-    /// Materialize every vector against the coins the ceremony created.
+    /// Materialize every vector the ceremony actually created coins for.
+    ///
+    /// A row the target's bound refused is skipped rather than built
+    /// against a short funding record. There is nothing to build: the
+    /// coins do not exist, and a transaction naming outpoints no chain
+    /// created is the very thing Wave 11 stopped producing.
     fn materialize_all(&mut self) -> Result<(), PlanRefusal> {
         let bundle = self
             .bundle
@@ -479,6 +641,9 @@ impl CompactAshOperationPlanner {
         let mut vectors = Vec::with_capacity(self.cases.len());
         for case in &self.cases {
             let id = vector_id(case);
+            if self.unfundable.contains(&id) {
+                continue;
+            }
             let outpoints = self.transcript.funded.get(&id).cloned().unwrap_or_default();
             let funding = AshFunding::new(id, outpoints)
                 .map_err(|cause| PlanRefusal::Bundle(Box::new(cause)))?;
@@ -645,4 +810,307 @@ pub const fn ceremony_census() -> &'static [FundingCeremonyStep] {
 #[must_use]
 pub fn is_funding(case: &OperationCaseId) -> bool {
     case.operation == OperationStepKind::Fund
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CompactAshOperationPlanner, PlanRefusal, hex_of_slice, is_funding};
+    use target_elements_conformance::executor::TargetOperationPlanner;
+    use target_elements_conformance::protocol::{
+        FundedOutput, NATIVE_PROTOCOL_SCHEMA, NativeOperationResponse, NativeResourceObservation,
+        ObservedOutcomeLayer, OperationCaseId, OperationStepKind, OperationSubject, WireOutpoint,
+    };
+
+    /// A disposable asset identity, in the target's own spelling.
+    ///
+    /// A fixed value naming a coin on no chain, which authorizes
+    /// nothing `(´[ADR015-rule:security:test-material]´)`.
+    const ISSUED: &str = "11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff";
+
+    fn resources() -> NativeResourceObservation {
+        NativeResourceObservation {
+            script_bytes: 0,
+            initial_stack_items: 0,
+            peak_stack_items: None,
+            peak_altstack_items: None,
+            maximum_element_bytes: None,
+            validation_budget_used: None,
+            transaction_weight: None,
+        }
+    }
+
+    /// One coin identity per funding answer, so no two collide.
+    fn coin(sequence: u32) -> WireOutpoint {
+        let mut bytes = [0_u8; 32];
+        bytes[0..4].copy_from_slice(&sequence.to_be_bytes());
+        WireOutpoint {
+            txid: hex_of_slice(&bytes),
+            vout: 0,
+        }
+    }
+
+    /// The bound the reviewed target facts publish.
+    fn bound() -> u64 {
+        target_elements::reviewed_stated_amount_bound().maximum()
+    }
+
+    /// What the fake target should do with the step it was handed.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Answer {
+        /// Do what the step asked.
+        Perform,
+        /// Report that the step did not happen.
+        Refuse(ObservedOutcomeLayer),
+    }
+
+    /// A fake target that answers exactly what a step asks for.
+    ///
+    /// It creates no chain and validates nothing. Its whole job is to
+    /// produce well-shaped answers so that the *planner's* reaction to
+    /// them can be tested, which is the half of the exchange this
+    /// module owns.
+    struct FakeTarget<F: FnMut(&OperationCaseId, u64) -> Answer> {
+        sequence: u32,
+        decide: F,
+    }
+
+    impl<F: FnMut(&OperationCaseId, u64) -> Answer> FakeTarget<F> {
+        fn answer(
+            &mut self,
+            case: &OperationCaseId,
+            subject: &OperationSubject,
+        ) -> NativeOperationResponse {
+            let mut response = NativeOperationResponse {
+                schema: NATIVE_PROTOCOL_SCHEMA,
+                case: case.clone(),
+                observed_layer: ObservedOutcomeLayer::Accepted,
+                observed_detail: None,
+                issued_asset: None,
+                funded_outputs: Vec::new(),
+                accepted_txid: None,
+                resources: resources(),
+            };
+            match subject {
+                OperationSubject::Funding(funding) => {
+                    if let Answer::Refuse(layer) = (self.decide)(case, funding.amount_per_output) {
+                        response.observed_layer = layer;
+                        response.observed_detail = Some(
+                            "the step asks for more of the asset than this run holds".to_owned(),
+                        );
+                        return response;
+                    }
+                    self.sequence += 1;
+                    if funding.issue_asset {
+                        response.issued_asset = Some(ISSUED.to_owned());
+                    }
+                    response.funded_outputs = (0..u32::from(funding.outputs))
+                        .map(|index| FundedOutput {
+                            outpoint: coin(self.sequence * 16 + index),
+                            asset: ISSUED.to_owned(),
+                            amount_satoshis: funding.amount_per_output,
+                            script: hex_of_slice(&funding.output_program),
+                        })
+                        .collect();
+                }
+                OperationSubject::Submission(_) => {
+                    response.accepted_txid = Some(ISSUED.to_owned());
+                }
+            }
+            response
+        }
+    }
+
+    /// Drive a planner to completion against a fake target.
+    ///
+    /// Returns the planner and whether the plan ran out of steps rather
+    /// than refusing.
+    fn run<F: FnMut(&OperationCaseId, u64) -> Answer>(
+        decide: F,
+    ) -> (CompactAshOperationPlanner, bool) {
+        let mut planner = CompactAshOperationPlanner::new().expect("the planner builds");
+        let mut target = FakeTarget {
+            sequence: 0,
+            decide,
+        };
+        let mut previous: Option<(OperationCaseId, NativeOperationResponse)> = None;
+        loop {
+            let borrowed = previous.as_ref().map(|(case, response)| (case, response));
+            let step = match planner.next_step(borrowed) {
+                Ok(Some(step)) => step,
+                Ok(None) => return (planner, true),
+                Err(_) => return (planner, false),
+            };
+            let response = target.answer(step.case(), step.subject());
+            response
+                .validate_shape()
+                .expect("the fake target answers in a shape the protocol defines");
+            previous = Some((step.case().clone(), response));
+        }
+    }
+
+    /// The answer a run gives to a step the reviewed bound forbids.
+    fn refuse_beyond_bound(case: &OperationCaseId, amount: u64) -> Answer {
+        if is_funding(case) && amount > bound() {
+            Answer::Refuse(ObservedOutcomeLayer::ExecutorInfrastructureFailure)
+        } else {
+            Answer::Perform
+        }
+    }
+
+    #[test]
+    fn the_divergent_row_is_asked_for_once_and_the_run_continues() {
+        // The whole behaviour in one run: the step the bound forbids is
+        // asked, refused, recorded, and the remaining rows are funded
+        // and submitted anyway.
+        let (planner, completed) = run(refuse_beyond_bound);
+        assert!(completed, "an expected refusal must not stop the run");
+
+        let transcript = planner.transcript();
+        assert_eq!(transcript.refusal(), None);
+        assert_eq!(transcript.divergences().len(), 1);
+
+        let divergence = &transcript.divergences()[0];
+        assert_eq!(
+            divergence.vector().fixture().name(),
+            "values-summing-to-two-pow-51-minus-one"
+        );
+        assert_eq!(divergence.beyond().stated(), (1 << 51) - 2);
+        assert_eq!(divergence.beyond().bound(), bound());
+        assert_eq!(
+            divergence.layer(),
+            ObservedOutcomeLayer::ExecutorInfrastructureFailure
+        );
+        assert!(divergence.detail().is_some(), "a refusal states a reason");
+
+        // Eight submissions, not nine, and the divergent row is not
+        // among them: it was never built, so there was nothing to hand
+        // over.
+        assert_eq!(transcript.submissions().len(), 8);
+        assert_eq!(planner.vectors().len(), 8);
+        for submission in transcript.submissions() {
+            assert_ne!(
+                submission.vector().fixture().name(),
+                "values-summing-to-two-pow-51-minus-one",
+                "a row with no coins was submitted anyway"
+            );
+        }
+    }
+
+    #[test]
+    fn the_divergent_row_costs_one_funding_step_and_not_its_whole_family() {
+        // Its family has two members and only the forbidden one is
+        // asked for: the second coin would be cut for a transaction
+        // that is never built.
+        let recorded = std::cell::RefCell::new(Vec::new());
+        let (_, completed) = run(|case, amount| {
+            if is_funding(case) {
+                recorded.borrow_mut().push(amount);
+            }
+            refuse_beyond_bound(case, amount)
+        });
+        assert!(completed);
+        let asked = recorded.into_inner();
+        assert_eq!(asked.iter().filter(|amount| **amount > bound()).count(), 1);
+
+        // The schedule's own length, recomputed from the census rather
+        // than pinned as a bare number: every sponsorless row's inputs,
+        // except the divergent row which contributes one, plus the two
+        // ceremony steps that also fund.
+        let census = crate::fixture::positive_semantic_census().expect("the census builds");
+        let scheduled: usize = census
+            .iter()
+            .filter(|case| crate::materialize::is_materializable(case))
+            .map(|case| {
+                if crate::divergence::target_amount_standing(case).is_unfundable() {
+                    1
+                } else {
+                    case.inputs().len()
+                }
+            })
+            .sum();
+        assert_eq!(asked.len(), scheduled + 2);
+    }
+
+    #[test]
+    fn a_target_that_funds_the_forbidden_amount_refuses_the_plan() {
+        // The other half of the expectation. The step is asked only
+        // because the reviewed bound says it cannot succeed, so a
+        // target that succeeds has falsified the fact the
+        // classification was derived from, and the run must not
+        // continue on a reading of the target known to be wrong.
+        let (planner, completed) = run(|_, _| Answer::Perform);
+        assert!(!completed, "the surprise must refuse the run");
+        match planner.transcript().refusal() {
+            Some(PlanRefusal::AmountBeyondBoundWasFunded {
+                vector,
+                stated,
+                bound: reported,
+            }) => {
+                assert_eq!(
+                    vector.fixture().name(),
+                    "values-summing-to-two-pow-51-minus-one"
+                );
+                assert_eq!(*stated, (1 << 51) - 2);
+                assert_eq!(*reported, bound());
+            }
+            other => panic!("the plan refused with {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_unexpected_funding_refusal_still_refuses_the_whole_plan() {
+        // The conservative rule is not weakened generally: only the row
+        // the bound names may fail. Any other failure leaves coins
+        // missing that later steps depend on.
+        let (planner, completed) = run(|case, amount| {
+            if is_funding(case) && amount == 180 {
+                Answer::Refuse(ObservedOutcomeLayer::ExecutorInfrastructureFailure)
+            } else {
+                Answer::Perform
+            }
+        });
+        assert!(!completed);
+        assert_eq!(
+            planner.transcript().refusal(),
+            Some(&PlanRefusal::FundingDidNotHappen(
+                ObservedOutcomeLayer::ExecutorInfrastructureFailure
+            ))
+        );
+        assert!(
+            planner.transcript().divergences().is_empty(),
+            "an ordinary failure is not a divergence"
+        );
+    }
+
+    #[test]
+    fn no_step_the_planner_states_carries_an_expectation() {
+        // §16.2's forbidden direction, checked against the rendering of
+        // every step this planner actually produces rather than against
+        // the field list. The divergence machinery added an expectation
+        // to the *plan*, and this is what says none of it leaked into
+        // what crosses the boundary.
+        let mut planner = CompactAshOperationPlanner::new().expect("the planner builds");
+        let mut target = FakeTarget {
+            sequence: 0,
+            decide: refuse_beyond_bound,
+        };
+        let mut previous: Option<(OperationCaseId, NativeOperationResponse)> = None;
+        let mut steps = 0_usize;
+        while let Ok(Some(step)) =
+            planner.next_step(previous.as_ref().map(|(case, response)| (case, response)))
+        {
+            let rendered = format!("{step:?}").to_lowercase();
+            for forbidden in ["expect", "refus", "bound", "diverg", "beyond", "accept"] {
+                assert!(!rendered.contains(forbidden), "a step rendered {forbidden}");
+            }
+            assert!(matches!(
+                step.case().operation,
+                OperationStepKind::Fund | OperationStepKind::Submit
+            ));
+            let response = target.answer(step.case(), step.subject());
+            previous = Some((step.case().clone(), response));
+            steps += 1;
+        }
+        assert!(steps > 0, "the planner stated no steps at all");
+    }
 }
