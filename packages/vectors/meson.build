@@ -9,6 +9,7 @@ vectors_source_files = files(
   'src/lib.rs',
   'src/materialize.rs',
   'src/matrix.rs',
+  'src/operation.rs',
   'src/plan.rs',
   'src/projection.rs',
   'src/subject.rs',
@@ -18,6 +19,9 @@ vectors_source_files = files(
 vectors_doc_files = files('README.md')
 
 # Same-typed files deliberately outside the crate-source census
-# (ADR-014). The crate declares none yet; the empty list keeps the
-# parent's role composition uniform across crates.
-vectors_excluded_files = files()
+# (ADR-014): integration-test sources are cargo test inputs, not label
+# subjects. The census audit accepts the exclusion only because it is
+# declared here.
+vectors_excluded_files = files(
+  'tests/compact_ash_operation.rs',
+)
