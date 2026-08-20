@@ -156,14 +156,14 @@ pub enum TransactionRefusal {
     SponsorValueDoesNotCoverFee,
 
     // --- Signing ------------------------------------------------------
-    /// A signing request was issued before every protected output was
-    /// final.
-    ///
-    /// Structurally unreachable through the public pipeline, and kept
-    /// as a typed outcome anyway: §15.8's ordering is a rule about what
-    /// a signer's signature can be relied on to cover, so the layer
-    /// that would violate it names the violation.
-    SigningRequestedBeforeOutputsFinal,
+    //
+    // §15.8's "no signing request before protected outputs are final"
+    // has no variant here on purpose. It is enforced structurally
+    // rather than checked: a `SponsorSigningRequest` carries the exact
+    // finalized bytes and its constructor is crate-internal, so there
+    // is no way to build one from a template and no state in which the
+    // violation could be observed. A variant for it would be a refusal
+    // whose failing branch could only be reasoned about.
     /// A sponsor capability returned no signature for an input it was
     /// asked to sign.
     SponsorSignatureMissing(Outpoint),
