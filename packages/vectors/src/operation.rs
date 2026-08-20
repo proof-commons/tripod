@@ -842,6 +842,17 @@ mod tests {
     /// nothing `(´[ADR015-rule:security:test-material]´)`.
     const ISSUED: &str = "11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff";
 
+    /// A disposable reserve identity, in the target's own spelling.
+    ///
+    /// Distinct from [`ISSUED`], because a fake target that answered one
+    /// asset for both would let a planner confusing the two pass
+    /// `(´[ADR015-rule:security:test-material]´)`.
+    const RESERVE: &str = "aabbccddeeff00112233445566778899aabbccddeeff001122334455667788990";
+
+    /// The program a sponsor coin lands at, as the fake target reports
+    /// it: version zero over a twenty-byte payload.
+    const SPONSOR_PROGRAM: &str = "0014000102030405060708090a0b0c0d0e0f10111213";
+
     fn resources() -> NativeResourceObservation {
         NativeResourceObservation {
             script_bytes: 0,
@@ -903,6 +914,8 @@ mod tests {
                 issued_asset: None,
                 funded_outputs: Vec::new(),
                 accepted_txid: None,
+                sponsor_witness: Vec::new(),
+                signature_bound_to: None,
                 resources: resources(),
             };
             match subject {
@@ -926,6 +939,35 @@ mod tests {
                             script: hex_of_slice(&funding.output_program),
                         })
                         .collect();
+                }
+                OperationSubject::SponsorFunding(sponsor) => {
+                    if let Answer::Refuse(layer) =
+                        (self.decide)(case, sponsor.amount_per_sponsor_output)
+                    {
+                        response.observed_layer = layer;
+                        response.observed_detail =
+                            Some("this run holds no reserve to sponsor from".to_owned());
+                        return response;
+                    }
+                    self.sequence += 1;
+                    // The reserve asset and the program are the fake
+                    // target's own answers, exactly as a real adapter's
+                    // are: the planner states neither.
+                    response.funded_outputs = (0..u32::from(sponsor.sponsor_outputs))
+                        .map(|index| FundedOutput {
+                            outpoint: coin(self.sequence * 16 + index),
+                            asset: RESERVE.to_owned(),
+                            amount_satoshis: sponsor.amount_per_sponsor_output,
+                            script: SPONSOR_PROGRAM.to_owned(),
+                        })
+                        .collect();
+                }
+                OperationSubject::SponsorSigning(signing) => {
+                    // Two items, because that is the stack shape the
+                    // admitted sponsor program class takes, and the echo
+                    // is the bytes it was handed.
+                    response.sponsor_witness = vec![vec![0x30; 71], vec![0x02; 33]];
+                    response.signature_bound_to = Some(signing.finalized_transaction.clone());
                 }
                 OperationSubject::Submission(_) => {
                     response.accepted_txid = Some(ISSUED.to_owned());

@@ -493,3 +493,212 @@ fn every_failure_class_spelling_is_distinct() {
         "no two failure classes share a spelling",
     );
 }
+
+/// The four operation subjects, and the one thing that could go wrong.
+///
+/// `OperationSubject` is untagged, so a subject is recognized by its
+/// members alone. Four shapes now share that discrimination where two
+/// used to, and a shape parsing as the wrong variant would be answered
+/// by the wrong half of an adapter. Each is therefore round-tripped and
+/// then checked to land on its own variant, which is the property the
+/// untagged representation actually needs.
+#[test]
+fn every_operation_subject_round_trips_to_its_own_variant() {
+    use crate::protocol::{
+        OperationStepKind, OperationSubject, TargetFundingSubject, TargetSponsorFundingSubject,
+        TargetSponsorSigningSubject, TargetSubmissionSubject, WireOutpoint, WireSighashProfile,
+    };
+
+    let subjects = [
+        OperationSubject::Funding(Box::new(TargetFundingSubject {
+            issue_asset: false,
+            asset: Some("aa".to_owned()),
+            output_program: vec![0x51, 0x20],
+            outputs: 1,
+            amount_per_output: 7,
+        })),
+        OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+            transaction_bytes: vec![0x02, 0x00],
+        })),
+        OperationSubject::SponsorFunding(Box::new(TargetSponsorFundingSubject {
+            sponsor_outputs: 2,
+            amount_per_sponsor_output: 900,
+        })),
+        OperationSubject::SponsorSigning(Box::new(TargetSponsorSigningSubject {
+            finalized_transaction: vec![0x02, 0x00, 0x01],
+            sponsor_input_index: 3,
+            sponsor_outpoint: WireOutpoint {
+                txid: "ab".repeat(32),
+                vout: 1,
+            },
+            sighash_profile: WireSighashProfile::AllInputsAllOutputs,
+        })),
+    ];
+    let kinds = [
+        OperationStepKind::Fund,
+        OperationStepKind::Submit,
+        OperationStepKind::FundSponsor,
+        OperationStepKind::SignSponsor,
+    ];
+
+    for (subject, kind) in subjects.iter().zip(kinds) {
+        let text = serde_json::to_string(subject).expect("the subject serializes");
+        let parsed: OperationSubject = serde_json::from_str(&text).expect("the subject parses");
+        assert_eq!(&parsed, subject, "a subject changed on the way round");
+        assert_eq!(parsed.kind(), kind, "a subject parsed as another kind");
+    }
+}
+
+/// The sponsor steps are gated, and gated together.
+#[test]
+fn a_sponsor_step_is_refused_by_an_executor_that_did_not_advertise_one() {
+    use crate::protocol::{
+        OperationSubject, TargetSponsorFundingSubject, TargetSponsorSigningSubject, WireOutpoint,
+        WireSighashProfile,
+    };
+
+    let funding = OperationSubject::SponsorFunding(Box::new(TargetSponsorFundingSubject {
+        sponsor_outputs: 1,
+        amount_per_sponsor_output: 1,
+    }));
+    let signing = OperationSubject::SponsorSigning(Box::new(TargetSponsorSigningSubject {
+        finalized_transaction: vec![0x02],
+        sponsor_input_index: 0,
+        sponsor_outpoint: WireOutpoint {
+            txid: "cd".repeat(32),
+            vout: 0,
+        },
+        sighash_profile: WireSighashProfile::AllInputsAllOutputs,
+    }));
+
+    // An executor holding every other operation capability is still
+    // refused both sponsor steps: being able to fund a ceremony and to
+    // submit a transaction says nothing about holding a reserve.
+    let mut executor = handshake();
+    executor.capabilities = BTreeSet::from([
+        ExecutorCapability::TestFundingCeremony,
+        ExecutorCapability::TargetTransactionSubmission,
+    ]);
+    assert!(!executor.runs_operation_step(&funding));
+    assert!(!executor.runs_operation_step(&signing));
+
+    // And the one capability admits both halves, which is what makes
+    // them one capability rather than two.
+    executor
+        .capabilities
+        .insert(ExecutorCapability::TestSponsorAuthorization);
+    assert!(executor.runs_operation_step(&funding));
+    assert!(executor.runs_operation_step(&signing));
+}
+
+/// An executor that never heard of the sponsor steps still parses.
+///
+/// This is the whole justification for leaving the revision where it is:
+/// the two added response members are defaulted, so a record written by
+/// an executor that predates them is read rather than refused.
+#[test]
+fn a_response_without_the_sponsor_members_still_parses() {
+    use crate::protocol::NativeOperationResponse;
+
+    let written = r#"{
+        "schema": 4,
+        "case": {"operation": "fund", "step": "issue"},
+        "observed_layer": "accepted",
+        "observed_detail": null,
+        "issued_asset": "aa",
+        "funded_outputs": [],
+        "accepted_txid": null,
+        "resources": {
+            "script_bytes": 0,
+            "initial_stack_items": 0,
+            "peak_stack_items": null,
+            "peak_altstack_items": null,
+            "maximum_element_bytes": null,
+            "validation_budget_used": null,
+            "transaction_weight": null
+        }
+    }"#;
+    let parsed: NativeOperationResponse =
+        serde_json::from_str(written).expect("a pre-sponsor response still reads");
+    assert!(parsed.sponsor_witness.is_empty());
+    assert_eq!(parsed.signature_bound_to, None);
+}
+
+/// An authorization belongs to the step that asked for one.
+#[test]
+fn only_a_signing_step_may_report_an_authorization() {
+    use crate::protocol::{
+        NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId, OperationStepKind,
+    };
+
+    let signed = |kind: OperationStepKind| NativeOperationResponse {
+        schema: NATIVE_PROTOCOL_SCHEMA,
+        case: OperationCaseId {
+            operation: kind,
+            step: "step".to_owned(),
+        },
+        observed_layer: ObservedOutcomeLayer::Accepted,
+        observed_detail: None,
+        issued_asset: None,
+        funded_outputs: Vec::new(),
+        accepted_txid: None,
+        sponsor_witness: vec![vec![0x30], vec![0x02]],
+        signature_bound_to: Some(vec![0x02]),
+        resources: NativeResourceObservation::default(),
+    };
+
+    signed(OperationStepKind::SignSponsor)
+        .validate_shape()
+        .expect("the step that was asked for an authorization may report one");
+    for kind in [
+        OperationStepKind::Fund,
+        OperationStepKind::Submit,
+        OperationStepKind::FundSponsor,
+    ] {
+        assert_eq!(
+            signed(kind).validate_shape(),
+            Err(ResponseShapeDefect::OperationResponseMismatchesStep),
+            "{kind} reported an authorization nobody asked it for",
+        );
+    }
+}
+
+/// An accepted signing step owes both halves of an authorization.
+#[test]
+fn an_accepted_authorization_states_a_stack_and_what_it_was_bound_to() {
+    use crate::protocol::{
+        NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId, OperationStepKind,
+    };
+
+    let partial = |stack: Vec<Vec<u8>>, bound: Option<Vec<u8>>| NativeOperationResponse {
+        schema: NATIVE_PROTOCOL_SCHEMA,
+        case: OperationCaseId {
+            operation: OperationStepKind::SignSponsor,
+            step: "sign".to_owned(),
+        },
+        observed_layer: ObservedOutcomeLayer::Accepted,
+        observed_detail: None,
+        issued_asset: None,
+        funded_outputs: Vec::new(),
+        accepted_txid: None,
+        sponsor_witness: stack,
+        signature_bound_to: bound,
+        resources: NativeResourceObservation::default(),
+    };
+
+    // A stack with nothing to bind it to, and a binding with no stack.
+    // Either alone is unusable, and an acceptance reporting one is
+    // indistinguishable from an adapter that returned the layer without
+    // doing the work.
+    assert_eq!(
+        partial(vec![vec![0x30]], None).validate_shape(),
+        Err(ResponseShapeDefect::AcceptedOperationOmitsObservation)
+    );
+    assert_eq!(
+        partial(Vec::new(), Some(vec![0x02])).validate_shape(),
+        Err(ResponseShapeDefect::AcceptedOperationOmitsObservation)
+    );
+    partial(vec![vec![0x30]], Some(vec![0x02]))
+        .validate_shape()
+        .expect("both halves is an authorization");
+}
