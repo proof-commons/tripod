@@ -38,6 +38,7 @@
 //! where it matters.
 
 mod abstract_oracle_tests;
+mod bundle_tests;
 mod byte_census_tests;
 mod census_tests;
 mod guide12_reproductions;
@@ -54,7 +55,14 @@ mod shape_tests;
 mod stack_tests;
 
 use std::collections::BTreeMap;
+use std::num::NonZeroU64;
 
+use architecture::{ARCHITECTURE, OperationId};
+use compiler::input::{AnalysisPolicy, CompilationScope, ProofSearchLimits, bind_input};
+use compiler::operation_plan::{
+    PlacementSearchLimits, ValidatedTargetOperationPlan, plan_compact_ash_target_operation,
+};
+use realization::{RealizationScope, derive};
 use target_elements::{
     CapabilityContract, ConfidentialCapabilityState, ConfidentialValueCapability,
     ConfidentialValueContract, ElementsCapability, ReviewedElementsTapscriptDefinition,
@@ -83,6 +91,27 @@ fn pattern_symbols(
         vec![0x55; 32],
     )
     .expect("the placeholder symbols are the reviewed widths")
+}
+
+/// The validated compact-ASH plan, from the compiler's own constructor.
+///
+/// One fixture for every test that needs a plan: §8.1 assesses what the
+/// compiler actually required, and two fixtures could disagree about
+/// what that was.
+fn compact_ash_plan() -> ValidatedTargetOperationPlan {
+    let limit = |value: u64| NonZeroU64::new(value).expect("the fixture limits are nonzero");
+    let realization =
+        derive(&ARCHITECTURE, RealizationScope::phase1_pilots()).expect("the pilots derive");
+    let scope = CompilationScope::from_operations([OperationId::CompactAsh])
+        .expect("a one-operation scope");
+    let policy = AnalysisPolicy::strict(ProofSearchLimits::new(limit(1_000_000), limit(10_000)));
+    let input = bind_input(&ARCHITECTURE, realization, scope, policy).expect("the input binds");
+
+    plan_compact_ash_target_operation(
+        &input,
+        PlacementSearchLimits::new(limit(10_000_000), limit(1_000_000)),
+    )
+    .expect("the plan validates")
 }
 
 /// The reviewed contract, unmodified.

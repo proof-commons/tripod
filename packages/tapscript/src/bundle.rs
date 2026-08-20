@@ -509,6 +509,49 @@ pub struct Relocation {
 }
 
 impl Relocation {
+    /// State a byte-patching relocation, if §13.4 admits one.
+    ///
+    /// The only constructor this type offers, and the reason it exists
+    /// is that §13.4's prohibition has to be something that runs. A
+    /// patch is admissible only where the width is fixed by the
+    /// reviewed contract for every resolution, and only where the
+    /// placeholder is exactly that width. Everything this bundle emits
+    /// substitutes before serialization instead and is built inside
+    /// this module, where no patch is reachable at all.
+    ///
+    /// # Errors
+    ///
+    /// [`BundleRefusal::VariableWidthBytePatch`] when the width is one
+    /// only the resolved value settles, and
+    /// [`BundleRefusal::PlaceholderWidthMismatch`] when the placeholder
+    /// is not that width.
+    pub fn byte_patch(
+        symbol: BundleSymbol,
+        role: TargetRole,
+        site: RelocationSite,
+        width: SymbolWidth,
+        encoding: RelocationEncoding,
+        multiplicity: NonZeroUsize,
+        placeholder: StackItem,
+    ) -> Result<Self, BundleRefusal> {
+        let SymbolWidth::Fixed { bytes } = width else {
+            return Err(BundleRefusal::VariableWidthBytePatch { symbol });
+        };
+        if placeholder.len() != bytes {
+            return Err(BundleRefusal::PlaceholderWidthMismatch { symbol });
+        }
+
+        Ok(Self {
+            symbol,
+            role,
+            site,
+            width,
+            encoding,
+            multiplicity,
+            substitution: SubstitutionMode::FixedWidthBytePatch { placeholder },
+        })
+    }
+
     /// The symbol whose value this relocation places.
     #[must_use]
     pub const fn symbol(&self) -> BundleSymbol {
