@@ -361,20 +361,36 @@ generators and six Pedersen commitments. The merkle root and the
 reference output key are pinned as vectors in `src/reference.rs`.
 
 Two defects the cross-check found, both recorded by tests that fail
-if the defect is repaired, and neither repaired here because the fix
-changes every fixture's exact bytes and is a substrate decision.
-First, the fixture bundle's pinned witness program is not a curve
-point, so no control block can ever satisfy the reference verifier
-against it and an output created at that program is unspendable by
-construction. Second, the fixture declares even output-key parity
-while the tweak of the fixture internal key by the fixture merkle
-root produces odd parity, so a control block built from the declared
-bit states the wrong y coordinate. Both are the same root cause: the
-pin is declared rather than derived. Both block the Wave-11 funding
-ceremony that would discharge the pinned-output-key obligation, and
-the minted reference output key is the value that would work. Pinning
-that key does not itself discharge the obligation, which still needs
-an output a real node created and a spend it accepted.
+if the defect is repaired. First, the fixture bundle's pinned witness
+program was not a curve point, so no control block could ever satisfy
+the reference verifier against it and an output created at that
+program was unspendable by construction. Second, the fixture declared
+even output-key parity while the tweak of the fixture internal key by
+the fixture merkle root produces odd parity, so a control block built
+from the declared bit stated the wrong y coordinate. Both are the
+same root cause: the pin was declared rather than derived. Both
+blocked the Wave-11 funding ceremony that would discharge the
+pinned-output-key obligation.
+
+Both are now repaired, in the only place the repair belongs — the
+substrate. The fixture pin carries the output key its own committed
+tree derives together with that key's parity, stated in
+`packages/vectors` as literals whose provenance is the minted
+reference vector, because the vectors package contract §16.2 forbids
+the edge that would let the fixture import the curve arithmetic and
+the conformance package already dev-depends on vectors. The
+cross-check recomputes the key from the fixture internal key and the
+merkle root and asserts equality with the constant, so a literal
+cannot drift back into a declaration; the two tests that recorded the
+defects now assert the repaired truth, and the reference verifier
+accepts the fixture's own unmodified control blocks for all twelve
+leaves rather than blocks rebuilt with a corrected parity. The
+merkle root did not move, since the committed tree does not depend on
+the pin, so every fixture transaction keeps its length, weight, and
+virtual size and changes only the thirty-two program bytes it pays to.
+Pinning the derived key does not discharge the pinned-output-key
+obligation, which still needs an output a real node created and a
+spend it accepted; what it buys is that the ceremony can run at all.
 
 ### The verification harness's two standing hazards · `rem:backlog:verification-harness`
 
