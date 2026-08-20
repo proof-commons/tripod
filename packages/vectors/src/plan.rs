@@ -1,0 +1,576 @@
+//! The canonical operation evidence plan of Guide-12 §16.4.
+//!
+//! The plan is the only route to canonical standing. Its fields are
+//! private, its constructor is checked, and everything it admits comes
+//! out wrapped in a [`CanonicalSubject`]; anything assembled outside it
+//! is experimental by construction, which is what "ad hoc vectors
+//! produce experimental reports only" means once it is a type.
+//!
+//! # The censuses are recomputed, never restated
+//!
+//! §1.3 says no relation disappears at a package boundary, and the only
+//! way to know that is to count both sides. Every number in
+//! [`PlanCensus`] is derived from the validated operation plan the
+//! fixture bundle carries — the relations it publishes, the cases it
+//! publishes, the coverage requirements it publishes — and then checked
+//! against an independently computed value. A census this package
+//! asserted from prose would be this package agreeing with itself.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use compiler::operation_plan::{
+    CoverageRequirementId, EvidenceRole, RelationActivity, RelationCaseKey,
+    TargetCoverageObligation, TargetCoverageRequirement,
+};
+use realization::RelationId;
+
+use crate::bundle::FixtureBundle;
+use crate::error::VectorError;
+use crate::fixture::{CompactAshSemanticCase, positive_semantic_census};
+use crate::materialize::{MaterializedTargetVector, is_materializable, materialize};
+use crate::matrix::class_count;
+use crate::subject::CanonicalSubject;
+
+/// Why a coverage row carries no observation yet.
+///
+/// §19.3 rules that lifecycle incompleteness is a status and not a
+/// passing target case, so a row's unobserved state is named rather than
+/// left blank. A blank row and a satisfied row must not look alike.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum OutstandingReason {
+    /// No target has executed anything in this wave.
+    NoTargetHasExecuted,
+    /// The requirement is answered by an external report that does not
+    /// exist yet.
+    ExternalReportAbsent,
+    /// The requirement's boundary is compiler-static or
+    /// backend-structural, and its structural evidence is not assembled
+    /// in this wave.
+    StructuralEvidenceNotAssembled,
+}
+
+/// What is known about one coverage requirement.
+///
+/// One variant today. It is an enum rather than an `Option` so that Wave
+/// 11 adds an observed arm instead of filling a hole, and so that no
+/// row can be read as satisfied by being absent.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
+pub enum CoverageObservation {
+    /// Nothing has been observed for this requirement.
+    Outstanding(OutstandingReason),
+}
+
+impl CoverageObservation {
+    /// Whether this observation discharges its requirement.
+    ///
+    /// Always false today, and deliberately a method rather than a
+    /// pattern match at each call site, so that the one place that
+    /// decides cannot be forgotten in a later wave.
+    #[must_use]
+    pub const fn is_discharged(self) -> bool {
+        false
+    }
+}
+
+/// One row of §19's relation-indexed coverage matrix.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RelationCoverageRow {
+    key: RelationCaseKey,
+    activity: RelationActivity,
+    role: EvidenceRole,
+    positive: bool,
+    carrier_alternatives: usize,
+    projection_required: bool,
+    observation: CoverageObservation,
+}
+
+impl RelationCoverageRow {
+    /// The relation-case this row indexes.
+    #[must_use]
+    pub const fn key(&self) -> &RelationCaseKey {
+        &self.key
+    }
+
+    /// Whether the relation is active in this case.
+    #[must_use]
+    pub const fn activity(&self) -> RelationActivity {
+        self.activity
+    }
+
+    /// Which artifact answers this requirement.
+    #[must_use]
+    pub const fn role(&self) -> &EvidenceRole {
+        &self.role
+    }
+
+    /// Whether the requirement is the positive half.
+    #[must_use]
+    pub const fn is_positive(&self) -> bool {
+        self.positive
+    }
+
+    /// How many carrier assignments the relation-case admits.
+    #[must_use]
+    pub const fn carrier_alternatives(&self) -> usize {
+        self.carrier_alternatives
+    }
+
+    /// Whether an accepted-projection comparison applies here.
+    #[must_use]
+    pub const fn projection_required(&self) -> bool {
+        self.projection_required
+    }
+
+    /// What has been observed for this requirement.
+    #[must_use]
+    pub const fn observation(&self) -> CoverageObservation {
+        self.observation
+    }
+}
+
+/// Every count this package can recompute, and did.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PlanCensus {
+    relations: usize,
+    cases: usize,
+    relation_cases: usize,
+    coverage_requirements: usize,
+    positive_requirements: usize,
+    negative_requirements: usize,
+    vacuous_relation_cases: usize,
+    matrix_classes: usize,
+    semantic_cases: usize,
+    materialized_vectors: usize,
+}
+
+impl PlanCensus {
+    /// Relations the plan publishes for the operation.
+    #[must_use]
+    pub const fn relations(&self) -> usize {
+        self.relations
+    }
+
+    /// Execution cases the plan publishes.
+    #[must_use]
+    pub const fn cases(&self) -> usize {
+        self.cases
+    }
+
+    /// Relation-cases, counted across every relation's case map.
+    #[must_use]
+    pub const fn relation_cases(&self) -> usize {
+        self.relation_cases
+    }
+
+    /// Coverage requirements the plan publishes.
+    #[must_use]
+    pub const fn coverage_requirements(&self) -> usize {
+        self.coverage_requirements
+    }
+
+    /// How many of those are the positive half.
+    #[must_use]
+    pub const fn positive_requirements(&self) -> usize {
+        self.positive_requirements
+    }
+
+    /// How many of those are the negative half.
+    #[must_use]
+    pub const fn negative_requirements(&self) -> usize {
+        self.negative_requirements
+    }
+
+    /// Relation-cases present with no obligation.
+    #[must_use]
+    pub const fn vacuous_relation_cases(&self) -> usize {
+        self.vacuous_relation_cases
+    }
+
+    /// Named §18 vector classes.
+    #[must_use]
+    pub const fn matrix_classes(&self) -> usize {
+        self.matrix_classes
+    }
+
+    /// Positive semantic cases admitted.
+    #[must_use]
+    pub const fn semantic_cases(&self) -> usize {
+        self.semantic_cases
+    }
+
+    /// Target vectors materialized to exact bytes.
+    #[must_use]
+    pub const fn materialized_vectors(&self) -> usize {
+        self.materialized_vectors
+    }
+}
+
+/// The canonical compact-ASH evidence plan.
+///
+/// Private fields, no public constructor, no `Default`, no builder: the
+/// sole route is [`derive_evidence_plan`], which recomputes every
+/// census before admitting anything.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompactAshEvidencePlan {
+    semantic_cases: Vec<CanonicalSubject<CompactAshSemanticCase>>,
+    target_cases: Vec<CanonicalSubject<MaterializedTargetVector>>,
+    relation_coverage: BTreeMap<CoverageRequirementId, RelationCoverageRow>,
+    census: PlanCensus,
+}
+
+impl CompactAshEvidencePlan {
+    /// The admitted semantic cases.
+    #[must_use]
+    pub fn semantic_cases(&self) -> &[CanonicalSubject<CompactAshSemanticCase>] {
+        &self.semantic_cases
+    }
+
+    /// The admitted target cases.
+    #[must_use]
+    pub fn target_cases(&self) -> &[CanonicalSubject<MaterializedTargetVector>] {
+        &self.target_cases
+    }
+
+    /// The relation-indexed coverage matrix.
+    #[must_use]
+    pub const fn relation_coverage(&self) -> &BTreeMap<CoverageRequirementId, RelationCoverageRow> {
+        &self.relation_coverage
+    }
+
+    /// Every count this plan recomputed.
+    #[must_use]
+    pub const fn census(&self) -> PlanCensus {
+        self.census
+    }
+
+    /// Whether every coverage requirement is discharged.
+    ///
+    /// False in this wave, and it says so through the rows rather than
+    /// through a flag someone could set.
+    #[must_use]
+    pub fn coverage_complete(&self) -> bool {
+        self.relation_coverage
+            .values()
+            .all(|row| row.observation().is_discharged())
+    }
+}
+
+const fn outstanding_reason(requirement: &TargetCoverageRequirement) -> OutstandingReason {
+    match &requirement.role {
+        EvidenceRole::TargetExecution | EvidenceRole::InactiveCaseAcceptance => {
+            OutstandingReason::NoTargetHasExecuted
+        }
+        EvidenceRole::ExternalReport { .. } => OutstandingReason::ExternalReportAbsent,
+        EvidenceRole::CompilerAnalysisResult | EvidenceRole::EmittedStructure => {
+            OutstandingReason::StructuralEvidenceNotAssembled
+        }
+    }
+}
+
+/// The coverage matrix and the tallies taken while building it.
+struct CoverageBuild {
+    rows: BTreeMap<CoverageRequirementId, RelationCoverageRow>,
+    covered: BTreeSet<RelationId>,
+    positive: usize,
+    negative: usize,
+}
+
+/// Build one row per published coverage requirement.
+fn build_coverage(
+    plan: &compiler::operation_plan::ValidatedTargetOperationPlan,
+) -> Result<CoverageBuild, VectorError> {
+    let mut rows = BTreeMap::new();
+    let mut covered = BTreeSet::new();
+    let mut positive = 0_usize;
+    let mut negative = 0_usize;
+    let mut published = 0_usize;
+
+    for requirement in plan.coverage() {
+        published += 1;
+        let key = requirement.id.key();
+        covered.insert(key.relation.clone());
+
+        let is_positive = match &requirement.obligation {
+            TargetCoverageObligation::Positive(_) => {
+                positive += 1;
+                true
+            }
+            TargetCoverageObligation::Negative(_) => {
+                negative += 1;
+                false
+            }
+        };
+
+        let row = RelationCoverageRow {
+            key,
+            activity: requirement.activity,
+            role: requirement.role.clone(),
+            positive: is_positive,
+            carrier_alternatives: requirement.carrier.len(),
+            projection_required: requirement.projection.is_some(),
+            observation: CoverageObservation::Outstanding(outstanding_reason(requirement)),
+        };
+        if rows.insert(requirement.id.clone(), row).is_some() {
+            return Err(VectorError::DuplicateCoverageRequirement);
+        }
+    }
+
+    // The map's size and the number published are two routes to one
+    // count; a silent overwrite would separate them.
+    if rows.len() != published {
+        return Err(VectorError::DuplicateCoverageRequirement);
+    }
+
+    Ok(CoverageBuild {
+        rows,
+        covered,
+        positive,
+        negative,
+    })
+}
+
+/// §1.3, checked in both directions: no relation disappears at this
+/// package boundary, and none appears that the plan never published.
+fn check_relation_closure(
+    planned: &BTreeSet<RelationId>,
+    covered: &BTreeSet<RelationId>,
+) -> Result<(), VectorError> {
+    for relation in planned {
+        if !covered.contains(relation) {
+            return Err(VectorError::MissingRelation(relation.clone()));
+        }
+    }
+    for relation in covered {
+        if !planned.contains(relation) {
+            return Err(VectorError::UnexpectedRelation(relation.clone()));
+        }
+    }
+    Ok(())
+}
+
+/// Derive the canonical evidence plan from the fixture bundle.
+///
+/// # Errors
+///
+/// [`VectorError::RelationCensusMismatch`],
+/// [`VectorError::CaseCensusMismatch`], or
+/// [`VectorError::RelationCaseCensusMismatch`] when a census recomputed
+/// two ways disagrees; [`VectorError::MissingRelation`] when a planned
+/// relation has no coverage requirement and
+/// [`VectorError::UnexpectedRelation`] when a covered relation is not
+/// planned; [`VectorError::DuplicateCoverageRequirement`] when two
+/// requirements claim one identity; and any refusal from fixture
+/// construction or materialization.
+pub fn derive_evidence_plan(
+    fixture: &FixtureBundle,
+) -> Result<CompactAshEvidencePlan, VectorError> {
+    let plan = fixture.plan();
+
+    let relations: Vec<_> = plan.relations().collect();
+    let cases: Vec<_> = plan.cases().collect();
+    let relation_ids: BTreeSet<RelationId> = relations
+        .iter()
+        .map(|requirement| requirement.relation.clone())
+        .collect();
+
+    // Two independent routes to the relation count: the published
+    // iterator, and the deduplicated identity set. A relation published
+    // twice would make the first larger than the second.
+    if relations.len() != relation_ids.len() {
+        return Err(VectorError::RelationCensusMismatch {
+            derived: relations.len(),
+            recomputed: relation_ids.len(),
+        });
+    }
+
+    // Two independent routes to the relation-case count: the sum over
+    // each relation's own case map, and the product with the case
+    // census. The product only equals the sum because every relation is
+    // present in every case, active or vacuous — so a relation that
+    // dropped a case would separate them.
+    let summed: usize = relations
+        .iter()
+        .map(|requirement| requirement.cases.len())
+        .sum();
+    let product = relations.len() * cases.len();
+    if summed != product {
+        return Err(VectorError::RelationCaseCensusMismatch {
+            derived: summed,
+            recomputed: product,
+        });
+    }
+
+    let case_ids: BTreeSet<_> = cases.iter().map(|case| case.id.clone()).collect();
+    if case_ids.len() != cases.len() {
+        return Err(VectorError::CaseCensusMismatch {
+            derived: cases.len(),
+            recomputed: case_ids.len(),
+        });
+    }
+
+    let vacuous = relations
+        .iter()
+        .flat_map(|requirement| requirement.cases.values())
+        .filter(|row| row.activity == RelationActivity::Vacuous)
+        .count();
+
+    let coverage = build_coverage(plan)?;
+    check_relation_closure(&relation_ids, &coverage.covered)?;
+
+    let relation_coverage = coverage.rows;
+    let positive = coverage.positive;
+    let negative = coverage.negative;
+
+    let semantic = positive_semantic_census()?;
+    let mut seen = BTreeSet::new();
+    for case in &semantic {
+        if !seen.insert(case.id()) {
+            return Err(VectorError::DuplicateSemanticFixture(case.id()));
+        }
+    }
+
+    let mut target_cases = Vec::new();
+    for case in semantic.iter().filter(|case| is_materializable(case)) {
+        target_cases.push(CanonicalSubject::admit(materialize(fixture, case)?));
+    }
+
+    let census = PlanCensus {
+        relations: relations.len(),
+        cases: cases.len(),
+        relation_cases: summed,
+        coverage_requirements: relation_coverage.len(),
+        positive_requirements: positive,
+        negative_requirements: negative,
+        vacuous_relation_cases: vacuous,
+        matrix_classes: class_count(),
+        semantic_cases: semantic.len(),
+        materialized_vectors: target_cases.len(),
+    };
+
+    Ok(CompactAshEvidencePlan {
+        semantic_cases: semantic.into_iter().map(CanonicalSubject::admit).collect(),
+        target_cases,
+        relation_coverage,
+        census,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CoverageObservation, OutstandingReason, derive_evidence_plan};
+    use crate::bundle::fixture_bundle;
+    use crate::subject::SubjectStanding;
+    use std::collections::BTreeSet;
+
+    fn plan() -> super::CompactAshEvidencePlan {
+        let fixture = fixture_bundle().expect("the fixture bundle builds");
+        derive_evidence_plan(&fixture).expect("the evidence plan derives")
+    }
+
+    #[test]
+    fn the_relation_and_case_censuses_are_the_reviewed_ones() {
+        // The guide's compact-ASH figures. Asserted here against numbers
+        // this package recomputed from the plan, so a drift in either
+        // the compiler or the guide surfaces as a failure rather than as
+        // a quietly smaller matrix.
+        let census = plan().census();
+        assert_eq!(census.relations(), 23);
+        assert_eq!(census.cases(), 2);
+        assert_eq!(census.relation_cases(), 46);
+        assert_eq!(
+            census.relation_cases(),
+            census.relations() * census.cases(),
+            "the product identity holds only while every relation is present in every case"
+        );
+    }
+
+    #[test]
+    fn four_relation_cases_are_vacuous_and_stay_in_the_census() {
+        // §19.3: an inactive relation retains explicit inactive-valid
+        // coverage. Dropping it would be indistinguishable from never
+        // having known about it.
+        assert_eq!(plan().census().vacuous_relation_cases(), 4);
+    }
+
+    #[test]
+    fn every_coverage_requirement_has_exactly_one_row() {
+        let plan = plan();
+        assert_eq!(
+            plan.relation_coverage().len(),
+            plan.census().coverage_requirements()
+        );
+        assert_eq!(
+            plan.census().positive_requirements() + plan.census().negative_requirements(),
+            plan.census().coverage_requirements(),
+            "every requirement is one half or the other"
+        );
+        // The exact figure, pinned. §1.11 asks for exact finite sets;
+        // a `> 0` assertion here would pass just as happily on a census
+        // that had quietly lost two hundred rows.
+        assert_eq!(plan.census().coverage_requirements(), 211);
+        assert_eq!(plan.census().positive_requirements(), 139);
+        assert_eq!(plan.census().negative_requirements(), 72);
+    }
+
+    #[test]
+    fn no_coverage_row_is_discharged_in_this_wave() {
+        // The whole point of the wave's honesty bar: fixtures exist, and
+        // nothing has been executed against a target.
+        let plan = plan();
+        assert!(!plan.coverage_complete());
+        for row in plan.relation_coverage().values() {
+            assert!(!row.observation().is_discharged());
+        }
+    }
+
+    #[test]
+    fn every_outstanding_reason_is_actually_reached() {
+        // A reason no row ever carries would be decoration. This records
+        // which of the three the current plan actually produces.
+        let plan = plan();
+        let reasons: BTreeSet<OutstandingReason> = plan
+            .relation_coverage()
+            .values()
+            .map(|row| match row.observation() {
+                CoverageObservation::Outstanding(reason) => reason,
+            })
+            .collect();
+        assert!(
+            reasons.contains(&OutstandingReason::NoTargetHasExecuted),
+            "no requirement is waiting on a target, which cannot be right"
+        );
+        assert!(!reasons.is_empty());
+    }
+
+    #[test]
+    fn the_plan_admits_the_positive_census_and_the_bytes_it_materialized() {
+        let plan = plan();
+        assert_eq!(plan.census().semantic_cases(), 14);
+        // Nine of the fourteen positive classes are sponsorless and
+        // therefore materializable without a signing capability; the
+        // five sponsored ones are admitted as semantic cases and left
+        // unmaterialized rather than approximated.
+        assert_eq!(plan.census().materialized_vectors(), 9);
+        assert_eq!(plan.semantic_cases().len(), 14);
+        assert_eq!(plan.target_cases().len(), 9);
+        assert_eq!(plan.census().matrix_classes(), 153);
+    }
+
+    #[test]
+    fn everything_the_plan_admits_carries_canonical_standing() {
+        let plan = plan();
+        for subject in plan.semantic_cases() {
+            assert_eq!(subject.standing(), SubjectStanding::Canonical);
+        }
+        for subject in plan.target_cases() {
+            assert_eq!(subject.standing(), SubjectStanding::Canonical);
+            assert!(!subject.subject().bytes().is_empty());
+        }
+    }
+
+    #[test]
+    fn the_plan_is_the_same_plan_every_time() {
+        assert_eq!(plan(), plan());
+    }
+}

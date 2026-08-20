@@ -53,7 +53,7 @@ its realization dependency is for post-execution conformance projection.
 | [simplicity.md](simplicity.md) | Parked | Future second backend. |
 | [linker.md](linker.md) | Candidate | Constructor, relocation, and bundle resolution. |
 | [transaction.md](transaction.md) | Candidate — compact-ASH ABI, first-party explicit encoder/decoder, and construction pipeline implemented; sighash, blinding, and issuance delegated | Canonical transaction and witness ABI. |
-| [vectors.md](vectors.md) | Planned | Translation-validation evidence. |
+| [vectors.md](vectors.md) | Candidate — section-18 matrix, canonical/experimental subject separation, semantic fixtures, target materialization, and the evidence plan implemented; no target has executed anything | Translation-validation evidence. |
 | [release.md](release.md) | Planned | Final evidence/profile/publication gate. |
 | [errors/](errors/README.md) | Active | Illustrative typed error vocabularies for planned package boundaries. |
 

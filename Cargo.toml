@@ -16,6 +16,7 @@ members = [
     "packages/target-elements",
     "packages/target-elements-conformance",
     "packages/transaction",
+    "packages/vectors",
 ]
 
 [workspace.package]
@@ -41,6 +42,7 @@ tapscript = { package = "tripod-tapscript", path = "packages/tapscript" }
 target-elements = { package = "tripod-target-elements", path = "packages/target-elements" }
 target-elements-conformance = { package = "tripod-target-elements-conformance", path = "packages/target-elements-conformance" }
 transaction = { package = "tripod-transaction", path = "packages/transaction" }
+vectors = { package = "tripod-vectors", path = "packages/vectors" }
 
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

@@ -152,6 +152,7 @@ pub const PACKAGE_OWNERS: &[(&str, &str)] = &[
     ("TARGETELEMENTS", "target-elements"),
     ("TARGETELEMENTSCONFORMANCE", "target-elements-conformance"),
     ("TRANSACTION", "transaction"),
+    ("VECTORS", "vectors"),
 ];
 
 /// Derive a package's registered prefix from its directory name, by the
