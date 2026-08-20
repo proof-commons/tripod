@@ -289,4 +289,5 @@ ADR-014 is implemented when:
   label-check stamp;
 - `cargo test` passes with the network and the repository checkout
   outside the workspace crates absent, proving fixture hermeticity;
-- `scripts/ci.sh` and the Meson document lane pass end to end.
+- `meson test` — the whole gate, which `scripts/ci.sh` shims — and the
+  Meson document lane pass end to end.

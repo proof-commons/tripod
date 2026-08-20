@@ -194,11 +194,25 @@ The canonical Rust entry point is:
 scripts/ci.sh
 ```
 
-It includes formatting, Clippy with `-D warnings`, debug and release tests,
-generated-artifact checks, the advisory lane, planning/documentation checks,
-and a clean-tree check.
+It is a shim over `meson test`, which is where every lane is declared, timed,
+and statused. The lanes are formatting, Clippy with `-D warnings`, per-package
+debug and release tests, the census audit, generated-artifact and label checks,
+planning and forbidden-text checks, the mocked Meson contract, the node-free
+executor classification tests, the advisory lane, and a clean-tree check.
+Arguments are forwarded to `meson test`, so a suite or a single lane is the
+same command narrowed.
 
-Document verification additionally runs the Meson and reproducibility lanes.
+The advisory lane stays externally provisioned: `cargo audit` is not a
+workspace dependency, and when it is absent the lane reports the harness's
+SKIP status rather than a pass. A skipped lane is neither failure nor success,
+and a run that skipped one is not a green run.
+
+Document verification additionally runs the Meson document lane in a
+non-mocked build directory and the reproducibility lane
+(`scripts/check-document-reproducibility.sh`). Neither is part of the shim:
+the first needs a real TeX toolchain, and the second builds the document twice
+in disposable directories and refuses a dirty worktree, so it answers a
+release question rather than a per-batch one.
 
 A clean checkout must pass checks without modifying tracked files. An explicit
 generation or publication command may write only to its requested destination.

@@ -137,11 +137,14 @@ meson test -C build --print-errorlogs
 
 ## CI
 
-The runner-agnostic CI entry point is [scripts/ci.sh](scripts/ci.sh):
-fmt, clippy (`-D warnings`), debug and release tests, the non-writing
-generated-artifact gate, `cargo audit` (when installed), and a
-clean-tree check — all Cargo invocations `--locked`. Toolchain and
-dependency policy is [ADR-011](adr/011-toolchain-and-dependency-policy.md).
+Every lane of the gate is a Meson test, so `meson test` is the gate and `meson test --list` is the authoritative lane list: fmt, clippy (`-D warnings`), per-package debug and release tests, the ADR-014 census audit, the non-writing generated-artifact and label gates, plan-tree, forbidden-text and hash-citation checks, the mocked Meson contract, the node-free executor classification tests, `cargo audit` (skipped, not passed, when it is not installed), and a clean-tree check.
+
+The runner-agnostic entry point is [scripts/ci.sh](scripts/ci.sh), a shim
+that configures a build directory with the TeX toolchain mocked, runs
+`meson test`, and prints the timing report; arguments are forwarded, so
+`scripts/ci.sh --suite lint` and `scripts/ci.sh cargo-clippy` are
+content-scoped runs of the same gate. Toolchain and dependency policy is
+[ADR-011](adr/011-toolchain-and-dependency-policy.md).
 
 ## Security and execution trust
 
