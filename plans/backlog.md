@@ -1327,10 +1327,12 @@ the relevant documentation and census checks.
 | document stamps | `cargo test -p tripod-document-stamps` |
 | flattener | `cargo test -p flatten-latex-main` |
 | process wrapper | `cargo test -p execwrap` |
-| mocked Meson graph | `scripts/test-meson-mock.sh .` |
+| mocked Meson graph | `meson test -C build meson-mock-contract` |
+| executor classification | `meson test -C build executor-classification` |
 
 Focused filters supplement but never replace complete package and workspace
-runs.
+runs. Every gate lane is a Meson test (CI-009), so any of them narrows the
+same way: `scripts/ci.sh --suite lint`, or a lane by name.
 
 ### 10.3 Full gate
 
@@ -1341,6 +1343,12 @@ scripts/ci.sh
 meson compile -C build
 meson test -C build --print-errorlogs
 ```
+
+The first line is the whole lane surface with the TeX toolchain mocked; the
+second and third add the real document build, which the mocked run cannot
+cover. `scripts/ci.sh` is a shim over `meson test` and forwards its arguments,
+and `scripts/ci-timing-report.py` reads the finished run's logs for the
+per-suite, per-lane, and per-test timing.
 
 The canonical build directory is `build/`.
 
@@ -1534,7 +1542,7 @@ already cites (G11-R12).
 
 | ID | Status | Task |
 |---|---|---|
-| `CI-001` | DONE | Rewrite the shell CI driver in Python with a typed lane tracker: every lane declared with status and skip reason, every lane and the whole run wall-timed, and a timing report emitted as the success output and on failure alike. Delivered as scripts/ci.py with an eleven-lane registry and the ci.sh shim; the first dataset shows the two test lanes at eighty-four percent of a twenty-minute gate. |
+| `CI-001` | DONE (superseded by `CI-009`) | Rewrite the shell CI driver in Python with a typed lane tracker: every lane declared with status and skip reason, every lane and the whole run wall-timed, and a timing report emitted as the success output and on failure alike. Delivered as scripts/ci.py with an eleven-lane registry and the ci.sh shim; the first dataset shows the two test lanes at eighty-four percent of a twenty-minute gate. The dataset is what the row was for, and it holds; the driver that produced it does not. `CI-009` retired scripts/ci.py outright, because meson's harness already declares, times, and statuses every lane, and a second registry of the same lanes is a second thing that can disagree with the first. |
 | `CI-002` | FOLDED into `CI-009` | Move test execution to the meson layer per the user's ruling: no workspace-level cargo test in the gate; each package's test groups run as individual meson-driven lanes, and per-test timing uses the nightly libtest JSON output, which the user has admitted as not affecting what the tests prove. The timing report gains per-package and per-test figures; attribution replaces the aggregate block. Contention on the shared cargo target directory is measured and the chosen serialization or partitioning recorded honestly. |
 | `CI-003` | DONE | User ruling: the generated registers are archive-budget, by role not directory; labels/README.md stays prose. Combined 783755 to 724577 bytes; archive 1168518 to 1228130. |
 | `CI-004` | DONE | Second half of the same ruling: closed backlog sections move to archived history. New archive-class directory plans/history/ holds the twelve completed gate records (§2.3–2.14) and the four remediated review registers (§5.2–5.5), moved verbatim with their labels; the backlog keeps a numbered stub at each origin. plans/README.md now separates superseded prose, which is deleted, from a closed record, which moves. Combined 786243 to 744305 bytes, headroom 189 to 42127. |
@@ -1543,7 +1551,7 @@ already cites (G11-R12).
 | `CI-007` | DONE (deletion) | Wave-1b worker findings, 2026-08-20, dispositioned by user ruling: the dead executor smoke script `scripts/test-elements-native-executor.sh` — unrunnable since revision 3 landed, hidden behind its live-node skip — is deleted outright rather than patched; rebuilding a native-executor smoke test is proper engineering and stands as the low-priority row `CI-010`. The second finding, no Python test lane anywhere in CI, is subsumed by the `CI-009` migration ruling: the lane arrives as a first-class meson test, not as a `ci.py` registry entry. |
 
 | `CI-008` | DONE | Wave-2 worker finding and repair, 2026-08-20: the combined-Markdown headroom CI-004 restored was spent. The base tree measured 785909 bytes against the 786432 hard cap — 523 bytes — so the Wave-2 register rows could not be written at all without failing the plans lane, and a lane could no longer record its own evidence. Repaired by the mechanism CI-004 built, on the record that had just become eligible for it: §5.9's preflight register is complete, so it moved verbatim to history with a numbered stub at its origin, and the combined figure returned to about 762 kilobytes. Two things to watch rather than rediscover: the headroom is consumed by whichever wave is recording evidence, at roughly a kilobyte a row, and the next eligible record is not obvious — §5.7 still carries an OPEN P0 and §13 an ACTIVE row, so neither is movable yet. |
-| `CI-009` | TODO | User ruling 2026-08-20: `ci.py` is dead weight — the CI driver migrates to the meson layer and test execution becomes first class there, completing what CI-002 started rather than growing the Python registry further. Deliverables: every `ci.py` lane restated as a meson test or target with its timing reported by meson's own harness; a first-class Python test lane for node-free executor logic, carrying the exhaustive script-error mapped-message check from the `G12-R07` repair; `ci.sh` reduced to a thin shim or retired; the wall-time budgets restated per lane where meson reports them. CI-002 folds into this row. |
+| `CI-009` | DONE | User ruling 2026-08-20: `ci.py` is dead weight — the CI driver migrates to the meson layer and test execution becomes first class there, completing what CI-002 started rather than growing the Python registry further. Deliverables: every `ci.py` lane restated as a meson test or target with its timing reported by meson's own harness; a first-class Python test lane for node-free executor logic, carrying the exhaustive script-error mapped-message check from the `G12-R07` repair; `ci.sh` reduced to a thin shim or retired; the wall-time budgets restated per lane where meson reports them. CI-002 folds into this row. Delivered: scripts/ci.py is deleted and scripts/ci.sh is a shim that configures the mocked build directory, runs `meson test`, and prints the timing report. Four lanes were not yet meson tests and are now — `tracked-path-argv-audit`, `cargo-audit`, `meson-mock-contract`, `clean-tree` — with the advisory lane exiting 77 so meson reports its own SKIP rather than a private vocabulary. The Python lane is `executor-classification`, an exhaustive node-free oracle over the executor's script-error classification that fails on the pre-`G12-R07` parser. Per-lane budgets sit beside each `test()` call in meson.build. Per-test attribution survives the driver in scripts/ci-timing-report.py, which reads the finished run's logs and gates nothing. One explicit exception, stated rather than dropped: `scripts/check-document-reproducibility.sh` stays a script, because it builds the document twice in disposable directories and refuses a dirty worktree, so it answers a release question and cannot be a lane of the run whose cleanliness it depends on. |
 | `CI-010` | LOW | User ruling 2026-08-20: rebuild the native-executor smoke test as proper engineering, replacing the deleted revision-2 script. It speaks protocol revision 4, exercises the real handshake against a live node, is validated in a session that holds one, and fails loudly rather than skipping silently when its preconditions are absent. Blocked on a live node like the rest of Wave 11. |
 
 ## 14. Backlog hygiene · `sec:backlog:hygiene`

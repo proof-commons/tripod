@@ -6,8 +6,8 @@ cd "$(dirname "$0")/.."
 # shellcheck source=scripts/census-args.sh
 . ./scripts/census-args.sh
 
-# Label linting lives in ci.sh lane 6 and the meson labels-check
-# target; this gate covers plan-tree structure and whitespace hygiene.
+# Label linting lives in the meson labels-check lane; this gate covers
+# plan-tree structure and whitespace hygiene.
 # The checker receives its census by argument (ADR-014); the argv is
 # shell-quoted and re-parsed into positional parameters rather than
 # expanded unquoted, and unsafe tracked paths are refused up front

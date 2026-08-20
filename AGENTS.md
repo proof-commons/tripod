@@ -16,9 +16,11 @@
   commit that formatting on its own and carry on. `scripts/ci.sh`
   keeps `--check`, because a clean checkout must pass the gate without
   modifying tracked files.
-- Run the full gate — `scripts/ci.sh` and then
-  `meson test -C build --print-errorlogs` — once a batch of changes is
-  finished, not once per commit. The debug lane above is not that
+- Run the full gate — `scripts/ci.sh`, which is `meson test` over every
+  lane with the TeX toolchain mocked — once a batch of changes is
+  finished, not once per commit. A real document build
+  (`meson test -C build --print-errorlogs` in a non-mocked build
+  directory) is the part the mocked gate does not cover. The debug lane above is not that
   gate: it does not cover the release profile, the ADR-014 census,
   the generated-artifact and documentation checkers, or the document
   build. Until the full gate has run, report it as deferred rather
@@ -36,7 +38,10 @@
   Rust spellings such as `Vec<_>` or `collect::<Vec<_>>()`, and use the
   escaped spelling `&lt;char&gt;` when prose must discuss the exact token.
 - `scripts/ci.sh` is the runner-agnostic CI gate for environments
-  without a TeX toolchain.
+  without a TeX toolchain. It is a thin shim: every lane is a
+  `meson test`, timed and statused by meson's own harness, and
+  `scripts/ci-timing-report.py` reads that run's logs afterwards for the
+  per-suite and per-test breakdown. There is no separate lane registry.
 - Meson graph and command wiring is tested by the mocked contract lane
   (`scripts/test-meson-mock.sh`): it configures one disposable build under
   `build/mocks/` with `-Dmock_mode=true` and simulates only the TeX

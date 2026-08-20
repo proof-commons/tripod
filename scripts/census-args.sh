@@ -1,9 +1,9 @@
 # shellcheck shell=sh
 #
 # Shared, filename-safe derivation of role-tagged checker argv from the
-# Git index (ADR-014). Sourced by scripts/ci.sh and
-# scripts/check-plans.sh; it defines functions only and is not
-# executable on its own.
+# Git index (ADR-014). Sourced by scripts/check-plans.sh and by the
+# tracked-path-argv-audit meson lane; it defines functions only and is
+# not executable on its own.
 #
 # The checkers take their census by argument, one role tag plus one
 # path per subject. Building that argv by unquoted command substitution

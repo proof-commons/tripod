@@ -18,8 +18,8 @@ set -eu
 # record carries on stderr. Nothing else is normalized, so a diff that
 # reports no output is byte equality modulo wall-clock time.
 #
-# The argv mirrors the ci.py lanes (check-labels, plans,
-# forbidden-text) and the Meson generator target
+# The argv mirrors the gate's checker lanes (labels-check, plans-check,
+# forbidden-text-check) and the Meson generator target
 # (generate-label-registers), so the capture exercises exactly the
 # invocations the gate exercises. The register generator writes to
 # files under <output-dir> rather than in-tree, so a capture never

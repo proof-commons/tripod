@@ -448,7 +448,7 @@ hash_citations_stamp = custom_target(
 # repository that skipped it would leave tracked symlinks and gitlinks
 # under categorically excluded paths unaudited (ADR-014). Membership
 # here is what makes `meson compile -C build lint` — and therefore the
-# mocked contract lane of scripts/ci.sh — actually run the audit; an
+# `meson-mock-contract` lane — actually run the audit; an
 # explicit Ninja target never pulls in unrelated build_by_default ones.
 alias_target(
   'lint',
@@ -572,6 +572,7 @@ alias_target('papers', attestation_mirror, attestation_flatten)
 # the stamp targets above — `meson test` builds the stamps (running
 # only what changed) and then merely asserts they exist.
 # ---------------------------------------------------------------------------
+# Budget: 0:01, tolerance 0:05. rustfmt parses, it does not compile.
 test(
   'cargo-fmt',
   cargo,
@@ -613,6 +614,9 @@ cargo_clippy_stamp = custom_target(
   console: true,
 )
 
+# Budget: 0:20 warm, tolerance 6:00 cold. The stamp target compiles the whole
+# workspace with all targets on a cold cache; warm it is a cargo freshness
+# check. Both figures are the same lane, and the spread is the cache.
 test(
   'cargo-clippy',
   sh,
@@ -698,11 +702,36 @@ cargo_test_json = find_program('scripts/cargo-test-json.sh')
 # time queued behind that lock and their per-package durations would
 # measure the queue rather than the package. Building once and running
 # many leaves each lane holding the lock only briefly, which is what
-# makes the per-package figures attributable at all. Measured on a
-# 14-core host, thirteen debug lanes: 0:52 warm-up plus 5:00 of lanes,
-# against 6:53 for the same lanes with no warm-up and a cold target
-# directory. The measurement and the parallelism it settles are
-# recorded in scripts/ci.py.
+# makes the per-package figures attributable at all.
+#
+# Measured on a 14-core host, wall clock, the debug lanes (CI-002):
+#
+#   warm-up build then serial lanes (--num-processes 1)   0:52 + 8:32
+#   warm-up build then parallel lanes (meson's default)   0:52 + 5:00
+#   no warm-up, parallel lanes, cold target directory            6:53
+#
+# Two things follow. Parallel is faster, so the lanes really do overlap:
+# cargo's lock over the shared target directory is held only briefly
+# once the binaries are built, and the serialization it could have
+# forced does not materialize. The gain is bounded from below by the
+# slowest single package -- target-elements-conformance alone is about
+# 250s serial and 300s while the other lanes share the cores -- so it is
+# 1.7x, not 13x. And the third row is why the warm-up exists at all:
+# without it every lane's cargo has to build, it is slower in total, and
+# worse, each lane's duration then measures how long that lane waited
+# for the build lock rather than how long its tests took.
+#
+# What the warm-up does NOT cover is documentation tests: `cargo build
+# --tests` does not compile them, so rustdoc compiles each package's
+# doctests inside its own lane, holding cargo's lock while it does. In
+# debug that cost is small. In release it dominates: a full gate run
+# measured 7:04 of warm-up and 10:31 of lanes, with individual packages
+# reporting ten-minute durations against a tenth of a second of actual
+# test execution and cargo's own "Blocking waiting for file lock" lines
+# in the logs. The release per-package durations are therefore honest
+# wall times but poor attributions -- they are mostly queueing -- and
+# that is a known residual of this design, not a measurement to read as
+# test cost.
 cargo_test_warmup = {}
 foreach profile : ['debug', 'release']
   warmup_args = [
@@ -728,9 +757,18 @@ endforeach
 # The lanes themselves. Each runs the package's complete test set --
 # unit, integration, and documentation tests, exactly what
 # `cargo test -p <package>` ran before -- and captures libtest's JSON
-# event stream under the build tree, from which scripts/ci.py reads
-# per-test durations. is_parallel is pinned rather than left at its
-# default: see scripts/ci.py for the measurement behind the value.
+# event stream under the build tree, from which scripts/ci-timing-report.py
+# reads per-test durations. Meson times a lane; only libtest can say
+# which test inside it was slow, which is the attribution CI-002 split
+# the suite per package to obtain. is_parallel is pinned rather than
+# left at its default: the measurement behind the value is directly
+# above.
+#
+# Budget (CI-005): the debug suite 5:00, tolerance 8:00; the release
+# suite 10:30, tolerance 15:00. Per lane the spread is wide and
+# deliberate -- target-elements-conformance owns roughly a fifth of the
+# debug suite by itself -- so the budget is stated per suite, which is
+# the unit a cadence decision actually chooses.
 cargo_test_stream_root = meson.project_build_root() / 'cargo-test-json'
 
 foreach profile : ['debug', 'release']
@@ -753,6 +791,8 @@ foreach profile : ['debug', 'release']
   endforeach
 endforeach
 
+# Budget: 0:02, tolerance 0:10. One `git ls-files` welded against the
+# hand-managed per-directory lists.
 test(
   'census-audit',
   sh,
@@ -762,6 +802,8 @@ test(
   timeout: 60,
 )
 
+# Budget: 0:02, tolerance 0:10. The stamp probe is instant; the cost is the
+# checker target behind it, which reruns only when its census slice changed.
 test(
   'check-generated',
   sh,
@@ -771,6 +813,7 @@ test(
   timeout: 60,
 )
 
+# Budget: 0:05, tolerance 0:20. The label graph is the largest census slice.
 test(
   'labels-check',
   sh,
@@ -780,6 +823,7 @@ test(
   timeout: 60,
 )
 
+# Budget: 0:03, tolerance 0:15.
 test(
   'plans-check',
   sh,
@@ -789,6 +833,8 @@ test(
   timeout: 60,
 )
 
+# Budget: 0:03, tolerance 0:15. Always stale: it runs git grep over the
+# complete tracked set on every build rather than tracking an input list.
 test(
   'forbidden-text-check',
   sh,
@@ -823,6 +869,7 @@ test(
 # or TeX is involved.
 publication_mode_test = find_program('scripts/test-publication-mode.sh')
 
+# Budget: 0:02, tolerance 0:10. Mock cargo, no toolchain involved.
 test(
   'publication-mode-freshness',
   publication_mode_test,
@@ -833,6 +880,8 @@ test(
 
 attestation_stamps_test = find_program('scripts/test-attestation-stamps.sh')
 
+# Budget: 1:00, tolerance 3:00. Real cargo and git, no TeX; pinned serial
+# because it drives cargo against the shared target directory.
 test(
   'attestation-stamps-scopes',
   attestation_stamps_test,
@@ -898,8 +947,9 @@ gate_cargo_audit = find_program('scripts/gate-cargo-audit.sh')
 # The advisory lane. Externally provisioned by ADR-011, so the wrapper exits
 # 77 and meson reports SKIP when cargo-audit is absent -- the harness's own
 # status, rather than a driver's private vocabulary.
-# Budget: 0:03 when provisioned, tolerance 0:15 (it fetches nothing; the
-# advisory database is whatever the operator last synced). Skips instantly.
+# Budget: 0:03 when provisioned, tolerance 0:15 (measured 0:02; it fetches
+# nothing, the advisory database is whatever the operator last synced). A
+# skip is instant.
 test(
   'cargo-audit',
   gate_cargo_audit,
@@ -929,8 +979,9 @@ meson_mock_test = find_program('scripts/test-meson-mock.sh')
 # CI_REQUIRE_MESON=1 to make a skip fatal. Both are now moot -- a meson test
 # cannot run without meson -- so the lane is unconditional, which is the
 # stronger of the two behaviours the toggle chose between.
-# Budget: 1:30, tolerance 3:00. It configures a Meson build, syncs six helper
-# binaries through cargo, and runs the repair and restat regressions.
+# Budget: 2:15, tolerance 4:00 (measured 2:11). It configures a Meson build,
+# syncs the helper binaries through cargo, and runs the repair, restat, and
+# render-failure regressions.
 test(
   'meson-mock-contract',
   meson_mock_test,
