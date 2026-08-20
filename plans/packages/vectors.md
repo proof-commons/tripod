@@ -1,6 +1,7 @@
 # Translation-Validation Vectors · `pkg:vectors:contract`
 
-> **Status:** Planned
+> **Status:** Candidate — fixtures and evidence plan implemented;
+> execution, mutations, and resources outstanding
 > **Phase:** [Phase 4](../phases/04-compact-ash.md) onward
 > **Package:** `tripod-vectors`
 > **Library:** `vectors`

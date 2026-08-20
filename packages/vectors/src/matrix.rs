@@ -99,7 +99,8 @@ impl Display for VectorFamily {
 
 /// What a class expects the run to establish.
 ///
-/// Three outcomes, not two. `rule:vectors:execution` forbids counting an
+/// Three outcomes, not two. `(´[PLAN-rule:vectors:execution]´)`
+/// forbids counting an
 /// infrastructure failure as an expected rejection, so a class whose
 /// subject *is* the infrastructure needs its own polarity rather than a
 /// negative one with a caveat attached.
@@ -130,7 +131,8 @@ impl VectorPolarity {
     }
 }
 
-/// The layer a mutation is applied at, per `rule:vectors:mutations`.
+/// The layer a mutation is applied at, per
+/// `(´[PLAN-rule:vectors:mutations]´)`.
 ///
 /// Positive classes mutate nothing and carry `None` instead.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1148,7 +1150,8 @@ pub const ABI: &[VectorClass] = &[
 /// §18.12 — resource and infrastructure cases.
 ///
 /// The eight infrastructure entries are the reason [`VectorPolarity`]
-/// has three arms: `rule:vectors:execution` says an infrastructure
+/// has three arms: `(´[PLAN-rule:vectors:execution]´)` says an
+/// infrastructure
 /// failure never counts as an expected rejection, so these classes must
 /// be unable to contribute a target verdict by construction.
 pub const RESOURCE: &[VectorClass] = &[

@@ -1,6 +1,6 @@
 //! The one exact linked bundle and ABI every fixture binds to.
 //!
-//! `pkg:vectors:contract` scopes this package to "one exact linked
+//! `(´[PLAN-pkg:vectors:contract]´)` scopes this package to "one exact linked
 //! bundle and ABI", and Guide-12 §17.2 makes target materialization a
 //! function of the bundle, the ABI, the typed request, and the public
 //! input view. This module owns the first two so that every fixture in
