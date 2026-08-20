@@ -44,8 +44,9 @@ use linker::{CandidateLinkedBundle, LinkDeploymentParameters, SelfCommitmentStra
 use realization::{RealizationScope, derive};
 use tapscript::{CompactAshSymbols, demonstration_policy, emit_candidate_bundle};
 use target_elements::{ReviewedElementsTapscriptDefinition, reviewed_elements_tapscript};
+use target_elements_conformance::constructor::tree as oracle_tree;
 use transaction::{
-    AshInstanceOrigin, CandidateTransactionAbi, OutputKeyParity, PinnedAshInstance,
+    AshInstanceOrigin, CandidateTransactionAbi, OutputKeyParity, PinnedAshInstance, commit_tree,
     derive_candidate_abi,
 };
 
@@ -132,6 +133,31 @@ pub struct FixtureBundle {
     plan: ValidatedTargetOperationPlan,
     bundle: CandidateLinkedBundle,
     abi: CandidateTransactionAbi,
+    pin: PinnedAshInstance,
+    closed_asset: [u8; 32],
+    provenance: PinProvenance,
+}
+
+/// Where a bundle's pinned output key came from.
+///
+/// # Why the two are told apart in the type
+///
+/// A pin is either the literal this module states — cross-checked from
+/// the far side of the §16.2 boundary, and the only pin the canonical
+/// fixtures use — or one derived here for a closed asset a ceremony
+/// observed, which no literal could have anticipated. They are not
+/// interchangeable: the first carries the reference oracle's agreement
+/// and the second carries none until a target accepts a spend at it.
+///
+/// Keeping them apart in the type is what stops a report from citing
+/// the cross-check for a bundle the cross-check never saw.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
+pub enum PinProvenance {
+    /// [`PINNED_PROGRAM`], the literal the reference oracle cross-checks.
+    CanonicalLiteral,
+    /// Derived here, for a closed asset a funding ceremony observed.
+    DerivedForObservedAsset,
 }
 
 impl FixtureBundle {
@@ -163,21 +189,35 @@ impl FixtureBundle {
     }
 
     /// The pinned ASH instance the ABI was derived against.
+    #[must_use]
+    pub const fn pin(&self) -> &PinnedAshInstance {
+        &self.pin
+    }
+
+    /// Where that pin came from.
+    #[must_use]
+    pub const fn pin_provenance(&self) -> PinProvenance {
+        self.provenance
+    }
+
+    /// The closed protocol asset this bundle's programs are linked
+    /// against.
     ///
-    /// # Errors
+    /// # Why a bundle has to be able to say this
     ///
-    /// [`FixtureBundleRefusal::Abi`] when the fixture program is not the
-    /// reviewed taproot width, which the constants above make
-    /// unreachable but which is not asserted away.
-    pub fn pin(&self) -> Result<PinnedAshInstance, FixtureBundleRefusal> {
-        fixture_pin(&self.target)
+    /// Every leaf substitutes the closed asset into its own bytes, so
+    /// the asset is not a parameter of a run against a fixed bundle —
+    /// it is part of what the bundle *is*. A ceremony that issued some
+    /// other asset has not funded these programs, and this accessor is
+    /// what lets a planner notice that rather than discover it as a
+    /// script failure.
+    #[must_use]
+    pub const fn closed_asset(&self) -> [u8; 32] {
+        self.closed_asset
     }
 }
 
-fn fixture_pin(
-    target: &ReviewedElementsTapscriptDefinition,
-) -> Result<PinnedAshInstance, FixtureBundleRefusal> {
-    let _ = target;
+fn canonical_pin() -> Result<PinnedAshInstance, FixtureBundleRefusal> {
     PinnedAshInstance::new(
         &PINNED_PROGRAM,
         PINNED_PARITY,
@@ -193,6 +233,86 @@ fn limit(value: u64) -> NonZeroU64 {
 }
 
 fn build() -> Result<FixtureBundle, FixtureBundleRefusal> {
+    build_at(CLOSED_ASSET, PinProvenance::CanonicalLiteral)
+}
+
+/// The same bundle, linked against a closed asset a ceremony observed.
+///
+/// # Why this exists at all, and what Wave 11 found
+///
+/// The canonical bundle pins [`CLOSED_ASSET`], a chosen constant. Every
+/// one of the twelve linked leaves substitutes that constant into its
+/// own bytes — the linker reports `ClosedAsset` among the symbols it
+/// substituted on all twelve — so the committed tree, and therefore the
+/// taproot output key the ASH inputs pay to, are functions of it.
+///
+/// An Elements asset identifier is not a value anyone chooses. It is
+/// derived from the issuing input's outpoint and the contract hash, so
+/// no issuance can produce the chosen constant: a regtest node asked to
+/// issue one answered with a value derived from that outpoint and that
+/// contract hash, as every issuance must, and no such derivation lands
+/// on a repeated byte. The canonical fixtures are therefore unfundable
+/// on any real chain — not because the constructor is wrong, but
+/// because the asset they name cannot be minted.
+///
+/// So a run against a real node links a *second* bundle, at the asset
+/// the ceremony actually issued, and executes that one. The canonical
+/// bundle is untouched: it keeps its literal pin, its reference-oracle
+/// cross-check, and its byte-stable fixtures.
+///
+/// # Why the pin is derived here rather than stated
+///
+/// A literal cannot anticipate an asset the chain had not yet chosen.
+/// The key is therefore computed from this bundle's own internal key
+/// and the merkle root of its own committed tree, through the
+/// conformance package's first-party constructor oracle — the same
+/// arithmetic the reference cross-check performs for the canonical
+/// literal, reached across the §16.2 edge Wave 11 takes.
+///
+/// That is not the substrate marking its own homework. The oracle
+/// computes a key; it does not decide whether an output at that key is
+/// spendable. Only the target decides that, and it decides it by
+/// accepting or refusing a script-path spend whose control block
+/// commits to this very tree. A wrong key is refused for every leaf.
+///
+/// # Errors
+///
+/// [`FixtureBundleRefusal`] naming the layer that refused, exactly as
+/// [`fixture_bundle`] does, plus a refusal from the tree commitment or
+/// the tweak when the derived key is not a point this contract admits.
+pub fn ceremony_bundle(closed_asset: [u8; 32]) -> Result<FixtureBundle, FixtureBundleRefusal> {
+    build_at(closed_asset, PinProvenance::DerivedForObservedAsset)
+}
+
+/// Derive the pinned instance for a linked bundle, from its own tree.
+fn derived_pin(
+    target: &ReviewedElementsTapscriptDefinition,
+    bundle: &CandidateLinkedBundle,
+) -> Result<PinnedAshInstance, FixtureBundleRefusal> {
+    let tree = commit_tree(target, bundle).map_err(FixtureBundleRefusal::Abi)?;
+    let root = tree.merkle_root();
+    let tweak = oracle_tree::tweak(&INTERNAL_KEY, &root);
+    let (key, parity_bit) =
+        oracle_tree::tweaked_key(&INTERNAL_KEY, &tweak).map_err(|_| FixtureBundleRefusal::Tweak)?;
+    let parity = if parity_bit == 0 {
+        OutputKeyParity::Even
+    } else {
+        OutputKeyParity::Odd
+    };
+    PinnedAshInstance::new(
+        &key,
+        parity,
+        target_elements::LeafVersion::TAPSCRIPT,
+        INTERNAL_KEY.to_vec(),
+        AshInstanceOrigin::SyntheticTestFunding,
+    )
+    .map_err(FixtureBundleRefusal::Abi)
+}
+
+fn build_at(
+    closed_asset: [u8; 32],
+    provenance: PinProvenance,
+) -> Result<FixtureBundle, FixtureBundleRefusal> {
     let target = reviewed_elements_tapscript().map_err(FixtureBundleRefusal::Target)?;
 
     let realization = derive(&ARCHITECTURE, RealizationScope::phase1_pilots())
@@ -226,7 +346,7 @@ fn build() -> Result<FixtureBundle, FixtureBundleRefusal> {
 
     let resolved = CompactAshSymbols::new(
         &target,
-        CLOSED_ASSET.to_vec(),
+        closed_asset.to_vec(),
         RESERVE_ASSET.to_vec(),
         SPONSOR_CHANGE_PROGRAM.to_vec(),
         0,
@@ -245,14 +365,21 @@ fn build() -> Result<FixtureBundle, FixtureBundleRefusal> {
     let bundle = linker::link_candidate(&target, &emitted, &deployment)
         .map_err(FixtureBundleRefusal::Link)?;
 
-    let pin = fixture_pin(&target)?;
-    let abi = derive_candidate_abi(&target, &bundle, pin).map_err(FixtureBundleRefusal::Abi)?;
+    let pin = match provenance {
+        PinProvenance::CanonicalLiteral => canonical_pin()?,
+        PinProvenance::DerivedForObservedAsset => derived_pin(&target, &bundle)?,
+    };
+    let abi =
+        derive_candidate_abi(&target, &bundle, pin.clone()).map_err(FixtureBundleRefusal::Abi)?;
 
     Ok(FixtureBundle {
         target,
         plan,
         bundle,
         abi,
+        pin,
+        closed_asset,
+        provenance,
     })
 }
 

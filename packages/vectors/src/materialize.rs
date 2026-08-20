@@ -6,13 +6,15 @@
 //! request, and the public target input view, exactly as §17.2's
 //! four-term recipe says.
 //!
-//! # Why the outpoints are derived rather than stated
+//! # Where the outpoints come from
 //!
 //! §17.2 excludes target indices from the fixture, so the fixture cannot
-//! carry outpoints. They are derived from the fixture's ordinal and the
-//! member's position by a stated rule, which keeps materialization a
-//! pure function of the semantic case and makes repeated materialization
-//! byte-identical — the property §18.1's last positive class is about.
+//! carry outpoints. They arrive separately, in an [`AshFunding`] record
+//! the caller supplies — from a ceremony's own answers for a vector that
+//! will be submitted, and from a named placeholder for one that will
+//! not. Materialization stays a pure function of its inputs either way,
+//! so repeated materialization is byte-identical, which is the property
+//! §18.1's last positive class is about.
 //!
 //! # What this is not
 //!
@@ -29,7 +31,7 @@ use transaction::{
     SyntheticDisclaimer, Txid, ValueField, construct,
 };
 
-use crate::bundle::{CLOSED_ASSET, FixtureBundle};
+use crate::bundle::FixtureBundle;
 use crate::error::VectorError;
 use crate::fixture::{CompactAshSemanticCase, SemanticFixtureId};
 use crate::matrix::{EvidenceBoundary, VectorClass};
@@ -158,21 +160,127 @@ impl MaterializedTargetVector {
     }
 }
 
-/// The outpoint of the `member`-th ASH input of fixture `ordinal`.
+/// Where the ASH inputs of one vector come from.
 ///
-/// A stated rule rather than a stored table, so that materialization is
-/// a pure function of the semantic case. `None` when the member's
-/// position is not an outpoint index the target admits — returned rather
-/// than asserted away, because a fixture that quietly reused index zero
-/// would produce a duplicate outpoint and turn a positive vector into
-/// §18.3's first negative one.
+/// # Why this replaced a derived rule
+///
+/// Wave 10 derived outpoints from the fixture's ordinal and the
+/// member's position, which made materialization a pure function of the
+/// semantic case and made repeated materialization byte-identical. It
+/// also made the transactions unspendable: a derived outpoint names a
+/// coin no chain ever created, so every one of them would be refused
+/// for a missing input before any script ran.
+///
+/// Wave 11 takes them from the ceremony instead. The coins exist
+/// because a target created them, and a vector spends the ones it was
+/// given. Determinism is not lost, only relocated: materialization is
+/// still a pure function of its inputs, and the same funding answers
+/// produce the same bytes twice.
+///
+/// # Why this is a distinct type and not a bare slice
+///
+/// A slice of outpoints could be handed to the wrong vector. This
+/// carries the vector's own identity alongside them, so materialization
+/// can refuse a funding record that was not cut for it rather than
+/// silently building a transaction against another vector's coins.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AshFunding {
+    vector: TargetVectorId,
+    outpoints: Vec<Outpoint>,
+}
+
+impl AshFunding {
+    /// States the coins one vector's ASH inputs spend.
+    ///
+    /// # Errors
+    ///
+    /// [`VectorError::FundingCardinalityMismatch`] when the ceremony
+    /// supplied a number of coins the vector's shape does not take, and
+    /// [`VectorError::DuplicateFundedOutpoint`] when it supplied one
+    /// coin twice — which would turn a positive vector into §18.3's
+    /// first negative one without anything saying so.
+    pub fn new(vector: TargetVectorId, outpoints: Vec<Outpoint>) -> Result<Self, VectorError> {
+        let wanted = usize::from(vector.ash_inputs());
+        if outpoints.len() != wanted {
+            return Err(VectorError::FundingCardinalityMismatch {
+                vector,
+                wanted,
+                supplied: outpoints.len(),
+            });
+        }
+        let distinct: std::collections::BTreeSet<Outpoint> = outpoints.iter().copied().collect();
+        if distinct.len() != outpoints.len() {
+            return Err(VectorError::DuplicateFundedOutpoint(vector));
+        }
+        Ok(Self { vector, outpoints })
+    }
+
+    /// The vector these coins were cut for.
+    #[must_use]
+    pub const fn vector(&self) -> TargetVectorId {
+        self.vector
+    }
+
+    /// The coins, in the order the ceremony reported them.
+    #[must_use]
+    pub fn outpoints(&self) -> &[Outpoint] {
+        &self.outpoints
+    }
+
+    /// Coins no chain created, for a vector nothing will submit.
+    ///
+    /// # Why an unexecuted fixture still needs outpoints
+    ///
+    /// The canonical fixtures exist to carry exact bytes: the reference
+    /// oracle decodes them, re-encodes them, hashes their leaves, and
+    /// checks their control blocks against the pinned key. None of that
+    /// needs the inputs to be real, and all of it needs them to be
+    /// *stated*, because a transaction with no inputs is not the
+    /// transaction whose encoding is under test.
+    ///
+    /// # Why it is named rather than silent
+    ///
+    /// Wave 10 derived these inside materialization, where nothing
+    /// distinguished them from coins a ceremony had supplied. They are
+    /// not the same thing and a report must not be able to confuse
+    /// them: an output at one of these outpoints does not exist, so a
+    /// vector built on it can only ever be refused for a missing input,
+    /// before any script runs. Requiring a caller to ask for it by this
+    /// name is what keeps that fact attached to the artifact.
+    #[must_use]
+    pub fn unexecutable_placeholder(vector: TargetVectorId) -> Self {
+        let ordinal = vector.fixture().ordinal();
+        let mut outpoints = Vec::with_capacity(usize::from(vector.ash_inputs()));
+        for member in 0..u32::from(vector.ash_inputs()) {
+            let mut seed = [0_u8; 32];
+            seed[0] = 0xa0;
+            seed[1..5].copy_from_slice(&ordinal.to_be_bytes());
+            // The width is fixed by the shape bounds, so both the index
+            // and the outpoint are constructible; a refusal here would
+            // mean the bounds and this rule had drifted apart, and the
+            // empty vector it would leave is refused by `new` below.
+            if let Ok(outpoint) = Outpoint::new(Txid::from_internal(seed), member) {
+                outpoints.push(outpoint);
+            }
+        }
+        Self { vector, outpoints }
+    }
+}
+
+/// The identity the sponsorless vector of one semantic case carries.
+///
+/// Stated once here because three callers need it before a vector
+/// exists: the plan, to name the work it is waiting for; the ceremony,
+/// to cut funding for it; and materialization itself. A second
+/// derivation would be a second authored spelling of one identity
+/// `(´[PLAN-rule:guide12-exec:typed-source]´)`.
 #[must_use]
-pub fn ash_outpoint(ordinal: u32, member: usize) -> Option<Outpoint> {
-    let mut seed = [0_u8; 32];
-    seed[0] = 0xa0;
-    seed[1..5].copy_from_slice(&ordinal.to_be_bytes());
-    let index = u32::try_from(member).ok()?;
-    Outpoint::new(Txid::from_internal(seed), index).ok()
+pub fn vector_id(case: &CompactAshSemanticCase) -> TargetVectorId {
+    TargetVectorId {
+        fixture: case.id(),
+        ash_inputs: u8::try_from(case.ash_inputs()).unwrap_or(u8::MAX),
+        sponsors: 0,
+    }
 }
 
 fn shape_of(
@@ -214,12 +322,14 @@ fn shape_of(
 /// do not name a shape the demonstration bounds admit,
 /// [`VectorError::TargetMaterializationFailed`] when the constructor
 /// refuses — which is an ABI/construction rejection and never a target
-/// verdict — and [`VectorError::SuccessorAmountMismatch`] when the
-/// amount the constructor settled on is not the one the realization
-/// layer's arithmetic derived.
+/// verdict — [`VectorError::SuccessorAmountMismatch`] when the amount
+/// the constructor settled on is not the one the realization layer's
+/// arithmetic derived, and [`VectorError::FundingNamesAnotherVector`]
+/// when the funding offered was cut for a different vector.
 pub fn materialize(
     fixture: &FixtureBundle,
     case: &CompactAshSemanticCase,
+    funding: &AshFunding,
 ) -> Result<MaterializedTargetVector, VectorError> {
     let ash_inputs = u8::try_from(case.ash_inputs()).unwrap_or(u8::MAX);
     let id = TargetVectorId {
@@ -227,24 +337,33 @@ pub fn materialize(
         ash_inputs,
         sponsors: 0,
     };
+    // The funding was cut for a vector, and this is that vector or it is
+    // not. Building against another vector's coins would produce a
+    // transaction nobody planned.
+    if funding.vector() != id {
+        return Err(VectorError::FundingNamesAnotherVector {
+            wanted: id,
+            supplied: funding.vector(),
+        });
+    }
     let shape = shape_of(ash_inputs, 0, false, id)?;
 
-    let mut outpoints = Vec::with_capacity(case.ash_inputs());
     let mut views = Vec::with_capacity(case.ash_inputs());
-    let pin = fixture
+    let program = fixture
         .pin()
-        .map_err(VectorError::FixtureBundleUnavailable)?;
-    let program = pin
         .output_script(fixture.target())
         .map_err(|cause| VectorError::TargetMaterializationFailed { vector: id, cause })?;
 
-    for (member, amount) in case.inputs().iter().enumerate() {
-        let outpoint = ash_outpoint(case.id().ordinal(), member)
-            .ok_or(VectorError::MaterializedShapeMismatch(id))?;
-        outpoints.push(outpoint);
+    // The asset is the bundle's own, not this module's constant: a
+    // ceremony-bound bundle is linked against the asset the ceremony
+    // issued, and an input declaring any other one would be refused by
+    // the very leaf that introspects it.
+    let asset = AssetField::Explicit(AssetId::from_internal(fixture.closed_asset()));
+    let outpoints: Vec<Outpoint> = funding.outpoints().to_vec();
+    for (outpoint, amount) in outpoints.iter().zip(case.inputs().iter()) {
         views.push(PublicOutputView::new(
-            outpoint,
-            AssetField::Explicit(AssetId::from_internal(CLOSED_ASSET)),
+            *outpoint,
+            asset,
             ValueField::Explicit(amount.get()),
             program.clone(),
         ));
@@ -300,12 +419,17 @@ pub const fn is_materializable(case: &CompactAshSemanticCase) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{ash_outpoint, is_materializable, materialize};
+    use super::{AshFunding, is_materializable, materialize, vector_id};
     use crate::bundle::fixture_bundle;
-    use crate::fixture::positive_semantic_census;
+    use crate::fixture::{CompactAshSemanticCase, positive_semantic_census};
     use crate::matrix::EvidenceBoundary;
     use std::collections::BTreeSet;
     use transaction::{SyntheticDisclaimer, TargetTransaction, check_weight};
+
+    /// The placeholder funding the canonical fixtures materialize under.
+    fn placeholder(case: &CompactAshSemanticCase) -> AshFunding {
+        AshFunding::unexecutable_placeholder(vector_id(case))
+    }
 
     #[test]
     fn every_sponsorless_positive_case_materializes() {
@@ -322,7 +446,7 @@ mod tests {
         );
 
         for case in materializable {
-            let vector = materialize(&fixture, case)
+            let vector = materialize(&fixture, case, &placeholder(case))
                 .unwrap_or_else(|error| panic!("{:?} did not materialize: {error:?}", case.id()));
             assert_ne!(vector.bytes(), [] as [u8; 0]);
             assert_eq!(vector.expected(), EvidenceBoundary::AcceptedTransaction);
@@ -344,7 +468,7 @@ mod tests {
             .iter()
             .find(|case| is_materializable(case))
             .expect("a sponsorless case exists");
-        let vector = materialize(&fixture, case).expect("it materializes");
+        let vector = materialize(&fixture, case, &placeholder(case)).expect("it materializes");
 
         let decoded = TargetTransaction::decode(vector.bytes()).expect("the bytes decode");
         assert_eq!(decoded.encode(), vector.bytes());
@@ -360,8 +484,8 @@ mod tests {
         let fixture = fixture_bundle().expect("the fixture bundle builds");
         let census = positive_semantic_census().expect("the positive census builds");
         for case in census.iter().filter(|case| is_materializable(case)) {
-            let first = materialize(&fixture, case).expect("it materializes");
-            let second = materialize(&fixture, case).expect("it materializes");
+            let first = materialize(&fixture, case, &placeholder(case)).expect("it materializes");
+            let second = materialize(&fixture, case, &placeholder(case)).expect("it materializes");
             assert_eq!(first, second, "{:?} is not byte-stable", case.id());
         }
     }
@@ -374,7 +498,7 @@ mod tests {
             .iter()
             .filter(|case| is_materializable(case))
             .map(|case| {
-                materialize(&fixture, case)
+                materialize(&fixture, case, &placeholder(case))
                     .expect("it materializes")
                     .bytes()
                     .to_vec()
@@ -395,7 +519,7 @@ mod tests {
         let fixture = fixture_bundle().expect("the fixture bundle builds");
         let census = positive_semantic_census().expect("the positive census builds");
         for case in census.iter().filter(|case| is_materializable(case)) {
-            let vector = materialize(&fixture, case).expect("it materializes");
+            let vector = materialize(&fixture, case, &placeholder(case)).expect("it materializes");
             let carried: BTreeSet<SyntheticDisclaimer> =
                 vector.disclaimers().iter().copied().collect();
             let all: BTreeSet<SyntheticDisclaimer> =
@@ -405,17 +529,51 @@ mod tests {
     }
 
     #[test]
-    fn the_outpoint_rule_is_injective_across_fixtures_and_members() {
+    fn the_placeholder_rule_is_injective_across_fixtures_and_members() {
+        // Two fixtures sharing an outpoint would make one vector spend
+        // another's coin, which is §18.3's first negative class arriving
+        // by accident in the positive set.
+        let census = positive_semantic_census().expect("the positive census builds");
         let mut seen = BTreeSet::new();
-        for ordinal in 0..20_u32 {
-            for member in 0..4_usize {
-                let outpoint =
-                    ash_outpoint(ordinal, member).expect("a small member index is an outpoint");
+        for case in census.iter().filter(|case| is_materializable(case)) {
+            for outpoint in placeholder(case).outpoints() {
                 assert!(
-                    seen.insert(outpoint),
-                    "the outpoint rule collided at {ordinal}/{member}"
+                    seen.insert(*outpoint),
+                    "the placeholder rule collided at {:?}",
+                    case.id()
                 );
             }
         }
+    }
+
+    #[test]
+    fn funding_cut_for_one_vector_is_refused_by_another() {
+        // The check that makes the funding record worth being a type.
+        let fixture = fixture_bundle().expect("the fixture bundle builds");
+        let census = positive_semantic_census().expect("the positive census builds");
+        let mut sponsorless = census.iter().filter(|case| is_materializable(case));
+        let first = sponsorless.next().expect("a first sponsorless case");
+        let second = sponsorless.next().expect("a second sponsorless case");
+        let error = materialize(&fixture, first, &placeholder(second))
+            .expect_err("funding cut for another vector is refused");
+        assert!(matches!(
+            error,
+            crate::error::VectorError::FundingNamesAnotherVector { .. }
+        ));
+    }
+
+    #[test]
+    fn a_vector_refuses_a_funding_record_of_the_wrong_size() {
+        let census = positive_semantic_census().expect("the positive census builds");
+        let case = census
+            .iter()
+            .find(|case| is_materializable(case))
+            .expect("a sponsorless case exists");
+        let id = vector_id(case);
+        let error = AshFunding::new(id, Vec::new()).expect_err("no coins is not a funding record");
+        assert!(matches!(
+            error,
+            crate::error::VectorError::FundingCardinalityMismatch { .. }
+        ));
     }
 }

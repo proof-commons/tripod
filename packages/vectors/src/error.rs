@@ -40,6 +40,14 @@ pub enum FixtureBundleRefusal {
     Link(LinkRefusal),
     /// The ABI refused to derive from the linked bundle.
     Abi(TransactionRefusal),
+    /// The taproot tweak of this bundle's own tree is not a key.
+    ///
+    /// Reachable only for a ceremony-bound bundle, whose pin is derived
+    /// rather than stated. It carries no cause: the oracle's defect
+    /// vocabulary is that package's own, and restating it here would be
+    /// a second authored spelling of a distinction this package neither
+    /// owns nor acts on `(´[PLAN-rule:guide12-exec:typed-source]´)`.
+    Tweak,
 }
 
 /// A refusal encountered while assembling or checking evidence.
@@ -114,6 +122,24 @@ pub enum VectorError {
     MatrixCoverageMismatch {
         /// The class name in question.
         class: &'static str,
+    },
+    /// The ceremony supplied a number of coins this vector cannot take.
+    FundingCardinalityMismatch {
+        /// The vector the coins were offered to.
+        vector: TargetVectorId,
+        /// How many ASH inputs its shape carries.
+        wanted: usize,
+        /// How many coins were offered.
+        supplied: usize,
+    },
+    /// The ceremony supplied one coin twice for a single vector.
+    DuplicateFundedOutpoint(TargetVectorId),
+    /// Funding cut for one vector was offered to another.
+    FundingNamesAnotherVector {
+        /// The vector being materialized.
+        wanted: TargetVectorId,
+        /// The vector the funding names.
+        supplied: TargetVectorId,
     },
 }
 
