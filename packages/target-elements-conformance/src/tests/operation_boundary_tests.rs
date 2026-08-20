@@ -462,6 +462,52 @@ fn an_answer_carrying_an_observation_for_a_step_that_never_ran_is_refused() {
 }
 
 #[test]
+fn the_adapters_not_yet_implemented_refusal_is_a_declared_record() {
+    // The Python seam's own answer, in the exact spelling
+    // `answer_operation_step` writes it. Written out here rather than
+    // derived, because what is being checked is that the two
+    // implementations agree on one revision — a value this side produced
+    // would only check this side against itself
+    // `(´[PLAN-rule:guide12-exec:protocol-revision]´)`.
+    //
+    // The refusal is what an unimplemented step honestly is: the run did
+    // not happen, so no member describing what a target did is present,
+    // and the shape check passes for that reason rather than by
+    // exemption.
+    let refusal = serde_json::json!({
+        "schema": NATIVE_PROTOCOL_SCHEMA,
+        "case": {"operation": "fund", "step": "ceremony"},
+        "observed_layer": "executor_infrastructure_failure",
+        "observed_detail": "this adapter recognizes operation steps and performs none: \
+            the funding ceremony and transaction submission are not implemented",
+        "issued_asset": serde_json::Value::Null,
+        "funded_outputs": [],
+        "accepted_txid": serde_json::Value::Null,
+        "resources": {
+            "script_bytes": 0,
+            "initial_stack_items": 0,
+            "peak_stack_items": serde_json::Value::Null,
+            "peak_altstack_items": serde_json::Value::Null,
+            "maximum_element_bytes": serde_json::Value::Null,
+            "validation_budget_used": serde_json::Value::Null,
+            "transaction_weight": serde_json::Value::Null,
+        },
+    });
+    let response: NativeOperationResponse =
+        serde_json::from_value(refusal).expect("the adapter's refusal is a declared record");
+    assert_eq!(response.case.operation, OperationStepKind::Fund);
+    assert!(
+        !response.observed_layer.is_target_verdict(),
+        "an unimplemented step must not be reported as anything the target did",
+    );
+    assert_eq!(
+        response.validate_shape(),
+        Ok(()),
+        "the refusal must be a shape the protocol defines",
+    );
+}
+
+#[test]
 fn an_acceptance_with_nothing_to_show_for_it_is_refused() {
     // An adapter that returned the layer without doing the work is
     // indistinguishable, from the outside, from one that did it and

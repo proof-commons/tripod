@@ -3994,6 +3994,12 @@ def answer_case(executor: CaseExecutor, line: str) -> None:
     if isinstance(case, dict) and "lifecycle" in case:
         answer_lifecycle_step(executor, request, case)
         return
+    # A section 16.2 operation step names a kind and the caller's own name
+    # for it. Told apart the same way as the rest: by the one field whose
+    # shape differs.
+    if isinstance(case, dict) and "operation" in case and "step" in case:
+        answer_operation_step(executor, request, case)
+        return
     # The case identity is echoed verbatim, so that the harness correlates
     # against exactly what it sent. Without one there is nothing to answer,
     # and answering the wrong case would be worse than not answering.
@@ -4305,6 +4311,67 @@ def answer_lifecycle_step(executor: CaseExecutor, request: dict, case: dict) -> 
             "superseded_by": body.get("superseded_by"),
             "supersede_failure": body.get("supersede_failure"),
             "detail": body.get("detail"),
+        }
+    )
+
+
+def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> None:
+    """Answers exactly one Guide-12 section 16.2 operation step.
+
+    This adapter performs neither kind of operation work yet, and this is
+    the named seam where it will. What lives here now is the honest
+    state: the record is recognized, its shape is checked, and the step is
+    refused as an infrastructure failure -- which is what a step that did
+    not happen is, and is deliberately not a target verdict of any kind
+    (section 1.5).
+
+    The refusal is normally unreachable, and that is the design rather
+    than an accident: this adapter advertises neither
+    `test_funding_ceremony` nor `target_transaction_submission`, so the
+    harness refuses the step before sending it. The branch exists so that
+    a mis-sent record gets a typed answer instead of being read as a
+    request naming no case, and so the two halves of the seam are already
+    in the same shape when the work lands.
+
+    Implementing the work is Wave 11's, and needs a live node: issuing the
+    disposable test asset, paying the constructor's output program, and
+    submitting the fixture transactions are all things only a real chain
+    can do.
+    """
+    for key in request:
+        if key not in ("schema", "case", "subject"):
+            raise FatalAdapterError("the harness sent a request field named %s" % key)
+    kind = case.get("operation")
+    if kind not in ("fund", "submit"):
+        raise FatalAdapterError("the harness sent an operation step of an unknown kind")
+
+    note = (
+        "this adapter recognizes operation steps and performs none: the "
+        "funding ceremony and transaction submission are not implemented"
+    )
+    log("executor infrastructure failure: %s" % note)
+    write_message(
+        {
+            "schema": NATIVE_PROTOCOL_SCHEMA,
+            "case": case,
+            # Not a target verdict. The target was never asked.
+            "observed_layer": "executor_infrastructure_failure",
+            "observed_detail": note,
+            # Every observation member stays empty, which is what the
+            # harness's own shape check requires of a step that did not
+            # run: an outpoint is a coin the target created, and none was.
+            "issued_asset": None,
+            "funded_outputs": [],
+            "accepted_txid": None,
+            "resources": {
+                "script_bytes": 0,
+                "initial_stack_items": 0,
+                "peak_stack_items": None,
+                "peak_altstack_items": None,
+                "maximum_element_bytes": None,
+                "validation_budget_used": None,
+                "transaction_weight": None,
+            },
         }
     )
 
