@@ -4,6 +4,7 @@
 # into its role group.
 vectors_source_files = files(
   'src/bundle.rs',
+  'src/comparison.rs',
   'src/divergence.rs',
   'src/error.rs',
   'src/fixture.rs',

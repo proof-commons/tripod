@@ -214,6 +214,7 @@ pub struct OperationTranscript {
     issued_asset: Option<[u8; 32]>,
     constructor_program: Option<Vec<u8>>,
     funded: BTreeMap<TargetVectorId, Vec<Outpoint>>,
+    coins: BTreeMap<Outpoint, u64>,
     submissions: Vec<SubmissionOutcome>,
     divergences: Vec<ObservedDivergence>,
     refusal: Option<PlanRefusal>,
@@ -240,6 +241,18 @@ impl OperationTranscript {
     #[must_use]
     pub const fn funded(&self) -> &BTreeMap<TargetVectorId, Vec<Outpoint>> {
         &self.funded
+    }
+
+    /// What the target said it put in each coin it created.
+    ///
+    /// The amount is read back off the target's own answer rather than
+    /// carried over from the request. They should be the same number and
+    /// this is the only record of the one the target actually reported,
+    /// which is what a later comparison has to be made against if it is
+    /// to be a comparison at all.
+    #[must_use]
+    pub const fn coins(&self) -> &BTreeMap<Outpoint, u64> {
+        &self.coins
     }
 
     /// What each submitted vector produced, in submission order.
@@ -618,12 +631,14 @@ impl CompactAshOperationPlanner {
         let output = &response.funded_outputs[0];
         let outpoint = outpoint_from_wire(&output.outpoint.txid, output.outpoint.vout)
             .ok_or_else(|| PlanRefusal::FundedOutpointUnreadable(output.outpoint.txid.clone()))?;
-        let planned = &self.schedule[index];
         self.transcript
             .funded
             .entry(planned.vector)
             .or_default()
             .push(outpoint);
+        self.transcript
+            .coins
+            .insert(outpoint, output.amount_satoshis);
         Ok(())
     }
 

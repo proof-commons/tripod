@@ -22,14 +22,17 @@
 //! # Nothing here decides what the run should have found
 //!
 //! The assertions are about the *shape* of a completed run: that the
-//! ceremony reached the target, that every submission was answered, and
-//! that the transcript records the same number of outcomes as vectors
-//! submitted, and that the run met exactly the money-bound divergences
-//! the plan's census derived before it started. Whether the target
-//! accepted anything is written down, not asserted: a wave that asserted
-//! acceptance would fail rather than report when the honest answer is a
-//! refusal `(´[PLAN-rule:guide12-exec:failure-layers]´)`.
+//! ceremony reached the target, that every submission was answered, that
+//! the transcript records the same number of outcomes as vectors
+//! submitted, that the run met exactly the money-bound divergences the
+//! plan's census derived before it started, and that a §17.4 comparison
+//! was performed for every acceptance. Whether the target accepted
+//! anything, and what the comparisons found, are written down and not
+//! asserted: a wave that asserted acceptance would fail rather than
+//! report when the honest answer is a refusal
+//! `(´[PLAN-rule:guide12-exec:failure-layers]´)`.
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -41,6 +44,10 @@ use target_elements::{
 use target_elements_conformance::executor::{
     DEFAULT_EXECUTOR_TIMEOUT, ExecutorConfiguration, ExecutorTrust, execute_operations,
 };
+use target_elements_conformance::protocol::ObservedOutcomeLayer;
+use vectors::comparison::{compare, read_accepted};
+use vectors::fixture::{OPERATION, positive_semantic_census};
+use vectors::materialize::{TargetVectorId, vector_id};
 use vectors::operation::{CompactAshOperationPlanner, OperationTranscript};
 
 fn environment(name: &str) -> Option<String> {
@@ -86,8 +93,78 @@ fn hex(bytes: &[u8]) -> String {
     text
 }
 
+/// The §17.4 comparison for every vector the target accepted.
+///
+/// Performed here rather than inside the planner, because it needs both
+/// halves and the planner holds only one: the expectation came from the
+/// realization layer's own arithmetic over the fixture, and the
+/// observation is read back out of the bytes the target took and the
+/// coins the target said it created. A vector the target did not accept
+/// gets no entry at all — §1.4's second verdict does not exist for a
+/// transaction that never reached the first.
+fn compare_projections(
+    transcript: &OperationTranscript,
+) -> BTreeMap<TargetVectorId, (bool, String)> {
+    let mut verdicts = BTreeMap::new();
+    let (Some(program), Some(asset)) =
+        (transcript.constructor_program(), transcript.issued_asset())
+    else {
+        return verdicts;
+    };
+    let census = positive_semantic_census().expect("the positive census builds");
+
+    for submission in transcript.submissions() {
+        if submission.layer() != ObservedOutcomeLayer::Accepted {
+            continue;
+        }
+        let id = submission.vector();
+        let Some(case) = census.iter().find(|case| vector_id(case) == id) else {
+            continue;
+        };
+        // Only the coins this vector was funded with. Handing over every
+        // coin the run created would let one vector's input read as
+        // another's, and the sponsor count is derived from exactly the
+        // inputs that are not in this set.
+        let mine: BTreeMap<_, _> = transcript
+            .funded()
+            .get(&id)
+            .map(|outpoints| {
+                outpoints
+                    .iter()
+                    .filter_map(|outpoint| {
+                        transcript
+                            .coins()
+                            .get(outpoint)
+                            .map(|amount| (*outpoint, *amount))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let verdict = match read_accepted(submission.bytes(), &mine, asset, program, OPERATION) {
+            Err(refusal) => (false, format!("unreadable: {refusal:?}")),
+            Ok(observed) => {
+                let differed = compare(case.expected(), &observed);
+                if differed.is_empty() {
+                    (true, "matched".to_owned())
+                } else {
+                    let names: Vec<&str> = differed.iter().map(|term| term.name()).collect();
+                    (false, format!("differed: {}", names.join(" ")))
+                }
+            }
+        };
+        verdicts.insert(id, verdict);
+    }
+    verdicts
+}
+
 /// Write everything the run established, and nothing it did not.
-fn render(transcript: &OperationTranscript, wall: Duration, outcome_text: &str) -> String {
+fn render(
+    transcript: &OperationTranscript,
+    wall: Duration,
+    outcome_text: &str,
+    projections: &BTreeMap<TargetVectorId, (bool, String)>,
+) -> String {
     let mut out = String::new();
     out.push_str("{\n");
     let _ = writeln!(out, "  \"wall_seconds\": {:.1},", wall.as_secs_f64());
@@ -115,6 +192,12 @@ fn render(transcript: &OperationTranscript, wall: Duration, outcome_text: &str) 
             .map_or_else(|| "null".to_owned(), |program| quote(&hex(program)))
     );
     let _ = writeln!(out, "  \"funded_vectors\": {},", transcript.funded().len());
+    let _ = writeln!(
+        out,
+        "  \"projections_compared\": {}, \"projections_matched\": {},",
+        projections.len(),
+        projections.values().filter(|(matched, _)| *matched).count()
+    );
 
     // The rows this target's own money bound forbids, and what it said
     // when it was asked for one anyway. Written apart from the
@@ -128,13 +211,17 @@ fn render(transcript: &OperationTranscript, wall: Duration, outcome_text: &str) 
         }
         let _ = write!(
             out,
-            "    {{\"ordinal\": {}, \"fixture\": {}, \"stated\": {}, \"bound\": {}, \"excess\": {}, \"layer\": {}, \"detail\": {}}}",
+            "    {{\"ordinal\": {}, \"fixture\": {}, \"stated\": {}, \"bound\": {}, \"excess\": {}, \"layer\": {}, \"target_verdict\": {}, \"detail\": {}}}",
             divergence.vector().fixture().ordinal(),
             quote(divergence.vector().fixture().name()),
             divergence.beyond().stated(),
             divergence.beyond().bound(),
             divergence.beyond().excess(),
             quote(&divergence.layer().to_string()),
+            // §1.5, stated rather than left to be inferred from the
+            // layer's name: an adapter that could not perform a step has
+            // not told anyone what the target thinks of it.
+            divergence.layer().is_target_verdict(),
             divergence.detail().map_or_else(|| "null".to_owned(), quote),
         );
     }
@@ -147,13 +234,16 @@ fn render(transcript: &OperationTranscript, wall: Duration, outcome_text: &str) 
         }
         let _ = write!(
             out,
-            "    {{\"ordinal\": {}, \"ash_inputs\": {}, \"layer\": {}, \"txid\": {}, \"detail\": {}, \"bytes\": {}}}",
+            "    {{\"ordinal\": {}, \"ash_inputs\": {}, \"layer\": {}, \"txid\": {}, \"projection\": {}, \"detail\": {}, \"bytes\": {}}}",
             submission.vector().fixture().ordinal(),
             submission.vector().ash_inputs(),
             quote(&submission.layer().to_string()),
             submission
                 .accepted_txid()
                 .map_or_else(|| "null".to_owned(), quote),
+            projections
+                .get(&submission.vector())
+                .map_or_else(|| quote("not performed"), |(_, text)| quote(text)),
             submission.detail().map_or_else(|| "null".to_owned(), quote),
             submission.bytes().len(),
         );
@@ -211,7 +301,8 @@ fn compact_ash_runs_against_a_real_target() {
         Ok(_) => quote("completed"),
         Err(error) => quote(&format!("refused: {error}")),
     };
-    let out = render(transcript, wall, &outcome_text);
+    let projections = compare_projections(transcript);
+    let out = render(transcript, wall, &outcome_text, &projections);
     std::fs::write(&report, &out).expect("the transcript is written");
 
     // A run that reached the target at all answered every step it asked
@@ -239,6 +330,22 @@ fn compact_ash_runs_against_a_real_target() {
             transcript.divergences().len(),
             plan.census().divergent_vectors(),
             "the run met a different number of money-bound divergences than the plan derived"
+        );
+
+        // The §17.4 comparison was attempted for every acceptance. What
+        // it found is written down, not asserted; that it was performed
+        // at all is a property of this lane and is checked, because a
+        // silently skipped comparison and a matching one would otherwise
+        // look the same in the report.
+        let accepted = transcript
+            .submissions()
+            .iter()
+            .filter(|submission| submission.layer() == ObservedOutcomeLayer::Accepted)
+            .count();
+        assert_eq!(
+            projections.len(),
+            accepted,
+            "an accepted transaction went uncompared"
         );
     }
 }

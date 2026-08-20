@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub mod bundle;
+pub mod comparison;
 pub mod divergence;
 pub mod error;
 pub mod fixture;
@@ -12,6 +13,9 @@ pub mod plan;
 pub mod projection;
 pub mod subject;
 
+pub use comparison::{
+    ObservedProjection, ProjectionRefusal, ProjectionTerm, compare, read_accepted,
+};
 pub use divergence::{
     AmountBeyondTargetBound, StatedAmountPlace, TargetAmountStanding, target_amount_standing,
 };
