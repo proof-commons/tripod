@@ -59,13 +59,25 @@ name = "target_elements_conformance"
 # shared with the materializer, so §6.3's fallback of recording a shared
 # dependency and narrowing the claim does not arise. Nothing entered
 # `target-elements`, which stays standard-library-only (§6.1).
+#
+# One amendment to the above: `elements` and `secp256k1-zkp` are
+# adopted below as REFERENCE-IMPLEMENTATION oracles for testing.
+# The tautology analysis above is not withdrawn — it is what defines
+# their claim class: because they bind the same C library the node
+# vendors, agreement with them is conformance-to-the-target's-own-
+# implementation evidence, and the first-party oracles above retain
+# the independence claim unqualified. The raw `secp256k1-zkp-sys` FFI
+# crate is never a direct dependency; it is only these wrappers'
+# backend onto the upstream secp256k1-zkp C library.
 [dependencies]
 cli-common = { workspace = true }
 tapscript = { workspace = true }
 target-elements = { workspace = true }
 
 clap = { workspace = true }
+elements = { workspace = true }
 num-bigint = { workspace = true }
+secp256k1-zkp = { workspace = true }
 num-traits = { workspace = true }
 # `nix` carries the POSIX process-group calls the executor supervisor
 # needs — a graceful group signal, a bounded non-reaping wait, and a

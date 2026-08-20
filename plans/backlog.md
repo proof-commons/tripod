@@ -311,8 +311,12 @@ The six build waves after the Phase-3 exit delivered the complete
 compact-ASH pipeline up to the live-node boundary, one Opus lane per
 wave, every merge tree-identical to the worker's gated tree: the
 validated compiler operation plan (Wave 4), the transaction-form and
-substrate review (Wave 5, first-party selection recorded with the
-third-party review of record awaiting ratification), the static
+substrate review (Wave 5; the user's 2026-08-20 ruling ratified a
+modified form: the first-party substrate stands, and `elements` with
+`secp256k1-zkp` are adopted as reference-implementation oracles for
+testing — their agreement is conformance-to-target evidence, the
+first-party oracles keep the independence claim, and the raw sys FFI
+crate is never a direct dependency), the static
 assessment and eight operation-proven proof patterns (Wave 6), the
 candidate relocatable bundle (Wave 7), the linker foundation (Wave 8),
 and the candidate transaction ABI (Wave 9) and canonical fixtures

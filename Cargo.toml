@@ -46,6 +46,21 @@ vectors = { package = "tripod-vectors", path = "packages/vectors" }
 
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+# Reference-implementation oracles for testing: agreement with them is
+# conformance-to-target evidence, because they bind the same C library
+# the node vendors (the Wave-5 / Guide-11 independence analysis stands
+# — the first-party oracles keep the independence claim, and these
+# crates never replace them). The raw `secp256k1-zkp-sys` FFI crate is
+# never a direct dependency: the wrapper already carries it as its own
+# vendored backend, so a direct edge would add a second, unwrapped
+# C-API surface for nothing — verified provenance: both crates declare
+# ElementsProject/rust-secp256k1-zkp as their repository, and
+# `elements` declares ElementsProject/rust-elements.
+# `elements` pinned to the version the Wave-5 review of record examined
+# (packages/target-elements/src/transaction_form.rs); the default
+# `json-contract` feature is not needed by an oracle role.
+elements = { version = "=0.27.0", default-features = false }
+secp256k1-zkp = "0.11"
 nix = { version = "0", features = ["process", "signal", "fs", "term"] }
 num-bigint = "0.4"
 num-integer = "0.1"
