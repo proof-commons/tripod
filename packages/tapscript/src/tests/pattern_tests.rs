@@ -252,9 +252,17 @@ fn the_member_leaf_checks_both_ends_of_its_range_and_consumes_both_flags() {
 
 #[test]
 fn recognition_leaves_exactly_one_amount_operand_and_nothing_else() {
-    // §12.1 in one fragment: the linked asset, the linked program, the
-    // explicit encoding, and the amount domain — with the amount left
-    // for the aggregate rather than introspected a second time.
+    // §12.1 in one fragment: the linked asset, the program read off
+    // this leaf's own input, the explicit encoding, and the amount
+    // domain — with the amount left for the aggregate rather than
+    // introspected a second time.
+    //
+    // The success and abort sets are exact rather than sampled. The
+    // slice is what makes the operand's width a program fact, so its
+    // out-of-range abort belongs here; the domain bounds and the prefix
+    // and program comparisons account for the false and unequal causes;
+    // and reading this leaf's own input index is what puts an
+    // unavailable-context abort in the set at all.
     let pattern = patterns()[&BackendPatternId::CompactAshObjectRecognitionV1].clone();
 
     assert_eq!(
@@ -264,28 +272,41 @@ fn recognition_leaves_exactly_one_amount_operand_and_nothing_else() {
         )])]),
     );
 
-    // The slice is what makes the operand's width a program fact. Its
-    // out-of-range abort is therefore part of the pattern's failure
-    // behaviour and not an accident.
-    assert!(
-        pattern
-            .failure()
-            .aborts()
-            .contains(&FailureCause::SliceOutOfRange),
+    assert_eq!(
+        pattern.failure().aborts(),
+        &BTreeSet::from([
+            FailureCause::MalformedScriptNumber,
+            FailureCause::UnsupportedExecutionDomain,
+            FailureCause::IntrospectionContextUnavailable,
+            FailureCause::IntrospectionIndexOutOfRange,
+            FailureCause::SliceOutOfRange,
+            FailureCause::UnequalOperands,
+            FailureCause::FalseVerification,
+        ]),
     );
-    // Both domain bounds and both prefix comparisons can fail.
-    assert!(
-        pattern
-            .failure()
-            .aborts()
-            .contains(&FailureCause::FalseVerification),
+    // The prerequisite census, exact. Two of these are the program
+    // test's: the current-input index the leaf reads its own program
+    // by, and the rearrangement that brings the four introspected items
+    // into comparison order. Neither was needed while the program was a
+    // literal, and both are the price of the literal being gone.
+    assert_eq!(
+        pattern.prerequisites(),
+        &BTreeSet::from([
+            ElementsCapability::CurrentInputIndexInspection,
+            ElementsCapability::InputAssetInspection,
+            ElementsCapability::InputValueInspection,
+            ElementsCapability::InputProgramInspection,
+            ElementsCapability::SignedFixedWidthComparison,
+            ElementsCapability::StackRearrangement,
+            ElementsCapability::ByteStringEquality,
+            ElementsCapability::BooleanVerification,
+            ElementsCapability::ByteStringSlicing,
+        ]),
     );
-    assert!(
-        pattern
-            .failure()
-            .aborts()
-            .contains(&FailureCause::UnequalOperands),
-    );
+
+    // Nothing survives a failure: every Boolean this fragment produces
+    // is consumed by a verifying form (§12.11).
+    assert!(pattern.failure().nonaborting().is_empty());
 
     assert!(
         pattern
