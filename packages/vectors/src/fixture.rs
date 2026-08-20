@@ -87,6 +87,20 @@ impl SponsorCase {
     pub const fn is_present(self) -> bool {
         matches!(self, Self::Present(_))
     }
+
+    /// How many members the region has, which is zero where it is
+    /// absent.
+    ///
+    /// A count rather than a presence flag, because the shape a row
+    /// names is a function of the number and a target either has a
+    /// program for that shape or does not.
+    #[must_use]
+    pub const fn members(self) -> u16 {
+        match self {
+            Self::Absent => 0,
+            Self::Present(members) => members,
+        }
+    }
 }
 
 /// One positive semantic case: a model-valid compact-ASH world, its

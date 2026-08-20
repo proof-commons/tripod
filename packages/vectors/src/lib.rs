@@ -20,6 +20,10 @@ pub use divergence::{
     AmountBeyondTargetBound, StatedAmountPlace, TargetAmountStanding, target_amount_standing,
 };
 pub use error::{FixtureBundleRefusal, VectorError};
+pub use materialize::{
+    SponsorCoin, SponsorSigningTask, has_candidate_program, materialize_sponsored,
+    needs_authorization, sponsor_signing_requests,
+};
 pub use matrix::{
     EvidenceBoundary, MutationLayer, VectorClass, VectorFamily, VectorPolarity, all_classes,
     class_count, family_census,

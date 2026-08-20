@@ -135,6 +135,7 @@ pub struct FixtureBundle {
     abi: CandidateTransactionAbi,
     pin: PinnedAshInstance,
     closed_asset: [u8; 32],
+    reserve_asset: [u8; 32],
     provenance: PinProvenance,
 }
 
@@ -215,6 +216,27 @@ impl FixtureBundle {
     pub const fn closed_asset(&self) -> [u8; 32] {
         self.closed_asset
     }
+
+    /// The reserve asset this bundle's programs are linked against.
+    ///
+    /// # Why the reserve is part of the bundle too
+    ///
+    /// For the same reason the closed asset is, and it was found the
+    /// same way. The emitted coordinator introspects every sponsor
+    /// input's asset and requires it to equal this value, and requires
+    /// the fee output to carry it as well. So a sponsored transaction
+    /// built against a bundle linked at one reserve and funded with
+    /// another is refused by the candidate's own program, and this
+    /// accessor is what lets a planner notice rather than discover it
+    /// as a script failure.
+    ///
+    /// A sponsorless bundle carries the value anyway: the symbol is
+    /// substituted into all twelve leaves whether or not a shape uses
+    /// it, so the pin is a function of it in either case.
+    #[must_use]
+    pub const fn reserve_asset(&self) -> [u8; 32] {
+        self.reserve_asset
+    }
 }
 
 fn canonical_pin() -> Result<PinnedAshInstance, FixtureBundleRefusal> {
@@ -233,7 +255,7 @@ fn limit(value: u64) -> NonZeroU64 {
 }
 
 fn build() -> Result<FixtureBundle, FixtureBundleRefusal> {
-    build_at(CLOSED_ASSET, PinProvenance::CanonicalLiteral)
+    build_at(CLOSED_ASSET, RESERVE_ASSET, PinProvenance::CanonicalLiteral)
 }
 
 /// The same bundle, linked against a closed asset a ceremony observed.
@@ -280,8 +302,30 @@ fn build() -> Result<FixtureBundle, FixtureBundleRefusal> {
 /// [`FixtureBundleRefusal`] naming the layer that refused, exactly as
 /// [`fixture_bundle`] does, plus a refusal from the tree commitment or
 /// the tweak when the derived key is not a point this contract admits.
-pub fn ceremony_bundle(closed_asset: [u8; 32]) -> Result<FixtureBundle, FixtureBundleRefusal> {
-    build_at(closed_asset, PinProvenance::DerivedForObservedAsset)
+/// # Why the reserve asset is observed too, and not only the closed one
+///
+/// Wave 11 needed one observed asset because the sponsorless shapes
+/// name one. A sponsored shape names two: the coordinator requires
+/// every sponsor input to carry the reserve asset and requires the fee
+/// output to carry it as well. Neither can be a chosen constant on a
+/// real chain, and for the *reserve* there is a further constraint the
+/// closed asset does not have — a fee this target's mempool weighs is
+/// one paid in the chain's own policy asset, so the reserve has to be
+/// the asset the chain already uses as a reserve rather than a second
+/// asset a ceremony issued.
+///
+/// So both come from the target: the closed asset is what the issuance
+/// step chose, and the reserve is what the sponsor-funding step
+/// reported paying in.
+pub fn ceremony_bundle(
+    closed_asset: [u8; 32],
+    reserve_asset: [u8; 32],
+) -> Result<FixtureBundle, FixtureBundleRefusal> {
+    build_at(
+        closed_asset,
+        reserve_asset,
+        PinProvenance::DerivedForObservedAsset,
+    )
 }
 
 /// Derive the pinned instance for a linked bundle, from its own tree.
@@ -311,6 +355,7 @@ fn derived_pin(
 
 fn build_at(
     closed_asset: [u8; 32],
+    reserve_asset: [u8; 32],
     provenance: PinProvenance,
 ) -> Result<FixtureBundle, FixtureBundleRefusal> {
     let target = reviewed_elements_tapscript().map_err(FixtureBundleRefusal::Target)?;
@@ -347,7 +392,7 @@ fn build_at(
     let resolved = CompactAshSymbols::new(
         &target,
         closed_asset.to_vec(),
-        RESERVE_ASSET.to_vec(),
+        reserve_asset.to_vec(),
         SPONSOR_CHANGE_PROGRAM.to_vec(),
         0,
         FEE_PROGRAM.to_vec(),
@@ -379,6 +424,7 @@ fn build_at(
         abi,
         pin,
         closed_asset,
+        reserve_asset,
         provenance,
     })
 }

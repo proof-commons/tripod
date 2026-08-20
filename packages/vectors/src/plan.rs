@@ -31,7 +31,8 @@ use crate::divergence::target_amount_standing;
 use crate::error::VectorError;
 use crate::fixture::{CompactAshSemanticCase, positive_semantic_census};
 use crate::materialize::{
-    AshFunding, MaterializedTargetVector, TargetVectorId, is_materializable, materialize, vector_id,
+    AshFunding, MaterializedTargetVector, TargetVectorId, has_candidate_program, is_materializable,
+    materialize, needs_authorization, vector_id,
 };
 use crate::matrix::class_count;
 use crate::subject::CanonicalSubject;
@@ -153,6 +154,13 @@ impl CoverageObservation {
     }
 }
 
+/// What one submission established, as a run reports it.
+///
+/// The vector that was submitted, where the target put it, and what the
+/// §17.4 comparison found — three separate facts, none inferable from
+/// the others.
+pub type Outcome = (TargetVectorId, ObservedOutcomeLayer, ProjectionComparison);
+
 /// One row of §19's relation-indexed coverage matrix.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RelationCoverageRow {
@@ -224,6 +232,8 @@ pub struct PlanCensus {
     materialized_vectors: usize,
     submittable_vectors: usize,
     divergent_vectors: usize,
+    sponsored_vectors: usize,
+    unbuilt_shape_vectors: usize,
 }
 
 impl PlanCensus {
@@ -313,6 +323,29 @@ impl PlanCensus {
     pub const fn divergent_vectors(&self) -> usize {
         self.divergent_vectors
     }
+
+    /// Sponsored rows a run builds and submits.
+    ///
+    /// Not counted among the materialized vectors, because this plan
+    /// holds no bytes for them: a sponsored row's witness is settled
+    /// during the run by an authorization from the executor. They are
+    /// work the target does and they are not fixtures this package can
+    /// state, and the census keeps the two apart so no reading of it
+    /// can take a row built during a run for a byte-stable one.
+    #[must_use]
+    pub const fn sponsored_vectors(&self) -> usize {
+        self.sponsored_vectors
+    }
+
+    /// Rows this candidate emitted no program for.
+    ///
+    /// A limit of the candidate's own shape bounds and never a target
+    /// answer: nothing was submitted, so nothing diverged. Counted in
+    /// its own column for exactly that reason.
+    #[must_use]
+    pub const fn unbuilt_shape_vectors(&self) -> usize {
+        self.unbuilt_shape_vectors
+    }
 }
 
 /// One piece of target work this plan needs done.
@@ -370,6 +403,38 @@ pub enum RequiredTargetWork {
     /// criterion any other item has — an acceptance here would discharge
     /// nothing and would falsify the reviewed bound instead.
     TargetAmountDivergence(TargetVectorId),
+    /// One sponsored row, built during a run and handed to the target.
+    ///
+    /// # Why it is not a [`Self::VectorSubmission`]
+    ///
+    /// Because the plan cannot state its bytes. Every other submission
+    /// names a vector this plan already materialized, and the bytes
+    /// exist here before any run starts. A sponsored row's witness
+    /// carries an authorization produced by the executor, so its bytes
+    /// are settled during the run and are not a function of the fixture
+    /// — two runs against two executors would produce two different
+    /// transactions from one row, both correct.
+    ///
+    /// The work is still required and is named, so the wait stays
+    /// falsifiable. What differs is what the plan can promise about it
+    /// beforehand, and that difference is in the type rather than in a
+    /// note beside it.
+    SponsoredVectorSubmission(TargetVectorId),
+    /// One row this candidate emitted no program for, and why.
+    ///
+    /// # A limit of the candidate, not of the target
+    ///
+    /// §18's matrix names a sponsor region with two members and this
+    /// candidate's demonstration bounds admit one, so there is no
+    /// program to spend such a family with. The target was never asked
+    /// and has diverged from nothing — which is exactly why this is a
+    /// separate item from [`Self::TargetAmountDivergence`], whose whole
+    /// content is an answer the target gave.
+    ///
+    /// It has no discharge criterion at all. A run cannot perform it,
+    /// and the honest accounting is that the row stays unanswered until
+    /// a candidate is linked under bounds that reach it.
+    CandidateShapeUnbuilt(TargetVectorId),
 }
 
 /// The canonical compact-ASH evidence plan.
@@ -470,8 +535,20 @@ impl CompactAshEvidencePlan {
     ///   keeps whole-transaction conservation external;
     /// - a negative requirement is left alone, because nothing in this
     ///   wave submits a mutation;
-    /// - a sponsored-case requirement is left alone, because no
-    ///   sponsored transaction was built.
+    /// - a requirement whose execution case no outcome in this run
+    ///   belongs to is left alone.
+    ///
+    /// # Why the case is matched rather than assumed
+    ///
+    /// The outcomes now arrive from both execution cases at once: a run
+    /// submits sponsorless rows and sponsored ones, and each is evidence
+    /// about its own case only. An accepted sponsorless transaction says
+    /// nothing about how the target treats a sponsor region, and an
+    /// accepted sponsored one says nothing about the sponsorless shape.
+    /// So the outcomes are grouped by the case their vector belongs to,
+    /// and each group discharges only rows indexed at that case — which
+    /// is the same rule the old code applied to one case, now applied to
+    /// both instead of hard-coding which one it was.
     ///
     /// # Nothing is discharged by intent
     ///
@@ -481,43 +558,56 @@ impl CompactAshEvidencePlan {
     /// decides whether the triple amounts to coverage — so a row can
     /// carry an observation and still not be discharged, which is
     /// exactly what a rejected or unmatched submission should produce.
-    pub fn discharge(
-        &mut self,
-        outcomes: &[(TargetVectorId, ObservedOutcomeLayer, ProjectionComparison)],
-    ) {
-        let Some(&(vector, layer, projection)) = outcomes.first() else {
-            return;
-        };
-        // The strongest outcome the run produced, preferring one that
-        // actually discharges. A run with one acceptance and eight
-        // refusals has established the acceptance; a run with none has
-        // established a refusal, and the row records that instead.
-        let chosen = outcomes
-            .iter()
-            .copied()
-            .find(|&(_, layer, projection)| {
-                CoverageObservation::Observed(ObservedCoverage {
-                    vector: outcomes[0].0,
-                    layer,
-                    projection,
-                })
-                .is_discharged()
-            })
-            .unwrap_or((vector, layer, projection));
+    pub fn discharge(&mut self, outcomes: &[Outcome]) {
+        // Which execution case an outcome belongs to is read off the
+        // vector's own sponsor count, so a row cannot be filed under a
+        // case by anything but what it actually carried.
+        let mut by_case: BTreeMap<SponsorCase, Vec<Outcome>> = BTreeMap::new();
+        for &outcome in outcomes {
+            let case = if outcome.0.sponsors() == 0 {
+                SponsorCase::Absent
+            } else {
+                SponsorCase::Present
+            };
+            by_case.entry(case).or_default().push(outcome);
+        }
 
-        for row in self.relation_coverage.values_mut() {
-            if !row.positive
-                || row.role != EvidenceRole::TargetExecution
-                || row.activity != RelationActivity::Active
-                || row.key.case.sponsor != SponsorCase::Absent
-            {
+        for (case, group) in &by_case {
+            let Some(&(vector, layer, projection)) = group.first() else {
                 continue;
+            };
+            // The strongest outcome the group produced, preferring one
+            // that actually discharges. A group with one acceptance and
+            // eight refusals has established the acceptance; one with
+            // none has established a refusal, and the row records that
+            // instead.
+            let chosen = group
+                .iter()
+                .copied()
+                .find(|&(vector, layer, projection)| {
+                    CoverageObservation::Observed(ObservedCoverage {
+                        vector,
+                        layer,
+                        projection,
+                    })
+                    .is_discharged()
+                })
+                .unwrap_or((vector, layer, projection));
+
+            for row in self.relation_coverage.values_mut() {
+                if !row.positive
+                    || row.role != EvidenceRole::TargetExecution
+                    || row.activity != RelationActivity::Active
+                    || row.key.case.sponsor != *case
+                {
+                    continue;
+                }
+                row.observation = CoverageObservation::Observed(ObservedCoverage {
+                    vector: chosen.0,
+                    layer: chosen.1,
+                    projection: chosen.2,
+                });
             }
-            row.observation = CoverageObservation::Observed(ObservedCoverage {
-                vector: chosen.0,
-                layer: chosen.1,
-                projection: chosen.2,
-            });
         }
     }
 }
@@ -594,6 +684,49 @@ fn build_coverage(
         positive,
         negative,
     })
+}
+
+/// Everything a target must do, in dependency order.
+///
+/// The ceremony's whole census first, then one item per positive row.
+/// Derived rather than stated: a list written out by hand could name a
+/// vector the plan does not hold, or miss one it does.
+///
+/// The four kinds are what the plan can honestly promise about each
+/// row. A materialized row is a submission or, where the reviewed
+/// target bound forbids its coins, a divergence probe. A row this plan
+/// holds no bytes for is a sponsored submission where the candidate has
+/// a program for its shape, and unbuilt where it does not — one is work
+/// a run performs, the other work nothing can perform, and folding them
+/// together would make a plan that cannot finish look like one that
+/// merely has not.
+fn derive_required_work(
+    semantic: &[CompactAshSemanticCase],
+    target_cases: &[CanonicalSubject<MaterializedTargetVector>],
+    divergent: &BTreeSet<TargetVectorId>,
+) -> Vec<RequiredTargetWork> {
+    let mut work: Vec<RequiredTargetWork> = FundingCeremonyStep::ALL
+        .iter()
+        .copied()
+        .map(RequiredTargetWork::FundingCeremony)
+        .collect();
+    work.extend(target_cases.iter().map(|subject| {
+        let id = subject.subject().id();
+        if divergent.contains(&id) {
+            RequiredTargetWork::TargetAmountDivergence(id)
+        } else {
+            RequiredTargetWork::VectorSubmission(id)
+        }
+    }));
+    for case in semantic.iter().filter(|case| needs_authorization(case)) {
+        let id = vector_id(case);
+        if has_candidate_program(case) {
+            work.push(RequiredTargetWork::SponsoredVectorSubmission(id));
+        } else {
+            work.push(RequiredTargetWork::CandidateShapeUnbuilt(id));
+        }
+    }
+    work
 }
 
 /// §1.3, checked in both directions: no relation disappears at this
@@ -717,24 +850,7 @@ pub fn derive_evidence_plan(
         )?));
     }
 
-    // The ceremony's whole census, then one item per vector this plan
-    // materialized: a submission for a vector the target can be handed,
-    // and a divergence probe for one it cannot. Derived rather than
-    // stated: a list written out here could name a vector the plan does
-    // not hold, or miss one it does.
-    let mut required_target_work: Vec<RequiredTargetWork> = FundingCeremonyStep::ALL
-        .iter()
-        .copied()
-        .map(RequiredTargetWork::FundingCeremony)
-        .collect();
-    required_target_work.extend(target_cases.iter().map(|subject| {
-        let id = subject.subject().id();
-        if divergent.contains(&id) {
-            RequiredTargetWork::TargetAmountDivergence(id)
-        } else {
-            RequiredTargetWork::VectorSubmission(id)
-        }
-    }));
+    let required_target_work = derive_required_work(&semantic, &target_cases, &divergent);
 
     let census = PlanCensus {
         relations: relations.len(),
@@ -757,6 +873,14 @@ pub fn derive_evidence_plan(
         divergent_vectors: required_target_work
             .iter()
             .filter(|work| matches!(work, RequiredTargetWork::TargetAmountDivergence(_)))
+            .count(),
+        sponsored_vectors: required_target_work
+            .iter()
+            .filter(|work| matches!(work, RequiredTargetWork::SponsoredVectorSubmission(_)))
+            .count(),
+        unbuilt_shape_vectors: required_target_work
+            .iter()
+            .filter(|work| matches!(work, RequiredTargetWork::CandidateShapeUnbuilt(_)))
             .count(),
     };
 
@@ -986,11 +1110,53 @@ mod tests {
         // vector fails here rather than discharging fewer rows.
         let plan = plan();
         let work = plan.required_target_work();
-        assert_eq!(work.len(), 13);
+        // The ceremony, then one item per positive row: nine this plan
+        // materialized to bytes, four sponsored rows a run builds, and
+        // one the candidate emitted no program for.
+        assert_eq!(work.len(), 18);
         assert_eq!(
             work.len(),
-            super::FundingCeremonyStep::ALL.len() + plan.census().materialized_vectors(),
+            super::FundingCeremonyStep::ALL.len()
+                + plan.census().materialized_vectors()
+                + plan.census().sponsored_vectors()
+                + plan.census().unbuilt_shape_vectors(),
         );
+        assert_eq!(plan.census().sponsored_vectors(), 4);
+        assert_eq!(plan.census().unbuilt_shape_vectors(), 1);
+    }
+
+    #[test]
+    fn the_row_with_two_sponsor_members_has_no_program_in_this_candidate() {
+        // §18's matrix names a sponsor region of two and this
+        // candidate's demonstration bounds admit one, so the row is
+        // unbuilt. It is counted in its own column and never as a
+        // divergence: nothing was submitted, so the target has not
+        // disagreed with anything.
+        let plan = plan();
+        let unbuilt: Vec<_> = plan
+            .required_target_work()
+            .iter()
+            .filter_map(|work| match work {
+                super::RequiredTargetWork::CandidateShapeUnbuilt(id) => Some(*id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(unbuilt.len(), 1);
+        assert_eq!(unbuilt[0].sponsors(), 2);
+
+        // Recomputed from the candidate's own bounds rather than
+        // restated: the row is refused because the shape is above the
+        // bound, and every other sponsored row is admitted.
+        let census = crate::fixture::positive_semantic_census().expect("the census builds");
+        for case in &census {
+            let admitted = crate::materialize::has_candidate_program(case);
+            assert_eq!(
+                admitted,
+                case.sponsor().members() <= 1,
+                "{:?} was classified against the wrong bound",
+                case.id()
+            );
+        }
     }
 
     #[test]
@@ -1005,18 +1171,24 @@ mod tests {
             .filter_map(|work| match work {
                 super::RequiredTargetWork::FundingCeremony(step) => Some(*step),
                 super::RequiredTargetWork::VectorSubmission(_)
-                | super::RequiredTargetWork::TargetAmountDivergence(_) => None,
+                | super::RequiredTargetWork::TargetAmountDivergence(_)
+                | super::RequiredTargetWork::SponsoredVectorSubmission(_)
+                | super::RequiredTargetWork::CandidateShapeUnbuilt(_) => None,
             })
             .collect();
         assert_eq!(ceremony, super::FundingCeremonyStep::ALL.to_vec());
 
+        // The items this plan holds bytes for, which is exactly what it
+        // materialized.
         let per_vector: Vec<_> = plan
             .required_target_work()
             .iter()
             .filter_map(|work| match work {
                 super::RequiredTargetWork::VectorSubmission(id)
                 | super::RequiredTargetWork::TargetAmountDivergence(id) => Some(*id),
-                super::RequiredTargetWork::FundingCeremony(_) => None,
+                super::RequiredTargetWork::FundingCeremony(_)
+                | super::RequiredTargetWork::SponsoredVectorSubmission(_)
+                | super::RequiredTargetWork::CandidateShapeUnbuilt(_) => None,
             })
             .collect();
         let materialized: Vec<_> = plan
@@ -1025,11 +1197,148 @@ mod tests {
             .map(|subject| subject.subject().id())
             .collect();
         assert_eq!(per_vector, materialized);
+
+        // And every item naming a vector names a distinct one, across
+        // all four kinds. Restricting this to the materialized ones
+        // would let a sponsored row share an identity with a
+        // sponsorless one and nothing would notice.
+        let every: Vec<_> = plan
+            .required_target_work()
+            .iter()
+            .filter_map(|work| match work {
+                super::RequiredTargetWork::VectorSubmission(id)
+                | super::RequiredTargetWork::TargetAmountDivergence(id)
+                | super::RequiredTargetWork::SponsoredVectorSubmission(id)
+                | super::RequiredTargetWork::CandidateShapeUnbuilt(id) => Some(*id),
+                super::RequiredTargetWork::FundingCeremony(_) => None,
+            })
+            .collect();
         assert_eq!(
-            per_vector.iter().copied().collect::<BTreeSet<_>>().len(),
-            per_vector.len(),
+            every.iter().copied().collect::<BTreeSet<_>>().len(),
+            every.len(),
             "a vector named twice would be submitted twice",
         );
+        assert_eq!(
+            every.len(),
+            plan.census().semantic_cases(),
+            "every positive row is named by exactly one work item",
+        );
+    }
+
+    #[test]
+    fn each_execution_case_is_discharged_only_by_its_own_outcomes() {
+        // The rule the sponsored half turns on. An accepted sponsorless
+        // transaction is evidence about the sponsorless case and about
+        // nothing else, so discharging one case must leave the other
+        // exactly where it was.
+        use super::{ProjectionComparison, RequiredTargetWork};
+        use crate::materialize::vector_id;
+        use compiler::operation_plan::SponsorCase;
+        use target_elements_conformance::protocol::ObservedOutcomeLayer;
+
+        let sponsorless = crate::fixture::positive_semantic_census()
+            .expect("the census builds")
+            .into_iter()
+            .find(crate::materialize::is_materializable)
+            .expect("a sponsorless row exists");
+        let sponsored = crate::fixture::positive_semantic_census()
+            .expect("the census builds")
+            .into_iter()
+            .find(|case| {
+                crate::materialize::needs_authorization(case)
+                    && crate::materialize::has_candidate_program(case)
+            })
+            .expect("a sponsored row with a program exists");
+
+        let accepted = |case| {
+            (
+                vector_id(case),
+                ObservedOutcomeLayer::Accepted,
+                ProjectionComparison::Matched,
+            )
+        };
+
+        // Sponsorless only.
+        let mut only_sponsorless = plan();
+        only_sponsorless.discharge(&[accepted(&sponsorless)]);
+        let after_sponsorless = only_sponsorless.discharged_rows();
+        assert!(after_sponsorless > 0, "the sponsorless case discharged");
+        for row in only_sponsorless.relation_coverage().values() {
+            if row.key().case.sponsor == SponsorCase::Present {
+                assert!(
+                    !row.observation().is_discharged(),
+                    "a sponsorless acceptance discharged a sponsored row",
+                );
+            }
+        }
+
+        // Sponsored only, from a fresh plan.
+        let mut only_sponsored = plan();
+        only_sponsored.discharge(&[accepted(&sponsored)]);
+        let after_sponsored = only_sponsored.discharged_rows();
+        assert!(after_sponsored > 0, "the sponsored case discharged");
+        for row in only_sponsored.relation_coverage().values() {
+            if row.key().case.sponsor == SponsorCase::Absent {
+                assert!(
+                    !row.observation().is_discharged(),
+                    "a sponsored acceptance discharged a sponsorless row",
+                );
+            }
+        }
+
+        // Both together discharge the sum of the two, and no more: the
+        // cases partition the rows, so overlap would show up here.
+        let mut both = plan();
+        both.discharge(&[accepted(&sponsorless), accepted(&sponsored)]);
+        assert_eq!(
+            both.discharged_rows(),
+            after_sponsorless + after_sponsored,
+            "the two cases are disjoint and together discharge both",
+        );
+
+        // And the plan still names the sponsored row as work, so the
+        // discharge cannot be read as coming from nowhere.
+        let wanted = vector_id(&sponsored);
+        assert!(both.required_target_work().iter().any(|work| matches!(
+            work,
+            RequiredTargetWork::SponsoredVectorSubmission(id) if *id == wanted
+        )));
+    }
+
+    #[test]
+    fn a_sponsored_row_that_was_refused_discharges_nothing() {
+        // The two-verdict rule, on the new half. A sponsored submission
+        // the target refused is an observation and not a pass, and it
+        // must not discharge the case it belongs to.
+        use super::{CoverageObservation, ProjectionComparison};
+        use crate::materialize::vector_id;
+        use target_elements_conformance::protocol::ObservedOutcomeLayer;
+
+        let sponsored = crate::fixture::positive_semantic_census()
+            .expect("the census builds")
+            .into_iter()
+            .find(|case| {
+                crate::materialize::needs_authorization(case)
+                    && crate::materialize::has_candidate_program(case)
+            })
+            .expect("a sponsored row with a program exists");
+
+        let mut refused = plan();
+        refused.discharge(&[(
+            vector_id(&sponsored),
+            ObservedOutcomeLayer::ScriptPathRejection,
+            ProjectionComparison::NotPerformed,
+        )]);
+        assert_eq!(refused.discharged_rows(), 0, "a refusal is not coverage");
+
+        // It is still recorded, which is the difference between a row
+        // nobody ran and a row the target refused.
+        let observed = refused
+            .relation_coverage()
+            .values()
+            .filter(|row| matches!(row.observation(), CoverageObservation::Observed(_)))
+            .count();
+        assert!(observed > 0, "the refusal was recorded rather than dropped");
     }
 
     #[test]

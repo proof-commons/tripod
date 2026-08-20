@@ -506,7 +506,7 @@ mod tests {
             .filter(|case| is_materializable(case))
             .map(|case| case.class().name())
             .collect();
-        assert_eq!(names.len(), 9);
+        assert_eq!(names.len(), 9, "nine positive rows are byte fixtures");
 
         for name in names {
             let sample = sample(name);
@@ -725,6 +725,126 @@ mod tests {
             !differed.contains(&ProjectionTerm::Successor),
             "the amount did not change and must not be reported as though it had"
         );
+    }
+
+    /// A sponsored sample, built the way a run builds one.
+    ///
+    /// The coins the comparison is given are the ASH coins only. The
+    /// sponsor coin is deliberately not among them, because that is
+    /// what a run holds: the ceremony cut the ASH coins and the
+    /// executor cut the sponsor's, and the comparison recognizes a
+    /// sponsor member by its coin being one this ceremony did *not*
+    /// cut. Handing it both would make the sponsor input read as an
+    /// ASH input and the region would vanish.
+    fn sponsored_sample() -> Sample {
+        use crate::materialize::{
+            SponsorCoin, has_candidate_program, materialize_sponsored, needs_authorization,
+            sponsor_signing_requests,
+        };
+        use transaction::{SponsorSignature, Txid};
+
+        let bundle = fixture_bundle().expect("the fixture bundle builds");
+        let census = positive_semantic_census().expect("the positive census builds");
+        let case = census
+            .into_iter()
+            .find(|case| needs_authorization(case) && has_candidate_program(case))
+            .expect("a sponsored row with a program exists");
+        let id = vector_id(&case);
+        let funding = AshFunding::unexecutable_placeholder(id);
+        let coins = funding
+            .outpoints()
+            .iter()
+            .copied()
+            .zip(case.inputs().iter().map(|amount| amount.get()))
+            .collect();
+
+        let mut seed = [0_u8; 32];
+        seed[0] = 0xd0;
+        let sponsor_outpoint =
+            Outpoint::new(Txid::from_internal(seed), 0).expect("an admissible outpoint");
+        let mut program = vec![0x00, 0x14];
+        program.extend(std::iter::repeat_n(0x11, 20));
+        let sponsor = [SponsorCoin::new(sponsor_outpoint, 100_000, program)];
+
+        let tasks = sponsor_signing_requests(&bundle, &case, &funding, &sponsor)
+            .expect("the requests are collected");
+        let signatures = tasks
+            .iter()
+            .map(|task| {
+                (
+                    task.coin().outpoint(),
+                    SponsorSignature::new(
+                        task.request().transaction().to_vec(),
+                        vec![vec![0x30; 71], vec![0x02; 33]],
+                    ),
+                )
+            })
+            .collect();
+        let vector = materialize_sponsored(&bundle, &case, &funding, &sponsor, &signatures)
+            .expect("the sponsored row materializes");
+
+        Sample {
+            bytes: vector.bytes().to_vec(),
+            coins,
+            asset: bundle.closed_asset(),
+            program: bundle
+                .pin()
+                .output_script(bundle.target())
+                .expect("the pinned program derives"),
+            expected: case.expected().clone(),
+        }
+    }
+
+    #[test]
+    fn a_sponsored_vector_projects_to_its_own_expectation() {
+        // §17.4 over the sponsored shape. Nothing in the comparison was
+        // widened for it: the fee output is recognized by its empty
+        // program as it always was, and the sponsor input is recognized
+        // by being a coin this ceremony did not cut. What this checks is
+        // that those two rules, written for the sponsorless case,
+        // actually produce the right reading of a sponsored one.
+        let sample = sponsored_sample();
+        let observed = read(&sample);
+        assert!(observed.sponsor().is_present());
+        assert_eq!(observed.sponsor().members(), 1);
+
+        let differed = compare(&sample.expected, &observed);
+        assert!(
+            differed.is_empty(),
+            "the sponsored row differed on {:?}",
+            differed.iter().map(|term| term.name()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn a_sponsored_vectors_fee_output_is_not_read_as_a_protocol_object() {
+        // The fee carries the reserve asset and a sponsor paid it. If
+        // the comparison counted it as an output the protocol relation
+        // is about, the row would disagree at roots, destruction, and
+        // event all at once — so this checks the three absences hold
+        // for a transaction that genuinely has a second output.
+        let sample = sponsored_sample();
+        let decoded =
+            transaction::TargetTransaction::decode(&sample.bytes).expect("the bytes decode");
+        assert_eq!(decoded.outputs().len(), 2, "a successor and a fee");
+        assert!(
+            decoded.outputs().iter().any(|out| out.program().is_empty()),
+            "the fee role is the empty program"
+        );
+
+        let differed = compare(&sample.expected, &read(&sample));
+        for term in [
+            ProjectionTerm::Roots,
+            ProjectionTerm::Destruction,
+            ProjectionTerm::Event,
+            ProjectionTerm::Flow,
+        ] {
+            assert!(
+                !differed.contains(&term),
+                "{} moved because of the fee output",
+                term.name()
+            );
+        }
     }
 
     #[test]
