@@ -21,7 +21,7 @@
 use target_elements::TargetEvidenceRequirementId;
 
 use crate::fixture::NativeCaseId;
-use crate::protocol::{ProtocolPhase, ResponseShapeDefect};
+use crate::protocol::{OperationCaseId, OperationStepKind, ProtocolPhase, ResponseShapeDefect};
 use crate::prototype::PrototypeCaseId;
 use crate::vocabulary::evidence_requirement_name;
 
@@ -198,6 +198,61 @@ pub enum NativeConformanceError {
         /// The case whose response was outstanding.
         expected: PrototypeCaseId,
     },
+
+    /// The executor was asked for one kind of operation step and said it
+    /// does not do that kind of work.
+    ///
+    /// Refused before the step is sent, and named per kind rather than
+    /// per workload: an executor that submits transactions and holds no
+    /// funds has declined one half of an operation plan, not failed the
+    /// protocol `(´[PLAN-rule:guide10:schema-migration]´)`.
+    #[error("the external executor does not perform {0} steps")]
+    OperationStepUnsupported(OperationStepKind),
+
+    /// The caller's own plan could not state its next step.
+    ///
+    /// Nothing about the target: the plan refused, and why it refused is
+    /// the plan's to say. Carrying a reason here would mean this package
+    /// holding a vocabulary for decisions made in the package that owns
+    /// the operation's meaning `(´[PLAN-rule:guide12-exec:executor-ownership]´)`.
+    #[error("the caller's operation plan refused to state its next step")]
+    OperationPlanRefused,
+
+    /// The caller's plan asked for one step identity twice.
+    ///
+    /// A transcript is indexed by step identity, so a repeat would either
+    /// overwrite an answer already recorded or leave two runs sharing one
+    /// row. The plan is refused rather than silently renumbered.
+    #[error("the operation plan asked for step {0} twice")]
+    DuplicateOperationStep(OperationCaseId),
+
+    /// An operation response contradicted its executor's advertised
+    /// interface, or its own step kind.
+    #[error("the executor's response for operation step {case} is malformed: {defect}")]
+    MalformedOperationResponseShape {
+        /// The step answered.
+        case: OperationCaseId,
+        /// How the response contradicts what it should have been.
+        defect: ResponseShapeDefect,
+    },
+
+    /// The executor answered one operation step twice.
+    #[error("the external executor answered operation step {0} twice")]
+    DuplicateOperationResponse(OperationCaseId),
+
+    /// The executor never answered an operation step it was asked for.
+    #[error("the external executor did not answer operation step {0}")]
+    MissingOperationResponse(OperationCaseId),
+
+    /// The executor answered an operation step it was never asked for.
+    ///
+    /// There is no ordering fault beside this one. Exactly one operation
+    /// step is outstanding at a time — the plan states the next step only
+    /// after the previous one is answered — so a response naming a
+    /// different step was either already settled or never asked for, and
+    /// there is no third case for an ordering variant to name.
+    #[error("the external executor answered operation step {0}, which it was not asked for")]
+    UnexpectedOperationResponse(OperationCaseId),
 
     /// The executor reported infrastructure trouble for one case.
     #[error("the external executor reported infrastructure trouble for case {0}")]

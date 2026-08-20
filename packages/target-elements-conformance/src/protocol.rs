@@ -102,6 +102,24 @@ use crate::prototype::{PrototypeCaseId, PrototypeConstruction, PrototypeExecutio
 /// executor is refused at the handshake rather than reconciled, on the
 /// same ground revision 2 was.
 ///
+/// # The operation records complete revision 4 rather than opening a
+/// fifth
+///
+/// §16.3 names four workloads that must have typed records under one
+/// revision: conservation, normalization, lifecycle, and the compact-ASH
+/// operation. Revision 4 was minted for exactly that union and carried
+/// the first three; [`NativeOperationRequest`] and
+/// [`NativeOperationResponse`] are the fourth, and adding them here is
+/// finishing the revision rather than superseding it. Nothing that a
+/// revision-4 executor already implements changes shape, so no executor
+/// is refused for a record it used to be able to write.
+///
+/// Whether the new records may be *sent* is decided the way every other
+/// added record shape has been decided in this protocol: by a capability
+/// the executor advertises, not by a revision it declares
+/// `(´[PLAN-rule:guide10:schema-migration]´)`. An executor that never
+/// heard of an operation step is simply never handed one.
+///
 /// # Revision 3 removed the answer from the question
 ///
 /// A revision-2 request carried the complete fixture, expectation
@@ -355,6 +373,30 @@ pub enum ExecutorCapability {
     /// what keeps it from being sent to an executor that cannot read it:
     /// no executor is ever handed one unless it said it reads them.
     CompoundPrototypeFixtures,
+    /// It creates spendable outputs at a stated witness program, and
+    /// reports where they landed.
+    ///
+    /// # Why funding is a capability of its own
+    ///
+    /// Issuing an asset and paying outputs are things a node does with
+    /// its own wallet, and an executor that judges transactions perfectly
+    /// well may hold no funds and no issuance capability at all. Folding
+    /// this into the submission claim would refuse such a runner from a
+    /// workload it could answer, and would let a runner that advertised
+    /// submission be sent a step it can only fail
+    /// `(´[PLAN-rule:guide10:schema-migration]´)`.
+    TestFundingCeremony,
+    /// It hands the target a complete transaction and reports the layer
+    /// the target's answer came from.
+    ///
+    /// # What the claim is about
+    ///
+    /// Submission *plus* layer attribution, on exactly the reasoning
+    /// [`Self::ConfidentialConservation`] gives: an executor that can
+    /// broadcast but reports one undifferentiated refusal cannot answer
+    /// a submission step, because the step's whole content is which
+    /// layer the target answered from.
+    TargetTransactionSubmission,
 }
 
 impl ExecutorHandshake {
@@ -425,6 +467,19 @@ impl ExecutorHandshake {
         self.capabilities
             .contains(&ExecutorCapability::OwnerAuthorizedNormalization)
             && self.runs_conservation_rows()
+    }
+
+    /// Whether this executor may be sent one operation step.
+    ///
+    /// The same gate once more, and asked per step rather than per run:
+    /// an operation plan interleaves two kinds of work, and an executor
+    /// that can do one of them should be refused only the steps it cannot
+    /// do. Refusing the whole workload on the strength of the harder half
+    /// would decline a runner that could have answered every step the
+    /// caller actually planned.
+    #[must_use]
+    pub fn runs_operation_step(&self, subject: &OperationSubject) -> bool {
+        self.capabilities.contains(&subject.required_capability())
     }
 }
 
@@ -726,6 +781,12 @@ pub enum ResponseShapeDefect {
     /// An interpreter figure was reported by an executor that said it
     /// observes none.
     ResourceWithoutAdvertisedObservation,
+    /// An operation response carried members the step kind it answers
+    /// does not produce.
+    OperationResponseMismatchesStep,
+    /// An accepted operation step reported nothing its kind is defined to
+    /// produce.
+    AcceptedOperationOmitsObservation,
 }
 
 impl std::fmt::Display for ResponseShapeDefect {
@@ -749,6 +810,12 @@ impl std::fmt::Display for ResponseShapeDefect {
             }
             Self::ResourceWithoutAdvertisedObservation => {
                 "an interpreter figure was reported by an executor that observes none"
+            }
+            Self::OperationResponseMismatchesStep => {
+                "an operation response carried members the step kind it answers does not produce"
+            }
+            Self::AcceptedOperationOmitsObservation => {
+                "an accepted operation step reported nothing its kind produces"
             }
         };
         formatter.write_str(text)
@@ -1285,10 +1352,16 @@ pub struct LifecycleCheck {
     pub agrees: bool,
 }
 
-/// One outpoint.
+/// One outpoint, as the target spells it.
+///
+/// One type rather than one per workload. An outpoint is a single
+/// semantic object on this wire, and a second structurally identical
+/// record for the same thing would be a lookalike the two halves of the
+/// protocol could drift apart at
+/// `(´[PLAN-rule:guide12-exec:typed-source]´)`.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct LifecycleOutpoint {
+pub struct WireOutpoint {
     /// The transaction.
     pub txid: String,
     /// The output index.
@@ -1317,7 +1390,7 @@ pub struct LifecycleSpend {
     /// That address's script.
     pub destination_script: String,
     /// The outpoint it actually consumed.
-    pub consumed_outpoint: LifecycleOutpoint,
+    pub consumed_outpoint: WireOutpoint,
     /// Whether that outpoint was the owner's published object.
     pub consumed_owner_object: bool,
 }
@@ -1388,6 +1461,313 @@ impl NativeLifecycleResponse {
                 || self.superseded_by.is_some())
         {
             return Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation);
+        }
+        Ok(())
+    }
+}
+
+/// Which kind of target work one operation step asks for.
+///
+/// # Why the kinds are named on the wire rather than inferred
+///
+/// The two steps ask a node for entirely different things — create some
+/// outputs, or judge a transaction — and they are told apart here rather
+/// than by which subject member happens to parse, on exactly the
+/// reasoning [`LifecycleStepRole`] states: an adapter that inferred the
+/// kind from what was readable would be deciding what it was asked from
+/// what happened to succeed.
+///
+/// # What this vocabulary deliberately does not name
+///
+/// Nothing in it is compact-ASH vocabulary. Issuing a disposable asset,
+/// paying outputs to a witness program, and submitting a transaction are
+/// things a caller can ask of a target with no operation semantics
+/// whatsoever, and that is the property that lets this package own the
+/// exchange without owning what the exchange is evidence *of*
+/// `(´[PLAN-rule:guide12-exec:executor-ownership]´)`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum OperationStepKind {
+    /// Create spendable outputs at a stated witness program.
+    Fund,
+    /// Hand the target a complete transaction and report what it did.
+    Submit,
+}
+
+impl std::fmt::Display for OperationStepKind {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let text = match self {
+            Self::Fund => "fund",
+            Self::Submit => "submit",
+        };
+        formatter.write_str(text)
+    }
+}
+
+/// One operation step's identity.
+///
+/// Two members, and deliberately not the shape any other record carries,
+/// on the reasoning [`NormalizationCaseId`] states: the adapter tells the
+/// record kinds apart by shape alone. A primitive case is a group and an
+/// ordinal, a compound one a relation and a name, a conservation row an
+/// ordinal and a name, a normalization row one mutation, a lifecycle step
+/// one role; an operation step is a kind and a caller's name for it.
+///
+/// The name is the caller's, and the harness reads nothing out of it. It
+/// exists so a transcript can be indexed by something the caller
+/// recognizes without the harness having to understand what the caller
+/// recognized.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OperationCaseId {
+    /// Which kind of target work this step is.
+    pub operation: OperationStepKind,
+    /// The caller's own name for this step.
+    pub step: String,
+}
+
+impl std::fmt::Display for OperationCaseId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}/{}", self.operation, self.step)
+    }
+}
+
+/// What a funding step is asked to create.
+///
+/// # Amounts and programs, not roles
+///
+/// The step states a witness program, a count, and an amount. It does not
+/// state what the outputs are *for*: which of them will carry an
+/// operation's inputs, and what an operation will do with them, is the
+/// caller's question and never travels here.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TargetFundingSubject {
+    /// Whether this step must issue the disposable test asset.
+    ///
+    /// Where false, the asset the outputs carry is named below and was
+    /// issued by an earlier step of the same run.
+    pub issue_asset: bool,
+    /// The asset the outputs must carry, where an earlier step issued
+    /// one.
+    ///
+    /// Absent exactly when [`Self::issue_asset`] is set: a step that
+    /// issues the asset cannot also name it, because the target has not
+    /// chosen it yet.
+    pub asset: Option<String>,
+    /// The witness program each created output pays to.
+    pub output_program: Vec<u8>,
+    /// How many outputs to create at that program.
+    pub outputs: u8,
+    /// What each output holds, in the asset's smallest unit.
+    pub amount_per_output: u64,
+}
+
+/// What a submission step is asked to judge.
+///
+/// The bytes and nothing else. No expected layer, no expected identity,
+/// and no class: under revision 4 the answer stays with the caller
+/// exactly as it does for every other workload
+/// `(´[PLAN-rule:guide11-exec:request-subject]´)`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TargetSubmissionSubject {
+    /// The exact transaction to hand the target.
+    pub transaction_bytes: Vec<u8>,
+}
+
+/// The subject of one operation step.
+///
+/// Untagged because the kind is already stated in the case identity, and
+/// a second discriminator could disagree with the first. The two variants
+/// refuse unknown members and share none of their own, so the shapes are
+/// distinguishable without one — the same construction
+/// [`LifecycleSubject`] uses, for the same reason.
+///
+/// Both subjects are boxed, so an operation request is not as large as
+/// whichever variant happens to be bigger. The boxes are invisible on the
+/// wire.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum OperationSubject {
+    /// A funding step's subject.
+    Funding(Box<TargetFundingSubject>),
+    /// A submission step's subject.
+    Submission(Box<TargetSubmissionSubject>),
+}
+
+impl OperationSubject {
+    /// The step kind this subject belongs to.
+    ///
+    /// The one place the correspondence is stated. A request whose case
+    /// identity and subject disagree is refused before it is sent, rather
+    /// than at whichever end of the exchange noticed first.
+    #[must_use]
+    pub const fn kind(&self) -> OperationStepKind {
+        match self {
+            Self::Funding(_) => OperationStepKind::Fund,
+            Self::Submission(_) => OperationStepKind::Submit,
+        }
+    }
+
+    /// The executor capability a step of this kind requires.
+    #[must_use]
+    pub const fn required_capability(&self) -> ExecutorCapability {
+        match self {
+            Self::Funding(_) => ExecutorCapability::TestFundingCeremony,
+            Self::Submission(_) => ExecutorCapability::TargetTransactionSubmission,
+        }
+    }
+}
+
+/// One operation step, handed to the executor.
+///
+/// Carries the step's identity and its subject, and nothing else
+/// `(´[PLAN-rule:guide11-exec:request-subject]´)`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeOperationRequest {
+    /// The protocol revision.
+    pub schema: u32,
+    /// The step being asked for.
+    pub case: OperationCaseId,
+    /// Exactly what to do.
+    pub subject: OperationSubject,
+}
+
+/// One output a funding step created.
+///
+/// # Why the target restates what it was asked for
+///
+/// The asset and the amount were stated in the request, and they come
+/// back because a funding step is only useful if what it created is what
+/// a later transaction can spend. The caller compares the two; the
+/// executor is never told what the comparison is for, and an executor
+/// that echoed the request instead of reading the chain is caught by the
+/// script the target itself reports.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FundedOutput {
+    /// Where the output is.
+    pub outpoint: WireOutpoint,
+    /// The asset it holds, in the target's own spelling.
+    pub asset: String,
+    /// The explicit amount it holds.
+    pub amount_satoshis: u64,
+    /// The output's script, as the target reports it.
+    pub script: String,
+}
+
+/// What the target did with one operation step.
+///
+/// # One record for both kinds
+///
+/// A funding step reports what it created; a submission step reports what
+/// the target made of a transaction. They are one type because they are
+/// one exchange, and because the members each kind leaves empty are
+/// exactly what [`Self::validate_shape`] can then hold to — the same
+/// construction [`NativeLifecycleResponse`] uses.
+///
+/// # The layer vocabulary is the shared one
+///
+/// [`ObservedOutcomeLayer`] already separates the two non-verdicts from
+/// the four verdicts, and a submission is precisely the observation that
+/// vocabulary was minted for: whether the target refused before any
+/// script ran, refused in the script path, would relay-refuse, or
+/// accepted. Restating it here under different names would be two
+/// authored spellings of one distinction
+/// `(´[PLAN-rule:guide12-exec:typed-source]´)`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeOperationResponse {
+    /// The protocol revision.
+    pub schema: u32,
+    /// The step answered.
+    pub case: OperationCaseId,
+    /// Where the step ended up, as the adapter observed it.
+    pub observed_layer: ObservedOutcomeLayer,
+    /// What the target or the adapter said, verbatim and unmapped.
+    pub observed_detail: Option<String>,
+    /// The disposable asset a funding step issued, where it issued one.
+    pub issued_asset: Option<String>,
+    /// The outputs a funding step created, in creation order.
+    pub funded_outputs: Vec<FundedOutput>,
+    /// The identity the target gave a submitted transaction, where it
+    /// took one.
+    pub accepted_txid: Option<String>,
+    /// What the target reported the work cost.
+    pub resources: NativeResourceObservation,
+}
+
+impl NativeOperationResponse {
+    /// Whether this response contradicts itself.
+    ///
+    /// Three rules, and each one closes a way for a report to state a
+    /// fact no run produced.
+    ///
+    /// A step that reached no target verdict observed nothing, on exactly
+    /// the reasoning [`NativeConservationResponse::validate_shape`]
+    /// states: an outpoint is a coin the target created, an issued asset
+    /// is an identity the target chose, and a transaction identity is one
+    /// the target computed over bytes it accepted.
+    ///
+    /// A step's answer must belong to the kind that was asked. A funding
+    /// step that named an accepted transaction, or a submission that
+    /// reported created outputs, is answering a question it was not
+    /// asked, and reading either as evidence would attach one kind of
+    /// observation to the other kind's obligation.
+    ///
+    /// An accepted step must report what its kind is defined to produce.
+    /// An acceptance with nothing to show for it is indistinguishable
+    /// from an adapter that returned the layer without doing the work.
+    ///
+    /// The detail is not counted, on the same ground the lifecycle
+    /// response gives: a failure is entitled to a reason.
+    ///
+    /// The match over the step kinds is exhaustive and stays that way. A
+    /// kind added later has no shape rule until one is written here, and
+    /// the compiler is what says so — a catch-all arm would let a new kind
+    /// be admitted, or refused, by a rule nobody chose for it.
+    ///
+    /// # Errors
+    ///
+    /// [`ResponseShapeDefect`] where the response is not a shape the
+    /// protocol defines.
+    pub fn validate_shape(&self) -> Result<(), ResponseShapeDefect> {
+        let observed = self.issued_asset.is_some()
+            || !self.funded_outputs.is_empty()
+            || self.accepted_txid.is_some()
+            || self.resources.observes_interpreter();
+        if !self.observed_layer.is_target_verdict() {
+            return if observed {
+                Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation)
+            } else {
+                Ok(())
+            };
+        }
+
+        match self.case.operation {
+            OperationStepKind::Fund => {
+                if self.accepted_txid.is_some() {
+                    return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
+                }
+                if self.observed_layer == ObservedOutcomeLayer::Accepted
+                    && self.funded_outputs.is_empty()
+                {
+                    return Err(ResponseShapeDefect::AcceptedOperationOmitsObservation);
+                }
+            }
+            OperationStepKind::Submit => {
+                if self.issued_asset.is_some() || !self.funded_outputs.is_empty() {
+                    return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
+                }
+                if self.observed_layer == ObservedOutcomeLayer::Accepted
+                    && self.accepted_txid.is_none()
+                {
+                    return Err(ResponseShapeDefect::AcceptedOperationOmitsObservation);
+                }
+            }
         }
         Ok(())
     }

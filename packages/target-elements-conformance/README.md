@@ -350,7 +350,7 @@ the transaction-context types `PrimitiveExecutionContext`, `FixtureInput`,
 ### `protocol` — the secretless wire
 
 ```text
-NATIVE_PROTOCOL_SCHEMA: u32 = 3
+NATIVE_PROTOCOL_SCHEMA: u32 = 4
 MOCK_EXECUTOR_NETWORK_ID: [u8; 32] = [0x11; 32]
 MOCK_EXECUTOR_GENESIS_ID: [u8; 32] = [0x22; 32]
 
@@ -361,17 +361,38 @@ validate_response_shape(response: &NativeExecutionResponse,
 
 `ExecutorHandshake` carries fourteen fields of what the executor *says* about
 itself, including the optional revision fields that a mock leaves as `None`
-rather than filling with something plausible. `runs_prototype_fixtures()` and
-`materializes_trees()` read the capability set.
+rather than filling with something plausible. `runs_prototype_fixtures()`,
+`materializes_trees()`, `runs_conservation_rows()`,
+`runs_normalization_rows()`, and `runs_operation_step()` read the capability
+set.
 
-`ExecutorCapability` has 7 variants; `ObservedFailureClass` has **34**,
+`ExecutorCapability` has 11 variants; `ObservedFailureClass` has **34**,
 enumerated in `src/protocol.rs`. Representative: `StackUnderflow`,
 `InvalidOperandWidth`, `DivisionByZero`, `EvaluatedFalse`,
 `NonSingletonFinalStack`.
 
-`ResponseShapeDefect` has 7 variants and exists so that an executor cannot
+`ResponseShapeDefect` has 9 variants and exists so that an executor cannot
 report more than it advertised or less than it promised — for example
 `StackWithoutAdvertisedReporting` and `AdvertisedStackOmitted` are both defects.
+
+Revision 4 carries a typed record pair for each of the four workloads
+Guide-12 §16.3 names: `NativeConservationRequest`/`Response`,
+`NativeNormalizationRequest`/`Response`, `NativeLifecycleRequest`/`Response`,
+and `NativeOperationRequest`/`Response`. Every one of them refuses unknown
+fields and every response has a `validate_shape` that refuses an observation
+beside a layer saying the run never happened.
+
+The operation records are the §16.2 target-generic boundary on the wire. An
+`OperationCaseId` is an `OperationStepKind` (`Fund` or `Submit`) and the
+caller's own name for the step; an `OperationSubject` is a
+`TargetFundingSubject` (issue an asset, pay `outputs` outputs of
+`amount_per_output` to `output_program`) or a `TargetSubmissionSubject`
+(`transaction_bytes`), untagged and told apart by disjoint members. A
+`NativeOperationResponse` answers with an `ObservedOutcomeLayer`, the
+`FundedOutput` rows a funding step created, and the `accepted_txid` a
+submission earned. Nothing in that vocabulary names an operation's meaning,
+which is what lets this package supervise a compact-ASH run without owning
+one.
 
 `ProtocolLimits` bounds each phase; `ProtocolLimits::DEFAULT` is the standard
 set, and `for_phase` reads the bound that applies.
@@ -391,7 +412,24 @@ execute(target, binding, configuration: &ExecutorConfiguration, fixtures: &Primi
     -> Result<ExecutionTranscript, NativeConformanceError>
 execute_prototypes(target, binding, configuration, fixtures: &[CompoundPrototypeFixture])
     -> Result<ExecutionTranscript, NativeConformanceError>
+execute_operations(target, binding, configuration, planner: &mut dyn TargetOperationPlanner)
+    -> Result<ExecutionTranscript, NativeConformanceError>
 ```
+
+`execute_operations` is the Guide-12 §16.2 boundary. Unlike the other two it
+takes a *plan* rather than a set of cases: a `TargetOperationPlanner` is asked
+for its `next_step` between steps, is handed the previous step's answer, and
+returns `Ok(None)` when it is done or `Err(PlanRefused)` when it cannot state
+one. That is what makes an operation expressible at all — a transaction cannot
+be built until the outputs it spends exist, those outputs are created by an
+earlier step of the same run, and each run gets its own disposable node, so a
+fixed list of steps could not carry the dependency and two runs would fund one
+chain and submit to another.
+
+The capability gate is asked per step rather than per run, so an executor that
+submits transactions but holds no funds is refused the funding steps and
+answers the submissions. `PlanRefused` carries no reason: the plan knows why in
+its own vocabulary, and this package holds none for it.
 
 The timeout is explicit and typed; there is no untimed run. The child is spawned
 in its own process group so that a stalled executor and its descendants can be
@@ -402,8 +440,8 @@ declaration rather than an observation — nothing here can tell the difference.
 
 `ExecutionTranscript` reads back `handshake()`, `environment()`, `trust()`,
 `target()`, `deployment()`, `requests()`, `responses()`,
-`prototype_requests()`, and `prototype_responses()`. It has no public
-constructor.
+`prototype_requests()`, `prototype_responses()`, `operation_requests()`, and
+`operation_responses()`. It has no public constructor.
 
 The first four of those readers are what makes a transcript *bound*. It
 retains the reviewed contract projection and the deployment projection the run

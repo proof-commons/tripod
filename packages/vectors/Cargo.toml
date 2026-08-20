@@ -44,12 +44,30 @@ name = "vectors"
 # executes against a real node, and a substrate reachable only from a
 # cfg-gated module cannot be executed by anything.
 #
-# `target-elements-conformance` is absent for the reason §16.2 gives: it
-# owns target-generic process supervision, and this package must not be
-# able to obtain an expectation from the same component that will later
-# produce the observation it is judged against. Wave 11 must either widen
-# that package's workload boundary or extract a shared executor package;
-# it must not be reached around from here.
+# `target-elements-conformance` is absent, and the §16.2 decision Wave 10
+# left open is now settled: the boundary was WIDENED rather than
+# extracted. That package's executor gained a target-generic operation
+# workload — a caller-supplied plan of funding and submission steps, over
+# bytes, programs, outpoints, and the existing observed-layer vocabulary —
+# so no shared executor package was needed and the preferred first-
+# operation direction §16.2 states holds as written.
+#
+# §16.2 permits this package to take that narrow boundary as a
+# dependency. Wave 10's own rule decides not to take it yet: nothing here
+# calls it, because calling it needs a live node, and an unused
+# dependency advertises a reach this wave has not earned. The edge is
+# also not free — `target-elements-conformance` dev-depends on this
+# package for the reference cross-checks, so the edge closes a cycle
+# through that lane — which is a reason to take it deliberately in Wave
+# 11 rather than speculatively here.
+#
+# What this package names instead is its own obligation:
+# `RequiredTargetWork` states the ceremony steps and the vector
+# submissions the plan is waiting for, in `FundingCeremonyStep`'s
+# vocabulary from `transaction` and this package's own vector
+# identities. No executor record, no wire spelling, and no second
+# authored source for either name (§1.12). Wave 11 adds the edge and
+# writes the one mapping from these onto the executor's step records.
 [dependencies]
 architecture = { workspace = true }
 compiler = { workspace = true }

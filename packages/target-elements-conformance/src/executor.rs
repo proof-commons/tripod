@@ -73,7 +73,8 @@ use crate::fixture::{
 use crate::protocol::{
     ExecutorCapability, ExecutorEnvironmentObservation, ExecutorHandshake, HandshakeRequest,
     NATIVE_PROTOCOL_SCHEMA, NativeExecutionRequest, NativeExecutionResponse,
-    NativePrototypeRequest, NativePrototypeResponse, ProtocolLimits, ProtocolPhase,
+    NativeOperationRequest, NativeOperationResponse, NativePrototypeRequest,
+    NativePrototypeResponse, OperationCaseId, OperationSubject, ProtocolLimits, ProtocolPhase,
     WireEnvironment, WireExecutionDomain, validate_response_shape,
 };
 use crate::prototype::{
@@ -83,17 +84,124 @@ use crate::provenance::ExpectedExecutorProvenance;
 
 /// What one run asks the executor about.
 ///
-/// Two workloads, kept apart in the type rather than in a flag: a
-/// primitive census and a compound-prototype matrix are different
-/// questions with different case identities, and a run that could carry
-/// both would produce a transcript whose rows a report could not tell
-/// apart `(´[PLAN-rule:guide10:compound-fixture]´)`.
-#[derive(Clone, Copy, Debug)]
+/// Workloads are kept apart in the type rather than in a flag: a
+/// primitive census, a compound-prototype matrix, and a target operation
+/// are different questions with different case identities, and a run that
+/// could carry two of them would produce a transcript whose rows a report
+/// could not tell apart `(´[PLAN-rule:guide10:compound-fixture]´)`.
+///
+/// # Why the third variant is a plan rather than a list
+///
+/// The first two workloads are finite sets stated before the run begins.
+/// An operation is not: a transaction cannot be built until the outputs
+/// it spends exist, and those outputs are created by an earlier step of
+/// the same run against the same node. A list of steps fixed in advance
+/// could not express that, and splitting the run in two would fund one
+/// disposable chain and submit to another
+/// `(´[PLAN-rule:guide12-exec:executor-ownership]´)`.
+///
+/// So the caller supplies a plan that is consulted between steps. This
+/// package still owns the whole exchange — the framing, the supervision,
+/// the environment binding, the refusals — and the plan owns only what to
+/// ask next, which is the half that depends on what the operation means.
+#[non_exhaustive]
 pub enum NativeWorkload<'a> {
     /// The canonical primitive census.
     Primitives(&'a PrimitiveFixtureSet),
     /// One compound-prototype case matrix.
     Prototypes(&'a [CompoundPrototypeFixture]),
+    /// One caller-driven target operation.
+    Operations(&'a mut dyn TargetOperationPlanner),
+}
+
+/// The caller's own operation plan, consulted between steps.
+///
+/// # The narrow target-generic boundary of §16.2
+///
+/// This is the whole of what an operation caller implements. Everything
+/// on either side of it is target-generic: the plan states steps in the
+/// vocabulary of [`OperationSubject`] — issue an asset, pay outputs to a
+/// witness program, submit a transaction — and reads answers in the
+/// vocabulary of [`ObservedOutcomeLayer`]. Neither names an operation,
+/// a relation, a coverage requirement, or a class, so this package
+/// supervises a compact-ASH run without owning any part of what makes it
+/// one `(´[PLAN-rule:guide12-exec:executor-ownership]´)`.
+///
+/// # No expectation crosses, and the type is what says so
+///
+/// A step carries an identity and a subject. There is no member for an
+/// expected layer, an expected identity, or a class, so a plan cannot
+/// hand the executor the answer it is about to be graded against even by
+/// mistake `(´[PLAN-rule:guide11-exec:request-subject]´)`.
+///
+/// # A refusal carries no reason here
+///
+/// [`PlanRefused`] is a marker. A plan that cannot state its next step
+/// knows why in its own vocabulary, and this package holds none for it:
+/// carrying the reason would mean spelling, here, decisions made in the
+/// package that owns the operation's meaning. The caller reads the reason
+/// off its own plan after the run is refused.
+pub trait TargetOperationPlanner {
+    /// The next step to ask for, or `None` when the plan is complete.
+    ///
+    /// `previous` is the step just answered and the answer, and is `None`
+    /// for the first step. The plan keeps whatever state it needs; this
+    /// package keeps only the transcript.
+    ///
+    /// # Errors
+    ///
+    /// [`PlanRefused`] where the plan cannot state a next step at all.
+    fn next_step(
+        &mut self,
+        previous: Option<(&OperationCaseId, &NativeOperationResponse)>,
+    ) -> Result<Option<OperationStep>, PlanRefused>;
+}
+
+/// The plan could not state its next step.
+///
+/// Deliberately empty. See [`TargetOperationPlanner`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PlanRefused;
+
+/// One step a plan asks for.
+///
+/// The identity and the subject travel together and are checked against
+/// each other before anything is sent: a step whose identity names one
+/// kind and whose subject is the other would be answered by the wrong
+/// half of an adapter.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OperationStep {
+    case: OperationCaseId,
+    subject: OperationSubject,
+}
+
+impl OperationStep {
+    /// States one step, under the caller's own name for it.
+    ///
+    /// The kind is taken from the subject rather than accepted from the
+    /// caller, so the two cannot disagree.
+    #[must_use]
+    pub fn new(name: &str, subject: OperationSubject) -> Self {
+        Self {
+            case: OperationCaseId {
+                operation: subject.kind(),
+                step: name.to_owned(),
+            },
+            subject,
+        }
+    }
+
+    /// This step's identity.
+    #[must_use]
+    pub const fn case(&self) -> &OperationCaseId {
+        &self.case
+    }
+
+    /// What this step asks for.
+    #[must_use]
+    pub const fn subject(&self) -> &OperationSubject {
+        &self.subject
+    }
 }
 
 /// How long a run may take before the executor is stopped.
@@ -254,6 +362,8 @@ pub struct ExecutionTranscript {
     responses: BTreeMap<NativeCaseId, NativeExecutionResponse>,
     prototype_requests: BTreeMap<PrototypeCaseId, PrototypeExecutionSubject>,
     prototype_responses: BTreeMap<PrototypeCaseId, NativePrototypeResponse>,
+    operation_requests: BTreeMap<OperationCaseId, OperationSubject>,
+    operation_responses: BTreeMap<OperationCaseId, NativeOperationResponse>,
 }
 
 impl ExecutionTranscript {
@@ -321,6 +431,27 @@ impl ExecutionTranscript {
         &self.prototype_responses
     }
 
+    /// The exact subject sent for each operation step.
+    ///
+    /// Retained for the same reason the other request maps are: a
+    /// transcript is bound to what it asked as well as to what it heard,
+    /// so an evaluator can compare its own steps against these rather
+    /// than trusting the identities alone
+    /// `(´[PLAN-rule:guide11-exec:transcript-binding]´)`.
+    #[must_use]
+    pub const fn operation_requests(&self) -> &BTreeMap<OperationCaseId, OperationSubject> {
+        &self.operation_requests
+    }
+
+    /// The operation answers, in step-identity order.
+    ///
+    /// Empty for every workload but an operation, as with the other
+    /// per-workload maps: one run asks one workload.
+    #[must_use]
+    pub const fn operation_responses(&self) -> &BTreeMap<OperationCaseId, NativeOperationResponse> {
+        &self.operation_responses
+    }
+
     /// A transcript assembled directly, for the crate's own tests.
     ///
     /// Not public: a transcript is what an executor was asked and said,
@@ -345,6 +476,8 @@ impl ExecutionTranscript {
             responses: parts.responses,
             prototype_requests: BTreeMap::new(),
             prototype_responses: BTreeMap::new(),
+            operation_requests: BTreeMap::new(),
+            operation_responses: BTreeMap::new(),
         }
     }
 
@@ -364,6 +497,8 @@ impl ExecutionTranscript {
             responses: BTreeMap::new(),
             prototype_requests: parts.requests,
             prototype_responses: parts.responses,
+            operation_requests: BTreeMap::new(),
+            operation_responses: BTreeMap::new(),
         }
     }
 }
@@ -801,6 +936,46 @@ pub fn execute_canonical_prototypes(
     execute_prototypes(target, binding, configuration, matrix.rows())
 }
 
+/// Runs one caller-driven target operation through the selected executor.
+///
+/// # The §16.2 boundary, as one function
+///
+/// This is the whole of what an operation caller needs from this package,
+/// and the whole of what this package learns about the operation. It
+/// supervises the process, frames the exchange, binds the environment,
+/// records the provenance, and hands the plan one answer at a time; the
+/// plan decides what to ask. Nothing about relations, coverage, classes,
+/// or acceptance crosses in either direction
+/// `(´[PLAN-rule:guide12-exec:executor-ownership]´)`.
+///
+/// The trust boundary is not here, on exactly the reasoning
+/// [`execute_canonical`] gives: running a plan is a way to ask a node
+/// questions, and whether the answers are evidence is settled by the
+/// package that owns the plan.
+///
+/// # Errors
+///
+/// Every protocol failure [`execute`] states, plus
+/// [`NativeConformanceError::OperationStepUnsupported`] when the executor
+/// did not advertise a step's kind,
+/// [`NativeConformanceError::OperationPlanRefused`] when the plan cannot
+/// state its next step, and
+/// [`NativeConformanceError::DuplicateOperationStep`] when it reuses a
+/// step identity.
+pub fn execute_operations(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    configuration: &ExecutorConfiguration,
+    planner: &mut dyn TargetOperationPlanner,
+) -> Result<ExecutionTranscript, NativeConformanceError> {
+    execute_workload(
+        target,
+        binding,
+        configuration,
+        NativeWorkload::Operations(planner),
+    )
+}
+
 /// The supervised run, over either workload.
 fn execute_workload(
     target: &ReviewedElementsTapscriptDefinition,
@@ -883,7 +1058,12 @@ fn execute_workload(
 }
 
 /// The protocol exchange itself.
-fn run_protocol(
+///
+/// Crate-visible so the boundary suites can drive one exchange against a
+/// written script rather than a spawned process: what those tests are
+/// about is which record this side sends and what it refuses, and a real
+/// child would answer that through scheduling that is not the property.
+pub(crate) fn run_protocol(
     target: &ReviewedElementsTapscriptDefinition,
     binding: &ReviewedDevelopmentBinding,
     configuration: &ExecutorConfiguration,
@@ -955,6 +1135,12 @@ fn run_protocol(
                 return Err(NativeConformanceError::PrototypeFixturesUnsupported);
             }
         }
+        // An operation plan states its steps one at a time, so what the
+        // executor can do is checked per step in the loop below rather
+        // than here: there is no set of steps to check against yet, and
+        // inventing one would mean asking the plan for work in order to
+        // decide whether to ask it for work.
+        NativeWorkload::Operations(_) => {}
     }
 
     let environment: ExecutorEnvironmentObservation =
@@ -967,6 +1153,9 @@ fn run_protocol(
     let mut prototype_requests: BTreeMap<PrototypeCaseId, PrototypeExecutionSubject> =
         BTreeMap::new();
     let mut prototype_responses: BTreeMap<PrototypeCaseId, NativePrototypeResponse> =
+        BTreeMap::new();
+    let mut operation_requests: BTreeMap<OperationCaseId, OperationSubject> = BTreeMap::new();
+    let mut operation_responses: BTreeMap<OperationCaseId, NativeOperationResponse> =
         BTreeMap::new();
     match workload {
         NativeWorkload::Primitives(fixtures) => run_primitive_cases(
@@ -986,6 +1175,15 @@ fn run_protocol(
             reader,
             &mut prototype_requests,
             &mut prototype_responses,
+        )?,
+        NativeWorkload::Operations(planner) => run_operation_steps(
+            planner,
+            &handshake,
+            limits,
+            &mut stdin,
+            reader,
+            &mut operation_requests,
+            &mut operation_responses,
         )?,
     }
 
@@ -1011,6 +1209,8 @@ fn run_protocol(
         responses,
         prototype_requests,
         prototype_responses,
+        operation_requests,
+        operation_responses,
     })
 }
 
@@ -1145,6 +1345,99 @@ fn run_prototype_cases(
         responses.insert(case, response);
     }
     Ok(())
+}
+
+/// The operation half of the exchange.
+///
+/// # Lock-step, one outstanding step at a time
+///
+/// The plan is consulted, one step is written, one response is read, and
+/// only then is the plan consulted again. That is what makes the
+/// interleaving possible at all — a plan cannot state a submission until
+/// it has been told where the funding landed — and it is also why there
+/// is no ordering fault to name: exactly one step is outstanding, so a
+/// response naming another step was either already settled or never
+/// asked for.
+fn run_operation_steps(
+    planner: &mut dyn TargetOperationPlanner,
+    handshake: &ExecutorHandshake,
+    limits: ProtocolLimits,
+    stdin: &mut impl Write,
+    reader: &mut impl BufRead,
+    requests: &mut BTreeMap<OperationCaseId, OperationSubject>,
+    responses: &mut BTreeMap<OperationCaseId, NativeOperationResponse>,
+) -> Result<(), NativeConformanceError> {
+    let mut previous: Option<(OperationCaseId, NativeOperationResponse)> = None;
+    loop {
+        let asked = planner
+            .next_step(previous.as_ref().map(|(case, response)| (case, response)))
+            .map_err(|PlanRefused| NativeConformanceError::OperationPlanRefused)?;
+        let Some(step) = asked else {
+            return Ok(());
+        };
+
+        let case = step.case().clone();
+        let subject = step.subject().clone();
+
+        // A plan that reuses an identity would overwrite an answer
+        // already recorded, or leave two runs sharing one transcript row.
+        if requests.contains_key(&case) {
+            return Err(NativeConformanceError::DuplicateOperationStep(case));
+        }
+        // The capability gate, asked of the step rather than of the run.
+        // An executor that never advertised this kind of work is handed a
+        // typed refusal instead of a record it cannot parse
+        // `(´[PLAN-rule:guide10:schema-migration]´)`.
+        if !handshake.runs_operation_step(&subject) {
+            return Err(NativeConformanceError::OperationStepUnsupported(
+                case.operation,
+            ));
+        }
+
+        let request = NativeOperationRequest {
+            schema: NATIVE_PROTOCOL_SCHEMA,
+            case: case.clone(),
+            subject: subject.clone(),
+        };
+        // Retained before the write, exactly as the other loops do it.
+        requests.insert(case.clone(), subject);
+        // A failed write means the pipe is gone. What that was is decided
+        // by the read below and by the child's status.
+        let _write = write_message(&mut *stdin, &request, ProtocolPhase::Request);
+
+        let response: NativeOperationResponse =
+            read_message(reader, ProtocolPhase::Response, limits)?
+                .ok_or_else(|| NativeConformanceError::MissingOperationResponse(case.clone()))?;
+
+        if response.schema != NATIVE_PROTOCOL_SCHEMA {
+            return Err(NativeConformanceError::UnsupportedProtocolSchema {
+                offered: response.schema,
+            });
+        }
+        if response.case != case {
+            if responses.contains_key(&response.case) {
+                return Err(NativeConformanceError::DuplicateOperationResponse(
+                    response.case,
+                ));
+            }
+            return Err(NativeConformanceError::UnexpectedOperationResponse(
+                response.case,
+            ));
+        }
+        // Shape before anything else, exactly as for every other record.
+        // A response that contradicts its own step kind is a protocol
+        // failure, and letting a plan read a target fact out of it would
+        // mean believing whichever half happens to fit.
+        response.validate_shape().map_err(|defect| {
+            NativeConformanceError::MalformedOperationResponseShape {
+                case: case.clone(),
+                defect,
+            }
+        })?;
+
+        responses.insert(case.clone(), response.clone());
+        previous = Some((case, response));
+    }
 }
 
 /// Whether the executor ran the chain the binding names.

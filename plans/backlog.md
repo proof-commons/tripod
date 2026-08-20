@@ -392,6 +392,49 @@ Pinning the derived key does not discharge the pinned-output-key
 obligation, which still needs an output a real node created and a
 spend it accepted; what it buys is that the ceremony can run at all.
 
+The section 16.2 executor-ownership decision Wave 10 left open is now
+settled, and settled the way the guide states it: the boundary was
+WIDENED, not extracted, and no shared executor package was created.
+The test the guide sets is whether a clean target-generic boundary can
+be exposed without making the conformance package own compact-ASH
+meaning, and it can. What an operation asks a node for is target
+generic all the way down — issue a disposable asset, pay outputs to a
+witness program, hand the target a complete transaction — and what
+comes back is the observed-layer vocabulary that package already owns
+for conservation. Nothing about relations, coverage, classes, or
+acceptance crosses in either direction.
+
+The widening is one enum variant and one trait. `NativeWorkload` gains
+an operations arm carrying a caller-supplied plan rather than a fixed
+list of cases, because an operation is the first workload whose steps
+are not all statable before the run begins: a transaction cannot be
+built until the outputs it spends exist, those outputs are created by
+an earlier step of the same run, and each run gets its own disposable
+node — so a fixed list could not express the dependency and two runs
+would fund one chain and submit to another. Protocol revision 4 gains
+the fourth workload section 16.3 names, under two capabilities on the
+established pattern that a new record shape is a capability rather than
+a revision. Fifteen tests hold the boundary against a written exchange
+rather than a spawned process.
+
+The reviewed adapter gains the named seam and nothing more: it
+recognizes an operation step, checks its shape, and refuses it as an
+infrastructure failure, which is what a step that did not happen is.
+It advertises neither capability, so the harness refuses before
+sending. Implementing the ceremony and the submissions is Wave 11's and
+needs a live node.
+
+The vectors package states what it is waiting for without taking the
+edge section 16.2 permits: `RequiredTargetWork` names the whole funding
+ceremony census and one submission per materialized vector, thirteen
+entries derived from the plan rather than written out. The vocabulary
+is authored once on each side — the ceremony steps in `transaction`,
+the vector identities in `vectors`, the wire records in
+`target-elements-conformance` — so no name has a second source. Wave 11
+adds the dependency edge, which also closes a cycle through the
+conformance package's reference cross-check lane, and writes the one
+mapping from these obligations onto the executor's step records.
+
 ### The verification harness's two standing hazards · `rem:backlog:verification-harness`
 
 A verdict is read from the report wrapper's own report line, never from a pipeline's shell status: the wrapper propagates its exit code faithfully, and a pipe to a filter truncates the status to the last stage's. And a single shared build-target directory is poisoned when checkouts of two different commits build the same crates into it, so a lane that moves between commits pins a target directory of its own.
@@ -1446,7 +1489,7 @@ evidence and the batch gate record extends §2.6:
 | `T4-005a` | DONE | Self-commitment resolved by identity introspection — the recognition fragments read the constructor's program off the input the leaf is spending instead of pushing a literal for it, which is the resolution the Wave-8 refusal named; `AshConstructorProgramVersion` retired, `AshConstructorProgram` rebound `ReadFromTargetAtSpendTime` and carried by an introspection-reference census, the sound strategy now links with no equality outstanding, and every emitted program shrank (coordinator model base 116 to 85 and per-ash-input 109 to 78, member 102 to 64) |
 | `T4-006` | DONE | Candidate transaction ABI — `packages/transaction`; the ABI states every item Guide-12 section 15.4 lists over the 9 admitted shapes, with a first-party explicit-field encoder and decoder checked against hand-written byte strings (193 sponsorless, 374 sponsored) and control blocks over a committed tree checked against digests computed outside the crate; the three whole-transaction dimensions settle per constructed transaction; the taproot output key is pinned rather than recomputed and the pin-against-tree equality is carried as an outstanding obligation |
 | `T4-007` | DONE | Canonical semantic and target fixtures — `packages/vectors`; the complete Guide-12 section-18 matrix transcribed as 153 named classes each naming its polarity, mutation layer, and expected section-1.5 boundary; canonical and experimental standing separated by a type whose canonical constructor is crate-private and has no promotion path; the section-16.4 evidence plan recomputing every census two ways and comparing them (23 relations, 2 cases, 46 relation-cases of which 4 vacuous, 211 coverage requirements split 139 positive and 72 negative), the section-1.3 relation closure checked in both directions; 14 positive semantic cases carrying no target vocabulary, with the successor derived from the realization layer's own checked sum, and 9 of them materialized to exact byte-stable target transactions; no coverage row discharged, every row naming why it is outstanding |
-| `T4-008` | TODO | Real target execution (Wave 11; needs a live node — also unblocks the `G12-R04` runtime half) |
+| `T4-008` | TODO | Real target execution (Wave 11; needs a live node — also unblocks the `G12-R04` runtime half). Unblocked on the design side: the section 16.2 boundary is settled as a widening, the revision-4 operation records and the caller-driven plan exist, the adapter has its named seam, and `RequiredTargetWork` states the thirteen obligations the plan is waiting for |
 | `T4-009` | TODO | Negative relation coverage (Wave 12) |
 | `T4-010` | TODO | Candidate resource study (Wave 13) |
 | `T4-011` | TODO | Phase-4 gate and handoff (Wave 14) |
