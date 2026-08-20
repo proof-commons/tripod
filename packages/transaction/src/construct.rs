@@ -241,6 +241,12 @@ pub fn construct(
     // constructor already rejected duplicates inside the ASH selection;
     // what is left is the overlap between the two regions, which no
     // single set can rule out.
+    if request.sponsored() && sponsor.is_none() {
+        return Err(TransactionRefusal::SponsorRequestedWithoutCapability);
+    }
+    if !request.sponsored() && sponsor.is_some() {
+        return Err(TransactionRefusal::SponsorCapabilityWithoutRequest);
+    }
     let offer = sponsor.map(SponsorCapability::offer);
     let sponsor_inputs: BTreeSet<Outpoint> = offer
         .as_ref()

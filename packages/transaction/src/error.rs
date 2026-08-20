@@ -143,6 +143,21 @@ pub enum TransactionRefusal {
     /// The request selects a sponsor change destination but no sponsor
     /// input.
     SponsorChangeWithoutSponsor,
+    /// The request asks for a sponsor suffix and no capability was
+    /// supplied to fill it.
+    ///
+    /// A refusal rather than a quiet downgrade to the sponsorless form.
+    /// The two forms have different relay verdicts and different
+    /// versions, so building the other one would answer a question the
+    /// caller did not ask.
+    SponsorRequestedWithoutCapability,
+    /// A sponsor capability was supplied and the request asks for no
+    /// sponsor suffix.
+    ///
+    /// The converse, and refused for the converse reason: silently
+    /// spending a sponsor's inputs because an adapter happened to be in
+    /// scope is worse than refusing.
+    SponsorCapabilityWithoutRequest,
     /// The consolidated successor amount overflows the target's
     /// checked range.
     SuccessorAmountOutOfRange,

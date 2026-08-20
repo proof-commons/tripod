@@ -563,6 +563,35 @@ fn a_family_size_no_shape_admits_is_refused() {
 }
 
 #[test]
+fn a_request_and_a_capability_must_agree_about_sponsorship() {
+    // Neither mismatch is downgraded. A caller asking for a sponsored
+    // transaction gets one or gets a refusal, because the two forms
+    // have different relay verdicts and different versions and building
+    // the other one would answer a question nobody asked.
+    let target = reviewed_target();
+    let abi = candidate_abi();
+    let first = outpoint(0xaa, 0);
+    let second = outpoint(0xbb, 1);
+    let view = view([
+        ash_view(&target, first, 120),
+        ash_view(&target, second, 180),
+    ]);
+
+    let asked = CompactAshRequest::new([first, second], true).expect("a sponsored request");
+    assert_eq!(
+        construct(&target, &abi, &asked, &view, None),
+        Err(TransactionRefusal::SponsorRequestedWithoutCapability)
+    );
+
+    let unasked = CompactAshRequest::new([first, second], false).expect("a sponsorless request");
+    let sponsor = FixtureSponsor::new(500, None);
+    assert_eq!(
+        construct(&target, &abi, &unasked, &view, Some(&sponsor)),
+        Err(TransactionRefusal::SponsorCapabilityWithoutRequest)
+    );
+}
+
+#[test]
 fn a_transaction_above_the_reviewed_weight_bound_is_refused() {
     // The consensus maximum is four million weight units, so a
     // transaction reaching it needs about a megabyte of non-witness
