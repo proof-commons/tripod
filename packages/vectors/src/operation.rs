@@ -569,8 +569,18 @@ impl TargetOperationPlanner for CompactAshOperationPlanner {
 }
 
 /// The target's own spelling of a 32-byte identity.
+///
+/// A target prints an asset identity in the reverse of the order it
+/// commits to it in, exactly as it does for a transaction identity. The
+/// transcript holds the committed order, because that is the order the
+/// linked programs introspect and the order the constructor writes into
+/// an explicit asset field; the reversal happens here and in
+/// [`asset_from_hex`], at the two points where the target's spelling
+/// crosses the boundary.
 fn hex_of(bytes: [u8; 32]) -> String {
-    hex_of_slice(&bytes)
+    let mut printed = bytes;
+    printed.reverse();
+    hex_of_slice(&printed)
 }
 
 fn hex_of_slice(bytes: &[u8]) -> String {
@@ -599,8 +609,12 @@ fn bytes_from_hex(text: &str) -> Option<Vec<u8>> {
     Some(bytes)
 }
 
+/// One asset identity, from the spelling the target printed.
+///
+/// Reversed into the committed order. See [`hex_of`].
 fn asset_from_hex(text: &str) -> Option<[u8; 32]> {
-    let bytes = bytes_from_hex(text)?;
+    let mut bytes = bytes_from_hex(text)?;
+    bytes.reverse();
     <[u8; 32]>::try_from(bytes.as_slice()).ok()
 }
 
