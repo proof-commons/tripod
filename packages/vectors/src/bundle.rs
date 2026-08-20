@@ -24,6 +24,13 @@
 //! `(´[ADR015-rule:security:test-material]´)`. The internal key is a
 //! meaningless 32-byte pattern; §11.3's unspendability obligation is
 //! outstanding and this module does not discharge it.
+//!
+//! Most of those constants are arbitrary patterns, and one is not.
+//! [`PINNED_PROGRAM`] and [`PINNED_PARITY`] are *derived* facts about
+//! this bundle rather than choices — the taproot output key of its own
+//! committed tree, and that key's parity. Their derivation chain, and
+//! the cross-check that keeps them from drifting away from the tree,
+//! are stated on the constants themselves.
 
 use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::LazyLock;
@@ -55,7 +62,64 @@ pub const INTERNAL_KEY: [u8; 32] = [0xa6; 32];
 /// The disposable fee-program digest the resolved symbols carry.
 pub const FEE_PROGRAM: [u8; 32] = [0xa5; 32];
 /// The pinned output program every fixture ASH input pays to.
-pub const PINNED_PROGRAM: [u8; 32] = [0xcc; 32];
+///
+/// # This value is derived, not chosen
+///
+/// It is the BIP-341-style taproot output key of this very bundle: the
+/// x-only key obtained by tweaking [`INTERNAL_KEY`] by the merkle root
+/// of the committed tree that `transaction::commit_tree` builds over
+/// the linked bundle below. An earlier revision carried a fixed byte
+/// pattern here, which is not a curve point at all and therefore not
+/// the tweak of any key by any root; an output created at that program
+/// was unspendable by construction, because no control block can
+/// satisfy a taproot commitment check against a program that is not a
+/// key.
+///
+/// # Where the derivation happens, and what re-checks it
+///
+/// Not here. This package computes merkle roots and refuses the curve
+/// arithmetic that turns one into an output key — that refusal is the
+/// entire content of the `PinnedOutputKeyUnverifiedAgainstTree`
+/// obligation, and importing an oracle to discharge it inside the
+/// fixture would be the substrate marking its own homework. The value
+/// is instead stated as a literal whose provenance is the reference
+/// vector `FIXTURE_REFERENCE_OUTPUT_KEY` in the conformance package's
+/// reference module, recomputed there through the adopted reference
+/// bindings from this bundle's own internal key and root.
+///
+/// That package's reference-oracle cross-checks recompute the key and
+/// assert it equals this constant, so the two cannot drift apart: a
+/// change to the tree moves the derived key and fails that comparison
+/// rather than silently leaving an unspendable program pinned here.
+/// The dependency runs one way only — conformance dev-depends on this
+/// package, never the reverse, per the vectors package contract in
+/// §16.2 — so the agreement is enforced from the side that already
+/// owns the curve arithmetic.
+///
+/// # What this still does not establish
+///
+/// Nothing about spendability. `PinnedOutputKeyUnverifiedAgainstTree`
+/// remains outstanding and this constant does not discharge it:
+/// discharging needs the funding ceremony against a real node — an
+/// output that node actually created at this program, and a spend it
+/// accepted. What a derived pin buys is narrower: the fixture is no
+/// longer unspendable *by construction*, so that ceremony is able to
+/// run at all.
+pub const PINNED_PROGRAM: [u8; 32] = [
+    0x71, 0xc8, 0x38, 0xe9, 0x0d, 0xeb, 0x1c, 0x76, 0x55, 0x8a, 0x68, 0x8e, 0x8e, 0x5a, 0x08, 0xc6,
+    0x94, 0xe9, 0xca, 0x95, 0x3d, 0x13, 0xb4, 0xb7, 0x84, 0xd6, 0xc4, 0x56, 0x69, 0x31, 0x75, 0xfe,
+];
+
+/// The parity of [`PINNED_PROGRAM`]'s implicit y coordinate.
+///
+/// Derived with the key itself and carried beside it for the same
+/// reason, under the same cross-check. A control block states this bit
+/// and an x-only program cannot, so a fixture that guessed it would
+/// produce control blocks a verifier rejects for every leaf even when
+/// every hash in the path is right — which is exactly what an earlier
+/// revision did by declaring even parity against a derivation that
+/// yields odd.
+pub const PINNED_PARITY: OutputKeyParity = OutputKeyParity::Odd;
 
 /// The one bundle-and-ABI pair every fixture in this crate binds to.
 ///
@@ -116,7 +180,7 @@ fn fixture_pin(
     let _ = target;
     PinnedAshInstance::new(
         &PINNED_PROGRAM,
-        OutputKeyParity::Even,
+        PINNED_PARITY,
         target_elements::LeafVersion::TAPSCRIPT,
         INTERNAL_KEY.to_vec(),
         AshInstanceOrigin::SyntheticTestFunding,

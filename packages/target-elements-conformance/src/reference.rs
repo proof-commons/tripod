@@ -53,6 +53,18 @@ pub const FIXTURE_MERKLE_ROOT: [u8; REFERENCE_KEY_BYTES] = [
 /// turn it into an output key, which is the whole content of the
 /// `PinnedOutputKeyUnverifiedAgainstTree` obligation.
 ///
+/// # This is the fixture's pinned program, and a test says so
+///
+/// The fixture bundle pins this exact key as
+/// `vectors::bundle::PINNED_PROGRAM`, stated there as a literal
+/// because that package must not depend on this one — the vectors
+/// package contract §16.2 fixes the direction, and this package
+/// dev-depends on vectors, so the reverse edge would close a cycle.
+/// The literal is therefore kept honest from this side: the
+/// cross-check in the reference-oracle tests recomputes the key here
+/// and asserts equality with the fixture's constant, which is what
+/// makes the fixture pin derived rather than declared.
+///
 /// # What this does NOT discharge
 ///
 /// It does **not** discharge that obligation. Discharging it requires
@@ -73,9 +85,10 @@ pub const FIXTURE_REFERENCE_OUTPUT_KEY: [u8; REFERENCE_KEY_BYTES] = [
 /// A control block carries this bit and an x-only program cannot state
 /// it, so a spend that guesses it wrong fails.
 ///
-/// This is **odd**, and the fixture bundle declares **even**. The
-/// fixture declares a parity rather than deriving one, so its own
-/// control blocks are rejected by the reference verifier for every
-/// leaf. A later wave repairing the pin must take this bit from here
-/// rather than restating a choice.
+/// This is **odd**. An earlier revision of the fixture bundle declared
+/// **even** — a parity it had chosen rather than derived — so its own
+/// control blocks were rejected by the reference verifier for every
+/// leaf while every hash in the path was right. The fixture now carries
+/// this bit as `vectors::bundle::PINNED_PARITY`, and the cross-check
+/// named below asserts the two agree.
 pub const FIXTURE_REFERENCE_OUTPUT_KEY_PARITY_BIT: u8 = 1;
