@@ -36,10 +36,11 @@ use std::num::{NonZeroU64, NonZeroUsize};
 
 use tapscript::upstream::{LifecycleRequirement, RelationCaseKey, ValidatedTargetOperationPlan};
 use tapscript::{
-    BackendArtifactStatus, BundleSymbol, CandidateRelocatableTapscriptBundle, CandidateShapeSet,
-    CompactAshShape, ConcreteLayout, ConcreteRelationPlacement, ConstructorAssumption,
-    ExactTargetProjection, InternalKeyPolicy, KeyPathPolicy, LeafRole, ProgramRole, RelocationSite,
-    ResourceModel, ResourceObligation, StackItem, WitnessRole, fit_shape_model,
+    AshRepresentationSelection, BackendArtifactStatus, BundleSymbol,
+    CandidateRelocatableTapscriptBundle, CandidateShapeSet, CompactAshShape, ConcreteLayout,
+    ConcreteRelationPlacement, ConstructorAssumption, ExactTargetProjection, ExplicitValuePolicy,
+    InternalKeyPolicy, KeyPathPolicy, LeafRole, ProgramRole, RelocationSite, ResourceModel,
+    ResourceObligation, StackItem, WitnessRole, fit_shape_model,
 };
 use target_elements::{
     LeafVersion, ResourceDimension, ReviewedElementsTapscriptDefinition, TargetContractVersion,
@@ -140,6 +141,8 @@ impl OutstandingLinkObligations {
 pub struct LinkedConstructor {
     contract: TargetContractVersion,
     leaf_version: LeafVersion,
+    representation: AshRepresentationSelection,
+    value_policy: ExplicitValuePolicy,
     internal_key: StackItem,
     internal_key_policy: InternalKeyPolicy,
     key_path: KeyPathPolicy,
@@ -157,6 +160,24 @@ impl LinkedConstructor {
     #[must_use]
     pub const fn leaf_version(&self) -> LeafVersion {
         self.leaf_version
+    }
+
+    /// The selected ASH representation.
+    ///
+    /// Carried across rather than recomputed, and carried at all
+    /// because §15.4 requires the transaction ABI to state the explicit
+    /// ASH representation and §1.12 admits one authored source for it.
+    /// A consumer that had to reach past the linked bundle for it would
+    /// be reading the pre-link constructor the link may have changed.
+    #[must_use]
+    pub const fn representation(&self) -> AshRepresentationSelection {
+        self.representation
+    }
+
+    /// The explicit value policy every value field is held to.
+    #[must_use]
+    pub const fn value_policy(&self) -> ExplicitValuePolicy {
+        self.value_policy
     }
 
     /// The resolved unspendable internal key.
@@ -449,6 +470,8 @@ pub fn link_candidate(
         constructor: LinkedConstructor {
             contract: bundle.constructor().contract(),
             leaf_version,
+            representation: bundle.constructor().representation(),
+            value_policy: bundle.constructor().value_policy(),
             internal_key: deployment.internal_key().clone(),
             internal_key_policy: bundle.constructor().internal_key(),
             key_path: bundle.constructor().key_path(),

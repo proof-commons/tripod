@@ -3,6 +3,7 @@
 # audit fails the build. The parent meson.build accumulates this list
 # into its role group.
 linker_source_files = files(
+  'src/backend.rs',
   'src/bundle.rs',
   'src/carrier.rs',
   'src/deployment.rs',

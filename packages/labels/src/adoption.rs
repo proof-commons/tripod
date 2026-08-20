@@ -151,6 +151,7 @@ pub const PACKAGE_OWNERS: &[(&str, &str)] = &[
     ("TAPSCRIPT", "tapscript"),
     ("TARGETELEMENTS", "target-elements"),
     ("TARGETELEMENTSCONFORMANCE", "target-elements-conformance"),
+    ("TRANSACTION", "transaction"),
 ];
 
 /// Derive a package's registered prefix from its directory name, by the

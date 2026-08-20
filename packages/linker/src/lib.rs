@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 #![forbid(unsafe_code)]
 
+pub mod backend;
 pub mod bundle;
 pub mod carrier;
 pub mod deployment;
