@@ -54,10 +54,12 @@ fn the_declared_types_separate_the_thirty_two_byte_symbols() {
 
 #[test]
 fn the_census_splits_by_who_settles_each_symbol() {
-    // Eight resolved at link and fifteen defined by the bundle, and the
+    // Six resolved at link and fifteen defined by the bundle, and the
     // split must agree with the bundle's own symbol table rather than
     // with a list kept here. A symbol the deployment settled while the
-    // table said the bundle would is ambiguous, not a preference.
+    // table said the bundle would is ambiguous, not a preference. The
+    // twenty-second symbol is settled by neither and appears in no
+    // census at all, which is the ASH constructor's program.
     let bundle = relocatable_bundle();
     let target = reviewed_target();
     let census = collect_definitions(
@@ -73,10 +75,10 @@ fn the_census_splits_by_who_settles_each_symbol() {
         census
             .from_origin(DefinitionOrigin::DeploymentParameters)
             .count(),
-        8
+        6
     );
     assert_eq!(census.from_origin(DefinitionOrigin::Bundle).count(), 15);
-    assert_eq!(census.len(), 23);
+    assert_eq!(census.len(), 21);
     assert!(!census.is_empty());
 }
 
@@ -103,7 +105,7 @@ fn an_internal_key_of_the_wrong_width_never_reaches_the_census() {
 
 #[test]
 fn a_symbol_of_the_wrong_width_never_reaches_the_link_at_all() {
-    // The backend's own symbol type checks the widths of the seven
+    // The backend's own symbol type checks the widths of the five
     // program symbols, which is why the linker does not check them
     // again: there is one authored source for that question (§1.12),
     // and a resolution that is not the reviewed width cannot be built
@@ -114,8 +116,6 @@ fn a_symbol_of_the_wrong_width_never_reaches_the_link_at_all() {
             &target,
             vec![0xa1; 31],
             vec![0xa2; 32],
-            vec![0xa3; 20],
-            1,
             vec![0xa4; 32],
             0,
             vec![0xa5; 32],

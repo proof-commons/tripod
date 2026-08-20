@@ -79,8 +79,6 @@ fn placeholder_symbols(target: &ReviewedElementsTapscriptDefinition) -> CompactA
         target,
         vec![0x11; 32],
         vec![0x22; 32],
-        vec![0x33; 32],
-        1,
         vec![0x44; 20],
         0,
         vec![0x55; 32],
@@ -91,16 +89,14 @@ fn placeholder_symbols(target: &ReviewedElementsTapscriptDefinition) -> CompactA
 /// The resolved symbol values of the demonstration link.
 ///
 /// Different from the placeholders in every field, and different in
-/// *width* for the two witness programs, so a link that substituted
-/// nothing and a link that patched bytes in place both fail rather than
-/// pass by coincidence.
+/// *width* for the sponsor-change witness program, so a link that
+/// substituted nothing and a link that patched bytes in place both fail
+/// rather than pass by coincidence.
 fn resolved_symbols(target: &ReviewedElementsTapscriptDefinition) -> CompactAshSymbols {
     CompactAshSymbols::new(
         target,
         vec![0xa1; 32],
         vec![0xa2; 32],
-        vec![0xa3; 20],
-        1,
         vec![0xa4; 32],
         0,
         vec![0xa5; 32],

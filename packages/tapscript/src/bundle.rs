@@ -345,9 +345,15 @@ pub enum BundleSymbol {
     /// The reserve asset every sponsor and fee role carries.
     ReserveAsset,
     /// The ASH constructor's witness program.
+    ///
+    /// Named here and settled nowhere. It is the taproot output over
+    /// the taptree this bundle's own leaves are committed in, so no
+    /// layer this side of a deployed tree can hand over its bytes — and
+    /// no program needs them, because the leaves that compare against
+    /// it read it from the input they are spending. The symbol exists
+    /// so that dependency is visible to the linker's cycle analysis
+    /// rather than invisible for being unwritten.
     AshConstructorProgram,
-    /// The version the ASH constructor's program is read at.
-    AshConstructorProgramVersion,
     /// The sponsor-change role's witness program.
     SponsorChangeProgram,
     /// The version the sponsor-change program is read at.
@@ -383,6 +389,15 @@ pub enum SymbolBinding {
     /// A later layer settles it, which is exactly
     /// [`AbiAssumption::SymbolsResolvedAtLink`].
     ResolvedAtLink,
+    /// No layer settles it: the referring programs read the value from
+    /// the target at spend time.
+    ///
+    /// Not a weaker [`Self::ResolvedAtLink`] but a different claim. A
+    /// symbol bound this way has no link-time value, so there is
+    /// nothing for a deployment to supply, nothing to substitute, and
+    /// no relocation site — and a caller reading the census cannot
+    /// mistake it for a parameter somebody forgot to fill in.
+    ReadFromTargetAtSpendTime,
 }
 
 /// What one symbol occupies wherever it is placed (§13.4).
@@ -592,6 +607,57 @@ impl Relocation {
     #[must_use]
     pub const fn substitution(&self) -> &SubstitutionMode {
         &self.substitution
+    }
+}
+
+/// One leaf's dependency on a symbol it reads from the target.
+///
+/// The counterpart of [`Relocation`] for a value no layer supplies. A
+/// relocation records where a later layer writes bytes in; this records
+/// where the program fetches them itself, and the two are exclusive by
+/// construction — a site cannot both be patched and be introspected.
+///
+/// Recorded rather than inferred, because the dependency is otherwise
+/// invisible. The whole hazard of a self-committing constructor is that
+/// a program which stopped carrying a literal for it looks, to anything
+/// reading relocations alone, like a program that never needed it. The
+/// linker's cycle analysis needs the edge, so the bundle states it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct IntrospectionReference {
+    symbol: BundleSymbol,
+    leaf: LeafRole,
+    role: TargetRole,
+    sites: NonZeroUsize,
+}
+
+impl IntrospectionReference {
+    /// The symbol whose value the program reads.
+    #[must_use]
+    pub const fn symbol(&self) -> BundleSymbol {
+        self.symbol
+    }
+
+    /// The leaf whose program reads it.
+    #[must_use]
+    pub const fn leaf(&self) -> LeafRole {
+        self.leaf
+    }
+
+    /// What the read value is, and which side it is read from.
+    ///
+    /// The side is the read's, not the comparison's. Every read here is
+    /// of the leaf's own input, including the ones whose result is
+    /// compared against an output — the successor's program test reads
+    /// an input and compares an output with it.
+    #[must_use]
+    pub const fn role(&self) -> TargetRole {
+        self.role
+    }
+
+    /// How many places in that program read it.
+    #[must_use]
+    pub const fn sites(&self) -> NonZeroUsize {
+        self.sites
     }
 }
 
@@ -1234,6 +1300,7 @@ pub struct CandidateRelocatableTapscriptBundle {
     symbols: BTreeMap<BundleSymbol, SymbolEntry>,
     unresolved: CompactAshSymbols,
     relocations: BTreeSet<Relocation>,
+    introspections: BTreeSet<IntrospectionReference>,
     formulas: BTreeMap<ProgramRole, BTreeMap<ResourceDimension, ShapeResourceFormula>>,
     outstanding_dimensions: BTreeMap<ResourceDimension, ResourceObligation>,
     patterns: BTreeSet<BackendPatternId>,
@@ -1333,6 +1400,22 @@ impl CandidateRelocatableTapscriptBundle {
         self.relocations
             .iter()
             .filter(move |relocation| relocation.symbol == symbol)
+    }
+
+    /// Every value a program reads from the target, in canonical order.
+    #[must_use]
+    pub const fn introspections(&self) -> &BTreeSet<IntrospectionReference> {
+        &self.introspections
+    }
+
+    /// Every introspection reference to one symbol.
+    pub fn introspections_for(
+        &self,
+        symbol: BundleSymbol,
+    ) -> impl Iterator<Item = &IntrospectionReference> {
+        self.introspections
+            .iter()
+            .filter(move |reference| reference.symbol == symbol)
     }
 
     /// The resource formulas, by program role and dimension.
@@ -1462,6 +1545,7 @@ pub fn emit_candidate_bundle(
     let (leaves, sharing) = leaf_programs(target, &symbols, &shapes)?;
     let layouts = layouts(&shapes)?;
     let relocations = all_relocations(target, &symbols, &shapes, &leaves)?;
+    let introspections = introspection_references(&leaves);
     let symbol_table = symbol_table(target, &symbols, &leaves);
     let placements = relation_placements(plan, &policy)?;
     let formulas = resource_formulas(&leaves, &shapes);
@@ -1493,6 +1577,7 @@ pub fn emit_candidate_bundle(
         symbols: symbol_table,
         unresolved: symbols,
         relocations,
+        introspections,
         formulas,
         outstanding_dimensions: outstanding_dimensions(),
         patterns,
@@ -1769,8 +1854,6 @@ fn census(
 const PROGRAM_SYMBOLS: &[BundleSymbol] = &[
     BundleSymbol::ClosedAsset,
     BundleSymbol::ReserveAsset,
-    BundleSymbol::AshConstructorProgram,
-    BundleSymbol::AshConstructorProgramVersion,
     BundleSymbol::SponsorChangeProgram,
     BundleSymbol::SponsorChangeProgramVersion,
     BundleSymbol::TargetFeeRoleProgramDigest,
@@ -1795,8 +1878,6 @@ fn probe_symbols(
 
     let mut closed = symbols.closed_asset().bytes().to_vec();
     let mut reserve = symbols.reserve_asset().bytes().to_vec();
-    let mut ash = symbols.ash_program().bytes().to_vec();
-    let mut ash_version = symbols.ash_program_version();
     let mut change = symbols.sponsor_change_program().bytes().to_vec();
     let mut change_version = symbols.sponsor_change_version();
     let mut digest = symbols.fee_program_digest().bytes().to_vec();
@@ -1804,25 +1885,14 @@ fn probe_symbols(
     match symbol {
         BundleSymbol::ClosedAsset => closed = flip(symbols.closed_asset()),
         BundleSymbol::ReserveAsset => reserve = flip(symbols.reserve_asset()),
-        BundleSymbol::AshConstructorProgram => ash = flip(symbols.ash_program()),
-        BundleSymbol::AshConstructorProgramVersion => ash_version = other(ash_version),
         BundleSymbol::SponsorChangeProgram => change = flip(symbols.sponsor_change_program()),
         BundleSymbol::SponsorChangeProgramVersion => change_version = other(change_version),
         BundleSymbol::TargetFeeRoleProgramDigest => digest = flip(symbols.fee_program_digest()),
         _ => {}
     }
 
-    CompactAshSymbols::new(
-        target,
-        closed,
-        reserve,
-        ash,
-        ash_version,
-        change,
-        change_version,
-        digest,
-    )
-    .map_err(BundleRefusal::Program)
+    CompactAshSymbols::new(target, closed, reserve, change, change_version, digest)
+        .map_err(BundleRefusal::Program)
 }
 
 /// Every relocation of the bundle: program sites and constructor
@@ -1975,15 +2045,12 @@ fn site_roles(
                 BundleSymbol::ClosedAsset | BundleSymbol::ReserveAsset,
                 Some((side, InspectedField::Asset)),
             ) => TargetRole::AssetComparand { side },
-            (
-                BundleSymbol::AshConstructorProgram | BundleSymbol::SponsorChangeProgram,
-                Some((side, InspectedField::Program)),
-            ) => TargetRole::ProgramComparand { side },
-            (
-                BundleSymbol::AshConstructorProgramVersion
-                | BundleSymbol::SponsorChangeProgramVersion,
-                Some((side, InspectedField::Program)),
-            ) => TargetRole::ProgramVersionComparand { side },
+            (BundleSymbol::SponsorChangeProgram, Some((side, InspectedField::Program))) => {
+                TargetRole::ProgramComparand { side }
+            }
+            (BundleSymbol::SponsorChangeProgramVersion, Some((side, InspectedField::Program))) => {
+                TargetRole::ProgramVersionComparand { side }
+            }
             (
                 BundleSymbol::TargetFeeRoleProgramDigest,
                 Some((FieldSide::Output, InspectedField::Program)),
@@ -2000,6 +2067,51 @@ fn site_roles(
     }
 
     Ok(roles)
+}
+
+/// Every place a leaf reads the ASH constructor's program from the
+/// target instead of carrying a literal for it.
+///
+/// Read from the emitted instructions, on the same principle as
+/// [`site_roles`]: the census is what the programs do, never a claim
+/// made beside them. The idiom is exact — this leaf's own input index,
+/// then that input's witness program — and nothing else in the
+/// candidate emits it, so counting occurrences counts the reads.
+fn introspection_references(
+    leaves: &BTreeMap<LeafRole, LeafProgram>,
+) -> BTreeSet<IntrospectionReference> {
+    let mut references = BTreeSet::new();
+
+    for (role, leaf) in leaves {
+        let sites = leaf
+            .program
+            .instructions()
+            .windows(2)
+            .filter(|pair| {
+                matches!(
+                    (&pair[0], &pair[1]),
+                    (
+                        TapscriptInstruction::Opcode(OpcodeId::PushCurrentInputIndex),
+                        TapscriptInstruction::Opcode(OpcodeId::InspectInputScriptPubKey),
+                    )
+                )
+            })
+            .count();
+        let Some(sites) = NonZeroUsize::new(sites) else {
+            continue;
+        };
+
+        references.insert(IntrospectionReference {
+            symbol: BundleSymbol::AshConstructorProgram,
+            leaf: *role,
+            role: TargetRole::ProgramComparand {
+                side: FieldSide::Input,
+            },
+            sites,
+        });
+    }
+
+    references
 }
 
 /// The relocations of the symbols no program pushes.
@@ -2072,9 +2184,7 @@ const fn symbol_class(symbol: BundleSymbol) -> Option<EncodingClass> {
             EncodingClass::WitnessProgram
         }
         BundleSymbol::TargetFeeRoleProgramDigest => EncodingClass::ScriptPubKeySha256,
-        BundleSymbol::AshConstructorProgramVersion | BundleSymbol::SponsorChangeProgramVersion => {
-            EncodingClass::ScriptNumber
-        }
+        BundleSymbol::SponsorChangeProgramVersion => EncodingClass::ScriptNumber,
         BundleSymbol::UnspendableInternalKey => EncodingClass::XOnlyPublicKey,
         _ => return None,
     })
@@ -2106,19 +2216,18 @@ fn symbol_width(
     let bytes = match symbol {
         BundleSymbol::ClosedAsset => laid_out(symbols.closed_asset()),
         BundleSymbol::ReserveAsset => laid_out(symbols.reserve_asset()),
-        BundleSymbol::AshConstructorProgram => laid_out(symbols.ash_program()),
         BundleSymbol::SponsorChangeProgram => laid_out(symbols.sponsor_change_program()),
         BundleSymbol::TargetFeeRoleProgramDigest => laid_out(symbols.fee_program_digest()),
-        BundleSymbol::AshConstructorProgramVersion => {
-            StackItem::script_number(target, symbols.ash_program_version())
-                .map_or(0, |item| item.len())
-        }
         BundleSymbol::SponsorChangeProgramVersion => {
             StackItem::script_number(target, symbols.sponsor_change_version())
                 .map_or(0, |item| item.len())
         }
         BundleSymbol::UnspendableInternalKey | BundleSymbol::TargetLeafVersion => 0,
-        BundleSymbol::CandidateAshBound
+        // The ASH constructor's program has no link-time value at all,
+        // so there is no laid-out width to read and no field of this
+        // bundle it occupies.
+        BundleSymbol::AshConstructorProgram
+        | BundleSymbol::CandidateAshBound
         | BundleSymbol::CandidateSponsorBound
         | BundleSymbol::CoordinatorProgram { .. }
         | BundleSymbol::MemberProgram { .. } => return SymbolWidth::Unserialized,
@@ -2188,6 +2297,11 @@ fn symbol_table(
             symbol_width(target, symbols, symbol),
         );
     }
+    admit(
+        BundleSymbol::AshConstructorProgram,
+        SymbolBinding::ReadFromTargetAtSpendTime,
+        symbol_width(target, symbols, BundleSymbol::AshConstructorProgram),
+    );
     for (leaf, program) in leaves {
         let symbol = match leaf {
             LeafRole::Coordinator { shape } => BundleSymbol::CoordinatorProgram { shape: *shape },

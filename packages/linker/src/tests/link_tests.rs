@@ -10,22 +10,33 @@
 //! is that the *mechanism* resolves, substitutes, commits, and closes
 //! correctly, not that any particular deployment exists.
 //!
-//! # The headline result of this wave is a refusal
+//! # The self-commitment, and how it is resolved
 //!
-//! With no self-commitment strategy stated — the honest default — the
-//! demonstration bundle does not link. The ASH constructor's witness
-//! program is the taproot output committing to the taptree over the
-//! twelve leaves, and those leaves push that program as a link-time
-//! literal, so the symbol's value is a function of itself. §14.4 calls
-//! that an impossible static fixed point, prohibits searching for it by
-//! repeated hashing, and requires an explicit authenticated strategy.
-//! Both the refusal and the sound alternative's refusal are asserted
-//! below, because both are findings rather than accidents.
+//! The ASH constructor's witness program is the taproot output
+//! committing to the taptree over the twelve leaves, and the leaves
+//! depend on that program: the coordinator's recognition fragments
+//! compare other positions against it. The dependency is a cycle
+//! whichever way it is discharged, and §14.4 requires an explicit
+//! authenticated strategy for it rather than a silent choice.
+//!
+//! The coordinator leaves read the program from the input they are
+//! spending instead of carrying a literal for it, which is what makes
+//! [`SelfCommitmentStrategy::IdentityIntrospection`] a resolution
+//! rather than a claim: there is no literal to be wrong, and no value
+//! for a deployment to supply. That strategy links, and the link is
+//! asserted below. With no strategy stated the same cycle is still
+//! there and still unclassified, so the honest default still refuses —
+//! that refusal is asserted too, because a resolution nobody could
+//! have skipped is not much of a resolution.
 
 use std::collections::BTreeSet;
+use std::num::NonZeroUsize;
 
-use tapscript::{BundleSymbol, LeafRole, ProgramRole, ResourceModel};
-use target_elements::ResourceDimension;
+use tapscript::{
+    BundleSymbol, FieldSide, LeafRole, ProgramRole, Relocation, RelocationEncoding, RelocationSite,
+    ResourceModel, StackItem, SymbolWidth, TargetRole,
+};
+use target_elements::{EncodingClass, ResourceDimension};
 
 use crate::tests::{deployment, relocatable_bundle, reviewed_target};
 use crate::{
@@ -33,8 +44,23 @@ use crate::{
     SelfCommitmentStrategy, link_candidate,
 };
 
-/// The demonstration linked bundle, under the one strategy that links.
+/// The demonstration linked bundle, under the sound strategy.
 fn linked() -> CandidateLinkedBundle {
+    let target = reviewed_target();
+    link_candidate(
+        &target,
+        &relocatable_bundle(),
+        &deployment(&target, SelfCommitmentStrategy::IdentityIntrospection),
+    )
+    .expect("the demonstration link completes under identity introspection")
+}
+
+/// The same link under the strategy that cuts the cycle by authority.
+///
+/// Kept as a second fixture rather than as the main one: it still
+/// links, and what it carries that the sound link does not is the
+/// undischarged equality obligation.
+fn authenticated() -> CandidateLinkedBundle {
     let target = reviewed_target();
     link_candidate(
         &target,
@@ -71,31 +97,83 @@ fn an_unstated_strategy_refuses_the_self_referential_constructor() {
 }
 
 #[test]
-fn the_sound_strategy_is_refused_because_the_leaves_still_push_a_literal() {
-    // The strategy that would actually resolve the cycle is for the
-    // referring programs to read the identity from the target at spend
-    // time instead of carrying a literal. Declaring it does not make it
-    // true, and the linker checks rather than believes: the emitted
-    // leaves do push the literal, so the declaration is contradicted
-    // and named against the leaf that contradicts it.
-    //
-    // That is a finding about the backend, not about this linker. Until
-    // the recognition fragments introspect the spending input's own
-    // program, no link of this bundle can be both sound and complete.
-    let target = reviewed_target();
-    let refusal = link_candidate(
-        &target,
-        &relocatable_bundle(),
-        &deployment(&target, SelfCommitmentStrategy::IdentityIntrospection),
-    )
-    .expect_err("the emitted leaves contradict an introspection strategy");
+fn the_sound_strategy_links_and_owes_no_equality() {
+    // The resolution. The referring programs read the identity from the
+    // input they are spending, so there is no literal to contradict the
+    // declaration and no supplied value whose equality with the tree
+    // would have to be taken on trust. The link completes, and the
+    // obligation the authenticated strategy carries is absent here —
+    // which is the difference between cutting the cycle and cutting it
+    // soundly.
+    let bundle = linked();
 
-    match refusal {
-        LinkRefusal::CycleStrategyContradictedByRelocation { symbol, .. } => {
-            assert_eq!(symbol, BundleSymbol::AshConstructorProgram);
-        }
-        other => panic!("expected a contradicted strategy, got {other:?}"),
-    }
+    assert_eq!(
+        bundle.self_commitment(),
+        SelfCommitmentStrategy::IdentityIntrospection
+    );
+    let obligations = bundle.outstanding_obligations();
+    assert_eq!(obligations.count().get(), 2);
+    assert!(!obligations.holds(LinkObligation::SelfCommitmentEqualityUndischarged));
+    assert!(obligations.holds(LinkObligation::TaprootOutputKeyUndischarged));
+    assert!(obligations.holds(LinkObligation::InternalKeyUnspendabilityUnverified));
+}
+
+#[test]
+fn a_literal_reaching_a_leaf_still_contradicts_the_introspection_strategy() {
+    // The check that made the old design's refusal, kept live against a
+    // relocation set stated here rather than emitted. The bundles this
+    // crate links no longer place the ASH program into a program at
+    // all, so without this the refusal would be unreachable code that
+    // only reasoning defends.
+    let target = reviewed_target();
+    let placeholder = StackItem::new(&target, vec![0x00; 32]).expect("a literal within the bound");
+    let leaf = LeafRole::Member { ash_inputs: 2 };
+    let relocation = Relocation::byte_patch(
+        BundleSymbol::AshConstructorProgram,
+        TargetRole::ProgramComparand {
+            side: FieldSide::Input,
+        },
+        RelocationSite::ProgramInstructions {
+            leaf,
+            indices: BTreeSet::from([7]),
+        },
+        SymbolWidth::Fixed { bytes: 32 },
+        RelocationEncoding::EncodedPayload {
+            class: EncodingClass::WitnessProgram,
+        },
+        NonZeroUsize::MIN,
+        placeholder,
+    )
+    .expect("a fixed width with a matching placeholder is admissible");
+
+    assert_eq!(
+        crate::bundle::no_literal_reaches_a_leaf(std::iter::once(&relocation)),
+        Err(LinkRefusal::CycleStrategyContradictedByRelocation {
+            symbol: BundleSymbol::AshConstructorProgram,
+            leaf,
+        }),
+    );
+
+    // And a relocation that binds the constructor rather than a program
+    // is not a contradiction, so the check is discriminating.
+    let binding = Relocation::byte_patch(
+        BundleSymbol::AshConstructorProgram,
+        TargetRole::ProgramComparand {
+            side: FieldSide::Input,
+        },
+        RelocationSite::ConstructorBinding,
+        SymbolWidth::Fixed { bytes: 32 },
+        RelocationEncoding::EncodedPayload {
+            class: EncodingClass::WitnessProgram,
+        },
+        NonZeroUsize::MIN,
+        StackItem::new(&target, vec![0x00; 32]).expect("a literal within the bound"),
+    )
+    .expect("a fixed width with a matching placeholder is admissible");
+    assert_eq!(
+        crate::bundle::no_literal_reaches_a_leaf(std::iter::once(&binding)),
+        Ok(()),
+    );
 }
 
 #[test]
@@ -106,7 +184,7 @@ fn the_authenticated_link_carries_its_undischarged_equality_structurally() {
     // sentence: a bundle linked this way cannot be read as one whose
     // commitment was checked, because the obligation set is non-empty
     // by type and this member of it is present by construction.
-    let bundle = linked();
+    let bundle = authenticated();
     let obligations = bundle.outstanding_obligations();
 
     assert_eq!(obligations.count().get(), 3);
@@ -130,25 +208,29 @@ fn the_linked_bundle_is_a_candidate_and_has_no_way_to_say_otherwise() {
 
     assert_eq!(bundle.status(), LinkedArtifactStatus::Prototype);
     assert_eq!(bundle.outstanding_lifecycle().len(), 1);
-    assert_eq!(bundle.unresolved_target_evidence().len(), 12);
+    assert_eq!(bundle.unresolved_target_evidence().len(), 13);
 }
 
 #[test]
 fn every_symbol_the_bundle_declared_is_defined_exactly_once() {
     // The definition census against the bundle's own symbol table: the
-    // same keys, no more and no fewer. Eight symbols the deployment
-    // settles and fifteen the bundle does, which is the eleven scalars
-    // plus the twelve leaf scripts less the eight — written out so a
-    // symbol that quietly changed sides fails here.
+    // same keys but one, and the one exception is the point. Six
+    // symbols the deployment settles and fifteen the bundle does, out
+    // of a table of twenty-two — the ASH constructor's program is
+    // declared and defined by nobody, because no layer can settle it.
+    // Written out so a symbol that quietly changed sides fails here.
     let bundle = linked();
     let relocatable = relocatable_bundle();
 
-    assert_eq!(bundle.definitions().len(), 23);
-    assert_eq!(relocatable.symbols().len(), 23);
+    assert_eq!(relocatable.symbols().len(), 22);
+    assert_eq!(bundle.definitions().len(), 21);
     let defined: BTreeSet<BundleSymbol> =
         bundle.definitions().definitions().keys().copied().collect();
     let declared: BTreeSet<BundleSymbol> = relocatable.symbols().keys().copied().collect();
-    assert_eq!(defined, declared);
+    assert_eq!(
+        declared.difference(&defined).copied().collect::<Vec<_>>(),
+        vec![BundleSymbol::AshConstructorProgram],
+    );
 
     let from_deployment: BTreeSet<BundleSymbol> = bundle
         .definitions()
@@ -159,8 +241,6 @@ fn every_symbol_the_bundle_declared_is_defined_exactly_once() {
         BTreeSet::from([
             BundleSymbol::ClosedAsset,
             BundleSymbol::ReserveAsset,
-            BundleSymbol::AshConstructorProgram,
-            BundleSymbol::AshConstructorProgramVersion,
             BundleSymbol::SponsorChangeProgram,
             BundleSymbol::SponsorChangeProgramVersion,
             BundleSymbol::TargetFeeRoleProgramDigest,
@@ -246,19 +326,23 @@ fn the_linked_script_bytes_are_the_pre_link_ones_moved_by_the_resolved_widths() 
         )
         .expect("a small figure fits");
 
-        let ash = pushes(*leaf, BundleSymbol::AshConstructorProgram);
+        // One symbol's resolution changes width: the sponsor-change
+        // program goes from a twenty byte placeholder to a thirty-two
+        // byte resolution. Nothing else moves, and the ASH constructor
+        // program moves nothing at all because no leaf carries it.
+        assert_eq!(pushes(*leaf, BundleSymbol::AshConstructorProgram), 0);
         let change = pushes(*leaf, BundleSymbol::SponsorChangeProgram);
         assert_eq!(
             after - before,
-            12 * (change - ash),
+            12 * change,
             "leaf {leaf:?} moved by an amount the resolved widths do not explain",
         );
     }
 
     // And the totals, written out, so a leaf that changed without its
     // neighbours noticing fails here too.
-    assert_eq!(relocatable.total_script_bytes(), 5169);
-    assert_eq!(bundle.total_script_bytes(), 4737);
+    assert_eq!(relocatable.total_script_bytes(), 3939);
+    assert_eq!(bundle.total_script_bytes(), 3975);
 }
 
 #[test]
@@ -305,9 +389,15 @@ fn the_resource_formulas_are_refitted_and_predict_every_linked_measurement() {
 fn the_reference_graph_holds_exactly_one_cycle_and_it_is_the_self_commitment() {
     // §14.4 asks the linker to find components, not to assume there are
     // none. There is one, it contains the ASH constructor program and
-    // the constructor node, and every leaf-script symbol is in it —
-    // which is precisely the statement that the leaves commit to the
-    // program that commits to the leaves.
+    // the constructor node, and every *coordinator* leaf is in it —
+    // which is precisely the statement that those leaves depend on the
+    // program that commits to them.
+    //
+    // Member leaves are outside it, and that is a result rather than a
+    // gap. A member leaf compares nothing against the constructor: it
+    // has only its own input in view, so the only test it could make
+    // would compare that input with itself. Nothing points from a
+    // member back to the program, so no loop runs through one.
     let bundle = linked();
     let graph = bundle.reference_graph();
 
@@ -319,11 +409,13 @@ fn the_reference_graph_holds_exactly_one_cycle_and_it_is_the_self_commitment() {
     assert!(cycle.members().contains(&crate::ReferenceNode::Constructor));
 
     for leaf in bundle.programs().keys() {
-        assert!(
-            cycle
-                .members()
-                .contains(&crate::ReferenceNode::Symbol(crate::leaf_symbol(*leaf))),
-            "leaf {leaf:?} is outside the component it is committed by",
+        let inside = cycle
+            .members()
+            .contains(&crate::ReferenceNode::Symbol(crate::leaf_symbol(*leaf)));
+        assert_eq!(
+            inside,
+            matches!(leaf, LeafRole::Coordinator { .. }),
+            "leaf {leaf:?} is on the wrong side of the component",
         );
     }
 }

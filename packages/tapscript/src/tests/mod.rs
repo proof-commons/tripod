@@ -85,8 +85,6 @@ fn pattern_symbols(
         target,
         vec![0x11; 32],
         vec![0x22; 32],
-        vec![0x33; 32],
-        1,
         vec![0x44; 20],
         0,
         vec![0x55; 32],

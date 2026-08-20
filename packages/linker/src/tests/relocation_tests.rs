@@ -69,7 +69,6 @@ fn every_resolved_value_appears_at_exactly_the_recorded_sites() {
         Some(match symbol {
             BundleSymbol::ClosedAsset => resolved.closed_asset().clone(),
             BundleSymbol::ReserveAsset => resolved.reserve_asset().clone(),
-            BundleSymbol::AshConstructorProgram => resolved.ash_program().clone(),
             BundleSymbol::SponsorChangeProgram => resolved.sponsor_change_program().clone(),
             BundleSymbol::TargetFeeRoleProgramDigest => resolved.fee_program_digest().clone(),
             _ => return None,
@@ -96,12 +95,26 @@ fn every_resolved_value_appears_at_exactly_the_recorded_sites() {
         }
     }
 
-    // The bundle records one hundred and three relocations across
-    // program sites and constructor bindings; the wide byte-string
-    // symbols checked here account for the sites below, and a census
-    // that shrank would mean a relocation stopped being recorded.
+    // The bundle records sixty-one relocations across program sites and
+    // constructor bindings; the wide byte-string symbols checked here
+    // account for the sites below, and a census that shrank would mean
+    // a relocation stopped being recorded. The ASH constructor's
+    // program is not among them and cannot be: the leaves read it from
+    // the target, so it has an introspection reference instead.
     assert!(checked > 0);
-    assert_eq!(bundle.relocations().len(), 103);
+    assert_eq!(bundle.relocations().len(), 61);
+    assert_eq!(
+        bundle
+            .relocations_for(BundleSymbol::AshConstructorProgram)
+            .count(),
+        0
+    );
+    assert_eq!(
+        bundle
+            .introspections_for(BundleSymbol::AshConstructorProgram)
+            .count(),
+        9
+    );
 }
 
 #[test]

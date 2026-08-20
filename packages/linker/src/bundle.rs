@@ -507,10 +507,22 @@ fn check_strategy_consistency(
         return Ok(());
     }
 
-    for relocation in bundle.relocations_for(BundleSymbol::AshConstructorProgram) {
+    no_literal_reaches_a_leaf(bundle.relocations_for(BundleSymbol::AshConstructorProgram))
+}
+
+/// Refuse if any of these relocations writes the symbol into a program.
+///
+/// Split from its caller so the refusal is reachable from a relocation
+/// set stated directly. The bundles this crate links no longer emit
+/// such a site, and a check whose failing branch could only be reasoned
+/// about is a check nobody has run.
+pub(crate) fn no_literal_reaches_a_leaf<'relocations>(
+    relocations: impl Iterator<Item = &'relocations tapscript::Relocation>,
+) -> Result<(), LinkRefusal> {
+    for relocation in relocations {
         if let RelocationSite::ProgramInstructions { leaf, .. } = relocation.site() {
             return Err(LinkRefusal::CycleStrategyContradictedByRelocation {
-                symbol: BundleSymbol::AshConstructorProgram,
+                symbol: relocation.symbol(),
                 leaf: *leaf,
             });
         }
