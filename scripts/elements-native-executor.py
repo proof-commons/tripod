@@ -369,6 +369,7 @@ Measured against `v28.99.0-6f43e3ffe730`.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
 import json
 import os
@@ -418,6 +419,36 @@ NUMS_INTERNAL_KEY_HEX = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9
 # The anyone-can-spend program the disposable chain's free coins sit behind,
 # and which this adapter reuses for its own change and block rewards.
 ANYONE_CAN_SPEND_HEX = "51"
+
+# The witness-carrying form of that same program: a version-0 witness
+# script hash committing to it.
+#
+# # Why an issuance cannot be funded from the bare program
+#
+# The target only checks an issuance when the transaction carries a
+# witness section. `VerifyAmounts` returns false outright when the
+# issuing input has no witness entry -- `src/confidential_validation.cpp`,
+# the `i >= tx.witness.vtxinwit.size()` guard ahead of the issuance's
+# `VerifyIssuanceAmount` call -- so the issued asset's pseudo-input is
+# never added to the input side of the balance at all. The caller sees
+# that as `bad-txns-in-ne-out` from `Consensus::CheckTxInputs`, on a
+# transaction whose explicit amounts balance in every asset.
+#
+# The section cannot simply be added empty: the target refuses to encode
+# a witness whose every entry is empty (`Superfluous witness record`),
+# an explicit issuance may not carry a range proof, and an explicit
+# output may not carry a range or surjection proof. The only field left
+# that may be filled is a spending input's witness stack, which the bare
+# program never has. So the coin that funds the issuance is paid to this
+# program instead, and the issuing input spends it by naming the
+# committed program on its stack (T4-012).
+ANYONE_CAN_SPEND_WITNESS_HEX = "0020" + hashlib.sha256(
+    bytes.fromhex(ANYONE_CAN_SPEND_HEX)
+).hexdigest()
+
+# The stack that spends it: the committed program, and nothing else. No
+# key, seed, or signature is involved `(ADR-015 rule test-material)`.
+ANYONE_CAN_SPEND_WITNESS_STACK = (bytes.fromhex(ANYONE_CAN_SPEND_HEX),)
 
 # Explicit-amount prefix for an Elements asset, value, or nonce field.
 EXPLICIT_PREFIX = 0x01
@@ -1456,6 +1487,7 @@ class CaseExecutor:
         self.script = script
         self.internal_key = bytes.fromhex(NUMS_INTERNAL_KEY_HEX)
         self.anyone_can_spend = bytes.fromhex(ANYONE_CAN_SPEND_HEX)
+        self.anyone_can_spend_witness = bytes.fromhex(ANYONE_CAN_SPEND_WITNESS_HEX)
         self.change = None
         self.policy_asset_field = None
         self.mining_descriptor = None
@@ -2291,6 +2323,13 @@ class OperationExecutor:
         The parked output sits at the same anyone-can-spend program the
         free coin did. It is not hidden, reserved, or owned: it is public
         chain data any party could spend, and this lane simply does not.
+
+        The working output sits at the witness-carrying form of that same
+        program instead, because the issuance that spends it is only
+        checked at all if its input can carry a witness stack -- see
+        `ANYONE_CAN_SPEND_WITNESS_HEX`. It is anyone-can-spend on the
+        same terms: the stack that spends it is the program itself, which
+        is a published constant and nobody's secret.
         """
         if self.prepared:
             return
@@ -2323,7 +2362,9 @@ class OperationExecutor:
                 nSequence=0xFFFFFFFE,
             )
         )
-        transaction.vout.append(executor.output(working, executor.anyone_can_spend))
+        transaction.vout.append(
+            executor.output(working, executor.anyone_can_spend_witness)
+        )
         transaction.vout.append(executor.output(parked, executor.anyone_can_spend))
         transaction.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
         txid = self.mine(transaction, "free-coin split")
@@ -2480,6 +2521,16 @@ class OperationExecutor:
         issued.vout.append(executor.output(remainder, executor.anyone_can_spend))
         issued.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
 
+        # The issuing input names the program its funding coin commits
+        # to. That stack is what spends the coin, and it is also the only
+        # thing that gives this transaction a witness section -- without
+        # one the target never checks the issuance and reports the
+        # balanced transaction as `bad-txns-in-ne-out` (T4-012).
+        issued.wit.vtxinwit = [messages.CTxInWitness() for _ in issued.vin]
+        issued.wit.vtxinwit[0].scriptWitness.stack = list(
+            ANYONE_CAN_SPEND_WITNESS_STACK
+        )
+
         txid = self.mine(issued, "issuance")
         reserve_index = subject["outputs"]
         self.reserves[printed] = {
@@ -2516,8 +2567,14 @@ class OperationExecutor:
 
         wanted = subject["amount_per_output"] * subject["outputs"]
         if wanted > reserve["amount"]:
+            # Named in satoshis, because whether this is a fixture asking
+            # for more than the target's money bound or a run that simply
+            # issued too little is the whole question, and a message that
+            # states neither amount cannot tell the two apart.
             raise AdapterError(
-                "the step asks for more of the asset than this run holds"
+                "the step asks for more of the asset than this run holds: "
+                "wanted %d, reserve holds %d, this run issued %d"
+                % (wanted, reserve["amount"], ISSUED_ASSET_UNITS * 100_000_000)
             )
         remainder = source["amount"] - ADAPTER_FEE_SATOSHIS
         if remainder < 0:
