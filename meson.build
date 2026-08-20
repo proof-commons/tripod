@@ -616,7 +616,11 @@ cargo_clippy_stamp = custom_target(
 
 # Budget: 0:20 warm, tolerance 6:00 cold. The stamp target compiles the whole
 # workspace with all targets on a cold cache; warm it is a cargo freshness
-# check. Both figures are the same lane, and the spread is the cache.
+# check. Both figures are the same lane, and the spread is the cache. The
+# test() itself only probes the stamp, so its reported duration is the probe
+# (0:00.2 measured) and the compile is attributed to the build phase -- which
+# is where it belongs, and is why this lane's budget is not read off the test
+# report alone.
 test(
   'cargo-clippy',
   sh,
@@ -764,11 +768,17 @@ endforeach
 # left at its default: the measurement behind the value is directly
 # above.
 #
-# Budget (CI-005): the debug suite 5:00, tolerance 8:00; the release
-# suite 10:30, tolerance 15:00. Per lane the spread is wide and
-# deliberate -- target-elements-conformance owns roughly a fifth of the
-# debug suite by itself -- so the budget is stated per suite, which is
-# the unit a cadence decision actually chooses.
+# Budget (CI-005), stated per suite, which is the unit a cadence
+# decision actually chooses. Per lane the spread is too wide to budget:
+# target-elements-conformance owns roughly a sixth of the debug suite by
+# itself. Warm cache, sixteen lanes: debug 5:00, tolerance 8:00; release
+# 10:30, tolerance 15:00. Cold cache, measured 2026-08-20 on the 14-core
+# reference host: debug 15:45, release 30:30, tolerance 1.5x each.
+#
+# The cold and warm figures differ by 3x, so a run that does not say
+# which cache it had has not reported its duration. The release suite is
+# the whole gate's cost -- 30:30 of a 33:20 test phase -- and most of it
+# is the doctest queueing described above rather than test execution.
 cargo_test_stream_root = meson.project_build_root() / 'cargo-test-json'
 
 foreach profile : ['debug', 'release']
@@ -983,9 +993,12 @@ meson_mock_test = find_program('scripts/test-meson-mock.sh')
 # CI_REQUIRE_MESON=1 to make a skip fatal. Both are now moot -- a meson test
 # cannot run without meson -- so the lane is unconditional, which is the
 # stronger of the two behaviours the toggle chose between.
-# Budget: 2:15, tolerance 4:00 (measured 2:11). It configures a Meson build,
-# syncs the helper binaries through cargo, and runs the repair, restat, and
-# render-failure regressions.
+# Budget: 0:15 warm, tolerance 0:45; 2:15 cold, tolerance 4:00. Both measured
+# 2026-08-20 (0:09.8 and 2:11.3). The spread is the helper binaries: it syncs
+# them through cargo, which is instant against a warm target directory and a
+# full release build against a cold one. Its own work -- configuring a Meson
+# build and running the repair, restat, and render-failure regressions -- is
+# the warm figure.
 test(
   'meson-mock-contract',
   meson_mock_test,
