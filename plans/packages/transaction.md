@@ -1,6 +1,6 @@
 # Transaction and Witness ABI · `pkg:transaction:contract`
 
-> **Status:** Planned
+> **Status:** Candidate — Guide-12 §15 compact-ASH ABI delivered
 > **Phase:** [Phase 4](../phases/04-compact-ash.md) onward
 > **Package:** `tripod-transaction`
 > **Library:** `transaction`
@@ -312,9 +312,42 @@ See [`errors/transaction.md`](errors/transaction.md).
 
 ## Open questions · `sec:transaction:open`
 
+Three of these are settled for the compact-ASH candidate and are recorded
+rather than deleted, because each was settled for one operation and not in
+general.
+
 - Which Rust Elements library owns transaction, sighash, and CT proof types?
+  Settled for the candidate: none. The reviewed substrate decision selected
+  first-party explicit-field structures, and this package owns the encoder,
+  the decoder, the script-path witness assembly, and the canonical role
+  layout. Blinding, signing digests, and issuance stay delegated, and each is
+  a recorded trigger that would reopen the decision.
 - How are linked layout types finalized without a linker/transaction cycle?
-- Does construction evaluate realization expressions directly or use linked recipes?
+  Settled: the linker re-exports the backend types its own accessors return,
+  so this package names them through the linker rather than depending on the
+  backend, and the dependency stays one-way.
+- Does construction evaluate realization expressions directly or use linked
+  recipes? Settled for compact ASH: linked recipes only. No `realization`
+  dependency was added.
 - What signer-capability interface supports hardware and remote signers?
 - Where does fee-market policy end and ABI-valid sponsor construction begin?
+  The candidate puts the fee amount on the sponsor's side of the boundary: a
+  signing capability declares what it is paying, and the ABI states only the
+  fee *role*.
 - Which package owns trusted-setup or genesis transaction construction?
+
+## Candidate residuals · `rem:transaction:candidate-residuals`
+
+The taproot output key is pinned rather than recomputed. The merkle root and
+every control-path element are computed here, because the witness is made of
+them; the tweak that would turn that root and the internal key into an output
+key is not, and the equality between the pinned program and the committed tree
+is carried as an outstanding obligation. The arithmetic that would discharge it
+belongs to the independent host oracle this package's output is compared
+against, and a builder that called that oracle would be counting one opinion
+twice.
+
+Sponsor change goes to a program the deployment fixes rather than to a
+destination a sponsor picks, because the emitted coordinator compares that
+output's program against a deployment constant. A destination that differs is
+refused rather than honoured.

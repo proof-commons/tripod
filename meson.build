@@ -653,11 +653,13 @@ cargo_test_packages = [
   ['execwrap', 'execwrap'],
   ['flatten-latex-main', 'flatten-latex-main'],
   ['labels', 'tripod-labels'],
+  ['linker', 'tripod-linker'],
   ['model', 'tripod-model'],
   ['realization', 'tripod-realization'],
   ['tapscript', 'tripod-tapscript'],
   ['target-elements', 'tripod-target-elements'],
   ['target-elements-conformance', 'tripod-target-elements-conformance'],
+  ['transaction', 'tripod-transaction'],
 ]
 
 cargo_test_lane_dirs = []

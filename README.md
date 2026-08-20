@@ -32,6 +32,14 @@ A compiler is proved by what it compiles. This tree therefore carries, beside th
   fixtures and records what that executor answered. Development native
   evidence is produced and recorded here, separately from the static
   contract; a mock executor can never satisfy its gate.
+- `packages/linker/` - Resolves the backend's relocatable bundle into a
+  deterministic candidate linked bundle: symbol resolution, the typed
+  reference graph and its cycle policy, structured relocation, taptree
+  assembly, and relation-carrier closure.
+- `packages/transaction/` - Derives the candidate compact-ASH transaction ABI
+  from a linked bundle and constructs exact target transaction bytes from it.
+  It holds no key, signs nothing, and performs no network submission: a
+  sponsor signs through an external capability adapter.
 - `packages/artifacts/` - Generator/checker for the generated derivative artifacts.
 - `packages/labels/` - Repository-wide documentation-label registries and checks.
 - `adr/` - Architecture decision records for the repository tooling.

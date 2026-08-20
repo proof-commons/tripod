@@ -35,3 +35,6 @@ pub use taproot::{
     commit_tree, leaf_hash, tagged_hash, witness_program_script,
 };
 pub use view::{PublicConstructionView, PublicOutputView};
+
+#[cfg(test)]
+mod tests;
