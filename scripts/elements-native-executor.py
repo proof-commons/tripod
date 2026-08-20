@@ -2467,8 +2467,18 @@ class OperationExecutor:
         # asked for at its own program, a reserve this adapter retains so
         # later steps have something of the asset to spend, and the
         # policy change and fee the base transaction already carried.
+        log(
+            "unmodified issuance acceptance: %s"
+            % json.dumps(
+                node.call("testmempoolaccept", json.dumps([issuance["hex"]]))
+            )
+        )
         issued = messages.CTransaction()
         issued.deserialize(io.BytesIO(bytes.fromhex(issuance["hex"])))
+        log(
+            "round trip equal: %s"
+            % (issued.serialize().hex() == issuance["hex"])
+        )
         field = self.asset_field(printed)
         total = ISSUED_ASSET_UNITS * 100_000_000
         wanted = subject["amount_per_output"] * subject["outputs"]
