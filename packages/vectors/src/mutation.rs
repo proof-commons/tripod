@@ -122,10 +122,11 @@ pub enum NegativeMutation {
     RouteUnitIntoUndeclaredOutput,
     /// Change one input's sequence field.
     ///
-    /// Staged but never submitted: the class's boundary is the
-    /// constructor's, and the target has no rule to refuse a changed
-    /// sequence by. Kept as an arm because the bytes are what a
-    /// first-party conformance check would be handed.
+    /// A run records this arm without building it, because the class's
+    /// boundary is the constructor's and the target has no rule to
+    /// refuse a changed sequence by. It remains an arm because
+    /// [`apply`] still builds the bytes on demand, which is what a
+    /// first-party conformance check over the ABI would be handed.
     ChangeInputSequence,
     /// Change the transaction version.
     ChangeTransactionVersion,
