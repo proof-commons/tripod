@@ -431,12 +431,28 @@ ADAPTER_FEE_SATOSHIS = 1_000
 # How many whole units the Guide-12 section 16.2 funding ceremony issues
 # its disposable asset in.
 #
-# The target's own money bound, so that a funding step asking for more
-# than the target admits is refused by the target rather than by an
-# adapter-chosen ceiling that would look like the same thing. The
-# issuance is a single transaction on a disposable chain and the units
-# authorize nothing `(ADR-015 rule test-material)`.
-ISSUED_ASSET_UNITS = 21_000_000
+# One percent of the target's own money bound. The bound itself was the
+# first choice and the target refused it: a transaction's outputs may not
+# total more than the bound, and the chain's free coin already holds the
+# whole of it, so an issuance of the full supply cannot share a
+# transaction with the coin that pays its fee. `prepare` parks all but a
+# working slice of that coin for the same reason.
+#
+# A hundredth of the bound is far above every amount the sponsorless
+# fixture census asks for except one, and that one asks for more than the
+# bound itself -- which is a fact about the fixture and is left to be
+# refused by the target rather than papered over by issuing more.
+#
+# The issuance is a single transaction on a disposable chain and the
+# units authorize nothing `(ADR-015 rule test-material)`.
+ISSUED_ASSET_UNITS = 210_000
+
+# The policy-asset slice the operation lane keeps spendable, in satoshis.
+#
+# Large enough to pay the fee of every transaction the lane builds, and
+# small enough that it plus an issuance stays inside the target's money
+# bound with room to spare.
+OPERATION_WORKING_SATOSHIS = 1_000_000_000
 
 # The boundary between a lock time counted in blocks and one counted in
 # seconds, and the bit layout of a sequence field's relative lock. All four
@@ -2253,10 +2269,34 @@ class OperationExecutor:
         self.reserves = {}
 
     def prepare(self) -> None:
-        """Creates the disposable wallet this lane spells addresses with."""
+        """Creates the wallet, and parks all but a working slice of the
+        free coin.
+
+        # Why the free coin has to be split before anything is issued
+
+        The chain's free coin holds the target's entire money bound, and
+        the target refuses a transaction whose outputs total more than
+        that bound. A transaction that spent the free coin *and* created
+        an issued asset would therefore be refused for
+        `bad-txns-txouttotal-toolarge` no matter how little of the asset
+        it issued: the policy side alone is already the whole bound.
+
+        So the free coin is split once, in a transaction that moves only
+        the policy asset and is inside the bound by construction, into a
+        small working coin this lane spends and a parked remainder it
+        never touches. Every later transaction spends the working coin,
+        so the policy side of an issuance is a rounding error rather than
+        the whole supply.
+
+        The parked output sits at the same anyone-can-spend program the
+        free coin did. It is not hidden, reserved, or owned: it is public
+        chain data any party could spend, and this lane simply does not.
+        """
         if self.prepared:
             return
-        node = self.executor.node
+        executor = self.executor
+        messages = executor.messages
+        node = executor.node
         try:
             node.call("createwallet", self.wallet_name)
         except AdapterError:
@@ -2266,6 +2306,28 @@ class OperationExecutor:
                 node.call("loadwallet", self.wallet_name)
             except AdapterError:
                 pass
+
+        source = executor.change
+        if source is None:
+            raise AdapterError("the adapter has no spendable change output")
+        working = OPERATION_WORKING_SATOSHIS
+        parked = source["amount"] - working - ADAPTER_FEE_SATOSHIS
+        if parked < 0:
+            raise AdapterError("the free coin cannot be split into a working slice")
+
+        transaction = messages.CTransaction()
+        transaction.version = 2
+        transaction.vin.append(
+            messages.CTxIn(
+                messages.COutPoint(txid_to_internal_int(source["txid"]), source["vout"]),
+                nSequence=0xFFFFFFFE,
+            )
+        )
+        transaction.vout.append(executor.output(working, executor.anyone_can_spend))
+        transaction.vout.append(executor.output(parked, executor.anyone_can_spend))
+        transaction.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
+        txid = self.mine(transaction)
+        executor.change = {"txid": txid, "vout": 0, "amount": working}
         self.prepared = True
 
     # -- helpers ----------------------------------------------------------
@@ -2325,6 +2387,10 @@ class OperationExecutor:
         executor = self.executor
         messages = executor.messages
         node = executor.node
+        # Before the change output is read: preparing splits the free
+        # coin and replaces it, so a source read first would name a coin
+        # this transaction is no longer allowed to spend.
+        self.prepare()
         source = executor.change
         if source is None:
             raise AdapterError("the adapter has no spendable change output")
@@ -2344,7 +2410,6 @@ class OperationExecutor:
         base.vout.append(executor.output(remainder, executor.anyone_can_spend))
         base.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
 
-        self.prepare()
         address = node.call("getnewaddress", wallet=self.wallet_name)
         answer = node.call(
             "rawissueasset",
