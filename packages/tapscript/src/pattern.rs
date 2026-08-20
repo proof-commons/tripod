@@ -205,6 +205,24 @@ impl CompactAshSymbols {
         &self.ash_program
     }
 
+    /// The version the ASH constructor's witness program is read at.
+    #[must_use]
+    pub const fn ash_program_version(&self) -> i64 {
+        self.ash_program_version
+    }
+
+    /// The sponsor-change role's witness program.
+    #[must_use]
+    pub const fn sponsor_change_program(&self) -> &StackItem {
+        &self.sponsor_change_program
+    }
+
+    /// The version the sponsor-change witness program is read at.
+    #[must_use]
+    pub const fn sponsor_change_version(&self) -> i64 {
+        self.sponsor_change_version
+    }
+
     /// The fee role's program digest.
     ///
     /// The reviewed target replaces a program that is not a witness

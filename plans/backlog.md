@@ -1346,7 +1346,7 @@ evidence and the batch gate record extends §2.6:
 | `T4-001` | DONE | Validated compact-ASH target operation plan — compiler `operation_plan` public boundary, projections recomputed against the analysis (23 relations, 2 cases, 46 relation-cases, 69 layout requirements), Guide-11 representation stated, nine corruption oracles |
 | `T4-002` | DONE | Target transaction-form and dependency review — target-elements `transaction_form`, fee role recognized by form, both forms consensus-admitted, sponsor asset explicit and value uninspected, first-party substrate selected awaiting dependency ratification, three requirements deferred to transaction evidence |
 | `T4-003` | DONE | Static target assessment and typed tapscript proof patterns — tapscript `shape`, `policy`, `pattern`, `operation_assessment`; `CompactAshShape` minted and the (`rule:guide12-exec:plan-selection`) tie-break stated in `CompactAshBackendPolicy`; eight pattern identities earned by machine-checked schedules; all 79 plan requirements assessed (74 complete-pattern, 3 structural, 2 external evidence) with emission admissible |
-| `T4-004` | TODO | Candidate relocatable bundle (Wave 7) |
+| `T4-004` | DONE | Candidate relocatable bundle — tapscript `bundle`; static ASH constructor over 9 shapes as 9 coordinator leaves and 3 recomputation-shared member leaves, 5169 exact encoded bytes, 103 relocations located by rebuilding each program with one symbol replaced, candidate status held by construction refusing a release-complete plan and by a read-only artifact status |
 | `T4-005` | TODO | Linker foundation (Wave 8) |
 | `T4-006` | TODO | Candidate transaction ABI (Wave 9) |
 | `T4-007` | TODO | Canonical semantic and target fixtures (Wave 10) |

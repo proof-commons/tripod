@@ -38,6 +38,7 @@
 //! where it matters.
 
 mod abstract_oracle_tests;
+mod bundle_tests;
 mod byte_census_tests;
 mod census_tests;
 mod guide12_reproductions;
@@ -54,7 +55,15 @@ mod shape_tests;
 mod stack_tests;
 
 use std::collections::BTreeMap;
+use std::num::NonZeroU64;
+use std::sync::LazyLock;
 
+use architecture::{ARCHITECTURE, OperationId};
+use compiler::input::{AnalysisPolicy, CompilationScope, ProofSearchLimits, bind_input};
+use compiler::operation_plan::{
+    PlacementSearchLimits, ValidatedTargetOperationPlan, plan_compact_ash_target_operation,
+};
+use realization::{RealizationScope, derive};
 use target_elements::{
     CapabilityContract, ConfidentialCapabilityState, ConfidentialValueCapability,
     ConfidentialValueContract, ElementsCapability, ReviewedElementsTapscriptDefinition,
@@ -83,6 +92,41 @@ fn pattern_symbols(
         vec![0x55; 32],
     )
     .expect("the placeholder symbols are the reviewed widths")
+}
+
+/// The validated compact-ASH plan, from the compiler's own constructor.
+///
+/// One fixture for every test that needs a plan: §8.1 assesses what the
+/// compiler actually required, and two fixtures could disagree about
+/// what that was.
+///
+/// Derived once and handed out by clone. The derivation is the whole
+/// scoped analysis, its validator, the Phase-4 filter, and an
+/// independent re-derivation of the assembled plan; running it once per
+/// test cost this crate's lane about three seconds of the wall time it
+/// is supposed to be accounting for. A clone of the finished value is
+/// the same value by construction, so nothing about what is tested
+/// changes — only how many times the compiler is asked for it.
+fn compact_ash_plan() -> ValidatedTargetOperationPlan {
+    static PLAN: LazyLock<ValidatedTargetOperationPlan> = LazyLock::new(derive_compact_ash_plan);
+    PLAN.clone()
+}
+
+/// The one derivation behind [`compact_ash_plan`].
+fn derive_compact_ash_plan() -> ValidatedTargetOperationPlan {
+    let limit = |value: u64| NonZeroU64::new(value).expect("the fixture limits are nonzero");
+    let realization =
+        derive(&ARCHITECTURE, RealizationScope::phase1_pilots()).expect("the pilots derive");
+    let scope = CompilationScope::from_operations([OperationId::CompactAsh])
+        .expect("a one-operation scope");
+    let policy = AnalysisPolicy::strict(ProofSearchLimits::new(limit(1_000_000), limit(10_000)));
+    let input = bind_input(&ARCHITECTURE, realization, scope, policy).expect("the input binds");
+
+    plan_compact_ash_target_operation(
+        &input,
+        PlacementSearchLimits::new(limit(10_000_000), limit(1_000_000)),
+    )
+    .expect("the plan validates")
 }
 
 /// The reviewed contract, unmodified.

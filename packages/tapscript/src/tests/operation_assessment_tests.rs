@@ -17,15 +17,10 @@
 //! the layout census.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::num::NonZeroU64;
 
-use architecture::{ARCHITECTURE, OperationId};
-use compiler::input::{AnalysisPolicy, CompilationScope, ProofSearchLimits, bind_input};
 use compiler::operation_plan::{
-    ExternalEvidenceRole, PlacementSearchLimits, RequiredCapability, ValidatedTargetOperationPlan,
-    plan_compact_ash_target_operation,
+    ExternalEvidenceRole, RequiredCapability, ValidatedTargetOperationPlan,
 };
-use realization::{RealizationScope, derive};
 use target_elements::{ElementsCapability, StaticCapabilityStatus};
 
 use crate::capability::{AssessmentDisposition, BackendPatternId};
@@ -34,28 +29,11 @@ use crate::operation_assessment::{
 };
 use crate::pattern::{BackendPattern, operation_patterns};
 use crate::shape::demonstration_shape_set;
-use crate::tests::{pattern_symbols, reviewed_target};
+use crate::tests::{compact_ash_plan, pattern_symbols, reviewed_target};
 
-/// A nonzero limit for the fixtures.
-fn nonzero(value: u64) -> NonZeroU64 {
-    NonZeroU64::new(value).expect("the fixture limits are nonzero")
-}
-
-/// The validated compact-ASH plan, from the compiler's own constructor.
+/// The validated compact-ASH plan, shared with every other test module.
 fn plan() -> ValidatedTargetOperationPlan {
-    let realization =
-        derive(&ARCHITECTURE, RealizationScope::phase1_pilots()).expect("the pilots derive");
-    let scope = CompilationScope::from_operations([OperationId::CompactAsh])
-        .expect("a one-operation scope");
-    let policy =
-        AnalysisPolicy::strict(ProofSearchLimits::new(nonzero(1_000_000), nonzero(10_000)));
-    let input = bind_input(&ARCHITECTURE, realization, scope, policy).expect("the input binds");
-
-    plan_compact_ash_target_operation(
-        &input,
-        PlacementSearchLimits::new(nonzero(10_000_000), nonzero(1_000_000)),
-    )
-    .expect("the plan validates")
+    compact_ash_plan()
 }
 
 /// The pattern census over the largest demonstration shape.

@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 #![forbid(unsafe_code)]
 
+pub mod bundle;
 pub mod capability;
 pub mod error;
 pub mod instruction;
@@ -11,6 +12,16 @@ pub mod program;
 pub mod shape;
 pub mod stack;
 
+pub use bundle::{
+    BackendArtifactStatus, BundleRefusal, BundleSymbol, CandidateRelocatableTapscriptBundle,
+    ConcreteCarrierSite, ConcreteLayout, ConcreteRelationPlacement, ConstructorAssumption,
+    ExplicitValuePolicy, FieldSide, InputPlacement, InputRole, InternalKeyPolicy, KeyPathPolicy,
+    LeafProgram, LeafRole, OutputPlacement, OutputRole, OutstandingLifecycle, ProgramResources,
+    ProgramRole, Relocation, RelocationEncoding, RelocationSite, ResourceModel, ResourceObligation,
+    ShapeResourceFormula, SharedLeafProof, SharingGround, StaticAshConstructor, SubstitutionMode,
+    SymbolBinding, SymbolEntry, SymbolWidth, TargetRole, WitnessComponent, WitnessRole,
+    emit_candidate_bundle,
+};
 pub use capability::{
     AssessmentDisposition, AssessmentProjection, BackendFoundationRequirement, BackendPatternId,
     EvidenceAssessmentDisposition, EvidenceAssessmentProjection, ExternalEvidenceAssessment,

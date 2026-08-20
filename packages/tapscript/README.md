@@ -458,6 +458,8 @@ exact serializer and reviewed-subset parser
 abstract stack validator over the reviewed primitive contracts
 static capability adapter over the reviewed target contract
 external-evidence-role adapter
+candidate shape set, backend policy, and typed proof patterns
+static ASH constructor and candidate relocatable bundle
 ```
 
 ## What this package deliberately does not do
@@ -465,16 +467,17 @@ external-evidence-role adapter
 Not implemented:
 
 ```text
-stack scheduler
-backend proof patterns
-constructors
-relocatable bundle
+linked bundle and taptree
+transaction ABI
+target execution
 ```
 
 Beyond those, and by design rather than by omission:
 
-- it owns no target program, no stack schedule, no transaction layout, and no
-  bundle, and it emits nothing;
+- the programs it emits are relocatable and unresolved: every link-time literal
+  is a symbol a later layer settles, and the bundle is a candidate whose clear
+  lifecycle is outstanding — the type refuses to exist for a plan whose
+  lifecycle is complete;
 - it executes nothing — `validate_program` is a statement about the reviewed
   contracts, not about a node;
 - it restates no target number: every opcode byte, push form, encoding width,
@@ -489,10 +492,11 @@ Beyond those, and by design rather than by omission:
 
 ## Nothing here is claimed to work against a node
 
-No target program has been emitted, no transaction has been built, and no
-evidence requirement the target contract names has been discharged. An
-assessment states what a future backend would have to establish. It states
-nothing about whether it has been established.
+Programs have been emitted and walked against the reviewed contracts, but none
+has been run: no transaction has been built, and no evidence requirement the
+target contract names has been discharged. An assessment states what a backend
+would have to establish, and an emitted program states what it would attempt.
+Neither states that anything has been established.
 
 Evidence about the target's actual behavior is produced elsewhere, by
 `tripod-target-elements-conformance`, and nothing in this crate reads

@@ -3,6 +3,7 @@
 # audit fails the build. The parent meson.build accumulates this list
 # into its role group.
 tapscript_source_files = files(
+  'src/bundle.rs',
   'src/capability.rs',
   'src/error.rs',
   'src/instruction.rs',
@@ -14,6 +15,7 @@ tapscript_source_files = files(
   'src/shape.rs',
   'src/stack.rs',
   'src/tests/abstract_oracle_tests.rs',
+  'src/tests/bundle_tests.rs',
   'src/tests/byte_census_tests.rs',
   'src/tests/census_tests.rs',
   'src/tests/guide12_reproductions.rs',
