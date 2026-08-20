@@ -11,6 +11,7 @@ vectors_source_files = files(
   'src/lib.rs',
   'src/materialize.rs',
   'src/matrix.rs',
+  'src/mutation.rs',
   'src/operation.rs',
   'src/plan.rs',
   'src/projection.rs',

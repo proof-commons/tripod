@@ -86,6 +86,17 @@ pub enum VectorError {
     MissingRelation(RelationId),
     /// Two coverage requirements claimed one identity.
     DuplicateCoverageRequirement,
+    /// A vector could not be decoded and re-encoded to its own bytes,
+    /// so no mutation of it would carry exactly one difference.
+    UnmutatableVector(TargetVectorId),
+    /// A negative coverage requirement's evidence role names no place
+    /// its refusal could be observed.
+    ///
+    /// Refused rather than filed under whichever column looked closest:
+    /// a requirement this package cannot place is one it cannot honestly
+    /// count, and a default arm would make the negative census add up
+    /// while meaning nothing.
+    UnclassifiableNegativeRequirement,
     /// Two semantic fixtures claimed one identity.
     DuplicateSemanticFixture(SemanticFixtureId),
     /// A fixture's stated facts are not a model-valid compact-ASH world.

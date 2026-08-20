@@ -55,6 +55,58 @@ pub enum OutstandingReason {
     StructuralEvidenceNotAssembled,
 }
 
+/// Where one negative requirement's refusal can be observed.
+///
+/// §19.2's negative half is not one kind of evidence. A mutation the
+/// target must refuse, a mutation first-party code refuses before any
+/// transaction exists, and a mutation nothing in this candidate can
+/// stage are three different claims, and a census that called them all
+/// "negative coverage" would let the third hide behind the first.
+///
+/// # Derived, never marked
+///
+/// The arm is a function of the requirement's own [`EvidenceRole`],
+/// which the compiler fixes from its coverage boundary. Nothing here
+/// reads a list somebody maintained: a requirement that moved to
+/// another boundary reclassifies itself, and a boundary that stopped
+/// producing a role would fail to classify rather than silently keep
+/// its old column.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
+pub enum NegativeObservability {
+    /// A complete mutated transaction exists and the target must refuse
+    /// it. The only arm whose discharge needs a live target.
+    TargetExecutable,
+    /// The refusal happens in first-party code, at the compiler's own
+    /// analysis or in the emitted structure, before any transaction is
+    /// built. No target is involved and none may be credited.
+    FirstPartyRefusal,
+    /// Nothing this candidate can stage produces the observation,
+    /// because the evidence is a typed external report that does not
+    /// exist. Never dischargeable by a run, and counted so that no
+    /// reading of the census mistakes it for work merely not done yet.
+    UnreachableInCandidate,
+}
+
+/// Which arm a negative requirement's evidence role puts it in.
+///
+/// `None` for a role no negative requirement carries, so a future
+/// boundary that started emitting negatives would surface here rather
+/// than being folded into whichever column looked closest.
+const fn negative_observability(role: &EvidenceRole) -> Option<NegativeObservability> {
+    match role {
+        EvidenceRole::TargetExecution => Some(NegativeObservability::TargetExecutable),
+        EvidenceRole::CompilerAnalysisResult | EvidenceRole::EmittedStructure => {
+            Some(NegativeObservability::FirstPartyRefusal)
+        }
+        EvidenceRole::ExternalReport { .. } => Some(NegativeObservability::UnreachableInCandidate),
+        // A vacuous relation-case states an acceptance obligation and
+        // never a mutation, so this role reaching a negative row would
+        // be a compiler change rather than a classification gap.
+        EvidenceRole::InactiveCaseAcceptance => None,
+    }
+}
+
 /// What is known about one coverage requirement.
 ///
 /// Two variants: nothing observed, or one target run that answered it.
@@ -168,6 +220,7 @@ pub struct RelationCoverageRow {
     activity: RelationActivity,
     role: EvidenceRole,
     positive: bool,
+    observability: Option<NegativeObservability>,
     carrier_alternatives: usize,
     projection_required: bool,
     observation: CoverageObservation,
@@ -198,6 +251,14 @@ impl RelationCoverageRow {
         self.positive
     }
 
+    /// Where this row's refusal can be observed, for a negative row.
+    ///
+    /// `None` for every positive row, which has no refusal to place.
+    #[must_use]
+    pub const fn observability(&self) -> Option<NegativeObservability> {
+        self.observability
+    }
+
     /// How many carrier assignments the relation-case admits.
     #[must_use]
     pub const fn carrier_alternatives(&self) -> usize {
@@ -226,6 +287,9 @@ pub struct PlanCensus {
     coverage_requirements: usize,
     positive_requirements: usize,
     negative_requirements: usize,
+    negative_target_executable: usize,
+    negative_first_party: usize,
+    negative_unreachable: usize,
     vacuous_relation_cases: usize,
     matrix_classes: usize,
     semantic_cases: usize,
@@ -271,6 +335,36 @@ impl PlanCensus {
     #[must_use]
     pub const fn negative_requirements(&self) -> usize {
         self.negative_requirements
+    }
+
+    /// Negative requirements a live target must refuse.
+    ///
+    /// The only negative column a run can move. Kept apart from the two
+    /// below because they are discharged by different evidence
+    /// entirely, and a single "negative" figure would let a wave that
+    /// executed nothing look like one that executed everything
+    /// first-party.
+    #[must_use]
+    pub const fn negative_target_executable(&self) -> usize {
+        self.negative_target_executable
+    }
+
+    /// Negative requirements first-party code refuses before any
+    /// transaction exists.
+    #[must_use]
+    pub const fn negative_first_party(&self) -> usize {
+        self.negative_first_party
+    }
+
+    /// Negative requirements nothing in this candidate can stage.
+    ///
+    /// Their evidence is a typed external report that does not exist,
+    /// so no run discharges them and the honest accounting is that they
+    /// stay unanswered. Counted in their own column for exactly the
+    /// reason [`Self::unbuilt_shape_vectors`] is.
+    #[must_use]
+    pub const fn negative_unreachable(&self) -> usize {
+        self.negative_unreachable
     }
 
     /// Relation-cases present with no obligation.
@@ -630,6 +724,9 @@ struct CoverageBuild {
     covered: BTreeSet<RelationId>,
     positive: usize,
     negative: usize,
+    target_executable: usize,
+    first_party: usize,
+    unreachable: usize,
 }
 
 /// Build one row per published coverage requirement.
@@ -641,12 +738,16 @@ fn build_coverage(
     let mut positive = 0_usize;
     let mut negative = 0_usize;
     let mut published = 0_usize;
+    let mut target_executable = 0_usize;
+    let mut first_party = 0_usize;
+    let mut unreachable = 0_usize;
 
     for requirement in plan.coverage() {
         published += 1;
         let key = requirement.id.key();
         covered.insert(key.relation.clone());
 
+        let mut observability = None;
         let is_positive = match &requirement.obligation {
             TargetCoverageObligation::Positive(_) => {
                 positive += 1;
@@ -654,6 +755,20 @@ fn build_coverage(
             }
             TargetCoverageObligation::Negative(_) => {
                 negative += 1;
+                // A negative requirement whose role names no arm is a
+                // requirement this package cannot honestly place, and
+                // refusing is the only answer that does not invent a
+                // column for it.
+                let kind = negative_observability(&requirement.role)
+                    .ok_or(VectorError::UnclassifiableNegativeRequirement)?;
+                // Matched rather than indexed, so an arm added later
+                // has to be given a column here before this compiles.
+                match kind {
+                    NegativeObservability::TargetExecutable => target_executable += 1,
+                    NegativeObservability::FirstPartyRefusal => first_party += 1,
+                    NegativeObservability::UnreachableInCandidate => unreachable += 1,
+                }
+                observability = Some(kind);
                 false
             }
         };
@@ -663,6 +778,7 @@ fn build_coverage(
             activity: requirement.activity,
             role: requirement.role.clone(),
             positive: is_positive,
+            observability,
             carrier_alternatives: requirement.carrier.len(),
             projection_required: requirement.projection.is_some(),
             observation: CoverageObservation::Outstanding(outstanding_reason(requirement)),
@@ -683,6 +799,9 @@ fn build_coverage(
         covered,
         positive,
         negative,
+        target_executable,
+        first_party,
+        unreachable,
     })
 }
 
@@ -859,6 +978,9 @@ pub fn derive_evidence_plan(
         coverage_requirements: relation_coverage.len(),
         positive_requirements: positive,
         negative_requirements: negative,
+        negative_target_executable: coverage.target_executable,
+        negative_first_party: coverage.first_party,
+        negative_unreachable: coverage.unreachable,
         vacuous_relation_cases: vacuous,
         matrix_classes: class_count(),
         semantic_cases: semantic.len(),
@@ -948,6 +1070,98 @@ mod tests {
         assert_eq!(plan.census().coverage_requirements(), 211);
         assert_eq!(plan.census().positive_requirements(), 139);
         assert_eq!(plan.census().negative_requirements(), 72);
+    }
+
+    #[test]
+    fn the_negative_half_splits_into_three_kinds_that_sum_to_it() {
+        // The Wave-13 classification, pinned. Forty-eight requirements
+        // a live target must refuse, eighteen first-party code refuses
+        // before any transaction exists, and six whose evidence is an
+        // external report nobody has written.
+        //
+        // The sum is asserted against the negative total rather than
+        // against 72 alone, so a requirement that gained a new kind of
+        // role fails here instead of quietly leaving one column short.
+        let census = plan().census();
+        assert_eq!(census.negative_target_executable(), 48);
+        assert_eq!(census.negative_first_party(), 18);
+        assert_eq!(census.negative_unreachable(), 6);
+        assert_eq!(
+            census.negative_target_executable()
+                + census.negative_first_party()
+                + census.negative_unreachable(),
+            census.negative_requirements(),
+            "a negative requirement is in exactly one column",
+        );
+    }
+
+    #[test]
+    fn only_negative_rows_are_placed_and_every_one_of_them_is() {
+        // The classification is a property of the rows, not only of the
+        // tallies taken while building them: a census computed from a
+        // counter could agree with itself while the rows disagreed.
+        let plan = plan();
+        let mut placed = 0_usize;
+        for row in plan.relation_coverage().values() {
+            if row.is_positive() {
+                assert!(
+                    row.observability().is_none(),
+                    "a positive row was given a refusal to place",
+                );
+            } else {
+                assert!(
+                    row.observability().is_some(),
+                    "a negative row carries no place its refusal could be observed",
+                );
+                placed += 1;
+            }
+        }
+        assert_eq!(placed, plan.census().negative_requirements());
+    }
+
+    #[test]
+    fn a_negative_rows_kind_agrees_with_the_role_that_answers_it() {
+        // Recomputed from each row's own evidence role by a second
+        // route, so this is a comparison rather than a restatement of
+        // the function under test.
+        use compiler::operation_plan::EvidenceRole;
+        for row in plan().relation_coverage().values() {
+            let Some(kind) = row.observability() else {
+                continue;
+            };
+            let expected = match row.role() {
+                EvidenceRole::TargetExecution => super::NegativeObservability::TargetExecutable,
+                EvidenceRole::CompilerAnalysisResult | EvidenceRole::EmittedStructure => {
+                    super::NegativeObservability::FirstPartyRefusal
+                }
+                EvidenceRole::ExternalReport { .. } => {
+                    super::NegativeObservability::UnreachableInCandidate
+                }
+                EvidenceRole::InactiveCaseAcceptance => {
+                    panic!("a vacuous role answered a negative row")
+                }
+            };
+            assert_eq!(
+                kind,
+                expected,
+                "{:?} was placed in the wrong column",
+                row.key()
+            );
+        }
+    }
+
+    #[test]
+    fn no_negative_row_is_discharged_before_anything_refuses() {
+        // The negative half starts where the positive half started: at
+        // nothing. A run is what moves it.
+        for row in plan().relation_coverage().values() {
+            if !row.is_positive() {
+                assert!(
+                    !row.observation().is_discharged(),
+                    "a negative row was discharged by deriving the plan",
+                );
+            }
+        }
     }
 
     #[test]
