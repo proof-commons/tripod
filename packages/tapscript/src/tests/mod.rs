@@ -56,6 +56,7 @@ mod stack_tests;
 
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;
+use std::sync::LazyLock;
 
 use architecture::{ARCHITECTURE, OperationId};
 use compiler::input::{AnalysisPolicy, CompilationScope, ProofSearchLimits, bind_input};
@@ -98,7 +99,21 @@ fn pattern_symbols(
 /// One fixture for every test that needs a plan: §8.1 assesses what the
 /// compiler actually required, and two fixtures could disagree about
 /// what that was.
+///
+/// Derived once and handed out by clone. The derivation is the whole
+/// scoped analysis, its validator, the Phase-4 filter, and an
+/// independent re-derivation of the assembled plan; running it once per
+/// test cost this crate's lane about three seconds of the wall time it
+/// is supposed to be accounting for. A clone of the finished value is
+/// the same value by construction, so nothing about what is tested
+/// changes — only how many times the compiler is asked for it.
 fn compact_ash_plan() -> ValidatedTargetOperationPlan {
+    static PLAN: LazyLock<ValidatedTargetOperationPlan> = LazyLock::new(derive_compact_ash_plan);
+    PLAN.clone()
+}
+
+/// The one derivation behind [`compact_ash_plan`].
+fn derive_compact_ash_plan() -> ValidatedTargetOperationPlan {
     let limit = |value: u64| NonZeroU64::new(value).expect("the fixture limits are nonzero");
     let realization =
         derive(&ARCHITECTURE, RealizationScope::phase1_pilots()).expect("the pilots derive");
