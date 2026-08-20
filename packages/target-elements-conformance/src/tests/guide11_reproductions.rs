@@ -2535,8 +2535,8 @@ fn the_reproduction_inputs_state() {
     let registry: ClaimRegistry = claim_registry().expect("the claim census is coherent");
     assert!(!registry.is_empty());
     let plan = guide_nine_evidence_plan().expect("the plan is a partition");
-    assert!(
-        plan.class(TargetEvidenceRequirementId::SighashSemantics)
-            == Some(EvidencePlanClass::UnresolvedByDesign),
+    assert_eq!(
+        plan.class(TargetEvidenceRequirementId::SighashSemantics),
+        Some(EvidencePlanClass::UnresolvedByDesign),
     );
 }

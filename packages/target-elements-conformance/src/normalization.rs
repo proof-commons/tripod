@@ -932,7 +932,7 @@ mod tests {
         };
         assert_eq!(unclaimed.len(), 1);
         assert_eq!(unclaimed[0].script_pubkey, vec![0xcc; 4]);
-        assert!(missing.is_empty());
+        assert_eq!(missing, [] as [crate::normalization::OutputFingerprint; 0]);
     }
 
     #[test]

@@ -76,7 +76,10 @@ fn blind_full() -> [u8; 32] {
 }
 
 fn bytes(hexadecimal: &str) -> Vec<u8> {
-    assert!(hexadecimal.len() % 2 == 0, "hex must be byte aligned");
+    assert!(
+        hexadecimal.len().is_multiple_of(2),
+        "hex must be byte aligned"
+    );
     (0..hexadecimal.len() / 2)
         .map(|index| {
             u8::from_str_radix(&hexadecimal[index * 2..index * 2 + 2], 16)
