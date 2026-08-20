@@ -16,7 +16,7 @@ use linker::backend::OutputRole;
 use target_elements::TransactionForm;
 
 use crate::bytes::{AssetField, TargetTransaction, ValueField};
-use crate::construct::construct;
+use crate::construct::{check_weight, construct};
 use crate::error::TransactionRefusal;
 use crate::request::CompactAshRequest;
 use crate::sponsor::{
@@ -560,6 +560,109 @@ fn a_family_size_no_shape_admits_is_refused() {
             sponsor_change: false,
         })
     );
+}
+
+#[test]
+fn a_transaction_above_the_reviewed_weight_bound_is_refused() {
+    // The consensus maximum is four million weight units, so a
+    // transaction reaching it needs about a megabyte of non-witness
+    // bytes. Built directly rather than through the pipeline, because
+    // no admitted compact-ASH shape can reach it and a bound whose
+    // failing branch could only be reasoned about is a bound nobody has
+    // checked.
+    let target = reviewed_target();
+    let oversized = TargetTransaction::new(
+        3,
+        vec![crate::bytes::TargetInput::new(
+            outpoint(0xaa, 0),
+            0xffff_ffff,
+        )],
+        vec![crate::bytes::TargetOutput::new(
+            AssetField::Explicit(crate::bytes::AssetId::from_internal(CLOSED_ASSET)),
+            ValueField::Explicit(1),
+            crate::bytes::NonceField::Null,
+            vec![0x00; 1_000_000],
+        )],
+        0,
+        vec![crate::bytes::InputWitness::default()],
+    )
+    .expect("an oversized transaction is still well formed");
+
+    assert!(oversized.weight() > 4_000_000);
+    assert_eq!(
+        crate::construct::check_weight(&target, &oversized),
+        Err(TransactionRefusal::ResourceBoundExceeded {
+            dimension: target_elements::ResourceDimension::TransactionWeight,
+            reached: oversized.weight(),
+            bound: 4_000_000,
+        })
+    );
+
+    // And an ordinary construction is nowhere near it.
+    let abi = candidate_abi();
+    let first = outpoint(0xaa, 0);
+    let second = outpoint(0xbb, 1);
+    let view = view([
+        ash_view(&target, first, 120),
+        ash_view(&target, second, 180),
+    ]);
+    let request = CompactAshRequest::new([first, second], false).expect("a two-input request");
+    let built = construct(&target, &abi, &request, &view, None).expect("a construction");
+    assert!(check_weight(&target, built.transaction()).is_ok());
+}
+
+#[test]
+fn a_sponsor_spending_more_than_it_contributes_is_refused() {
+    // A construction check over the sponsor's own explicit values,
+    // which §1.6 permits the constructor to use and forbids the
+    // protocol relation to depend on. The sponsor here declares a fee
+    // and a change that together exceed the input it brought.
+    let target = reviewed_target();
+    let abi = candidate_abi();
+    let first = outpoint(0xaa, 0);
+    let second = outpoint(0xbb, 1);
+    let sponsor_input = outpoint(0xdd, 2);
+    let view = view([
+        ash_view(&target, first, 120),
+        ash_view(&target, second, 180),
+        sponsor_view(sponsor_input, 600),
+    ]);
+    let request = CompactAshRequest::new([first, second], true).expect("a sponsored request");
+    let sponsor = FixtureSponsor::new(500, Some(ValueField::Explicit(400)));
+
+    assert_eq!(
+        construct(&target, &abi, &request, &view, Some(&sponsor)),
+        Err(TransactionRefusal::SponsorValueDoesNotCoverFee)
+    );
+}
+
+#[test]
+fn a_committed_sponsor_value_is_never_compared_at_all() {
+    // The same arithmetic that refused above cannot even be attempted
+    // here, because the sponsor's input value is a commitment. The
+    // construction succeeds, and that is the erasure law holding rather
+    // than a check being skipped.
+    let target = reviewed_target();
+    let abi = candidate_abi();
+    let first = outpoint(0xaa, 0);
+    let second = outpoint(0xbb, 1);
+    let sponsor_input = outpoint(0xdd, 2);
+    let mut program = vec![0x00, 0x14];
+    program.extend_from_slice(&[0xd0; 20]);
+    let view = view([
+        ash_view(&target, first, 120),
+        ash_view(&target, second, 180),
+        crate::view::PublicOutputView::new(
+            sponsor_input,
+            AssetField::Explicit(crate::bytes::AssetId::from_internal(RESERVE_ASSET)),
+            ValueField::Commitment([0x08; 33]),
+            program,
+        ),
+    ]);
+    let request = CompactAshRequest::new([first, second], true).expect("a sponsored request");
+    let sponsor = FixtureSponsor::new(500, Some(ValueField::Explicit(400)));
+
+    assert!(construct(&target, &abi, &request, &view, Some(&sponsor)).is_ok());
 }
 
 #[test]

@@ -324,7 +324,15 @@ pub fn construct(
     }
 
     // Stage 15: the ABI-local preflight.
-    preflight(abi, shape_abi, &transaction, successor_amount)?;
+    let contributed = explicit_sponsor_contribution(abi, view, &sponsors);
+    preflight(
+        target,
+        abi,
+        shape_abi,
+        &transaction,
+        successor_amount,
+        contributed,
+    )?;
 
     // Stage 16: exact bytes and a typed report.
     let roles = role_census(shape_abi, ash.len(), sponsors.len(), &transaction);
@@ -459,6 +467,33 @@ fn collect_sponsor_signatures(
     }
 
     Ok(witnesses)
+}
+
+/// The sponsors' total explicit contribution, if every one of them is
+/// explicit.
+///
+/// `None` the moment one sponsor's value is a commitment, and `None` is
+/// the honest answer rather than a partial sum: a total over some of
+/// them would be a number that looks like the sponsors' contribution
+/// and is not.
+fn explicit_sponsor_contribution(
+    abi: &CandidateTransactionAbi,
+    view: &PublicConstructionView,
+    sponsors: &[Outpoint],
+) -> Option<u64> {
+    let reserve = AssetField::Explicit(abi.symbols().reserve_asset());
+    let mut total: u64 = 0;
+    for outpoint in sponsors {
+        let public = view.get(*outpoint)?;
+        if public.asset() != reserve {
+            return None;
+        }
+        let ValueField::Explicit(amount) = public.value() else {
+            return None;
+        };
+        total = total.checked_add(amount)?;
+    }
+    Some(total)
 }
 
 /// Whether a change value is known to be zero.
@@ -701,10 +736,12 @@ fn settled_resources(
 /// anything, which is the erasure law holding rather than a check being
 /// skipped.
 fn preflight(
+    target: &ReviewedElementsTapscriptDefinition,
     abi: &CandidateTransactionAbi,
     shape: &ShapeAbi,
     transaction: &TargetTransaction,
     successor_amount: u64,
+    contributed: Option<u64>,
 ) -> Result<(), TransactionRefusal> {
     let closed: AssetId = abi.symbols().closed_asset();
     let mut paid_out: u64 = 0;
@@ -742,5 +779,92 @@ fn preflight(
         }
     }
 
+    check_reserve_cover(abi, transaction, contributed)?;
+    check_weight(target, transaction)
+}
+
+/// Require the sponsor's explicit contribution to cover what it spends.
+///
+/// A construction check, not a protocol one, and the distinction is the
+/// whole reason it lives here rather than in a program. §1.6 forbids the
+/// protocol *relation* from depending on a sponsor's amount; it says in
+/// as many words that the constructor may use sponsor-private state to
+/// build a balanced transaction, which is exactly this.
+///
+/// The check runs only where every reserve-asset field in play is
+/// explicit. One committed sponsor value and it does not run at all —
+/// not as a concession, but because the alternative is opening the
+/// commitment, and there is no branch here that could.
+fn check_reserve_cover(
+    abi: &CandidateTransactionAbi,
+    transaction: &TargetTransaction,
+    contributed: Option<u64>,
+) -> Result<(), TransactionRefusal> {
+    let Some(contributed) = contributed else {
+        return Ok(());
+    };
+    let reserve = AssetField::Explicit(abi.symbols().reserve_asset());
+    let mut spent: u64 = 0;
+    for output in transaction.outputs() {
+        if output.asset() != reserve {
+            continue;
+        }
+        let ValueField::Explicit(amount) = output.value() else {
+            return Ok(());
+        };
+        spent = spent
+            .checked_add(amount)
+            .ok_or(TransactionRefusal::SponsorValueDoesNotCoverFee)?;
+    }
+    if spent > contributed {
+        return Err(TransactionRefusal::SponsorValueDoesNotCoverFee);
+    }
+    Ok(())
+}
+
+/// Require the assembled transaction to fit the reviewed weight bound.
+///
+/// The one whole-transaction dimension the reviewed contract bounds by
+/// consensus. Checking it turns a transaction no node could include
+/// into a construction refusal, which is §1.5's distinction applied in
+/// the direction that is actually useful: the builder knows before it
+/// asks anybody to sign.
+///
+/// The *consensus* bound and not the policy one. Exceeding the policy
+/// bound makes a transaction non-standard, which is a deployment fact
+/// and a relay outcome; refusing to construct it here would be the
+/// backend deciding a relay question, which is the confusion the
+/// two-verdict rule exists to prevent.
+///
+/// Public because the evidence packages need the same preflight, and
+/// because a check nobody outside this module can reach is a check
+/// whose failing branch could only be reasoned about.
+///
+/// # Errors
+///
+/// [`TransactionRefusal::ResourceBoundExceeded`] when the transaction's
+/// weight is above the reviewed consensus maximum.
+pub fn check_weight(
+    target: &ReviewedElementsTapscriptDefinition,
+    transaction: &TargetTransaction,
+) -> Result<(), TransactionRefusal> {
+    let bound = target
+        .definition()
+        .resources()
+        .consensus()
+        .bounds()
+        .get(&ResourceDimension::TransactionWeight)
+        .and_then(|bound| bound.maximum());
+    let Some(bound) = bound else {
+        return Ok(());
+    };
+    let reached = transaction.weight();
+    if reached > bound {
+        return Err(TransactionRefusal::ResourceBoundExceeded {
+            dimension: ResourceDimension::TransactionWeight,
+            reached,
+            bound,
+        });
+    }
     Ok(())
 }

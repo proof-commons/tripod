@@ -21,7 +21,8 @@ pub use bytes::{
     TargetTransaction, Txid, ValueField, compact_size,
 };
 pub use construct::{
-    CandidateCompleteTransaction, ConstructionReport, RoleCensus, SettledResources, construct,
+    CandidateCompleteTransaction, ConstructionReport, RoleCensus, SettledResources, check_weight,
+    construct,
 };
 pub use error::TransactionRefusal;
 pub use request::CompactAshRequest;
