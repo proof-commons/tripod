@@ -33,10 +33,13 @@
 //! mutation that produced an acceptance is a finding this module has no
 //! opinion about.
 
-use transaction::{AssetField, AssetId, TargetTransaction};
+use transaction::{
+    AssetField, AssetId, InputWitness, TargetInput, TargetOutput, TargetTransaction, ValueField,
+};
 
 use crate::error::VectorError;
 use crate::materialize::{MaterializedTargetVector, TargetVectorId};
+use crate::matrix::{EvidenceBoundary, VectorClass, all_classes};
 
 /// Whether a transaction survives a decode and re-encode unchanged.
 ///
@@ -86,6 +89,294 @@ pub fn outputs_carrying(transaction: &TargetTransaction, asset: [u8; 32]) -> Vec
         .collect()
 }
 
+/// One focused mutation of an accepted compact-ASH transaction.
+///
+/// Each arm names the §18 class it stages, and the class is where its
+/// expected §1.5 boundary comes from — looked up rather than restated,
+/// so a matrix that changed its mind about a boundary changes what this
+/// module expects with nothing here to edit.
+///
+/// # Why value balance is a property of the arm
+///
+/// Elements checks per-asset value conservation before it runs any
+/// script. A mutation that leaves the closed asset unbalanced is
+/// therefore answered by consensus whatever the covenant would have
+/// said, and a class expecting a script-path refusal cannot be reached
+/// by one. That is a fact about the mutation rather than about the
+/// target, so it is recorded here and reported alongside the observed
+/// layer instead of being discovered again in every run.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
+pub enum NegativeMutation {
+    /// Split the successor across two closed-asset outputs at the same
+    /// program. The family's total is unchanged, so the covenant sees a
+    /// second successor rather than a value it can dispute.
+    SplitSuccessorInTwo,
+    /// Reverse the order of the ASH inputs, carrying each input's
+    /// witness with it so no input acquires another's proof.
+    ReverseAshInputOrder,
+    /// Pay the successor to a program that is not the constructor's.
+    RedirectSuccessorProgram,
+    /// Move one unit of the successor into a second output the fixture
+    /// never declared, keeping the family total fixed.
+    RouteUnitIntoUndeclaredOutput,
+    /// Change one input's sequence field.
+    ChangeInputSequence,
+    /// Change the transaction version.
+    ChangeTransactionVersion,
+    /// Swap two items of one input's witness stack.
+    ReorderWitnessItems,
+    /// Take one unit off the successor and give it to nothing, leaving
+    /// the closed asset short of what the inputs carry.
+    SuccessorOneBelowTheSum,
+}
+
+impl NegativeMutation {
+    /// Every mutation this module can stage.
+    pub const ALL: &'static [Self] = &[
+        Self::SplitSuccessorInTwo,
+        Self::ReverseAshInputOrder,
+        Self::RedirectSuccessorProgram,
+        Self::RouteUnitIntoUndeclaredOutput,
+        Self::ChangeInputSequence,
+        Self::ChangeTransactionVersion,
+        Self::ReorderWitnessItems,
+        Self::SuccessorOneBelowTheSum,
+    ];
+
+    /// The §18 class this mutation stages.
+    #[must_use]
+    pub const fn class_name(self) -> &'static str {
+        match self {
+            Self::SplitSuccessorInTwo => "two-ash-outputs",
+            Self::ReverseAshInputOrder => "noncanonical-ash-ordering",
+            Self::RedirectSuccessorProgram => "ordinary-wallet-u-output",
+            Self::RouteUnitIntoUndeclaredOutput => "shorten-successor-and-grow-another-output",
+            Self::ChangeInputSequence => "wrong-sequence",
+            Self::ChangeTransactionVersion => "wrong-transaction-version",
+            Self::ReorderWitnessItems => "witness-item-reorder",
+            Self::SuccessorOneBelowTheSum => "successor-one-below-the-sum",
+        }
+    }
+
+    /// The matrix class this mutation stages.
+    ///
+    /// # Errors
+    ///
+    /// [`VectorError::MatrixCoverageMismatch`] when §18 names no class
+    /// by this mutation's name, which would mean the matrix and this
+    /// module had drifted apart.
+    pub fn class(self) -> Result<VectorClass, VectorError> {
+        all_classes()
+            .into_iter()
+            .find(|class| class.name() == self.class_name())
+            .ok_or(VectorError::MatrixCoverageMismatch {
+                class: "18 mutation class",
+            })
+    }
+
+    /// The §1.5 boundary the staged class expects.
+    ///
+    /// # Errors
+    ///
+    /// Whatever [`Self::class`] refuses.
+    pub fn expected_boundary(self) -> Result<EvidenceBoundary, VectorError> {
+        Ok(self.class()?.boundary())
+    }
+
+    /// Whether the mutation leaves every asset's value balanced.
+    ///
+    /// False only for [`Self::SuccessorOneBelowTheSum`], whose whole
+    /// content is an imbalance.
+    #[must_use]
+    pub const fn preserves_value_balance(self) -> bool {
+        !matches!(self, Self::SuccessorOneBelowTheSum)
+    }
+}
+
+/// One mutated transaction, and what was done to make it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MutatedVector {
+    origin: TargetVectorId,
+    mutation: NegativeMutation,
+    bytes: Vec<u8>,
+}
+
+impl MutatedVector {
+    /// The accepted vector this was made from.
+    #[must_use]
+    pub const fn origin(&self) -> TargetVectorId {
+        self.origin
+    }
+
+    /// What was changed.
+    #[must_use]
+    pub const fn mutation(&self) -> NegativeMutation {
+        self.mutation
+    }
+
+    /// The mutated transaction bytes.
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+/// Apply one mutation to one accepted vector.
+///
+/// The vector is round-tripped first, so the only difference between
+/// these bytes and the accepted ones is the mutation named.
+///
+/// # Errors
+///
+/// [`VectorError::UnmutatableVector`] when the vector does not
+/// reproduce its own bytes, or when its shape gives the mutation
+/// nothing to act on — one input cannot be reordered, a witness of one
+/// item cannot be permuted, and a transaction with no closed-asset
+/// output has no successor to disturb. Refusing is the honest answer:
+/// a mutation that silently did nothing would submit the accepted
+/// transaction again and record its acceptance as a negative result.
+pub fn apply(
+    vector: &MaterializedTargetVector,
+    asset: [u8; 32],
+    mutation: NegativeMutation,
+) -> Result<MutatedVector, VectorError> {
+    let original = round_trips(vector)?;
+    let id = vector.id();
+    let refuse = || VectorError::UnmutatableVector(id);
+
+    let successors = outputs_carrying(&original, asset);
+    let &successor = successors.first().ok_or_else(refuse)?;
+
+    let mut version = original.version();
+    let mut inputs = original.inputs().to_vec();
+    let mut outputs = original.outputs().to_vec();
+    let mut witnesses = original.witnesses().to_vec();
+
+    match mutation {
+        NegativeMutation::SplitSuccessorInTwo => {
+            let whole = explicit_value(&outputs[successor]).ok_or_else(refuse)?;
+            // An odd amount would not halve evenly, and a split that
+            // also changed the total would be two mutations.
+            let half = whole / 2;
+            let rest = whole - half;
+            let template = outputs[successor].clone();
+            outputs[successor] = with_value(&template, half);
+            outputs.insert(successor + 1, with_value(&template, rest));
+        }
+        NegativeMutation::ReverseAshInputOrder => {
+            let ash = usize::from(id.ash_inputs());
+            if ash < 2 {
+                return Err(refuse());
+            }
+            // The witness travels with its input. Reversing one and not
+            // the other would change which proof answers which spend,
+            // which is a different mutation entirely.
+            inputs[..ash].reverse();
+            witnesses[..ash].reverse();
+        }
+        NegativeMutation::RedirectSuccessorProgram => {
+            let template = outputs[successor].clone();
+            // A well-formed witness program of the same width that no
+            // constructor in this bundle emits, so the output is
+            // spendable-looking and simply not the successor's place.
+            let mut program = template.program().to_vec();
+            if program.is_empty() {
+                return Err(refuse());
+            }
+            let last = program.len() - 1;
+            program[last] ^= 0xff;
+            outputs[successor] = TargetOutput::new(
+                template.asset(),
+                template.value(),
+                template.nonce(),
+                program,
+            );
+        }
+        NegativeMutation::RouteUnitIntoUndeclaredOutput => {
+            let whole = explicit_value(&outputs[successor]).ok_or_else(refuse)?;
+            let kept = whole.checked_sub(1).ok_or_else(refuse)?;
+            let template = outputs[successor].clone();
+            let mut program = template.program().to_vec();
+            if program.is_empty() {
+                return Err(refuse());
+            }
+            let last = program.len() - 1;
+            program[last] ^= 0xff;
+            outputs[successor] = with_value(&template, kept);
+            outputs.insert(
+                successor + 1,
+                TargetOutput::new(
+                    template.asset(),
+                    ValueField::Explicit(1),
+                    template.nonce(),
+                    program,
+                ),
+            );
+        }
+        NegativeMutation::ChangeInputSequence => {
+            let first = inputs.first().ok_or_else(refuse)?;
+            inputs[0] = TargetInput::new(first.outpoint(), first.sequence() ^ 1);
+        }
+        NegativeMutation::ChangeTransactionVersion => {
+            version ^= 1;
+        }
+        NegativeMutation::ReorderWitnessItems => {
+            let witness = witnesses.first().ok_or_else(refuse)?;
+            let mut stack = witness.stack().to_vec();
+            if stack.len() < 2 {
+                return Err(refuse());
+            }
+            stack.swap(0, 1);
+            witnesses[0] = InputWitness::new(stack);
+        }
+        NegativeMutation::SuccessorOneBelowTheSum => {
+            let whole = explicit_value(&outputs[successor]).ok_or_else(refuse)?;
+            let short = whole.checked_sub(1).ok_or_else(refuse)?;
+            outputs[successor] = with_value(&outputs[successor].clone(), short);
+        }
+    }
+
+    let mutated = TargetTransaction::new(version, inputs, outputs, original.lock_time(), witnesses)
+        .map_err(|_| refuse())?;
+    let bytes = mutated.encode();
+    // A mutation that produced the accepted bytes again would submit
+    // the positive vector under a negative name, and its acceptance
+    // would be recorded as a target failing to refuse.
+    if bytes == vector.bytes() {
+        return Err(refuse());
+    }
+    Ok(MutatedVector {
+        origin: id,
+        mutation,
+        bytes,
+    })
+}
+
+/// One output's explicit amount, where it has one.
+#[must_use]
+const fn explicit_value(output: &TargetOutput) -> Option<u64> {
+    match output.value() {
+        ValueField::Explicit(amount) => Some(amount),
+        // A blinded value, or any field a later revision adds, is not an
+        // amount this module may arithmetic on. Answered with `None` so
+        // the caller refuses the mutation rather than inventing a
+        // number for a commitment.
+        _ => None,
+    }
+}
+
+/// The same output carrying another explicit amount.
+#[must_use]
+fn with_value(output: &TargetOutput, amount: u64) -> TargetOutput {
+    TargetOutput::new(
+        output.asset(),
+        ValueField::Explicit(amount),
+        output.nonce(),
+        output.program().to_vec(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::round_trips;
@@ -117,6 +408,145 @@ mod tests {
                 usize::from(vector.id().ash_inputs()) + usize::from(vector.id().sponsors()),
                 "{:?} decoded to another input census",
                 vector.id(),
+            );
+        }
+    }
+
+    /// A vector with at least two ASH inputs and a multi-item witness,
+    /// so every mutation has something to act on.
+    fn subject() -> (crate::materialize::MaterializedTargetVector, [u8; 32]) {
+        let bundle = fixture_bundle().expect("the fixture bundle builds");
+        let plan = derive_evidence_plan(&bundle).expect("the evidence plan derives");
+        let vector = plan
+            .target_cases()
+            .iter()
+            .map(crate::subject::CanonicalSubject::subject)
+            .find(|vector| vector.id().ash_inputs() >= 2)
+            .expect("a multi-input vector exists")
+            .clone();
+        (vector, bundle.closed_asset())
+    }
+
+    #[test]
+    fn every_mutation_stages_a_class_the_matrix_actually_names() {
+        // The expected boundary is looked up rather than restated, and
+        // this is what keeps the lookup honest: a mutation naming a
+        // class §18 does not have would silently lose its expectation.
+        for mutation in super::NegativeMutation::ALL {
+            let class = mutation
+                .class()
+                .unwrap_or_else(|_| panic!("{mutation:?} names no §18 class"));
+            assert_eq!(class.name(), mutation.class_name());
+            assert_eq!(
+                class.polarity(),
+                crate::matrix::VectorPolarity::Negative,
+                "{mutation:?} stages a class that does not expect a refusal",
+            );
+            let boundary = mutation.expected_boundary().expect("the class is named");
+            assert!(
+                boundary.requires_target_execution(),
+                "{mutation:?} expects a boundary no submission could reach",
+            );
+        }
+    }
+
+    #[test]
+    fn every_mutation_changes_the_bytes_and_still_decodes() {
+        // A mutation that produced unreadable bytes would be answered by
+        // the target's parser rather than by anything the class is
+        // about, and one that produced the original bytes would submit
+        // the accepted vector under a negative name.
+        let (vector, asset) = subject();
+        for mutation in super::NegativeMutation::ALL {
+            let mutated = super::apply(&vector, asset, *mutation)
+                .unwrap_or_else(|_| panic!("{mutation:?} could not be applied"));
+            assert_ne!(
+                mutated.bytes(),
+                vector.bytes(),
+                "{mutation:?} left the transaction alone",
+            );
+            let decoded = transaction::TargetTransaction::decode(mutated.bytes())
+                .unwrap_or_else(|_| panic!("{mutation:?} produced unreadable bytes"));
+            assert_eq!(
+                decoded.encode(),
+                mutated.bytes(),
+                "{mutation:?} produced bytes that do not reproduce themselves",
+            );
+        }
+    }
+
+    #[test]
+    fn each_mutation_changes_exactly_the_structure_it_names() {
+        // The attributability argument, checked per arm: everything the
+        // mutation does not claim to touch must compare equal to the
+        // accepted transaction's own.
+        use super::NegativeMutation as M;
+        let (vector, asset) = subject();
+        let before = round_trips(&vector).expect("the subject round-trips");
+
+        for mutation in M::ALL {
+            let mutated = super::apply(&vector, asset, *mutation).expect("applied");
+            let after = transaction::TargetTransaction::decode(mutated.bytes()).expect("decodes");
+
+            // The version moves for exactly one arm.
+            assert_eq!(
+                after.version() != before.version(),
+                *mutation == M::ChangeTransactionVersion,
+                "{mutation:?} disagreed about the version",
+            );
+            // The input census never changes: no arm here adds or drops
+            // a spend.
+            assert_eq!(
+                after.inputs().len(),
+                before.inputs().len(),
+                "{mutation:?} changed the input census",
+            );
+            // The output census grows for exactly the two arms that say
+            // they add an output.
+            let adds_output = matches!(
+                mutation,
+                M::SplitSuccessorInTwo | M::RouteUnitIntoUndeclaredOutput
+            );
+            assert_eq!(
+                after.outputs().len() > before.outputs().len(),
+                adds_output,
+                "{mutation:?} disagreed about adding an output",
+            );
+            // The witnesses move for exactly the two arms that touch
+            // them.
+            let touches_witness =
+                matches!(mutation, M::ReverseAshInputOrder | M::ReorderWitnessItems);
+            assert_eq!(
+                after.witnesses() != before.witnesses(),
+                touches_witness,
+                "{mutation:?} disagreed about touching a witness",
+            );
+        }
+    }
+
+    #[test]
+    fn the_closed_asset_stays_balanced_except_where_the_arm_says_it_does_not() {
+        // Value balance is checked before any script runs, so an arm
+        // that claims a script-path refusal must not disturb it. This is
+        // the property that decides whether the expected boundary is
+        // even reachable, so it is asserted rather than assumed.
+        let (vector, asset) = subject();
+        let before = round_trips(&vector).expect("the subject round-trips");
+        let total = |transaction: &transaction::TargetTransaction| -> u64 {
+            super::outputs_carrying(transaction, asset)
+                .into_iter()
+                .filter_map(|index| super::explicit_value(&transaction.outputs()[index]))
+                .sum()
+        };
+        let accepted = total(&before);
+
+        for mutation in super::NegativeMutation::ALL {
+            let mutated = super::apply(&vector, asset, *mutation).expect("applied");
+            let after = transaction::TargetTransaction::decode(mutated.bytes()).expect("decodes");
+            assert_eq!(
+                total(&after) == accepted,
+                mutation.preserves_value_balance(),
+                "{mutation:?} disagreed with its own balance claim",
             );
         }
     }
