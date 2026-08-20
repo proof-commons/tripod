@@ -43,10 +43,14 @@ mod census_tests;
 mod guide12_reproductions;
 mod mapping_tests;
 mod non_weakening_tests;
+mod operation_assessment_tests;
 mod parser_tests;
+mod pattern_tests;
+mod policy_tests;
 mod public_api_tests;
 mod push_census_tests;
 mod schedule_tests;
+mod shape_tests;
 mod stack_tests;
 
 use std::collections::BTreeMap;
@@ -57,6 +61,29 @@ use target_elements::{
     StaticCapabilityStatus, TargetDefinition, TargetDefinitionParts, ValidatedTargetDefinition,
     reviewed_elements_tapscript, status_closure_violations, validate_target_definition,
 };
+
+/// Placeholder link-time symbols, shared by the pattern schedules and
+/// the operation assessment.
+///
+/// Distinguishable byte strings standing in for symbols a later wave
+/// resolves, not claims about any real object. Test material in the
+/// sense `(´[ADR015-rule:security:test-material]´)` fixes: public,
+/// meaningless, and never a key.
+fn pattern_symbols(
+    target: &ReviewedElementsTapscriptDefinition,
+) -> crate::pattern::CompactAshSymbols {
+    crate::pattern::CompactAshSymbols::new(
+        target,
+        vec![0x11; 32],
+        vec![0x22; 32],
+        vec![0x33; 32],
+        1,
+        vec![0x44; 20],
+        0,
+        vec![0x55; 32],
+    )
+    .expect("the placeholder symbols are the reviewed widths")
+}
 
 /// The reviewed contract, unmodified.
 fn reviewed_target() -> ReviewedElementsTapscriptDefinition {

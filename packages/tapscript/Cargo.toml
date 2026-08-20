@@ -28,5 +28,22 @@ name = "tapscript"
 compiler = { workspace = true }
 target-elements = { workspace = true }
 
+# Test-only, and only to build a plan fixture. Guide-12 §8.1 assesses
+# against the compiler's validated operation plan, and the only way to
+# obtain one is the compiler's own public constructor, which takes a
+# bound input built from the architecture body and a derived
+# realization. A test that hand-assembled a plan instead would be
+# assessing something no compiler produced.
+#
+# The production boundary above is unchanged and the reason for it
+# still holds: no module under `src/` names either package, the
+# assessment takes the plan by type, and every architecture-owned fact
+# it reads arrives through the compiler's projection. A dependency that
+# leaked into the library would let the adapter reach around that
+# projection, which is exactly what the comment above refuses.
+[dev-dependencies]
+architecture = { workspace = true }
+realization = { workspace = true }
+
 [lints]
 workspace = true

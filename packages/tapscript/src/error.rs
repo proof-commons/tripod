@@ -192,6 +192,14 @@ pub enum TapscriptError {
         /// Assessed roles nothing required, in census order.
         unexpected: Vec<ExternalEvidenceRole>,
     },
+
+    /// One operation requirement was assessed more than once.
+    ///
+    /// The plan publishes its censuses as sets, so a repeat means the
+    /// plan itself carried a duplicate. Reported rather than collapsed:
+    /// a census that quietly deduplicated would report a smaller total
+    /// than the plan it claims to answer.
+    DuplicateOperationRequirement,
 }
 
 impl fmt::Display for TapscriptError {
@@ -249,6 +257,10 @@ impl fmt::Display for TapscriptError {
             Self::ResultAlternativeLimitExceeded { maximum } => write!(
                 formatter,
                 "a result may carry at most {maximum} alternatives",
+            ),
+            Self::DuplicateOperationRequirement => write!(
+                formatter,
+                "one operation requirement was assessed more than once",
             ),
             Self::DuplicateCapabilityAssessment(capability) => {
                 write!(formatter, "capability {capability:?} was assessed twice")
