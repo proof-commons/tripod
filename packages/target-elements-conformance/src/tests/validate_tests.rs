@@ -358,7 +358,7 @@ fn a_complete_run_passes_the_gate_with_its_unresolved_claims_explicit() {
     for row in &report.cases {
         assert_eq!(row.status, CaseStatus::Passed);
         assert_eq!(row.fixture.case, row.case());
-        assert!(!row.fixture.script.is_empty());
+        assert_ne!(row.fixture.script, [] as [u8; 0]);
     }
 }
 

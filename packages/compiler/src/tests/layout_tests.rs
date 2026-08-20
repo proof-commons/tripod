@@ -85,7 +85,10 @@ fn conservation_requires_a_complete_carrier_and_authenticated_family_totals() {
             .iter()
             .filter(|analysis| analysis.relation == relation)
         {
-            assert!(!analysis.eligible.is_empty());
+            assert_ne!(
+                analysis.eligible,
+                [] as [crate::carrier::EligibleCarrier; 0]
+            );
 
             for entry in &analysis.eligible {
                 assert!(

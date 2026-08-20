@@ -64,7 +64,10 @@ fn place(operation: OperationId) -> Pilot {
         .expect("placement analysis")
         .placed;
 
-    assert!(!placed.is_empty());
+    assert_ne!(
+        placed,
+        [] as [crate::placement::PlacedProofPlanCandidate; 0]
+    );
 
     let coverage = placed
         .iter()
@@ -623,7 +626,10 @@ fn an_acyclic_graph_has_no_component() {
     let keys = synthetic_keys(OperationId::CompactAsh);
     let graph = synthetic_graph(&keys, &[prerequisite(&keys[0], &keys[1])]).expect("graph");
 
-    assert!(graph.cyclic_components().is_empty());
+    assert_eq!(
+        graph.cyclic_components(),
+        [] as [crate::coverage_graph::CoverageCycleComponent; 0]
+    );
     assert_eq!(graph.validate_acyclic(), Ok(()));
 }
 

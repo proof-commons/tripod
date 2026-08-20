@@ -715,7 +715,7 @@ fn shape_abi(
     let member_run = layout.input_run(InputRole::Member);
     let sponsor_run = layout.input_run(InputRole::Sponsor);
 
-    let ash_end = member_run.map_or(coordinator_run.end(), InputPlacement::end);
+    let ash_end = member_run.map_or_else(|| coordinator_run.end(), InputPlacement::end);
     let sponsor_range = sponsor_run.map_or((ash_end, ash_end), |run| (run.first(), run.end()));
 
     let successor_position = layout.output_position(OutputRole::Successor).ok_or(

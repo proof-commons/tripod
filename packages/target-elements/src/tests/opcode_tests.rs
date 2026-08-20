@@ -930,8 +930,14 @@ fn equality_answers_with_a_truth_value_and_its_verifying_form_answers_with_nothi
         sole_results(&spec(OpcodeId::Equal)),
         vec![StackValueType::Bool]
     );
-    assert!(sole_results(&spec(OpcodeId::EqualVerify)).is_empty());
-    assert!(sole_results(&spec(OpcodeId::Verify)).is_empty());
+    assert_eq!(
+        sole_results(&spec(OpcodeId::EqualVerify)),
+        [] as [StackValueType; 0]
+    );
+    assert_eq!(
+        sole_results(&spec(OpcodeId::Verify)),
+        [] as [StackValueType; 0]
+    );
 }
 
 #[test]

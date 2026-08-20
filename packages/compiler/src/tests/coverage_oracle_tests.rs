@@ -813,7 +813,7 @@ fn pilot(operation: OperationId) -> Pilot {
         .expect("placement analysis")
         .placed;
 
-    assert!(!placed.is_empty());
+    assert_ne!(placed, [] as [PlacedProofPlanCandidate; 0]);
 
     let coverage = placed
         .iter()
@@ -1435,7 +1435,10 @@ fn the_closure_oracle_agrees_on_a_dependency_chain() {
     let activity = all_active(&keys);
 
     assert_eq!(graph.validate_acyclic(), Ok(()));
-    assert!(oracle_components(&graph_nodes(&keys), &edges).is_empty());
+    assert_eq!(
+        oracle_components(&graph_nodes(&keys), &edges),
+        [] as [CoverageCycleComponent; 0]
+    );
 
     for key in &keys {
         assert_eq!(

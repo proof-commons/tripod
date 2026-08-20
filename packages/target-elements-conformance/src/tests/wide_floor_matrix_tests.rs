@@ -192,7 +192,7 @@ fn the_residual_threats_are_enumerated_with_reasons() {
     let named: BTreeSet<&str> = residuals.iter().map(|(name, _)| *name).collect();
     assert_eq!(named.len(), residuals.len());
     for (name, reason) in residuals {
-        assert!(!name.is_empty());
+        assert_ne!(*name, "");
         assert!(reason.len() > 40, "{name} has no stated reason");
     }
 }

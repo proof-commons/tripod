@@ -165,7 +165,10 @@ fn the_three_way_comparison_records_the_target_leg_as_agreeing() {
     let outcome = comparison.against(&predicted);
 
     assert_eq!(outcome.agreed, vec![CommitmentSource::TargetIntrospection]);
-    assert!(outcome.disagreed.is_empty());
+    assert_eq!(
+        outcome.disagreed,
+        [] as [crate::commitment_oracle::vector::LegDisagreement; 0]
+    );
     assert_eq!(outcome.absent, vec![CommitmentSource::ConstructionLibrary]);
     assert!(outcome.supplied_legs_agree());
     // Not complete, and it must not claim to be: one leg never arrived.

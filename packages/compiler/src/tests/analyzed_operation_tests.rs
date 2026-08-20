@@ -73,7 +73,7 @@ fn fixture(operations: &[OperationId]) -> Fixture {
         .expect("feasible plans")
         .candidates;
 
-    assert!(!candidates.is_empty());
+    assert_ne!(candidates, [] as [ProofPlanCandidate; 0]);
 
     Fixture {
         input,
@@ -269,7 +269,7 @@ fn inactive_relation_cases_are_present_and_carry_nothing() {
         .filter(|bundle| bundle.activity == RelationActivity::Vacuous)
         .collect::<Vec<_>>();
 
-    assert!(!inactive.is_empty());
+    assert_ne!(inactive, [] as [&RelationCaseRequirements; 0]);
 
     for bundle in inactive {
         // The sponsor cases are the only vacuity the pilots produce, so
@@ -359,7 +359,7 @@ fn external_evidence_relation_cases_retain_their_typed_requirement() {
 
     let external = only_at(&analyzed, DischargeBoundary::ExternalEvidence);
 
-    assert!(!external.is_empty());
+    assert_ne!(external, [] as [&RelationCaseRequirements; 0]);
 
     for bundle in external {
         assert!(!bundle.external_evidence.is_empty());
@@ -388,7 +388,7 @@ fn active_runtime_relation_cases_retain_every_alternative() {
         })
         .collect::<Vec<_>>();
 
-    assert!(!runtime.is_empty());
+    assert_ne!(runtime, [] as [&RelationCaseRequirements; 0]);
 
     for bundle in runtime {
         assert!(!bundle.carrier_assignments.is_empty(), "{:?}", bundle.key);
@@ -563,7 +563,10 @@ fn no_operation_factor_carries_a_cross_operation_dependency() {
     .expect("operation factors");
 
     for (operation, analyzed) in &factors {
-        assert!(!analyzed.coverage_dependencies.nodes.is_empty());
+        assert_ne!(
+            analyzed.coverage_dependencies.nodes,
+            [] as [crate::coverage_graph::CoverageNode; 0]
+        );
 
         for node in &analyzed.coverage_dependencies.nodes {
             assert_eq!(node.id.operation(), *operation);

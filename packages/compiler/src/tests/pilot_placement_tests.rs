@@ -67,7 +67,7 @@ fn planned(operations: &[OperationId]) -> (CompilerRelationAnalysis, Vec<ProofPl
         .expect("feasible plans")
         .candidates;
 
-    assert!(!candidates.is_empty());
+    assert_ne!(candidates, [] as [ProofPlanCandidate; 0]);
     (relations, candidates)
 }
 
@@ -314,7 +314,10 @@ fn every_discharge_disposition_is_represented_in_each_pilot() {
         for plan in analysis.plans() {
             if plan.activity == RelationActivity::Vacuous {
                 vacuous += 1;
-                assert!(plan.runtime_requirements.is_empty());
+                assert_eq!(
+                    plan.runtime_requirements,
+                    [] as [crate::placement::RuntimePlacementRequirement; 0]
+                );
             }
 
             boundaries.extend(plan.boundaries.iter().copied());
@@ -443,7 +446,10 @@ fn sponsor_family_cardinality_is_vacuous_unsponsored_and_active_when_sponsored()
                 assert_eq!(plan.activity, expected, "{operation:?} {side:?}");
 
                 if plan.case.sponsor == SponsorCase::Absent {
-                    assert!(plan.runtime_requirements.is_empty());
+                    assert_eq!(
+                        plan.runtime_requirements,
+                        [] as [crate::placement::RuntimePlacementRequirement; 0]
+                    );
                 } else {
                     assert_eq!(plan.runtime_requirements.len(), 1);
                 }
@@ -487,7 +493,7 @@ fn sponsor_cardinality_operands_name_counts_and_bounds_but_no_amount() {
                 .clone();
             let operands = crate::source::relation_operands(&declaration).expect("operands");
 
-            assert!(!operands.is_empty());
+            assert_ne!(operands, [] as [crate::source::OperandId; 0]);
             for operand in &operands {
                 assert!(
                     !crate::source::is_sponsor_amount_operand(operand.role()),
@@ -666,9 +672,18 @@ fn substrate_conservation_stays_external_evidence_with_no_runtime_carrier() {
                 plan.boundaries,
                 BTreeSet::from([DischargeBoundary::ExternalEvidence]),
             );
-            assert!(plan.runtime_requirements.is_empty());
-            assert!(plan.compiler_requirements.is_empty());
-            assert!(plan.structural_requirements.is_empty());
+            assert_eq!(
+                plan.runtime_requirements,
+                [] as [crate::placement::RuntimePlacementRequirement; 0]
+            );
+            assert_eq!(
+                plan.compiler_requirements,
+                [] as [crate::placement::CompilerStaticRequirement; 0]
+            );
+            assert_eq!(
+                plan.structural_requirements,
+                [] as [crate::placement::BackendStructuralRequirement; 0]
+            );
             assert!(!plan.external_evidence.is_empty());
         }
 
@@ -1035,6 +1050,6 @@ fn the_combined_scope_placement_set_is_the_product_of_its_operations() {
     // placement set over both operations' cases.
     for entry in &combined.placed.placed {
         assert_eq!(entry.execution_cases.len(), 4);
-        assert!(!entry.feasible_placements.is_empty());
+        assert_ne!(entry.feasible_placements, [] as [PlacementCandidate; 0]);
     }
 }

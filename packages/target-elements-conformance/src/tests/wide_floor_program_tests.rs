@@ -192,7 +192,7 @@ fn the_comparison_covers_every_candidate_exactly_once() {
     assert_eq!(named.len(), rows.len());
     assert_eq!(named, WideFloorCandidate::ALL.iter().copied().collect());
     for candidate in WideFloorCandidate::ALL {
-        assert!(!disposition(*candidate).is_empty());
+        assert_ne!(disposition(*candidate), "");
     }
 }
 

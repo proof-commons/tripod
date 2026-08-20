@@ -96,7 +96,10 @@ fn the_analyzed_source_binds_the_exact_typed_source() {
         // single-operation scope analyzes a subset of the relations its
         // source declares, and the source states the whole of what it
         // was derived from rather than the part that was used.
-        assert!(!source.realization.relations.nodes.is_empty());
+        assert_ne!(
+            source.realization.relations.nodes,
+            [] as [realization::RelationDeclaration; 0]
+        );
         assert!(
             analyzed.program.foundation.relations.nodes.len()
                 <= source.realization.relations.nodes.len(),
@@ -641,7 +644,7 @@ fn a_corrupted_architecture_scope_status_is_rejected() {
     };
 
     assert_eq!(missing.len(), 12);
-    assert!(unexpected.is_empty());
+    assert_eq!(unexpected, [] as [OperationId; 0]);
 }
 
 #[test]

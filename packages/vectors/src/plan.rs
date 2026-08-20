@@ -635,7 +635,7 @@ mod tests {
         }
         for subject in plan.target_cases() {
             assert_eq!(subject.standing(), SubjectStanding::Canonical);
-            assert!(!subject.subject().bytes().is_empty());
+            assert_ne!(subject.subject().bytes(), [] as [u8; 0]);
         }
     }
 

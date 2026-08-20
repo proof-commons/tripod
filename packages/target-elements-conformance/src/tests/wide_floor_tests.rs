@@ -214,7 +214,7 @@ fn the_bound_census_is_a_set_and_its_exponents_are_representable() {
     assert_eq!(unique.len(), WideFloorBound::ALL.len());
     for bound in WideFloorBound::ALL.iter().copied() {
         assert!(bound.exclusive_exponent() < 63);
-        assert!(!bound.derivation().is_empty());
+        assert_ne!(bound.derivation(), "");
     }
 }
 

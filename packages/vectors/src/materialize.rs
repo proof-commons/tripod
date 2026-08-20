@@ -324,7 +324,7 @@ mod tests {
         for case in materializable {
             let vector = materialize(&fixture, case)
                 .unwrap_or_else(|error| panic!("{:?} did not materialize: {error:?}", case.id()));
-            assert!(!vector.bytes().is_empty());
+            assert_ne!(vector.bytes(), [] as [u8; 0]);
             assert_eq!(vector.expected(), EvidenceBoundary::AcceptedTransaction);
             assert_eq!(
                 vector.settled_successor(),

@@ -93,8 +93,14 @@ fn runtime_only(plan: &RelationCasePlan) -> (SemanticScope, CarrierMultiplicity)
 
     let requirement = &plan.runtime_requirements[0];
     assert_eq!(requirement.relation, plan.relation);
-    assert!(plan.compiler_requirements.is_empty());
-    assert!(plan.structural_requirements.is_empty());
+    assert_eq!(
+        plan.compiler_requirements,
+        [] as [CompilerStaticRequirement; 0]
+    );
+    assert_eq!(
+        plan.structural_requirements,
+        [] as [BackendStructuralRequirement; 0]
+    );
     assert!(plan.external_evidence.is_empty());
 
     (requirement.scope, requirement.multiplicity)
@@ -215,7 +221,10 @@ fn permissionless_authorization_is_a_backend_structural_secret_free_path() {
             plan.boundaries,
             BTreeSet::from([DischargeBoundary::BackendStructural]),
         );
-        assert!(plan.runtime_requirements.is_empty());
+        assert_eq!(
+            plan.runtime_requirements,
+            [] as [crate::placement::RuntimePlacementRequirement; 0]
+        );
         assert_eq!(
             plan.structural_requirements,
             vec![BackendStructuralRequirement::SecretFreeOperationPath {
@@ -244,7 +253,10 @@ fn representation_is_static_selection_plus_structural_encoding() {
                 DischargeBoundary::BackendStructural,
             ]),
         );
-        assert!(plan.runtime_requirements.is_empty());
+        assert_eq!(
+            plan.runtime_requirements,
+            [] as [crate::placement::RuntimePlacementRequirement; 0]
+        );
 
         let selected = plan.case.representations[&ObjectId::Ash];
 
@@ -279,8 +291,14 @@ fn constructibility_is_compiler_static_only() {
             plan.boundaries,
             BTreeSet::from([DischargeBoundary::CompilerStatic]),
         );
-        assert!(plan.runtime_requirements.is_empty());
-        assert!(plan.structural_requirements.is_empty());
+        assert_eq!(
+            plan.runtime_requirements,
+            [] as [crate::placement::RuntimePlacementRequirement; 0]
+        );
+        assert_eq!(
+            plan.structural_requirements,
+            [] as [BackendStructuralRequirement; 0]
+        );
         assert_eq!(plan.compiler_requirements.len(), 1);
     }
 }
@@ -302,9 +320,18 @@ fn substrate_conservation_is_external_evidence_with_no_runtime_requirement() {
                 plan.boundaries,
                 BTreeSet::from([DischargeBoundary::ExternalEvidence]),
             );
-            assert!(plan.runtime_requirements.is_empty());
-            assert!(plan.structural_requirements.is_empty());
-            assert!(plan.compiler_requirements.is_empty());
+            assert_eq!(
+                plan.runtime_requirements,
+                [] as [crate::placement::RuntimePlacementRequirement; 0]
+            );
+            assert_eq!(
+                plan.structural_requirements,
+                [] as [BackendStructuralRequirement; 0]
+            );
+            assert_eq!(
+                plan.compiler_requirements,
+                [] as [CompilerStaticRequirement; 0]
+            );
             assert_eq!(
                 plan.external_evidence,
                 BTreeSet::from([
@@ -331,7 +358,10 @@ fn sponsor_family_relations_are_vacuous_without_a_sponsor_region() {
     let absent = pilot.plan(&relation, SponsorCase::Absent);
     assert_eq!(absent.activation, ActivationCondition::WhenSponsorPresent);
     assert_eq!(absent.activity, RelationActivity::Vacuous);
-    assert!(absent.runtime_requirements.is_empty());
+    assert_eq!(
+        absent.runtime_requirements,
+        [] as [crate::placement::RuntimePlacementRequirement; 0]
+    );
 
     let present = pilot.plan(&relation, SponsorCase::Present);
     assert_eq!(present.activation, ActivationCondition::WhenSponsorPresent);
@@ -542,7 +572,7 @@ fn a_dropped_relation_case_plan_is_rejected() {
         panic!("expected a relation-case census mismatch");
     };
 
-    assert!(unexpected.is_empty());
+    assert_eq!(unexpected, [] as [crate::placement::RelationCaseKey; 0]);
     assert_eq!(missing.len(), 1);
     assert_eq!(missing[0].relation, dropped.relation);
     assert_eq!(missing[0].case, dropped.case);

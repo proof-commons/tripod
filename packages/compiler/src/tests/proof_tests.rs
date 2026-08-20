@@ -78,12 +78,12 @@ fn every_pilot_relation_is_classified_exactly_once() {
                         obligation.relation
                     );
                 };
-                assert!(!alternatives.is_empty());
+                assert_ne!(alternatives.as_slice(), []);
                 assert!(alternatives.is_sorted());
             }
         }
 
-        assert!(!obligation.operands.is_empty());
+        assert_ne!(obligation.operands, [] as [crate::source::OperandId; 0]);
     }
 }
 
@@ -94,7 +94,10 @@ fn pilot_search_retains_both_live_transfer_strategies() {
     let input = bound_input(&[OperationId::CompactAsh, OperationId::TransferLive]);
     let plans = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).expect("plans");
 
-    assert!(!plans.candidates.is_empty());
+    assert_ne!(
+        plans.candidates,
+        [] as [crate::proof::ProofPlanCandidate; 0]
+    );
     assert!(plans.candidates.is_sorted());
 
     let live_choice = RepresentationChoiceId {
@@ -188,7 +191,7 @@ fn a_missing_capability_blocks_rather_than_weakens() {
     let CompileError::NoFeasibleProofPlan { blocked_relations } = error else {
         panic!("must be no-feasible-plan");
     };
-    assert!(!blocked_relations.is_empty());
+    assert_ne!(blocked_relations, [] as [realization::RelationId; 0]);
     assert!(blocked_relations.is_sorted());
 }
 
@@ -221,7 +224,10 @@ fn capability_requirements_are_published_per_candidate() {
                 .contains(&RequiredCapability::OwnerAuthorization),
             "live transfer always requires owner authorization",
         );
-        assert!(!candidate.source_requirements.is_empty());
+        assert_ne!(
+            candidate.source_requirements,
+            [] as [crate::source::SourceRequirement; 0]
+        );
         assert!(candidate.source_requirements.is_sorted());
     }
 }
@@ -298,7 +304,10 @@ fn external_evidence_carries_its_capability_and_source_into_every_candidate() {
     let input = bound_input(&[OperationId::CompactAsh, OperationId::TransferLive]);
     let plans = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).expect("plans");
 
-    assert!(!plans.candidates.is_empty());
+    assert_ne!(
+        plans.candidates,
+        [] as [crate::proof::ProofPlanCandidate; 0]
+    );
 
     for candidate in &plans.candidates {
         // The evidence requirement itself is retained unresolved…
@@ -447,7 +456,10 @@ fn live_transfer_conservation_agrees_with_every_selected_mode() {
         object: ObjectId::ReceiptLive,
     };
 
-    assert!(!plans.candidates.is_empty());
+    assert_ne!(
+        plans.candidates,
+        [] as [crate::proof::ProofPlanCandidate; 0]
+    );
 
     for candidate in &plans.candidates {
         let (conservation, alternative) = candidate
@@ -506,7 +518,7 @@ fn live_transfer_conservation_agrees_with_every_selected_mode() {
             })
             .collect::<Vec<_>>();
 
-        assert!(!amount_rows.is_empty());
+        assert_ne!(amount_rows, [] as [&crate::source::SourceRequirement; 0]);
         for row in amount_rows {
             assert_eq!(row.source, expected_source);
             assert_ne!(row.source, RequiredSourceKind::AuthenticatedFamilyCensus);

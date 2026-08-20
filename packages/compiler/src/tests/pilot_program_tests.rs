@@ -1450,7 +1450,7 @@ fn the_combined_program_selects_no_target() {
     // Withdrawing one capability removes the plans that needed it, so
     // the analyzed set is the wider unconstrained one.
     assert!(pruned.len() < COMBINED.program.proof_plans.len());
-    assert!(!pruned.is_empty());
+    assert_ne!(pruned, [] as [ProofPlanCandidate; 0]);
 
     for plan in &pruned {
         assert!(COMBINED.program.proof_plans.contains_key(plan));
@@ -1561,7 +1561,10 @@ fn the_analyzed_program_mints_no_compiler_identity() {
     assert_eq!(&architecture, COMBINED.input.architecture_binding());
     assert_eq!(realization, COMBINED.input.realization().project());
     assert_eq!(&compilation_scope, COMBINED.input.scope());
-    assert!(!foundation.relations.nodes.is_empty());
+    assert_ne!(
+        foundation.relations.nodes,
+        [] as [crate::relation::CompilerRelationNodeProjection; 0]
+    );
     assert!(matches!(
         architecture_scope,
         ArchitectureScopeStatus::Partial { .. },
@@ -1597,7 +1600,10 @@ fn the_analyzed_program_mints_no_compiler_identity() {
             assert!(!relation_cases.is_empty());
             assert!(!feasible_placements.is_empty());
             assert!(!layout_requirements.is_empty());
-            assert!(!coverage_dependencies.nodes.is_empty());
+            assert_ne!(
+                coverage_dependencies.nodes,
+                [] as [crate::coverage_graph::CoverageNode; 0]
+            );
         }
     }
 

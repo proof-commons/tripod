@@ -264,8 +264,14 @@ fn out_of_scope_pairs_are_ignored_entirely() {
     )
     .expect("fully out-of-scope declarations are simply not selected");
 
-    assert!(analysis.project().nodes.is_empty());
-    assert!(analysis.project().edges.is_empty());
+    assert_eq!(
+        analysis.project().nodes,
+        [] as [crate::relation::CompilerRelationNodeProjection; 0]
+    );
+    assert_eq!(
+        analysis.project().edges,
+        [] as [crate::relation::CompilerRelationDependencyProjection; 0]
+    );
 }
 
 #[test]
