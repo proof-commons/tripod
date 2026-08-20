@@ -31,6 +31,15 @@
 #   ELEMENTS_NATIVE_EXECUTOR_LOCAL_TOPICS   space-separated local topic
 #                                           branches folded into that tip
 #                                           (optional, ADR-018)
+#   ELEMENTS_NATIVE_EXECUTOR_ENABLE_WALLET  set to any non-empty value to
+#                                           boot the node with its wallet
+#                                           enabled, which the Guide-12
+#                                           section 16.2 operation lane
+#                                           needs (optional). A wallet
+#                                           NAME is not a credential and
+#                                           none is named here; the
+#                                           adapter creates a disposable
+#                                           wallet on a disposable chain
 #   ELEMENTS_NATIVE_EXECUTOR_PYTHON         python interpreter (default
 #                                           python3)
 #   ELEMENTS_NATIVE_EXECUTOR_LAUNCH_PREFIX  word-split command placed in
@@ -81,6 +90,10 @@ fi
 for topic in ${ELEMENTS_NATIVE_EXECUTOR_LOCAL_TOPICS:-}; do
   set -- --included-local-topic "$topic" "$@"
 done
+
+if [ -n "${ELEMENTS_NATIVE_EXECUTOR_ENABLE_WALLET:-}" ]; then
+  set -- --enable-wallet "$@"
+fi
 
 python="${ELEMENTS_NATIVE_EXECUTOR_PYTHON:-python3}"
 
