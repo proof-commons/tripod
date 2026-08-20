@@ -93,6 +93,17 @@ pub enum TargetEvidenceRequirementId {
     /// That the described policy resource limits are the limits a real
     /// deployment enforces.
     PolicyResourceLimits,
+    /// That a real node recognizes its fee role by exactly the
+    /// described structural terms, refuses a zero-amount fee output,
+    /// and imposes neither a count nor a position rule of its own.
+    FeeOutputForm,
+    /// That a real node refuses an explicit zero-valued output whose
+    /// program is spendable, and admits one whose program is not.
+    ExplicitZeroValueOutputRule,
+    /// That a real node accepts a transaction carrying no fee output at
+    /// all, and that the path refusing to relay one is a policy path
+    /// rather than a consensus one.
+    FeelessTransactionAdmission,
 }
 
 impl TargetEvidenceRequirementId {
@@ -122,5 +133,8 @@ impl TargetEvidenceRequirementId {
         Self::VerificationSemantics,
         Self::ConsensusResourceLimits,
         Self::PolicyResourceLimits,
+        Self::FeeOutputForm,
+        Self::ExplicitZeroValueOutputRule,
+        Self::FeelessTransactionAdmission,
     ];
 }

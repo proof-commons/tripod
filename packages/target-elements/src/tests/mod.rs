@@ -13,4 +13,5 @@ mod permutation_tests;
 mod push_tests;
 mod registry_mutation_tests;
 mod status_closure_tests;
+mod transaction_form_tests;
 mod weld_tests;
