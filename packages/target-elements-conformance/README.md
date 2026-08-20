@@ -104,6 +104,17 @@ material: the first-party interface neither accepts it nor reads it.
 - **`tapscript`** produces the exact script bytes a fixture carries. Scripts are
   not assembled here; a fixture takes a typed `TapscriptProgram`, except where a
   case is deliberately malformed and says so via `FixtureScriptSource`.
+- **`elements`** and **`secp256k1-zkp`** are the reference implementation,
+  adopted by the user's 2026-08-20 ruling and used only by the cross-check
+  tests. They bind the same C library the node vendors, so agreement with them
+  is conformance-to-the-target's-own-implementation evidence and never
+  independence evidence; the first-party oracles below keep the independence
+  claim unqualified. The raw sys FFI crate is never a direct dependency.
+- **`vectors`** and **`transaction`** are **test-only** neighbors, carrying the
+  fixtures and the first-party computations the cross-checks are stated
+  against. Neither may be promoted to a regular dependency, because the
+  library graph must stay clear of them so that the executor cannot reach an
+  expectation.
 - Nothing depends on this package in turn. It is the end of the chain.
 
 ## The workflow
@@ -540,6 +551,25 @@ point arithmetic only — no secret scalar appears anywhere in it.
 
 `wide_floor` re-exports the domain constants, the `WideFloorInstance` oracle and
 its `WideFloorWitness`, the staged normalizer, and the candidate comparison.
+
+### `reference` — vectors minted against the reference implementation
+
+`FIXTURE_MERKLE_ROOT` and `FIXTURE_REFERENCE_OUTPUT_KEY`, with the output key's
+parity bit. The root is the first-party hashing of the fixture bundle's
+committed tree, confirmed by folding every leaf path through the reference
+crate's own branch hashing; the output key is the BIP-341-style tweak of the
+fixture internal key by that root, computed through `secp256k1-zkp` because the
+first-party construction side deliberately refuses that arithmetic.
+
+Pinning the key does **not** discharge `PinnedOutputKeyUnverifiedAgainstTree`.
+That needs the funding ceremony against a real node — an output actually created
+at the program and a spend the node accepted. The pin buys early detection of
+tree-construction drift, and nothing more.
+
+The cross-checks themselves live in `src/tests/reference_oracle_tests.rs`,
+because they need the test-only fixture neighbors. Every one of them states its
+claim class in a line: reference-implementation conformance, not independent
+evidence.
 
 ### The declassification lane
 

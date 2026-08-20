@@ -92,8 +92,35 @@ sha2 = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
+# Test-only, and deliberately not `[dependencies]`.
+#
+# The reference cross-checks compare a first-party computation against
+# the reference implementation of the same object, so the test lane has
+# to hold the first-party object itself. `vectors` owns the nine
+# byte-stable sponsorless fixture transactions and the one linked
+# bundle they are materialized from; `transaction` owns the encoder,
+# the weight and virtual-size rules, and the committed-tree hashing
+# those cross-checks are stated against.
+#
+# Re-materializing the fixtures here through the public constructors was
+# considered and not taken. It would restate the bundle recipe — the
+# placement search, the link, the ABI derivation — a second time, and a
+# restatement is a *lookalike*: the real fixtures could drift while
+# these tests stayed green, which is the exact regression this wave
+# exists to notice. The cross-check has to bind the fixtures Wave 11
+# will submit, not a reconstruction of them.
+#
+# The edge is test-only, so it does not enter this package's library
+# graph and cannot reach the executor. That matters for the vectors
+# package contract §16.2, which forbids the *opposite* edge: `vectors`
+# must not be able to obtain an expectation from the component that
+# will later produce the observation it is judged against. Nothing here
+# creates that edge, and nothing here may be promoted to
+# `[dependencies]` without revisiting it.
 [dev-dependencies]
 tempfile = { workspace = true }
+transaction = { workspace = true }
+vectors = { workspace = true }
 
 [lints]
 workspace = true
