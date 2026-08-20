@@ -102,6 +102,8 @@ fn funded(step: &str, txid: &str) -> NativeOperationResponse {
             script: "5120aabb".to_owned(),
         }],
         accepted_txid: None,
+        sponsor_witness: Vec::new(),
+        signature_bound_to: None,
         resources: NativeResourceObservation::default(),
     }
 }
@@ -119,6 +121,8 @@ fn submitted(step: &str, txid: &str) -> NativeOperationResponse {
         issued_asset: None,
         funded_outputs: Vec::new(),
         accepted_txid: Some(txid.to_owned()),
+        sponsor_witness: Vec::new(),
+        signature_bound_to: None,
         resources: NativeResourceObservation::default(),
     }
 }
@@ -277,7 +281,9 @@ fn a_plan_states_its_second_step_out_of_the_first_answer() {
             b"aa00".to_vec(),
             "the submission was not built from the funding answer",
         ),
-        OperationSubject::Funding(_) => panic!("the second step is a submission"),
+        OperationSubject::Funding(_)
+        | OperationSubject::SponsorFunding(_)
+        | OperationSubject::SponsorSigning(_) => panic!("the second step is a submission"),
     }
     assert_eq!(transcript.operation_responses().len(), 2);
     assert_eq!(transcript.operation_requests().len(), 2);
@@ -305,7 +311,9 @@ fn the_transcript_retains_the_exact_subject_of_every_step() {
         .expect("the step was recorded")
     {
         OperationSubject::Funding(subject) => assert_eq!(subject.outputs, 3),
-        OperationSubject::Submission(_) => panic!("the step was a funding step"),
+        OperationSubject::Submission(_)
+        | OperationSubject::SponsorFunding(_)
+        | OperationSubject::SponsorSigning(_) => panic!("the step was a funding step"),
     }
 }
 

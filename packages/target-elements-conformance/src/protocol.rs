@@ -426,6 +426,40 @@ pub enum ExecutorCapability {
     /// a submission step, because the step's whole content is which
     /// layer the target answered from.
     TargetTransactionSubmission,
+    /// It acts as a sponsor on this development network: it creates a
+    /// coin out of its own reserve holdings at a program it can
+    /// authorize, and authorizes one input of a finalized transaction.
+    ///
+    /// # Why the capability lives on this side of the boundary
+    ///
+    /// A sponsored transaction carries an input somebody has to
+    /// authorize, and the packages that build one hold no key and derive
+    /// none. That is a deliberate property rather than a gap: a
+    /// constructor that could produce an authorization could also
+    /// produce one nobody asked for. So the ability is the executor's,
+    /// it is advertised here like every other, and an executor without
+    /// it is never sent a step it could only refuse
+    /// `(´[PLAN-rule:guide10:schema-migration]´)`.
+    ///
+    /// # What an executor advertising this is claiming, and what it is
+    /// not
+    ///
+    /// The claim is narrow: on a disposable development network, this
+    /// executor holds reserve value and can authorize a spend of a coin
+    /// it made. The key material behind it is test-scoped by
+    /// construction — it belongs to a chain nobody settles on and
+    /// authorizes nothing anywhere else
+    /// `(´[ADR015-rule:security:test-material]´)`.
+    ///
+    /// It is emphatically *not* a claim about a sponsor's authorization
+    /// strength, custody, or standing. Evidence produced with this
+    /// capability is evidence about what the *candidate* owes — that the
+    /// transaction it builds is one the target accepts, and that the
+    /// projection read back off the accepted bytes matches the one the
+    /// model derived. Reading it as evidence that a sponsor's
+    /// authorization was sound would be reading a fact about the
+    /// candidate as a fact about a party the run never had.
+    TestSponsorAuthorization,
 }
 
 impl ExecutorHandshake {
@@ -1522,13 +1556,36 @@ pub enum OperationStepKind {
     Fund,
     /// Hand the target a complete transaction and report what it did.
     Submit,
+    /// Create a coin out of the executor's own reserve holdings, at a
+    /// program the executor is able to authorize a spend of.
+    ///
+    /// Distinct from [`Self::Fund`] because the caller does not choose
+    /// the program. A funding step names the program its outputs pay to;
+    /// this one cannot, because the whole point is that the executor
+    /// keeps whatever the program commits to. What comes back is the
+    /// program the executor picked, and the caller reads it rather than
+    /// dictating it.
+    FundSponsor,
+    /// Authorize one input of an already-finalized transaction.
+    SignSponsor,
 }
 
 impl std::fmt::Display for OperationStepKind {
+    /// # One spelling, and why it has to be the wire's
+    ///
+    /// The serde representation of this enum is snake case, and an
+    /// adapter reads the kind out of the record's own field. A
+    /// `Display` that rendered a kind differently would be a second
+    /// authored spelling of one word — harmless while a reader is
+    /// human, and not harmless at all the moment anything compares the
+    /// two `(´[PLAN-rule:guide12-exec:typed-source]´)`. The census test
+    /// below holds them equal for every variant.
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let text = match self {
             Self::Fund => "fund",
             Self::Submit => "submit",
+            Self::FundSponsor => "fund_sponsor",
+            Self::SignSponsor => "sign_sponsor",
         };
         formatter.write_str(text)
     }
@@ -1606,6 +1663,81 @@ pub struct TargetSubmissionSubject {
     pub transaction_bytes: Vec<u8>,
 }
 
+/// What a sponsor-funding step is asked to create.
+///
+/// # Why no program is stated
+///
+/// Every other funding request names the program its outputs pay to.
+/// This one deliberately does not, and the omission is the whole record:
+/// the coin exists to be spent later by the executor itself, so the
+/// program has to be one the executor can authorize. A caller that
+/// named it would be choosing where somebody else's key lives, and the
+/// only honest answer to "which program can you sign for" comes back
+/// from the executor.
+///
+/// The asset is not stated either, for the same reason. What a
+/// development network uses as its reserve is the network's own fact,
+/// and the executor reports which asset it paid in.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TargetSponsorFundingSubject {
+    /// How many sponsor coins to create.
+    pub sponsor_outputs: u8,
+    /// What each of them must hold, in the reserve asset's smallest
+    /// unit.
+    ///
+    /// Exact rather than a minimum. A sponsor input that carries more
+    /// than the transaction spends leaves the reserve asset unbalanced,
+    /// and the caller — not the executor — is the side that knows what
+    /// the transaction it is about to build will spend.
+    pub amount_per_sponsor_output: u64,
+}
+
+/// Which sighash profile a signing step selects, on the wire.
+///
+/// One variant, and named rather than assumed, on exactly the reasoning
+/// `transaction`'s own profile type states: a profile committing to
+/// fewer outputs would let an authorization be replayed against a
+/// transaction whose protected outputs differ.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum WireSighashProfile {
+    /// Commits to every input and every output of the transaction.
+    AllInputsAllOutputs,
+}
+
+/// What a sponsor-signing step is asked to authorize.
+///
+/// # The request carries finalized bytes, not a template
+///
+/// The transaction is complete except for the witness of the input
+/// being authorized. That is what makes the echo below checkable: the
+/// executor returns the bytes it actually signed, and the caller
+/// compares them with the bytes it sent, so an executor that authorized
+/// some other transaction is caught by comparison rather than trusted
+/// not to.
+///
+/// # What is deliberately absent
+///
+/// No expected layer, no expected verdict, and nothing about what the
+/// transaction is for. A signing step is not a judgement and the
+/// executor is told nothing that would let it produce one
+/// `(´[PLAN-rule:guide11-exec:request-subject]´)`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TargetSponsorSigningSubject {
+    /// The exact finalized transaction the authorization is about.
+    pub finalized_transaction: Vec<u8>,
+    /// Which input is being authorized.
+    pub sponsor_input_index: u16,
+    /// The coin that input spends, so the executor knows which of its
+    /// own programs is in question without inferring it.
+    pub sponsor_outpoint: WireOutpoint,
+    /// The profile the authorization must commit under.
+    pub sighash_profile: WireSighashProfile,
+}
+
 /// The subject of one operation step.
 ///
 /// Untagged because the kind is already stated in the case identity, and
@@ -1624,6 +1756,10 @@ pub enum OperationSubject {
     Funding(Box<TargetFundingSubject>),
     /// A submission step's subject.
     Submission(Box<TargetSubmissionSubject>),
+    /// A sponsor-funding step's subject.
+    SponsorFunding(Box<TargetSponsorFundingSubject>),
+    /// A sponsor-signing step's subject.
+    SponsorSigning(Box<TargetSponsorSigningSubject>),
 }
 
 impl OperationSubject {
@@ -1637,15 +1773,31 @@ impl OperationSubject {
         match self {
             Self::Funding(_) => OperationStepKind::Fund,
             Self::Submission(_) => OperationStepKind::Submit,
+            Self::SponsorFunding(_) => OperationStepKind::FundSponsor,
+            Self::SponsorSigning(_) => OperationStepKind::SignSponsor,
         }
     }
 
     /// The executor capability a step of this kind requires.
+    ///
+    /// The two sponsor steps require one capability rather than two, and
+    /// that is a judgement about what is separable rather than an
+    /// economy. Funding and submission were split because an executor
+    /// can genuinely have one and not the other — a node that judges
+    /// transactions perfectly well may hold no funds. Sponsor funding
+    /// and sponsor signing are not like that: a coin the executor
+    /// created but cannot authorize is a coin nothing can spend, and an
+    /// executor that could authorize but holds no reserve has nothing to
+    /// authorize a spend of. Splitting them would offer a combination
+    /// neither half is usable in.
     #[must_use]
     pub const fn required_capability(&self) -> ExecutorCapability {
         match self {
             Self::Funding(_) => ExecutorCapability::TestFundingCeremony,
             Self::Submission(_) => ExecutorCapability::TargetTransactionSubmission,
+            Self::SponsorFunding(_) | Self::SponsorSigning(_) => {
+                ExecutorCapability::TestSponsorAuthorization
+            }
         }
     }
 }
@@ -1725,6 +1877,32 @@ pub struct NativeOperationResponse {
     /// The identity the target gave a submitted transaction, where it
     /// took one.
     pub accepted_txid: Option<String>,
+    /// The witness stack a sponsor-signing step produced, bottom item
+    /// first.
+    ///
+    /// Defaulted, so an executor that predates the sponsor steps and
+    /// never writes the member still produces a record this harness
+    /// reads. That is what keeps the addition from being a revision:
+    /// nothing an executor already wrote changes shape.
+    #[serde(default)]
+    pub sponsor_witness: Vec<Vec<u8>>,
+    /// The exact bytes a sponsor-signing step authorized.
+    ///
+    /// # Why the executor echoes what it was handed
+    ///
+    /// So the caller can compare rather than trust. An executor that
+    /// authorized some other transaction returns some other bytes, and
+    /// the comparison is an exact byte comparison
+    /// `(´[PLAN-rule:guide12-exec:typed-source]´)`.
+    ///
+    /// The echo on its own is weak — an executor could echo without
+    /// looking — and it is not what the evidence rests on. What rests on
+    /// nothing but the target is the submission: an authorization
+    /// produced over different bytes fails the target's own verification
+    /// and the transaction is refused. The echo catches the honest
+    /// mistake early; the target catches the rest.
+    #[serde(default)]
+    pub signature_bound_to: Option<Vec<u8>>,
     /// What the target reported the work cost.
     pub resources: NativeResourceObservation,
 }
@@ -1767,6 +1945,8 @@ impl NativeOperationResponse {
         let observed = self.issued_asset.is_some()
             || !self.funded_outputs.is_empty()
             || self.accepted_txid.is_some()
+            || !self.sponsor_witness.is_empty()
+            || self.signature_bound_to.is_some()
             || self.resources.observes_interpreter();
         if !self.observed_layer.is_target_verdict() {
             return if observed {
@@ -1774,6 +1954,15 @@ impl NativeOperationResponse {
             } else {
                 Ok(())
             };
+        }
+
+        // An authorization belongs to the one step that asks for one.
+        // Any other kind reporting one would be attaching an
+        // authorization to an obligation that never requested it.
+        if !matches!(self.case.operation, OperationStepKind::SignSponsor)
+            && (!self.sponsor_witness.is_empty() || self.signature_bound_to.is_some())
+        {
+            return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
         }
 
         match self.case.operation {
@@ -1793,6 +1982,38 @@ impl NativeOperationResponse {
                 }
                 if self.observed_layer == ObservedOutcomeLayer::Accepted
                     && self.accepted_txid.is_none()
+                {
+                    return Err(ResponseShapeDefect::AcceptedOperationOmitsObservation);
+                }
+            }
+            // A sponsor-funding step creates coins and issues nothing: a
+            // reserve the executor already holds is not an identity it
+            // chose, and a coin is not a transaction the target took an
+            // identity for.
+            OperationStepKind::FundSponsor => {
+                if self.accepted_txid.is_some() || self.issued_asset.is_some() {
+                    return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
+                }
+                if self.observed_layer == ObservedOutcomeLayer::Accepted
+                    && self.funded_outputs.is_empty()
+                {
+                    return Err(ResponseShapeDefect::AcceptedOperationOmitsObservation);
+                }
+            }
+            // A signing step creates nothing and submits nothing. What it
+            // owes on acceptance is both halves of an authorization: the
+            // stack, and the bytes that stack was produced against. One
+            // without the other is unusable — a stack nobody can bind to
+            // a transaction, or a binding with nothing to apply.
+            OperationStepKind::SignSponsor => {
+                if self.accepted_txid.is_some()
+                    || self.issued_asset.is_some()
+                    || !self.funded_outputs.is_empty()
+                {
+                    return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
+                }
+                if self.observed_layer == ObservedOutcomeLayer::Accepted
+                    && (self.sponsor_witness.is_empty() || self.signature_bound_to.is_none())
                 {
                     return Err(ResponseShapeDefect::AcceptedOperationOmitsObservation);
                 }

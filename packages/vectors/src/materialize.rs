@@ -23,12 +23,14 @@
 //! target has seen them. §1.5 files a refusal from here as an
 //! ABI/construction rejection, never as a target verdict.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU8;
 
 use linker::backend::{CompactAshShape, CompactAshShapeBounds, SponsorChangePresence};
 use transaction::{
     AssetField, AssetId, CompactAshRequest, Outpoint, PublicConstructionView, PublicOutputView,
-    SyntheticDisclaimer, Txid, ValueField, construct,
+    SponsorCapability, SponsorOffer, SponsorSignature, SponsorSigningRequest, SyntheticDisclaimer,
+    Txid, ValueField, construct,
 };
 
 use crate::bundle::FixtureBundle;
@@ -274,12 +276,20 @@ impl AshFunding {
 /// to cut funding for it; and materialization itself. A second
 /// derivation would be a second authored spelling of one identity
 /// `(´[PLAN-rule:guide12-exec:typed-source]´)`.
+/// # Why the sponsor count comes from the case
+///
+/// It used to be zero here, because no sponsored row could be built at
+/// all and every identity this function produced was a sponsorless
+/// one. A sponsored row's identity has to carry its own member count or
+/// two rows differing only in the size of their sponsor region would
+/// share an identity — and the funding cut for one would be accepted
+/// for the other.
 #[must_use]
 pub fn vector_id(case: &CompactAshSemanticCase) -> TargetVectorId {
     TargetVectorId {
         fixture: case.id(),
         ash_inputs: u8::try_from(case.ash_inputs()).unwrap_or(u8::MAX),
-        sponsors: 0,
+        sponsors: u8::try_from(case.sponsor().members()).unwrap_or(u8::MAX),
     }
 }
 
@@ -308,13 +318,159 @@ fn shape_of(
     .map_err(|_| VectorError::MaterializedShapeMismatch(id))
 }
 
-/// Materialize one semantic case into exact target bytes.
+/// What one sponsor coin is, as the executor reported it.
 ///
-/// Sponsored cases are not materialized in this wave: constructing one
-/// requires a sponsor capability that signs, and this package holds no
-/// key and signs nothing. They are reported as unmaterialized rather
-/// than approximated, because §1.5 forbids letting an absent capability
-/// read as a target result.
+/// # Every field is the executor's answer
+///
+/// The program especially. A sponsor coin has to sit at a program its
+/// holder can authorize a spend of, so the caller cannot choose it; it
+/// arrives here as whatever the executor said it created, and the
+/// construction is checked against the reviewed sponsor profile rather
+/// than trusted to be of the admitted class.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SponsorCoin {
+    outpoint: Outpoint,
+    amount: u64,
+    program: Vec<u8>,
+}
+
+impl SponsorCoin {
+    /// States one coin an executor reported creating.
+    #[must_use]
+    pub const fn new(outpoint: Outpoint, amount: u64, program: Vec<u8>) -> Self {
+        Self {
+            outpoint,
+            amount,
+            program,
+        }
+    }
+
+    /// Where the coin is.
+    #[must_use]
+    pub const fn outpoint(&self) -> Outpoint {
+        self.outpoint
+    }
+
+    /// What the executor said it holds.
+    #[must_use]
+    pub const fn amount(&self) -> u64 {
+        self.amount
+    }
+
+    /// The program it sits at, as the executor reported it.
+    #[must_use]
+    pub fn program(&self) -> &[u8] {
+        &self.program
+    }
+}
+
+/// The sponsor side of one construction, answered out of process.
+///
+/// # Why the authorization is replayed rather than fetched
+///
+/// [`SponsorCapability::sign`] is a synchronous call and the party that
+/// can answer it is a separate process reached one step at a time. So
+/// the construction is run twice: once to learn what the authorization
+/// would be about, and once with the answer in hand. Both runs are the
+/// same pure function of the same inputs, and the builder's own byte
+/// comparison is what enforces that — a second run that produced
+/// different bytes would produce an authorization bound to the first
+/// run's, and `SponsorSignatureBindingMismatch` refuses it.
+///
+/// The first run is not a construction anybody may use. It exists
+/// inside [`sponsor_signing_requests`], which returns requests and
+/// never a transaction, so the placeholder-authorized bytes it builds
+/// have no path out of that function.
+struct CeremonySponsor<'a> {
+    coins: &'a [SponsorCoin],
+    fee: u64,
+    /// How many inputs precede the sponsor suffix.
+    ///
+    /// The builder numbers a signing request by its position in the
+    /// whole input list, and the sponsor region is the suffix, so this
+    /// is what turns a request's index back into which sponsor coin it
+    /// is about.
+    ash_inputs: usize,
+    /// What to answer a signing request with.
+    answers: SponsorAnswers<'a>,
+}
+
+/// How a [`CeremonySponsor`] answers the requests it is handed.
+enum SponsorAnswers<'a> {
+    /// Record what was asked, and answer with a stack of the admitted
+    /// width that authorizes nothing.
+    ///
+    /// The placeholder is what lets *every* request be collected rather
+    /// than only the first: a decline stops the builder at the input it
+    /// was declined for, and a run with two sponsor members would learn
+    /// about one of them. It never leaves the first run.
+    Recording(std::cell::RefCell<Vec<SponsorSigningRequest>>),
+    /// Answer with the authorizations the executor produced, found by
+    /// the coin each one is about rather than by arrival order.
+    Replaying(&'a BTreeMap<Outpoint, SponsorSignature>),
+}
+
+impl SponsorCapability for CeremonySponsor<'_> {
+    fn offer(&self) -> SponsorOffer {
+        // The fee is exactly what the coins hold. The reserve asset has
+        // to balance across the whole transaction and the only output
+        // carrying it is the fee, so any other figure builds a
+        // transaction the target refuses for an unbalanced asset.
+        SponsorOffer::new(
+            self.coins.iter().map(SponsorCoin::outpoint),
+            self.fee,
+            // No change output. The fixtures state a sponsor region's
+            // membership and say nothing about a residual, so asking
+            // for one would be this package inventing a term the row
+            // does not have.
+            None,
+        )
+    }
+
+    fn change_destination(&self) -> Option<(u8, Vec<u8>)> {
+        None
+    }
+
+    fn sign(&self, request: &SponsorSigningRequest) -> Option<SponsorSignature> {
+        match &self.answers {
+            SponsorAnswers::Recording(recorded) => {
+                recorded.borrow_mut().push(request.clone());
+                // A stack of the admitted width carrying nothing. It
+                // authorizes no spend of anything, and the run it
+                // belongs to returns requests rather than a
+                // transaction, so it cannot reach a target.
+                Some(SponsorSignature::new(
+                    request.transaction().to_vec(),
+                    vec![Vec::new(), Vec::new()],
+                ))
+            }
+            // Which coin the request is about, recovered from the index
+            // rather than from arrival order, so a caller that supplied
+            // its authorizations in some other order still gets each one
+            // matched to the input it was produced for.
+            SponsorAnswers::Replaying(signatures) => self
+                .sponsor_position(request)
+                .and_then(|coin| signatures.get(&coin).cloned()),
+        }
+    }
+}
+
+impl CeremonySponsor<'_> {
+    /// The coin one signing request is about.
+    ///
+    /// The offer's inputs reach the builder as a sorted set, so the
+    /// suffix is in outpoint order and the request's index names a
+    /// position in it. Recomputing that order here rather than assuming
+    /// the caller's is what keeps the two sides from disagreeing about
+    /// which coin input *n* is.
+    fn sponsor_position(&self, request: &SponsorSigningRequest) -> Option<Outpoint> {
+        let ordered: BTreeSet<Outpoint> = self.coins.iter().map(SponsorCoin::outpoint).collect();
+        let offset = usize::from(request.input()).checked_sub(self.ash_inputs)?;
+        ordered.into_iter().nth(offset)
+    }
+}
+
+/// Materialize one semantic case into exact target bytes.
 ///
 /// # Errors
 ///
@@ -331,12 +487,140 @@ pub fn materialize(
     case: &CompactAshSemanticCase,
     funding: &AshFunding,
 ) -> Result<MaterializedTargetVector, VectorError> {
-    let ash_inputs = u8::try_from(case.ash_inputs()).unwrap_or(u8::MAX);
-    let id = TargetVectorId {
-        fixture: case.id(),
-        ash_inputs,
-        sponsors: 0,
+    build_vector(fixture, case, funding, None)
+}
+
+/// One authorization a sponsored construction needs.
+///
+/// The request and the coin it is about, paired here because the
+/// correspondence is computed from the builder's own input numbering
+/// and the offer's sorted order. A caller working it out again would be
+/// a second authored spelling of one rule, and the two could disagree
+/// about which coin input *n* spends.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SponsorSigningTask {
+    coin: SponsorCoin,
+    request: SponsorSigningRequest,
+}
+
+impl SponsorSigningTask {
+    /// The coin whose spend is being authorized.
+    #[must_use]
+    pub const fn coin(&self) -> &SponsorCoin {
+        &self.coin
+    }
+
+    /// What the authorization must be produced against.
+    #[must_use]
+    pub const fn request(&self) -> &SponsorSigningRequest {
+        &self.request
+    }
+}
+
+/// What a sponsored row's authorizations would be about.
+///
+/// Runs the construction once with a placeholder sponsor so that every
+/// [`SponsorSigningRequest`] the builder would issue is collected, and
+/// returns those requests. The transaction that run produced is dropped
+/// here and has no way out: a placeholder-authorized transaction is not
+/// a vector and must never be able to become one.
+///
+/// The requests carry the exact finalized bytes an authorization has to
+/// be produced against, which is what the executor is handed and what
+/// its answer is later compared with.
+///
+/// # Errors
+///
+/// Everything [`materialize`] refuses, for the same reasons.
+pub fn sponsor_signing_requests(
+    fixture: &FixtureBundle,
+    case: &CompactAshSemanticCase,
+    funding: &AshFunding,
+    coins: &[SponsorCoin],
+) -> Result<Vec<SponsorSigningTask>, VectorError> {
+    let recorded = std::cell::RefCell::new(Vec::new());
+    let sponsor = CeremonySponsor {
+        coins,
+        fee: sponsor_fee(coins),
+        ash_inputs: case.ash_inputs(),
+        answers: SponsorAnswers::Recording(recorded),
     };
+    build_vector(fixture, case, funding, Some(&sponsor))?;
+    let SponsorAnswers::Recording(recorded) = &sponsor.answers else {
+        // Unreachable: the value was just built with this arm. Answered
+        // rather than unwrapped, so no path here can panic.
+        return Err(VectorError::MaterializedShapeMismatch(vector_id(case)));
+    };
+
+    let mut tasks = Vec::new();
+    for request in recorded.borrow().iter() {
+        let outpoint = sponsor
+            .sponsor_position(request)
+            .ok_or_else(|| VectorError::MaterializedShapeMismatch(vector_id(case)))?;
+        let coin = coins
+            .iter()
+            .find(|coin| coin.outpoint() == outpoint)
+            .ok_or_else(|| VectorError::MaterializedShapeMismatch(vector_id(case)))?;
+        tasks.push(SponsorSigningTask {
+            coin: coin.clone(),
+            request: request.clone(),
+        });
+    }
+    Ok(tasks)
+}
+
+/// Materialize one sponsored case, with the authorizations in hand.
+///
+/// # Errors
+///
+/// Everything [`materialize`] refuses, plus
+/// [`VectorError::TargetMaterializationFailed`] carrying
+/// `SponsorSignatureMissing` when no authorization was supplied for a
+/// coin the construction asks about, and
+/// `SponsorSignatureBindingMismatch` when the authorization supplied was
+/// produced against other bytes than this construction settled on —
+/// which is the check that makes running the construction twice sound
+/// rather than assumed.
+pub fn materialize_sponsored(
+    fixture: &FixtureBundle,
+    case: &CompactAshSemanticCase,
+    funding: &AshFunding,
+    coins: &[SponsorCoin],
+    signatures: &BTreeMap<Outpoint, SponsorSignature>,
+) -> Result<MaterializedTargetVector, VectorError> {
+    let sponsor = CeremonySponsor {
+        coins,
+        fee: sponsor_fee(coins),
+        ash_inputs: case.ash_inputs(),
+        answers: SponsorAnswers::Replaying(signatures),
+    };
+    build_vector(fixture, case, funding, Some(&sponsor))
+}
+
+/// What the sponsor region declares as the fee.
+///
+/// Exactly what its coins hold. The reserve asset has to balance across
+/// the transaction and the fee is the only output carrying it, so this
+/// is the one figure that balances; it is summed from the amounts the
+/// executor reported rather than from what was asked for, because those
+/// are the amounts the chain actually holds.
+fn sponsor_fee(coins: &[SponsorCoin]) -> u64 {
+    coins
+        .iter()
+        .map(SponsorCoin::amount)
+        .try_fold(0_u64, u64::checked_add)
+        .unwrap_or(u64::MAX)
+}
+
+/// The construction both entry points run.
+fn build_vector(
+    fixture: &FixtureBundle,
+    case: &CompactAshSemanticCase,
+    funding: &AshFunding,
+    sponsor: Option<&CeremonySponsor<'_>>,
+) -> Result<MaterializedTargetVector, VectorError> {
+    let ash_inputs = u8::try_from(case.ash_inputs()).unwrap_or(u8::MAX);
+    let id = vector_id(case);
     // The funding was cut for a vector, and this is that vector or it is
     // not. Building against another vector's coins would produce a
     // transaction nobody planned.
@@ -346,9 +630,18 @@ pub fn materialize(
             supplied: funding.vector(),
         });
     }
-    let shape = shape_of(ash_inputs, 0, false, id)?;
+    let sponsors = sponsor.map_or(0, |sponsor| {
+        u8::try_from(sponsor.coins.len()).unwrap_or(u8::MAX)
+    });
+    // The row states how many sponsor members its world has, and the
+    // coins offered have to be that many. A construction over some other
+    // number would settle a shape the fixture did not name.
+    if u16::from(sponsors) != case.sponsor().members() {
+        return Err(VectorError::MaterializedShapeMismatch(id));
+    }
+    let shape = shape_of(ash_inputs, sponsors, false, id)?;
 
-    let mut views = Vec::with_capacity(case.ash_inputs());
+    let mut views = Vec::with_capacity(case.ash_inputs() + usize::from(sponsors));
     let program = fixture
         .pin()
         .output_script(fixture.target())
@@ -369,11 +662,28 @@ pub fn materialize(
         ));
     }
 
-    let request = CompactAshRequest::new(outpoints, false)
+    // The sponsor coins enter the public view as the executor described
+    // them: its asset, its amounts, its programs. The reserve asset is
+    // the bundle's own for the same reason the closed asset is — the
+    // coordinator introspects it against the value linked into the leaf.
+    let reserve = AssetField::Explicit(AssetId::from_internal(fixture.reserve_asset()));
+    if let Some(sponsor) = sponsor {
+        for coin in sponsor.coins {
+            views.push(PublicOutputView::new(
+                coin.outpoint(),
+                reserve,
+                ValueField::Explicit(coin.amount()),
+                coin.program().to_vec(),
+            ));
+        }
+    }
+
+    let request = CompactAshRequest::new(outpoints, sponsor.is_some())
         .map_err(|cause| VectorError::TargetMaterializationFailed { vector: id, cause })?;
     let view = PublicConstructionView::new(views);
 
-    let built = construct(fixture.target(), fixture.abi(), &request, &view, None)
+    let capability = sponsor.map(|sponsor| sponsor as &dyn SponsorCapability);
+    let built = construct(fixture.target(), fixture.abi(), &request, &view, capability)
         .map_err(|cause| VectorError::TargetMaterializationFailed { vector: id, cause })?;
 
     let report = built.report();
@@ -408,13 +718,64 @@ pub fn materialize(
     })
 }
 
-/// Whether a semantic case can be materialized in this wave.
+/// Whether this candidate emitted a program for the shape a row names.
 ///
-/// Sponsored cases cannot: they need a signing capability this package
-/// does not have and will not fabricate.
+/// Derived from [`CompactAshShape::new`] against the demonstration
+/// bounds rather than written down. The bounds admit sponsor regions up
+/// to one member, and §18's matrix names a row with two, so that row
+/// has no program in this bundle and this says so by computing it. A
+/// candidate linked under wider bounds reclassifies the same row with
+/// nothing here to edit.
+///
+/// A row refused here is *unbuilt*, which is what
+/// `ShapeRejection::SponsorInputsAboveBound` means: not semantically
+/// invalid, and not a target divergence either — the target was never
+/// asked. It is a limit of this candidate's emitted shape set, and
+/// keeping it distinct from the target's own money bound is the whole
+/// reason the two are computed in different places.
 #[must_use]
-pub const fn is_materializable(case: &CompactAshSemanticCase) -> bool {
-    !case.sponsor().is_present()
+pub fn has_candidate_program(case: &CompactAshSemanticCase) -> bool {
+    shape_of(
+        u8::try_from(case.ash_inputs()).unwrap_or(u8::MAX),
+        u8::try_from(case.sponsor().members()).unwrap_or(u8::MAX),
+        false,
+        vector_id(case),
+    )
+    .is_ok()
+}
+
+/// Whether building this row needs an authorization from outside.
+///
+/// A sponsored row carries an input somebody has to authorize, and no
+/// part of this workspace can. The authorization arrives from the
+/// executor during a run, which is why such a row can be *executed*
+/// while not being a fixture whose bytes this package can state.
+#[must_use]
+pub const fn needs_authorization(case: &CompactAshSemanticCase) -> bool {
+    case.sponsor().is_present()
+}
+
+/// Whether a row's exact bytes are a function of the fixture and its
+/// funding alone.
+///
+/// # Why this is narrower than having a program
+///
+/// The canonical plan materializes every row it admits to exact bytes,
+/// and those bytes are what the reference oracle decodes, re-encodes,
+/// and hashes. That only means anything while the bytes are determined
+/// by things this package holds. A sponsored row's witness carries an
+/// authorization produced elsewhere, so its bytes are not a function of
+/// the fixture at all — two runs against two executors would produce
+/// two different transactions from one row, both correct.
+///
+/// So a sponsored row is executable and is not a byte fixture, and the
+/// two questions are asked separately. Answering them with one
+/// predicate is what would let a canonical fixture carry bytes nobody
+/// could reproduce, or an authorized row be dropped from a run that can
+/// perfectly well perform it.
+#[must_use]
+pub fn is_materializable(case: &CompactAshSemanticCase) -> bool {
+    has_candidate_program(case) && !needs_authorization(case)
 }
 
 #[cfg(test)]
@@ -423,8 +784,8 @@ mod tests {
     use crate::bundle::fixture_bundle;
     use crate::fixture::{CompactAshSemanticCase, positive_semantic_census};
     use crate::matrix::EvidenceBoundary;
-    use std::collections::BTreeSet;
-    use transaction::{SyntheticDisclaimer, TargetTransaction, check_weight};
+    use std::collections::{BTreeMap, BTreeSet};
+    use transaction::{Outpoint, SyntheticDisclaimer, TargetTransaction, Txid, check_weight};
 
     /// The placeholder funding the canonical fixtures materialize under.
     fn placeholder(case: &CompactAshSemanticCase) -> AshFunding {
@@ -442,7 +803,7 @@ mod tests {
         assert_eq!(
             materializable.len(),
             9,
-            "nine of the fourteen positive classes are sponsorless"
+            "nine of the fourteen positive classes are byte fixtures"
         );
 
         for case in materializable {
@@ -575,5 +936,226 @@ mod tests {
             error,
             crate::error::VectorError::FundingCardinalityMismatch { .. }
         ));
+    }
+
+    /// The first sponsored row this candidate has a program for.
+    fn sponsored_case() -> CompactAshSemanticCase {
+        positive_semantic_census()
+            .expect("the positive census builds")
+            .into_iter()
+            .find(|case| super::needs_authorization(case) && super::has_candidate_program(case))
+            .expect("a sponsored row with a program exists")
+    }
+
+    /// One sponsor coin at a version-zero key-hash program.
+    ///
+    /// The program class is the one the reviewed sponsor profile
+    /// admits, which is what an executor holding a key would report; a
+    /// coin at any other program is refused by the construction, and
+    /// that refusal is its own test below.
+    fn sponsor_coin(seed: u8, amount: u64) -> super::SponsorCoin {
+        let mut bytes = [0_u8; 32];
+        bytes[0] = 0xc0;
+        bytes[1] = seed;
+        let outpoint =
+            Outpoint::new(Txid::from_internal(bytes), 0).expect("an admissible outpoint");
+        let mut program = vec![0x00, 0x14];
+        program.extend(std::iter::repeat_n(seed, 20));
+        super::SponsorCoin::new(outpoint, amount, program)
+    }
+
+    /// Drive both passes with a stand-in for the executor.
+    ///
+    /// The authorization is a fixed stack of the admitted width bound
+    /// to the exact bytes the request carried, which is the shape an
+    /// executor's answer has. It authorizes nothing and no target sees
+    /// it; what is under test here is the two-pass exchange, not
+    /// whether a signature verifies.
+    fn sponsored_vector(
+        coins: &[super::SponsorCoin],
+    ) -> Result<super::MaterializedTargetVector, crate::error::VectorError> {
+        let bundle = fixture_bundle().expect("the fixture bundle builds");
+        let case = sponsored_case();
+        let funding = placeholder(&case);
+        let tasks = super::sponsor_signing_requests(&bundle, &case, &funding, coins)?;
+        let signatures = tasks
+            .iter()
+            .map(|task| {
+                (
+                    task.coin().outpoint(),
+                    super::SponsorSignature::new(
+                        task.request().transaction().to_vec(),
+                        vec![vec![0x30; 71], vec![0x02; 33]],
+                    ),
+                )
+            })
+            .collect();
+        super::materialize_sponsored(&bundle, &case, &funding, coins, &signatures)
+    }
+
+    #[test]
+    fn a_sponsored_row_materializes_once_its_authorization_arrives() {
+        // The whole point of the wave, at the construction level: the
+        // row that could not be built now builds, and it builds into
+        // the shape the fixture names rather than some near neighbour.
+        let coins = [sponsor_coin(0x01, 100_000)];
+        let vector = sponsored_vector(&coins).expect("the sponsored row materializes");
+        assert_eq!(vector.id().sponsors(), 1);
+        assert_eq!(vector.shape().sponsor_inputs(), 1);
+        assert!(vector.shape().sponsored());
+        assert_ne!(vector.bytes(), [] as [u8; 0]);
+
+        // The successor is still the realization layer's own sum. A
+        // sponsor pays the fee and contributes nothing to the protocol
+        // object, so its arrival must not move this number.
+        let case = sponsored_case();
+        assert_eq!(
+            vector.settled_successor(),
+            case.expected().successor().1.get()
+        );
+    }
+
+    #[test]
+    fn the_two_passes_agree_and_the_second_is_what_carries_the_authorization() {
+        // The soundness condition for running the construction twice.
+        // The request the first pass produced states the bytes an
+        // authorization must be about; the second pass settles the same
+        // bytes, which is why the authorization still applies. If the
+        // two ever diverged, the binding check below would fire instead
+        // of this passing.
+        let bundle = fixture_bundle().expect("the fixture bundle builds");
+        let case = sponsored_case();
+        let funding = placeholder(&case);
+        let coins = [sponsor_coin(0x02, 100_000)];
+        let tasks = super::sponsor_signing_requests(&bundle, &case, &funding, &coins)
+            .expect("the requests are collected");
+        assert_eq!(tasks.len(), 1, "one member, one authorization");
+        assert_eq!(tasks[0].coin().outpoint(), coins[0].outpoint());
+
+        // The request is about the input after the ASH family, which is
+        // where the suffix starts.
+        assert_eq!(usize::from(tasks[0].request().input()), case.ash_inputs());
+
+        let vector = sponsored_vector(&coins).expect("it materializes");
+        // The authorized transaction is longer than the bytes that were
+        // signed, because the witness it carries was empty at signing
+        // time. That is the ordering §15.8 asks for, visible in the
+        // sizes.
+        assert!(vector.bytes().len() > tasks[0].request().transaction().len());
+    }
+
+    #[test]
+    fn an_authorization_over_other_bytes_is_refused() {
+        // The check that makes the echo worth carrying. An executor
+        // that authorized some other transaction returns some other
+        // bytes, and the construction refuses rather than attaching the
+        // stack to a transaction it was not produced for.
+        let bundle = fixture_bundle().expect("the fixture bundle builds");
+        let case = sponsored_case();
+        let funding = placeholder(&case);
+        let coins = [sponsor_coin(0x03, 100_000)];
+        let tasks = super::sponsor_signing_requests(&bundle, &case, &funding, &coins)
+            .expect("the requests are collected");
+
+        let mut wrong = tasks[0].request().transaction().to_vec();
+        wrong.push(0x00);
+        let signatures = std::iter::once((
+            tasks[0].coin().outpoint(),
+            super::SponsorSignature::new(wrong, vec![vec![0x30; 71], vec![0x02; 33]]),
+        ))
+        .collect();
+
+        let error = super::materialize_sponsored(&bundle, &case, &funding, &coins, &signatures)
+            .expect_err("an authorization bound to other bytes is refused");
+        assert!(
+            matches!(
+                error,
+                crate::error::VectorError::TargetMaterializationFailed {
+                    cause: transaction::TransactionRefusal::SponsorSignatureBindingMismatch(_),
+                    ..
+                }
+            ),
+            "refused with {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_sponsored_row_with_no_authorization_is_refused() {
+        // An absent authorization is not a transaction with an empty
+        // witness. Nothing may stand in for it.
+        let bundle = fixture_bundle().expect("the fixture bundle builds");
+        let case = sponsored_case();
+        let funding = placeholder(&case);
+        let coins = [sponsor_coin(0x04, 100_000)];
+        let error =
+            super::materialize_sponsored(&bundle, &case, &funding, &coins, &BTreeMap::new())
+                .expect_err("no authorization is not a construction");
+        assert!(
+            matches!(
+                error,
+                crate::error::VectorError::TargetMaterializationFailed {
+                    cause: transaction::TransactionRefusal::SponsorSignatureMissing(_),
+                    ..
+                }
+            ),
+            "refused with {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_sponsor_coin_at_a_program_the_profile_does_not_admit_is_refused() {
+        // The executor chooses the program, and the construction still
+        // checks it. A coin at a taproot program cannot be spent by the
+        // two-item stack the reviewed profile expects, and building
+        // against one would produce a transaction refused for a reason
+        // the row is not about.
+        let outpoint = {
+            let mut bytes = [0_u8; 32];
+            bytes[0] = 0xc5;
+            Outpoint::new(Txid::from_internal(bytes), 0).expect("an admissible outpoint")
+        };
+        let mut program = vec![0x51, 0x20];
+        program.extend(std::iter::repeat_n(0x05, 32));
+        let coins = [super::SponsorCoin::new(outpoint, 100_000, program)];
+
+        let error = sponsored_vector(&coins).expect_err("the program class is not admitted");
+        assert!(
+            matches!(
+                error,
+                crate::error::VectorError::TargetMaterializationFailed {
+                    cause: transaction::TransactionRefusal::SponsorProgramClassNotAdmitted(_),
+                    ..
+                }
+            ),
+            "refused with {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_sponsored_materialization_is_deterministic_to_the_byte() {
+        // §18.1's byte-stability class, for the sponsored half. The
+        // authorization is an input here rather than something produced
+        // twice, which is exactly the claim: given the same answers, the
+        // construction settles the same transaction.
+        let coins = [sponsor_coin(0x06, 100_000)];
+        let first = sponsored_vector(&coins).expect("it materializes");
+        let second = sponsored_vector(&coins).expect("it materializes");
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn a_row_offered_the_wrong_number_of_sponsor_coins_is_refused() {
+        // The row states how many members its world has. Building it
+        // against a different number would settle a shape the fixture
+        // never named, and the successor would be right by accident.
+        let coins = [sponsor_coin(0x07, 50_000), sponsor_coin(0x08, 50_000)];
+        let error = sponsored_vector(&coins).expect_err("two coins is not this row's region");
+        assert!(
+            matches!(
+                error,
+                crate::error::VectorError::MaterializedShapeMismatch(_)
+            ),
+            "refused with {error:?}"
+        );
     }
 }

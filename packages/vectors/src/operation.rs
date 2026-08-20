@@ -30,16 +30,18 @@ use std::collections::{BTreeMap, BTreeSet};
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
 use target_elements_conformance::protocol::{
     NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId, OperationStepKind,
-    OperationSubject, TargetFundingSubject, TargetSubmissionSubject,
+    OperationSubject, TargetFundingSubject, TargetSponsorFundingSubject,
+    TargetSponsorSigningSubject, TargetSubmissionSubject, WireOutpoint, WireSighashProfile,
 };
-use transaction::{FundingCeremonyStep, Outpoint, Txid};
+use transaction::{FundingCeremonyStep, Outpoint, SponsorSignature, Txid};
 
 use crate::bundle::{FixtureBundle, ceremony_bundle};
 use crate::divergence::{AmountBeyondTargetBound, target_amount_standing};
 use crate::error::VectorError;
 use crate::fixture::{CompactAshSemanticCase, positive_semantic_census};
 use crate::materialize::{
-    AshFunding, MaterializedTargetVector, TargetVectorId, is_materializable, materialize, vector_id,
+    AshFunding, MaterializedTargetVector, SponsorCoin, SponsorSigningTask, TargetVectorId,
+    has_candidate_program, materialize, materialize_sponsored, sponsor_signing_requests, vector_id,
 };
 
 /// What each ceremony output carries while the asset is being issued.
@@ -50,6 +52,23 @@ use crate::materialize::{
 /// because an issuance attaches to a transaction that has outputs, and
 /// the asset identity is what the step is for.
 const ISSUANCE_PROBE_AMOUNT: u64 = 1;
+
+/// What each sponsor coin holds, in the reserve asset's smallest unit.
+///
+/// # Why an exact figure and not a minimum
+///
+/// It is the fee a sponsored vector declares. The reserve asset has to
+/// balance across the transaction and the fee output is the only place
+/// it goes, so the coin and the fee are one number; a coin holding more
+/// would leave the reserve unbalanced and the target would refuse the
+/// transaction for a reason that has nothing to do with what the row is
+/// about.
+///
+/// The size is chosen to sit comfortably above any relay threshold a
+/// development deployment sets, so that a submission is answered on its
+/// merits rather than for a fee nobody meant to make marginal. It is
+/// not a semantic value and no fixture states it.
+const SPONSOR_COIN_UNITS: u64 = 100_000;
 
 /// Why a plan could not state its next step.
 ///
@@ -104,6 +123,48 @@ pub enum PlanRefusal {
         /// What the target reported storing.
         stored: String,
     },
+    /// The sponsor-funding step reached no target verdict.
+    SponsorFundingDidNotHappen(ObservedOutcomeLayer),
+    /// The executor created a different number of sponsor coins than
+    /// asked.
+    SponsorCardinalityWrong {
+        /// How many coins the step asked for.
+        wanted: usize,
+        /// How many it reported.
+        reported: usize,
+    },
+    /// A sponsor coin's asset is not 32 bytes of hex.
+    SponsorAssetUnreadable(String),
+    /// The executor paid its sponsor coins in more than one asset.
+    ///
+    /// The reserve is one identity that gets linked into every leaf, so
+    /// coins carrying two of them cannot all be spent by one bundle.
+    /// Picking whichever came first would link against an asset half
+    /// the coins do not hold.
+    SponsorAssetsDisagree,
+    /// A sponsor coin's outpoint is not one the target admits.
+    SponsorOutpointUnreadable(String),
+    /// A sponsor coin's program is not readable as bytes.
+    SponsorProgramUnreadable(String),
+    /// An authorization step reached no target verdict.
+    AuthorizationDidNotHappen(ObservedOutcomeLayer),
+    /// The executor authorized bytes other than the ones it was handed.
+    ///
+    /// The caller's own comparison of the echo, made before the
+    /// authorization is put anywhere near a construction. The builder
+    /// makes it again from its own side; this one catches it at the
+    /// step that produced it, so the transcript names the exchange that
+    /// went wrong rather than the construction that later refused.
+    AuthorizationBoundToOtherBytes {
+        /// The vector whose construction asked for it.
+        vector: TargetVectorId,
+        /// How many bytes were handed over.
+        sent: usize,
+        /// How many the executor said it authorized.
+        echoed: usize,
+    },
+    /// An accepted authorization carried no witness stack.
+    AuthorizationCarriedNoWitness(TargetVectorId),
     /// The ceremony-bound bundle could not be built or materialized.
     Bundle(Box<VectorError>),
 }
@@ -212,6 +273,7 @@ impl ObservedDivergence {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct OperationTranscript {
     issued_asset: Option<[u8; 32]>,
+    reserve_asset: Option<[u8; 32]>,
     constructor_program: Option<Vec<u8>>,
     funded: BTreeMap<TargetVectorId, Vec<Outpoint>>,
     coins: BTreeMap<Outpoint, u64>,
@@ -225,6 +287,17 @@ impl OperationTranscript {
     #[must_use]
     pub const fn issued_asset(&self) -> Option<[u8; 32]> {
         self.issued_asset
+    }
+
+    /// The asset the executor paid its sponsor coins in.
+    ///
+    /// Observed rather than chosen, like the issued asset, and for a
+    /// reason of the same kind: which asset a development network
+    /// treats as its reserve is the network's own fact. The bundle this
+    /// run executed is linked against it.
+    #[must_use]
+    pub const fn reserve_asset(&self) -> Option<[u8; 32]> {
+        self.reserve_asset
     }
 
     /// The constructor output program the ceremony funded.
@@ -316,14 +389,41 @@ struct PlannedFunding {
 enum Stage {
     /// Ask the target to issue the disposable asset.
     Issue,
+    /// Ask the executor for the sponsor coins, and learn the reserve.
+    ///
+    /// # Why this comes before the bundle is linked
+    ///
+    /// The reserve asset is substituted into all twelve leaves, so the
+    /// committed tree — and the program every ASH input pays to — is a
+    /// function of it just as it is of the closed asset. A bundle
+    /// cannot be linked until both are known, and neither is a value
+    /// anyone chooses: the closed asset is what the issuance produced,
+    /// and the reserve is what the executor reported paying its sponsor
+    /// coins in.
+    ///
+    /// That is why a run with no sponsored row still takes this step.
+    /// It is not the sponsored rows that need it; it is the link.
+    FundSponsor,
     /// Ask it to create one output at the derived constructor program.
     Derive,
     /// Work through the per-input funding schedule.
     Fund(usize),
+    /// Work through the authorizations the sponsored rows need.
+    Sign(usize),
     /// Work through the materialized vectors.
     Submit(usize),
     /// Nothing left to ask.
     Done,
+}
+
+/// One sponsored row, waiting for the authorizations it needs.
+#[derive(Clone, Debug)]
+struct PendingSponsored {
+    case: CompactAshSemanticCase,
+    funding: AshFunding,
+    coins: Vec<SponsorCoin>,
+    tasks: Vec<SponsorSigningTask>,
+    signatures: BTreeMap<Outpoint, SponsorSignature>,
 }
 
 /// The compact-ASH operation plan, as the executor consults it.
@@ -362,6 +462,12 @@ pub struct CompactAshOperationPlanner {
     bundle: Option<FixtureBundle>,
     probe_program: Vec<u8>,
     program: Vec<u8>,
+    sponsor_coins: Vec<SponsorCoin>,
+    pending: Vec<PendingSponsored>,
+    /// The flattened authorization schedule: which pending row, and
+    /// which of its tasks. Flattened so a stage is one index, exactly as
+    /// the funding schedule is.
+    sign_schedule: Vec<(usize, usize)>,
     vectors: Vec<MaterializedTargetVector>,
     transcript: OperationTranscript,
 }
@@ -374,9 +480,13 @@ impl CompactAshOperationPlanner {
     /// Any refusal from building the positive semantic census, which is
     /// a construction failure and never a target verdict.
     pub fn new() -> Result<Self, VectorError> {
+        // Every row this candidate has a program for, which now
+        // includes the sponsored ones: what used to exclude them was an
+        // authorization nothing could produce, and the executor
+        // boundary produces one.
         let cases: Vec<CompactAshSemanticCase> = positive_semantic_census()?
             .into_iter()
-            .filter(is_materializable)
+            .filter(has_candidate_program)
             .collect();
         let canonical = crate::bundle::fixture_bundle()?;
         let probe_program = canonical
@@ -394,6 +504,9 @@ impl CompactAshOperationPlanner {
             bundle: None,
             probe_program,
             program: Vec::new(),
+            sponsor_coins: Vec::new(),
+            pending: Vec::new(),
+            sign_schedule: Vec::new(),
             vectors: Vec::new(),
             transcript: OperationTranscript::default(),
         })
@@ -481,6 +594,56 @@ impl CompactAshOperationPlanner {
         ))
     }
 
+    /// How many sponsor coins this census needs.
+    ///
+    /// One per sponsor member of every row that has a program, and at
+    /// least one whatever the census holds: a run with no sponsored row
+    /// still has to learn which asset the executor treats as its
+    /// reserve, because the bundle is linked against it either way. That
+    /// spare coin is used by nothing, exactly as the issuance step's
+    /// output is.
+    fn sponsor_coins_wanted(&self) -> usize {
+        let needed: usize = self
+            .cases
+            .iter()
+            .map(|case| usize::from(case.sponsor().members()))
+            .sum();
+        needed.max(1)
+    }
+
+    fn sponsor_step(&self) -> OperationStep {
+        OperationStep::new(
+            "fund-sponsor-region",
+            OperationSubject::SponsorFunding(Box::new(TargetSponsorFundingSubject {
+                sponsor_outputs: u8::try_from(self.sponsor_coins_wanted()).unwrap_or(u8::MAX),
+                amount_per_sponsor_output: SPONSOR_COIN_UNITS,
+            })),
+        )
+    }
+
+    fn sign_step(&self, index: usize) -> Option<OperationStep> {
+        let &(row, task) = self.sign_schedule.get(index)?;
+        let pending = self.pending.get(row)?;
+        let task = pending.tasks.get(task)?;
+        let outpoint = task.coin().outpoint();
+        Some(OperationStep::new(
+            &format!(
+                "authorize-sponsor-input/{}/{}",
+                vector_id(&pending.case).fixture().ordinal(),
+                task.request().input()
+            ),
+            OperationSubject::SponsorSigning(Box::new(TargetSponsorSigningSubject {
+                finalized_transaction: task.request().transaction().to_vec(),
+                sponsor_input_index: task.request().input(),
+                sponsor_outpoint: WireOutpoint {
+                    txid: txid_to_wire(&outpoint.txid()),
+                    vout: outpoint.index(),
+                },
+                sighash_profile: WireSighashProfile::AllInputsAllOutputs,
+            })),
+        ))
+    }
+
     fn submit_step(&self, index: usize) -> Option<OperationStep> {
         let vector = self.vectors.get(index)?;
         Some(OperationStep::new(
@@ -491,7 +654,7 @@ impl CompactAshOperationPlanner {
         ))
     }
 
-    /// Read the issued asset, link the bundle, and build the schedule.
+    /// Read the issued asset. The bundle waits for the reserve.
     fn settle_issuance(&mut self, response: &NativeOperationResponse) -> Result<(), PlanRefusal> {
         if response.observed_layer != ObservedOutcomeLayer::Accepted {
             return Err(PlanRefusal::IssuanceDidNotHappen(response.observed_layer));
@@ -503,12 +666,64 @@ impl CompactAshOperationPlanner {
         let asset = asset_from_hex(&named)
             .ok_or_else(|| PlanRefusal::IssuedAssetUnreadable(named.clone()))?;
         self.transcript.issued_asset = Some(asset);
+        Ok(())
+    }
 
-        // The bundle is linked against the asset the target chose, and
-        // its pin is derived from its own tree. Neither could have been
-        // stated before this answer arrived.
-        let bundle =
-            ceremony_bundle(asset).map_err(|cause| PlanRefusal::Bundle(Box::new(cause.into())))?;
+    /// Read the sponsor coins, link the bundle, and build the schedule.
+    fn settle_sponsor_funding(
+        &mut self,
+        response: &NativeOperationResponse,
+    ) -> Result<(), PlanRefusal> {
+        if response.observed_layer != ObservedOutcomeLayer::Accepted {
+            return Err(PlanRefusal::SponsorFundingDidNotHappen(
+                response.observed_layer,
+            ));
+        }
+        let wanted = self.sponsor_coins_wanted();
+        if response.funded_outputs.len() != wanted {
+            return Err(PlanRefusal::SponsorCardinalityWrong {
+                wanted,
+                reported: response.funded_outputs.len(),
+            });
+        }
+
+        // One reserve identity across every coin, because one is what
+        // gets linked into the leaves.
+        let mut reserve: Option<[u8; 32]> = None;
+        let mut coins = Vec::with_capacity(wanted);
+        for output in &response.funded_outputs {
+            let asset = asset_from_hex(&output.asset)
+                .ok_or_else(|| PlanRefusal::SponsorAssetUnreadable(output.asset.clone()))?;
+            match reserve {
+                Some(known) if known != asset => return Err(PlanRefusal::SponsorAssetsDisagree),
+                Some(_) => {}
+                None => reserve = Some(asset),
+            }
+            let outpoint = outpoint_from_wire(&output.outpoint.txid, output.outpoint.vout)
+                .ok_or_else(|| {
+                    PlanRefusal::SponsorOutpointUnreadable(output.outpoint.txid.clone())
+                })?;
+            let program = bytes_from_hex(&output.script)
+                .ok_or_else(|| PlanRefusal::SponsorProgramUnreadable(output.script.clone()))?;
+            coins.push(SponsorCoin::new(outpoint, output.amount_satoshis, program));
+        }
+        let reserve = reserve.ok_or(PlanRefusal::SponsorCardinalityWrong {
+            wanted,
+            reported: 0,
+        })?;
+        self.transcript.reserve_asset = Some(reserve);
+        self.sponsor_coins = coins;
+
+        let asset = self
+            .transcript
+            .issued_asset
+            .ok_or(PlanRefusal::IssuanceNamedNoAsset)?;
+
+        // The bundle is linked against the two assets the run observed,
+        // and its pin is derived from its own tree. Neither could have
+        // been stated before these answers arrived.
+        let bundle = ceremony_bundle(asset, reserve)
+            .map_err(|cause| PlanRefusal::Bundle(Box::new(cause.into())))?;
         let program = bundle
             .pin()
             .output_script(bundle.target())
@@ -648,12 +863,22 @@ impl CompactAshOperationPlanner {
     /// against a short funding record. There is nothing to build: the
     /// coins do not exist, and a transaction naming outpoints no chain
     /// created is the very thing Wave 11 stopped producing.
+    ///
+    /// A sponsored row is not built here either, and for an unrelated
+    /// reason: it cannot be, until somebody has authorized the input it
+    /// carries. What happens instead is that the construction is run far
+    /// enough to learn what those authorizations have to be about, and
+    /// the row waits in [`Self::pending`] for them.
     fn materialize_all(&mut self) -> Result<(), PlanRefusal> {
         let bundle = self
             .bundle
             .clone()
             .ok_or(PlanRefusal::IssuanceNamedNoAsset)?;
         let mut vectors = Vec::with_capacity(self.cases.len());
+        let mut pending = Vec::new();
+        // The sponsor coins are handed out one region at a time, in
+        // census order, so no two rows are built against one coin.
+        let mut spare = self.sponsor_coins.clone();
         for case in &self.cases {
             let id = vector_id(case);
             if self.unfundable.contains(&id) {
@@ -662,11 +887,147 @@ impl CompactAshOperationPlanner {
             let outpoints = self.transcript.funded.get(&id).cloned().unwrap_or_default();
             let funding = AshFunding::new(id, outpoints)
                 .map_err(|cause| PlanRefusal::Bundle(Box::new(cause)))?;
-            let vector = materialize(&bundle, case, &funding)
+            let members = usize::from(case.sponsor().members());
+            if members == 0 {
+                let vector = materialize(&bundle, case, &funding)
+                    .map_err(|cause| PlanRefusal::Bundle(Box::new(cause)))?;
+                vectors.push(vector);
+                continue;
+            }
+            if spare.len() < members {
+                return Err(PlanRefusal::SponsorCardinalityWrong {
+                    wanted: members,
+                    reported: spare.len(),
+                });
+            }
+            let coins: Vec<SponsorCoin> = spare.drain(..members).collect();
+            let tasks = sponsor_signing_requests(&bundle, case, &funding, &coins)
                 .map_err(|cause| PlanRefusal::Bundle(Box::new(cause)))?;
-            vectors.push(vector);
+            pending.push(PendingSponsored {
+                case: case.clone(),
+                funding,
+                coins,
+                tasks,
+                signatures: BTreeMap::new(),
+            });
         }
+
+        self.sign_schedule = pending
+            .iter()
+            .enumerate()
+            .flat_map(|(row, entry)| (0..entry.tasks.len()).map(move |task| (row, task)))
+            .collect();
+        self.pending = pending;
         self.vectors = vectors;
+        Ok(())
+    }
+
+    /// Record one authorization the executor produced.
+    ///
+    /// The echo is compared here, before the authorization is put
+    /// anywhere near a construction. The builder compares it again from
+    /// its own side and would refuse a mismatch; making it twice is
+    /// deliberate, because the two refusals name different things — this
+    /// one names the exchange that produced the wrong bytes, and the
+    /// builder's names the construction that could not use them.
+    fn settle_authorization(
+        &mut self,
+        index: usize,
+        response: &NativeOperationResponse,
+    ) -> Result<(), PlanRefusal> {
+        let &(row, task) = self
+            .sign_schedule
+            .get(index)
+            .ok_or(PlanRefusal::IssuanceNamedNoAsset)?;
+        let pending = self
+            .pending
+            .get_mut(row)
+            .ok_or(PlanRefusal::IssuanceNamedNoAsset)?;
+        let vector = vector_id(&pending.case);
+        let task = pending
+            .tasks
+            .get(task)
+            .ok_or(PlanRefusal::AuthorizationCarriedNoWitness(vector))?;
+
+        if response.observed_layer != ObservedOutcomeLayer::Accepted {
+            return Err(PlanRefusal::AuthorizationDidNotHappen(
+                response.observed_layer,
+            ));
+        }
+        let bound = response
+            .signature_bound_to
+            .as_ref()
+            .ok_or(PlanRefusal::AuthorizationCarriedNoWitness(vector))?;
+        let sent = task.request().transaction();
+        if bound.as_slice() != sent {
+            return Err(PlanRefusal::AuthorizationBoundToOtherBytes {
+                vector,
+                sent: sent.len(),
+                echoed: bound.len(),
+            });
+        }
+        if response.sponsor_witness.is_empty() {
+            return Err(PlanRefusal::AuthorizationCarriedNoWitness(vector));
+        }
+
+        let outpoint = task.coin().outpoint();
+        pending.signatures.insert(
+            outpoint,
+            SponsorSignature::new(bound.clone(), response.sponsor_witness.clone()),
+        );
+        Ok(())
+    }
+
+    /// Which stage follows the funding schedule.
+    ///
+    /// Authorizations where a sponsored row is waiting for one, and
+    /// submission where none is: a census of sponsorless rows must not
+    /// stall in a stage with nothing to ask.
+    const fn after_funding(&self) -> Stage {
+        if self.sign_schedule.is_empty() {
+            Stage::Submit(0)
+        } else {
+            Stage::Sign(0)
+        }
+    }
+
+    /// Build the sponsored rows where there was nothing to authorize.
+    ///
+    /// Reached only when the schedule is empty, which means the census
+    /// held no sponsored row at all; the loop then runs over nothing.
+    /// It exists so the two paths out of funding both leave every
+    /// admitted row built.
+    fn finish_if_signed(&mut self) -> Result<(), PlanRefusal> {
+        if self.sign_schedule.is_empty() {
+            self.finish_sponsored()?;
+        }
+        Ok(())
+    }
+
+    /// Build every sponsored row now that its authorizations are in.
+    ///
+    /// The construction runs a second time, against the same inputs, and
+    /// the authorization it is handed carries the bytes it was produced
+    /// against. The builder compares those with what this run settles
+    /// on, which is what makes running it twice sound rather than
+    /// assumed: a second run that differed would be refused here rather
+    /// than submitted.
+    fn finish_sponsored(&mut self) -> Result<(), PlanRefusal> {
+        let bundle = self
+            .bundle
+            .clone()
+            .ok_or(PlanRefusal::IssuanceNamedNoAsset)?;
+        for entry in &self.pending {
+            let vector = materialize_sponsored(
+                &bundle,
+                &entry.case,
+                &entry.funding,
+                &entry.coins,
+                &entry.signatures,
+            )
+            .map_err(|cause| PlanRefusal::Bundle(Box::new(cause)))?;
+            self.vectors.push(vector);
+        }
         Ok(())
     }
 
@@ -703,6 +1064,12 @@ impl TargetOperationPlanner for CompactAshOperationPlanner {
                     if let Err(refusal) = self.settle_issuance(response) {
                         return Err(self.refuse(refusal));
                     }
+                    self.stage = Stage::FundSponsor;
+                }
+                Stage::FundSponsor => {
+                    if let Err(refusal) = self.settle_sponsor_funding(response) {
+                        return Err(self.refuse(refusal));
+                    }
                     self.stage = Stage::Derive;
                 }
                 Stage::Derive => {
@@ -720,6 +1087,23 @@ impl TargetOperationPlanner for CompactAshOperationPlanner {
                         self.stage = Stage::Fund(next);
                     } else {
                         if let Err(refusal) = self.materialize_all() {
+                            return Err(self.refuse(refusal));
+                        }
+                        self.stage = self.after_funding();
+                        if let Err(refusal) = self.finish_if_signed() {
+                            return Err(self.refuse(refusal));
+                        }
+                    }
+                }
+                Stage::Sign(index) => {
+                    if let Err(refusal) = self.settle_authorization(index, response) {
+                        return Err(self.refuse(refusal));
+                    }
+                    let next = index + 1;
+                    if next < self.sign_schedule.len() {
+                        self.stage = Stage::Sign(next);
+                    } else {
+                        if let Err(refusal) = self.finish_sponsored() {
                             return Err(self.refuse(refusal));
                         }
                         self.stage = Stage::Submit(0);
@@ -740,8 +1124,10 @@ impl TargetOperationPlanner for CompactAshOperationPlanner {
 
         Ok(match self.stage {
             Stage::Issue => Some(self.issue_step()),
+            Stage::FundSponsor => Some(self.sponsor_step()),
             Stage::Derive => Some(self.derive_step()),
             Stage::Fund(index) => self.fund_step(index),
+            Stage::Sign(index) => self.sign_step(index),
             Stage::Submit(index) => self.submit_step(index),
             Stage::Done => None,
         })
@@ -798,6 +1184,16 @@ fn asset_from_hex(text: &str) -> Option<[u8; 32]> {
     <[u8; 32]>::try_from(bytes.as_slice()).ok()
 }
 
+/// The target's own spelling of a transaction identity.
+///
+/// The reverse of the order this crate's `Txid` holds, for the reason
+/// [`outpoint_from_wire`] states from the other direction.
+fn txid_to_wire(txid: &Txid) -> String {
+    let mut printed = *txid.internal();
+    printed.reverse();
+    hex_of_slice(&printed)
+}
+
 /// One outpoint, from the identity the target printed.
 ///
 /// A target prints a transaction identity in the reverse of the order it
@@ -841,6 +1237,17 @@ mod tests {
     /// A fixed value naming a coin on no chain, which authorizes
     /// nothing `(´[ADR015-rule:security:test-material]´)`.
     const ISSUED: &str = "11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff";
+
+    /// A disposable reserve identity, in the target's own spelling.
+    ///
+    /// Distinct from [`ISSUED`], because a fake target that answered one
+    /// asset for both would let a planner confusing the two pass
+    /// `(´[ADR015-rule:security:test-material]´)`.
+    const RESERVE: &str = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899";
+
+    /// The program a sponsor coin lands at, as the fake target reports
+    /// it: version zero over a twenty-byte payload.
+    const SPONSOR_PROGRAM: &str = "0014000102030405060708090a0b0c0d0e0f10111213";
 
     fn resources() -> NativeResourceObservation {
         NativeResourceObservation {
@@ -903,6 +1310,8 @@ mod tests {
                 issued_asset: None,
                 funded_outputs: Vec::new(),
                 accepted_txid: None,
+                sponsor_witness: Vec::new(),
+                signature_bound_to: None,
                 resources: resources(),
             };
             match subject {
@@ -926,6 +1335,35 @@ mod tests {
                             script: hex_of_slice(&funding.output_program),
                         })
                         .collect();
+                }
+                OperationSubject::SponsorFunding(sponsor) => {
+                    if let Answer::Refuse(layer) =
+                        (self.decide)(case, sponsor.amount_per_sponsor_output)
+                    {
+                        response.observed_layer = layer;
+                        response.observed_detail =
+                            Some("this run holds no reserve to sponsor from".to_owned());
+                        return response;
+                    }
+                    self.sequence += 1;
+                    // The reserve asset and the program are the fake
+                    // target's own answers, exactly as a real adapter's
+                    // are: the planner states neither.
+                    response.funded_outputs = (0..u32::from(sponsor.sponsor_outputs))
+                        .map(|index| FundedOutput {
+                            outpoint: coin(self.sequence * 16 + index),
+                            asset: RESERVE.to_owned(),
+                            amount_satoshis: sponsor.amount_per_sponsor_output,
+                            script: SPONSOR_PROGRAM.to_owned(),
+                        })
+                        .collect();
+                }
+                OperationSubject::SponsorSigning(signing) => {
+                    // Two items, because that is the stack shape the
+                    // admitted sponsor program class takes, and the echo
+                    // is the bytes it was handed.
+                    response.sponsor_witness = vec![vec![0x30; 71], vec![0x02; 33]];
+                    response.signature_bound_to = Some(signing.finalized_transaction.clone());
                 }
                 OperationSubject::Submission(_) => {
                     response.accepted_txid = Some(ISSUED.to_owned());
@@ -997,11 +1435,21 @@ mod tests {
         );
         assert!(divergence.detail().is_some(), "a refusal states a reason");
 
-        // Eight submissions, not nine, and the divergent row is not
-        // among them: it was never built, so there was nothing to hand
+        // Twelve submissions and not thirteen: eight sponsorless rows
+        // and four sponsored ones, with the divergent row absent
+        // because it was never built and there was nothing to hand
         // over.
-        assert_eq!(transcript.submissions().len(), 8);
-        assert_eq!(planner.vectors().len(), 8);
+        assert_eq!(transcript.submissions().len(), 12);
+        assert_eq!(planner.vectors().len(), 12);
+        assert_eq!(
+            transcript
+                .submissions()
+                .iter()
+                .filter(|outcome| outcome.vector().sponsors() > 0)
+                .count(),
+            4,
+            "the sponsored rows are submitted too"
+        );
         for submission in transcript.submissions() {
             assert_ne!(
                 submission.vector().fixture().name(),
@@ -1028,13 +1476,15 @@ mod tests {
         assert_eq!(asked.iter().filter(|amount| **amount > bound()).count(), 1);
 
         // The schedule's own length, recomputed from the census rather
-        // than pinned as a bare number: every sponsorless row's inputs,
+        // than pinned as a bare number: every runnable row's inputs,
         // except the divergent row which contributes one, plus the two
-        // ceremony steps that also fund.
+        // ceremony steps that also fund. The sponsor-funding step is
+        // not among these -- it is its own kind and `is_funding` does
+        // not match it, which is the point of giving it one.
         let census = crate::fixture::positive_semantic_census().expect("the census builds");
         let scheduled: usize = census
             .iter()
-            .filter(|case| crate::materialize::is_materializable(case))
+            .filter(|case| crate::materialize::has_candidate_program(case))
             .map(|case| {
                 if crate::divergence::target_amount_standing(case).is_unfundable() {
                     1
@@ -1120,7 +1570,10 @@ mod tests {
             }
             assert!(matches!(
                 step.case().operation,
-                OperationStepKind::Fund | OperationStepKind::Submit
+                OperationStepKind::Fund
+                    | OperationStepKind::Submit
+                    | OperationStepKind::FundSponsor
+                    | OperationStepKind::SignSponsor
             ));
             let response = target.answer(step.case(), step.subject());
             previous = Some((step.case().clone(), response));

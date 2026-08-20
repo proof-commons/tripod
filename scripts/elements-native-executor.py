@@ -485,6 +485,67 @@ ISSUED_ASSET_UNITS = 210_000
 # bound with room to spare.
 OPERATION_WORKING_SATOSHIS = 1_000_000_000
 
+# The secret this adapter authorizes sponsor coins with.
+#
+# # Why a fixed value is the right one here
+#
+# It is a published constant on a chain this process creates and
+# destroys. It holds nothing anybody settles on, it is not derived from
+# and does not derive any production material, and an authorization made
+# with it is meaningful only against the disposable genesis this run
+# pinned `(ADR-015 rule test-material)`. Writing it here rather than
+# generating one keeps a run reproducible: the sponsor program is then
+# the same program every time, so two runs of the same census produce
+# the same bytes.
+#
+# # Why this adapter holds a key at all
+#
+# Because the packages that build a sponsored transaction deliberately
+# do not. The candidate constructs the transaction and asks for an
+# authorization of one input; a constructor able to produce that
+# authorization itself could produce one nobody asked for. So the key
+# lives on this side of the boundary, where its whole scope is a
+# regtest chain.
+#
+# # Why it is derived rather than drawn
+#
+# The value used to be a pattern somebody chose, and a chosen constant
+# asks a reader to accept that the roll was fair. So it is computed
+# instead, from a string published beside it: the digest of that string,
+# reduced into the group's scalar range. Nobody has to trust the choice,
+# because anybody can repeat the computation, and the reduction is the
+# obvious one that cannot land on zero. The internal key above is the
+# same pattern, being the digest of the curve generator's encoding.
+#
+# The constant remains constant, so a run is as reproducible as it ever
+# was. What changed with the derivation is the key itself, so the
+# sponsored ceremonies already recorded in the corpus were authorized by
+# the previous value and a fresh run will not reproduce their bytes.
+# That costs nothing a reader can check: those recordings publish their
+# transactions, and every identifier and signature hash rendered beside
+# them is derived from or verified against those published bytes.
+
+# The order of the secp256k1 group, from the curve's specification.
+SECP256K1_GROUP_ORDER = (
+    0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+)
+
+SPONSOR_SECRET_DERIVATION = "tripod/native-executor/sponsor-secret/v1"
+SPONSOR_SECRET_HEX = format(
+    int.from_bytes(hashlib.sha256(SPONSOR_SECRET_DERIVATION.encode()).digest(), "big")
+    % (SECP256K1_GROUP_ORDER - 1)
+    + 1,
+    "064x",
+)
+
+# The sighash type a sponsor authorization commits under.
+#
+# `SIGHASH_ALL`, which commits to every input and every output. The
+# protocol names exactly this profile and no other: one committing to
+# fewer outputs would let an authorization be replayed against a
+# transaction whose protected outputs differ.
+SPONSOR_SIGHASH_ALL = 1
+
 # The boundary between a lock time counted in blocks and one counted in
 # seconds, and the bit layout of a sequence field's relative lock. All four
 # are the target's own constants, restated here because the adapter has to
@@ -1436,7 +1497,15 @@ def load_framework(framework: str):
         from test_framework import messages, script
     except ImportError as error:
         raise FatalAdapterError("the framework did not import: %s" % error)
-    return candidate, messages, script
+    # The key module is optional, and its absence is reported as an
+    # absent capability rather than a fatal one: everything except the
+    # sponsor lane runs perfectly well without it, and a framework
+    # revision that does not ship it should still be usable for the rest.
+    try:
+        from test_framework import key as key_module
+    except ImportError:
+        key_module = None
+    return candidate, messages, script, key_module
 
 
 def txid_to_internal_int(txid_hex: str) -> int:
@@ -1481,10 +1550,11 @@ def explicit_amount(field: bytes, path: str) -> int:
 class CaseExecutor:
     """Executes fixtures against one disposable node."""
 
-    def __init__(self, node: DisposableNode, messages, script) -> None:
+    def __init__(self, node: DisposableNode, messages, script, key_module=None) -> None:
         self.node = node
         self.messages = messages
         self.script = script
+        self.key_module = key_module
         self.internal_key = bytes.fromhex(NUMS_INTERNAL_KEY_HEX)
         self.anyone_can_spend = bytes.fromhex(ANYONE_CAN_SPEND_HEX)
         self.anyone_can_spend_witness = bytes.fromhex(ANYONE_CAN_SPEND_WITNESS_HEX)
@@ -1523,6 +1593,17 @@ class CaseExecutor:
         # are advertised together because a submission with nothing funded
         # to spend is a step that could only be refused.
         self.operations = None
+        # Whether this adapter can act as a sponsor: hold reserve value at
+        # a program of its own and authorize a spend of it. Derived from
+        # the machinery actually present rather than written by hand, on
+        # the same reasoning as every other capability here -- the two
+        # things it needs are a key implementation and the segwit-v0
+        # signature hash, and an adapter advertising a capability whose
+        # machinery it lacks would be sent precisely the work only it
+        # could refuse.
+        self.sponsor_authorization = key_module is not None and callable(
+            getattr(script, "SegwitV0SignatureHash", None)
+        )
 
     def prime(self) -> None:
         """Locates a spendable free-coin output and confirms one block.
@@ -2299,6 +2380,13 @@ class OperationExecutor:
         # funding steps have something of that asset to spend. Public
         # chain data; the key is the target's own spelling of the asset.
         self.reserves = {}
+        # What this adapter put in each sponsor coin it created, keyed by
+        # the outpoint that holds it. A signing step needs the value the
+        # coin carries -- the segwit-v0 signature hash commits to it --
+        # and a coin this adapter never created is one it cannot
+        # authorize, which is a refusal rather than a guess.
+        self.sponsor_coins = {}
+        self.sponsor_key_cache = None
 
     def prepare(self) -> None:
         """Creates the wallet, and parks all but a working slice of the
@@ -2629,6 +2717,221 @@ class OperationExecutor:
             "funded_outputs": [
                 self.created(txid, index) for index in range(subject["outputs"])
             ],
+        }
+
+    # -- sponsorship ------------------------------------------------------
+
+    def sponsor_key(self):
+        """The key this adapter authorizes sponsor coins with.
+
+        Built once from `SPONSOR_SECRET_HEX` and kept, so that the
+        program below is the same program for the whole run.
+        """
+        if self.sponsor_key_cache is None:
+            key_module = self.executor.key_module
+            if key_module is None:
+                raise AdapterError(
+                    "this adapter's framework ships no key implementation, so "
+                    "it can authorize nothing"
+                )
+            key = key_module.ECKey()
+            key.set(bytes.fromhex(SPONSOR_SECRET_HEX), True)
+            if not key.is_valid:
+                raise AdapterError("the sponsor secret is not a valid key")
+            self.sponsor_key_cache = key
+        return self.sponsor_key_cache
+
+    def sponsor_program(self) -> bytes:
+        """The witness program sponsor coins are paid to.
+
+        Version zero over the twenty-byte hash of this adapter's own
+        public key, which is the one program class the candidate's
+        reviewed sponsor profile admits. The class is not this adapter's
+        choice -- the emitted coordinator checks it -- and building it
+        from the framework's own hash helper keeps the two from drifting.
+        """
+        pubkey = self.sponsor_key().get_pubkey().get_bytes()
+        return bytes([0x00, 0x14]) + self.executor.script.hash160(pubkey)
+
+    def fund_sponsor(self, subject: dict) -> dict:
+        """Creates sponsor coins out of this adapter's own reserve.
+
+        # Why the reserve is the policy asset and not something issued
+
+        The candidate's fee output carries the reserve asset, and a fee
+        this target's mempool weighs is one paid in the chain's own
+        policy asset. A reserve this lane issued would produce a
+        transaction whose fee the relay layer does not recognize as a
+        fee -- an honest answer, but a relay refusal rather than the
+        acceptance the step is asked for. So the reserve is what the
+        chain already uses as one, and the caller learns which asset
+        that is from the answer rather than by stating it.
+
+        The coins are unblinded, because they are built here rather than
+        by a wallet. That is not a detail: the coordinator introspects
+        the sponsor input's asset, and an introspection reads an
+        explicit field. A confidential coin would be refused by the
+        candidate's own program.
+        """
+        executor = self.executor
+        messages = executor.messages
+        source = executor.change
+        if source is None:
+            raise AdapterError("the adapter has no spendable change output")
+
+        outputs = subject["sponsor_outputs"]
+        amount = subject["amount_per_sponsor_output"]
+        wanted = outputs * amount
+        remainder = source["amount"] - wanted - ADAPTER_FEE_SATOSHIS
+        if remainder < 0:
+            raise AdapterError(
+                "the adapter's working coin cannot fund this sponsor step: "
+                "wanted %d plus a fee of %d, and it holds %d"
+                % (wanted, ADAPTER_FEE_SATOSHIS, source["amount"])
+            )
+
+        program = self.sponsor_program()
+        transaction = messages.CTransaction()
+        transaction.version = 2
+        transaction.vin.append(
+            messages.CTxIn(
+                messages.COutPoint(txid_to_internal_int(source["txid"]), source["vout"]),
+                nSequence=0xFFFFFFFE,
+            )
+        )
+        for _ in range(outputs):
+            transaction.vout.append(executor.output(amount, program))
+        # The change goes back to the BARE anyone-can-spend program, not
+        # the witness-carrying form. The two are not interchangeable:
+        # the witness form has to be spent with its own program on the
+        # stack, and every later step here spends this coin without
+        # pushing one. Only the issuance needs the witness form, because
+        # only an issuance is checked solely when its transaction
+        # carries a witness section (T4-012), and `issue` has already
+        # consumed it by the time this step runs.
+        transaction.vout.append(executor.output(remainder, executor.anyone_can_spend))
+        transaction.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
+
+        txid = self.mine(transaction, "sponsor funding")
+        executor.change = {"txid": txid, "vout": outputs, "amount": remainder}
+
+        created = []
+        for index in range(outputs):
+            entry = self.created(txid, index)
+            # Retained so a later signing step knows what the coin holds
+            # without asking the caller to restate it.
+            self.sponsor_coins["%s:%d" % (txid, index)] = {
+                "amount": entry["amount_satoshis"],
+                "asset": entry["asset"],
+            }
+            created.append(entry)
+        return {"issued_asset": None, "funded_outputs": created, "accepted_txid": None}
+
+    def sign_sponsor(self, subject: dict) -> dict:
+        """Authorizes one input of a finalized transaction.
+
+        # What is checked before anything is signed
+
+        That the input at the stated index really spends the stated
+        coin, and that the coin is one this adapter created. Signing an
+        input the caller misidentified would produce an authorization
+        over the wrong prevout -- which the target would refuse, but
+        only after the run had recorded a refusal whose cause was this
+        adapter's rather than the candidate's.
+
+        # Why the nonce is forced deterministic
+
+        The framework's ECDSA signer uses a random nonce unless asked
+        otherwise, and a random nonce makes every run of the same census
+        produce different bytes. Reproducibility is a property this lane
+        is expected to have, so the nonce is derived from the key and
+        the message instead (RFC 6979) and two runs agree to the byte.
+        """
+        executor = self.executor
+        messages = executor.messages
+        script = executor.script
+
+        raw = subject["finalized_transaction"]
+        transaction = messages.CTransaction()
+        try:
+            transaction.deserialize(io.BytesIO(raw))
+        except Exception as error:
+            raise AdapterError(
+                "the bytes handed to this signing step are not a transaction "
+                "this framework decodes: %s" % error
+            )
+
+        index = subject["sponsor_input_index"]
+        if index >= len(transaction.vin):
+            raise AdapterError(
+                "the step named input %d of a transaction with %d inputs"
+                % (index, len(transaction.vin))
+            )
+        stated = subject["sponsor_outpoint"]
+        prevout = transaction.vin[index].prevout
+        # The framework holds an outpoint's identity as an integer over
+        # the displayed byte order, which is how `txid_to_internal_int`
+        # produces one.
+        if (
+            prevout.hash != txid_to_internal_int(stated["txid"])
+            or prevout.n != stated["vout"]
+        ):
+            raise AdapterError(
+                "input %d does not spend the coin the step named" % index
+            )
+
+        held = self.sponsor_coins.get("%s:%d" % (stated["txid"], stated["vout"]))
+        if held is None:
+            raise AdapterError(
+                "this adapter did not create the coin it was asked to "
+                "authorize a spend of, so it holds nothing that could"
+            )
+
+        value = messages.CTxOutValue()
+        value.vchCommitment = bytes([EXPLICIT_PREFIX]) + held["amount"].to_bytes(
+            8, "big"
+        )
+
+        key = self.sponsor_key()
+        pubkey = key.get_pubkey().get_bytes()
+        # The script the signature hash is taken over for a version-zero
+        # key-hash program is the pay-to-public-key-hash script the
+        # program's payload names, which is the target's own rule and
+        # not this adapter's convention.
+        script_code = script.CScript(
+            [
+                script.OP_DUP,
+                script.OP_HASH160,
+                script.hash160(pubkey),
+                script.OP_EQUALVERIFY,
+                script.OP_CHECKSIG,
+            ]
+        )
+        digest = script.SegwitV0SignatureHash(
+            script_code, transaction, index, SPONSOR_SIGHASH_ALL, value
+        )
+        signature = key.sign_ecdsa(digest, rfc6979=True)
+
+        return {
+            "issued_asset": None,
+            "funded_outputs": [],
+            "accepted_txid": None,
+            # Bottom item first: the authorization, then the key it is
+            # checked against, which is the stack the admitted program
+            # class takes.
+            #
+            # Written as arrays of octets, which is how every other byte
+            # field crosses this boundary -- `require_bytes` reads one
+            # from the harness and the harness reads one back. Hex here
+            # would be a second encoding for one kind of value, and the
+            # harness would refuse the record rather than misread it.
+            "sponsor_witness": [
+                list(signature + bytes([SPONSOR_SIGHASH_ALL])),
+                list(pubkey),
+            ],
+            # Echoed rather than asserted. The caller compares these with
+            # what it sent, byte for byte.
+            "signature_bound_to": list(raw),
         }
 
     # -- submission -------------------------------------------------------
@@ -4350,7 +4653,7 @@ def identifier(text: str, role: str) -> bytes:
 
 def serve(arguments) -> int:
     """Runs the whole exchange, and destroys the node whatever happens."""
-    framework_path, messages, script = load_framework(arguments.framework)
+    framework_path, messages, script, key_module = load_framework(arguments.framework)
     log("framework loaded from %s" % framework_path)
     name, version, revision = node_provenance(arguments.elementsd)
     network_id = identifier(arguments.network_id, "network")
@@ -4384,7 +4687,7 @@ def serve(arguments) -> int:
     try:
         started = time.monotonic()
         node.start()
-        executor = CaseExecutor(node, messages, script)
+        executor = CaseExecutor(node, messages, script, key_module)
         executor.prime()
         if arguments.enable_wallet:
             executor.conservation = ConservationExecutor(executor, arguments.wallet_name)
@@ -4480,6 +4783,25 @@ def serve(arguments) -> int:
                 + (
                     ["test_funding_ceremony", "target_transaction_submission"]
                     if executor.operations is not None
+                    else []
+                )
+                # Acting as a sponsor: holding reserve value at a program
+                # of this adapter's own and authorizing a spend of it. It
+                # rests on the operation lane, because the coin is
+                # created by the same machinery, and on the framework
+                # actually shipping the key and signature-hash helpers,
+                # because this adapter implements neither itself.
+                #
+                # The claim is about this disposable chain and nothing
+                # else. The key it authorizes with is a published
+                # constant belonging to a genesis this process created
+                # `(ADR-015 rule test-material)`, so what it establishes
+                # is that the candidate's transaction is one the target
+                # accepts -- never anything about a sponsor's standing.
+                + (
+                    ["test_sponsor_authorization"]
+                    if executor.operations is not None
+                    and executor.sponsor_authorization
                     else []
                 ),
             }
@@ -4878,6 +5200,73 @@ def parse_operation_subject(raw: object, kind: str) -> dict:
             subject.get("transaction_bytes"), "request.subject.transaction_bytes"
         )}
 
+    if kind == "fund_sponsor":
+        require_keys(
+            subject,
+            ("sponsor_outputs", "amount_per_sponsor_output"),
+            "request.subject",
+        )
+        outputs = require_int(
+            subject.get("sponsor_outputs"), "request.subject.sponsor_outputs"
+        )
+        if outputs < 1 or outputs > 255:
+            raise FatalAdapterError(
+                "request.subject.sponsor_outputs is not a byte count of outputs"
+            )
+        return {
+            "sponsor_outputs": outputs,
+            "amount_per_sponsor_output": require_int(
+                subject.get("amount_per_sponsor_output"),
+                "request.subject.amount_per_sponsor_output",
+            ),
+        }
+
+    if kind == "sign_sponsor":
+        require_keys(
+            subject,
+            (
+                "finalized_transaction",
+                "sponsor_input_index",
+                "sponsor_outpoint",
+                "sighash_profile",
+            ),
+            "request.subject",
+        )
+        profile = subject.get("sighash_profile")
+        # The one profile the protocol names. An adapter that quietly
+        # signed under another would produce an authorization protecting
+        # a different output set than the caller asked it to.
+        if profile != "all_inputs_all_outputs":
+            raise FatalAdapterError(
+                "request.subject.sighash_profile names a profile this adapter "
+                "does not implement: %s" % profile
+            )
+        outpoint = require_object(
+            subject.get("sponsor_outpoint"), "request.subject.sponsor_outpoint"
+        )
+        require_keys(outpoint, ("txid", "vout"), "request.subject.sponsor_outpoint")
+        txid = outpoint.get("txid")
+        if not isinstance(txid, str):
+            raise FatalAdapterError(
+                "request.subject.sponsor_outpoint.txid is not a string"
+            )
+        return {
+            "finalized_transaction": require_bytes(
+                subject.get("finalized_transaction"),
+                "request.subject.finalized_transaction",
+            ),
+            "sponsor_input_index": require_int(
+                subject.get("sponsor_input_index"),
+                "request.subject.sponsor_input_index",
+            ),
+            "sponsor_outpoint": {
+                "txid": txid,
+                "vout": require_int(
+                    outpoint.get("vout"), "request.subject.sponsor_outpoint.vout"
+                ),
+            },
+        }
+
     require_keys(
         subject,
         ("issue_asset", "asset", "output_program", "outputs", "amount_per_output"),
@@ -4935,7 +5324,7 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
         if key not in ("schema", "case", "subject"):
             raise FatalAdapterError("the harness sent a request field named %s" % key)
     kind = case.get("operation")
-    if kind not in ("fund", "submit"):
+    if kind not in ("fund", "submit", "fund_sponsor", "sign_sponsor"):
         raise FatalAdapterError("the harness sent an operation step of an unknown kind")
     subject = parse_operation_subject(request.get("subject"), kind)
 
@@ -4961,6 +5350,10 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
                 else operations.pay(subject)
             )
             body.setdefault("accepted_txid", None)
+        elif kind == "fund_sponsor":
+            body = operations.fund_sponsor(subject)
+        elif kind == "sign_sponsor":
+            body = operations.sign_sponsor(subject)
         else:
             body = operations.submit(subject)
             body.setdefault("issued_asset", None)
@@ -4983,6 +5376,12 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
             "issued_asset": body["issued_asset"],
             "funded_outputs": body["funded_outputs"],
             "accepted_txid": body["accepted_txid"],
+            # Written only by the step that was asked for one. The
+            # harness refuses a response carrying an authorization it
+            # never requested, so the defaults are empty rather than
+            # omitted-and-hoped-for.
+            "sponsor_witness": body.get("sponsor_witness", []),
+            "signature_bound_to": body.get("signature_bound_to"),
             # No interpreter observation is made for an operation step.
             # The node reports no per-script resource figures for a
             # transaction it validated as a whole, and inventing them
@@ -5006,8 +5405,9 @@ def write_operation_failure(case: dict, note: str) -> None:
 
     Which is what the harness's own shape check requires of one: an
     outpoint is a coin the target created, an issued asset is an identity
-    the target chose, and a transaction identity is one the target
-    computed over bytes it accepted. None exists here.
+    the target chose, a transaction identity is one the target computed
+    over bytes it accepted, and an authorization is one this adapter
+    produced. None exists here.
     """
     write_message(
         {
@@ -5018,6 +5418,8 @@ def write_operation_failure(case: dict, note: str) -> None:
             "issued_asset": None,
             "funded_outputs": [],
             "accepted_txid": None,
+            "sponsor_witness": [],
+            "signature_bound_to": None,
             "resources": {
                 "script_bytes": 0,
                 "initial_stack_items": 0,

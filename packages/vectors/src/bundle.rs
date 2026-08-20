@@ -44,6 +44,7 @@ use linker::{CandidateLinkedBundle, LinkDeploymentParameters, SelfCommitmentStra
 use realization::{RealizationScope, derive};
 use tapscript::{CompactAshSymbols, demonstration_policy, emit_candidate_bundle};
 use target_elements::{ReviewedElementsTapscriptDefinition, reviewed_elements_tapscript};
+use target_elements_conformance::constructor::tagged;
 use target_elements_conformance::constructor::tree as oracle_tree;
 use transaction::{
     AshInstanceOrigin, CandidateTransactionAbi, OutputKeyParity, PinnedAshInstance, commit_tree,
@@ -56,12 +57,55 @@ use crate::error::FixtureBundleRefusal;
 pub const CLOSED_ASSET: [u8; 32] = [0xa1; 32];
 /// The disposable reserve asset the sponsor region uses.
 pub const RESERVE_ASSET: [u8; 32] = [0xa2; 32];
-/// The disposable sponsor-change program digest.
+/// The disposable sponsor-change program payload.
+///
+/// # Why this one really is a choice, unlike the fee digest
+///
+/// The change output is a witness program, and
+/// `OP_INSPECTOUTPUTSCRIPTPUBKEY` pushes a witness program's *payload*
+/// and its version rather than a hash of the whole script. So what the
+/// emitted coordinator compares against is the thirty-two byte payload
+/// of a version-zero program, and any thirty-two bytes name one. A
+/// deployment picks it.
+///
+/// [`fee_program_digest`] is not like that, and the difference is worth
+/// keeping straight because the two symbols look alike: a fee output
+/// has no witness program at all, so the target falls back to the
+/// SHA-256 of the whole script under a version of -1, and the value is
+/// then determined rather than chosen. Making this constant "consistent"
+/// with that one would break a check that currently passes.
 pub const SPONSOR_CHANGE_PROGRAM: [u8; 32] = [0xa4; 32];
 /// The meaningless taproot internal key the fixture link commits to.
 pub const INTERNAL_KEY: [u8; 32] = [0xa6; 32];
-/// The disposable fee-program digest the resolved symbols carry.
-pub const FEE_PROGRAM: [u8; 32] = [0xa5; 32];
+/// The fee-program digest the resolved symbols carry.
+///
+/// # This value is derived, not chosen, and an earlier revision chose it
+///
+/// It is the SHA-256 of the *empty* program, because that is what the
+/// target's fee role is. `OP_INSPECTOUTPUTSCRIPTPUBKEY` pushes a
+/// witness program and its version for an output that has one, and for
+/// an output that does not it pushes the SHA-256 of the whole
+/// `scriptPubKey` under a version of -1 (`pushspk` and
+/// `GetOutputScriptPubKeysSHA256` in `src/script/interpreter.cpp`). The
+/// fee role's whole identity is its empty program, so the emitted
+/// coordinator's check against this digest is a check against
+/// SHA-256 of nothing.
+///
+/// An earlier revision carried `[0xa5; 32]`, an arbitrary pattern, and
+/// nothing noticed while no sponsored transaction was ever built: the
+/// fee fragment is emitted only for a sponsored shape. The first four
+/// sponsored rows put to a live node were refused
+/// `Script failed an OP_EQUALVERIFY operation`, which is that
+/// comparison failing. This is the same class of defect Wave 11 found
+/// in `CLOSED_ASSET` — a value the target determines, written down as
+/// though it were a deployment's to pick.
+///
+/// The digest is computed rather than stated, through the conformance
+/// package's own SHA-256, so it cannot drift from the rule above.
+#[must_use]
+pub fn fee_program_digest() -> [u8; 32] {
+    tagged::sha256(&[])
+}
 /// The pinned output program every fixture ASH input pays to.
 ///
 /// # This value is derived, not chosen
@@ -107,8 +151,8 @@ pub const FEE_PROGRAM: [u8; 32] = [0xa5; 32];
 /// longer unspendable *by construction*, so that ceremony is able to
 /// run at all.
 pub const PINNED_PROGRAM: [u8; 32] = [
-    0x71, 0xc8, 0x38, 0xe9, 0x0d, 0xeb, 0x1c, 0x76, 0x55, 0x8a, 0x68, 0x8e, 0x8e, 0x5a, 0x08, 0xc6,
-    0x94, 0xe9, 0xca, 0x95, 0x3d, 0x13, 0xb4, 0xb7, 0x84, 0xd6, 0xc4, 0x56, 0x69, 0x31, 0x75, 0xfe,
+    0x5a, 0x75, 0x95, 0x13, 0x41, 0xde, 0x4b, 0xa0, 0x67, 0x16, 0x24, 0x2e, 0x04, 0x7c, 0xa4, 0xef,
+    0x5c, 0x60, 0xce, 0x86, 0x9f, 0x4a, 0x63, 0x78, 0x60, 0x8d, 0xf7, 0x45, 0x09, 0x17, 0xbc, 0xed,
 ];
 
 /// The parity of [`PINNED_PROGRAM`]'s implicit y coordinate.
@@ -120,7 +164,7 @@ pub const PINNED_PROGRAM: [u8; 32] = [
 /// every hash in the path is right — which is exactly what an earlier
 /// revision did by declaring even parity against a derivation that
 /// yields odd.
-pub const PINNED_PARITY: OutputKeyParity = OutputKeyParity::Odd;
+pub const PINNED_PARITY: OutputKeyParity = OutputKeyParity::Even;
 
 /// The one bundle-and-ABI pair every fixture in this crate binds to.
 ///
@@ -135,6 +179,7 @@ pub struct FixtureBundle {
     abi: CandidateTransactionAbi,
     pin: PinnedAshInstance,
     closed_asset: [u8; 32],
+    reserve_asset: [u8; 32],
     provenance: PinProvenance,
 }
 
@@ -215,6 +260,27 @@ impl FixtureBundle {
     pub const fn closed_asset(&self) -> [u8; 32] {
         self.closed_asset
     }
+
+    /// The reserve asset this bundle's programs are linked against.
+    ///
+    /// # Why the reserve is part of the bundle too
+    ///
+    /// For the same reason the closed asset is, and it was found the
+    /// same way. The emitted coordinator introspects every sponsor
+    /// input's asset and requires it to equal this value, and requires
+    /// the fee output to carry it as well. So a sponsored transaction
+    /// built against a bundle linked at one reserve and funded with
+    /// another is refused by the candidate's own program, and this
+    /// accessor is what lets a planner notice rather than discover it
+    /// as a script failure.
+    ///
+    /// A sponsorless bundle carries the value anyway: the symbol is
+    /// substituted into all twelve leaves whether or not a shape uses
+    /// it, so the pin is a function of it in either case.
+    #[must_use]
+    pub const fn reserve_asset(&self) -> [u8; 32] {
+        self.reserve_asset
+    }
 }
 
 fn canonical_pin() -> Result<PinnedAshInstance, FixtureBundleRefusal> {
@@ -233,7 +299,7 @@ fn limit(value: u64) -> NonZeroU64 {
 }
 
 fn build() -> Result<FixtureBundle, FixtureBundleRefusal> {
-    build_at(CLOSED_ASSET, PinProvenance::CanonicalLiteral)
+    build_at(CLOSED_ASSET, RESERVE_ASSET, PinProvenance::CanonicalLiteral)
 }
 
 /// The same bundle, linked against a closed asset a ceremony observed.
@@ -280,8 +346,30 @@ fn build() -> Result<FixtureBundle, FixtureBundleRefusal> {
 /// [`FixtureBundleRefusal`] naming the layer that refused, exactly as
 /// [`fixture_bundle`] does, plus a refusal from the tree commitment or
 /// the tweak when the derived key is not a point this contract admits.
-pub fn ceremony_bundle(closed_asset: [u8; 32]) -> Result<FixtureBundle, FixtureBundleRefusal> {
-    build_at(closed_asset, PinProvenance::DerivedForObservedAsset)
+/// # Why the reserve asset is observed too, and not only the closed one
+///
+/// Wave 11 needed one observed asset because the sponsorless shapes
+/// name one. A sponsored shape names two: the coordinator requires
+/// every sponsor input to carry the reserve asset and requires the fee
+/// output to carry it as well. Neither can be a chosen constant on a
+/// real chain, and for the *reserve* there is a further constraint the
+/// closed asset does not have — a fee this target's mempool weighs is
+/// one paid in the chain's own policy asset, so the reserve has to be
+/// the asset the chain already uses as a reserve rather than a second
+/// asset a ceremony issued.
+///
+/// So both come from the target: the closed asset is what the issuance
+/// step chose, and the reserve is what the sponsor-funding step
+/// reported paying in.
+pub fn ceremony_bundle(
+    closed_asset: [u8; 32],
+    reserve_asset: [u8; 32],
+) -> Result<FixtureBundle, FixtureBundleRefusal> {
+    build_at(
+        closed_asset,
+        reserve_asset,
+        PinProvenance::DerivedForObservedAsset,
+    )
 }
 
 /// Derive the pinned instance for a linked bundle, from its own tree.
@@ -311,6 +399,7 @@ fn derived_pin(
 
 fn build_at(
     closed_asset: [u8; 32],
+    reserve_asset: [u8; 32],
     provenance: PinProvenance,
 ) -> Result<FixtureBundle, FixtureBundleRefusal> {
     let target = reviewed_elements_tapscript().map_err(FixtureBundleRefusal::Target)?;
@@ -347,10 +436,10 @@ fn build_at(
     let resolved = CompactAshSymbols::new(
         &target,
         closed_asset.to_vec(),
-        RESERVE_ASSET.to_vec(),
+        reserve_asset.to_vec(),
         SPONSOR_CHANGE_PROGRAM.to_vec(),
         0,
-        FEE_PROGRAM.to_vec(),
+        fee_program_digest().to_vec(),
     )
     .map_err(FixtureBundleRefusal::Symbols)?;
     let deployment = LinkDeploymentParameters::new(
@@ -379,6 +468,7 @@ fn build_at(
         abi,
         pin,
         closed_asset,
+        reserve_asset,
         provenance,
     })
 }
@@ -447,7 +537,7 @@ mod tests {
             super::RESERVE_ASSET,
             super::SPONSOR_CHANGE_PROGRAM,
             super::INTERNAL_KEY,
-            super::FEE_PROGRAM,
+            super::fee_program_digest(),
             super::PINNED_PROGRAM,
         ] {
             assert!(seen.insert(constant), "two fixture constants collide");

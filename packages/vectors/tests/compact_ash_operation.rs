@@ -234,7 +234,23 @@ fn render(
             .constructor_program()
             .map_or_else(|| "null".to_owned(), |program| quote(&hex(program)))
     );
+    let _ = writeln!(
+        out,
+        "  \"reserve_asset\": {},",
+        transcript
+            .reserve_asset()
+            .map_or_else(|| "null".to_owned(), |asset| quote(&hex(&asset)))
+    );
     let _ = writeln!(out, "  \"funded_vectors\": {},", transcript.funded().len());
+    let _ = writeln!(
+        out,
+        "  \"sponsored_submissions\": {},",
+        transcript
+            .submissions()
+            .iter()
+            .filter(|submission| submission.vector().sponsors() > 0)
+            .count()
+    );
     let _ = writeln!(
         out,
         "  \"projections_compared\": {}, \"projections_matched\": {},",
@@ -285,9 +301,10 @@ fn render(
         }
         let _ = write!(
             out,
-            "    {{\"ordinal\": {}, \"ash_inputs\": {}, \"layer\": {}, \"txid\": {}, \"projection\": {}, \"detail\": {}, \"bytes\": {}}}",
+            "    {{\"ordinal\": {}, \"ash_inputs\": {}, \"sponsors\": {}, \"layer\": {}, \"txid\": {}, \"projection\": {}, \"detail\": {}, \"bytes\": {}}}",
             submission.vector().fixture().ordinal(),
             submission.vector().ash_inputs(),
+            submission.vector().sponsors(),
             quote(&submission.layer().to_string()),
             submission
                 .accepted_txid()
@@ -374,8 +391,22 @@ fn compact_ash_runs_against_a_real_target() {
         let plan = vectors::derive_evidence_plan(&bundle).expect("the evidence plan derives");
         assert_eq!(
             transcript.submissions().len(),
-            plan.census().submittable_vectors(),
+            plan.census().submittable_vectors() + plan.census().sponsored_vectors(),
             "the run submitted a different number of vectors than the plan admits"
+        );
+
+        // And the sponsored half actually ran. The count comes from the
+        // plan's own census rather than from a number written here, so a
+        // candidate whose bounds admitted more sponsored rows would be
+        // held to the larger figure without this line changing.
+        assert_eq!(
+            transcript
+                .submissions()
+                .iter()
+                .filter(|submission| submission.vector().sponsors() > 0)
+                .count(),
+            plan.census().sponsored_vectors(),
+            "the run submitted a different number of sponsored vectors than the plan names"
         );
         assert_eq!(
             transcript.divergences().len(),
