@@ -354,10 +354,22 @@ fn render_mutations(transcript: &OperationTranscript) -> String {
             .iter()
             .find(|submission| submission.vector() == id)
     });
+    // Whether the subject's coins were ever demonstrably spendable. The
+    // control's acceptance shows it; so does an accepted mutation, which
+    // spent them itself. Either settles the question a refusal on its
+    // own could not.
+    let control_accepted =
+        control.is_some_and(|submission| submission.layer() == ObservedOutcomeLayer::Accepted);
+    let any_mutation_accepted = transcript
+        .mutants()
+        .iter()
+        .any(|mutant| mutant.layer() == ObservedOutcomeLayer::Accepted);
+    let coins_were_spendable = control_accepted || any_mutation_accepted;
+
     let mut out = String::new();
     let _ = writeln!(
         out,
-        "  \"mutation_control\": {{\"subject_ordinal\": {}, \"layer\": {}, \"mutations_attributable\": {}}},",
+        "  \"mutation_control\": {{\"subject_ordinal\": {}, \"layer\": {}, \"control_accepted\": {control_accepted}, \"coins_were_spendable\": {coins_were_spendable}}},",
         subject.map_or_else(
             || "null".to_owned(),
             |id| id.fixture().ordinal().to_string()
@@ -366,12 +378,14 @@ fn render_mutations(transcript: &OperationTranscript) -> String {
             || "null".to_owned(),
             |submission| quote(&submission.layer().to_string())
         ),
-        // The whole negative half's licence, stated once: the control
-        // was accepted, so the mutations submitted before it differ from
-        // an accepted transaction by exactly what each one changed.
-        control.is_some_and(|submission| submission.layer() == ObservedOutcomeLayer::Accepted),
     );
     out.push_str("  \"mutations\": [\n");
+    // Attributability is per row and order-dependent: once a mutation is
+    // accepted it spends the subject's coins, so every later row is
+    // refused for that rather than for what it changed. A global flag
+    // would throw away the rows submitted before that happened, which
+    // are the ones that actually established something.
+    let mut spent = false;
     for (index, mutant) in transcript.mutants().iter().enumerate() {
         if index > 0 {
             out.push_str(",\n");
@@ -381,9 +395,11 @@ fn render_mutations(transcript: &OperationTranscript) -> String {
             .expected_boundary()
             .expect("the mutation stages a class §18 names");
         let observed = mutant.layer();
+        let submitted = !mutant.bytes().is_empty();
+        let attributable = submitted && !spent && coins_were_spendable;
         let _ = write!(
             out,
-            "    {{\"mutation\": {}, \"class\": {}, \"origin_ordinal\": {}, \"expected_boundary\": {}, \"observed_layer\": {}, \"boundary_matched\": {}, \"target_verdict\": {}, \"preserves_value_balance\": {}, \"detail\": {}, \"bytes\": {}}}",
+            "    {{\"mutation\": {}, \"class\": {}, \"origin_ordinal\": {}, \"expected_boundary\": {}, \"observed_layer\": {}, \"boundary_matched\": {}, \"target_verdict\": {}, \"attributable\": {attributable}, \"submitted\": {submitted}, \"preserves_value_balance\": {}, \"detail\": {}, \"bytes\": {}}}",
             quote(&format!("{:?}", mutant.mutation())),
             quote(mutant.mutation().class_name()),
             mutant.origin().fixture().ordinal(),
@@ -395,6 +411,9 @@ fn render_mutations(transcript: &OperationTranscript) -> String {
             mutant.detail().map_or_else(|| "null".to_owned(), quote),
             mutant.bytes().len(),
         );
+        if observed == ObservedOutcomeLayer::Accepted {
+            spent = true;
+        }
     }
     out.push_str("\n  ]\n");
     out

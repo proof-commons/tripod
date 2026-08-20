@@ -562,6 +562,8 @@ pub struct CompactAshOperationPlanner {
     /// The mutated transactions this run will submit, settled once the
     /// positive submissions have said which vector was accepted.
     mutants: Vec<MutatedVector>,
+    /// Whether a mutation was accepted and took the subject's coins.
+    subject_spent: bool,
     transcript: OperationTranscript,
 }
 
@@ -602,6 +604,7 @@ impl CompactAshOperationPlanner {
             sign_schedule: Vec::new(),
             vectors: Vec::new(),
             mutants: Vec::new(),
+            subject_spent: false,
             transcript: OperationTranscript::default(),
         })
     }
@@ -1226,6 +1229,34 @@ impl CompactAshOperationPlanner {
                 detail: response.observed_detail.clone(),
                 bytes: mutant.bytes().to_vec(),
             });
+            // A mutation the target *accepted* has spent the subject's
+            // coins. Every later mutation would be refused for that and
+            // not for what it changed, so the sequence stops here rather
+            // than collecting refusals that establish nothing.
+            if response.observed_layer == ObservedOutcomeLayer::Accepted {
+                self.subject_spent = true;
+            }
+        }
+    }
+
+    /// Record the mutations this run will no longer offer.
+    ///
+    /// Reached when an earlier mutation was accepted and took the
+    /// subject's coins with it. The rows are kept — a matrix that
+    /// silently shrank when a run went wrong would be the least honest
+    /// possible outcome — and each says why it was not submitted.
+    fn abandon_remaining_mutants(&mut self, from: usize) {
+        for mutant in self.mutants.iter().skip(from) {
+            self.transcript.mutants.push(MutantOutcome {
+                origin: mutant.origin(),
+                mutation: mutant.mutation(),
+                layer: ObservedOutcomeLayer::FixtureConstructionFailure,
+                detail: Some(
+                    "not submitted: an earlier mutation was accepted and spent the subject's coins"
+                        .into(),
+                ),
+                bytes: Vec::new(),
+            });
         }
     }
 
@@ -1327,7 +1358,10 @@ impl TargetOperationPlanner for CompactAshOperationPlanner {
                 Stage::SubmitMutant(index) => {
                     self.settle_mutant(index, response);
                     let next = index + 1;
-                    self.stage = if next < self.mutants.len() {
+                    self.stage = if self.subject_spent {
+                        self.abandon_remaining_mutants(next);
+                        Stage::SubmitControl
+                    } else if next < self.mutants.len() {
                         Stage::SubmitMutant(next)
                     } else {
                         Stage::SubmitControl
