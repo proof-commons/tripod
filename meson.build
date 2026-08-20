@@ -946,7 +946,11 @@ gate_cargo_audit = find_program('scripts/gate-cargo-audit.sh')
 
 # The advisory lane. Externally provisioned by ADR-011, so the wrapper exits
 # 77 and meson reports SKIP when cargo-audit is absent -- the harness's own
-# status, rather than a driver's private vocabulary.
+# status, rather than a driver's private vocabulary. The wrapper locates and
+# executes the advisory binary directly instead of going through `cargo
+# audit`, so no caller has to put ~/.cargo/bin on PATH to satisfy this lane
+# and thereby put rustup's cargo in front of the configured toolchain; see
+# the script for the failure that discipline exists to prevent.
 # Budget: 0:03 when provisioned, tolerance 0:15 (measured 0:02; it fetches
 # nothing, the advisory database is whatever the operator last synced). A
 # skip is instant.
