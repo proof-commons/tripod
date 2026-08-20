@@ -813,9 +813,9 @@ test(
 # Real-derivation integration test (cargo + git, no TeX): proves the
 # Git-derived identity scopes that the mocked contract test cannot. The
 # heavier Meson graph properties (mirror/generator repair, restat, failure
-# propagation) are covered by scripts/test-meson-mock.sh, which runs from
-# scripts/ci.sh with the TeX toolchain mocked rather than as a nested
-# Meson test.
+# propagation) are covered by scripts/test-meson-mock.sh, which is the
+# `meson-mock-contract` test declared below (CI-009 re-homed it here from the
+# retired Python driver).
 # Publication-mode freshness contract for the two shell publication
 # paths (R2-N04): compare-if-changed equality is bytes AND required
 # mode, so a byte-current destination with a wrong mode is repaired
@@ -840,6 +840,122 @@ test(
   suite: 'integration',
   timeout: 600,
   is_parallel: false,
+)
+
+# ---------------------------------------------------------------------------
+# Gate lanes migrated from the retired Python driver (CI-009).
+#
+# The driver declared eleven lanes and wall-timed each one itself. Seven of
+# them were already meson tests and it merely invoked them; the four below
+# were the remainder, and they are re-homed here unchanged in what they
+# prove. Nothing about a lane's subject moved: the argv, the scripts, and the
+# exit-status meanings are the ones the driver used. What moved is who
+# measures and who reports, and that is the point -- meson's harness times
+# every test, writes the durations into meson-logs/testlog.json, and has a
+# first-class SKIP status, so the driver's parallel implementations of all
+# three are dead weight rather than a second opinion.
+#
+# Budgets (CI-005, the wall-time ruling). Each test carries its expected
+# duration and tolerance beside the declaration. A lane outside its budget is
+# a finding to report, not a cost to absorb; the figures are measurements on
+# the 14-core reference host, not estimates.
+# ---------------------------------------------------------------------------
+
+python3 = find_program('python3')
+
+# Preflight in the driver, an ordinary lane here. It refuses a tracked path
+# that falls outside the safe checker-argv grammar (SR3-05), so a path that
+# would need quoting can never reach a checker's argv. census-args.sh stays
+# the single definition of the grammar: this sources it exactly as the driver
+# did rather than restating the rule.
+# Budget: 0:01, tolerance 0:02. It is one `git ls-files` and a pattern match.
+test(
+  'tracked-path-argv-audit',
+  sh,
+  args: ['-c', '. ./scripts/census-args.sh && audit_tracked_paths'],
+  workdir: meson.project_source_root(),
+  suite: 'lint',
+  timeout: 120,
+)
+
+# The Python test surface CI-007 found missing, arriving as a meson test by
+# the CI-009 ruling rather than as a driver registry entry. Node-free by
+# construction: it imports the executor adapter and exercises its script-error
+# classification as pure string functions, so it needs no node, no network,
+# and no Rust or TeX toolchain, and it belongs in the ordinary suite rather
+# than behind the target_native_executor option.
+# Budget: 0:00.2, tolerance 0:02. It is an import and 112 assertions.
+test(
+  'executor-classification',
+  python3,
+  args: [meson.project_source_root() / 'scripts' / 'test-executor-classification.py'],
+  suite: 'lint',
+  timeout: 120,
+)
+
+gate_cargo_audit = find_program('scripts/gate-cargo-audit.sh')
+
+# The advisory lane. Externally provisioned by ADR-011, so the wrapper exits
+# 77 and meson reports SKIP when cargo-audit is absent -- the harness's own
+# status, rather than a driver's private vocabulary.
+# Budget: 0:03 when provisioned, tolerance 0:15 (it fetches nothing; the
+# advisory database is whatever the operator last synced). Skips instantly.
+test(
+  'cargo-audit',
+  gate_cargo_audit,
+  args: [meson.project_source_root()],
+  suite: 'lint',
+  timeout: 600,
+)
+
+meson_mock_test = find_program('scripts/test-meson-mock.sh')
+
+# The mocked Meson contract lane: the production Meson graph with the TeX
+# toolchain simulated, covering the ADR-014 census wiring, report and stamp
+# edges, generator and publication repair, no-op restat behaviour, and
+# render-failure propagation.
+#
+# It is a nested Meson build, which is why the comment above the
+# publication-mode test used to say it ran from the shell driver "rather than
+# as a nested Meson test". That reservation was about the DRIVER's ordering,
+# not about a technical bar: the nested build configures its own directory
+# under build/mocks, shares no state with the outer build, and meson imposes
+# nothing on a test that forbids it. It is pinned serial because it drives
+# cargo, and cargo serializes on the lock over the shared target directory:
+# run in parallel with the package lanes its duration would measure the
+# queue.
+#
+# The driver made this lane skippable for local convenience, with
+# CI_REQUIRE_MESON=1 to make a skip fatal. Both are now moot -- a meson test
+# cannot run without meson -- so the lane is unconditional, which is the
+# stronger of the two behaviours the toggle chose between.
+# Budget: 1:30, tolerance 3:00. It configures a Meson build, syncs six helper
+# binaries through cargo, and runs the repair and restat regressions.
+test(
+  'meson-mock-contract',
+  meson_mock_test,
+  args: [meson.project_source_root()],
+  suite: 'integration',
+  timeout: 1800,
+  is_parallel: false,
+)
+
+gate_clean_tree = find_program('scripts/gate-clean-tree.sh')
+
+# The driver's last lane, and the one that makes "a clean checkout passes
+# without modifying tracked files" a checked claim rather than an assertion.
+# The negative priority schedules it after the parallel work; see the script
+# for why that is a preference rather than a guarantee, and why nothing in
+# this suite races it.
+# Budget: 0:01, tolerance 0:05. One `git status` over the tracked set.
+test(
+  'clean-tree',
+  gate_clean_tree,
+  args: [meson.project_source_root()],
+  suite: 'lint',
+  timeout: 120,
+  is_parallel: false,
+  priority: -100,
 )
 
 # ---------------------------------------------------------------------------
