@@ -318,6 +318,15 @@ pub fn partition() -> Vec<PartitionRule> {
             rule: PathRule::Under,
             owner: OwnerSelector::Fixed(LabelOwner::Doc),
         },
+        // ADR-023: the script tree's Python sources to the same
+        // residual owner. Only `.py` is carried, and the census is what
+        // enforces that -- a rule here matches a location, and the
+        // extension split belongs where subjects are enumerated.
+        PartitionRule {
+            path: "scripts",
+            rule: PathRule::Under,
+            owner: OwnerSelector::Fixed(LabelOwner::Doc),
+        },
     ]
 }
 
@@ -439,6 +448,13 @@ pub const SCANNED_REGIONS: &[(&str, &str)] = &[
         "latex",
         "authored body text with percent comments stripped, the label \
          carried by the label macro",
+    ),
+    // ADR-023.
+    (
+        "python",
+        "line comments, introduced by a number sign, with string \
+         literals of every quote form -- single, double, and triple, \
+         prefixed or bare, docstrings included -- excluded",
     ),
 ];
 

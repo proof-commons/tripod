@@ -30,6 +30,8 @@
 //! | `repository::harvest_attestation_citations` | `delimiter_len != 1` skip, restated inline; **and** computed the generated-index region boundary by walking raw `source.lines()` with no fence awareness | [`MarkdownScan::participating_spans`]; the region walk now consults [`ProseParticipation::participates`] (DI-F02) |
 //! | `plans::without_fenced_lines` | a second fence open/close loop, blanking fenced lines for the link check only | [`ProseParticipation::blanked`] |
 //! | `rust_source::comment_segments` | comment/literal segmentation for Rust: the scanned-region recognition | moved here as [`comment_segments`], the Rust front-end; the harvester keeps only its fence handling, which calls [`fence_open`]/[`fence_close`]/[`nested_fence`] |
+//! | `rust_source::harvest_region` | located and classified the acute spans of one comment region, for Rust alone | moved here as [`region_spans`], shared by both code front-ends; the harvesters keep only what they do with a located span |
+//! | the Python front-end (ADR-023) | new: comment/string segmentation for Python | [`python_comment_segments`], written here rather than beside its harvester, so the second code language cannot grow a second recognizer |
 //! | `latex::comments` | strips percent comments, honouring backslash escaping | moved here as [`latex_participating`], the LaTeX front-end; LaTeX has no fenced or double-delimited displayed material, so its region model is total |
 //! | `repository::harvest_plans` | skipped the two generated registers by census role | unchanged; register non-participation is a census-role decision, not a scanning one, and is recorded here so the whole judgment is visible in one place |
 //! | `forbidden::*` | none: `git grep -F` over every tracked file | unchanged, deliberately. The forbidden-token ban is total by policy — a banned token is banned inside a fence and inside a string literal too — so this audit is participation-blind by design, not by omission |
@@ -57,7 +59,7 @@ use std::path::Path;
 
 use crate::{
     diagnostic::{LabelDiagnostic, LabelErrorCode},
-    markdown::InlineCodeSpan,
+    markdown::{InlineCodeContext, InlineCodeSpan, classify},
     source::SourceLocation,
 };
 
@@ -602,6 +604,272 @@ pub fn comment_segments(
         }
     }
     segments
+}
+
+// ---------------------------------------------------------------------
+// Python front-end: the scanned-region recognition of ADR-023.
+//
+// Python's rule is the Rust rule with a smaller grammar under it. A
+// number sign opens a comment that runs to end of line, and string
+// literals are code: single-, double-, and triple-quoted, with or
+// without a prefix, and docstrings among them, since a docstring is a
+// string literal in an expression statement and nothing lexical tells
+// it from any other string. The executor this record was written for
+// carries protocol text, RPC arguments, and fixture strings, so scanning
+// literals would manufacture citations out of data.
+//
+// Three simplifications hold because Python is not Rust, and each is a
+// narrowing of what the scanner must get right rather than an
+// assumption about the source:
+//
+//   1. A quote is always a string delimiter. Python has no character
+//      literal and no lifetime, so the Rust lookbehind that keeps a
+//      prefix letter out of an identifier has nothing to do here: the
+//      quote itself is the trigger, whatever letters precede it.
+//   2. A backslash escapes the next character in every string form,
+//      raw included. A raw string keeps the backslash in its value but
+//      still cannot be terminated by the quote after it, so delimiter
+//      pairing needs no raw/cooked distinction.
+//   3. There is no block comment and so no nesting.
+//
+// Two deliberate narrownesses, stated rather than repaired. A
+// single-quoted string that reaches end of line is closed there: it is
+// a syntax error in Python, and ending it at the newline keeps one
+// stray quote from swallowing the rest of the file. An unterminated
+// triple-quoted string runs to end of file, as an unterminated Rust
+// string does. Neither is diagnosed here; a file in that state does not
+// run, and the label check is not Python's parser.
+// ---------------------------------------------------------------------
+
+/// Extract comment text from Python source (ADR-023 Python rule).
+///
+/// Every segment is [`CommentKind::OrdinaryLine`]: Python has one
+/// comment form, and this repository claims no documentation-comment
+/// convention over runs of number signs. Block identity follows the
+/// Rust rule — consecutive comment lines with no code between them
+/// continue one region.
+#[must_use]
+pub fn python_comment_segments(source: &str) -> Vec<CommentSegment> {
+    let chars = source.chars().collect::<Vec<_>>();
+    let mut segments = Vec::new();
+    let mut i = 0;
+    let mut line = 1;
+    let mut column = 1;
+    let mut advance = |i: &mut usize, line: &mut usize, column: &mut usize| {
+        if chars[*i] == '\n' {
+            *line += 1;
+            *column = 1;
+        } else {
+            *column += 1;
+        }
+        *i += 1;
+    };
+    let mut next_block = 0_usize;
+    let mut previous_line_comment: Option<(usize, usize)> = None;
+    let mut code_since_comment = false;
+    while i < chars.len() {
+        match chars[i] {
+            '#' => {
+                // One number sign is the marker; any further ones are
+                // the comment's own text.
+                advance(&mut i, &mut line, &mut column);
+                let (start_line, start_column) = (line, column);
+                let block = match previous_line_comment {
+                    Some((previous_line, block))
+                        if start_line == previous_line + 1 && !code_since_comment =>
+                    {
+                        block
+                    }
+                    _ => {
+                        next_block += 1;
+                        next_block
+                    }
+                };
+                previous_line_comment = Some((start_line, block));
+                code_since_comment = false;
+                let mut text = String::new();
+                while i < chars.len() && chars[i] != '\n' {
+                    text.push(chars[i]);
+                    advance(&mut i, &mut line, &mut column);
+                }
+                segments.push(CommentSegment {
+                    line: start_line,
+                    column: start_column,
+                    text,
+                    kind: CommentKind::OrdinaryLine,
+                    block,
+                });
+            }
+            quote @ ('"' | '\'') => {
+                code_since_comment = true;
+                let triple = chars.get(i + 1) == Some(&quote) && chars.get(i + 2) == Some(&quote);
+                let width = if triple { 3 } else { 1 };
+                for _ in 0..width {
+                    advance(&mut i, &mut line, &mut column);
+                }
+                skip_python_string(
+                    &chars,
+                    &mut i,
+                    &mut line,
+                    &mut column,
+                    &mut advance,
+                    quote,
+                    triple,
+                );
+            }
+            _ => {
+                if !chars[i].is_whitespace() {
+                    code_since_comment = true;
+                }
+                advance(&mut i, &mut line, &mut column);
+            }
+        }
+    }
+    segments
+}
+
+/// Consume a Python string literal whose opening delimiter is already
+/// past, stopping after its closing delimiter.
+fn skip_python_string(
+    chars: &[char],
+    i: &mut usize,
+    line: &mut usize,
+    column: &mut usize,
+    advance: &mut impl FnMut(&mut usize, &mut usize, &mut usize),
+    quote: char,
+    triple: bool,
+) {
+    while *i < chars.len() {
+        if chars[*i] == '\\' {
+            // The escape and whatever follows it, newline included: a
+            // backslash-continued line stays inside the literal.
+            advance(i, line, column);
+            if *i < chars.len() {
+                advance(i, line, column);
+            }
+            continue;
+        }
+        if chars[*i] == quote {
+            if !triple {
+                advance(i, line, column);
+                return;
+            }
+            if chars.get(*i + 1) == Some(&quote) && chars.get(*i + 2) == Some(&quote) {
+                for _ in 0..3 {
+                    advance(i, line, column);
+                }
+                return;
+            }
+        }
+        if chars[*i] == '\n' && !triple {
+            // Unterminated single-quoted string: closed at the newline
+            // rather than allowed to swallow the file.
+            return;
+        }
+        advance(i, line, column);
+    }
+}
+
+// ---------------------------------------------------------------------
+// The shared region walk over located acute spans.
+// ---------------------------------------------------------------------
+
+/// One acute span of a scanned code region, located and classified.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RegionSpan {
+    /// The span's interior, both acute delimiters removed.
+    pub value: String,
+    pub location: SourceLocation,
+    /// Whether the immediate syntactic group parenthesizes the span,
+    /// which is what separates a citation from a mint.
+    pub parenthesized: bool,
+}
+
+/// Locate and classify the acute spans of one logical comment region.
+///
+/// The region's text is its segments joined by newlines, the comment
+/// leaders already resolved away by the front-end. Joining on a newline
+/// keeps pairing region-wide, as the calculus asks, while never
+/// fabricating a label out of two lines: no label carries a newline, so
+/// an acute whose candidate interior crosses a line break opens
+/// nothing.
+///
+/// Citation-defect and unclosed-delimiter diagnostics are pushed here;
+/// what a well-formed span means is the caller's, and differs by owner.
+#[must_use]
+pub fn region_spans(
+    path: &Path,
+    region: &[&CommentSegment],
+    diagnostics: &mut Vec<LabelDiagnostic>,
+) -> Vec<RegionSpan> {
+    let mut located = Vec::new();
+    if region.is_empty() {
+        return located;
+    }
+    let mut text = String::new();
+    let mut starts = Vec::new();
+    for segment in region {
+        if !text.is_empty() {
+            text.push('\n');
+        }
+        starts.push((text.len(), segment.line, segment.column));
+        text.push_str(&segment.text);
+    }
+    let scan = acute_scan(&text);
+    // A region byte offset back to the position it came from: the
+    // segment it falls in, advanced by the characters before it.
+    let locate = |offset: usize| {
+        let (start, line, column) = starts
+            .iter()
+            .rev()
+            .find(|(start, _, _)| *start <= offset)
+            .copied()
+            .unwrap_or((0, 1, 1));
+        SourceLocation::new(path, line, column + text[start..offset].chars().count())
+    };
+    for (start, after) in scan.spans.iter().copied() {
+        let location = locate(start);
+        // Classification parses the immediate syntactic group. An
+        // attempted citation whose group is malformed is diagnosed,
+        // never demoted to a bare mint: a dangling citation must not
+        // be able to self-satisfy by minting the label it cites.
+        //
+        // The group is read within the span's own line, not the whole
+        // region: distinguishing a dropped parenthesis from a malformed
+        // group turns on whether a partner is in sight, and a
+        // parenthesis a line away is not. Every span lies inside one
+        // line, since an interior carrying a newline is not
+        // label-shaped and so opens nothing.
+        let line_start = text[..start].rfind('\n').map_or(0, |offset| offset + 1);
+        let line_end = text[after..]
+            .find('\n')
+            .map_or(text.len(), |offset| after + offset);
+        let line = &text[line_start..line_end];
+        let ranges = scan
+            .spans
+            .iter()
+            .filter(|(span, _)| (line_start..line_end).contains(span))
+            .map(|(span, end)| (span - line_start, end - line_start))
+            .collect::<Vec<_>>();
+        let context = classify(line, start - line_start, after - line_start, &ranges);
+        if let Some((code, message)) = context.defect("label citation") {
+            diagnostics.push(LabelDiagnostic::error(code, &location, message));
+            continue;
+        }
+        located.push(RegionSpan {
+            value: text[start + ACUTE.len_utf8()..after - ACUTE.len_utf8()].to_owned(),
+            location,
+            parenthesized: context == InlineCodeContext::Parenthesized,
+        });
+    }
+    if let Some(offset) = scan.unclosed {
+        diagnostics.push(LabelDiagnostic::error(
+            LabelErrorCode::UnclosedInlineCode,
+            &locate(offset),
+            "unclosed acute label delimiter",
+        ));
+    }
+    located
 }
 
 // ---------------------------------------------------------------------

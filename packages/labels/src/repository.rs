@@ -23,6 +23,7 @@ use crate::{
     markdown::{InlineCodeContext, MarkdownScan, scan_markdown},
     nearmiss,
     owner::{ImportedLabel, LabelOwner, OwnerParseError},
+    participation::{CommentSegment, RegionSpan, python_comment_segments, region_spans},
     plans,
     registry::{LabelMint, LabelRegistry, RegistrySet},
     render,
@@ -154,6 +155,7 @@ impl RepositoryLabels {
         harvest_adrs(paths, &mut result);
         harvest_plans(paths, &mut result);
         harvest_docs(paths, &mut result);
+        harvest_scripts(paths, &mut result);
         let model = harvest_model(paths);
         add_model(model, &mut result);
         for (name, harvest) in harvest_crates(paths) {
@@ -663,6 +665,97 @@ fn harvest_docs(paths: &RepositoryCensus, result: &mut RepositoryLabels) {
     for path in &paths.docs {
         harvest_markdown_owner(paths, path, MarkdownOwner::Doc, result);
     }
+}
+
+/// Harvest the Python sources of the script tree as the `DOC` owner
+/// (ADR-023).
+///
+/// The surface is the acute one the Rust crates use, not the backtick
+/// one the Markdown owners use, because this is code text: the scanned
+/// region is the comments, and the front-end has already excluded every
+/// string literal. What a located span means is the `DOC` owner's
+/// reading of it, so the label shape is the planning shape here as it
+/// is in `docs/`.
+fn harvest_scripts(paths: &RepositoryCensus, result: &mut RepositoryLabels) {
+    let mut files = paths.scripts.clone();
+    files.sort();
+    for path in files {
+        let relative = relative_to(&paths.root, &path);
+        let source = match fs::read_to_string(&path) {
+            Ok(source) => source,
+            Err(error) => {
+                result.diagnostics.push(LabelDiagnostic::error(
+                    LabelErrorCode::Io,
+                    &SourceLocation::new(&relative, 1, 1),
+                    error.to_string(),
+                ));
+                continue;
+            }
+        };
+        let segments = python_comment_segments(&source);
+        let mut region: Vec<&CommentSegment> = Vec::new();
+        for segment in &segments {
+            nearmiss::comment(&relative, segment, &mut result.diagnostics);
+            if region
+                .last()
+                .is_some_and(|last| last.block != segment.block)
+            {
+                harvest_script_region(&relative, &mut region, result);
+            }
+            region.push(segment);
+        }
+        harvest_script_region(&relative, &mut region, result);
+    }
+}
+
+/// Harvest one comment region of a Python source, draining it.
+fn harvest_script_region(
+    path: &Path,
+    region: &mut Vec<&CommentSegment>,
+    result: &mut RepositoryLabels,
+) {
+    for span in region_spans(path, region, &mut result.diagnostics) {
+        let RegionSpan {
+            value,
+            location,
+            parenthesized,
+        } = span;
+        if let Some(token) = value.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            if parenthesized {
+                import(token, &location, LabelOwner::Doc, result);
+            } else {
+                result.diagnostics.push(LabelDiagnostic::error(
+                    LabelErrorCode::InvalidImportedCitationForm,
+                    &location,
+                    "imported citation must be parenthesized",
+                ));
+            }
+            continue;
+        }
+        let Ok(label) = Label::parse(value.trim(), LabelShape::Planning) else {
+            result.diagnostics.push(LabelDiagnostic::error(
+                LabelErrorCode::InvalidLabel,
+                &location,
+                format!("unknown label in a script comment: {value}"),
+            ));
+            continue;
+        };
+        if parenthesized {
+            result.push_same_owner_citation(LabelOwner::Doc, label, location);
+        } else {
+            let mint = LabelMint {
+                owner: LabelOwner::Doc,
+                label,
+                location,
+                home: None,
+            };
+            result
+                .registries
+                .doc
+                .insert_or_diagnose(mint, "DOC", &mut result.diagnostics);
+        }
+    }
+    region.clear();
 }
 
 fn harvest_markdown_owner(

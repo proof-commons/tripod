@@ -47,7 +47,7 @@ if [ "\$inject" = "no" ]; then
   exec $real_git "\$@"
 fi
 $real_git "\$@"
-printf '120000 0000000000000000000000000000000000000000 0\tscripts/mock-tracked-symlink\0'
+printf '120000 0000000000000000000000000000000000000000 0\tarchive/mock-tracked-symlink\0'
 MOCK_GIT
 chmod +x "$mock_git"
 
@@ -161,9 +161,12 @@ echo "==> the audit edge rejects a tracked symlink" >&2
 # Graph-level regression: the subprocess tests already prove the binary
 # rejects mode 120000, so what is proven here is that the production
 # Meson edge feeds the real tracked listing to that binary and fails
-# the build on its verdict. The fabricated entry sits under scripts/,
+# the build on its verdict. The fabricated entry sits under archive/,
 # which the categorical exclusion pattern removes from lint subjects —
 # lint exclusion must not exempt a path from the repository-shape rule.
+# It sat under scripts/ until ADR-023 made the Python sources there
+# subjects; an excluded location is what this case needs, so it moved
+# to one that still is.
 if MOCK_GIT_TRACKED_SYMLINK=1 meson compile -C "$build" census-audit >/dev/null 2>&1; then
   echo "the census audit edge accepted a tracked symlink" >&2
   exit 1

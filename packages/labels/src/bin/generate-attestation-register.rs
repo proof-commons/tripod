@@ -50,7 +50,10 @@ struct Args {
     /// Other first-party crate Rust sources.
     #[arg(long = "crate-source", value_name = "FILE")]
     crate_sources: Vec<PathBuf>,
-    /// The generated Layer-0 register publication.
+    /// Python sources under `scripts/`, carried by the `DOC` owner.
+    #[arg(long = "script-source", value_name = "FILE")]
+    scripts: Vec<PathBuf>,
+    /// The generated specification register publication.
     #[arg(long, value_name = "FILE")]
     specification_register: PathBuf,
     /// The generated realization register publication.
@@ -82,6 +85,7 @@ impl Args {
             docs: resolve_all(&self.docs),
             model_sources: resolve_all(&self.model_sources),
             crate_sources: labels::group_crate_sources(root, self.crate_sources.clone())?,
+            scripts: resolve_all(&self.scripts),
             specification_register: resolve(&self.specification_register),
             realization_register: resolve(&self.realization_register),
             attestation_register: resolve(&self.attestation_register),

@@ -74,6 +74,7 @@ subdir('adr')
 subdir('docs')
 subdir('plans')
 subdir('packages')
+subdir('scripts')
 
 adr_files = adr_record_files
 
@@ -119,6 +120,10 @@ endforeach
 crate_source_paths = []
 foreach f : crate_source_files
   crate_source_paths += fs.relative_to(f, source_root)
+endforeach
+script_source_paths = []
+foreach f : script_source_files
+  script_source_paths += fs.relative_to(f, source_root)
 endforeach
 generated_paths = []
 foreach f : generated_files
@@ -171,24 +176,34 @@ endforeach
 foreach p : crate_source_paths
   labels_census_args += ['--crate-source', p]
 endforeach
+foreach p : script_source_paths
+  labels_census_args += ['--script-source', p]
+endforeach
 
 census_paths = [attestation_main_path, realization_path, specification_register_path,
                 realization_register_path, attestation_register_path,
                 model_labels_json_path] \
                + attestation_section_paths + adr_paths + plan_paths + doc_paths \
-               + model_source_paths + crate_source_paths + generated_paths
+               + model_source_paths + crate_source_paths + script_source_paths \
+               + generated_paths
 
 # Tracked paths that are categorically never lint subjects: dotfiles,
-# archives, helper scripts, build and package definitions, licences,
-# and binary or data blobs. Same-typed exceptions (a stray .tex or .rs
-# that is deliberately not a subject) are NOT listed here — they live
-# in their directory's explicit exclusion list.
+# archives, shell helper scripts, build and package definitions,
+# licences, and binary or data blobs. Same-typed exceptions (a stray
+# .tex or .rs that is deliberately not a subject) are NOT listed here —
+# they live in their directory's explicit exclusion list.
+#
+# ADR-023 narrowed the script-tree entry from every path under scripts/
+# to the shell sources there: the Python sources are label subjects,
+# declared in scripts/meson.build. A file added under scripts/ that is
+# neither Python nor shell therefore fails the census audit until it is
+# classified, which is the intended effect.
 #
 # The tabular data extension joins the same categorical entry as the
 # other data blobs: a rule table read by a checker is an input to a
 # program, not prose a label could be attached to, and giving it a
 # census list entry would say the opposite.
-census_exclude_pattern = '(^|/)[.]|^archive/|^scripts/|^LICENSE-' \
+census_exclude_pattern = '(^|/)[.]|^archive/|^scripts/[^/]*[.]sh$|^LICENSE-' \
   + '|(^|/)meson[.](build|options)$|(^|/)Cargo[.]toml$|[.](bib|tsv|txt|zip)$'
 
 census_excluded_files = packages_excluded_files \

@@ -47,6 +47,9 @@ pub struct RepositoryCensus {
     pub docs: Vec<PathBuf>,
     pub model_sources: Vec<PathBuf>,
     pub crate_sources: BTreeMap<String, Vec<PathBuf>>,
+    /// Python sources under `scripts/`, carried by the `DOC` owner
+    /// (ADR-023). Shell sources there stay categorically excluded.
+    pub scripts: Vec<PathBuf>,
     /// Generated register publications and the model-label artifact.
     /// Inputs of the currency weld only; empty in scoped censuses that
     /// never touch them.
@@ -76,6 +79,7 @@ pub enum CensusGroup {
     Doc,
     Model,
     Crates,
+    Script,
 }
 
 impl CensusGroup {
@@ -87,6 +91,7 @@ impl CensusGroup {
         Self::Doc,
         Self::Model,
         Self::Crates,
+        Self::Script,
     ];
     /// The groups feeding the scoped register derivation.
     pub const REGISTER_SCOPED: &[Self] = &[Self::Attestation, Self::Realization];
@@ -171,6 +176,12 @@ impl RepositoryCensus {
         }
         census.traversal.insert(CensusGroup::Crates, walk.finish());
 
+        // ADR-023: the Python sources of the script tree. The shell
+        // sources beside them are not scanned and are not subjects.
+        let mut walk = Walk::new(&root);
+        census.scripts = files_with_extension(&root.join("scripts"), "py", &mut walk);
+        census.traversal.insert(CensusGroup::Script, walk.finish());
+
         census
     }
 
@@ -229,6 +240,7 @@ impl RepositoryCensus {
                         .map(PathBuf::as_path)
                         .collect(),
                 ),
+                CensusGroup::Script => (as_paths(&self.scripts), as_paths(&discovered.scripts)),
             };
             compare(&self.root, &declared, &found, &mut diagnostics);
         }

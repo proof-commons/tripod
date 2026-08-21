@@ -1368,6 +1368,9 @@ class DisposableNode:
             "-rpcallowip=127.0.0.1",
             "-rpcport=%d" % self.rpc_port,
             "-disablewallet=%d" % (0 if self.enable_wallet else 1),
+            # Regtest validates pegins against a bitcoind this harness
+            # does not run, so the lane could not boot with the upstream
+            # default (´[PLAN-obs:upstream:regtest-pegin-validation]´).
             "-validatepegin=0",
             "-minrelaytxfee=0",
             "-blockmintxfee=0",
@@ -1962,6 +1965,10 @@ class CaseExecutor:
         transaction.vout.append(self.output(amount, program))
         transaction.vout.append(self.output(remainder, self.anyone_can_spend))
         transaction.vout.append(self.output(ADAPTER_FEE_SATOSHIS, b""))
+        # The adaptation the docstring above explains, cited at the line
+        # that makes it: mining the funding transaction directly is how
+        # this adapter works around a miner that takes only what it is
+        # handed (´[PLAN-obs:upstream:eg-007]´).
         self.node.call(
             "generateblock",
             "raw(%s)" % ANYONE_CAN_SPEND_HEX,

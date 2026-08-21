@@ -72,11 +72,12 @@ audit_tracked_paths() {
 # The exclusion cases mirror the meson census: categorical non-subjects
 # first, then the same-typed exclusions declared in per-directory
 # meson.build lists (macros_attestation.tex, execwrap integration
-# tests).
+# tests). Under scripts/ only the shell sources are categorical: the
+# Python sources are label subjects (ADR-023), tagged below.
 census_args() {
   git ls-files | LC_ALL=C sort | while IFS= read -r path; do
     case "$path" in
-      .* | */.* | archive/* | scripts/*) continue ;;
+      .* | */.* | archive/* | scripts/*.sh) continue ;;
       papers/attestation/macros_attestation.tex) continue ;;
       papers/attestation/stamps.tex.in) continue ;;
       packages/execwrap/tests/*) continue ;;
@@ -94,6 +95,7 @@ census_args() {
           plans/*.md) emit_tagged --plan "$path" ;;
           adr/[0-9][0-9][0-9]*.md) emit_tagged --adr "$path" ;;
           packages/*/src/*.rs) emit_tagged --crate-source "$path" ;;
+          scripts/*.py) emit_tagged --script-source "$path" ;;
           *.md) emit_tagged --doc "$path" ;;
         esac
         ;;
