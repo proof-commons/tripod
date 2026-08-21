@@ -515,11 +515,24 @@ pub const INPUT: &[VectorClass] = &[
 
 /// §18.4 — output mutations.
 pub const OUTPUT: &[VectorClass] = &[
+    // The mutation takes one unit off the successor and leaves the
+    // closed asset short of what the inputs carry — its own module
+    // already says `preserves_value_balance` is false for this arm,
+    // and Elements checks per-asset conservation before it runs any
+    // script. So the covenant is never reached: block validation
+    // answers `bad-txns-in-ne-out` at the consensus layer before a
+    // script-path verdict could exist, which is what the live run
+    // observed verbatim. Section 19.2 requires the intended carrier to
+    // have executed for a case to discharge its relation, and the
+    // covenant script is that carrier here, so an arm answered before
+    // it runs answers its class without discharging the conservation
+    // requirement — which stays outstanding, as Wave 13d recorded when
+    // it found the arm's script-path claim wrong.
     negative(
         F::Output,
         "successor-one-below-the-sum",
         L::SemanticFact,
-        B::ScriptPathRejection,
+        B::ConsensusRejectionBeforeScript,
     ),
     negative(
         F::Output,

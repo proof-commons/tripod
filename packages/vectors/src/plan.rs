@@ -1782,11 +1782,15 @@ mod negative_discharge_tests {
     }
 
     #[test]
-    fn the_six_script_path_refusals_discharge_exactly_the_two_linked_rows() {
-        // The run of record refused six arms at the script path. Only
-        // two of them name a relation the guide determines, so only two
-        // rows move — which is the whole point of resolving the link
-        // instead of counting refusals.
+    fn the_five_script_path_refusals_discharge_exactly_the_one_linked_row() {
+        // The run of record refuses five arms at the script path.
+        // `successor-one-below-the-sum` is not among them: its own
+        // mutation unbalances the closed asset, which Elements checks
+        // before any script runs, so its class's boundary is a
+        // consensus one and `discharge_mutants` never gets to ask
+        // whether it links. Only one of the five names a relation the
+        // guide determines, so only one row moves — which is the whole
+        // point of resolving the link instead of counting refusals.
         let mut plan = plan();
         let vector = sponsorless(&plan);
         assert_eq!(discharged_negatives(&plan), 0, "nothing starts discharged");
@@ -1797,7 +1801,6 @@ mod negative_discharge_tests {
             NegativeMutation::RedirectSuccessorProgram,
             NegativeMutation::RouteUnitIntoUndeclaredOutput,
             NegativeMutation::ReorderWitnessItems,
-            NegativeMutation::SuccessorOneBelowTheSum,
         ];
         let outcomes: Vec<_> = refused
             .iter()
@@ -1807,8 +1810,8 @@ mod negative_discharge_tests {
 
         assert_eq!(
             discharged_negatives(&plan),
-            2,
-            "only the arms whose intended violation resolves may discharge",
+            1,
+            "only the arm whose intended violation resolves may discharge",
         );
     }
 

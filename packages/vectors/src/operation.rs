@@ -341,6 +341,19 @@ pub struct OperationTranscript {
     reserve_asset: Option<[u8; 32]>,
     constructor_program: Option<Vec<u8>>,
     funded: BTreeMap<TargetVectorId, Vec<Outpoint>>,
+    /// The mutation subject's own extra replicas, one per submittable
+    /// arm, keyed by replica number.
+    ///
+    /// Replica zero is the control's, and lands in [`Self::funded`]
+    /// exactly as every other row's single funding does. Every other
+    /// vector in the census is funded once and needs no entry here at
+    /// all. The subject alone is funded once per arm this run will
+    /// actually submit, so that an accepted mutation spends only its
+    /// own coins and abandons nothing behind it; this is the record of
+    /// which replica became which arm's own funding, read by
+    /// `stage_mutants` in the same deterministic plan order the
+    /// replicas were scheduled in.
+    arm_funded: BTreeMap<usize, Vec<Outpoint>>,
     coins: BTreeMap<Outpoint, u64>,
     submissions: Vec<SubmissionOutcome>,
     mutants: Vec<MutantOutcome>,
@@ -381,6 +394,21 @@ impl OperationTranscript {
     #[must_use]
     pub const fn funded(&self) -> &BTreeMap<TargetVectorId, Vec<Outpoint>> {
         &self.funded
+    }
+
+    /// Which replica of the mutation subject's coins funded each
+    /// submittable arm, by replica number.
+    ///
+    /// Empty for a run that reserved no subject. Replica zero is the
+    /// control's own and is not here, only in [`Self::funded`]; every
+    /// other replica is numbered by counting forward through
+    /// [`crate::mutation::NegativeMutation::ALL`] in order and
+    /// skipping every arm this run does not submit, so replica one is
+    /// the first submittable arm in that order, replica two the
+    /// second, and so on.
+    #[must_use]
+    pub const fn arm_funded(&self) -> &BTreeMap<usize, Vec<Outpoint>> {
+        &self.arm_funded
     }
 
     /// What the target said it put in each coin it created.
@@ -471,6 +499,16 @@ struct PlannedFunding {
     member: usize,
     amount: u64,
     expectation: FundingExpectation,
+    /// Which copy of this vector's input set this request funds.
+    ///
+    /// Zero for every row this run funds once, which is every row but
+    /// the mutation subject. The subject earns one replica per arm
+    /// this run will actually submit, plus its own replica zero, so
+    /// that every arm spends coins nothing else has touched.
+    /// `settle_funding` reads this to decide where an answer's
+    /// outpoint belongs, and `stage_mutants` reads the transcript's
+    /// own record of it to build each arm's own subject.
+    replica: usize,
 }
 
 /// Where the planner is.
@@ -570,9 +608,40 @@ pub struct CompactAshOperationPlanner {
     /// The mutated transactions this run will submit, settled once the
     /// positive submissions have said which vector was accepted.
     mutants: Vec<MutatedVector>,
-    /// Whether a mutation was accepted and took the subject's coins.
-    subject_spent: bool,
+    /// The vector this run has chosen to hold back and mutate, fixed
+    /// before funding is scheduled.
+    ///
+    /// Read here rather than recomputed later, because the funding
+    /// schedule needs to know which row earns extra replicas before
+    /// any of them is asked for. [`Self::choose_mutation_subject`]
+    /// reads it back once the vector actually exists, to move it to
+    /// the end of the submission order and settle
+    /// [`OperationTranscript::mutation_subject`].
+    subject: Option<TargetVectorId>,
     transcript: OperationTranscript,
+}
+
+/// The mutations this run will actually offer, in plan order.
+///
+/// [`NegativeMutation::ALL`], filtered to the arms whose class both
+/// names a boundary and does not expect it before the target — the
+/// same two checks [`CompactAshOperationPlanner::stage_mutants`] makes
+/// per arm, so a class this workspace's own matrix moves cannot leave
+/// the funding schedule and the staging loop counting the submittable
+/// set two different ways. `settle_sponsor_funding` reads only this
+/// list's length, to know how many replicas the subject earns;
+/// `stage_mutants` recomputes the same two checks itself, arm by arm,
+/// so it can say *why* an arm that fails them was not submitted.
+fn submittable_mutations() -> Vec<NegativeMutation> {
+    NegativeMutation::ALL
+        .iter()
+        .copied()
+        .filter(|mutation| {
+            mutation
+                .expected_boundary()
+                .is_ok_and(|boundary| !boundary.is_pre_target())
+        })
+        .collect()
 }
 
 impl CompactAshOperationPlanner {
@@ -612,7 +681,7 @@ impl CompactAshOperationPlanner {
             sign_schedule: Vec::new(),
             vectors: Vec::new(),
             mutants: Vec::new(),
-            subject_spent: false,
+            subject: None,
             transcript: OperationTranscript::default(),
         })
     }
@@ -841,43 +910,82 @@ impl CompactAshOperationPlanner {
         self.program = program;
         self.bundle = Some(bundle);
 
-        // One funding request per ASH input, in fixture order and then
-        // member order, because materialization pairs the coins with the
-        // amounts in exactly that order.
-        //
-        // Except for a row the reviewed target bound says cannot be
-        // funded at all. That row gets exactly one step — the first
-        // input the bound forbids — and none of the rest, because the
-        // remaining coins would be cut for a transaction that is never
-        // built. The one step is asked so that the divergence is
-        // observed rather than assumed.
+        self.schedule_funding();
+        Ok(())
+    }
+
+    /// Build the funding schedule and choose the mutation subject.
+    ///
+    /// One funding request per ASH input, in fixture order and then
+    /// member order, because materialization pairs the coins with the
+    /// amounts in exactly that order.
+    ///
+    /// Except for a row the reviewed target bound says cannot be funded
+    /// at all. That row gets exactly one step — the first input the
+    /// bound forbids — and none of the rest, because the remaining
+    /// coins would be cut for a transaction that is never built. The
+    /// one step is asked so that the divergence is observed rather than
+    /// assumed.
+    ///
+    /// Except also for the mutation subject, chosen here rather than
+    /// after materialization: the widest fundable row, ties broken
+    /// toward the lowest ordinal, exactly the rule
+    /// [`Self::choose_mutation_subject`] used to apply once the vectors
+    /// existed. Nothing that rule reads is learned from a target
+    /// answer — a case's own ash-input count and whether its bound
+    /// forbids it are both known from the census alone — so the choice
+    /// can be made before anything is asked for, and the subject earns
+    /// one extra replica of its whole input set per arm this run will
+    /// actually submit, plus its own at replica zero. Every other row
+    /// is funded once.
+    fn schedule_funding(&mut self) {
         self.schedule.clear();
         self.unfundable.clear();
+
+        for case in &self.cases {
+            if target_amount_standing(case).unfundable_input().is_some() {
+                self.unfundable.insert(vector_id(case));
+            }
+        }
+
+        self.subject = self
+            .cases
+            .iter()
+            .enumerate()
+            .filter(|(_, case)| !self.unfundable.contains(&vector_id(case)))
+            .max_by_key(|(index, case)| (case.ash_inputs(), std::cmp::Reverse(*index)))
+            .map(|(_, case)| vector_id(case));
+
+        let submittable = submittable_mutations().len();
         for case in &self.cases {
             let vector = vector_id(case);
-            match target_amount_standing(case).unfundable_input() {
-                Some((member, beyond)) => {
-                    self.unfundable.insert(vector);
-                    self.schedule.push(PlannedFunding {
-                        vector,
-                        member,
-                        amount: beyond.stated(),
-                        expectation: FundingExpectation::BeyondBound(beyond),
-                    });
-                }
-                None => {
+            let Some((member, beyond)) = target_amount_standing(case).unfundable_input() else {
+                let replicas = if Some(vector) == self.subject {
+                    1 + submittable
+                } else {
+                    1
+                };
+                for replica in 0..replicas {
                     for (member, amount) in case.inputs().iter().enumerate() {
                         self.schedule.push(PlannedFunding {
                             vector,
                             member,
                             amount: amount.get(),
                             expectation: FundingExpectation::Coin,
+                            replica,
                         });
                     }
                 }
-            }
+                continue;
+            };
+            self.schedule.push(PlannedFunding {
+                vector,
+                member,
+                amount: beyond.stated(),
+                expectation: FundingExpectation::BeyondBound(beyond),
+                replica: 0,
+            });
         }
-        Ok(())
     }
 
     /// Check the target stored the program the planner asked for.
@@ -951,11 +1059,23 @@ impl CompactAshOperationPlanner {
         let output = &response.funded_outputs[0];
         let outpoint = outpoint_from_wire(&output.outpoint.txid, output.outpoint.vout)
             .ok_or_else(|| PlanRefusal::FundedOutpointUnreadable(output.outpoint.txid.clone()))?;
-        self.transcript
-            .funded
-            .entry(planned.vector)
-            .or_default()
-            .push(outpoint);
+        // Replica zero is every row's ordinary funding, the control's
+        // included. Every other replica is a mutation subject arm's own
+        // coins, and lands in its own record so it is never mistaken for
+        // the control's — see `PlannedFunding::replica`.
+        if planned.replica == 0 {
+            self.transcript
+                .funded
+                .entry(planned.vector)
+                .or_default()
+                .push(outpoint);
+        } else {
+            self.transcript
+                .arm_funded
+                .entry(planned.replica)
+                .or_default()
+                .push(outpoint);
+        }
         self.transcript
             .coins
             .insert(outpoint, output.amount_satoshis);
@@ -1139,7 +1259,7 @@ impl CompactAshOperationPlanner {
         Ok(())
     }
 
-    /// Reserve one vector to mutate, and put it last in the order.
+    /// Move the reserved subject to the end of the submission order.
     ///
     /// # Why the subject is submitted after its own mutations
     ///
@@ -1152,23 +1272,25 @@ impl CompactAshOperationPlanner {
     /// mutation it was supposed to be about.
     ///
     /// So the subject is held back. Its mutations are offered while its
-    /// coins are still unspent, and the un-mutated subject follows as
-    /// the control: a refused mutation and an accepted control differ by
-    /// exactly the mutation, which is the whole argument. A control the
-    /// target refuses invalidates the mutations submitted before it, and
-    /// the transcript records the control so a reader can tell.
+    /// own replicas are still unspent, and the un-mutated subject
+    /// follows as the control: a refused mutation and an accepted
+    /// control differ by exactly the mutation, which is the whole
+    /// argument. A control the target refuses invalidates every
+    /// mutation submitted before it, and the transcript records the
+    /// control so a reader can tell.
     ///
-    /// The widest row is chosen because reversing an input order needs
-    /// at least two ASH inputs to do anything, with the lowest ordinal
-    /// breaking ties so the choice is the same in every run.
+    /// # Why the choice itself is not made here
+    ///
+    /// It used to be: the widest row among the materialized vectors,
+    /// ties broken toward the lowest ordinal. `self.subject` now
+    /// carries that same choice, made before funding was scheduled so
+    /// the subject's extra replicas could be asked for — this function
+    /// only has to find the vector that choice named and move it.
     fn choose_mutation_subject(&mut self) {
-        let Some(position) = self
-            .vectors
-            .iter()
-            .enumerate()
-            .max_by_key(|(index, vector)| (vector.id().ash_inputs(), std::cmp::Reverse(*index)))
-            .map(|(index, _)| index)
-        else {
+        let Some(id) = self.subject else {
+            return;
+        };
+        let Some(position) = self.vectors.iter().position(|vector| vector.id() == id) else {
             return;
         };
         let subject = self.vectors.remove(position);
@@ -1187,41 +1309,50 @@ impl CompactAshOperationPlanner {
     /// Build the mutations of the reserved subject.
     ///
     /// Every arm is staged whether or not anything has been accepted
-    /// yet, because the acceptance that makes them attributable is the
-    /// control's and it has not been submitted. An arm with nothing to
-    /// act on in this shape is recorded as a fixture construction
-    /// failure, which is what it is: no target was asked, so no target
-    /// refused, and the row it would have answered stays outstanding.
+    /// yet, because attributability no longer waits on one shared
+    /// acceptance: each submittable arm was funded its own replica of
+    /// the subject's input set, so each is materialized from its own
+    /// coins here and stands or falls on its own answer. An arm with
+    /// nothing to act on in this shape, or whose replica did not fund,
+    /// is recorded as a fixture construction failure, which is what it
+    /// is: no target was asked, so no target refused, and the row it
+    /// would have answered stays outstanding.
     ///
     /// # An arm whose boundary is before the target is not submitted
     ///
     /// A class whose §1.5 boundary is a pre-target one expects
     /// first-party code to refuse the shape, so no answer the target
     /// could give would satisfy it: submitting it asks a question whose
-    /// every answer is the wrong one. Worse, the target has no rule to
-    /// refuse such a transaction by and will accept it — spending the
-    /// subject's coins and taking every later arm down with it. Filtering
-    /// here is what keeps one misplaced boundary from costing the rest of
-    /// the run.
+    /// every answer is the wrong one. Such an arm earns no funding
+    /// replica in the first place — see `settle_sponsor_funding` — and
+    /// is filtered here for the same reason, so the two cannot disagree
+    /// about which arms this run submits.
     fn stage_mutants(&mut self) {
         let Some(asset) = self.transcript.issued_asset else {
             return;
         };
-        let Some(subject) = self
-            .control_index()
-            .and_then(|index| self.vectors.get(index))
-            .cloned()
-        else {
+        let Some(bundle) = self.bundle.clone() else {
+            return;
+        };
+        let Some(subject_id) = self.transcript.mutation_subject else {
+            return;
+        };
+        let Some(case) = self.cases.iter().find(|case| vector_id(case) == subject_id) else {
             return;
         };
 
+        // Replica zero is the control's, so arm numbering starts at
+        // one and counts forward in exactly the plan order
+        // `submittable_mutations` filters — the two must agree, or an
+        // arm here would read another arm's coins.
+        let mut replica = 0_usize;
         for mutation in NegativeMutation::ALL {
             // A class this module cannot look up is a drift between the
             // matrix and the arms, and staging past it would submit a
             // vector nothing states an expectation for.
             let Ok(boundary) = mutation.expected_boundary() else {
                 self.transcript.mutants.push(MutantOutcome {
-                    origin: subject.id(),
+                    origin: subject_id,
                     mutation: *mutation,
                     layer: ObservedOutcomeLayer::FixtureConstructionFailure,
                     detail: Some("§18 names no class by this arm's name".into()),
@@ -1232,7 +1363,7 @@ impl CompactAshOperationPlanner {
             };
             if boundary.is_pre_target() {
                 self.transcript.mutants.push(MutantOutcome {
-                    origin: subject.id(),
+                    origin: subject_id,
                     mutation: *mutation,
                     layer: ObservedOutcomeLayer::FixtureConstructionFailure,
                     detail: Some(
@@ -1244,10 +1375,43 @@ impl CompactAshOperationPlanner {
                 });
                 continue;
             }
-            match apply(&subject, asset, *mutation) {
+
+            replica += 1;
+            let outpoints = self
+                .transcript
+                .arm_funded
+                .get(&replica)
+                .cloned()
+                .unwrap_or_default();
+            let Ok(funding) = AshFunding::new(subject_id, outpoints) else {
+                self.transcript.mutants.push(MutantOutcome {
+                    origin: subject_id,
+                    mutation: *mutation,
+                    layer: ObservedOutcomeLayer::FixtureConstructionFailure,
+                    detail: Some(
+                        "not submitted: this arm's own replica was not funded to the subject's shape"
+                            .into(),
+                    ),
+                    accepted_txid: None,
+                    bytes: Vec::new(),
+                });
+                continue;
+            };
+            let Ok(arm_subject) = materialize(&bundle, case, &funding) else {
+                self.transcript.mutants.push(MutantOutcome {
+                    origin: subject_id,
+                    mutation: *mutation,
+                    layer: ObservedOutcomeLayer::FixtureConstructionFailure,
+                    detail: Some("this arm's own replica did not materialize".into()),
+                    accepted_txid: None,
+                    bytes: Vec::new(),
+                });
+                continue;
+            };
+            match apply(&arm_subject, asset, *mutation) {
                 Ok(mutant) => self.mutants.push(mutant),
                 Err(_) => self.transcript.mutants.push(MutantOutcome {
-                    origin: subject.id(),
+                    origin: subject_id,
                     mutation: *mutation,
                     layer: ObservedOutcomeLayer::FixtureConstructionFailure,
                     detail: Some("the subject's shape gave this mutation nothing to act on".into()),
@@ -1277,35 +1441,6 @@ impl CompactAshOperationPlanner {
                 detail: response.observed_detail.clone(),
                 accepted_txid: response.accepted_txid.clone(),
                 bytes: mutant.bytes().to_vec(),
-            });
-            // A mutation the target *accepted* has spent the subject's
-            // coins. Every later mutation would be refused for that and
-            // not for what it changed, so the sequence stops here rather
-            // than collecting refusals that establish nothing.
-            if response.observed_layer == ObservedOutcomeLayer::Accepted {
-                self.subject_spent = true;
-            }
-        }
-    }
-
-    /// Record the mutations this run will no longer offer.
-    ///
-    /// Reached when an earlier mutation was accepted and took the
-    /// subject's coins with it. The rows are kept — a matrix that
-    /// silently shrank when a run went wrong would be the least honest
-    /// possible outcome — and each says why it was not submitted.
-    fn abandon_remaining_mutants(&mut self, from: usize) {
-        for mutant in self.mutants.iter().skip(from) {
-            self.transcript.mutants.push(MutantOutcome {
-                origin: mutant.origin(),
-                mutation: mutant.mutation(),
-                layer: ObservedOutcomeLayer::FixtureConstructionFailure,
-                detail: Some(
-                    "not submitted: an earlier mutation was accepted and spent the subject's coins"
-                        .into(),
-                ),
-                accepted_txid: None,
-                bytes: Vec::new(),
             });
         }
     }
@@ -1408,10 +1543,12 @@ impl TargetOperationPlanner for CompactAshOperationPlanner {
                 Stage::SubmitMutant(index) => {
                     self.settle_mutant(index, response);
                     let next = index + 1;
-                    self.stage = if self.subject_spent {
-                        self.abandon_remaining_mutants(next);
-                        Stage::SubmitControl
-                    } else if next < self.mutants.len() {
+                    // Every arm was funded its own replica, so an
+                    // acceptance here spends only that arm's coins and
+                    // every later arm is offered exactly as planned —
+                    // there is no shared subject left to abandon the
+                    // rest for.
+                    self.stage = if next < self.mutants.len() {
                         Stage::SubmitMutant(next)
                     } else {
                         Stage::SubmitControl
@@ -1534,7 +1671,9 @@ pub fn is_funding(case: &OperationCaseId) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{CompactAshOperationPlanner, PlanRefusal, hex_of_slice, is_funding};
+    use super::{
+        CompactAshOperationPlanner, PlanRefusal, hex_of_slice, is_funding, submittable_mutations,
+    };
     use target_elements_conformance::executor::TargetOperationPlanner;
     use target_elements_conformance::protocol::{
         FundedOutput, NATIVE_PROTOCOL_SCHEMA, NativeOperationResponse, NativeResourceObservation,
@@ -1762,12 +1901,12 @@ mod tests {
             );
         }
 
-        // The fake target answers a performed submission with `ISSUED`
-        // as the accepted txid, and this run's first offered mutation is
-        // the one it accepts: every later arm is abandoned once the
-        // subject's coins are spent, so exactly one mutant carries an
-        // identity and every other one -- refused, withheld, or
-        // abandoned alike -- carries none.
+        // The fake target answers every performed submission with
+        // `ISSUED` as the accepted txid, and every submittable arm here
+        // was funded its own replica: none of them spends coins another
+        // arm touched, so every one of them is accepted rather than
+        // just the first. Only the pre-target and drift arms carry no
+        // identity, because they were never submitted at all.
         let accepted: Vec<_> = transcript
             .mutants()
             .iter()
@@ -1775,14 +1914,16 @@ mod tests {
             .collect();
         assert_eq!(
             accepted.len(),
-            1,
-            "this run accepts exactly one mutation before abandoning the rest",
+            submittable_mutations().len(),
+            "every arm funded its own replica, so every submittable arm is accepted",
         );
-        assert_eq!(
-            accepted[0].accepted_txid(),
-            Some(ISSUED),
-            "an accepted mutation must carry the txid the target reported",
-        );
+        for mutant in &accepted {
+            assert_eq!(
+                mutant.accepted_txid(),
+                Some(ISSUED),
+                "an accepted mutation must carry the txid the target reported",
+            );
+        }
         for mutant in transcript.mutants() {
             if mutant.layer() != ObservedOutcomeLayer::Accepted {
                 assert_eq!(
@@ -1965,10 +2106,19 @@ mod tests {
         // ceremony steps that also fund. The sponsor-funding step is
         // not among these -- it is its own kind and `is_funding` does
         // not match it, which is the point of giving it one.
+        //
+        // Except also for the mutation subject, whose whole input set is
+        // asked for once more per submittable arm: the same widest
+        // fundable row, ties broken to the lowest census index, that
+        // `settle_sponsor_funding` picks before any of this is asked
+        // for.
         let census = crate::fixture::positive_semantic_census().expect("the census builds");
-        let scheduled: usize = census
+        let cases: Vec<_> = census
             .iter()
             .filter(|case| crate::materialize::has_candidate_program(case))
+            .collect();
+        let scheduled: usize = cases
+            .iter()
             .map(|case| {
                 if crate::divergence::target_amount_standing(case).is_unfundable() {
                     1
@@ -1977,7 +2127,16 @@ mod tests {
                 }
             })
             .sum();
-        assert_eq!(asked.len(), scheduled + 2);
+        let subject = cases
+            .iter()
+            .enumerate()
+            .filter(|(_, case)| !crate::divergence::target_amount_standing(case).is_unfundable())
+            .max_by_key(|(index, case)| (case.ash_inputs(), std::cmp::Reverse(*index)))
+            .map(|(_, case)| *case);
+        let subject_extra = subject.map_or(0, |case| {
+            case.inputs().len() * submittable_mutations().len()
+        });
+        assert_eq!(asked.len(), scheduled + 2 + subject_extra);
     }
 
     #[test]
