@@ -8,11 +8,11 @@ use crate::{
     RepositoryCensus,
     diagnostic::{LabelDiagnostic, LabelErrorCode},
     label::{Label, LabelShape},
-    markdown::{InlineCodeContext, classify, nested_fence_diagnostic},
+    markdown::nested_fence_diagnostic,
     nearmiss,
     owner::{ImportedLabel, LabelOwner},
     participation::{
-        ACUTE, CommentSegment, acute_scan, comment_segments, fence_close, fence_open, nested_fence,
+        CommentSegment, comment_segments, fence_close, fence_open, nested_fence, region_spans,
     },
     registry::{LabelMint, LabelRegistry},
     repository::{CitationClass, CitationOrigin, LabelCitation},
@@ -148,89 +148,25 @@ fn harvest_file(path: &Path, source: &str, owner: &LabelOwner, result: &mut Rust
 
 /// Harvest one logical comment region, draining it.
 ///
-/// The region's text is its segments joined by newlines, with the
-/// comment leaders already resolved away by the scanner. Joining on a
-/// newline keeps pairing region-wide, as the calculus asks, while never
-/// fabricating a label out of two lines: no label carries a newline, so
-/// an acute whose candidate interior crosses a line break opens
-/// nothing.
+/// Locating and classifying the region's acute spans is
+/// [`region_spans`], shared with the Python front-end (ADR-023); what
+/// remains here is what a Rust owner does with a located span.
 fn harvest_region(
     path: &Path,
     region: &mut Vec<&CommentSegment>,
     owner: &LabelOwner,
     result: &mut RustHarvest,
 ) {
-    if region.is_empty() {
-        return;
-    }
-    let mut text = String::new();
-    let mut starts = Vec::new();
-    for segment in region.iter() {
-        if !text.is_empty() {
-            text.push('\n');
-        }
-        starts.push((text.len(), segment.line, segment.column));
-        text.push_str(&segment.text);
-    }
-    region.clear();
-    let scan = acute_scan(&text);
-    // A region byte offset back to the position it came from: the
-    // segment it falls in, advanced by the characters before it.
-    let locate = |offset: usize| {
-        let (start, line, column) = starts
-            .iter()
-            .rev()
-            .find(|(start, _, _)| *start <= offset)
-            .copied()
-            .unwrap_or((0, 1, 1));
-        SourceLocation::new(path, line, column + text[start..offset].chars().count())
-    };
-    for (start, after) in scan.spans.iter().copied() {
-        let location = locate(start);
-        // Classification parses the immediate syntactic group. An
-        // attempted citation whose group is malformed is diagnosed,
-        // never demoted to a bare mint: a dangling citation must not
-        // be able to self-satisfy by minting the label it cites.
-        //
-        // The group is read within the span's own line, not the whole
-        // region: distinguishing a dropped parenthesis from a malformed
-        // group turns on whether a partner is in sight, and a
-        // parenthesis a line away is not. Every span lies inside one
-        // line, since an interior carrying a newline is not
-        // label-shaped and so opens nothing.
-        let line_start = text[..start].rfind('\n').map_or(0, |offset| offset + 1);
-        let line_end = text[after..]
-            .find('\n')
-            .map_or(text.len(), |offset| after + offset);
-        let line = &text[line_start..line_end];
-        let ranges = scan
-            .spans
-            .iter()
-            .filter(|(span, _)| (line_start..line_end).contains(span))
-            .map(|(span, end)| (span - line_start, end - line_start))
-            .collect::<Vec<_>>();
-        let context = classify(line, start - line_start, after - line_start, &ranges);
-        if let Some((code, message)) = context.defect("label citation") {
-            result
-                .diagnostics
-                .push(LabelDiagnostic::error(code, &location, message));
-            continue;
-        }
+    for span in region_spans(path, region, &mut result.diagnostics) {
         harvest_label(
-            &text[start + ACUTE.len_utf8()..after - ACUTE.len_utf8()],
-            location,
-            context == InlineCodeContext::Parenthesized,
+            &span.value,
+            span.location,
+            span.parenthesized,
             owner,
             result,
         );
     }
-    if let Some(offset) = scan.unclosed {
-        result.diagnostics.push(LabelDiagnostic::error(
-            LabelErrorCode::UnclosedInlineCode,
-            &locate(offset),
-            "unclosed acute label delimiter",
-        ));
-    }
+    region.clear();
 }
 
 fn harvest_label(
