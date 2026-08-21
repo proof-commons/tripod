@@ -114,7 +114,8 @@ fn projected_script_bytes(
 ///
 /// The walk now keeps the item's bytes, so the target's own reading
 /// decides both directions. The first four rows are the required
-/// regressions of (`tab:guide12-exec:tapscript-tests`) — the empty item,
+/// regressions of `(´[PLAN-tab:guide12-exec:tapscript-tests]´)` — the
+/// empty item,
 /// the zero byte, the negative zero, and a true one — and the rest are
 /// their siblings: the wider all-zero payloads and the trailing sign
 /// bytes that are equally false and equally not minimal numbers, and the
@@ -174,7 +175,8 @@ fn an_exact_pushed_literal_settles_the_verified_truth_value() {
 /// `G12-R12`: two exact pushed literals settle the compared equality.
 ///
 /// The other half of the row, and the remaining two required regressions
-/// of (`tab:guide12-exec:tapscript-tests`). Both operands are known byte
+/// of `(´[PLAN-tab:guide12-exec:tapscript-tests]´)`. Both operands are
+/// known byte
 /// for byte, so the comparison the verifying primitive makes is one the
 /// walk can make: operands that differ reach no success state and do
 /// abort, and operands that agree reach one and cannot abort.

@@ -608,7 +608,8 @@ KNOWN_NORMALIZATION_MUTATIONS = (
 # Taproot, and not by preference. Guide 11 section 10.3 requires the
 # owner's authorization to commit to the finalized output set, and the
 # reviewed digest reaches that profile only on the taproot path
-# (`tab:elements-ref:ct-sighash`). A key-path spend of this address type
+# (´[PLAN-tab:elements-ref:ct-sighash]´). A key-path spend of this
+# address type
 # is signed with a bare 64-byte Schnorr signature carrying no trailing
 # sighash byte, and the reviewed digest reads a missing byte as the
 # default all-outputs non-anyone-can-pay mode -- so the profile is
@@ -5442,8 +5443,8 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
             # exception to that rule. It is read back from the node's own
             # `decoderawtransaction` rather than computed here, so it is
             # the target's accounting; it is what
-            # `rule:guide12-exec:resource-comparison` compares a
-            # prediction against; and it is written only on a target
+            # (´[PLAN-rule:guide12-exec:resource-comparison]´) compares
+            # a prediction against; and it is written only on a target
             # verdict, because a response that is not one may carry no
             # observation at all (`G12-R14`).
             "resources": {
