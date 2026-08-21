@@ -646,7 +646,12 @@ impl CompactAshEvidencePlan {
     pub fn observed_rows(&self) -> usize {
         self.relation_coverage
             .values()
-            .filter(|row| matches!(row.observation(), CoverageObservation::Observed(_)))
+            .filter(|row| {
+                matches!(
+                    row.observation(),
+                    CoverageObservation::Observed(_) | CoverageObservation::ObservedRefusal(_)
+                )
+            })
             .count()
     }
 
@@ -1804,6 +1809,30 @@ mod negative_discharge_tests {
             discharged_negatives(&plan),
             2,
             "only the arms whose intended violation resolves may discharge",
+        );
+    }
+
+    #[test]
+    fn a_row_that_is_discharged_is_also_counted_as_observed() {
+        // The two tallies are reported side by side, and a discharged
+        // row that the observed count missed would read as coverage
+        // arriving from nowhere.
+        let mut plan = plan();
+        let vector = sponsorless(&plan);
+        let before = plan.observed_rows();
+        plan.discharge_mutants(&[(
+            NegativeMutation::SplitSuccessorInTwo,
+            vector,
+            ObservedOutcomeLayer::ScriptPathRejection,
+        )]);
+        assert_eq!(
+            plan.observed_rows(),
+            before + 1,
+            "a refused mutation is an observation as much as an acceptance",
+        );
+        assert!(
+            plan.observed_rows() >= plan.discharged_rows(),
+            "no row may be discharged without being observed",
         );
     }
 
