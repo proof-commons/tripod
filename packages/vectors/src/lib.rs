@@ -35,4 +35,7 @@ pub use plan::{
     derive_evidence_plan,
 };
 pub use subject::{CanonicalSubject, ExperimentalSubject, SubjectStanding};
-pub use violation::{IntendedViolation, UnlinkedReason, matching_requirement};
+pub use violation::{
+    FirstPartyEvidence, IntendedViolation, UnlinkedReason, first_party_evidence,
+    matching_requirement,
+};

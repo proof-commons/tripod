@@ -242,7 +242,7 @@ pub fn matching_requirement(
 
 #[cfg(test)]
 mod tests {
-    use super::{IntendedViolation, UnlinkedReason, matching_requirement};
+    use super::{IntendedViolation, RelationMutation, UnlinkedReason, matching_requirement};
     use crate::bundle::fixture_bundle;
     use crate::mutation::NegativeMutation;
     use compiler::operation_plan::SponsorCase;
@@ -312,6 +312,90 @@ mod tests {
     }
 
     #[test]
+    fn every_first_party_requirement_has_a_stated_evidence_standing() {
+        // All 18 of them, recomputed from the plan rather than counted
+        // from prose, and every one classified. A class reaching this
+        // without an answer would be a new first-party boundary, which
+        // has to be looked at rather than absorbed.
+        use compiler::operation_plan::{EvidenceRole, TargetCoverageObligation};
+
+        let bundle = fixture_bundle().expect("the fixture bundle builds");
+        let mut counted = 0_usize;
+        for requirement in bundle.plan().coverage() {
+            let TargetCoverageObligation::Negative(negative) = &requirement.obligation else {
+                continue;
+            };
+            let emitted = match requirement.role {
+                EvidenceRole::EmittedStructure => true,
+                EvidenceRole::CompilerAnalysisResult => false,
+                _ => continue,
+            };
+            counted += 1;
+            assert!(
+                super::first_party_evidence(&negative.mutation, emitted).is_some(),
+                "{:?} has no stated first-party evidence standing",
+                negative.mutation,
+            );
+        }
+        assert_eq!(counted, 18, "the first-party half of the negative census");
+    }
+
+    #[test]
+    fn each_first_party_class_states_the_standing_the_archaeology_found() {
+        // Pinned per class, so that any of them gaining or losing a
+        // refusal has to be recorded here on purpose. There is
+        // deliberately no variant meaning "refused and tested at this
+        // boundary": nothing in the repository is, and a variant nobody
+        // could return would invite one to be claimed.
+        use super::FirstPartyEvidence as E;
+
+        let expected = [
+            (
+                RelationMutation::ConstructibilityWitnessUnavailable,
+                false,
+                E::RefusalReachedButUntested,
+            ),
+            (
+                RelationMutation::PermissionlessPrivateDependency,
+                false,
+                E::RefusalReachedButUntested,
+            ),
+            (
+                RelationMutation::RequiredLifecycleExitMissing,
+                false,
+                E::RefusedOnlyAtAnotherLayer,
+            ),
+            (
+                RelationMutation::RequiredLifecycleExitMissing,
+                true,
+                E::NoTypedRefusal,
+            ),
+            (
+                RelationMutation::UnsupportedRepresentation,
+                false,
+                E::MadeUnrepresentable,
+            ),
+            (
+                RelationMutation::UnauthenticatedRepresentation,
+                true,
+                E::NoTypedRefusal,
+            ),
+            (
+                RelationMutation::UnexpectedProtocolSecret,
+                true,
+                E::NoTypedRefusal,
+            ),
+        ];
+        for (mutation, emitted, standing) in expected {
+            assert_eq!(
+                super::first_party_evidence(&mutation, emitted),
+                Some(standing),
+                "{mutation:?} at emitted={emitted} carries another standing",
+            );
+        }
+    }
+
+    #[test]
     fn an_unlinked_arm_resolves_to_no_requirement() {
         let bundle = fixture_bundle().expect("the fixture bundle builds");
         let plan = bundle.plan();
@@ -322,5 +406,98 @@ mod tests {
             resolved.is_none(),
             "an unlinked arm must name no requirement",
         );
+    }
+}
+
+/// What first-party evidence exists for one negative requirement.
+///
+/// The 18 requirements whose evidence role is the compiler's own
+/// analysis or the emitted structure are answered, if at all, by
+/// first-party code refusing a condition rather than by a target
+/// refusing a transaction. This says what such a refusal actually looks
+/// like today, per semantic mutation class.
+///
+/// # None of these is a discharge, and the guide is why
+///
+/// §19.1 says positive coverage of a compiler-static or
+/// backend-structural relation uses typed structural evidence instead of
+/// inventing target execution. §19.2 states no such rule for the
+/// negative half: its conditions are a valid source transaction, a
+/// complete mutated target transaction, an executed carrier and an
+/// observed target rejection, none of which a compiler-static relation
+/// can have. So the guide states no condition under which a first-party
+/// refusal discharges a negative requirement, and a boundary being
+/// first-party is not the same claim as a first-party test discharging
+/// the row. These arms therefore record readiness, never coverage.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
+pub enum FirstPartyEvidence {
+    /// A typed refusal exists and is reached, but no test at this
+    /// boundary drives it to the error.
+    ///
+    /// `CompileError::ConstructibilityWitnessUnavailable` and
+    /// `CompileError::PermissionlessPrivateDependency` are both
+    /// constructed in the compiler's constructibility stage, and the
+    /// stage is live. Every test that asserts either error asserts the
+    /// realization twin instead, which is a different layer answering a
+    /// different requirement.
+    RefusalReachedButUntested,
+    /// No error names this condition; the nearest one refuses something
+    /// else.
+    ///
+    /// The compiler refuses a missing lifecycle path and a missing
+    /// representation choice, and neither is a required exit going
+    /// missing. The realization layer does refuse the exact mutation,
+    /// and is tested, but answers its own boundary and not this one.
+    RefusedOnlyAtAnotherLayer,
+    /// The condition is made unrepresentable rather than refused.
+    ///
+    /// Representation candidates are built from the relation's own
+    /// allowed set, so a selection outside it cannot be constructed to
+    /// be refused. Nothing checks the membership the static requirement
+    /// documents, because nothing can currently violate it.
+    MadeUnrepresentable,
+    /// No typed refusal exists anywhere, and no site constructs one.
+    ///
+    /// The backend-structural half of the lifecycle exit is a declared
+    /// no-op at the layout stage; an unauthenticated representation and
+    /// an unexpected protocol secret have requirement types and
+    /// predicates but no error. The secret-freeness assertions that do
+    /// exist are positive properties of the emitted program, not
+    /// refusals of an offending input.
+    NoTypedRefusal,
+}
+
+/// The first-party evidence standing of one semantic mutation class.
+///
+/// `None` for a class no first-party requirement carries, so a boundary
+/// that started emitting one would surface here rather than being
+/// folded into whichever answer looked closest.
+#[must_use]
+pub const fn first_party_evidence(
+    mutation: &RelationMutation,
+    role_is_emitted_structure: bool,
+) -> Option<FirstPartyEvidence> {
+    match mutation {
+        RelationMutation::ConstructibilityWitnessUnavailable
+        | RelationMutation::PermissionlessPrivateDependency => {
+            Some(FirstPartyEvidence::RefusalReachedButUntested)
+        }
+        // The compiler-static half has a neighbouring refusal and the
+        // emitted half has nothing at all, so the two boundaries of one
+        // class answer differently.
+        RelationMutation::RequiredLifecycleExitMissing => {
+            if role_is_emitted_structure {
+                Some(FirstPartyEvidence::NoTypedRefusal)
+            } else {
+                Some(FirstPartyEvidence::RefusedOnlyAtAnotherLayer)
+            }
+        }
+        RelationMutation::UnsupportedRepresentation => {
+            Some(FirstPartyEvidence::MadeUnrepresentable)
+        }
+        RelationMutation::UnauthenticatedRepresentation
+        | RelationMutation::UnexpectedProtocolSecret => Some(FirstPartyEvidence::NoTypedRefusal),
+        _ => None,
     }
 }
