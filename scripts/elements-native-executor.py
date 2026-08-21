@@ -3008,9 +3008,33 @@ class OperationExecutor:
         this method is either the mempool's own structured reason, which
         is the target speaking through an RPC answer, or nothing --
         never the child's text (G12-R04).
+
+        # A mempool reason that is not a script error settles the layer
+
+        Block validation runs the amount checks inside the SAME check
+        queue as the script checks, so a one-unit imbalance, a malformed
+        rangeproof and a broken surjection proof all reach the block
+        layer wearing `mandatory-script-verify-flag-failed (unknown
+        error)`. The mempool tells them apart and the block cannot: a
+        conservation failure is `bad-txns-in-ne-out` there, and a real
+        script failure carries the mandatory-script prefix.
+
+        So when the mempool already named a reason and that reason is not
+        a script verdict, it decides, and the block's text is not
+        consulted. Letting the block override it attributes a
+        conservation failure to an opening script that never ran -- the
+        misattribution the conservation judgement documents as a defect
+        of its own earlier revision, reached here by the other path.
+
+        The block's text is still read when the mempool named nothing to
+        contradict it, which is the transaction a relay accepted and a
+        block did not.
         """
         detail = mempool_reason
-        if script_error_in(error.client_detail, CONSENSUS_SCRIPT_PREFIX) is not None:
+        if (
+            mempool_reason is None
+            and script_error_in(error.client_detail, CONSENSUS_SCRIPT_PREFIX) is not None
+        ):
             return {
                 "observed_layer": "script_path_rejection",
                 "observed_detail": detail,
