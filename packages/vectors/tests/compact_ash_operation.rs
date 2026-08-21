@@ -330,7 +330,7 @@ fn render_submissions(
         }
         let _ = write!(
             out,
-            "    {{\"ordinal\": {}, \"ash_inputs\": {}, \"sponsors\": {}, \"layer\": {}, \"txid\": {}, \"projection\": {}, \"detail\": {}, \"bytes\": {}, \"predicted_weight\": {}, \"observed_weight\": {}, \"weight_agrees\": {}}}",
+            "    {{\"ordinal\": {}, \"ash_inputs\": {}, \"sponsors\": {}, \"layer\": {}, \"txid\": {}, \"projection\": {}, \"detail\": {}, \"bytes\": {}, \"witness_bytes\": {}, \"virtual_size\": {}, \"predicted_weight\": {}, \"observed_weight\": {}, \"weight_agrees\": {}}}",
             submission.vector().fixture().ordinal(),
             submission.vector().ash_inputs(),
             submission.vector().sponsors(),
@@ -343,6 +343,8 @@ fn render_submissions(
                 .map_or_else(|| quote("not performed"), |(_, text)| quote(text)),
             submission.detail().map_or_else(|| "null".to_owned(), quote),
             submission.bytes().len(),
+            submission.witness_bytes(),
+            submission.virtual_size(),
             submission.predicted_weight(),
             submission
                 .observed_weight()

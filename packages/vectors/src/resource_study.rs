@@ -719,6 +719,15 @@ mod tests {
         let linked = link_at(fits).expect("fourteen leaves are inside the budget");
         assert_eq!(linked.taptree().recipes().len(), 14);
 
+        // §20.3's tree depth and control-path depth, for an assignment
+        // wider than the demonstration one. Fourteen leaves cannot sit
+        // shallower than four levels, and the reviewed target admits a
+        // hundred and twenty-eight, so depth is nowhere near binding —
+        // which is the point: what refuses this assignment's wider
+        // siblings is the oracle's cost, not the target's depth limit.
+        assert_eq!(linked.taptree().depth(), 4);
+        assert_eq!(linked.control_path_depth(), 4);
+
         let exceeds = bounds(4, 2);
         assert!(!within_tree_oracle_budget(exceeds));
         assert_eq!(leaf_count(exceeds), 18);

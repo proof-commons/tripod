@@ -195,6 +195,8 @@ pub struct SubmissionOutcome {
     bytes: Vec<u8>,
     predicted_weight: u64,
     observed_weight: Option<u64>,
+    witness_bytes: u64,
+    virtual_size: u64,
 }
 
 impl SubmissionOutcome {
@@ -250,6 +252,23 @@ impl SubmissionOutcome {
     #[must_use]
     pub const fn observed_weight(&self) -> Option<u64> {
         self.observed_weight
+    }
+
+    /// The serialized witness bytes the ABI settled.
+    ///
+    /// One of §20.3's measures, and unlike the weight it has no
+    /// observed counterpart: the target reports a weight and never a
+    /// witness subtotal, so this figure stands alone rather than
+    /// entering the comparison.
+    #[must_use]
+    pub const fn witness_bytes(&self) -> u64 {
+        self.witness_bytes
+    }
+
+    /// The virtual size the ABI settled.
+    #[must_use]
+    pub const fn virtual_size(&self) -> u64 {
+        self.virtual_size
     }
 
     /// Whether prediction and observation agree, where both exist.
@@ -1524,6 +1543,8 @@ impl CompactAshOperationPlanner {
                 bytes: vector.bytes().to_vec(),
                 predicted_weight,
                 observed_weight,
+                witness_bytes: vector.witness_bytes(),
+                virtual_size: vector.virtual_size(),
             });
 
             // §20.5: a resource mismatch fails the resource report even
