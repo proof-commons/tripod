@@ -16,6 +16,7 @@ vectors_source_files = files(
   'src/plan.rs',
   'src/projection.rs',
   'src/subject.rs',
+  'src/violation.rs',
 )
 
 # Crate documentation (DOC owner).

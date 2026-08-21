@@ -221,12 +221,80 @@ def test_unmapped_message_is_reported_unclassified(executor, failures) -> int:
     return 1
 
 
+def test_a_mempool_conservation_reason_is_not_upgraded_to_a_script_verdict(
+    executor, failures
+) -> int:
+    """A precise mempool reason is not overridden by the block's text.
+
+    The block runs the amount checks in the same queue as the script
+    checks, so an imbalance reaches it wearing a mandatory-script error.
+    The mempool already said `bad-txns-in-ne-out`, which is not a script
+    verdict, and that has to decide the layer -- otherwise a
+    conservation failure is attributed to an opening script that never
+    ran, and a negative coverage row is discharged on a carrier that
+    never executed.
+
+    The one case where the block's text may still speak is the
+    transaction the mempool did not refuse at all.
+    """
+
+    class BlockSaidScript:
+        client_detail = (
+            executor.CONSENSUS_SCRIPT_PREFIX + "unknown error) while connecting block"
+        )
+
+    class Bare:
+        """Enough of the executor for the classifier under test."""
+
+    judge = executor.OperationExecutor.refused_at_consensus
+    checks = 0
+
+    overridden = judge(Bare(), BlockSaidScript(), mempool_reason="bad-txns-in-ne-out")
+    failures.equal(
+        overridden["observed_layer"],
+        "consensus_rejection_before_script",
+        "a mempool conservation reason must settle the layer",
+    )
+    failures.equal(
+        overridden["observed_detail"],
+        "bad-txns-in-ne-out",
+        "the mempool's own reason is what leaves the classifier",
+    )
+    checks += 2
+
+    # A mempool reason that IS a script verdict never reaches here, but a
+    # non-script one that is not conservation must behave the same way.
+    other = judge(Bare(), BlockSaidScript(), mempool_reason="bad-txns-inputs-missingorspent")
+    failures.equal(
+        other["observed_layer"],
+        "consensus_rejection_before_script",
+        "any non-script mempool reason settles the layer",
+    )
+    checks += 1
+
+    # Nothing from the mempool to contradict: the block's text is the
+    # only evidence there is, and is read.
+    silent = judge(Bare(), BlockSaidScript())
+    failures.equal(
+        silent["observed_layer"],
+        "script_path_rejection",
+        "a relay-accepted transaction a block refuses on a script error",
+    )
+    checks += 1
+
+    return checks
+
+
 TESTS = [
     ("every mapped message survives both wrappers", test_every_mapped_message_survives_both_wrappers),
     ("every mapped message classifies", test_every_mapped_message_classifies),
     ("parenthesised messages are not truncated", test_parenthesised_messages_are_not_truncated),
     ("negative shapes are refused", test_negative_shapes_are_refused),
     ("an unmapped message is reported unclassified", test_unmapped_message_is_reported_unclassified),
+    (
+        "a mempool conservation reason is not upgraded to a script verdict",
+        test_a_mempool_conservation_reason_is_not_upgraded_to_a_script_verdict,
+    ),
 ]
 
 

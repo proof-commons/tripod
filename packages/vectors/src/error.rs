@@ -145,6 +145,17 @@ pub enum VectorError {
     },
     /// The ceremony supplied one coin twice for a single vector.
     DuplicateFundedOutpoint(TargetVectorId),
+    /// A declared intended violation matched no requirement, or several.
+    ///
+    /// The declaration and the published plan disagree about what
+    /// exists: either the relation no longer publishes that mutation
+    /// class, or it publishes more than one and the arm cannot say which
+    /// it meant. Both are answered by fixing the declaration, never by
+    /// taking whichever row came first.
+    NegativeLinkUnresolved {
+        /// The semantic mutation class the arm declared.
+        class: &'static str,
+    },
     /// Funding cut for one vector was offered to another.
     FundingNamesAnotherVector {
         /// The vector being materialized.

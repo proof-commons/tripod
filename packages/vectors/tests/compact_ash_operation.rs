@@ -182,7 +182,7 @@ fn compare_projections(
 fn coverage(
     transcript: &OperationTranscript,
     projections: &BTreeMap<TargetVectorId, (ProjectionComparison, String)>,
-) -> (usize, usize, usize) {
+) -> (usize, usize, usize, usize, usize) {
     let bundle = vectors::bundle::fixture_bundle().expect("the fixture bundle builds");
     let mut plan = derive_evidence_plan(&bundle).expect("the evidence plan derives");
     let outcomes: Vec<_> = transcript
@@ -196,10 +196,22 @@ fn coverage(
         })
         .collect();
     plan.discharge(&outcomes);
+    // The negative half is offered the same way: every mutation the run
+    // actually submitted, with the arm that made it and where the target
+    // put it. The plan decides which of them answers a requirement, and
+    // for most arms the answer is none.
+    let mutants: Vec<_> = transcript
+        .mutants()
+        .iter()
+        .map(|mutant| (mutant.mutation(), mutant.origin(), mutant.layer()))
+        .collect();
+    plan.discharge_mutants(&mutants);
     (
         plan.census().coverage_requirements(),
         plan.observed_rows(),
         plan.discharged_rows(),
+        plan.discharged_positive_rows(),
+        plan.discharged_negative_rows(),
     )
 }
 
@@ -261,10 +273,15 @@ fn render(
             .filter(|(verdict, _)| *verdict == ProjectionComparison::Matched)
             .count()
     );
-    let (requirements, observed, discharged) = coverage(transcript, projections);
+    let (requirements, observed, discharged, positive, negative) =
+        coverage(transcript, projections);
     let _ = writeln!(
         out,
         "  \"coverage_requirements\": {requirements}, \"coverage_observed\": {observed}, \"coverage_discharged\": {discharged},"
+    );
+    let _ = writeln!(
+        out,
+        "  \"coverage_discharged_positive\": {positive}, \"coverage_discharged_negative\": {negative},"
     );
 
     out.push_str(&render_divergences(transcript));
