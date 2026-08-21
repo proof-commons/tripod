@@ -39,6 +39,7 @@ weight rule in [the plans README](../README.md).
 | [guide_ten_concept.md](guide_ten_concept.md) | STATE constructor and wide-arithmetic prototypes |
 | [guide_eleven_concept.md](guide_eleven_concept.md) | Public declassification and confidential-to-public lifecycle |
 | [guide_twelve_concept.md](guide_twelve_concept.md) | Phase-4 end-to-end compact ASH |
+| [guide_thirteen_concept.md](guide_thirteen_concept.md) | Phase-5 end-to-end live receipt transfer |
 
 A concept guide and the executed guide of the same number are different
 documents: the concept is the earlier sketch, the executed guide is what the
