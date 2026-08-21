@@ -12,6 +12,7 @@ pub mod mutation;
 pub mod operation;
 pub mod plan;
 pub mod projection;
+pub mod resource_study;
 pub mod subject;
 pub mod violation;
 
