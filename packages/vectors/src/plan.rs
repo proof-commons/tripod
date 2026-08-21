@@ -34,8 +34,10 @@ use crate::materialize::{
     AshFunding, MaterializedTargetVector, TargetVectorId, has_candidate_program, is_materializable,
     materialize, needs_authorization, vector_id,
 };
-use crate::matrix::class_count;
+use crate::matrix::{EvidenceBoundary, class_count};
+use crate::mutation::NegativeMutation;
 use crate::subject::CanonicalSubject;
+use crate::violation::matching_requirement;
 
 /// Why a coverage row carries no observation yet.
 ///
@@ -133,6 +135,42 @@ pub enum CoverageObservation {
     /// constructor is [`CompactAshEvidencePlan::discharge`], which reads
     /// submissions the executor recorded.
     Observed(ObservedCoverage),
+    /// One mutation the target refused where its class said it would.
+    ///
+    /// The negative half's own arm. §19.2 asks a different question
+    /// from §19.1 — a mutated transaction the target rejected, at the
+    /// boundary the class named in advance — so it is a separate
+    /// variant rather than an [`ObservedCoverage`] with the verdict
+    /// read backwards.
+    ObservedRefusal(ObservedRefusal),
+}
+
+/// What one refused mutation established about one requirement.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ObservedRefusal {
+    vector: TargetVectorId,
+    mutation: NegativeMutation,
+    layer: ObservedOutcomeLayer,
+}
+
+impl ObservedRefusal {
+    /// The accepted vector the mutation was made from.
+    #[must_use]
+    pub const fn vector(&self) -> TargetVectorId {
+        self.vector
+    }
+
+    /// The arm that made the change.
+    #[must_use]
+    pub const fn mutation(&self) -> NegativeMutation {
+        self.mutation
+    }
+
+    /// Where the target put the mutated transaction.
+    #[must_use]
+    pub const fn layer(&self) -> ObservedOutcomeLayer {
+        self.layer
+    }
 }
 
 /// What one target run established about one requirement.
@@ -202,6 +240,10 @@ impl CoverageObservation {
                     ProjectionComparison::Matched
                 )
             ),
+            // The constructor already checked every §19.2 condition
+            // this package can check, and refuses to build the value
+            // otherwise, so reaching here means the refusal counted.
+            Self::ObservedRefusal(_) => true,
         }
     }
 }
@@ -212,6 +254,12 @@ impl CoverageObservation {
 /// §17.4 comparison found — three separate facts, none inferable from
 /// the others.
 pub type Outcome = (TargetVectorId, ObservedOutcomeLayer, ProjectionComparison);
+
+/// What one submitted mutation established, as a run reports it.
+///
+/// The arm that made the change, the accepted vector it was made from,
+/// and where the target put the result.
+pub type MutantObservation = (NegativeMutation, TargetVectorId, ObservedOutcomeLayer);
 
 /// One row of §19's relation-indexed coverage matrix.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -543,6 +591,7 @@ pub struct CompactAshEvidencePlan {
     relation_coverage: BTreeMap<CoverageRequirementId, RelationCoverageRow>,
     required_target_work: Vec<RequiredTargetWork>,
     census: PlanCensus,
+    negative_link: BTreeMap<(NegativeMutation, SponsorCase), CoverageRequirementId>,
 }
 
 impl CompactAshEvidencePlan {
@@ -702,6 +751,74 @@ impl CompactAshEvidencePlan {
                     projection: chosen.2,
                 });
             }
+        }
+    }
+
+    /// Move negative rows to observed, from a run's mutation outcomes.
+    ///
+    /// # What a refused mutation can and cannot answer
+    ///
+    /// §19.2 asks for six things at once, and this checks the three a
+    /// run can establish while the plan supplies the rest:
+    ///
+    /// - the arm must name an intended violated relation, and the link
+    ///   the plan resolved is the only route to one — an arm the guide
+    ///   does not determine discharges nothing, whatever the target
+    ///   said about it;
+    /// - the intended carrier must have executed, and the covenant
+    ///   script is that carrier, so only a script-path refusal counts. A
+    ///   transaction the target threw out before running any script was
+    ///   invalid for some reason, and nothing says which relation;
+    /// - the observed layer must be the one the class named in advance,
+    ///   so a refusal at a boundary nobody predicted is a finding rather
+    ///   than a pass.
+    ///
+    /// The case is read off the vector's own sponsor count, exactly as
+    /// the positive half reads it, so a mutation of a sponsorless vector
+    /// answers only the sponsorless row.
+    ///
+    /// # Collateral is recorded, never claimed away
+    ///
+    /// Every runtime negative requirement carries the policy that the
+    /// intended relation and its typed dependency closure must both be
+    /// reported blocked, and the closure travels with the requirement
+    /// the plan published. Discharging one row therefore says the target
+    /// refused a transaction that violates that relation together with
+    /// its closure — which is what §19.2 means by a focused mutation
+    /// with dependency collateral, and is why no row here is described
+    /// as isolated.
+    pub fn discharge_mutants(&mut self, outcomes: &[MutantObservation]) {
+        for &(mutation, vector, layer) in outcomes {
+            // The class's own boundary, by lookup, so an arm whose
+            // matrix row moves takes this with it.
+            let Ok(EvidenceBoundary::ScriptPathRejection) = mutation.expected_boundary() else {
+                continue;
+            };
+            if layer != ObservedOutcomeLayer::ScriptPathRejection {
+                continue;
+            }
+            let case = if vector.sponsors() == 0 {
+                SponsorCase::Absent
+            } else {
+                SponsorCase::Present
+            };
+            let Some(id) = self.negative_link.get(&(mutation, case)) else {
+                continue;
+            };
+            let Some(row) = self.relation_coverage.get_mut(id) else {
+                continue;
+            };
+            // The link only ever resolves negative runtime rows; the
+            // guard is here so that a change which broke that would stop
+            // rather than file a refusal against a positive row.
+            if row.positive {
+                continue;
+            }
+            row.observation = CoverageObservation::ObservedRefusal(ObservedRefusal {
+                vector,
+                mutation,
+                layer,
+            });
         }
     }
 }
@@ -1012,7 +1129,34 @@ pub fn derive_evidence_plan(
         relation_coverage,
         required_target_work,
         census,
+        negative_link: resolve_negative_link(plan)?,
     })
+}
+
+/// Which requirement each mutation arm can answer, per execution case.
+///
+/// Resolved once, from the published plan, so that every later discharge
+/// reads a link the plan itself produced. An arm the guide does not
+/// determine contributes no entry rather than a placeholder one, which
+/// is why an unlinked arm cannot discharge anything by accident.
+///
+/// # Errors
+///
+/// Whatever [`matching_requirement`] refuses: a declared violation that
+/// matches no published requirement, or more than one.
+fn resolve_negative_link(
+    plan: &compiler::operation_plan::ValidatedTargetOperationPlan,
+) -> Result<BTreeMap<(NegativeMutation, SponsorCase), CoverageRequirementId>, VectorError> {
+    let mut link = BTreeMap::new();
+    for &arm in NegativeMutation::ALL {
+        let violation = arm.intended_violation();
+        for case in [SponsorCase::Absent, SponsorCase::Present] {
+            if let Some(id) = matching_requirement(plan, &violation, case)? {
+                link.insert((arm, case), id);
+            }
+        }
+    }
+    Ok(link)
 }
 
 #[cfg(test)]
@@ -1241,7 +1385,7 @@ mod tests {
             .values()
             .filter_map(|row| match row.observation() {
                 CoverageObservation::Outstanding(reason) => Some(reason),
-                CoverageObservation::Observed(_) => None,
+                CoverageObservation::Observed(_) | CoverageObservation::ObservedRefusal(_) => None,
             })
             .collect();
         assert!(
@@ -1577,5 +1721,164 @@ mod tests {
                 .all(|work| matches!(work, super::RequiredTargetWork::FundingCeremony(_))),
             "a submission is planned before the ceremony that funds it",
         );
+    }
+}
+
+#[cfg(test)]
+mod negative_discharge_tests {
+    use super::derive_evidence_plan;
+    use crate::bundle::fixture_bundle;
+    use crate::materialize::TargetVectorId;
+    use crate::mutation::NegativeMutation;
+    use crate::violation::{IntendedViolation, UnlinkedReason};
+    use target_elements_conformance::protocol::ObservedOutcomeLayer;
+
+    fn plan() -> super::CompactAshEvidencePlan {
+        let fixture = fixture_bundle().expect("the fixture bundle builds");
+        derive_evidence_plan(&fixture).expect("the evidence plan derives")
+    }
+
+    /// A sponsorless vector this plan holds bytes for.
+    fn sponsorless(plan: &super::CompactAshEvidencePlan) -> TargetVectorId {
+        plan.target_cases()
+            .iter()
+            .map(|subject| subject.subject().id())
+            .find(|id| id.sponsors() == 0)
+            .expect("a sponsorless vector exists")
+    }
+
+    fn discharged_negatives(plan: &super::CompactAshEvidencePlan) -> usize {
+        plan.relation_coverage()
+            .values()
+            .filter(|row| !row.is_positive() && row.observation().is_discharged())
+            .count()
+    }
+
+    #[test]
+    fn the_six_script_path_refusals_discharge_exactly_the_two_linked_rows() {
+        // The run of record refused six arms at the script path. Only
+        // two of them name a relation the guide determines, so only two
+        // rows move — which is the whole point of resolving the link
+        // instead of counting refusals.
+        let mut plan = plan();
+        let vector = sponsorless(&plan);
+        assert_eq!(discharged_negatives(&plan), 0, "nothing starts discharged");
+
+        let refused = [
+            NegativeMutation::SplitSuccessorInTwo,
+            NegativeMutation::ReverseAshInputOrder,
+            NegativeMutation::RedirectSuccessorProgram,
+            NegativeMutation::RouteUnitIntoUndeclaredOutput,
+            NegativeMutation::ReorderWitnessItems,
+            NegativeMutation::SuccessorOneBelowTheSum,
+        ];
+        let outcomes: Vec<_> = refused
+            .iter()
+            .map(|&arm| (arm, vector, ObservedOutcomeLayer::ScriptPathRejection))
+            .collect();
+        plan.discharge_mutants(&outcomes);
+
+        assert_eq!(
+            discharged_negatives(&plan),
+            2,
+            "only the arms whose intended violation resolves may discharge",
+        );
+    }
+
+    #[test]
+    fn a_refusal_before_the_script_discharges_nothing() {
+        // §19.2 wants the intended carrier to have executed. A target
+        // that threw the transaction out before running any script
+        // established that it was invalid, not which relation refused
+        // it.
+        let mut plan = plan();
+        let vector = sponsorless(&plan);
+        plan.discharge_mutants(&[(
+            NegativeMutation::SplitSuccessorInTwo,
+            vector,
+            ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
+        )]);
+        assert_eq!(
+            discharged_negatives(&plan),
+            0,
+            "a refusal the carrier never produced is not carrier coverage",
+        );
+    }
+
+    #[test]
+    fn an_accepted_mutation_discharges_nothing() {
+        // The arm that matters most: a mutation the target took is a
+        // finding about the class, never coverage of the requirement.
+        let mut plan = plan();
+        let vector = sponsorless(&plan);
+        plan.discharge_mutants(&[(
+            NegativeMutation::SuccessorOneBelowTheSum,
+            vector,
+            ObservedOutcomeLayer::Accepted,
+        )]);
+        assert_eq!(
+            discharged_negatives(&plan),
+            0,
+            "an accepted mutation is a finding, not a discharge",
+        );
+    }
+
+    #[test]
+    fn the_unlinked_arms_stay_unlinked_whatever_the_target_said() {
+        // Four arms name no requirement. Feeding each a perfect
+        // script-path refusal must still move nothing, because there is
+        // no row their refusal is about.
+        let mut plan = plan();
+        let vector = sponsorless(&plan);
+        for &arm in NegativeMutation::ALL {
+            if matches!(arm.intended_violation(), IntendedViolation::Declared { .. }) {
+                continue;
+            }
+            plan.discharge_mutants(&[(arm, vector, ObservedOutcomeLayer::ScriptPathRejection)]);
+        }
+        assert_eq!(
+            discharged_negatives(&plan),
+            0,
+            "an arm with no intended violation cannot discharge a row",
+        );
+    }
+
+    #[test]
+    fn each_unlinked_arm_states_which_kind_of_gap_it_is() {
+        // The three reasons are not interchangeable, and the census
+        // reports them apart, so this pins which arm carries which.
+        let expected = [
+            (
+                NegativeMutation::ReverseAshInputOrder,
+                UnlinkedReason::NoSemanticMutationClass,
+            ),
+            (
+                NegativeMutation::ReorderWitnessItems,
+                UnlinkedReason::NoSemanticMutationClass,
+            ),
+            (
+                NegativeMutation::RedirectSuccessorProgram,
+                UnlinkedReason::SemanticClassUnderdetermined,
+            ),
+            (
+                NegativeMutation::RouteUnitIntoUndeclaredOutput,
+                UnlinkedReason::SemanticClassUnderdetermined,
+            ),
+            (
+                NegativeMutation::ChangeInputSequence,
+                UnlinkedReason::BoundaryPrecedesTarget,
+            ),
+            (
+                NegativeMutation::ChangeTransactionVersion,
+                UnlinkedReason::BoundaryPrecedesTarget,
+            ),
+        ];
+        for (arm, reason) in expected {
+            assert_eq!(
+                arm.intended_violation(),
+                IntendedViolation::Unlinked(reason),
+                "{arm:?} carries another reason",
+            );
+        }
     }
 }
