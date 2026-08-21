@@ -98,8 +98,8 @@ citation fails when its mint is removed.
 | EG-002 | `obs:upstream:eg-002` | The register alone: the gap is upstream's own coverage. |
 | EG-003 | `obs:upstream:eg-003` | `packages/target-elements-conformance/src/protocol.rs`, the observed class for a refusal the target states with one coarse arithmetic string. |
 | EG-004 | `obs:upstream:eg-004` | `packages/target-elements-conformance/src/protocol.rs`, the script-number class that carries both causes the unnamed error hides. |
-| EG-005 | `obs:upstream:eg-005` | `packages/target-elements/src/encoding.rs` and `packages/target-elements-conformance/src/census/numeric.rs`, which model the wider operand apart from the ordinary one. |
-| EG-006 | `obs:upstream:eg-006` | `packages/vectors/src/matrix.rs`, the relay-policy evidence boundary, and `packages/target-elements-conformance/src/claim.rs`, the nonminimal-push claim. |
+| EG-005 | `obs:upstream:eg-005` | `packages/target-elements/src/encoding.rs`, the encoding class that keeps the wider operand apart from the ordinary one. |
+| EG-006 | `obs:upstream:eg-006` | `packages/vectors/src/matrix.rs`, the relay-policy evidence boundary; `packages/target-elements-conformance/src/claim.rs`, the nonminimal-push claim; and `packages/target-elements-conformance/src/census/numeric.rs`, the relay-scoped rejection. |
 | EG-007 | `obs:upstream:eg-007` | The register alone: the funding and confirmation path in `scripts/elements-native-executor.py` hands every transaction to the miner, and that file is outside the label census. |
 | EG-008 | `obs:upstream:eg-008` | `packages/target-elements/src/success.rs` and `packages/target-elements/src/authorization.rs`, which model an unrecognized key type as a success. |
 | EG-009 | `obs:upstream:eg-009` | `packages/target-elements/src/opcode.rs`, the nonce introspection contract, the one asymmetric case among the reviewed primitives. |
