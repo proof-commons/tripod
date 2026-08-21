@@ -435,6 +435,56 @@ adds the dependency edge, which also closes a cycle through the
 conformance package's reference cross-check lane, and writes the one
 mapping from these obligations onto the executor's step records.
 
+### 2.8 Guide-12 Phase-4 exit gate · `gate:backlog:guide12-exit`
+
+The five execution waves and their fix lanes closed Phase 4 against a
+live target. Wave 11 took the section 16.2 edge for real and was
+unblocked by two diagnoses — the witness-section guard behind a
+misleading balance diagnostic, and the money-bound row the user ruled
+kept-and-reclassified — after which eight sponsorless transactions
+were accepted and mined at the pinned genesis; Wave 12 added the
+test-scoped sponsor authorization capability and the four sponsored
+acceptances, closing real target execution with twelve accepted
+transactions, twelve matched section 17.4 projections, and the
+fee-role digest defect found and computed; Wave 13 with its four fix
+and design lanes built the negative machinery, corrected three
+mis-specified section 18 boundary claims against live evidence, fixed
+the adapter's layer misattribution, derived the class-to-requirement
+link from the section 19.2 declaration, and funded every mutation arm
+independently; Wave 14 measured the candidate — all thirty-six
+section 20.2 assignments statically, twelve predicted weights equal
+to observation live, and the finding that linking, not any target
+bound, is the candidate ceiling, with seven of thirty-six assignments
+linkable under the sixteen-leaf oracle budget. Wave 15 audited the
+section 29 exit checklist item by item: 105 items, 94 passing, five
+qualified, five deferred to this gate, and one honest structural
+failure — negative coverage stands at one of seventy-two, and the
+remedy is three guide gaps carried as the handoff's feature-request
+material (section 18 naming no relation per row, section 19.2
+stating no first-party discharge condition, the section 16.5
+ABI-validation entry point absent). Coverage ends at 100 of 211,
+every outstanding row naming its reason; three byte-identical runs
+per wave; every merge tree-identical to its worker's gated tree. The
+completion report is filed at plans/history/guide-12-completion-report.md.
+
+This gate ran the five deferred repository lanes locally as the
+verdict of record, wall-timed: scripts/ci.sh — the meson suite in its
+own target/ci-meson directory, configured cold — passed 47 of 47
+lanes (lane-duration sum 239 minutes across parallel jobs on the idle
+build slice; the whole gate including setup took about 38 minutes
+wall), and scripts/check-document-reproducibility.sh passed both of
+its checks in 2 m 11 s, the reused and fresh builds producing
+byte-identical documents. The advisory audit lane ran inside the
+suite. The server suite had already answered 47 of 47 on every merged
+boundary of this batch, most recently in 323 to 330 seconds per run.
+
+Phase 4 exits. The batch fast-forwards main. Guide 13 inherits the
+nine residuals the completion report enumerates, of which the pinned
+taproot output key and the linking ceiling are the two that constrain
+what a wider candidate can attempt; the Elements gripe material from
+the issuance diagnosis remains recorded and unfiled pending the
+user's ruling.
+
 ### The verification harness's two standing hazards · `rem:backlog:verification-harness`
 
 A verdict is read from the report wrapper's own report line, never from a pipeline's shell status: the wrapper propagates its exit code faithfully, and a pipe to a filter truncates the status to the last stage's. And a single shared build-target directory is poisoned when checkouts of two different commits build the same crates into it, so a lane that moves between commits pins a target directory of its own.
