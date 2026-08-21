@@ -1515,3 +1515,106 @@ Reduction implements the sub- prefix and the catalogued modifiers only;
 the other devices are unimplemented and untriggered, so a numbered or
 lettered head fails until they are. The three waves: acute
 classification, the 196-site sweep, head validation.
+
+### Wave 7 — CT fixtures and the conservation matrix · `task:guide11:conservation`
+
+**Priority:** P1
+**Status:** DONE
+
+The §8 fixture language, a generic confidential-transaction
+materializer, and the §8.4 matrix run against a real node. The report
+role is **experimental** and the type has one variant: §8 establishes the
+CT substrate and the consensus facts, and nothing about a candidate, an
+opening prototype, or a normalization policy. A canonical role belongs to
+whichever wave earns it.
+
+**The matrix's discriminating power is the layer, not the class.** This
+target answers every CT conservation failure with one consensus code, so
+§8.3's six layers are what a row can actually distinguish.
+
+| ID | Priority | Status | Finding |
+|---|---:|---|---|
+| `G11-W7-01` | P1 | DONE | **Byte-level determinism is not achievable through this materializer, and §8.2 is met one level down.** Confidential value on this target can only be produced by the node: the upstream Python framework carries no Pedersen commitment, range proof, or surjection proof. `BlindTransaction` draws every output blinding factor from `GetStrongRandBytes` and generates a fresh ephemeral nonce key, and no RPC on the path takes a seed — `rawblindrawtransaction` included. Established by reading the source and by blinding one identical raw transaction twice and comparing. So the fixture's own inputs are fully determined and reproducible, the transaction bytes are recorded per run, and the level is typed as `FixtureInputsOnly` so a later materializer that can seed its blinding reports a different value rather than quietly improving. |
+| `G11-W7-02` | P1 | DONE | **Ten of eleven executed rows agree with expectations written before the target was asked.** Rows 1, 2, 4 accept; 6, 7, 8, 9, 10, 11 are consensus rejections before script; 12 accepts. The one row that reached no verdict is `G11-W7-03`. |
+| `G11-W7-03` | P1 | DONE | **Several confidential inputs to a single explicit output is not constructible**, which is the exact evidence §10.2 said it required and refused to take from algebra. The node answers "Add another output to blind in order to complete the blinding": residual blinding has nowhere to go without a blinded output to absorb it. Recorded as a fixture-construction failure, which establishes no target verdict — the target was never asked — and is a finding about the candidate rather than a defect of the row. |
+| `G11-W7-04` | P1 | DONE | **The §7.4 third leg lands.** The oracle predicts, and the target produces, the same commitment bytes for three observed openings. Both the asset identifier and the blinding factors are printed reversed from the order the arithmetic reads them; the convention was settled by trying all four combinations against a real observation, and only one reproduces the target's commitment. The construction-library leg stays absent and is reported as absent: the node built these transactions, no third-party library did. |
+| `G11-W7-05` | P1 | DONE | **Consensus does not police a hidden confidential output.** §8.4 states the row as "closure reject *where claimed*", and the conditional is load-bearing: a hidden output makes the commitments balance, so conservation is satisfied and consensus has nothing to refuse. The row expects acceptance and names the obligation — any candidate claiming disclosure-completeness has to police it itself. Writing it as a consensus rejection would have failed the run against an expectation the target never owed. |
+| `G11-W7-06` | P1 | DONE | **Block validation cannot be read for the layer.** Amount checks run in the same check queue as script checks, so a malformed range proof, a broken surjection proof, and a one-unit imbalance all reach the block layer as `mandatory-script-verify-flag-failed (unknown error)`. Classifying on that string attributes a conservation failure to an opening script that never ran, which is the exact misattribution §8.3 exists to prevent and which the first revision of the adapter's `judge` committed. The mempool names these precisely, so the mempool reason decides the layer and the block only separates unrelayable from consensus-invalid. |
+| `G11-W7-07` | P2 | DONE | **Four adapter faults produced false target facts before they were caught**, all in the first run and all recorded here because each is a way a harness manufactures evidence. `getnewaddress` returns a blinded address by default, so every row that said it was explicit was confidential end to end and nothing in the result said so. The wallet's coin selection spent a row's own freshly created coin while funding the next, and `bad-txns-inputs-missingorspent` was recorded as a conservation verdict. A partially signed transaction was judged as if it were the row. And `MalformedRangeProof` serializes as `malformed_range_proof` while the adapter compared against `malformed_rangeproof`, so the branch never fired, the transaction ran undamaged, and *the target accepting a valid transaction was recorded as the target accepting a malformed range proof*. An unknown defect is now refused by name rather than falling through every branch. |
+
+| ID | Priority | Status | Item |
+|---|---:|---|---|
+| `G11-W7-08` | P2 | OPEN | The conservation lane runs through `run-conservation-matrix.py`, which records and does not gate. The typed report exists and is tested; what is not yet built is the Rust executor driver, the gate, the published report asset, and the Meson target that would make this lane refusable in CI the way the primitive and prototype lanes are. Until then a conservation run is evidence a reader consults, not a gate a build enforces. |
+| `G11-W7-09` | OPTIONAL | OPEN | Both public-committed rows of §8.4 remain deferred against `G11-C03`'s blockers. One of the two is executed in its explicit form (`G11-W7-03`); the public-committed form of both awaits a selected candidate. |
+
+### Waves 8+10 — Candidate dispositions and normalization · `task:guide11:dispositions`
+
+**Priority:** P1
+**Status:** PARTIAL
+
+The typed dispositions the evidence already dictated, and the typed
+disclosure reasons the one live candidate needs. The normalization
+prototype, its threat matrix, and its safety report are **not started**;
+the wave was wound down after the disposition half landed.
+
+**A deferral and a rejection are not the same decision, and §11 is both.**
+Recording only one of them would have stated something the review never
+established, in whichever direction it was collapsed.
+
+| ID | Priority | Status | Finding |
+|---|---:|---|---|
+| `G11-W8-01` | P1 | DONE | **The direct authenticated opening is deferred as a class and refused as a shape, and the register carries both.** §11.4 rejects any candidate that loses parity, and two of the three reviewed blockers are parity facts, so the §11.3 proof outline as instantiated on the reviewed primitives is refused outright under that criterion — as is an opening checked off-script and asserted on-script, under §21's "only a host library verifies the opening". The class is deferred rather than rejected because a pattern proving the normalization or negation §11.4 asks for was not found, which is not the same as shown impossible. Cites `G11-C03`, `G11-C01`, `G11-O02`, `G11-O03`. |
+| `G11-W8-02` | P1 | DONE | **The public-committed representation defers on the same three blockers.** A public committed output exists to publish an amount and opening a later relation can verify; on this target that verification has no on-script form, so an output publishing one would be publishing unauthenticated metadata, which §21 refuses by name. Conservation row 3 already carried the deferral as a typed row rather than as an absence. |
+| `G11-W8-03` | P1 | DONE | **The capsule is not-applicable-while-deferred, which is a third state rather than a deferral of its own.** A capsule's contents are an opening and the fields binding it to one output; with no public committed representation there is no opening to carry and no output to bind it to, so §12.4–§12.6 have no subject. Nothing about the capsule was examined and found wanting. The normalization path supplies no subject either: its public output is explicit, and an explicit amount is already recoverable public chain data. |
+| `G11-W8-04` | P1 | DONE | **Dispositions belong in conformance, not in `target-elements`.** Wave 5 put `OpeningFeasibility` in the target package correctly — whether the reviewed language *can* carry an opening is a target fact. A disposition is this project's decision taken in the light of target facts, and §6.2 puts candidate work in conformance. The blockers a disposition names are Wave 5's own typed values rather than a restatement, reached through a vocabulary spelling table because the target crate is standard-library-only and derives no serialization. |
+| `G11-W8-05` | P1 | DONE | **§14.4's preferred reuse of realization's disclosure types is not available, for two independent reasons.** `realization::DisclosureReason` does express the required distinction. But conformance refuses the realization dependency by decision rather than oversight — the manifest says naming it would import a publication boundary this harness has no asset for — and two of its variants carry an `OperationId` and a `RelationId` that a conformance run does not have. Filling them would mean inventing identities, which in an evidence record is worse than a duplicated enum. The vocabulary is therefore §14.4's own, stated in conformance, with the correspondence documented. |
+| `G11-W8-06` | P1 | DONE | **Every normalization disclosure is deployment policy and none is boundary arithmetic.** The relation does not need the amount in the clear: the §8.4 matrix conserved value over commitments without it. Each non-semantic disclosure states what a deployment that did not want the fact public would do instead, so that a policy choice cannot harden into an apparent necessity across waves. §9.3's rule that an explicit-only result is not disclosure-minimal is what this makes checkable. |
+
+| ID | Priority | Status | Item |
+|---|---:|---|---|
+| `G11-W10-01` | P1 | DONE | **The normalization prototype is built, and the disposition it was recorded under is now true.** The claim is private → explicit + private change, the constructible variant. The owner's coin and every destination are taproot, so the wallet signs a key-path spend: both inputs carried a single 64-byte witness item on the run, which is a Schnorr signature with no trailing sighash byte — the default all-outputs non-anyone-can-pay profile §10.3 requires, per the reviewed output-committing signature profile table. The profile is read out of the witness by the adapter rather than asserted, so a narrower signature is a construction failure instead of silent evidence. The unmutated claim was accepted by a real node at the declared tip, with closure and preservation both holding. |
+| `G11-W10-02` | P1 | DONE | **The closure check is implemented as exact multiset equality in both directions, and all nine §10.4 rows agree with expectations written and committed before the run.** Three rows are consensus-valid transactions the report layer alone refuses — amount changed with the change compensating, owner changed, and a hidden private output — and the target accepted all three, which is the wave's substantive finding rather than a gap. The hidden-output row is what justifies the shape of the check: the owner is paid exactly right so preservation holds, the value comes out of the blinded change so no amount is observable, and the only evidence is an output the claim never named. A subset test would have passed it and a count test would have passed a swap, which is why neither is used. The layer is recorded as report-layer and never as consensus, so `G11-W7-06`'s misattribution is not repeated. A relay-policy refusal now has its own refusal layer as well: no row expects one, so a post-signing row refused for its fee would surface as a disagreement rather than pass as a signature refusal. |
+| `G11-W10-03` | P1 | DONE | **The typed §14 safety report is built.** Role is `Experimental`, as `ConservationReportRole` is: it establishes what the target does with the §10.4 matrix and nothing about a candidate being selected, which is §24's question. It carries `declassification::normalization_declassifications` — three disclosures, every one `DeploymentPolicy` and none claiming semantic necessity — the observed authorization profile, the genesis and network the run was bound to, the declared tip and the revision the node binary reported about itself, and every row's expected against observed layer. The judgement lives in the crate that owns the claim: the runner records responses verbatim and `emit-normalization-report` rebuilds the expectations from source, so a run cannot supply the answer it is checked against. |
+
+### Wave 11 — Fresh-process lifecycle · `task:guide11:lifecycle`
+
+**Priority:** P1
+**Status:** DONE
+
+The §13 proof that public evidence survives its creator. The boundary is
+an operating-system boundary rather than a reset of state inside one
+process, and the reading process is held to public chain data alone.
+
+| ID | Priority | Status | Item |
+|---|---:|---|---|
+| `G11-W11-01` | P1 | DONE | §13 boundary is an OS boundary: A publishes and exits, each B is a fresh process and node, three distinct pids; wallet destroyed, chain kept. |
+| `G11-W11-02` | P1 | DONE | The public record is a typed 12-field schema of chain data, with `deny_unknown_fields` and a field-NAME ban. Both tested. |
+| `G11-W11-03` | P1 | DONE | 18/18 rows agree over two passes against `lifecycle::canonical_lifecycle_matrix`, never the run record. All nine canonical rows are now sent; the stale row joined them when `G11-W11-06` closed. |
+| `G11-W11-04` | P1 | DONE | B locates by block locator, parses independently, rebuilds the script by bech32m; it cannot spend the owned object and spends its own funds. |
+| `G11-W11-05` | P1 | DONE | Cache independence: fresh process and node per pass, both identical. The object needed locking against A's coin selection (`G11-W7-07`). |
+| `G11-W11-06` | P2 | DONE | Diagnosed and repaired. The taproot digest commits the output-witness vector at its actual length, so an unblinded spend signs one digest and consensus checks another; paying to a single confidential address did not blind it, because the node declines to balance a lone blinded output against an explicit input and says so only if asked. The spend now carries two confidential outputs and refuses a silent non-blinding. The row builds and both passes answer `refused_output_spent`. |
+
+The `G11-W11-06` diagnosis, because the finding outlives the row. The
+target's taproot digest commits the transaction's output-witness vector,
+and it hashes that vector at whatever length the vector has rather than
+at one entry per output. A transaction carrying no witness deserializes
+with that vector empty, and serializing a transaction that has any
+witness grows it to one entry per output — so a wallet asked to sign an
+unblinded transaction signs a digest those same bytes can never produce
+once they are on the wire. The wallet reports the signing complete and
+the target refuses an invalid Schnorr signature.
+
+Proven rather than argued: the signature the wallet produced verifies
+against the digest computed with the vector empty and fails against the
+digest computed with it grown, while a genuinely blinded control spend
+verifies the other way round and is accepted. The check is kept runnable
+at `scripts/diagnose-taproot-output-witness-digest.py`.
+
+The repair is ours and is in the adapter, so the row is closed here. The
+upstream half is a defect worth filing against the target and is drafted
+for the register another lane owns: the signing path builds its constant
+transaction view before growing the output-witness vector, so it computes
+a digest over a shape the wire form cannot have, and reports the result
+complete. It is not a consensus question — every transaction that reaches
+consensus with a taproot spend already carries the grown vector — so the
+correction belongs on the signer's side.
