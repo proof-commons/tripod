@@ -509,11 +509,14 @@ refusal at client exit status 22, whose record states only the method,
 the status, and the omission; the mutation refusals, whose detail is
 the mempool's own reject reason; and the conservation refusals, where
 the child stderr was read, classified, and still withheld while the
-mempool's `bad-txns-in-ne-out` stood as the record. Qualified: no
-framework taproot-construction exception fired in these runs, so that
-branch rests on the code half and its unit witness alone, and no
-unmapped script error occurred, so the no-class-rather-than-text
-fallback is likewise unexercised live.
+mempool's `bad-txns-in-ne-out` stood as the record. Qualified: these
+runs wrote operation-lane records only, so the conservation,
+normalization, and lifecycle shapes carry the same typed note by
+construction rather than by live witness; no framework
+taproot-construction exception fired, so that branch rests on the code
+half and its unit witness alone; and no unmapped script error
+occurred, so the no-class-rather-than-text fallback is likewise
+unexercised live.
 
 ### The verification harness's two standing hazards · `rem:backlog:verification-harness`
 
