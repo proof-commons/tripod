@@ -72,6 +72,54 @@ their record.
 | Distribution-packaged meson can sit far below this repository's declared floor. | meson is pinned in a virtual environment wherever the distribution package is too old. |
 | An Elements regtest daemon defaults to validating pegins against a mainchain daemon that does not exist in a test environment. | Every harness invocation disables pegin validation explicitly. |
 
+## Friction labels and adaptation sites · `ref:upstream:friction-labels`
+
+Every friction above carries a label, minted in the table below and
+cited at each place in this repository that adapts to it. The label is
+the friction's name in the corpus: a reader who meets one of those
+adaptations follows the citation to the entry, and a reader who wants
+to know what an upstream correction would cost here reads the citation
+list instead of a campaign's history. The Elements labels take the
+owning register's own identifier as their name, so that a mint and the
+entry it indexes cannot drift apart.
+
+A citation is the mechanism; the third column is only its index. Where
+that column says the register alone, this repository holds no citation
+the label check can reach, for one of three reasons: nothing here is
+shaped by the friction, the adaptation lives in the Python adapter
+under `scripts/`, which the label census does not scan, or the
+adaptation is not in this repository at all. Those places are named in
+words and are not citations, and the difference matters, because only a
+citation fails when its mint is removed.
+
+| Friction | Label | Where this repository adapts |
+|---|---|---|
+| EG-001 | `obs:upstream:eg-001` | `plans/reference/elements-tapscript.md`, whose revision-2 provenance reads a locally corrected tree because of it. |
+| EG-002 | `obs:upstream:eg-002` | The register alone: the gap is upstream's own coverage. |
+| EG-003 | `obs:upstream:eg-003` | `packages/target-elements-conformance/src/protocol.rs`, the observed class for a refusal the target states with one coarse arithmetic string. |
+| EG-004 | `obs:upstream:eg-004` | `packages/target-elements-conformance/src/protocol.rs`, the script-number class that carries both causes the unnamed error hides. |
+| EG-005 | `obs:upstream:eg-005` | `packages/target-elements/src/encoding.rs`, the encoding class that keeps the wider operand apart from the ordinary one. |
+| EG-006 | `obs:upstream:eg-006` | `packages/vectors/src/matrix.rs`, the relay-policy evidence boundary; `packages/target-elements-conformance/src/claim.rs`, the nonminimal-push claim; and `packages/target-elements-conformance/src/census/numeric.rs`, the relay-scoped rejection. |
+| EG-007 | `obs:upstream:eg-007` | The register alone: the funding and confirmation path in `scripts/elements-native-executor.py` hands every transaction to the miner, and that file is outside the label census. |
+| EG-008 | `obs:upstream:eg-008` | `packages/target-elements/src/success.rs` and `packages/target-elements/src/authorization.rs`, which model an unrecognized key type as a success. |
+| EG-009 | `obs:upstream:eg-009` | `packages/target-elements/src/opcode.rs`, the nonce introspection contract, the one asymmetric case among the reviewed primitives. |
+| EG-010 | `obs:upstream:eg-010` | `packages/target-elements-conformance/src/provenance.rs`, which compares an embedded revision against the tip the operator intended. |
+| EG-011 | `obs:upstream:eg-011` | `packages/target-elements-conformance/src/protocol.rs`, the resource observation whose interpreter figures are optional rather than zero. |
+| EG-012 | `obs:upstream:eg-012` | `packages/target-elements-conformance/src/tests/constructor_tests.rs`, which transcribes the sound array of the vector file and no other. |
+| EG-013 | `obs:upstream:eg-013` | `packages/target-elements-conformance/src/disposition.rs` and `packages/target-elements-conformance/src/tests/commitment_oracle_tests.rs`, which read the prefix rather than the fixture's name. |
+| EG-014 | `obs:upstream:eg-014` | `packages/target-elements-conformance/src/commitment_oracle/generator.rs`, which returns a defect where the consensus call site asserts. |
+| EG-015 | `obs:upstream:eg-015` | `packages/vectors/src/matrix.rs`, where the one reject code fixes a class's boundary and leaves its relation undischarged. |
+| EG-016 | `obs:upstream:eg-016` | `packages/target-elements-conformance/src/conservation.rs`, the determinism level that stops at the fixture inputs. |
+| EG-017 | `obs:upstream:eg-017` | `packages/target-elements-conformance/src/normalization.rs`, which claims the constructible shape and reports the other as a finding. |
+| EG-018 | `obs:upstream:eg-018` | `packages/target-elements-conformance/src/conservation.rs` and `packages/target-elements-conformance/src/commitment_oracle/mod.rs`, the first-party oracle that exists because there is nothing to differentially test against. |
+| EG-019 | `obs:upstream:eg-019` | `packages/transaction/src/bytes.rs`, whose serializer grows both witness vectors exactly where the wallet's signer does not. |
+| EG-020 | `obs:upstream:eg-020` | `packages/target-elements-conformance/src/disposition.rs`, the typed blocker register, with `plans/research/public-declassification.md` and `plans/reference/elements-tapscript.md`. |
+| EG-021 | `obs:upstream:eg-021` | `packages/transaction/src/bytes.rs` and `packages/transaction/src/tests/encoding_tests.rs`, which refuse to write the section the target asserts on. |
+| The SDK clippy trailing its cargo | `obs:upstream:sdk-clippy-currency` | The register alone: lint currency is a property of the toolchain the gate is run with, not of anything in the tree. |
+| The texmf font tree unindexed | `obs:upstream:texmf-font-lookup` | The register alone: the symlink and cache refresh are carried in the shared-instance bootstrap. |
+| Distribution meson below the floor | `obs:upstream:meson-version-floor` | The register alone: the pinned environment is provisioned outside this repository. |
+| Regtest pegin validation on by default | `obs:upstream:regtest-pegin-validation` | The register alone: the flag is passed by `scripts/elements-native-executor.py`, outside the label census. |
+
 ## Discipline · `ref:upstream:frictions-discipline`
 
 A friction earns an entry when it cost an investigation, forced an
@@ -80,3 +128,22 @@ choice this project would not have made. Entries are never deleted;
 a resolved entry keeps its identifier at its owning register with a
 closed status, and this index drops to one line saying so. When a new
 external dependency joins the project, its frictions join this index.
+
+Removing a label is how a correction is collected. When upstream fixes
+a friction, the entry at its owning register flips to closed and the
+mint above is deleted in the same change. The label check then fails at
+every citation that outlived it, one diagnostic per site, and that list
+is the worklist: each site is a place this repository shaped itself
+around the correction's absence and must now be read again. The
+failures cannot be cleared by deleting the citations, because a
+citation goes only with the adaptation it explains — clearing them is
+the work. A friction whose row above says the register alone yields no
+such list, which is the standing cost of an adaptation the checker
+cannot reach.
+
+That was exercised rather than described. Deleting the relay-layer
+mint failed the check at its three code citations, each reported with
+file and line; deleting the opening-gap mint failed at its code
+citation and at both planning citations, the two forms reported
+separately as an unresolved import and an unresolved same-owner
+citation. Both mints were restored and the check returned to valid.

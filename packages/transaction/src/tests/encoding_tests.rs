@@ -428,7 +428,9 @@ fn a_transaction_with_no_witness_carries_the_other_flag() {
     assert_eq!(bytes[4], 0x00);
     // Encoding an all-empty witness section is what the target asserts
     // against, so the two encodings coincide here rather than differing
-    // by an empty section.
+    // by an empty section. The same refusal is what makes a witnessless
+    // coin unable to fund an issuance (´[PLAN-obs:upstream:eg-021]´),
+    // which is why this template's shape is worth pinning.
     assert_eq!(bytes, transaction.encode_without_witness());
     assert_eq!(transaction.witness_bytes(), 0);
 }

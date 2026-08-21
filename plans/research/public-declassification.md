@@ -481,8 +481,9 @@ private would have to take.
 
 The review of the target's confidential-value machinery named three
 independent reasons an authenticated opening has no complete on-script
-form under the reviewed revision. They are typed as `OpeningBlocker` and
-they are what every deferral below cites:
+form under the reviewed revision. They are typed as `OpeningBlocker`,
+they are filed upstream as one capability the target lacks
+(`obs:upstream:eg-020`), and they are what every deferral below cites:
 
 1. `GeneratorNotDerivableOnScript` — the asset-generator recipe needs two
    curve maps and a point addition, and the reviewed language performs

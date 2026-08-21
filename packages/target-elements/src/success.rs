@@ -72,6 +72,12 @@ pub enum SuccessCondition {
     /// must be modeled as one: a caller that treated an unrecognized
     /// key as a rejection would believe a spend fails that in fact
     /// stands, which is the more dangerous of the two errors.
+    ///
+    /// The rule is carried as an upstream friction
+    /// `(´[PLAN-obs:upstream:eg-008]´)`. This variant is the whole of
+    /// this contract's adaptation to it: were the target ever to verify
+    /// unrecognized key types, the success census is where the change
+    /// lands.
     UnknownKeyTypeUnverified,
 }
 

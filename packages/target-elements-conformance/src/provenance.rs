@@ -26,6 +26,15 @@
 //! `HEAD` identifies intended source; the field being compared is what
 //! the *binary* embeds about itself, and substituting one for the other
 //! would attribute one program's identity to another.
+//!
+//! # Why a version line is not enough on its own
+//!
+//! A rebuilt binary can carry a stale version string from an earlier
+//! build's cached metadata `(´[PLAN-obs:upstream:eg-010]´)`, so the
+//! string alone is not build provenance. The comparison this module
+//! makes — an embedded revision against the tip the operator intended —
+//! is what that friction costs, and the whole of this module's answer
+//! to it.
 
 use std::collections::BTreeSet;
 use std::fmt;

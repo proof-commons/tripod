@@ -15,6 +15,14 @@
 //! array, transcribed by index. They are public test data
 //! `(´[PLAN-rule:guide10:test-material]´)`.
 //!
+//! That one array and no other, deliberately: the file was only partly
+//! regenerated for this target's tag strings, and its intermediary leaf
+//! hashes are stale data from the other chain
+//! `(´[PLAN-obs:upstream:eg-012]´)`. The leaf hashes the oracle is
+//! checked on are recomputed here rather than read from the file, so a
+//! regenerated file would add a second opinion rather than correct a
+//! wrong one.
+//!
 //! Two things about those vectors need saying. Their leaf versions are
 //! `0xc0` and `0xfa`, not this target's reviewed `0xc4`: the version
 //! byte is an input to the leaf hash, so the vectors check the hashing

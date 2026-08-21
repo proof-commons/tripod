@@ -417,7 +417,9 @@ fn widening(author: &mut CensusAuthor<'_>) {
     // A trailing zero byte is never the minimal encoding of a script
     // number — and minimality is a relay rule, not the target's own. At
     // consensus the operand is simply read; the refusal is real, and it
-    // is real one layer up.
+    // is real one layer up. That the rule lives only at relay policy is
+    // an upstream friction (´[PLAN-obs:upstream:eg-006]´), and the
+    // relay-scoped rejection is this census's answer to it.
     let nonminimal = author.item(vec![0x01, 0x00]);
     author.reject_at_relay(
         bare(group, id, &script, &[nonminimal]),

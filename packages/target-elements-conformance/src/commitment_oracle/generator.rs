@@ -65,8 +65,10 @@ pub enum GeneratorDefect {
     /// A generation's digest is not below the field modulus.
     ///
     /// The library folds this into a return code its consensus callers
-    /// assert on, so a caller here is told rather than handed a point
-    /// derived from an out-of-range element.
+    /// assert on `(´[PLAN-obs:upstream:eg-014]´)`, so a caller here is
+    /// told rather than handed a point derived from an out-of-range
+    /// element. This variant is the whole of that divergence: the oracle
+    /// refuses where the target aborts.
     DigestOutOfFieldRange {
         /// Which generation's digest fell out of range, one or two.
         generation: u8,

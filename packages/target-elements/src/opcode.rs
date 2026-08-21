@@ -1283,6 +1283,10 @@ fn output_introspection_opcodes() -> Vec<(OpcodeId, OpcodeSpec)> {
                 // where assets and values arrive split in two. An
                 // absent nonce arrives as the empty item, which is a
                 // third form rather than a degenerate explicit one.
+                // The asymmetry is an upstream friction
+                // (´[PLAN-obs:upstream:eg-009]´); this alternatives
+                // contract is the special case it forces on the
+                // operand model.
                 SuccessContract::Alternatives {
                     cases: vec![
                         case(

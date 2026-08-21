@@ -500,6 +500,7 @@ that revision; the typed registry remains the authority.
 |---|---|
 | revision consulted | merged tip `0b3bffd`, upstream base `b7fc5d0` |
 | workspace | ADR-018, topics `fix/tapscript-opcodes` and notes |
+| why a topic branch is in the tree read | the elliptic-curve opcodes lacked stack-size checks upstream (`obs:upstream:eg-001`), so the reviewed behavior is the locally corrected one and the contract's operand counts are read from it |
 | census after revision | 55 opcodes |
 | newly reviewed | 17 compound-proof primitives |
 | review date | 2026-08-16 |
@@ -717,7 +718,9 @@ domains do not.
 The consequence is recorded rather than softened. Under the reviewed revision
 an authenticated public opening has no complete on-script form, and the
 capability stays unsupported in the typed contract for that reason and not for
-want of looking.
+want of looking. The gap is filed against upstream as a capability the target
+lacks (`obs:upstream:eg-020`), where the three blockers are stated as the
+upstream changes that would each close it.
 
 ## Updating · `rule:elements-ref:update`
 

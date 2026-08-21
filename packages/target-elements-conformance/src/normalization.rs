@@ -13,9 +13,10 @@
 //! inputs into an explicit-only output set is *not constructible on this
 //! target*: Wave 7 asked the node for one and was told to "add another
 //! output to blind", because residual blinding has nowhere to go without
-//! a blinded output to absorb it (`G11-W7-03`). The constructible shape
-//! is private → explicit **plus private change**, and it is the shape
-//! this module claims. The other is not a weaker version of it; it is a
+//! a blinded output to absorb it (`G11-W7-03`), which is carried as an
+//! upstream friction `(´[PLAN-obs:upstream:eg-017]´)`. The constructible
+//! shape is private → explicit **plus private change**, and it is the
+//! shape this module claims. The other is not a weaker version of it; it is a
 //! transaction the target refuses to help build, and that refusal is a
 //! finding rather than a gap.
 //!

@@ -78,6 +78,12 @@ pub enum NativeEvidenceClaim {
     /// A malformed literal push was refused.
     PushMalformedRefused,
     /// Relay policy refused a nonminimal push form.
+    ///
+    /// A claim of its own rather than a push refusal, because the rule
+    /// lives at relay policy and not at consensus
+    /// `(´[PLAN-obs:upstream:eg-006]´)`: a claim that did not say which
+    /// layer refused would assert of block validation what only a
+    /// relaying node does.
     PushNonminimalRelayRefused,
 
     /// An input field was read in its explicit form.

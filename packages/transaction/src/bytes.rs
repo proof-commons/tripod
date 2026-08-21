@@ -656,6 +656,13 @@ impl InputWitness {
 /// are written when the transaction carries any witness at all, which
 /// is what the target's own serializer does after resizing the two
 /// witness vectors to the input and output counts.
+///
+/// That resizing is exactly what the target's own wallet signer misses
+/// `(´[PLAN-obs:upstream:eg-019]´)`: it precomputes a taproot digest
+/// over the ungrown vectors and calls the result complete. This crate
+/// writes the grown form, so the bytes it produces commit to the digest
+/// consensus checks; a signer corrected upstream would agree with them
+/// rather than needing to be worked around.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TargetTransaction {
     version: u32,
@@ -743,6 +750,11 @@ impl TargetTransaction {
     /// transaction whose every witness is empty must be serialized
     /// *without* the witness section; writing an all-empty section is
     /// an error the target asserts on rather than tolerates.
+    ///
+    /// The section's absence is not free downstream: an issuance in a
+    /// witnessless transaction is refused as a balance failure
+    /// `(´[PLAN-obs:upstream:eg-021]´)`, so what this predicate answers
+    /// decides whether such a transaction can be funded at all.
     #[must_use]
     pub fn has_witness(&self) -> bool {
         self.witnesses.iter().any(|witness| !witness.is_null())

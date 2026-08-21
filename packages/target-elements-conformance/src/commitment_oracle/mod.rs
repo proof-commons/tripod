@@ -21,6 +21,11 @@
 //! crate is added, and no entry enters the lock file, which keeps the
 //! oracle independent by construction rather than by policy.
 //!
+//! Writing it was the only option in any case: the upstream functional
+//! framework carries no confidential-transaction primitives of its own
+//! `(´[PLAN-obs:upstream:eg-018]´)`, so there is nothing to
+//! differentially test against even where independence is not at issue.
+//!
 //! # What it does not claim
 //!
 //! Nothing here is constant-time, side-channel resistant, or suitable
