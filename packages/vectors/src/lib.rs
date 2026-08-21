@@ -13,6 +13,7 @@ pub mod operation;
 pub mod plan;
 pub mod projection;
 pub mod subject;
+pub mod violation;
 
 pub use comparison::{
     ObservedProjection, ProjectionRefusal, ProjectionTerm, compare, read_accepted,
@@ -34,3 +35,4 @@ pub use plan::{
     derive_evidence_plan,
 };
 pub use subject::{CanonicalSubject, ExperimentalSubject, SubjectStanding};
+pub use violation::{IntendedViolation, UnlinkedReason, matching_requirement};
