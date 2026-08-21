@@ -486,18 +486,17 @@ the issuance diagnosis remains recorded and unfiled pending the
 user's ruling.
 
 The runtime half of `G12-R04` is discharged, 2026-08-21, by re-reading
-these transcripts rather than by running anything new. The fifty-four
-first-party record files — eight adapter response streams and
-forty-six report and comparison documents, under
+these transcripts, not by any new run. The fifty-four first-party
+record files — eight adapter response streams and forty-six report
+and comparison documents, under
 `/workspace/loops/attestation/` in the eight wave directories from
 `wave11` to `w14`, fetched 2026-08-21 from the ephemeral shared
 instance and pinned by an aggregate sha256
 taken over their sorted per-file digests — carry 481 record objects
-and 5769 string leaves. Every value of every diagnostic-bearing field
-the executor can write is a mapped script-error message, a mempool
-reject reason arriving on the JSON-RPC result path, or fixed typed
-text; none carries a filesystem path, a client stderr frame, or an
-exception message. The counter-check is what makes that evidence
+and 5769 string leaves. Every diagnostic-bearing field value is a
+mapped script-error message, a mempool reject reason arriving on the
+JSON-RPC result path, or fixed typed text; none carries a filesystem
+path, a client stderr frame, or an exception message. The counter-check is what makes that evidence
 rather than absence: the adapters' own stderr, which production nulls,
 holds eighty diverted client messages — a TX decode failure, a
 connection refusal naming a loopback RPC port, and twenty-one block
