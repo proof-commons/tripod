@@ -485,6 +485,38 @@ what a wider candidate can attempt; the Elements gripe material from
 the issuance diagnosis remains recorded and unfiled pending the
 user's ruling.
 
+The runtime half of `G12-R04` is discharged, 2026-08-21, by re-reading
+these transcripts, not by any new run. The fifty-four first-party
+record files — eight adapter response streams and forty-six report
+and comparison documents, under
+`/workspace/loops/attestation/` in the eight wave directories from
+`wave11` to `w14`, fetched 2026-08-21 from the ephemeral shared
+instance and pinned by an aggregate sha256
+taken over their sorted per-file digests — carry 481 record objects
+and 5769 string leaves. Every diagnostic-bearing field value is a
+mapped script-error message, a mempool reject reason arriving on the
+JSON-RPC result path, or fixed typed text; none carries a filesystem
+path, a client stderr frame, or an exception message. The counter-check is what makes that evidence
+rather than absence: the adapters' own stderr, which production nulls,
+holds eighty diverted client messages — a TX decode failure, a
+connection refusal naming a loopback RPC port, and twenty-one block
+refusals reading
+`mandatory-script-verify-flag-failed (unknown error)`
+and a balance-check tail — none of which appears in any record. Three
+failures were traced through the source: the live `rawissueasset`
+refusal at client exit status 22, whose record states only the method,
+the status, and the omission; the mutation refusals, whose detail is
+the mempool's own reject reason; and the conservation refusals, where
+the child stderr was read, classified, and still withheld while the
+mempool's `bad-txns-in-ne-out` stood as the record. Qualified: these
+runs wrote operation-lane records only, so the conservation,
+normalization, and lifecycle shapes carry the same typed note by
+construction rather than by live witness; no framework
+taproot-construction exception fired, so that branch rests on the code
+half and its unit witness alone; and no unmapped script error
+occurred, so the no-class-rather-than-text fallback is likewise
+unexercised live.
+
 ### The verification harness's two standing hazards · `rem:backlog:verification-harness`
 
 A verdict is read from the report wrapper's own report line, never from a pipeline's shell status: the wrapper propagates its exit code faithfully, and a pipe to a filter truncates the status to the last stage's. And a single shared build-target directory is poisoned when checkouts of two different commits build the same crates into it, so a lane that moves between commits pins a target directory of its own.
