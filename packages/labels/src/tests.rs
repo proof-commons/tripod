@@ -3671,3 +3671,145 @@ fn a_backticked_cell_after_the_first_is_not_an_identifier() {
 
     assert_eq!(crate::plans::duplicate_row_ids(markdown), [] as [String; 0]);
 }
+
+// ---------------------------------------------------------------------
+// The Python front-end and the script-tree carrier (ADR-023).
+// ---------------------------------------------------------------------
+
+/// The scanned region of a Python source is its comments and nothing
+/// else. Every string form is code: single, double, triple, prefixed,
+/// and the docstring, which is a string literal like any other. An
+/// acute span inside one is therefore invisible to the harvest.
+#[test]
+fn the_python_scanner_reads_comments_and_skips_every_string_form() {
+    let source = r#"
+"""A docstring holding ´def:model:docstring´ and no label."""
+# a comment
+value = 'single ´def:model:single´'
+other = "double ´def:model:double´"  # trailing comment
+deep = '''triple ' quoted ´def:model:triple´'''
+raw = r"prefixed ´def:model:prefixed´"
+escaped = 'it\'s still one string ´def:model:escaped´'
+"#;
+
+    let texts: Vec<String> = participation::python_comment_segments(source)
+        .into_iter()
+        .map(|segment| segment.text)
+        .collect();
+    assert_eq!(texts, vec![" a comment", " trailing comment"]);
+}
+
+/// A comment is scanned, so an acute span in one is an occurrence, and
+/// the shared region walk locates and classifies it.
+#[test]
+fn an_acute_span_in_a_python_comment_is_located() {
+    let source = "value = 1\n# see (´[PLAN-obs:upstream:sample]´) for why\n";
+    let segments = participation::python_comment_segments(source);
+    let region: Vec<&participation::CommentSegment> = segments.iter().collect();
+    let mut diagnostics = Vec::new();
+    let spans = participation::region_spans(Path::new("adapter.py"), &region, &mut diagnostics);
+
+    assert_eq!(diagnostics, [] as [LabelDiagnostic; 0]);
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].value, "[PLAN-obs:upstream:sample]");
+    assert!(
+        spans[0].parenthesized,
+        "the span is parenthesized, so it cites rather than mints",
+    );
+    assert_eq!(spans[0].location.line, 2);
+}
+
+/// Comment regions are maximal runs of consecutive comment lines, so an
+/// acute delimiter cannot pair across the statement between two of
+/// them.
+#[test]
+fn a_python_comment_region_ends_at_intervening_code() {
+    let segments =
+        participation::python_comment_segments("# first\n# still first\nvalue = 1\n# second\n");
+    let blocks: Vec<usize> = segments.iter().map(|segment| segment.block).collect();
+
+    assert_eq!(blocks.len(), 3);
+    assert_eq!(
+        blocks[0], blocks[1],
+        "consecutive comment lines share a region",
+    );
+    assert_ne!(blocks[1], blocks[2], "intervening code opens a new region");
+}
+
+/// The participation claim DI-F06 existed to make true: a citation
+/// written in a Python comment resolves against its mint in the
+/// planning tree, as one written in a Rust comment does. The same
+/// fixture proves the docstring beside it is not an occurrence.
+#[test]
+fn a_citation_in_a_python_comment_resolves_against_its_plan_mint() {
+    let directory = tempfile::tempdir().expect("temporary repository");
+    let root = directory.path();
+    for name in [
+        "papers/attestation/sections",
+        "docs/attestation",
+        "adr",
+        "plans",
+        "packages/model/src",
+        "scripts",
+    ] {
+        fs::create_dir_all(root.join(name)).expect("fixture directory");
+    }
+    fs::write(root.join("papers/attestation/main.tex"), "% main\n").expect("attestation source");
+    fs::write(
+        root.join("docs/attestation/realization.md"),
+        "# Realization\n",
+    )
+    .expect("realization source");
+    fs::write(
+        root.join("plans/frictions.md"),
+        "# Frictions\n\n`obs:upstream:sample`\n",
+    )
+    .expect("plan source");
+    fs::write(
+        root.join("scripts/adapter.py"),
+        "\"\"\"Not scanned: ´[PLAN-obs:upstream:absent]´.\"\"\"\n\
+         # the adaptation (´[PLAN-obs:upstream:sample]´) explains\n\
+         flag = 0\n",
+    )
+    .expect("script source");
+
+    let census = RepositoryCensus::discover(root);
+    assert_eq!(census.scripts.len(), 1, "the script tree is a census group");
+
+    let labels = RepositoryLabels::harvest_sources(&census);
+    let offending: Vec<&LabelDiagnostic> = labels
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.message.contains("obs:upstream:"))
+        .collect();
+    assert!(
+        offending.is_empty(),
+        "neither the citation nor the unscanned docstring is diagnosed: {offending:#?}",
+    );
+    assert_eq!(
+        labels.imported_citation_count(),
+        1,
+        "the comment cites and the docstring does not",
+    );
+}
+
+/// The two amended adoption rows are the checker's own data, so a
+/// reader comparing ADR-023 against the implementation compares these.
+#[test]
+fn the_amended_adoption_rows_carry_the_script_tree_and_python() {
+    let scripts = adoption::partition()
+        .into_iter()
+        .find(|rule| rule.path == "scripts")
+        .expect("the script tree has a partition rule");
+    assert_eq!(
+        scripts.owner,
+        adoption::OwnerSelector::Fixed(LabelOwner::Doc),
+        "ADR-023 places the script tree with the residual owner",
+    );
+    assert!(
+        adoption::SCANNED_REGIONS
+            .iter()
+            .any(|(language, _)| *language == "python"),
+        "the scanned-region table names Python",
+    );
+}
