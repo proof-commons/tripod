@@ -234,9 +234,9 @@ impl SubmissionOutcome {
 
     /// The weight the ABI computed before anything was submitted.
     ///
-    /// A prediction in the sense `rule:guide12-exec:resource-comparison`
-    /// means: settled by the transaction layer from the bytes it built,
-    /// with no target involved.
+    /// A prediction in the sense §20.5 means: settled by the
+    /// transaction layer from the bytes it built, with no target
+    /// involved.
     #[must_use]
     pub const fn predicted_weight(&self) -> u64 {
         self.predicted_weight

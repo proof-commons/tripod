@@ -470,8 +470,7 @@ pub fn dense_shape_set(bounds: CompactAshShapeBounds) -> CandidateShapeSet {
 /// specialization costs in leaves, bytes, depth, control, witness, and
 /// weight, and a wider candidate would be claiming a size nobody had
 /// sized. Widening it is a bound change and a measurement, not a
-/// semantic change, which is the study `sec:guide12-exec:resources`
-/// asks for.
+/// semantic change, which is the study §20 asks for.
 ///
 /// # Panics
 ///
