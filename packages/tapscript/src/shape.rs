@@ -429,42 +429,60 @@ impl CandidateShapeSet {
     }
 }
 
+/// The complete unrolling of one candidate bound assignment.
+///
+/// Every shape §9.1 admits under `bounds`, and nothing else: each ASH
+/// count from [`MINIMUM_ASH_INPUTS`] through the ASH bound, each
+/// sponsor count from none through the sponsor bound, and both change
+/// presences wherever a sponsor region exists to carry one. The result
+/// declares itself dense, because it is.
+///
+/// This is the one authored unrolling (§1.12). A study that measured
+/// bound assignments by rebuilding the shape set itself would be
+/// comparing sets that two different loops had produced, and a
+/// disagreement between the loops would read as a measurement.
+#[must_use]
+pub fn dense_shape_set(bounds: CompactAshShapeBounds) -> CandidateShapeSet {
+    let mut shapes = BTreeSet::new();
+
+    for ash in MINIMUM_ASH_INPUTS..=bounds.ash_inputs() {
+        for sponsors in 0..=bounds.sponsor_inputs() {
+            for change in SponsorChangePresence::ALL {
+                // The one combination §9.1 refuses inside these bounds:
+                // a change role with no sponsor region to sit in. Asking
+                // and discarding the refusal keeps the validity rule in
+                // one place rather than restating it as a loop guard.
+                if let Ok(shape) = CompactAshShape::new(bounds, nonzero(ash), sponsors, *change) {
+                    shapes.insert(shape);
+                }
+            }
+        }
+    }
+
+    CandidateShapeSet::new(bounds, shapes, false)
+}
+
 /// The Phase-4 demonstration candidate shape set.
 ///
 /// Batches of two through four ASH inputs; sponsorless and one-sponsor
 /// forms of each; and, for the sponsored forms, both change presences.
 /// The bounds are deliberately small: §9.2 lists what shape
 /// specialization costs in leaves, bytes, depth, control, witness, and
-/// weight, and none of those has been measured yet, so a wider
-/// candidate would be claiming a size nobody sized. Widening it is a
-/// bound change and a measurement, not a semantic change.
+/// weight, and a wider candidate would be claiming a size nobody had
+/// sized. Widening it is a bound change and a measurement, not a
+/// semantic change, which is the study §20 asks for.
 ///
 /// # Panics
 ///
-/// If the constants written here ever stop satisfying §9.1's validity
-/// condition. They are constants, so that is a property of this
+/// If the ASH bound written here ever stops satisfying §9.1's validity
+/// condition. It is a constant, so that is a property of this
 /// function's own source rather than of any input, and a panic would
-/// mean the demonstration set had been edited into an inadmissible
-/// shape — which must fail loudly rather than yield a set with a hole
-/// in it.
+/// mean the demonstration bounds had been edited below the minimum
+/// batch — which must fail loudly rather than yield an empty set.
 #[must_use]
 pub fn demonstration_shape_set() -> CandidateShapeSet {
     let bounds = CompactAshShapeBounds::new(nonzero(4), 1).expect("four is above the minimum");
-    let mut shapes = BTreeSet::new();
-
-    for ash in MINIMUM_ASH_INPUTS..=bounds.ash_inputs() {
-        for (sponsors, change) in [
-            (0, SponsorChangePresence::Absent),
-            (1, SponsorChangePresence::Absent),
-            (1, SponsorChangePresence::Present),
-        ] {
-            let shape = CompactAshShape::new(bounds, nonzero(ash), sponsors, change)
-                .expect("the demonstration shapes satisfy the validity condition");
-            shapes.insert(shape);
-        }
-    }
-
-    CandidateShapeSet::new(bounds, shapes, false)
+    dense_shape_set(bounds)
 }
 
 /// A nonzero count, for the constants above.

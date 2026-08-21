@@ -49,7 +49,7 @@ pub use policy::{
 pub use program::{MAXIMUM_PROGRAM_INSTRUCTIONS, TapscriptProgram};
 pub use shape::{
     CandidateShapeSet, CompactAshShape, CompactAshShapeBounds, MINIMUM_ASH_INPUTS, ShapeRejection,
-    SponsorChangePresence, UsefulCandidateCondition, demonstration_shape_set,
+    SponsorChangePresence, UsefulCandidateCondition, demonstration_shape_set, dense_shape_set,
 };
 pub use stack::{
     AbstractExecutionResult, AbstractLimits, AbstractStackState, resource_projection,

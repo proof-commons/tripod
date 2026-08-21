@@ -166,6 +166,21 @@ pub enum PlanRefusal {
     },
     /// An accepted authorization carried no witness stack.
     AuthorizationCarriedNoWitness(TargetVectorId),
+    /// The target weighed a submission differently than the ABI did.
+    ///
+    /// The one resource dimension both sides state for the same bytes,
+    /// so it is the one place §20.5's comparison can actually be made.
+    /// A disagreement means the ABI's weight arithmetic and the
+    /// target's do not describe the same transaction, which falsifies
+    /// the prediction every other candidate measurement rests on.
+    WeightObservationDisagrees {
+        /// The vector whose submission was weighed.
+        vector: TargetVectorId,
+        /// What the transaction layer settled before submission.
+        predicted: u64,
+        /// What the target reported for the same bytes.
+        observed: u64,
+    },
     /// The ceremony-bound bundle could not be built or materialized.
     Bundle(Box<VectorError>),
 }
@@ -178,6 +193,10 @@ pub struct SubmissionOutcome {
     detail: Option<String>,
     accepted_txid: Option<String>,
     bytes: Vec<u8>,
+    predicted_weight: u64,
+    observed_weight: Option<u64>,
+    witness_bytes: u64,
+    virtual_size: u64,
 }
 
 impl SubmissionOutcome {
@@ -213,6 +232,57 @@ impl SubmissionOutcome {
     #[must_use]
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
+    }
+
+    /// The weight the ABI computed before anything was submitted.
+    ///
+    /// A prediction in the sense §20.5 means: settled by the
+    /// transaction layer from the bytes it built, with no target
+    /// involved.
+    #[must_use]
+    pub const fn predicted_weight(&self) -> u64 {
+        self.predicted_weight
+    }
+
+    /// The weight the target reported for the same bytes.
+    ///
+    /// Absent where the executor made no such observation, which is not
+    /// the same fact as a weight of zero. An executor that reports none
+    /// leaves the comparison unmade rather than passing it by default.
+    #[must_use]
+    pub const fn observed_weight(&self) -> Option<u64> {
+        self.observed_weight
+    }
+
+    /// The serialized witness bytes the ABI settled.
+    ///
+    /// One of §20.3's measures, and unlike the weight it has no
+    /// observed counterpart: the target reports a weight and never a
+    /// witness subtotal, so this figure stands alone rather than
+    /// entering the comparison.
+    #[must_use]
+    pub const fn witness_bytes(&self) -> u64 {
+        self.witness_bytes
+    }
+
+    /// The virtual size the ABI settled.
+    #[must_use]
+    pub const fn virtual_size(&self) -> u64 {
+        self.virtual_size
+    }
+
+    /// Whether prediction and observation agree, where both exist.
+    ///
+    /// `None` when nothing was observed. §20.5 makes a mismatch fail the
+    /// resource report even for a transaction the target accepted, so
+    /// the three cases stay distinct here rather than collapsing an
+    /// unmade comparison into a passing one.
+    #[must_use]
+    pub const fn weight_agrees(&self) -> Option<bool> {
+        match self.observed_weight {
+            Some(observed) => Some(observed == self.predicted_weight),
+            None => None,
+        }
     }
 }
 
@@ -1463,13 +1533,33 @@ impl CompactAshOperationPlanner {
         // target facts are recorded as themselves rather than dropped
         // `(´[PLAN-rule:guide12-exec:failure-layers]´)`.
         if let Some(vector) = self.vectors.get(index) {
+            let predicted_weight = vector.weight();
+            let observed_weight = response.resources.transaction_weight;
             self.transcript.submissions.push(SubmissionOutcome {
                 vector: vector.id(),
                 layer: response.observed_layer,
                 detail: response.observed_detail.clone(),
                 accepted_txid: response.accepted_txid.clone(),
                 bytes: vector.bytes().to_vec(),
+                predicted_weight,
+                observed_weight,
+                witness_bytes: vector.witness_bytes(),
+                virtual_size: vector.virtual_size(),
             });
+
+            // §20.5: a resource mismatch fails the resource report even
+            // where the transaction was accepted. The ABI settled this
+            // weight from the same bytes the target weighed, so a
+            // disagreement is not a tolerance to widen — one of the two
+            // is wrong about bytes both of them hold, and continuing
+            // would build the rest of the run on whichever it was.
+            if observed_weight.is_some_and(|observed| observed != predicted_weight) {
+                self.transcript.refusal = Some(PlanRefusal::WeightObservationDisagrees {
+                    vector: vector.id(),
+                    predicted: predicted_weight,
+                    observed: observed_weight.unwrap_or_default(),
+                });
+            }
         }
     }
 }
@@ -1754,6 +1844,12 @@ mod tests {
     struct FakeTarget<F: FnMut(&OperationCaseId, u64) -> Answer> {
         sequence: u32,
         decide: F,
+        /// What this target reports weighing a submission at.
+        ///
+        /// A function of the bytes rather than a constant, so a test can
+        /// stage a target that agrees with the ABI by decoding what it
+        /// was handed, and one that disagrees by a stated amount.
+        weigh: fn(&[u8]) -> Option<u64>,
     }
 
     impl<F: FnMut(&OperationCaseId, u64) -> Answer> FakeTarget<F> {
@@ -1825,7 +1921,7 @@ mod tests {
                     response.sponsor_witness = vec![vec![0x30; 71], vec![0x02; 33]];
                     response.signature_bound_to = Some(signing.finalized_transaction.clone());
                 }
-                OperationSubject::Submission(_) => {
+                OperationSubject::Submission(submission) => {
                     // A submission is offered to the same decision as
                     // every other step, so a run in which the target
                     // refuses what it is handed can be staged. The
@@ -1838,6 +1934,11 @@ mod tests {
                         return response;
                     }
                     response.accepted_txid = Some(ISSUED.to_owned());
+                    // The weight this fake target reports for the bytes
+                    // it was handed, which a test chooses so that
+                    // agreement and disagreement can both be staged.
+                    response.resources.transaction_weight =
+                        (self.weigh)(&submission.transaction_bytes);
                 }
             }
             response
@@ -1851,10 +1952,19 @@ mod tests {
     fn run<F: FnMut(&OperationCaseId, u64) -> Answer>(
         decide: F,
     ) -> (CompactAshOperationPlanner, bool) {
+        run_weighing(decide, |_| None)
+    }
+
+    /// The same drive, with a chosen answer to "what does this weigh".
+    fn run_weighing<F: FnMut(&OperationCaseId, u64) -> Answer>(
+        decide: F,
+        weigh: fn(&[u8]) -> Option<u64>,
+    ) -> (CompactAshOperationPlanner, bool) {
         let mut planner = CompactAshOperationPlanner::new().expect("the planner builds");
         let mut target = FakeTarget {
             sequence: 0,
             decide,
+            weigh,
         };
         let mut previous: Option<(OperationCaseId, NativeOperationResponse)> = None;
         loop {
@@ -2047,6 +2157,96 @@ mod tests {
         }
     }
 
+    /// The weight of the bytes, decoded independently of the ABI.
+    ///
+    /// A second reader of the same bytes rather than an echo of the
+    /// prediction: a fake target that simply repeated what it was told
+    /// would make the comparison agree with itself.
+    fn decoded_weight(bytes: &[u8]) -> Option<u64> {
+        transaction::TargetTransaction::decode(bytes)
+            .ok()
+            .map(|transaction| transaction.weight())
+    }
+
+    /// One weight unit more than the bytes actually weigh.
+    fn overstated_weight(bytes: &[u8]) -> Option<u64> {
+        decoded_weight(bytes).map(|weight| weight + 1)
+    }
+
+    #[test]
+    fn a_target_that_weighs_a_submission_as_the_abi_did_agrees() {
+        // §20.5's comparison in its passing case. The fake target
+        // decodes the bytes it was handed and reports their weight, so
+        // the agreement is between two independent readings of one byte
+        // string rather than between the ABI and an echo of itself.
+        let (planner, finished) = run_weighing(refuse_beyond_bound, decoded_weight);
+        assert!(finished, "the plan ran out of steps rather than refusing");
+
+        let transcript = planner.transcript();
+        assert_eq!(transcript.refusal(), None);
+        assert!(
+            !transcript.submissions().is_empty(),
+            "the run submitted nothing, so nothing was weighed",
+        );
+        for submission in transcript.submissions() {
+            assert_eq!(
+                submission.weight_agrees(),
+                Some(true),
+                "vector {:?} was weighed at {:?} against a predicted {}",
+                submission.vector(),
+                submission.observed_weight(),
+                submission.predicted_weight(),
+            );
+            assert!(submission.predicted_weight() > 0);
+        }
+    }
+
+    #[test]
+    fn a_target_that_weighs_a_submission_differently_refuses_the_plan() {
+        // The negative control, and the one that matters: §20.5 makes a
+        // mismatch fail even where the transaction was accepted, so
+        // this fake target accepts everything and misweighs it by one.
+        // A comparison that only ever ran on agreeing figures would
+        // agree with itself.
+        let (planner, _) = run_weighing(refuse_beyond_bound, overstated_weight);
+
+        let transcript = planner.transcript();
+        let refusal = transcript
+            .refusal()
+            .expect("a misweighed submission refuses the plan");
+        assert!(
+            matches!(refusal, PlanRefusal::WeightObservationDisagrees { .. }),
+            "the refusal must name the weight disagreement, not something else: {refusal:?}",
+        );
+
+        let disagreeing = transcript
+            .submissions()
+            .iter()
+            .find(|submission| submission.weight_agrees() == Some(false))
+            .expect("the misweighed submission is recorded with its two figures");
+        assert_eq!(
+            disagreeing.observed_weight(),
+            Some(disagreeing.predicted_weight() + 1),
+        );
+    }
+
+    #[test]
+    fn a_target_that_weighs_nothing_leaves_the_comparison_unmade() {
+        // The third case, kept distinct from agreement. An executor
+        // reports no weight where it observes none, and reading that
+        // absence as a match would let a lane that stopped observing
+        // keep reporting a passing resource comparison.
+        let (planner, finished) = run(refuse_beyond_bound);
+        assert!(finished, "the plan ran out of steps rather than refusing");
+
+        let transcript = planner.transcript();
+        assert_eq!(transcript.refusal(), None);
+        for submission in transcript.submissions() {
+            assert_eq!(submission.observed_weight(), None);
+            assert_eq!(submission.weight_agrees(), None);
+        }
+    }
+
     #[test]
     fn the_divergent_row_is_asked_for_once_and_the_run_continues() {
         // The whole behaviour in one run: the step the bound forbids is
@@ -2213,6 +2413,7 @@ mod tests {
         let mut target = FakeTarget {
             sequence: 0,
             decide: refuse_beyond_bound,
+            weigh: |_| None,
         };
         let mut previous: Option<(OperationCaseId, NativeOperationResponse)> = None;
         let mut steps = 0_usize;

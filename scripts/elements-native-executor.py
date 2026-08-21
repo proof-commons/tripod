@@ -686,6 +686,14 @@ LIFECYCLE_SPONSOR_SPEND_SATOSHIS = 100_000
 CONSENSUS_SCRIPT_PREFIX = "mandatory-script-verify-flag-failed ("
 POLICY_SCRIPT_PREFIX = "non-mandatory-script-verify-flag ("
 
+# The two observed layers that are NOT verdicts of the target. A response
+# at either may carry no target observation at all -- not an outpoint, not
+# an identity, and not a resource figure (`G12-R14`). Stated here so the
+# rule is applied from one list rather than restated at each writer.
+NON_VERDICT_LAYERS = frozenset(
+    {"fixture_construction_failure", "executor_infrastructure_failure"}
+)
+
 # The mapping documented in the module docstring. A key absent from this
 # table, and a key whose value is None, both mean "this adapter did not
 # classify the rejection".
@@ -2968,11 +2976,12 @@ class OperationExecutor:
                     "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw])
                 )
             except AdapterError as error:
-                return self.refused_at_consensus(error)
+                return self.refused_at_consensus(error, raw=raw)
             return {
                 "observed_layer": "accepted",
                 "observed_detail": None,
                 "accepted_txid": result.get("txid"),
+                "transaction_weight": self.executor.weight_of(raw),
             }
 
         reason = result.get("reject-reason")
@@ -2984,6 +2993,7 @@ class OperationExecutor:
                     "observed_layer": "script_path_rejection",
                     "observed_detail": reason,
                     "accepted_txid": None,
+                    "transaction_weight": self.executor.weight_of(raw),
                 }
 
         # Not a script verdict. Ask consensus directly: a transaction a
@@ -2994,14 +3004,15 @@ class OperationExecutor:
                 "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw])
             )
         except AdapterError as error:
-            return self.refused_at_consensus(error, mempool_reason=reason)
+            return self.refused_at_consensus(error, mempool_reason=reason, raw=raw)
         return {
             "observed_layer": "relay_policy_rejection",
             "observed_detail": reason,
             "accepted_txid": None,
+            "transaction_weight": self.executor.weight_of(raw),
         }
 
-    def refused_at_consensus(self, error, mempool_reason=None) -> dict:
+    def refused_at_consensus(self, error, mempool_reason=None, raw=None) -> dict:
         """Classifies a block-validation refusal.
 
         The client's stderr is read for CLASSIFICATION only. What leaves
@@ -3031,6 +3042,10 @@ class OperationExecutor:
         block did not.
         """
         detail = mempool_reason
+        # The refused bytes still have a weight, and it is the node's
+        # own figure for them rather than this adapter's arithmetic. A
+        # refusal is a target verdict, so the observation belongs on it.
+        weight = self.executor.weight_of(raw) if raw is not None else None
         if (
             mempool_reason is None
             and script_error_in(error.client_detail, CONSENSUS_SCRIPT_PREFIX) is not None
@@ -3039,11 +3054,13 @@ class OperationExecutor:
                 "observed_layer": "script_path_rejection",
                 "observed_detail": detail,
                 "accepted_txid": None,
+                "transaction_weight": weight,
             }
         return {
             "observed_layer": "consensus_rejection_before_script",
             "observed_detail": detail,
             "accepted_txid": None,
+            "transaction_weight": weight,
         }
 
 
@@ -5406,11 +5423,20 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
             # omitted-and-hoped-for.
             "sponsor_witness": body.get("sponsor_witness", []),
             "signature_bound_to": body.get("signature_bound_to"),
-            # No interpreter observation is made for an operation step.
-            # The node reports no per-script resource figures for a
-            # transaction it validated as a whole, and inventing them
-            # here would be this adapter reporting its own arithmetic as
-            # the target's accounting.
+            # No INTERPRETER observation is made for an operation step:
+            # the node exposes no per-script stack, so the peaks, the
+            # widest element, and the validation budget stay null, and
+            # inventing them here would be this adapter reporting its own
+            # arithmetic as the target's accounting.
+            #
+            # The transaction's weight is the exception, and it is not an
+            # exception to that rule. It is read back from the node's own
+            # `decoderawtransaction` rather than computed here, so it is
+            # the target's accounting; it is what
+            # `rule:guide12-exec:resource-comparison` compares a
+            # prediction against; and it is written only on a target
+            # verdict, because a response that is not one may carry no
+            # observation at all (`G12-R14`).
             "resources": {
                 "script_bytes": 0,
                 "initial_stack_items": 0,
@@ -5418,7 +5444,11 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
                 "peak_altstack_items": None,
                 "maximum_element_bytes": None,
                 "validation_budget_used": None,
-                "transaction_weight": None,
+                "transaction_weight": (
+                    body.get("transaction_weight")
+                    if body["observed_layer"] not in NON_VERDICT_LAYERS
+                    else None
+                ),
             },
         }
     )
