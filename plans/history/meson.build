@@ -5,5 +5,6 @@ plans_history_files = files(
   'README.md',
   'attestation-floor-bounds.md',
   'backlog-history.md',
+  'guide-12-completion-report.md',
   'notation-semantic-census.md',
 )

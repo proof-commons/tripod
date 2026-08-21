@@ -10,10 +10,12 @@ script; the verdict is the node's.
 
 The request carries no answer
 -----------------------------
-This adapter speaks protocol revision 3, in which a request carries the
-execution subject and nothing about what the result should be: no expected
-verdict, no expected failure class, no expected final stack, no expected
-resource figure, no claim set, and no evidence class. Earlier revisions sent
+This adapter speaks protocol revision 4. It keeps the property this section
+is about, which arrived in revision 3 and has not moved since -- a request
+carries the execution subject and nothing about what the result should be:
+no expected verdict, no expected failure class, no expected final stack, no
+expected resource figure, no claim set, and no evidence class. Earlier
+revisions sent
 the whole fixture and required an executor to discard the expectation before
 executing, and this adapter did; revision 3 makes the discipline unnecessary
 by removing the field, and the two revisions are refused for each other at
