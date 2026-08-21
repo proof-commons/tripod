@@ -85,12 +85,11 @@ entry it indexes cannot drift apart.
 
 A citation is the mechanism; the third column is only its index. Where
 that column says the register alone, this repository holds no citation
-the label check can reach, for one of three reasons: nothing here is
-shaped by the friction, the adaptation lives in the Python adapter
-under `scripts/`, which the label census does not scan, or the
-adaptation is not in this repository at all. Those places are named in
-words and are not citations, and the difference matters, because only a
-citation fails when its mint is removed.
+the label check can reach, for one of two reasons: nothing here is
+shaped by the friction, or the adaptation is not in this repository at
+all. Those places are named in words and are not citations, and the
+difference matters, because only a citation fails when its mint is
+removed.
 
 | Friction | Label | Where this repository adapts |
 |---|---|---|
@@ -100,7 +99,7 @@ citation fails when its mint is removed.
 | EG-004 | `obs:upstream:eg-004` | `packages/target-elements-conformance/src/protocol.rs`, the script-number class that carries both causes the unnamed error hides. |
 | EG-005 | `obs:upstream:eg-005` | `packages/target-elements/src/encoding.rs`, the encoding class that keeps the wider operand apart from the ordinary one. |
 | EG-006 | `obs:upstream:eg-006` | `packages/vectors/src/matrix.rs`, the relay-policy evidence boundary; `packages/target-elements-conformance/src/claim.rs`, the nonminimal-push claim; and `packages/target-elements-conformance/src/census/numeric.rs`, the relay-scoped rejection. |
-| EG-007 | `obs:upstream:eg-007` | The register alone: the funding and confirmation path in `scripts/elements-native-executor.py` hands every transaction to the miner, and that file is outside the label census. |
+| EG-007 | `obs:upstream:eg-007` | `scripts/elements-native-executor.py`, whose funding path mines each transaction directly because the miner takes only what it is handed. |
 | EG-008 | `obs:upstream:eg-008` | `packages/target-elements/src/success.rs` and `packages/target-elements/src/authorization.rs`, which model an unrecognized key type as a success. |
 | EG-009 | `obs:upstream:eg-009` | `packages/target-elements/src/opcode.rs`, the nonce introspection contract, the one asymmetric case among the reviewed primitives. |
 | EG-010 | `obs:upstream:eg-010` | `packages/target-elements-conformance/src/provenance.rs`, which compares an embedded revision against the tip the operator intended. |
@@ -118,7 +117,7 @@ citation fails when its mint is removed.
 | The SDK clippy trailing its cargo | `obs:upstream:sdk-clippy-currency` | The register alone: lint currency is a property of the toolchain the gate is run with, not of anything in the tree. |
 | The texmf font tree unindexed | `obs:upstream:texmf-font-lookup` | The register alone: the symlink and cache refresh are carried in the shared-instance bootstrap. |
 | Distribution meson below the floor | `obs:upstream:meson-version-floor` | The register alone: the pinned environment is provisioned outside this repository. |
-| Regtest pegin validation on by default | `obs:upstream:regtest-pegin-validation` | The register alone: the flag is passed by `scripts/elements-native-executor.py`, outside the label census. |
+| Regtest pegin validation on by default | `obs:upstream:regtest-pegin-validation` | `scripts/elements-native-executor.py`, which boots its node with the validation disabled. |
 
 ## Discipline · `ref:upstream:frictions-discipline`
 
@@ -138,8 +137,7 @@ around the correction's absence and must now be read again. The
 failures cannot be cleared by deleting the citations, because a
 citation goes only with the adaptation it explains — clearing them is
 the work. A friction whose row above says the register alone yields no
-such list, which is the standing cost of an adaptation the checker
-cannot reach.
+such list, there being no adaptation here to read again.
 
 That was exercised rather than described. Deleting the relay-layer
 mint failed the check at its three code citations, each reported with

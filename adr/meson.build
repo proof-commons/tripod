@@ -12,6 +12,7 @@ adr_record_files = files(
   '020-environment-kinds.md',
   '021-identity-adjudication.md',
   '022-interchange-conventions.md',
+  '023-script-tree-label-carrier.md',
 )
 
 # Non-numbered documentation in this directory (DOC owner).
