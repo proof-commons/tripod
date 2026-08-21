@@ -275,247 +275,20 @@ proceed past a red checker — it did once here, caught on the next run;
 the archival also taught that a block moved into history must have its
 relative links re-based, which the checker catches as broken links.
 
-### 2.6 Guide-12 preflight and Phase-3 exit gate · `gate:backlog:guide12-preflight`
+### 2.6 Guide-12 preflight and Phase-3 exit gate (archived)
 
-The Guide-12 preflight campaign closed the seventh review's register in
-three waves of one Opus lane each: Wave 1a repaired the identity and
-evidence-boundary rows, Wave 1b unified both protocol sides on revision
-four and brought the Python runners to the Rust supervisor's
-guarantees, and Wave 2 corrected the tapscript projection, the abstract
-literal walk, and the bounded decode, then proved the emit subprocess
-contract. Every merge was audited against the worker's own gated tree
-and each landed byte-identical, so the lane evidence transferred
-verbatim; the register itself, complete at sixteen rows, moved to
-[backlog history](history/backlog-history.md) under the CI-004 pattern
-when the byte budget fell to 523 bytes mid-wave, and the §5.9 stub
-carries the satisfied gate verdict (`gate:guide12-exec:preflight`).
+### 2.7 Guide-12 build boundary (archived)
 
-With the register closed, the Phase-3 exit gate was evaluated on the
-current tree per Guide 12 Wave 3. Full gate, wall-timed: the CI
-registry passed 13 of 13 lanes in 16 m 46 s, meson compiled warm in
-2 s, and the meson suite passed 36 of 36 lanes in 5 m 25 s. Native
-evidence state, recorded exactly: the development target-native
-evidence cited by the readiness statement was produced under protocol
-revisions up to three; the executor and the typed protocol moved to
-revision four together in Wave 1b, so the next native run reproduces
-that evidence under the unified revision, and the runtime half of
-`G12-R04` stays blocked on a live node and is recorded as blocked. The
-package contracts state resources and protocol at a level the wave did
-not move, verified by inspection rather than assumed. The Phase-3 card
-records the exit; Phase 4 is chartered by Guide 12 and its core waves
-are unblocked by the closed register.
+### 2.8 Guide-12 Phase-4 exit gate (archived)
 
-### 2.7 Guide-12 build boundary · `gate:backlog:guide12-build`
-
-The six build waves after the Phase-3 exit delivered the complete
-compact-ASH pipeline up to the live-node boundary, one Opus lane per
-wave, every merge tree-identical to the worker's gated tree: the
-validated compiler operation plan (Wave 4), the transaction-form and
-substrate review (Wave 5; the user's 2026-08-20 ruling ratified a
-modified form: the first-party substrate stands, and `elements` with
-`secp256k1-zkp` are adopted as reference-implementation oracles for
-testing — their agreement is conformance-to-target evidence, the
-first-party oracles keep the independence claim, and the raw sys FFI
-crate is never a direct dependency), the static
-assessment and eight operation-proven proof patterns (Wave 6), the
-candidate relocatable bundle (Wave 7), the linker foundation (Wave 8),
-and the candidate transaction ABI (Wave 9) and canonical fixtures
-(Wave 10). The linker wave proved the Wave-7 bundle unlinkable — the
-recognition fragments pushed the constructor program as a literal, a
-preimage-hard self-commitment — and a dedicated fix wave resolved it
-by identity introspection, re-deriving every census the change
-touched; the refusal vocabulary stays covered by constructed
-fixtures.
-
-Full gate on the boundary tree, wall-timed: the CI registry passed 16
-of 16 lanes in 21 m 57 s, meson compiled warm in 2 s, and the meson
-suite passed 42 of 42 lanes in 7 m 13 s. Weight: the closed §13.1
-integration queue moved to history mid-batch, combined markdown
-745826 of the 786432 cap. Waves 11 through 14 are blocked on a live
-target node and are recorded as blocked in §11: execution, negative
-relation coverage against the target, the resource observations, and
-the Phase-4 gate that consumes them. Standing obligations carried,
-not discharged: the pinned output key is unverified against the tree,
-internal-key unspendability is unverified, the clear lifecycle exit is
-outstanding, and no target has executed anything.
-
-The reference-oracle cross-check wave is the first consumer of the
-adopted crates. Fifteen tests in
-`packages/target-elements-conformance` compare a first-party
-computation against the reference implementation of the same object,
-each stating the claim class in one line: reference-implementation
-conformance, not independent evidence. Byte-equal on every comparison
-made — all nine sponsorless fixture transactions round-trip through
-the reference decoder and re-encode identically, their structure and
-version agree under both decoders, the reference txid and wtxid are
-the double digests of the first-party witness-stripped and full
-encodings, the two unrelated weight formulas and both virtual-size
-rules agree, all nine reference txids stay distinct, every committed
-leaf hash equals the reference tapleaf hash under the reviewed leaf
-version, every leaf path folds to the first-party merkle root under
-reference branch hashing, every control block parses and
-re-serializes byte-identically, the reference verifier accepts the
-first-party taproot commitment for every leaf, and the first-party
-confidential oracle matches the reference library on two asset
-generators and six Pedersen commitments. The merkle root and the
-reference output key are pinned as vectors in `src/reference.rs`.
-
-Two defects the cross-check found, both recorded by tests that fail
-if the defect is repaired. First, the fixture bundle's pinned witness
-program was not a curve point, so no control block could ever satisfy
-the reference verifier against it and an output created at that
-program was unspendable by construction. Second, the fixture declared
-even output-key parity while the tweak of the fixture internal key by
-the fixture merkle root produces odd parity, so a control block built
-from the declared bit stated the wrong y coordinate. Both are the
-same root cause: the pin was declared rather than derived. Both
-blocked the Wave-11 funding ceremony that would discharge the
-pinned-output-key obligation.
-
-Both are now repaired, in the only place the repair belongs — the
-substrate. The fixture pin carries the output key its own committed
-tree derives together with that key's parity, stated in
-`packages/vectors` as literals whose provenance is the minted
-reference vector, because the vectors package contract §16.2 forbids
-the edge that would let the fixture import the curve arithmetic and
-the conformance package already dev-depends on vectors. The
-cross-check recomputes the key from the fixture internal key and the
-merkle root and asserts equality with the constant, so a literal
-cannot drift back into a declaration; the two tests that recorded the
-defects now assert the repaired truth, and the reference verifier
-accepts the fixture's own unmodified control blocks for all twelve
-leaves rather than blocks rebuilt with a corrected parity. The
-merkle root did not move, since the committed tree does not depend on
-the pin, so every fixture transaction keeps its length, weight, and
-virtual size and changes only the thirty-two program bytes it pays to.
-Pinning the derived key does not discharge the pinned-output-key
-obligation, which still needs an output a real node created and a
-spend it accepted; what it buys is that the ceremony can run at all.
-
-The section 16.2 executor-ownership decision Wave 10 left open is now
-settled, and settled the way the guide states it: the boundary was
-WIDENED, not extracted, and no shared executor package was created.
-The test the guide sets is whether a clean target-generic boundary can
-be exposed without making the conformance package own compact-ASH
-meaning, and it can. What an operation asks a node for is target
-generic all the way down — issue a disposable asset, pay outputs to a
-witness program, hand the target a complete transaction — and what
-comes back is the observed-layer vocabulary that package already owns
-for conservation. Nothing about relations, coverage, classes, or
-acceptance crosses in either direction.
-
-The widening is one enum variant and one trait. `NativeWorkload` gains
-an operations arm carrying a caller-supplied plan rather than a fixed
-list of cases, because an operation is the first workload whose steps
-are not all statable before the run begins: a transaction cannot be
-built until the outputs it spends exist, those outputs are created by
-an earlier step of the same run, and each run gets its own disposable
-node — so a fixed list could not express the dependency and two runs
-would fund one chain and submit to another. Protocol revision 4 gains
-the fourth workload section 16.3 names, under two capabilities on the
-established pattern that a new record shape is a capability rather than
-a revision. Fifteen tests hold the boundary against a written exchange
-rather than a spawned process.
-
-The reviewed adapter gains the named seam and nothing more: it
-recognizes an operation step, checks its shape, and refuses it as an
-infrastructure failure, which is what a step that did not happen is.
-It advertises neither capability, so the harness refuses before
-sending. Implementing the ceremony and the submissions is Wave 11's and
-needs a live node.
-
-The vectors package states what it is waiting for without taking the
-edge section 16.2 permits: `RequiredTargetWork` names the whole funding
-ceremony census and one submission per materialized vector, thirteen
-entries derived from the plan rather than written out. The vocabulary
-is authored once on each side — the ceremony steps in `transaction`,
-the vector identities in `vectors`, the wire records in
-`target-elements-conformance` — so no name has a second source. Wave 11
-adds the dependency edge, which also closes a cycle through the
-conformance package's reference cross-check lane, and writes the one
-mapping from these obligations onto the executor's step records.
-
-### 2.8 Guide-12 Phase-4 exit gate · `gate:backlog:guide12-exit`
-
-The five execution waves and their fix lanes closed Phase 4 against a
-live target. Wave 11 took the section 16.2 edge for real and was
-unblocked by two diagnoses — the witness-section guard behind a
-misleading balance diagnostic, and the money-bound row the user ruled
-kept-and-reclassified — after which eight sponsorless transactions
-were accepted and mined at the pinned genesis; Wave 12 added the
-test-scoped sponsor authorization capability and the four sponsored
-acceptances, closing real target execution with twelve accepted
-transactions, twelve matched section 17.4 projections, and the
-fee-role digest defect found and computed; Wave 13 with its four fix
-and design lanes built the negative machinery, corrected three
-mis-specified section 18 boundary claims against live evidence, fixed
-the adapter's layer misattribution, derived the class-to-requirement
-link from the section 19.2 declaration, and funded every mutation arm
-independently; Wave 14 measured the candidate — all thirty-six
-section 20.2 assignments statically, twelve predicted weights equal
-to observation live, and the finding that linking, not any target
-bound, is the candidate ceiling, with seven of thirty-six assignments
-linkable under the sixteen-leaf oracle budget. Wave 15 audited the
-section 29 exit checklist item by item: 105 items, 94 passing, five
-qualified, five deferred to this gate, and one honest structural
-failure — negative coverage stands at one of seventy-two, and the
-remedy is three guide gaps carried as the handoff's feature-request
-material (section 18 naming no relation per row, section 19.2
-stating no first-party discharge condition, the section 16.5
-ABI-validation entry point absent). Coverage ends at 100 of 211,
-every outstanding row naming its reason; three byte-identical runs
-per wave; every merge tree-identical to its worker's gated tree. The
-completion report is filed at plans/history/guide-12-completion-report.md.
-
-This gate ran the five deferred repository lanes locally as the
-verdict of record, wall-timed: scripts/ci.sh — the meson suite in its
-own target/ci-meson directory, configured cold — passed 47 of 47
-lanes (lane-duration sum 239 minutes across parallel jobs on the idle
-build slice; the whole gate including setup took about 38 minutes
-wall), and scripts/check-document-reproducibility.sh passed both of
-its checks in 2 m 11 s, the reused and fresh builds producing
-byte-identical documents. The advisory audit lane ran inside the
-suite. The server suite had already answered 47 of 47 on every merged
-boundary of this batch, most recently in 323 to 330 seconds per run.
-
-Phase 4 exits. The batch fast-forwards main. Guide 13 inherits the
-nine residuals the completion report enumerates, of which the pinned
-taproot output key and the linking ceiling are the two that constrain
-what a wider candidate can attempt; the Elements gripe material from
-the issuance diagnosis remains recorded and unfiled pending the
-user's ruling.
-
-The runtime half of `G12-R04` is discharged, 2026-08-21, by re-reading
-these transcripts, not by any new run. The fifty-four first-party
-record files — eight adapter response streams and forty-six report
-and comparison documents, under
-`/workspace/loops/attestation/` in the eight wave directories from
-`wave11` to `w14`, fetched 2026-08-21 from the ephemeral shared
-instance and pinned by an aggregate sha256
-taken over their sorted per-file digests — carry 481 record objects
-and 5769 string leaves. Every diagnostic-bearing field value is a
-mapped script-error message, a mempool reject reason arriving on the
-JSON-RPC result path, or fixed typed text; none carries a filesystem
-path, a client stderr frame, or an exception message. The counter-check is what makes that evidence
-rather than absence: the adapters' own stderr, which production nulls,
-holds eighty diverted client messages — a TX decode failure, a
-connection refusal naming a loopback RPC port, and twenty-one block
-refusals reading
-`mandatory-script-verify-flag-failed (unknown error)`
-and a balance-check tail — none of which appears in any record. Three
-failures were traced through the source: the live `rawissueasset`
-refusal at client exit status 22, whose record states only the method,
-the status, and the omission; the mutation refusals, whose detail is
-the mempool's own reject reason; and the conservation refusals, where
-the child stderr was read, classified, and still withheld while the
-mempool's `bad-txns-in-ne-out` stood as the record. Qualified: these
-runs wrote operation-lane records only, so the conservation,
-normalization, and lifecycle shapes carry the same typed note by
-construction rather than by live witness; no framework
-taproot-construction exception fired, so that branch rests on the code
-half and its unit witness alone; and no unmapped script error
-occurred, so the no-class-rather-than-text fallback is likewise
-unexercised live.
+The three Guide-12 gate records are archived verbatim, with their
+labels, in [backlog history](history/backlog-history.md) under the
+Guide-12 records group; a reference to §2.6, §2.7, or §2.8 below
+resolves to the heading of that number there. Phase 4 exited at §2.8:
+twelve accepted and matched live submissions, honest coverage 100 of
+211, the section-29 audit at 94 of 105, the local gate 47 of 47 with
+byte-identical document reproduction, and the runtime half of
+`G12-R04` discharged from the wave transcripts.
 
 ### The verification harness's two standing hazards · `rem:backlog:verification-harness`
 
@@ -1403,10 +1176,10 @@ correctness check, not malicious-code containment.
 
 ## 11. Current gate · `gate:backlog:current`
 
-The Phase-2 gate is **passed** (§2.11) and the Phase-3 gate is
-**passed** (§2.6 with the Phase-3 card). The current gate is Phase 4 —
-end-to-end compact ASH, chartered by Guide 12; its preflight register
-is closed and its core waves are unblocked.
+The Phase-2 gate is **passed** (§2.11), the Phase-3 gate is
+**passed** (§2.6 with the Phase-3 card), and the Phase-4 gate is
+**passed** (§2.8). No Phase-5 charter exists yet: the next gate arrives
+with Guide 13.
 
 The Guide-8 target foundation is complete; the gate record is §2.12. The
 Phase-3 task state is:
@@ -1438,12 +1211,12 @@ evidence and the batch gate record extends §2.6:
 | `T4-005a` | DONE | Self-commitment resolved by identity introspection — the recognition fragments read the constructor's program off the input the leaf is spending instead of pushing a literal for it, which is the resolution the Wave-8 refusal named; `AshConstructorProgramVersion` retired, `AshConstructorProgram` rebound `ReadFromTargetAtSpendTime` and carried by an introspection-reference census, the sound strategy now links with no equality outstanding, and every emitted program shrank (coordinator model base 116 to 85 and per-ash-input 109 to 78, member 102 to 64) |
 | `T4-006` | DONE | Candidate transaction ABI — `packages/transaction`; the ABI states every item Guide-12 section 15.4 lists over the 9 admitted shapes, with a first-party explicit-field encoder and decoder checked against hand-written byte strings (193 sponsorless, 374 sponsored) and control blocks over a committed tree checked against digests computed outside the crate; the three whole-transaction dimensions settle per constructed transaction; the taproot output key is pinned rather than recomputed and the pin-against-tree equality is carried as an outstanding obligation |
 | `T4-007` | DONE | Canonical semantic and target fixtures — `packages/vectors`; the complete Guide-12 section-18 matrix transcribed as 153 named classes each naming its polarity, mutation layer, and expected section-1.5 boundary; canonical and experimental standing separated by a type whose canonical constructor is crate-private and has no promotion path; the section-16.4 evidence plan recomputing every census two ways and comparing them (23 relations, 2 cases, 46 relation-cases of which 4 vacuous, 211 coverage requirements split 139 positive and 72 negative), the section-1.3 relation closure checked in both directions; 14 positive semantic cases carrying no target vocabulary, with the successor derived from the realization layer's own checked sum, and 9 of them materialized to exact byte-stable target transactions; no coverage row discharged, every row naming why it is outstanding |
-| `T4-008` | DONE | Real target execution (Waves 11 and 12); the full narratives live in the merge commits for those waves and compress here to the evidence. Built: the section 16.2 edge taken end to end — `CompactAshOperationPlanner` maps the thirteen obligations onto operation steps, materialization takes outpoints from funding answers, the adapter funds and submits for real, and `CoverageObservation` gained its observed arm whose discharge requires acceptance and a matched projection both. `bundle::ceremony_bundle` links a second bundle at the asset a ceremony issues, because an Elements asset identifier derives from the issuing outpoint and the canonical fixture bundle is therefore unfundable on any real chain; `ExecutorCapability` gained the `FreshProcessLifecycle` variant the adapter had advertised since Guide 11, and Wave 12 added `ExecutorCapability::TestSponsorAuthorization` — one capability whose sponsor-funding and sponsor-signing halves are inseparable, the adapter authorizing with a published constant key under an RFC 6979 nonce (ADR-015 rule test-material), the protocol revision unmoved because the added records are capability-gated per the Guide-10 schema-migration rule and the added response members are defaulted, with a parse-compatibility test. The run of record, elementsregtest at pinned genesis: the ceremony issues its asset, records the money-bound row as a divergence, funds and submits all twelve remaining vectors — eight sponsorless and four sponsored — every one accepted and mined, and every one matched on all thirteen section 17.4 terms, the observed side read from accepted bytes and `gettxout` rather than echoed. Coverage discharged by the run's own outcomes: 99 of 211 (every positive target-execution row active in either case). Three runs, byte-identical transcripts, both waves. Defects found on the way and fixed: the fee-role digest was an invention — a fee output carries no witness program, so its digest is the SHA-256 of the empty script and the linked constant was wrong; computing it moved the pin at even parity and the conformance cross-check caught the drift as designed. Also fixed: step-kind spelling divergence, sponsor change paid to the wrong program form, authorization written as hex where the boundary uses octets. Structural: the two-sponsor row is unbuilt in this candidate (own census column, the target never asked); a sponsored row is executable without being a byte fixture, so `is_materializable` split into its two questions |
-| `T4-012` | DONE | Issuance refused `bad-txns-in-ne-out` with no first-party code involved, and the cause was not an amount: Elements checks an issuance only when the transaction carries a witness section — the guard ahead of the issuing input's `VerifyIssuanceAmount` call in `src/confidential_validation.cpp` returns false and `Consensus::CheckTxInputs` reports that as a balance failure — so the issued asset weighs an empty input side against the whole issuance and the explicit amounts are never consulted. An empty witness section cannot be encoded (`Superfluous witness record`, the earlier hypothesis's misread disproof), and explicit issuances and outputs may carry no proofs, so the only fillable field is a spending input's witness stack, which a bare anyone-can-spend coin lacks. Seven-arm live bisect with amounts held fixed: forcing a witness section on the refused bytes flips the answer to `bad-witness-nonstandard`; a witness-script-hash coin spent with its committed program on the stack is accepted and mined; a blinded funding coin is a real second effect but not this one. Fixed first-party: the free-coin split pays the working slice to the witness-carrying form of the program and the issuing input names it on the stack, no key or signature (ADR-015 rule test-material). The ceremony then issues live and stops at `T4-013`. Gripe material for the Elements register: a balance diagnostic for a non-balance condition, and `rawissueasset` returns a transaction that can never be accepted from the coin it was handed, acknowledged only in a source comment |
-| `T4-013` | DONE | Kept and reclassified,. The `maximum` fixture is unchanged at the protocol's own 51-bit bound and no target constant entered any semantic fixture; the plan and target layers learned to carry a row this target's money bound forbids. `target-elements::transaction_form` records the reviewed stated-amount bound, sourced to `MAX_MONEY` and the explicit-output loop of `CheckTransaction`, with the guard test recomputing the bound from its two factors; `vectors::divergence` derives each row's standing by comparing every amount the row makes the target state against that bound, proven by a test that narrows the bound and watches an ordinary row become divergent; the planner schedules a divergent row's one forbidden input and nothing else, records an `ObservedDivergence` carrying stated amount, bound, excess and the target's verbatim layer, and refuses the whole plan if the forbidden amount is ever accepted, because that would falsify the reviewed bound. `RequiredTargetWork::TargetAmountDivergence` keeps the thirteen work items summing: 9 materialized as 8 submittable plus 1 divergent, and the divergent row reaches no coverage row because nothing is submitted for it. Confirmed live: refused with excess while the other eight rows funded and submitted in the same run. Honest qualification: the observed refusal is the adapter's own reserve arithmetic and the transcript says so in a `target_verdict` field — that the target itself answers `bad-txns-vout-toolarge` rests on the reviewed source and its guard test, not on an observation |
-| `T4-009` | TODO | Negative relation coverage (Wave 13). Open: none of the 72 negative requirements is discharged, and the wave says so rather than rounding up. What landed is the machinery and one finding. The 72 are classified by where a refusal could be observed, derived from each requirement's own evidence role rather than marked by hand: 48 target-executable, 18 first-party (10 compiler-analysis and 8 emitted-structure), 6 unreachable because their evidence is an external report nobody has written. The three columns are recomputed in `PlanCensus` and checked against the negative total, and a role naming no column is refused rather than filed under the nearest one. `vectors::mutation` builds a negative vector the only way a safe constructor allows — by changing one thing about a transaction the target accepted — and opens with the gate rather than the mutations: a vector that does not decode and re-encode to its own bytes is refused, because surgery on bytes that normalize would add a second difference and the refusal would be attributable to neither. All nine materialized vectors pass it. Eight arms each name the section-18 class they stage and take the expected boundary from the matrix by lookup, so a class that changes its mind takes the module with it; tests assert per arm that everything it does not claim to touch compares equal, and that value balance moves only where the arm says it does. That last property is load-bearing: Elements checks per-asset conservation before it runs a script, so an arm that unbalances the closed asset cannot reach a script-path expectation whatever the covenant would have said. One defect was found by the first live run and fixed. Mutations were staged from vectors already submitted, so the target refused them for spending coins it had seen spent — seven read `missing-inputs`, one read `txn-already-known`, and the witness-reorder arm had not even changed the txid. Eight results, none attributable to the mutation it was about. The order is now inverted: one vector is held back, its mutations are offered while its coins are unspent, and the un-mutated subject follows as the control, so a refused mutation and an accepted control differ by exactly the mutation. The ordering is itself a test, and attributability is a per-row order-dependent reading rather than one flag, because a mutation the target accepts spends the subject and invalidates only what comes after it. The run of record, on the shared instance against elementsregtest at pinned genesis, issued asset, subject the four-input row: four mutations refused at exactly the boundary their class names, each naming the operation that failed — two-ash-outputs and ordinary-wallet-u-output and shorten-successor-and-grow-another-output on OP_EQUALVERIFY, noncanonical-ash-ordering on OP_VERIFY. The finding is the fifth. **`wrong-sequence` was ACCEPTED**: the class expects a script-path refusal and the target took the transaction, so either the covenant does not constrain the sequence field or the class's boundary claim is wrong. Wave 13b settled which, and it was the class. No emitted program reads a sequence — `InspectInputSequence` sits in the opcode vocabulary and the capability map and at no emission site in tapscript's pattern module — and an ASH input's witness is the leaf program and its control block, so no signature covers the field either. The ABI has typed `SequenceConstraint` as a convention, in those words, since it was derived, and section 18.11 asks only that a wrong-sequence case exist, naming no boundary for it; the boundary came from the matrix, beside a transaction-version row the target really does answer, and the resemblance did not hold. The row moves to `AbiConstructionRejection`, beside the two other rows whose mutation only first-party code catches, and what actually pins the field — `construct` writing the ABI's sequence on every input, against a request carrying no field to argue with it — is now tested rather than assumed. The run also withholds any arm whose boundary precedes the target: submitting one buys an acceptance, and an acceptance spends the subject and abandons every arm behind it. **The withheld arm exposed the next one: `wrong-transaction-version` was ACCEPTED.** Same defect: `InspectVersion` has no emission site either, no signature covers the sponsorless form, and the ABI itself records that consensus admits that form at either version — so `ConsensusRejectionBeforeScript` cannot be right. Relay policy is ruled out too, because the vectors pay a thousand satoshis and the chain runs at zero min-relay fee, so no floor refuses the flip from the topology-restricted version to the standard one. It is reported and not reclassified: a second class respec deserves its own evidence, and its correction is the next bite. Its acceptance spent the subject in turn, so the last two arms are again recorded as not submitted with the reason, and re-testing them needs either per-mutation funding or a classify-without-broadcast capability. Three runs each wave, byte-identical transcripts. Nothing is discharged because the link from a section-18 class to a relation-indexed coverage requirement is not established, and inventing it to move 4 rows would be the discharge-by-intent the plan exists to prevent. Wave 13c respecified the row Wave 13b reported and left for its own bite: `wrong-transaction-version` moves to `AbiConstructionRejection` too. `InspectVersion` has no emission site either, the ABI's own type doc records the topology-restricted version as a policy choice rather than a consensus requirement — consensus admits the sponsorless form at either version — and the relay floor stays moot for the reason it always was. The generalized pre-target withholding needed no change to cover it. Review also found a second defect: `MutantOutcome` dropped an accepted mutation's txid, though the adapter reports one at the same submission path a positive row uses; the field now mirrors `SubmissionOutcome`'s, and the report writer, which had silently dropped it too, now emits it beside `detail`. **With both boundaries withheld, the control was finally observed ACCEPTED**: ordinal 2, txid, projection matched. Nothing spent the subject early, so both remaining arms reached the target for the first time — `witness-item-reorder` and `successor-one-below-the-sum` — and matched their `ScriptPathRejection` boundary, joining the four already seen. All eight arms are now answered: two withheld, six matched, none accepted. The txid field is exercised by test and by structure; no mutation was accepted in this run, so it reads null throughout the live transcript too. Three runs, byte-identical transcripts. Wave 13d establishes the link and reports what it is worth, which is one row. Section 19.2 requires a negative case to name its intended violated relation before it runs, and nothing did; that declaration was the missing half. An arm now declares the relation and the semantic mutation class its change falls in, and the requirement is resolved against the published plan where it must hit exactly one row — a table from arms to requirement identities would have been a third source of truth agreeing with neither side. Section 18's tables are lists of names, and no row there names a relation, a mutation class, or a boundary, so only two arms are determined at all, each by its own class name read in the relation vocabulary: `two-ash-outputs` to the ASH-output cardinality relation above its declared maximum of one, and `successor-one-below-the-sum` to the closed asset's conservation relation at an amount mismatch. Both resolve to exactly one published requirement per case. The other six carry typed reasons rather than guesses: `noncanonical-ash-ordering` and `witness-item-reorder` have no member in the negative mutation vocabulary at all, a gap between two authorities rather than a defect in either; `ordinary-wallet-u-output` and `shorten-successor-and-grow-another-output` each fit two published classes equally well; `wrong-sequence` and `wrong-transaction-version` expect a refusal before any target sees the bytes, and no requirement is indexed at the constructor's boundary, so reaching them needs the ABI-validation entry point section 16.5 names as its own report role and which does not exist. Discharge further requires the intended carrier to have executed, and the covenant script is that carrier, so only a script-path refusal counts: a transaction the target threw out before running any script established that it was invalid and not which relation refused it. **The live run found a third boundary defect and an adapter defect underneath it.** `successor-one-below-the-sum` was reported as a script-path rejection carrying the detail `bad-txns-in-ne-out`, a conservation failure attributed to an opening script that never ran. The submission path had asked a block to classify a refusal the mempool already described precisely, and block validation runs the amount checks in the same queue as the script checks, so an imbalance arrives there wearing a mandatory-script error. The conservation judgement documents that exact trap and records an earlier revision of itself committing it; the submission path reached it by the other door. The mempool's own non-script reason now settles the layer, the block's text is read only when the mempool named nothing to contradict, and a regression test drives the classifier directly. With that fixed the arm reads consensus rejection before script, which its own module already predicted: the arm does not preserve value balance, and Elements checks per-asset conservation before it runs a script. So the class's script-path claim cannot be right either — the third row of the family after `wrong-sequence` and `wrong-transaction-version`, reported here and left its own bite as those were. Six arms refused at the script path and exactly one of them names a relation, so exactly one negative row moves: ASH-output cardinality above maximum, sponsorless case; its sponsored twin waits on a mutated sponsored subject. **Coverage is 100 of 211, being 99 positive and 1 negative**, with 71 negative rows outstanding and each naming why in the code rather than in prose. The 18 first-party rows got the pass Wave 13's grep was not. None is discharged, and the guide is the reason before the evidence is: section 19.1 says positive coverage of a compiler-static or backend-structural relation uses typed structural evidence instead of inventing target execution, and 19.2 states no such rule for the negative half — its conditions are a complete mutated target transaction, an executed carrier and an observed target rejection, none of which a compiler-static relation can have. A boundary being first-party is not the same claim as a first-party test discharging the row. The evidence is thin independently of that: the constructibility witness and permissionless private dependency classes have a live typed refusal that no compiler-level test drives, every test asserting either driving the realization twin at another boundary; the required lifecycle exit is refused only at another layer on the compiler-static side and not at all on the emitted side, where the layout stage is a declared no-op; an unsupported representation is made unrepresentable rather than refused; an unauthenticated representation and an unexpected protocol secret have requirement types and predicates but no error at all. Three Wave-13d runs, byte-identical transcripts. Per-mutation funding is not built and is the next bite: until it lands the eight arms still share one subject's coins and no sponsored subject can be mutated. Wave 13e lands per-mutation funding: the subject earns one extra replica per submittable arm, funded and materialized independently, retiring the abandon-on-earlier-acceptance path so every arm answers from its own coins. It also respecifies successor-one-below-the-sum a third time, from ScriptPathRejection to ConsensusRejectionBeforeScript, alongside wrong-sequence and wrong-transaction-version: the arm's own module already records it does not preserve value balance, and Elements checks conservation before any script runs, so the arm answers its class without discharging the conservation row, which stays outstanding. Three runs, byte-identical: all six submittable arms answer independently, five still match ScriptPathRejection and successor-one-below-the-sum now matches ConsensusRejectionBeforeScript, two pre-target arms withheld as before, control accepted. Coverage is unchanged at 100 of 211 |
-| `T4-010` | DONE | Candidate resource study (Wave 14). `vectors::resource_study` enumerates the section 20.2 product of six ASH and six sponsor research bounds and measures all thirty-six, recomputing from programs it emitted rather than quoting Wave 8. The unrolling became one authored source, so study and pipeline compare sets one loop produced, and a test ties the basis to the pipeline's: emitting at the resolved symbols reproduces the linked bundle's total script bytes, leaf count, and both role byte models exactly. All thirty-six emit; the rendered matrix is the study's table, recomputed on every run rather than transcribed here. Operation cost and validation budget are zero throughout, both reviewed facts rather than holes: no reviewed primitive charges operation cost, and a zero budget says this candidate emits no signature or curve primitive. **Linking, not weight or script size, is what bounds a candidate today.** The exact taptree oracle costs three-to-the-n set operations and refuses above sixteen leaves; leaves are the shape count plus the distinct batch sizes, so seven of thirty-six link and the linkable corner is an awkward shape rather than a prefix — which is what section 20.2 means by refusing monotonicity. Observed, not read off the constant: fourteen leaves link and the tree is counted, eighteen answer `TreeOracleBudgetExceeded`. Section 20.5 previously compared nothing: the ABI settled a weight the report never emitted, and the adapter answered every operation step with an all-null resource record. Weight is the one dimension where the comparison can be made and it is now made live. The adapter reports it from the node's own `decoderawtransaction` rather than computing it, writes it only on a target verdict since a non-verdict response may carry no observation, and a disagreement refuses the whole plan because both sides weighed the same bytes; unit tests stage agreement, disagreement by one unit, and an executor observing nothing, which stays an unmade comparison rather than a passing one. The run of record, same instance and pinned genesis, issued asset and submitted twelve: **all twelve weighed, all twelve matched**, at 1293 for two ASH inputs, 1736 for three, 2177 for four, 1861 and 1862 for the sponsored pair. Weight is measurably not affine in batch size, stepping 443 then 441, while the byte models are — so a weight predicted from a fitted model would have been wrong. The largest measured transaction uses 0.05 percent of the 4000000 consensus weight limit and 0.54 percent of the 400000 policy limit. Eleven of section 20.3's eighteen measures are answered; the other seven say why rather than reporting zero. The peaks and the maximum element are not observable through this adapter, because a validating node exposes no interpreter stack, no reviewed primitive touches the alternate stack, and the only static peak walk is private to the prototype lane; arithmetic and comparison counts have no charged dimension to carry them; control bytes and initial witness items are structural and simply not surfaced by this wave. No bound is selected and none calibrated, per section 20.6. Three runs, byte-identical transcripts |
-| `T4-011` | TODO | Phase-4 gate and handoff (Wave 15). The exit audit is done; the gate is not, since the authoritative ci.sh, canonical meson, and document-reproducibility lanes stay the orchestrator's. Section 29 holds 105 items across eight sections, not the roughly eighty across seven an earlier reading assumed; each is dispositioned 94 PASS, 5 QUALIFIED, 1 FAIL, 5 DEFERRED-TO-GATE. The FAIL is that every negative relation reaches its owning evidence layer, which 100 of 211 cannot support, and the remedy named is the three guide gaps rather than more first-party tests. Fixed in lane, four stale facts: the vectors contract and package index claiming no target had executed anything, the Phase-4 card still opening at Wave 4, and the executor docstring saying revision 3 where its constant says 4. Record and filled section-30 report: [the Guide-12 completion record](history/guide-12-completion-report.md), archive-class, so the core tree gains 301 bytes |
+| `T4-008` | DONE | Real target execution (Waves 11 and 12): the section 16.2 edge end to end, twelve vectors — eight sponsorless, four sponsored under the test-scoped authorization capability — accepted and mined at the pinned genesis, all twelve matched on the thirteen section 17.4 terms, coverage 99 of 211, three byte-identical runs per wave. Full narrative archived in [backlog history](history/backlog-history.md) |
+| `T4-012` | DONE | Issuance bisect: the refusal `bad-txns-in-ne-out` traced to the witness-section guard ahead of `VerifyIssuanceAmount` — a balance diagnostic for a non-balance condition — and fixed first-party by funding through the witness-carrying program form; filed upstream as EG-021. Full narrative archived in [backlog history](history/backlog-history.md) |
+| `T4-013` | DONE | Kept and reclassified: the `maximum` fixture stands at the protocol's 51-bit bound, `vectors::divergence` derives the row's standing against the reviewed stated-amount bound, and the divergent row was refused live with excess while the other eight submitted. Full narrative archived in [backlog history](history/backlog-history.md) |
+| `T4-009` | TODO | Negative relation coverage (Waves 13–13e): the mutation machinery, the derived class-to-requirement link, per-mutation funding, three section-18 boundary respecs proven against live evidence, and one negative row discharged. Open honestly: 71 of 72 negative rows outstanding, each naming its reason in code; the remedy is the three guide gaps carried as Guide-13 feature-request material, not more first-party tests. Full narrative archived in [backlog history](history/backlog-history.md) |
+| `T4-010` | DONE | Candidate resource study (Wave 14): all thirty-six section 20.2 assignments measured, twelve live weights matched against prediction, and the finding that linking — seven of thirty-six under the sixteen-leaf oracle budget — is the candidate ceiling, not any target bound. Full narrative archived in [backlog history](history/backlog-history.md) |
+| `T4-011` | DONE | Phase-4 gate and handoff (Wave 15): the section-29 audit dispositioned 105 items (94 PASS, 5 QUALIFIED, 1 honest FAIL, 5 deferred), the completion report filed at [the Guide-12 completion record](history/guide-12-completion-report.md), and the deferred lanes discharged by the §2.8 gate run locally as the verdict of record. Full narrative archived in [backlog history](history/backlog-history.md) |
 
 Current blockers are:
 
