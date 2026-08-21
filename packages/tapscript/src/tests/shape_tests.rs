@@ -15,7 +15,7 @@ use std::num::NonZeroU8;
 
 use crate::shape::{
     CandidateShapeSet, CompactAshShape, CompactAshShapeBounds, MINIMUM_ASH_INPUTS, ShapeRejection,
-    SponsorChangePresence, UsefulCandidateCondition, demonstration_shape_set,
+    SponsorChangePresence, UsefulCandidateCondition, demonstration_shape_set, dense_shape_set,
 };
 
 /// A nonzero count for the fixtures.
@@ -218,4 +218,82 @@ fn membership_is_the_set_and_not_an_inequality() {
 
     assert!(sparse.admits(shape(2, 0, SponsorChangePresence::Absent)));
     assert!(!sparse.admits(shape(3, 0, SponsorChangePresence::Absent)));
+}
+
+#[test]
+fn the_demonstration_set_is_the_dense_unrolling_of_its_own_bounds() {
+    // The refactor's whole point. `demonstration_shape_set` used to
+    // carry its own loop over a hand-written sponsor list, so a study
+    // that unrolled other bounds would have been comparing sets two
+    // different loops produced. One authored unrolling (§1.12) makes
+    // the demonstration candidate a bound assignment rather than a
+    // separately maintained table, and this is the equality that says
+    // the refactor changed no shape.
+    assert_eq!(demonstration_shape_set(), dense_shape_set(bounds()));
+}
+
+#[test]
+fn a_dense_unrolling_holds_exactly_the_shapes_its_bounds_admit() {
+    // The count is recomputed from the bounds rather than quoted: each
+    // ASH count from the minimum through the bound, times one
+    // sponsorless form plus two forms per sponsor count. A set built by
+    // a loop that skipped the change-presence axis, or that admitted a
+    // change role with no sponsor region, disagrees here.
+    for (ash, sponsors) in [(2, 0), (2, 1), (4, 0), (4, 1), (5, 3), (8, 2)] {
+        let bounds = CompactAshShapeBounds::new(count(ash), sponsors)
+            .expect("every fixture bound is above the minimum");
+        let set = dense_shape_set(bounds);
+
+        let expected = u64::from(ash - MINIMUM_ASH_INPUTS + 1) * (1 + 2 * u64::from(sponsors));
+        assert_eq!(
+            set.shapes().count() as u64,
+            expected,
+            "the dense unrolling of {ash} ASH and {sponsors} sponsor bounds",
+        );
+
+        for shape in set.shapes() {
+            assert!(shape.ash_inputs() >= MINIMUM_ASH_INPUTS);
+            assert!(shape.ash_inputs() <= ash);
+            assert!(shape.sponsor_inputs() <= sponsors);
+            assert!(
+                shape.sponsored() || shape.sponsor_change() == SponsorChangePresence::Absent,
+                "a change role needs a sponsor region to sit in",
+            );
+        }
+    }
+}
+
+#[test]
+fn a_dense_unrolling_never_declares_itself_sparse() {
+    // The declaration is an input to the §9.3 audit, so a constructor
+    // that produced a dense set while declaring it sparse would let a
+    // real gap pass as a reported limitation. The unrolling is dense by
+    // construction and says so, and the audit agrees.
+    let set =
+        dense_shape_set(CompactAshShapeBounds::new(count(6), 2).expect("six is above the minimum"));
+
+    assert!(!set.sparse_counts_declared());
+    assert!(
+        !set.unmet_conditions()
+            .contains(&UsefulCandidateCondition::DenseAshCounts),
+        "the unrolling covers every count in range, so no count is missing",
+    );
+}
+
+#[test]
+fn the_narrowest_admissible_bounds_unroll_to_one_shape() {
+    // The boundary case the enumeration must not lose: the minimum
+    // batch with no sponsor region admits exactly the minimum
+    // sponsorless shape, and a loop written with an exclusive upper
+    // bound would yield an empty set here rather than that shape.
+    let set = dense_shape_set(
+        CompactAshShapeBounds::new(count(MINIMUM_ASH_INPUTS), 0)
+            .expect("the minimum is not below itself"),
+    );
+
+    let shapes: Vec<_> = set.shapes().collect();
+    assert_eq!(shapes.len(), 1);
+    assert_eq!(shapes[0].ash_inputs(), MINIMUM_ASH_INPUTS);
+    assert_eq!(shapes[0].sponsor_inputs(), 0);
+    assert_eq!(shapes[0].sponsor_change(), SponsorChangePresence::Absent);
 }
