@@ -1,11 +1,13 @@
 # Backlog History
 
-This directory holds this repository's own closed records, moved
-verbatim out of maintained planning documents once the work they
-describe finished. A completed gate record and the finding register of a
-remediated review are evidence about the tree they were written for;
-keeping them in the backlog made the backlog grow without making it more
-useful, because none of it is live work any more.
+This directory holds this repository's own closed records. Most were
+moved verbatim out of maintained planning documents once the work they
+describe finished; a few — a guide's exit record, for one — are authored
+here directly, because they are closed on the day they are written and
+were never live prose anywhere else. A completed gate record and the
+finding register of a remediated review are evidence about the tree they
+were written for; keeping them in the backlog made the backlog grow
+without making it more useful, because none of it is live work any more.
 
 Archived history is excluded from the load-bearing documentation weight budget and accounted against the separate archive budget instead, under the weight rule in [the plans README](../README.md). The exclusion is by role, not by provenance: like the drafts, guides, and reviews archives, nothing here is revised to keep pace with the living tree, so a weight warning could only ask an author to falsify a settled record. What a settled record is nonetheless kept current in, and what it never changes for, is stated with the archive rule below.
 
@@ -15,6 +17,8 @@ Archived history is excluded from the load-bearing documentation weight budget a
 |---|---|
 | [attestation-floor-bounds.md](attestation-floor-bounds.md) | Resolved research: the attestation containment and seigniorage claims and the SP5 capacity export. |
 | [backlog-history.md](backlog-history.md) | Closed sections moved out of [the backlog](../backlog.md): completed gate records and the finding registers of remediated static reviews. |
+| [guide-12-completion-report.md](guide-12-completion-report.md) | The Guide-12 exit record at tree 0.4.1-dev: the §29 checklist audited item by item, and the §30 completion report. |
+| [notation-semantic-census.md](notation-semantic-census.md) | Resolved research, closed as over-scoped: the existing label graph is sufficient, and the surviving work was attestation label minting and editorial repair. |
 
 ## Archive rule · `rule:history:authority`
 
