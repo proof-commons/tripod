@@ -132,10 +132,18 @@ impl NegativeMutation {
     #[must_use]
     pub fn intended_violation(self) -> IntendedViolation {
         match self {
-            // "two ASH outputs" where the plan declares a maximum of one
-            // ASH output: the subject is named in the class name, and
-            // the class is the one above-maximum mutation that subject
-            // publishes. The ceiling stays the plan's to state.
+            // Determined by the table the class comes from and the words
+            // in its name, in that order. §18.2 is the cardinality table,
+            // which fixes the relation kind; "two ASH outputs" names the
+            // side and the object family, which fixes the subject; and
+            // the plan declares that family's maximum to be one, which
+            // leaves exactly one above-maximum mutation for two of them
+            // to exceed. The ceiling itself stays the plan's to state.
+            //
+            // A second ASH output is arguably also an unexpected
+            // canonical delta family, and that reading is what the table
+            // rules out: a class §18 files under cardinality is a
+            // cardinality case, and this does not get to choose again.
             Self::SplitSuccessorInTwo => IntendedViolation::Declared {
                 relation: relation(
                     RelationKind::Cardinality,
@@ -149,10 +157,19 @@ impl NegativeMutation {
                 },
                 class_name: "CardinalityAboveMaximum",
             },
-            // "successor one below the sum" leaves the closed asset
-            // short of what the inputs carry, which is what an amount
-            // mismatch on that asset is. No other relation publishes
-            // that class.
+            // Determined by the mutation class rather than by the table,
+            // because §18.4 collects output mutations of several relation
+            // kinds and fixes none. "One below the sum" leaves the closed
+            // asset short of what the inputs carry, which is what an
+            // amount mismatch on that asset is, and exactly one relation
+            // in the whole plan publishes that class.
+            //
+            // The target never reaches it. The arm does not preserve
+            // value balance and Elements checks per-asset conservation
+            // before running a script, so the refusal arrives before the
+            // carrier executes and §19.2's carrier condition fails. The
+            // link is still stated: what is missing is a way to reach
+            // this relation with the script running, not a relation.
             Self::SuccessorOneBelowTheSum => IntendedViolation::Declared {
                 relation: relation(
                     RelationKind::Conservation,
