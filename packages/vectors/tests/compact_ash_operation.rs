@@ -399,7 +399,7 @@ fn render_mutations(transcript: &OperationTranscript) -> String {
         let attributable = submitted && !spent && coins_were_spendable;
         let _ = write!(
             out,
-            "    {{\"mutation\": {}, \"class\": {}, \"origin_ordinal\": {}, \"expected_boundary\": {}, \"observed_layer\": {}, \"boundary_matched\": {}, \"target_verdict\": {}, \"attributable\": {attributable}, \"submitted\": {submitted}, \"preserves_value_balance\": {}, \"detail\": {}, \"bytes\": {}}}",
+            "    {{\"mutation\": {}, \"class\": {}, \"origin_ordinal\": {}, \"expected_boundary\": {}, \"observed_layer\": {}, \"boundary_matched\": {}, \"target_verdict\": {}, \"attributable\": {attributable}, \"submitted\": {submitted}, \"preserves_value_balance\": {}, \"txid\": {}, \"detail\": {}, \"bytes\": {}}}",
             quote(&format!("{:?}", mutant.mutation())),
             quote(mutant.mutation().class_name()),
             mutant.origin().fixture().ordinal(),
@@ -408,6 +408,9 @@ fn render_mutations(transcript: &OperationTranscript) -> String {
             matches_boundary(expected, observed),
             observed.is_target_verdict(),
             mutant.mutation().preserves_value_balance(),
+            mutant
+                .accepted_txid()
+                .map_or_else(|| "null".to_owned(), quote),
             mutant.detail().map_or_else(|| "null".to_owned(), quote),
             mutant.bytes().len(),
         );

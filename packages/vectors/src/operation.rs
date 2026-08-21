@@ -288,6 +288,7 @@ pub struct MutantOutcome {
     mutation: NegativeMutation,
     layer: ObservedOutcomeLayer,
     detail: Option<String>,
+    accepted_txid: Option<String>,
     bytes: Vec<u8>,
 }
 
@@ -314,6 +315,13 @@ impl MutantOutcome {
     #[must_use]
     pub fn detail(&self) -> Option<&str> {
         self.detail.as_deref()
+    }
+
+    /// The identity the target gave the transaction, where a mutation was
+    /// accepted rather than refused.
+    #[must_use]
+    pub fn accepted_txid(&self) -> Option<&str> {
+        self.accepted_txid.as_deref()
     }
 
     /// The exact bytes that were submitted.
@@ -1217,6 +1225,7 @@ impl CompactAshOperationPlanner {
                     mutation: *mutation,
                     layer: ObservedOutcomeLayer::FixtureConstructionFailure,
                     detail: Some("§18 names no class by this arm's name".into()),
+                    accepted_txid: None,
                     bytes: Vec::new(),
                 });
                 continue;
@@ -1230,6 +1239,7 @@ impl CompactAshOperationPlanner {
                         "not submitted: the class expects a refusal before the target is asked"
                             .into(),
                     ),
+                    accepted_txid: None,
                     bytes: Vec::new(),
                 });
                 continue;
@@ -1241,6 +1251,7 @@ impl CompactAshOperationPlanner {
                     mutation: *mutation,
                     layer: ObservedOutcomeLayer::FixtureConstructionFailure,
                     detail: Some("the subject's shape gave this mutation nothing to act on".into()),
+                    accepted_txid: None,
                     bytes: Vec::new(),
                 }),
             }
@@ -1264,6 +1275,7 @@ impl CompactAshOperationPlanner {
                 mutation: mutant.mutation(),
                 layer: response.observed_layer,
                 detail: response.observed_detail.clone(),
+                accepted_txid: response.accepted_txid.clone(),
                 bytes: mutant.bytes().to_vec(),
             });
             // A mutation the target *accepted* has spent the subject's
@@ -1292,6 +1304,7 @@ impl CompactAshOperationPlanner {
                     "not submitted: an earlier mutation was accepted and spent the subject's coins"
                         .into(),
                 ),
+                accepted_txid: None,
                 bytes: Vec::new(),
             });
         }
@@ -1748,6 +1761,38 @@ mod tests {
                 "a mutated transaction was recorded as a positive submission",
             );
         }
+
+        // The fake target answers a performed submission with `ISSUED`
+        // as the accepted txid, and this run's first offered mutation is
+        // the one it accepts: every later arm is abandoned once the
+        // subject's coins are spent, so exactly one mutant carries an
+        // identity and every other one -- refused, withheld, or
+        // abandoned alike -- carries none.
+        let accepted: Vec<_> = transcript
+            .mutants()
+            .iter()
+            .filter(|mutant| mutant.layer() == ObservedOutcomeLayer::Accepted)
+            .collect();
+        assert_eq!(
+            accepted.len(),
+            1,
+            "this run accepts exactly one mutation before abandoning the rest",
+        );
+        assert_eq!(
+            accepted[0].accepted_txid(),
+            Some(ISSUED),
+            "an accepted mutation must carry the txid the target reported",
+        );
+        for mutant in transcript.mutants() {
+            if mutant.layer() != ObservedOutcomeLayer::Accepted {
+                assert_eq!(
+                    mutant.accepted_txid(),
+                    None,
+                    "{:?} was not accepted and must carry no txid",
+                    mutant.mutation(),
+                );
+            }
+        }
     }
 
     #[test]
@@ -1779,6 +1824,11 @@ mod tests {
             assert!(
                 outcome.bytes().is_empty(),
                 "{mutation:?} carries bytes, which only a submitted arm does",
+            );
+            assert_eq!(
+                outcome.accepted_txid(),
+                None,
+                "{mutation:?} was never submitted and must carry no txid",
             );
         }
     }
