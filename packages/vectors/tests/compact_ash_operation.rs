@@ -273,6 +273,7 @@ fn render(
             .filter(|(verdict, _)| *verdict == ProjectionComparison::Matched)
             .count()
     );
+    out.push_str(&render_weights(transcript));
     let (requirements, observed, discharged, positive, negative) =
         coverage(transcript, projections);
     let _ = writeln!(
@@ -286,14 +287,50 @@ fn render(
 
     out.push_str(&render_divergences(transcript));
 
-    out.push_str("  \"submissions\": [\n");
+    out.push_str(&render_submissions(transcript, projections));
+    out.push_str(&render_mutations(transcript));
+    out.push_str("}\n");
+    out
+}
+
+/// §20.5's comparison, aggregated.
+///
+/// The compared count is deliberately not the submission count: an
+/// executor that observes no weight leaves the comparison unmade, and
+/// counting those rows as matched would turn an absent observation into
+/// a passing one.
+fn render_weights(transcript: &OperationTranscript) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "  \"weights_compared\": {}, \"weights_matched\": {},",
+        transcript
+            .submissions()
+            .iter()
+            .filter(|submission| submission.observed_weight().is_some())
+            .count(),
+        transcript
+            .submissions()
+            .iter()
+            .filter(|submission| submission.weight_agrees() == Some(true))
+            .count(),
+    );
+    out
+}
+
+/// Every positive submission, with both weights beside its verdict.
+fn render_submissions(
+    transcript: &OperationTranscript,
+    projections: &BTreeMap<TargetVectorId, (ProjectionComparison, String)>,
+) -> String {
+    let mut out = String::from("  \"submissions\": [\n");
     for (index, submission) in transcript.submissions().iter().enumerate() {
         if index > 0 {
             out.push_str(",\n");
         }
         let _ = write!(
             out,
-            "    {{\"ordinal\": {}, \"ash_inputs\": {}, \"sponsors\": {}, \"layer\": {}, \"txid\": {}, \"projection\": {}, \"detail\": {}, \"bytes\": {}}}",
+            "    {{\"ordinal\": {}, \"ash_inputs\": {}, \"sponsors\": {}, \"layer\": {}, \"txid\": {}, \"projection\": {}, \"detail\": {}, \"bytes\": {}, \"predicted_weight\": {}, \"observed_weight\": {}, \"weight_agrees\": {}}}",
             submission.vector().fixture().ordinal(),
             submission.vector().ash_inputs(),
             submission.vector().sponsors(),
@@ -306,11 +343,16 @@ fn render(
                 .map_or_else(|| quote("not performed"), |(_, text)| quote(text)),
             submission.detail().map_or_else(|| "null".to_owned(), quote),
             submission.bytes().len(),
+            submission.predicted_weight(),
+            submission
+                .observed_weight()
+                .map_or_else(|| "null".to_owned(), |weight| weight.to_string()),
+            submission
+                .weight_agrees()
+                .map_or_else(|| "null".to_owned(), |agrees| agrees.to_string()),
         );
     }
     out.push_str("\n  ],\n");
-    out.push_str(&render_mutations(transcript));
-    out.push_str("}\n");
     out
 }
 
@@ -584,8 +626,50 @@ fn compact_ash_runs_against_a_real_target() {
             "an accepted transaction went uncompared"
         );
 
+        check_weight_comparison(transcript, accepted);
         check_negative_half(transcript, accepted);
     }
+}
+
+/// §20.5's comparison, asserted rather than merely written down.
+///
+/// Unlike the §17.4 projection, whose verdicts this lane records and
+/// does not judge, a weight disagreement is a defect on its face: the
+/// transaction layer and the target weighed the *same bytes*, so the
+/// two answers cannot honestly differ. §20.5 says a mismatch fails the
+/// resource report even where the transaction was accepted, and this is
+/// where that happens.
+///
+/// An unobserved weight is not a failure. An executor that reports none
+/// leaves the comparison unmade, and this lane refuses to read that as
+/// agreement — but it also refuses to invent a requirement the protocol
+/// does not place on an executor.
+fn check_weight_comparison(transcript: &OperationTranscript, accepted: usize) {
+    for submission in transcript.submissions() {
+        assert_ne!(
+            submission.weight_agrees(),
+            Some(false),
+            "the target weighed vector {:?} at {:?} where the ABI settled {}",
+            submission.vector(),
+            submission.observed_weight(),
+            submission.predicted_weight(),
+        );
+    }
+
+    // An executor advertising the observation must actually make it on
+    // every acceptance. Without this, an adapter that quietly stopped
+    // reporting weights would turn every comparison into an unmade one
+    // and the assertion above would pass by vacuum.
+    let observed = transcript
+        .submissions()
+        .iter()
+        .filter(|submission| submission.observed_weight().is_some())
+        .count();
+    assert!(
+        observed == 0 || observed >= accepted,
+        "an executor that weighs anything must weigh every acceptance: \
+         {observed} observed against {accepted} accepted",
+    );
 }
 
 /// The negative half's shape, and nothing about its verdicts.
