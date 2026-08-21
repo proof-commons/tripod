@@ -140,3 +140,10 @@ citation goes only with the adaptation it explains — clearing them is
 the work. A friction whose row above says the register alone yields no
 such list, which is the standing cost of an adaptation the checker
 cannot reach.
+
+That was exercised rather than described. Deleting the relay-layer
+mint failed the check at its three code citations, each reported with
+file and line; deleting the opening-gap mint failed at its code
+citation and at both planning citations, the two forms reported
+separately as an unresolved import and an unresolved same-owner
+citation. Both mints were restored and the check returned to valid.
