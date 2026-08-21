@@ -752,12 +752,24 @@ impl CompactAshOperationPlanner {
 
     fn fund_step(&self, index: usize) -> Option<OperationStep> {
         let planned = self.schedule.get(index)?;
+        // Every row but the mutation subject is funded once, so its
+        // ordinal and member already name a step uniquely. The subject's
+        // extra replicas share both, and the executor refuses a plan
+        // that asks for one step identity twice -- so a non-zero
+        // replica earns its own suffix, which doubles as the funding
+        // derivation the transcript keeps visible: this step's name
+        // says which arm its answer will fund.
+        let mut name = format!(
+            "fund-ash-input/{}/{}",
+            planned.vector.fixture().ordinal(),
+            planned.member
+        );
+        if planned.replica > 0 {
+            use std::fmt::Write as _;
+            let _ = write!(name, "/arm-{}", planned.replica);
+        }
         Some(OperationStep::new(
-            &format!(
-                "fund-ash-input/{}/{}",
-                planned.vector.fixture().ordinal(),
-                planned.member
-            ),
+            &name,
             OperationSubject::Funding(Box::new(TargetFundingSubject {
                 issue_asset: false,
                 asset: self.transcript.issued_asset.map(hex_of),
