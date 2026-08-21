@@ -32,6 +32,7 @@
 use std::collections::BTreeMap;
 use std::num::NonZeroU8;
 
+use linker::ORACLE_LEAF_BUDGET;
 use tapscript::{
     CompactAshShape, CompactAshShapeBounds, CompactAshSymbols, MINIMUM_ASH_INPUTS, ResourceModel,
     TapscriptError, TapscriptInstruction, TapscriptProgram, coordinator_program, dense_shape_set,
@@ -91,6 +92,24 @@ pub fn leaf_count(bounds: CompactAshShapeBounds) -> u64 {
     let counts = u64::from(bounds.ash_inputs() - MINIMUM_ASH_INPUTS + 1);
     let per_count = 1 + 2 * u64::from(bounds.sponsor_inputs());
     counts * per_count + counts
+}
+
+/// Whether the linker's exact tree oracle can reach this assignment.
+///
+/// The binding constraint on candidate width today, and it is neither a
+/// weight limit nor a script-size limit: the taptree oracle is a
+/// dynamic program costing three-to-the-n set operations, so it refuses
+/// a leaf set above [`ORACLE_LEAF_BUDGET`] rather than returning a
+/// partial answer. Emission has no such ceiling, which is why the study
+/// measures every assignment and links only some.
+///
+/// This is a prediction about the linker, and the study proves it by
+/// linking rather than by trusting it: an assignment this admits is
+/// linked, and one it refuses is offered to the linker anyway so the
+/// refusal is observed.
+#[must_use]
+pub fn within_tree_oracle_budget(bounds: CompactAshShapeBounds) -> bool {
+    leaf_count(bounds) <= ORACLE_LEAF_BUDGET as u64
 }
 
 /// One program role's byte behaviour across an assignment's shapes.
@@ -474,7 +493,7 @@ fn push_bytes(target: &ReviewedElementsTapscriptDefinition, program: &TapscriptP
 mod tests {
     use super::{
         RESEARCH_ASH_BOUNDS, RESEARCH_SPONSOR_BOUNDS, leaf_count, measure_emitted, render_matrix,
-        research_assignments,
+        research_assignments, within_tree_oracle_budget,
     };
     use crate::bundle::{
         CLOSED_ASSET, RESERVE_ASSET, SPONSOR_CHANGE_PROGRAM, fee_program_digest, fixture_bundle,
@@ -641,6 +660,93 @@ mod tests {
         assert!(
             lines.iter().any(|line| line.starts_with("4 1 9 12 ")),
             "the demonstration assignment is nine shapes over twelve leaves",
+        );
+    }
+
+    /// Link one assignment through the whole pipeline.
+    ///
+    /// The demonstration policy with its shape set replaced, so the only
+    /// difference between this and the pipeline's own link is the bound
+    /// assignment under study.
+    fn link_at(
+        bounds: CompactAshShapeBounds,
+    ) -> Result<linker::CandidateLinkedBundle, linker::LinkRefusal> {
+        let fixture = fixture_bundle().expect("the fixture bundle builds");
+        let target = fixture.target();
+        let demonstration = tapscript::demonstration_policy();
+        let policy = tapscript::CompactAshBackendPolicy::new(
+            demonstration.projection().clone(),
+            demonstration.representation(),
+            super::dense_shape_set(bounds),
+            demonstration.layout(),
+            demonstration.pattern_preference().to_vec(),
+            demonstration.objective(),
+            demonstration.tie_break(),
+        );
+        let placeholders = CompactAshSymbols::new(
+            target,
+            vec![0x11; 32],
+            vec![0x22; 32],
+            vec![0x44; 20],
+            0,
+            vec![0x55; 32],
+        )
+        .expect("the placeholder symbols bind");
+        let emitted =
+            tapscript::emit_candidate_bundle(target, fixture.plan(), policy, placeholders)
+                .expect("the assignment emits");
+        let deployment = linker::LinkDeploymentParameters::new(
+            target,
+            symbols(target),
+            crate::bundle::INTERNAL_KEY.to_vec(),
+            linker::SelfCommitmentStrategy::IdentityIntrospection,
+            std::num::NonZeroU32::new(32).expect("thirty-two is nonzero"),
+        )
+        .expect("the deployment parameters bind");
+        linker::link_candidate(target, &emitted, &deployment)
+    }
+
+    #[test]
+    fn the_tree_oracle_budget_is_what_bounds_a_candidate_today() {
+        // The study's headline constraint, observed rather than read off
+        // a constant. Emission reaches every assignment; linking reaches
+        // the ones whose leaf set the exact tree oracle can afford. Both
+        // sides are checked, because a predicate tested only where it
+        // says yes would never notice that the refusal had moved.
+        let fits = bounds(8, 0);
+        assert!(within_tree_oracle_budget(fits));
+        assert_eq!(leaf_count(fits), 14);
+        let linked = link_at(fits).expect("fourteen leaves are inside the budget");
+        assert_eq!(linked.taptree().recipes().len(), 14);
+
+        let exceeds = bounds(4, 2);
+        assert!(!within_tree_oracle_budget(exceeds));
+        assert_eq!(leaf_count(exceeds), 18);
+        assert!(
+            matches!(
+                link_at(exceeds),
+                Err(linker::LinkRefusal::TreeOracleBudgetExceeded { .. })
+            ),
+            "eighteen leaves must be refused by the oracle, and by that refusal",
+        );
+    }
+
+    #[test]
+    fn most_of_the_enumeration_cannot_be_linked_at_all() {
+        // §20.2 forbids assuming monotonicity, and this is the
+        // non-monotone fact the enumeration exposes: widening either
+        // axis multiplies the leaf set, so the assignments a link can
+        // reach are a small and awkwardly-shaped corner of the matrix
+        // rather than a prefix of it.
+        let linkable: Vec<_> = research_assignments()
+            .into_iter()
+            .filter(|bounds| within_tree_oracle_budget(*bounds))
+            .map(|bounds| (bounds.ash_inputs(), bounds.sponsor_inputs()))
+            .collect();
+
+        assert_eq!(
+            linkable,
+            vec![(2, 0), (2, 1), (2, 2), (2, 4), (4, 0), (4, 1), (8, 0)],
         );
     }
 
