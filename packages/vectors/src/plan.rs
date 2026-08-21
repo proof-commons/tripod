@@ -659,6 +659,28 @@ impl CompactAshEvidencePlan {
             .count()
     }
 
+    /// How many positive rows are discharged.
+    ///
+    /// Reported apart from the negative count because the two halves are
+    /// answered by different evidence and reach very different numbers;
+    /// one total would let the larger half carry the smaller.
+    #[must_use]
+    pub fn discharged_positive_rows(&self) -> usize {
+        self.relation_coverage
+            .values()
+            .filter(|row| row.is_positive() && row.observation().is_discharged())
+            .count()
+    }
+
+    /// How many negative rows are discharged.
+    #[must_use]
+    pub fn discharged_negative_rows(&self) -> usize {
+        self.relation_coverage
+            .values()
+            .filter(|row| !row.is_positive() && row.observation().is_discharged())
+            .count()
+    }
+
     /// Move rows from outstanding to observed, from a run's outcomes.
     ///
     /// # What a submission can and cannot answer
