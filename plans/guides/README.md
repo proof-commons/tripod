@@ -41,6 +41,17 @@ weight rule in [the plans README](../README.md).
 | [guide_twelve_concept.md](guide_twelve_concept.md) | Phase-4 end-to-end compact ASH |
 | [guide_thirteen_concept.md](guide_thirteen_concept.md) | Phase-5 end-to-end live receipt transfer |
 
+## Feature requests · `tab:guides:feature-requests`
+
+| Document | Request |
+|---|---|
+| [guide_thirteen_feature_requests.md](guide_thirteen_feature_requests.md) | The three Guide-12 gaps blocking the negative evidence half, addressed to the numbered Guide 13 |
+
+A feature-request document is correspondence to the guide author: it
+records what a completed batch established the guide itself must change
+before some class of evidence can be discharged. Like the guides, it is
+planning input only.
+
 A concept guide and the executed guide of the same number are different
 documents: the concept is the earlier sketch, the executed guide is what the
 batch was run against, and they may disagree. The executed guide is the

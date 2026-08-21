@@ -19,4 +19,5 @@ plans_guides_files = files(
   'guide_twelve.md',
   'guide_twelve_concept.md',
   'guide_thirteen_concept.md',
+  'guide_thirteen_feature_requests.md',
 )
