@@ -1618,3 +1618,51 @@ a digest over a shape the wire form cannot have, and reports the result
 complete. It is not a consensus question — every transaction that reaches
 consensus with a taproot spend already carries the grown vector — so the
 correction belongs on the signer's side.
+
+### 5.8 Dependency decision and commitment oracle · `tab:backlog:findings-ct-oracle`
+
+The Guide-11 §6 dependency decision and the §7 independent commitment
+oracle. Filed by content for the reason §5.7 gives: the preflight arc
+spends the wave numbers on a different sequence.
+
+**The dependency decision is to add nothing.** The guide permits a
+generic Elements or secp256k1-zkp dependency in
+`target-elements-conformance` for generator derivation, commitment
+construction, and independent vectors. It was reviewed against the
+ADR-011 dependency policy and declined.
+
+| Candidate | Licence | Disposition |
+|---|---|---|
+| `secp256k1` / `secp256k1-zkp` (Rust FFI bindings) | MIT | **Refused on independence.** Both wrap the same in-tree C library the node vendors for confidential values. The oracle exists to be a second opinion; binding it to the implementation it checks would make agreement a tautology rather than evidence (§6.3). |
+| A pure-Rust curve crate (`k256`, `crypto-bigint`) | Apache-2.0/MIT | **Not taken.** It would preserve independence, but it buys nothing the workspace lacks: the whole computation is one curve map, two point additions, and two scalar multiplications over published constants. Against that it adds a cryptographic dependency, a transitive graph, an advisory surface, and a lock-file delta. |
+| First-party arithmetic over the workspace bignum | — | **Taken.** `num-bigint` and `sha2` are existing workspace dependencies with existing first-party consumers, so nothing entered the lock file, and the exact-arithmetic stance of (`dec:math:exact-certified`) is served directly. |
+
+Because no library is shared with the materializer, the §6.3
+independence claim is unqualified and its fallback — record the shared
+dependency and narrow the claim — does not arise. `target-elements`
+remains standard-library-only (§6.1); the oracle lives entirely in the
+conformance crate.
+
+**The oracle's expected values rest on three derivations, not one.**
+Every pinned byte string was computed by the crate's oracle and, before
+being pinned, by a separate implementation written from the same source
+citations in a different language. The two agree byte for byte. The
+third and strongest leg is external: the vendored library carries its
+own published fixed vectors, and all of them reproduce.
+
+| ID | Priority | Status | Finding |
+|---|---:|---|---|
+| `G11-O01` | P1 | DONE | Upstream low-level confidential vectors **do** exist, contradicting the §5 review's premise. That review read the Python functional framework, which indeed carries no Pedersen or generator helper, and concluded the oracle could not be cross-checked against published vectors. The vendored C library's own unit tests carry three sets: thirty-four curve-map outputs stated to match an independent SAGE program, thirty-two generator derivations for the asset identifiers that are thirty-one zero bytes followed by `i`, and one point under both prefix conventions. All sixty-eight reproduce exactly. The oracle's two pinned assets are drawn from the published table, so its generators rest on upstream bytes. |
+| `G11-O02` | P1 | DONE | The upstream fixture named `two_g` does not encode `2G`. It carries prefix `0x0b` and is a parse-and-serialize round trip; parsing takes the point whose y is a quadratic residue and negates it when the prefix is odd, so those bytes name the *negation* of the doubled base point. `2G`'s own y is a square, so `2G` encodes as `0x0a` and `0x08`. Pinned explicitly, because reading the fixture's name as a claim would put a sign error into every later commitment. |
+| `G11-O03` | P2 | DONE | A one-bit mutation of a commitment behaves in two entirely different ways depending on where it lands. Flipping a bit of the x coordinate leaves the curve and is refused; flipping the parity bit yields a well-formed encoding of the negated point. Nothing in the encoding binds the prefix to the commitment that was intended, which is the encoding-level face of the reviewed blocker that a witness-supplied parity byte is bound to nothing. |
+
+The three-way comparison of §7.4 is landed as an interface, not as a
+result. The oracle's expectation is the subject; the construction-library
+and target-introspection legs are optional and arrive from later native
+runs. A leg that was never supplied is reported as absent rather than as
+agreement, so a comparison that did not happen cannot read as one that
+passed.
+
+| ID | Priority | Status | Item |
+|---|---:|---|---|
+| `G11-O04` | OPTIONAL | DONE | The oracle derives only the unblinded asset generator. The reviewed recipe also has a blinded form, which prepends a scalar multiple of the base point and is used to check that a reissuance input carries its blinded token. No present consumer needs it, and a wave that reaches reissuance should add it with its own published-vector check rather than by analogy. **Closed by Wave 7, and not by reissuance.** The §8.4 conservation matrix needed it for an ordinary reason the row did not anticipate: every balanced confidential output has a *blinded* asset, so the unblinded generator predicts nothing for exactly the rows the §7.4 comparison matters most for. The check is not by analogy and not a published vector either — it is three commitments observed on a real node, which the oracle reproduces exactly (`G11-W7-04`). |
