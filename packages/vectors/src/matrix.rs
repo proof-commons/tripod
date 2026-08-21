@@ -1079,11 +1079,27 @@ pub const ABI: &[VectorClass] = &[
         L::AbiLayout,
         B::AbiConstructionRejection,
     ),
+    // The transaction version selects TRUC relay eligibility and
+    // nothing else. No emitted program inspects it — InspectVersion sits
+    // in the opcode vocabulary and the capability map and at no
+    // emission site in tapscript's pattern module — no signature covers
+    // the sponsorless form either, and the ABI's own type doc records
+    // the choice as a policy one: selecting TopologyRestricted "is a
+    // policy choice rather than a consensus requirement: consensus
+    // admits the sponsorless form at either version." The relay floor
+    // is no rescue either, since the vectors pay a thousand satoshis
+    // against a chain run at zero min-relay fee, so no floor refuses
+    // the flip to the standard version — so the target has no rule to
+    // refuse it by and accepting it is correct. What fixes the field is
+    // the safe constructor, which writes the ABI's own version at
+    // assembly and offers no request field for another. The boundary is
+    // therefore the constructor's, like wrong-sequence and the other
+    // rows whose mutation only first-party code catches.
     negative(
         F::Abi,
         "wrong-transaction-version",
         L::TargetTransaction,
-        B::ConsensusRejectionBeforeScript,
+        B::AbiConstructionRejection,
     ),
     // The sequence field is an ABI convention and nothing else. No
     // emitted program inspects it, no signature covers an ASH input, and
