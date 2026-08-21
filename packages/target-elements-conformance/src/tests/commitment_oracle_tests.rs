@@ -29,7 +29,10 @@
 //! residue and then negates it when the prefix is odd, so `0x0b`
 //! followed by that x names the *negation* of `2G`. The y of `2G` itself
 //! is a square, so `2G` encodes as `0x0a`. The distinction is pinned
-//! below so a later wave does not read the fixture's name as a claim.
+//! below so a later wave does not read the fixture's name as a claim,
+//! and the false name is carried as an upstream friction
+//! `(´[PLAN-obs:upstream:eg-013]´)`: were it corrected, these pins are
+//! what would stop naming the correction.
 //!
 //! All material here is public test data under ADR-015.
 

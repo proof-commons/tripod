@@ -343,9 +343,10 @@ pub enum ExpectedOutcomeLayer {
 /// Blinding on this target happens inside the node. `BlindTransaction`
 /// draws every output blinding factor from `GetStrongRandBytes` and
 /// generates a fresh ephemeral nonce key with `MakeNewKey`, and no RPC on
-/// the path — `rawblindrawtransaction` included — takes a seed. The
-/// upstream Python functional framework offers no Pedersen commitment,
-/// range proof, or surjection proof of its own, so there is no
+/// the path — `rawblindrawtransaction` included — takes a seed
+/// `(´[PLAN-obs:upstream:eg-016]´)`. The upstream Python functional
+/// framework offers no Pedersen commitment, range proof, or surjection
+/// proof of its own `(´[PLAN-obs:upstream:eg-018]´)`, so there is no
 /// out-of-node materializer to substitute. Two runs of the same fixture
 /// therefore produce different bytes, and this was confirmed both by
 /// reading the source and by blinding one identical raw transaction twice

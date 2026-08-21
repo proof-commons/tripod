@@ -165,6 +165,12 @@ impl MutationLayer {
 /// §1.5 enumerates exactly these eleven and forbids inferring one from
 /// what a test hoped for. A class names its boundary in advance, and a
 /// run that refuses at a different one is a finding, not a pass.
+///
+/// [`Self::RelayPolicyRejection`] is separate from the consensus
+/// boundaries because the target enforces several reviewed rules at
+/// relay policy alone `(´[PLAN-obs:upstream:eg-006]´)`. A vocabulary
+/// without that distinction would let a class claim of block validation
+/// what only a relaying node does.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum EvidenceBoundary {
     /// The typed semantic request is refused.
@@ -527,7 +533,10 @@ pub const OUTPUT: &[VectorClass] = &[
     // covenant script is that carrier here, so an arm answered before
     // it runs answers its class without discharging the conservation
     // requirement — which stays outstanding, as Wave 13d recorded when
-    // it found the arm's script-path claim wrong.
+    // it found the arm's script-path claim wrong. The one reject code
+    // the target has for every conservation failure
+    // (´[PLAN-obs:upstream:eg-015]´) is why the boundary has to be
+    // stated here rather than read off the run.
     negative(
         F::Output,
         "successor-one-below-the-sum",

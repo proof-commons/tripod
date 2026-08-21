@@ -2057,6 +2057,11 @@ pub enum ObservedFailureClass {
     /// An operand was not the width the primitive requires.
     InvalidOperandWidth,
     /// A script-number operand was oversized or nonminimal.
+    ///
+    /// One class covers both causes because the target names neither:
+    /// a script-number decode failure surfaces as an unnamed error
+    /// `(´[PLAN-obs:upstream:eg-004]´)`, which is the string the
+    /// reviewed adapter maps here.
     MalformedScriptNumber,
     /// A result was not representable as a script number.
     ScriptNumberRangeExceeded,
@@ -2070,6 +2075,11 @@ pub enum ObservedFailureClass {
     /// observe, so it reports this — and a fixture whose contract cause
     /// is one of the two admits it alongside, which is what the class
     /// set is for.
+    ///
+    /// The coarse arithmetic string behind it is an upstream friction
+    /// `(´[PLAN-obs:upstream:eg-003]´)`. This class exists only because
+    /// of it: were the causes ever named apart, the fixtures admitting
+    /// this class alongside a contract cause would each narrow to one.
     FixedWidthConversionRefused,
     /// The primitive is unavailable in the executing domain.
     UnsupportedExecutionDomain,
@@ -2178,6 +2188,10 @@ pub enum ObservedFailureClass {
 /// that validates a transaction reports what the transaction cost, not
 /// what its interpreter's stack did on the way, and recording an
 /// unobserved peak as zero would turn "not measured" into a measurement.
+/// No RPC exposes that state at all, which is an upstream friction
+/// `(´[PLAN-obs:upstream:eg-011]´)`; the optional figures here are its
+/// shape in the protocol, and an interface that exposed the interpreter
+/// would make them measurements rather than absences.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeResourceObservation {

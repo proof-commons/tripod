@@ -201,6 +201,11 @@ pub enum EncodingClass {
     /// or introspection operand five bytes wide is still malformed, and
     /// a contract that widened the shared class would have said the
     /// target accepts it everywhere.
+    ///
+    /// The one-operand exception is an upstream friction
+    /// `(´[PLAN-obs:upstream:eg-005]´)`, easy to mis-transcribe as a
+    /// general width. This class is the transcription that cannot be
+    /// mistaken.
     LockTimeScriptNumber,
     /// A signed 64-bit fixed-width integer.
     SignedLittleEndian64,

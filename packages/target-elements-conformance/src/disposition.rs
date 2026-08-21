@@ -37,6 +37,16 @@
 //! never established, and "deferred" alone would drop a shape §11.4
 //! actually refuses.
 //!
+//! # The frictions this register is downstream of
+//!
+//! The deferral exists because the reviewed language cannot verify a
+//! commitment opening at all `(´[PLAN-obs:upstream:eg-020]´)`: the
+//! blockers below are that gap, typed. One of the findings recorded here
+//! is narrower and its own entry — an upstream fixture whose name states
+//! a point it does not encode `(´[PLAN-obs:upstream:eg-013]´)` — kept
+//! because reading the name as a claim is what put a sign error into the
+//! first commitments this package built.
+//!
 //! [`OpeningBlocker`]: target_elements::confidential::OpeningBlocker
 //! [`OpeningFeasibility`]: target_elements::confidential::OpeningFeasibility
 

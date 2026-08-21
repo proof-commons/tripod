@@ -94,7 +94,7 @@ citation fails when its mint is removed.
 
 | Friction | Label | Where this repository adapts |
 |---|---|---|
-| EG-001 | `obs:upstream:eg-001` | The register alone: the missing checks are upstream's, and no shape here was taken because of them. |
+| EG-001 | `obs:upstream:eg-001` | `plans/reference/elements-tapscript.md`, whose revision-2 provenance reads a locally corrected tree because of it. |
 | EG-002 | `obs:upstream:eg-002` | The register alone: the gap is upstream's own coverage. |
 | EG-003 | `obs:upstream:eg-003` | `packages/target-elements-conformance/src/protocol.rs`, the observed class for a refusal the target states with one coarse arithmetic string. |
 | EG-004 | `obs:upstream:eg-004` | `packages/target-elements-conformance/src/protocol.rs`, the script-number class that carries both causes the unnamed error hides. |

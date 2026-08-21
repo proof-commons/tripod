@@ -143,7 +143,9 @@ pub enum UnknownPublicKeyTypeRule {
     /// verification into a no-op that returns true. Any backend that
     /// relies on a signature check for authorization must constrain
     /// the key encoding itself rather than trusting the check's
-    /// result.
+    /// result. The edge is kept as an upstream friction
+    /// `(´[PLAN-obs:upstream:eg-008]´)`, and this variant is why a
+    /// backend has to ask which rule the deployment runs under.
     SucceedsWithoutVerification,
     /// The check refuses the key.
     Rejected,
