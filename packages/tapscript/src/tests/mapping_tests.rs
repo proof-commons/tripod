@@ -250,16 +250,30 @@ struct ExpectedEvidence {
 /// one requirement about whole-transaction conservation — not from the
 /// production match. As with the capability table, a mistake copied
 /// into production does not reproduce itself here.
+///
+/// Both roles land on that one requirement, and the repetition is the
+/// finding rather than an oversight: this target balances a whole
+/// transaction across its explicit and confidential value classes in a
+/// single consensus rule and offers no separate claim about either
+/// class alone. Inventing a second requirement to make the table look
+/// injective would state a distinction the target does not draw.
 fn evidence_oracle() -> Vec<ExpectedEvidence> {
     use EvidenceAssessmentDisposition as D;
     use ExternalEvidenceRole as E;
     use TargetEvidenceRequirementId as R;
 
-    vec![ExpectedEvidence {
-        role: E::SubstrateConservation,
-        disposition: D::TargetEvidenceRequired,
-        evidence: &[R::ConfidentialValueConservation],
-    }]
+    vec![
+        ExpectedEvidence {
+            role: E::ConfidentialValueConservation,
+            disposition: D::TargetEvidenceRequired,
+            evidence: &[R::ConfidentialValueConservation],
+        },
+        ExpectedEvidence {
+            role: E::SubstrateConservation,
+            disposition: D::TargetEvidenceRequired,
+            evidence: &[R::ConfidentialValueConservation],
+        },
+    ]
 }
 
 #[test]

@@ -64,6 +64,18 @@ census_enum! {
     /// reading them would be reading a protocol fact through a target
     /// interface.
     pub enum ExternalEvidenceRole {
+        /// The target's confidential-transaction rules must establish
+        /// the value equation for one asset.
+        ///
+        /// Distinct from [`Self::SubstrateConservation`] and not
+        /// implied by it: the substrate role is about the whole
+        /// transaction balancing in the target's own fee asset, and a
+        /// target could conserve that while representing a protocol
+        /// asset's amounts in the clear. This role appears exactly when
+        /// the plan holds those amounts as commitments, so nothing the
+        /// analysis emits reads them and only the target's own rules
+        /// relate them.
+        ConfidentialValueConservation,
         /// The substrate itself must conserve value across a
         /// transaction.
         ///
@@ -81,6 +93,9 @@ impl ExternalEvidenceRole {
     /// which is the only mechanism that keeps the census complete.
     pub(crate) const fn of(requirement: &ExternalEvidenceRequirement) -> Self {
         match requirement {
+            ExternalEvidenceRequirement::ConfidentialValueConservation { .. } => {
+                Self::ConfidentialValueConservation
+            }
             ExternalEvidenceRequirement::SubstrateConservation { .. } => {
                 Self::SubstrateConservation
             }

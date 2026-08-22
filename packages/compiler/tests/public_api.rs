@@ -242,7 +242,10 @@ fn every_required_capability_is_publicly_nameable() {
 fn every_evidence_role_is_publicly_nameable() {
     assert_eq!(
         ExternalEvidenceRole::ALL,
-        [ExternalEvidenceRole::SubstrateConservation],
+        [
+            ExternalEvidenceRole::ConfidentialValueConservation,
+            ExternalEvidenceRole::SubstrateConservation,
+        ],
     );
 }
 
@@ -271,7 +274,16 @@ fn target_requirements_come_only_from_a_completed_analysis() {
 
     let evidence = requirements.external_evidence().collect::<Vec<_>>();
 
-    assert_eq!(evidence, [ExternalEvidenceRole::SubstrateConservation]);
+    // Both roles, because the pilot scope's live transfer is planned
+    // under a private representation as well as an explicit one, and
+    // the requirement set is the union over the retained alternatives.
+    assert_eq!(
+        evidence,
+        [
+            ExternalEvidenceRole::ConfidentialValueConservation,
+            ExternalEvidenceRole::SubstrateConservation,
+        ],
+    );
 }
 
 #[test]
@@ -612,10 +624,31 @@ fn the_live_transfer_plan_comes_only_from_a_completed_analysis() {
     assert_eq!(plan.representations().count(), 2);
 
     for projection in plan.representations() {
+        // The relation and case censuses agree across the two
+        // representations, as §6.6 requires. The layout and coverage
+        // censuses do not, as §19.4 requires: the private plan places no
+        // carrier for conservation, so it states neither the layout that
+        // would route family totals to one nor that carrier's runtime
+        // coverage, and it answers at the evidence boundary instead.
+        let (layout, coverage, evidence) = match projection.plan() {
+            LiveTransferRepresentationPlan::Explicit => {
+                (69, 223, vec![ExternalEvidenceRole::SubstrateConservation])
+            }
+            LiveTransferRepresentationPlan::PrivateCommitted => (
+                61,
+                225,
+                vec![
+                    ExternalEvidenceRole::ConfidentialValueConservation,
+                    ExternalEvidenceRole::SubstrateConservation,
+                ],
+            ),
+        };
+
         assert_eq!(projection.relations().count(), 24);
         assert_eq!(projection.cases().count(), 2);
-        assert_eq!(projection.layout().count(), 69);
-        assert_eq!(projection.coverage().count(), 223);
+        assert_eq!(projection.layout().count(), layout);
+        assert_eq!(projection.coverage().count(), coverage);
+        assert_eq!(projection.external_evidence().collect::<Vec<_>>(), evidence,);
         assert!(projection.carriers().count() > 0);
     }
 }

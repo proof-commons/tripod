@@ -163,7 +163,40 @@ enum MatrixCases {
 struct MatrixRow {
     relation: RelationId,
     boundaries: BTreeSet<CoverageBoundary>,
+    /// The boundaries this row takes where the case holds its
+    /// conserved amounts as commitments, when that differs.
+    ///
+    /// One row uses it. Conservation is discharged by the target rather
+    /// than by a carrier when nothing publishes the amounts (§10.6,
+    /// §19.4), so the matrix states both answers and the comparison
+    /// stays an exact set equality in either case. A row that widened
+    /// to a containment check to cover both would stop noticing a plan
+    /// that kept the carrier it should have given up.
+    committed: Option<BTreeSet<CoverageBoundary>>,
     cases: MatrixCases,
+}
+
+impl MatrixRow {
+    /// State this row's boundaries under a committed representation.
+    fn when_committed(mut self, boundaries: &[CoverageBoundary]) -> Self {
+        self.committed = Some(boundaries.iter().copied().collect());
+        self
+    }
+
+    /// The boundaries this row takes in one case.
+    fn boundaries(&self, case: &ExecutionCaseId) -> &BTreeSet<CoverageBoundary> {
+        match &self.committed {
+            Some(committed)
+                if case
+                    .representations
+                    .values()
+                    .any(|mode| *mode == RepresentationMode::PrivateCommitted) =>
+            {
+                committed
+            }
+            _ => &self.boundaries,
+        }
+    }
 }
 
 fn row(
@@ -176,6 +209,7 @@ fn row(
     MatrixRow {
         relation: RelationId::new(operation, kind, subject),
         boundaries: boundaries.iter().copied().collect(),
+        committed: None,
         cases,
     }
 }
@@ -280,7 +314,8 @@ fn compact_ash_matrix() -> Vec<MatrixRow> {
             RelationSubject::Asset { asset: AssetId::U },
             &runtime,
             All,
-        ),
+        )
+        .when_committed(&[CoverageBoundary::ExternalEvidence]),
         at(
             Kind::CanonicalDeltaPolicy,
             RelationSubject::Operation,
@@ -456,7 +491,8 @@ fn transfer_live_matrix() -> Vec<MatrixRow> {
             RelationSubject::Asset { asset: AssetId::U },
             &runtime,
             All,
-        ),
+        )
+        .when_committed(&[CoverageBoundary::ExternalEvidence]),
         at(
             Kind::CanonicalDeltaPolicy,
             RelationSubject::Operation,
@@ -644,9 +680,11 @@ fn every_pilot_relation_covers_exactly_its_acceptance_matrix_row() {
                 cases.insert(plan.case.sponsor);
 
                 assert_eq!(
-                    plan.boundaries, row.boundaries,
-                    "{:?} in {operation:?}",
+                    &plan.boundaries,
+                    row.boundaries(&plan.case),
+                    "{:?} in {operation:?} case {:?}",
                     row.relation,
+                    plan.case,
                 );
                 assert_eq!(
                     plan.activity,

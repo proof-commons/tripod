@@ -119,10 +119,7 @@ impl CoverageNodeId {
             Self::Requirement(id) => id.case.operation,
             Self::Carrier { relation_case, .. } => relation_case.case.operation,
             Self::Layout(requirement) => layout_operation(requirement),
-            Self::ExternalEvidence(ExternalEvidenceRequirement::SubstrateConservation {
-                operation,
-                ..
-            }) => *operation,
+            Self::ExternalEvidence(requirement) => requirement.operation(),
         }
     }
 

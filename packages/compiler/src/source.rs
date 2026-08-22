@@ -342,6 +342,59 @@ pub fn proof_capabilities(
     }
 }
 
+/// External evidence one *selected* (relation, proof) pairing leaves
+/// open.
+///
+/// # Why a selected alternative can still leave evidence open
+///
+/// Selecting a proof alternative settles which class of argument
+/// discharges a relation, not that the argument completes here. The
+/// confidential conservation of a protocol asset is the case where the
+/// two come apart: the alternative is genuinely selected — the plan
+/// commits to holding the amounts as commitments rather than in the
+/// clear — and the consequence of that commitment is that no program
+/// this compiler emits ever reads them, so the value equation is the
+/// target's own confidential-transaction rules to establish and
+/// nobody else's. A capability alone would understate it: a capability
+/// says a target must be *able* to do something, where this says a
+/// specific run must be *observed* doing it.
+///
+/// # Why the substrate pairing is absent
+///
+/// [`ProofKind::SubstrateConservation`] is not listed as producing its
+/// requirement here. No candidate ever selects it:
+/// [`classify_obligations`] classifies its relation as externally
+/// evidenced before any selection is made, and produces the requirement
+/// there. Producing it in both places would let the two disagree about
+/// one fact.
+///
+/// # What keeps a pairing honest
+///
+/// The realization's approved-alternative census does. This function
+/// answers for the pairings the realization admits; a confidential
+/// alternative approved for a relation that conserves nothing would be
+/// a realization defect, and the selection check that rejects an
+/// unapproved proof is where it is caught.
+///
+/// [`classify_obligations`]: crate::proof::classify_obligations
+#[must_use]
+pub fn proof_external_evidence(
+    declaration: &RelationDeclaration,
+    proof: ProofKind,
+) -> BTreeSet<realization::ExternalEvidenceRequirement> {
+    match (&declaration.relation, proof) {
+        (Relation::AmountConservation { asset, .. }, ProofKind::ConfidentialConservation) => {
+            BTreeSet::from([
+                realization::ExternalEvidenceRequirement::ConfidentialValueConservation {
+                    operation: declaration.id.operation(),
+                    asset: *asset,
+                },
+            ])
+        }
+        _ => BTreeSet::new(),
+    }
+}
+
 /// One source-requirement row for every operand of one (relation,
 /// proof) pairing.
 ///

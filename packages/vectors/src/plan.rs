@@ -1652,8 +1652,9 @@ mod tests {
         use compiler::operation_plan::{RelationMutation, TargetCoverageObligation};
 
         let fixture = fixture_bundle().expect("the fixture bundle builds");
-        let raw = super::build_coverage(fixture.plan()).expect("the coverage matrix builds");
-        let before = raw
+        let undischarged =
+            super::build_coverage(fixture.plan()).expect("the coverage matrix builds");
+        let before = undischarged
             .rows
             .values()
             .filter(|row| row.observation().is_discharged())

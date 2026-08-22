@@ -36,7 +36,7 @@ use super::bound_input;
 use crate::{
     BoundCompilerInput,
     analyzed::{
-        AnalyzedProofPlanProjection, AnalyzedSource, ArchitectureScopeStatus,
+        AnalyzedProofPlan, AnalyzedProofPlanProjection, AnalyzedSource, ArchitectureScopeStatus,
         LifecycleCompleteness, ScopedAnalyzedProgram, ScopedAnalyzedProgramProjection,
         analyze_scoped_program,
     },
@@ -672,10 +672,16 @@ fn approved_modes(operation: OperationId) -> BTreeSet<RepresentationMode> {
 
 /// The measured §19 factorized-output census of one pilot operation.
 ///
-/// One factor per proof plan, and every plan of one pilot produces the
-/// same sizes: the representation decision changes which proof
-/// discharges conservation and which source reads its amounts, not how
-/// many relation-cases, placements, or layout obligations exist.
+/// One factor per proof plan. The relation, case, and relation-case
+/// sizes are the same under every plan of one pilot, as §6.6 requires:
+/// no relation appears or disappears with the representation.
+///
+/// The layout and coverage sizes are not, and that is §19.4. A plan
+/// that holds the conserved amounts as commitments places no carrier
+/// for conservation, so it states none of the layout that would route
+/// authenticated family totals to one, and it answers at the evidence
+/// boundary, where the report owes three negatives where a carrier owed
+/// one focused rejection.
 struct FactorCensus {
     relations: usize,
     cases: usize,
@@ -686,9 +692,9 @@ struct FactorCensus {
     coverage_edges: usize,
 }
 
-const fn factor_census(operation: OperationId) -> FactorCensus {
-    match operation {
-        OperationId::CompactAsh => FactorCensus {
+const fn factor_census(operation: OperationId, committed: bool) -> FactorCensus {
+    match (operation, committed) {
+        (OperationId::CompactAsh, _) => FactorCensus {
             relations: 23,
             cases: 2,
             relation_cases: 46,
@@ -697,7 +703,7 @@ const fn factor_census(operation: OperationId) -> FactorCensus {
             coverage_nodes: 344,
             coverage_edges: 365,
         },
-        OperationId::TransferLive => FactorCensus {
+        (OperationId::TransferLive, false) => FactorCensus {
             relations: 24,
             cases: 2,
             relation_cases: 48,
@@ -706,8 +712,39 @@ const fn factor_census(operation: OperationId) -> FactorCensus {
             coverage_nodes: 362,
             coverage_edges: 489,
         },
+        (OperationId::TransferLive, true) => FactorCensus {
+            relations: 24,
+            cases: 2,
+            relation_cases: 48,
+            placements: 216,
+            layout_requirements: 61,
+            coverage_nodes: 359,
+            coverage_edges: 475,
+        },
         _ => panic!("not a pilot"),
     }
+}
+
+/// Whether one analyzed plan holds the pilot's conserved amounts as
+/// commitments.
+///
+/// Read from the plan's own selected alternative rather than from the
+/// case representation, because it is the selection that decides where
+/// conservation is discharged and the two agree only because the
+/// compiler makes them agree.
+fn plan_is_committed(analysis: &AnalyzedProofPlan, operation: OperationId) -> bool {
+    analysis
+        .relation_requirements
+        .iter()
+        .any(|(relation, bundle)| {
+            relation.operation() == operation
+                && relation.kind() == RelationKind::Conservation
+                && matches!(
+                    &bundle.proof,
+                    ProofDisposition::Selected { proof }
+                        if proof.proof() == ProofKind::ConfidentialConservation
+                )
+        })
 }
 
 // --- §19.1 and §19.2 scope, cases, and relations ---
@@ -721,7 +758,7 @@ fn every_pilot_relation_list_is_exactly_the_analyzed_relation_census() {
             .map(|row| row.relation)
             .collect::<BTreeSet<_>>();
 
-        assert_eq!(expected.len(), factor_census(operation).relations);
+        assert_eq!(expected.len(), factor_census(operation, false).relations);
 
         for analysis in pilot.program.proof_plans.values() {
             // The guide's list is the complete relation census of every
@@ -1140,6 +1177,19 @@ fn every_pilot_places_aggregate_conservation_on_one_operation_global_carrier() {
         for analysis in pilot.program.proof_plans.values() {
             let factor = &analysis.operations[&operation];
 
+            // A plan holding the conserved amounts as commitments
+            // places no carrier for conservation at all, because there
+            // is no arithmetic to place (§10.6). The expectation
+            // follows the plan rather than tolerating either answer.
+            let expected = if plan_is_committed(analysis, operation) {
+                BTreeSet::new()
+            } else {
+                BTreeSet::from([PlacedCarrier {
+                    carrier: CarrierRole::OperationGlobal { operation, anchor },
+                    quantification: CarrierQuantification::Single,
+                }])
+            };
+
             for (key, requirements) in &factor.relation_cases {
                 if key.relation != relation {
                     continue;
@@ -1153,10 +1203,7 @@ fn every_pilot_places_aggregate_conservation_on_one_operation_global_carrier() {
                         .iter()
                         .flat_map(|alternative| alternative.carriers.iter().cloned())
                         .collect::<BTreeSet<_>>(),
-                    BTreeSet::from([PlacedCarrier {
-                        carrier: CarrierRole::OperationGlobal { operation, anchor },
-                        quantification: CarrierQuantification::Single,
-                    }]),
+                    expected,
                     "{operation:?}",
                 );
             }
@@ -1170,9 +1217,8 @@ fn every_pilot_places_aggregate_conservation_on_one_operation_global_carrier() {
 fn every_pilot_factor_is_exactly_its_measured_census() {
     for pilot in pilots() {
         let operation = pilot.operation();
-        let census = factor_census(operation);
-
         for analysis in pilot.program.proof_plans.values() {
+            let census = factor_census(operation, plan_is_committed(analysis, operation));
             let factor = &analysis.operations[&operation];
 
             assert_eq!(factor.execution_cases.len(), census.cases, "{operation:?}");
@@ -1469,18 +1515,34 @@ fn the_combined_program_requires_unresolved_external_evidence_with_no_verdict() 
     // of this assertion.
     let operations = evidence
         .iter()
-        .map(|requirement| {
-            let ExternalEvidenceRequirement::SubstrateConservation { operation, asset } =
-                requirement;
+        .filter_map(|requirement| match requirement {
+            ExternalEvidenceRequirement::SubstrateConservation { operation, asset } => {
+                assert_eq!(*asset, AssetId::Lbtc);
 
-            assert_eq!(*asset, AssetId::Lbtc);
-
-            *operation
+                Some(*operation)
+            }
+            ExternalEvidenceRequirement::ConfidentialValueConservation { .. } => None,
         })
         .collect::<BTreeSet<_>>();
 
     assert_eq!(operations, COMBINED.scope());
-    assert_eq!(evidence.len(), 2);
+
+    // The confidential class is counted separately and pinned by the
+    // operations whose plans hold a protocol amount as a commitment, so
+    // the total below cannot absorb a stray requirement of either class.
+    let confidential = evidence
+        .iter()
+        .filter_map(|requirement| match requirement {
+            ExternalEvidenceRequirement::ConfidentialValueConservation { operation, asset } => {
+                assert_eq!(*asset, AssetId::U);
+
+                Some(*operation)
+            }
+            ExternalEvidenceRequirement::SubstrateConservation { .. } => None,
+        })
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(evidence.len(), operations.len() + confidential.len());
 
     // Deployment lifecycle: every plan retains the exits declared
     // outside the compiler scope rather than reporting completeness.
@@ -1569,7 +1631,10 @@ fn the_analyzed_program_mints_no_compiler_identity() {
         architecture_scope,
         ArchitectureScopeStatus::Partial { .. },
     ));
-    assert_eq!(required_external_evidence.len(), 2);
+    // Two whole-transaction substrate obligations, one per analyzed
+    // operation, and one confidential obligation for the live transfer,
+    // whose private plan holds its protocol amounts as commitments.
+    assert_eq!(required_external_evidence.len(), 3);
 
     for analysis in proof_plans.values() {
         let AnalyzedProofPlanProjection {

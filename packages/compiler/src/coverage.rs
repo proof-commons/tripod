@@ -48,7 +48,7 @@ use crate::{
     CompileError,
     capability::RequiredCapability,
     carrier::{CarrierEligibility, relation_case_eligibility},
-    case::ExecutionCaseId,
+    case::{ConservedAmountVisibility, ExecutionCaseId, conserved_amount_visibility},
     coverage_graph::{CoverageGraphProjection, resolve_coverage_dependencies},
     layout::{LayoutRequirement, names_sponsor_amount, selected_carrier_requirements},
     placement::{
@@ -455,7 +455,10 @@ pub fn derive_relation_coverage(
 ) -> Result<RelationCoveragePlan, CompileError> {
     let operands = relation_operands(declaration)?;
     let representation = relation_representation(&declaration.relation, &plan.case);
-    let mutations = relation_mutations(&declaration.relation);
+    let mutations = relation_mutations(
+        &declaration.relation,
+        conserved_amount_visibility(declaration, &plan.case)?,
+    );
 
     let mut positive = Vec::new();
     let mut negative = Vec::new();
@@ -703,13 +706,27 @@ pub fn validate_relation_coverage(plan: &RelationCoveragePlan) -> Result<(), Com
 /// wildcard arm, so a new realization relation fails to compile in both
 /// until its required negatives are stated rather than being absorbed
 /// into a default that silently requires nothing.
-pub fn relation_mutations(relation: &Relation) -> Vec<(CoverageBoundary, RelationMutation)> {
-    let mut mutations = runtime_mutations(relation)
+pub fn relation_mutations(
+    relation: &Relation,
+    amounts: ConservedAmountVisibility,
+) -> Vec<(CoverageBoundary, RelationMutation)> {
+    // Committed conservation has no carrier to mutate against, so its
+    // negatives move with its discharge. Retaining the runtime mismatch
+    // as well would require a rejection from a program that does not
+    // exist, and dropping the mutations entirely would leave the one
+    // relation Guide-13 §19.4 makes representation-dependent as the one
+    // relation with no negative at all.
+    let runtime = match (relation, amounts) {
+        (Relation::AmountConservation { .. }, ConservedAmountVisibility::Committed) => Vec::new(),
+        _ => runtime_mutations(relation),
+    };
+
+    let mut mutations = runtime
         .into_iter()
         .map(|mutation| (CoverageBoundary::RuntimeCarrier, mutation))
         .collect::<Vec<_>>();
 
-    mutations.extend(static_mutations(relation));
+    mutations.extend(static_mutations(relation, amounts));
     mutations
 }
 
@@ -789,9 +806,34 @@ fn runtime_mutations(relation: &Relation) -> Vec<RelationMutation> {
 }
 
 /// The negatives one relation requires away from the runtime boundary.
-fn static_mutations(relation: &Relation) -> Vec<(CoverageBoundary, RelationMutation)> {
+fn static_mutations(
+    relation: &Relation,
+    amounts: ConservedAmountVisibility,
+) -> Vec<(CoverageBoundary, RelationMutation)> {
     use CoverageBoundary as Boundary;
     use RelationMutation as Mutation;
+
+    // Committed conservation is discharged where substrate conservation
+    // is, so it owes the same three negatives about the report that
+    // discharges it: that no report arrived, that the report records a
+    // target rejection, and that the report describes some other
+    // transaction. A report accepted for the wrong subject is the
+    // failure a valid-looking case is most likely to hide.
+    if let (Relation::AmountConservation { .. }, ConservedAmountVisibility::Committed) =
+        (relation, amounts)
+    {
+        return vec![
+            (
+                Boundary::ExternalEvidence,
+                Mutation::ExternalEvidenceMissing,
+            ),
+            (Boundary::ExternalEvidence, Mutation::ExternalEvidenceFailed),
+            (
+                Boundary::ExternalEvidence,
+                Mutation::ExternalEvidenceIdentityMismatch,
+            ),
+        ];
+    }
 
     match relation {
         // A hidden owner or operator gate is a property of the emitted

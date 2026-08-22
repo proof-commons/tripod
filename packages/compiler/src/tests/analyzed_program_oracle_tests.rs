@@ -290,8 +290,17 @@ fn oracle_relation_case_keys(
 /// one by the emitted bundle, an external one by a typed report, and
 /// everything a target actually evaluates is runtime. A representation
 /// or lifecycle relation is genuinely hybrid and states two.
-fn oracle_boundaries(relation: &Relation) -> BTreeSet<CoverageBoundary> {
+///
+/// Conservation is the one row that reads the case as well as the
+/// relation: amounts a case holds as commitments are related by the
+/// target rather than by any program, so the relation answers at the
+/// external boundary instead of the runtime one (Guide-13 §10.6).
+fn oracle_boundaries(relation: &Relation, case: &ExecutionCaseId) -> BTreeSet<CoverageBoundary> {
     use CoverageBoundary as Boundary;
+
+    if oracle_committed_amounts(relation, case) {
+        return BTreeSet::from([Boundary::ExternalEvidence]);
+    }
 
     match relation {
         Relation::Constructibility { .. } => BTreeSet::from([Boundary::CompilerStatic]),
@@ -355,22 +364,68 @@ fn oracle_keys_at(
         .filter(|key| {
             let relation = &declarations[&key.relation].relation;
 
-            oracle_boundaries(relation).contains(&boundary)
+            oracle_boundaries(relation, &key.case).contains(&boundary)
                 && (!active_only
                     || oracle_activity(relation, &key.case) == RelationActivity::Active)
         })
         .collect()
 }
 
-/// The external evidence one scope's declarations require, restated.
+/// Whether one case holds a relation's conserved amounts as
+/// commitments, restated.
+fn oracle_committed_amounts(relation: &Relation, case: &ExecutionCaseId) -> bool {
+    let Relation::AmountConservation {
+        input_objects,
+        output_objects,
+        ..
+    } = relation
+    else {
+        return false;
+    };
+
+    input_objects.iter().chain(output_objects).any(|object| {
+        case.representations.get(object) == Some(&RepresentationMode::PrivateCommitted)
+    })
+}
+
+/// Whether one plan proves a relation's conservation confidentially,
+/// restated.
+///
+/// The plan's own selection is read rather than the case's
+/// representation, because this is the ownership question — which
+/// alternative *this* candidate picked — and the two agree only because
+/// the compiler makes them agree, which is a thing an oracle checks
+/// rather than assumes.
+fn oracle_confidential_conservation(
+    declaration: &RelationDeclaration,
+    plan: &ProofPlanCandidate,
+) -> bool {
+    matches!(&declaration.relation, Relation::AmountConservation { .. })
+        && plan
+            .proofs
+            .get(&declaration.id)
+            .is_some_and(|selected| selected.proof() == ProofKind::ConfidentialConservation)
+}
+
+/// The external evidence one scope's declarations require under one
+/// plan, restated.
 fn oracle_evidence(
     declarations: &BTreeMap<RelationId, RelationDeclaration>,
+    plan: &ProofPlanCandidate,
 ) -> BTreeSet<ExternalEvidenceRequirement> {
     declarations
         .values()
         .filter_map(|declaration| match &declaration.relation {
             Relation::SubstrateConservation { asset } => {
                 Some(ExternalEvidenceRequirement::SubstrateConservation {
+                    operation: declaration.id.operation(),
+                    asset: *asset,
+                })
+            }
+            Relation::AmountConservation { asset, .. }
+                if oracle_confidential_conservation(declaration, plan) =>
+            {
+                Some(ExternalEvidenceRequirement::ConfidentialValueConservation {
                     operation: declaration.id.operation(),
                     asset: *asset,
                 })
@@ -776,14 +831,15 @@ fn the_oracle_reproduces_the_placement_factors_and_layout_census() {
 fn the_oracle_reproduces_the_external_evidence_union() {
     for analyzed in scopes() {
         let declarations = oracle_declarations(analyzed);
-        let expected = oracle_evidence(&declarations);
+        let mut union = BTreeSet::new();
 
-        // One whole-transaction substrate obligation per analyzed
-        // operation, retained as an unresolved requirement.
-        assert_eq!(expected.len(), analyzed.scope().len());
-        assert_eq!(analyzed.projection.required_external_evidence, expected);
-
-        for plan in analyzed.projection.proof_plans.values() {
+        // Per plan, not per scope: the substrate obligation is the same
+        // under every plan, where the confidential one belongs only to
+        // the plans that chose to hold the amounts as commitments. A
+        // single scope-wide expectation would have to be wrong for one
+        // of the two kinds of plan.
+        for (key, plan) in &analyzed.projection.proof_plans {
+            let expected = oracle_evidence(&declarations, key);
             let owned = plan
                 .relation_requirements
                 .values()
@@ -791,7 +847,24 @@ fn the_oracle_reproduces_the_external_evidence_union() {
                 .collect::<BTreeSet<_>>();
 
             assert_eq!(owned, expected);
+            union.extend(expected);
         }
+
+        assert_eq!(analyzed.projection.required_external_evidence, union);
+
+        // One whole-transaction substrate obligation per analyzed
+        // operation, retained as an unresolved requirement.
+        let substrate = union
+            .iter()
+            .filter(|requirement| {
+                matches!(
+                    requirement,
+                    ExternalEvidenceRequirement::SubstrateConservation { .. }
+                )
+            })
+            .count();
+
+        assert_eq!(substrate, analyzed.scope().len());
     }
 }
 
@@ -908,13 +981,31 @@ fn oracle_owned(
                 "the selection is realization-approved",
             );
 
+            // A selected alternative can still leave evidence open:
+            // choosing to hold the amounts as commitments is exactly
+            // the choice that puts the value equation beyond every
+            // program this compiler emits.
+            let evidence = match &declaration.relation {
+                Relation::AmountConservation { asset, .. }
+                    if selected.proof() == ProofKind::ConfidentialConservation =>
+                {
+                    BTreeSet::from(
+                        [ExternalEvidenceRequirement::ConfidentialValueConservation {
+                            operation: declaration.id.operation(),
+                            asset: *asset,
+                        }],
+                    )
+                }
+                _ => BTreeSet::new(),
+            };
+
             (
                 proof_capabilities(declaration, selected.proof()),
                 derive_source_requirements(declaration, selected.proof())
                     .expect("selected source rows")
                     .into_iter()
                     .collect(),
-                BTreeSet::new(),
+                evidence,
             )
         }
     }

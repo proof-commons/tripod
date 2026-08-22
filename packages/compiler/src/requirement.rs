@@ -41,7 +41,7 @@ use crate::{
     relation::CompilerRelationAnalysis,
     source::{
         OperandRole, RequiredSourceKind, SourceRequirement, derive_source_requirements,
-        is_sponsor_amount_operand, proof_capabilities,
+        is_sponsor_amount_operand, proof_capabilities, proof_external_evidence,
     },
 };
 
@@ -175,7 +175,7 @@ pub fn derive_relation_requirements(
                     },
                     proof_capabilities(declaration, selected.proof()),
                     derive_source_requirements(declaration, selected.proof())?,
-                    BTreeSet::new(),
+                    proof_external_evidence(declaration, selected.proof()),
                 )
             }
 

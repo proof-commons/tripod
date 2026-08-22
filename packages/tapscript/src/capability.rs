@@ -934,14 +934,28 @@ impl EvidenceAssessmentProjection {
 #[must_use]
 pub fn assess_evidence_role(role: ExternalEvidenceRole) -> ExternalEvidenceAssessment {
     let evidence: &[TargetEvidenceRequirementId] = match role {
-        // The compiler says the substrate itself must conserve value
-        // across a transaction; the target names that claim as
+        // Both roles land on one requirement, and the arms are merged
+        // rather than written twice because the target really does
+        // answer them with one rule.
+        //
+        // The compiler asks two different questions. One says the
+        // substrate itself must conserve value across a transaction;
+        // the other says a protocol asset's amounts are held as
+        // commitments, so nothing the analysis emits reads them and
+        // only the target relates them. This target answers both with
         // whole-transaction conservation over its confidential and
-        // explicit value classes. Neither an opcode nor a backend
-        // pattern discharges it, so no primitive and no structural
-        // obligation appears here — listing one would turn an external
-        // consensus claim into a question of primitive availability.
-        ExternalEvidenceRole::SubstrateConservation => {
+        // explicit value classes at once: it draws no line between the
+        // classes, and a second requirement invented to make the two
+        // roles look distinct would claim a distinction the target does
+        // not offer.
+        //
+        // Neither an opcode nor a backend pattern discharges either
+        // question, so no primitive and no structural obligation
+        // appears here. Commitment equality in particular is absent: it
+        // is a script mechanism a program can execute, and offering it
+        // would answer an external consensus claim with a primitive.
+        ExternalEvidenceRole::ConfidentialValueConservation
+        | ExternalEvidenceRole::SubstrateConservation => {
             &[TargetEvidenceRequirementId::ConfidentialValueConservation]
         }
     };

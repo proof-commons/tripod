@@ -18,7 +18,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use architecture::{ObjectId, OperationId};
-use realization::{Relation, RelationId, RelationKind, RepresentationMode, TransactionSide};
+use realization::{
+    ProofAlternativeId, ProofKind, Relation, RelationId, RelationKind, RepresentationMode,
+    TransactionSide,
+};
 
 use super::bound_input;
 use crate::{
@@ -126,6 +129,18 @@ impl Analysis {
             .expect("relation is in scope")
             .source
             .relation
+            .clone()
+    }
+
+    /// The proof alternatives the realization approves for one relation.
+    fn proof_alternatives(&self, relation: &RelationId) -> BTreeSet<ProofAlternativeId> {
+        self.relations
+            .graph
+            .node_weights()
+            .find(|node| &node.source.id == relation)
+            .expect("relation is in scope")
+            .source
+            .proof_alternatives
             .clone()
     }
 
@@ -569,12 +584,39 @@ fn amount_conservation_is_placed_on_one_complete_global_carrier() {
         let operation = analysis.operation();
         let (relation, families) = conservation(&analysis);
 
-        for (_, placement) in analysis.placements() {
+        let mut arithmetic = 0_usize;
+        let mut committed = 0_usize;
+
+        for (entry, placement) in analysis.placements() {
             let assignment = placement
                 .assignments
                 .iter()
-                .find(|assignment| assignment.relation == relation)
-                .expect("conservation is placed");
+                .find(|assignment| assignment.relation == relation);
+
+            // A plan that holds the amounts as commitments places no
+            // carrier for conservation at all, because there is no
+            // program to place: the value equation is the target's
+            // (Guide-13 §10.6). Reading the plan's own selection rather
+            // than tolerating either answer is what keeps this a check.
+            if entry
+                .proof_plan
+                .proofs
+                .get(&relation)
+                .is_some_and(|selected| selected.proof() == ProofKind::ConfidentialConservation)
+            {
+                committed += 1;
+
+                assert!(
+                    assignment.is_none(),
+                    "{operation:?} placed a carrier for committed conservation",
+                );
+
+                continue;
+            }
+
+            arithmetic += 1;
+
+            let assignment = assignment.expect("conservation is placed");
 
             assert_eq!(assignment.carriers.len(), 1, "{operation:?}");
 
@@ -586,6 +628,23 @@ fn amount_conservation_is_placed_on_one_complete_global_carrier() {
             );
             assert_eq!(placed.quantification, CarrierQuantification::Single);
         }
+
+        // Which halves are exercised is read from the realization's own
+        // approved alternatives rather than from what the placement
+        // happened to produce: a pilot whose conservation admits the
+        // confidential class must place both kinds of plan, and one
+        // that does not must place none of the second kind. Asserting
+        // only that each branch ran somewhere would let a pilot lose
+        // its committed plans without failing.
+        assert!(arithmetic > 0, "{operation:?}");
+        assert_eq!(
+            committed > 0,
+            analysis
+                .proof_alternatives(&relation)
+                .iter()
+                .any(|alternative| alternative.proof() == ProofKind::ConfidentialConservation),
+            "{operation:?}",
+        );
 
         // The global carrier depends on authenticated totals for every
         // family the relation conserves, on both sides.

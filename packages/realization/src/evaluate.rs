@@ -18,18 +18,79 @@ use crate::{
     expression::{DependencyEdge, ExpressionDeclaration, FactValues},
 };
 
-/// Typed premise the realization evaluator cannot establish itself.
+/// Typed premise no boundary below the target can establish itself.
 ///
 /// Carrying the requirement in the report keeps the missing proof
 /// visible: a runtime pass over the sponsor-erased observation is not
 /// evidence that the substrate accepted whole-transaction value
 /// conservation. The model kernel or the target discharges it.
+///
+/// # Two boundaries, not one
+///
+/// The two members are raised by different boundaries and neither
+/// implies the other.
+///
+/// [`Self::SubstrateConservation`] is raised by the evaluator itself:
+/// the observation it reads has the sponsor amounts erased, so the
+/// value equation is not computable here at all, and
+/// [`Relation::SubstrateConservation`] evaluates straight to
+/// [`RelationStatus::EvidenceRequired`].
+///
+/// [`Self::ConfidentialValueConservation`] is not. A semantic
+/// observation carries protocol amounts whatever representation a
+/// target later chooses for them, so the evaluator computes ordinary
+/// amount conservation and reaches a verdict. What it cannot reach is
+/// the *target's* verdict: where the target holds those amounts as
+/// commitments, no program the compiler emits reads them, and only the
+/// target's own confidential-transaction rules establish that the sums
+/// agree. The requirement is therefore raised by the compiler, against
+/// the conservation relation, when the plan selects the confidential
+/// proof alternative for it.
+///
+/// [`Relation::SubstrateConservation`]: crate::Relation::SubstrateConservation
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ExternalEvidenceRequirement {
+    /// The target's own confidential-transaction rules must establish
+    /// the value equation for one asset across one operation.
+    ///
+    /// No opcode, abstract stack result, local curve primitive, or
+    /// commitment oracle substitutes for it: an oracle can check what a
+    /// fixture claims its commitments open to, which says nothing about
+    /// whether the target accepted the transaction carrying them.
+    ConfidentialValueConservation {
+        operation: architecture::OperationId,
+        asset: AssetId,
+    },
     SubstrateConservation {
         operation: architecture::OperationId,
         asset: AssetId,
     },
+}
+
+impl ExternalEvidenceRequirement {
+    /// The operation whose relation left this premise open.
+    ///
+    /// Every member names one, and the accessor is exhaustive with no
+    /// wildcard arm: a member added later stops this crate compiling
+    /// until it says which operation it belongs to. A requirement that
+    /// belonged to no operation could not be filed against the analysis
+    /// that raised it.
+    #[must_use]
+    pub const fn operation(&self) -> architecture::OperationId {
+        match self {
+            Self::ConfidentialValueConservation { operation, .. }
+            | Self::SubstrateConservation { operation, .. } => *operation,
+        }
+    }
+
+    /// The asset whose value equation stays open.
+    #[must_use]
+    pub const fn asset(&self) -> AssetId {
+        match self {
+            Self::ConfidentialValueConservation { asset, .. }
+            | Self::SubstrateConservation { asset, .. } => *asset,
+        }
+    }
 }
 
 /// Result class for one realization relation.

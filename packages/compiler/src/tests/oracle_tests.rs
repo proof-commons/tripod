@@ -149,6 +149,12 @@ fn oracle_enumerate(
         let mut valid = true;
         let mut required_capabilities = fixed_capabilities.clone();
         let mut source_requirements = fixed_sources.clone();
+        // The fixed set is what no assignment can trade away. An
+        // assignment can still add to it: choosing to hold the amounts
+        // as commitments is the choice that puts the value equation
+        // beyond every program the compiler emits, so the evidence
+        // follows the alternative rather than the relation.
+        let mut candidate_evidence = external_evidence.clone();
 
         for (relation, alternative) in &proofs {
             let declaration = &declarations[relation];
@@ -171,11 +177,20 @@ fn oracle_enumerate(
 
             // Representation compatibility for amount relations.
             if let Relation::AmountConservation {
+                asset,
                 input_objects,
                 output_objects,
-                ..
             } = &declaration.relation
             {
+                if alternative.proof() == realization::ProofKind::ConfidentialConservation {
+                    candidate_evidence.insert(
+                        realization::ExternalEvidenceRequirement::ConfidentialValueConservation {
+                            operation: relation.operation(),
+                            asset: *asset,
+                        },
+                    );
+                }
+
                 for (choice, mode) in &representations {
                     if choice.operation == relation.operation()
                         && (input_objects.contains(&choice.object)
@@ -220,7 +235,7 @@ fn oracle_enumerate(
                     representations,
                     required_capabilities,
                     source_requirements,
-                    external_evidence: external_evidence.clone(),
+                    external_evidence: candidate_evidence,
                     lifecycle: lifecycle_rows,
                     disclosure,
                 });
