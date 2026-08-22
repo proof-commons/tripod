@@ -35,7 +35,7 @@
 //! the ADR-010 command-line contract.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, btree_map::Entry},
     fs,
     path::{Path, PathBuf},
     sync::LazyLock,
@@ -157,12 +157,16 @@ static CURRENT_GATE: LazyLock<regex::Regex> = LazyLock::new(|| {
 static CURRENT_PHASE: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(r"(?m)^Current: Phase\b[ \t]*(\S*)").expect("static phase pattern")
 });
-static ACTIVE_STATUS: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"(?m)^> \*\*Status:\*\* Active").expect("static status pattern")
+static PHASE_CARD_STATUS: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?m)^> \*\*Status:\*\* ([[:alpha:]]+)").expect("static status pattern")
 });
 static TASK_HEADING: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(r"^`?([A-Z][A-Z0-9]*-?[0-9]+)`? ").expect("static task heading")
 });
+
+const PHASE_INDEX_README: &str = "plans/phases/README.md";
+const PHASE_INDEX_HEADING: &str = "## Index \u{00b7} `tab:phases:index`";
+const PHASE_INDEX_HEADING_BARE: &str = "## Index \u{00b7} tab:phases:index";
 
 #[derive(Debug, Serialize)]
 pub struct PlansReport {
@@ -494,10 +498,12 @@ fn warn_threshold(relative_path: &str) -> Option<u64> {
     }
 }
 
-/// The numbered phase cards on disk, and which of them are Active.
+/// The numbered phase cards on disk, with their declared statuses.
 struct PhaseCards {
+    files: BTreeSet<String>,
     numbered: BTreeSet<u32>,
     active: Vec<u32>,
+    statuses: BTreeMap<String, String>,
 }
 
 /// Read `plans/phases`, collecting every `NN-`-prefixed card.
@@ -506,8 +512,10 @@ struct PhaseCards {
 /// depend on directory traversal order.
 fn phase_cards(root: &Path) -> anyhow::Result<PhaseCards> {
     let mut cards = PhaseCards {
+        files: BTreeSet::new(),
         numbered: BTreeSet::new(),
         active: Vec::new(),
+        statuses: BTreeMap::new(),
     };
     for entry in read_dir_sorted(&root.join("plans/phases"))? {
         let Some(name) = entry.file_name().and_then(|name| name.to_str()) else {
@@ -526,12 +534,23 @@ fn phase_cards(root: &Path) -> anyhow::Result<PhaseCards> {
             continue;
         };
         cards.numbered.insert(number);
-        if ACTIVE_STATUS.is_match(&read_text(&entry)?) {
-            cards.active.push(number);
+        cards.files.insert(name.to_owned());
+        let text = read_text(&entry)?;
+        if let Some(status) = phase_card_status(&text) {
+            cards.statuses.insert(name.to_owned(), status.to_owned());
+            if status == "Active" {
+                cards.active.push(number);
+            }
         }
     }
     cards.active.sort_unstable();
     Ok(cards)
+}
+
+fn phase_card_status(text: &str) -> Option<&str> {
+    PHASE_CARD_STATUS
+        .captures(text)
+        .map(|capture| capture.get(1).expect("status capture").as_str())
 }
 
 /// The numeric phase `pattern` declares in `text`.
@@ -557,6 +576,139 @@ fn declared_phase(
         "phase: {file} declares a malformed {subject}: \"{declared}\""
     ));
     None
+}
+
+fn verify_phase_index(
+    root: &Path,
+    cards: &PhaseCards,
+    failures: &mut Vec<String>,
+) -> anyhow::Result<()> {
+    let Some(index) = phase_index(root, failures)? else {
+        return Ok(());
+    };
+
+    for card in &cards.files {
+        if !index.contains_key(card) {
+            failures.push(format!("phase index: plans/phases/{card} has no index row"));
+        }
+    }
+    for (card, status) in &index {
+        if !cards.files.contains(card) {
+            failures.push(format!(
+                "phase index: {PHASE_INDEX_README} links missing phase card {card}"
+            ));
+            continue;
+        }
+        if let Some(declared) = cards.statuses.get(card)
+            && status != declared
+        {
+            failures.push(format!(
+                "phase index: plans/phases/{card} lists Status {status} but card declares {declared}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn phase_index(
+    root: &Path,
+    failures: &mut Vec<String>,
+) -> anyhow::Result<Option<BTreeMap<String, String>>> {
+    let readme = root.join(PHASE_INDEX_README);
+    let text = read_text(&readme)?;
+    let lines: Vec<_> = text.lines().collect();
+    let Some(section_start) = lines.iter().position(|line| is_phase_index_heading(line)) else {
+        failures.push(format!(
+            "phase index: {PHASE_INDEX_README} declares no index section"
+        ));
+        return Ok(None);
+    };
+    let section: Vec<_> = lines[section_start + 1..]
+        .iter()
+        .copied()
+        .take_while(|line| !line.trim_start().starts_with("## "))
+        .collect();
+    let Some(header) = section
+        .iter()
+        .position(|line| is_phase_index_table_header(line))
+    else {
+        failures.push(format!(
+            "phase index: {PHASE_INDEX_README} declares no index table"
+        ));
+        return Ok(None);
+    };
+    if !section
+        .get(header + 1)
+        .is_some_and(|line| is_separator_row(line))
+    {
+        failures.push(format!(
+            "phase index: {PHASE_INDEX_README} declares no index table"
+        ));
+        return Ok(None);
+    }
+
+    let mut rows = BTreeMap::new();
+    for line in section.iter().skip(header + 2) {
+        if !line.trim_start().starts_with('|') {
+            break;
+        }
+        let Some(cells) = table_cells(line) else {
+            continue;
+        };
+        if cells.len() != 3 {
+            continue;
+        }
+        let Some(capture) = LINK.captures(cells[0]) else {
+            continue;
+        };
+        let card = capture[1].to_owned();
+        match rows.entry(card) {
+            Entry::Vacant(entry) => {
+                entry.insert(cells[1].to_owned());
+            }
+            Entry::Occupied(entry) => {
+                let card = entry.key();
+                failures.push(format!(
+                    "phase index: plans/phases/{card} appears in more than one index row"
+                ));
+            }
+        }
+    }
+    Ok(Some(rows))
+}
+
+fn is_phase_index_heading(line: &str) -> bool {
+    let line = line.trim();
+    line == PHASE_INDEX_HEADING || line == PHASE_INDEX_HEADING_BARE
+}
+
+fn is_phase_index_table_header(line: &str) -> bool {
+    table_cells(line).is_some_and(|cells| {
+        cells.len() == 3 && cells[0] == "Phase" && cells[1] == "Status" && cells[2] == "Result"
+    })
+}
+
+fn is_separator_row(line: &str) -> bool {
+    table_cells(line).is_some_and(|cells| {
+        cells.len() == 3
+            && cells
+                .iter()
+                .all(|cell| cell.len() >= 3 && cell.chars().all(|mark| mark == '-' || mark == ':'))
+    })
+}
+
+fn table_cells(line: &str) -> Option<Vec<&str>> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with('|') || !trimmed.ends_with('|') {
+        return None;
+    }
+    Some(
+        trimmed
+            .trim_matches('|')
+            .split('|')
+            .map(str::trim)
+            .collect(),
+    )
 }
 
 /// Weld every current-phase declaration in the planning tree (T8).
@@ -600,6 +752,7 @@ fn verify_phase_gate(root: &Path, failures: &mut Vec<String>) -> anyhow::Result<
     );
 
     let cards = phase_cards(root)?;
+    verify_phase_index(root, &cards, &mut phase_failures)?;
     let mut compared = vec![
         ("plans/README.md", readme_phase),
         ("plans/roadmap.md", roadmap_phase),
@@ -868,8 +1021,21 @@ mod tests {
 
     use super::*;
 
-    /// A minimal valid tree: indexed READMEs, four agreeing Phase 2
-    /// declarations, one Active card.
+    fn write_phase_index(root: &Path, rows: &[(&str, &str, &str)]) {
+        let mut index = String::from(concat!(
+            "# Phases\n\n",
+            "## Index \u{00b7} `tab:phases:index`\n\n",
+            "| Phase | Status | Result |\n",
+            "|---|---|---|\n",
+        ));
+        for (card, status, result) in rows {
+            index.push_str(&format!("| [{card}]({card}) | {status} | {result} |\n"));
+        }
+        fs::write(root.join("plans/phases/README.md"), index).expect("phases readme");
+    }
+
+    /// A minimal valid tree: indexed READMEs, agreeing Phase 2
+    /// declarations, one Active card, and a matching phase index.
     fn fixture() -> tempfile::TempDir {
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
@@ -886,11 +1052,7 @@ mod tests {
             "# Roadmap\n\nCurrent: Phase 2 - pilot\n",
         )
         .expect("roadmap");
-        fs::write(
-            root.join("plans/phases/README.md"),
-            "# Phases\n\n02-pilot.md\n",
-        )
-        .expect("phases readme");
+        write_phase_index(root, &[("02-pilot.md", "Active", "Pilot.")]);
         fs::write(
             root.join("plans/backlog.md"),
             "# Backlog\n\n> **Current gate:** Phase 2\n",
@@ -910,6 +1072,16 @@ mod tests {
             .failures
             .iter()
             .filter(|failure| failure.starts_with("phase: "))
+            .cloned()
+            .collect()
+    }
+
+    /// Every `phase index:` diagnostic the tree reports, in reported order.
+    fn phase_index_failures(outcome: &PlansOutcome) -> Vec<String> {
+        outcome
+            .failures
+            .iter()
+            .filter(|failure| failure.starts_with("phase index: "))
             .cloned()
             .collect()
     }
@@ -1070,6 +1242,135 @@ mod tests {
     }
 
     #[test]
+    fn agreeing_phase_index_passes() {
+        let dir = fixture();
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+        assert_eq!(phase_index_failures(&outcome), Vec::<String>::new());
+    }
+
+    #[test]
+    fn phase_card_missing_from_index_fails() {
+        let dir = fixture();
+        fs::write(
+            dir.path().join("plans/phases/03-second.md"),
+            "# Second\n\n> **Status:** Planned\n",
+        )
+        .expect("second card");
+
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+
+        assert_eq!(
+            phase_index_failures(&outcome),
+            vec!["phase index: plans/phases/03-second.md has no index row".to_owned()],
+        );
+        assert!(!outcome.report.valid);
+    }
+
+    #[test]
+    fn phase_index_link_to_missing_card_fails() {
+        let dir = fixture();
+        write_phase_index(
+            dir.path(),
+            &[
+                ("02-pilot.md", "Active", "Pilot."),
+                ("03-second.md", "Planned", "Missing."),
+            ],
+        );
+
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+
+        assert_eq!(
+            phase_index_failures(&outcome),
+            vec![
+                "phase index: plans/phases/README.md links missing phase card 03-second.md"
+                    .to_owned()
+            ],
+        );
+        assert!(!outcome.report.valid);
+    }
+
+    #[test]
+    fn phase_index_status_drift_fails() {
+        let dir = fixture();
+        write_phase_index(dir.path(), &[("02-pilot.md", "Planned", "Pilot.")]);
+
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+
+        assert_eq!(
+            phase_index_failures(&outcome),
+            vec![
+                "phase index: plans/phases/02-pilot.md lists Status Planned but card declares Active"
+                    .to_owned()
+            ],
+        );
+        assert!(!outcome.report.valid);
+    }
+
+    #[test]
+    fn duplicate_phase_index_row_fails() {
+        let dir = fixture();
+        write_phase_index(
+            dir.path(),
+            &[
+                ("02-pilot.md", "Active", "Pilot."),
+                ("02-pilot.md", "Active", "Repeated."),
+            ],
+        );
+
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+
+        assert_eq!(
+            phase_index_failures(&outcome),
+            vec![
+                "phase index: plans/phases/02-pilot.md appears in more than one index row"
+                    .to_owned()
+            ],
+        );
+        assert!(!outcome.report.valid);
+    }
+
+    #[test]
+    fn missing_phase_index_section_fails() {
+        let dir = fixture();
+        fs::write(
+            dir.path().join("plans/phases/README.md"),
+            concat!(
+                "# Phases\n\n",
+                "| Phase | Status | Result |\n",
+                "|---|---|---|\n",
+                "| [02-pilot.md](02-pilot.md) | Active | Pilot. |\n",
+            ),
+        )
+        .expect("phases readme");
+
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+
+        assert_eq!(
+            phase_index_failures(&outcome),
+            vec!["phase index: plans/phases/README.md declares no index section".to_owned()],
+        );
+        assert!(!outcome.report.valid);
+    }
+
+    #[test]
+    fn missing_phase_index_table_fails() {
+        let dir = fixture();
+        fs::write(
+            dir.path().join("plans/phases/README.md"),
+            "# Phases\n\n## Index \u{00b7} `tab:phases:index`\n\nNo table.\n",
+        )
+        .expect("phases readme");
+
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+
+        assert_eq!(
+            phase_index_failures(&outcome),
+            vec!["phase index: plans/phases/README.md declares no index table".to_owned()],
+        );
+        assert!(!outcome.report.valid);
+    }
+
+    #[test]
     fn stale_plans_readme_phase_fails() {
         // The finding itself: plans/README.md sat on Phase 1 while the
         // rest of the tree had moved to Phase 2, and nothing looked.
@@ -1137,6 +1438,7 @@ mod tests {
             "# Pilot\n\n> **Status:** Complete\n",
         )
         .expect("retired card");
+        write_phase_index(dir.path(), &[("02-pilot.md", "Complete", "Pilot.")]);
         let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
         assert_eq!(
             phase_failures(&outcome),
@@ -1152,11 +1454,13 @@ mod tests {
             "# Second\n\n> **Status:** Active\n",
         )
         .expect("second card");
-        fs::write(
-            dir.path().join("plans/phases/README.md"),
-            "# Phases\n\n02-pilot.md 03-second.md\n",
-        )
-        .expect("phases readme");
+        write_phase_index(
+            dir.path(),
+            &[
+                ("02-pilot.md", "Active", "Pilot."),
+                ("03-second.md", "Active", "Second."),
+            ],
+        );
         let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
         assert_eq!(
             phase_failures(&outcome),
@@ -1242,11 +1546,13 @@ mod tests {
                 )
                 .expect("card");
             }
-            fs::write(
-                dir.path().join("plans/phases/README.md"),
-                "# Phases\n\n02-pilot.md 03-second.md\n",
-            )
-            .expect("phases readme");
+            write_phase_index(
+                dir.path(),
+                &[
+                    ("02-pilot.md", "Active", "Pilot."),
+                    ("03-second.md", "Active", "Second."),
+                ],
+            );
             let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
             reports.push(phase_failures(&outcome));
         }
