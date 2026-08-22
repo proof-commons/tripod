@@ -58,12 +58,13 @@ pub use live_pattern::{
     OwnerKeyMutationGate, OwnerKeyMutationOutcome, OwnerKeyOracle, PlacementDefect,
     ReceiptOwnerAssignment, RecognitionCarrier, RecognitionEstablishment, RecognitionResidual,
     RecognizedFact, build_live_pattern, coordinator_placements, emitted_fragments,
-    every_emitted_fragment, final_stack_defects, live_cardinality_fragment,
+    every_emitted_fragment, final_stack_defects, has_member_position, live_cardinality_fragment,
     live_coordinator_program, live_member_program, live_member_role_fragment,
-    live_program_precondition, live_transfer_patterns, local_recognition_fragment,
-    mutated_owner_authorization_fragment, mutation_gate, negative_disposition,
-    owner_authorization_fragment, owner_authorization_precondition, owner_key_mutation_outcome,
-    owner_key_obligation, recognition_establishments, validate_coordinator_placements,
+    live_owner_profile_disposition, live_program_precondition, live_transfer_patterns,
+    local_recognition_fragment, mutated_owner_authorization_fragment, mutation_gate,
+    negative_disposition, owner_authorization_fragment, owner_authorization_precondition,
+    owner_key_mutation_outcome, owner_key_obligation, patterns_for, recognition_establishments,
+    validate_coordinator_placements,
 };
 pub use live_shape::{
     LiveShapeRejection, LiveTransferShape, LiveTransferShapeBounds, LiveTransferShapeSet,

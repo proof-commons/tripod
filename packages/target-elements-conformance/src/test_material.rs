@@ -93,7 +93,15 @@ const NONCE_TAG: &str = "BIP0340/nonce";
 const AUXILIARY_TAG: &str = "BIP0340/aux";
 
 /// The tag the challenge is taken under.
-const CHALLENGE_TAG: &str = "BIP0340/challenge";
+///
+/// Shared with [`crate::owner_key_oracle`], which needs the same
+/// challenge to verify what this module signs. Sharing it is not the
+/// oracle checking itself: what grounds both is that this module
+/// reproduces the published vectors' signatures byte for byte and the
+/// oracle accepts those same published signatures, so a wrong tag here
+/// fails against the specification's own artifacts rather than being
+/// agreed to twice.
+pub(crate) const CHALLENGE_TAG: &str = "BIP0340/challenge";
 
 /// How many bytes one signature occupies.
 pub const SIGNATURE_BYTES: usize = 64;
@@ -267,7 +275,7 @@ fn has_even_y(point: &CurvePoint) -> Result<bool, TestSigningDefect> {
 /// Total for every value this module produces: each is reduced modulo
 /// the group order, which is below `2^256`, so it never needs more than
 /// thirty-two bytes and the leading ones stay zero.
-fn scalar_bytes(value: &BigUint) -> [u8; FIELD_ELEMENT_BYTES] {
+pub(crate) fn scalar_bytes(value: &BigUint) -> [u8; FIELD_ELEMENT_BYTES] {
     let mut bytes = [0_u8; FIELD_ELEMENT_BYTES];
     let encoded = value.to_bytes_be();
     let offset = FIELD_ELEMENT_BYTES.saturating_sub(encoded.len());

@@ -33,7 +33,8 @@ use target_elements::{
 
 use super::{live_transfer_plan, reviewed_target};
 use crate::authorization::{
-    OwnerKeyEncodingClosure, OwnerKeyNegative, OwnerKeyObligation, owner_key_encoding_closure,
+    OwnerKeyEncodingClosure, OwnerKeyNegative, OwnerKeyObligation, OwnerProfileDisposition,
+    owner_key_encoding_closure,
 };
 use crate::instruction::{StackItem, TapscriptInstruction};
 use crate::live_constructor::{
@@ -47,11 +48,12 @@ use crate::live_pattern::{
     OwnerKeyMutationGate, OwnerKeyMutationOutcome, OwnerKeyOracle, PlacementDefect,
     ReceiptOwnerAssignment, RecognitionCarrier, RecognitionResidual, RecognizedFact,
     coordinator_placements, emitted_fragments, every_emitted_fragment, final_stack_defects,
-    live_coordinator_program, live_member_program, live_program_precondition,
-    live_transfer_patterns, local_recognition_fragment, mutated_owner_authorization_fragment,
-    mutation_gate, negative_disposition, owner_authorization_fragment,
-    owner_authorization_precondition, owner_key_mutation_outcome, owner_key_obligation,
-    recognition_establishments, validate_coordinator_placements,
+    has_member_position, live_coordinator_program, live_member_program,
+    live_owner_profile_disposition, live_program_precondition, live_transfer_patterns,
+    local_recognition_fragment, mutated_owner_authorization_fragment, mutation_gate,
+    negative_disposition, owner_authorization_fragment, owner_authorization_precondition,
+    owner_key_mutation_outcome, owner_key_obligation, patterns_for, recognition_establishments,
+    validate_coordinator_placements,
 };
 use crate::live_shape::{LiveTransferShape, demonstration_live_shape_set};
 use crate::pattern::final_truth_fragment;
@@ -679,7 +681,7 @@ fn the_slot_census_still_reports_every_pattern_this_wave_does_not_build() {
 }
 
 #[test]
-fn only_the_two_checks_this_wave_can_settle_are_settled() {
+fn only_the_one_check_this_wave_can_settle_whole_is_settled() {
     let placements = coordinator_placements();
     let established = placements
         .values()
@@ -692,6 +694,23 @@ fn only_the_two_checks_this_wave_can_settle_are_settled() {
     assert_eq!(
         established,
         BTreeSet::from([CoordinatorGlobalCheck::ExactInputAndOutputCounts]),
+    );
+
+    // And three more are answered in part, which is the finding a
+    // two-state census would have had to round away: emitted bytes
+    // carry some of each, and a §10 pattern owes the rest.
+    let partial = placements
+        .values()
+        .filter(|placement| placement.status() == GlobalCheckStatus::Partial)
+        .map(crate::live_pattern::GlobalCheckPlacement::check)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        partial,
+        BTreeSet::from([
+            CoordinatorGlobalCheck::CompleteProtocolRanges,
+            CoordinatorGlobalCheck::ExplicitAssetClosure,
+            CoordinatorGlobalCheck::ExactRoleOrder,
+        ]),
     );
 }
 
@@ -863,18 +882,45 @@ fn a_false_comparison_followed_by_verify_has_no_abstract_success_path() {
 
 #[test]
 fn every_pattern_identity_has_a_record_built_by_walking_its_fragment() {
-    let patterns = live_transfer_patterns(&reviewed_target(), &symbols(), &explicit(), shape(2))
+    let subject = shape(2);
+    let patterns = live_transfer_patterns(&reviewed_target(), &symbols(), &explicit(), subject)
         .expect("the census builds");
 
-    assert_eq!(patterns.len(), LiveTransferPatternId::ALL.len());
-    for id in LiveTransferPatternId::ALL {
-        let pattern = patterns
-            .get(id)
-            .unwrap_or_else(|| panic!("{id:?} has no record"));
-        assert_eq!(pattern.id(), *id);
+    // A shape with a member position calls for every identity.
+    assert_eq!(
+        patterns_for(subject),
+        LiveTransferPatternId::ALL.iter().copied().collect(),
+    );
+    assert_eq!(
+        patterns.keys().copied().collect::<BTreeSet<_>>(),
+        patterns_for(subject),
+    );
+    for pattern in patterns.values() {
         assert!(!pattern.prerequisites().is_empty());
         assert!(!pattern.evidence().is_empty());
     }
+}
+
+#[test]
+fn the_one_to_one_shape_gets_no_member_record_rather_than_a_borrowed_one() {
+    // A member record for a shape with no nonzero receipt position would
+    // have to be either an unsatisfiable range check or the
+    // coordinator's own program under the member identity. It is
+    // neither: the identity is simply not called for.
+    let subject = shape(1);
+    let patterns = live_transfer_patterns(&reviewed_target(), &symbols(), &explicit(), subject)
+        .expect("the census builds");
+
+    assert!(!has_member_position(subject));
+    assert!(!patterns.contains_key(&LiveTransferPatternId::LiveMemberRoleV1));
+    assert!(!patterns.contains_key(&LiveTransferPatternId::LiveMemberProgramV1));
+    assert_eq!(
+        patterns.keys().copied().collect::<BTreeSet<_>>(),
+        patterns_for(subject),
+    );
+    // And what it does hold is the coordinator's, under the
+    // coordinator's own identity.
+    assert!(patterns.contains_key(&LiveTransferPatternId::LiveCoordinatorProgramV1));
 }
 
 #[test]
@@ -910,6 +956,24 @@ fn every_pattern_asserting_a_signature_carries_the_unreviewed_profile_residual()
             );
         }
     }
+}
+
+#[test]
+fn the_unreviewed_profile_residual_is_a_computed_answer_and_not_a_caveat() {
+    // The residual every signature-asserting pattern carries, checked
+    // against the reviewed contract's own sighash capability rather than
+    // taken on trust. A contract that reviewed the dimensions would move
+    // this to `Established` and the residual would be the thing out of
+    // date — which is the direction a caveat could never fail in.
+    let disposition = live_owner_profile_disposition(&reviewed_target());
+
+    assert!(
+        matches!(
+            disposition,
+            OwnerProfileDisposition::ReviewIncomplete { .. }
+        ),
+        "the profile review is claimed complete: {disposition:?}",
+    );
 }
 
 #[test]

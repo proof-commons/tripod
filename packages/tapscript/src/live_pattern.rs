@@ -78,7 +78,9 @@ use target_elements::{
     TargetEvidenceRequirementId,
 };
 
-use crate::authorization::{OwnerKeyNegative, OwnerKeyObligation};
+use crate::authorization::{
+    OwnerKeyNegative, OwnerKeyObligation, OwnerProfileDisposition, selected_owner_profile,
+};
 use crate::capability::census_enum;
 use crate::error::TapscriptError;
 use crate::instruction::{StackItem, TapscriptInstruction};
@@ -778,9 +780,10 @@ impl GlobalCheckPlacement {
 /// The coordinator's slot census (§10.3).
 ///
 /// Every one of §10.3's eleven checks, with what this wave emits towards
-/// it and which §10 pattern owes the remainder. The two checks the
-/// emitted bytes settle whole are the ones a coordinator can settle
-/// without any pattern that reads the output side.
+/// it and which §10 pattern owes the remainder. One is settled whole —
+/// the counts, which a coordinator can authenticate without any pattern
+/// that reads the output side or censuses the sponsor region — three are
+/// settled in part, and seven wait entirely on §10.4 through §10.8.
 #[must_use]
 pub fn coordinator_placements() -> BTreeMap<CoordinatorGlobalCheck, GlobalCheckPlacement> {
     use CoordinatorGlobalCheck as Check;
@@ -1760,9 +1763,10 @@ pub fn build_live_pattern(
 
 /// Every live-transfer pattern, for one constructor and one shape.
 ///
-/// The census [`LiveTransferPatternId`] draws its variants from. Each
-/// record is built by walking its own fragment, so nothing here is a
-/// claim about a fragment that was not scheduled.
+/// Exactly [`patterns_for`]'s identities, each built by walking its own
+/// fragment, so nothing here is a claim about a fragment that was not
+/// scheduled and no identity is filled in with a program that is not
+/// its own.
 ///
 /// # Errors
 ///
@@ -1872,30 +1876,32 @@ pub fn live_transfer_patterns(
         )?,
     );
 
-    let range = live_member_role_fragment(target, shape.receipt_inputs())?;
-    patterns.insert(
-        Id::LiveMemberRoleV1,
-        build_live_pattern(
-            target,
+    if has_member_position(shape) {
+        let range = live_member_role_fragment(target, shape.receipt_inputs())?;
+        patterns.insert(
             Id::LiveMemberRoleV1,
-            Owns::MemberParticipation,
-            range,
-            empty.clone(),
-            Witness::NoWitnessItem,
-            Build::LinkTimeOnly,
-            BTreeSet::from([Disclose::ReceiptInputCount]),
-            BTreeSet::from([Source::AuthenticatedFamilyCensus]),
-            BTreeSet::new(),
-            introspection
-                .into_iter()
-                .chain([
-                    Evidence::InputIntrospectionSemantics,
-                    Evidence::ComparisonSemantics,
-                    Evidence::ConversionSemantics,
-                ])
-                .collect(),
-        )?,
-    );
+            build_live_pattern(
+                target,
+                Id::LiveMemberRoleV1,
+                Owns::MemberParticipation,
+                range,
+                empty.clone(),
+                Witness::NoWitnessItem,
+                Build::LinkTimeOnly,
+                BTreeSet::from([Disclose::ReceiptInputCount]),
+                BTreeSet::from([Source::AuthenticatedFamilyCensus]),
+                BTreeSet::new(),
+                introspection
+                    .into_iter()
+                    .chain([
+                        Evidence::InputIntrospectionSemantics,
+                        Evidence::ComparisonSemantics,
+                        Evidence::ConversionSemantics,
+                    ])
+                    .collect(),
+            )?,
+        );
+    }
 
     let counts = live_cardinality_fragment(target, shape)?;
     patterns.insert(
@@ -1922,28 +1928,28 @@ pub fn live_transfer_patterns(
     // whole program rather than about a fragment of one: exactly one
     // canonical true item, no surviving non-aborting failure, and no
     // signature form that verifies nothing.
-    let composed = [
-        (
-            Id::LiveCoordinatorProgramV1,
-            live_coordinator_program(target, symbols, constructor, shape)?,
-            BTreeSet::from([
-                Disclose::ProtocolAsset,
-                Disclose::OwnerPublicKey,
-                Disclose::ValueRepresentationForm,
-                Disclose::TransactionCounts,
-            ]),
-        ),
-        (
+    let mut composed = vec![(
+        Id::LiveCoordinatorProgramV1,
+        live_coordinator_program(target, symbols, constructor, shape)?,
+        BTreeSet::from([
+            Disclose::ProtocolAsset,
+            Disclose::OwnerPublicKey,
+            Disclose::ValueRepresentationForm,
+            Disclose::TransactionCounts,
+        ]),
+    )];
+    if has_member_position(shape) {
+        composed.push((
             Id::LiveMemberProgramV1,
-            member_program_or_coordinator(target, symbols, constructor, shape)?,
+            live_member_program(target, symbols, constructor, shape.receipt_inputs())?,
             BTreeSet::from([
                 Disclose::ProtocolAsset,
                 Disclose::OwnerPublicKey,
                 Disclose::ValueRepresentationForm,
                 Disclose::ReceiptInputCount,
             ]),
-        ),
-    ];
+        ));
+    }
 
     for (id, program, disclosure) in composed {
         patterns.insert(
@@ -1986,25 +1992,37 @@ pub fn live_transfer_patterns(
     Ok(patterns)
 }
 
-/// The member program of one shape, or the coordinator's where the shape
-/// has no member position.
+/// Whether one shape has a receipt position a member leaf can occupy.
 ///
-/// The one-to-one transfer has no nonzero receipt position, so it has no
-/// member program at all (§7.1). The census still has to hold a record
-/// for the member identity, and the honest one is the program a spend of
-/// that shape actually runs, which is the coordinator's.
-fn member_program_or_coordinator(
-    target: &ReviewedElementsTapscriptDefinition,
-    symbols: &LiveTransferSymbols,
-    constructor: &StaticLiveReceiptConstructor,
-    shape: LiveTransferShape,
-) -> Result<TapscriptProgram, LiveProgramRefusal> {
-    match live_member_program(target, symbols, constructor, shape.receipt_inputs()) {
-        Err(LiveProgramRefusal::ShapeHasNoMemberPosition { .. }) => {
-            live_coordinator_program(target, symbols, constructor, shape)
-        }
-        other => other,
-    }
+/// The one-to-one transfer does not: input 0 is the coordinator and
+/// there is nothing after it (§7.1, §10.3).
+#[must_use]
+pub const fn has_member_position(shape: LiveTransferShape) -> bool {
+    shape.receipt_inputs() > 1
+}
+
+/// Which pattern identities one shape calls for.
+///
+/// Every identity but the two member ones, which a shape with no nonzero
+/// receipt position does not call for. Omitting them is the honest
+/// answer rather than a gap: a member record built for that shape would
+/// either be a range check no spend can satisfy — `1 ≤ i < 1` — or the
+/// coordinator's own program wearing the member identity, and a reader
+/// inspecting the member pattern would be shown the wrong program.
+#[must_use]
+pub fn patterns_for(shape: LiveTransferShape) -> BTreeSet<LiveTransferPatternId> {
+    LiveTransferPatternId::ALL
+        .iter()
+        .copied()
+        .filter(|id| {
+            has_member_position(shape)
+                || !matches!(
+                    id,
+                    LiveTransferPatternId::LiveMemberRoleV1
+                        | LiveTransferPatternId::LiveMemberProgramV1
+                )
+        })
+        .collect()
 }
 
 /// What the reviewed target obliges of a live owner-authorization
@@ -2018,4 +2036,38 @@ pub const fn owner_key_obligation(
     constructor: &StaticLiveReceiptConstructor,
 ) -> OwnerKeyObligation {
     constructor.owner_encoding().obligation()
+}
+
+/// What the review establishes about the profile these signatures are
+/// taken under (§9.2).
+///
+/// # Why the profile is not a field of the constructor
+///
+/// It could have been. It is not, because it is not a property of one
+/// constructor: [`selected_owner_profile`] is the candidate's single
+/// selection, §11.2 lists it among the *link-time symbols*, and §11.6
+/// has the linked bundle retain it. A copy on every constructor would be
+/// one more place for the selection to be changed in, and every
+/// constructor derived before a change would go on reporting the old
+/// one.
+///
+/// Nothing in this wave needs it there either. The profile decides which
+/// message the target builds, and no byte an authorization fragment
+/// pushes depends on that message — the fragment pushes a key and
+/// verifies whatever the witness offers against it. The profile enters
+/// at the moment a signing request is built, which is §12's, and is
+/// answered here as a disposition rather than carried as a field.
+///
+/// # What it answers today
+///
+/// [`OwnerProfileDisposition::ReviewIncomplete`], and every pattern
+/// asserting a signature carries
+/// [`RecognitionResidual::SighashProfileUnreviewed`] to match. A caller
+/// reading a verified signature as authorization over §1.7's protected
+/// data is reading past this.
+#[must_use]
+pub fn live_owner_profile_disposition(
+    target: &ReviewedElementsTapscriptDefinition,
+) -> OwnerProfileDisposition {
+    selected_owner_profile().assess(target.definition().authorization().sighash())
 }

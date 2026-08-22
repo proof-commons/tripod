@@ -108,7 +108,11 @@ pub enum CurvePoint {
 }
 
 /// Why a 32-byte value is not the x coordinate of a curve point.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+///
+/// Ordered and hashable because it is a two-member census with no
+/// payload, and a caller collecting defects into one of this workspace's
+/// ordered containers should not have to wrap it to do so.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PointDecodingDefect {
     /// The value is not below the field modulus, so it is not a field
     /// element at all.

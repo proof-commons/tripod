@@ -66,6 +66,16 @@ pub enum OwnerAuthorizationCaseId {
     InvalidSignature,
     /// A different approved owner's signature is offered.
     WrongOwner,
+    /// An empty owner key is offered.
+    ///
+    /// §1.8's first negative, and distinct from every signature-side
+    /// case: the reviewed primitive refuses the empty key outright,
+    /// through a failure cause of its own, where a missing witness item
+    /// is a structural fault before the key is read at all. Mapping
+    /// §1.8's empty key onto [`Self::MissingSignature`] was the earlier
+    /// reading, and it lost the one negative the target has a dedicated
+    /// refusal for.
+    EmptyOwnerKey,
     /// A key of a form the target does not recognize is offered.
     ///
     /// The forward-compatibility case §1.8 is written for: the reviewed
@@ -111,6 +121,7 @@ impl OwnerAuthorizationCaseId {
         Self::EmptySignature,
         Self::InvalidSignature,
         Self::WrongOwner,
+        Self::EmptyOwnerKey,
         Self::UnknownKeyForm,
         Self::MalformedApprovedKey,
         Self::SignatureAgainstAnotherKey,
@@ -260,6 +271,7 @@ pub fn owner_authorization_cases() -> BTreeMap<OwnerAuthorizationCaseId, OwnerAu
                 | Case::EmptySignature
                 | Case::InvalidSignature
                 | Case::WrongOwner
+                | Case::EmptyOwnerKey
                 | Case::UnknownKeyForm
                 | Case::MalformedApprovedKey
                 | Case::SignatureAgainstAnotherKey
@@ -410,7 +422,7 @@ pub fn validated_owner_authorization_cases()
 #[must_use]
 pub const fn case_for_key_negative(negative: OwnerKeyNegative) -> OwnerAuthorizationCaseId {
     match negative {
-        OwnerKeyNegative::EmptyKey => OwnerAuthorizationCaseId::MissingSignature,
+        OwnerKeyNegative::EmptyKey => OwnerAuthorizationCaseId::EmptyOwnerKey,
         OwnerKeyNegative::UnknownNonemptyKeyType => OwnerAuthorizationCaseId::UnknownKeyForm,
         OwnerKeyNegative::MalformedApprovedKey => OwnerAuthorizationCaseId::MalformedApprovedKey,
         OwnerKeyNegative::ApprovedKeyOfAnotherOwner => OwnerAuthorizationCaseId::WrongOwner,

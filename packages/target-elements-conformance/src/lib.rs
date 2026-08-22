@@ -18,6 +18,7 @@ pub mod lifecycle_report;
 pub mod normalization;
 pub mod normalization_report;
 pub mod owner_authorization;
+pub mod owner_key_oracle;
 pub mod protocol;
 pub mod prototype;
 pub mod prototype_program;
