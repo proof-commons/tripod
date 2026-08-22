@@ -1,12 +1,13 @@
 //! Pass two and the cycle policy (§14.3, §14.4).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroUsize;
 
 use tapscript::{BundleSymbol, LeafRole};
 
-use crate::graph::{apply_cycle_policy, resolve_references};
+use crate::graph::{apply_cycle_policy, record_reference_sites, resolve_references};
 use crate::tests::relocatable_bundle;
-use crate::{ReferenceClass, ReferenceNode, SelfCommitmentStrategy, leaf_symbol};
+use crate::{LinkRefusal, ReferenceClass, ReferenceNode, SelfCommitmentStrategy, leaf_symbol};
 
 #[test]
 fn the_graph_is_the_same_graph_whatever_the_strategy_is() {
@@ -53,6 +54,92 @@ fn resolution_is_deterministic_across_repeated_runs() {
     let second = resolve_references(&bundle, SelfCommitmentStrategy::NotStated).expect("resolves");
 
     assert_eq!(first, second);
+}
+
+#[test]
+fn relocation_multiplicity_overflow_is_refused_instead_of_saturated() {
+    // A relocation multiplicity of `usize::MAX` still fits the graph's
+    // observable count exactly. Adding one more site to the same edge
+    // crosses the edge and must refuse without changing the census.
+    let from = ReferenceNode::Constructor;
+    let to = ReferenceNode::Symbol(BundleSymbol::ClosedAsset);
+    let mut collected = BTreeMap::new();
+
+    record_reference_sites(
+        &mut collected,
+        from,
+        to,
+        ReferenceClass::StaticLinkTimeConstant,
+        NonZeroUsize::new(usize::MAX).expect("usize::MAX is nonzero"),
+    )
+    .expect("the largest exact count still fits");
+    assert_eq!(collected[&(from, to)].1, usize::MAX);
+
+    let refusal = record_reference_sites(
+        &mut collected,
+        from,
+        to,
+        ReferenceClass::StaticLinkTimeConstant,
+        NonZeroUsize::MIN,
+    )
+    .expect_err("one more relocation site exceeds the observable count");
+
+    assert_eq!(
+        refusal,
+        LinkRefusal::ReferenceSiteCountOverflow {
+            referrer: from,
+            referent: to,
+        }
+    );
+    assert_eq!(collected[&(from, to)].1, usize::MAX);
+}
+
+#[test]
+fn introspection_site_overflow_is_refused_instead_of_saturated() {
+    // The reachable edge is the same one the introspection loop uses:
+    // a leaf symbol depending on the ASH constructor program. The first
+    // extra site reaches the largest exact count; the second is the
+    // overflow branch.
+    let leaf = LeafRole::Member { ash_inputs: 2 };
+    let from = ReferenceNode::Symbol(leaf_symbol(leaf));
+    let to = ReferenceNode::Symbol(BundleSymbol::AshConstructorProgram);
+    let mut collected = BTreeMap::new();
+
+    record_reference_sites(
+        &mut collected,
+        from,
+        to,
+        ReferenceClass::IdentityIntrospection,
+        NonZeroUsize::new(usize::MAX - 1).expect("usize::MAX - 1 is nonzero"),
+    )
+    .expect("one below the maximum fits");
+    record_reference_sites(
+        &mut collected,
+        from,
+        to,
+        ReferenceClass::IdentityIntrospection,
+        NonZeroUsize::MIN,
+    )
+    .expect("the maximum exact count fits");
+    assert_eq!(collected[&(from, to)].1, usize::MAX);
+
+    let refusal = record_reference_sites(
+        &mut collected,
+        from,
+        to,
+        ReferenceClass::IdentityIntrospection,
+        NonZeroUsize::MIN,
+    )
+    .expect_err("one more introspection site exceeds the observable count");
+
+    assert_eq!(
+        refusal,
+        LinkRefusal::ReferenceSiteCountOverflow {
+            referrer: from,
+            referent: to,
+        }
+    );
+    assert_eq!(collected[&(from, to)].1, usize::MAX);
 }
 
 #[test]

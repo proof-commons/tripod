@@ -126,6 +126,10 @@ impl OutstandingLinkObligations {
     /// How many are outstanding, which is never zero.
     #[must_use]
     pub fn count(&self) -> NonZeroUsize {
+        // Saturation is unreachable here: `rest` is a set of the
+        // remaining `LinkObligation` variants while `least` is held
+        // separately. Today the maximum count is three, and any future
+        // maximum is still bounded by the enum's finite variant set.
         NonZeroUsize::MIN.saturating_add(self.rest.len())
     }
 
@@ -408,10 +412,23 @@ impl CandidateLinkedBundle {
     /// The exact total linked program bytes of every committed leaf.
     #[must_use]
     pub fn total_script_bytes(&self) -> u64 {
-        self.programs
+        // A returned linked bundle has already passed the taptree
+        // oracle budget, so it holds at most sixteen programs. Each
+        // linked program is built through `TapscriptProgram::new`,
+        // which caps it at ten thousand instructions; under the
+        // reviewed Elements push contract one instruction encodes to
+        // at most one opcode byte, four width bytes, and 520 payload
+        // bytes. The total is therefore at most 16 * 10_000 * 525 =
+        // 84_000_000, far below `u64::MAX`. The checked `u128` sum
+        // keeps that bound load-bearing if those construction limits
+        // ever move.
+        let total = self
+            .programs
             .values()
             .filter_map(|program| program.charged(ResourceDimension::ScriptBytes))
-            .fold(0, u64::saturating_add)
+            .try_fold(0_u128, |total, bytes| total.checked_add(u128::from(bytes)))
+            .expect("linked script-byte total obeys the construction-time bound");
+        u64::try_from(total).expect("linked script-byte total obeys the construction-time bound")
     }
 }
 
