@@ -1022,6 +1022,8 @@ mod tests {
     use super::*;
 
     fn write_phase_index(root: &Path, rows: &[(&str, &str, &str)]) {
+        use std::fmt::Write as _;
+
         let mut index = String::from(concat!(
             "# Phases\n\n",
             "## Index \u{00b7} `tab:phases:index`\n\n",
@@ -1029,7 +1031,7 @@ mod tests {
             "|---|---|---|\n",
         ));
         for (card, status, result) in rows {
-            index.push_str(&format!("| [{card}]({card}) | {status} | {result} |\n"));
+            writeln!(index, "| [{card}]({card}) | {status} | {result} |").expect("string write");
         }
         fs::write(root.join("plans/phases/README.md"), index).expect("phases readme");
     }
