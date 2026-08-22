@@ -616,23 +616,8 @@ fn project_operation(
     let relation_requirements = project_relations(plan, operation, &relations)?;
     let carriers = project_carriers(operation);
     let coverage = project_coverage(plan, operation)?;
-
-    let capabilities = relation_requirements
-        .values()
-        .flat_map(|requirement| requirement.required_capabilities.iter().copied())
-        .collect::<BTreeSet<_>>();
-    let capabilities = canonical_census(&capabilities, RequiredCapability::ALL, |capability| {
-        CompileError::NoncanonicalCapabilityCensus { capability }
-    })?;
-
-    let evidence = relation_requirements
-        .values()
-        .flat_map(|requirement| requirement.external_evidence.iter())
-        .map(ExternalEvidenceRole::of)
-        .collect::<BTreeSet<_>>();
-    let evidence = canonical_census(&evidence, ExternalEvidenceRole::ALL, |role| {
-        CompileError::NoncanonicalEvidenceRoleCensus { role }
-    })?;
+    let capabilities = capability_census(&relation_requirements)?;
+    let external_evidence = evidence_census(&relation_requirements)?;
 
     Ok(ValidatedTargetOperationPlan {
         operation: PLANNED,
@@ -643,10 +628,49 @@ fn project_operation(
         carriers,
         layout: operation.layout_requirements.clone(),
         coverage,
-        capabilities: capabilities.into_iter().collect(),
-        external_evidence: evidence.into_iter().collect(),
+        capabilities,
+        external_evidence,
         lifecycle: project_lifecycle(plan, &relations),
     })
+}
+
+/// The capability census one relation set owns, in canonical order.
+///
+/// # Errors
+///
+/// [`CompileError::NoncanonicalCapabilityCensus`].
+fn capability_census(
+    relations: &BTreeMap<RelationId, TargetRelationRequirement>,
+) -> Result<BTreeSet<RequiredCapability>, CompileError> {
+    let present = relations
+        .values()
+        .flat_map(|requirement| requirement.required_capabilities.iter().copied())
+        .collect::<BTreeSet<_>>();
+
+    canonical_census(&present, RequiredCapability::ALL, |capability| {
+        CompileError::NoncanonicalCapabilityCensus { capability }
+    })
+    .map(|census| census.into_iter().collect())
+}
+
+/// The evidence-role census one relation set owns, in canonical order.
+///
+/// # Errors
+///
+/// [`CompileError::NoncanonicalEvidenceRoleCensus`].
+fn evidence_census(
+    relations: &BTreeMap<RelationId, TargetRelationRequirement>,
+) -> Result<BTreeSet<ExternalEvidenceRole>, CompileError> {
+    let present = relations
+        .values()
+        .flat_map(|requirement| requirement.external_evidence.iter())
+        .map(ExternalEvidenceRole::of)
+        .collect::<BTreeSet<_>>();
+
+    canonical_census(&present, ExternalEvidenceRole::ALL, |role| {
+        CompileError::NoncanonicalEvidenceRoleCensus { role }
+    })
+    .map(|census| census.into_iter().collect())
 }
 
 /// The exact relation census of one operation factor.
@@ -966,6 +990,8 @@ pub(crate) fn project_lifecycle(
 /// [`CompileError::TargetPlanCarrierCensusMismatch`],
 /// [`CompileError::TargetPlanLayoutCensusMismatch`],
 /// [`CompileError::TargetPlanCoverageCensusMismatch`],
+/// [`CompileError::TargetPlanCapabilityCensusMismatch`],
+/// [`CompileError::TargetPlanEvidenceCensusMismatch`],
 /// [`CompileError::TargetPlanRepresentationMismatch`],
 /// [`CompileError::TargetPlanLifecycleMismatch`], or
 /// [`CompileError::SponsorValueRead`] when a published layout
@@ -1084,12 +1110,24 @@ fn validate_against_factor(
         return Err(CompileError::TargetPlanLayoutCensusMismatch);
     }
 
-    if project_relations(candidate, operation, &relations)? != plan.relations {
+    let requirements = project_relations(candidate, operation, &relations)?;
+
+    if requirements != plan.relations {
         return Err(CompileError::TargetPlanRelationRequirementMismatch);
     }
 
     if project_coverage(candidate, operation)? != plan.coverage {
         return Err(CompileError::TargetPlanCoverageCensusMismatch);
+    }
+
+    // §7.2: the aggregate censuses are owned by the relation rows.
+    // Re-derive them instead of trusting the published aggregates.
+    if capability_census(&requirements)? != plan.capabilities {
+        return Err(CompileError::TargetPlanCapabilityCensusMismatch);
+    }
+
+    if evidence_census(&requirements)? != plan.external_evidence {
+        return Err(CompileError::TargetPlanEvidenceCensusMismatch);
     }
 
     if project_lifecycle(candidate, &relations) != plan.lifecycle {
@@ -1140,6 +1178,14 @@ impl ValidatedTargetOperationPlan {
         &mut self,
     ) -> &mut BTreeMap<CoverageRequirementId, TargetCoverageRequirement> {
         &mut self.coverage
+    }
+
+    pub(crate) const fn capabilities_mut(&mut self) -> &mut BTreeSet<RequiredCapability> {
+        &mut self.capabilities
+    }
+
+    pub(crate) const fn external_evidence_mut(&mut self) -> &mut BTreeSet<ExternalEvidenceRole> {
+        &mut self.external_evidence
     }
 
     pub(crate) const fn lifecycle_mut(&mut self) -> &mut TargetLifecycleStatus {
