@@ -128,7 +128,19 @@ fn no_case_claims_it_could_run_today() {
 }
 
 #[test]
-fn the_multi_owner_and_sponsor_cases_carry_their_further_residuals() {
+fn the_multi_owner_cases_wait_on_the_review_alone_and_the_sponsor_case_on_more() {
+    // What §12 moved. Both multi-owner cases named a
+    // `MultiOwnerTransaction` residual while no candidate ABI built one,
+    // and the ABI now builds both shapes the two cases need: a transfer
+    // consuming two owners' receipts, and a transfer consuming two
+    // receipts of a single owner whose census reports one semantic owner
+    // and two concrete signatures. The residual is gone rather than kept
+    // as a discharged marker.
+    //
+    // The sponsor case is not flipped with them, and the difference is
+    // what this test holds: §1.9 keeps the sponsor's own authorization
+    // outside protocol data, so the sponsored form being constructible
+    // is not the same as its owner being modelled.
     let census = cases();
     let residuals = |id| census[&id].residuals().collect::<BTreeSet<_>>();
 
@@ -136,8 +148,9 @@ fn the_multi_owner_and_sponsor_cases_carry_their_further_residuals() {
         OwnerAuthorizationCaseId::IncompleteOwnerSet,
         OwnerAuthorizationCaseId::RepeatedOwnerWithOneWitnessOmitted,
     ] {
-        assert!(
-            residuals(id).contains(&CaseResidual::MultiOwnerTransaction),
+        assert_eq!(
+            residuals(id),
+            BTreeSet::from([CaseResidual::ProfileUnreviewed]),
             "{id:?}"
         );
     }
@@ -153,6 +166,17 @@ fn the_multi_owner_and_sponsor_cases_carry_their_further_residuals() {
     assert_eq!(
         residuals(OwnerAuthorizationCaseId::ValidOwnerSignature),
         BTreeSet::from([CaseResidual::ProfileUnreviewed]),
+    );
+    // And the sponsor case is the only one left carrying more than the
+    // review, which is the count a later wave will be closing.
+    let beyond_the_review: Vec<_> = census
+        .values()
+        .filter(|case| case.residuals().count() > 1)
+        .map(super::super::owner_authorization::OwnerAuthorizationCase::id)
+        .collect();
+    assert_eq!(
+        beyond_the_review,
+        vec![OwnerAuthorizationCaseId::SponsorOwnerOmission],
     );
 }
 

@@ -15,6 +15,7 @@ pub mod executor;
 pub mod fixture;
 pub mod lifecycle;
 pub mod lifecycle_report;
+pub mod live_receipt_key;
 pub mod normalization;
 pub mod normalization_report;
 pub mod owner_authorization;

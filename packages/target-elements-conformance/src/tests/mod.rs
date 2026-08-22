@@ -11,6 +11,7 @@ mod fixture_tests;
 mod guide11_reproductions;
 mod guide12_reproductions;
 mod guide13_reproductions;
+mod live_receipt_key_tests;
 mod normalization_matrix_tests;
 mod operation_boundary_tests;
 mod owner_authorization_tests;

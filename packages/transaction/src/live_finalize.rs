@@ -12,7 +12,7 @@
 //! ten items are settled, and there is no operation on it that settles
 //! them differently.
 //!
-//! [`LiveSigningRequest::new`] is `pub(crate)` for the same reason §15.8
+//! [`LiveSigningRequest`]'s own constructor is `pub(crate)` for the same reason §15.8
 //! made the sponsor's request so: §1.7 admits no protocol-owner signing
 //! request until all protected data is fixed, and a request nobody can
 //! build except from a finalized form cannot exist before that.
