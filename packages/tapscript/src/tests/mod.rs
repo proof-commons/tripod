@@ -44,6 +44,7 @@ mod byte_census_tests;
 mod census_tests;
 mod guide12_reproductions;
 mod guide13_reproductions;
+mod live_constructor_tests;
 mod live_shape_tests;
 mod mapping_tests;
 mod non_weakening_tests;
@@ -63,6 +64,9 @@ use std::sync::LazyLock;
 
 use architecture::{ARCHITECTURE, OperationId};
 use compiler::input::{AnalysisPolicy, CompilationScope, ProofSearchLimits, bind_input};
+use compiler::live_transfer_plan::{
+    ValidatedLiveTransferOperationPlan, plan_live_transfer_target_operation,
+};
 use compiler::operation_plan::{
     PlacementSearchLimits, ValidatedTargetOperationPlan, plan_compact_ash_target_operation,
 };
@@ -124,6 +128,38 @@ fn derive_compact_ash_plan() -> ValidatedTargetOperationPlan {
     let input = bind_input(&ARCHITECTURE, realization, scope, policy).expect("the input binds");
 
     plan_compact_ash_target_operation(
+        &input,
+        PlacementSearchLimits::new(limit(10_000_000), limit(1_000_000)),
+    )
+    .expect("the plan validates")
+}
+
+/// The validated live-transfer plan, from the compiler's own
+/// constructor.
+///
+/// The Guide-13 counterpart of [`compact_ash_plan`], and cached for the
+/// same reason: the derivation is the whole scoped analysis, its
+/// validator, the Phase-5 representation filter, and an independent
+/// re-derivation of the assembled plan, and the constructor tests want
+/// one of these each. A clone of the finished value is the same value by
+/// construction.
+fn live_transfer_plan() -> ValidatedLiveTransferOperationPlan {
+    static PLAN: LazyLock<ValidatedLiveTransferOperationPlan> =
+        LazyLock::new(derive_live_transfer_plan);
+    PLAN.clone()
+}
+
+/// The one derivation behind [`live_transfer_plan`].
+fn derive_live_transfer_plan() -> ValidatedLiveTransferOperationPlan {
+    let limit = |value: u64| NonZeroU64::new(value).expect("the fixture limits are nonzero");
+    let realization =
+        derive(&ARCHITECTURE, RealizationScope::phase1_pilots()).expect("the pilots derive");
+    let scope = CompilationScope::from_operations([OperationId::TransferLive])
+        .expect("a one-operation scope");
+    let policy = AnalysisPolicy::strict(ProofSearchLimits::new(limit(1_000_000), limit(10_000)));
+    let input = bind_input(&ARCHITECTURE, realization, scope, policy).expect("the input binds");
+
+    plan_live_transfer_target_operation(
         &input,
         PlacementSearchLimits::new(limit(10_000_000), limit(1_000_000)),
     )
