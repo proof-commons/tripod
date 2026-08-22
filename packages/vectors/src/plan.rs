@@ -26,6 +26,7 @@ use realization::RelationId;
 use target_elements_conformance::protocol::ObservedOutcomeLayer;
 use transaction::FundingCeremonyStep;
 
+use crate::abi_validation::{AbiValidationRow, index_abi_validation};
 use crate::bundle::FixtureBundle;
 use crate::divergence::target_amount_standing;
 use crate::error::VectorError;
@@ -605,6 +606,7 @@ pub struct CompactAshEvidencePlan {
     required_target_work: Vec<RequiredTargetWork>,
     census: PlanCensus,
     negative_link: BTreeMap<(NegativeMutation, SponsorCase), DeclarationLink>,
+    abi_validation: BTreeMap<NegativeMutation, AbiValidationRow>,
 }
 
 impl CompactAshEvidencePlan {
@@ -624,6 +626,17 @@ impl CompactAshEvidencePlan {
     #[must_use]
     pub const fn relation_coverage(&self) -> &BTreeMap<CoverageRequirementId, RelationCoverageRow> {
         &self.relation_coverage
+    }
+
+    /// Where every withheld class landed at the ABI boundary.
+    ///
+    /// §4.3's index. One row per class whose refusal precedes the
+    /// target, so a class the run withholds has somewhere to be read
+    /// rather than reading as merely unrun. No row here is a target
+    /// verdict and none discharges a coverage requirement.
+    #[must_use]
+    pub const fn abi_validation(&self) -> &BTreeMap<NegativeMutation, AbiValidationRow> {
+        &self.abi_validation
     }
 
     /// What every mutation arm's §4.1 declaration resolved to.
@@ -1163,26 +1176,12 @@ pub fn derive_evidence_plan(
         }
     }
 
-    // The canonical plan materializes against placeholder funding, and
-    // says so in the name. Its vectors carry exact bytes for the
-    // reference cross-checks and name coins no chain created; the
-    // executed plan is built from a ceremony's own answers instead.
-    let mut target_cases = Vec::new();
-    // Which of them this target could be asked to accept. Derived from
-    // the reviewed target bound rather than marked on a row, so the
-    // classification changes when the target does and not when somebody
-    // remembers to edit a list.
-    let mut divergent = BTreeSet::new();
-    for case in semantic.iter().filter(|case| is_materializable(case)) {
-        let id = vector_id(case);
-        if target_amount_standing(case).is_unfundable() {
-            divergent.insert(id);
-        }
-        let funding = AshFunding::unexecutable_placeholder(id);
-        target_cases.push(CanonicalSubject::admit(materialize(
-            fixture, case, &funding,
-        )?));
-    }
+    let (target_cases, divergent) = materialize_canonical(fixture, &semantic)?;
+
+    // The ABI-validation index is built from the same materialized set
+    // the run would submit, so what it reads is what a target would have
+    // been handed rather than a rebuild of it.
+    let abi_validation = index_abi_validation(fixture, &target_cases)?;
 
     let required_target_work = derive_required_work(&semantic, &target_cases, &divergent);
 
@@ -1228,7 +1227,49 @@ pub fn derive_evidence_plan(
         required_target_work,
         census,
         negative_link: resolve_negative_link(plan)?,
+        abi_validation,
     })
+}
+
+/// Materialize the canonical vectors, and note which the target refuses
+/// to be asked about.
+///
+/// The canonical plan materializes against placeholder funding, and says
+/// so in the name. Its vectors carry exact bytes for the reference
+/// cross-checks and name coins no chain created; the executed plan is
+/// built from a ceremony's own answers instead.
+///
+/// The divergent set is derived from the reviewed target bound rather
+/// than marked on a row, so the classification changes when the target
+/// does and not when somebody remembers to edit a list.
+///
+/// # Errors
+///
+/// Whatever [`materialize`] refuses, which is a construction failure and
+/// never a target verdict.
+fn materialize_canonical(
+    fixture: &FixtureBundle,
+    semantic: &[CompactAshSemanticCase],
+) -> Result<
+    (
+        Vec<CanonicalSubject<MaterializedTargetVector>>,
+        BTreeSet<TargetVectorId>,
+    ),
+    VectorError,
+> {
+    let mut target_cases = Vec::new();
+    let mut divergent = BTreeSet::new();
+    for case in semantic.iter().filter(|case| is_materializable(case)) {
+        let id = vector_id(case);
+        if target_amount_standing(case).is_unfundable() {
+            divergent.insert(id);
+        }
+        let funding = AshFunding::unexecutable_placeholder(id);
+        target_cases.push(CanonicalSubject::admit(materialize(
+            fixture, case, &funding,
+        )?));
+    }
+    Ok((target_cases, divergent))
 }
 
 /// What each mutation arm's §4.1 declaration resolves to, per case.

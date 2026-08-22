@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 #![forbid(unsafe_code)]
 
+pub mod abi_validation;
 pub mod bundle;
 pub mod comparison;
 pub mod divergence;
@@ -18,6 +19,9 @@ pub mod resource_study;
 pub mod subject;
 pub mod violation;
 
+pub use abi_validation::{
+    AbiValidationOutcome, AbiValidationRow, index_abi_validation, precedes_the_target,
+};
 pub use comparison::{
     ObservedProjection, ProjectionRefusal, ProjectionTerm, compare, read_accepted,
 };

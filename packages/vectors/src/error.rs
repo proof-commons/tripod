@@ -184,6 +184,16 @@ pub enum VectorError {
         /// Which stated expectation the published requirement denies.
         expectation: crate::violation::ContradictedExpectation,
     },
+    /// A withheld class changes several target fields at once.
+    ///
+    /// The ABI-validation boundary pins one field, so a class that moves
+    /// more than one cannot be settled there. Answered by narrowing the
+    /// class or by giving the boundary a second thing to pin, never by
+    /// picking whichever field the reading happened to reach first.
+    AbiValidationFieldUnderdetermined {
+        /// The class whose declaration names several fields.
+        class: crate::mutation::NegativeMutation,
+    },
     /// Funding cut for one vector was offered to another.
     FundingNamesAnotherVector {
         /// The vector being materialized.
