@@ -457,3 +457,140 @@ fn relations_declaring_open_flows(allowed: &[OpenFlowKind]) -> CompilerRelationA
     )
     .expect("the synthetic relation graph builds")
 }
+
+// --- §6.5 mixed representation is refused, not planned ---
+
+/// One synthetic conservation relation over two object families.
+///
+/// Hand-built rather than taken from a pilot, because no pilot declares
+/// one: every operation the realization declares conserves one family
+/// per side, so the mixed case is unreachable through the production
+/// path today. That is precisely why it is worth stating — an
+/// unreachable refusal nobody exercises is indistinguishable from a
+/// refusal that does not work, and the operation this guards is one a
+/// later wave is expected to add.
+fn two_family_conservation() -> realization::RelationDeclaration {
+    realization::RelationDeclaration {
+        id: realization::RelationId::new(
+            OperationId::TransferLive,
+            realization::RelationKind::Conservation,
+            realization::RelationSubject::Asset {
+                asset: architecture::AssetId::U,
+            },
+        ),
+        relation: realization::Relation::AmountConservation {
+            asset: architecture::AssetId::U,
+            input_objects: std::collections::BTreeSet::from([
+                ObjectId::ReceiptLive,
+                ObjectId::ReceiptTimeLocked,
+            ]),
+            output_objects: std::collections::BTreeSet::from([ObjectId::ReceiptLive]),
+        },
+        proof_alternatives: std::collections::BTreeSet::new(),
+    }
+}
+
+fn case_fixing(
+    representations: BTreeMap<ObjectId, RepresentationMode>,
+) -> crate::case::ExecutionCaseId {
+    ExecutionCaseId {
+        operation: OperationId::TransferLive,
+        sponsor: SponsorCase::Absent,
+        representations,
+    }
+}
+
+#[test]
+fn a_homogeneous_case_decides_the_conserved_amounts_either_way() {
+    use crate::case::{ConservedAmountVisibility, conserved_amount_visibility};
+
+    let declaration = two_family_conservation();
+    let both = |mode| {
+        case_fixing(BTreeMap::from([
+            (ObjectId::ReceiptLive, mode),
+            (ObjectId::ReceiptTimeLocked, mode),
+        ]))
+    };
+
+    assert_eq!(
+        conserved_amount_visibility(&declaration, &both(RepresentationMode::Explicit)),
+        Ok(ConservedAmountVisibility::Readable),
+    );
+    assert_eq!(
+        conserved_amount_visibility(&declaration, &both(RepresentationMode::PrivateCommitted)),
+        Ok(ConservedAmountVisibility::Committed),
+    );
+
+    // A publicly committed amount is published through an authenticated
+    // opening, so the arithmetic discharge still stands. Grouping it
+    // with the private mode because both involve commitments would move
+    // a discharge the analysis can perform to a target nobody asked.
+    assert_eq!(
+        conserved_amount_visibility(&declaration, &both(RepresentationMode::PublicCommitted)),
+        Ok(ConservedAmountVisibility::Readable),
+    );
+}
+
+#[test]
+fn a_mixed_case_is_refused_rather_than_planned_as_either_half() {
+    use crate::case::conserved_amount_visibility;
+
+    let declaration = two_family_conservation();
+
+    // Both orderings, because a rule that read the first family it saw
+    // would refuse one of them and plan the other.
+    for (live, locked) in [
+        (
+            RepresentationMode::Explicit,
+            RepresentationMode::PrivateCommitted,
+        ),
+        (
+            RepresentationMode::PrivateCommitted,
+            RepresentationMode::Explicit,
+        ),
+    ] {
+        let case = case_fixing(BTreeMap::from([
+            (ObjectId::ReceiptLive, live),
+            (ObjectId::ReceiptTimeLocked, locked),
+        ]));
+
+        assert_eq!(
+            conserved_amount_visibility(&declaration, &case),
+            Err(CompileError::MixedRepresentationConservation {
+                relation: declaration.id.clone(),
+            }),
+            "{live:?} with {locked:?}",
+        );
+    }
+}
+
+#[test]
+fn a_relation_that_conserves_nothing_reads_no_representation() {
+    use crate::case::{ConservedAmountVisibility, conserved_amount_visibility};
+
+    // The mixed case above, over a relation with no amounts: the answer
+    // must not depend on the representations at all, or every relation
+    // in a mixed case would be refused rather than the one relation the
+    // mixing actually breaks.
+    let declaration = realization::RelationDeclaration {
+        id: realization::RelationId::new(
+            OperationId::TransferLive,
+            realization::RelationKind::SponsorIsolation,
+            realization::RelationSubject::Operation,
+        ),
+        relation: realization::Relation::SponsorIsolation,
+        proof_alternatives: std::collections::BTreeSet::new(),
+    };
+    let case = case_fixing(BTreeMap::from([
+        (ObjectId::ReceiptLive, RepresentationMode::Explicit),
+        (
+            ObjectId::ReceiptTimeLocked,
+            RepresentationMode::PrivateCommitted,
+        ),
+    ]));
+
+    assert_eq!(
+        conserved_amount_visibility(&declaration, &case),
+        Ok(ConservedAmountVisibility::Readable),
+    );
+}
