@@ -237,10 +237,11 @@ pub fn construct(
     sponsor: Option<&dyn SponsorCapability>,
 ) -> Result<CandidateCompleteTransaction, TransactionRefusal> {
     // Stages 1 and 2: validate the request and the public view, and
-    // reject duplicate and overlapping outpoints. The request's own
-    // constructor already rejected duplicates inside the ASH selection;
-    // what is left is the overlap between the two regions, which no
-    // single set can rule out.
+    // reject duplicate and overlapping outpoints. Each region's own
+    // constructor already rejected the duplicates inside it — the
+    // request's ASH selection, the offer's sponsor coins, and the
+    // view's statements; what is left is the overlap between the two
+    // regions, which no single set can rule out.
     if request.sponsored() && sponsor.is_none() {
         return Err(TransactionRefusal::SponsorRequestedWithoutCapability);
     }
