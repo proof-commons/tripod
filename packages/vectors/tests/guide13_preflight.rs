@@ -130,8 +130,8 @@ fn the_values_the_old_tuple_was_made_of_no_longer_reach_a_coverage_row() {
 #[test]
 fn a_planner_transcript_alone_is_not_a_run() {
     let planner = OperationTranscript::default();
-    assert!(planner.submissions().is_empty());
-    assert!(planner.mutants().is_empty());
+    assert_eq!(planner.submissions(), []);
+    assert_eq!(planner.mutants(), []);
     assert_eq!(planner.refusal(), None);
 
     // Named so the entry above is known to be reachable at all; there is
