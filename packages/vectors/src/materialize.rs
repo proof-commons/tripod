@@ -37,6 +37,7 @@ use crate::bundle::FixtureBundle;
 use crate::error::VectorError;
 use crate::fixture::{CompactAshSemanticCase, SemanticFixtureId};
 use crate::matrix::{EvidenceBoundary, VectorClass};
+use crate::projection::SponsorChange;
 
 /// The demonstration shape bounds the fixture bundle was linked under.
 ///
@@ -534,9 +535,11 @@ pub fn sponsor_signing_requests(
     let recorded = std::cell::RefCell::new(Vec::new());
     let sponsor = CeremonySponsor {
         coins,
-        offer: ceremony_offer(coins).map_err(|cause| VectorError::TargetMaterializationFailed {
-            vector: vector_id(case),
-            cause,
+        offer: ceremony_offer(coins, case.sponsor().change()).map_err(|cause| {
+            VectorError::TargetMaterializationFailed {
+                vector: vector_id(case),
+                cause,
+            }
         })?,
         ash_inputs: case.ash_inputs(),
         answers: SponsorAnswers::Recording(recorded),
@@ -586,9 +589,11 @@ pub fn materialize_sponsored(
 ) -> Result<MaterializedTargetVector, VectorError> {
     let sponsor = CeremonySponsor {
         coins,
-        offer: ceremony_offer(coins).map_err(|cause| VectorError::TargetMaterializationFailed {
-            vector: vector_id(case),
-            cause,
+        offer: ceremony_offer(coins, case.sponsor().change()).map_err(|cause| {
+            VectorError::TargetMaterializationFailed {
+                vector: vector_id(case),
+                cause,
+            }
         })?,
         ash_inputs: case.ash_inputs(),
         answers: SponsorAnswers::Replaying(signatures),
@@ -596,19 +601,58 @@ pub fn materialize_sponsored(
     build_vector(fixture, case, funding, Some(&sponsor))
 }
 
-/// What the sponsor region declares as the fee.
+/// What the sponsor region's coins hold, as the executor reported them.
 ///
-/// Exactly what its coins hold. The reserve asset has to balance across
-/// the transaction and the fee is the only output carrying it, so this
-/// is the one figure that balances; it is summed from the amounts the
-/// executor reported rather than from what was asked for, because those
-/// are the amounts the chain actually holds.
-fn sponsor_fee(coins: &[SponsorCoin]) -> u64 {
+/// Summed from the amounts the executor reported rather than from what
+/// was asked for, because those are the amounts the chain actually
+/// holds.
+fn sponsor_total(coins: &[SponsorCoin]) -> u64 {
     coins
         .iter()
         .map(SponsorCoin::amount)
         .try_fold(0_u64, u64::checked_add)
         .unwrap_or(u64::MAX)
+}
+
+/// How a row's sponsor contribution divides into fee and residual.
+///
+/// # Why the split is settled here and not stated by a fixture
+///
+/// The reserve asset has to balance across the transaction, and the fee
+/// and the change output are the only places it goes — so the two
+/// figures are one decision, made against amounts the executor reported.
+/// A fixture states whether a residual *exists*; §17.4 rules individual
+/// sponsor amounts absent from the semantic layer, so how large it is
+/// cannot come from there and does not.
+///
+/// A change-present row halves the contribution, with the odd unit
+/// going to the fee. Half of a figure already chosen to sit comfortably
+/// above any relay threshold is still comfortably above it, and an
+/// even split is the one choice that needs no second constant to
+/// justify.
+///
+/// # Errors
+///
+/// [`TransactionRefusal::SponsorChangeWithoutSponsor`] where a residual
+/// was asked for and the contribution cannot carry a nonzero one. The
+/// builder omits a zero-valued change output — the target refuses a
+/// spendable zero — so such a row would silently become a change-absent
+/// transaction wearing a change-present class's name.
+fn sponsor_split(
+    coins: &[SponsorCoin],
+    change: SponsorChange,
+) -> Result<(u64, Option<u64>), TransactionRefusal> {
+    let total = sponsor_total(coins);
+    match change {
+        SponsorChange::Absent => Ok((total, None)),
+        SponsorChange::Present => {
+            let residual = total / 2;
+            if residual == 0 {
+                return Err(TransactionRefusal::SponsorChangeWithoutSponsor);
+            }
+            Ok((total - residual, Some(residual)))
+        }
+    }
 }
 
 /// What the ceremony's coins offer a construction.
@@ -617,16 +661,21 @@ fn sponsor_fee(coins: &[SponsorCoin]) -> u64 {
 ///
 /// [`TransactionRefusal::DuplicateSponsorOutpoint`] when the coins
 /// supplied name one outpoint twice, which is a sponsor region the
-/// executor did not cut.
-fn ceremony_offer(coins: &[SponsorCoin]) -> Result<SponsorOffer, TransactionRefusal> {
+/// executor did not cut, and everything [`sponsor_split`] refuses.
+///
+/// The change role is the row's own, not this function's choice: a
+/// fixture filed under `sponsor-change-present` states that its world
+/// has a residual, and an offer built without one would produce a
+/// transaction of the other class entirely (`G13-R10`).
+fn ceremony_offer(
+    coins: &[SponsorCoin],
+    change: SponsorChange,
+) -> Result<SponsorOffer, TransactionRefusal> {
+    let (fee, residual) = sponsor_split(coins, change)?;
     SponsorOffer::new(
         coins.iter().map(SponsorCoin::outpoint),
-        sponsor_fee(coins),
-        // No change output. The fixtures state a sponsor region's
-        // membership and say nothing about a residual, so asking for
-        // one would be this package inventing a term the row does not
-        // have.
-        None,
+        fee,
+        residual.map(ValueField::Explicit),
     )
 }
 
@@ -657,7 +706,16 @@ fn build_vector(
     if u16::from(sponsors) != case.sponsor().members() {
         return Err(VectorError::MaterializedShapeMismatch(id));
     }
-    let shape = shape_of(ash_inputs, sponsors, false, id)?;
+    // The change role is the fixture's own fact, not a constant: the
+    // shape a row selects is a conjunct of its counts and its change
+    // presence, and hardcoding one of the two made both §18.1
+    // sponsor-change classes select the same shape (`G13-R10`).
+    let shape = shape_of(
+        ash_inputs,
+        sponsors,
+        case.sponsor().change().is_present(),
+        id,
+    )?;
 
     let mut views = Vec::with_capacity(case.ash_inputs() + usize::from(sponsors));
     let program = fixture
@@ -757,7 +815,7 @@ pub fn has_candidate_program(case: &CompactAshSemanticCase) -> bool {
     shape_of(
         u8::try_from(case.ash_inputs()).unwrap_or(u8::MAX),
         u8::try_from(case.sponsor().members()).unwrap_or(u8::MAX),
-        false,
+        case.sponsor().change().is_present(),
         vector_id(case),
     )
     .is_ok()

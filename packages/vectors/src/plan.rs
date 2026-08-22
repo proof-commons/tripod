@@ -36,6 +36,7 @@ use crate::materialize::{
 };
 use crate::matrix::{EvidenceBoundary, class_count};
 use crate::mutation::NegativeMutation;
+use crate::report::ValidatedCompactAshOperationReport;
 use crate::subject::CanonicalSubject;
 use crate::violation::matching_requirement;
 
@@ -253,13 +254,25 @@ impl CoverageObservation {
 /// The vector that was submitted, where the target put it, and what the
 /// §17.4 comparison found — three separate facts, none inferable from
 /// the others.
-pub type Outcome = (TargetVectorId, ObservedOutcomeLayer, ProjectionComparison);
+///
+/// Crate-private, and the reason is the whole of `G13-R01`. Every
+/// component is a public enum or a public identity a consumer can name
+/// for itself, so a tuple is exactly as easy to author as to observe;
+/// while this alias was public, the counters a gate reads could be moved
+/// without an executor, a target binding, or a comparison anyone
+/// performed. The public route is
+/// [`CompactAshEvidencePlan::discharge_observed_run`], whose argument
+/// cannot be authored.
+pub(crate) type Outcome = (TargetVectorId, ObservedOutcomeLayer, ProjectionComparison);
 
 /// What one submitted mutation established, as a run reports it.
 ///
 /// The arm that made the change, the accepted vector it was made from,
-/// and where the target put the result.
-pub type MutantObservation = (NegativeMutation, TargetVectorId, ObservedOutcomeLayer);
+/// and where the target put the result. Crate-private for the reason
+/// [`Outcome`] gives, and with an edge of its own: the negative half's
+/// discharge predicate accepts every refusal it is handed, so a stated
+/// one was indistinguishable from an observed one.
+pub(crate) type MutantObservation = (NegativeMutation, TargetVectorId, ObservedOutcomeLayer);
 
 /// One row of §19's relation-indexed coverage matrix.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -728,7 +741,15 @@ impl CompactAshEvidencePlan {
     /// decides whether the triple amounts to coverage — so a row can
     /// carry an observation and still not be discharged, which is
     /// exactly what a rejected or unmatched submission should produce.
-    pub fn discharge(&mut self, outcomes: &[Outcome]) {
+    ///
+    /// # Why this is crate-private
+    ///
+    /// "All three come off a transcript" was a description of the one
+    /// caller, not a property of the function: nothing in the signature
+    /// said so, and every component was a public value a consumer could
+    /// state. The property is now carried by the type the public entry
+    /// takes — see [`Self::discharge_observed_run`].
+    pub(crate) fn discharge(&mut self, outcomes: &[Outcome]) {
         // Which execution case an outcome belongs to is read off the
         // vector's own sponsor count, so a row cannot be filed under a
         // case by anything but what it actually carried.
@@ -814,7 +835,13 @@ impl CompactAshEvidencePlan {
     /// its closure — which is what §19.2 means by a focused mutation
     /// with dependency collateral, and is why no row here is described
     /// as isolated.
-    pub fn discharge_mutants(&mut self, outcomes: &[MutantObservation]) {
+    ///
+    /// Crate-private for the reason [`Self::discharge`] gives, and the
+    /// case here was worse: [`CoverageObservation::is_discharged`]
+    /// accepts every [`ObservedRefusal`] unconditionally, on the
+    /// strength of the checks above — which are checks about the
+    /// *mutation*, not about whether anybody ran it.
+    pub(crate) fn discharge_mutants(&mut self, outcomes: &[MutantObservation]) {
         for &(mutation, vector, layer) in outcomes {
             // The class's own boundary, by lookup, so an arm whose
             // matrix row moves takes this with it.
@@ -847,6 +874,33 @@ impl CompactAshEvidencePlan {
                 layer,
             });
         }
+    }
+
+    /// Discharge this plan's coverage from one validated run.
+    ///
+    /// # The only public route, and why there is exactly one
+    ///
+    /// §4.4 asks that coverage be attributable to a supervised target
+    /// run. Attributability is not something a call site can promise on
+    /// a function's behalf, because the promise is invisible to everyone
+    /// reading the function afterwards; it has to be carried by the
+    /// argument. So the argument is a
+    /// [`ValidatedCompactAshOperationReport`], which exists only where
+    /// an executor transcript and a planner transcript were laid beside
+    /// each other and agreed — and an executor transcript has no public
+    /// constructor at all.
+    ///
+    /// Both halves are discharged from the one report, positive and
+    /// negative together, because they came out of one run and offering
+    /// them separately would let half a run be presented as a whole one.
+    ///
+    /// What the report says the target *decided* is still what decides.
+    /// A validated run in which every submission was refused moves no
+    /// row to discharged; it moves rows to observed and the counters say
+    /// what happened.
+    pub fn discharge_observed_run(&mut self, report: &ValidatedCompactAshOperationReport<'_>) {
+        self.discharge(report.outcomes());
+        self.discharge_mutants(report.mutant_observations());
     }
 }
 

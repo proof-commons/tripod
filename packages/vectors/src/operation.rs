@@ -401,6 +401,26 @@ impl MutantOutcome {
     }
 }
 
+#[cfg(test)]
+impl MutantOutcome {
+    /// One mutation outcome, stated directly, for the crate's tests.
+    pub(crate) fn for_tests(
+        origin: TargetVectorId,
+        mutation: NegativeMutation,
+        layer: ObservedOutcomeLayer,
+        bytes: Vec<u8>,
+    ) -> Self {
+        Self {
+            origin,
+            mutation,
+            layer,
+            detail: None,
+            accepted_txid: None,
+            bytes,
+        }
+    }
+}
+
 /// Everything one operation run established.
 ///
 /// Built only by [`CompactAshOperationPlanner`], and only from answers
@@ -536,6 +556,67 @@ impl OperationTranscript {
     #[must_use]
     pub const fn refusal(&self) -> Option<&PlanRefusal> {
         self.refusal.as_ref()
+    }
+
+    /// A transcript assembled directly, for the crate's own tests.
+    ///
+    /// Not public, and for the reason the executor package gives for its
+    /// own such constructor: a transcript is what a run established, and
+    /// a caller able to state one without a run could hand the report
+    /// validation a run that never happened. The crate's own tests need
+    /// exactly that — a pair of records that do *not* correspond is the
+    /// thing report validation exists to refuse, and no honest run
+    /// produces one to test against.
+    #[cfg(test)]
+    pub(crate) fn for_tests(parts: TranscriptParts) -> Self {
+        Self {
+            issued_asset: parts.issued_asset,
+            reserve_asset: parts.reserve_asset,
+            constructor_program: parts.constructor_program,
+            submissions: parts.submissions,
+            mutants: parts.mutants,
+            refusal: parts.refusal,
+            ..Self::default()
+        }
+    }
+}
+
+/// The parts a test-assembled [`OperationTranscript`] is stated from.
+///
+/// A struct rather than a long argument list, so that a test states
+/// which field it is exercising by name.
+#[cfg(test)]
+pub(crate) struct TranscriptParts {
+    pub(crate) issued_asset: Option<[u8; 32]>,
+    pub(crate) reserve_asset: Option<[u8; 32]>,
+    pub(crate) constructor_program: Option<Vec<u8>>,
+    pub(crate) submissions: Vec<SubmissionOutcome>,
+    pub(crate) mutants: Vec<MutantOutcome>,
+    pub(crate) refusal: Option<PlanRefusal>,
+}
+
+#[cfg(test)]
+impl SubmissionOutcome {
+    /// One submission outcome, stated directly, for the crate's tests.
+    pub(crate) fn for_tests(
+        vector: TargetVectorId,
+        layer: ObservedOutcomeLayer,
+        accepted_txid: Option<&str>,
+        bytes: Vec<u8>,
+        predicted_weight: u64,
+        observed_weight: Option<u64>,
+    ) -> Self {
+        Self {
+            vector,
+            layer,
+            detail: None,
+            accepted_txid: accepted_txid.map(str::to_owned),
+            bytes,
+            predicted_weight,
+            observed_weight,
+            witness_bytes: 0,
+            virtual_size: 0,
+        }
     }
 }
 
@@ -1527,11 +1608,23 @@ impl CompactAshOperationPlanner {
         }
     }
 
-    fn settle_submission(&mut self, index: usize, response: &NativeOperationResponse) {
-        // A submission answer is never a refusal. Every layer the target
-        // can reach is a fact about the target, and the two that are not
-        // target facts are recorded as themselves rather than dropped
-        // `(´[PLAN-rule:guide12-exec:failure-layers]´)`.
+    /// Record one submission answer, and say whether the plan survives it.
+    ///
+    /// # Errors
+    ///
+    /// [`PlanRefusal::WeightObservationDisagrees`] where the target
+    /// weighed the submitted bytes differently than the ABI did. The
+    /// observed *layer* is never a refusal — every layer the target can
+    /// reach is a fact about the target, and the two that are not target
+    /// facts are recorded as themselves rather than dropped
+    /// `(´[PLAN-rule:guide12-exec:failure-layers]´)`. A weight
+    /// disagreement is not a layer: it is the two sides of the boundary
+    /// contradicting each other about bytes they both hold.
+    fn settle_submission(
+        &mut self,
+        index: usize,
+        response: &NativeOperationResponse,
+    ) -> Result<(), PlanRefusal> {
         if let Some(vector) = self.vectors.get(index) {
             let predicted_weight = vector.weight();
             let observed_weight = response.resources.transaction_weight;
@@ -1553,14 +1646,21 @@ impl CompactAshOperationPlanner {
             // disagreement is not a tolerance to widen — one of the two
             // is wrong about bytes both of them hold, and continuing
             // would build the rest of the run on whichever it was.
+            //
+            // The refusal is returned rather than filed here, so that the
+            // one place a refusal is recorded is also the one place the
+            // plan is stopped. Filing it here and returning nothing is
+            // exactly the state `G13-R03` was about: a transcript that
+            // says refused under a run that says completed.
             if observed_weight.is_some_and(|observed| observed != predicted_weight) {
-                self.transcript.refusal = Some(PlanRefusal::WeightObservationDisagrees {
+                return Err(PlanRefusal::WeightObservationDisagrees {
                     vector: vector.id(),
                     predicted: predicted_weight,
                     observed: observed_weight.unwrap_or_default(),
                 });
             }
         }
+        Ok(())
     }
 }
 
@@ -1626,7 +1726,9 @@ impl TargetOperationPlanner for CompactAshOperationPlanner {
                     }
                 }
                 Stage::Submit(index) => {
-                    self.settle_submission(index, response);
+                    if let Err(refusal) = self.settle_submission(index, response) {
+                        return Err(self.refuse(refusal));
+                    }
                     let next = index + 1;
                     // The reserved subject is the last vector and is not
                     // submitted here: its mutations go first, while its
@@ -1657,8 +1759,10 @@ impl TargetOperationPlanner for CompactAshOperationPlanner {
                     };
                 }
                 Stage::SubmitControl => {
-                    if let Some(index) = self.control_index() {
-                        self.settle_submission(index, response);
+                    if let Some(index) = self.control_index()
+                        && let Err(refusal) = self.settle_submission(index, response)
+                    {
+                        return Err(self.refuse(refusal));
                     }
                     self.stage = Stage::Done;
                 }
@@ -2232,19 +2336,17 @@ mod tests {
 
     /// `G13-R03`: a fatal plan refusal actually refuses the plan.
     ///
-    /// `settle_submission` records a weight disagreement in the
-    /// transcript and returns nothing, so the `Submit` and
-    /// `SubmitControl` arms of `next_step` — alone among the stages —
-    /// never turn it into `Err(PlanRefused)`. The planner keeps
-    /// scheduling, and the run ends by running out of steps: the control
-    /// plane says the operation completed while the operation report
-    /// carries a fatal refusal about it.
+    /// A weight disagreement is fatal, so the submission stages refuse on
+    /// it exactly as every other stage refuses on its own fatal answers.
+    /// The state this forbids is the one the row named: a run that ends
+    /// by running out of steps while its transcript carries a fatal
+    /// refusal, so that the control plane says the operation completed
+    /// and the operation report says it was refused.
     ///
     /// Three properties at once, which is what makes the state
     /// contradictory rather than merely surprising: the mismatch is
     /// staged, the run refuses, and nothing was submitted after it.
     #[test]
-    #[ignore = "G13-R03: confirmed, repair pending"]
     fn a_misweighed_submission_stops_the_run_rather_than_completing_it() {
         let (planner, finished) = run_weighing(refuse_beyond_bound, overstated_weight);
         let transcript = planner.transcript();

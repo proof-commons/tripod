@@ -44,7 +44,7 @@ use transaction::{AssetField, AssetId, NonceField, Outpoint, TargetTransaction, 
 
 use crate::projection::{
     AcceptedProjection, CanonicalFlowKind, DestructionClaim, EventClaim, IssuanceClaim,
-    OwnershipStatus, RootSuccession, SponsorRegion, TransitionCertificate,
+    OwnershipStatus, RootSuccession, SponsorChange, SponsorRegion, TransitionCertificate,
 };
 
 /// Why an accepted transaction could not be read at all.
@@ -70,6 +70,15 @@ pub enum ProjectionRefusal {
     /// The successor output's value is a commitment rather than an
     /// amount, so there is no amount to compare.
     SuccessorValueIsConfidential,
+    /// More than one output pays the reserve asset to a program.
+    ///
+    /// §9.1 admits at most one sponsor-change role, so a transaction
+    /// carrying two is not a shape any candidate emitted. The reading is
+    /// refused rather than resolved: "there is a change role" and "there
+    /// are two of them" are different facts, and recording the second as
+    /// the first is how a shape nobody planned would pass as one that
+    /// was (`G13-R10`).
+    AmbiguousSponsorChange(usize),
 }
 
 /// One §17.4 term.
@@ -94,7 +103,7 @@ pub enum ProjectionTerm {
     Destruction,
     /// The canonical movement kind.
     Flow,
-    /// The sponsor region's existence and membership.
+    /// The sponsor region's existence, membership, and change role.
     Sponsor,
     /// The absence of a specialized event.
     Event,
@@ -188,28 +197,106 @@ enum OutputRole {
     /// Its program is empty: the target's fee role, which is not a
     /// protocol object and carries nothing to project.
     Fee,
-    /// Anything else, which no compact-ASH sponsorless shape defines.
+    /// It pays the reserve asset to a program: the sponsor's residual.
+    ///
+    /// A defined role rather than a surprise. It used to fall into
+    /// [`Self::Foreign`], which made every change-present transaction
+    /// read as carrying a root succession, a destruction, and a
+    /// specialized event at once — so the one shape §18.1 asks for by
+    /// name was the one shape the reader could not project (`G13-R10`).
+    SponsorChange,
+    /// Anything else, which no compact-ASH shape defines.
     Foreign,
 }
 
-/// Recognize the successor by the asset it carries, never by where it
-/// is paid.
+/// Recognize each output by the asset it carries, never by where it is
+/// paid.
 ///
 /// # Why not by the program
 ///
-/// Recognizing it by the constructor program would make the ownerless
-/// status true by construction: the output would be the successor
-/// *because* it sits behind the covenant, and the ownership comparison
-/// would have nothing left to decide. The protocol object is the asset,
-/// so the asset is what finds it, and where it was paid is then a fact
-/// about that output which the comparison can disagree with.
-fn classify(output: &transaction::TargetOutput, asset: AssetId) -> OutputRole {
-    if output.asset() == AssetField::Explicit(asset) && !output.program().is_empty() {
-        OutputRole::Successor
-    } else if output.program().is_empty() {
+/// Recognizing the successor by the constructor program would make the
+/// ownerless status true by construction: the output would be the
+/// successor *because* it sits behind the covenant, and the ownership
+/// comparison would have nothing left to decide. The protocol object is
+/// the asset, so the asset is what finds it, and where it was paid is
+/// then a fact about that output which the comparison can disagree with.
+///
+/// The residual is found the same way, by the reserve asset the target
+/// itself named. Recognizing it by the deployment's change program
+/// would be this package agreeing with the constant it linked against
+/// rather than reading what the chain holds.
+fn classify(output: &transaction::TargetOutput, asset: AssetId, reserve: AssetId) -> OutputRole {
+    if output.program().is_empty() {
         OutputRole::Fee
+    } else if output.asset() == AssetField::Explicit(asset) {
+        OutputRole::Successor
+    } else if output.asset() == AssetField::Explicit(reserve) {
+        OutputRole::SponsorChange
     } else {
         OutputRole::Foreign
+    }
+}
+
+/// The output roles one accepted transaction carries.
+///
+/// Assembled in one pass and refused where the tally is not a shape any
+/// candidate emits, so that everything downstream reads a transaction
+/// whose roles are already known to be unambiguous.
+struct OutputRoles<'a> {
+    successor: &'a transaction::TargetOutput,
+    fee_outputs: usize,
+    change_outputs: usize,
+    foreign_outputs: usize,
+}
+
+impl<'a> OutputRoles<'a> {
+    /// Tally one transaction's outputs by role.
+    ///
+    /// # Errors
+    ///
+    /// [`ProjectionRefusal::NoSuccessorOutput`] where no output carries
+    /// the issued asset, [`ProjectionRefusal::AmbiguousSuccessor`] where
+    /// more than one does, and
+    /// [`ProjectionRefusal::AmbiguousSponsorChange`] where more than one
+    /// pays the reserve asset to a program. Each is an undecidable
+    /// reading rather than a disagreement, and none may be guessed past.
+    fn of(
+        decoded: &'a TargetTransaction,
+        asset: [u8; 32],
+        reserve: [u8; 32],
+    ) -> Result<Self, ProjectionRefusal> {
+        let object = AssetId::from_internal(asset);
+        let residual = AssetId::from_internal(reserve);
+        let mut successor = None;
+        let mut successors = 0_usize;
+        let mut fee_outputs = 0_usize;
+        let mut change_outputs = 0_usize;
+        let mut foreign_outputs = 0_usize;
+        for output in decoded.outputs() {
+            match classify(output, object, residual) {
+                OutputRole::Successor => {
+                    successors += 1;
+                    successor = Some(output);
+                }
+                OutputRole::Fee => fee_outputs += 1,
+                OutputRole::SponsorChange => change_outputs += 1,
+                OutputRole::Foreign => foreign_outputs += 1,
+            }
+        }
+        if successors > 1 {
+            return Err(ProjectionRefusal::AmbiguousSuccessor(successors));
+        }
+        // Exactly one, or none. §9.1 admits a single change role, so a
+        // second is a shape nobody emitted rather than a larger region.
+        if change_outputs > 1 {
+            return Err(ProjectionRefusal::AmbiguousSponsorChange(change_outputs));
+        }
+        Ok(Self {
+            successor: successor.ok_or(ProjectionRefusal::NoSuccessorOutput)?,
+            fee_outputs,
+            change_outputs,
+            foreign_outputs,
+        })
     }
 }
 
@@ -217,10 +304,16 @@ fn classify(output: &transaction::TargetOutput, asset: AssetId) -> OutputRole {
 ///
 /// `coins` is what the target reported putting in each output the
 /// ceremony created for this vector, `asset` is the identity the target
-/// chose when it issued, and `constructor` is the program the ceremony
-/// funded and the target confirmed storing. All three are the target's
+/// chose when it issued, `reserve` is the asset the target pays its
+/// sponsor coins in, and `constructor` is the program the ceremony
+/// funded and the target confirmed storing. All four are the target's
 /// own answers; nothing the fixture said enters here, which is what
 /// makes the result something to compare rather than an echo.
+///
+/// The reserve identity is what lets a sponsor's residual be read as the
+/// role it is. Without it the change output was indistinguishable from
+/// an output no shape defines, and a change-present transaction
+/// projected three absences as present (`G13-R10`).
 ///
 /// # Errors
 ///
@@ -231,6 +324,7 @@ pub fn read_accepted(
     bytes: &[u8],
     coins: &BTreeMap<Outpoint, u64>,
     asset: [u8; 32],
+    reserve: [u8; 32],
     constructor: &[u8],
     operation: &'static str,
 ) -> Result<ObservedProjection, ProjectionRefusal> {
@@ -255,28 +349,13 @@ pub fn read_accepted(
         }
     }
 
-    let object = AssetId::from_internal(asset);
-    let mut successor_output = None;
-    let mut successors = 0_usize;
-    let mut fee_outputs = 0_usize;
-    let mut foreign_outputs = 0_usize;
-    for output in decoded.outputs() {
-        match classify(output, object) {
-            OutputRole::Successor => {
-                successors += 1;
-                successor_output = Some(output);
-            }
-            OutputRole::Fee => fee_outputs += 1,
-            OutputRole::Foreign => foreign_outputs += 1,
-        }
-    }
-    if successors == 0 {
-        return Err(ProjectionRefusal::NoSuccessorOutput);
-    }
-    if successors > 1 {
-        return Err(ProjectionRefusal::AmbiguousSuccessor(successors));
-    }
-    let output = successor_output.ok_or(ProjectionRefusal::NoSuccessorOutput)?;
+    let roles = OutputRoles::of(&decoded, asset, reserve)?;
+    let OutputRoles {
+        successor: output,
+        fee_outputs,
+        change_outputs,
+        foreign_outputs,
+    } = roles;
     let ValueField::Explicit(successor) = output.value() else {
         return Err(ProjectionRefusal::SuccessorValueIsConfidential);
     };
@@ -321,11 +400,18 @@ pub fn read_accepted(
     let issuance = IssuanceClaim::Absent;
 
     // A fee output means a sponsor paid one: the sponsorless form
-    // carries none.
-    let sponsor = if foreign_inputs == 0 && fee_outputs == 0 {
+    // carries none. A residual means one too, and is counted in the
+    // same condition rather than beside it, so no arrangement of the
+    // three can read as sponsorless while a sponsor's output sits in it.
+    let residual = if change_outputs == 0 {
+        SponsorChange::Absent
+    } else {
+        SponsorChange::Present
+    };
+    let sponsor = if foreign_inputs == 0 && fee_outputs == 0 && change_outputs == 0 {
         SponsorRegion::ABSENT
     } else {
-        SponsorRegion::present(foreign_inputs)
+        SponsorRegion::present(foreign_inputs, residual)
     };
 
     let flow = if ownership == OwnershipStatus::Ownerless
@@ -434,19 +520,25 @@ pub fn compare(
 
 #[cfg(test)]
 mod tests {
-    use super::{ObservedProjection, ProjectionRefusal, ProjectionTerm, compare, read_accepted};
+    use super::{
+        ObservedProjection, OutputRole, ProjectionRefusal, ProjectionTerm, classify, compare,
+        read_accepted,
+    };
     use crate::bundle::fixture_bundle;
     use crate::fixture::{OPERATION, positive_semantic_census};
     use crate::materialize::{AshFunding, is_materializable, materialize, vector_id};
+    use crate::projection::SponsorChange;
     use std::collections::BTreeMap;
-    use transaction::Outpoint;
+    use transaction::{AssetId, Outpoint};
 
     /// One materialized vector, the coins it spends, and its program.
     struct Sample {
         bytes: Vec<u8>,
         coins: BTreeMap<Outpoint, u64>,
         asset: [u8; 32],
+        reserve: [u8; 32],
         program: Vec<u8>,
+        shape: linker::backend::CompactAshShape,
         expected: crate::projection::AcceptedProjection,
     }
 
@@ -480,7 +572,9 @@ mod tests {
             bytes: vector.bytes().to_vec(),
             coins,
             asset: bundle.closed_asset(),
+            reserve: bundle.reserve_asset(),
             program,
+            shape: vector.shape(),
             expected: case.expected().clone(),
         }
     }
@@ -490,6 +584,7 @@ mod tests {
             &sample.bytes,
             &sample.coins,
             sample.asset,
+            sample.reserve,
             &sample.program,
             OPERATION,
         )
@@ -561,10 +656,12 @@ mod tests {
             bytes: vector.bytes().to_vec(),
             coins,
             asset: bundle.closed_asset(),
+            reserve: bundle.reserve_asset(),
             program: bundle
                 .pin()
                 .output_script(bundle.target())
                 .expect("the pinned program derives"),
+            shape: vector.shape(),
             expected: case.expected().clone(),
         }
     }
@@ -649,6 +746,7 @@ mod tests {
             &[0x00, 0x01],
             &sample.coins,
             sample.asset,
+            sample.reserve,
             &sample.program,
             OPERATION,
         )
@@ -666,6 +764,7 @@ mod tests {
             &sample.bytes,
             &sample.coins,
             [0xcd; 32],
+            sample.reserve,
             &sample.program,
             OPERATION,
         )
@@ -714,6 +813,7 @@ mod tests {
             &moved.encode(),
             &sample.coins,
             sample.asset,
+            sample.reserve,
             &sample.program,
             OPERATION,
         )
@@ -737,6 +837,16 @@ mod tests {
     /// cut. Handing it both would make the sponsor input read as an
     /// ASH input and the region would vanish.
     fn sponsored_sample() -> Sample {
+        sponsored_sample_named("sponsored-transaction")
+    }
+
+    /// The same, for one §18.1 class named outright.
+    ///
+    /// The two sponsor-change rows have to be reachable by name: they
+    /// differ in exactly one fact, so a helper that took whichever
+    /// sponsored row came first could not tell a test about one of them
+    /// from a test about the other (`G13-R10`).
+    fn sponsored_sample_named(class: &str) -> Sample {
         use crate::materialize::{
             SponsorCoin, has_candidate_program, materialize_sponsored, needs_authorization,
             sponsor_signing_requests,
@@ -747,8 +857,12 @@ mod tests {
         let census = positive_semantic_census().expect("the positive census builds");
         let case = census
             .into_iter()
-            .find(|case| needs_authorization(case) && has_candidate_program(case))
-            .expect("a sponsored row with a program exists");
+            .find(|case| {
+                case.class().name() == class
+                    && needs_authorization(case)
+                    && has_candidate_program(case)
+            })
+            .unwrap_or_else(|| panic!("{class} is a sponsored row with a program"));
         let id = vector_id(&case);
         let funding = AshFunding::unexecutable_placeholder(id);
         let coins = funding
@@ -787,12 +901,92 @@ mod tests {
             bytes: vector.bytes().to_vec(),
             coins,
             asset: bundle.closed_asset(),
+            reserve: bundle.reserve_asset(),
             program: bundle
                 .pin()
                 .output_script(bundle.target())
                 .expect("the pinned program derives"),
+            shape: vector.shape(),
             expected: case.expected().clone(),
         }
+    }
+
+    /// `G13-R10`: the change-present row, built and read back.
+    ///
+    /// The typed class witness the row's name asserts, in three parts:
+    /// the fixture selects a change-present shape, the constructed
+    /// transaction carries exactly one sponsor-change role, and the
+    /// projection read back off those bytes agrees with the expectation
+    /// derived before anything was built. Any one of the three alone
+    /// would be satisfiable by a transaction of the other class.
+    #[test]
+    fn the_change_present_row_carries_exactly_one_sponsor_change_role() {
+        use linker::backend::SponsorChangePresence;
+
+        let sample = sponsored_sample_named("sponsor-change-present");
+        assert_eq!(
+            sample.shape.sponsor_change(),
+            SponsorChangePresence::Present,
+            "the fixture selected a shape with no change role",
+        );
+
+        let decoded =
+            transaction::TargetTransaction::decode(&sample.bytes).expect("the bytes decode");
+        let residual = AssetId::from_internal(sample.reserve);
+        let object = AssetId::from_internal(sample.asset);
+        let changes = decoded
+            .outputs()
+            .iter()
+            .filter(|output| {
+                matches!(
+                    classify(output, object, residual),
+                    OutputRole::SponsorChange
+                )
+            })
+            .count();
+        assert_eq!(
+            changes, 1,
+            "exactly one sponsor-change role, or none at all"
+        );
+
+        let observed = read(&sample);
+        assert_eq!(observed.sponsor().change(), SponsorChange::Present);
+        let differed = compare(&sample.expected, &observed);
+        assert!(
+            differed.is_empty(),
+            "the change-present row differed on {:?}",
+            differed.iter().map(|term| term.name()).collect::<Vec<_>>()
+        );
+    }
+
+    /// `G13-R10`: the change-absent row carries none, and the two rows
+    /// disagree when compared across.
+    ///
+    /// The negative half of the witness. Reading the change-absent row
+    /// against the change-present expectation must move the sponsor
+    /// term — otherwise a run of either row would still be evidence for
+    /// both, which is the state the row was filed about.
+    #[test]
+    fn the_two_sponsor_change_rows_do_not_satisfy_each_others_expectation() {
+        let present = sponsored_sample_named("sponsor-change-present");
+        let absent = sponsored_sample_named("sponsor-change-absent");
+
+        assert_eq!(
+            read(&absent).sponsor().change(),
+            SponsorChange::Absent,
+            "the change-absent row acquired a residual",
+        );
+
+        let crossed = compare(&present.expected, &read(&absent));
+        assert!(
+            crossed.contains(&ProjectionTerm::Sponsor),
+            "the change-absent row satisfied the change-present expectation",
+        );
+        let other_way = compare(&absent.expected, &read(&present));
+        assert!(
+            other_way.contains(&ProjectionTerm::Sponsor),
+            "the change-present row satisfied the change-absent expectation",
+        );
     }
 
     #[test]

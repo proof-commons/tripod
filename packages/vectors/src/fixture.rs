@@ -23,7 +23,7 @@ use realization::ProtocolAmount;
 use crate::error::VectorError;
 use crate::matrix::{VectorClass, VectorPolarity};
 use crate::projection::{
-    AcceptedProjection, SemanticObjectId, SponsorRegion, TransitionCertificate,
+    AcceptedProjection, SemanticObjectId, SponsorChange, SponsorRegion, TransitionCertificate,
 };
 
 /// The exact operation identity every fixture in this package claims.
@@ -63,29 +63,72 @@ impl SemanticFixtureId {
     }
 }
 
-/// Whether the fixture's world carries a sponsor region.
+/// Whether the fixture's world carries a sponsor region, and what shape
+/// that region has.
+///
+/// # Why the change role lives here
+///
+/// §18.1 names `sponsor-change-present` and `sponsor-change-absent` as
+/// two classes. While this type recorded only membership, the two rows
+/// answering those classes were identical values under two names, so
+/// neither row witnessed the property its name asserts and a run of
+/// either was equally good evidence for both (`G13-R10`).
+///
+/// The dimension sits on the sponsor case rather than beside it because
+/// a change role is part of what a sponsor region *is*: §9.1 refuses one
+/// with no region to carry it, and [`Self::region`] can only stay a
+/// total function of this value while both facts are in it.
+///
+/// It is stated in this package's own vocabulary
+/// ([`SponsorChange`]) and never the backend's. §17.2 keeps target and
+/// backend terms out of a semantic fixture, and the mapping onto the
+/// candidate's shape vocabulary happens at materialization, where the
+/// target is.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SponsorCase {
     /// No sponsor region.
     Absent,
-    /// A sponsor region with this many members.
-    Present(u16),
+    /// A sponsor region with this many members and this change role.
+    Present {
+        /// How many members the region has.
+        members: u16,
+        /// Whether the region returns a residual to its sponsor.
+        change: SponsorChange,
+    },
 }
 
 impl SponsorCase {
+    /// A sponsored case whose region returns nothing.
+    #[must_use]
+    pub const fn sponsored(members: u16) -> Self {
+        Self::Present {
+            members,
+            change: SponsorChange::Absent,
+        }
+    }
+
+    /// A sponsored case whose region returns a residual.
+    #[must_use]
+    pub const fn sponsored_with_change(members: u16) -> Self {
+        Self::Present {
+            members,
+            change: SponsorChange::Present,
+        }
+    }
+
     /// The region this case projects.
     #[must_use]
     pub const fn region(self) -> SponsorRegion {
         match self {
             Self::Absent => SponsorRegion::ABSENT,
-            Self::Present(members) => SponsorRegion::present(members),
+            Self::Present { members, change } => SponsorRegion::present(members, change),
         }
     }
 
     /// Whether a sponsor region exists.
     #[must_use]
     pub const fn is_present(self) -> bool {
-        matches!(self, Self::Present(_))
+        matches!(self, Self::Present { .. })
     }
 
     /// How many members the region has, which is zero where it is
@@ -98,7 +141,19 @@ impl SponsorCase {
     pub const fn members(self) -> u16 {
         match self {
             Self::Absent => 0,
-            Self::Present(members) => members,
+            Self::Present { members, .. } => members,
+        }
+    }
+
+    /// Whether the region returns a residual to its sponsor.
+    ///
+    /// Absent where there is no region, which is the only value §9.1
+    /// admits there rather than a default chosen here.
+    #[must_use]
+    pub const fn change(self) -> SponsorChange {
+        match self {
+            Self::Absent => SponsorChange::Absent,
+            Self::Present { change, .. } => change,
         }
     }
 }
@@ -159,7 +214,9 @@ impl CompactAshSemanticCase {
 ///
 /// [`VectorError::InvalidSemanticFixture`] when the stated world is not
 /// a model-valid compact-ASH world — fewer than the two inputs §12.3
-/// requires, or an amount outside the realization layer's domain — and
+/// requires, or an amount outside the realization layer's domain —
+/// [`VectorError::FixtureContradictsItsClass`] when the facts stated do
+/// not witness the §18.1 class the row is filed under, and
 /// [`VectorError::ExpectationNotDerivable`] when the realization layer's
 /// own arithmetic refuses the sum.
 pub fn semantic_case(
@@ -176,6 +233,11 @@ pub fn semantic_case(
     if amounts.len() < 2 {
         return Err(VectorError::InvalidSemanticFixture(id));
     }
+    // And the row must actually witness what it is filed under. Checked
+    // at the one place a case is built, so no route — the canonical
+    // census, a test, or a later caller — can produce a row carrying a
+    // class name without the property that name asserts.
+    witnesses_its_class(id, class, sponsor)?;
 
     let mut inputs = Vec::with_capacity(amounts.len());
     for value in amounts {
@@ -220,6 +282,60 @@ pub fn semantic_case(
     })
 }
 
+/// Whether a row's stated facts witness the §18.1 class it is filed
+/// under.
+///
+/// # Why this is a check and not a convention
+///
+/// A class name is an assertion about the row, and until `G13-R10` the
+/// only thing keeping a row honest about its own name was that whoever
+/// wrote the census meant it. The two sponsor-change rows were the proof
+/// that this is not enough: they were the same value twice, filed under
+/// two names, and nothing anywhere noticed.
+///
+/// Only the classes whose names assert a fact this type can see are
+/// listed. A class named for something a [`SponsorCase`] does not record
+/// — the canonical ordering, the candidate maximum — is not silently
+/// passed here: it is answered by a row whose *facts* make the property
+/// checkable, which is a different obligation and belongs where those
+/// facts are.
+///
+/// # Errors
+///
+/// [`VectorError::FixtureContradictsItsClass`] naming the row and the
+/// class it does not witness.
+fn witnesses_its_class(
+    id: SemanticFixtureId,
+    class: VectorClass,
+    sponsor: SponsorCase,
+) -> Result<(), VectorError> {
+    // Spelled out name by name rather than by a prefix. Two of these
+    // names begin with the same seven letters and assert opposite
+    // things, so a rule written over the prefix would have passed the
+    // sponsorless row for being sponsored.
+    let holds = match class.name() {
+        "sponsor-change-present" => {
+            sponsor.is_present() && sponsor.change() == SponsorChange::Present
+        }
+        "sponsor-change-absent" => {
+            sponsor.is_present() && sponsor.change() == SponsorChange::Absent
+        }
+        "sponsorless-consensus-transaction" => !sponsor.is_present(),
+        "sponsored-transaction" => sponsor.is_present(),
+        "one-sponsor-input" => sponsor.members() == 1,
+        "multiple-sponsor-inputs" => sponsor.members() > 1,
+        _ => true,
+    };
+    if holds {
+        Ok(())
+    } else {
+        Err(VectorError::FixtureContradictsItsClass {
+            fixture: id,
+            class: class.name(),
+        })
+    }
+}
+
 /// The §18.1 positive semantic census, in the guide's own order.
 ///
 /// Each row answers one named §18.1 class. Four of the fourteen classes
@@ -247,11 +363,15 @@ pub fn positive_semantic_census() -> Result<Vec<CompactAshSemanticCase>, VectorE
         (&[(1 << 51) - 2, 1], SponsorCase::Absent),
         (&[300, 200, 100], SponsorCase::Absent),
         (&[7, 11], SponsorCase::Absent),
-        (&[7, 11], SponsorCase::Present(1)),
-        (&[13, 17], SponsorCase::Present(1)),
-        (&[13, 17, 19], SponsorCase::Present(2)),
-        (&[23, 29], SponsorCase::Present(1)),
-        (&[31, 37], SponsorCase::Present(1)),
+        (&[7, 11], SponsorCase::sponsored(1)),
+        (&[13, 17], SponsorCase::sponsored(1)),
+        (&[13, 17, 19], SponsorCase::sponsored(2)),
+        // The two rows §18.1 distinguishes, now distinguished by a
+        // fact: the first returns a residual to its sponsor and the
+        // second does not. They were the same value under two names
+        // until `G13-R10`.
+        (&[23, 29], SponsorCase::sponsored_with_change(1)),
+        (&[31, 37], SponsorCase::sponsored(1)),
         (&[41, 43], SponsorCase::Absent),
         (&[47, 53], SponsorCase::Absent),
     ];
@@ -283,6 +403,7 @@ mod tests {
     };
     use crate::error::VectorError;
     use crate::matrix::POSITIVE_SEMANTIC;
+    use crate::projection::SponsorChange;
     use realization::ProtocolAmount;
     use std::collections::BTreeSet;
 
@@ -414,7 +535,6 @@ mod tests {
     /// name asserts cannot witness that property, so a run of either row
     /// would be equally good evidence for both.
     #[test]
-    #[ignore = "G13-R10: confirmed, repair pending"]
     fn the_sponsor_change_classes_are_distinguished_by_a_sponsor_change_fact() {
         let present = named("sponsor-change-present");
         let absent = named("sponsor-change-absent");
@@ -439,7 +559,6 @@ mod tests {
     /// `sponsor-change-present` carried no sponsor change. Both rows
     /// project the same region.
     #[test]
-    #[ignore = "G13-R10: confirmed, repair pending"]
     fn the_accepted_projection_retains_sponsor_change_presence() {
         let present = named("sponsor-change-present");
         let absent = named("sponsor-change-absent");
@@ -448,6 +567,95 @@ mod tests {
             present.expected().sponsor(),
             absent.expected().sponsor(),
             "the accepted projection of the two classes is identical, so a matching projection is no evidence of which class ran",
+        );
+    }
+
+    /// `G13-R10`: the change dimension is the *only* thing separating
+    /// the two rows.
+    ///
+    /// Stated so that a later edit cannot make the two tests above pass
+    /// by moving some other fact instead. If the rows differed in their
+    /// member count, or in their sponsor presence, they would be told
+    /// apart by something that is not what their names assert.
+    #[test]
+    fn the_two_sponsor_change_rows_differ_in_the_change_role_and_nowhere_else() {
+        let present = named("sponsor-change-present");
+        let absent = named("sponsor-change-absent");
+
+        assert!(present.sponsor().is_present());
+        assert!(absent.sponsor().is_present());
+        assert_eq!(present.sponsor().members(), absent.sponsor().members());
+        assert_eq!(present.sponsor().change(), SponsorChange::Present);
+        assert_eq!(absent.sponsor().change(), SponsorChange::Absent);
+    }
+
+    /// `G13-R10`: a row filed under a class it does not witness is
+    /// refused where it is built.
+    ///
+    /// The swap, both ways. Nothing about either world is invalid — both
+    /// are model-valid sponsored compact-ASH worlds — and that is the
+    /// point: the refusal is about the row's name not matching its
+    /// facts, which is a different defect from an unbuildable world and
+    /// is reported as one.
+    #[test]
+    fn swapping_the_two_sponsor_change_fixtures_refuses_the_case() {
+        for (name, wrong) in [
+            ("sponsor-change-present", SponsorCase::sponsored(1)),
+            (
+                "sponsor-change-absent",
+                SponsorCase::sponsored_with_change(1),
+            ),
+        ] {
+            let class = POSITIVE_SEMANTIC
+                .iter()
+                .find(|class| class.name() == name)
+                .copied()
+                .unwrap_or_else(|| panic!("§18.1 names {name}"));
+            let id = SemanticFixtureId::new(name, 0);
+            assert_eq!(
+                semantic_case(id, class, &[23, 29], wrong),
+                Err(VectorError::FixtureContradictsItsClass {
+                    fixture: id,
+                    class: name,
+                }),
+                "{name} accepted a world that does not witness it",
+            );
+        }
+    }
+
+    /// A sponsorless row filed under a sponsored class is refused too.
+    ///
+    /// The check is written name by name rather than over the shared
+    /// prefix, and this is what would catch a rule that had been written
+    /// over the prefix instead: `sponsorless-consensus-transaction` and
+    /// `sponsored-transaction` begin alike and assert opposites.
+    #[test]
+    fn a_sponsorship_claim_a_row_does_not_carry_is_refused() {
+        let class = POSITIVE_SEMANTIC
+            .iter()
+            .find(|class| class.name() == "sponsored-transaction")
+            .copied()
+            .expect("§18.1 names sponsored-transaction");
+        let id = SemanticFixtureId::new("sponsored-transaction", 0);
+        assert!(matches!(
+            semantic_case(id, class, &[7, 11], SponsorCase::Absent),
+            Err(VectorError::FixtureContradictsItsClass { .. })
+        ));
+
+        let sponsorless = POSITIVE_SEMANTIC
+            .iter()
+            .find(|class| class.name() == "sponsorless-consensus-transaction")
+            .copied()
+            .expect("§18.1 names sponsorless-consensus-transaction");
+        assert!(
+            semantic_case(
+                SemanticFixtureId::new("sponsorless-consensus-transaction", 0),
+                sponsorless,
+                &[7, 11],
+                SponsorCase::Absent,
+            )
+            .is_ok(),
+            "the sponsorless row must still be admitted by a rule about sponsored ones",
         );
     }
 }

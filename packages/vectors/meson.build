@@ -15,6 +15,8 @@ vectors_source_files = files(
   'src/operation.rs',
   'src/plan.rs',
   'src/projection.rs',
+  'src/render.rs',
+  'src/report.rs',
   'src/resource_study.rs',
   'src/subject.rs',
   'src/violation.rs',

@@ -150,7 +150,12 @@ pub trait TargetOperationPlanner {
     ///
     /// # Errors
     ///
-    /// [`PlanRefused`] where the plan cannot state a next step at all.
+    /// [`PlanRefused`] where the plan will not state a next step. That
+    /// covers both a plan that cannot name one and a plan that refuses on
+    /// the answer it was just handed: a plan may read `previous`, decide
+    /// the run has been falsified, and refuse rather than continue. The
+    /// distinction does not reach this package — either way there is no
+    /// next step, and the reason stays in the caller's vocabulary.
     fn next_step(
         &mut self,
         previous: Option<(&OperationCaseId, &NativeOperationResponse)>,
@@ -958,8 +963,9 @@ pub fn execute_canonical_prototypes(
 /// Every protocol failure [`execute`] states, plus
 /// [`NativeConformanceError::OperationStepUnsupported`] when the executor
 /// did not advertise a step's kind,
-/// [`NativeConformanceError::OperationPlanRefused`] when the plan cannot
-/// state its next step, and
+/// [`NativeConformanceError::OperationPlanRefused`] when the plan will
+/// not state its next step — whether because it cannot name one or
+/// because it refused on the answer it was just handed — and
 /// [`NativeConformanceError::DuplicateOperationStep`] when it reuses a
 /// step identity.
 pub fn execute_operations(

@@ -10,8 +10,9 @@
 //! §17.4 closes by ruling that individual sponsor amounts and openings
 //! are absent, and §1.6 requires sponsor opacity to survive lowering.
 //! [`SponsorRegion`] therefore has nowhere to put an amount: it records
-//! existence and membership and nothing else. A field that could hold a
-//! sponsor amount would eventually hold one.
+//! existence, membership, and whether a change role exists, and nothing
+//! else. A field that could hold a sponsor amount would eventually hold
+//! one — which is why the change role is a presence and not a residual.
 
 use realization::ProtocolAmount;
 
@@ -99,26 +100,69 @@ pub enum CanonicalFlowKind {
     Clear,
 }
 
-/// The sponsor region's existence and membership, and nothing else.
+/// Whether a sponsor region returns a residual to its sponsor.
+///
+/// # Why this is a projected fact and not a construction detail
+///
+/// §18.1 names `sponsor-change-present` and `sponsor-change-absent` as
+/// two classes, which makes the presence of a change role a property a
+/// run has to be able to witness. A projection that recorded only
+/// existence and membership could not tell the two apart, so a run of
+/// either row would be equally good evidence for both — the row would
+/// carry the class name without carrying the property the name asserts
+/// (`G13-R10`).
+///
+/// It is a presence and never an amount, for the reason this module's
+/// own documentation gives: §17.4 rules individual sponsor amounts and
+/// openings absent, and a residual's *size* is exactly such an amount.
+/// That a residual exists is structural; how much sits in it is not
+/// projected here and has nowhere to go if it were.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SponsorChange {
+    /// The sponsor region returns nothing: its whole contribution is
+    /// the fee.
+    Absent,
+    /// The sponsor region carries a change role.
+    Present,
+}
+
+impl SponsorChange {
+    /// Whether a change role exists.
+    #[must_use]
+    pub const fn is_present(self) -> bool {
+        matches!(self, Self::Present)
+    }
+}
+
+/// The sponsor region's existence, membership, and change role.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SponsorRegion {
     present: bool,
     members: u16,
+    change: SponsorChange,
 }
 
 impl SponsorRegion {
     /// A sponsorless projection.
+    ///
+    /// Change is absent because there is no region to carry one, which
+    /// is a fact rather than a default: §9.1 refuses a change role with
+    /// no sponsor region, so this is the only value the field can take
+    /// here.
     pub const ABSENT: Self = Self {
         present: false,
         members: 0,
+        change: SponsorChange::Absent,
     };
 
-    /// A sponsored projection with `members` members.
+    /// A sponsored projection with `members` members and this change
+    /// role.
     #[must_use]
-    pub const fn present(members: u16) -> Self {
+    pub const fn present(members: u16, change: SponsorChange) -> Self {
         Self {
             present: true,
             members,
+            change,
         }
     }
 
@@ -132,6 +176,12 @@ impl SponsorRegion {
     #[must_use]
     pub const fn members(self) -> u16 {
         self.members
+    }
+
+    /// Whether the region returns a residual to its sponsor.
+    #[must_use]
+    pub const fn change(self) -> SponsorChange {
+        self.change
     }
 }
 
@@ -287,7 +337,8 @@ impl AcceptedProjection {
 mod tests {
     use super::{
         AcceptedProjection, CanonicalFlowKind, DestructionClaim, EventClaim, IssuanceClaim,
-        OwnershipStatus, RootSuccession, SemanticObjectId, SponsorRegion, TransitionCertificate,
+        OwnershipStatus, RootSuccession, SemanticObjectId, SponsorChange, SponsorRegion,
+        TransitionCertificate,
     };
     use realization::ProtocolAmount;
 
@@ -326,7 +377,7 @@ mod tests {
         // §17.4: individual sponsor amounts and openings are absent.
         // The region has nowhere to put one, and its rendering must not
         // acquire one by accident either.
-        let sponsored = sample(SponsorRegion::present(2));
+        let sponsored = sample(SponsorRegion::present(2, SponsorChange::Absent));
         assert!(sponsored.sponsor().is_present());
         assert_eq!(sponsored.sponsor().members(), 2);
 
@@ -345,7 +396,7 @@ mod tests {
         // §17.4's point: verdict equality is insufficient, so the
         // projection has to actually discriminate.
         let base = sample(SponsorRegion::ABSENT);
-        let sponsored = sample(SponsorRegion::present(1));
+        let sponsored = sample(SponsorRegion::present(1, SponsorChange::Absent));
         assert_ne!(base, sponsored);
 
         let shifted = AcceptedProjection::new(
