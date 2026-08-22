@@ -6,6 +6,7 @@ pub mod bundle;
 pub mod capability;
 pub mod error;
 pub mod instruction;
+pub mod live_shape;
 pub mod operation_assessment;
 pub mod pattern;
 pub mod policy;
@@ -38,6 +39,11 @@ pub use capability::{
 };
 pub use error::TapscriptError;
 pub use instruction::{StackItem, TapscriptInstruction};
+pub use live_shape::{
+    LiveShapeRejection, LiveTransferShape, LiveTransferShapeBounds, LiveTransferShapeSet,
+    MINIMUM_TRANSFER_RECEIPT_INPUTS, MINIMUM_TRANSFER_RECEIPT_OUTPUTS,
+    demonstration_live_shape_set, dense_live_shape_set,
+};
 pub use operation_assessment::{
     EmissionRefusal, OperationAssessmentSet, OperationRequirement, OperationVerdict, VerdictGround,
     assess_operation_plan,
