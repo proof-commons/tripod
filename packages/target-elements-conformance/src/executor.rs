@@ -99,7 +99,7 @@ use crate::protocol::{
     NATIVE_PROTOCOL_SCHEMA, NativeExecutionRequest, NativeExecutionResponse,
     NativeOperationRequest, NativeOperationResponse, NativePrototypeRequest,
     NativePrototypeResponse, OperationCaseId, OperationSubject, ProtocolLimits, ProtocolPhase,
-    WireEnvironment, WireExecutionDomain, validate_response_shape,
+    WireEnvironment, WireExecutionDomain, maximum_request_bytes, validate_response_shape,
 };
 use crate::prototype::{
     CanonicalPrototypeMatrix, CompoundPrototypeFixture, PrototypeCaseId, PrototypeExecutionSubject,
@@ -1659,7 +1659,17 @@ pub(crate) fn compare_environment(
     Ok(())
 }
 
-/// Writes one NDJSON message.
+/// Writes one NDJSON message, under the bound the executor enforces.
+///
+/// # Why this side checks a bound it does not read
+///
+/// The request bounds belong to the contract, and the executor refuses a
+/// record past them. A harness that could serialize a larger request
+/// would be building something no conforming executor may accept, and
+/// the failure would arrive as the *executor's* framing refusal — a
+/// typed complaint about the peer, for a record this side wrote. So the
+/// bound is checked where the record is built, and a run that would have
+/// exceeded it is refused here as this harness's own defect.
 fn write_message<T: serde::Serialize>(
     writer: &mut impl Write,
     message: &T,
@@ -1667,6 +1677,10 @@ fn write_message<T: serde::Serialize>(
 ) -> Result<(), NativeConformanceError> {
     let mut bytes = serde_json::to_vec(message)
         .map_err(|_| NativeConformanceError::MalformedResponse { phase })?;
+    let maximum = maximum_request_bytes(phase);
+    if bytes.len() > maximum {
+        return Err(NativeConformanceError::RequestRecordTooLarge { phase, maximum });
+    }
     bytes.push(b'\n');
     // A child that has gone away closes the pipe; the caller decides
     // whether that was a timeout or an early exit.

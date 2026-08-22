@@ -247,6 +247,59 @@ impl Default for ProtocolLimits {
     }
 }
 
+/// The byte bound on one handshake request, as the executor enforces it.
+///
+/// # Why the request bounds are constants and the response bounds are not
+///
+/// [`ProtocolLimits`] is configuration because the side that enforces it
+/// is the side that holds it: this harness reads responses, so a caller
+/// tightening a response bound tightens something this process will
+/// actually apply.
+///
+/// The request bounds are enforced by the *executor*, which is a separate
+/// program that this interface passes no configuration to. A
+/// per-run request bound would therefore be a bound only one side knew —
+/// the harness would believe it had tightened the framing while the
+/// executor went on reading whatever arrived, which is the two-sided
+/// disagreement protocol revision 4 was minted to end. So the request
+/// bounds are stated once, here, as part of the contract both
+/// implementations declare, and the reviewed adapter mirrors these exact
+/// figures `(´[PLAN-rule:guide12-exec:protocol-revision]´)`.
+///
+/// The values match the response bounds for the same records, because
+/// they bound the same shapes: a handshake is small and fixed, and a
+/// request carries an execution subject whose script and stack are the
+/// only part a fixture's size reaches.
+///
+/// Changing either figure is a change to what a conforming executor must
+/// accept, so it moves in both implementations together or in neither.
+pub const MAXIMUM_HANDSHAKE_REQUEST_BYTES: usize = 64 * 1024;
+
+/// The byte bound on one execution request, as the executor enforces it.
+///
+/// See [`MAXIMUM_HANDSHAKE_REQUEST_BYTES`] for why this is a constant of
+/// the contract rather than a member of [`ProtocolLimits`].
+pub const MAXIMUM_REQUEST_BYTES: usize = 4 * 1024 * 1024;
+
+/// The request bound that applies to one phase.
+///
+/// Total over the phases so that a new phase cannot quietly acquire "no
+/// bound" by being left out of a match.
+#[must_use]
+pub const fn maximum_request_bytes(phase: ProtocolPhase) -> usize {
+    match phase {
+        ProtocolPhase::Handshake => MAXIMUM_HANDSHAKE_REQUEST_BYTES,
+        // Nothing is written to the executor in these phases; naming a
+        // bound keeps the function total without inventing a write that
+        // does not happen.
+        ProtocolPhase::Startup
+        | ProtocolPhase::Environment
+        | ProtocolPhase::Request
+        | ProtocolPhase::Response
+        | ProtocolPhase::Shutdown => MAXIMUM_REQUEST_BYTES,
+    }
+}
+
 /// The network identity the test-only mock executor states.
 ///
 /// Stated once here so the mock binary and the tests that drive it cannot

@@ -81,6 +81,46 @@ For the same reason no note interpolates a configuration path. Those paths
 are the operator's argv, not the target's answer, and a first-party record
 is not where an operator's directory layout belongs.
 
+Strict bounded request framing
+------------------------------
+The harness enforces a framing on this adapter's answers -- one nonempty
+JSON object, one newline, at most `maximum + 1` bytes read per record,
+blank records refused rather than skipped, unknown fields refused rather
+than ignored. This adapter enforces the same framing on the requests, and
+the symmetry is the point: a framing only one side applies is a framing
+the exchange does not have.
+
+Five endings are told apart, because they are five different things to
+have gone wrong:
+
+  clean end     the stream ended AT a record boundary. In the execution
+                phase that is the exchange finishing and the only clean
+                exit there is; in the handshake phase it is a harness
+                that closed before saying anything.
+  unterminated  the stream ended INSIDE a record. A harness that stopped
+                writing part-way, which is not the same event as one
+                that finished.
+  oversized     the bound was reached with no newline in sight. At most
+                `maximum + 1` bytes are ever taken, so this is a refusal
+                this adapter states rather than an allocation the host
+                eventually stops.
+  blank         a record that says nothing. Skipped, once; a framing that
+                skips them cannot tell "the harness said nothing here"
+                from "the harness is finished".
+  malformed     a well-framed record that is not one JSON object.
+
+Each is a fixed spelling in the `--output` file and, except for the clean
+end of the execution phase, a nonzero exit. The record itself is written
+nowhere: a record refused for its framing is exactly the record whose
+bytes have not been established as anything.
+
+The bounds are the contract's rather than this file's. They are stated in
+the harness's own `protocol.rs` and mirrored here as
+`MAXIMUM_HANDSHAKE_REQUEST_BYTES` and `MAXIMUM_REQUEST_BYTES`, with a
+cross-language test reading these lines out of this file and comparing
+them; a bound only one side held would be the two-sided disagreement
+protocol revision 4 was minted to end.
+
 Disposable datadir, and who owns the cookie
 -------------------------------------------
 The node runs in a fresh `mkdtemp` directory that this process creates, owns,
@@ -4804,6 +4844,139 @@ def write_message(value: dict) -> None:
     sys.stdout.flush()
 
 
+# The request bounds, mirrored from the harness's own contract
+# (`packages/target-elements-conformance/src/protocol.rs`, the
+# MAXIMUM_HANDSHAKE_REQUEST_BYTES and MAXIMUM_REQUEST_BYTES constants).
+#
+# Mirrored rather than negotiated because the bound is the contract's and
+# not either implementation's. The harness enforces it on the way out and
+# this adapter enforces it on the way in; a figure that only one side held
+# would be a framing only one side had, which is the two-sided
+# disagreement protocol revision 4 was minted to end. A cross-language
+# test reads these two lines out of this file and compares them with the
+# Rust constants, so the two cannot drift in silence.
+MAXIMUM_HANDSHAKE_REQUEST_BYTES = 64 * 1024
+MAXIMUM_REQUEST_BYTES = 4 * 1024 * 1024
+
+# The framing failures this reader tells apart, as fixed spellings.
+#
+# Five distinctions and not one "bad record", because they are five
+# different things to have gone wrong and a caller reading the diagnostic
+# stream has five different next steps. A framing that collapsed them
+# would report a harness that stopped writing and a harness that wrote
+# four megabytes without a newline as the same event.
+FRAMING_CLEAN_EOF = "clean_eof"
+FRAMING_BLANK_RECORD = "blank_record"
+FRAMING_MALFORMED_RECORD = "malformed_record"
+FRAMING_OVERSIZED_RECORD = "oversized_record"
+FRAMING_UNTERMINATED_RECORD = "unterminated_record"
+
+
+class ProtocolFramingError(FatalAdapterError):
+    """A request this adapter refused to read, named by what was wrong.
+
+    `failure` is one of the fixed spellings above and `phase` is the part
+    of the exchange the reader was in, so the diagnostic that follows is
+    two typed facts rather than a sentence assembled from whatever was in
+    the buffer. Nothing from the record itself is carried: a record
+    refused for its framing is exactly the record whose bytes have not
+    been established as anything.
+    """
+
+    def __init__(self, failure: str, phase: str) -> None:
+        super().__init__("%s in the %s phase" % (failure, phase))
+        self.failure = failure
+        self.phase = phase
+
+
+class RequestReader:
+    """Reads strict newline-delimited JSON requests, under an explicit bound.
+
+    The same framing the harness enforces on this adapter's answers
+    (`packages/target-elements-conformance/src/executor.rs`, `read_record`
+    and `bounded_read`), applied to the requests: one nonempty JSON object,
+    one newline, and nothing else.
+
+    # Why bounded
+
+    At most `maximum + 1` bytes are taken before a record is refused. A
+    harness that wrote without ever emitting a newline would otherwise
+    make this process allocate until the host stopped it, which turns a
+    typed framing failure into a resource failure of the process that was
+    supposed to report it. The bound is not protection from the harness --
+    the harness already owns this process -- it is the difference between
+    a refusal this adapter states and a refusal the kernel states for it.
+
+    # Why the cases stay apart
+
+    A stream that ends at a record boundary is the exchange finishing. A
+    stream that ends part-way through a record is a harness that died
+    mid-write. A record that reached the bound without a newline is a
+    record too large to be one. A blank record is a harness that wrote
+    something that says nothing -- and skipping it, which this adapter used
+    to do, means a framing that cannot tell "the harness said nothing here"
+    from "the harness is finished". Only the first of the four is a clean
+    exit.
+
+    The reader works on the byte stream rather than the decoded one. A
+    bound is a count of bytes, and a text stream that has already applied
+    universal newlines and its own decoding has already done the reading
+    the bound exists to limit.
+    """
+
+    def __init__(self, stream) -> None:
+        self.stream = stream
+
+    def read(self, maximum: int, phase: str):
+        """One record as text, or None at a clean end of stream.
+
+        Raises `ProtocolFramingError` for each of the four framing
+        failures. A record that is well framed but not JSON is the
+        caller's to refuse, because "not JSON" is a fact about the
+        record's content rather than about where it ended.
+        """
+        chunk = self.stream.readline(maximum + 1)
+        if chunk == b"":
+            return None
+        if not chunk.endswith(b"\n"):
+            # Either the bound was reached without a newline, or the
+            # stream ended mid-record. The first is a record too large to
+            # be one; the second is a harness that stopped writing in the
+            # middle of one, and they are not the same fault.
+            raise ProtocolFramingError(
+                FRAMING_OVERSIZED_RECORD
+                if len(chunk) > maximum
+                else FRAMING_UNTERMINATED_RECORD,
+                phase,
+            )
+        try:
+            record = chunk[:-1].decode("utf-8")
+        except UnicodeDecodeError:
+            raise ProtocolFramingError(FRAMING_MALFORMED_RECORD, phase) from None
+        if record.strip() == "":
+            raise ProtocolFramingError(FRAMING_BLANK_RECORD, phase)
+        return record
+
+    def read_object(self, maximum: int, phase: str):
+        """One record, decoded to a JSON object, or None at a clean end.
+
+        The object-ness is part of the framing rather than of the
+        request's meaning: every record this protocol defines is one JSON
+        object, so an array or a bare number is a malformed record and not
+        a request with a surprising shape.
+        """
+        record = self.read(maximum, phase)
+        if record is None:
+            return None
+        try:
+            value = json.loads(record)
+        except json.JSONDecodeError:
+            raise ProtocolFramingError(FRAMING_MALFORMED_RECORD, phase) from None
+        if not isinstance(value, dict):
+            raise ProtocolFramingError(FRAMING_MALFORMED_RECORD, phase)
+        return value
+
+
 def resources_for(fixture, weight) -> dict:
     """Reports the observations this executor can actually make.
 
@@ -4889,11 +5062,33 @@ def serve(arguments) -> int:
     network_id = identifier(arguments.network_id, "network")
     topics = [topic for topic in (arguments.included_local_topic or []) if topic]
 
-    request_line = sys.stdin.readline()
-    if request_line == "":
-        raise FatalAdapterError("the harness closed stdin before the handshake")
-    handshake = json.loads(request_line)
-    if not isinstance(handshake, dict) or handshake.get("schema") != NATIVE_PROTOCOL_SCHEMA:
+    reader = RequestReader(sys.stdin.buffer)
+    handshake = reader.read_object(MAXIMUM_HANDSHAKE_REQUEST_BYTES, "handshake")
+    if handshake is None:
+        # A clean end of stream here is still fatal, because the exchange
+        # has not happened. The distinction the reader keeps is between a
+        # stream that ended where a record may end and one that ended
+        # inside a record; whether ending there was allowed is this
+        # caller's question, and in the handshake phase it is not.
+        raise ProtocolFramingError(FRAMING_CLEAN_EOF, "handshake")
+    # An exact field census, mirroring the harness's own
+    # `deny_unknown_fields` on `HandshakeRequest`. A revision-4 handshake
+    # carries `schema` and nothing else, so a record with an extra member
+    # is a harness this adapter does not agree with about what revision 4
+    # is -- which is the very state the revision was minted to end, and is
+    # therefore refused rather than read past.
+    try:
+        require_keys(handshake, ("schema",), "handshake")
+    except AdapterError as error:
+        # The field's NAME is the harness's own text and is bounded only
+        # by the record bound, so it is quarantined like any other
+        # unreviewed string rather than interpolated into a typed line.
+        record = quarantined("handshake field census", error.note)
+        raise FatalAdapterError(
+            "the handshake failed its field census; the detail is "
+            "elements-output record %d" % record
+        ) from None
+    if handshake["schema"] != NATIVE_PROTOCOL_SCHEMA:
         raise FatalAdapterError("the harness spoke a protocol revision this adapter does not")
 
     node = DisposableNode(
@@ -5055,16 +5250,22 @@ def serve(arguments) -> int:
             }
         )
 
-        for line in sys.stdin:
-            if line.strip() == "":
-                continue
-            answer_case(executor, line)
+        while True:
+            request = reader.read_object(MAXIMUM_REQUEST_BYTES, "request")
+            if request is None:
+                # The one clean ending. The harness closed its side at a
+                # record boundary, which is how the exchange finishes;
+                # every other way a record can end is a framing failure
+                # the reader has already raised.
+                log("the request stream ended cleanly at a record boundary")
+                break
+            answer_case(executor, request)
     finally:
         close()
     return 0
 
 
-def answer_case(executor: CaseExecutor, line: str) -> None:
+def answer_case(executor: CaseExecutor, request: dict) -> None:
     """Answers exactly one execution request, primitive or compound.
 
     The two records are told apart by the case identity they carry, which
@@ -5073,10 +5274,12 @@ def answer_case(executor: CaseExecutor, line: str) -> None:
     Reading the fixture first and inferring the record from which fields
     parsed would mean deciding what was asked from what happened to be
     readable.
+
+    The record arrives decoded. Framing -- where the record ended, whether
+    it was JSON at all, whether it was an object -- is `RequestReader`'s,
+    and settled before this function sees anything; what is left here is
+    what the request MEANS.
     """
-    request = json.loads(line)
-    if not isinstance(request, dict):
-        raise FatalAdapterError("the harness sent a request that is not an object")
     case = request.get("case")
     # A conservation row is told apart the same way the other two records
     # are: by the one field whose shape differs. A primitive case is a
@@ -5823,11 +6026,25 @@ def main(argv) -> int:
         return DIAGNOSTICS_UNAVAILABLE_STATUS
     try:
         return serve(arguments)
+    except ProtocolFramingError as error:
+        # Two typed facts and nothing else: which of the five framing
+        # cases this was, and which phase the reader was in. The record
+        # itself is not written anywhere, here or in the quarantine: a
+        # record refused for its framing is exactly the record whose
+        # bytes have not been established as anything at all.
+        log(
+            "fatal: request framing failure %s in the %s phase"
+            % (error.failure, error.phase)
+        )
+        return 1
     except FatalAdapterError as error:
         log("fatal: %s" % error)
         return 1
     except json.JSONDecodeError:
-        log("fatal: the harness sent a line that is not JSON")
+        # Retained for the JSON this adapter decodes outside the request
+        # framing -- the node's own answers. A malformed REQUEST is a
+        # framing failure and is raised as one.
+        log("fatal: a JSON value this adapter read did not decode")
         return 1
     finally:
         streams, STREAMS = STREAMS, None

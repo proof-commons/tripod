@@ -10,5 +10,6 @@ script_source_files = files(
   'run-conservation-matrix.py',
   'run-fresh-process-lifecycle.py',
   'run-normalization-matrix.py',
+  'test-executor-boundaries.py',
   'test-executor-classification.py',
 )
