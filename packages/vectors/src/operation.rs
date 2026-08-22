@@ -1527,11 +1527,23 @@ impl CompactAshOperationPlanner {
         }
     }
 
-    fn settle_submission(&mut self, index: usize, response: &NativeOperationResponse) {
-        // A submission answer is never a refusal. Every layer the target
-        // can reach is a fact about the target, and the two that are not
-        // target facts are recorded as themselves rather than dropped
-        // `(´[PLAN-rule:guide12-exec:failure-layers]´)`.
+    /// Record one submission answer, and say whether the plan survives it.
+    ///
+    /// # Errors
+    ///
+    /// [`PlanRefusal::WeightObservationDisagrees`] where the target
+    /// weighed the submitted bytes differently than the ABI did. The
+    /// observed *layer* is never a refusal — every layer the target can
+    /// reach is a fact about the target, and the two that are not target
+    /// facts are recorded as themselves rather than dropped
+    /// `(´[PLAN-rule:guide12-exec:failure-layers]´)`. A weight
+    /// disagreement is not a layer: it is the two sides of the boundary
+    /// contradicting each other about bytes they both hold.
+    fn settle_submission(
+        &mut self,
+        index: usize,
+        response: &NativeOperationResponse,
+    ) -> Result<(), PlanRefusal> {
         if let Some(vector) = self.vectors.get(index) {
             let predicted_weight = vector.weight();
             let observed_weight = response.resources.transaction_weight;
@@ -1553,14 +1565,21 @@ impl CompactAshOperationPlanner {
             // disagreement is not a tolerance to widen — one of the two
             // is wrong about bytes both of them hold, and continuing
             // would build the rest of the run on whichever it was.
+            //
+            // The refusal is returned rather than filed here, so that the
+            // one place a refusal is recorded is also the one place the
+            // plan is stopped. Filing it here and returning nothing is
+            // exactly the state `G13-R03` was about: a transcript that
+            // says refused under a run that says completed.
             if observed_weight.is_some_and(|observed| observed != predicted_weight) {
-                self.transcript.refusal = Some(PlanRefusal::WeightObservationDisagrees {
+                return Err(PlanRefusal::WeightObservationDisagrees {
                     vector: vector.id(),
                     predicted: predicted_weight,
                     observed: observed_weight.unwrap_or_default(),
                 });
             }
         }
+        Ok(())
     }
 }
 
@@ -1626,7 +1645,9 @@ impl TargetOperationPlanner for CompactAshOperationPlanner {
                     }
                 }
                 Stage::Submit(index) => {
-                    self.settle_submission(index, response);
+                    if let Err(refusal) = self.settle_submission(index, response) {
+                        return Err(self.refuse(refusal));
+                    }
                     let next = index + 1;
                     // The reserved subject is the last vector and is not
                     // submitted here: its mutations go first, while its
@@ -1657,8 +1678,10 @@ impl TargetOperationPlanner for CompactAshOperationPlanner {
                     };
                 }
                 Stage::SubmitControl => {
-                    if let Some(index) = self.control_index() {
-                        self.settle_submission(index, response);
+                    if let Some(index) = self.control_index()
+                        && let Err(refusal) = self.settle_submission(index, response)
+                    {
+                        return Err(self.refuse(refusal));
                     }
                     self.stage = Stage::Done;
                 }
@@ -2232,19 +2255,17 @@ mod tests {
 
     /// `G13-R03`: a fatal plan refusal actually refuses the plan.
     ///
-    /// `settle_submission` records a weight disagreement in the
-    /// transcript and returns nothing, so the `Submit` and
-    /// `SubmitControl` arms of `next_step` — alone among the stages —
-    /// never turn it into `Err(PlanRefused)`. The planner keeps
-    /// scheduling, and the run ends by running out of steps: the control
-    /// plane says the operation completed while the operation report
-    /// carries a fatal refusal about it.
+    /// A weight disagreement is fatal, so the submission stages refuse on
+    /// it exactly as every other stage refuses on its own fatal answers.
+    /// The state this forbids is the one the row named: a run that ends
+    /// by running out of steps while its transcript carries a fatal
+    /// refusal, so that the control plane says the operation completed
+    /// and the operation report says it was refused.
     ///
     /// Three properties at once, which is what makes the state
     /// contradictory rather than merely surprising: the mismatch is
     /// staged, the run refuses, and nothing was submitted after it.
     #[test]
-    #[ignore = "G13-R03: confirmed, repair pending"]
     fn a_misweighed_submission_stops_the_run_rather_than_completing_it() {
         let (planner, finished) = run_weighing(refuse_beyond_bound, overstated_weight);
         let transcript = planner.transcript();
