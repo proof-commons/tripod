@@ -1,13 +1,17 @@
 #!/bin/sh
-# Zero-argument launcher for the target-native executor adapter.
+# Configuration launcher for the target-native executor adapter.
 #
-# The conformance harness spawns the program named by --executor with no
-# arguments and nulls its stderr (Guide-9 section 11.1, section 11.2), so the
-# adapter's own configuration has to be established outside the first-party
-# interface. This launcher is that boundary: it reads a small set of
-# environment variables naming the node binaries and the upstream
-# functional-test framework, and re-execs elements-native-executor.py with
-# them as explicit arguments.
+# The conformance harness spawns the program named by --executor with exactly
+# two arguments -- --output and --elements-output, the two files the adapter
+# writes its diagnostics into -- and with nothing else, so the adapter's own
+# configuration has to be established outside the first-party interface. This
+# launcher is that boundary: it reads a small set of environment variables
+# naming the node binaries and the upstream functional-test framework, and
+# re-execs elements-native-executor.py with them as explicit arguments.
+#
+# The harness's own two arguments arrive here as this launcher's arguments and
+# are passed straight through, which is why the pass-through below is part of
+# the contract rather than a convenience for running it by hand.
 #
 # None of these variables is a credential, and none may become one. Guide-9
 # section 17.6 bans an RPC user, an RPC password, a cookie path, a token, a
@@ -49,9 +53,13 @@
 #                                           (optional)
 #
 # Any further arguments given to this launcher are appended to the adapter's
-# own, which is useful when running it by hand; the harness supplies none.
+# own. That is how the harness's --output and --elements-output reach the
+# adapter, and it is also how an operator running this by hand supplies them;
+# the adapter requires both and starts without neither.
 #
-# Stdout is protocol data. Stderr is diagnostics the harness discards.
+# Stdout is protocol data. The adapter writes nothing at all on stderr, so
+# this launcher's own refusal below is the only thing that ever appears
+# there -- and it appears before the adapter has been executed.
 set -eu
 
 here="$(cd "$(dirname "$0")" && pwd)"

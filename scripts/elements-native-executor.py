@@ -21,20 +21,49 @@ executing, and this adapter did; revision 3 makes the discipline unnecessary
 by removing the field, and the two revisions are refused for each other at
 the handshake rather than reconciled.
 
-No-arguments-from-harness contract
-----------------------------------
-The conformance harness spawns the selected executor with no arguments at all
-and never reads its stderr (Guide-9 section 11.1, section 11.2). This script
-therefore has to be reached through a launcher that supplies its
-configuration; `elements-native-executor.sh` beside it is that launcher. The
-configuration this script requires -- the `elementsd` and `elements-cli`
-paths, and the `--framework` path -- is the executor's own, established
-outside the first-party interface, and carries no credential of any kind
-(ADR-015, and Guide-9 section 17.6, which bans `--rpc-user`, `--rpc-password`,
-`--cookie`, `--token`, `--wallet`, and `--private-key`).
+Three streams out, and nothing on stderr
+---------------------------------------
+The harness spawns the selected executor with two arguments and no others:
+`--output`, naming the file this adapter writes its own diagnostics to, and
+`--elements-output`, naming the file raw child text is quarantined in. Both
+are mandatory, both name destinations the harness itself chose, and neither
+is a credential or can become one -- Guide-9 section 17.6 bans `--rpc-user`,
+`--rpc-password`, `--cookie`, `--token`, `--wallet`, and `--private-key`
+from this boundary, and the name of a file to write diagnostics into is none
+of them.
 
-Everything this script writes on stdout is protocol data. Diagnostics go to
-stderr, which the harness nulls.
+Everything else this script requires -- the `elementsd` and `elements-cli`
+paths, the `--framework` path, the `--network-id` -- is the executor's own
+configuration, established outside the first-party interface (ADR-015). The
+`elements-native-executor.sh` launcher beside this file is that boundary: it
+reads that configuration from the environment and appends the harness's own
+two arguments to it.
+
+So there are exactly three streams out of this process, and the third is
+empty:
+
+  stdout             protocol data, and nothing else.
+  --output           this adapter's diagnostics, TYPED FACTS ONLY: a method
+                     this adapter itself named, a child's exit status, a
+                     phase, a class from the harness's own vocabulary, a
+                     duration, a record number. No child byte reaches it.
+  --elements-output  raw child text, quarantined: what `elements-cli` wrote
+                     on its stderr, what the node answered, what this
+                     adapter serialized. Every entry carries a header this
+                     adapter wrote, numbering it so a typed line in
+                     `--output` and the raw text it declined to quote name
+                     the same record.
+  stderr             nothing, ever.
+
+Stderr used to be the diagnostic stream, on the ground that the harness
+nulls it. That made the discipline depend on the reader: bytes the harness
+happened not to read were treated as bytes that had not left, and an
+operator running this adapter by hand got the raw child text on their
+terminal all the same. A destination this adapter is *told* is the
+destination does not depend on who is reading it. What can still reach
+stderr is an interpreter traceback raised before the arguments have been
+read; that is the interpreter's behaviour rather than this program's
+statement, and it is stated here rather than fought.
 
 The boundary runs in both directions, and the second direction is the one
 that was missing. The harness does not read this process's stderr; this
@@ -45,7 +74,8 @@ records as `observed_detail` and `detail` -- so child bytes arrived in
 first-party evidence by the back door while the contract above appeared to
 forbid exactly that. A note now states the method and the client's exit
 status, both of them fixed and typed, and says that the reason is omitted;
-the reason itself is logged here, on the stderr the harness nulls (G12-R04).
+the reason itself goes to the elements output, behind a numbered header
+(G12-R04).
 
 For the same reason no note interpolates a configuration path. Those paths
 are the operator's argv, not the target's answer, and a first-party record
@@ -818,9 +848,102 @@ class FatalAdapterError(Exception):
     """A condition that ends the exchange rather than one case."""
 
 
+class DiagnosticStreams:
+    """The two destinations this adapter writes diagnostics to.
+
+    Neither is stdout and neither is stderr. One holds typed facts and one
+    holds raw child text, and the whole point of there being two is that
+    the separation is a property of *where a byte is written* rather than
+    of how carefully each call site phrased itself.
+
+    `record` numbers every quarantined entry. The number is the only thing
+    that crosses: a typed line may say that record 7 holds the text it
+    declined to quote, and record 7's header in the elements output says
+    which method and which exit status it belongs to. A reader can
+    therefore correlate the two files without either file quoting the
+    other's material.
+
+    Both handles are flushed after every write. This process can be killed
+    by the harness's group signal at any point, and a diagnostic that was
+    still in a buffer when that happened would be a diagnostic about
+    exactly the run that most needed one.
+    """
+
+    def __init__(self, output, elements_output) -> None:
+        self.output = output
+        self.elements_output = elements_output
+        self.record = 0
+
+    def typed(self, message: str) -> None:
+        """Writes one typed-fact line. No child byte may reach here."""
+        self.output.write("%s: %s\n" % (COMMAND_NAME, message))
+        self.output.flush()
+
+    def quarantine(self, subject: str, text: str) -> int:
+        """Writes raw child text behind a header, and numbers it.
+
+        The header is this adapter's own sentence -- a subject it composed
+        from typed facts, a record number, and the byte count -- so a
+        reader can find the entry's bounds without parsing the payload.
+        The payload is written whole and unread: truncating it here would
+        be this adapter deciding which part of a child's message mattered,
+        which is the judgement the quarantine exists to avoid making.
+        """
+        self.record += 1
+        number = self.record
+        self.elements_output.write(
+            "----- %s record %d: %s (%d characters) -----\n"
+            % (COMMAND_NAME, number, subject, len(text))
+        )
+        self.elements_output.write(text)
+        if not text.endswith("\n"):
+            self.elements_output.write("\n")
+        self.elements_output.write("----- end record %d -----\n" % number)
+        self.elements_output.flush()
+        return number
+
+
+# The streams, established by `main` from the harness's two mandatory
+# arguments and by nothing else.
+#
+# `None` before that, and `None` is not a fallback to stderr: an unconfigured
+# adapter discards its diagnostics rather than writing them somewhere it was
+# not told to write. The only way to reach a call site with the streams unset
+# is to import this module and call one of its functions directly, which is
+# what the node-free test lanes do; a run of this program as a program has
+# parsed its arguments before any diagnostic exists to write.
+STREAMS = None
+
+# The status a run exits with when the two destinations could not be
+# established at all -- named as a constant because it is the one refusal
+# this program can make without being able to write a word about it, so the
+# number is the whole of the message.
+DIAGNOSTICS_UNAVAILABLE_STATUS = 2
+
+
 def log(message: str) -> None:
-    """Writes one diagnostic line to stderr, which the harness nulls."""
-    print("%s: %s" % (COMMAND_NAME, message), file=sys.stderr, flush=True)
+    """Writes one typed-fact diagnostic line to the `--output` file.
+
+    Every argument reaching here must be a fact this adapter or the harness
+    stated: a method name, an exit status, a phase, a failure class, a
+    duration, a record number. Raw text from a child process goes to
+    `quarantined` instead, and the two are different functions precisely so
+    that the choice is made once per call site and is visible in the diff.
+    """
+    if STREAMS is not None:
+        STREAMS.typed(message)
+
+
+def quarantined(subject: str, text: str) -> int:
+    """Files raw child text in the `--elements-output` quarantine.
+
+    Returns the record number, so the caller's typed line can name where
+    the text it did not quote actually went. Returns 0 where no stream is
+    configured, which is the "there is no such record" answer.
+    """
+    if STREAMS is None:
+        return 0
+    return STREAMS.quarantine(subject, text)
 
 
 # --------------------------------------------------------------------------
@@ -1428,21 +1551,28 @@ class DisposableNode:
             # becomes observed_detail on a first-party protocol record,
             # so anything placed here is bytes from a child process
             # arriving in first-party evidence -- which is precisely
-            # what the no-arguments-from-harness contract above says
-            # does not happen. The contract described the harness
-            # reading THIS process's stderr; it did not describe this
-            # path, and the same bytes were reaching the same place by
-            # the back door (G12-R04).
+            # what the stream contract above says does not happen. That
+            # contract used to be stated as "the harness nulls this
+            # process's stderr"; it did not describe this path, and the
+            # same bytes were reaching the same place by the back door
+            # (G12-R04).
             #
             # What is left is fixed and typed: the method, which the
             # harness itself named, and the client's exit status. The
             # omission is stated rather than silent, because a
             # diagnostic that quietly dropped the reason would be less
-            # honest than one that says where the reason went -- it is
-            # on this adapter's own stderr, which the harness nulls.
+            # honest than one that says where the reason went -- and
+            # where it went is the elements output, which is named here
+            # by record number rather than quoted.
+            record = quarantined(
+                "rpc %s exit status %d, client stderr"
+                % (method, completed.returncode),
+                completed.stderr,
+            )
             log(
-                "rpc %s failed with status %d, and the client said: %s"
-                % (method, completed.returncode, one_line(completed.stderr))
+                "rpc %s failed with client exit status %d; the client's text "
+                "is elements-output record %d"
+                % (method, completed.returncode, record)
             )
             raise AdapterError(
                 "rpc %s failed with client exit status %d; the client's stderr is "
@@ -1483,7 +1613,14 @@ class DisposableNode:
 
 
 def one_line(text: str) -> str:
-    """Collapses a client's message to one line for a stderr diagnostic."""
+    """Collapses a client's message to one bounded line.
+
+    Used only where the result stays inside this process -- the
+    `client_detail` a consensus judgement classifies -- and never to
+    prepare text for a typed diagnostic. Raw text is quarantined whole by
+    `quarantined`; there is nothing left for a collapsing helper to make
+    safe, because collapsing was never what made it safe.
+    """
     return " ".join(text.split())[:400]
 
 
@@ -1829,10 +1966,19 @@ class CaseExecutor:
             # uncontrolled text that can carry a path out of this
             # operator's filesystem, and observed_detail is a
             # first-party record rather than a place for it. The full
-            # message goes to the stderr the harness nulls (G12-R04).
+            # message is quarantined with the child text, for the same
+            # reason and in the same place (G12-R04): the framework runs
+            # in this process, but its message is no more this adapter's
+            # own sentence than a child's stderr is.
+            record = quarantined(
+                "framework raised %s building a taproot commitment"
+                % type(error).__name__,
+                str(error),
+            )
             log(
-                "the framework raised %s building a taproot commitment: %s"
-                % (type(error).__name__, one_line(str(error)))
+                "the framework raised %s building a taproot commitment; its "
+                "message is elements-output record %d"
+                % (type(error).__name__, record)
             )
             raise AdapterError(
                 "the framework built no taproot commitment for the stated "
@@ -2497,10 +2643,18 @@ class OperationExecutor:
 
         A refusal here is the adapter failing to build something the
         chain accepts, which is an infrastructure failure and never a
-        target verdict. The transaction this adapter built is logged to
-        stderr so the failure can be diagnosed; stderr is diagnostics the
-        harness discards, and nothing from it reaches a first-party
-        record (G12-R04).
+        target verdict. The transaction this adapter built, and the
+        node's structured reason for refusing it, both go to the
+        quarantine so the failure can be diagnosed; neither reaches a
+        first-party record, and neither reaches the typed diagnostic
+        stream either (G12-R04).
+
+        The serialized transaction is this adapter's own material rather
+        than a child's, and it is quarantined all the same. The
+        quarantine is not only for bytes of untrusted origin: it is for
+        unbounded text, and a diagnostic stream that admitted one
+        transaction hex would have no ground on which to refuse the next
+        arbitrary string.
         """
         raw = transaction.serialize().hex()
         try:
@@ -2508,18 +2662,27 @@ class OperationExecutor:
                 "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw])
             )
         except AdapterError:
-            log("the %s transaction this adapter built was refused: %s" % (note, raw))
+            record = quarantined(
+                "the %s transaction this adapter built, refused" % (note or "unnamed"),
+                raw,
+            )
+            log(
+                "the %s transaction this adapter built was refused; its bytes "
+                "are elements-output record %d" % (note or "unnamed", record)
+            )
             # The mempool's structured reason, which names the rule; the
             # block error names only the check that reported it.
             try:
-                log(
-                    "the mempool says: %s"
-                    % json.dumps(
-                        self.executor.node.call("testmempoolaccept", json.dumps([raw]))
-                    )
-                )
+                answer = self.executor.node.call("testmempoolaccept", json.dumps([raw]))
             except AdapterError:
                 pass
+            else:
+                reason = quarantined(
+                    "testmempoolaccept on the refused %s transaction"
+                    % (note or "unnamed"),
+                    json.dumps(answer),
+                )
+                log("the mempool's reason is elements-output record %d" % reason)
             raise
         return transaction.rehash()
 
@@ -4615,7 +4778,18 @@ def rejection(script_error: str) -> dict:
     text = script_error.strip()
     failure = FAILURE_CLASS_BY_SCRIPT_ERROR.get(text)
     if failure is None:
-        log("rejected, with a script error this adapter does not classify: %s" % text)
+        # The unclassified message is the target's own text, lifted out of
+        # the client's stderr, and it is exactly the material the
+        # quarantine is for: it is the reason a class is missing, so it
+        # has to be recoverable, and it is uncontrolled text, so it may
+        # not travel in a typed line. The response carries no class, which
+        # is what "not classified" means on the wire; the record number is
+        # how an operator finds the message that needs a table entry.
+        record = quarantined("unclassified script error", text)
+        log(
+            "rejected, with a script error this adapter does not classify; "
+            "the message is elements-output record %d" % record
+        )
     return {"verdict": "rejected", "observed_failure": failure}
 
 
@@ -4705,7 +4879,12 @@ def identifier(text: str, role: str) -> bytes:
 def serve(arguments) -> int:
     """Runs the whole exchange, and destroys the node whatever happens."""
     framework_path, messages, script, key_module = load_framework(arguments.framework)
-    log("framework loaded from %s" % framework_path)
+    # That the framework loaded, and not where from. The path is the
+    # operator's own argv, and this adapter's diagnostics are no more a
+    # place for an operator's directory layout than a first-party record
+    # is -- the two files travel together, and a path written in either is
+    # a path that has left this host.
+    log("framework loaded")
     name, version, revision = node_provenance(arguments.elementsd)
     network_id = identifier(arguments.network_id, "network")
     topics = [topic for topic in (arguments.included_local_topic or []) if topic]
@@ -5507,6 +5686,25 @@ def parse_arguments(argv):
             "executor protocol on stdio."
         ),
     )
+    # The two the HARNESS supplies. Mandatory, because this program writes
+    # nothing to stderr and a run with nowhere to write its diagnostics
+    # would be a run whose failures are unexplainable -- which is the state
+    # the stderr contract was quietly in whenever the harness nulled it.
+    parser.add_argument(
+        "--output",
+        required=True,
+        help="file this adapter writes its own diagnostics to. Typed facts "
+        "only: a method, an exit status, a phase, a failure class, a "
+        "duration, a record number. No byte of any child process reaches it",
+    )
+    parser.add_argument(
+        "--elements-output",
+        required=True,
+        help="file raw child text is quarantined in: what elements-cli wrote "
+        "on its stderr, what the node answered, what this adapter "
+        "serialized. Every entry carries a numbered header, and the number "
+        "is what a typed line in --output names instead of quoting the text",
+    )
     parser.add_argument("--elementsd", required=True, help="path to the elementsd binary")
     parser.add_argument("--elements-cli", required=True, help="path to the elements-cli binary")
     parser.add_argument(
@@ -5571,9 +5769,58 @@ def parse_arguments(argv):
     return parser.parse_args(argv)
 
 
+def open_diagnostics(arguments) -> DiagnosticStreams:
+    """Opens the two destinations the harness named.
+
+    Refused where they are the same destination. Two roles sharing one
+    file would put raw child text into the typed stream by the shortest
+    route available -- writing it there -- and a separation that a
+    configuration mistake can undo is not a separation. The comparison is
+    lexical normalization rather than filesystem identity, for the reason
+    ADR-017's path-role rule gives: the host may replace or remount a path
+    at any moment, so a device-and-inode answer would establish a boundary
+    the repository cannot hold.
+
+    Opened for append rather than truncation. The files belong to the run
+    the harness named them for, and a harness that reuses one path for two
+    phases of a run should get both phases rather than the second only.
+    """
+    if os.path.abspath(arguments.output) == os.path.abspath(arguments.elements_output):
+        raise FatalAdapterError(
+            "--output and --elements-output name one destination, and the "
+            "two streams are separate or they are not streams"
+        )
+    output = open(arguments.output, "a", encoding="utf-8", errors="replace")
+    try:
+        elements_output = open(
+            arguments.elements_output, "a", encoding="utf-8", errors="replace"
+        )
+    except OSError:
+        output.close()
+        raise
+    return DiagnosticStreams(output, elements_output)
+
+
 def main(argv) -> int:
-    """Entry point."""
+    """Entry point.
+
+    Nothing here writes to stderr, including the failure paths: a fatal
+    condition is a typed line in the `--output` file and a nonzero status,
+    and the status is what the harness reads. An exception escaping before
+    the streams are open still reaches stderr as an interpreter traceback,
+    which is the interpreter's doing and is stated in this module's own
+    documentation rather than caught and hidden.
+    """
+    global STREAMS
     arguments = parse_arguments(argv)
+    try:
+        STREAMS = open_diagnostics(arguments)
+    except (FatalAdapterError, OSError):
+        # There is no destination, so there is nowhere honest to say so.
+        # The refusal is the exit status and nothing else: a status is a
+        # typed fact the harness already reads, and stderr stays empty
+        # even here.
+        return DIAGNOSTICS_UNAVAILABLE_STATUS
     try:
         return serve(arguments)
     except FatalAdapterError as error:
@@ -5582,6 +5829,10 @@ def main(argv) -> int:
     except json.JSONDecodeError:
         log("fatal: the harness sent a line that is not JSON")
         return 1
+    finally:
+        streams, STREAMS = STREAMS, None
+        streams.output.close()
+        streams.elements_output.close()
 
 
 if __name__ == "__main__":
