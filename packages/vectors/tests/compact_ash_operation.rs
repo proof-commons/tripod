@@ -1,4 +1,4 @@
-//! The Wave-11 operation lane: one compact-ASH run against a real node.
+//! The operation lane: one compact-ASH run against a real node.
 //!
 //! # Why this is an ignored test rather than a command
 //!
@@ -19,6 +19,17 @@
 //!   cargo test -p tripod-vectors --test compact_ash_operation -- --ignored --nocapture
 //! ```
 //!
+//! # What this file still owns
+//!
+//! Obtaining a run, and asserting the shape of one that completed. The
+//! rendering it used to carry moved into `vectors::render`, where the
+//! crate's own tests can cover it without a node: a function reachable
+//! only through a live Elements node is a function nothing checks
+//! (`G13-R12`). What is written here is a *validated* report — the
+//! executor's record and the planner's, laid beside each other and
+//! agreeing — so the coverage figures in the file are attributable to
+//! the run rather than to this lane's arithmetic.
+//!
 //! # Nothing here decides what the run should have found
 //!
 //! The assertions are about the *shape* of a completed run: that the
@@ -32,9 +43,7 @@
 //! report when the honest answer is a refusal
 //! `(´[PLAN-rule:guide12-exec:failure-layers]´)`.
 
-use std::collections::BTreeMap;
-use std::fmt::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use target_elements::{
@@ -45,13 +54,9 @@ use target_elements_conformance::executor::{
     DEFAULT_EXECUTOR_TIMEOUT, ExecutorConfiguration, ExecutorTrust, execute_operations,
 };
 use target_elements_conformance::protocol::ObservedOutcomeLayer;
-use vectors::materialize::TargetVectorId;
-use vectors::matrix::EvidenceBoundary;
 use vectors::operation::{CompactAshOperationPlanner, OperationTranscript};
-use vectors::plan::{ProjectionComparison, derive_evidence_plan};
-use vectors::report::{
-    ProjectionVerdict, ValidatedCompactAshOperationReport, validate_operation_report,
-};
+use vectors::render::{render_refused_run, render_validated_report};
+use vectors::report::validate_operation_report;
 
 fn environment(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|value| !value.is_empty())
@@ -68,367 +73,22 @@ fn identifier(text: &str) -> [u8; 32] {
     bytes
 }
 
-fn quote(text: &str) -> String {
-    let mut out = String::with_capacity(text.len() + 2);
-    out.push('"');
-    for character in text.chars() {
-        match character {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            other if (other as u32) < 0x20 => {
-                let _ = write!(out, "\\u{:04x}", other as u32);
-            }
-            other => out.push(other),
-        }
-    }
-    out.push('"');
-    out
-}
-
-fn hex(bytes: &[u8]) -> String {
-    let mut text = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        let _ = write!(text, "{byte:02x}");
-    }
-    text
-}
-
-/// How many §19 coverage rows this run's outcomes actually discharge.
+/// Where the run's wall time is written.
 ///
-/// The plan decides, not this lane, and it reads the validated report
-/// rather than anything this file states: the outcomes were recomputed
-/// where the two transcripts were laid beside each other, and
-/// `CoverageObservation::is_discharged` is what turns each into coverage
-/// or refuses to. An acceptance whose projection was never compared
-/// discharges nothing, which is why the comparison distinguishes
-/// not-performed from differed.
-fn coverage(
-    report: &ValidatedCompactAshOperationReport<'_>,
-) -> (usize, usize, usize, usize, usize) {
-    let bundle = vectors::bundle::fixture_bundle().expect("the fixture bundle builds");
-    let mut plan = derive_evidence_plan(&bundle).expect("the evidence plan derives");
-    plan.discharge_observed_run(report);
-    (
-        plan.census().coverage_requirements(),
-        plan.observed_rows(),
-        plan.discharged_rows(),
-        plan.discharged_positive_rows(),
-        plan.discharged_negative_rows(),
-    )
-}
-
-/// Write everything the run established, and nothing it did not.
-fn render(
-    transcript: &OperationTranscript,
-    validated: Option<&ValidatedCompactAshOperationReport<'_>>,
-    wall: Duration,
-    outcome_text: &str,
-) -> String {
-    let empty = BTreeMap::new();
-    let projections = validated.map_or(&empty, |report| report.projections());
-    let mut out = String::new();
-    out.push_str("{\n");
-    let _ = writeln!(out, "  \"wall_seconds\": {:.1},", wall.as_secs_f64());
-    let _ = writeln!(out, "  \"run\": {outcome_text},");
-    let _ = writeln!(
-        out,
-        "  \"plan_refusal\": {},",
-        transcript.refusal().map_or_else(
-            || "null".to_owned(),
-            |refusal| quote(&format!("{refusal:?}"))
-        )
+/// Beside the report and never inside it. Duration is a property of the
+/// machine the run happened on rather than of the run's result, and a
+/// canonical stream carrying one differs from every other by
+/// construction, so two runs of the same census could never be compared
+/// byte for byte (`G13-R12`).
+fn timing_path(report: &Path) -> PathBuf {
+    let mut path = report.to_path_buf();
+    let mut name = path.file_name().map_or_else(
+        || "operation-report".to_owned(),
+        |name| name.to_string_lossy().into_owned(),
     );
-    let _ = writeln!(
-        out,
-        "  \"issued_asset\": {},",
-        transcript
-            .issued_asset()
-            .map_or_else(|| "null".to_owned(), |asset| quote(&hex(&asset)))
-    );
-    let _ = writeln!(
-        out,
-        "  \"constructor_program\": {},",
-        transcript
-            .constructor_program()
-            .map_or_else(|| "null".to_owned(), |program| quote(&hex(program)))
-    );
-    let _ = writeln!(
-        out,
-        "  \"reserve_asset\": {},",
-        transcript
-            .reserve_asset()
-            .map_or_else(|| "null".to_owned(), |asset| quote(&hex(&asset)))
-    );
-    let _ = writeln!(out, "  \"funded_vectors\": {},", transcript.funded().len());
-    let _ = writeln!(
-        out,
-        "  \"sponsored_submissions\": {},",
-        transcript
-            .submissions()
-            .iter()
-            .filter(|submission| submission.vector().sponsors() > 0)
-            .count()
-    );
-    let _ = writeln!(
-        out,
-        "  \"projections_compared\": {}, \"projections_matched\": {},",
-        projections.len(),
-        projections
-            .values()
-            .filter(|verdict| verdict.comparison() == ProjectionComparison::Matched)
-            .count()
-    );
-    out.push_str(&render_weights(transcript));
-    // Coverage exists only where a run was validated. A refused run
-    // writes no coverage figures rather than writing zeroes, because a
-    // zero is a count and the honest statement is that there was nothing
-    // to count.
-    if let Some(report) = validated {
-        let (requirements, observed, discharged, positive, negative) = coverage(report);
-        let _ = writeln!(
-            out,
-            "  \"coverage_requirements\": {requirements}, \"coverage_observed\": {observed}, \"coverage_discharged\": {discharged},"
-        );
-        let _ = writeln!(
-            out,
-            "  \"coverage_discharged_positive\": {positive}, \"coverage_discharged_negative\": {negative},"
-        );
-    }
-
-    out.push_str(&render_divergences(transcript));
-
-    out.push_str(&render_submissions(transcript, projections));
-    out.push_str(&render_mutations(transcript));
-    out.push_str("}\n");
-    out
-}
-
-/// §20.5's comparison, aggregated.
-///
-/// The compared count is deliberately not the submission count: an
-/// executor that observes no weight leaves the comparison unmade, and
-/// counting those rows as matched would turn an absent observation into
-/// a passing one.
-fn render_weights(transcript: &OperationTranscript) -> String {
-    let mut out = String::new();
-    let _ = writeln!(
-        out,
-        "  \"weights_compared\": {}, \"weights_matched\": {},",
-        transcript
-            .submissions()
-            .iter()
-            .filter(|submission| submission.observed_weight().is_some())
-            .count(),
-        transcript
-            .submissions()
-            .iter()
-            .filter(|submission| submission.weight_agrees() == Some(true))
-            .count(),
-    );
-    out
-}
-
-/// Every positive submission, with both weights beside its verdict.
-fn render_submissions(
-    transcript: &OperationTranscript,
-    projections: &BTreeMap<TargetVectorId, ProjectionVerdict>,
-) -> String {
-    let mut out = String::from("  \"submissions\": [\n");
-    for (index, submission) in transcript.submissions().iter().enumerate() {
-        if index > 0 {
-            out.push_str(",\n");
-        }
-        let _ = write!(
-            out,
-            "    {{\"ordinal\": {}, \"ash_inputs\": {}, \"sponsors\": {}, \"layer\": {}, \"txid\": {}, \"projection\": {}, \"detail\": {}, \"bytes\": {}, \"witness_bytes\": {}, \"virtual_size\": {}, \"predicted_weight\": {}, \"observed_weight\": {}, \"weight_agrees\": {}}}",
-            submission.vector().fixture().ordinal(),
-            submission.vector().ash_inputs(),
-            submission.vector().sponsors(),
-            quote(&submission.layer().to_string()),
-            submission
-                .accepted_txid()
-                .map_or_else(|| "null".to_owned(), quote),
-            projections
-                .get(&submission.vector())
-                .map_or_else(|| quote("not performed"), |verdict| quote(verdict.detail())),
-            submission.detail().map_or_else(|| "null".to_owned(), quote),
-            submission.bytes().len(),
-            submission.witness_bytes(),
-            submission.virtual_size(),
-            submission.predicted_weight(),
-            submission
-                .observed_weight()
-                .map_or_else(|| "null".to_owned(), |weight| weight.to_string()),
-            submission
-                .weight_agrees()
-                .map_or_else(|| "null".to_owned(), |agrees| agrees.to_string()),
-        );
-    }
-    out.push_str("\n  ],\n");
-    out
-}
-
-/// The rows this target's own money bound forbids.
-///
-/// What the target said when it was asked for one anyway, written apart
-/// from the submissions and never among them: nothing was built for
-/// these, so nothing was judged, and a reader must not be able to count
-/// one as a result.
-fn render_divergences(transcript: &OperationTranscript) -> String {
-    let mut out = String::from("  \"target_amount_divergences\": [\n");
-    for (index, divergence) in transcript.divergences().iter().enumerate() {
-        if index > 0 {
-            out.push_str(",\n");
-        }
-        let _ = write!(
-            out,
-            "    {{\"ordinal\": {}, \"fixture\": {}, \"stated\": {}, \"bound\": {}, \"excess\": {}, \"layer\": {}, \"target_verdict\": {}, \"detail\": {}}}",
-            divergence.vector().fixture().ordinal(),
-            quote(divergence.vector().fixture().name()),
-            divergence.beyond().stated(),
-            divergence.beyond().bound(),
-            divergence.beyond().excess(),
-            quote(&divergence.layer().to_string()),
-            // §1.5, stated rather than left to be inferred from the
-            // layer's name: an adapter that could not perform a step has
-            // not told anyone what the target thinks of it.
-            divergence.layer().is_target_verdict(),
-            divergence.detail().map_or_else(|| "null".to_owned(), quote),
-        );
-    }
-    out.push_str("\n  ],\n");
-    out
-}
-
-/// The negative half of the report.
-///
-/// Each row states the mutation, the §1.5 boundary the §18 class it
-/// stages expects, the layer the target actually answered at, and
-/// whether those two agree — as separate fields, because a row
-/// recording only the agreement would hide which way a disagreement
-/// went.
-///
-/// Whether the mutation could even reach its expected boundary is a
-/// further fact: an arm that unbalances the closed asset is answered by
-/// consensus before any script runs, so a script-path expectation is
-/// unreachable for it whatever the covenant would have said.
-fn render_mutations(transcript: &OperationTranscript) -> String {
-    // The control first, because every row below depends on it. A
-    // mutation refused while its control was also refused is not
-    // evidence about the mutation: both could have failed for the same
-    // unrelated reason, and the reader has to be able to see that
-    // before reading a single mutation row.
-    let subject = transcript.mutation_subject();
-    let control = subject.and_then(|id| {
-        transcript
-            .submissions()
-            .iter()
-            .find(|submission| submission.vector() == id)
-    });
-    // Whether the subject's coins were ever demonstrably spendable. The
-    // control's acceptance shows it; so does an accepted mutation, which
-    // spent them itself. Either settles the question a refusal on its
-    // own could not.
-    let control_accepted =
-        control.is_some_and(|submission| submission.layer() == ObservedOutcomeLayer::Accepted);
-    let any_mutation_accepted = transcript
-        .mutants()
-        .iter()
-        .any(|mutant| mutant.layer() == ObservedOutcomeLayer::Accepted);
-    let coins_were_spendable = control_accepted || any_mutation_accepted;
-
-    let mut out = String::new();
-    let _ = writeln!(
-        out,
-        "  \"mutation_control\": {{\"subject_ordinal\": {}, \"layer\": {}, \"control_accepted\": {control_accepted}, \"coins_were_spendable\": {coins_were_spendable}}},",
-        subject.map_or_else(
-            || "null".to_owned(),
-            |id| id.fixture().ordinal().to_string()
-        ),
-        control.map_or_else(
-            || "null".to_owned(),
-            |submission| quote(&submission.layer().to_string())
-        ),
-    );
-    out.push_str("  \"mutations\": [\n");
-    // Attributability is per row and order-dependent: once a mutation is
-    // accepted it spends the subject's coins, so every later row is
-    // refused for that rather than for what it changed. A global flag
-    // would throw away the rows submitted before that happened, which
-    // are the ones that actually established something.
-    let mut spent = false;
-    for (index, mutant) in transcript.mutants().iter().enumerate() {
-        if index > 0 {
-            out.push_str(",\n");
-        }
-        let expected = mutant
-            .mutation()
-            .expected_boundary()
-            .expect("the mutation stages a class §18 names");
-        let observed = mutant.layer();
-        let submitted = !mutant.bytes().is_empty();
-        let attributable = submitted && !spent && coins_were_spendable;
-        let _ = write!(
-            out,
-            "    {{\"mutation\": {}, \"class\": {}, \"origin_ordinal\": {}, \"expected_boundary\": {}, \"observed_layer\": {}, \"boundary_matched\": {}, \"target_verdict\": {}, \"attributable\": {attributable}, \"submitted\": {submitted}, \"preserves_value_balance\": {}, \"txid\": {}, \"detail\": {}, \"bytes\": {}}}",
-            quote(&format!("{:?}", mutant.mutation())),
-            quote(mutant.mutation().class_name()),
-            mutant.origin().fixture().ordinal(),
-            quote(&format!("{expected:?}")),
-            quote(&observed.to_string()),
-            matches_boundary(expected, observed),
-            observed.is_target_verdict(),
-            mutant.mutation().preserves_value_balance(),
-            mutant
-                .accepted_txid()
-                .map_or_else(|| "null".to_owned(), quote),
-            mutant.detail().map_or_else(|| "null".to_owned(), quote),
-            mutant.bytes().len(),
-        );
-        if observed == ObservedOutcomeLayer::Accepted {
-            spent = true;
-        }
-    }
-    out.push_str("\n  ]\n");
-    out
-}
-
-/// Whether an observed layer is the §1.5 boundary a class expected.
-///
-/// The two vocabularies are different types and this is the only place
-/// they are put side by side. It is a total function over the observed
-/// layer rather than a lookup with a fallback, so a layer nobody
-/// considered fails to match rather than matching by accident.
-fn matches_boundary(expected: EvidenceBoundary, observed: ObservedOutcomeLayer) -> bool {
-    // Exhaustive over the expected side, which is this workspace's own
-    // vocabulary: a boundary added to §1.5 has to be given an
-    // observable layer here or this stops compiling. The observed side
-    // is then a single equality, so no layer can satisfy a boundary by
-    // falling through a wildcard.
-    let required = match expected {
-        EvidenceBoundary::ConsensusRejectionBeforeScript => {
-            ObservedOutcomeLayer::ConsensusRejectionBeforeScript
-        }
-        EvidenceBoundary::ScriptPathRejection => ObservedOutcomeLayer::ScriptPathRejection,
-        EvidenceBoundary::RelayPolicyRejection => ObservedOutcomeLayer::RelayPolicyRejection,
-        EvidenceBoundary::AcceptedTransaction => ObservedOutcomeLayer::Accepted,
-        // Boundaries no submission reaches. A pre-target refusal happens
-        // before a target is asked, an infrastructure failure is not a
-        // target fact, and a report-layer verdict is made after
-        // acceptance rather than by the target — so no observed layer
-        // satisfies one of these.
-        EvidenceBoundary::SemanticRequestRejection
-        | EvidenceBoundary::CompilerPlanRejection
-        | EvidenceBoundary::BackendEmissionRejection
-        | EvidenceBoundary::LinkerRejection
-        | EvidenceBoundary::AbiConstructionRejection
-        | EvidenceBoundary::ExecutorInfrastructureFailure
-        | EvidenceBoundary::ReportSemanticProjectionRejection => return false,
-    };
-    observed == required
+    name.push_str(".timing");
+    path.set_file_name(name);
+    path
 }
 
 #[test]
@@ -476,30 +136,34 @@ fn compact_ash_runs_against_a_real_target() {
     let wall = started.elapsed();
 
     let transcript = planner.transcript();
-    let outcome_text = match &outcome {
-        Ok(_) => quote("completed"),
-        Err(error) => quote(&format!("refused: {error}")),
-    };
     // The two records of the run, laid beside each other. A refusal here
     // is a defect and not a target verdict: it says the executor's own
-    // record and the planner's do not describe the same run, so the
-    // lane stops rather than writing a report about which of them to
-    // believe.
+    // record and the planner's do not describe the same run, so the lane
+    // stops rather than writing a report about which of them to believe.
     let validated = outcome.as_ref().ok().map(|execution| {
         validate_operation_report(execution, transcript)
             .expect("the executor's record and the planner's describe the same run")
     });
-    let projections = validated
-        .as_ref()
-        .map(ValidatedCompactAshOperationReport::projections)
-        .cloned()
-        .unwrap_or_default();
-    let out = render(transcript, validated.as_ref(), wall, &outcome_text);
+    let out = validated.as_ref().map_or_else(
+        || {
+            let reason = outcome
+                .as_ref()
+                .err()
+                .map_or_else(|| "unknown".to_owned(), ToString::to_string);
+            render_refused_run(transcript, &reason).expect("the refused run renders")
+        },
+        |report| render_validated_report(report).expect("the validated run renders"),
+    );
     std::fs::write(&report, &out).expect("the transcript is written");
+    std::fs::write(
+        timing_path(&report),
+        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+    )
+    .expect("the run's wall time is written");
 
     // A run that reached the target at all answered every step it asked
     // for. Nothing here says what the answers were.
-    if outcome.is_ok() {
+    if let Some(report) = validated.as_ref() {
         assert_eq!(
             transcript.submissions().len(),
             planner.vectors().len(),
@@ -549,7 +213,7 @@ fn compact_ash_runs_against_a_real_target() {
             .filter(|submission| submission.layer() == ObservedOutcomeLayer::Accepted)
             .count();
         assert_eq!(
-            projections.len(),
+            report.projections().len(),
             accepted,
             "an accepted transaction went uncompared"
         );

@@ -749,10 +749,10 @@ fn compare_projections(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::{
         ExecutionBinding, ExecutorSelfDescription, ObservedAnswer, ReportValidationRefusal,
-        validate_bound_run,
+        ValidatedCompactAshOperationReport, validate_bound_run,
     };
     use crate::fixture::positive_semantic_census;
     use crate::materialize::{TargetVectorId, vector_id};
@@ -872,6 +872,34 @@ mod tests {
             mutants: Vec::new(),
             refusal: None,
         })
+    }
+
+    /// The bytes every staged submission carries.
+    ///
+    /// Not a transaction, deliberately: a run whose §17.4 comparison
+    /// cannot be performed is the one a staged pair can honestly
+    /// produce, and it is also the case the rendering has to spell
+    /// correctly.
+    const STAGED_BYTES: &[u8] = b"this is not a target transaction";
+
+    /// One accepted run, for the crate's rendering tests.
+    ///
+    /// Exposed to sibling modules because the rendering is a function of
+    /// a validated report, and staging one is the only way to render
+    /// without a live node.
+    pub fn staged_transcript() -> OperationTranscript {
+        accepted_run(STAGED_BYTES, None)
+    }
+
+    /// That run, validated.
+    pub fn staged_report(
+        transcript: &OperationTranscript,
+    ) -> ValidatedCompactAshOperationReport<'_> {
+        let binding = binding(
+            vec![submission_step("submit/0", STAGED_BYTES)],
+            vec![answer(ObservedOutcomeLayer::Accepted, Some("aa"))],
+        );
+        validate_bound_run(&binding, transcript).expect("the staged records agree")
     }
 
     /// `G13-R01`: an acceptance a caller states is not a matched
