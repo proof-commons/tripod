@@ -122,20 +122,14 @@ fn the_values_the_old_tuple_was_made_of_no_longer_reach_a_coverage_row() {
 
 /// `G13-R01`: the planner's transcript alone opens no route.
 ///
-/// A consumer can build an `OperationTranscript` — it is public and
-/// carries a `Default` — and the validation still cannot be reached with
-/// it, because the second operand has no public constructor. The
-/// function is referenced rather than called for exactly that reason:
-/// there is no value to call it with.
+/// A consumer cannot build either an `OperationTranscript` or the
+/// executor's `ExecutionTranscript`: neither type exposes a public
+/// constructor. The functions are referenced rather than called for
+/// exactly that reason: there are no values to call them with.
 #[test]
 fn a_planner_transcript_alone_is_not_a_run() {
-    let planner = OperationTranscript::default();
-    assert_eq!(planner.submissions(), []);
-    assert_eq!(planner.mutants(), []);
-    assert_eq!(planner.refusal(), None);
-
-    // Named so the entry above is known to be reachable at all; there is
-    // no execution transcript to pass it, which is the property.
+    // Named so the entries above are known to be reachable at all; there
+    // are no constructible transcripts to pass them, which is the property.
     let entry = the_validation_entry;
     let _ = &entry;
     let discharge = the_discharge_entry;
