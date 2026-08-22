@@ -44,9 +44,9 @@ pub use capability::{
 pub use error::TapscriptError;
 pub use instruction::{StackItem, TapscriptInstruction};
 pub use live_bundle::{
-    CandidateRelocatableLiveTransferBundle, LiveBundleRefusal, LiveBundleSymbol,
-    LiveIntrospectionReference, LiveLeafProgram, LiveRelocation, LiveRelocationSite,
-    LiveSharedLeafProof, LiveSymbolEntry, emit_candidate_live_bundle,
+    CandidateRelocatableLiveTransferBundle, LiveBundleRefusal, LiveBundleSymbol, LiveLeafProgram,
+    LiveRelocation, LiveRelocationSite, LiveSharedLeafProof, LiveSymbolEntry,
+    emit_candidate_live_bundle,
 };
 pub use live_constructor::{
     BindingStatus, CandidateTransferLifecycle, ConstructorBinding, ConstructorDisposition,

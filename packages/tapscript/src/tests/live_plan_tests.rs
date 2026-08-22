@@ -198,6 +198,15 @@ fn every_position_of_every_admitted_shape_is_held_by_exactly_one_family() {
             "the family ranges of {shape:?} do not cover its transaction",
         );
 
+        // Every run lies on the side it was filed under, so a family
+        // cannot be classified on one side and counted on the other.
+        for range in ranges.inputs() {
+            assert_eq!(range.family().side(), FieldSide::Input);
+        }
+        for range in ranges.outputs() {
+            assert_eq!(range.family().side(), FieldSide::Output);
+        }
+
         // Stated twice on purpose, the second time from the ranges
         // themselves: the covered positions are exactly the transaction's.
         let covered = |ranges: &[crate::live_plan::LiveFamilyRange]| {

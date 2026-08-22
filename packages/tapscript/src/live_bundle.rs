@@ -31,13 +31,22 @@
 //! field. The alternative was a second role enum, and then two censuses
 //! for one linker.
 //!
-//! Three types are new, and each is new because it is keyed to something
+//! Two types are new, and each is new because it is keyed to something
 //! compact ASH does not have: [`LiveBundleSymbol`], because the symbol
-//! set differs; [`LiveRelocationSite`] and [`LiveIntrospectionReference`],
-//! because a site names a [`LiveTransferLeafRole`], which is a different
-//! type from [`crate::bundle::LeafRole`] for the reason §11.3 gives — the
+//! set differs, and [`LiveRelocationSite`], because a site names a
+//! [`LiveTransferLeafRole`] — a different type from
+//! [`crate::bundle::LeafRole`] for the reason §11.3 gives, that the
 //! leaves of two representations are disjoint sets and a leaf of one must
 //! have no way of reaching the other's constructor.
+//!
+//! One type is deliberately *not* carried across.
+//! [`crate::bundle::IntrospectionReference`] records where a program
+//! fetches a symbol's value from the target itself, and the compact-ASH
+//! bundle needs it because its leaves read the ASH constructor's program
+//! from the input they are spending. No live-transfer fragment reads a
+//! symbol from the target — see [`LiveBundleSymbol`] — so a census of
+//! those reads would be a permanently empty field, which §1.10 refuses as
+//! firmly as it refuses a reserved one.
 //!
 //! # Explicit only, and it says so
 //!
@@ -142,9 +151,10 @@ pub enum LiveBundleSymbol {
     TargetLeafVersion,
     /// The selected owner sighash profile (§11.2).
     ///
-    /// A symbol with no relocation, and it is here rather than omitted
-    /// because it is genuinely consumed: [`CandidateRelocatableLiveTransferBundle::sighash_profile`]
-    /// carries the review's answer about it. It reaches no site because
+    /// A symbol with no relocation, named because §11.2 lists the role
+    /// and because its value is carried:
+    /// [`CandidateRelocatableLiveTransferBundle::sighash_profile`] is what
+    /// the review establishes about it. It reaches no site because
     /// the profile decides which message the target builds, and no byte
     /// an authorization fragment pushes depends on that message — the
     /// fragment pushes a key and verifies whatever the witness offers
@@ -292,47 +302,6 @@ impl LiveRelocation {
     #[must_use]
     pub const fn substitution(&self) -> &SubstitutionMode {
         &self.substitution
-    }
-}
-
-/// One leaf's dependency on a value it reads from the target.
-///
-/// The counterpart of [`LiveRelocation`] for a value no layer supplies.
-/// The live-transfer leaves have none today — see [`LiveBundleSymbol`]
-/// for why the constructor's own program is not among the symbols — and
-/// the type exists so that a leaf which acquired one would have somewhere
-/// to record it rather than acquiring it invisibly.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LiveIntrospectionReference {
-    symbol: LiveBundleSymbol,
-    leaf: LiveTransferLeafRole,
-    role: TargetRole,
-    sites: NonZeroUsize,
-}
-
-impl LiveIntrospectionReference {
-    /// The symbol whose value the program reads.
-    #[must_use]
-    pub const fn symbol(&self) -> LiveBundleSymbol {
-        self.symbol
-    }
-
-    /// The leaf whose program reads it.
-    #[must_use]
-    pub const fn leaf(&self) -> LiveTransferLeafRole {
-        self.leaf
-    }
-
-    /// What the read value is, and which side it is read from.
-    #[must_use]
-    pub const fn role(&self) -> TargetRole {
-        self.role
-    }
-
-    /// How many places in that program read it.
-    #[must_use]
-    pub const fn sites(&self) -> NonZeroUsize {
-        self.sites
     }
 }
 
@@ -558,7 +527,6 @@ pub struct CandidateRelocatableLiveTransferBundle {
     symbols: BTreeMap<LiveBundleSymbol, LiveSymbolEntry>,
     unresolved: LiveTransferSymbols,
     relocations: BTreeSet<LiveRelocation>,
-    introspections: BTreeSet<LiveIntrospectionReference>,
     outstanding_dimensions: BTreeMap<ResourceDimension, ResourceObligation>,
     patterns: BTreeSet<LiveTransferPatternId>,
     residuals: BTreeSet<RecognitionResidual>,
@@ -670,12 +638,6 @@ impl CandidateRelocatableLiveTransferBundle {
         self.relocations
             .iter()
             .filter(move |relocation| relocation.symbol == symbol)
-    }
-
-    /// Every value a program reads from the target, in canonical order.
-    #[must_use]
-    pub const fn introspections(&self) -> &BTreeSet<LiveIntrospectionReference> {
-        &self.introspections
     }
 
     /// The resource dimensions this bundle does not establish, and who
@@ -834,10 +796,6 @@ pub fn emit_candidate_live_bundle(
         symbols: symbol_table,
         unresolved: symbols,
         relocations,
-        // Empty, and stated rather than omitted: no live-transfer
-        // fragment reads a symbol's value from the target, so there is no
-        // edge for the linker's cycle analysis to carry.
-        introspections: BTreeSet::new(),
         outstanding_dimensions: outstanding_dimensions(),
         patterns,
         residuals,

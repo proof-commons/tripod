@@ -319,7 +319,6 @@ fn the_link_time_symbols_are_the_ones_a_later_layer_settles() {
     // And no symbol is read from the target at spend time, because no
     // live-transfer fragment reads one: recognition rests on the leaf
     // commitment instead of on a comparison.
-    assert!(bundle.introspections().is_empty());
     assert!(
         !bundle
             .symbols()
@@ -397,6 +396,19 @@ fn the_bundle_publishes_the_residuals_its_patterns_carry() {
         bundle.sighash_profile(),
         OwnerProfileDisposition::ReviewIncomplete { .. },
     ));
+    // §11.2 lists the profile among the symbol roles, and the table says
+    // what it is: settled here, a typed parameter, and reaching no
+    // serialized field — which is why it has no relocation.
+    let profile = bundle.symbols()[&LiveBundleSymbol::SelectedSighashProfile];
+    assert_eq!(profile.binding(), SymbolBinding::DefinedByBundle);
+    assert_eq!(profile.encoding(), RelocationEncoding::TypedParameter);
+    assert_eq!(profile.width(), SymbolWidth::Unserialized);
+    assert_eq!(
+        bundle
+            .relocations_for(LiveBundleSymbol::SelectedSighashProfile)
+            .count(),
+        0,
+    );
     assert!(!bundle.target_evidence().is_empty());
 }
 
