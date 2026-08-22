@@ -48,6 +48,7 @@ mod live_bundle_tests;
 mod live_constructor_tests;
 mod live_pattern_tests;
 mod live_plan_tests;
+mod live_private_tests;
 mod live_shape_tests;
 mod mapping_tests;
 mod non_weakening_tests;

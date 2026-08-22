@@ -32,6 +32,7 @@ tapscript_source_files = files(
   'src/tests/live_constructor_tests.rs',
   'src/tests/live_pattern_tests.rs',
   'src/tests/live_plan_tests.rs',
+  'src/tests/live_private_tests.rs',
   'src/tests/live_shape_tests.rs',
   'src/tests/mapping_tests.rs',
   'src/tests/mod.rs',

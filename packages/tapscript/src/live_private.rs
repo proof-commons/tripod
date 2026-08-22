@@ -149,7 +149,7 @@ pub fn prefix_mask(
     target: &ReviewedElementsTapscriptDefinition,
     class: EncodingClass,
 ) -> Result<PrefixMask, TapscriptError> {
-    let prefixes: &BTreeSet<u8> = target
+    let prefixes = target
         .definition()
         .encodings()
         .get(&class)
@@ -157,19 +157,36 @@ pub fn prefix_mask(
         .filter(|prefixes| !prefixes.is_empty())
         .ok_or(TapscriptError::MalformedEncodedItem { class })?;
 
+    discriminating_mask(prefixes).ok_or(TapscriptError::PrefixSetNotDiscriminable { class })
+}
+
+/// The mask that admits exactly `prefixes`, where one exists.
+///
+/// The arithmetic of [`prefix_mask`], separated from the registry lookup
+/// so the refusal is a value this crate can be shown refusing. Every
+/// prefix-discriminated class the reviewed contract states happens to
+/// discriminate, so a test that could only reach the refusal through the
+/// registry could not reach it at all — and an unreachable refusal is one
+/// nobody has watched work.
+///
+/// [`None`] for an empty set, and for a set that is not precisely the
+/// bytes one mask admits: `{0x01, 0x02, 0x03}` varies in two bits, so a
+/// mask covering them would admit `0x00` as well, and no comparison this
+/// crate emits may accept a byte the class never declared.
+#[must_use]
+pub fn discriminating_mask(prefixes: &BTreeSet<u8>) -> Option<PrefixMask> {
+    if prefixes.is_empty() {
+        return None;
+    }
+
     let fixed_ones = prefixes.iter().fold(u8::MAX, |bits, prefix| bits & prefix);
     let any_ones = prefixes.iter().fold(0, |bits, prefix| bits | prefix);
-    let mask = !(any_ones & !fixed_ones);
     let candidate = PrefixMask {
-        mask,
+        mask: !(any_ones & !fixed_ones),
         value: fixed_ones,
     };
 
-    if candidate.admitted_count() == prefixes.len() {
-        Ok(candidate)
-    } else {
-        Err(TapscriptError::PrefixSetNotDiscriminable { class })
-    }
+    (candidate.admitted_count() == prefixes.len()).then_some(candidate)
 }
 
 /// Require the field just introspected to be in one class's form.

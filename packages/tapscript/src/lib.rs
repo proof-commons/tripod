@@ -84,9 +84,9 @@ pub use live_private::{
     ComparableProjection, ComparisonSource, PrefixMask, PrivateAmountProhibition,
     PrivateConditionCarrier, PrivatePlanNonClaim, PrivateSoundnessCondition,
     PrivateSoundnessEstablishment, ProhibitionDisposition, RepresentationComparisonAxis,
-    ValueFieldUse, opens_no_value_payload, prefix_mask, private_destination_form_fragment,
-    private_soundness_establishments, prohibition_dispositions, representation_comparison_axes,
-    value_field_uses,
+    ValueFieldUse, discriminating_mask, opens_no_value_payload, prefix_mask,
+    private_destination_form_fragment, private_soundness_establishments, prohibition_dispositions,
+    representation_comparison_axes, value_field_uses,
 };
 pub use live_shape::{
     LiveShapeRejection, LiveTransferShape, LiveTransferShapeBounds, LiveTransferShapeSet,
