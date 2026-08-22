@@ -180,6 +180,17 @@ pub enum VectorError {
         /// The semantic mutation class the arm declared.
         class: &'static str,
     },
+    /// The live-transfer substrate could not be built.
+    ///
+    /// The reviewed contract, the validated plan, the demonstration
+    /// link, or the candidate ABI refused. §13.1 derives the evidence
+    /// plan from those artifacts, so a plan derived without one of them
+    /// would be stating requirements about nothing — the refusal is
+    /// carried rather than worked around, and it is deliberately not
+    /// subdivided: which of the four refused is a defect in that
+    /// artifact's own package and is reported by that package's own
+    /// tests, not diagnosed again here.
+    LiveSubstrateUnavailable,
     /// A declaration resolved, and the requirement it found describes
     /// something else.
     ///

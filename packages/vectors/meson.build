@@ -12,6 +12,12 @@ vectors_source_files = files(
   'src/fixture.rs',
   'src/lib.rs',
   'src/live_capability.rs',
+  'src/live_evidence.rs',
+  'src/live_first_party.rs',
+  'src/live_native.rs',
+  'src/live_plan.rs',
+  'src/live_report.rs',
+  'src/live_safety.rs',
   'src/materialize.rs',
   'src/matrix.rs',
   'src/mutation.rs',
@@ -34,6 +40,7 @@ vectors_doc_files = files('README.md')
 # declared here.
 vectors_excluded_files = files(
   'tests/compact_ash_operation.rs',
+  'tests/guide13_live_native.rs',
   'tests/guide13_live_transfer.rs',
   'tests/guide13_preflight.rs',
 )

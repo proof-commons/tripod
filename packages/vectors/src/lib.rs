@@ -9,6 +9,12 @@ pub mod error;
 pub mod first_party;
 pub mod fixture;
 pub mod live_capability;
+pub mod live_evidence;
+pub mod live_first_party;
+pub mod live_native;
+pub mod live_plan;
+pub mod live_report;
+pub mod live_safety;
 pub mod materialize;
 pub mod matrix;
 pub mod mutation;
@@ -36,6 +42,36 @@ pub use first_party::{
     ValidatedFirstPartyNegativeEvidence, validate_first_party_negative,
 };
 pub use live_capability::{OracleFixtureValues, OracleLiveCurve};
+pub use live_evidence::{
+    FirstPartyGap, LiveEvidenceCensus, LiveEvidenceRow, LiveInfrastructureBlocker, LiveRowStanding,
+    LiveTransferEvidencePlan, MinimalityRegistryStanding, blocker_census, carried_residuals,
+    derive_live_evidence_plan,
+};
+pub use live_first_party::{
+    LiveFirstPartyCase, LiveFirstPartyRefusal, LiveFirstPartyValidator, LiveOwnerScenario,
+    LiveResponseMalformation, ValidatedLiveFirstPartyEvidence, discharge_live_first_party,
+    live_first_party_cases, validate_live_first_party,
+};
+pub use live_native::{
+    LiveFormNotSubmitted, LiveNativeObservation, LiveNativeRefusal, LiveNativeStep,
+    LiveNativeTranscript, LiveTransferOperationPlanner, observed_run_of_record,
+    render_live_native_run,
+};
+pub use live_plan::{
+    demonstration_live_abi, demonstration_live_bundle, link_live_bundle_for_asset,
+    live_abi_for_asset, live_transfer_plan, published_owner,
+};
+pub use live_report::{
+    LIVE_SAFETY_REPORT_SCHEMA, LiveLifecycleStatus, LiveRunStanding, LiveSafetyCompleteness,
+    LiveSafetyDiagnostics, LiveSafetyReportRefusal, LiveSafetyReportRole, LiveTransferSafetyReport,
+    RecomputedItem, ValidatedLiveTransferSafetyReport, VolatileField, assemble_live_safety_report,
+    canonical_bytes_publish_no_sponsor_value, render_live_safety_report, section_scoreboard,
+    validate_live_safety_report,
+};
+pub use live_safety::{
+    LiveRelationStanding, LiveRowLink, LiveSafetyPolarity, LiveSafetyRow, LiveSafetySection,
+    LiveUnlinkedReason, required_safety_matrix, resolve_row, row_count, section_census,
+};
 pub use materialize::{
     SponsorCoin, SponsorSigningTask, has_candidate_program, materialize_sponsored,
     needs_authorization, sponsor_signing_requests,
