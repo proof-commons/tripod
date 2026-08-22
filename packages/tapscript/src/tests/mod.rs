@@ -45,6 +45,7 @@ mod census_tests;
 mod guide12_reproductions;
 mod guide13_reproductions;
 mod live_constructor_tests;
+mod live_pattern_tests;
 mod live_shape_tests;
 mod mapping_tests;
 mod non_weakening_tests;

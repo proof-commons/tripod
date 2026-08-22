@@ -7,6 +7,7 @@ pub mod capability;
 pub mod error;
 pub mod instruction;
 pub mod live_constructor;
+pub mod live_pattern;
 pub mod live_shape;
 pub mod operation_assessment;
 pub mod pattern;
@@ -49,6 +50,22 @@ pub use live_constructor::{
     derive_live_receipt_constructor, key_path_closure, mutation_census_defects,
     static_transfer_leaf_set,
 };
+pub use live_pattern::{
+    CoordinatorGlobalCheck, FinalStackDefect, GlobalCheckPlacement, GlobalCheckStatus,
+    LiveConstructibility, LiveDisclosure, LiveFragmentId, LivePatternOwner, LiveProgramRefusal,
+    LiveTransferPattern, LiveTransferPatternId, LiveTransferSymbols, LiveWitnessRole,
+    NegativeDisposition, OutstandingGlobalPattern, OwnerAssignmentRejection, OwnerKeyMutation,
+    OwnerKeyMutationGate, OwnerKeyMutationOutcome, OwnerKeyOracle, PlacementDefect,
+    ReceiptOwnerAssignment, RecognitionCarrier, RecognitionEstablishment, RecognitionResidual,
+    RecognizedFact, build_live_pattern, coordinator_placements, emitted_fragments,
+    every_emitted_fragment, final_stack_defects, has_member_position, live_cardinality_fragment,
+    live_coordinator_program, live_member_program, live_member_role_fragment,
+    live_owner_profile_disposition, live_program_precondition, live_transfer_patterns,
+    local_recognition_fragment, mutated_owner_authorization_fragment, mutation_gate,
+    negative_disposition, owner_authorization_fragment, owner_authorization_precondition,
+    owner_key_mutation_outcome, owner_key_obligation, patterns_for, recognition_establishments,
+    validate_coordinator_placements,
+};
 pub use live_shape::{
     LiveShapeRejection, LiveTransferShape, LiveTransferShapeBounds, LiveTransferShapeSet,
     MINIMUM_TRANSFER_RECEIPT_INPUTS, MINIMUM_TRANSFER_RECEIPT_OUTPUTS,
@@ -74,8 +91,8 @@ pub use shape::{
     SponsorChangePresence, UsefulCandidateCondition, demonstration_shape_set, dense_shape_set,
 };
 pub use stack::{
-    AbstractExecutionResult, AbstractLimits, AbstractStackState, resource_projection,
-    validate_program,
+    AbstractExecutionResult, AbstractLimits, AbstractStackState, SignatureSuccessForm,
+    resource_projection, validate_program,
 };
 
 #[cfg(test)]

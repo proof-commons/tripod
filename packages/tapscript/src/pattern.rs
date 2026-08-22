@@ -580,7 +580,7 @@ pub fn build_pattern(
 // --- Fragment construction ------------------------------------------
 
 /// One reviewed primitive, as an instruction.
-const fn op(id: OpcodeId) -> TapscriptInstruction {
+pub(crate) const fn op(id: OpcodeId) -> TapscriptInstruction {
     TapscriptInstruction::Opcode(id)
 }
 
@@ -588,7 +588,13 @@ const fn op(id: OpcodeId) -> TapscriptInstruction {
 ///
 /// Read from the contract rather than written down, so a fragment
 /// cannot compare against a prefix the target does not use.
-fn prefix(
+///
+/// # Errors
+///
+/// [`TapscriptError::MalformedEncodedItem`] when the class states no
+/// prefix, and [`TapscriptError::OversizedStackItem`] when the reviewed
+/// literal bound admits nothing at all.
+pub(crate) fn prefix(
     target: &ReviewedElementsTapscriptDefinition,
     class: EncodingClass,
 ) -> Result<StackItem, TapscriptError> {
@@ -603,7 +609,12 @@ fn prefix(
 }
 
 /// A script-number literal.
-fn number(
+///
+/// # Errors
+///
+/// [`TapscriptError::ScriptNumberOutOfRange`] when the value needs more
+/// bytes than the reviewed script-number encoding admits.
+pub(crate) fn number(
     target: &ReviewedElementsTapscriptDefinition,
     value: i64,
 ) -> Result<TapscriptInstruction, TapscriptError> {
@@ -917,6 +928,29 @@ pub fn member_role_fragment(
     target: &ReviewedElementsTapscriptDefinition,
     shape: CompactAshShape,
 ) -> Result<TapscriptProgram, TapscriptError> {
+    member_range_fragment(target, shape.ash_inputs())
+}
+
+/// Bind the executing leaf to `1 ≤ index < protocol_inputs`.
+///
+/// The whole of a member role, with the count as a figure rather than a
+/// shape, so the two operations that have a member range share the
+/// bytes rather than each writing them out. A live transfer's member
+/// range is the same statement over its own receipt-input count
+/// (Guide-13 §10.3), and two copies of a bound check are two places for
+/// an off-by-one to live.
+///
+/// # Errors
+///
+/// [`TapscriptError::ScriptNumberOutOfRange`] or
+/// [`TapscriptError::OversizedStackItem`] when a literal this fragment
+/// pushes is outside what the reviewed contract admits, and
+/// [`TapscriptError::InstructionLimitExceeded`] when the fragment
+/// exceeds the instruction bound.
+pub(crate) fn member_range_fragment(
+    target: &ReviewedElementsTapscriptDefinition,
+    protocol_inputs: u8,
+) -> Result<TapscriptProgram, TapscriptError> {
     TapscriptProgram::new(vec![
         op(OpcodeId::PushCurrentInputIndex),
         op(OpcodeId::ScriptNumToLe64),
@@ -924,7 +958,7 @@ pub fn member_role_fragment(
         wide(target, 1),
         op(OpcodeId::GreaterThanOrEqual64),
         op(OpcodeId::Verify),
-        wide(target, i64::from(shape.ash_inputs())),
+        wide(target, i64::from(protocol_inputs)),
         op(OpcodeId::LessThan64),
         op(OpcodeId::Verify),
     ])
