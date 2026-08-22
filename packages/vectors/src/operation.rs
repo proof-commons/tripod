@@ -425,7 +425,9 @@ impl MutantOutcome {
 ///
 /// Built only by [`CompactAshOperationPlanner`], and only from answers
 /// the executor recorded. Nothing here is an intention.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+/// Construction is crate-private so callers cannot mint a record for a run
+/// that never happened.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationTranscript {
     issued_asset: Option<[u8; 32]>,
     reserve_asset: Option<[u8; 32]>,
@@ -453,6 +455,23 @@ pub struct OperationTranscript {
 }
 
 impl OperationTranscript {
+    /// An empty transcript for the planner to populate from recorded answers.
+    pub(crate) const fn empty() -> Self {
+        Self {
+            issued_asset: None,
+            reserve_asset: None,
+            constructor_program: None,
+            funded: BTreeMap::new(),
+            arm_funded: BTreeMap::new(),
+            coins: BTreeMap::new(),
+            submissions: Vec::new(),
+            mutants: Vec::new(),
+            mutation_subject: None,
+            divergences: Vec::new(),
+            refusal: None,
+        }
+    }
+
     /// The disposable asset the target issued, where it issued one.
     #[must_use]
     pub const fn issued_asset(&self) -> Option<[u8; 32]> {
@@ -576,7 +595,7 @@ impl OperationTranscript {
             submissions: parts.submissions,
             mutants: parts.mutants,
             refusal: parts.refusal,
-            ..Self::default()
+            ..Self::empty()
         }
     }
 }
@@ -831,7 +850,7 @@ impl CompactAshOperationPlanner {
             vectors: Vec::new(),
             mutants: Vec::new(),
             subject: None,
-            transcript: OperationTranscript::default(),
+            transcript: OperationTranscript::empty(),
         })
     }
 
