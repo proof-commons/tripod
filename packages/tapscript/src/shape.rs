@@ -259,10 +259,11 @@ impl CompactAshShape {
     /// The half-open ASH input range, as exact indices.
     ///
     /// `0..ash_inputs`: §10.1 puts the ASH family first, and input 0 is
-    /// the canonical coordinator.
+    /// the canonical coordinator. The indices are input positions, so
+    /// they are in the domain [`Self::sponsor_range`] describes.
     #[must_use]
-    pub const fn ash_range(self) -> (u8, u8) {
-        (0, self.ash_inputs.get())
+    pub const fn ash_range(self) -> (u16, u16) {
+        (0, self.ash_inputs.get() as u16)
     }
 
     /// The half-open sponsor suffix, as exact indices.
@@ -271,11 +272,29 @@ impl CompactAshShape {
     /// count — which is the exact suffix start and the exact suffix
     /// length §10.4 has the coordinator authenticate even when there is
     /// nothing in it.
+    ///
+    /// # Why an index is a `u16` where a count is a `u8`
+    ///
+    /// The two are different domains, and the difference is not
+    /// cosmetic. A count is a bound this candidate chose, and §9.2
+    /// keeps those small on purpose. An index is a position in the
+    /// target's own transaction, and every consumer already reads one
+    /// as a `u16`: [`Self::inputs`] reports the total that way, the
+    /// concrete layout places every region that way, and the candidate
+    /// ABI names both ranges that way. Deriving the suffix end in the
+    /// count's domain instead made the widest admissible shape wrap its
+    /// own last index to zero, which is the one piece of arithmetic a
+    /// range accessor may not perform.
+    ///
+    /// Here the sum of two `u8` counts is exact for every shape
+    /// [`Self::new`] admits — the largest is 510, which the domain
+    /// holds — so the accessor is total: it neither wraps nor panics,
+    /// in any build profile.
     #[must_use]
-    pub const fn sponsor_range(self) -> (u8, u8) {
+    pub const fn sponsor_range(self) -> (u16, u16) {
         (
-            self.ash_inputs.get(),
-            self.ash_inputs.get() + self.sponsor_inputs,
+            self.ash_inputs.get() as u16,
+            self.ash_inputs.get() as u16 + self.sponsor_inputs as u16,
         )
     }
 }

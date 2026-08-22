@@ -129,7 +129,7 @@ fn the_sponsor_suffix_starts_where_the_ash_range_ends_for_every_admitted_shape()
 
         assert_eq!(ash_start, 0);
         assert_eq!(ash_end, sponsor_start);
-        assert_eq!(u16::from(sponsor_end), shape.inputs());
+        assert_eq!(sponsor_end, shape.inputs());
     }
 }
 

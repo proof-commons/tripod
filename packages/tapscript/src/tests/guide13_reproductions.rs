@@ -116,14 +116,17 @@ fn a_candidate_shape_set_holds_only_shapes_its_own_bounds_admit() {
 /// because it adds the two counts in `u8`.
 ///
 /// The first two assertions are exact and hold in every profile: they
-/// say the constructors admitted a shape whose accessor arithmetic does
-/// not fit its own domain. The third reaches the branch, and fails
-/// either way — the dev profile panics on the overflow, and a profile
-/// with overflow checks off wraps the suffix to `(255, 0)`, which is
-/// the empty range `sponsor_isolation_fragment` then loops over. Wave 0
-/// measured the dev profile, where the failure is the panic.
+/// say the counts are a `u8` domain and their total is not one. The
+/// third reaches the branch that used to derive the suffix in that
+/// domain, where the dev profile panicked on the overflow and a profile
+/// with overflow checks off wrapped the suffix to `(255, 0)` — the
+/// empty range `sponsor_isolation_fragment` then looped over.
+///
+/// The repair moved the *indices* to `u16` while leaving the *counts* a
+/// `u8`, so all four assertions now hold as written and hold in either
+/// profile: the counts still overflow their own domain, and the suffix
+/// is still derived exactly, because it is no longer derived there.
 #[test]
-#[ignore = "G13-R05: confirmed, repair pending"]
 fn a_sponsored_shape_reports_a_nonempty_sponsor_suffix() {
     let bounds = CompactAshShapeBounds::new(count(255), 1).expect("255 is above the minimum");
     let shape = CompactAshShape::new(bounds, count(255), 1, SponsorChangePresence::Absent)

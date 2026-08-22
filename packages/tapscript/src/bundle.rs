@@ -1764,19 +1764,19 @@ fn layout_of(shape: CompactAshShape) -> Result<ConcreteLayout, BundleRefusal> {
 
     let mut inputs = vec![InputPlacement {
         role: InputRole::Coordinator,
-        first: u16::from(ash_first),
-        end: u16::from(ash_first) + 1,
+        first: ash_first,
+        end: ash_first + 1,
     }];
     inputs.push(InputPlacement {
         role: InputRole::Member,
-        first: u16::from(ash_first) + 1,
-        end: u16::from(ash_end),
+        first: ash_first + 1,
+        end: ash_end,
     });
     if shape.sponsored() {
         inputs.push(InputPlacement {
             role: InputRole::Sponsor,
-            first: u16::from(sponsor_first),
-            end: u16::from(sponsor_end),
+            first: sponsor_first,
+            end: sponsor_end,
         });
     }
 
