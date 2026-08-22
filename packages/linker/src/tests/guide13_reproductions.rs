@@ -42,7 +42,6 @@ fn input(weights: &[u64]) -> TaptreeInput {
         weights.iter().enumerate().map(|(index, w)| {
             TapLeafInput::new(
                 leaf(u8::try_from(index).expect("the synthetic sizes fit a byte")),
-                ProgramRole::Member,
                 weight(*w),
             )
         }),
@@ -193,23 +192,20 @@ fn the_exact_oracle_returns_the_exact_minimum_or_a_typed_refusal() {
 /// `G13-R15`: declaration order does not select a duplicate's value.
 ///
 /// Both declarations name the same two leaves with the same two
-/// candidate weights; only the order differs. The constructor collects
-/// straight into a map, so the second declaration of a leaf overwrites
-/// the first and the surviving weight is whichever was written last.
+/// candidate weights; only the order differs. The constructor refuses
+/// the duplicate instead of collecting it away, so both orders reach
+/// the same typed refusal and neither weight is ever selected.
 ///
-/// The later "reverse the declaration order and rebuild" check inside
-/// `assemble` cannot see this: it reverses the map's *values*, after
-/// the lossy collection has already picked a winner.
-///
-/// Either outcome satisfies the determinism claim — one tree, or one
-/// typed refusal for both orders. What the row reports is that neither
-/// holds.
+/// The state this forbids is the one the row named: a silent
+/// last-value-wins collection that made declaration order semantic
+/// where nothing could observe it — least of all the reversed-order
+/// rebuild inside `assemble`, which compares the map's *values* and so
+/// only ever saw the winner.
 #[test]
-#[ignore = "G13-R15: confirmed, repair pending"]
 fn a_duplicate_leaf_declaration_does_not_make_declaration_order_semantic() {
-    let light = TapLeafInput::new(leaf(0), ProgramRole::Member, weight(1));
-    let heavy = TapLeafInput::new(leaf(0), ProgramRole::Member, weight(10));
-    let other = TapLeafInput::new(leaf(1), ProgramRole::Member, weight(2));
+    let light = TapLeafInput::new(leaf(0), weight(1));
+    let heavy = TapLeafInput::new(leaf(0), weight(10));
+    let other = TapLeafInput::new(leaf(1), weight(2));
 
     let build = |leaves: [TapLeafInput; 3]| {
         TaptreeInput::new(
@@ -233,31 +229,30 @@ fn a_duplicate_leaf_declaration_does_not_make_declaration_order_semantic() {
 ///
 /// `LeafRole::Coordinator` names the coordinator program of one exact
 /// shape, and `ProgramRole::Coordinator` names the same thing about the
-/// program. The constructor takes them as two independent arguments, so
-/// a leaf can be declared the coordinator of a shape while carrying the
-/// member program's role — two authored spellings of one fact, free to
-/// disagree.
+/// program. The constructor takes the identity alone and derives the
+/// role from it, so the two are one fact with one spelling.
+///
+/// The state this forbids is the one the row named: a role accepted as
+/// an independent argument, leaving a leaf free to be declared the
+/// coordinator of a shape while carrying the member program's role.
+/// That declaration no longer type-checks, which is why this test can
+/// only state the derivation and not attempt the contradiction.
 #[test]
-#[ignore = "G13-R15: confirmed, repair pending"]
 fn a_leaf_carries_the_program_role_its_identity_names() {
     let count = |value: u8| NonZeroU8::new(value).expect("the fixture counts are nonzero");
     let bounds = CompactAshShapeBounds::new(count(4), 1).expect("four is above the minimum");
     let shape = CompactAshShape::new(bounds, count(2), 0, SponsorChangePresence::Absent)
         .expect("the shape is within its bounds");
 
-    let contradictory = TapLeafInput::new(
-        LeafRole::Coordinator { shape },
-        ProgramRole::Member,
-        weight(1),
-    );
+    let coordinator = TapLeafInput::new(LeafRole::Coordinator { shape }, weight(1));
 
-    let expected = match contradictory.leaf() {
+    let expected = match coordinator.leaf() {
         LeafRole::Coordinator { .. } => ProgramRole::Coordinator,
         LeafRole::Member { .. } => ProgramRole::Member,
     };
     assert_eq!(
-        contradictory.role(),
+        coordinator.role(),
         expected,
-        "a coordinator leaf was accepted carrying the member program role",
+        "a coordinator leaf did not carry the coordinator program role",
     );
 }

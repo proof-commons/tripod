@@ -450,7 +450,7 @@ pub fn link_candidate(
     let tree_input = TaptreeInput::new(
         programs
             .keys()
-            .map(|leaf| TapLeafInput::new(*leaf, leaf.program_role(), EQUAL_LEAF_WEIGHT)),
+            .map(|leaf| TapLeafInput::new(*leaf, EQUAL_LEAF_WEIGHT)),
         leaf_version,
         TreeObjective::MinimumTotalWeightedDepth,
         deployment.maximum_control_path_depth(),

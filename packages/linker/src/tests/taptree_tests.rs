@@ -19,9 +19,10 @@
 
 use std::num::{NonZeroU32, NonZeroU64};
 
-use tapscript::{LeafRole, ProgramRole};
+use tapscript::LeafRole;
 use target_elements::LeafVersion;
 
+use crate::LinkRefusal;
 use crate::taptree::{
     ControlPathRecipe, ORACLE_LEAF_BUDGET, TapLeafInput, TaptreeInput, TreeObjective, assemble,
     enumerated_minimum_cost, exact_minimum_cost,
@@ -41,7 +42,6 @@ fn input(weights: &[u64]) -> TaptreeInput {
         weights.iter().enumerate().map(|(index, weight)| {
             TapLeafInput::new(
                 leaf(u8::try_from(index).expect("the synthetic sizes fit a byte")),
-                ProgramRole::Member,
                 NonZeroU64::new(*weight).expect("the synthetic weights are positive"),
             )
         }),
@@ -257,7 +257,6 @@ fn a_tree_past_the_declared_maximum_depth_is_a_refusal() {
         weights.iter().enumerate().map(|(index, weight)| {
             TapLeafInput::new(
                 leaf(u8::try_from(index).expect("a small index fits")),
-                ProgramRole::Member,
                 NonZeroU64::new(*weight).expect("the weights are positive"),
             )
         }),
@@ -285,6 +284,111 @@ fn the_oracle_budget_is_a_typed_complexity_failure_and_not_a_guess() {
         Err(crate::LinkRefusal::TreeOracleBudgetExceeded { .. })
     ));
     assert!(exact_minimum_cost(&[1u64; ORACLE_LEAF_BUDGET]).is_ok());
+}
+
+/// A positive weight for the fixtures below.
+fn positive(value: u64) -> NonZeroU64 {
+    NonZeroU64::new(value).expect("the fixture weights are positive")
+}
+
+/// A tree input over exactly these declarations, in exactly this order.
+fn declared(leaves: impl IntoIterator<Item = TapLeafInput>) -> Result<TaptreeInput, LinkRefusal> {
+    TaptreeInput::new(
+        leaves,
+        LeafVersion::TAPSCRIPT,
+        TreeObjective::MinimumTotalWeightedDepth,
+        NonZeroU32::new(32).expect("thirty-two is nonzero"),
+    )
+}
+
+/// Every ordering of `count` positions, as index permutations.
+fn permutations(count: usize) -> Vec<Vec<usize>> {
+    if count == 0 {
+        return vec![Vec::new()];
+    }
+    let mut orders = Vec::new();
+    for shorter in permutations(count - 1) {
+        for position in 0..=shorter.len() {
+            let mut extended = shorter.clone();
+            extended.insert(position, count - 1);
+            orders.push(extended);
+        }
+    }
+    orders
+}
+
+#[test]
+fn one_leaf_declared_twice_is_a_refusal_whether_or_not_the_declarations_agree() {
+    // Collecting declarations into a map would resolve a duplicate
+    // last-value-wins, which makes declaration order pick the weight,
+    // and would absorb an equal duplicate in silence — either way a
+    // leaf set that does not know its own size. Both are refused, on
+    // the same footing as the exact censuses elsewhere in this crate.
+    //
+    // The third way two declarations of one leaf could disagree — over
+    // the program role — has no spelling to test: the role is derived
+    // from the identity, so two declarations of one identity name one
+    // role by construction.
+    let conflicting = declared([
+        TapLeafInput::new(leaf(0), positive(5)),
+        TapLeafInput::new(leaf(1), positive(2)),
+        TapLeafInput::new(leaf(0), positive(9)),
+    ]);
+    assert_eq!(
+        conflicting,
+        Err(LinkRefusal::DuplicateTreeLeaf(leaf(0))),
+        "a leaf declared twice with two weights was resolved rather than refused",
+    );
+
+    let agreeing = declared([
+        TapLeafInput::new(leaf(0), positive(5)),
+        TapLeafInput::new(leaf(1), positive(2)),
+        TapLeafInput::new(leaf(0), positive(5)),
+    ]);
+    assert_eq!(
+        agreeing,
+        Err(LinkRefusal::DuplicateTreeLeaf(leaf(0))),
+        "a leaf declared twice with one weight was absorbed rather than refused",
+    );
+}
+
+#[test]
+fn every_declaration_order_of_one_leaf_set_produces_one_identical_tree() {
+    // `assemble` checks the reversed order and nothing else, which was
+    // enough only because the reversal happened after a lossy
+    // collection had already picked winners. With duplicates refused
+    // the leaf set is exactly what the declaration says, so the whole
+    // statement is available: every one of the twenty-four orderings of
+    // a four-leaf set, compared as whole trees rather than as costs.
+    let leaves = [
+        TapLeafInput::new(leaf(0), positive(3)),
+        TapLeafInput::new(leaf(1), positive(1)),
+        TapLeafInput::new(leaf(2), positive(4)),
+        TapLeafInput::new(leaf(3), positive(1)),
+    ];
+
+    let build = |order: &[usize]| {
+        let ordered: Vec<TapLeafInput> = order.iter().map(|index| leaves[*index]).collect();
+        declared(ordered)
+            .and_then(|input| assemble(&input))
+            .expect("every ordering of one valid leaf set assembles")
+    };
+
+    let orders = permutations(leaves.len());
+    assert_eq!(
+        orders.len(),
+        24,
+        "four positions have twenty-four orderings"
+    );
+
+    let first = build(&orders[0]);
+    for order in &orders {
+        assert_eq!(
+            build(order),
+            first,
+            "declaration order {order:?} produced a different tree",
+        );
+    }
 }
 
 #[test]

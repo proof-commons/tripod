@@ -63,7 +63,6 @@ pub enum TreeObjective {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TapLeafInput {
     leaf: LeafRole,
-    role: ProgramRole,
     weight: NonZeroU64,
 }
 
@@ -72,9 +71,15 @@ impl TapLeafInput {
     ///
     /// The weight is a positive integer by type, which is §14.5's
     /// "exact positive integer weight" made unrepresentable otherwise.
+    /// The program role is not stated here because it is not a free
+    /// fact: it is a function of the leaf's identity, and [`role`]
+    /// evaluates that function rather than repeating an author's
+    /// answer to it.
+    ///
+    /// [`role`]: Self::role
     #[must_use]
-    pub const fn new(leaf: LeafRole, role: ProgramRole, weight: NonZeroU64) -> Self {
-        Self { leaf, role, weight }
+    pub const fn new(leaf: LeafRole, weight: NonZeroU64) -> Self {
+        Self { leaf, weight }
     }
 
     /// The leaf's identity, which is also its stable tie-break key.
@@ -83,10 +88,16 @@ impl TapLeafInput {
         self.leaf
     }
 
-    /// The program role the leaf carries.
+    /// The program role the leaf carries, derived from its identity.
+    ///
+    /// [`LeafRole::program_role`] is the one definition of which
+    /// program a leaf runs, and this is a call to it. A leaf therefore
+    /// cannot be declared the coordinator of a shape while carrying the
+    /// member program's role: the disagreement §14.5 would otherwise
+    /// have to be checked for has no spelling.
     #[must_use]
     pub const fn role(self) -> ProgramRole {
-        self.role
+        self.leaf.program_role()
     }
 
     /// The leaf's exact positive weight.
@@ -108,23 +119,35 @@ pub struct TaptreeInput {
 impl TaptreeInput {
     /// State the tree input.
     ///
-    /// The leaf set is a map keyed by the leaf's own identity, so a
-    /// leaf declared twice is one entry rather than a duplicate, and
-    /// the stable tie-break key §14.5 asks for is the key itself.
+    /// The leaf set is a map keyed by the leaf's own identity, which is
+    /// the stable tie-break key §14.5 asks for. Declaring one leaf
+    /// twice is refused rather than resolved: collecting into the map
+    /// would let the last declaration win, which would make declaration
+    /// order decide the weight while the reversed-order rebuild inside
+    /// [`assemble`] compared two already-resolved maps and saw nothing.
+    /// Equal duplicates are refused too, on the same footing as the
+    /// exact censuses elsewhere in this crate — a leaf stated twice is
+    /// an authored set that does not know its own size, whether or not
+    /// the two statements agree.
     ///
     /// # Errors
     ///
-    /// [`LinkRefusal::EmptyLeafSet`] when no leaf is declared.
+    /// [`LinkRefusal::EmptyLeafSet`] when no leaf is declared, and
+    /// [`LinkRefusal::DuplicateTreeLeaf`] when one leaf is declared
+    /// more than once.
     pub fn new(
         leaves: impl IntoIterator<Item = TapLeafInput>,
         leaf_version: LeafVersion,
         objective: TreeObjective,
         maximum_depth: NonZeroU32,
     ) -> Result<Self, LinkRefusal> {
-        let leaves: BTreeMap<LeafRole, TapLeafInput> = leaves
-            .into_iter()
-            .map(|input| (input.leaf, input))
-            .collect();
+        let mut collected: BTreeMap<LeafRole, TapLeafInput> = BTreeMap::new();
+        for input in leaves {
+            if collected.insert(input.leaf, input).is_some() {
+                return Err(LinkRefusal::DuplicateTreeLeaf(input.leaf));
+            }
+        }
+        let leaves = collected;
         if leaves.is_empty() {
             return Err(LinkRefusal::EmptyLeafSet);
         }

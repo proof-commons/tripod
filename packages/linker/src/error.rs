@@ -129,6 +129,10 @@ pub enum LinkRefusal {
     InvalidLeafVersion(LeafRole),
     /// The taptree input holds no leaf, so there is nothing to commit.
     EmptyLeafSet,
+    /// One leaf identity was declared more than once, so the leaf set
+    /// does not know its own size and declaration order would decide
+    /// which declaration survived (§14.5).
+    DuplicateTreeLeaf(LeafRole),
     /// The deterministic tree exceeds the declared maximum depth.
     TreeDepthExceeded {
         /// The deepest leaf.
