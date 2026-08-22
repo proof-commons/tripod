@@ -1,26 +1,31 @@
 //! Guide-13 preflight reproductions owned by this crate.
 //!
 //! Each test here belongs to a row of the Guide-13 preflight register
-//! and reaches the branch that row reports. A row whose test is
-//! `#[ignore]`d is one Wave 0 CONFIRMED: the assertion states the
-//! property that *should* hold, so the test fails while the defect
-//! stands, and the wave that repairs the row removes the attribute
-//! rather than writing a new test.
+//! and reaches the branch that row reports. Wave 0 wrote each assertion
+//! as the property that *should* hold and marked it `#[ignore]`, so the
+//! test failed while the defect stood; the wave that repairs a row lifts
+//! the attribute rather than writing a new test, which is what makes the
+//! test that reproduced the defect the same test that now witnesses its
+//! absence. No attribute remains: both rows below are repaired.
 //!
-//! - `G13-R07` — CONFIRMED: `is_valid_scalar` refuses a zero tweak, so
-//!   the oracle rejects a construction the target accepts.
-//! - `G13-R14` — CONFIRMED: neither response validator checks a record
-//!   against the role it answers or against its own verdict.
+//! - `G13-R07` — REPAIRED: `is_valid_scalar` refused a zero tweak, so
+//!   the oracle rejected a construction the target accepts. The guard
+//!   is now overflow alone, and the identity result is refused after
+//!   the addition that establishes it.
+//! - `G13-R14` — REPAIRED: neither response validator checked a record
+//!   against the role it answers or against its own verdict. Both are
+//!   now exhaustive over role and outcome.
 //!
-//! # One repair here has to flip a standing test
+//! # One repair here had to flip a standing test
 //!
 //! `constructor_tests::a_tweak_that_is_not_a_scalar_has_no_output_key`
-//! asserts today's behaviour for the zero tweak directly. It is left
-//! alone by Wave 0, which reproduces and does not repair; the wave that
-//! closes `G13-R07` has to change that assertion as well as this one,
-//! and the two together are the whole of what the row costs.
+//! asserted the old behaviour for the zero tweak directly, so the row
+//! could not close without changing that assertion as well as lifting
+//! the attributes here. The two together were the whole of what the row
+//! cost, and the standing test now holds the corrected rule beside the
+//! boundary — the group order — that zero was mistaken for.
 
-use crate::constructor::curve::FIELD_ELEMENT_BYTES;
+use crate::constructor::curve::{FIELD_ELEMENT_BYTES, generator};
 use crate::constructor::internal_key::UNSPENDABLE_INTERNAL_KEY;
 use crate::constructor::tagged::Digest32;
 use crate::constructor::tree::{TweakDefect, tweaked_key};
@@ -63,7 +68,6 @@ fn group_order() -> Digest32 {
 /// multiplies to the identity and the identity is the additive unit —
 /// so the whole of the row is the guard in `is_valid_scalar`.
 #[test]
-#[ignore = "G13-R07: confirmed, repair pending"]
 fn a_zero_tweak_has_an_output_key_and_it_is_the_internal_key() {
     let (output, parity) = tweaked_key(&UNSPENDABLE_INTERNAL_KEY, &[0_u8; FIELD_ELEMENT_BYTES])
         .expect("Q = P + 0G = P is a valid output key");
@@ -99,9 +103,44 @@ fn a_tweak_at_the_group_order_still_has_no_output_key() {
 /// order exactly, not about large values.
 #[test]
 fn a_tweak_one_below_the_group_order_has_an_output_key() {
-    let below = digest("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364140");
-    tweaked_key(&UNSPENDABLE_INTERNAL_KEY, &below)
+    tweaked_key(&UNSPENDABLE_INTERNAL_KEY, &one_below_the_group_order())
         .expect("one below the order is a valid multiplier");
+}
+
+/// One below the order, which is the last value that is a multiplier.
+fn one_below_the_group_order() -> Digest32 {
+    digest("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364140")
+}
+
+/// `G13-R07`, the failure that is genuinely about the sum.
+///
+/// The identity result, constructed rather than searched for. `n-1` is
+/// the negation of one, so for the generator itself the sum is
+/// `G + (n-1)G = nG`, which is the identity — the one point with no
+/// x-only encoding, and the whole of what
+/// [`TweakDefect::TweakedKeyIsIdentity`] is for.
+///
+/// This is what the repaired guard leaves standing, and it is the
+/// reason the repair is a *move* rather than a removal. Zero is
+/// accepted before the addition because zero says nothing about the
+/// sum; this is refused after it, because the sum is where the fact
+/// is. A repair that had dropped the range check entirely, or that had
+/// kept refusing zero to cover this case, would fail one of the two
+/// tests above and this one respectively.
+///
+/// It is also the only construction in this file whose internal key is
+/// not the unspendable one. That is deliberate: the identity result
+/// requires knowing the internal key's discrete logarithm, and the
+/// generator is the one point whose logarithm anybody knows. Nobody
+/// reaches this case with a key nothing has the logarithm of, which is
+/// exactly why the constructor's policy calls it negligible rather
+/// than impossible.
+#[test]
+fn a_tweak_that_sums_to_the_identity_has_no_output_key() {
+    assert_eq!(
+        tweaked_key(&generator().x_only_bytes(), &one_below_the_group_order()),
+        Err(TweakDefect::TweakedKeyIsIdentity),
+    );
 }
 
 /// One lifecycle response, in whatever shape a test needs.
@@ -129,24 +168,25 @@ fn lifecycle(role: LifecycleStepRole, outcome: LifecycleOutcome) -> NativeLifecy
 /// response claiming it is a record of Process A reporting what Process
 /// B concluded, which no run produced.
 ///
-/// `validate_shape` never reads `case.lifecycle` at all. Its one rule
-/// is about a step that did *not* run, and `Verified` runs, so the
-/// record passes untouched — while also carrying no handoff, which is
+/// `validate_shape` never read `case.lifecycle` at all. Its one rule
+/// was about a step that did *not* run, and `Verified` runs, so the
+/// record passed untouched — while also carrying no handoff, which is
 /// the one thing a construct step exists to publish.
 ///
-/// The module documentation claims the two roles' field separation is
+/// The module documentation claimed the two roles' field separation is
 /// enforced here, and that claim is what this test holds it to.
 #[test]
-#[ignore = "G13-R14: confirmed, repair pending"]
 fn a_construct_response_cannot_report_the_verifier_s_verdict() {
     let contradictory = lifecycle(LifecycleStepRole::Construct, LifecycleOutcome::Verified);
 
-    // The refusal is asserted as a refusal, not as one named variant:
-    // no variant of `ResponseShapeDefect` names a role contradiction
-    // yet, so the repair has to mint one and the row must not
-    // pre-empt which.
-    assert!(
-        contradictory.validate_shape().is_err(),
+    // Wave 0 asserted the refusal as a refusal, because no variant
+    // named a role contradiction and the row was not to pre-empt which
+    // one the repair would mint. It minted this one, so the assertion
+    // names it: a refusal under some other variant would mean the
+    // record was refused for some other reason.
+    assert_eq!(
+        contradictory.validate_shape(),
+        Err(ResponseShapeDefect::LifecycleOutcomeMismatchesRole),
         "a construct step reported the verdict only a verify step reaches",
     );
 }
@@ -157,12 +197,12 @@ fn a_construct_response_cannot_report_the_verifier_s_verdict() {
 /// mirrored: Process B does not publish a record, and the outcome that
 /// says one was published is not its to report.
 #[test]
-#[ignore = "G13-R14: confirmed, repair pending"]
 fn a_verify_response_cannot_report_the_constructor_s_verdict() {
     let contradictory = lifecycle(LifecycleStepRole::Verify, LifecycleOutcome::Constructed);
 
-    assert!(
-        contradictory.validate_shape().is_err(),
+    assert_eq!(
+        contradictory.validate_shape(),
+        Err(ResponseShapeDefect::LifecycleOutcomeMismatchesRole),
         "a verify step reported the verdict only a construct step reaches",
     );
 }
@@ -198,7 +238,6 @@ fn operation(kind: OperationStepKind, layer: ObservedOutcomeLayer) -> NativeOper
 /// acceptance, and never requires it to be absent otherwise: the
 /// converse the row names.
 #[test]
-#[ignore = "G13-R14: confirmed, repair pending"]
 fn a_rejected_submission_carries_no_accepted_transaction_identity() {
     let mut contradictory = operation(
         OperationStepKind::Submit,
@@ -206,8 +245,9 @@ fn a_rejected_submission_carries_no_accepted_transaction_identity() {
     );
     contradictory.accepted_txid = Some("00".repeat(32));
 
-    assert!(
-        contradictory.validate_shape().is_err(),
+    assert_eq!(
+        contradictory.validate_shape(),
+        Err(ResponseShapeDefect::RefusedOperationCarriesObservation),
         "a rejection reported the identity of an acceptance",
     );
 }
@@ -218,7 +258,6 @@ fn a_rejected_submission_carries_no_accepted_transaction_identity() {
 /// target refused created none, so a nonempty output list beside a
 /// script-path rejection is an observation with no provenance.
 #[test]
-#[ignore = "G13-R14: confirmed, repair pending"]
 fn a_rejected_funding_step_reports_no_created_outputs() {
     let mut contradictory = operation(
         OperationStepKind::Fund,
@@ -226,8 +265,9 @@ fn a_rejected_funding_step_reports_no_created_outputs() {
     );
     contradictory.issued_asset = Some("00".repeat(32));
 
-    assert!(
-        contradictory.validate_shape().is_err(),
+    assert_eq!(
+        contradictory.validate_shape(),
+        Err(ResponseShapeDefect::RefusedOperationCarriesObservation),
         "a refused funding step reported an asset the target never issued",
     );
 }
@@ -239,7 +279,6 @@ fn a_rejected_funding_step_reports_no_created_outputs() {
 /// was bound to, reported beside a target rejection, is a signature
 /// attributed to a run that the target refused.
 #[test]
-#[ignore = "G13-R14: confirmed, repair pending"]
 fn a_rejected_signing_step_reports_no_authorization() {
     let mut contradictory = operation(
         OperationStepKind::SignSponsor,
@@ -248,8 +287,9 @@ fn a_rejected_signing_step_reports_no_authorization() {
     contradictory.sponsor_witness = vec![vec![0x30], vec![0x02]];
     contradictory.signature_bound_to = Some(vec![0x02]);
 
-    assert!(
-        contradictory.validate_shape().is_err(),
+    assert_eq!(
+        contradictory.validate_shape(),
+        Err(ResponseShapeDefect::RefusedOperationCarriesObservation),
         "a refused signing step reported an authorization",
     );
 }

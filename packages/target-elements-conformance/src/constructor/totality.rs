@@ -3,12 +3,19 @@
 //!
 //! # The question
 //!
-//! An output key exists only if the tweak is a valid scalar and the sum
-//! is not the identity. Both hold for very nearly every input and
-//! neither holds for all of them, so the constructor is not total, and
-//! a constructor that did not say what happens in the remaining case
-//! would have chosen a policy silently
+//! An output key exists only if the tweak is below the group order and
+//! the sum is not the identity. Both hold for very nearly every input
+//! and neither holds for all of them, so the constructor is not total,
+//! and a constructor that did not say what happens in the remaining
+//! case would have chosen a policy silently
 //! `(´[PLAN-rule:guide10:tweak-totality]´)`.
+//!
+//! Those two are the whole of the partiality, and a zero tweak is not
+//! among them. It is a multiplier, its product is the identity, and
+//! adding the identity leaves the internal key alone — so the policy
+//! below is never consulted for one, and a model that counted zero as
+//! a case needing a policy would be sizing the residual against a
+//! failure that does not occur.
 //!
 //! # No policy is chosen here
 //!
