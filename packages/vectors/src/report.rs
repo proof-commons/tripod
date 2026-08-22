@@ -683,10 +683,16 @@ fn compare_projections(
         return Ok(verdicts);
     }
 
-    // A run that accepted something must have established both, because
-    // both had to exist before anything could be built to submit.
-    let (Some(program), Some(asset)) = (planner.constructor_program(), planner.issued_asset())
-    else {
+    // A run that accepted something must have established all three,
+    // because all three had to exist before anything could be built to
+    // submit. The reserve identity is needed to read a sponsor's
+    // residual as the role it is rather than as an output no shape
+    // defines.
+    let (Some(program), Some(asset), Some(reserve)) = (
+        planner.constructor_program(),
+        planner.issued_asset(),
+        planner.reserve_asset(),
+    ) else {
         return Err(ReportValidationRefusal::CeremonyIncomplete);
     };
 
@@ -718,7 +724,14 @@ fn compare_projections(
             })
             .unwrap_or_default();
 
-        let verdict = match read_accepted(submission.bytes(), &mine, asset, program, OPERATION) {
+        let verdict = match read_accepted(
+            submission.bytes(),
+            &mine,
+            asset,
+            reserve,
+            program,
+            OPERATION,
+        ) {
             // A transaction that could not be read has not disagreed
             // about anything, so the comparison was not performed. It
             // must not be recorded as a difference, which would file a
@@ -860,6 +873,7 @@ pub(crate) mod tests {
     fn accepted_run(bytes: &[u8], observed_weight: Option<u64>) -> OperationTranscript {
         OperationTranscript::for_tests(TranscriptParts {
             issued_asset: Some([0x33; 32]),
+            reserve_asset: Some([0x44; 32]),
             constructor_program: Some(vec![0x51, 0x20]),
             submissions: vec![SubmissionOutcome::for_tests(
                 some_vector(),
@@ -984,6 +998,7 @@ pub(crate) mod tests {
         let bytes = b"unnamed".to_vec();
         let planner = OperationTranscript::for_tests(TranscriptParts {
             issued_asset: Some([0x33; 32]),
+            reserve_asset: Some([0x44; 32]),
             constructor_program: Some(vec![0x51, 0x20]),
             submissions: vec![SubmissionOutcome::for_tests(
                 some_vector(),
@@ -1050,6 +1065,7 @@ pub(crate) mod tests {
     fn a_refused_plan_yields_no_validated_report() {
         let planner = OperationTranscript::for_tests(TranscriptParts {
             issued_asset: None,
+            reserve_asset: None,
             constructor_program: None,
             submissions: Vec::new(),
             mutants: Vec::new(),
@@ -1066,6 +1082,7 @@ pub(crate) mod tests {
     fn an_executor_reporting_another_chain_refuses_the_report() {
         let planner = OperationTranscript::for_tests(TranscriptParts {
             issued_asset: None,
+            reserve_asset: None,
             constructor_program: None,
             submissions: Vec::new(),
             mutants: Vec::new(),
@@ -1088,6 +1105,7 @@ pub(crate) mod tests {
         let bytes = b"a real submission".to_vec();
         let planner = OperationTranscript::for_tests(TranscriptParts {
             issued_asset: Some([0x33; 32]),
+            reserve_asset: Some([0x44; 32]),
             constructor_program: Some(vec![0x51, 0x20]),
             submissions: vec![SubmissionOutcome::for_tests(
                 some_vector(),
@@ -1126,6 +1144,7 @@ pub(crate) mod tests {
         let mutated = b"the mutation".to_vec();
         let planner = OperationTranscript::for_tests(TranscriptParts {
             issued_asset: Some([0x33; 32]),
+            reserve_asset: Some([0x44; 32]),
             constructor_program: Some(vec![0x51, 0x20]),
             submissions: vec![SubmissionOutcome::for_tests(
                 some_vector(),

@@ -571,6 +571,7 @@ impl OperationTranscript {
     pub(crate) fn for_tests(parts: TranscriptParts) -> Self {
         Self {
             issued_asset: parts.issued_asset,
+            reserve_asset: parts.reserve_asset,
             constructor_program: parts.constructor_program,
             submissions: parts.submissions,
             mutants: parts.mutants,
@@ -587,6 +588,7 @@ impl OperationTranscript {
 #[cfg(test)]
 pub(crate) struct TranscriptParts {
     pub(crate) issued_asset: Option<[u8; 32]>,
+    pub(crate) reserve_asset: Option<[u8; 32]>,
     pub(crate) constructor_program: Option<Vec<u8>>,
     pub(crate) submissions: Vec<SubmissionOutcome>,
     pub(crate) mutants: Vec<MutantOutcome>,

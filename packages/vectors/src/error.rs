@@ -101,6 +101,20 @@ pub enum VectorError {
     DuplicateSemanticFixture(SemanticFixtureId),
     /// A fixture's stated facts are not a model-valid compact-ASH world.
     InvalidSemanticFixture(SemanticFixtureId),
+    /// A fixture's stated facts do not witness the class it is filed
+    /// under.
+    ///
+    /// Distinct from [`Self::InvalidSemanticFixture`], and the
+    /// difference is the whole of `G13-R10`: the world may be perfectly
+    /// valid and still fail to exhibit the property its §18.1 class name
+    /// asserts, in which case a run of the row is evidence about
+    /// something other than what it is filed as.
+    FixtureContradictsItsClass {
+        /// The row whose facts and name disagree.
+        fixture: SemanticFixtureId,
+        /// The class it is filed under.
+        class: &'static str,
+    },
     /// The expected semantic result could not be derived from the
     /// realization layer's own domain.
     ExpectationNotDerivable {
