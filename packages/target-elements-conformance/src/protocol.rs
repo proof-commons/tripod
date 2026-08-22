@@ -11,6 +11,15 @@
 //! stderr is not read at all, so there is no path by which arbitrary child
 //! bytes become first-party diagnostics.
 //!
+//! Not read, and — for a reviewed executor — not written either. The
+//! executor is handed two files on the spawn, one for its own typed facts
+//! and one for raw child text it wants kept, so it has somewhere to say
+//! what it saw without saying it on a stream this side would have to
+//! either quote or throw away
+//! (see [`ExecutorDiagnostics`](crate::executor::ExecutorDiagnostics)).
+//! An arbitrary caller-selected executor may still write to stderr; that
+//! is why the null device is still on the other end of it.
+//!
 //! That closure is transitive, and it did not used to be. This side never
 //! read the executor's stderr, but the reviewed executor collapsed its
 //! *own* child's stderr into the note it then wrote as
@@ -19,7 +28,9 @@
 //! rather than through a stream it was not. A detail is now what the
 //! adapter or the target *stated*: a method, a status, a target's own
 //! answer. Neither a child's stderr nor an operator's configuration path
-//! is one `(´[PLAN-rule:guide12-exec:failure-layers]´)`.
+//! is one `(´[PLAN-rule:guide12-exec:failure-layers]´)`; both are kept in
+//! the executor's own quarantine file, where a record number rather than
+//! the text itself is what a typed diagnostic names.
 //!
 //! Every record is read under an explicit byte bound
 //! ([`ProtocolLimits`]). At most `maximum + 1` bytes are taken before the
@@ -233,6 +244,59 @@ impl ProtocolLimits {
 impl Default for ProtocolLimits {
     fn default() -> Self {
         Self::DEFAULT
+    }
+}
+
+/// The byte bound on one handshake request, as the executor enforces it.
+///
+/// # Why the request bounds are constants and the response bounds are not
+///
+/// [`ProtocolLimits`] is configuration because the side that enforces it
+/// is the side that holds it: this harness reads responses, so a caller
+/// tightening a response bound tightens something this process will
+/// actually apply.
+///
+/// The request bounds are enforced by the *executor*, which is a separate
+/// program that this interface passes no configuration to. A
+/// per-run request bound would therefore be a bound only one side knew —
+/// the harness would believe it had tightened the framing while the
+/// executor went on reading whatever arrived, which is the two-sided
+/// disagreement protocol revision 4 was minted to end. So the request
+/// bounds are stated once, here, as part of the contract both
+/// implementations declare, and the reviewed adapter mirrors these exact
+/// figures `(´[PLAN-rule:guide12-exec:protocol-revision]´)`.
+///
+/// The values match the response bounds for the same records, because
+/// they bound the same shapes: a handshake is small and fixed, and a
+/// request carries an execution subject whose script and stack are the
+/// only part a fixture's size reaches.
+///
+/// Changing either figure is a change to what a conforming executor must
+/// accept, so it moves in both implementations together or in neither.
+pub const MAXIMUM_HANDSHAKE_REQUEST_BYTES: usize = 64 * 1024;
+
+/// The byte bound on one execution request, as the executor enforces it.
+///
+/// See [`MAXIMUM_HANDSHAKE_REQUEST_BYTES`] for why this is a constant of
+/// the contract rather than a member of [`ProtocolLimits`].
+pub const MAXIMUM_REQUEST_BYTES: usize = 4 * 1024 * 1024;
+
+/// The request bound that applies to one phase.
+///
+/// Total over the phases so that a new phase cannot quietly acquire "no
+/// bound" by being left out of a match.
+#[must_use]
+pub const fn maximum_request_bytes(phase: ProtocolPhase) -> usize {
+    match phase {
+        ProtocolPhase::Handshake => MAXIMUM_HANDSHAKE_REQUEST_BYTES,
+        // Nothing is written to the executor in these phases; naming a
+        // bound keeps the function total without inventing a write that
+        // does not happen.
+        ProtocolPhase::Startup
+        | ProtocolPhase::Environment
+        | ProtocolPhase::Request
+        | ProtocolPhase::Response
+        | ProtocolPhase::Shutdown => MAXIMUM_REQUEST_BYTES,
     }
 }
 

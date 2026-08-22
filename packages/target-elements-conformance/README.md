@@ -124,6 +124,7 @@ reviewed_elements_tapscript()                 the reviewed static contract
 validate_reviewed_development_binding(..)     the development binding
 canonical_fixture_set(&target, &binding)   -> CanonicalPrimitiveFixtureSet
 ExecutorConfiguration::new(path, trust, ..)   the caller selects the executor
+                                              and where its diagnostics go
 executor::execute_canonical(..)      -> ExecutionTranscript
 validate::evaluate(..)               -> NativeConformanceReport
 validate::validate_native_report(..) -> ValidatedNativeConformanceReport
@@ -179,7 +180,7 @@ use target_elements::{
 };
 use target_elements_conformance::claim::claim_registry;
 use target_elements_conformance::executor::{
-    ExecutorConfiguration, ExecutorTrust, execute, execute_canonical,
+    ExecutorConfiguration, ExecutorDiagnostics, ExecutorTrust, execute, execute_canonical,
 };
 use target_elements_conformance::fixture::{
     ExpectedPrimitiveOutcome, NativeCaseGroup, NativeCaseId, PrimitiveFixture, PrimitiveFixtureSet,
@@ -239,6 +240,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::path::Path::new("./mock-executor-wrapper.sh"),
         ExecutorTrust::Mock,
         Duration::from_secs(30),
+        // Where that executor writes its own diagnostics. The harness
+        // names both files and keeps them after the run.
+        ExecutorDiagnostics::in_directory(std::path::Path::new("./run-diagnostics")),
     );
 
     let plan = guide_nine_evidence_plan()?;
@@ -285,9 +289,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-The executor is passed **no arguments** by `execute`, so the mock's
-`--behavior <BEHAVIOR>` selector must be supplied by a wrapper script on disk.
-That is what `./mock-executor-wrapper.sh` stands for above.
+The executor is passed **two arguments and no others** by `execute`:
+`--output` and `--elements-output`, the two files it writes its diagnostics
+into. Nothing a caller states travels through that interface, which is why no
+credential can. The mock's `--behavior <BEHAVIOR>` selector is therefore still
+a wrapper script's to supply, and that is what `./mock-executor-wrapper.sh`
+stands for above.
+
+The two files are the run's artifacts and are kept: one holds the executor's
+own typed facts, the other quarantines raw text out of whatever the executor
+ran, and the separation is a property of which file a byte was written to
+rather than of how each diagnostic was phrased. The executor's stderr is still
+routed to the null device, because a caller-selected executor may write
+anywhere; the reviewed adapter writes nothing there at all.
 
 ## Public-API tour
 
@@ -394,8 +408,15 @@ submission earned. Nothing in that vocabulary names an operation's meaning,
 which is what lets this package supervise a compact-ASH run without owning
 one.
 
-`ProtocolLimits` bounds each phase; `ProtocolLimits::DEFAULT` is the standard
-set, and `for_phase` reads the bound that applies.
+`ProtocolLimits` bounds each phase of what this side READS;
+`ProtocolLimits::DEFAULT` is the standard set, and `for_phase` reads the bound
+that applies. What the executor reads is bounded by
+`MAXIMUM_HANDSHAKE_REQUEST_BYTES` and `MAXIMUM_REQUEST_BYTES`, which are
+constants of the contract rather than configuration: the executor is a
+separate program this interface passes no configuration to, so a per-run
+request bound would be a bound only one side knew. `maximum_request_bytes`
+reads the one that applies, and `write_message` refuses to build a record past
+it.
 
 ### `executor` — the driver
 
@@ -403,7 +424,11 @@ set, and `for_phase` reads the bound that applies.
 DEFAULT_EXECUTOR_TIMEOUT: Duration = 300s
 DEFAULT_EXECUTOR_CLEANUP_GRACE: Duration = 5s
 
-ExecutorConfiguration::new(program: &Path, trust: ExecutorTrust, timeout: Duration) -> Self
+ExecutorDiagnostics::in_directory(directory: &Path) -> Self
+ExecutorDiagnostics::new(typed: &Path, child: &Path) -> Self
+
+ExecutorConfiguration::new(program: &Path, trust: ExecutorTrust, timeout: Duration,
+                           diagnostics: ExecutorDiagnostics) -> Self
 ExecutorConfiguration::with_limits(self, limits: ProtocolLimits) -> Self
 ExecutorConfiguration::with_cleanup_grace(self, cleanup_grace: Duration) -> Self
 ExecutorConfiguration::with_expected_provenance(self, expected: ExpectedExecutorProvenance) -> Self

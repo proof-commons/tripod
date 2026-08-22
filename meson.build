@@ -967,6 +967,23 @@ test(
   timeout: 120,
 )
 
+# The adapter's two boundaries -- what it writes where, and what it refuses to
+# read -- driven with the adapter running as a real child process. Node-free
+# like the lane above, and for a reason rather than by luck: the diagnostic
+# split shows itself the first time the client is run at all, and every
+# request-framing case is posed at the handshake, which the adapter reads
+# before it boots anything. The `elementsd` and `elements-cli` it configures
+# are two-line stand-ins and the framework is a stub package.
+# Budget: 0:05, tolerance 0:20 (measured 0:04.8). Twelve adapter processes,
+# two of which wait out a stand-in node's bounded lifetime.
+test(
+  'executor-boundaries',
+  python3,
+  args: [meson.project_source_root() / 'scripts' / 'test-executor-boundaries.py'],
+  suite: 'lint',
+  timeout: 180,
+)
+
 gate_cargo_audit = find_program('scripts/gate-cargo-audit.sh')
 
 # The advisory lane. Externally provisioned by ADR-011, so the wrapper exits
@@ -1143,6 +1160,11 @@ if target_native_executor != ''
     command: [check_target_native_bin] + target_native_common_args + [
       '--report', '@OUTPUT1@',
       '--stamp', '@OUTPUT0@',
+      # Kept beside the report, and for the same reason: what one
+      # executor said about one run on one host. One directory per
+      # target, so two runs cannot append into each other's record.
+      '--executor-diagnostics-directory',
+      meson.current_build_dir() / 'target-elements-native-diagnostics',
     ],
     build_always_stale: true,
     build_by_default: false,
@@ -1184,6 +1206,9 @@ if target_native_executor != ''
         + target_native_common_args + [
         '--report', '@OUTPUT1@',
         '--stamp', '@OUTPUT0@',
+        '--executor-diagnostics-directory',
+        meson.current_build_dir() / ('target-elements-prototype-' + relation
+          + '-diagnostics'),
       ],
       build_always_stale: true,
       build_by_default: false,

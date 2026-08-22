@@ -125,6 +125,26 @@ def read_bounded(stream, what: str, phase: str, deadline: "Deadline" = None):
     return json.loads(line)
 
 
+def diagnostic_paths(directory: str, label: str):
+    """The two destinations one supervised executor writes to.
+
+    Derived from the label rather than fixed, because a lane may run two
+    adapters at once -- the section 13 lifecycle lane runs a creator and
+    a reader -- and two processes appending to one file would produce a
+    record neither of them could be held to.
+    """
+    slug = "".join(
+        character if character.isalnum() else "-" for character in label.lower()
+    ).strip("-")
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    slug = slug or "executor"
+    return (
+        os.path.join(directory, "%s-diagnostics.txt" % slug),
+        os.path.join(directory, "%s-child-output.txt" % slug),
+    )
+
+
 class SupervisedExecutor:
     """One executor process, its group, and its guaranteed cleanup.
 
@@ -133,16 +153,34 @@ class SupervisedExecutor:
     from any row, or the deadline. That is the property the runners
     lacked: cleanup that happens on the failure paths and not only on the
     two the author remembered.
+
+    # Where the child's diagnostics go
+
+    Stated here rather than per runner, for the reason everything else in
+    this class is stated here: the three runners drive the same protocol
+    and must spawn an executor the same way. The two destinations are
+    appended to whatever arguments the caller gave, exactly as the Rust
+    supervisor appends them, and the directory is created if it is not
+    there -- an executor refuses a run it cannot write, and that refusal
+    should not be the way a runner discovers a missing directory.
     """
 
     def __init__(
         self,
         arguments,
         deadline: "Deadline",
+        diagnostics_directory: str,
         label: str = "executor",
         cleanup_grace: float = CLEANUP_GRACE_SECONDS,
     ) -> None:
-        self.arguments = list(arguments)
+        os.makedirs(diagnostics_directory, exist_ok=True)
+        output, elements_output = diagnostic_paths(diagnostics_directory, label)
+        self.output = output
+        self.elements_output = elements_output
+        self.arguments = list(arguments) + [
+            "--output", output,
+            "--elements-output", elements_output,
+        ]
         self.deadline = deadline
         self.label = label
         self.cleanup_grace = cleanup_grace
@@ -160,10 +198,13 @@ class SupervisedExecutor:
             self.arguments,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            # Not captured and not read: arbitrary child bytes never
-            # become first-party diagnostics, exactly as the Rust
-            # supervisor has it.
-            stderr=None,
+            # Routed to the null device, exactly as the Rust supervisor
+            # has it: arbitrary child bytes never become first-party
+            # diagnostics. It used to be None, which INHERITS this
+            # runner's stderr -- so the bytes the comment said were not
+            # captured went straight to the operator's terminal. The
+            # executor has two files of its own to write to instead.
+            stderr=subprocess.DEVNULL,
             text=True,
             # The child leads its own session, so it and the node it
             # starts form one group this runner can signal as a whole.

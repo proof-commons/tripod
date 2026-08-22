@@ -38,6 +38,20 @@
 //! material either way: this interface neither accepts a cookie path nor
 //! reads one.
 //!
+//! # Where the executor writes what it saw
+//!
+//! `--executor-diagnostics-directory` names a directory this command
+//! creates and hands the executor two files inside: one for the
+//! executor's own typed facts, one for raw text out of whatever the
+//! executor ran. Both are kept after the run. They are build-directory
+//! evidence about one execution on one host, like the report beside
+//! them, and nothing in the repository is derived from either.
+//!
+//! Handing an executor a place to write is not the same as accepting
+//! anything from it. The files are this side's own output roles, no
+//! report reads them, and the harness still routes the executor's
+//! stderr to the null device.
+//!
 //! # A declaration is not a proof
 //!
 //! `--executor-class` records what the caller says the program is. The
@@ -67,7 +81,8 @@ use target_elements::{
     TargetContractVersion, reviewed_elements_tapscript, validate_reviewed_development_binding,
 };
 use target_elements_conformance::executor::{
-    DEFAULT_EXECUTOR_TIMEOUT, ExecutorConfiguration, ExecutorTrust, execute_canonical_prototypes,
+    DEFAULT_EXECUTOR_TIMEOUT, ExecutorConfiguration, ExecutorDiagnostics, ExecutorTrust,
+    execute_canonical_prototypes,
 };
 use target_elements_conformance::prototype::{
     CanonicalPrototypeMatrix, ConstructorPrototypeMatrix, WideFloorPrototypeMatrix,
@@ -114,9 +129,18 @@ struct Args {
     relation: Relation,
 
     /// The external executor to run. Selecting it grants execution
-    /// authority (ADR-015); it receives no arguments and no secrets.
+    /// authority (ADR-015); it receives no secrets, and no argument but
+    /// the two diagnostic destinations below.
     #[arg(long, value_name = "PROGRAM")]
     executor: PathBuf,
+
+    /// Where that executor writes its own diagnostics. The harness
+    /// creates the directory and names two files inside it: one for the
+    /// executor's typed facts and one for raw child text it quarantines.
+    /// Both are kept after the run, because a diagnostic deleted on
+    /// success is unavailable for the run that succeeded surprisingly.
+    #[arg(long, value_name = "DIRECTORY")]
+    executor_diagnostics_directory: PathBuf,
 
     /// What the caller declares that executor to be.
     #[arg(long, value_name = "CLASS")]
@@ -236,6 +260,7 @@ fn run(args: &Args) -> Result<PrototypeConformanceReport, String> {
         },
         args.executor_timeout_seconds
             .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs),
+        ExecutorDiagnostics::in_directory(&args.executor_diagnostics_directory),
     );
     if let Some(expected) = expected_provenance.clone() {
         configuration = configuration.with_expected_provenance(expected);

@@ -95,6 +95,20 @@ pub enum NativeConformanceError {
         maximum: usize,
     },
 
+    /// This harness built a request past the bound the contract states.
+    ///
+    /// A defect on this side rather than the executor's. The request
+    /// bounds are the contract's, a conforming executor refuses a record
+    /// past them, and a harness that sent one would collect that refusal
+    /// as a complaint about the peer for a record it wrote itself.
+    #[error("the harness built a {phase} record larger than the {maximum}-byte bound")]
+    RequestRecordTooLarge {
+        /// The phase the harness was in.
+        phase: ProtocolPhase,
+        /// The bound that applied.
+        maximum: usize,
+    },
+
     /// The executor sent a blank or whitespace-only protocol record.
     ///
     /// The framing defines one nonempty JSON object per record, so an

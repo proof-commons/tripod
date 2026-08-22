@@ -36,7 +36,11 @@ expected is decided by the typed report in the package that owns the
 claim, from a record this process did not classify -- the division
 `G11-W7-06` paid for.
 
-  --executor        the zero-argument executor launcher to spawn
+  --executor        the executor launcher to spawn
+  --executor-diagnostics-directory
+                    where each spawned process writes its own
+                    diagnostics, named apart by its role; defaults to
+                    the report's directory
   --matrix          the JSON `emit-normalization-matrix` produced, whose
                     unmutated row supplies the claim
   --chain-dir       the chain directory both processes share
@@ -86,8 +90,11 @@ class AdapterProcess:
     another, and the capability the handshake must advertise.
     """
 
-    def __init__(self, executor, chain_dir, wallet_name, schema, deadline):
+    def __init__(
+        self, executor, chain_dir, wallet_name, schema, deadline, diagnostics_directory
+    ):
         self.executor = executor
+        self.diagnostics_directory = diagnostics_directory
         self.chain_dir = chain_dir
         self.wallet_name = wallet_name
         self.schema = schema
@@ -101,14 +108,19 @@ class AdapterProcess:
             [
                 self.executor,
                 # This lane is not the conformance harness and does not
-                # pretend to be: the harness spawns an executor with no
-                # arguments, and these three are what make one process
-                # distinguishable from another. None is a credential.
+                # pretend to be: the harness passes an executor its two
+                # diagnostic destinations and nothing else, and these
+                # three are what make one process distinguishable from
+                # another. None is a credential.
                 "--enable-wallet",
                 "--datadir", self.chain_dir,
                 "--wallet-name", self.wallet_name,
             ],
             self.deadline,
+            self.diagnostics_directory,
+            # The label names the wallet, so the two processes of this
+            # lane write to two pairs of files rather than appending into
+            # each other's record.
             label="lifecycle adapter (%s)" % self.wallet_name,
         )
         self.supervised.__enter__()
@@ -284,6 +296,15 @@ def main(argv):
     parser.add_argument("--matrix", required=True)
     parser.add_argument("--chain-dir", required=True)
     parser.add_argument("--report", required=True)
+    parser.add_argument(
+        "--executor-diagnostics-directory",
+        default=None,
+        help="where the spawned executor writes its own diagnostics; two "
+        "files per process, one for its typed facts and one quarantining "
+        "raw child text. Defaults to the report's own directory, because "
+        "they are the same kind of thing: what one run on one host "
+        "produced. Kept after the run",
+    )
     parser.add_argument("--expect-network-id", default=None)
     parser.add_argument("--expect-genesis-id", default=None)
     parser.add_argument(
@@ -293,6 +314,10 @@ def main(argv):
         help="the bound on the whole run, not on any single step",
     )
     arguments = parser.parse_args(argv)
+
+    diagnostics_directory = arguments.executor_diagnostics_directory or (
+        os.path.dirname(os.path.abspath(arguments.report)) or "."
+    )
 
     with open(arguments.matrix) as handle:
         matrix = json.load(handle)
@@ -317,7 +342,9 @@ def main(argv):
     # ---- Process A ------------------------------------------------------
     print("Process A: constructing", flush=True)
     a_wallet = "guide11-lifecycle-a"
-    with AdapterProcess(arguments.executor, chain_dir, a_wallet, schema, deadline) as process_a:
+    with AdapterProcess(
+        arguments.executor, chain_dir, a_wallet, schema, deadline, diagnostics_directory
+    ) as process_a:
         observed_genesis = process_a.genesis()
         observed_network = bytes(process_a.environment["network_id"]).hex()
         for expected, observed, role in (
@@ -446,7 +473,12 @@ def main(argv):
         print("Process B run %d: verifying from the public record" % attempt, flush=True)
         answers = []
         with AdapterProcess(
-            arguments.executor, chain_dir, wallet, schema, deadline
+            arguments.executor,
+            chain_dir,
+            wallet,
+            schema,
+            deadline,
+            diagnostics_directory,
         ) as process_b:
             b_pid = process_b.pid
             b_genesis = process_b.genesis()

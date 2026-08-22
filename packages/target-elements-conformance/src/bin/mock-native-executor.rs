@@ -60,6 +60,20 @@
 //!
 //! Under ADR-010 this command's stdout is protocol data, in the NDJSON
 //! form the harness's protocol documents.
+//!
+//! # The two diagnostic destinations
+//!
+//! The harness hands every executor an `--output` file for its own typed
+//! facts and an `--elements-output` file for raw text out of whatever it
+//! ran. This mock takes both and writes to both, because a mock that
+//! ignored them would let the harness pass an unusable path forever with
+//! nothing noticing.
+//!
+//! Its `noisy-stderr` behavior still writes on stderr, and that is the
+//! point of it: an arbitrary caller-selected executor may write anywhere,
+//! and what the harness promises is that nothing it wrote there is
+//! relayed. The reviewed adapter's promise — that it writes nothing there
+//! at all — is a different promise, checked where that adapter lives.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
@@ -376,6 +390,43 @@ struct Args {
     /// is refused rather than guessed.
     #[arg(long, value_name = "PATH")]
     prototype_verdicts: Option<std::path::PathBuf>,
+
+    /// Where this executor writes its own typed diagnostics.
+    ///
+    /// The harness passes this to every executor it starts, so the mock
+    /// takes it on the same terms a real adapter does: required, and
+    /// written to. A mock that ignored it would let the harness pass an
+    /// unwritable path forever without any test noticing.
+    #[arg(long, value_name = "FILE")]
+    output: std::path::PathBuf,
+
+    /// Where this executor quarantines raw text out of its own children.
+    ///
+    /// The mock has no children, so it files one entry saying which
+    /// behavior it ran. The point of writing here at all is that the
+    /// destination is exercised.
+    #[arg(long, value_name = "FILE")]
+    elements_output: std::path::PathBuf,
+}
+
+/// Records that this mock started, in both destinations the harness named.
+///
+/// Failing to write is not fatal here. The mock's subject is the wire
+/// protocol, and a diagnostic file it could not open is a fact about the
+/// host rather than about the exchange under test; the harness's own
+/// startup path is what refuses an unusable destination.
+fn note_startup(args: &Args) {
+    let typed = format!("mock-native-executor: behavior {:?}\n", args.behavior);
+    let _ignored = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&args.output)
+        .and_then(|mut file| file.write_all(typed.as_bytes()));
+    let _ignored = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&args.elements_output)
+        .and_then(|mut file| file.write_all(b"----- mock-native-executor: no child text -----\n"));
 }
 
 fn main() -> ExitCode {
@@ -388,6 +439,7 @@ fn main() -> ExitCode {
         }
     };
 
+    note_startup(&args);
     let table = AnswerTable::new(args.unknown_case, args.prototype_verdicts.as_deref());
     run(args.behavior, &table)
         .map_or_else(|_| CommandExit::Failure.exit_code(), CommandExit::exit_code)

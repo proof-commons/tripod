@@ -553,7 +553,7 @@ pub fn exact_minimum_cost(weights: &[u64]) -> Result<u128, LinkRefusal> {
     let full = 1usize << count;
     let mut total = vec![0u128; full];
     for (mask, slot) in total.iter_mut().enumerate() {
-        for (bit, weight) in weights.iter().enumerate().take(count) {
+        for (bit, weight) in weights.iter().enumerate() {
             if mask & (1 << bit) != 0 {
                 *slot = slot
                     .checked_add(u128::from(*weight))

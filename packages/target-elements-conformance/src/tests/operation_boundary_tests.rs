@@ -22,8 +22,8 @@ use std::collections::BTreeSet;
 
 use crate::error::NativeConformanceError;
 use crate::executor::{
-    ExecutorConfiguration, ExecutorTrust, NativeWorkload, OperationStep, PlanRefused,
-    TargetOperationPlanner, run_protocol,
+    ExecutorConfiguration, ExecutorDiagnostics, ExecutorTrust, NativeWorkload, OperationStep,
+    PlanRefused, TargetOperationPlanner, run_protocol,
 };
 use crate::protocol::{
     ExecutorCapability, ExecutorHandshake, FundedOutput, NATIVE_PROTOCOL_SCHEMA,
@@ -245,6 +245,10 @@ fn drive(
         std::path::Path::new("/nonexistent-executor"),
         ExecutorTrust::ReviewedNonMock,
         std::time::Duration::from_secs(1),
+        // Nothing is spawned here: the protocol is driven over an
+        // in-memory script, so the destinations are named and never
+        // opened.
+        ExecutorDiagnostics::in_directory(std::path::Path::new("/nonexistent-diagnostics")),
     );
     let text = script(handshake, answers);
     let mut reader = std::io::BufReader::new(std::io::Cursor::new(text.into_bytes()));

@@ -28,7 +28,9 @@ use target_elements::{
     TargetContractVersion, reviewed_elements_tapscript, validate_reviewed_development_binding,
 };
 use target_elements_conformance::error::NativeConformanceError;
-use target_elements_conformance::executor::{ExecutorConfiguration, ExecutorTrust, execute};
+use target_elements_conformance::executor::{
+    ExecutorConfiguration, ExecutorDiagnostics, ExecutorTrust, execute,
+};
 use target_elements_conformance::fixture::{
     ExpectedPrimitiveOutcome, NativeCaseGroup, NativeCaseId, PrimitiveFixture, PrimitiveFixtureSet,
 };
@@ -149,8 +151,17 @@ fn recorded_descendant(marker: &Path) -> i32 {
 
 /// Runs one shell executor to its timeout.
 fn run(program: &Path) -> (Result<(), NativeConformanceError>, Duration) {
-    let configuration =
-        ExecutorConfiguration::new(program, ExecutorTrust::Mock, TIMEOUT).with_cleanup_grace(GRACE);
+    let configuration = ExecutorConfiguration::new(
+        program,
+        ExecutorTrust::Mock,
+        TIMEOUT,
+        ExecutorDiagnostics::in_directory(
+            program
+                .parent()
+                .expect("the executor sits in the test directory"),
+        ),
+    )
+    .with_cleanup_grace(GRACE);
     let target = reviewed_target();
     let binding = development_binding(&target);
     let started = Instant::now();

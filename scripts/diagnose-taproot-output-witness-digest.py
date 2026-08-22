@@ -46,8 +46,17 @@ is the control: it is expected to sign the grown-vector digest and be
 accepted, which is what establishes that the digests are being modelled
 correctly here rather than merely differing.
 
-Stdout is the JSON record. Stderr is diagnostics. Exit 0 when the
-diagnosis holds, 1 when it does not, 2 when the run could not be made.
+Stdout is the JSON record. Stderr is this script's own diagnostics. The
+adapter code it imports writes to neither: it writes to the two files
+named by --adapter-output and --adapter-elements-output, which default
+beside this script's temporary state and whose location is announced on
+stderr when the run starts. That split is the adapter's own contract and
+is kept here rather than worked around, because a diagnosis that quietly
+dropped the node client's messages would be missing the very material it
+exists to read.
+
+Exit 0 when the diagnosis holds, 1 when it does not, 2 when the run could
+not be made.
 
 Nothing here accepts a credential. Every value it prints is test
 material from a chain this process created and destroyed.
@@ -59,6 +68,7 @@ import io
 import json
 import os
 import sys
+import tempfile
 
 FEE_SATOSHIS = 1000
 COIN_SATOSHIS = 100000000
@@ -183,11 +193,32 @@ def main(argv):
     parser.add_argument("--elements-cli", required=True)
     parser.add_argument("--framework", required=True)
     parser.add_argument("--boot-timeout", type=float, default=120.0)
+    parser.add_argument("--adapter-diagnostics-directory", default=None)
     arguments = parser.parse_args(argv)
 
     scripts_directory = os.path.dirname(os.path.abspath(__file__))
     adapter = load_adapter(scripts_directory)
     adapter.load_framework(arguments.framework)
+
+    # The imported adapter's diagnostic streams. Unset, its `log` and
+    # `quarantine` calls discard what they were given -- which is the
+    # right default for a library nobody told where to write, and the
+    # wrong state for this script, whose whole subject is what the node
+    # client said.
+    diagnostics_directory = arguments.adapter_diagnostics_directory or tempfile.mkdtemp(
+        prefix="diagnose-taproot-output-witness-digest-"
+    )
+    os.makedirs(diagnostics_directory, exist_ok=True)
+    adapter_output = os.path.join(diagnostics_directory, "adapter-diagnostics.txt")
+    adapter_elements_output = os.path.join(
+        diagnostics_directory, "adapter-child-output.txt"
+    )
+    note("the adapter's diagnostics go to %s" % diagnostics_directory)
+    typed_handle = open(adapter_output, "a", encoding="utf-8", errors="replace")
+    child_handle = open(
+        adapter_elements_output, "a", encoding="utf-8", errors="replace"
+    )
+    adapter.STREAMS = adapter.DiagnosticStreams(typed_handle, child_handle)
 
     wallet = "guide11-w1106-diagnosis"
     node = adapter.DisposableNode(
