@@ -19,9 +19,10 @@
 
 use std::num::{NonZeroU32, NonZeroU64};
 
-use tapscript::{LeafRole, ProgramRole};
+use tapscript::LeafRole;
 use target_elements::LeafVersion;
 
+use crate::LinkRefusal;
 use crate::taptree::{
     ControlPathRecipe, ORACLE_LEAF_BUDGET, TapLeafInput, TaptreeInput, TreeObjective, assemble,
     enumerated_minimum_cost, exact_minimum_cost,
@@ -41,7 +42,6 @@ fn input(weights: &[u64]) -> TaptreeInput {
         weights.iter().enumerate().map(|(index, weight)| {
             TapLeafInput::new(
                 leaf(u8::try_from(index).expect("the synthetic sizes fit a byte")),
-                ProgramRole::Member,
                 NonZeroU64::new(*weight).expect("the synthetic weights are positive"),
             )
         }),
@@ -57,7 +57,7 @@ fn input(weights: &[u64]) -> TaptreeInput {
 /// Arithmetic, not search: `k` is the least integer with `2^k` at least
 /// `count`, `2^k - count` leaves sit one level shallower than `k`, and
 /// the rest sit at `k`.
-fn equal_weight_optimum(count: u64) -> u64 {
+fn equal_weight_optimum(count: u64) -> u128 {
     if count <= 1 {
         return 0;
     }
@@ -65,7 +65,7 @@ fn equal_weight_optimum(count: u64) -> u64 {
     while (1u64 << k) < count {
         k += 1;
     }
-    count * k - ((1u64 << k) - count)
+    u128::from(count * k - ((1u64 << k) - count))
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn the_subset_oracle_agrees_with_literal_enumeration_at_every_small_size() {
         loop {
             assert_eq!(
                 exact_minimum_cost(&vector).expect("six leaves is inside the budget"),
-                enumerated_minimum_cost(&vector),
+                enumerated_minimum_cost(&vector).expect("six leaves is inside the budget"),
                 "the two oracles disagree at {vector:?}",
             );
 
@@ -136,7 +136,7 @@ fn the_constructed_tree_reaches_the_optimum_at_every_small_size() {
             let tree = assemble(&input(&vector)).expect("a small tree assembles");
             assert_eq!(
                 tree.cost(),
-                enumerated_minimum_cost(&vector),
+                enumerated_minimum_cost(&vector).expect("six leaves is inside the budget"),
                 "the constructed tree is not optimal at {vector:?}",
             );
 
@@ -257,7 +257,6 @@ fn a_tree_past_the_declared_maximum_depth_is_a_refusal() {
         weights.iter().enumerate().map(|(index, weight)| {
             TapLeafInput::new(
                 leaf(u8::try_from(index).expect("a small index fits")),
-                ProgramRole::Member,
                 NonZeroU64::new(*weight).expect("the weights are positive"),
             )
         }),
@@ -274,6 +273,57 @@ fn a_tree_past_the_declared_maximum_depth_is_a_refusal() {
 }
 
 #[test]
+fn both_oracles_answer_above_the_old_domain_and_still_agree() {
+    // The row's weights, reached through both oracles rather than
+    // through the tree. Three maximal weights and a unit one: the exact
+    // optimum pairs the unit leaf with one maximal leaf and the other
+    // two together, so every leaf sits at depth two and the cost is
+    // twice the total — a number above `u64::MAX`, which is the whole
+    // reason the domain had to move. Saturating `u64` reported
+    // `u64::MAX` here, from both oracles, agreeing about nothing.
+    let weights = [u64::MAX, u64::MAX, u64::MAX, 1];
+    let doubled_total = 2 * (3 * u128::from(u64::MAX) + 1);
+
+    let exact = exact_minimum_cost(&weights).expect("four leaves are inside the budget");
+    let enumerated = enumerated_minimum_cost(&weights).expect("four leaves are inside the budget");
+
+    assert_eq!(exact, doubled_total, "the subset oracle lost the optimum");
+    assert_eq!(
+        enumerated, doubled_total,
+        "the enumerating oracle lost the optimum"
+    );
+    assert!(
+        doubled_total > u128::from(u64::MAX),
+        "the fixture no longer exceeds the domain it was chosen to exceed",
+    );
+}
+
+#[test]
+fn a_leaf_set_past_the_budget_refuses_before_any_arithmetic() {
+    // The budget bounds the leaf count, and the leaf count is what the
+    // module's `u128` sufficiency argument rests on. So `assemble` has
+    // to refuse an oversized set at its head rather than build a tree,
+    // total its cost, and only then discover the oracle will not run.
+    let oversized: Vec<TapLeafInput> = (0..=ORACLE_LEAF_BUDGET)
+        .map(|index| {
+            TapLeafInput::new(
+                leaf(u8::try_from(index).expect("a small index fits")),
+                positive(1),
+            )
+        })
+        .collect();
+    let input = declared(oversized).expect("the leaves are distinct and non-empty");
+
+    assert_eq!(
+        assemble(&input),
+        Err(LinkRefusal::TreeOracleBudgetExceeded {
+            leaves: ORACLE_LEAF_BUDGET + 1,
+            budget: ORACLE_LEAF_BUDGET,
+        }),
+    );
+}
+
+#[test]
 fn the_oracle_budget_is_a_typed_complexity_failure_and_not_a_guess() {
     // §1.11: a search past its budget returns a typed complexity
     // failure and no partial result. One past the bound is the only
@@ -285,6 +335,118 @@ fn the_oracle_budget_is_a_typed_complexity_failure_and_not_a_guess() {
         Err(crate::LinkRefusal::TreeOracleBudgetExceeded { .. })
     ));
     assert!(exact_minimum_cost(&[1u64; ORACLE_LEAF_BUDGET]).is_ok());
+
+    // The enumerating oracle shares the budget so that one sufficiency
+    // argument covers both domains, and refuses the same way.
+    assert!(matches!(
+        enumerated_minimum_cost(&weights),
+        Err(crate::LinkRefusal::TreeOracleBudgetExceeded { .. })
+    ));
+}
+
+/// A positive weight for the fixtures below.
+fn positive(value: u64) -> NonZeroU64 {
+    NonZeroU64::new(value).expect("the fixture weights are positive")
+}
+
+/// A tree input over exactly these declarations, in exactly this order.
+fn declared(leaves: impl IntoIterator<Item = TapLeafInput>) -> Result<TaptreeInput, LinkRefusal> {
+    TaptreeInput::new(
+        leaves,
+        LeafVersion::TAPSCRIPT,
+        TreeObjective::MinimumTotalWeightedDepth,
+        NonZeroU32::new(32).expect("thirty-two is nonzero"),
+    )
+}
+
+/// Every ordering of `count` positions, as index permutations.
+fn permutations(count: usize) -> Vec<Vec<usize>> {
+    if count == 0 {
+        return vec![Vec::new()];
+    }
+    let mut orders = Vec::new();
+    for shorter in permutations(count - 1) {
+        for position in 0..=shorter.len() {
+            let mut extended = shorter.clone();
+            extended.insert(position, count - 1);
+            orders.push(extended);
+        }
+    }
+    orders
+}
+
+#[test]
+fn one_leaf_declared_twice_is_a_refusal_whether_or_not_the_declarations_agree() {
+    // Collecting declarations into a map would resolve a duplicate
+    // last-value-wins, which makes declaration order pick the weight,
+    // and would absorb an equal duplicate in silence — either way a
+    // leaf set that does not know its own size. Both are refused, on
+    // the same footing as the exact censuses elsewhere in this crate.
+    //
+    // The third way two declarations of one leaf could disagree — over
+    // the program role — has no spelling to test: the role is derived
+    // from the identity, so two declarations of one identity name one
+    // role by construction.
+    let conflicting = declared([
+        TapLeafInput::new(leaf(0), positive(5)),
+        TapLeafInput::new(leaf(1), positive(2)),
+        TapLeafInput::new(leaf(0), positive(9)),
+    ]);
+    assert_eq!(
+        conflicting,
+        Err(LinkRefusal::DuplicateTreeLeaf(leaf(0))),
+        "a leaf declared twice with two weights was resolved rather than refused",
+    );
+
+    let agreeing = declared([
+        TapLeafInput::new(leaf(0), positive(5)),
+        TapLeafInput::new(leaf(1), positive(2)),
+        TapLeafInput::new(leaf(0), positive(5)),
+    ]);
+    assert_eq!(
+        agreeing,
+        Err(LinkRefusal::DuplicateTreeLeaf(leaf(0))),
+        "a leaf declared twice with one weight was absorbed rather than refused",
+    );
+}
+
+#[test]
+fn every_declaration_order_of_one_leaf_set_produces_one_identical_tree() {
+    // `assemble` checks the reversed order and nothing else, which was
+    // enough only because the reversal happened after a lossy
+    // collection had already picked winners. With duplicates refused
+    // the leaf set is exactly what the declaration says, so the whole
+    // statement is available: every one of the twenty-four orderings of
+    // a four-leaf set, compared as whole trees rather than as costs.
+    let leaves = [
+        TapLeafInput::new(leaf(0), positive(3)),
+        TapLeafInput::new(leaf(1), positive(1)),
+        TapLeafInput::new(leaf(2), positive(4)),
+        TapLeafInput::new(leaf(3), positive(1)),
+    ];
+
+    let build = |order: &[usize]| {
+        let ordered: Vec<TapLeafInput> = order.iter().map(|index| leaves[*index]).collect();
+        declared(ordered)
+            .and_then(|input| assemble(&input))
+            .expect("every ordering of one valid leaf set assembles")
+    };
+
+    let orders = permutations(leaves.len());
+    assert_eq!(
+        orders.len(),
+        24,
+        "four positions have twenty-four orderings"
+    );
+
+    let first = build(&orders[0]);
+    for order in &orders {
+        assert_eq!(
+            build(order),
+            first,
+            "declaration order {order:?} produced a different tree",
+        );
+    }
 }
 
 #[test]

@@ -129,6 +129,10 @@ pub enum LinkRefusal {
     InvalidLeafVersion(LeafRole),
     /// The taptree input holds no leaf, so there is nothing to commit.
     EmptyLeafSet,
+    /// One leaf identity was declared more than once, so the leaf set
+    /// does not know its own size and declaration order would decide
+    /// which declaration survived (§14.5).
+    DuplicateTreeLeaf(LeafRole),
     /// The deterministic tree exceeds the declared maximum depth.
     TreeDepthExceeded {
         /// The deepest leaf.
@@ -142,10 +146,15 @@ pub enum LinkRefusal {
     /// names, checked against an independent exact oracle (§14.5).
     NonOptimalTree {
         /// What the constructed tree costs.
-        constructed: u64,
+        constructed: u128,
         /// What the oracle says the optimum is.
-        optimum: u64,
+        optimum: u128,
     },
+    /// A tree measurement did not fit the exact domain the objective is
+    /// computed in, so no cost is reported rather than a saturated one
+    /// (§14.5). The leaf budget rules this out; it refuses instead of
+    /// returning a number that is not any tree's cost.
+    TreeCostOverflow,
     /// Two orderings of the same leaf set produced different trees, so
     /// construction is not independent of declaration order (§14.5).
     NonDeterministicTree,
