@@ -333,6 +333,64 @@ fn every_alternative_of_an_undecidable_discriminant_is_retained() {
 }
 
 #[test]
+fn operands_that_share_no_admissible_width_cannot_be_equal() {
+    // Byte equality needs equal length. The current-input index is a
+    // script number, which the reviewed encoding bounds at four bytes,
+    // so a thirty-two byte literal is unequal to it whatever the index
+    // turns out to be: the successful form goes and the inequality abort
+    // stays, which is the only direction a width can settle.
+    let disjoint = validate(vec![
+        push(32),
+        TapscriptInstruction::Opcode(OpcodeId::PushCurrentInputIndex),
+        TapscriptInstruction::Opcode(OpcodeId::EqualVerify),
+    ]);
+
+    assert!(disjoint.success().is_empty());
+    assert!(disjoint.aborts().contains(&FailureCause::UnequalOperands));
+
+    // A width the script number does admit settles nothing in either
+    // direction: the walk holds no bytes for the index and invents none.
+    let overlapping = validate(vec![
+        push(2),
+        TapscriptInstruction::Opcode(OpcodeId::PushCurrentInputIndex),
+        TapscriptInstruction::Opcode(OpcodeId::EqualVerify),
+    ]);
+
+    assert_eq!(
+        overlapping.success().iter().cloned().collect::<Vec<_>>(),
+        vec![AbstractStackState::from_main(Vec::new())],
+    );
+    assert!(
+        overlapping
+            .aborts()
+            .contains(&FailureCause::UnequalOperands)
+    );
+}
+
+#[test]
+fn the_issuance_present_form_does_not_survive_the_null_marker_comparison() {
+    // The reviewed introspection pushes one empty item for an input
+    // carrying no issuance and six for an input carrying one, with a
+    // thirty-two byte blinding nonce on top of the second form. So the
+    // comparison against the empty marker leaves the absent form and
+    // only the absent form — which is what lets a straight-line
+    // coordinator authenticate issuance absence instead of carrying five
+    // items of residue from a path the target refuses.
+    let result = validate(vec![
+        push(1),
+        TapscriptInstruction::Opcode(OpcodeId::InspectInputIssuance),
+        push(0),
+        TapscriptInstruction::Opcode(OpcodeId::EqualVerify),
+    ]);
+
+    assert_eq!(
+        result.success().iter().cloned().collect::<Vec<_>>(),
+        vec![AbstractStackState::from_main(Vec::new())],
+    );
+    assert!(result.aborts().contains(&FailureCause::UnequalOperands));
+}
+
+#[test]
 fn alternatives_multiply_through_a_sequence() {
     // Two independent undecidable discriminants leave four states, and
     // the validator keeps all of them rather than picking a path.

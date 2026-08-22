@@ -34,6 +34,23 @@
 //! width, once every operand's abstract type fixes one width. Both are
 //! reported as validation failures of the program instead.
 //!
+//! # One narrowing the widths alone license
+//!
+//! Byte equality requires equal length, so two operands whose abstract
+//! types admit no width in common cannot be equal — whatever their bytes
+//! turn out to be. That is the one equality question a type answers, and
+//! it answers it in the safe direction only: it removes a *successful*
+//! form and never removes an abort.
+//!
+//! Without it a straight-line program cannot narrow an introspection
+//! that pushes a different number of items in each of its forms. The
+//! reviewed issuance introspection is exactly that: an input carrying no
+//! issuance pushes one empty item, an input carrying one pushes six, and
+//! the comparison that separates them on the target — the empty marker
+//! against a thirty-two byte blinding nonce — is decided by width and by
+//! nothing else. A walk that kept the six-item form alive would report
+//! five items of residue on a path the target refuses.
+//!
 //! # Two more the program's own literals decide
 //!
 //! Where a program pushed an operand itself, the walk holds its bytes,
@@ -859,19 +876,22 @@ impl LiteralFacts {
         }
 
         // Equality is a question about bytes, so only the arm that
-        // carries bytes answers it. A settled truth is not enough: two
-        // values the target reads the same way are not thereby the same
-        // item, and the reviewed contract fixes no bytes for a computed
-        // one to compare against.
-        if declares(FailureCause::UnequalOperands)
-            && operands.len() == 2
-            && let (Some(left), Some(right)) =
-                (literals.literal_at(base), literals.literal_at(base + 1))
-        {
-            facts.compared = if left == right {
-                SettledEquality::Equal
-            } else {
-                SettledEquality::Unequal
+        // carries bytes answers it in both directions. A settled truth is
+        // not enough: two values the target reads the same way are not
+        // thereby the same item, and the reviewed contract fixes no bytes
+        // for a computed one to compare against.
+        //
+        // The widths answer one half of it without the bytes. Operands
+        // that share no admissible width cannot be equal, so the
+        // successful form goes; they can never be shown *equal* that way,
+        // so no abort ever goes with it.
+        if declares(FailureCause::UnequalOperands) && operands.len() == 2 {
+            let (left, right) = (&state.main()[base], &state.main()[base + 1]);
+            facts.compared = match (literals.literal_at(base), literals.literal_at(base + 1)) {
+                (Some(left), Some(right)) if left == right => SettledEquality::Equal,
+                (Some(_), Some(_)) => SettledEquality::Unequal,
+                _ if widths_are_disjoint(target, left, right) => SettledEquality::Unequal,
+                _ => SettledEquality::Unsettled,
             };
         }
 
@@ -1124,6 +1144,34 @@ fn is_definitely_false(
 ) -> bool {
     matches!(value, StackValueType::Empty)
         || width_ranges(target, value) == BTreeSet::from([(0, 0)])
+}
+
+/// Whether two abstract types admit no common width.
+///
+/// Two byte strings of different lengths are unequal, so operands whose
+/// admissible widths do not meet are unequal whatever their bytes are.
+/// This is the only equality question an abstract type answers, and it
+/// answers it one way: disjoint widths remove the successful form, and
+/// overlapping widths establish nothing at all.
+///
+/// A type this crate has not been taught admits no width it can reason
+/// about ([`width_ranges`] returns nothing for one), and an empty range
+/// set would make every comparison against it vacuously disjoint. Both
+/// sides are therefore required to admit a width before the narrowing is
+/// taken, so an untaught type settles nothing rather than settling
+/// everything.
+fn widths_are_disjoint(
+    target: &ReviewedElementsTapscriptDefinition,
+    left: &StackValueType,
+    right: &StackValueType,
+) -> bool {
+    let (left, right) = (width_ranges(target, left), width_ranges(target, right));
+
+    !left.is_empty()
+        && !right.is_empty()
+        && !left
+            .iter()
+            .any(|one| right.iter().any(|other| overlaps(*one, *other)))
 }
 
 /// Whether an abstract type can be the empty item.

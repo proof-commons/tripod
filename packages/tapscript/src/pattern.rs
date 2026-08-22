@@ -624,7 +624,10 @@ pub(crate) fn number(
 }
 
 /// A signed fixed-width literal.
-fn wide(target: &ReviewedElementsTapscriptDefinition, value: i64) -> TapscriptInstruction {
+pub(crate) fn wide(
+    target: &ReviewedElementsTapscriptDefinition,
+    value: i64,
+) -> TapscriptInstruction {
     TapscriptInstruction::Push(StackItem::signed_le64(target, value))
 }
 
@@ -641,7 +644,7 @@ const AMOUNT_DOMAIN_BOUND: i64 = 1 << 51;
 /// Consumes the prefix the introspection pushed on top and leaves the
 /// payload. See [`AbiAssumption::ExplicitFormEstablishedByPrefixEquality`]
 /// for what this does and does not settle in the abstract walk.
-fn require_explicit(
+pub(crate) fn require_explicit(
     target: &ReviewedElementsTapscriptDefinition,
     class: EncodingClass,
 ) -> Result<Vec<TapscriptInstruction>, TapscriptError> {
@@ -661,7 +664,7 @@ fn require_explicit(
 /// out yields an unconstrained item of settled width, which the
 /// arithmetic operand does admit, and it makes the width a fact the
 /// program established rather than one the schedule assumed.
-fn narrow_to_operand(
+pub(crate) fn narrow_to_operand(
     target: &ReviewedElementsTapscriptDefinition,
 ) -> Result<Vec<TapscriptInstruction>, TapscriptError> {
     Ok(vec![
@@ -676,7 +679,7 @@ fn narrow_to_operand(
 /// Positive and below `2^51`, checked in both directions, with each
 /// comparison's Boolean consumed immediately so no unchecked result
 /// survives (§12.11).
-fn require_amount_domain(
+pub(crate) fn require_amount_domain(
     target: &ReviewedElementsTapscriptDefinition,
 ) -> Vec<TapscriptInstruction> {
     vec![
@@ -692,7 +695,7 @@ fn require_amount_domain(
 }
 
 /// Require the field at `index` on `side` to carry exactly `asset`.
-fn require_asset(
+pub(crate) fn require_asset(
     target: &ReviewedElementsTapscriptDefinition,
     inspect: OpcodeId,
     index: i64,
@@ -712,7 +715,7 @@ fn require_asset(
 /// the sponsor-change role's. The ASH constructor's own program is not
 /// settleable this way and uses
 /// `require_program_matches_this_input` instead.
-fn require_program(
+pub(crate) fn require_program(
     target: &ReviewedElementsTapscriptDefinition,
     inspect: OpcodeId,
     index: i64,
