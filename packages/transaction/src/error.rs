@@ -122,7 +122,8 @@ pub enum TransactionRefusal {
     /// An outpoint appears in both the ASH selection and the sponsor
     /// suffix, which would put one input in two regions.
     OverlappingOutpoint(Outpoint),
-    /// The selected counts match no shape the candidate admits.
+    /// No shape the candidate admits takes these counts at the form the
+    /// request asks for.
     UnsupportedShape {
         /// How many ASH inputs the request selects.
         ash_inputs: usize,
@@ -175,6 +176,16 @@ pub enum TransactionRefusal {
     /// spending a sponsor's inputs because an adapter happened to be in
     /// scope is worse than refusing.
     SponsorCapabilityWithoutRequest,
+    /// The capability filling a sponsor suffix offered no input.
+    ///
+    /// The third term of the same equivalence. A suffix is a region of
+    /// inputs, so an offer of none names no suffix: the declared fee
+    /// would have no position to occupy, no signing request would be
+    /// issued, and the counts would select the sponsorless shape —
+    /// which is the quiet downgrade
+    /// [`Self::SponsorRequestedWithoutCapability`] exists to refuse,
+    /// reached from the other side.
+    EmptySponsorOffer,
     /// The consolidated successor amount overflows the target's
     /// checked range.
     SuccessorAmountOutOfRange,

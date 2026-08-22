@@ -653,6 +653,41 @@ fn a_request_and_a_capability_must_agree_about_sponsorship() {
 }
 
 #[test]
+fn the_report_names_the_form_the_request_asked_for() {
+    // The last term of the same equivalence, read off the report rather
+    // than inferred from the counts: what a caller is entitled to
+    // choose under §15.5 is the form, so the form the construction
+    // settled is compared with the flag the request carried.
+    let target = reviewed_target();
+    let abi = candidate_abi();
+    let first = outpoint(0xaa, 0);
+    let second = outpoint(0xbb, 1);
+    let sponsor_input = outpoint(0xdd, 2);
+
+    let sponsorless_view = view([
+        ash_view(&target, first, 120),
+        ash_view(&target, second, 180),
+    ]);
+    let sponsorless = CompactAshRequest::new([first, second], false).expect("a two-input request");
+    let built = construct(&target, &abi, &sponsorless, &sponsorless_view, None)
+        .expect("the sponsorless form constructs");
+    assert!(!sponsorless.sponsored());
+    assert_eq!(built.report().form(), TransactionForm::Sponsorless);
+
+    let sponsored_view = view([
+        ash_view(&target, first, 120),
+        ash_view(&target, second, 180),
+        sponsor_view(sponsor_input, 1_000),
+    ]);
+    let sponsored = CompactAshRequest::new([first, second], true).expect("a sponsored request");
+    let sponsor = FixtureSponsor::new(500, None);
+    let built = construct(&target, &abi, &sponsored, &sponsored_view, Some(&sponsor))
+        .expect("the sponsored form constructs");
+    assert!(sponsored.sponsored());
+    assert_eq!(built.report().form(), TransactionForm::Sponsored);
+}
+
+#[test]
 fn a_transaction_above_the_reviewed_weight_bound_is_refused() {
     // The consensus maximum is four million weight units, so a
     // transaction reaching it needs about a megabyte of non-witness

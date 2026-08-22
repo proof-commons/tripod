@@ -171,7 +171,6 @@ impl SponsorCapability for EmptyOfferSponsor {
 /// Stated as an equivalence between what was asked and what was built,
 /// so a repair that refuses the empty offer also satisfies it.
 #[test]
-#[ignore = "G13-R13: confirmed, repair pending"]
 fn a_sponsored_request_does_not_build_the_sponsorless_form() {
     let target = reviewed_target();
     let abi = candidate_abi();
@@ -193,6 +192,31 @@ fn a_sponsored_request_does_not_build_the_sponsorless_form() {
             "a request that asked for a sponsor suffix must not be answered with the sponsorless form"
         ),
     }
+}
+
+/// The refusal an empty offer draws, named exactly.
+///
+/// The reproduction above is stated as an equivalence and is satisfied
+/// by any refusal at all. This says which one, so a later change that
+/// refused the same construction for an unrelated reason would still
+/// have to account for this row.
+#[test]
+fn a_sponsored_request_offered_no_input_is_refused() {
+    let target = reviewed_target();
+    let abi = candidate_abi();
+    let first = outpoint(0xaa, 0);
+    let second = outpoint(0xbb, 1);
+    let chain = view([
+        ash_view(&target, first, 120),
+        ash_view(&target, second, 180),
+    ]);
+    let request = CompactAshRequest::new([first, second], true).expect("a sponsored request");
+    let sponsor = EmptyOfferSponsor { fee: 30 };
+
+    assert_eq!(
+        construct(&target, &abi, &request, &chain, Some(&sponsor)),
+        Err(TransactionRefusal::EmptySponsorOffer)
+    );
 }
 
 /// The control: the same request with one sponsor outpoint offered.
