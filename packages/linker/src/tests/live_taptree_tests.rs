@@ -22,18 +22,22 @@
 //! rather than a list of the right length.
 
 use std::collections::BTreeSet;
-use std::num::NonZeroU32;
+use std::num::{NonZeroU8, NonZeroU32};
 
 use tapscript::upstream::LiveTransferRepresentationPlan;
 use tapscript::{
-    LiveProgramRole, LiveTransferLeafRole, demonstration_live_shape_set, static_transfer_leaf_set,
+    LiveProgramRole, LiveTransferLeafRole, LiveTransferShapeBounds, demonstration_live_shape_set,
+    dense_live_shape_set, static_transfer_leaf_set,
 };
 use target_elements::LeafVersion;
 
 use crate::live_taptree::{
     assemble_live, committed_representation, control_path_depths, live_taptree_input,
 };
-use crate::taptree::{ExactOptimumRoute, TapLeafInput, equal_weight_minimum_cost};
+use crate::taptree::{
+    ExactOptimumRoute, TapLeafInput, enumerated_minimum_cost, equal_weight_minimum_cost,
+    exact_minimum_cost,
+};
 use crate::{LinkRefusal, TREE_LEAF_BUDGET};
 
 /// The candidate's own leaf set for one representation.
@@ -268,6 +272,84 @@ fn every_declaration_order_of_the_candidate_leaf_set_produces_one_tree() {
         assert_eq!(
             committed, first,
             "rotation {offset} produced a different tree"
+        );
+    }
+}
+
+#[test]
+fn a_small_live_instance_is_compared_with_the_exhaustive_subset_oracle() {
+    // §11.4's last clause, over the live leaf vocabulary rather than a
+    // synthetic one. The candidate's own twenty-nine leaves are past the
+    // subset oracle's budget and reach their optimum by the closed form,
+    // so without this the oracle would never once have run over a real
+    // live leaf set — and "compares small instances with an exact
+    // independent oracle" would be a property of some other leaf type.
+    //
+    // A narrower bound assignment is a smaller candidate rather than a
+    // different one: the shapes are built by the same unrolling, the
+    // leaves by the same leaf-set derivation, and the tree by the same
+    // construction. Two receipts in, two out, one optional sponsor gives
+    // twelve shapes and thirteen leaves, which is inside the budget.
+    let shapes = dense_live_shape_set(LiveTransferShapeBounds::new(
+        NonZeroU8::new(2).expect("two is nonzero"),
+        NonZeroU8::new(2).expect("two is nonzero"),
+        1,
+    ));
+    let small = static_transfer_leaf_set(LiveTransferRepresentationPlan::Explicit, &shapes);
+    assert_eq!(shapes.shapes().count(), 12);
+    assert_eq!(small.len(), 13);
+
+    let input = live_taptree_input(small.clone(), LeafVersion::TAPSCRIPT, deep())
+        .expect("the narrower leaf set is one representation and free of duplicates");
+    let committed = assemble_live(&input).expect("the narrower tree assembles");
+
+    // Inside the budget the subset oracle is what establishes the
+    // optimum, and `assemble_live` refuses a tree that misses it — so
+    // reaching a tree at all is half the statement.
+    assert_eq!(committed.optimum_route(), ExactOptimumRoute::SubsetOracle);
+    assert_eq!(committed.recipes().len(), 13);
+
+    // The other half, stated here rather than inferred: the cost the
+    // construction reached is the one an exhaustive search over the
+    // whole tree space names, and the one the closed form names. Three
+    // routes, three algorithms, one number.
+    let weights = vec![1u64; small.len()];
+    assert_eq!(
+        committed.cost(),
+        exact_minimum_cost(&weights).expect("thirteen leaves are inside the budget"),
+    );
+    assert_eq!(
+        committed.cost(),
+        equal_weight_minimum_cost(small.len(), 1).expect("a non-empty set inside the budget"),
+    );
+}
+
+#[test]
+fn a_tiny_live_instance_agrees_with_literal_enumeration_of_every_tree() {
+    // The check on the check, over live leaves. Enumeration is
+    // combinatorially expensive, so it runs at the smallest live
+    // candidate there is — one receipt in, one out, no sponsor, which is
+    // a single coordinator — and at the two-in two-out sponsorless set,
+    // which is five leaves and still enumerable.
+    for (inputs, outputs, expected) in [(1u8, 1u8, 1usize), (2, 2, 5)] {
+        let shapes = dense_live_shape_set(LiveTransferShapeBounds::new(
+            NonZeroU8::new(inputs).expect("the fixture counts are nonzero"),
+            NonZeroU8::new(outputs).expect("the fixture counts are nonzero"),
+            0,
+        ));
+        let leaves = static_transfer_leaf_set(LiveTransferRepresentationPlan::Explicit, &shapes);
+        assert_eq!(leaves.len(), expected);
+
+        let input = live_taptree_input(leaves.clone(), LeafVersion::TAPSCRIPT, deep())
+            .expect("the tiny leaf set is well formed");
+        let committed = assemble_live(&input).expect("the tiny tree assembles");
+
+        let weights = vec![1u64; leaves.len()];
+        assert_eq!(
+            committed.cost(),
+            enumerated_minimum_cost(&weights).expect("a tiny set is inside the budget"),
+            "the constructed live tree is not optimal at {} leaves",
+            leaves.len(),
         );
     }
 }
