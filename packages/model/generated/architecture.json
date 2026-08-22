@@ -1,7 +1,7 @@
 {
   "publication_status": "final",
   "architecture_schema_version": 17,
-  "realization_version": "0.4.0-dev",
+  "realization_version": "0.5.0-dev",
   "semantic_hash_algorithm": "sha256-canonical-json-v3",
   "semantic_hash": "c1d0c6716317543c0e6d6376ec69995c5b40078449af5c9eda909d474249f6bb",
   "behavioural_hash_algorithm": "sha256-canonical-json-behavioural-v3",

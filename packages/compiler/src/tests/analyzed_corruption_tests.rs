@@ -254,7 +254,7 @@ fn a_changed_architecture_binding_is_rejected() {
     // A binding built from an architecture whose envelope names another
     // realization version: a different identity for the same relations.
     let mut architecture = architecture::ARCHITECTURE;
-    architecture.document.realization_version = "0.5.0-dev";
+    architecture.document.realization_version = "9.0.0";
 
     let binding =
         realization::ArchitectureBinding::from_architecture(&architecture).expect("a binding");
