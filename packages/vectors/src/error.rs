@@ -97,6 +97,16 @@ pub enum VectorError {
     /// count, and a default arm would make the negative census add up
     /// while meaning nothing.
     UnclassifiableNegativeRequirement,
+    /// Canonical first-party evidence could not be built or validated.
+    ///
+    /// The first-party module owns the refusal vocabulary for both the
+    /// canonical case and the validator run, so this error preserves
+    /// that typed cause rather than filing it as a coverage-role
+    /// classification failure.
+    FirstPartyEvidenceRefused {
+        /// Which first-party precondition failed.
+        cause: crate::first_party::FirstPartyEvidenceRefusal,
+    },
     /// Two semantic fixtures claimed one identity.
     DuplicateSemanticFixture(SemanticFixtureId),
     /// A fixture's stated facts are not a model-valid compact-ASH world.
