@@ -12,8 +12,8 @@ use crate::error::TapscriptError;
 use crate::instruction::{StackItem, TapscriptInstruction};
 use crate::program::TapscriptProgram;
 use crate::stack::{
-    AbstractExecutionResult, AbstractLimits, AbstractStackState, resource_projection,
-    validate_program,
+    AbstractExecutionResult, AbstractLimits, AbstractStackState, SignatureSuccessForm,
+    resource_projection, validate_program,
 };
 
 use super::reviewed_target;
@@ -676,4 +676,111 @@ fn a_settled_truth_never_answers_a_question_about_bytes() {
 
     assert!(!result.success().is_empty());
     assert!(result.aborts().contains(&FailureCause::UnequalOperands));
+}
+
+// --- Which signature form a program reaches (Guide-13 §1.8) ---------
+
+/// One reviewed primitive, as an instruction.
+const fn op(id: OpcodeId) -> TapscriptInstruction {
+    TapscriptInstruction::Opcode(id)
+}
+
+/// The forms one signature primitive can reach at `index`.
+///
+/// # Panics
+///
+/// If the program schedules no signature primitive at `index`, which
+/// would make the fixture rather than the walk the thing under test.
+fn forms(result: &AbstractExecutionResult, index: usize) -> BTreeSet<SignatureSuccessForm> {
+    result
+        .signature_forms()
+        .get(&index)
+        .cloned()
+        .expect("the fixture schedules a signature primitive there")
+}
+
+#[test]
+fn a_recognized_key_leaves_only_the_verified_form() {
+    let result = validate(vec![push(64), push(32), op(OpcodeId::CheckSigVerify)]);
+
+    assert_eq!(
+        forms(&result, 2),
+        BTreeSet::from([SignatureSuccessForm::RecognizedKeyVerified]),
+    );
+    assert!(!result.reaches_unverified_signature_success());
+}
+
+#[test]
+fn an_unknown_key_type_leaves_only_the_unverified_form() {
+    // The §1.8 danger, as the walk sees it: the program still has a
+    // successful path, and nothing on that path verified anything.
+    let result = validate(vec![push(64), push(33), op(OpcodeId::CheckSigVerify)]);
+
+    assert_eq!(
+        forms(&result, 2),
+        BTreeSet::from([SignatureSuccessForm::UnknownKeyTypeUnverified]),
+    );
+    assert!(result.reaches_unverified_signature_success());
+}
+
+#[test]
+fn an_empty_key_leaves_a_signature_primitive_with_no_successful_form() {
+    let result = validate(vec![push(64), push(0), op(OpcodeId::CheckSigVerify)]);
+
+    // Present and empty, which is the finding: the instruction is a
+    // signature check, and no form of it survives. An absent entry
+    // would have said the program verifies no signature at all.
+    assert_eq!(forms(&result, 2), BTreeSet::new());
+    assert!(result.success().is_empty());
+}
+
+#[test]
+fn an_unsettled_key_width_leaves_both_forms_open() {
+    // Nothing here pushed the key, so its width is whatever the witness
+    // supplies. Both forms stay, which is the honest answer and the
+    // reason a program that means to authorize pushes the key itself.
+    let target = reviewed_target();
+    let program =
+        TapscriptProgram::new(vec![op(OpcodeId::CheckSigVerify)]).expect("the fixture is short");
+    let initial = AbstractStackState::from_main(vec![
+        StackValueType::Encoded(EncodingClass::SchnorrSignature),
+        StackValueType::Bytes {
+            minimum: 1,
+            maximum: 40,
+        },
+    ]);
+    let result = validate_program(
+        &target,
+        &program,
+        &initial,
+        AbstractLimits::for_target(&target),
+    )
+    .expect("the fixture validates");
+
+    assert_eq!(
+        forms(&result, 0),
+        BTreeSet::from([
+            SignatureSuccessForm::RecognizedKeyVerified,
+            SignatureSuccessForm::UnknownKeyTypeUnverified,
+        ]),
+    );
+}
+
+#[test]
+fn a_program_verifying_no_signature_reports_no_forms() {
+    let result = validate(vec![push(4), push(4), op(OpcodeId::EqualVerify)]);
+
+    assert!(result.signature_forms().is_empty());
+}
+
+#[test]
+fn the_two_verifying_forms_are_indistinguishable_by_stack_shape() {
+    // The whole reason the forms are reported beside the states. Both
+    // programs reach exactly one successful state, and it is the same
+    // state; only one of them verified anything.
+    let recognized = validate(vec![push(64), push(32), op(OpcodeId::CheckSigVerify)]);
+    let unknown = validate(vec![push(64), push(33), op(OpcodeId::CheckSigVerify)]);
+
+    assert_eq!(recognized.success(), unknown.success());
+    assert_ne!(recognized.signature_forms(), unknown.signature_forms());
 }

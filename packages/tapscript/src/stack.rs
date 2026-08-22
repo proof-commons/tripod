@@ -108,16 +108,48 @@ impl AbstractStackState {
     }
 }
 
+/// Which successful form of a reviewed signature primitive was reached.
+///
+/// # Why a stack shape cannot carry this
+///
+/// The target's two signature successes consume the same operands and
+/// push the same results, so they leave *identical* stacks: for the
+/// verifying forms both push nothing at all, and for the pushing forms
+/// both push one Boolean. An [`AbstractStackState`] therefore cannot
+/// tell them apart, and neither can a caller comparing the success sets
+/// of two programs.
+///
+/// The difference between them is nonetheless the whole of Guide-13
+/// §1.8: one form verified a signature and the other verified nothing,
+/// and a program that can reach the second has a success path that
+/// authorizes nothing. So the forms are reported beside the states
+/// rather than inside them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SignatureSuccessForm {
+    /// The key was the recognized encoding and the signature verified
+    /// against it.
+    RecognizedKeyVerified,
+    /// The key was a nonempty encoding the target does not recognize,
+    /// so the primitive succeeded without verifying anything.
+    ///
+    /// The forward-compatibility path. A program that can reach it can
+    /// succeed on a witness that proves nothing.
+    UnknownKeyTypeUnverified,
+}
+
 /// What a program can produce.
 ///
-/// The three sets are kept apart deliberately. A consumer that wanted
-/// one answer would have to decide which of them it meant, and that
-/// decision belongs to the consumer.
+/// The three state sets are kept apart deliberately. A consumer that
+/// wanted one answer would have to decide which of them it meant, and
+/// that decision belongs to the consumer. The signature forms are a
+/// fourth report for the reason [`SignatureSuccessForm`] gives: they are
+/// a distinction no stack shape carries.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AbstractExecutionResult {
     success: BTreeSet<AbstractStackState>,
     nonaborting_failure: BTreeSet<AbstractStackState>,
     aborts: BTreeSet<FailureCause>,
+    signature_forms: BTreeMap<usize, BTreeSet<SignatureSuccessForm>>,
 }
 
 impl AbstractExecutionResult {
@@ -145,6 +177,37 @@ impl AbstractExecutionResult {
     #[must_use]
     pub fn always_aborts(&self) -> bool {
         self.success.is_empty() && self.nonaborting_failure.is_empty()
+    }
+
+    /// The successful forms each signature primitive can reach, by
+    /// instruction index.
+    ///
+    /// An index appears exactly where the program schedules a primitive
+    /// carrying a public-key operand, and its set is the forms the
+    /// incoming operand types leave open there. An empty set is a
+    /// finding rather than an absence: it says the primitive has no
+    /// successful form at all on any path that reaches it.
+    ///
+    /// The index is ephemeral context in the sense
+    /// [`validate_program`] fixes — it names a position in *this*
+    /// program and is not an identity.
+    #[must_use]
+    pub const fn signature_forms(&self) -> &BTreeMap<usize, BTreeSet<SignatureSuccessForm>> {
+        &self.signature_forms
+    }
+
+    /// Whether any signature primitive can succeed without verifying
+    /// (§1.8).
+    ///
+    /// The question §1.8 asks of a program, answered over the whole of
+    /// it: a forward-compatibility success path anywhere is a path on
+    /// which the program authorizes nothing, and where it lies matters
+    /// less than that it exists.
+    #[must_use]
+    pub fn reaches_unverified_signature_success(&self) -> bool {
+        self.signature_forms
+            .values()
+            .any(|forms| forms.contains(&SignatureSuccessForm::UnknownKeyTypeUnverified))
     }
 }
 
@@ -428,6 +491,14 @@ struct Transfer {
     success: Vec<Reached>,
     nonaborting_failure: Vec<Reached>,
     aborts: BTreeSet<FailureCause>,
+    /// The forms a signature primitive left open, and `None` for every
+    /// primitive that is not one.
+    ///
+    /// An `Option` rather than a set, because an empty set is a real
+    /// answer here — a signature primitive whose operands close every
+    /// successful form — and merging it with "this instruction verifies
+    /// no signature" would lose exactly the finding worth having.
+    signature_forms: Option<BTreeSet<SignatureSuccessForm>>,
 }
 
 /// Validates a program against the reviewed contracts.
@@ -467,6 +538,7 @@ pub fn validate_program(
     let mut live: BTreeSet<(AbstractStackState, bool, KnownLiterals)> = BTreeSet::new();
     live.insert((initial.clone(), false, KnownLiterals::default()));
     let mut aborts: BTreeSet<FailureCause> = BTreeSet::new();
+    let mut signature_forms: BTreeMap<usize, BTreeSet<SignatureSuccessForm>> = BTreeMap::new();
     let mut visited = 0_u64;
     check_depth(initial, limits)?;
 
@@ -475,6 +547,9 @@ pub fn validate_program(
         for (state, failed, constants) in &live {
             let transfer = step(target, instruction, state, constants, index, limits)?;
             aborts.extend(transfer.aborts);
+            if let Some(forms) = transfer.signature_forms {
+                signature_forms.entry(index).or_default().extend(forms);
+            }
             for (reached, constants) in transfer.success {
                 admit(
                     &mut next,
@@ -514,6 +589,7 @@ pub fn validate_program(
         success,
         nonaborting_failure,
         aborts,
+        signature_forms,
     })
 }
 
@@ -638,9 +714,22 @@ fn apply_opcode(
     // which no abstract state can settle — except where the operand
     // types themselves rule a branch out, which is exactly the
     // signature case.
+    // A primitive carrying a public-key operand reports its forms even
+    // when none survives, which is why the set is created here rather
+    // than where a form is recorded.
+    if authorization.verifies_a_signature() {
+        transfer.signature_forms = Some(BTreeSet::new());
+    }
+
     for case in stack.success().cases() {
         if !literals.admits_success() || !authorization.admits_success(case.condition()) {
             continue;
+        }
+        if let (Some(forms), Some(form)) = (
+            transfer.signature_forms.as_mut(),
+            signature_success_form(case.condition()),
+        ) {
+            forms.insert(form);
         }
         let (reached, reached_constants) =
             apply_case(target, state, constants, &case, base, computed);
@@ -959,6 +1048,16 @@ impl AuthorizationFacts {
         facts
     }
 
+    /// Whether this primitive verifies a signature at all.
+    ///
+    /// The public-key position is the discriminator rather than the
+    /// signature position, because it is the one that decides *which*
+    /// of the two successful forms a program can reach — which is the
+    /// question [`SignatureSuccessForm`] is reported for.
+    const fn verifies_a_signature(self) -> bool {
+        self.public_key.is_some()
+    }
+
     /// Whether one successful form is still reachable.
     fn admits_success(self, condition: SuccessCondition) -> bool {
         match condition {
@@ -991,6 +1090,24 @@ impl AuthorizationFacts {
             FailureCause::EmptyPublicKey => self.public_key.is_none_or(|facts| facts.can_be_empty),
             _ => true,
         }
+    }
+}
+
+/// The signature form one successful condition names.
+///
+/// `None` for every condition that is not a signature outcome. The
+/// wildcard arm is required rather than chosen:
+/// [`SuccessCondition`] is non-exhaustive, and a condition added to it
+/// is not a signature form until somebody says it is.
+const fn signature_success_form(condition: SuccessCondition) -> Option<SignatureSuccessForm> {
+    match condition {
+        SuccessCondition::RecognizedKeyVerifiedSignature => {
+            Some(SignatureSuccessForm::RecognizedKeyVerified)
+        }
+        SuccessCondition::UnknownKeyTypeUnverified => {
+            Some(SignatureSuccessForm::UnknownKeyTypeUnverified)
+        }
+        _ => None,
     }
 }
 
