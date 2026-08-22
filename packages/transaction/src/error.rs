@@ -102,6 +102,23 @@ pub enum TransactionRefusal {
     EmptyAshSelection,
     /// The request selects one outpoint more than once.
     DuplicateOutpoint(Outpoint),
+    /// The public view states one outpoint more than once.
+    ///
+    /// Every second statement is refused, agreeing or contradicting.
+    /// A contradictory pair has no resolution a constructor could
+    /// justify — believing either one is believing the order the caller
+    /// listed them in — and an agreeing pair is a census the caller got
+    /// wrong about a boundary whose exactness the rest of the pipeline
+    /// rests on, so the two are one refusal rather than a judgement
+    /// about which duplicates are harmless.
+    DuplicatePublicOutputView(Outpoint),
+    /// A sponsor offer names one outpoint more than once.
+    ///
+    /// Refused rather than collapsed into a smaller offer, for the
+    /// reason [`Self::DuplicateOutpoint`] gives about the ASH
+    /// selection: a set built by insertion would answer a caller
+    /// naming one coin twice with a sponsor region it did not ask for.
+    DuplicateSponsorOutpoint(Outpoint),
     /// An outpoint appears in both the ASH selection and the sponsor
     /// suffix, which would put one input in two regions.
     OverlappingOutpoint(Outpoint),

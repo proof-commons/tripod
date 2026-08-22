@@ -22,6 +22,7 @@
 use std::collections::BTreeMap;
 
 use crate::bytes::{AssetField, Outpoint, ValueField};
+use crate::error::TransactionRefusal;
 
 /// The target's public facts about one unspent output.
 ///
@@ -87,18 +88,30 @@ pub struct PublicConstructionView {
 impl PublicConstructionView {
     /// The view holding exactly these outputs.
     ///
-    /// A later entry for one outpoint replaces an earlier one, which
-    /// cannot produce two views of one outpoint: the map is keyed by
-    /// outpoint, so a contradictory pair is unrepresentable rather than
-    /// resolved.
-    #[must_use]
-    pub fn new(outputs: impl IntoIterator<Item = PublicOutputView>) -> Self {
-        Self {
-            outputs: outputs
-                .into_iter()
-                .map(|view| (view.outpoint(), view))
-                .collect(),
+    /// Two statements about one outpoint are refused before the map is
+    /// built rather than resolved by it. Collecting into a map keyed by
+    /// outpoint would keep whichever statement arrived last, so a
+    /// caller declaring two amounts for one output would decide the
+    /// constructed successor amount by the order it listed them in —
+    /// and a view is the boundary every public fact of a construction
+    /// is read from.
+    ///
+    /// # Errors
+    ///
+    /// [`TransactionRefusal::DuplicatePublicOutputView`] when one
+    /// outpoint is stated more than once, whether the two statements
+    /// agree or contradict.
+    pub fn new(
+        outputs: impl IntoIterator<Item = PublicOutputView>,
+    ) -> Result<Self, TransactionRefusal> {
+        let mut stated = BTreeMap::new();
+        for view in outputs {
+            let outpoint = view.outpoint();
+            if stated.insert(outpoint, view).is_some() {
+                return Err(TransactionRefusal::DuplicatePublicOutputView(outpoint));
+            }
         }
+        Ok(Self { outputs: stated })
     }
 
     /// One outpoint's view, if the caller supplied it.

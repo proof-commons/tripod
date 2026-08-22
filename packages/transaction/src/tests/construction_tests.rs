@@ -54,6 +54,7 @@ impl FixtureSponsor {
 impl SponsorCapability for FixtureSponsor {
     fn offer(&self) -> SponsorOffer {
         SponsorOffer::new([outpoint(0xdd, 2)], self.fee, self.change)
+            .expect("the fixture offer names one outpoint")
     }
 
     fn change_destination(&self) -> Option<(u8, Vec<u8>)> {

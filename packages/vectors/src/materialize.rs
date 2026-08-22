@@ -30,7 +30,7 @@ use linker::backend::{CompactAshShape, CompactAshShapeBounds, SponsorChangePrese
 use transaction::{
     AssetField, AssetId, CompactAshRequest, Outpoint, PublicConstructionView, PublicOutputView,
     SponsorCapability, SponsorOffer, SponsorSignature, SponsorSigningRequest, SyntheticDisclaimer,
-    Txid, ValueField, construct,
+    TransactionRefusal, Txid, ValueField, construct,
 };
 
 use crate::bundle::FixtureBundle;
@@ -383,7 +383,12 @@ impl SponsorCoin {
 /// have no path out of that function.
 struct CeremonySponsor<'a> {
     coins: &'a [SponsorCoin],
-    fee: u64,
+    /// What the coins amount to as an offer.
+    ///
+    /// Built once, where a refusal has somewhere to go: the capability
+    /// answers `offer` infallibly, so a duplicated coin has to be
+    /// refused before a sponsor exists rather than inside the answer.
+    offer: SponsorOffer,
     /// How many inputs precede the sponsor suffix.
     ///
     /// The builder numbers a signing request by its position in the
@@ -412,19 +417,7 @@ enum SponsorAnswers<'a> {
 
 impl SponsorCapability for CeremonySponsor<'_> {
     fn offer(&self) -> SponsorOffer {
-        // The fee is exactly what the coins hold. The reserve asset has
-        // to balance across the whole transaction and the only output
-        // carrying it is the fee, so any other figure builds a
-        // transaction the target refuses for an unbalanced asset.
-        SponsorOffer::new(
-            self.coins.iter().map(SponsorCoin::outpoint),
-            self.fee,
-            // No change output. The fixtures state a sponsor region's
-            // membership and say nothing about a residual, so asking
-            // for one would be this package inventing a term the row
-            // does not have.
-            None,
-        )
+        self.offer.clone()
     }
 
     fn change_destination(&self) -> Option<(u8, Vec<u8>)> {
@@ -541,7 +534,10 @@ pub fn sponsor_signing_requests(
     let recorded = std::cell::RefCell::new(Vec::new());
     let sponsor = CeremonySponsor {
         coins,
-        fee: sponsor_fee(coins),
+        offer: ceremony_offer(coins).map_err(|cause| VectorError::TargetMaterializationFailed {
+            vector: vector_id(case),
+            cause,
+        })?,
         ash_inputs: case.ash_inputs(),
         answers: SponsorAnswers::Recording(recorded),
     };
@@ -590,7 +586,10 @@ pub fn materialize_sponsored(
 ) -> Result<MaterializedTargetVector, VectorError> {
     let sponsor = CeremonySponsor {
         coins,
-        fee: sponsor_fee(coins),
+        offer: ceremony_offer(coins).map_err(|cause| VectorError::TargetMaterializationFailed {
+            vector: vector_id(case),
+            cause,
+        })?,
         ash_inputs: case.ash_inputs(),
         answers: SponsorAnswers::Replaying(signatures),
     };
@@ -610,6 +609,25 @@ fn sponsor_fee(coins: &[SponsorCoin]) -> u64 {
         .map(SponsorCoin::amount)
         .try_fold(0_u64, u64::checked_add)
         .unwrap_or(u64::MAX)
+}
+
+/// What the ceremony's coins offer a construction.
+///
+/// # Errors
+///
+/// [`TransactionRefusal::DuplicateSponsorOutpoint`] when the coins
+/// supplied name one outpoint twice, which is a sponsor region the
+/// executor did not cut.
+fn ceremony_offer(coins: &[SponsorCoin]) -> Result<SponsorOffer, TransactionRefusal> {
+    SponsorOffer::new(
+        coins.iter().map(SponsorCoin::outpoint),
+        sponsor_fee(coins),
+        // No change output. The fixtures state a sponsor region's
+        // membership and say nothing about a residual, so asking for
+        // one would be this package inventing a term the row does not
+        // have.
+        None,
+    )
 }
 
 /// The construction both entry points run.
@@ -680,7 +698,8 @@ fn build_vector(
 
     let request = CompactAshRequest::new(outpoints, sponsor.is_some())
         .map_err(|cause| VectorError::TargetMaterializationFailed { vector: id, cause })?;
-    let view = PublicConstructionView::new(views);
+    let view = PublicConstructionView::new(views)
+        .map_err(|cause| VectorError::TargetMaterializationFailed { vector: id, cause })?;
 
     let capability = sponsor.map(|sponsor| sponsor as &dyn SponsorCapability);
     let built = construct(fixture.target(), fixture.abi(), &request, &view, capability)

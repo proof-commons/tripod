@@ -12,13 +12,14 @@
 //! A test that asserted today's behaviour would pass now and fail once
 //! the defect is fixed, which is the wrong way round. Each test states
 //! the property the row's repair must establish, so it fails while the
-//! defect stands and passes once the repair lands. Confirmed rows are
-//! therefore `#[ignore]`d: the reproduction is committed and replayable
-//! with `--ignored`, and the ordinary lane stays green until the repair
-//! wave removes the attribute.
+//! defect stands and passes once the repair lands.
 //!
-//! Nothing here is a repair. Guide 13 wave 0 disposes rows; later waves
-//! change behaviour.
+//! The rows this file names are repaired, so every test here runs in
+//! the ordinary lane and none carries `#[ignore]`. A row whose repair
+//! changed the shape of the surface it is about states its property
+//! against that surface: the refusal a fallible constructor returns is
+//! that property held exactly, because a boundary that refuses both
+//! declaration orders cannot be decided by either.
 
 use linker::backend::SponsorChangePresence;
 use target_elements::TransactionForm;
@@ -28,6 +29,7 @@ use crate::bytes::{
     TargetTransaction, ValueField, WITNESS_FLAG,
 };
 use crate::construct::construct;
+use crate::error::TransactionRefusal;
 use crate::request::CompactAshRequest;
 use crate::sponsor::{SponsorCapability, SponsorOffer, SponsorSignature, SponsorSigningRequest};
 use crate::tests::{
@@ -143,7 +145,7 @@ struct EmptyOfferSponsor {
 
 impl SponsorCapability for EmptyOfferSponsor {
     fn offer(&self) -> SponsorOffer {
-        SponsorOffer::new([], self.fee, None)
+        SponsorOffer::new([], self.fee, None).expect("an offer of nothing has no duplicate")
     }
 
     fn change_destination(&self) -> Option<(u8, Vec<u8>)> {
@@ -237,6 +239,7 @@ struct OneInputSponsor {
 impl SponsorCapability for OneInputSponsor {
     fn offer(&self) -> SponsorOffer {
         SponsorOffer::new([outpoint(0xdd, 2)], self.fee, None)
+            .expect("the fixture offer names one outpoint")
     }
 
     fn change_destination(&self) -> Option<(u8, Vec<u8>)> {
@@ -253,71 +256,99 @@ impl SponsorCapability for OneInputSponsor {
 
 // --- G13-R16: silently collapsed duplicates --------------------------
 
-/// `G13-R16`: declaration order must not decide the constructed amount.
+/// `G13-R16`: declaration order does not decide the constructed amount.
 ///
-/// Two contradictory public views of one outpoint both enter the public
-/// construction boundary; the map keyed by outpoint keeps whichever
-/// arrived last. The surviving view is the one the constructor believes
-/// about that output's amount, so the successor amount of the finished
-/// transaction depends on the order the caller happened to list the two
-/// statements in.
-///
-/// The repair makes the constructor fallible, at which point both
-/// orders refuse and the first arm of the match carries the test.
+/// Two contradictory public views of one outpoint are refused at the
+/// public construction boundary, in whichever order they are listed.
+/// That is the row's property held exactly rather than approximately: a
+/// boundary that admitted one of them would be answering, by arrival
+/// order, a question the caller asked twice and never resolved.
 #[test]
-#[ignore = "G13-R16: confirmed, repair pending"]
-fn a_contradictory_public_view_does_not_depend_on_declaration_order() {
+fn a_contradictory_public_view_is_refused_in_either_order() {
+    let target = reviewed_target();
+    let first = outpoint(0xaa, 0);
+    let second = outpoint(0xbb, 1);
+    let low = ash_view(&target, first, 120);
+    let high = ash_view(&target, first, 900);
+    let other = ash_view(&target, second, 180);
+
+    for views in [
+        [high.clone(), low.clone(), other.clone()],
+        [low, high, other],
+    ] {
+        assert_eq!(
+            PublicConstructionView::new(views),
+            Err(TransactionRefusal::DuplicatePublicOutputView(first))
+        );
+    }
+}
+
+/// `G13-R16`: an agreeing second statement is refused as well.
+///
+/// The refusal is about the census rather than about the disagreement.
+/// Two identical statements resolve to one view under any rule at all,
+/// so admitting them would be the boundary deciding that some
+/// duplicates are harmless — and the caller that wrote one twice is
+/// equally wrong about which outputs it is constructing against.
+#[test]
+fn an_agreeing_duplicate_public_view_is_refused_too() {
+    let target = reviewed_target();
+    let first = outpoint(0xaa, 0);
+    let stated = ash_view(&target, first, 120);
+    assert_eq!(
+        PublicConstructionView::new([stated.clone(), stated]),
+        Err(TransactionRefusal::DuplicatePublicOutputView(first))
+    );
+}
+
+/// The accepting case is order-independent too.
+///
+/// The control for the two refusals above: distinct statements listed
+/// in either order build one view and settle one amount, so what the
+/// refusals remove is the order dependence and not the ordering.
+#[test]
+fn distinct_public_views_settle_one_amount_in_any_order() {
     let target = reviewed_target();
     let abi = candidate_abi();
     let first = outpoint(0xaa, 0);
     let second = outpoint(0xbb, 1);
     let request = CompactAshRequest::new([first, second], false).expect("a two-input request");
-
-    let amount_when = |views: [PublicOutputView; 3]| {
-        construct(
-            &target,
-            &abi,
-            &request,
-            &PublicConstructionView::new(views),
-            None,
-        )
-        .map(|built| built.report().successor_amount())
-        .map_err(|_| ())
-    };
-
-    let low = ash_view(&target, first, 120);
-    let high = ash_view(&target, first, 900);
+    let one = ash_view(&target, first, 120);
     let other = ash_view(&target, second, 180);
 
-    let low_last = amount_when([high.clone(), low.clone(), other.clone()]);
-    let high_last = amount_when([low, high, other]);
+    let amount_when = |views: [PublicOutputView; 2]| {
+        let view = PublicConstructionView::new(views).expect("two distinct statements");
+        construct(&target, &abi, &request, &view, None)
+            .expect("the sponsorless form constructs")
+            .report()
+            .successor_amount()
+    };
 
-    match (low_last, high_last) {
-        // Repaired: a contradictory pair is refused in either order.
-        (Err(()), Err(())) => {}
-        (low_last, high_last) => assert_eq!(
-            low_last, high_last,
-            "which of two contradictory views the constructor believes must not be decided by the order they were listed in"
-        ),
-    }
+    assert_eq!(amount_when([one.clone(), other.clone()]), 300);
+    assert_eq!(amount_when([other, one]), 300);
 }
 
 /// `G13-R16`: a duplicated sponsor outpoint is not a smaller offer.
 ///
-/// The offer collects into a set, so a caller naming one outpoint twice
-/// is silently normalized into a request for one input rather than
-/// refused. The assertion is on the census the caller stated.
-///
-/// The repair makes the constructor fallible; the repair wave replaces
-/// this assertion with the refusal it then returns.
+/// A set built by insertion would answer a sponsor naming one coin
+/// twice with a one-input offer, which is a sponsor region the sponsor
+/// did not state. The offer refuses instead, naming the coin.
 #[test]
-#[ignore = "G13-R16: confirmed, repair pending"]
-fn a_duplicated_sponsor_outpoint_is_not_silently_collapsed() {
+fn a_duplicated_sponsor_outpoint_is_refused_rather_than_collapsed() {
     let repeated: Outpoint = outpoint(0xdd, 2);
-    let offer = SponsorOffer::new([repeated, repeated], 90, None);
     assert_eq!(
-        offer.inputs().len(),
-        2,
-        "a sponsor offer naming one outpoint twice must not be normalized into a one-input offer"
+        SponsorOffer::new([repeated, repeated], 90, None),
+        Err(TransactionRefusal::DuplicateSponsorOutpoint(repeated))
     );
+}
+
+/// A sponsor offer of distinct coins does not depend on their order.
+#[test]
+fn a_sponsor_offer_of_distinct_coins_is_order_independent() {
+    let one = outpoint(0xdd, 2);
+    let other = outpoint(0xee, 3);
+    let forward = SponsorOffer::new([one, other], 90, None).expect("two distinct coins");
+    let reversed = SponsorOffer::new([other, one], 90, None).expect("two distinct coins");
+    assert_eq!(forward, reversed);
+    assert_eq!(forward.inputs().len(), 2);
 }
