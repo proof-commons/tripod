@@ -564,7 +564,7 @@ fn the_lifecycle_is_structurally_incomplete() {
     );
     // The exits partition: nothing is both done and outstanding.
     let implemented = lifecycle.closure().implemented().collect::<Vec<_>>();
-    assert!(!implemented.is_empty());
+    assert_ne!(implemented, []);
     assert!(
         !lifecycle
             .closure()
