@@ -30,6 +30,7 @@ use crate::abi_validation::{AbiValidationRow, index_abi_validation};
 use crate::bundle::FixtureBundle;
 use crate::divergence::target_amount_standing;
 use crate::error::VectorError;
+use crate::first_party::{FirstPartyRefusal, ValidatedFirstPartyNegativeEvidence};
 use crate::fixture::{CompactAshSemanticCase, positive_semantic_census};
 use crate::materialize::{
     AshFunding, MaterializedTargetVector, TargetVectorId, has_candidate_program, is_materializable,
@@ -145,6 +146,18 @@ pub enum CoverageObservation {
     /// variant rather than an [`ObservedCoverage`] with the verdict
     /// read backwards.
     ObservedRefusal(ObservedRefusal),
+    /// One first-party validator refused a canonical malformed input.
+    ///
+    /// §4.2's arm, and a fourth kind of thing rather than a refusal with
+    /// no target attached: no transaction exists at this boundary, no
+    /// carrier executed, and no target was asked. What it records is
+    /// which validator refused and which class its refusal named, which
+    /// are the two facts a reader of the row needs and neither of which
+    /// a target could have supplied.
+    ///
+    /// Built only by [`CompactAshEvidencePlan::discharge_first_party`],
+    /// from evidence whose own constructor ran the validator twice.
+    FirstPartyRefusal(FirstPartyRefusal),
 }
 
 /// What one refused mutation established about one requirement.
@@ -242,10 +255,15 @@ impl CoverageObservation {
                     ProjectionComparison::Matched
                 )
             ),
-            // The constructor already checked every §19.2 condition
-            // this package can check, and refuses to build the value
-            // otherwise, so reaching here means the refusal counted.
-            Self::ObservedRefusal(_) => true,
+            // Two refusals, one argument. The §19.2 arm's constructor
+            // already checked every condition this package can check,
+            // and the §4.2 arm's only route is a validated evidence
+            // value whose own constructor ran the owning validator over
+            // a malformed input and its control and compared the class
+            // that came back against the requirement's own. Neither
+            // variant is reachable without its checks, so reaching
+            // either here means the refusal counted.
+            Self::ObservedRefusal(_) | Self::FirstPartyRefusal(_) => true,
         }
     }
 }
@@ -688,7 +706,9 @@ impl CompactAshEvidencePlan {
             .filter(|row| {
                 matches!(
                     row.observation(),
-                    CoverageObservation::Observed(_) | CoverageObservation::ObservedRefusal(_)
+                    CoverageObservation::Observed(_)
+                        | CoverageObservation::ObservedRefusal(_)
+                        | CoverageObservation::FirstPartyRefusal(_)
                 )
             })
             .count()
@@ -904,6 +924,36 @@ impl CompactAshEvidencePlan {
                 layer,
             });
         }
+    }
+
+    /// Discharge one first-party negative row, per §4.2.
+    ///
+    /// # What this can and cannot answer
+    ///
+    /// The one requirement the evidence names, and nothing else. The
+    /// evidence carries a requirement identity its own validation
+    /// resolved against the published plan, so a row is never reached by
+    /// resemblance; a requirement this plan does not hold, or one whose
+    /// obligation is positive, is left alone.
+    ///
+    /// # Why the argument is a validated value rather than a class
+    ///
+    /// For the reason [`Self::discharge_observed_run`] gives. A class
+    /// name and a validator name are both public enums a consumer could
+    /// state, so a signature taking them would let the counters a gate
+    /// reads be reached without anything having been refused. The
+    /// argument is therefore
+    /// [`ValidatedFirstPartyNegativeEvidence`], which exists only where
+    /// the owning validator refused a canonical malformed input and
+    /// accepted its control.
+    pub fn discharge_first_party(&mut self, evidence: &ValidatedFirstPartyNegativeEvidence) {
+        let Some(row) = self.relation_coverage.get_mut(evidence.requirement()) else {
+            return;
+        };
+        if row.positive {
+            return;
+        }
+        row.observation = CoverageObservation::FirstPartyRefusal(evidence.refusal());
     }
 
     /// Discharge this plan's coverage from one validated run.
@@ -1517,6 +1567,91 @@ mod tests {
     }
 
     #[test]
+    fn the_first_party_policy_moves_exactly_the_rows_it_discharges() {
+        // §4.2 end to end, through the plan. Two rows move — the
+        // permissionless private dependency in each execution case — and
+        // the sixteen other first-party rows stay outstanding, because
+        // nothing offered evidence for them and a policy that filled
+        // them anyway would be the discharge-by-intent the census exists
+        // to prevent.
+        use crate::first_party::{FirstPartyNegativeCase, validate_first_party_negative};
+        use architecture::{ObjectId, OperationId};
+        use compiler::operation_plan::{RelationMutation, TargetCoverageObligation};
+        use realization::{AvailabilityClass, ConstructibilityNodeId};
+
+        let fixture = fixture_bundle().expect("the fixture bundle builds");
+        let mut plan = super::derive_evidence_plan(&fixture).expect("the evidence plan derives");
+        let before = plan.discharged_negative_rows();
+
+        // The published compact-ASH public required fact, and the same
+        // fact under a private availability class.
+        let published = realization::derive(
+            &architecture::ARCHITECTURE,
+            realization::RealizationScope::phase1_pilots(),
+        )
+        .expect("the realization derives")
+        .project()
+        .constructibility
+        .nodes
+        .into_iter()
+        .map(|node| node.id)
+        .find(|id| {
+            matches!(
+                id,
+                ConstructibilityNodeId::Fact {
+                    operation: OperationId::CompactAsh,
+                    availability: AvailabilityClass::Public,
+                    ..
+                }
+            )
+        })
+        .expect("compact-ash publishes a public required fact");
+        let case = FirstPartyNegativeCase::PrivateRequiredDependency {
+            operation: OperationId::CompactAsh,
+            published,
+            availability: AvailabilityClass::InputOwners {
+                object: ObjectId::Ash,
+            },
+        };
+
+        let rows: Vec<_> = fixture
+            .plan()
+            .coverage()
+            .filter(|candidate| {
+                matches!(
+                    &candidate.obligation,
+                    TargetCoverageObligation::Negative(negative)
+                        if negative.mutation == RelationMutation::PermissionlessPrivateDependency
+                )
+            })
+            .map(|candidate| candidate.id.clone())
+            .collect();
+        assert_eq!(rows.len(), 2, "one row per execution case");
+        for id in &rows {
+            let evidence = validate_first_party_negative(fixture.plan(), id, &case)
+                .expect("the case discharges the row");
+            plan.discharge_first_party(&evidence);
+        }
+
+        assert_eq!(
+            plan.discharged_negative_rows(),
+            before + 2,
+            "the policy moved another number of rows than it was offered",
+        );
+        for id in &rows {
+            let row = plan
+                .relation_coverage()
+                .get(id)
+                .expect("the discharged row is in the matrix");
+            assert!(row.observation().is_discharged());
+            assert!(matches!(
+                row.observation(),
+                CoverageObservation::FirstPartyRefusal(_)
+            ));
+        }
+    }
+
+    #[test]
     fn every_outstanding_reason_is_actually_reached() {
         // A reason no row ever carries would be decoration. This records
         // which of the three the current plan actually produces.
@@ -1526,7 +1661,9 @@ mod tests {
             .values()
             .filter_map(|row| match row.observation() {
                 CoverageObservation::Outstanding(reason) => Some(reason),
-                CoverageObservation::Observed(_) | CoverageObservation::ObservedRefusal(_) => None,
+                CoverageObservation::Observed(_)
+                | CoverageObservation::ObservedRefusal(_)
+                | CoverageObservation::FirstPartyRefusal(_) => None,
             })
             .collect();
         assert!(

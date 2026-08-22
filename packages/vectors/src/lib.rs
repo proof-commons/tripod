@@ -6,6 +6,7 @@ pub mod bundle;
 pub mod comparison;
 pub mod divergence;
 pub mod error;
+pub mod first_party;
 pub mod fixture;
 pub mod materialize;
 pub mod matrix;
@@ -29,6 +30,10 @@ pub use divergence::{
     AmountBeyondTargetBound, StatedAmountPlace, TargetAmountStanding, target_amount_standing,
 };
 pub use error::{FixtureBundleRefusal, VectorError};
+pub use first_party::{
+    FirstPartyEvidenceRefusal, FirstPartyNegativeCase, FirstPartyRefusal, FirstPartyValidator,
+    ValidatedFirstPartyNegativeEvidence, validate_first_party_negative,
+};
 pub use materialize::{
     SponsorCoin, SponsorSigningTask, has_candidate_program, materialize_sponsored,
     needs_authorization, sponsor_signing_requests,

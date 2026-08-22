@@ -8,6 +8,7 @@ vectors_source_files = files(
   'src/comparison.rs',
   'src/divergence.rs',
   'src/error.rs',
+  'src/first_party.rs',
   'src/fixture.rs',
   'src/lib.rs',
   'src/materialize.rs',

@@ -56,7 +56,7 @@ pub fn precedes_the_target(mutation: NegativeMutation) -> Result<bool, VectorErr
 ///
 /// Exclusive by construction, in the order written: a class the safe
 /// constructor forecloses is settled there and the other two questions
-/// do not arise; a class it does not forecloses is only whatever raw
+/// do not arise; a class it does not foreclose is only whatever raw
 /// surgery made of it; and a class surgery cannot make either has not
 /// been looked at at all.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

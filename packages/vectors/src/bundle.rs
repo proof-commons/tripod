@@ -36,7 +36,9 @@ use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::LazyLock;
 
 use architecture::{ARCHITECTURE, OperationId};
-use compiler::input::{AnalysisPolicy, CompilationScope, ProofSearchLimits, bind_input};
+use compiler::input::{
+    AnalysisPolicy, BoundCompilerInput, CompilationScope, ProofSearchLimits, bind_input,
+};
 use compiler::operation_plan::{
     PlacementSearchLimits, ValidatedTargetOperationPlan, plan_compact_ash_target_operation,
 };
@@ -397,6 +399,28 @@ fn derived_pin(
     .map_err(FixtureBundleRefusal::Abi)
 }
 
+/// The bound compiler input every compact-ASH analysis in this crate
+/// runs over.
+///
+/// One spelling of the recipe. A second caller that rebound the input
+/// for itself could differ from this one in a scope or a search limit,
+/// and the two analyses would then be about slightly different programs
+/// while both calling themselves the candidate's.
+///
+/// # Errors
+///
+/// [`FixtureBundleRefusal::Realization`] where the realization does not
+/// derive, and [`FixtureBundleRefusal::Compile`] where the scope or the
+/// binding is refused.
+pub fn bind_compact_ash_input() -> Result<BoundCompilerInput, FixtureBundleRefusal> {
+    let realization = derive(&ARCHITECTURE, RealizationScope::phase1_pilots())
+        .map_err(FixtureBundleRefusal::Realization)?;
+    let scope = CompilationScope::from_operations([OperationId::CompactAsh])
+        .map_err(FixtureBundleRefusal::Compile)?;
+    let policy = AnalysisPolicy::strict(ProofSearchLimits::new(limit(1_000_000), limit(10_000)));
+    bind_input(&ARCHITECTURE, realization, scope, policy).map_err(FixtureBundleRefusal::Compile)
+}
+
 fn build_at(
     closed_asset: [u8; 32],
     reserve_asset: [u8; 32],
@@ -404,13 +428,7 @@ fn build_at(
 ) -> Result<FixtureBundle, FixtureBundleRefusal> {
     let target = reviewed_elements_tapscript().map_err(FixtureBundleRefusal::Target)?;
 
-    let realization = derive(&ARCHITECTURE, RealizationScope::phase1_pilots())
-        .map_err(FixtureBundleRefusal::Realization)?;
-    let scope = CompilationScope::from_operations([OperationId::CompactAsh])
-        .map_err(FixtureBundleRefusal::Compile)?;
-    let policy = AnalysisPolicy::strict(ProofSearchLimits::new(limit(1_000_000), limit(10_000)));
-    let input = bind_input(&ARCHITECTURE, realization, scope, policy)
-        .map_err(FixtureBundleRefusal::Compile)?;
+    let input = bind_compact_ash_input()?;
     let plan = plan_compact_ash_target_operation(
         &input,
         PlacementSearchLimits::new(limit(10_000_000), limit(1_000_000)),

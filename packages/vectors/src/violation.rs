@@ -822,10 +822,11 @@ mod tests {
     #[test]
     fn each_first_party_class_states_the_standing_the_archaeology_found() {
         // Pinned per class, so that any of them gaining or losing a
-        // refusal has to be recorded here on purpose. There is
-        // deliberately no variant meaning "refused and tested at this
-        // boundary": nothing in the repository is, and a variant nobody
-        // could return would invite one to be claimed.
+        // refusal has to be recorded here on purpose. Exactly one class
+        // reads `RefusedAndTestedHere` today, and it reads that way
+        // because `crate::first_party` really drives the compiler's own
+        // validator to it — a class that lost that machinery would fail
+        // here rather than keeping the standing.
         use super::FirstPartyEvidence as E;
 
         let expected = [
@@ -837,7 +838,7 @@ mod tests {
             (
                 RelationMutation::PermissionlessPrivateDependency,
                 false,
-                E::RefusalReachedButUntested,
+                E::RefusedAndTestedHere,
             ),
             (
                 RelationMutation::RequiredLifecycleExitMissing,
@@ -1157,31 +1158,54 @@ mod tests {
 /// refusing a transaction. This says what such a refusal actually looks
 /// like today, per semantic mutation class.
 ///
-/// # None of these is a discharge, and the guide is why
+/// # A standing is readiness, and one of them is now a discharge
 ///
 /// §19.1 says positive coverage of a compiler-static or
 /// backend-structural relation uses typed structural evidence instead of
-/// inventing target execution. §19.2 states no such rule for the
+/// inventing target execution. §19.2 stated no such rule for the
 /// negative half: its conditions are a valid source transaction, a
 /// complete mutated target transaction, an executed carrier and an
 /// observed target rejection, none of which a compiler-static relation
-/// can have. So the guide states no condition under which a first-party
-/// refusal discharges a negative requirement, and a boundary being
-/// first-party is not the same claim as a first-party test discharging
-/// the row. These arms therefore record readiness, never coverage.
+/// can have — so for a long time no condition existed under which a
+/// first-party refusal discharged a negative requirement, and every
+/// standing here recorded readiness rather than coverage.
+///
+/// §4.2 supplies the missing condition, and [`crate::first_party`] is
+/// the machinery that meets it. A standing still describes what evidence
+/// *exists* rather than what has been claimed; what changed is that one
+/// of them now describes evidence that meets the policy, and the
+/// coverage row it belongs to moves when the policy is actually run over
+/// it. The rest still record readiness, and the difference between the
+/// two is a variant rather than a footnote.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum FirstPartyEvidence {
     /// A typed refusal exists and is reached, but no test at this
     /// boundary drives it to the error.
     ///
-    /// `CompileError::ConstructibilityWitnessUnavailable` and
-    /// `CompileError::PermissionlessPrivateDependency` are both
-    /// constructed in the compiler's constructibility stage, and the
-    /// stage is live. Every test that asserts either error asserts the
-    /// realization twin instead, which is a different layer answering a
-    /// different requirement.
+    /// `CompileError::ConstructibilityWitnessUnavailable` is constructed
+    /// in the compiler's constructibility stage, and the stage is live.
+    /// Every test that asserts that error asserts the realization twin
+    /// instead, which is a different layer answering a different
+    /// requirement. Reaching it from a focused first-party case needs
+    /// two changes at once — a private dependency *and* a
+    /// non-permissionless authorization — because the operation
+    /// publishes only the permissionless case, and a refusal produced by
+    /// two changes is attributable to neither.
     RefusalReachedButUntested,
+    /// A typed refusal exists, and a focused first-party case drives it.
+    ///
+    /// §4.2's conditions are met for this class:
+    /// [`crate::first_party`] stages a canonical malformed input and the
+    /// published value it is one change of, runs the exact owning
+    /// validator over both, and the refusal names this class while the
+    /// control is accepted.
+    ///
+    /// The variant exists because something returns it. There was
+    /// deliberately no such variant while nothing in the repository
+    /// could, since a variant nobody could return invites one to be
+    /// claimed.
+    RefusedAndTestedHere,
     /// No error names this condition; the nearest one refuses something
     /// else.
     ///
@@ -1219,9 +1243,11 @@ pub const fn first_party_evidence(
     role_is_emitted_structure: bool,
 ) -> Option<FirstPartyEvidence> {
     match mutation {
-        RelationMutation::ConstructibilityWitnessUnavailable
-        | RelationMutation::PermissionlessPrivateDependency => {
+        RelationMutation::ConstructibilityWitnessUnavailable => {
             Some(FirstPartyEvidence::RefusalReachedButUntested)
+        }
+        RelationMutation::PermissionlessPrivateDependency => {
+            Some(FirstPartyEvidence::RefusedAndTestedHere)
         }
         // The compiler-static half has a neighbouring refusal and the
         // emitted half has nothing at all, so the two boundaries of one

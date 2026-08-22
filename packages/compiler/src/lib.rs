@@ -28,6 +28,7 @@ mod source;
 mod sponsor_region;
 pub mod target;
 
+pub use constructibility::validate_required_dependency;
 pub use error::CompileError;
 pub use expression::ExpressionCycleComponent;
 pub use input::{

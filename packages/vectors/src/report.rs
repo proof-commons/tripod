@@ -51,7 +51,12 @@ use crate::plan::ProjectionComparison;
 /// Stated in the bytes so a reader never has to infer which revision a
 /// file is: a report whose field set changed under a reader that assumed
 /// the old one would otherwise be read wrong rather than refused.
-pub const OPERATION_REPORT_SCHEMA: u32 = 1;
+///
+/// Revision 2 adds `executor_provenance_verified`, which is the ADR-018
+/// comparison's own result and is deliberately a separate field from the
+/// tip the executor reported about itself. A revision-1 reader seeing a
+/// revision-2 file must refuse it rather than read the two as one.
+pub const OPERATION_REPORT_SCHEMA: u32 = 2;
 
 /// Why a run could not be validated into a report.
 ///
