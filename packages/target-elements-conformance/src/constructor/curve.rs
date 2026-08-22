@@ -151,14 +151,25 @@ pub fn generator() -> AffinePoint {
 
 /// Whether a 32-byte scalar is a valid multiplier.
 ///
-/// Zero and anything at or above the group order are not. The target's
-/// tweak rules reject exactly those, so a construction that produced
-/// one has no output key rather than a wrapped one
+/// Anything at or above the group order is not, and nothing else is
+/// excluded. The target reads a tweak as a scalar and refuses it on
+/// overflow alone, so overflow is the whole of the rule here as well
 /// `(´[PLAN-rule:guide10:tweak-totality]´)`.
+///
+/// # Zero is a multiplier
+///
+/// It takes the generator to the identity, and the identity is the
+/// additive unit, so `P + 0G = P`: a zero tweak leaves the key it is
+/// added to exactly where it was. Refusing it here would have named a
+/// rule the target does not have and would have reported a
+/// construction the target accepts as one with no output key at all.
+///
+/// What genuinely has no output key is a *sum* that is the identity,
+/// and that is decided after the addition — by looking at the sum,
+/// where the fact is — rather than guessed at from one operand.
 #[must_use]
 pub fn is_valid_scalar(scalar: &[u8; FIELD_ELEMENT_BYTES]) -> bool {
-    let value = BigUint::from_bytes_be(scalar);
-    !value.is_zero() && value < *GROUP_ORDER
+    BigUint::from_bytes_be(scalar) < *GROUP_ORDER
 }
 
 /// The point whose x coordinate is `x` and whose y coordinate is even.

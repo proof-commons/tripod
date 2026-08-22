@@ -481,10 +481,16 @@ fn a_tweak_that_is_not_a_scalar_has_no_output_key() {
         tweaked_key(&UNSPENDABLE_INTERNAL_KEY, &order),
         Err(TweakDefect::TweakNotAScalar)
     );
-    assert_eq!(
-        tweaked_key(&UNSPENDABLE_INTERNAL_KEY, &[0_u8; 32]),
-        Err(TweakDefect::TweakNotAScalar)
-    );
+
+    // Zero is not that failure mode, and this test used to assert that
+    // it was. The target refuses a tweak on overflow and on nothing
+    // else, so a zero tweak is a multiplier and `Q = P + 0G = P` is an
+    // output key -- which is the whole of `G13-R07`. Kept here, beside
+    // the boundary it was mistaken for, so the two cannot be confused
+    // again by a reader who finds only one of them.
+    let (output, _) = tweaked_key(&UNSPENDABLE_INTERNAL_KEY, &[0_u8; FIELD_ELEMENT_BYTES])
+        .expect("zero is a multiplier, and adding the identity changes nothing");
+    assert_eq!(output, UNSPENDABLE_INTERNAL_KEY);
 }
 
 #[test]

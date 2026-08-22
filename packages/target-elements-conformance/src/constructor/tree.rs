@@ -134,8 +134,18 @@ pub enum TreeDefect {
 pub enum TweakDefect {
     /// The internal key is not the x coordinate of any curve point.
     InternalKeyNotOnCurve(PointDecodingDefect),
-    /// The tweak is not a valid scalar: it is zero, or it is at or
-    /// above the group order.
+    /// The tweak is at or above the group order, so it is not a
+    /// multiplier at all.
+    ///
+    /// Overflow is the whole of the rule, and zero is not part of it.
+    /// A zero tweak is a multiplier whose product is the identity and
+    /// whose sum is therefore the internal key unchanged, so it has an
+    /// output key like any other value below the order. Refusing it
+    /// here classified a construction the target accepts as one with
+    /// no answer, which is the defect `G13-R07` records; the sum that
+    /// really has no encoding is reported by
+    /// [`Self::TweakedKeyIsIdentity`] instead, after the addition that
+    /// establishes it.
     ///
     /// A hash of public data lands here with negligible probability,
     /// and negligible is not never — which is exactly why the
@@ -413,7 +423,9 @@ pub fn tweak_without_tree(internal_key: &[u8; FIELD_ELEMENT_BYTES]) -> Digest32 
 /// # Errors
 ///
 /// [`TweakDefect`] when the internal key is not on the curve, the tweak
-/// is not a scalar, or the sum is the identity.
+/// is at or above the group order, or the sum is the identity. A tweak
+/// of zero is none of those: it is a multiplier, and the addition it
+/// leads to is the identity added to the internal key.
 pub fn tweaked_key(
     internal_key: &[u8; FIELD_ELEMENT_BYTES],
     tweak: &Digest32,
@@ -496,10 +508,14 @@ pub enum ConstructionDefect {
 /// cannot.
 ///
 /// So exactly two defects are worth retrying. The tweak is a hash of
-/// the root, so a tweak that is not a scalar is a property of this
-/// root and not of the instance; and the tweaked key being the
+/// the root, so a tweak that overflows the group order is a property
+/// of this root and not of the instance; and the tweaked key being the
 /// identity depends on the same hash. Both are negligibly rare and
 /// both move.
+///
+/// Zero appears in neither list, because a zero tweak is no longer a
+/// defect to classify: it has an output key, so nothing retries it and
+/// nothing refuses it `(´[PLAN-rule:guide10:tweak-totality]´)`.
 ///
 /// Nothing else does. Every [`TreeDefect`] is a property of the static
 /// subtree and the executing leaf — whether the tree contains that
