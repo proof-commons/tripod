@@ -129,6 +129,19 @@ pub enum LiveInfrastructureBlocker {
     /// constructors distinct and this workspace builds only the live one,
     /// so there is no time-locked output to offer a live transfer leaf.
     PredecessorConstructorAbsent,
+    /// No confidential predecessor can be funded on this chain.
+    ///
+    /// §6.3 admits a private transfer only over confidential receipt
+    /// inputs, and the target-generic funding step names an explicit
+    /// amount and has no confidential form. So the two questions Wave 9
+    /// left for a target — the value field's form and the missing range
+    /// proof — cannot be asked through this boundary, and
+    /// [`crate::live_native`] records that rather than guessing.
+    ///
+    /// It is carried beside [`Self::OwnerSighashNotComputable`] rather
+    /// than assigned to the §15.2 rows, because it is the *second* thing
+    /// standing in their way and clearing it alone would move nothing.
+    NoConfidentialPredecessorCanBeFunded,
     /// The row needs a raw path the safe constructor cannot express.
     ///
     /// §4.3's second answer. The row asks whether an unsafe raw mutation
@@ -617,6 +630,7 @@ pub fn carried_residuals() -> BTreeSet<LiveInfrastructureBlocker> {
         LiveInfrastructureBlocker::SighashProfileUnreviewed,
         LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent,
         LiveInfrastructureBlocker::PredecessorConstructorAbsent,
+        LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded,
     ])
 }
 

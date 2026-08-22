@@ -190,6 +190,30 @@ pub fn demonstration_live_bundle() -> Result<CandidateLinkedLiveTransferBundle, 
 
 /// The link proper, run once behind the cache.
 fn link_demonstration_bundle() -> Result<CandidateLinkedLiveTransferBundle, VectorError> {
+    link_live_bundle_for_asset(PROTOCOL_ASSET)
+}
+
+/// The demonstration link, over one stated protocol asset.
+///
+/// The constant-asset link above is this function at [`PROTOCOL_ASSET`],
+/// and the parameter exists for one reason: a target-native run does not
+/// get to choose the asset. §14.3's materialization funds real coins, and
+/// on a disposable chain the asset is whatever the issuance step created
+/// — a value the run learns *after* it starts. The linked programs push
+/// the asset as a literal, so a run against a target-issued asset has to
+/// link again once it knows one, and the constructors, their committed
+/// trees, and therefore the destination programs all move with it.
+///
+/// That is a fact about the deployment rather than a workaround: a
+/// deployment is welded to its asset, and two assets are two deployments.
+///
+/// # Errors
+///
+/// [`VectorError::LiveSubstrateUnavailable`] when a constructor, an
+/// emission, the deployment parameters, or the link refuses.
+pub fn link_live_bundle_for_asset(
+    protocol_asset: [u8; 32],
+) -> Result<CandidateLinkedLiveTransferBundle, VectorError> {
     let target = reviewed_target()?;
     let plan = live_transfer_plan()?;
     let shapes = demonstration_live_shape_set();
@@ -227,7 +251,7 @@ fn link_demonstration_bundle() -> Result<CandidateLinkedLiveTransferBundle, Vect
         &target,
         live_symbols(
             &target,
-            PROTOCOL_ASSET.to_vec(),
+            protocol_asset.to_vec(),
             vec![0xb2; 32],
             vec![0xb4; 32],
             vec![0xb5; 32],
@@ -264,13 +288,32 @@ fn link_demonstration_bundle() -> Result<CandidateLinkedLiveTransferBundle, Vect
 pub fn demonstration_live_abi() -> Result<CandidateLiveTransferAbi, VectorError> {
     static CACHED: OnceLock<Result<CandidateLiveTransferAbi, VectorError>> = OnceLock::new();
     CACHED
-        .get_or_init(|| {
-            let target = reviewed_target()?;
-            let curve = OracleLiveCurve::new(reviewed_target()?);
-            derive_live_transfer_abi(&target, &demonstration_live_bundle()?, &curve)
-                .map_err(|_| VectorError::LiveSubstrateUnavailable)
-        })
+        .get_or_init(|| live_abi_for_asset(PROTOCOL_ASSET))
         .clone()
+}
+
+/// The candidate ABI over one stated protocol asset.
+///
+/// The run-time counterpart of [`demonstration_live_abi`], for the reason
+/// [`link_live_bundle_for_asset`] states. Deliberately not memoized: a
+/// run links once for the asset it was given, and a cache keyed by
+/// nothing would hand the second asset the first one's programs.
+///
+/// # Errors
+///
+/// [`VectorError::LiveSubstrateUnavailable`] when the link or the ABI
+/// derivation refuses.
+pub fn live_abi_for_asset(
+    protocol_asset: [u8; 32],
+) -> Result<CandidateLiveTransferAbi, VectorError> {
+    let target = reviewed_target()?;
+    let curve = OracleLiveCurve::new(reviewed_target()?);
+    derive_live_transfer_abi(
+        &target,
+        &link_live_bundle_for_asset(protocol_asset)?,
+        &curve,
+    )
+    .map_err(|_| VectorError::LiveSubstrateUnavailable)
 }
 
 #[cfg(test)]

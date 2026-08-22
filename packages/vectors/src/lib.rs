@@ -11,6 +11,7 @@ pub mod fixture;
 pub mod live_capability;
 pub mod live_evidence;
 pub mod live_first_party;
+pub mod live_native;
 pub mod live_plan;
 pub mod live_report;
 pub mod live_safety;
@@ -51,8 +52,14 @@ pub use live_first_party::{
     LiveResponseMalformation, ValidatedLiveFirstPartyEvidence, discharge_live_first_party,
     live_first_party_cases, validate_live_first_party,
 };
+pub use live_native::{
+    LiveFormNotSubmitted, LiveNativeObservation, LiveNativeRefusal, LiveNativeStep,
+    LiveNativeTranscript, LiveTransferOperationPlanner, observed_run_of_record,
+    render_live_native_run,
+};
 pub use live_plan::{
-    demonstration_live_abi, demonstration_live_bundle, live_transfer_plan, published_owner,
+    demonstration_live_abi, demonstration_live_bundle, link_live_bundle_for_asset,
+    live_abi_for_asset, live_transfer_plan, published_owner,
 };
 pub use live_report::{
     LIVE_SAFETY_REPORT_SCHEMA, LiveLifecycleStatus, LiveRunStanding, LiveSafetyCompleteness,
