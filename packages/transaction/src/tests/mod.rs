@@ -32,6 +32,11 @@ mod abi_tests;
 mod construction_tests;
 mod encoding_tests;
 mod guide13_preflight_tests;
+mod live_abi_tests;
+mod live_construction_tests;
+mod live_request_tests;
+mod live_signing_tests;
+mod live_support;
 mod taproot_tests;
 
 use std::num::{NonZeroU8, NonZeroU32, NonZeroU64};
