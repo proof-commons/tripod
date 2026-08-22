@@ -79,121 +79,151 @@ use target_elements::{
 
 use crate::error::TapscriptError;
 
-/// A structural obligation the compiler and the transaction ABI owe.
+/// Declare a closed enum and its census from one list of members.
 ///
-/// None of these is a completed target program, and none of them is
-/// something a target opcode can establish. They are the facts a
-/// backend proof would be built on top of.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum BackendFoundationRequirement {
-    /// Protocol object families occupy a canonical, checkable layout.
-    CanonicalFamilyLayout,
-    /// The census of a family's members is complete, not a sample.
-    CompleteFamilyCensus,
-    /// Protocol families are complete and pairwise disjoint.
-    CompleteAndDisjointProtocolFamilies,
-    /// The fee-sponsor region is separated from protocol regions by
-    /// role, never by guessing from an asset or an amount.
-    ProtocolSponsorRegionSeparation,
-    /// One canonical position carries the whole-transaction checks.
-    CanonicalCoordinator,
-    /// A root constructor's predecessor and successor bind
-    /// continuously.
-    RootConstructorContinuity,
-    /// Projected events have a fixed, checkable shape.
-    ProjectionShape,
-    /// Every datum a construction needs is public.
-    PublicConstructionData,
-    /// The permissionless path needs no secret at all.
-    SecretFreePermissionlessPath,
+/// A census constant written beside its enum is a second list that has
+/// to be kept equal to the first, and nothing downstream can check that
+/// it is: a consumer folding over `ALL` sees exactly the members `ALL`
+/// names, so a variant omitted from it is invisible rather than
+/// detected — including to [`assess_complete_census`], which builds the
+/// "complete" census it assesses out of the very constants whose
+/// completeness is in question (Guide-13 §8.3, row `G13-R17`). This
+/// macro removes the second list rather than checking it: `ALL` is
+/// generated from the same members the enum is, so an omitted variant
+/// is not a defect that has to be caught — it is unwriteable.
+///
+/// The derives are fixed rather than supplied by the caller, because a
+/// census type owes its consumers a total order: `ALL` is emitted in
+/// declaration order, and derived `Ord` is declaration order, so a
+/// generated census is strictly increasing by construction too. What a
+/// caller does supply is the documentation, any further attributes, and
+/// the members. Everything a census type does with those members —
+/// mappings, assessments, dispositions — stays outside the macro, where
+/// an exhaustive `match` keeps its own guard over them.
+macro_rules! census_enum {
+    (
+        $(#[$enum_meta:meta])*
+        pub enum $name:ident {
+            $(
+                $(#[$variant_meta:meta])*
+                $variant:ident
+            ),+ $(,)?
+        }
+    ) => {
+        $(#[$enum_meta])*
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub enum $name {
+            $(
+                $(#[$variant_meta])*
+                $variant,
+            )+
+        }
+
+        impl $name {
+            #[doc = concat!(
+                "The complete census of [`", stringify!($name), "`], in \
+                 canonical order."
+            )]
+            ///
+            /// Complete by construction: the enum above and this
+            /// constant are generated from one declaration, so there is
+            /// no second list to fall out of step with the first.
+            pub const ALL: &'static [Self] = &[ $(Self::$variant),+ ];
+        }
+    };
 }
 
-impl BackendFoundationRequirement {
-    /// The complete census of structural obligations, in canonical
-    /// order.
-    pub const ALL: &'static [Self] = &[
-        Self::CanonicalFamilyLayout,
-        Self::CompleteFamilyCensus,
-        Self::CompleteAndDisjointProtocolFamilies,
-        Self::ProtocolSponsorRegionSeparation,
-        Self::CanonicalCoordinator,
-        Self::RootConstructorContinuity,
-        Self::ProjectionShape,
-        Self::PublicConstructionData,
-        Self::SecretFreePermissionlessPath,
-    ];
+pub(crate) use census_enum;
+
+census_enum! {
+    /// A structural obligation the compiler and the transaction ABI owe.
+    ///
+    /// None of these is a completed target program, and none of them is
+    /// something a target opcode can establish. They are the facts a
+    /// backend proof would be built on top of.
+    pub enum BackendFoundationRequirement {
+        /// Protocol object families occupy a canonical, checkable
+        /// layout.
+        CanonicalFamilyLayout,
+        /// The census of a family's members is complete, not a sample.
+        CompleteFamilyCensus,
+        /// Protocol families are complete and pairwise disjoint.
+        CompleteAndDisjointProtocolFamilies,
+        /// The fee-sponsor region is separated from protocol regions by
+        /// role, never by guessing from an asset or an amount.
+        ProtocolSponsorRegionSeparation,
+        /// One canonical position carries the whole-transaction checks.
+        CanonicalCoordinator,
+        /// A root constructor's predecessor and successor bind
+        /// continuously.
+        RootConstructorContinuity,
+        /// Projected events have a fixed, checkable shape.
+        ProjectionShape,
+        /// Every datum a construction needs is public.
+        PublicConstructionData,
+        /// The permissionless path needs no secret at all.
+        SecretFreePermissionlessPath,
+    }
 }
 
-/// A stable key naming one approved complete backend proof pattern.
-///
-/// # Why these variants exist and no others
-///
-/// The type was uninhabited through Guide 8 and Guide 11, and that was
-/// the point: no backend proof pattern had been approved, so no value
-/// of this type existed and
-/// [`StaticCapabilityAssessment::CompleteBackendPattern`] could not be
-/// constructed by anyone. Guide-12 §8.4 is what admits the first
-/// variants, and it admits them one at a time: a variant appears here
-/// exactly where [`crate::pattern::operation_patterns`] carries a
-/// complete [`crate::pattern::BackendPattern`] record for it — semantic
-/// owner, target prerequisites, typed instruction fragment, stack
-/// contract, failure behaviour, ABI assumptions, source requirements,
-/// resource formula, positive and negative vectors, and the operation
-/// evidence its correctness depends on.
-///
-/// Every one of these was earned by walking its fragment through the
-/// abstract validator and requiring the resulting success, non-aborting
-/// failure, and abort sets to be exactly the pattern's claim. A pattern
-/// that could not be scheduled, or whose walk did not settle its claim,
-/// has no variant here at all — not a variant marked provisional, which
-/// would be an identity for something that does not exist (§1.10).
-///
-/// # What a variant does not claim
-///
-/// It does not claim a node ran anything. The vectors behind these are
-/// abstract vectors over the reviewed primitive contracts;
-/// relation-indexed target evidence is a later layer's obligation and
-/// remains outstanding for every one of them.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum BackendPatternId {
-    /// §10.3: the coordinator leaf spends the canonical anchor and
-    /// aborts anywhere else.
-    CompactAshCoordinatorRoleV1,
-    /// §10.3, §12.7: a member leaf lies in the shape's member range.
-    CompactAshMemberRoleV1,
-    /// §12.1, §12.2: an ASH object is the linked asset and program, in
-    /// the explicit form, inside the semantic amount domain.
-    CompactAshObjectRecognitionV1,
-    /// §12.3: the target's own input and output counts are exactly the
-    /// shape's.
-    CompactAshShapeV1,
-    /// §12.4: the exact explicit sum, every arithmetic flag consumed,
-    /// compared byte for byte with the successor's amount.
-    CompactAshExplicitSumV1,
-    /// §12.5, §12.6, §12.10: every admitted position accounted for by
-    /// role, which is what makes root and specialized-event absence
-    /// structural.
-    CompactAshCanonicalPartitionV1,
-    /// §12.9: the sponsor region is exactly the suffix, carries the
-    /// reserve asset, and is never read for an amount.
-    CompactAshSponsorIsolationV1,
-    /// §12.8: the emitted protocol leaves carry no authorization or
-    /// cadence primitive at all.
-    CompactAshPermissionlessPathV1,
-}
-
-impl BackendPatternId {
-    /// The complete census of approved patterns, in canonical order.
-    pub const ALL: &'static [Self] = &[
-        Self::CompactAshCoordinatorRoleV1,
-        Self::CompactAshMemberRoleV1,
-        Self::CompactAshObjectRecognitionV1,
-        Self::CompactAshShapeV1,
-        Self::CompactAshExplicitSumV1,
-        Self::CompactAshCanonicalPartitionV1,
-        Self::CompactAshSponsorIsolationV1,
-        Self::CompactAshPermissionlessPathV1,
-    ];
+census_enum! {
+    /// A stable key naming one approved complete backend proof pattern.
+    ///
+    /// # Why these variants exist and no others
+    ///
+    /// The type was uninhabited through Guide 8 and Guide 11, and that was
+    /// the point: no backend proof pattern had been approved, so no value
+    /// of this type existed and
+    /// [`StaticCapabilityAssessment::CompleteBackendPattern`] could not be
+    /// constructed by anyone. Guide-12 §8.4 is what admits the first
+    /// variants, and it admits them one at a time: a variant appears here
+    /// exactly where [`crate::pattern::operation_patterns`] carries a
+    /// complete [`crate::pattern::BackendPattern`] record for it — semantic
+    /// owner, target prerequisites, typed instruction fragment, stack
+    /// contract, failure behaviour, ABI assumptions, source requirements,
+    /// resource formula, positive and negative vectors, and the operation
+    /// evidence its correctness depends on.
+    ///
+    /// Every one of these was earned by walking its fragment through the
+    /// abstract validator and requiring the resulting success, non-aborting
+    /// failure, and abort sets to be exactly the pattern's claim. A pattern
+    /// that could not be scheduled, or whose walk did not settle its claim,
+    /// has no variant here at all — not a variant marked provisional, which
+    /// would be an identity for something that does not exist (§1.10).
+    ///
+    /// # What a variant does not claim
+    ///
+    /// It does not claim a node ran anything. The vectors behind these are
+    /// abstract vectors over the reviewed primitive contracts;
+    /// relation-indexed target evidence is a later layer's obligation and
+    /// remains outstanding for every one of them.
+    pub enum BackendPatternId {
+        /// §10.3: the coordinator leaf spends the canonical anchor and
+        /// aborts anywhere else.
+        CompactAshCoordinatorRoleV1,
+        /// §10.3, §12.7: a member leaf lies in the shape's member range.
+        CompactAshMemberRoleV1,
+        /// §12.1, §12.2: an ASH object is the linked asset and program,
+        /// in the explicit form, inside the semantic amount domain.
+        CompactAshObjectRecognitionV1,
+        /// §12.3: the target's own input and output counts are exactly
+        /// the shape's.
+        CompactAshShapeV1,
+        /// §12.4: the exact explicit sum, every arithmetic flag
+        /// consumed, compared byte for byte with the successor's
+        /// amount.
+        CompactAshExplicitSumV1,
+        /// §12.5, §12.6, §12.10: every admitted position accounted for
+        /// by role, which is what makes root and specialized-event
+        /// absence structural.
+        CompactAshCanonicalPartitionV1,
+        /// §12.9: the sponsor region is exactly the suffix, carries the
+        /// reserve asset, and is never read for an amount.
+        CompactAshSponsorIsolationV1,
+        /// §12.8: the emitted protocol leaves carry no authorization or
+        /// cadence primitive at all.
+        CompactAshPermissionlessPathV1,
+    }
 }
 
 /// Why the reviewed target contract cannot support a capability.

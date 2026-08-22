@@ -54,7 +54,7 @@ use target_elements::{
     ReviewedElementsTapscriptDefinition, StackValueType, TargetEvidenceRequirementId,
 };
 
-use crate::capability::BackendPatternId;
+use crate::capability::{BackendPatternId, census_enum};
 use crate::error::TapscriptError;
 use crate::instruction::{StackItem, TapscriptInstruction};
 use crate::program::TapscriptProgram;
@@ -280,46 +280,38 @@ impl PatternFailure {
     }
 }
 
-/// One typed mutation a negative vector applies to a fragment.
-///
-/// Each names a way a fragment could be built wrong, and each is
-/// required to cost the fragment its successful form or to add an
-/// abort. A negative vector that changed nothing observable would be
-/// coverage that proves nothing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum PatternMutation {
-    /// Drop the fragment's last verifying primitive.
+census_enum! {
+    /// One typed mutation a negative vector applies to a fragment.
     ///
-    /// The mis-scheduling §12.11 names: a result the program never
-    /// checked, left on the stack where a caller might read it as
-    /// truth.
-    DropFinalVerification,
-    /// Change one byte of the fragment's last pushed literal, keeping
-    /// its width.
-    ///
-    /// A symbol resolved to the wrong object, or a count that does not
-    /// match the shape. The abstract walk cannot decide this one where
-    /// the literal is compared with a target-supplied value it holds no
-    /// bytes for, and that limit is a result rather than a gap: it is
-    /// exactly which of a pattern's claims rest on the link step
-    /// resolving a symbol correctly.
-    CorruptFinalLiteral,
-    /// Append a byte to the fragment's last pushed literal.
-    ///
-    /// A symbol of the wrong shape rather than the wrong value. Where
-    /// the literal feeds an operand whose width the contract fixes,
-    /// this is decidable from the abstract types alone and the mutant
-    /// stops being a schedulable program at all.
-    WidenFinalLiteral,
-}
-
-impl PatternMutation {
-    /// Every mutation, in canonical order.
-    pub const ALL: &'static [Self] = &[
-        Self::DropFinalVerification,
-        Self::CorruptFinalLiteral,
-        Self::WidenFinalLiteral,
-    ];
+    /// Each names a way a fragment could be built wrong, and each is
+    /// required to cost the fragment its successful form or to add an
+    /// abort. A negative vector that changed nothing observable would be
+    /// coverage that proves nothing.
+    pub enum PatternMutation {
+        /// Drop the fragment's last verifying primitive.
+        ///
+        /// The mis-scheduling §12.11 names: a result the program never
+        /// checked, left on the stack where a caller might read it as
+        /// truth.
+        DropFinalVerification,
+        /// Change one byte of the fragment's last pushed literal, keeping
+        /// its width.
+        ///
+        /// A symbol resolved to the wrong object, or a count that does not
+        /// match the shape. The abstract walk cannot decide this one where
+        /// the literal is compared with a target-supplied value it holds no
+        /// bytes for, and that limit is a result rather than a gap: it is
+        /// exactly which of a pattern's claims rest on the link step
+        /// resolving a symbol correctly.
+        CorruptFinalLiteral,
+        /// Append a byte to the fragment's last pushed literal.
+        ///
+        /// A symbol of the wrong shape rather than the wrong value. Where
+        /// the literal feeds an operand whose width the contract fixes,
+        /// this is decidable from the abstract types alone and the mutant
+        /// stops being a schedulable program at all.
+        WidenFinalLiteral,
+    }
 }
 
 /// What one negative vector established about a pattern.
