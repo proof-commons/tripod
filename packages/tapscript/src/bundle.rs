@@ -460,6 +460,17 @@ pub enum TargetRole {
     },
     /// Compared with the digest standing in for the fee role's program.
     FeeProgramDigestComparand,
+    /// Pushed as the public-key operand of a signature primitive.
+    ///
+    /// Absent from the compact-ASH census because that operation is
+    /// permissionless (§12.8) and no leaf of it carries a key at all.
+    /// Guide-13 §10.2 has every receipt input push its committed owner's
+    /// key before verifying one signature against it, which is a target
+    /// role none of the comparand variants describes: the value is an
+    /// operand of the primitive rather than something compared with an
+    /// introspected field. Added here rather than re-minted in a second
+    /// enum so that one linker reads one role census (Guide-13 §1.1).
+    SignatureKeyOperand,
     /// Bound as the taproot internal key.
     TaprootInternalKey,
     /// Bound as the leaf version of every emitted leaf.

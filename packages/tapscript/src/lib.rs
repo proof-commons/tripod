@@ -6,6 +6,7 @@ pub mod bundle;
 pub mod capability;
 pub mod error;
 pub mod instruction;
+pub mod live_bundle;
 pub mod live_constructor;
 pub mod live_pattern;
 pub mod live_plan;
@@ -42,6 +43,11 @@ pub use capability::{
 };
 pub use error::TapscriptError;
 pub use instruction::{StackItem, TapscriptInstruction};
+pub use live_bundle::{
+    CandidateRelocatableLiveTransferBundle, LiveBundleRefusal, LiveBundleSymbol,
+    LiveIntrospectionReference, LiveLeafProgram, LiveRelocation, LiveRelocationSite,
+    LiveSharedLeafProof, LiveSymbolEntry, emit_candidate_live_bundle,
+};
 pub use live_constructor::{
     BindingStatus, CandidateTransferLifecycle, ConstructorBinding, ConstructorDisposition,
     ConstructorFacet, ConstructorMutationCase, ConstructorMutationCaseId, KeyPathClosure,

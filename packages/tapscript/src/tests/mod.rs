@@ -44,6 +44,7 @@ mod byte_census_tests;
 mod census_tests;
 mod guide12_reproductions;
 mod guide13_reproductions;
+mod live_bundle_tests;
 mod live_constructor_tests;
 mod live_pattern_tests;
 mod live_plan_tests;
