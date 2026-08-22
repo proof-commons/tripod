@@ -9,7 +9,8 @@
 
 use std::collections::BTreeSet;
 
-use tapscript::{BundleSymbol, LeafRole, TapscriptError};
+use tapscript::upstream::LiveTransferRepresentationPlan;
+use tapscript::{BundleSymbol, LeafRole, LiveTransferLeafRole, TapscriptError};
 use target_elements::ResourceDimension;
 
 use crate::graph::{ReferenceEdgeId, ReferenceNode, SccId};
@@ -174,11 +175,57 @@ pub enum LinkRefusal {
     /// The exact tree oracle's leaf budget was exceeded, so the
     /// comparison §14.5 requires was not made and no tree is returned
     /// (§1.11).
+    ///
+    /// Raised when *no* route the caller admits reaches the leaf set:
+    /// past the oracle's budget with unequal weights, or past it with
+    /// equal weights under a policy that admits the oracle alone.
     TreeOracleBudgetExceeded {
         /// How many leaves were offered.
         leaves: usize,
         /// The budget.
         budget: usize,
+    },
+    /// The tree construction's own leaf budget was exceeded, so the
+    /// module's exact-domain argument no longer covers the arithmetic and
+    /// no tree is returned (§14.5, §1.11).
+    ///
+    /// Distinct from [`Self::TreeOracleBudgetExceeded`]: that one says no
+    /// admitted route establishes the optimum, this one says the
+    /// construction itself is past the bound its `u128` sufficiency
+    /// argument rests on, so no number it produced would be known to be
+    /// any tree's cost.
+    TreeLeafBudgetExceeded {
+        /// How many leaves were offered.
+        leaves: usize,
+        /// The budget.
+        budget: usize,
+    },
+
+    // --- Live-transfer taptree (§11.4) --------------------------------
+    /// One live-transfer leaf identity was declared more than once, so
+    /// the leaf set does not know its own size and declaration order
+    /// would decide which declaration survived (§11.4).
+    DuplicateLiveTreeLeaf(LiveTransferLeafRole),
+    /// The deterministic live-transfer tree exceeds the declared maximum
+    /// depth (§11.4).
+    LiveTreeDepthExceeded {
+        /// The deepest leaf.
+        leaf: LiveTransferLeafRole,
+        /// The depth it reached.
+        depth: u32,
+        /// The declared maximum.
+        maximum: u32,
+    },
+    /// One tree was offered leaves of more than one representation plan
+    /// (§11.3).
+    ///
+    /// The dispatch §11.3 forbids, arriving as a tree rather than as an
+    /// opcode: a taproot output committing both representations' leaves
+    /// lets a spender choose which semantics to run, and no care inside
+    /// the programs takes that choice back.
+    MixedRepresentationTree {
+        /// Every representation the declarations named.
+        representations: BTreeSet<LiveTransferRepresentationPlan>,
     },
 
     // --- Carrier closure ----------------------------------------------

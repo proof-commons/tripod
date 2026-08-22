@@ -60,14 +60,117 @@
 //! it is what keeps the bound load-bearing rather than assumed, so that
 //! raising the budget past what the proof covers refuses instead of
 //! quietly returning a number that is not any tree's cost.
+//!
+//! # Two leaf vocabularies, one construction
+//!
+//! Guide 13's live-transfer leaves are a different type from compact
+//! ASH's, and deliberately so — §11.3 keeps the two representations'
+//! leaf sets disjoint, and [`crate::live_taptree`] is where the live
+//! trees are assembled. What is *not* duplicated is anything in this
+//! module: the pool, the walk, and both oracles are generic over
+//! [`TreeLeaf`], so the live tree is the same construction checked by
+//! the same arithmetic rather than a second implementation that would
+//! have to be verified again. The trait's two refusal constructors are
+//! what let one generic core report in this crate's one refusal type.
+//!
+//! # Why a second exact route exists
+//!
+//! The subset oracle is exhaustive over the whole tree space and is
+//! therefore exponential, which is what [`ORACLE_LEAF_BUDGET`] bounds.
+//! Guide 13's candidate commits twenty-nine leaves, well past it, and a
+//! tree nothing checked would be a tree nothing established. So a second
+//! *exact* route is available where the objective admits one:
+//! [`equal_weight_minimum_cost`] is a closed form rather than a search,
+//! so it answers at any size this module admits, and §14.5's equal-weight
+//! rule is exactly the case Guide 13 is in. It is not a weaker check —
+//! it is the same number by arithmetic — and it is not trusted on its own
+//! authority either: it is required to agree with the subset oracle at
+//! every size the oracle can reach.
+//!
+//! [`OptimumEvidencePolicy`] is how a caller says which routes it admits,
+//! and [`DeterministicTaptree::optimum_route`] records which one answered,
+//! so a reader of a committed tree can tell how its optimality was
+//! established rather than having to infer it from the leaf count.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Debug;
 use std::num::{NonZeroU32, NonZeroU64};
 
 use tapscript::{LeafRole, ProgramRole};
 use target_elements::LeafVersion;
 
 use crate::error::LinkRefusal;
+
+/// A leaf identity the deterministic construction can commit.
+///
+/// Implemented for compact ASH's [`LeafRole`] and for Guide 13's
+/// [`tapscript::LiveTransferLeafRole`], which is the whole point: one
+/// construction, one cost arithmetic, and one pair of oracles serve both
+/// leaf vocabularies, so nothing about tree optimality has to be
+/// established twice.
+///
+/// The two refusal constructors are members rather than a `Display`
+/// bound because §14.3's rule holds here too — a leaf's identity is its
+/// typed value, never a rendering of it — so the refusal carries the
+/// leaf itself and the implementor states which variant carries it.
+pub trait TreeLeaf: Copy + Ord + Debug {
+    /// The program-role vocabulary this leaf's operation uses.
+    type Role: Copy + Ord + Debug;
+
+    /// The program role this leaf carries.
+    ///
+    /// A function of the identity rather than a free fact, which is what
+    /// §14.5 and §11.4 both mean by deriving the role from the leaf: a
+    /// leaf declared the coordinator of a shape while carrying the member
+    /// program's role has no spelling.
+    fn leaf_program_role(self) -> Self::Role;
+
+    /// The refusal for this leaf being declared more than once.
+    fn duplicate_declaration(self) -> LinkRefusal;
+
+    /// The refusal for this leaf's control path exceeding the maximum.
+    fn depth_exceeded(self, depth: u32, maximum: u32) -> LinkRefusal;
+}
+
+impl TreeLeaf for LeafRole {
+    type Role = ProgramRole;
+
+    fn leaf_program_role(self) -> ProgramRole {
+        self.program_role()
+    }
+
+    fn duplicate_declaration(self) -> LinkRefusal {
+        LinkRefusal::DuplicateTreeLeaf(self)
+    }
+
+    fn depth_exceeded(self, depth: u32, maximum: u32) -> LinkRefusal {
+        LinkRefusal::TreeDepthExceeded {
+            leaf: self,
+            depth,
+            maximum,
+        }
+    }
+}
+
+impl TreeLeaf for tapscript::LiveTransferLeafRole {
+    type Role = tapscript::LiveProgramRole;
+
+    fn leaf_program_role(self) -> tapscript::LiveProgramRole {
+        self.program_role()
+    }
+
+    fn duplicate_declaration(self) -> LinkRefusal {
+        LinkRefusal::DuplicateLiveTreeLeaf(self)
+    }
+
+    fn depth_exceeded(self, depth: u32, maximum: u32) -> LinkRefusal {
+        LinkRefusal::LiveTreeDepthExceeded {
+            leaf: self,
+            depth,
+            maximum,
+        }
+    }
+}
 
 /// The largest leaf set the exact oracle is run over.
 ///
@@ -77,6 +180,21 @@ use crate::error::LinkRefusal;
 /// a typed complexity failure and no partial result, which is what
 /// §1.11 requires of a search that exceeds its budget.
 pub const ORACLE_LEAF_BUDGET: usize = 16;
+
+/// The largest leaf set any tree in this module is built over.
+///
+/// A bound on the *construction* rather than on a search, and it is what
+/// the exact domain argument rests on once the subset oracle is not the
+/// route that establishes the optimum. Every weight is below `2^64` and
+/// there are at most `2^10` of them, so a subset weight stays below
+/// `2^74`; no leaf of a binary tree on `2^10` leaves sits deeper than
+/// `2^10`, so the total weighted depth stays below `2^84`. That leaves
+/// `u128` a factor of `2^44` in hand, and every step is checked anyway.
+///
+/// Guide 13's candidate commits twenty-nine leaves, so the budget is not
+/// a constraint the candidate feels; it is what keeps the domain
+/// argument true of every tree this module will build.
+pub const TREE_LEAF_BUDGET: usize = 1024;
 
 /// The objective the deterministic tree is selected under (§14.5).
 ///
@@ -90,14 +208,56 @@ pub enum TreeObjective {
     MinimumTotalWeightedDepth,
 }
 
+/// Which exact routes to the optimum a caller admits (§14.5, §11.4).
+///
+/// A parameter rather than a rule this module picks, because the two
+/// routes have different reaches and the difference is a fact about the
+/// artifact: a tree whose optimality came from exhaustive enumeration
+/// over the whole tree space is established more broadly than one whose
+/// optimality came from a closed form that holds only for equal weights.
+/// Both are exact. Neither is an estimate. What a caller chooses is which
+/// statement it wants to be able to make.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum OptimumEvidencePolicy {
+    /// Only the subset oracle establishes the optimum.
+    ///
+    /// A leaf set past [`ORACLE_LEAF_BUDGET`] is refused rather than
+    /// established some other way. This is compact ASH's policy and its
+    /// twelve leaves sit well inside the budget.
+    SubsetOracleOnly,
+    /// The subset oracle where it reaches, the equal-weight closed form
+    /// beyond it.
+    ///
+    /// Guide 13's policy. The closed form is exact arithmetic rather than
+    /// a search, so it answers at the twenty-nine leaves the live
+    /// candidate commits; it applies only where every leaf carries the
+    /// same weight, which is §14.5's own rule when no execution-frequency
+    /// data exists, and a leaf set with unequal weights past the oracle's
+    /// budget is refused here exactly as it is under the stricter policy.
+    SubsetOracleOrEqualWeightClosedForm,
+}
+
+/// Which exact route established one tree's optimality.
+///
+/// Recorded on the tree rather than inferred from the leaf count, so a
+/// consumer reading a committed tree reads how its optimality was
+/// established instead of reconstructing the decision.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ExactOptimumRoute {
+    /// The subset dynamic program over every binary tree on the leaves.
+    SubsetOracle,
+    /// The closed form for a leaf set whose weights are all equal.
+    EqualWeightClosedForm,
+}
+
 /// One leaf of the candidate tree input (§14.5).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TapLeafInput {
-    leaf: LeafRole,
+pub struct TapLeafInput<L = LeafRole> {
+    leaf: L,
     weight: NonZeroU64,
 }
 
-impl TapLeafInput {
+impl<L: TreeLeaf> TapLeafInput<L> {
     /// State one leaf's tree input.
     ///
     /// The weight is a positive integer by type, which is §14.5's
@@ -109,26 +269,26 @@ impl TapLeafInput {
     ///
     /// [`role`]: Self::role
     #[must_use]
-    pub const fn new(leaf: LeafRole, weight: NonZeroU64) -> Self {
+    pub const fn new(leaf: L, weight: NonZeroU64) -> Self {
         Self { leaf, weight }
     }
 
     /// The leaf's identity, which is also its stable tie-break key.
     #[must_use]
-    pub const fn leaf(self) -> LeafRole {
+    pub const fn leaf(self) -> L {
         self.leaf
     }
 
     /// The program role the leaf carries, derived from its identity.
     ///
-    /// [`LeafRole::program_role`] is the one definition of which
-    /// program a leaf runs, and this is a call to it. A leaf therefore
-    /// cannot be declared the coordinator of a shape while carrying the
-    /// member program's role: the disagreement §14.5 would otherwise
+    /// [`TreeLeaf::leaf_program_role`] is the one definition of which program
+    /// a leaf runs, and this is a call to it. A leaf therefore cannot be
+    /// declared the coordinator of a shape while carrying the member
+    /// program's role: the disagreement §14.5 and §11.4 would otherwise
     /// have to be checked for has no spelling.
     #[must_use]
-    pub const fn role(self) -> ProgramRole {
-        self.leaf.program_role()
+    pub fn role(self) -> L::Role {
+        self.leaf.leaf_program_role()
     }
 
     /// The leaf's exact positive weight.
@@ -140,14 +300,14 @@ impl TapLeafInput {
 
 /// The complete candidate tree input (§14.5).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TaptreeInput {
-    leaves: BTreeMap<LeafRole, TapLeafInput>,
+pub struct TaptreeInput<L = LeafRole> {
+    leaves: BTreeMap<L, TapLeafInput<L>>,
     leaf_version: LeafVersion,
     objective: TreeObjective,
     maximum_depth: NonZeroU32,
 }
 
-impl TaptreeInput {
+impl<L: TreeLeaf> TaptreeInput<L> {
     /// State the tree input.
     ///
     /// The leaf set is a map keyed by the leaf's own identity, which is
@@ -167,15 +327,15 @@ impl TaptreeInput {
     /// [`LinkRefusal::DuplicateTreeLeaf`] when one leaf is declared
     /// more than once.
     pub fn new(
-        leaves: impl IntoIterator<Item = TapLeafInput>,
+        leaves: impl IntoIterator<Item = TapLeafInput<L>>,
         leaf_version: LeafVersion,
         objective: TreeObjective,
         maximum_depth: NonZeroU32,
     ) -> Result<Self, LinkRefusal> {
-        let mut collected: BTreeMap<LeafRole, TapLeafInput> = BTreeMap::new();
+        let mut collected: BTreeMap<L, TapLeafInput<L>> = BTreeMap::new();
         for input in leaves {
             if collected.insert(input.leaf, input).is_some() {
-                return Err(LinkRefusal::DuplicateTreeLeaf(input.leaf));
+                return Err(input.leaf.duplicate_declaration());
             }
         }
         let leaves = collected;
@@ -193,7 +353,7 @@ impl TaptreeInput {
 
     /// Every leaf, in canonical order.
     #[must_use]
-    pub const fn leaves(&self) -> &BTreeMap<LeafRole, TapLeafInput> {
+    pub const fn leaves(&self) -> &BTreeMap<L, TapLeafInput<L>> {
         &self.leaves
     }
 
@@ -223,16 +383,16 @@ impl TaptreeInput {
 /// block's hash sequence once it has a hash function and a reason to
 /// use one; it is not a claim about any byte.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ControlPathRecipe {
-    leaf: LeafRole,
+pub struct ControlPathRecipe<L = LeafRole> {
+    leaf: L,
     depth: u32,
-    siblings: Vec<BTreeSet<LeafRole>>,
+    siblings: Vec<BTreeSet<L>>,
 }
 
-impl ControlPathRecipe {
+impl<L: TreeLeaf> ControlPathRecipe<L> {
     /// The leaf this path reaches.
     #[must_use]
-    pub const fn leaf(&self) -> LeafRole {
+    pub const fn leaf(&self) -> L {
         self.leaf
     }
 
@@ -245,22 +405,23 @@ impl ControlPathRecipe {
     /// Every sibling subtree, from the leaf upward, named by its
     /// leaves.
     #[must_use]
-    pub fn siblings(&self) -> &[BTreeSet<LeafRole>] {
+    pub fn siblings(&self) -> &[BTreeSet<L>] {
         &self.siblings
     }
 }
 
 /// The committed tree.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DeterministicTaptree {
+pub struct DeterministicTaptree<L = LeafRole> {
     leaf_version: LeafVersion,
     objective: TreeObjective,
-    recipes: BTreeMap<LeafRole, ControlPathRecipe>,
+    recipes: BTreeMap<L, ControlPathRecipe<L>>,
     cost: u128,
     depth: u32,
+    route: ExactOptimumRoute,
 }
 
-impl DeterministicTaptree {
+impl<L: TreeLeaf> DeterministicTaptree<L> {
     /// The leaf version every committed leaf carries.
     #[must_use]
     pub const fn leaf_version(&self) -> LeafVersion {
@@ -275,8 +436,14 @@ impl DeterministicTaptree {
 
     /// Every leaf's control-path recipe, in canonical order.
     #[must_use]
-    pub const fn recipes(&self) -> &BTreeMap<LeafRole, ControlPathRecipe> {
+    pub const fn recipes(&self) -> &BTreeMap<L, ControlPathRecipe<L>> {
         &self.recipes
+    }
+
+    /// Which exact route established this tree's optimality.
+    #[must_use]
+    pub const fn optimum_route(&self) -> ExactOptimumRoute {
+        self.route
     }
 
     /// The tree's exact cost under the declared objective.
@@ -304,14 +471,14 @@ impl DeterministicTaptree {
 /// look one up: weight and depth meet where both are known, and there
 /// is no join to fall back on a default for.
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum Node {
-    Leaf { leaf: LeafRole, weight: u128 },
+enum Node<L> {
+    Leaf { leaf: L, weight: u128 },
     Branch(Box<Self>, Box<Self>),
 }
 
-impl Node {
+impl<L: TreeLeaf> Node<L> {
     /// Every leaf beneath this node.
-    fn leaves(&self) -> BTreeSet<LeafRole> {
+    fn leaves(&self) -> BTreeSet<L> {
         match self {
             Self::Leaf { leaf, .. } => BTreeSet::from([*leaf]),
             Self::Branch(left, right) => {
@@ -325,37 +492,59 @@ impl Node {
 
 /// Assemble the deterministic tree and check it against the oracle.
 ///
-/// The three §14.5 obligations all run here rather than being left to a
-/// test: the tree is compared with the exact optimum, it is rebuilt
-/// from a reversed declaration order and required to be identical, and
-/// its depth is required to be within the declared maximum.
+/// Compact ASH's entry point, and its policy is the strict one: the
+/// subset oracle alone establishes the optimum, so a leaf set past
+/// [`ORACLE_LEAF_BUDGET`] is refused rather than established some other
+/// way. The twelve leaves this candidate commits sit well inside it.
 ///
 /// # Errors
 ///
-/// [`LinkRefusal::TreeOracleBudgetExceeded`] when the leaf set is
-/// larger than the exact oracle's budget,
-/// [`LinkRefusal::NonOptimalTree`] when the construction and the oracle
-/// disagree, [`LinkRefusal::NonDeterministicTree`] when declaration
-/// order changes the answer, [`LinkRefusal::TreeDepthExceeded`] when a
-/// control path is deeper than the input admits, and
+/// Every refusal [`assemble_under`] raises.
+pub fn assemble(input: &TaptreeInput) -> Result<DeterministicTaptree, LinkRefusal> {
+    assemble_under(input, OptimumEvidencePolicy::SubsetOracleOnly)
+}
+
+/// Assemble the deterministic tree under one optimum-evidence policy.
+///
+/// The four §14.5 and §11.4 obligations all run here rather than being
+/// left to a test: the tree is compared with an exact optimum computed by
+/// an independent route, it is rebuilt from a reversed declaration order
+/// and required to be identical, its depth is required to be within the
+/// declared maximum, and every step of the cost arithmetic is checked
+/// rather than saturated.
+///
+/// # Errors
+///
+/// [`LinkRefusal::TreeOracleBudgetExceeded`] when no admitted route
+/// reaches the leaf set, [`LinkRefusal::TreeLeafBudgetExceeded`] when the
+/// leaf set is past the construction's own bound,
+/// [`LinkRefusal::NonOptimalTree`] when the construction and the exact
+/// route disagree, [`LinkRefusal::NonDeterministicTree`] when declaration
+/// order changes the answer, the leaf's own depth refusal when a control
+/// path is deeper than the input admits, and
 /// [`LinkRefusal::TreeCostOverflow`] which the module's domain argument
 /// shows cannot be reached at the current budget.
-pub fn assemble(input: &TaptreeInput) -> Result<DeterministicTaptree, LinkRefusal> {
-    let ordered: Vec<TapLeafInput> = input.leaves.values().copied().collect();
+pub fn assemble_under<L: TreeLeaf>(
+    input: &TaptreeInput<L>,
+    policy: OptimumEvidencePolicy,
+) -> Result<DeterministicTaptree<L>, LinkRefusal> {
+    let ordered: Vec<TapLeafInput<L>> = input.leaves.values().copied().collect();
 
-    // The budget is checked here rather than only inside the oracle,
-    // because it is what bounds the leaf count for the module's `u128`
-    // sufficiency argument. A leaf set past it must reach no arithmetic
-    // at all, not merely fail the comparison afterwards.
-    if ordered.len() > ORACLE_LEAF_BUDGET {
-        return Err(LinkRefusal::TreeOracleBudgetExceeded {
+    // Both budgets are checked here rather than only inside the routes,
+    // because they are what bound the leaf count for the module's `u128`
+    // sufficiency argument. A leaf set past either must reach no
+    // arithmetic at all, not merely fail the comparison afterwards.
+    if ordered.len() > TREE_LEAF_BUDGET {
+        return Err(LinkRefusal::TreeLeafBudgetExceeded {
             leaves: ordered.len(),
-            budget: ORACLE_LEAF_BUDGET,
+            budget: TREE_LEAF_BUDGET,
         });
     }
+    let weights: Vec<u64> = ordered.iter().map(|leaf| leaf.weight.get()).collect();
+    let route = admitted_route(policy, &weights)?;
 
     let root = huffman(&ordered)?;
-    let reversed: Vec<TapLeafInput> = ordered.iter().copied().rev().collect();
+    let reversed: Vec<TapLeafInput<L>> = ordered.iter().copied().rev().collect();
     if huffman(&reversed)? != root {
         return Err(LinkRefusal::NonDeterministicTree);
     }
@@ -364,12 +553,15 @@ pub fn assemble(input: &TaptreeInput) -> Result<DeterministicTaptree, LinkRefusa
     let mut cost = 0u128;
     describe(&root, &mut Vec::new(), &mut recipes, &mut cost)?;
 
-    let optimum = exact_minimum_cost(
-        &ordered
-            .iter()
-            .map(|leaf| leaf.weight.get())
-            .collect::<Vec<_>>(),
-    )?;
+    let optimum = match route {
+        ExactOptimumRoute::SubsetOracle => exact_minimum_cost(&weights)?,
+        // The route was admitted only for an all-equal weight vector, and
+        // a non-empty one, so the first weight is every weight.
+        ExactOptimumRoute::EqualWeightClosedForm => equal_weight_minimum_cost(
+            ordered.len(),
+            *weights.first().ok_or(LinkRefusal::EmptyLeafSet)?,
+        )?,
+    };
     if cost != optimum {
         return Err(LinkRefusal::NonOptimalTree {
             constructed: cost,
@@ -387,11 +579,7 @@ pub fn assemble(input: &TaptreeInput) -> Result<DeterministicTaptree, LinkRefusa
             .values()
             .max_by_key(|recipe| recipe.depth)
             .map_or(ordered[0].leaf, |recipe| recipe.leaf);
-        return Err(LinkRefusal::TreeDepthExceeded {
-            leaf: deepest,
-            depth,
-            maximum: input.maximum_depth.get(),
-        });
+        return Err(deepest.depth_exceeded(depth, input.maximum_depth.get()));
     }
 
     Ok(DeterministicTaptree {
@@ -400,6 +588,37 @@ pub fn assemble(input: &TaptreeInput) -> Result<DeterministicTaptree, LinkRefusa
         recipes,
         cost,
         depth,
+        route,
+    })
+}
+
+/// The exact route one policy admits for one weight vector.
+///
+/// The subset oracle first wherever it reaches, because it is the
+/// stronger statement: it ranges over the whole tree space and holds for
+/// any weights at all. The closed form is reached only past the oracle's
+/// budget and only for an all-equal vector, which is the one case its
+/// arithmetic is a theorem about.
+///
+/// # Errors
+///
+/// [`LinkRefusal::TreeOracleBudgetExceeded`] when no admitted route
+/// reaches the leaf set, which is what §1.11 requires of a search past
+/// its budget: a typed failure and no partial answer.
+fn admitted_route(
+    policy: OptimumEvidencePolicy,
+    weights: &[u64],
+) -> Result<ExactOptimumRoute, LinkRefusal> {
+    if weights.len() <= ORACLE_LEAF_BUDGET {
+        return Ok(ExactOptimumRoute::SubsetOracle);
+    }
+    let equal = weights.windows(2).all(|pair| pair[0] == pair[1]);
+    if policy == OptimumEvidencePolicy::SubsetOracleOrEqualWeightClosedForm && equal {
+        return Ok(ExactOptimumRoute::EqualWeightClosedForm);
+    }
+    Err(LinkRefusal::TreeOracleBudgetExceeded {
+        leaves: weights.len(),
+        budget: ORACLE_LEAF_BUDGET,
     })
 }
 
@@ -420,8 +639,8 @@ pub fn assemble(input: &TaptreeInput) -> Result<DeterministicTaptree, LinkRefusa
 ///
 /// [`LinkRefusal::EmptyLeafSet`] when there is no leaf to build from,
 /// and [`LinkRefusal::TreeCostOverflow`] on an unreachable overflow.
-fn huffman(leaves: &[TapLeafInput]) -> Result<Node, LinkRefusal> {
-    let mut pool: Vec<(u128, LeafRole, Node)> = leaves
+fn huffman<L: TreeLeaf>(leaves: &[TapLeafInput<L>]) -> Result<Node<L>, LinkRefusal> {
+    let mut pool: Vec<(u128, L, Node<L>)> = leaves
         .iter()
         .map(|input| {
             let weight = u128::from(input.weight.get());
@@ -459,7 +678,7 @@ fn huffman(leaves: &[TapLeafInput]) -> Result<Node, LinkRefusal> {
 }
 
 /// Remove and return the least entry under (weight, least leaf).
-fn take_least(pool: &mut Vec<(u128, LeafRole, Node)>) -> (u128, LeafRole, Node) {
+fn take_least<L: TreeLeaf>(pool: &mut Vec<(u128, L, Node<L>)>) -> (u128, L, Node<L>) {
     let mut best = 0;
     for (index, entry) in pool.iter().enumerate() {
         if (entry.0, entry.1) < (pool[best].0, pool[best].1) {
@@ -482,10 +701,10 @@ fn take_least(pool: &mut Vec<(u128, LeafRole, Node)>) -> (u128, LeafRole, Node) 
 /// [`LinkRefusal::TreeCostOverflow`] if a depth did not fit its type or
 /// the running total did not fit the exact domain, neither of which the
 /// module's budget admits.
-fn describe(
-    node: &Node,
-    siblings: &mut Vec<BTreeSet<LeafRole>>,
-    recipes: &mut BTreeMap<LeafRole, ControlPathRecipe>,
+fn describe<L: TreeLeaf>(
+    node: &Node<L>,
+    siblings: &mut Vec<BTreeSet<L>>,
+    recipes: &mut BTreeMap<L, ControlPathRecipe<L>>,
     cost: &mut u128,
 ) -> Result<(), LinkRefusal> {
     match node {
@@ -520,6 +739,77 @@ fn describe(
         }
     }
     Ok(())
+}
+
+/// The exact minimum cost over every binary tree on `count` leaves that
+/// all carry `weight`.
+///
+/// Arithmetic rather than search, which is the whole reason it exists:
+/// the subset oracle below is exponential and stops at
+/// [`ORACLE_LEAF_BUDGET`], and Guide 13's candidate commits twenty-nine
+/// leaves. This answers exactly, at any size the module admits.
+///
+/// # Why the formula is the minimum
+///
+/// For equal weights the objective is the external path length, and the
+/// minimum external path length over `n` leaves is reached by every tree
+/// whose leaves sit at depths `k-1` and `k`, where `k` is the least
+/// integer with `2^k` at least `n`. A binary tree on `n` leaves has at
+/// most `2^d` leaves at depth `d`, so no tree can put more than `2^(k-1)`
+/// leaves shallower than `k`; placing `2^k - n` of them at `k-1` and the
+/// remaining `2n - 2^k` at `k` uses that allowance exactly and is
+/// realizable, so the bound is attained. The total depth is then
+/// `(2^k - n)(k-1) + (2n - 2^k)k`, which is `n*k - (2^k - n)`, and the
+/// cost is that times the shared weight.
+///
+/// The formula is not trusted on its own authority either: it is
+/// required to agree with [`exact_minimum_cost`] at every size that
+/// oracle can reach, which is a comparison against an exhaustive search
+/// over the whole tree space rather than against a second derivation of
+/// the same algebra.
+///
+/// # Errors
+///
+/// [`LinkRefusal::EmptyLeafSet`] for no leaves at all, and
+/// [`LinkRefusal::TreeLeafBudgetExceeded`] past [`TREE_LEAF_BUDGET`],
+/// which is what the exact domain argument rests on. Also
+/// [`LinkRefusal::TreeCostOverflow`], which that budget rules out.
+pub fn equal_weight_minimum_cost(count: usize, weight: u64) -> Result<u128, LinkRefusal> {
+    if count == 0 {
+        return Err(LinkRefusal::EmptyLeafSet);
+    }
+    if count > TREE_LEAF_BUDGET {
+        return Err(LinkRefusal::TreeLeafBudgetExceeded {
+            leaves: count,
+            budget: TREE_LEAF_BUDGET,
+        });
+    }
+    if count == 1 {
+        return Ok(0);
+    }
+
+    let leaves = u128::from(u64::try_from(count).map_err(|_| LinkRefusal::TreeCostOverflow)?);
+    // The least `k` with `2^k` at least `count`. The budget bounds it at
+    // ten, so the shift below cannot reach the width of the type.
+    let mut levels = 0u32;
+    while (1u128 << levels) < leaves {
+        levels = levels.checked_add(1).ok_or(LinkRefusal::TreeCostOverflow)?;
+    }
+
+    let capacity = 1u128 << levels;
+    let total_depth = leaves
+        .checked_mul(u128::from(levels))
+        .ok_or(LinkRefusal::TreeCostOverflow)?
+        .checked_sub(
+            capacity
+                .checked_sub(leaves)
+                .ok_or(LinkRefusal::TreeCostOverflow)?,
+        )
+        .ok_or(LinkRefusal::TreeCostOverflow)?;
+
+    u128::from(weight)
+        .checked_mul(total_depth)
+        .ok_or(LinkRefusal::TreeCostOverflow)
 }
 
 /// The exact minimum cost over every binary tree on these weights.
