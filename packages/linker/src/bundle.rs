@@ -410,6 +410,11 @@ impl CandidateLinkedBundle {
     }
 
     /// The exact total linked program bytes of every committed leaf.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the construction-time bound below stops holding,
+    /// which no linked bundle can arrange.
     #[must_use]
     pub fn total_script_bytes(&self) -> u64 {
         // A returned linked bundle has already passed the taptree

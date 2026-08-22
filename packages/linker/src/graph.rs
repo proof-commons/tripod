@@ -259,6 +259,11 @@ pub const fn leaf_symbol(leaf: LeafRole) -> BundleSymbol {
 /// symbol the definition census does not hold, and
 /// [`LinkRefusal::ReferenceSiteCountOverflow`] if one edge's exact site
 /// count does not fit the graph's observable count type.
+///
+/// # Panics
+///
+/// Panics only if a collected edge carries a zero site count, which
+/// the recording helper cannot produce.
 pub fn resolve_references(
     bundle: &CandidateRelocatableTapscriptBundle,
     strategy: SelfCommitmentStrategy,
