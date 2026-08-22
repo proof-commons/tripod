@@ -19,6 +19,13 @@
 //!   cargo test -p tripod-vectors --test compact_ash_operation -- --ignored --nocapture
 //! ```
 //!
+//! `TRIPOD_OPERATION_EXECUTOR_TIP` and `TRIPOD_OPERATION_UPSTREAM_BASE`
+//! state ADR-018's provenance expectation, with
+//! `TRIPOD_OPERATION_LOCAL_TOPICS` naming the folded-in topics as a
+//! comma-separated list. Stating them makes the run's report carry a
+//! comparison rather than a claim; a run by any other binary then has no
+//! report at all.
+//!
 //! # What this file still owns
 //!
 //! Obtaining a run, and asserting the shape of one that completed. The
@@ -55,6 +62,7 @@ use target_elements_conformance::executor::{
     execute_operations,
 };
 use target_elements_conformance::protocol::ObservedOutcomeLayer;
+use target_elements_conformance::provenance::ExpectedExecutorProvenance;
 use vectors::operation::{CompactAshOperationPlanner, OperationTranscript};
 use vectors::render::{render_refused_run, render_validated_report};
 use vectors::report::validate_operation_report;
@@ -92,6 +100,32 @@ fn timing_path(report: &Path) -> PathBuf {
     path
 }
 
+/// ADR-018's expectation, where the operator stated one.
+///
+/// Optional because a mock adapter has no build to declare and a run
+/// against one must stay possible. Where it is stated, the report
+/// validation makes the comparison and a run by any other binary
+/// produces no report at all. It is read from the operator's own
+/// environment rather than derived here: an expectation this lane
+/// computed for itself would be the executor supplying both operands.
+///
+/// Half an expectation is none. Comparing a tip while the base goes
+/// unstated establishes less than the pair does and would read as though
+/// it had established the pair.
+fn stated_provenance_expectation() -> Option<ExpectedExecutorProvenance> {
+    let tip = environment("TRIPOD_OPERATION_EXECUTOR_TIP")?;
+    let base = environment("TRIPOD_OPERATION_UPSTREAM_BASE")?;
+    let topics = environment("TRIPOD_OPERATION_LOCAL_TOPICS").unwrap_or_default();
+    Some(
+        ExpectedExecutorProvenance::new(
+            &tip,
+            &base,
+            topics.split(',').filter(|topic| !topic.is_empty()),
+        )
+        .expect("the stated provenance expectation is in the admitted syntax"),
+    )
+}
+
 #[test]
 #[ignore = "needs a live Elements node and an executor adapter"]
 fn compact_ash_runs_against_a_real_target() {
@@ -122,7 +156,7 @@ fn compact_ash_runs_against_a_real_target() {
     let timeout = environment("TRIPOD_OPERATION_TIMEOUT_SECONDS")
         .and_then(|value| value.parse::<u64>().ok())
         .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
-    let configuration = ExecutorConfiguration::new(
+    let mut configuration = ExecutorConfiguration::new(
         std::path::Path::new(&executor),
         // The trust declaration is the operator's and establishes nothing
         // about the program; this lane produces a transcript rather than
@@ -135,6 +169,9 @@ fn compact_ash_runs_against_a_real_target() {
         // operator recipe above still states every destination once.
         ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
     );
+    if let Some(expected) = stated_provenance_expectation() {
+        configuration = configuration.with_expected_provenance(expected);
+    }
 
     let mut planner = CompactAshOperationPlanner::new().expect("the planner builds");
     let started = Instant::now();

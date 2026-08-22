@@ -122,9 +122,11 @@ pub fn render_refused_run(
 /// What ran, as the report records it.
 ///
 /// The trust state is a declaration rather than a finding, and is
-/// written under a name that says so. The rest is what the executor said
-/// about itself, unverified here for the reason
-/// [`crate::report::ExecutorSelfDescription`] gives.
+/// written under a name that says so. What the executor said about
+/// itself is written under a name that says that too, and the ADR-018
+/// comparison is written separately from both: a run that made no
+/// comparison writes null there rather than borrowing the reported tip,
+/// so a reader can never mistake a claim for a verified one.
 fn render_executor(report: &ValidatedCompactAshOperationReport<'_>) -> String {
     let executor = report.executor();
     let mut out = String::new();
@@ -147,6 +149,14 @@ fn render_executor(report: &ValidatedCompactAshOperationReport<'_>) -> String {
         executor
             .intended_executed_tip()
             .map_or_else(|| "null".to_owned(), quote),
+    );
+    let _ = writeln!(
+        out,
+        "  \"executor_provenance_verified\": {},",
+        executor.expected_provenance().map_or_else(
+            || "null".to_owned(),
+            |validated| quote(validated.intended_tip().as_revision().as_str()),
+        ),
     );
     out
 }
