@@ -15,6 +15,7 @@ transaction_source_files = files(
   'src/tests/abi_tests.rs',
   'src/tests/construction_tests.rs',
   'src/tests/encoding_tests.rs',
+  'src/tests/guide13_preflight_tests.rs',
   'src/tests/mod.rs',
   'src/tests/taproot_tests.rs',
   'src/view.rs',

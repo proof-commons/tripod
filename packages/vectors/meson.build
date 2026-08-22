@@ -29,4 +29,5 @@ vectors_doc_files = files('README.md')
 # declared here.
 vectors_excluded_files = files(
   'tests/compact_ash_operation.rs',
+  'tests/guide13_preflight.rs',
 )

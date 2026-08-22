@@ -2230,6 +2230,55 @@ mod tests {
         );
     }
 
+    /// `G13-R03`: a fatal plan refusal actually refuses the plan.
+    ///
+    /// `settle_submission` records a weight disagreement in the
+    /// transcript and returns nothing, so the `Submit` and
+    /// `SubmitControl` arms of `next_step` — alone among the stages —
+    /// never turn it into `Err(PlanRefused)`. The planner keeps
+    /// scheduling, and the run ends by running out of steps: the control
+    /// plane says the operation completed while the operation report
+    /// carries a fatal refusal about it.
+    ///
+    /// Three properties at once, which is what makes the state
+    /// contradictory rather than merely surprising: the mismatch is
+    /// staged, the run refuses, and nothing was submitted after it.
+    #[test]
+    #[ignore = "G13-R03: confirmed, repair pending"]
+    fn a_misweighed_submission_stops_the_run_rather_than_completing_it() {
+        let (planner, finished) = run_weighing(refuse_beyond_bound, overstated_weight);
+        let transcript = planner.transcript();
+
+        // The fixture really did stage the mismatch this row is about.
+        let refusal = transcript
+            .refusal()
+            .expect("the fake target misweighs every submission by one");
+        assert!(
+            matches!(refusal, PlanRefusal::WeightObservationDisagrees { .. }),
+            "the staged refusal must be the weight disagreement: {refusal:?}",
+        );
+
+        assert!(
+            !finished,
+            "the plan ran out of steps while carrying a fatal refusal, so the executor result says completed and the transcript says refused",
+        );
+
+        let disagreed = transcript
+            .submissions()
+            .iter()
+            .position(|submission| submission.weight_agrees() == Some(false))
+            .expect("the misweighed submission is recorded");
+        assert_eq!(
+            disagreed,
+            transcript.submissions().len() - 1,
+            "the planner emitted further submissions after a refusal it had already recorded",
+        );
+        assert!(
+            transcript.mutants().is_empty(),
+            "the planner staged mutations after a refusal it had already recorded",
+        );
+    }
+
     #[test]
     fn a_target_that_weighs_nothing_leaves_the_comparison_unmade() {
         // The third case, kept distinct from agreement. An executor
