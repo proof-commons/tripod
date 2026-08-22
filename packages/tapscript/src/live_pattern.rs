@@ -264,9 +264,26 @@ census_enum! {
         /// (§7.6) and its owners are chosen per request (§12.3), so no
         /// leaf fixed at construction can carry a literal for it. The
         /// closure compares the asset and the version the program is read
-        /// at; recomputing the taproot output over the destination
-        /// owner's leaf set needs §11.4's deterministic tree and §12's
-        /// destination table, and then a target-native run.
+        /// at.
+        ///
+        /// # What the linker settled, and what is still owed
+        ///
+        /// The reason had three parts and now has two. §11.4's
+        /// deterministic tree exists: for each (owner, representation)
+        /// the linker produces the exact linked leaf programs and the
+        /// committed tree over them, and that tree is the one a
+        /// destination's version check points at. Two things still stand
+        /// between that and §10.4 holding whole — the taproot output key,
+        /// which §1.13 leaves uncomputed until a consumer of one exists,
+        /// and §12's destination table, which says which owner receives
+        /// which output position and is chosen per request.
+        ///
+        /// The residual is therefore re-scoped rather than cleared, and
+        /// it stays here for a reason no link changes: what a *program*
+        /// can establish about a destination it cannot see is unaffected
+        /// by what a linker establishes about which constructor a given
+        /// owner has. The linker states its own half as
+        /// `linker::LiveInductionStep`; this is still the leaves'.
         LinkedDestinationConstructorIdentity,
         /// The explicit or confidential form of an introspected field.
         ///
@@ -892,10 +909,16 @@ census_enum! {
         /// Not a §10 pattern at all, and that is why it is stated: no
         /// leaf can hold a literal for an owner-parameterized program
         /// whose owner the request chooses, so the remaining half of
-        /// §10.4 is owed by §11.4's deterministic taptree and §12's
-        /// destination table rather than by a fragment this crate has not
-        /// written yet. The matching residual is
-        /// [`RecognitionResidual::LinkedDestinationConstructorIdentity`].
+        /// §10.4 is owed outside this crate rather than by a fragment it
+        /// has not written yet.
+        ///
+        /// §11.4's deterministic taptree is built and is no longer among
+        /// the things owed; §12's destination table and the taproot
+        /// output key are. The slot stays outstanding because the slot
+        /// is about what the coordinator's emitted bytes reach, and no
+        /// linked tree changes that. The matching residual is
+        /// [`RecognitionResidual::LinkedDestinationConstructorIdentity`],
+        /// which carries the same re-scoping.
         DestinationConstructorIdentity,
     }
 }

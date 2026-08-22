@@ -1211,11 +1211,22 @@ census_enum! {
     /// target verdict, so a case whose residual list omitted it would be
     /// claiming an outcome nobody has seen.
     pub enum MutationResidual {
-        /// The mutation is expressible only in the linked taptree, and
-        /// §11's linker extension is not built.
-        LinkerNotExtended,
         /// The mutation is expressible only in a complete transaction,
         /// and §12's candidate ABI is not derived.
+        ///
+        /// Every expressible case carries it. It is the nearest blocker
+        /// now that §11's linker extension is built: the linked leaf
+        /// programs and the deterministic taptree exist, so each of the
+        /// mutations below has an artifact to be performed on, and what
+        /// none of them has is a transaction to perform it in.
+        ///
+        /// A `LinkerNotExtended` member stood in front of it for the
+        /// four taptree-level cases and is gone rather than kept as a
+        /// discharged marker: a residual nobody carries is a run nobody
+        /// is owed. Removing it moved the ABI dependency into view,
+        /// which the linker residual had been hiding — a census claiming
+        /// those cases were one target run away would have been two
+        /// waves optimistic.
         AbiNotDerived,
         /// The mutation needs a spent receipt built under a different
         /// constructor, and no predecessor exists to build one from.
@@ -1382,6 +1393,24 @@ pub enum MutationCensusDefect {
 /// The split is the useful part: it says exactly where the constructor's
 /// authority ends, and every case on the far side of that line names the
 /// component that has to exist before anybody can run it.
+///
+/// # What Wave 8 moved
+///
+/// Five of the six expressible cases named `LinkerNotExtended`, and the
+/// linker extension of §11 is built: the linked leaf programs and the
+/// deterministic taptree exist for each (owner, representation), so the
+/// owner bytes, the internal key, the tree's leaf set, and the
+/// representation of a committed tree are all things a surgeon now has
+/// an artifact to alter. That residual is therefore gone rather than
+/// retained as a discharged marker.
+///
+/// What replaced it in four of those cases is `AbiNotDerived`, and that
+/// is not a swap of one blocker for another of equal weight — it is a
+/// dependency the linker residual had been standing in front of.
+/// Observing a target verdict needs a complete target transaction
+/// (§1.11), §12's candidate ABI is what builds one, and a census that
+/// had simply dropped `LinkerNotExtended` would have reported these
+/// cases as one target run away when they are two waves away.
 #[must_use]
 pub fn constructor_mutation_cases() -> BTreeMap<ConstructorMutationCaseId, ConstructorMutationCase>
 {
@@ -1424,42 +1453,33 @@ pub fn constructor_mutation_cases() -> BTreeMap<ConstructorMutationCaseId, Const
                 }
 
                 // Past the constructor. Each names what would have to
-                // exist first: the owner bytes, the internal key, and
-                // the tree's leaves are resolved at link, the class and
-                // key-path cases need a transaction to put a predecessor
-                // or a witness in, and all of them need a verdict nobody
-                // can observe yet.
+                // exist first, and after Wave 8 that list is shorter by
+                // one: the owner bytes, the internal key, and the tree's
+                // leaves are resolved at link, and the link is built, so
+                // every one of these mutations now has a linked artifact
+                // to be performed on. What none of them has is a
+                // transaction to perform it in, or a verdict anybody can
+                // observe — and the predecessor case additionally has no
+                // earlier constructor to build a spent receipt under.
                 Case::OwnerBytesReplacedInTheLinkedOutput => (
                     Facet::OwnerMetadata,
                     Disposition::ExpressibleByRawSurgery,
-                    &[
-                        Residual::LinkerNotExtended,
-                        Residual::TargetNativeRunRequired,
-                    ],
+                    &[Residual::AbiNotDerived, Residual::TargetNativeRunRequired],
                 ),
                 Case::InternalKeyReplacedWithASpendableOne => (
                     Facet::InternalKeyPolicy,
                     Disposition::ExpressibleByRawSurgery,
-                    &[
-                        Residual::LinkerNotExtended,
-                        Residual::TargetNativeRunRequired,
-                    ],
+                    &[Residual::AbiNotDerived, Residual::TargetNativeRunRequired],
                 ),
                 Case::BurnLeafAddedToTheTaptree => (
                     Facet::CandidateLifecycle,
                     Disposition::ExpressibleByRawSurgery,
-                    &[
-                        Residual::LinkerNotExtended,
-                        Residual::TargetNativeRunRequired,
-                    ],
+                    &[Residual::AbiNotDerived, Residual::TargetNativeRunRequired],
                 ),
                 Case::RepresentationSwappedInTheLinkedTree => (
                     Facet::RepresentationRole,
                     Disposition::ExpressibleByRawSurgery,
-                    &[
-                        Residual::LinkerNotExtended,
-                        Residual::TargetNativeRunRequired,
-                    ],
+                    &[Residual::AbiNotDerived, Residual::TargetNativeRunRequired],
                 ),
                 Case::TimeLockedPredecessorOfferedToATransferLeaf => (
                     Facet::LiveClass,
@@ -1473,11 +1493,7 @@ pub fn constructor_mutation_cases() -> BTreeMap<ConstructorMutationCaseId, Const
                 Case::KeyPathSpendAttemptedOnTheLinkedOutput => (
                     Facet::KeyPathClosure,
                     Disposition::ExpressibleByRawSurgery,
-                    &[
-                        Residual::LinkerNotExtended,
-                        Residual::AbiNotDerived,
-                        Residual::TargetNativeRunRequired,
-                    ],
+                    &[Residual::AbiNotDerived, Residual::TargetNativeRunRequired],
                 ),
             };
 

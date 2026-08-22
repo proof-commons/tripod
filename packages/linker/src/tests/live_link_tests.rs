@@ -669,6 +669,65 @@ fn a_linked_bundle_always_owes_something_and_mints_no_digest() {
     );
 }
 
+// --- What the linker extension makes expressible ----------------------
+
+#[test]
+fn the_artifacts_the_flipped_mutation_cases_needed_now_exist() {
+    // The evidence behind Wave 8's flip of
+    // [`tapscript::MutationResidual`]. Four constructor mutation cases
+    // said they were expressible only in the linked taptree and that
+    // §11's linker extension was not built. It is, and this is what that
+    // means concretely rather than as an assertion in a census:
+    //
+    // - `OwnerBytesReplacedInTheLinkedOutput` needs a linked program
+    //   whose owner bytes could be replaced. Every leaf carries the
+    //   owner as a substituted symbol, so there is one;
+    // - `InternalKeyReplacedWithASpendableOne` needs a linked
+    //   constructor carrying a resolved internal key. Each does;
+    // - `BurnLeafAddedToTheTaptree` needs a committed taptree with a
+    //   leaf census to add to. Each constructor has one;
+    // - `RepresentationSwappedInTheLinkedTree` needs two representations'
+    //   leaves to swap between. Both are linked, and their leaf sets are
+    //   disjoint.
+    //
+    // What none of them has is a transaction, which is why every one of
+    // them now names the candidate ABI instead.
+    let target = reviewed_target();
+    let linked = link_live_candidate(&target, &live_bundles(), &live_deployment(&target))
+        .expect("the link completes");
+
+    let mut leaf_sets = Vec::new();
+    for constructor in linked.constructors().values() {
+        assert!(!constructor.internal_key().bytes().is_empty());
+        assert!(!constructor.taptree().recipes().is_empty());
+
+        let owner_bearing = constructor
+            .substituted()
+            .values()
+            .filter(|symbols| symbols.contains(&tapscript::LiveBundleSymbol::OwnerPublicKey))
+            .count();
+        assert_eq!(
+            owner_bearing, 29,
+            "no linked leaf carries the owner, so there is nothing to replace",
+        );
+
+        leaf_sets.push(
+            constructor
+                .taptree()
+                .recipes()
+                .keys()
+                .copied()
+                .collect::<BTreeSet<LiveTransferLeafRole>>(),
+        );
+    }
+
+    assert_eq!(leaf_sets.len(), 2);
+    assert!(
+        leaf_sets[0].is_disjoint(&leaf_sets[1]),
+        "the two representations' committed leaves overlap, so a swap would be no swap",
+    );
+}
+
 // --- Refusals ---------------------------------------------------------
 
 #[test]
