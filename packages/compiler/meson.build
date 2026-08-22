@@ -43,6 +43,7 @@ compiler_source_files = files(
   'src/tests/disclosure_tests.rs',
   'src/tests/expression_tests.rs',
   'src/tests/fold_tests.rs',
+  'src/tests/guide13_reproductions.rs',
   'src/tests/layout_tests.rs',
   'src/tests/lifecycle_tests.rs',
   'src/tests/mod.rs',

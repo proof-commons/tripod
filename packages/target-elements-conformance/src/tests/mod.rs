@@ -10,6 +10,7 @@ mod emit_tests;
 mod fixture_tests;
 mod guide11_reproductions;
 mod guide12_reproductions;
+mod guide13_reproductions;
 mod normalization_matrix_tests;
 mod operation_boundary_tests;
 mod protocol_tests;
