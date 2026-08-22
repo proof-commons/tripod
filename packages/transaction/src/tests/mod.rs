@@ -31,6 +31,7 @@
 mod abi_tests;
 mod construction_tests;
 mod encoding_tests;
+mod guide13_preflight_tests;
 mod taproot_tests;
 
 use std::num::{NonZeroU8, NonZeroU32, NonZeroU64};
