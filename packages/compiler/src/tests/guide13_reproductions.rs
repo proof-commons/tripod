@@ -1,10 +1,10 @@
 //! Guide-13 preflight reproductions owned by this crate.
 //!
-//! - `G13-R17` — CONFIRMED, and the one row of this wave with no
-//!   failing-test form. "The census cannot *prove* completeness" is the
-//!   absence of a check, not a wrong answer, so nothing here fails
-//!   today; what the tests below do is exhibit the exact gap, so the
-//!   claim is on record as measured rather than argued.
+//! - `G13-R17` — CONFIRMED, and REPAIRED at the source. The row was the
+//!   one entry of this wave with no failing-test form: "the census
+//!   cannot *prove* completeness" is the absence of a check, not a
+//!   wrong answer, so nothing here ever failed. The tests below exhibit
+//!   the exact gap the row named, and record what closing it changed.
 //!
 //! # What the helper does and does not establish
 //!
@@ -14,11 +14,25 @@
 //! Neither ranges over the enum, so a variant omitted from the census
 //! is invisible whenever the analysis does not happen to emit it — and
 //! `assess_complete_census` builds its "complete" input out of the very
-//! constant whose completeness is in question.
+//! constant whose completeness is in question. That is still true of
+//! the helper, which this repair did not touch, and the stand-in tests
+//! below keep it on record.
 //!
-//! The doc comment on `RequiredCapability::ALL` states the stronger
-//! property directly: "a member added to the enum and forgotten here
-//! fails at the boundary." That sentence is what the row falsifies.
+//! # What the repair changed
+//!
+//! The doc comment on `RequiredCapability::ALL` used to state the
+//! stronger property directly — "a member added to the enum and
+//! forgotten here fails at the boundary" — and that sentence was what
+//! the row falsified. It is gone, and so is the second list that made
+//! it false. `RequiredCapability` and its census are now generated from
+//! one declaration by `census_enum!`, per Guide-13 §8.3: a member
+//! omitted from the census is no longer a defect the boundary has to
+//! catch, because it cannot be written. The repair is structural, so
+//! the property it establishes is a compile-time one; what remains
+//! testable is that the generated census is canonical where the
+//! boundary reads it, which
+//! [`the_generated_capability_census_is_canonical_at_the_boundary`]
+//! recomputes.
 
 use std::collections::BTreeSet;
 
@@ -107,25 +121,33 @@ fn the_helper_still_refuses_a_misordered_or_repeated_census() {
     );
 }
 
-/// `G13-R17`: `ALL` and the enum are bound by two authored lists.
+/// `G13-R17`: the generated census satisfies the boundary it feeds.
 ///
-/// The standing test `the_capability_census_is_complete_and_duplicate_free`
-/// compares `RequiredCapability::ALL` with a literal array written
-/// beside it — its own comment says a "census compared only with itself
-/// agrees with itself". Both lists are hand-maintained, so a variant
-/// added to the enum and to neither list changes nothing that any test
-/// observes.
+/// `ALL` and the enum are no longer two authored lists, so the drift
+/// this row was filed about has no form to take: there is nothing for a
+/// test to compare, and a length assertion against a hand-counted
+/// number would now be a tautology dressed as a tripwire.
 ///
-/// What can be recorded without a generator is the count the two lists
-/// currently agree on. It is a tripwire and not a proof, and it is
-/// written here rather than in the census tests so that nothing reads
-/// it as the completeness check the row says is missing.
+/// What is worth recomputing is the promise the macro makes on the
+/// census it emits. It emits members in declaration order and fixes the
+/// derives so that `Ord` is declaration order too, which is what makes
+/// the result strictly increasing without anyone maintaining the
+/// ordering. Below that claim is checked the way the boundary checks
+/// it, by running the real helper over the real census with every
+/// member present: a generated census that failed here would be a
+/// generator defect rather than a forgotten line.
 #[test]
-fn the_capability_census_records_the_membership_it_was_measured_at() {
-    assert_eq!(
-        RequiredCapability::ALL.len(),
-        13,
-        "the census changed size; the enum and `ALL` must be checked against each other by hand \
-         until they are generated from one source",
+fn the_generated_capability_census_is_canonical_at_the_boundary() {
+    let every_member = RequiredCapability::ALL.iter().copied().collect();
+
+    let ordered = canonical_census(&every_member, RequiredCapability::ALL, |capability| {
+        CompileError::NoncanonicalCapabilityCensus { capability }
+    })
+    .expect("the generated census is strictly increasing and covers every present member");
+
+    assert_eq!(ordered, RequiredCapability::ALL);
+    assert!(
+        !ordered.is_empty(),
+        "an empty census would satisfy the assertion above vacuously",
     );
 }

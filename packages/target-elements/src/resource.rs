@@ -24,47 +24,36 @@
 
 use std::collections::BTreeMap;
 
-/// One resource the target accounts for, in its own unit.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum ResourceDimension {
-    /// Weight units of a whole transaction.
-    TransactionWeight,
-    /// Serialized bytes of the witness.
-    WitnessBytes,
-    /// Bytes of one script.
-    ScriptBytes,
-    /// Items on the witness stack before execution begins.
-    InitialStackItems,
-    /// The greatest combined main and alternate stack depth reached.
-    PeakStackItems,
-    /// Bytes of one stack element.
-    StackElementBytes,
-    /// The script-path validation budget.
-    ValidationBudget,
-    /// The per-script operation budget.
-    OperationCost,
-    /// Nodes on a control path from the root to the executing leaf.
-    ControlPathDepth,
-    /// Transactions or weight admitted in one package.
-    PackageLimit,
+use crate::capability::census_enum;
+
+census_enum! {
+    /// One resource the target accounts for, in its own unit.
+    #[non_exhaustive]
+    pub enum ResourceDimension {
+        /// Weight units of a whole transaction.
+        TransactionWeight,
+        /// Serialized bytes of the witness.
+        WitnessBytes,
+        /// Bytes of one script.
+        ScriptBytes,
+        /// Items on the witness stack before execution begins.
+        InitialStackItems,
+        /// The greatest combined main and alternate stack depth reached.
+        PeakStackItems,
+        /// Bytes of one stack element.
+        StackElementBytes,
+        /// The script-path validation budget.
+        ValidationBudget,
+        /// The per-script operation budget.
+        OperationCost,
+        /// Nodes on a control path from the root to the executing leaf.
+        ControlPathDepth,
+        /// Transactions or weight admitted in one package.
+        PackageLimit,
+    }
 }
 
 impl ResourceDimension {
-    /// The complete census of resource dimensions.
-    pub const ALL: &'static [Self] = &[
-        Self::TransactionWeight,
-        Self::WitnessBytes,
-        Self::ScriptBytes,
-        Self::InitialStackItems,
-        Self::PeakStackItems,
-        Self::StackElementBytes,
-        Self::ValidationBudget,
-        Self::OperationCost,
-        Self::ControlPathDepth,
-        Self::PackageLimit,
-    ];
-
     /// The dimensions a consensus contract must state.
     ///
     /// A missing entry among these is an incomplete contract, not a

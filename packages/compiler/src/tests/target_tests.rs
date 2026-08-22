@@ -52,7 +52,12 @@ fn requirements(operations: &[OperationId]) -> TargetRequirementSet {
 #[test]
 fn the_capability_census_is_complete_and_duplicate_free() {
     // An independently written expectation, not a fold over `ALL`: a
-    // census compared only with itself agrees with itself.
+    // census compared only with itself agrees with itself. Since
+    // `census_enum!` generates `ALL` from the enum, this literal no
+    // longer guards the two against each other — that drift is now
+    // unwriteable. It pins the membership itself, so adding, removing,
+    // or reordering a capability is a visible test change and not a
+    // silent one.
     let expected = [
         RequiredCapability::AuthenticatedObjectRecognition,
         RequiredCapability::AuthenticatedFamilyCardinality,

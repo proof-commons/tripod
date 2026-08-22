@@ -36,41 +36,30 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 
+use crate::capability::census_enum;
 use crate::encoding::ByteOrder;
 use crate::evidence::TargetEvidenceRequirementId;
 use crate::opcode::MAX_STACK_ELEMENT_BYTES;
 
-/// One way the target carries a literal payload in a script.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum PushForm {
-    /// The opcode that pushes the empty item.
-    Empty,
-    /// The opcodes that push a single small positive byte.
-    SmallNumber,
-    /// The opcode that pushes the single negative-one byte.
-    NegativeOne,
-    /// The opcodes whose own byte states the payload's width.
-    Direct,
-    /// The opcode followed by a one-byte width.
-    ExtendedOneByteWidth,
-    /// The opcode followed by a two-byte width.
-    ExtendedTwoByteWidth,
-    /// The opcode followed by a four-byte width.
-    ExtendedFourByteWidth,
-}
-
-impl PushForm {
-    /// The complete census of reviewed push forms.
-    pub const ALL: &'static [Self] = &[
-        Self::Empty,
-        Self::SmallNumber,
-        Self::NegativeOne,
-        Self::Direct,
-        Self::ExtendedOneByteWidth,
-        Self::ExtendedTwoByteWidth,
-        Self::ExtendedFourByteWidth,
-    ];
+census_enum! {
+    /// One way the target carries a literal payload in a script.
+    #[non_exhaustive]
+    pub enum PushForm {
+        /// The opcode that pushes the empty item.
+        Empty,
+        /// The opcodes that push a single small positive byte.
+        SmallNumber,
+        /// The opcode that pushes the single negative-one byte.
+        NegativeOne,
+        /// The opcodes whose own byte states the payload's width.
+        Direct,
+        /// The opcode followed by a one-byte width.
+        ExtendedOneByteWidth,
+        /// The opcode followed by a two-byte width.
+        ExtendedTwoByteWidth,
+        /// The opcode followed by a four-byte width.
+        ExtendedFourByteWidth,
+    }
 }
 
 /// How a form's opcode byte relates to the payload it pushes.
@@ -103,22 +92,18 @@ pub enum PushOpcodeMapping {
     },
 }
 
-/// Why a push is not one the target accepts in its canonical form.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum PushDefect {
-    /// The encoded push ends before its declared width does.
-    Truncated,
-    /// The payload is wider than the largest literal the target admits.
-    Oversized,
-    /// The payload is carried in a form that is not its unique minimal
-    /// one.
-    NonMinimal,
-}
-
-impl PushDefect {
-    /// The complete census of push defects.
-    pub const ALL: &'static [Self] = &[Self::Truncated, Self::Oversized, Self::NonMinimal];
+census_enum! {
+    /// Why a push is not one the target accepts in its canonical form.
+    #[non_exhaustive]
+    pub enum PushDefect {
+        /// The encoded push ends before its declared width does.
+        Truncated,
+        /// The payload is wider than the largest literal the target admits.
+        Oversized,
+        /// The payload is carried in a form that is not its unique minimal
+        /// one.
+        NonMinimal,
+    }
 }
 
 /// Which rule refuses a defective push.

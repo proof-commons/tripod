@@ -46,6 +46,7 @@ use std::collections::BTreeSet;
 use realization::ExternalEvidenceRequirement;
 
 pub use crate::capability::RequiredCapability;
+use crate::capability::census_enum;
 pub use crate::placement::PlacementSearchLimits;
 use crate::{
     CompileError,
@@ -53,27 +54,26 @@ use crate::{
     input::BoundCompilerInput,
 };
 
-/// The class of external claim one evidence requirement carries.
-///
-/// A compiler-owned projection of the realization requirement. It
-/// answers "what kind of thing must something outside this analysis
-/// establish", and nothing about which operation or asset raised it:
-/// those identities belong to the architecture, and a target adapter
-/// reading them would be reading a protocol fact through a target
-/// interface.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ExternalEvidenceRole {
-    /// The substrate itself must conserve value across a transaction.
+census_enum! {
+    /// The class of external claim one evidence requirement carries.
     ///
-    /// No analysis, and no program the analysis could emit, discharges
-    /// this. Only the target's own consensus rules do.
-    SubstrateConservation,
+    /// A compiler-owned projection of the realization requirement. It
+    /// answers "what kind of thing must something outside this analysis
+    /// establish", and nothing about which operation or asset raised it:
+    /// those identities belong to the architecture, and a target adapter
+    /// reading them would be reading a protocol fact through a target
+    /// interface.
+    pub enum ExternalEvidenceRole {
+        /// The substrate itself must conserve value across a
+        /// transaction.
+        ///
+        /// No analysis, and no program the analysis could emit,
+        /// discharges this. Only the target's own consensus rules do.
+        SubstrateConservation,
+    }
 }
 
 impl ExternalEvidenceRole {
-    /// The complete census of evidence roles, in canonical order.
-    pub const ALL: &'static [Self] = &[Self::SubstrateConservation];
-
     /// The role one realization requirement carries.
     ///
     /// Exhaustive with no wildcard arm: a realization requirement class

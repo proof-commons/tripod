@@ -29,40 +29,32 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::capability::census_enum;
 use crate::evidence::TargetEvidenceRequirementId;
 
-/// One structural term the target's fee-role test is made of.
-///
-/// The target recognizes its fee role by the *form* of the output, and
-/// this enumerates the conjuncts of that form. None of them is an
-/// amount comparison, which is the fact the protocol layer depends on:
-/// a fee output is not "an ordinary output whose amount is zero", and an
-/// ordinary output does not become a fee output by holding a small
-/// number.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum FeeRecognitionTerm {
-    /// The chain runs in the target's own transaction mode.
+census_enum! {
+    /// One structural term the target's fee-role test is made of.
     ///
-    /// Outside it the whole role does not exist, so this is a term of
-    /// the test rather than an ambient assumption.
-    ElementsTransactionMode,
-    /// The output's program is the empty program.
-    EmptyProgram,
-    /// The output's value field is explicit rather than a commitment.
-    ExplicitValue,
-    /// The output's asset field is explicit rather than a commitment.
-    ExplicitAsset,
-}
-
-impl FeeRecognitionTerm {
-    /// The complete census of recognition terms.
-    pub const ALL: &'static [Self] = &[
-        Self::ElementsTransactionMode,
-        Self::EmptyProgram,
-        Self::ExplicitValue,
-        Self::ExplicitAsset,
-    ];
+    /// The target recognizes its fee role by the *form* of the output, and
+    /// this enumerates the conjuncts of that form. None of them is an
+    /// amount comparison, which is the fact the protocol layer depends on:
+    /// a fee output is not "an ordinary output whose amount is zero", and an
+    /// ordinary output does not become a fee output by holding a small
+    /// number.
+    #[non_exhaustive]
+    pub enum FeeRecognitionTerm {
+        /// The chain runs in the target's own transaction mode.
+        ///
+        /// Outside it the whole role does not exist, so this is a term of
+        /// the test rather than an ambient assumption.
+        ElementsTransactionMode,
+        /// The output's program is the empty program.
+        EmptyProgram,
+        /// The output's value field is explicit rather than a commitment.
+        ExplicitValue,
+        /// The output's asset field is explicit rather than a commitment.
+        ExplicitAsset,
+    }
 }
 
 /// What a rule constrains, where the target constrains it.
@@ -209,19 +201,15 @@ pub fn reviewed_fee_output_contract() -> FeeOutputContract {
     }
 }
 
-/// Which candidate transaction form is under review.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum TransactionForm {
-    /// An ASH family alone, paying no fee.
-    Sponsorless,
-    /// An ASH family plus a sponsor suffix, paying a positive fee.
-    Sponsored,
-}
-
-impl TransactionForm {
-    /// The complete census of reviewed forms.
-    pub const ALL: &'static [Self] = &[Self::Sponsorless, Self::Sponsored];
+census_enum! {
+    /// Which candidate transaction form is under review.
+    #[non_exhaustive]
+    pub enum TransactionForm {
+        /// An ASH family alone, paying no fee.
+        Sponsorless,
+        /// An ASH family plus a sponsor suffix, paying a positive fee.
+        Sponsored,
+    }
 }
 
 /// Whether one layer admits one form.
@@ -346,26 +334,22 @@ pub fn reviewed_transaction_forms() -> BTreeMap<TransactionForm, TransactionForm
     .collect()
 }
 
-/// How the target treats an output whose explicit value is zero.
-///
-/// Recorded as its own reviewed fact because the candidate layout has
-/// an optional role — sponsor change — whose amount may legitimately
-/// come out zero, and because the answer turns out to be a consensus
-/// rule rather than the construction policy it is easy to mistake it
-/// for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum ExplicitZeroValueRule {
-    /// A zero-valued output whose program can be spent is refused.
-    SpendableRefused,
-    /// A zero-valued output whose program cannot be spent is admitted
-    /// and contributes nothing to the balance.
-    UnspendableAdmitted,
-}
-
-impl ExplicitZeroValueRule {
-    /// The complete census of the reviewed rule's parts.
-    pub const ALL: &'static [Self] = &[Self::SpendableRefused, Self::UnspendableAdmitted];
+census_enum! {
+    /// How the target treats an output whose explicit value is zero.
+    ///
+    /// Recorded as its own reviewed fact because the candidate layout has
+    /// an optional role — sponsor change — whose amount may legitimately
+    /// come out zero, and because the answer turns out to be a consensus
+    /// rule rather than the construction policy it is easy to mistake it
+    /// for.
+    #[non_exhaustive]
+    pub enum ExplicitZeroValueRule {
+        /// A zero-valued output whose program can be spent is refused.
+        SpendableRefused,
+        /// A zero-valued output whose program cannot be spent is admitted
+        /// and contributes nothing to the balance.
+        UnspendableAdmitted,
+    }
 }
 
 /// The reviewed explicit-zero-value rule.
@@ -388,24 +372,20 @@ pub fn reviewed_explicit_zero_value_rule() -> BTreeSet<ExplicitZeroValueRule> {
     ExplicitZeroValueRule::ALL.iter().copied().collect()
 }
 
-/// Where the target checks a stated amount against its money bound.
-///
-/// Two separate refusals, because they are two separate comparisons and
-/// a builder that only knew about the first would still produce a
-/// transaction the target refuses.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum StatedAmountCheck {
-    /// One output's own explicit value is compared against the bound.
-    SingleOutputValue,
-    /// The running total of explicit output values is compared against
-    /// it as each output is added.
-    RunningOutputTotal,
-}
-
-impl StatedAmountCheck {
-    /// The complete census of the reviewed checks.
-    pub const ALL: &'static [Self] = &[Self::SingleOutputValue, Self::RunningOutputTotal];
+census_enum! {
+    /// Where the target checks a stated amount against its money bound.
+    ///
+    /// Two separate refusals, because they are two separate comparisons and
+    /// a builder that only knew about the first would still produce a
+    /// transaction the target refuses.
+    #[non_exhaustive]
+    pub enum StatedAmountCheck {
+        /// One output's own explicit value is compared against the bound.
+        SingleOutputValue,
+        /// The running total of explicit output values is compared against
+        /// it as each output is added.
+        RunningOutputTotal,
+    }
 }
 
 /// The greatest value the target admits in an explicit amount field.
@@ -479,27 +459,23 @@ pub fn reviewed_stated_amount_checks() -> BTreeSet<StatedAmountCheck> {
     StatedAmountCheck::ALL.iter().copied().collect()
 }
 
-/// Which field of a sponsor input the coordinator reads.
-///
-/// The census is short on purpose. Each entry is a field the protocol
-/// relation authenticates, and the sponsor's individual amount is
-/// absent from it — not because reading it would be inconvenient, but
-/// because the sponsor-erasure law forbids the protocol relation from
-/// depending on it at all.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum SponsorInspectedField {
-    /// The input's position relative to the authenticated family range.
-    RegionMembership,
-    /// The declared start and length of the sponsor region.
-    RegionExtent,
-    /// The asset the input carries.
-    Asset,
-}
-
-impl SponsorInspectedField {
-    /// The complete census of inspected fields.
-    pub const ALL: &'static [Self] = &[Self::RegionMembership, Self::RegionExtent, Self::Asset];
+census_enum! {
+    /// Which field of a sponsor input the coordinator reads.
+    ///
+    /// The census is short on purpose. Each entry is a field the protocol
+    /// relation authenticates, and the sponsor's individual amount is
+    /// absent from it — not because reading it would be inconvenient, but
+    /// because the sponsor-erasure law forbids the protocol relation from
+    /// depending on it at all.
+    #[non_exhaustive]
+    pub enum SponsorInspectedField {
+        /// The input's position relative to the authenticated family range.
+        RegionMembership,
+        /// The declared start and length of the sponsor region.
+        RegionExtent,
+        /// The asset the input carries.
+        Asset,
+    }
 }
 
 /// The form a sponsor input's field must take to be authenticable.
@@ -513,27 +489,23 @@ pub enum FieldForm {
     EitherUninspected,
 }
 
-/// One class of sponsor spending condition the candidate admits.
-///
-/// Admission here is a statement about what the *builder* will issue a
-/// signing request for and what the Phase-4 evidence will exercise. It
-/// is not a claim that the coordinator authenticates the class, and it
-/// is not a claim of arbitrary wallet support.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum SponsorProgramClass {
-    /// A single-key native witness program of the target's version-zero
-    /// key-hash form.
+census_enum! {
+    /// One class of sponsor spending condition the candidate admits.
     ///
-    /// Chosen because it is what an unconfigured target wallet hands
-    /// out, so the development sponsor adapter produces it without a
-    /// setting the evidence would then depend on.
-    WitnessV0KeyHash,
-}
-
-impl SponsorProgramClass {
-    /// The complete census of admitted classes.
-    pub const ALL: &'static [Self] = &[Self::WitnessV0KeyHash];
+    /// Admission here is a statement about what the *builder* will issue a
+    /// signing request for and what the Phase-4 evidence will exercise. It
+    /// is not a claim that the coordinator authenticates the class, and it
+    /// is not a claim of arbitrary wallet support.
+    #[non_exhaustive]
+    pub enum SponsorProgramClass {
+        /// A single-key native witness program of the target's version-zero
+        /// key-hash form.
+        ///
+        /// Chosen because it is what an unconfigured target wallet hands
+        /// out, so the development sponsor adapter produces it without a
+        /// setting the evidence would then depend on.
+        WitnessV0KeyHash,
+    }
 }
 
 /// Where a sponsor input's authorization comes from.
@@ -641,113 +613,82 @@ pub enum DecisionStatus {
     AwaitingRatification,
 }
 
-/// One ground on which the third-party candidate was not selected.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum SubstrateGround {
-    /// No package in this workspace consumes it yet.
+census_enum! {
+    /// One ground on which the third-party candidate was not selected.
+    #[non_exhaustive]
+    pub enum SubstrateGround {
+        /// No package in this workspace consumes it yet.
+        ///
+        /// The consuming package is later work, and the standing rule
+        /// admits a dependency only with a real consumer, so admitting it
+        /// now would be admitting it on a plan.
+        NoPresentConsumer,
+        /// Its required graph reaches native code through a linked system
+        /// library with a build script.
+        NativeLinkedDependency,
+        /// Its required graph reaches the same native library the target
+        /// itself vendors, so agreement between the two would be one
+        /// opinion counted twice.
+        SharedImplementationWithTarget,
+        /// Its licence is a different instrument from the workspace's, and
+        /// adopting it is a licensing decision rather than a technical one.
+        DistinctLicenceInstrument,
+        /// The candidate's confidential and issuance surface is not on the
+        /// candidate pipeline's path, so most of what it supplies would be
+        /// carried unused.
+        SurfaceExceedsCandidateNeed,
+    }
+}
+
+census_enum! {
+    /// A fact that would reopen the substrate decision.
     ///
-    /// The consuming package is later work, and the standing rule
-    /// admits a dependency only with a real consumer, so admitting it
-    /// now would be admitting it on a plan.
-    NoPresentConsumer,
-    /// Its required graph reaches native code through a linked system
-    /// library with a build script.
-    NativeLinkedDependency,
-    /// Its required graph reaches the same native library the target
-    /// itself vendors, so agreement between the two would be one
-    /// opinion counted twice.
-    SharedImplementationWithTarget,
-    /// Its licence is a different instrument from the workspace's, and
-    /// adopting it is a licensing decision rather than a technical one.
-    DistinctLicenceInstrument,
-    /// The candidate's confidential and issuance surface is not on the
-    /// candidate pipeline's path, so most of what it supplies would be
-    /// carried unused.
-    SurfaceExceedsCandidateNeed,
+    /// Stated so that the decision is falsifiable rather than permanent. A
+    /// first-party substrate is the right answer for the reviewed candidate
+    /// need, and each trigger below names a need the review found to be
+    /// outside it.
+    #[non_exhaustive]
+    pub enum SubstrateRevisitTrigger {
+        /// Blinded fields must be produced inside this workspace rather
+        /// than by a sponsor adapter.
+        InProcessBlinding,
+        /// A transaction digest for signing must be computed inside this
+        /// workspace rather than requested from a signer.
+        InProcessSighash,
+        /// Issuance or reissuance fields must be constructed inside this
+        /// workspace rather than by a target funding interface.
+        InProcessIssuance,
+    }
 }
 
-impl SubstrateGround {
-    /// The complete census of recorded grounds.
-    pub const ALL: &'static [Self] = &[
-        Self::NoPresentConsumer,
-        Self::NativeLinkedDependency,
-        Self::SharedImplementationWithTarget,
-        Self::DistinctLicenceInstrument,
-        Self::SurfaceExceedsCandidateNeed,
-    ];
+census_enum! {
+    /// One capability the first-party substrate must own.
+    #[non_exhaustive]
+    pub enum FirstPartyCapability {
+        /// Encoding a transaction whose asset and value fields are all
+        /// explicit.
+        ExplicitTransactionEncoding,
+        /// Decoding target bytes back into validated typed values.
+        ExplicitTransactionDecoding,
+        /// Assembling a script-path witness from linked constructor data.
+        ScriptPathWitnessAssembly,
+        /// Stating the canonical role layout the candidate ABI fixes.
+        CanonicalRoleLayout,
+    }
 }
 
-/// A fact that would reopen the substrate decision.
-///
-/// Stated so that the decision is falsifiable rather than permanent. A
-/// first-party substrate is the right answer for the reviewed candidate
-/// need, and each trigger below names a need the review found to be
-/// outside it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum SubstrateRevisitTrigger {
-    /// Blinded fields must be produced inside this workspace rather
-    /// than by a sponsor adapter.
-    InProcessBlinding,
-    /// A transaction digest for signing must be computed inside this
-    /// workspace rather than requested from a signer.
-    InProcessSighash,
-    /// Issuance or reissuance fields must be constructed inside this
-    /// workspace rather than by a target funding interface.
-    InProcessIssuance,
-}
-
-impl SubstrateRevisitTrigger {
-    /// The complete census of triggers.
-    pub const ALL: &'static [Self] = &[
-        Self::InProcessBlinding,
-        Self::InProcessSighash,
-        Self::InProcessIssuance,
-    ];
-}
-
-/// One capability the first-party substrate must own.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum FirstPartyCapability {
-    /// Encoding a transaction whose asset and value fields are all
-    /// explicit.
-    ExplicitTransactionEncoding,
-    /// Decoding target bytes back into validated typed values.
-    ExplicitTransactionDecoding,
-    /// Assembling a script-path witness from linked constructor data.
-    ScriptPathWitnessAssembly,
-    /// Stating the canonical role layout the candidate ABI fixes.
-    CanonicalRoleLayout,
-}
-
-impl FirstPartyCapability {
-    /// The complete census of first-party capabilities.
-    pub const ALL: &'static [Self] = &[
-        Self::ExplicitTransactionEncoding,
-        Self::ExplicitTransactionDecoding,
-        Self::ScriptPathWitnessAssembly,
-        Self::CanonicalRoleLayout,
-    ];
-}
-
-/// One capability the first-party substrate deliberately does not own.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum DelegatedCapability {
-    /// Producing blinded fields and their proofs.
-    Blinding,
-    /// Computing a signing digest and producing a signature.
-    Signing,
-    /// Creating the disposable test asset the development fixtures
-    /// stand on.
-    TestAssetIssuance,
-}
-
-impl DelegatedCapability {
-    /// The complete census of delegated capabilities.
-    pub const ALL: &'static [Self] = &[Self::Blinding, Self::Signing, Self::TestAssetIssuance];
+census_enum! {
+    /// One capability the first-party substrate deliberately does not own.
+    #[non_exhaustive]
+    pub enum DelegatedCapability {
+        /// Producing blinded fields and their proofs.
+        Blinding,
+        /// Computing a signing digest and producing a signature.
+        Signing,
+        /// Creating the disposable test asset the development fixtures
+        /// stand on.
+        TestAssetIssuance,
+    }
 }
 
 /// The reviewed third-party substrate candidate.

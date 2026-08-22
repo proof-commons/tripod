@@ -30,6 +30,8 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU8;
 
+use crate::capability::census_enum;
+
 /// The smallest ASH batch a compact-ASH operation can have.
 ///
 /// Two, because the operation aggregates: one source is not a batch,
@@ -38,25 +40,21 @@ use std::num::NonZeroU8;
 /// same figure.
 pub const MINIMUM_ASH_INPUTS: u8 = 2;
 
-/// Whether a shape carries the optional sponsor-change role.
-///
-/// A named pair rather than a Boolean: §10.5 recognizes the role by
-/// declared role, canonical position, reserve asset, and admitted
-/// program class, and never by comparing an amount with zero. A field
-/// called `has_change: bool` invites exactly the amount test the rule
-/// forbids, because a reader reaches for the cheapest way to compute a
-/// Boolean.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum SponsorChangePresence {
-    /// The shape declares no sponsor-change role.
-    Absent,
-    /// The shape declares exactly one sponsor-change role.
-    Present,
-}
-
-impl SponsorChangePresence {
-    /// Both forms, in canonical order.
-    pub const ALL: &'static [Self] = &[Self::Absent, Self::Present];
+census_enum! {
+    /// Whether a shape carries the optional sponsor-change role.
+    ///
+    /// A named pair rather than a Boolean: §10.5 recognizes the role by
+    /// declared role, canonical position, reserve asset, and admitted
+    /// program class, and never by comparing an amount with zero. A field
+    /// called `has_change: bool` invites exactly the amount test the rule
+    /// forbids, because a reader reaches for the cheapest way to compute a
+    /// Boolean.
+    pub enum SponsorChangePresence {
+        /// The shape declares no sponsor-change role.
+        Absent,
+        /// The shape declares exactly one sponsor-change role.
+        Present,
+    }
 }
 
 /// Why a proposed shape is not a valid candidate shape.
@@ -315,35 +313,25 @@ impl CompactAshShape {
     }
 }
 
-/// Which §9.3 condition a candidate shape set does or does not meet.
-///
-/// A candidate that supports only the minimum batch is useful as a
-/// first wave and insufficient for Phase-4 exit, so the audit reports
-/// each condition separately rather than answering "useful" with one
-/// Boolean that could not say what was missing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum UsefulCandidateCondition {
-    /// At least one batch larger than the minimum.
-    BatchAboveMinimum,
-    /// At least one sponsored shape.
-    SponsoredShape,
-    /// Sponsor change present in some admitted shape.
-    SponsorChangePresent,
-    /// Sponsor change absent in some admitted shape.
-    SponsorChangeAbsent,
-    /// Every count from the minimum through the ASH bound.
-    DenseAshCounts,
-}
-
-impl UsefulCandidateCondition {
-    /// The complete census of §9.3 conditions, in canonical order.
-    pub const ALL: &'static [Self] = &[
-        Self::BatchAboveMinimum,
-        Self::SponsoredShape,
-        Self::SponsorChangePresent,
-        Self::SponsorChangeAbsent,
-        Self::DenseAshCounts,
-    ];
+census_enum! {
+    /// Which §9.3 condition a candidate shape set does or does not meet.
+    ///
+    /// A candidate that supports only the minimum batch is useful as a
+    /// first wave and insufficient for Phase-4 exit, so the audit reports
+    /// each condition separately rather than answering "useful" with one
+    /// Boolean that could not say what was missing.
+    pub enum UsefulCandidateCondition {
+        /// At least one batch larger than the minimum.
+        BatchAboveMinimum,
+        /// At least one sponsored shape.
+        SponsoredShape,
+        /// Sponsor change present in some admitted shape.
+        SponsorChangePresent,
+        /// Sponsor change absent in some admitted shape.
+        SponsorChangeAbsent,
+        /// Every count from the minimum through the ASH bound.
+        DenseAshCounts,
+    }
 }
 
 /// The shapes one candidate emits programs for, and what they cover.

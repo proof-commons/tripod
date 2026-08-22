@@ -8,36 +8,27 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::capability::census_enum;
 use crate::encoding::EncodingClass;
 use crate::evidence::TargetEvidenceRequirementId;
 use crate::opcode::OpcodeId;
 
-/// One confidential-value claim the target might support.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum ConfidentialValueCapability {
-    /// The target's own rules conserve value across a transaction.
-    ConsensusValueConservation,
-    /// A program can establish that two commitments are equal.
-    CommitmentEquality,
-    /// A program can read an amount carried in the clear.
-    ExplicitValueInspection,
-    /// A program can read a blinded amount's commitment.
-    ConfidentialValueInspection,
-    /// A program can establish that a commitment opens to a claimed
-    /// amount, in a way that binds the claim.
-    AuthenticatedOpening,
-}
-
-impl ConfidentialValueCapability {
-    /// The complete census of confidential-value claims.
-    pub const ALL: &'static [Self] = &[
-        Self::ConsensusValueConservation,
-        Self::CommitmentEquality,
-        Self::ExplicitValueInspection,
-        Self::ConfidentialValueInspection,
-        Self::AuthenticatedOpening,
-    ];
+census_enum! {
+    /// One confidential-value claim the target might support.
+    #[non_exhaustive]
+    pub enum ConfidentialValueCapability {
+        /// The target's own rules conserve value across a transaction.
+        ConsensusValueConservation,
+        /// A program can establish that two commitments are equal.
+        CommitmentEquality,
+        /// A program can read an amount carried in the clear.
+        ExplicitValueInspection,
+        /// A program can read a blinded amount's commitment.
+        ConfidentialValueInspection,
+        /// A program can establish that a commitment opens to a claimed
+        /// amount, in a way that binds the claim.
+        AuthenticatedOpening,
+    }
 }
 
 /// What the review established about one confidential-value claim.
@@ -111,29 +102,20 @@ impl ConfidentialValueContract {
     }
 }
 
-/// One field an issuance carries.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum IssuanceField {
-    /// The amount of the asset being issued.
-    AssetAmount,
-    /// The amount of reissuance authority being created.
-    InflationKeysAmount,
-    /// The entropy binding the issued asset's identity.
-    AssetEntropy,
-    /// The blinding nonce, whose value distinguishes an issuance from
-    /// a reissuance.
-    BlindingNonce,
-}
-
-impl IssuanceField {
-    /// The complete census of issuance fields.
-    pub const ALL: &'static [Self] = &[
-        Self::AssetAmount,
-        Self::InflationKeysAmount,
-        Self::AssetEntropy,
-        Self::BlindingNonce,
-    ];
+census_enum! {
+    /// One field an issuance carries.
+    #[non_exhaustive]
+    pub enum IssuanceField {
+        /// The amount of the asset being issued.
+        AssetAmount,
+        /// The amount of reissuance authority being created.
+        InflationKeysAmount,
+        /// The entropy binding the issued asset's identity.
+        AssetEntropy,
+        /// The blinding nonce, whose value distinguishes an issuance from
+        /// a reissuance.
+        BlindingNonce,
+    }
 }
 
 /// The target's issuance and reissuance facts.
@@ -612,44 +594,36 @@ impl ConservationContract {
     }
 }
 
-/// One reason the reviewed target cannot carry an authenticated public
-/// opening inside a program.
-///
-/// These are review results, not design intent. Each names a specific
-/// missing correspondence rather than a general difficulty, so a later
-/// candidate can be judged against them one at a time.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum OpeningBlocker {
-    /// No primitive maps an asset identifier to its generator.
+census_enum! {
+    /// One reason the reviewed target cannot carry an authenticated public
+    /// opening inside a program.
     ///
-    /// The recipe needs two curve maps and a point addition, and the
-    /// reviewed language performs neither.
-    GeneratorNotDerivableOnScript,
-    /// The confidential encodings and the curve primitives disagree
-    /// about which y a prefix selects.
-    ///
-    /// Commitments and generators record whether y is a quadratic
-    /// residue; the curve primitives accept only the compressed
-    /// public-key prefixes, which record whether y is odd. No reviewed
-    /// primitive converts between them.
-    EncodingDomainMismatch,
-    /// Nothing binds a witness-supplied parity byte to the point the
-    /// commitment names.
-    ///
-    /// A program can assemble an operand from an exposed x coordinate,
-    /// but the parity it supplies is unchecked, so the relation holds
-    /// for the point or its negation.
-    SuppliedParityUnbound,
-}
-
-impl OpeningBlocker {
-    /// The complete census of reviewed blockers.
-    pub const ALL: &'static [Self] = &[
-        Self::GeneratorNotDerivableOnScript,
-        Self::EncodingDomainMismatch,
-        Self::SuppliedParityUnbound,
-    ];
+    /// These are review results, not design intent. Each names a specific
+    /// missing correspondence rather than a general difficulty, so a later
+    /// candidate can be judged against them one at a time.
+    #[non_exhaustive]
+    pub enum OpeningBlocker {
+        /// No primitive maps an asset identifier to its generator.
+        ///
+        /// The recipe needs two curve maps and a point addition, and the
+        /// reviewed language performs neither.
+        GeneratorNotDerivableOnScript,
+        /// The confidential encodings and the curve primitives disagree
+        /// about which y a prefix selects.
+        ///
+        /// Commitments and generators record whether y is a quadratic
+        /// residue; the curve primitives accept only the compressed
+        /// public-key prefixes, which record whether y is odd. No reviewed
+        /// primitive converts between them.
+        EncodingDomainMismatch,
+        /// Nothing binds a witness-supplied parity byte to the point the
+        /// commitment names.
+        ///
+        /// A program can assemble an operand from an exposed x coordinate,
+        /// but the parity it supplies is unchecked, so the relation holds
+        /// for the point or its negation.
+        SuppliedParityUnbound,
+    }
 }
 
 /// What the review established about carrying an opening on-script.

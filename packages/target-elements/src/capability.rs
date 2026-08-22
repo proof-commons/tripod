@@ -24,170 +24,175 @@ use crate::encoding::EncodingClass;
 use crate::evidence::TargetEvidenceRequirementId;
 use crate::opcode::OpcodeId;
 
-/// A stable key naming one target capability.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum ElementsCapability {
-    /// Scripts execute in the reviewed domain at all.
-    TapscriptExecution,
-    /// The reviewed leaf version selects that domain.
-    RequiredLeafVersion,
+/// Declare a closed enum and its census from one list of members.
+///
+/// A census constant written beside its enum is a second list that has
+/// to be kept equal to the first, and no consumer can check that it is:
+/// a fold over `ALL` sees exactly the members `ALL` names, so a variant
+/// omitted from it is invisible rather than detected, and every check
+/// built on top of the constant inherits the omission silently
+/// (Guide-13 §8.3, row `G13-R17`). This macro removes the second list
+/// rather than checking it: `ALL` is generated from the same members
+/// the enum is, so an omitted variant is not a defect that has to be
+/// caught — it is unwriteable.
+///
+/// The derives are fixed rather than supplied by the caller, because a
+/// census type owes its consumers a total order: `ALL` is emitted in
+/// declaration order, and derived `Ord` is declaration order, so a
+/// generated census is strictly increasing by construction too. What a
+/// caller does supply is the documentation, any further attributes —
+/// `#[non_exhaustive]` among them — and the members. Everything a
+/// census type does with those members stays outside the macro, where
+/// an exhaustive `match` keeps its own guard over them.
+macro_rules! census_enum {
+    (
+        $(#[$enum_meta:meta])*
+        pub enum $name:ident {
+            $(
+                $(#[$variant_meta:meta])*
+                $variant:ident
+            ),+ $(,)?
+        }
+    ) => {
+        $(#[$enum_meta])*
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub enum $name {
+            $(
+                $(#[$variant_meta])*
+                $variant,
+            )+
+        }
 
-    /// A program can read the input count.
-    InputCountInspection,
-    /// A program can read the output count.
-    OutputCountInspection,
-    /// A program can read the index of the input being validated.
-    CurrentInputIndexInspection,
-
-    /// A program can read an input's outpoint.
-    InputOutpointInspection,
-    /// A program can read a spent output's asset.
-    InputAssetInspection,
-    /// A program can read a spent output's value.
-    InputValueInspection,
-    /// A program can read a spent output's program.
-    InputProgramInspection,
-    /// A program can read an input's sequence.
-    InputSequenceInspection,
-    /// A program can read an input's issuance fields.
-    InputIssuanceInspection,
-
-    /// A program can read an output's asset.
-    OutputAssetInspection,
-    /// A program can read an output's value.
-    OutputValueInspection,
-    /// A program can read an output's nonce.
-    OutputNonceInspection,
-    /// A program can read an output's program.
-    OutputProgramInspection,
-
-    /// A program can read the transaction version.
-    TransactionVersionInspection,
-    /// A program can read the transaction locktime.
-    TransactionLockTimeInspection,
-    /// A program can read the transaction weight.
-    TransactionWeightInspection,
-
-    /// A program can add, subtract, multiply, divide, and negate
-    /// signed fixed-width values.
-    SignedFixedWidthArithmetic,
-    /// A program can order signed fixed-width values.
-    SignedFixedWidthComparison,
-    /// A program can convert between the script number and
-    /// fixed-width forms.
-    ScriptNumberConversion,
-
-    /// A program can hash a message in streamed chunks.
-    StreamingSha256,
-    /// A program can verify a scalar multiplication.
-    EcScalarVerification,
-    /// A program can verify a pay-to-contract tweak.
-    TweakVerification,
-
-    /// A program can verify a signature over the transaction sighash.
-    SignatureVerification,
-    /// A program can verify a signature over a message it supplies.
-    StackMessageSignatureVerification,
-    /// A signature can be made to commit to the transaction's outputs.
-    OutputCommittingSighash,
-    /// A signature can be made to control which inputs may be added.
-    InputCommitmentControl,
-    /// A program can require a relative timelock.
-    RelativeTimelock,
-
-    /// A program can duplicate, reorder, and discard stack items.
-    StackRearrangement,
-    /// A program can compare two items for byte equality.
-    ByteStringEquality,
-    /// A program can require a truth value and abort otherwise.
-    BooleanVerification,
-    /// A program can join two items into one.
-    ByteStringConcatenation,
-    /// A program can read the width of an item.
-    ByteStringWidth,
-    /// A program can extract a slice of an item.
-    ByteStringSlicing,
-    /// A program can combine two equal-width items bit by bit.
-    BitwiseByteLogic,
-    /// A program can order two byte strings lexicographically with one
-    /// reviewed primitive.
-    ///
-    /// No such primitive exists. The capability is named so that the
-    /// absence is a stated, evidenced row rather than a gap a reader
-    /// has to notice, and so that a construction depending on it must
-    /// confront the status instead of assuming a familiar opcode
-    /// `(´[PLAN-rule:guide10:primitive-admission]´)`.
-    CanonicalByteOrdering,
-
-    /// The target's rules conserve value across a transaction.
-    ConfidentialValueConservation,
-    /// A program can establish equality of two commitments.
-    CommitmentEquality,
-    /// A program can bind a commitment to a claimed amount.
-    AuthenticatedValueOpening,
-    /// A program can read amounts carried in the clear.
-    ExplicitValueInspection,
-    /// A program can read issuance fields.
-    IssuanceIntrospection,
-    /// A program can distinguish a reissuance from an issuance.
-    ReissuanceIntrospection,
-
-    /// The target's own resource bounds are known.
-    ConsensusResourceLimits,
-    /// A deployment's stricter bounds are known.
-    PolicyResourceLimits,
+        impl $name {
+            #[doc = concat!(
+                "The complete census of [`", stringify!($name), "`], in \
+                 canonical order."
+            )]
+            ///
+            /// Complete by construction: the enum above and this
+            /// constant are generated from one declaration, so there is
+            /// no second list to fall out of step with the first.
+            pub const ALL: &'static [Self] = &[ $(Self::$variant),+ ];
+        }
+    };
 }
 
-impl ElementsCapability {
-    /// The complete census of target capabilities.
-    pub const ALL: &'static [Self] = &[
-        Self::TapscriptExecution,
-        Self::RequiredLeafVersion,
-        Self::InputCountInspection,
-        Self::OutputCountInspection,
-        Self::CurrentInputIndexInspection,
-        Self::InputOutpointInspection,
-        Self::InputAssetInspection,
-        Self::InputValueInspection,
-        Self::InputProgramInspection,
-        Self::InputSequenceInspection,
-        Self::InputIssuanceInspection,
-        Self::OutputAssetInspection,
-        Self::OutputValueInspection,
-        Self::OutputNonceInspection,
-        Self::OutputProgramInspection,
-        Self::TransactionVersionInspection,
-        Self::TransactionLockTimeInspection,
-        Self::TransactionWeightInspection,
-        Self::SignedFixedWidthArithmetic,
-        Self::SignedFixedWidthComparison,
-        Self::ScriptNumberConversion,
-        Self::StreamingSha256,
-        Self::EcScalarVerification,
-        Self::TweakVerification,
-        Self::SignatureVerification,
-        Self::StackMessageSignatureVerification,
-        Self::OutputCommittingSighash,
-        Self::InputCommitmentControl,
-        Self::RelativeTimelock,
-        Self::StackRearrangement,
-        Self::ByteStringEquality,
-        Self::BooleanVerification,
-        Self::ByteStringConcatenation,
-        Self::ByteStringWidth,
-        Self::ByteStringSlicing,
-        Self::BitwiseByteLogic,
-        Self::CanonicalByteOrdering,
-        Self::ConfidentialValueConservation,
-        Self::CommitmentEquality,
-        Self::AuthenticatedValueOpening,
-        Self::ExplicitValueInspection,
-        Self::IssuanceIntrospection,
-        Self::ReissuanceIntrospection,
-        Self::ConsensusResourceLimits,
-        Self::PolicyResourceLimits,
-    ];
+pub(crate) use census_enum;
+
+census_enum! {
+    /// A stable key naming one target capability.
+    #[non_exhaustive]
+    pub enum ElementsCapability {
+        /// Scripts execute in the reviewed domain at all.
+        TapscriptExecution,
+        /// The reviewed leaf version selects that domain.
+        RequiredLeafVersion,
+
+        /// A program can read the input count.
+        InputCountInspection,
+        /// A program can read the output count.
+        OutputCountInspection,
+        /// A program can read the index of the input being validated.
+        CurrentInputIndexInspection,
+
+        /// A program can read an input's outpoint.
+        InputOutpointInspection,
+        /// A program can read a spent output's asset.
+        InputAssetInspection,
+        /// A program can read a spent output's value.
+        InputValueInspection,
+        /// A program can read a spent output's program.
+        InputProgramInspection,
+        /// A program can read an input's sequence.
+        InputSequenceInspection,
+        /// A program can read an input's issuance fields.
+        InputIssuanceInspection,
+
+        /// A program can read an output's asset.
+        OutputAssetInspection,
+        /// A program can read an output's value.
+        OutputValueInspection,
+        /// A program can read an output's nonce.
+        OutputNonceInspection,
+        /// A program can read an output's program.
+        OutputProgramInspection,
+
+        /// A program can read the transaction version.
+        TransactionVersionInspection,
+        /// A program can read the transaction locktime.
+        TransactionLockTimeInspection,
+        /// A program can read the transaction weight.
+        TransactionWeightInspection,
+
+        /// A program can add, subtract, multiply, divide, and negate
+        /// signed fixed-width values.
+        SignedFixedWidthArithmetic,
+        /// A program can order signed fixed-width values.
+        SignedFixedWidthComparison,
+        /// A program can convert between the script number and
+        /// fixed-width forms.
+        ScriptNumberConversion,
+
+        /// A program can hash a message in streamed chunks.
+        StreamingSha256,
+        /// A program can verify a scalar multiplication.
+        EcScalarVerification,
+        /// A program can verify a pay-to-contract tweak.
+        TweakVerification,
+
+        /// A program can verify a signature over the transaction sighash.
+        SignatureVerification,
+        /// A program can verify a signature over a message it supplies.
+        StackMessageSignatureVerification,
+        /// A signature can be made to commit to the transaction's outputs.
+        OutputCommittingSighash,
+        /// A signature can be made to control which inputs may be added.
+        InputCommitmentControl,
+        /// A program can require a relative timelock.
+        RelativeTimelock,
+
+        /// A program can duplicate, reorder, and discard stack items.
+        StackRearrangement,
+        /// A program can compare two items for byte equality.
+        ByteStringEquality,
+        /// A program can require a truth value and abort otherwise.
+        BooleanVerification,
+        /// A program can join two items into one.
+        ByteStringConcatenation,
+        /// A program can read the width of an item.
+        ByteStringWidth,
+        /// A program can extract a slice of an item.
+        ByteStringSlicing,
+        /// A program can combine two equal-width items bit by bit.
+        BitwiseByteLogic,
+        /// A program can order two byte strings lexicographically with one
+        /// reviewed primitive.
+        ///
+        /// No such primitive exists. The capability is named so that the
+        /// absence is a stated, evidenced row rather than a gap a reader
+        /// has to notice, and so that a construction depending on it must
+        /// confront the status instead of assuming a familiar opcode
+        /// `(´[PLAN-rule:guide10:primitive-admission]´)`.
+        CanonicalByteOrdering,
+
+        /// The target's rules conserve value across a transaction.
+        ConfidentialValueConservation,
+        /// A program can establish equality of two commitments.
+        CommitmentEquality,
+        /// A program can bind a commitment to a claimed amount.
+        AuthenticatedValueOpening,
+        /// A program can read amounts carried in the clear.
+        ExplicitValueInspection,
+        /// A program can read issuance fields.
+        IssuanceIntrospection,
+        /// A program can distinguish a reissuance from an issuance.
+        ReissuanceIntrospection,
+
+        /// The target's own resource bounds are known.
+        ConsensusResourceLimits,
+        /// A deployment's stricter bounds are known.
+        PolicyResourceLimits,
+    }
 }
 
 /// What the static review established about one capability.
