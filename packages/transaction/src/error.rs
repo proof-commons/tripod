@@ -102,10 +102,28 @@ pub enum TransactionRefusal {
     EmptyAshSelection,
     /// The request selects one outpoint more than once.
     DuplicateOutpoint(Outpoint),
+    /// The public view states one outpoint more than once.
+    ///
+    /// Every second statement is refused, agreeing or contradicting.
+    /// A contradictory pair has no resolution a constructor could
+    /// justify — believing either one is believing the order the caller
+    /// listed them in — and an agreeing pair is a census the caller got
+    /// wrong about a boundary whose exactness the rest of the pipeline
+    /// rests on, so the two are one refusal rather than a judgement
+    /// about which duplicates are harmless.
+    DuplicatePublicOutputView(Outpoint),
+    /// A sponsor offer names one outpoint more than once.
+    ///
+    /// Refused rather than collapsed into a smaller offer, for the
+    /// reason [`Self::DuplicateOutpoint`] gives about the ASH
+    /// selection: a set built by insertion would answer a caller
+    /// naming one coin twice with a sponsor region it did not ask for.
+    DuplicateSponsorOutpoint(Outpoint),
     /// An outpoint appears in both the ASH selection and the sponsor
     /// suffix, which would put one input in two regions.
     OverlappingOutpoint(Outpoint),
-    /// The selected counts match no shape the candidate admits.
+    /// No shape the candidate admits takes these counts at the form the
+    /// request asks for.
     UnsupportedShape {
         /// How many ASH inputs the request selects.
         ash_inputs: usize,
@@ -158,6 +176,16 @@ pub enum TransactionRefusal {
     /// spending a sponsor's inputs because an adapter happened to be in
     /// scope is worse than refusing.
     SponsorCapabilityWithoutRequest,
+    /// The capability filling a sponsor suffix offered no input.
+    ///
+    /// The third term of the same equivalence. A suffix is a region of
+    /// inputs, so an offer of none names no suffix: the declared fee
+    /// would have no position to occupy, no signing request would be
+    /// issued, and the counts would select the sponsorless shape —
+    /// which is the quiet downgrade
+    /// [`Self::SponsorRequestedWithoutCapability`] exists to refuse,
+    /// reached from the other side.
+    EmptySponsorOffer,
     /// The consolidated successor amount overflows the target's
     /// checked range.
     SuccessorAmountOutOfRange,
@@ -253,6 +281,15 @@ pub enum TransactionRefusal {
         /// The offered byte.
         offered: u8,
     },
+    /// The witness flag stands over a witness section carrying nothing.
+    ///
+    /// The target sets the flag only where some witness is present, so
+    /// a transaction whose every witness is empty has one encoding and
+    /// it is the witnessless one. Accepting the flagged spelling as
+    /// well would admit two byte strings for one typed transaction,
+    /// which is what [`Self::NonMinimalCompactSize`] refuses about a
+    /// count and what the round-trip law forbids about a transaction.
+    SuperfluousWitnessRecord,
     /// An asset identifier was not the reviewed width.
     MalformedAssetIdentifier {
         /// How many bytes were offered.

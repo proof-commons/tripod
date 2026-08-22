@@ -434,3 +434,87 @@ fn a_transaction_with_no_witness_carries_the_other_flag() {
     assert_eq!(bytes, transaction.encode_without_witness());
     assert_eq!(transaction.witness_bytes(), 0);
 }
+
+/// The unsigned template of the sponsorless fixture.
+///
+/// The same roles with every witness empty, which is the one shape the
+/// encoder writes without a witness section.
+fn unsigned_template() -> TargetTransaction {
+    TargetTransaction::new(
+        3,
+        vec![ash_input(FIRST_TXID, 0), ash_input(SECOND_TXID, 1)],
+        vec![successor(300)],
+        0,
+        vec![InputWitness::default(), InputWitness::default()],
+    )
+    .expect("the fixture census is one witness per input")
+}
+
+/// The canonical bytes of the unsigned template, respelled with the
+/// witness flag set and an entirely empty section written out.
+///
+/// The section is the one the target's serializer would emit: four
+/// empty length prefixes per input — two issuance proofs, an empty
+/// stack count, and the peg-in stack — and two per output for the
+/// surjection and range proofs.
+fn witness_flagged_all_empty(transaction: &TargetTransaction) -> Vec<u8> {
+    let mut bytes = transaction.encode_without_witness();
+    // The flag byte sits immediately after the four version bytes.
+    bytes[4] = 0x01;
+    for _ in transaction.inputs() {
+        bytes.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+    }
+    for _ in transaction.outputs() {
+        bytes.extend_from_slice(&[0x00, 0x00]);
+    }
+    bytes
+}
+
+#[test]
+fn the_witnessless_form_decodes_to_the_template_it_came_from() {
+    let template = unsigned_template();
+    let canonical = template.encode();
+    assert_eq!(canonical[4], 0x00);
+    assert_eq!(
+        TargetTransaction::decode(&canonical),
+        Ok(unsigned_template())
+    );
+}
+
+#[test]
+fn a_genuinely_witnessed_transaction_decodes_to_what_it_encoded() {
+    for transaction in [sponsorless(), sponsored()] {
+        let bytes = transaction.encode();
+        assert_eq!(bytes[4], 0x01);
+        assert_eq!(TargetTransaction::decode(&bytes), Ok(transaction));
+    }
+}
+
+#[test]
+fn a_witness_flag_over_an_empty_section_is_refused() {
+    let forged = witness_flagged_all_empty(&unsigned_template());
+    // The forged string is a second spelling of a well-formed
+    // transaction rather than a malformed one: it differs from the
+    // canonical bytes only in the flag and the section that follows it.
+    assert_ne!(forged, unsigned_template().encode());
+    assert_eq!(
+        TargetTransaction::decode(&forged),
+        Err(TransactionRefusal::SuperfluousWitnessRecord)
+    );
+}
+
+#[test]
+fn every_accepted_byte_string_re_encodes_to_itself() {
+    // The three forms this crate emits — witnessless, script-path
+    // witnessed, and sponsor-witnessed — and the flagged all-empty
+    // spelling that is not one of them. A decoder holding the
+    // round-trip law admits exactly the strings its encoder produces.
+    let accepted = [unsigned_template(), sponsorless(), sponsored()];
+    for transaction in accepted {
+        let bytes = transaction.encode();
+        let decoded = TargetTransaction::decode(&bytes).expect("an emitted form decodes");
+        assert_eq!(decoded.encode(), bytes);
+    }
+    let forged = witness_flagged_all_empty(&unsigned_template());
+    assert!(TargetTransaction::decode(&forged).is_err());
+}

@@ -237,10 +237,11 @@ pub fn construct(
     sponsor: Option<&dyn SponsorCapability>,
 ) -> Result<CandidateCompleteTransaction, TransactionRefusal> {
     // Stages 1 and 2: validate the request and the public view, and
-    // reject duplicate and overlapping outpoints. The request's own
-    // constructor already rejected duplicates inside the ASH selection;
-    // what is left is the overlap between the two regions, which no
-    // single set can rule out.
+    // reject duplicate and overlapping outpoints. Each region's own
+    // constructor already rejected the duplicates inside it — the
+    // request's ASH selection, the offer's sponsor coins, and the
+    // view's statements; what is left is the overlap between the two
+    // regions, which no single set can rule out.
     if request.sponsored() && sponsor.is_none() {
         return Err(TransactionRefusal::SponsorRequestedWithoutCapability);
     }
@@ -252,6 +253,13 @@ pub fn construct(
         .as_ref()
         .map(|offer| offer.inputs().clone())
         .unwrap_or_default();
+    // A suffix is a region of inputs. An offer of none would leave the
+    // counts naming the sponsorless shape, so the request's own flag
+    // and the shape eventually built would disagree about what was
+    // asked for.
+    if request.sponsored() && sponsor_inputs.is_empty() {
+        return Err(TransactionRefusal::EmptySponsorOffer);
+    }
     for outpoint in &sponsor_inputs {
         if request.ash().contains(outpoint) {
             return Err(TransactionRefusal::OverlappingOutpoint(*outpoint));
@@ -269,7 +277,13 @@ pub fn construct(
         .as_ref()
         .and_then(crate::sponsor::SponsorOffer::change)
         .is_some_and(|value| !is_known_zero(value));
-    let shape_abi = select_shape(abi, ash.len(), sponsors.len(), change_wanted)?;
+    let shape_abi = select_shape(
+        abi,
+        ash.len(),
+        sponsors.len(),
+        change_wanted,
+        request.sponsored(),
+    )?;
 
     // Stage 5: derive the coordinator. Nobody selects it: it is
     // whichever outpoint the canonical order puts at the ABI's fixed
@@ -524,16 +538,29 @@ fn admitted_sponsor_program(target: &ReviewedElementsTapscriptDefinition, progra
     })
 }
 
-/// Select the one admitted shape these counts name.
+/// Select the one admitted shape these counts and this form name.
+///
+/// The form is a conjunct rather than a consequence. A shape's counts
+/// come from the census the linker admitted and its form from the input
+/// run its layout places, which are two facts about a linked bundle; a
+/// selection that read only the counts could return a shape whose form
+/// is not the one the request asked for, and the request's form is the
+/// term §15.5 entitles a caller to choose.
 fn select_shape(
     abi: &CandidateTransactionAbi,
     ash_inputs: usize,
     sponsor_inputs: usize,
     sponsor_change: bool,
+    sponsored: bool,
 ) -> Result<&ShapeAbi, TransactionRefusal> {
     if sponsor_change && sponsor_inputs == 0 {
         return Err(TransactionRefusal::SponsorChangeWithoutSponsor);
     }
+    let wanted = if sponsored {
+        TransactionForm::Sponsored
+    } else {
+        TransactionForm::Sponsorless
+    };
     abi.shapes()
         .values()
         .find(|candidate| {
@@ -541,6 +568,7 @@ fn select_shape(
             usize::from(shape.ash_inputs()) == ash_inputs
                 && usize::from(shape.sponsor_inputs()) == sponsor_inputs
                 && candidate.sponsor_change_position().is_some() == sponsor_change
+                && candidate.form() == wanted
         })
         .ok_or(TransactionRefusal::UnsupportedShape {
             ash_inputs,

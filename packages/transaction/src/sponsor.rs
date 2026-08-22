@@ -31,6 +31,7 @@
 use std::collections::BTreeSet;
 
 use crate::bytes::{Outpoint, TargetOutput, ValueField};
+use crate::error::TransactionRefusal;
 
 /// Which sighash profile a signing request selects.
 ///
@@ -80,17 +81,33 @@ impl SponsorOffer {
     /// residual that happens to be zero, which the builder omits rather
     /// than emits — the target refuses a spendable zero-valued output,
     /// so emitting it would produce a transaction consensus rejects.
-    #[must_use]
+    ///
+    /// Duplicates are rejected before sorting rather than collapsed by
+    /// it, which is what [`crate::request::CompactAshRequest::new`]
+    /// does with the ASH selection and for the same reason: an offer
+    /// built by insertion would turn a sponsor naming one coin twice
+    /// into a one-input offer nobody stated.
+    ///
+    /// # Errors
+    ///
+    /// [`TransactionRefusal::DuplicateSponsorOutpoint`] when one
+    /// outpoint is named more than once.
     pub fn new(
         inputs: impl IntoIterator<Item = Outpoint>,
         fee: u64,
         change: Option<ValueField>,
-    ) -> Self {
-        Self {
-            inputs: inputs.into_iter().collect(),
+    ) -> Result<Self, TransactionRefusal> {
+        let mut offered = BTreeSet::new();
+        for outpoint in inputs {
+            if !offered.insert(outpoint) {
+                return Err(TransactionRefusal::DuplicateSponsorOutpoint(outpoint));
+            }
+        }
+        Ok(Self {
+            inputs: offered,
             fee,
             change,
-        }
+        })
     }
 
     /// The outpoints the sponsor contributes.

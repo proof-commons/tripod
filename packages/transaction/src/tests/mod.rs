@@ -214,5 +214,5 @@ fn sponsor_view(outpoint: Outpoint, amount: u64) -> PublicOutputView {
 
 /// The public view holding exactly these outputs.
 fn view(entries: impl IntoIterator<Item = PublicOutputView>) -> PublicConstructionView {
-    PublicConstructionView::new(entries)
+    PublicConstructionView::new(entries).expect("the fixture views name distinct outpoints")
 }
