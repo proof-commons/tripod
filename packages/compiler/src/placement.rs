@@ -75,8 +75,9 @@ use crate::{
         is_sponsor_region_carrier, relation_case_eligibility,
     },
     case::{
-        ExecutionCase, ExecutionCaseId, SponsorCase, case_census, execution_cases,
-        is_sponsor_region_family, validate_case_census,
+        ConservedAmountVisibility, ExecutionCase, ExecutionCaseId, SponsorCase, case_census,
+        conserved_amount_visibility, execution_cases, is_sponsor_region_family,
+        validate_case_census,
     },
     layout::{
         LayoutRequirement, layout_requirements, selected_carrier_requirements,
@@ -244,7 +245,9 @@ pub struct RelationCaseKey {
 ///
 /// Separated from the per-case plan so the axes stay independent: the
 /// boundaries, scope, multiplicity, and activation of a relation do not
-/// change with the case; only activity and the active source set do.
+/// change with the case, with the single stated exception of
+/// [`ConservedAmountVisibility`]; only activity and the active source
+/// set do.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct RelationDischarge {
     boundaries: BTreeSet<DischargeBoundary>,
@@ -268,7 +271,8 @@ pub fn classify_relation_case(
     ordinary_lbtc: OrdinaryLbtcRole,
 ) -> Result<RelationCasePlan, CompileError> {
     let operation = declaration.id.operation();
-    let discharge = classify_discharge(&declaration.relation, ordinary_lbtc);
+    let amounts = conserved_amount_visibility(declaration, &case.id)?;
+    let discharge = classify_discharge(&declaration.relation, ordinary_lbtc, amounts);
     let activity = resolve_activity(discharge.activation, &case.id);
 
     let mut compiler_requirements = Vec::new();
@@ -322,6 +326,20 @@ pub fn classify_relation_case(
 
         Relation::SubstrateConservation { asset } => {
             external_evidence.insert(ExternalEvidenceRequirement::SubstrateConservation {
+                operation,
+                asset: *asset,
+            });
+        }
+
+        // Conservation over amounts the target holds as commitments is
+        // the target's own confidential-transaction rules to establish
+        // and nothing this compiler emits ever reads (Guide-13 §9.3,
+        // §10.6). Conservation over readable amounts is arithmetic a
+        // carrier performs, and raises nothing here.
+        Relation::AmountConservation { asset, .. }
+            if amounts == ConservedAmountVisibility::Committed =>
+        {
+            external_evidence.insert(ExternalEvidenceRequirement::ConfidentialValueConservation {
                 operation,
                 asset: *asset,
             });
@@ -468,7 +486,11 @@ pub fn validate_relation_case_census(
 /// lifecycle, and constructibility leave the runtime boundary
 /// entirely; substrate conservation is external evidence and gets no
 /// runtime carrier at all.
-fn classify_discharge(relation: &Relation, ordinary_lbtc: OrdinaryLbtcRole) -> RelationDischarge {
+fn classify_discharge(
+    relation: &Relation,
+    ordinary_lbtc: OrdinaryLbtcRole,
+    amounts: ConservedAmountVisibility,
+) -> RelationDischarge {
     use CarrierMultiplicity as Multiplicity;
     use DischargeBoundary as Boundary;
 
@@ -477,6 +499,22 @@ fn classify_discharge(relation: &Relation, ordinary_lbtc: OrdinaryLbtcRole) -> R
         activation,
         runtime: Some((scope, multiplicity)),
     };
+
+    // Committed conservation has no carrier at all. Giving it one would
+    // be the §10.6 defect exactly: a local program that appears to
+    // implement CT conservation because target consensus eventually
+    // accepts the transaction. The relation is still declared, still
+    // active, and still carries its capability and source rows — what
+    // it does not have is a script that discharges it.
+    if let (Relation::AmountConservation { .. }, ConservedAmountVisibility::Committed) =
+        (relation, amounts)
+    {
+        return RelationDischarge {
+            boundaries: BTreeSet::from([Boundary::ExternalEvidence]),
+            activation: ActivationCondition::Always,
+            runtime: None,
+        };
+    }
 
     match relation {
         Relation::Cardinality { side, object, .. } => runtime(

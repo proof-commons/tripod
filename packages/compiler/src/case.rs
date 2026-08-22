@@ -69,6 +69,87 @@ pub struct ExecutionCase {
     pub active_sources: Vec<SourceRequirement>,
 }
 
+/// Whether a conservation relation's amounts are readable in its case.
+///
+/// The one axis on which a relation's *discharge* depends on its case.
+/// Everything else the discharge classification fixes is a property of
+/// the relation alone; this is not, because the representation a case
+/// selected decides whether the amounts being conserved exist as
+/// numbers a program can add or as commitments only the target relates.
+///
+/// It lives here, beside the case identity it is read from, because two
+/// stages need the same answer — placement decides where the relation
+/// discharges, and coverage decides which mutations that discharge
+/// requires — and two derivations of one decision are two chances for
+/// the plan and its coverage to describe different transactions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConservedAmountVisibility {
+    /// The relation conserves nothing, or conserves amounts a program
+    /// can read.
+    ///
+    /// The two are one answer on purpose: a relation with no amounts
+    /// and a relation whose amounts are readable both leave the
+    /// discharge exactly as the relation itself states it, and giving
+    /// them separate answers would invite a caller to branch on a
+    /// difference that changes nothing.
+    Readable,
+    /// The relation conserves amounts the target holds as commitments.
+    Committed,
+}
+
+/// Whether one relation's conserved amounts are readable in one case.
+///
+/// # Why `PublicCommitted` counts as readable
+///
+/// The question this answers is not whether a commitment is present.
+/// It is whether the analysis can hand a program the numbers to add. A
+/// publicly committed amount is one an authenticated opening publishes,
+/// so a program that receives the opening adds numbers and the
+/// arithmetic discharge stands. A privately committed amount is one
+/// nothing publishes, and there is no opening to receive. Grouping the
+/// public mode with the private one because both involve commitments
+/// would move a discharge the analysis can still perform to a target
+/// that was never asked for it.
+///
+/// # Errors
+///
+/// [`CompileError::MixedRepresentationConservation`] when the case
+/// fixed both a readable and a committed representation among the
+/// families one relation conserves. Guide-13 §6.5 leaves mixed
+/// representation unsupported until it is separately admitted, and the
+/// two halves of such a relation have no common discharge: half of it
+/// is arithmetic a carrier performs and half of it is evidence only the
+/// target produces. Refusing is the disposition; silently choosing
+/// either half would publish a plan for a transaction nobody planned.
+pub fn conserved_amount_visibility(
+    declaration: &realization::RelationDeclaration,
+    case: &ExecutionCaseId,
+) -> Result<ConservedAmountVisibility, CompileError> {
+    let Relation::AmountConservation {
+        input_objects,
+        output_objects,
+        ..
+    } = &declaration.relation
+    else {
+        return Ok(ConservedAmountVisibility::Readable);
+    };
+
+    let committed = input_objects
+        .iter()
+        .chain(output_objects)
+        .filter_map(|object| case.representations.get(object))
+        .map(|mode| *mode == RepresentationMode::PrivateCommitted)
+        .collect::<BTreeSet<_>>();
+
+    match (committed.contains(&true), committed.contains(&false)) {
+        (true, true) => Err(CompileError::MixedRepresentationConservation {
+            relation: declaration.id.clone(),
+        }),
+        (true, false) => Ok(ConservedAmountVisibility::Committed),
+        (false, _) => Ok(ConservedAmountVisibility::Readable),
+    }
+}
+
 /// Whether one object family is the erased sponsor region *here*.
 ///
 /// Both halves of the question are needed and neither is sufficient.

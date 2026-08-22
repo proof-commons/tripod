@@ -1031,9 +1031,26 @@ fn every_published_census_is_complete_by_construction() {
 /// A matrix derived from the plan would only prove the plan agrees with
 /// itself. These are the sizes measured against the pilot realization,
 /// and the plan republishes them without loss.
+///
+/// # Why the two representations do not measure alike
+///
+/// The relation census is equal, as §6.6 requires: both plans declare
+/// the same twenty-four relations over the same two cases. The coverage
+/// and layout censuses are not, and that is §19.4 rather than a defect.
+/// Explicit conservation is arithmetic a carrier performs, so it states
+/// the layout that routes authenticated family totals to that carrier
+/// and one runtime acceptance with one focused rejection. Committed
+/// conservation has no carrier at all, so it states none of that layout
+/// and answers instead at the evidence boundary, where the report owes
+/// three negatives rather than one.
+///
+/// Stating one shared row and letting both plans meet it would have
+/// required the divergence to be zero, which would have meant the
+/// private plan still scripted the arithmetic it must not perform.
 #[test]
 fn the_published_censuses_have_the_measured_pilot_sizes() {
     let plan = corruption_subject().plan;
+    let mut seen = 0_usize;
 
     for projection in plan.representations() {
         let counts: BTreeMap<&str, usize> = BTreeMap::from([
@@ -1043,18 +1060,26 @@ fn the_published_censuses_have_the_measured_pilot_sizes() {
             ("relations", projection.relations().count()),
         ]);
 
-        assert_eq!(
-            counts,
-            BTreeMap::from([
+        let expected = match projection.plan() {
+            LiveTransferRepresentationPlan::Explicit => BTreeMap::from([
                 ("cases", 2),
                 ("coverage", 223),
                 ("layout", 69),
                 ("relations", 24),
             ]),
-            "{:?}",
-            projection.plan(),
-        );
+            LiveTransferRepresentationPlan::PrivateCommitted => BTreeMap::from([
+                ("cases", 2),
+                ("coverage", 225),
+                ("layout", 61),
+                ("relations", 24),
+            ]),
+        };
+
+        assert_eq!(counts, expected, "{:?}", projection.plan());
+        seen += 1;
     }
+
+    assert_eq!(seen, LiveTransferRepresentationPlan::ALL.len());
 }
 
 /// The relation bodies the class and value projections were derived

@@ -76,8 +76,12 @@ use crate::{
 /// one by the emitted bundle, an external one by a typed report, and
 /// everything a target actually evaluates is runtime. A representation
 /// or lifecycle relation is genuinely hybrid and states two.
-fn oracle_boundaries(relation: &Relation) -> BTreeSet<CoverageBoundary> {
+fn oracle_boundaries(relation: &Relation, case: &ExecutionCaseId) -> BTreeSet<CoverageBoundary> {
     use CoverageBoundary as Boundary;
+
+    if oracle_committed_amounts(relation, case) {
+        return BTreeSet::from([Boundary::ExternalEvidence]);
+    }
 
     match relation {
         Relation::Constructibility { .. } => BTreeSet::from([Boundary::CompilerStatic]),
@@ -129,9 +133,26 @@ fn oracle_activity(relation: &Relation, case: &ExecutionCaseId) -> RelationActiv
 /// an above-maximum class, and an architecture-owned ceiling is cited by
 /// its bound rather than copied as a value.
 #[allow(clippy::too_many_lines)]
-fn oracle_mutations(relation: &Relation) -> BTreeSet<(CoverageBoundary, RelationMutation)> {
+fn oracle_mutations(
+    relation: &Relation,
+    case: &ExecutionCaseId,
+) -> BTreeSet<(CoverageBoundary, RelationMutation)> {
     use CoverageBoundary as Boundary;
     use RelationMutation as Mutation;
+
+    if oracle_committed_amounts(relation, case) {
+        return BTreeSet::from([
+            (
+                Boundary::ExternalEvidence,
+                Mutation::ExternalEvidenceMissing,
+            ),
+            (Boundary::ExternalEvidence, Mutation::ExternalEvidenceFailed),
+            (
+                Boundary::ExternalEvidence,
+                Mutation::ExternalEvidenceIdentityMismatch,
+            ),
+        ]);
+    }
 
     let runtime = |mutations: Vec<Mutation>| {
         mutations
@@ -254,9 +275,33 @@ fn oracle_mutations(relation: &Relation) -> BTreeSet<(CoverageBoundary, Relation
     }
 }
 
+/// Whether one case holds a relation's conserved amounts as
+/// commitments, restated.
+///
+/// Read straight off the case's own representation map rather than from
+/// the compiler's decision, which is the whole point of an oracle. The
+/// pilots fix one representation per family, so `any` and `all` agree
+/// here; the production derivation refuses the case where they would
+/// not, and a mixed case therefore never reaches this comparison.
+fn oracle_committed_amounts(relation: &Relation, case: &ExecutionCaseId) -> bool {
+    let Relation::AmountConservation {
+        input_objects,
+        output_objects,
+        ..
+    } = relation
+    else {
+        return false;
+    };
+
+    input_objects.iter().chain(output_objects).any(|object| {
+        case.representations.get(object) == Some(&RepresentationMode::PrivateCommitted)
+    })
+}
+
 /// The typed external evidence one relation depends on, restated.
 fn oracle_external_evidence(
     declaration: &RelationDeclaration,
+    case: &ExecutionCaseId,
 ) -> BTreeSet<ExternalEvidenceRequirement> {
     match &declaration.relation {
         Relation::SubstrateConservation { asset } => {
@@ -264,6 +309,16 @@ fn oracle_external_evidence(
                 operation: declaration.id.operation(),
                 asset: *asset,
             }])
+        }
+        Relation::AmountConservation { asset, .. }
+            if oracle_committed_amounts(&declaration.relation, case) =>
+        {
+            BTreeSet::from(
+                [ExternalEvidenceRequirement::ConfidentialValueConservation {
+                    operation: declaration.id.operation(),
+                    asset: *asset,
+                }],
+            )
         }
         _ => BTreeSet::new(),
     }
@@ -511,10 +566,10 @@ fn oracle_relation_projection(
         case: case.clone(),
     };
     let activity = oracle_activity(relation, case);
-    let boundaries = oracle_boundaries(relation);
-    let external = oracle_external_evidence(declaration);
+    let boundaries = oracle_boundaries(relation, case);
+    let external = oracle_external_evidence(declaration, case);
     let representation = oracle_representation(relation, case);
-    let mutations = oracle_mutations(relation);
+    let mutations = oracle_mutations(relation, case);
     let operands = relation_operands(declaration).expect("the pilot operand census derives");
 
     let id = |boundary: CoverageBoundary, purpose: CoveragePurpose| CoverageRequirementId {
@@ -1040,7 +1095,18 @@ fn the_oracle_expects_sponsor_cardinality_in_both_pilots() {
                 .declarations
                 .get(&relation)
                 .unwrap_or_else(|| panic!("{:?} declares {relation:?}", pilot.operation));
-            let mutations = oracle_mutations(&declaration.relation);
+            // A cardinality relation conserves nothing, so the case's
+            // representations cannot change its mutations; the empty
+            // map states that rather than borrowing a pilot case whose
+            // representation would read as load-bearing here.
+            let mutations = oracle_mutations(
+                &declaration.relation,
+                &ExecutionCaseId {
+                    operation: pilot.operation,
+                    sponsor: SponsorCase::Present,
+                    representations: BTreeMap::new(),
+                },
+            );
 
             assert!(!mutations.contains(&(
                 CoverageBoundary::RuntimeCarrier,

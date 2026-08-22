@@ -35,7 +35,7 @@ use crate::{
     search_counter::{admit_search_state, record_search_event},
     source::{
         OperandId, SourceRequirement, derive_source_requirements, proof_capabilities,
-        relation_operands,
+        proof_external_evidence, relation_operands,
     },
 };
 
@@ -490,10 +490,16 @@ fn complete(
     // the fixed external-evidence requirements every candidate carries.
     let mut required_capabilities = state.fixed_required_capabilities.clone();
     let mut source_requirements = state.fixed_source_requirements.to_vec();
+    // The fixed set is what no choice can trade away; a candidate can
+    // still *add* evidence by the alternative it picked, which is how
+    // confidential conservation enters exactly the candidates that
+    // chose it.
+    let mut external_evidence = state.external_evidence.clone();
 
     for (relation, alternative) in &proofs {
         let declaration = &state.declarations[relation];
         required_capabilities.extend(proof_capabilities(declaration, alternative.proof()));
+        external_evidence.extend(proof_external_evidence(declaration, alternative.proof()));
 
         // Source-row derivation, not constructibility: the rows could
         // not be produced at all, so nothing was ever checked against
@@ -541,7 +547,7 @@ fn complete(
         representations,
         required_capabilities,
         source_requirements,
-        external_evidence: state.external_evidence.clone(),
+        external_evidence,
         lifecycle,
         disclosure,
     };

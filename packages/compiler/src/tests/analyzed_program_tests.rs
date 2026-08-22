@@ -328,8 +328,17 @@ fn the_pilots_retain_unresolved_substrate_conservation_evidence() {
             .program
             .required_external_evidence
             .iter()
-            .map(|requirement| match requirement {
-                ExternalEvidenceRequirement::SubstrateConservation { operation, .. } => *operation,
+            .filter_map(|requirement| match requirement {
+                ExternalEvidenceRequirement::SubstrateConservation { operation, .. } => {
+                    Some(*operation)
+                }
+                // A different class with a different owner: the
+                // substrate obligation is one per operation, where the
+                // confidential one belongs only to the operations whose
+                // plans hold a protocol amount as a commitment. Folding
+                // them together would make this assertion pass for the
+                // wrong reason.
+                ExternalEvidenceRequirement::ConfidentialValueConservation { .. } => None,
             })
             .collect::<BTreeSet<_>>();
 

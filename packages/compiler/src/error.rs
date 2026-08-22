@@ -402,6 +402,20 @@ pub enum CompileError {
         fact: realization::FactId,
     },
 
+    /// One conservation relation spans object families whose selected
+    /// representations disagree about whether the amounts are readable.
+    ///
+    /// Half such a relation is arithmetic a carrier performs and half
+    /// is evidence only the target produces, so it has no single
+    /// discharge. Mixed representation stays unsupported until it is
+    /// separately admitted, and the compiler refuses the case rather
+    /// than planning one half of it.
+    #[error("conservation relation {relation:?} spans mixed representations")]
+    MixedRepresentationConservation {
+        /// The relation whose conserved families disagree.
+        relation: realization::RelationId,
+    },
+
     /// A runtime relation declares no approved proof alternative.
     #[error("relation {relation:?} has no proof alternative")]
     MissingProofAlternative {

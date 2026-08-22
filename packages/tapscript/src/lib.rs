@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 #![forbid(unsafe_code)]
 
+pub mod authorization;
 pub mod bundle;
 pub mod capability;
 pub mod error;
@@ -13,6 +14,11 @@ pub mod shape;
 pub mod stack;
 pub mod upstream;
 
+pub use authorization::{
+    DimensionRefusal, DimensionRole, OwnerKeyEncodingClosure, OwnerKeyNegative, OwnerKeyObligation,
+    OwnerProfileDisposition, OwnerSighashProfile, ProtectedDatum, owner_key_encoding_closure,
+    profile_classifies_every_offered_dimension, selected_owner_profile,
+};
 pub use bundle::{
     BackendArtifactStatus, BundleRefusal, BundleSymbol, CandidateRelocatableTapscriptBundle,
     ConcreteCarrierSite, ConcreteLayout, ConcreteRelationPlacement, ConstructorAssumption,

@@ -95,7 +95,10 @@ fn the_capability_census_is_complete_and_duplicate_free() {
 fn the_evidence_role_census_is_complete_and_duplicate_free() {
     assert_eq!(
         ExternalEvidenceRole::ALL,
-        [ExternalEvidenceRole::SubstrateConservation],
+        [
+            ExternalEvidenceRole::ConfidentialValueConservation,
+            ExternalEvidenceRole::SubstrateConservation,
+        ],
     );
     assert!(
         ExternalEvidenceRole::ALL
@@ -111,17 +114,29 @@ fn every_realization_requirement_class_projects_to_a_role() {
     // a class added later is a visible test change as well as a
     // compile failure.
     let retained = analyzed(&[OperationId::TransferLive]).required_external_evidence;
+    let classes = retained
+        .iter()
+        .map(|requirement| match requirement {
+            ExternalEvidenceRequirement::ConfidentialValueConservation { .. } => {
+                ExternalEvidenceRole::ConfidentialValueConservation
+            }
+            ExternalEvidenceRequirement::SubstrateConservation { .. } => {
+                ExternalEvidenceRole::SubstrateConservation
+            }
+        })
+        .collect::<BTreeSet<_>>();
 
-    assert!(
-        retained.iter().all(|requirement| matches!(
-            requirement,
-            ExternalEvidenceRequirement::SubstrateConservation { .. }
-        )),
-        "every retained requirement belongs to a censused class",
-    );
-    assert!(
-        !retained.is_empty(),
-        "the pilot analysis retains the substrate-conservation requirement",
+    // Both classes, stated as a set rather than as "not empty": a live
+    // transfer leaves the substrate obligation open under either
+    // representation and the confidential one open under the private
+    // representation, so an analysis that lost the second would still
+    // satisfy a non-emptiness check.
+    assert_eq!(
+        classes,
+        BTreeSet::from([
+            ExternalEvidenceRole::ConfidentialValueConservation,
+            ExternalEvidenceRole::SubstrateConservation,
+        ]),
     );
 }
 
@@ -158,6 +173,9 @@ fn the_projection_carries_every_open_evidence_role() {
         .required_external_evidence
         .iter()
         .map(|requirement| match requirement {
+            ExternalEvidenceRequirement::ConfidentialValueConservation { .. } => {
+                ExternalEvidenceRole::ConfidentialValueConservation
+            }
             ExternalEvidenceRequirement::SubstrateConservation { .. } => {
                 ExternalEvidenceRole::SubstrateConservation
             }

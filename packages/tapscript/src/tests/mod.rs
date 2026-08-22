@@ -38,6 +38,7 @@
 //! where it matters.
 
 mod abstract_oracle_tests;
+mod authorization_tests;
 mod bundle_tests;
 mod byte_census_tests;
 mod census_tests;

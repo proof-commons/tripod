@@ -1010,11 +1010,7 @@ const fn carrier_operation(carrier: &CarrierRole) -> Option<OperationId> {
     match carrier {
         CarrierRole::OperationGlobal { operation, .. }
         | CarrierRole::BackendStructural { operation } => Some(*operation),
-        CarrierRole::ExternalEvidence { requirement } => match requirement {
-            ExternalEvidenceRequirement::SubstrateConservation { operation, .. } => {
-                Some(*operation)
-            }
-        },
+        CarrierRole::ExternalEvidence { requirement } => Some(requirement.operation()),
         CarrierRole::EveryInputFamilyMember { .. } | CarrierRole::InputFamilyCoordinator { .. } => {
             None
         }

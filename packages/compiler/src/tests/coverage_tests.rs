@@ -21,7 +21,7 @@ use crate::{
     CompileError,
     capability::{CapabilityView, RequiredCapability},
     carrier::{CarrierQuantification, CarrierRole, relation_case_eligibility},
-    case::SponsorCase,
+    case::{ConservedAmountVisibility, SponsorCase, conserved_amount_visibility},
     coverage::{
         CardinalityCeiling, CarrierAssignmentAlternative, CarrierCoverageRequirement,
         CollateralPolicy, CollateralRequirement, CoverageBoundary, CoveragePurpose,
@@ -178,8 +178,17 @@ fn mutations(plan: &RelationCoveragePlan) -> BTreeSet<RelationMutation> {
 /// The Guide-6 §15 matrix restated independently of the derivation, so
 /// a derivation that quietly moved a relation to another boundary
 /// disagrees with this rather than with itself.
-fn expected_boundaries(relation: &Relation) -> BTreeSet<CoverageBoundary> {
+fn expected_boundaries(
+    relation: &Relation,
+    amounts: ConservedAmountVisibility,
+) -> BTreeSet<CoverageBoundary> {
     use CoverageBoundary as Boundary;
+
+    if let (Relation::AmountConservation { .. }, ConservedAmountVisibility::Committed) =
+        (relation, amounts)
+    {
+        return BTreeSet::from([Boundary::ExternalEvidence]);
+    }
 
     match relation {
         Relation::Constructibility { .. } => BTreeSet::from([Boundary::CompilerStatic]),
@@ -284,12 +293,26 @@ fn coverage_is_aggregated_per_operation_and_never_across_operations() {
 fn every_pilot_relation_covers_exactly_its_acceptance_matrix_boundaries() {
     for pilot in pilots() {
         for relation in pilot.relation_ids() {
-            let expected = expected_boundaries(&pilot.declaration(&relation).relation);
+            let declaration = pilot.declaration(&relation);
             let mut seen = 0_usize;
 
             for plan in pilot.plans_of(&relation) {
                 seen += 1;
-                assert_eq!(plan.boundaries, expected, "{relation:?}");
+
+                // The expectation is re-derived per case rather than
+                // once per relation: conservation lands on a different
+                // boundary under a committed representation, and a
+                // per-relation expectation would have to be wrong for
+                // one of the two cases.
+                let amounts = conserved_amount_visibility(&declaration, &plan.case)
+                    .expect("a pilot case fixes one representation per family");
+
+                assert_eq!(
+                    plan.boundaries,
+                    expected_boundaries(&declaration.relation, amounts),
+                    "{relation:?} {:?}",
+                    plan.case,
+                );
             }
 
             assert!(seen > 0, "{relation:?}");
@@ -729,29 +752,88 @@ fn every_relation_variant() -> Vec<Relation> {
 
 #[test]
 fn every_relation_variant_requires_at_least_one_mutation_class() {
-    for relation in every_relation_variant() {
-        let required = relation_mutations(&relation);
+    // Both visibilities, because conservation is the one relation whose
+    // discharge the representation moves: checking only the readable
+    // answer would leave the committed one free to require nothing.
+    for amounts in [
+        ConservedAmountVisibility::Readable,
+        ConservedAmountVisibility::Committed,
+    ] {
+        for relation in every_relation_variant() {
+            let required = relation_mutations(&relation, amounts);
 
-        assert!(!required.is_empty(), "{relation:?}");
+            assert!(!required.is_empty(), "{relation:?} {amounts:?}");
 
-        // Every mutation is stated at a boundary the acceptance matrix
-        // gives the relation, so no negative can be answered by an
-        // artifact that never observes the relation.
-        let boundaries = expected_boundaries(&relation);
+            // Every mutation is stated at a boundary the acceptance
+            // matrix gives the relation, so no negative can be answered
+            // by an artifact that never observes the relation.
+            let boundaries = expected_boundaries(&relation, amounts);
 
-        for (boundary, _) in &required {
-            assert!(boundaries.contains(boundary), "{relation:?} {boundary:?}");
+            for (boundary, _) in &required {
+                assert!(
+                    boundaries.contains(boundary),
+                    "{relation:?} {amounts:?} {boundary:?}",
+                );
+            }
         }
     }
 }
 
 #[test]
+fn committed_conservation_moves_its_negatives_to_the_evidence_boundary() {
+    let relation = Relation::AmountConservation {
+        asset: AssetId::U,
+        input_objects: BTreeSet::from([ObjectId::ReceiptLive]),
+        output_objects: BTreeSet::from([ObjectId::ReceiptLive]),
+    };
+
+    let boundaries = |amounts| {
+        relation_mutations(&relation, amounts)
+            .into_iter()
+            .map(|(boundary, _)| boundary)
+            .collect::<BTreeSet<_>>()
+    };
+
+    // The whole §19.4 divergence in one comparison: one relation, two
+    // representations, two disjoint boundaries. An implementation that
+    // kept the runtime mutation as well would still satisfy a
+    // containment check, so the sets are compared exactly.
+    assert_eq!(
+        boundaries(ConservedAmountVisibility::Readable),
+        BTreeSet::from([CoverageBoundary::RuntimeCarrier]),
+    );
+    assert_eq!(
+        boundaries(ConservedAmountVisibility::Committed),
+        BTreeSet::from([CoverageBoundary::ExternalEvidence]),
+    );
+
+    // The committed negatives are the report's own three, matching the
+    // substrate obligation discharged at the same boundary.
+    let committed = relation_mutations(&relation, ConservedAmountVisibility::Committed)
+        .into_iter()
+        .map(|(_, mutation)| mutation)
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(
+        committed,
+        BTreeSet::from([
+            RelationMutation::ExternalEvidenceMissing,
+            RelationMutation::ExternalEvidenceFailed,
+            RelationMutation::ExternalEvidenceIdentityMismatch,
+        ]),
+    );
+}
+
+#[test]
 fn a_permissionless_constructibility_class_adds_a_private_dependency_mutation() {
     let classes = |class| {
-        relation_mutations(&Relation::Constructibility { class })
-            .into_iter()
-            .map(|(_, mutation)| mutation)
-            .collect::<BTreeSet<_>>()
+        relation_mutations(
+            &Relation::Constructibility { class },
+            ConservedAmountVisibility::Readable,
+        )
+        .into_iter()
+        .map(|(_, mutation)| mutation)
+        .collect::<BTreeSet<_>>()
     };
     let permissionless = classes(ConstructibilityClass::PublicPermissionless);
     let owners = classes(ConstructibilityClass::OwnersOf {
