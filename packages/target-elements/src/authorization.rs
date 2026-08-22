@@ -9,50 +9,36 @@
 
 use std::collections::BTreeSet;
 
+use crate::capability::census_enum;
 use crate::encoding::EncodingClass;
 use crate::evidence::TargetEvidenceRequirementId;
 use crate::opcode::FailureOutcome;
 
-/// One dimension a sighash may commit to.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum SighashDimension {
-    /// Every output of the transaction.
-    AllOutputs,
-    /// The single output at the signing input's index.
-    SingleOutput,
-    /// Every input of the transaction.
-    AllInputs,
-    /// Only the signing input, permitting other inputs to be added.
-    InputExtensionPermitted,
-    /// The issuance fields of the inputs.
-    Issuance,
-    /// The transaction version field.
-    Version,
-    /// The transaction locktime field.
-    LockTime,
-    /// The hash of the executing leaf.
-    TapleafHash,
-    /// The taproot internal key.
-    InternalKey,
-    /// The full set of outputs being spent.
-    SpentOutputs,
-}
-
-impl SighashDimension {
-    /// The complete census of sighash dimensions.
-    pub const ALL: &'static [Self] = &[
-        Self::AllOutputs,
-        Self::SingleOutput,
-        Self::AllInputs,
-        Self::InputExtensionPermitted,
-        Self::Issuance,
-        Self::Version,
-        Self::LockTime,
-        Self::TapleafHash,
-        Self::InternalKey,
-        Self::SpentOutputs,
-    ];
+census_enum! {
+    /// One dimension a sighash may commit to.
+    #[non_exhaustive]
+    pub enum SighashDimension {
+        /// Every output of the transaction.
+        AllOutputs,
+        /// The single output at the signing input's index.
+        SingleOutput,
+        /// Every input of the transaction.
+        AllInputs,
+        /// Only the signing input, permitting other inputs to be added.
+        InputExtensionPermitted,
+        /// The issuance fields of the inputs.
+        Issuance,
+        /// The transaction version field.
+        Version,
+        /// The transaction locktime field.
+        LockTime,
+        /// The hash of the executing leaf.
+        TapleafHash,
+        /// The taproot internal key.
+        InternalKey,
+        /// The full set of outputs being spent.
+        SpentOutputs,
+    }
 }
 
 /// Which sighash dimensions the review actually established.

@@ -73,6 +73,11 @@ pub(crate) use census_enum;
 
 census_enum! {
     /// One abstract requirement an approved proof places on a target.
+    ///
+    /// Declaration order is the census order of Guide-8 §15.2, which is
+    /// a stable order and ranks nothing: a capability earlier in this
+    /// list is not more fundamental, more required, or nearer to being
+    /// discharged than one later in it.
     pub enum RequiredCapability {
         AuthenticatedObjectRecognition,
         AuthenticatedFamilyCardinality,

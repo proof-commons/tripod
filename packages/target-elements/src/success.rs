@@ -29,72 +29,58 @@
 
 use std::collections::BTreeSet;
 
+use crate::capability::census_enum;
 use crate::opcode::StackValueType;
 
-/// What selects one successful form of a primitive.
-///
-/// The conditions are properties of the *target value being read*, not
-/// of the program: whether the field it found was explicit, blinded,
-/// or absent, whether the program was a witness program, whether the
-/// input carried an issuance. A program cannot choose among them, so a
-/// backend must be able to handle every form a primitive admits.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum SuccessCondition {
-    /// The primitive has one successful form.
-    Always,
-    /// The field read was carried in the clear.
-    ExplicitEncoding,
-    /// The field read was carried as a blinded commitment.
-    ConfidentialEncoding,
-    /// The field read was absent.
-    NullEncoding,
-    /// The program read was a witness program.
-    WitnessProgram,
-    /// The program read was not a witness program, so a digest stands
-    /// in for it.
-    NonWitnessProgram,
-    /// The input read carried an issuance.
-    IssuancePresent,
-    /// The input read carried no issuance.
-    IssuanceAbsent,
-    /// The key offered was the recognized encoding, and the nonempty
-    /// signature verified against it.
+census_enum! {
+    /// What selects one successful form of a primitive.
     ///
-    /// The ordinary signature success, named rather than left as
-    /// `Always` because it is now one of two: the target has a second
-    /// successful form that verifies nothing at all.
-    RecognizedKeyVerifiedSignature,
-    /// The key offered was a nonempty key of an unrecognized form, so
-    /// the check succeeded without verifying anything.
-    ///
-    /// The target's forward-compatibility rule. It is a success and
-    /// must be modeled as one: a caller that treated an unrecognized
-    /// key as a rejection would believe a spend fails that in fact
-    /// stands, which is the more dangerous of the two errors.
-    ///
-    /// The rule is carried as an upstream friction
-    /// `(´[PLAN-obs:upstream:eg-008]´)`. This variant is the whole of
-    /// this contract's adaptation to it: were the target ever to verify
-    /// unrecognized key types, the success census is where the change
-    /// lands.
-    UnknownKeyTypeUnverified,
-}
-
-impl SuccessCondition {
-    /// The complete census of success conditions.
-    pub const ALL: &'static [Self] = &[
-        Self::Always,
-        Self::ExplicitEncoding,
-        Self::ConfidentialEncoding,
-        Self::NullEncoding,
-        Self::WitnessProgram,
-        Self::NonWitnessProgram,
-        Self::IssuancePresent,
-        Self::IssuanceAbsent,
-        Self::RecognizedKeyVerifiedSignature,
-        Self::UnknownKeyTypeUnverified,
-    ];
+    /// The conditions are properties of the *target value being read*, not
+    /// of the program: whether the field it found was explicit, blinded,
+    /// or absent, whether the program was a witness program, whether the
+    /// input carried an issuance. A program cannot choose among them, so a
+    /// backend must be able to handle every form a primitive admits.
+    #[non_exhaustive]
+    pub enum SuccessCondition {
+        /// The primitive has one successful form.
+        Always,
+        /// The field read was carried in the clear.
+        ExplicitEncoding,
+        /// The field read was carried as a blinded commitment.
+        ConfidentialEncoding,
+        /// The field read was absent.
+        NullEncoding,
+        /// The program read was a witness program.
+        WitnessProgram,
+        /// The program read was not a witness program, so a digest stands
+        /// in for it.
+        NonWitnessProgram,
+        /// The input read carried an issuance.
+        IssuancePresent,
+        /// The input read carried no issuance.
+        IssuanceAbsent,
+        /// The key offered was the recognized encoding, and the nonempty
+        /// signature verified against it.
+        ///
+        /// The ordinary signature success, named rather than left as
+        /// `Always` because it is now one of two: the target has a second
+        /// successful form that verifies nothing at all.
+        RecognizedKeyVerifiedSignature,
+        /// The key offered was a nonempty key of an unrecognized form, so
+        /// the check succeeded without verifying anything.
+        ///
+        /// The target's forward-compatibility rule. It is a success and
+        /// must be modeled as one: a caller that treated an unrecognized
+        /// key as a rejection would believe a spend fails that in fact
+        /// stands, which is the more dangerous of the two errors.
+        ///
+        /// The rule is carried as an upstream friction
+        /// `(´[PLAN-obs:upstream:eg-008]´)`. This variant is the whole of
+        /// this contract's adaptation to it: were the target ever to verify
+        /// unrecognized key types, the success census is where the change
+        /// lands.
+        UnknownKeyTypeUnverified,
+    }
 }
 
 /// One item a successful form leaves on the stack.

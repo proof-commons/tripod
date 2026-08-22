@@ -20,6 +20,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 
+use crate::capability::census_enum;
 use crate::encoding::{ByteOrder, EncodingClass};
 use crate::evidence::TargetEvidenceRequirementId;
 use crate::operand::OperandContract;
@@ -28,22 +29,18 @@ use crate::success::{
     SuccessStackEffect,
 };
 
-/// The script execution domain a primitive is available in.
-///
-/// Only the reviewed domain is declared. Legacy script, segwit v0, and
-/// the separate Simplicity leaf are deliberately absent: this package
-/// has not reviewed them, and declaring a domain it cannot describe
-/// would be a claim rather than a contract.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum ExecutionDomain {
-    /// The taproot script-path execution domain.
-    Tapscript,
-}
-
-impl ExecutionDomain {
-    /// The complete census of reviewed execution domains.
-    pub const ALL: &'static [Self] = &[Self::Tapscript];
+census_enum! {
+    /// The script execution domain a primitive is available in.
+    ///
+    /// Only the reviewed domain is declared. Legacy script, segwit v0, and
+    /// the separate Simplicity leaf are deliberately absent: this package
+    /// has not reviewed them, and declaring a domain it cannot describe
+    /// would be a claim rather than a contract.
+    #[non_exhaustive]
+    pub enum ExecutionDomain {
+        /// The taproot script-path execution domain.
+        Tapscript,
+    }
 }
 
 /// A validated tapleaf version byte.
@@ -504,206 +501,147 @@ impl OpcodeResourceCost {
     }
 }
 
-/// A stable key naming one reviewed target primitive.
-///
-/// Admission is by review, not by availability: a primitive the target
-/// implements but this package has not reviewed does not appear here,
-/// and its absence means "not reviewed", never "not available".
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[non_exhaustive]
-pub enum OpcodeId {
-    /// Begins a streaming hash over an initial chunk.
-    Sha256Initialize,
-    /// Absorbs a further chunk into a streaming hash state.
-    Sha256Update,
-    /// Absorbs a final chunk and produces the digest.
-    Sha256Finalize,
-
-    /// Pushes the outpoint of one input.
-    InspectInputOutpoint,
-    /// Pushes the asset of one spent output.
-    InspectInputAsset,
-    /// Pushes the value of one spent output.
-    InspectInputValue,
-    /// Pushes the program of one spent output.
-    InspectInputScriptPubKey,
-    /// Pushes the sequence field of one input.
-    InspectInputSequence,
-    /// Pushes the issuance fields of one input.
-    InspectInputIssuance,
-
-    /// Pushes the index of the input being validated.
-    PushCurrentInputIndex,
-
-    /// Pushes the asset of one output.
-    InspectOutputAsset,
-    /// Pushes the value of one output.
-    InspectOutputValue,
-    /// Pushes the nonce of one output.
-    InspectOutputNonce,
-    /// Pushes the program of one output.
-    InspectOutputScriptPubKey,
-
-    /// Pushes the transaction version.
-    InspectVersion,
-    /// Pushes the transaction locktime.
-    InspectLockTime,
-    /// Pushes the input count.
-    InspectNumInputs,
-    /// Pushes the output count.
-    InspectNumOutputs,
-    /// Pushes the transaction weight.
-    TxWeight,
-
-    /// Adds two signed fixed-width operands.
-    Add64,
-    /// Subtracts the top signed fixed-width operand from the deeper.
-    Sub64,
-    /// Multiplies two signed fixed-width operands.
-    Mul64,
-    /// Divides the deeper signed fixed-width operand by the top,
-    /// producing a remainder and a quotient.
-    Div64,
-    /// Negates one signed fixed-width operand.
-    Neg64,
-
-    /// Orders two signed fixed-width operands strictly.
-    LessThan64,
-    /// Orders two signed fixed-width operands inclusively.
-    LessThanOrEqual64,
-    /// Orders two signed fixed-width operands strictly, reversed.
-    GreaterThan64,
-    /// Orders two signed fixed-width operands inclusively, reversed.
-    GreaterThanOrEqual64,
-
-    /// Widens a script number to a signed fixed-width value.
-    ScriptNumToLe64,
-    /// Narrows a signed fixed-width value to a script number.
-    Le64ToScriptNum,
-    /// Widens an unsigned 32-bit value to a signed fixed-width value.
-    Le32ToLe64,
-
-    /// Verifies that a point is a scalar multiple of a generator.
-    EcMulScalarVerify,
-    /// Verifies a pay-to-contract tweak relation.
-    TweakVerify,
-
-    /// Verifies a signature over the transaction sighash.
-    CheckSig,
-    /// Verifies a signature over the transaction sighash and requires
-    /// success.
-    CheckSigVerify,
-    /// Verifies a signature over a message taken from the stack.
-    CheckSigFromStack,
-    /// Verifies a signature over a message taken from the stack and
-    /// requires success.
-    CheckSigFromStackVerify,
-
-    /// Requires a relative timelock to have matured.
-    CheckSequenceVerify,
-
-    /// Copies the top item.
-    Duplicate,
-    /// Copies the top two items, as a pair.
-    DuplicateTwo,
-    /// Copies the second item to the top.
-    CopyOver,
-    /// Exchanges the top two items.
-    Swap,
-    /// Moves the third item to the top.
-    Rotate,
-    /// Removes the second item.
-    RemoveSecond,
-    /// Inserts a copy of the top item below the second.
-    Tuck,
-    /// Removes the top item.
-    Drop,
-    /// Removes the top two items.
-    DropTwo,
-
-    /// Compares two items for byte equality.
-    Equal,
-    /// Compares two items for byte equality and requires it.
-    EqualVerify,
-    /// Requires the top item to be true.
-    Verify,
-
-    /// Joins two items into one.
-    Concatenate,
-    /// Pushes the width of the top item above it.
-    Size,
-    /// Extracts a slice of one item.
-    Substring,
-
-    /// Combines two equal-width items bit by bit, conjunctively.
-    BitwiseAnd,
-    /// Combines two equal-width items bit by bit, exclusively.
-    BitwiseXor,
-}
-
-impl OpcodeId {
-    /// The complete census of reviewed primitives.
+census_enum! {
+    /// A stable key naming one reviewed target primitive.
     ///
-    /// Declaration order here is a grouping convenience. It is not the
-    /// target byte order, and a consumer must read the byte from the
-    /// specification rather than infer it from this position.
-    pub const ALL: &'static [Self] = &[
-        Self::Sha256Initialize,
-        Self::Sha256Update,
-        Self::Sha256Finalize,
-        Self::InspectInputOutpoint,
-        Self::InspectInputAsset,
-        Self::InspectInputValue,
-        Self::InspectInputScriptPubKey,
-        Self::InspectInputSequence,
-        Self::InspectInputIssuance,
-        Self::PushCurrentInputIndex,
-        Self::InspectOutputAsset,
-        Self::InspectOutputValue,
-        Self::InspectOutputNonce,
-        Self::InspectOutputScriptPubKey,
-        Self::InspectVersion,
-        Self::InspectLockTime,
-        Self::InspectNumInputs,
-        Self::InspectNumOutputs,
-        Self::TxWeight,
-        Self::Add64,
-        Self::Sub64,
-        Self::Mul64,
-        Self::Div64,
-        Self::Neg64,
-        Self::LessThan64,
-        Self::LessThanOrEqual64,
-        Self::GreaterThan64,
-        Self::GreaterThanOrEqual64,
-        Self::ScriptNumToLe64,
-        Self::Le64ToScriptNum,
-        Self::Le32ToLe64,
-        Self::EcMulScalarVerify,
-        Self::TweakVerify,
-        Self::CheckSig,
-        Self::CheckSigVerify,
-        Self::CheckSigFromStack,
-        Self::CheckSigFromStackVerify,
-        Self::CheckSequenceVerify,
-        Self::Duplicate,
-        Self::DuplicateTwo,
-        Self::CopyOver,
-        Self::Swap,
-        Self::Rotate,
-        Self::RemoveSecond,
-        Self::Tuck,
-        Self::Drop,
-        Self::DropTwo,
-        Self::Equal,
-        Self::EqualVerify,
-        Self::Verify,
-        Self::Concatenate,
-        Self::Size,
-        Self::Substring,
-        Self::BitwiseAnd,
-        Self::BitwiseXor,
-    ];
+    /// Admission is by review, not by availability: a primitive the target
+    /// implements but this package has not reviewed does not appear here,
+    /// and its absence means "not reviewed", never "not available".
+    ///
+    /// Declaration order here is a grouping convenience, and the census
+    /// below inherits it. It is not the target byte order, and a
+    /// consumer must read the byte from the specification rather than
+    /// infer it from this position.
+    #[non_exhaustive]
+    pub enum OpcodeId {
+        /// Begins a streaming hash over an initial chunk.
+        Sha256Initialize,
+        /// Absorbs a further chunk into a streaming hash state.
+        Sha256Update,
+        /// Absorbs a final chunk and produces the digest.
+        Sha256Finalize,
+
+        /// Pushes the outpoint of one input.
+        InspectInputOutpoint,
+        /// Pushes the asset of one spent output.
+        InspectInputAsset,
+        /// Pushes the value of one spent output.
+        InspectInputValue,
+        /// Pushes the program of one spent output.
+        InspectInputScriptPubKey,
+        /// Pushes the sequence field of one input.
+        InspectInputSequence,
+        /// Pushes the issuance fields of one input.
+        InspectInputIssuance,
+
+        /// Pushes the index of the input being validated.
+        PushCurrentInputIndex,
+
+        /// Pushes the asset of one output.
+        InspectOutputAsset,
+        /// Pushes the value of one output.
+        InspectOutputValue,
+        /// Pushes the nonce of one output.
+        InspectOutputNonce,
+        /// Pushes the program of one output.
+        InspectOutputScriptPubKey,
+
+        /// Pushes the transaction version.
+        InspectVersion,
+        /// Pushes the transaction locktime.
+        InspectLockTime,
+        /// Pushes the input count.
+        InspectNumInputs,
+        /// Pushes the output count.
+        InspectNumOutputs,
+        /// Pushes the transaction weight.
+        TxWeight,
+
+        /// Adds two signed fixed-width operands.
+        Add64,
+        /// Subtracts the top signed fixed-width operand from the deeper.
+        Sub64,
+        /// Multiplies two signed fixed-width operands.
+        Mul64,
+        /// Divides the deeper signed fixed-width operand by the top,
+        /// producing a remainder and a quotient.
+        Div64,
+        /// Negates one signed fixed-width operand.
+        Neg64,
+
+        /// Orders two signed fixed-width operands strictly.
+        LessThan64,
+        /// Orders two signed fixed-width operands inclusively.
+        LessThanOrEqual64,
+        /// Orders two signed fixed-width operands strictly, reversed.
+        GreaterThan64,
+        /// Orders two signed fixed-width operands inclusively, reversed.
+        GreaterThanOrEqual64,
+
+        /// Widens a script number to a signed fixed-width value.
+        ScriptNumToLe64,
+        /// Narrows a signed fixed-width value to a script number.
+        Le64ToScriptNum,
+        /// Widens an unsigned 32-bit value to a signed fixed-width value.
+        Le32ToLe64,
+
+        /// Verifies that a point is a scalar multiple of a generator.
+        EcMulScalarVerify,
+        /// Verifies a pay-to-contract tweak relation.
+        TweakVerify,
+
+        /// Verifies a signature over the transaction sighash.
+        CheckSig,
+        /// Verifies a signature over the transaction sighash and requires
+        /// success.
+        CheckSigVerify,
+        /// Verifies a signature over a message taken from the stack.
+        CheckSigFromStack,
+        /// Verifies a signature over a message taken from the stack and
+        /// requires success.
+        CheckSigFromStackVerify,
+
+        /// Requires a relative timelock to have matured.
+        CheckSequenceVerify,
+
+        /// Copies the top item.
+        Duplicate,
+        /// Copies the top two items, as a pair.
+        DuplicateTwo,
+        /// Copies the second item to the top.
+        CopyOver,
+        /// Exchanges the top two items.
+        Swap,
+        /// Moves the third item to the top.
+        Rotate,
+        /// Removes the second item.
+        RemoveSecond,
+        /// Inserts a copy of the top item below the second.
+        Tuck,
+        /// Removes the top item.
+        Drop,
+        /// Removes the top two items.
+        DropTwo,
+
+        /// Compares two items for byte equality.
+        Equal,
+        /// Compares two items for byte equality and requires it.
+        EqualVerify,
+        /// Requires the top item to be true.
+        Verify,
+
+        /// Joins two items into one.
+        Concatenate,
+        /// Pushes the width of the top item above it.
+        Size,
+        /// Extracts a slice of one item.
+        Substring,
+
+        /// Combines two equal-width items bit by bit, conjunctively.
+        BitwiseAnd,
+        /// Combines two equal-width items bit by bit, exclusively.
+        BitwiseXor,
+    }
 }
 
 /// The complete typed contract of one reviewed primitive.
