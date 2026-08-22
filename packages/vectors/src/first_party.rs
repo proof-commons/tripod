@@ -133,6 +133,18 @@ pub enum FirstPartyEvidenceRefusal {
     /// a focused change of it, and a refusal of the second says nothing
     /// about the workspace.
     ControlIsNotPublished,
+    /// The control carries no availability class to change.
+    ///
+    /// An operation node has no such field, so there is no single change
+    /// to make to it and no pair to compare.
+    ControlHasNoAvailabilityClass,
+    /// The operation publishes several authorization cases.
+    ///
+    /// Then which one the malformed input is offered to decides what
+    /// comes back, and a case that did not say would be answered by
+    /// whichever the lookup reached first. Refused rather than resolved,
+    /// for the reason every underdetermined link in this crate is.
+    AuthorizationCaseUnderdetermined,
     /// The malformation left the input unchanged.
     ///
     /// The whole argument is that the two inputs differ by exactly one
@@ -252,7 +264,7 @@ pub fn validate_first_party_negative(
     }
 
     let malformed = with_availability(control, *availability)
-        .ok_or(FirstPartyEvidenceRefusal::ControlIsNotPublished)?;
+        .ok_or(FirstPartyEvidenceRefusal::ControlHasNoAvailabilityClass)?;
     if malformed == *control {
         return Err(FirstPartyEvidenceRefusal::MalformationChangedNothing);
     }
@@ -260,19 +272,19 @@ pub fn validate_first_party_negative(
     // The authorization is the operation's own, looked up rather than
     // authored: a case offering an authorization the operation does not
     // have would be refusing something the analysis never asks.
-    let authorization = realization
+    let cases = realization
         .constructibility_authorizations(*operation)
-        .map_err(|_| FirstPartyEvidenceRefusal::RealizationUnavailable)?
-        .first()
-        .ok_or(FirstPartyEvidenceRefusal::RealizationUnavailable)?
-        .clone();
+        .map_err(|_| FirstPartyEvidenceRefusal::RealizationUnavailable)?;
+    let [authorization] = cases else {
+        return Err(FirstPartyEvidenceRefusal::AuthorizationCaseUnderdetermined);
+    };
 
     // The negative half. Nothing below reads a list: the class comes
     // back out of the validator's own error. The dependency walk is
     // empty because this case states a dependency rather than building a
     // graph to reach it through; the walk is diagnostic detail on the
     // error and no part of the class it names.
-    let Err(error) = validate_required_dependency(*operation, &authorization, &malformed, Vec::new)
+    let Err(error) = validate_required_dependency(*operation, authorization, &malformed, Vec::new)
     else {
         return Err(FirstPartyEvidenceRefusal::MalformedInputWasAccepted);
     };
@@ -284,7 +296,7 @@ pub fn validate_first_party_negative(
     // The positive control, through the same call with the same
     // authorization. A validator that refused this one refused the
     // input rather than the malformation.
-    if validate_required_dependency(*operation, &authorization, control, Vec::new).is_err() {
+    if validate_required_dependency(*operation, authorization, control, Vec::new).is_err() {
         return Err(FirstPartyEvidenceRefusal::ControlWasRefused);
     }
 
