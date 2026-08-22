@@ -27,6 +27,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU8;
 
+use architecture::{ObjectId, OperationId};
 use compiler::live_transfer_plan::LiveTransferRepresentationPlan;
 use target_elements::{
     CanonicalEncodingRule, EncodingClass, EncodingDomain, PayloadWidth,
@@ -501,7 +502,55 @@ fn the_shape_leaves_of_an_admitted_shape_come_back_together() {
     }
 }
 
+// --- §7.3: the live class the constructor carries ---------------------
+
+#[test]
+fn the_time_locked_family_is_forbidden_on_both_sides_of_the_constructor() {
+    // §7.3's second and third sentences, in the form the constructor can
+    // state them. That a live-transfer leaf cannot spend a time-locked
+    // constructor and that a time-locked output cannot satisfy a live
+    // destination role are one fact about the class closure this
+    // constructor carries: the live family is the protocol family on
+    // both sides, and the time-locked family is forbidden on both.
+    //
+    // The forbidden census is the compiler's, derived by subtraction
+    // from the object census rather than transcribed. What is checked
+    // here is that the constructor carries it, and that the owner it
+    // commits is an owner of the same family.
+    let constructor = Subject::new().constructor();
+    let class = constructor.class();
+
+    assert_eq!(class.protocol(), ObjectId::ReceiptLive);
+    assert!(class.forbids(ObjectId::ReceiptTimeLocked));
+    assert!(
+        !class
+            .admitted()
+            .any(|object| object == ObjectId::ReceiptTimeLocked)
+    );
+    assert_eq!(constructor.owner_family().object(), ObjectId::ReceiptLive);
+}
+
 // --- §7.4: the candidate lifecycle ------------------------------------
+
+#[test]
+fn the_lifecycle_records_the_exits_the_guide_fixes() {
+    // §7.4's recorded block, spelled out here rather than read back from
+    // the constructor: an oracle that asked the lifecycle what the exits
+    // were could not tell a correct candidate from one that had adopted
+    // a drifted plan.
+    let constructor = Subject::new().constructor();
+    let lifecycle = constructor.lifecycle();
+
+    assert_eq!(
+        lifecycle.closure().implemented().collect::<Vec<_>>(),
+        vec![OperationId::TransferLive]
+    );
+    assert_eq!(
+        lifecycle.closure().outstanding().collect::<BTreeSet<_>>(),
+        BTreeSet::from([OperationId::Burn, OperationId::Redeem])
+    );
+    assert_eq!(lifecycle.outstanding().get(), 2);
+}
 
 #[test]
 fn the_lifecycle_is_structurally_incomplete() {

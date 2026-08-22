@@ -59,6 +59,30 @@
 //!   constructor that exists, rather than for every constructor
 //!   somebody remembered to check.
 //!
+//! # The live class is structural (§7.3)
+//!
+//! §7.3 asks for four things, and three of them are properties of the
+//! type list rather than of any check.
+//!
+//! The live and time-locked constructors are distinct because this type
+//! exists and no other constructor does: there is no class field to set,
+//! no constructor argument naming a family, and no way to build this
+//! value for anything but the family the compiler's plan named. A
+//! live-transfer leaf cannot spend a time-locked constructor because
+//! [`LiveTransferLeafRole`] is not [`crate::bundle::LeafRole`] and is
+//! not any other operation's leaf either — the leaf sets of two
+//! operations are two types, so a leaf of one has no way of reaching the
+//! other's constructor. And a time-locked output cannot satisfy a live
+//! destination role because the class closure this constructor carries
+//! forbids that family on both sides, which is a census the compiler
+//! derived by subtraction rather than a list anybody transcribed.
+//!
+//! The fourth is a property with a test: class is not inferred from
+//! target position, value representation, amount, or owner. Position and
+//! amount are not inputs to [`derive_live_receipt_constructor`] at all —
+//! there is no parameter that could carry one. The other two are inputs,
+//! and varying either leaves the class exactly where the plan put it.
+//!
 //! # Where the facts come from
 //!
 //! The §5 contract is not restated here. The live class, the owner
