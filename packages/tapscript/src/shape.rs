@@ -92,6 +92,22 @@ pub enum ShapeRejection {
     },
     /// A sponsor-change role with no sponsor region to belong to.
     SponsorChangeWithoutSponsorInput,
+    /// A candidate set holding no shape at all.
+    ///
+    /// A candidate is the shapes it emits programs for, so a set with
+    /// none of them is not a narrow candidate but an absent one. It is
+    /// refused here rather than downstream because every consumer would
+    /// otherwise have to decide separately what an empty candidate
+    /// means, and the honest answer is that there is nothing to decide.
+    EmptyShapeSet,
+    /// A set declaring a sparse count range whose counts are dense.
+    ///
+    /// The declaration is what §9.3 turns a gap from an omission into a
+    /// reported limitation with, so it reports something. A set that
+    /// claimed the limitation and then had none was reporting a
+    /// restriction it does not carry, which is as inaccurate as the
+    /// silent gap the rule refuses — in the other direction.
+    DenseSetDeclaredSparse,
 }
 
 /// The finite bounds one candidate shape family is specialized over.
@@ -259,10 +275,11 @@ impl CompactAshShape {
     /// The half-open ASH input range, as exact indices.
     ///
     /// `0..ash_inputs`: §10.1 puts the ASH family first, and input 0 is
-    /// the canonical coordinator.
+    /// the canonical coordinator. The indices are input positions, so
+    /// they are in the domain [`Self::sponsor_range`] describes.
     #[must_use]
-    pub const fn ash_range(self) -> (u8, u8) {
-        (0, self.ash_inputs.get())
+    pub const fn ash_range(self) -> (u16, u16) {
+        (0, self.ash_inputs.get() as u16)
     }
 
     /// The half-open sponsor suffix, as exact indices.
@@ -271,11 +288,29 @@ impl CompactAshShape {
     /// count — which is the exact suffix start and the exact suffix
     /// length §10.4 has the coordinator authenticate even when there is
     /// nothing in it.
+    ///
+    /// # Why an index is a `u16` where a count is a `u8`
+    ///
+    /// The two are different domains, and the difference is not
+    /// cosmetic. A count is a bound this candidate chose, and §9.2
+    /// keeps those small on purpose. An index is a position in the
+    /// target's own transaction, and every consumer already reads one
+    /// as a `u16`: [`Self::inputs`] reports the total that way, the
+    /// concrete layout places every region that way, and the candidate
+    /// ABI names both ranges that way. Deriving the suffix end in the
+    /// count's domain instead made the widest admissible shape wrap its
+    /// own last index to zero, which is the one piece of arithmetic a
+    /// range accessor may not perform.
+    ///
+    /// Here the sum of two `u8` counts is exact for every shape
+    /// [`Self::new`] admits — the largest is 510, which the domain
+    /// holds — so the accessor is total: it neither wraps nor panics,
+    /// in any build profile.
     #[must_use]
-    pub const fn sponsor_range(self) -> (u8, u8) {
+    pub const fn sponsor_range(self) -> (u16, u16) {
         (
-            self.ash_inputs.get(),
-            self.ash_inputs.get() + self.sponsor_inputs,
+            self.ash_inputs.get() as u16,
+            self.ash_inputs.get() as u16 + self.sponsor_inputs as u16,
         )
     }
 }
@@ -334,17 +369,56 @@ impl CandidateShapeSet {
     /// limitation; a set that quietly skipped a count while claiming
     /// density would be the silent gap the rule exists to refuse, so the
     /// declaration is an input and [`Self::unmet_conditions`] reads it.
-    #[must_use]
-    pub const fn new(
+    ///
+    /// # What the bounds mean once a member disagrees with them
+    ///
+    /// A member outside the bounds is not a wider candidate. The two
+    /// statements are read by different consumers — a linker resolves
+    /// the advertised bound from [`Self::bounds`] while an emitter
+    /// iterates [`Self::shapes`] — so a set holding both would advertise
+    /// one window and emit programs for another, and nothing between
+    /// them ever compares the two. Each member is therefore checked
+    /// against this set's own bounds here, and not merely against
+    /// whichever bounds it happened to be built under.
+    ///
+    /// # Errors
+    ///
+    /// [`ShapeRejection::AshInputsAboveBound`] or
+    /// [`ShapeRejection::SponsorInputsAboveBound`] for a member outside
+    /// this set's window; [`ShapeRejection::EmptyShapeSet`] for a
+    /// candidate with nothing to emit; and
+    /// [`ShapeRejection::DenseSetDeclaredSparse`] for a declaration that
+    /// reports a limitation the members do not carry.
+    pub fn new(
         bounds: CompactAshShapeBounds,
         shapes: BTreeSet<CompactAshShape>,
         sparse_counts_declared: bool,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, ShapeRejection> {
+        if shapes.is_empty() {
+            return Err(ShapeRejection::EmptyShapeSet);
+        }
+        for shape in &shapes {
+            if shape.ash_inputs() > bounds.ash_inputs() {
+                return Err(ShapeRejection::AshInputsAboveBound {
+                    offered: shape.ash_inputs(),
+                    bound: bounds.ash_inputs(),
+                });
+            }
+            if shape.sponsor_inputs() > bounds.sponsor_inputs() {
+                return Err(ShapeRejection::SponsorInputsAboveBound {
+                    offered: shape.sponsor_inputs(),
+                    bound: bounds.sponsor_inputs(),
+                });
+            }
+        }
+        if sparse_counts_declared && !has_count_gap(&shapes, bounds) {
+            return Err(ShapeRejection::DenseSetDeclaredSparse);
+        }
+        Ok(Self {
             bounds,
             shapes,
             sparse_counts_declared,
-        }
+        })
     }
 
     /// The bounds this set specializes over.
@@ -411,22 +485,29 @@ impl CandidateShapeSet {
             }
         }
 
-        if !self.sparse_counts_declared {
-            let counts = self
-                .shapes
-                .iter()
-                .map(|shape| shape.ash_inputs())
-                .collect::<BTreeSet<_>>();
-            for count in MINIMUM_ASH_INPUTS..=self.bounds.ash_inputs() {
-                if !counts.contains(&count) {
-                    unmet.insert(UsefulCandidateCondition::DenseAshCounts);
-                    break;
-                }
-            }
+        if !self.sparse_counts_declared && has_count_gap(&self.shapes, self.bounds) {
+            unmet.insert(UsefulCandidateCondition::DenseAshCounts);
         }
 
         unmet
     }
+}
+
+/// Whether some ASH count the bounds admit has no shape carrying it.
+///
+/// Stated once and read twice, by the two places §9.3 gives a gap a
+/// meaning: [`CandidateShapeSet::new`] refuses a *sparsity declaration*
+/// made over no gap at all, and [`CandidateShapeSet::unmet_conditions`]
+/// reports an *undeclared* gap as the unmet density condition. Written
+/// out separately the two could drift into disagreeing about what a gap
+/// is, and then a set could be refused for having none while the audit
+/// reported one.
+fn has_count_gap(shapes: &BTreeSet<CompactAshShape>, bounds: CompactAshShapeBounds) -> bool {
+    let counts = shapes
+        .iter()
+        .map(|shape| shape.ash_inputs())
+        .collect::<BTreeSet<_>>();
+    (MINIMUM_ASH_INPUTS..=bounds.ash_inputs()).any(|count| !counts.contains(&count))
 }
 
 /// The complete unrolling of one candidate bound assignment.
@@ -441,6 +522,17 @@ impl CandidateShapeSet {
 /// bound assignments by rebuilding the shape set itself would be
 /// comparing sets that two different loops had produced, and a
 /// disagreement between the loops would read as a measurement.
+///
+/// # Panics
+///
+/// If the set this loop builds is one [`CandidateShapeSet::new`]
+/// refuses, which is a property of the loop rather than of `bounds`:
+/// every member is built against these same bounds and so is inside
+/// them, the ASH bound is at least [`MINIMUM_ASH_INPUTS`] and so at
+/// least one member exists, and the result declares itself dense, which
+/// it is. A panic here would mean this loop had stopped agreeing with
+/// the validity rule, and it must fail loudly rather than hand back a
+/// set that disagrees with its own bounds.
 #[must_use]
 pub fn dense_shape_set(bounds: CompactAshShapeBounds) -> CandidateShapeSet {
     let mut shapes = BTreeSet::new();
@@ -460,6 +552,7 @@ pub fn dense_shape_set(bounds: CompactAshShapeBounds) -> CandidateShapeSet {
     }
 
     CandidateShapeSet::new(bounds, shapes, false)
+        .expect("the dense unrolling of a bound assignment is admissible under it")
 }
 
 /// The Phase-4 demonstration candidate shape set.

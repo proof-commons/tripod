@@ -49,7 +49,8 @@ fn candidate(shapes: CandidateShapeSet, measure: u64) -> ConcreteCandidate {
 /// The demonstration set, and a strictly smaller one to tie against it.
 fn two_shape_sets() -> (CandidateShapeSet, CandidateShapeSet) {
     let full = demonstration_shape_set();
-    let narrow = CandidateShapeSet::new(full.bounds(), full.shapes().take(1).collect(), true);
+    let narrow = CandidateShapeSet::new(full.bounds(), full.shapes().take(1).collect(), true)
+        .expect("one shape of the demonstration set is a sparse set inside its bounds");
     (full, narrow)
 }
 

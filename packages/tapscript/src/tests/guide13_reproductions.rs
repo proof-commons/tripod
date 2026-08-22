@@ -28,7 +28,8 @@ use target_elements::OpcodeId;
 use crate::instruction::{StackItem, TapscriptInstruction};
 use crate::program::TapscriptProgram;
 use crate::shape::{
-    CandidateShapeSet, CompactAshShape, CompactAshShapeBounds, SponsorChangePresence,
+    CandidateShapeSet, CompactAshShape, CompactAshShapeBounds, ShapeRejection,
+    SponsorChangePresence, demonstration_shape_set,
 };
 use crate::stack::{AbstractExecutionResult, AbstractLimits, AbstractStackState, validate_program};
 
@@ -73,20 +74,37 @@ fn push(payload: &[u8]) -> TapscriptInstruction {
 /// built this way advertises a bound of four and emits a specialization
 /// of eight, and nothing between the two ever compares them.
 ///
-/// The assertion is the property the set is supposed to carry, so it
-/// fails while `CandidateShapeSet::new` remains infallible.
+/// The repair establishes the property by refusing the set, so the
+/// constructor is now fallible and this test states the property in the
+/// two halves that fallibility splits it into: the disagreeing set has
+/// no value at all, and a set that does exist holds only what its
+/// bounds admit. The original single-expression form could not be kept
+/// unchanged — `new` no longer returns a `CandidateShapeSet` — and the
+/// assertions below are the same two comparisons it made.
 #[test]
-#[ignore = "G13-R04: confirmed, repair pending"]
 fn a_candidate_shape_set_holds_only_shapes_its_own_bounds_admit() {
     let wide = CompactAshShapeBounds::new(count(8), 4).expect("eight is above the minimum");
     let outside = CompactAshShape::new(wide, count(8), 4, SponsorChangePresence::Present)
         .expect("the shape is valid under the wide bounds");
 
     let narrow = CompactAshShapeBounds::new(count(4), 1).expect("four is above the minimum");
-    let set = CandidateShapeSet::new(narrow, BTreeSet::from([outside]), false);
 
-    // Recomputed here rather than asked of the set, so a set that
-    // agreed with itself about the wrong window would still fail.
+    // The ASH count is reported first because it is the one the linker
+    // resolves the advertised bound from, so it is the disagreement a
+    // consumer would have acted on.
+    assert_eq!(
+        CandidateShapeSet::new(narrow, BTreeSet::from([outside]), false),
+        Err(ShapeRejection::AshInputsAboveBound {
+            offered: 8,
+            bound: 4,
+        }),
+        "a set may not hold a specialization its own declared window excludes",
+    );
+
+    // The other half: what a set that exists carries. Recomputed here
+    // rather than asked of the set, so one that agreed with itself
+    // about the wrong window would still fail.
+    let set = demonstration_shape_set();
     assert_eq!(set.bounds().ash_inputs(), 4);
     assert_eq!(set.bounds().sponsor_inputs(), 1);
 
@@ -106,6 +124,30 @@ fn a_candidate_shape_set_holds_only_shapes_its_own_bounds_admit() {
     }
 }
 
+/// `G13-R04`, the two refusals that are not about the bounds.
+///
+/// A candidate is the shapes it emits programs for, so a set holding
+/// none of them is refused rather than treated as a very narrow one.
+/// And the sparsity declaration reports a limitation, so declaring one
+/// over a dense set is refused too — §9.3's declaration exists to turn
+/// a gap into a reported limitation, and there is no gap to report.
+#[test]
+fn a_candidate_set_refuses_emptiness_and_a_limitation_it_does_not_carry() {
+    let bounds = CompactAshShapeBounds::new(count(4), 1).expect("four is above the minimum");
+
+    assert_eq!(
+        CandidateShapeSet::new(bounds, BTreeSet::new(), false),
+        Err(ShapeRejection::EmptyShapeSet),
+    );
+
+    let dense = demonstration_shape_set();
+    assert_eq!(
+        CandidateShapeSet::new(dense.bounds(), dense.shapes().collect(), true),
+        Err(ShapeRejection::DenseSetDeclaredSparse),
+        "the dense unrolling carries no gap, so it may not declare one",
+    );
+}
+
 /// `G13-R05`: a shape's sponsor suffix is the region it declares.
 ///
 /// The counts below are admitted by every check the public
@@ -116,14 +158,17 @@ fn a_candidate_shape_set_holds_only_shapes_its_own_bounds_admit() {
 /// because it adds the two counts in `u8`.
 ///
 /// The first two assertions are exact and hold in every profile: they
-/// say the constructors admitted a shape whose accessor arithmetic does
-/// not fit its own domain. The third reaches the branch, and fails
-/// either way — the dev profile panics on the overflow, and a profile
-/// with overflow checks off wraps the suffix to `(255, 0)`, which is
-/// the empty range `sponsor_isolation_fragment` then loops over. Wave 0
-/// measured the dev profile, where the failure is the panic.
+/// say the counts are a `u8` domain and their total is not one. The
+/// third reaches the branch that used to derive the suffix in that
+/// domain, where the dev profile panicked on the overflow and a profile
+/// with overflow checks off wrapped the suffix to `(255, 0)` — the
+/// empty range `sponsor_isolation_fragment` then looped over.
+///
+/// The repair moved the *indices* to `u16` while leaving the *counts* a
+/// `u8`, so all four assertions now hold as written and hold in either
+/// profile: the counts still overflow their own domain, and the suffix
+/// is still derived exactly, because it is no longer derived there.
 #[test]
-#[ignore = "G13-R05: confirmed, repair pending"]
 fn a_sponsored_shape_reports_a_nonempty_sponsor_suffix() {
     let bounds = CompactAshShapeBounds::new(count(255), 1).expect("255 is above the minimum");
     let shape = CompactAshShape::new(bounds, count(255), 1, SponsorChangePresence::Absent)
@@ -167,10 +212,10 @@ fn a_sponsored_shape_reports_a_nonempty_sponsor_suffix() {
 /// no literal to read at that position, and the successful branch
 /// survives a program that always aborts.
 ///
-/// The contrast is the next test, which passes today: the verifying
-/// primitive keeps the knowledge because it never has to transfer it.
+/// The contrast is the next test, which passed even while this one
+/// failed: the verifying primitive keeps the knowledge because it never
+/// has to transfer it.
 #[test]
-#[ignore = "G13-R11: confirmed, repair pending"]
 fn unequal_literals_compared_then_verified_reach_no_successful_state() {
     let result = validate(vec![
         push(&[0x01]),

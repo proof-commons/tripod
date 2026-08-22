@@ -1181,8 +1181,6 @@ pub enum BundleRefusal {
         /// Admitted but not preferred.
         admitted_only: BTreeSet<BackendPatternId>,
     },
-    /// The candidate shape set is empty, so there is nothing to emit.
-    EmptyCandidateShapeSet,
     /// A leaf's program does not schedule from the empty stack, so its
     /// witness role is not the one this bundle can establish.
     LeafDoesNotScheduleFromEmptyStack {
@@ -1509,10 +1507,10 @@ pub fn emit_candidate_bundle(
     let lifecycle = outstanding_lifecycle(plan)?;
     let assessment = assess_operation_plan(target, plan).map_err(BundleRefusal::Assessment)?;
 
+    // Nonempty by the cardinality's own construction: a candidate set
+    // with nothing to emit is refused where it is built, so there is no
+    // emptiness left to test for here.
     let shapes: Vec<CompactAshShape> = policy.cardinality().shapes().collect();
-    if shapes.is_empty() {
-        return Err(BundleRefusal::EmptyCandidateShapeSet);
-    }
 
     let mut patterns = BTreeSet::new();
     let mut abi = BTreeSet::new();
@@ -1764,19 +1762,19 @@ fn layout_of(shape: CompactAshShape) -> Result<ConcreteLayout, BundleRefusal> {
 
     let mut inputs = vec![InputPlacement {
         role: InputRole::Coordinator,
-        first: u16::from(ash_first),
-        end: u16::from(ash_first) + 1,
+        first: ash_first,
+        end: ash_first + 1,
     }];
     inputs.push(InputPlacement {
         role: InputRole::Member,
-        first: u16::from(ash_first) + 1,
-        end: u16::from(ash_end),
+        first: ash_first + 1,
+        end: ash_end,
     });
     if shape.sponsored() {
         inputs.push(InputPlacement {
             role: InputRole::Sponsor,
-            first: u16::from(sponsor_first),
-            end: u16::from(sponsor_end),
+            first: sponsor_first,
+            end: sponsor_end,
         });
     }
 
