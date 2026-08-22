@@ -1410,4 +1410,55 @@ pub enum CompileError {
     /// The published lifecycle status is not the analyzed one.
     #[error("target plan lifecycle status is not the analyzed status")]
     TargetPlanLifecycleMismatch,
+
+    /// The published capability census is not the relation union.
+    #[error("target plan capability census is not the relation union")]
+    TargetPlanCapabilityCensusMismatch,
+
+    /// The published evidence-role census is not the relation union.
+    #[error("target plan evidence-role census is not the relation union")]
+    TargetPlanEvidenceCensusMismatch,
+
+    /// A live-transfer contract clause the realization does not state as
+    /// Guide-13 §5 fixes it.
+    ///
+    /// The clause is carried rather than a message: a plan that failed
+    /// its contract check names the sentence to read, and a test can
+    /// assert which one without matching on prose.
+    #[error("live-transfer contract defect at {clause:?}")]
+    LiveTransferContractDefect {
+        /// The contract sentence the declarations contradict.
+        clause: crate::live_transfer_plan::LiveTransferClause,
+    },
+
+    /// A representation Guide 13 records as deferred is no longer
+    /// deferrable.
+    ///
+    /// A typed failure rather than a silently widened ABI: a deferral
+    /// whose ground stopped holding is a decision Guide 13 has to take,
+    /// not one this crate may take on its behalf.
+    #[error("live-transfer representation deferral defect at {representation:?}")]
+    LiveTransferDeferralDefect {
+        /// The representation whose recorded ground no longer holds.
+        representation: crate::live_transfer_plan::DeferredRepresentation,
+    },
+
+    /// The analysis retained no plan selecting an admitted live-transfer
+    /// representation.
+    #[error("no feasible plan of {operation:?} selects the {representation:?} representation")]
+    MissingLiveTransferRepresentation {
+        /// The operation whose representation is unplanned.
+        operation: OperationId,
+        /// The admitted representation nothing selected.
+        representation: crate::live_transfer_plan::LiveTransferRepresentationPlan,
+    },
+
+    /// One relation's requirements diverge across live-transfer
+    /// representations where §6.6 requires agreement, or agree where
+    /// §19.4 requires divergence.
+    #[error("live-transfer representations diverge at {relation:?}")]
+    LiveTransferRepresentationDivergence {
+        /// The relation that diverged, or failed to.
+        relation: realization::RelationId,
+    },
 }

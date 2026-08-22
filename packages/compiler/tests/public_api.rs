@@ -570,3 +570,334 @@ fn no_internal_analysis_container_is_re_exported() {
         );
     }
 }
+
+// --- Guide-13 §8.3: the public live-transfer target-operation plan ---
+
+use compiler::live_transfer_plan::{
+    DeferredRepresentation, LiveTransferClause, LiveTransferRepresentationPlan,
+    RepresentationDeferralGround, ValidatedLiveTransferOperationPlan,
+    plan_live_transfer_target_operation,
+};
+
+/// The live-transfer plan module's own source, read as an external
+/// consumer sees the crate rather than as the crate sees itself.
+const LIVE_TRANSFER_SOURCE: &str = include_str!("../src/live_transfer_plan.rs");
+
+fn live_transfer_plan(operations: &[OperationId]) -> ValidatedLiveTransferOperationPlan {
+    let scope = CompilationScope::from_operations(operations.iter().copied()).expect("pilot scope");
+    let input = bind_input(
+        &architecture::ARCHITECTURE,
+        phase1_realization(),
+        scope,
+        test_policy(),
+    )
+    .expect("bind input");
+
+    plan_live_transfer_target_operation(&input, placement_limits()).expect("pilot plan")
+}
+
+#[test]
+fn the_live_transfer_plan_comes_only_from_a_completed_analysis() {
+    // There is no public constructor, no `Default`, and no builder: this
+    // call is the only route to the type, and it runs the complete
+    // analysis, that analysis's own validator, the §5 contract checks,
+    // the §8.2 representation filter, and the plan's independent
+    // assembly validator before returning. A plan assembled from
+    // arbitrary fields would be a request rather than an analysis, and
+    // nothing downstream could tell the two apart once they shared a
+    // type.
+    let plan = live_transfer_plan(&[OperationId::CompactAsh, OperationId::TransferLive]);
+
+    assert_eq!(plan.operation(), OperationId::TransferLive);
+    assert_eq!(plan.representations().count(), 2);
+
+    for projection in plan.representations() {
+        assert_eq!(projection.relations().count(), 24);
+        assert_eq!(projection.cases().count(), 2);
+        assert_eq!(projection.layout().count(), 69);
+        assert_eq!(projection.coverage().count(), 223);
+        assert!(projection.carriers().count() > 0);
+    }
+}
+
+#[test]
+fn an_incomplete_analysis_publishes_no_live_transfer_plan() {
+    let scope =
+        CompilationScope::from_operations([OperationId::TransferLive]).expect("pilot scope");
+    let input = bind_input(
+        &architecture::ARCHITECTURE,
+        phase1_realization(),
+        scope,
+        test_policy(),
+    )
+    .expect("bind input");
+    let truncated = PlacementSearchLimits::new(
+        std::num::NonZeroU64::new(1).expect("nonzero"),
+        std::num::NonZeroU64::new(1).expect("nonzero"),
+    );
+
+    assert!(
+        plan_live_transfer_target_operation(&input, truncated).is_err(),
+        "a truncated search is a typed failure, never a smaller plan",
+    );
+}
+
+#[test]
+fn declaration_permutations_produce_equal_live_transfer_projections() {
+    let first = live_transfer_plan(&[OperationId::CompactAsh, OperationId::TransferLive]);
+    let permuted = live_transfer_plan(&[OperationId::TransferLive, OperationId::CompactAsh]);
+
+    assert_eq!(first, permuted);
+    assert_eq!(
+        first,
+        live_transfer_plan(&[OperationId::CompactAsh, OperationId::TransferLive]),
+    );
+}
+
+#[test]
+fn the_plan_admits_both_representations_and_states_its_deferrals() {
+    let plan = live_transfer_plan(&[OperationId::TransferLive]);
+    let policy = plan.representation();
+
+    // §6.1: the two admitted plans, checked against the realization's
+    // own approved set rather than against the policy's own choices.
+    assert_eq!(
+        policy.admitted().collect::<Vec<_>>(),
+        [
+            LiveTransferRepresentationPlan::Explicit,
+            LiveTransferRepresentationPlan::PrivateCommitted,
+        ],
+    );
+    assert_eq!(
+        policy.approved().collect::<Vec<_>>(),
+        [
+            realization::RepresentationMode::Explicit,
+            realization::RepresentationMode::PrivateCommitted,
+        ],
+    );
+
+    // §6.1, §6.5: what Guide 13 defers is data with a ground, not
+    // silence — and a consumer can read both without leaving the type.
+    assert_eq!(
+        policy.deferral(DeferredRepresentation::PublicCommittedMode),
+        Some(RepresentationDeferralGround::UnapprovedMode),
+    );
+    assert_eq!(
+        policy.deferral(DeferredRepresentation::MixedComposition),
+        Some(RepresentationDeferralGround::NoPerReferenceVariable),
+    );
+
+    // §1.12: the candidate is lifecycle-incomplete and says which exits
+    // are missing.
+    assert!(!plan.lifecycle().release_complete());
+    assert_eq!(
+        plan.lifecycle().implemented().collect::<Vec<_>>(),
+        [OperationId::TransferLive],
+    );
+    assert_eq!(
+        plan.lifecycle().outstanding().collect::<Vec<_>>(),
+        [OperationId::Redeem, OperationId::Burn],
+    );
+}
+
+#[test]
+fn the_live_transfer_censuses_are_complete_and_duplicate_free() {
+    // Independently written expectations, not folds over `ALL`: a census
+    // compared only with itself agrees with itself. `census_enum!`
+    // generates `ALL` from the enum, so drift between the two is
+    // unwriteable; these literals pin the membership, and adding,
+    // removing, or reordering a member is a visible test change.
+    assert_eq!(
+        LiveTransferRepresentationPlan::ALL,
+        [
+            LiveTransferRepresentationPlan::Explicit,
+            LiveTransferRepresentationPlan::PrivateCommitted,
+        ],
+    );
+    assert_eq!(
+        DeferredRepresentation::ALL,
+        [
+            DeferredRepresentation::PublicCommittedMode,
+            DeferredRepresentation::MixedComposition,
+        ],
+    );
+    assert_eq!(
+        RepresentationDeferralGround::ALL,
+        [
+            RepresentationDeferralGround::UnapprovedMode,
+            RepresentationDeferralGround::NoPerReferenceVariable,
+        ],
+    );
+    assert_eq!(
+        LiveTransferClause::ALL.len(),
+        19,
+        "the §5 clause census is the sentences the contract check pins",
+    );
+
+    for census in [
+        LiveTransferClause::ALL
+            .iter()
+            .map(|member| format!("{member:?}"))
+            .collect::<Vec<_>>(),
+        LiveTransferRepresentationPlan::ALL
+            .iter()
+            .map(|member| format!("{member:?}"))
+            .collect::<Vec<_>>(),
+        DeferredRepresentation::ALL
+            .iter()
+            .map(|member| format!("{member:?}"))
+            .collect::<Vec<_>>(),
+    ] {
+        assert_eq!(
+            census.iter().collect::<BTreeSet<_>>().len(),
+            census.len(),
+            "a census that names one member twice is not a census",
+        );
+    }
+}
+
+#[test]
+fn no_sponsor_amount_enters_any_public_live_transfer_field() {
+    // Structural rather than textual, under *every* admitted
+    // representation: §1.9 does not weaken because a plan changed how it
+    // proves conservation.
+    //
+    // The *amount* is what is erased. Sponsor membership, cardinality,
+    // isolation, and envelope multiplicity are required relations of
+    // §5.8, so an authenticated census of the ordinary L-BTC family is
+    // expected here and is not a leak — and the sponsor projection
+    // publishes exactly those and no amount-shaped field at all.
+    let plan = live_transfer_plan(&[OperationId::CompactAsh, OperationId::TransferLive]);
+    let names_sponsor_amount = |requirement: &LayoutRequirement| {
+        matches!(
+            requirement,
+            LayoutRequirement::MakeSourceAvailable { source, .. }
+                if matches!(
+                    source.operand.role(),
+                    OperandRole::ObjectFamilyAmount { object: ORDINARY_LBTC, .. },
+                )
+        )
+    };
+
+    for projection in plan.representations() {
+        for requirement in projection.layout() {
+            assert!(!names_sponsor_amount(requirement), "{requirement:?}");
+        }
+
+        for source in projection
+            .relations()
+            .flat_map(|relation| relation.source_requirements.iter())
+            .chain(
+                projection
+                    .relations()
+                    .flat_map(|relation| relation.cases.values())
+                    .flat_map(|case| case.active_sources.iter()),
+            )
+        {
+            assert!(
+                !matches!(
+                    source.operand.role(),
+                    OperandRole::ObjectFamilyAmount {
+                        object: ORDINARY_LBTC,
+                        ..
+                    },
+                ),
+                "{source:?}",
+            );
+        }
+    }
+
+    assert_eq!(plan.sponsor().object(), ORDINARY_LBTC);
+    assert_eq!(
+        plan.sponsor().envelope_maximum(),
+        realization::Count::ONE,
+        "the envelope census is a count, never an amount",
+    );
+}
+
+#[test]
+fn the_public_live_transfer_surface_carries_no_digest_and_no_graph_handle() {
+    // §1.13 mints no plan digest and reserves no field for a future one;
+    // §8.1 admits no Petgraph index. Both are properties of the
+    // published source rather than of any one value, so the source is
+    // what is checked — a field added later fails here even if no test
+    // happens to read it.
+    //
+    // Comment lines are excluded deliberately. The module documents that
+    // it carries no digest, and a scan that could not tell the
+    // prohibition from a violation would forbid saying so.
+    let code = LIVE_TRANSFER_SOURCE
+        .lines()
+        .filter(|line| {
+            let line = line.trim_start();
+
+            !(line.starts_with("//") || line.starts_with("///") || line.starts_with("//!"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    for banned in [
+        "digest",
+        "Digest",
+        "NodeIndex",
+        "EdgeIndex",
+        "petgraph",
+        "DiGraph",
+        "PlanHash",
+    ] {
+        assert!(
+            !code.contains(banned),
+            "the published plan surface must not name {banned}",
+        );
+    }
+
+    // §1.10: the private-committed plan states which proof a target must
+    // supply. It is not an interface handling the material that proof is
+    // built from, and no field here could hold such material.
+    for banned in ["blinder", "Blinder", "opening", "Opening", "PrivateKey"] {
+        assert!(
+            !code.contains(banned),
+            "the published plan surface must not name {banned}",
+        );
+    }
+
+    // The corruption handles the in-crate oracles need are compiled out
+    // of every non-test build, so no mutable route to a published field
+    // survives into a consumer's copy of this crate.
+    for line in LIVE_TRANSFER_SOURCE.lines() {
+        let line = line.trim_start();
+
+        assert!(
+            !(line.starts_with("pub fn") || line.starts_with("pub const fn"))
+                || !line.contains("_mut("),
+            "no public mutable accessor may exist: {line}",
+        );
+    }
+}
+
+#[test]
+fn no_internal_analysis_container_is_re_exported_by_the_live_transfer_plan() {
+    let block = LIVE_TRANSFER_SOURCE
+        .split("pub use crate::{")
+        .nth(1)
+        .and_then(|rest| rest.split("\n};").next())
+        .expect("the module's re-export block");
+
+    for container in [
+        "ScopedAnalyzedProgram",
+        "AnalyzedProofPlan",
+        "AnalyzedOperation",
+        "AnalyzedSource",
+        "RelationCaseRequirements",
+        "OperationPlacementAnalysis",
+        "PlacementCandidate",
+        "CoverageGraphProjection",
+        "PlanCoverageAnalysis",
+        "CompilerRelationAnalysis",
+    ] {
+        assert!(
+            !block.contains(container),
+            "{container} must not be re-exported",
+        );
+    }
+}
