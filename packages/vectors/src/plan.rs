@@ -19,8 +19,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use compiler::operation_plan::{
-    CoverageRequirementId, EvidenceRole, RelationActivity, RelationCaseKey, SponsorCase,
-    TargetCoverageObligation, TargetCoverageRequirement,
+    CoverageRequirementId, EvidenceRole, RelationActivity, RelationCaseKey, RelationMutation,
+    SponsorCase, TargetCoverageObligation, TargetCoverageRequirement,
 };
 use realization::RelationId;
 use target_elements_conformance::protocol::ObservedOutcomeLayer;
@@ -30,7 +30,10 @@ use crate::abi_validation::{AbiValidationRow, index_abi_validation};
 use crate::bundle::FixtureBundle;
 use crate::divergence::target_amount_standing;
 use crate::error::VectorError;
-use crate::first_party::{FirstPartyRefusal, ValidatedFirstPartyNegativeEvidence};
+use crate::first_party::{
+    FirstPartyRefusal, ValidatedFirstPartyNegativeEvidence,
+    compact_ash_permissionless_private_dependency_case, validate_first_party_negative,
+};
 use crate::fixture::{CompactAshSemanticCase, positive_semantic_census};
 use crate::materialize::{
     AshFunding, MaterializedTargetVector, TargetVectorId, has_candidate_program, is_materializable,
@@ -114,10 +117,10 @@ const fn negative_observability(role: &EvidenceRole) -> Option<NegativeObservabi
 
 /// What is known about one coverage requirement.
 ///
-/// Two variants: nothing observed, or one target run that answered it.
-/// It is an enum rather than an `Option` so that the observed arm was
-/// *added* rather than filling a hole, and so that no row can be read
-/// as satisfied by being absent.
+/// Nothing observed, a target acceptance, a target refusal, or a
+/// first-party refusal. It is an enum rather than an `Option` so that
+/// each observed arm was *added* rather than filling a hole, and so
+/// that no row can be read as satisfied by being absent.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum CoverageObservation {
@@ -526,11 +529,11 @@ impl PlanCensus {
 ///
 /// # Why the plan names its own workload
 ///
-/// Every coverage row below is outstanding for want of a target, and a
-/// plan that could not say *what* it was waiting for would leave the
-/// wait unfalsifiable: a wave could execute something, discharge
-/// nothing, and no row would be able to tell that it had executed the
-/// wrong thing.
+/// Every target-answerable row below is outstanding for want of a
+/// target, and a plan that could not say *what* it was waiting for would
+/// leave the wait unfalsifiable: a wave could execute something,
+/// discharge nothing, and no row would be able to tell that it had
+/// executed the wrong thing.
 ///
 /// # Why nothing here is an executor record
 ///
@@ -1145,6 +1148,43 @@ fn check_relation_closure(
     Ok(())
 }
 
+const FIRST_PARTY_PERMISSIONLESS_PRIVATE_DEPENDENCY: &str =
+    "permissionless-private-dependency first-party";
+
+/// Apply the first-party policy derivation owns by default.
+fn discharge_canonical_first_party(
+    operation_plan: &compiler::operation_plan::ValidatedTargetOperationPlan,
+    evidence_plan: &mut CompactAshEvidencePlan,
+) -> Result<(), VectorError> {
+    let case = compact_ash_permissionless_private_dependency_case()
+        .map_err(|_| VectorError::UnclassifiableNegativeRequirement)?;
+    let requirements: BTreeSet<_> = operation_plan
+        .coverage()
+        .filter(|candidate| {
+            matches!(
+                &candidate.obligation,
+                TargetCoverageObligation::Negative(negative)
+                    if negative.mutation == RelationMutation::PermissionlessPrivateDependency
+            ) && matches!(
+                negative_observability(&candidate.role),
+                Some(NegativeObservability::FirstPartyRefusal)
+            )
+        })
+        .map(|candidate| candidate.id.clone())
+        .collect();
+    if requirements.len() != 2 {
+        return Err(VectorError::MatrixCoverageMismatch {
+            class: FIRST_PARTY_PERMISSIONLESS_PRIVATE_DEPENDENCY,
+        });
+    }
+    for id in &requirements {
+        let evidence = validate_first_party_negative(operation_plan, id, &case)
+            .map_err(|_| VectorError::UnclassifiableNegativeRequirement)?;
+        evidence_plan.discharge_first_party(&evidence);
+    }
+    Ok(())
+}
+
 /// Derive the canonical evidence plan from the fixture bundle.
 ///
 /// # Errors
@@ -1156,7 +1196,10 @@ fn check_relation_closure(
 /// relation has no coverage requirement and
 /// [`VectorError::UnexpectedRelation`] when a covered relation is not
 /// planned; [`VectorError::DuplicateCoverageRequirement`] when two
-/// requirements claim one identity; and any refusal from fixture
+/// requirements claim one identity; [`VectorError::MatrixCoverageMismatch`]
+/// when the canonical first-party rows are not the two execution cases;
+/// [`VectorError::UnclassifiableNegativeRequirement`] when the canonical
+/// first-party case cannot be validated; and any refusal from fixture
 /// construction or materialization.
 pub fn derive_evidence_plan(
     fixture: &FixtureBundle,
@@ -1270,15 +1313,18 @@ pub fn derive_evidence_plan(
             .count(),
     };
 
-    Ok(CompactAshEvidencePlan {
+    let negative_link = resolve_negative_link(plan)?;
+    let mut evidence_plan = CompactAshEvidencePlan {
         semantic_cases: semantic.into_iter().map(CanonicalSubject::admit).collect(),
         target_cases,
         relation_coverage,
         required_target_work,
         census,
-        negative_link: resolve_negative_link(plan)?,
+        negative_link,
         abi_validation,
-    })
+    };
+    discharge_canonical_first_party(plan, &mut evidence_plan)?;
+    Ok(evidence_plan)
 }
 
 /// Materialize the canonical vectors, and note which the target refuses
@@ -1486,28 +1532,54 @@ mod tests {
     }
 
     #[test]
-    fn no_negative_row_is_discharged_before_anything_refuses() {
-        // The negative half starts where the positive half started: at
-        // nothing. A run is what moves it.
-        for row in plan().relation_coverage().values() {
-            if !row.is_positive() {
+    fn only_the_canonical_first_party_rows_are_discharged_by_derivation() {
+        // Derivation runs the first-party policy it owns, and nothing
+        // else. Runtime and external-report negative rows still wait
+        // for their own evidence boundary.
+        let plan = plan();
+        assert_eq!(plan.discharged_positive_rows(), 0);
+        assert_eq!(plan.discharged_negative_rows(), 2);
+        for row in plan.relation_coverage().values() {
+            if row.observation().is_discharged() {
+                assert!(!row.is_positive(), "a positive row moved during derivation");
+                assert_eq!(
+                    row.observability(),
+                    Some(super::NegativeObservability::FirstPartyRefusal),
+                    "only first-party rows may move during derivation",
+                );
+                assert!(matches!(
+                    row.observation(),
+                    CoverageObservation::FirstPartyRefusal(_)
+                ));
+            } else if !row.is_positive() {
+                let structurally_outstanding = matches!(
+                    row.observation(),
+                    CoverageObservation::Outstanding(
+                        OutstandingReason::StructuralEvidenceNotAssembled
+                    )
+                );
                 assert!(
-                    !row.observation().is_discharged(),
-                    "a negative row was discharged by deriving the plan",
+                    !matches!(
+                        row.observability(),
+                        Some(super::NegativeObservability::FirstPartyRefusal)
+                    ) || structurally_outstanding,
+                    "a non-discharged first-party row must remain structurally outstanding",
                 );
             }
         }
     }
 
     #[test]
-    fn a_freshly_derived_plan_discharges_nothing() {
-        // Deriving a plan is not executing one. Every row starts
-        // outstanding, and only a transcript moves one.
+    fn a_freshly_derived_plan_discharges_only_first_party_rows() {
+        // Deriving a plan is not executing one. The two first-party rows
+        // are discharged by the compiler policy; target rows still wait
+        // for a transcript.
         let plan = plan();
         assert!(!plan.coverage_complete());
-        for row in plan.relation_coverage().values() {
-            assert!(!row.observation().is_discharged());
-        }
+        assert_eq!(plan.observed_rows(), 2);
+        assert_eq!(plan.discharged_rows(), 2);
+        assert_eq!(plan.discharged_positive_rows(), 0);
+        assert_eq!(plan.discharged_negative_rows(), 2);
     }
 
     #[test]
@@ -1568,51 +1640,26 @@ mod tests {
 
     #[test]
     fn the_first_party_policy_moves_exactly_the_rows_it_discharges() {
-        // §4.2 end to end, through the plan. Two rows move — the
-        // permissionless private dependency in each execution case — and
-        // the sixteen other first-party rows stay outstanding, because
-        // nothing offered evidence for them and a policy that filled
-        // them anyway would be the discharge-by-intent the census exists
-        // to prevent.
-        use crate::first_party::{FirstPartyNegativeCase, validate_first_party_negative};
-        use architecture::{ObjectId, OperationId};
+        // §4.2 end to end, through derivation. Two rows move — the
+        // permissionless private dependency in each execution case —
+        // and the sixteen other first-party rows stay outstanding,
+        // because nothing offered evidence for them and a policy that
+        // filled them anyway would be the discharge-by-intent the census
+        // exists to prevent.
+        use crate::first_party::{
+            compact_ash_permissionless_private_dependency_case, validate_first_party_negative,
+        };
         use compiler::operation_plan::{RelationMutation, TargetCoverageObligation};
-        use realization::{AvailabilityClass, ConstructibilityNodeId};
 
         let fixture = fixture_bundle().expect("the fixture bundle builds");
+        let raw = super::build_coverage(fixture.plan()).expect("the coverage matrix builds");
+        let before = raw
+            .rows
+            .values()
+            .filter(|row| row.observation().is_discharged())
+            .count();
         let mut plan = super::derive_evidence_plan(&fixture).expect("the evidence plan derives");
-        let before = plan.discharged_negative_rows();
-
-        // The published compact-ASH public required fact, and the same
-        // fact under a private availability class.
-        let published = realization::derive(
-            &architecture::ARCHITECTURE,
-            realization::RealizationScope::phase1_pilots(),
-        )
-        .expect("the realization derives")
-        .project()
-        .constructibility
-        .nodes
-        .into_iter()
-        .map(|node| node.id)
-        .find(|id| {
-            matches!(
-                id,
-                ConstructibilityNodeId::Fact {
-                    operation: OperationId::CompactAsh,
-                    availability: AvailabilityClass::Public,
-                    ..
-                }
-            )
-        })
-        .expect("compact-ash publishes a public required fact");
-        let case = FirstPartyNegativeCase::PrivateRequiredDependency {
-            operation: OperationId::CompactAsh,
-            published,
-            availability: AvailabilityClass::InputOwners {
-                object: ObjectId::Ash,
-            },
-        };
+        assert_eq!(before, 0, "raw coverage starts outstanding");
 
         let rows: Vec<_> = fixture
             .plan()
@@ -1627,17 +1674,12 @@ mod tests {
             .map(|candidate| candidate.id.clone())
             .collect();
         assert_eq!(rows.len(), 2, "one row per execution case");
-        for id in &rows {
-            let evidence = validate_first_party_negative(fixture.plan(), id, &case)
-                .expect("the case discharges the row");
-            plan.discharge_first_party(&evidence);
-        }
-
         assert_eq!(
             plan.discharged_negative_rows(),
             before + 2,
-            "the policy moved another number of rows than it was offered",
+            "derivation moves exactly the canonical first-party rows",
         );
+        assert_eq!(plan.discharged_rows(), before + 2);
         for id in &rows {
             let row = plan
                 .relation_coverage()
@@ -1649,6 +1691,26 @@ mod tests {
                 CoverageObservation::FirstPartyRefusal(_)
             ));
         }
+
+        let case = compact_ash_permissionless_private_dependency_case()
+            .expect("the canonical private-dependency case is available");
+        for id in &rows {
+            let evidence = validate_first_party_negative(fixture.plan(), id, &case)
+                .expect("the case discharges the row");
+            plan.discharge_first_party(&evidence);
+        }
+        assert_eq!(
+            plan.discharged_negative_rows(),
+            before + 2,
+            "repeating the same first-party discharge must not add rows",
+        );
+        let second =
+            super::derive_evidence_plan(&fixture).expect("the second evidence plan derives");
+        assert_eq!(
+            second.discharged_negative_rows(),
+            before + 2,
+            "a second derivation starts with the same two first-party rows",
+        );
     }
 
     #[test]
@@ -1895,14 +1957,24 @@ mod tests {
         };
 
         // Sponsorless only.
+        let baseline = plan();
+        let before = baseline.discharged_rows();
         let mut only_sponsorless = plan();
         only_sponsorless.discharge(&[accepted(&sponsorless)]);
         let after_sponsorless = only_sponsorless.discharged_rows();
-        assert!(after_sponsorless > 0, "the sponsorless case discharged");
-        for row in only_sponsorless.relation_coverage().values() {
+        assert!(
+            after_sponsorless > before,
+            "the sponsorless case discharged",
+        );
+        for (id, row) in only_sponsorless.relation_coverage() {
             if row.key().case.sponsor == SponsorCase::Present {
-                assert!(
-                    !row.observation().is_discharged(),
+                let baseline_row = baseline
+                    .relation_coverage()
+                    .get(id)
+                    .expect("the baseline has the same row");
+                assert_eq!(
+                    row.observation(),
+                    baseline_row.observation(),
                     "a sponsorless acceptance discharged a sponsored row",
                 );
             }
@@ -1912,23 +1984,29 @@ mod tests {
         let mut only_sponsored = plan();
         only_sponsored.discharge(&[accepted(&sponsored)]);
         let after_sponsored = only_sponsored.discharged_rows();
-        assert!(after_sponsored > 0, "the sponsored case discharged");
-        for row in only_sponsored.relation_coverage().values() {
+        assert!(after_sponsored > before, "the sponsored case discharged");
+        for (id, row) in only_sponsored.relation_coverage() {
             if row.key().case.sponsor == SponsorCase::Absent {
-                assert!(
-                    !row.observation().is_discharged(),
+                let baseline_row = baseline
+                    .relation_coverage()
+                    .get(id)
+                    .expect("the baseline has the same row");
+                assert_eq!(
+                    row.observation(),
+                    baseline_row.observation(),
                     "a sponsored acceptance discharged a sponsorless row",
                 );
             }
         }
 
-        // Both together discharge the sum of the two, and no more: the
-        // cases partition the rows, so overlap would show up here.
+        // Both together discharge the sum of the two deltas, and no
+        // more: the cases partition the rows, so overlap would show up
+        // here.
         let mut both = plan();
         both.discharge(&[accepted(&sponsorless), accepted(&sponsored)]);
         assert_eq!(
             both.discharged_rows(),
-            after_sponsorless + after_sponsored,
+            after_sponsorless + after_sponsored - before,
             "the two cases are disjoint and together discharge both",
         );
 
@@ -1960,12 +2038,17 @@ mod tests {
             .expect("a sponsored row with a program exists");
 
         let mut refused = plan();
+        let before = refused.discharged_rows();
         refused.discharge(&[(
             vector_id(&sponsored),
             ObservedOutcomeLayer::ScriptPathRejection,
             ProjectionComparison::NotPerformed,
         )]);
-        assert_eq!(refused.discharged_rows(), 0, "a refusal is not coverage");
+        assert_eq!(
+            refused.discharged_rows(),
+            before,
+            "a refusal is not coverage",
+        );
 
         // It is still recorded, which is the difference between a row
         // nobody ran and a row the target refused.
@@ -2044,7 +2127,8 @@ mod negative_discharge_tests {
         // point of resolving the link instead of counting refusals.
         let mut plan = plan();
         let vector = sponsorless(&plan);
-        assert_eq!(discharged_negatives(&plan), 0, "nothing starts discharged");
+        let before = discharged_negatives(&plan);
+        assert_eq!(before, 2, "only first-party rows start discharged");
 
         let refused = [
             NegativeMutation::SplitSuccessorInTwo,
@@ -2061,7 +2145,7 @@ mod negative_discharge_tests {
 
         assert_eq!(
             discharged_negatives(&plan),
-            1,
+            before + 1,
             "only the arm whose intended violation resolves may discharge",
         );
     }
@@ -2098,6 +2182,7 @@ mod negative_discharge_tests {
         // it.
         let mut plan = plan();
         let vector = sponsorless(&plan);
+        let before = discharged_negatives(&plan);
         plan.discharge_mutants(&[(
             NegativeMutation::SplitSuccessorInTwo,
             vector,
@@ -2105,7 +2190,7 @@ mod negative_discharge_tests {
         )]);
         assert_eq!(
             discharged_negatives(&plan),
-            0,
+            before,
             "a refusal the carrier never produced is not carrier coverage",
         );
     }
@@ -2116,6 +2201,7 @@ mod negative_discharge_tests {
         // finding about the class, never coverage of the requirement.
         let mut plan = plan();
         let vector = sponsorless(&plan);
+        let before = discharged_negatives(&plan);
         plan.discharge_mutants(&[(
             NegativeMutation::SuccessorOneBelowTheSum,
             vector,
@@ -2123,7 +2209,7 @@ mod negative_discharge_tests {
         )]);
         assert_eq!(
             discharged_negatives(&plan),
-            0,
+            before,
             "an accepted mutation is a finding, not a discharge",
         );
     }
@@ -2135,6 +2221,7 @@ mod negative_discharge_tests {
         // no row their refusal is about.
         let mut plan = plan();
         let vector = sponsorless(&plan);
+        let before = discharged_negatives(&plan);
         for &arm in NegativeMutation::ALL {
             if matches!(arm.intended_violation(), IntendedViolation::Declared { .. }) {
                 continue;
@@ -2143,7 +2230,7 @@ mod negative_discharge_tests {
         }
         assert_eq!(
             discharged_negatives(&plan),
-            0,
+            before,
             "an arm with no intended violation cannot discharge a row",
         );
     }

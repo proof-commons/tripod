@@ -71,7 +71,7 @@ fn the_validation_entry<'run>(
     validate_operation_report(execution, planner)
 }
 
-/// The control: a fresh plan really does report outstanding rows.
+/// The control: a fresh plan still reports outstanding target rows.
 ///
 /// Kept from the reproductions, so the assertions above are known to be
 /// about the discharge path rather than about a plan that was empty all
@@ -79,11 +79,11 @@ fn the_validation_entry<'run>(
 #[test]
 fn a_freshly_derived_plan_has_rows_to_discharge() {
     let plan = plan();
-    assert_eq!(plan.observed_rows(), 0);
-    assert_eq!(plan.discharged_rows(), 0);
+    assert_eq!(plan.observed_rows(), 2);
+    assert_eq!(plan.discharged_rows(), 2);
     assert!(
         !plan.coverage_complete(),
-        "a plan with nothing observed cannot be complete"
+        "a plan with only first-party observations cannot be complete"
     );
     assert!(
         !plan.target_cases().is_empty(),
@@ -98,9 +98,9 @@ fn a_freshly_derived_plan_has_rows_to_discharge() {
 /// two verdict enums are how a reader of a report reads it. What changed
 /// is that no public function accepts them as an assertion. This test
 /// assembles the exact triple the reproduction used and demonstrates
-/// that holding it moves nothing, because the plan offers nowhere to put
-/// it — the two functions above state, at compile time, what the only
-/// entries are.
+/// that holding it moves nothing beyond the derived first-party rows,
+/// because the plan offers nowhere to put it — the two functions above
+/// state, at compile time, what the only entries are.
 #[test]
 fn the_values_the_old_tuple_was_made_of_no_longer_reach_a_coverage_row() {
     let plan = plan();
@@ -114,8 +114,8 @@ fn the_values_the_old_tuple_was_made_of_no_longer_reach_a_coverage_row() {
 
     assert_eq!(
         plan.discharged_rows(),
-        0,
-        "a plan a caller only read from must carry nothing discharged"
+        2,
+        "a plan a caller only read from carries only derived first-party coverage"
     );
     assert!(!plan.coverage_complete());
 }
