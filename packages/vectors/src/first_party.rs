@@ -34,7 +34,7 @@
 
 use std::collections::BTreeSet;
 
-use architecture::{ARCHITECTURE, OperationId};
+use architecture::{ARCHITECTURE, ObjectId, OperationId};
 use compiler::operation_plan::{
     CoverageRequirementId, EvidenceRole, RelationMutation, TargetCoverageObligation,
     ValidatedTargetOperationPlan,
@@ -106,6 +106,41 @@ pub enum FirstPartyNegativeCase {
         /// The one changed field.
         availability: AvailabilityClass,
     },
+}
+
+/// The canonical compact-ASH private-dependency case.
+///
+/// Both the validator tests and the plan derivation use this one case:
+/// the published compact-ASH public required fact, changed to an
+/// ASH-owner-private availability class.
+pub(crate) fn compact_ash_permissionless_private_dependency_case()
+-> Result<FirstPartyNegativeCase, FirstPartyEvidenceRefusal> {
+    let realization = derive(&ARCHITECTURE, RealizationScope::phase1_pilots())
+        .map_err(|_| FirstPartyEvidenceRefusal::RealizationUnavailable)?;
+    let published = realization
+        .project()
+        .constructibility
+        .nodes
+        .into_iter()
+        .map(|node| node.id)
+        .find(|id| {
+            matches!(
+                id,
+                ConstructibilityNodeId::Fact {
+                    operation: OperationId::CompactAsh,
+                    availability: AvailabilityClass::Public,
+                    ..
+                }
+            )
+        })
+        .ok_or(FirstPartyEvidenceRefusal::ControlIsNotPublished)?;
+    Ok(FirstPartyNegativeCase::PrivateRequiredDependency {
+        operation: OperationId::CompactAsh,
+        published,
+        availability: AvailabilityClass::InputOwners {
+            object: ObjectId::Ash,
+        },
+    })
 }
 
 /// Why one offered case does not discharge its requirement.
@@ -359,7 +394,7 @@ const fn refused_class(error: &CompileError) -> Option<RelationMutation> {
 mod tests {
     use super::{
         FirstPartyEvidenceRefusal, FirstPartyNegativeCase, FirstPartyValidator,
-        validate_first_party_negative,
+        compact_ash_permissionless_private_dependency_case, validate_first_party_negative,
     };
     use crate::bundle::fixture_bundle;
     use architecture::{ObjectId, OperationId};
@@ -393,39 +428,15 @@ mod tests {
     /// publishes it: a required dependency of this operation whose
     /// availability is public, which is why the real analysis passes.
     fn published_public_fact() -> ConstructibilityNodeId {
-        let realization = realization::derive(
-            &architecture::ARCHITECTURE,
-            realization::RealizationScope::phase1_pilots(),
-        )
-        .expect("the realization derives");
-        realization
-            .project()
-            .constructibility
-            .nodes
-            .into_iter()
-            .map(|node| node.id)
-            .find(|id| {
-                matches!(
-                    id,
-                    ConstructibilityNodeId::Fact {
-                        operation: OperationId::CompactAsh,
-                        availability: AvailabilityClass::Public,
-                        ..
-                    }
-                )
-            })
-            .expect("compact-ash publishes a public required fact")
+        let FirstPartyNegativeCase::PrivateRequiredDependency { published, .. } =
+            private_dependency();
+        published
     }
 
     /// The canonical malformed input: that fact under a private class.
     fn private_dependency() -> FirstPartyNegativeCase {
-        FirstPartyNegativeCase::PrivateRequiredDependency {
-            operation: OperationId::CompactAsh,
-            published: published_public_fact(),
-            availability: AvailabilityClass::InputOwners {
-                object: ObjectId::Ash,
-            },
-        }
+        compact_ash_permissionless_private_dependency_case()
+            .expect("the canonical private-dependency case is available")
     }
 
     #[test]
