@@ -1,7 +1,7 @@
 //! The one mapping from this package's own workload onto the executor's
 //! step records (Guide-12 §16.2).
 //!
-//! [`RequiredTargetWork`] says what a target must do before any coverage
+//! [`crate::plan::RequiredTargetWork`] says what a target must do before any coverage
 //! row can be discharged, in this package's vocabulary. The executor
 //! boundary says what a target *can* be asked to do, in a target-generic
 //! one: issue an asset, pay outputs to a witness program, submit a

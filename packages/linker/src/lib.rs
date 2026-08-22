@@ -7,6 +7,7 @@ pub mod carrier;
 pub mod deployment;
 pub mod error;
 pub mod graph;
+pub mod live_backend;
 pub mod live_bundle;
 pub mod live_carrier;
 pub mod live_deployment;

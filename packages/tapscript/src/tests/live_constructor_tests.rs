@@ -763,31 +763,27 @@ fn no_case_records_a_verdict_and_every_expressible_one_still_needs_a_run() {
                     "{:?} claims a target outcome with no run",
                     case.id()
                 );
-                assert!(
-                    case.residuals()
-                        .any(|residual| residual != MutationResidual::TargetNativeRunRequired),
-                    "{:?} names no component that has to exist first",
-                    case.id()
-                );
             }
         }
     }
 }
 
 #[test]
-fn the_candidate_abi_is_what_every_expressible_case_now_waits_on() {
-    // What Wave 8 moved. Five of the six expressible cases named a
-    // `LinkerNotExtended` residual, §11's linker extension is built, and
-    // the residual is gone rather than kept as a discharged marker — a
-    // residual nobody carries is a run nobody is owed.
+fn only_the_target_run_and_one_missing_predecessor_stand_in_the_way() {
+    // What §12 moved. Every expressible case named `AbiNotDerived`, and
+    // the candidate live-transfer ABI is derived: a request finalizes
+    // into a complete target transaction whose outputs carry the linked
+    // constructors' programs and whose witnesses carry their leaves and
+    // control blocks. Each of these mutations therefore has a
+    // transaction to be performed in, and the residual is gone rather
+    // than kept as a discharged marker.
     //
-    // What is left is the dependency it had been standing in front of:
-    // observing a target verdict needs a complete target transaction
-    // (§1.11), and §12's candidate ABI is what builds one. So every
-    // expressible case now waits on the ABI and the run, and exactly one
-    // of them additionally waits on a predecessor constructor. A census
-    // that had simply dropped the linker residual would have reported
-    // four of these as one target run away when they are two waves away.
+    // Five cases are consequently one target run from a verdict. The
+    // sixth is not, and the difference is what this test is for: it
+    // still needs a spent receipt built under a time-locked predecessor
+    // constructor, and no such constructor exists. A census that had
+    // dropped the ABI residual from all six equally would have reported
+    // that one as runnable when it is not.
     let cases = constructor_mutation_cases();
     let expressible: Vec<_> = cases
         .values()
@@ -795,15 +791,14 @@ fn the_candidate_abi_is_what_every_expressible_case_now_waits_on() {
         .collect();
     assert_eq!(expressible.len(), 6);
 
-    for case in &expressible {
-        let residuals: BTreeSet<_> = case.residuals().collect();
-        assert!(
-            residuals.contains(&MutationResidual::AbiNotDerived),
-            "{:?} names no transaction to be run in",
-            case.id()
-        );
-        assert!(residuals.contains(&MutationResidual::TargetNativeRunRequired));
-    }
+    let waiting_only_on_a_run = expressible
+        .iter()
+        .filter(|case| {
+            case.residuals().collect::<BTreeSet<_>>()
+                == BTreeSet::from([MutationResidual::TargetNativeRunRequired])
+        })
+        .count();
+    assert_eq!(waiting_only_on_a_run, 5);
 
     let waiting_on_a_predecessor: Vec<_> = expressible
         .iter()

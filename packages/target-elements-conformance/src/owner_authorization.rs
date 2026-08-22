@@ -162,11 +162,17 @@ pub enum CaseResidual {
     /// so no run can yet say the signature committed to what the case
     /// assumes it committed to.
     ProfileUnreviewed,
-    /// The case additionally needs a transaction with more than one
-    /// protocol owner, which the candidate ABI does not yet build.
-    MultiOwnerTransaction,
     /// The case additionally needs a sponsor envelope with its own
     /// authorizing owner.
+    ///
+    /// §12's candidate ABI builds the sponsored form — a sponsor suffix,
+    /// a sponsor-change role, and a fee role — but the sponsor's own
+    /// authorization arrives through an adapter that hands back a
+    /// witness stack, and §1.9 keeps that outside protocol data. A case
+    /// about the sponsor's owner failing to authorize therefore still
+    /// needs an envelope whose signer is modelled rather than supplied,
+    /// and this residual says so rather than being flipped alongside the
+    /// multi-owner one.
     SponsorEnvelope,
 }
 
@@ -298,8 +304,17 @@ pub fn owner_authorization_cases() -> BTreeMap<OwnerAuthorizationCaseId, OwnerAu
                     None,
                 ),
 
+                // §12's candidate ABI builds both of these transactions.
+                // A transfer consuming two owners' receipts is what the
+                // multi-owner case needs; a transfer consuming two
+                // receipts of one owner is what the repeated-owner case
+                // needs, and the ABI's own owner census reports it as
+                // one semantic owner and two concrete signatures, which
+                // is the distinction §1.6 lists the case for. The
+                // `MultiOwnerTransaction` residual is therefore gone
+                // rather than kept as a discharged marker.
                 Case::IncompleteOwnerSet | Case::RepeatedOwnerWithOneWitnessOmitted => {
-                    (Expect::Refused, None, Some(Residual::MultiOwnerTransaction))
+                    (Expect::Refused, None, None)
                 }
                 Case::SponsorOwnerOmission => {
                     (Expect::Refused, None, Some(Residual::SponsorEnvelope))
