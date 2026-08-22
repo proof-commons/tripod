@@ -143,14 +143,14 @@ fn every_guide_listed_symbol_role_is_filled_across_the_link() {
     let linked = link_live_candidate(&target, &live_bundles(), &live_deployment(&target))
         .expect("the link completes");
 
-    assert!(
+    assert_eq!(
         link_role_defects(
             linked
                 .definitions()
                 .iter()
                 .map(|((_, plan), census)| (*plan, census))
-        )
-        .is_empty()
+        ),
+        []
     );
 
     let filled: BTreeSet<LiveLinkRole> = linked
@@ -197,14 +197,14 @@ fn a_link_over_one_plan_is_not_required_to_fill_the_other_plans_roles() {
         linked.representation_plans(),
         &BTreeSet::from([LiveTransferRepresentationPlan::Explicit]),
     );
-    assert!(
+    assert_eq!(
         link_role_defects(
             linked
                 .definitions()
                 .iter()
                 .map(|((_, plan), census)| (*plan, census))
-        )
-        .is_empty()
+        ),
+        []
     );
 }
 
@@ -698,8 +698,8 @@ fn the_artifacts_the_flipped_mutation_cases_needed_now_exist() {
 
     let mut leaf_sets = Vec::new();
     for constructor in linked.constructors().values() {
-        assert!(!constructor.internal_key().bytes().is_empty());
-        assert!(!constructor.taptree().recipes().is_empty());
+        assert_ne!(constructor.internal_key().bytes().len(), 0);
+        assert_ne!(constructor.taptree().recipes().len(), 0);
 
         let owner_bearing = constructor
             .substituted()
