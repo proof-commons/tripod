@@ -39,7 +39,7 @@ The order is intentional:
 ## Status · `phase:roadmap:current`
 
 ```text
-Current: Phase 4 - End-to-end compact ASH
+Current: Phase 5 - Live receipt transfer
 ```
 
 ## Phase index · `tab:roadmap:phases`

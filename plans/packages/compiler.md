@@ -3,8 +3,9 @@
 > **Status:** Active — input, graph, folding, source, constructibility, disclosure,
 > lifecycle, exact proof-planning, execution-case placement, layout-requirement,
 > relation-indexed coverage, and complete scoped analyzed-pilot foundations
-> implemented internally; no public complete-analysis result is exposed and no
-> compiler identity exists
+> implemented internally; the validated target-operation boundary is public
+> (backlog section 2.12); no public complete-analysis result beyond it is
+> exposed and no compiler identity exists
 > **Phase:** [Phase 2](../phases/02-compiler.md)
 > **Package:** `tripod-compiler`
 > **Library:** `compiler`

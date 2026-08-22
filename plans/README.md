@@ -28,7 +28,7 @@ A lower row never overrides an upper owner on that owner's subject.
 ## Current phase · `phase:plans:current`
 
 ```text
-Current: Phase 4 - End-to-end compact ASH
+Current: Phase 5 - Live receipt transfer
 ```
 
 Current work is indexed by [the backlog](backlog.md). Long-term ordering is

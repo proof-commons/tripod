@@ -1,6 +1,8 @@
 # Phase 5 — Live Receipt Transfer · `phase:roadmap:live-transfer`
 
-> **Status:** Planned
+> **Status:** Active — the entry gate is satisfied: Phase 4 exited
+> 2026-08-21, recorded in the backlog's section 2.8. The Guide-13
+> batch is chartered; its preflight register gates implementation.
 > **Entry:** (`gate:phase4:exit`)
 > **Packages:** realization, compiler, tapscript, linker, transaction, vectors
 > **Decision:** D005 value representation

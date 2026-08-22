@@ -1,10 +1,10 @@
 # Phase 4 — End-to-End Compact ASH · `phase:roadmap:compact-ash`
 
-> **Status:** Active — both entry gates are satisfied: Phase 3 exited
-> 2026-08-20 with the Guide-12 preflight register closed. Guide 12's
-> build and execution waves are delivered through Wave 14, and Wave 15
-> audited the exit checklist; the exit verdict is the batch gate
-> record's, not this card's. See [the Guide-12 completion
+> **Status:** Exited — the Phase-4 exit gate passed 2026-08-21 and is
+> recorded in the backlog's section 2.8: twelve accepted and matched
+> live submissions, honest coverage 100 of 211, the section-29 audit at
+> 94 of 105, the local gate 47 of 47 with byte-identical document
+> reproduction. See [the Guide-12 completion
 > record](../history/guide-12-completion-report.md).
 > **Entry:** (`gate:phase2:exit`), (`gate:phase3:exit`)
 > **Packages:** compiler, target-elements, tapscript, linker, transaction,

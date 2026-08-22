@@ -5,8 +5,9 @@
 > encoding, the supported-subset parser, and the abstract stack and
 > failure-state validator implemented; the concrete shape policy, the
 > backend selection policy, eight machine-checked compact-ASH proof
-> patterns, and the operation-plan assessment implemented; the ASH
-> constructor and the relocatable bundle not implemented
+> patterns, and the operation-plan assessment implemented; the static
+> ASH constructor over nine shapes and the candidate relocatable
+> bundle delivered under Guide 12 (backlog gate record section 2.8)
 > **Phases:** [Phase 3](../phases/03-target-foundation.md) onward
 > **Package:** `tripod-tapscript`
 > **Library:** `tapscript`

@@ -1,9 +1,9 @@
 # Tripod Implementation Backlog
 
 > **Status:** ACTIVE
-> **Current gate:** Phase 4 — End-to-end compact ASH
-> **Current condition:** Phases 1 and 2 are complete. The target-independent compiler constructs one deterministic, validated scoped analyzed program for the complete pilot scope, factorized per operation, with relation-owned requirements, a corruption-resistant assembly validator, and independent assembly oracles; the Phase-2 exit gate record is in §2.11, including passed document reproducibility. Phase 3 then delivered the Guide-8 target foundation, the Guide-9 native primitive gate, the Guide-10 constructor and wide-floor prototypes, and the Guide-11 declassification result, each with its own gate record. Public declassification is no longer an open blocker: an initial policy is selected — an explicit boundary reached by owner-authorized normalization, with the direct and public-committed paths deferred against three named target blockers — and the gate record is in §2.4. Phase-3 exit is recorded: the Guide-12 preflight register closed all sixteen seventh-review rows, and (`gate:phase3:exit`) was checked green on that tree with the record in §2.6. The current work is the first complete compiler-to-target operation, compact ASH, which consumes the declassification policy rather than reopening it.
-> **Next gate:** Phase 4 — compact-ash end-to-end pipeline
+> **Current gate:** Phase 5 — Live receipt transfer
+> **Current condition:** Phases 1 and 2 are complete. The target-independent compiler constructs one deterministic, validated scoped analyzed program for the complete pilot scope, factorized per operation, with relation-owned requirements, a corruption-resistant assembly validator, and independent assembly oracles; the Phase-2 exit gate record is in §2.11, including passed document reproducibility. Phase 3 then delivered the Guide-8 target foundation, the Guide-9 native primitive gate, the Guide-10 constructor and wide-floor prototypes, and the Guide-11 declassification result, each with its own gate record. Public declassification is no longer an open blocker: an initial policy is selected — an explicit boundary reached by owner-authorized normalization, with the direct and public-committed paths deferred against three named target blockers — and the gate record is in §2.4. Phase-3 exit is recorded: the Guide-12 preflight register closed all sixteen seventh-review rows, and (`gate:phase3:exit`) was checked green on that tree with the record in §2.6. Phase-4 exit is recorded in §2.8: compact ASH ran end to end against a live target with twelve accepted and matched submissions and honest coverage stated at 100 of 211. The current work is Phase 5 — Guide 13's owner-authorized live receipt transfer — which consumes the Phase-4 pipeline rather than redesigning it and begins implementation only when the Guide-13 preflight register closes.
+> **Next gate:** Phase 5 — live-transfer end-to-end pipeline
 > **Authority:** Current execution queue only. The specification, the realization document, typed architecture, implemented ADRs, accepted decisions, package contracts, phase cards, and accepted research results take precedence.
 
 This file contains only:
@@ -359,6 +359,12 @@ A domain separator is hashed input that identifies a recipe, and the product's n
 | `artifacts` | Generated-publication derivation, writer/checker, realization-document weld |
 | `labels` | Owner-aware Markdown/Rust label graph, census, plan checks, register rendering |
 | `cli-common` | ADR-010 streams, diagnostics, checker report/stamp publication, batch publication |
+| `target-elements` | Reviewed typed target contract, capability and evidence-role adapter, typed instruction core, welded development binding |
+| `tapscript` | Compact-ASH proof patterns, abstract stack and failure-state validator, static ASH constructor over nine shapes, candidate relocatable bundle |
+| `linker` | Typed symbols, references, and relocations; deterministic taptree; candidate linked bundle |
+| `transaction` | Candidate compact-ASH transaction and witness ABI with the safe construction pipeline |
+| `vectors` | Canonical fixtures, evidence plan, negative-mutation machinery, live target execution, and the candidate resource study |
+| `target-elements-conformance` | Native-executor protocol and supervision, constructor and commitment oracles, conformance reports |
 | Meson | Explicit source census, stamp-backed checks, mocked document graph |
 | Security policy | Public-data interfaces and external execution-environment boundary |
 | Path policy | Central tracked-mode audit, lexical output roles, explicit host-filesystem non-claims |
@@ -393,14 +399,10 @@ Architecture finality does not imply:
 ```text
 public complete compiler-analysis API beyond the target-requirement boundary
 compiler-plan identity
-backend proof patterns
 direct authenticated opening and public-committed representation
 public opening capsule
 production target-native evidence
 
-tripod-linker
-tripod-transaction
-tripod-vectors
 tripod-release
 
 independent deployment observers
@@ -431,10 +433,14 @@ Capability and evidence adapter:    implemented, section 2.13
 Typed instruction core:             implemented, section 2.13
 Development target-native evidence: recorded, section 2.13
 Production target evidence:        absent
-Backend patterns/linker/ABI:       absent
+Backend patterns/constructor:       implemented (candidate), section 2.8
+Linker and transaction ABI:        implemented (candidate), section 2.8
+Vectors and live target execution: recorded, section 2.8
 Independent deployment evidence:   absent
 Production deployment:             absent
 Phase-2 exit gate:                 passed and recorded, section 2.11
+Phase-3 exit gate:                 passed and recorded, section 2.6
+Phase-4 exit gate:                 passed and recorded, section 2.8
 ```
 
 Current packages are public-data tools. They do not legitimately accept private
@@ -453,7 +459,8 @@ credentials, or production authority.
 | Phase 1 | HISTORICAL | the completion evidence on [the Phase-1 card](phases/01-realization.md), and the gate record in [the backlog archive](history/backlog-history.md) §2.3 |
 | Phase 2 | HISTORICAL | Guide-4 through Guide-7 gate records, §2.8–§2.11 |
 | Phase 3 | HISTORICAL | exit recorded in §2.6 and the Phase-3 card |
-| Phase 4 | Active | current backlog, Guide 12, and the Phase-4 card |
+| Phase 4 | HISTORICAL | exit recorded in §2.8, the Phase-4 card, and [the Guide-12 completion record](history/guide-12-completion-report.md) |
+| Phase 5 | Active | current backlog, Guide 13, and the Phase-5 card |
 
 ### 4.2 Historical finding families · `tab:backlog:historical-findings`
 
@@ -1262,9 +1269,10 @@ Standing rules that survive the phase exit:
 Execute in this order unless reproduction changes dependencies:
 
 ```text
-1. Follow Guide 12's wave order for Phase 4; no later wave begins
-   before Wave 3's recorded Phase-3 exit, which is §2.6, and no wave
-   skips its predecessor's typed handoff.
+1. Follow Guide 13's wave order for Phase 5; no implementation wave
+   begins before the preflight register closes its confirmed P0 and
+   P1 rows, the entry is the recorded Phase-4 exit in §2.8, and no
+   wave skips its predecessor's typed handoff.
 2. Keep target types out of compiler core; the target packages consume
    the analyzed boundary, never the reverse.
 3. Mint no target hash and claim no production activation without a real
@@ -1392,4 +1400,4 @@ After a phase or remediation series:
 
 ## 15. One-line backlog · `rem:backlog:one-line`
 
-> Check the Phase-3 exit gate now that all three foundational questions are answered — the STATE-constructor and wide-floor prototypes accepted in §2.14, the declassification policy selected in §2.4 — then begin the first complete compiler-to-target operation without reopening the policy, minting speculative identities, or claiming production activation.
+> Execute Guide 13 — Phase 5 live receipt transfer: close the Wave-0 preflight register first (no live-transfer implementation while a confirmed P0 or P1 row stays open), then build the owner-authorized, representation-parametric transfer pipeline through real target execution, keeping safety and minimality evidence separate, every artifact candidate-only, and no production claim minted.
