@@ -1157,7 +1157,7 @@ fn discharge_canonical_first_party(
     evidence_plan: &mut CompactAshEvidencePlan,
 ) -> Result<(), VectorError> {
     let case = compact_ash_permissionless_private_dependency_case()
-        .map_err(|_| VectorError::UnclassifiableNegativeRequirement)?;
+        .map_err(|cause| VectorError::FirstPartyEvidenceRefused { cause })?;
     let requirements: BTreeSet<_> = operation_plan
         .coverage()
         .filter(|candidate| {
@@ -1179,7 +1179,7 @@ fn discharge_canonical_first_party(
     }
     for id in &requirements {
         let evidence = validate_first_party_negative(operation_plan, id, &case)
-            .map_err(|_| VectorError::UnclassifiableNegativeRequirement)?;
+            .map_err(|cause| VectorError::FirstPartyEvidenceRefused { cause })?;
         evidence_plan.discharge_first_party(&evidence);
     }
     Ok(())
@@ -1198,9 +1198,9 @@ fn discharge_canonical_first_party(
 /// planned; [`VectorError::DuplicateCoverageRequirement`] when two
 /// requirements claim one identity; [`VectorError::MatrixCoverageMismatch`]
 /// when the canonical first-party rows are not the two execution cases;
-/// [`VectorError::UnclassifiableNegativeRequirement`] when the canonical
-/// first-party case cannot be validated; and any refusal from fixture
-/// construction or materialization.
+/// [`VectorError::FirstPartyEvidenceRefused`] when the canonical
+/// first-party case cannot be assembled or validated; and any refusal
+/// from fixture construction or materialization.
 pub fn derive_evidence_plan(
     fixture: &FixtureBundle,
 ) -> Result<CompactAshEvidencePlan, VectorError> {
