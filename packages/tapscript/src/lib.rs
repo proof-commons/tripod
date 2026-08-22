@@ -6,6 +6,8 @@ pub mod bundle;
 pub mod capability;
 pub mod error;
 pub mod instruction;
+pub mod live_constructor;
+pub mod live_shape;
 pub mod operation_assessment;
 pub mod pattern;
 pub mod policy;
@@ -38,6 +40,20 @@ pub use capability::{
 };
 pub use error::TapscriptError;
 pub use instruction::{StackItem, TapscriptInstruction};
+pub use live_constructor::{
+    BindingStatus, CandidateTransferLifecycle, ConstructorBinding, ConstructorDisposition,
+    ConstructorFacet, ConstructorMutationCase, ConstructorMutationCaseId, KeyPathClosure,
+    LiveConstructorRefusal, LiveProgramRole, LiveSpendingRoute, LiveTransferLeafRole,
+    MutationCensusDefect, MutationResidual, OwnerKey, OwnerKeyEstablishment, OwnerKeyRejection,
+    OwnerKeyResidual, PendingBinding, StaticLiveReceiptConstructor, constructor_mutation_cases,
+    derive_live_receipt_constructor, key_path_closure, mutation_census_defects,
+    static_transfer_leaf_set,
+};
+pub use live_shape::{
+    LiveShapeRejection, LiveTransferShape, LiveTransferShapeBounds, LiveTransferShapeSet,
+    MINIMUM_TRANSFER_RECEIPT_INPUTS, MINIMUM_TRANSFER_RECEIPT_OUTPUTS,
+    demonstration_live_shape_set, dense_live_shape_set,
+};
 pub use operation_assessment::{
     EmissionRefusal, OperationAssessmentSet, OperationRequirement, OperationVerdict, VerdictGround,
     assess_operation_plan,

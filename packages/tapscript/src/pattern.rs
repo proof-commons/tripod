@@ -700,7 +700,7 @@ fn require_asset(
 /// For a program the deployment settles from outside the ASH family —
 /// the sponsor-change role's. The ASH constructor's own program is not
 /// settleable this way and uses
-/// [`require_program_matches_this_input`] instead.
+/// `require_program_matches_this_input` instead.
 fn require_program(
     target: &ReviewedElementsTapscriptDefinition,
     inspect: OpcodeId,
