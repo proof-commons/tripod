@@ -564,3 +564,116 @@ fn a_resource_projection_states_each_unit_separately() {
     );
     assert_eq!(projection.get(&ResourceDimension::OperationCost), Some(&0));
 }
+
+// --- Computed truth (`G13-R11`) ---------------------------------------
+
+/// A literal of exactly these bytes, as an instruction.
+fn push_bytes(payload: &[u8]) -> TapscriptInstruction {
+    let target = reviewed_target();
+    TapscriptInstruction::Push(
+        StackItem::new(&target, payload.to_vec()).expect("the payload is within the bound"),
+    )
+}
+
+/// The target's signed fixed-width encoding of `value`, as a push.
+fn push_le64(value: i64) -> TapscriptInstruction {
+    let target = reviewed_target();
+    TapscriptInstruction::Push(StackItem::signed_le64(&target, value))
+}
+
+#[test]
+fn a_comparison_of_unequal_literals_settles_its_result_false() {
+    // Read through the primitive that consumes a truth value, because
+    // that is where the knowledge is spent. A settled false removes the
+    // successful form of the verification, and the abort it removes
+    // nothing from stays: both halves are asserted, since a repair that
+    // simply dropped every state would satisfy the first alone.
+    let result = validate(vec![
+        push_bytes(&[0x01]),
+        push_bytes(&[0x02]),
+        TapscriptInstruction::Opcode(OpcodeId::Equal),
+        TapscriptInstruction::Opcode(OpcodeId::Verify),
+    ]);
+
+    assert!(result.success().is_empty());
+    assert!(result.always_aborts());
+    assert!(result.aborts().contains(&FailureCause::FalseVerification));
+}
+
+#[test]
+fn a_comparison_of_equal_literals_settles_its_result_true() {
+    // The other direction, and the sharper assertion of the two:
+    // removing an abort is a claim, and only exact knowledge licenses
+    // it. A walk that merely kept the successful form would still list
+    // the false verification as reachable.
+    let result = validate(vec![
+        push_bytes(&[0x01]),
+        push_bytes(&[0x01]),
+        TapscriptInstruction::Opcode(OpcodeId::Equal),
+        TapscriptInstruction::Opcode(OpcodeId::Verify),
+    ]);
+
+    assert!(!result.success().is_empty());
+    assert!(!result.aborts().contains(&FailureCause::FalseVerification));
+}
+
+#[test]
+fn equality_is_settled_on_the_bytes_and_not_on_how_they_read() {
+    // Both operands are items the target reads as false, and they are
+    // not the same item. A comparison settled on the reading rather
+    // than on the bytes would call them equal and would keep a state
+    // this program cannot reach.
+    let result = validate(vec![
+        push_bytes(&[0x00]),
+        push_bytes(&[]),
+        TapscriptInstruction::Opcode(OpcodeId::Equal),
+        TapscriptInstruction::Opcode(OpcodeId::Verify),
+    ]);
+
+    assert!(result.always_aborts());
+}
+
+#[test]
+fn a_fixed_width_ordering_of_known_operands_settles_its_result() {
+    // Operands are declared deepest first, so this is one against two
+    // and not two against one. An ordering that read the pair in the
+    // other direction would settle the opposite value, and these two
+    // results would cross over rather than merely blur.
+    let less = validate(vec![
+        push_le64(1),
+        push_le64(2),
+        TapscriptInstruction::Opcode(OpcodeId::LessThan64),
+        TapscriptInstruction::Opcode(OpcodeId::Verify),
+    ]);
+    assert!(!less.success().is_empty());
+    assert!(!less.aborts().contains(&FailureCause::FalseVerification));
+
+    let greater = validate(vec![
+        push_le64(1),
+        push_le64(2),
+        TapscriptInstruction::Opcode(OpcodeId::GreaterThan64),
+        TapscriptInstruction::Opcode(OpcodeId::Verify),
+    ]);
+    assert!(greater.always_aborts());
+}
+
+#[test]
+fn a_settled_truth_never_answers_a_question_about_bytes() {
+    // The reviewed contract states a computed Boolean as a type and
+    // never says which bytes carry it. So the comparison below is
+    // settled by nothing, and `EQUALVERIFY` keeps both its successful
+    // form and its inequality abort. Recording a plausible canonical
+    // byte for the truth would decide this, and would decide it with no
+    // ground in the contract — which is why the walk records the truth
+    // and not the bytes.
+    let result = validate(vec![
+        push_bytes(&[0x01]),
+        push_bytes(&[0x01]),
+        TapscriptInstruction::Opcode(OpcodeId::Equal),
+        push_bytes(&[0x01]),
+        TapscriptInstruction::Opcode(OpcodeId::EqualVerify),
+    ]);
+
+    assert!(!result.success().is_empty());
+    assert!(result.aborts().contains(&FailureCause::UnequalOperands));
+}

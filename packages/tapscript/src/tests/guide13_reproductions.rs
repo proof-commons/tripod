@@ -212,10 +212,10 @@ fn a_sponsored_shape_reports_a_nonempty_sponsor_suffix() {
 /// no literal to read at that position, and the successful branch
 /// survives a program that always aborts.
 ///
-/// The contrast is the next test, which passes today: the verifying
-/// primitive keeps the knowledge because it never has to transfer it.
+/// The contrast is the next test, which passed even while this one
+/// failed: the verifying primitive keeps the knowledge because it never
+/// has to transfer it.
 #[test]
-#[ignore = "G13-R11: confirmed, repair pending"]
 fn unequal_literals_compared_then_verified_reach_no_successful_state() {
     let result = validate(vec![
         push(&[0x01]),

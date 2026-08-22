@@ -209,6 +209,32 @@ impl StackItem {
         }
         script_number_from_bytes(&little_endian)
     }
+
+    /// The fixed-width signed integer this item carries, where it
+    /// carries one.
+    ///
+    /// The inverse of [`Self::signed_le64`], and `None` for any item
+    /// that is not exactly the width the reviewed contract fixes for
+    /// the class. There is no minimality question here: unlike a script
+    /// number the encoding is exact-width two's complement, so every
+    /// item of that width denotes exactly one value and no two items
+    /// denote the same one.
+    ///
+    /// It exists for the same reason [`Self::script_number_value`]
+    /// does — so a consumer can settle a literal a program pushed
+    /// rather than treat it as unknown — and it is used where a
+    /// comparison's operands are both known.
+    #[must_use]
+    pub fn signed_le64_value(&self, target: &ReviewedElementsTapscriptDefinition) -> Option<i64> {
+        let spec = encoding(target, EncodingClass::SignedLittleEndian64);
+        if !admits_width(spec.payload(), self.bytes.len()) {
+            return None;
+        }
+        let little_endian = order_bytes(spec, self.bytes.clone());
+        Some(i64::from_le_bytes(
+            <[u8; 8]>::try_from(little_endian.as_slice()).ok()?,
+        ))
+    }
 }
 
 /// The value of a minimal little-endian script number.

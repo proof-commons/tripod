@@ -328,13 +328,70 @@ const fn admit_state(visited: &mut u64, maximum: u64) -> Result<(), u64> {
 /// question about bytes.
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 struct KnownLiterals {
-    values: BTreeMap<usize, StackItem>,
+    values: BTreeMap<usize, KnownValue>,
+}
+
+/// What the walk knows about one main-stack position.
+///
+/// # Why knowing the truth is not knowing the bytes
+///
+/// The two arms are different amounts of knowledge, and collapsing them
+/// would be unsound in the direction that matters. A literal push fixes
+/// the bytes, so every question the target answers from bytes is
+/// answerable. A computed comparison fixes only the *truth*: the
+/// reviewed contract states that result as [`StackValueType::Bool`], "a
+/// truth value in the target's canonical form", and nowhere states what
+/// that form's bytes are.
+///
+/// So the truth is recorded and the bytes are not invented. Writing a
+/// plausible `0x01` here would be a claim the reviewed contract does
+/// not make, and it would not stay confined: those bytes would flow
+/// into the equality comparison and the script-number reading below,
+/// where they would settle questions the target does not settle.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum KnownValue {
+    /// The exact bytes a literal push put at this position.
+    Literal(StackItem),
+    /// A truth value the reviewed semantics settle, whose bytes the
+    /// reviewed contract does not fix.
+    Truth(bool),
+}
+
+impl KnownValue {
+    /// The exact bytes, for the questions that are about bytes.
+    const fn literal(&self) -> Option<&StackItem> {
+        match self {
+            Self::Literal(item) => Some(item),
+            Self::Truth(_) => None,
+        }
+    }
+
+    /// How the target reads this value as a truth value.
+    ///
+    /// Available from either arm: a known literal is read by the
+    /// target's own rule, and a settled truth is already the answer.
+    fn truth(&self) -> bool {
+        match self {
+            Self::Literal(item) => !reads_as_false(item.bytes()),
+            Self::Truth(truth) => *truth,
+        }
+    }
 }
 
 impl KnownLiterals {
-    /// The literal at one main-stack position, where there is one.
-    fn at(&self, position: usize) -> Option<&StackItem> {
+    /// What the walk knows at one main-stack position, if anything.
+    fn at(&self, position: usize) -> Option<&KnownValue> {
         self.values.get(&position)
+    }
+
+    /// The exact literal at one position, where the bytes are known.
+    fn literal_at(&self, position: usize) -> Option<&StackItem> {
+        self.at(position).and_then(KnownValue::literal)
+    }
+
+    /// How the target reads one position, where the walk settles it.
+    fn truth_at(&self, position: usize) -> Option<bool> {
+        self.at(position).map(KnownValue::truth)
     }
 
     /// Forgets every position at or above `depth`.
@@ -344,16 +401,16 @@ impl KnownLiterals {
                 .values
                 .iter()
                 .filter(|(position, _)| **position < depth)
-                .map(|(position, item)| (*position, item.clone()))
+                .map(|(position, value)| (*position, value.clone()))
                 .collect(),
         }
     }
 
     /// Records what a newly pushed item at `position` carries.
-    fn record(&mut self, position: usize, item: Option<StackItem>) {
-        match item {
-            Some(item) => {
-                self.values.insert(position, item);
+    fn record(&mut self, position: usize, value: Option<KnownValue>) {
+        match value {
+            Some(value) => {
+                self.values.insert(position, value);
             }
             None => {
                 self.values.remove(&position);
@@ -503,7 +560,7 @@ fn step(
             // the program itself fixed it, exactly, whatever the bytes
             // happen to denote.
             let mut constants = constants.clone();
-            constants.record(position, Some(item.clone()));
+            constants.record(position, Some(KnownValue::Literal(item.clone())));
             Ok(Transfer {
                 success: vec![(reached, constants)],
                 ..Transfer::default()
@@ -572,6 +629,10 @@ fn apply_opcode(
     // of its true values, and whether two compared operands agree.
     let literals = LiteralFacts::observe(target, stack, state, constants, base);
 
+    // What those same literals settle about the value this primitive
+    // computes, for the primitives whose semantics settle one exactly.
+    let computed = settled_comparison(target, id, constants, base);
+
     // Every compatible alternative is retained. The condition selecting
     // one is generally a property of the target value that was read,
     // which no abstract state can settle — except where the operand
@@ -581,7 +642,8 @@ fn apply_opcode(
         if !literals.admits_success() || !authorization.admits_success(case.condition()) {
             continue;
         }
-        let (reached, reached_constants) = apply_case(target, state, constants, &case, base);
+        let (reached, reached_constants) =
+            apply_case(target, state, constants, &case, base, computed);
         check_depth(&reached, limits)?;
         transfer.success.push((reached, reached_constants));
     }
@@ -699,17 +761,23 @@ impl LiteralFacts {
         };
 
         if declares(FailureCause::FalseVerification) && operands.len() == 1 {
-            facts.verified = match literals.at(base) {
-                Some(item) if reads_as_false(item.bytes()) => SettledTruth::False,
-                Some(_) => SettledTruth::True,
+            facts.verified = match literals.truth_at(base) {
+                Some(false) => SettledTruth::False,
+                Some(true) => SettledTruth::True,
                 None if is_definitely_false(target, &state.main()[base]) => SettledTruth::False,
                 None => SettledTruth::Unsettled,
             };
         }
 
+        // Equality is a question about bytes, so only the arm that
+        // carries bytes answers it. A settled truth is not enough: two
+        // values the target reads the same way are not thereby the same
+        // item, and the reviewed contract fixes no bytes for a computed
+        // one to compare against.
         if declares(FailureCause::UnequalOperands)
             && operands.len() == 2
-            && let (Some(left), Some(right)) = (literals.at(base), literals.at(base + 1))
+            && let (Some(left), Some(right)) =
+                (literals.literal_at(base), literals.literal_at(base + 1))
         {
             facts.compared = if left == right {
                 SettledEquality::Equal
@@ -751,6 +819,67 @@ fn reads_as_false(bytes: &[u8]) -> bool {
         return true;
     };
     rest.iter().all(|byte| *byte == 0) && (*last == 0x00 || *last == 0x80)
+}
+
+/// What a comparison's known operands settle about its answer.
+///
+/// # The computed half of the same question
+///
+/// [`LiteralFacts`] settles what a primitive's *own* declared causes
+/// admit. This settles what the primitive *leaves behind*, which is
+/// where the knowledge used to stop: a comparison's result carried its
+/// type and not its value, so `EQUAL` over two known literals arrived
+/// at the next primitive as an open Boolean, and a program that always
+/// aborts kept a successful state.
+///
+/// # Which primitives are here, and which are deliberately not
+///
+/// Every reviewed primitive whose result is settled *by its operands*
+/// and by nothing else. That is the comparison family: byte equality,
+/// and the four fixed-width orderings, whose operands are read through
+/// the reviewed encoding rather than compared as bytes.
+///
+/// The other producers of a Boolean are absent for reasons, not by
+/// omission:
+///
+/// - The arithmetic primitives push a Boolean beside their result. Its
+///   value is settled by *which declared form the walk took* rather
+///   than by any operand, and the contract already splits those paths
+///   into a successful form and an overflow effect. Reading it as a
+///   success flag here would mean deciding that this particular
+///   `Bool` means "the operation did not overflow" — which is a claim
+///   about the target that the reviewed contract does not state.
+/// - The signature primitives push a Boolean no stack literal settles:
+///   it depends on the transaction being spent. What their operands do
+///   settle is which branches exist at all, and
+///   [`AuthorizationFacts`] already states that.
+/// - `EQUALVERIFY` and `VERIFY` push no result at all, so there is
+///   nothing here to carry; their knowledge never has to survive a
+///   transfer, which is why they were never affected.
+fn settled_comparison(
+    target: &ReviewedElementsTapscriptDefinition,
+    id: OpcodeId,
+    constants: &KnownLiterals,
+    base: usize,
+) -> Option<bool> {
+    // Operands are declared deepest first, so offset 0 is the one
+    // pushed first and offset 1 the one on top. An ordering answered
+    // with the two exchanged would be exactly wrong rather than
+    // imprecise, which is why they are named by depth here.
+    let item = |offset: usize| constants.literal_at(base + offset);
+    let signed = |offset: usize| item(offset)?.signed_le64_value(target);
+
+    match id {
+        // Byte for byte, with no numeric reading whatever: two script
+        // numbers of equal value in different encodings are unequal
+        // here, exactly as the reviewed contract says.
+        OpcodeId::Equal => Some(item(0)? == item(1)?),
+        OpcodeId::LessThan64 => Some(signed(0)? < signed(1)?),
+        OpcodeId::LessThanOrEqual64 => Some(signed(0)? <= signed(1)?),
+        OpcodeId::GreaterThan64 => Some(signed(0)? > signed(1)?),
+        OpcodeId::GreaterThanOrEqual64 => Some(signed(0)? >= signed(1)?),
+        _ => None,
+    }
 }
 
 /// What the incoming operands settle about a signature primitive.
@@ -959,12 +1088,27 @@ fn apply_case(
     constants: &KnownLiterals,
     case: &SuccessCase,
     base: usize,
+    computed: Option<bool>,
 ) -> Reached {
     let effect = case.effect();
     let operands = state.main()[base..].to_vec();
-    let operand_literals: Vec<Option<&StackItem>> = (base..state.main().len())
+    let operand_literals: Vec<Option<&KnownValue>> = (base..state.main().len())
         .map(|at| constants.at(at))
         .collect();
+
+    // A settled truth is about one result, and there must be no
+    // question which. Every primitive whose computed value the walk
+    // settles pushes exactly one Boolean; a form pushing two would have
+    // to say which of them this answer described, and no contract says.
+    let settled = computed.filter(|_| {
+        effect
+            .results()
+            .iter()
+            .filter(|result| matches!(result, ResultValue::Computed(StackValueType::Bool)))
+            .count()
+            == 1
+    });
+
     let mut main = state.main().to_vec();
     // Each form states how many of the declared operands it consumes,
     // which is what makes a retaining form different from a consuming
@@ -974,7 +1118,19 @@ fn apply_case(
 
     for result in effect.results() {
         match result {
-            ResultValue::Computed(value) => main.push(value.clone()),
+            ResultValue::Computed(value) => {
+                main.push(value.clone());
+                // The type alone would forget what the operands
+                // settled: `Bool` admits both truth values, so a
+                // comparison of two known literals would arrive at the
+                // next primitive as an open question the program had
+                // already closed.
+                if matches!(value, StackValueType::Bool)
+                    && let Some(truth) = settled
+                {
+                    reached.record(main.len() - 1, Some(KnownValue::Truth(truth)));
+                }
+            }
             // Total by construction: the target validator refuses a
             // contract whose results name an operand position the
             // primitive does not declare.
@@ -1005,6 +1161,7 @@ fn apply_case(
                     .get(*width_operand)
                     .copied()
                     .flatten()
+                    .and_then(KnownValue::literal)
                     .and_then(|item| item.script_number_value(target));
                 main.push(settled_width(target, unsettled, width));
             }
