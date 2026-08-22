@@ -138,8 +138,8 @@ pub enum CoverageObservation {
     /// can be inferred from the others.
     ///
     /// A row is never built from a plan's intention. The only
-    /// constructor is [`CompactAshEvidencePlan::discharge`], which reads
-    /// submissions the executor recorded.
+    /// constructor is [`CompactAshEvidencePlan`]'s own crate-private
+    /// discharge, which reads submissions the executor recorded.
     Observed(ObservedCoverage),
     /// One mutation the target refused where its class said it would.
     ///

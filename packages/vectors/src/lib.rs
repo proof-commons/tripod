@@ -8,6 +8,7 @@ pub mod divergence;
 pub mod error;
 pub mod first_party;
 pub mod fixture;
+pub mod live_capability;
 pub mod materialize;
 pub mod matrix;
 pub mod mutation;
@@ -34,6 +35,7 @@ pub use first_party::{
     FirstPartyEvidenceRefusal, FirstPartyNegativeCase, FirstPartyRefusal, FirstPartyValidator,
     ValidatedFirstPartyNegativeEvidence, validate_first_party_negative,
 };
+pub use live_capability::{OracleFixtureValues, OracleLiveCurve};
 pub use materialize::{
     SponsorCoin, SponsorSigningTask, has_candidate_program, materialize_sponsored,
     needs_authorization, sponsor_signing_requests,
