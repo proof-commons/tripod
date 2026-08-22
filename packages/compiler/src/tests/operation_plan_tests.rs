@@ -735,6 +735,38 @@ fn a_changed_coverage_row_is_rejected() {
 }
 
 #[test]
+fn an_omitted_capability_is_rejected() {
+    let subject = corruption_subject();
+    let mut damaged = subject.plan.clone();
+    let removed = damaged
+        .capabilities_mut()
+        .iter()
+        .next()
+        .copied()
+        .expect("a capability");
+
+    damaged.capabilities_mut().remove(&removed);
+
+    assert_eq!(
+        crate::operation_plan::validate_target_operation_plan(&subject.analyzed, &damaged),
+        Err(CompileError::TargetPlanCapabilityCensusMismatch),
+    );
+}
+
+#[test]
+fn an_omitted_evidence_role_is_rejected() {
+    let subject = corruption_subject();
+    let mut damaged = subject.plan.clone();
+
+    damaged.external_evidence_mut().clear();
+
+    assert_eq!(
+        crate::operation_plan::validate_target_operation_plan(&subject.analyzed, &damaged),
+        Err(CompileError::TargetPlanEvidenceCensusMismatch),
+    );
+}
+
+#[test]
 fn a_changed_case_census_is_rejected() {
     let subject = corruption_subject();
     let mut damaged = subject.plan.clone();
