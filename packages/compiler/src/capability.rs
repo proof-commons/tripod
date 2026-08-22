@@ -14,53 +14,83 @@
 
 use std::collections::BTreeSet;
 
-/// One abstract requirement an approved proof places on a target.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum RequiredCapability {
-    AuthenticatedObjectRecognition,
-    AuthenticatedFamilyCardinality,
-    AuthenticatedCanonicalPartition,
-    AuthenticatedOpenFlowPartition,
-    AuthenticatedRootEffects,
-    AuthenticatedProjectionSet,
+/// Declare a closed enum and its census from one list of members.
+///
+/// A census constant written by hand is a second list that has to be
+/// kept equal to the first, and nothing available at the projection
+/// boundary can check that it is: [`crate::target::canonical_census`]
+/// checks the order of the census and the membership of what an
+/// analysis *presents*, neither of which ranges over the enum, so a
+/// variant omitted from a hand-written census is invisible for as long
+/// as nothing happens to emit it (Guide-13 §8.3, row `G13-R17`). This
+/// macro removes the second list rather than checking it: `ALL` is
+/// generated from the same members the enum is, so an omitted variant
+/// is not a defect that has to be caught — it is unwriteable.
+///
+/// The derives are fixed rather than supplied by the caller, because a
+/// census type owes the boundary a total order: `ALL` is emitted in
+/// declaration order, and derived `Ord` is declaration order, so a
+/// generated census is strictly increasing by construction too. What a
+/// caller does supply is the documentation, any further attributes, and
+/// the members. Everything else a census type wants — mappings,
+/// dispositions, `Display` — stays outside the macro, where an
+/// exhaustive `match` keeps its own guard over the same members.
+macro_rules! census_enum {
+    (
+        $(#[$enum_meta:meta])*
+        pub enum $name:ident {
+            $(
+                $(#[$variant_meta:meta])*
+                $variant:ident
+            ),+ $(,)?
+        }
+    ) => {
+        $(#[$enum_meta])*
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub enum $name {
+            $(
+                $(#[$variant_meta])*
+                $variant,
+            )+
+        }
 
-    ExactPublicAmountArithmetic,
-    ConfidentialValueConservation,
-
-    OwnerAuthorization,
-    OperatorAuthorization,
-    RefundAuthorization,
-    PublicConstructibility,
-
-    WholeTransactionValueConservation,
+        impl $name {
+            #[doc = concat!(
+                "The complete census of [`", stringify!($name), "`], in the \
+                 type's own canonical order."
+            )]
+            ///
+            /// Complete by construction: the enum above and this
+            /// constant are generated from one declaration, so there is
+            /// no second list to fall out of step with the first. The
+            /// order is a stable census order; it ranks nothing.
+            pub const ALL: &'static [Self] = &[ $(Self::$variant),+ ];
+        }
+    };
 }
 
-impl RequiredCapability {
-    /// The complete census of abstract capabilities, in the type's own
-    /// canonical order (Guide-8 §15.2).
-    ///
-    /// A census constant rather than a derived iteration, because the
-    /// property a downstream adapter needs is that *this list* and the
-    /// enum agree: the projection boundary re-checks the constant
-    /// against the type's ordering on every use, so a member added to
-    /// the enum and forgotten here fails at the boundary, and a member
-    /// listed twice fails there too. The order is a stable census
-    /// order; it ranks nothing.
-    pub const ALL: &'static [Self] = &[
-        Self::AuthenticatedObjectRecognition,
-        Self::AuthenticatedFamilyCardinality,
-        Self::AuthenticatedCanonicalPartition,
-        Self::AuthenticatedOpenFlowPartition,
-        Self::AuthenticatedRootEffects,
-        Self::AuthenticatedProjectionSet,
-        Self::ExactPublicAmountArithmetic,
-        Self::ConfidentialValueConservation,
-        Self::OwnerAuthorization,
-        Self::OperatorAuthorization,
-        Self::RefundAuthorization,
-        Self::PublicConstructibility,
-        Self::WholeTransactionValueConservation,
-    ];
+pub(crate) use census_enum;
+
+census_enum! {
+    /// One abstract requirement an approved proof places on a target.
+    pub enum RequiredCapability {
+        AuthenticatedObjectRecognition,
+        AuthenticatedFamilyCardinality,
+        AuthenticatedCanonicalPartition,
+        AuthenticatedOpenFlowPartition,
+        AuthenticatedRootEffects,
+        AuthenticatedProjectionSet,
+
+        ExactPublicAmountArithmetic,
+        ConfidentialValueConservation,
+
+        OwnerAuthorization,
+        OperatorAuthorization,
+        RefundAuthorization,
+        PublicConstructibility,
+
+        WholeTransactionValueConservation,
+    }
 }
 
 /// Optional planning filter over abstract capabilities.
