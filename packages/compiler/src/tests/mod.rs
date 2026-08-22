@@ -17,6 +17,7 @@ mod coverage_tests;
 mod disclosure_tests;
 mod expression_tests;
 mod fold_tests;
+mod guide13_reproductions;
 mod layout_tests;
 mod lifecycle_tests;
 mod operation_plan_tests;
