@@ -817,6 +817,12 @@ impl TargetTransaction {
     /// is longer than the transaction it holds. Trailing bytes are a
     /// refusal rather than a remainder: a decoder that ignored them
     /// would accept two byte strings as one transaction.
+    ///
+    /// [`TransactionRefusal::SuperfluousWitnessRecord`] for the same
+    /// reason, when the witness flag stands over a section carrying
+    /// nothing. Between them the two refusals give the decoder its
+    /// round-trip law: a transaction this returns re-encodes to exactly
+    /// the bytes it was read from.
     pub fn decode(bytes: &[u8]) -> Result<Self, TransactionRefusal> {
         let mut reader = Reader::new(bytes);
         let version = reader.u32_le()?;
@@ -860,6 +866,16 @@ impl TargetTransaction {
             }
         } else {
             witnesses.resize(inputs.len(), InputWitness::default());
+        }
+
+        // Every output witness read above was required to be empty, so
+        // an all-empty section is one whose input witnesses are all
+        // null. The encoder writes such a transaction without a section
+        // at all, and a decoder that accepted the flagged spelling
+        // would hold a value that re-encodes to other bytes than it
+        // came from.
+        if with_witness && witnesses.iter().all(InputWitness::is_null) {
+            return Err(TransactionRefusal::SuperfluousWitnessRecord);
         }
 
         if !reader.exhausted() {

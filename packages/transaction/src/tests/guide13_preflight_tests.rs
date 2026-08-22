@@ -93,7 +93,6 @@ fn witness_flagged_all_empty_bytes(transaction: &TargetTransaction) -> Vec<u8> {
 /// decode fails", so that it also holds once the decoder refuses the
 /// forged bytes outright.
 #[test]
-#[ignore = "G13-R02: confirmed, repair pending"]
 fn a_decoded_transaction_re_encodes_to_the_bytes_it_came_from() {
     let transaction = all_empty_witness_transaction();
     let forged = witness_flagged_all_empty_bytes(&transaction);

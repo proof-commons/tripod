@@ -253,6 +253,15 @@ pub enum TransactionRefusal {
         /// The offered byte.
         offered: u8,
     },
+    /// The witness flag stands over a witness section carrying nothing.
+    ///
+    /// The target sets the flag only where some witness is present, so
+    /// a transaction whose every witness is empty has one encoding and
+    /// it is the witnessless one. Accepting the flagged spelling as
+    /// well would admit two byte strings for one typed transaction,
+    /// which is what [`Self::NonMinimalCompactSize`] refuses about a
+    /// count and what the round-trip law forbids about a transaction.
+    SuperfluousWitnessRecord,
     /// An asset identifier was not the reviewed width.
     MalformedAssetIdentifier {
         /// How many bytes were offered.
