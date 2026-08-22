@@ -401,6 +401,26 @@ impl MutantOutcome {
     }
 }
 
+#[cfg(test)]
+impl MutantOutcome {
+    /// One mutation outcome, stated directly, for the crate's tests.
+    pub(crate) fn for_tests(
+        origin: TargetVectorId,
+        mutation: NegativeMutation,
+        layer: ObservedOutcomeLayer,
+        bytes: Vec<u8>,
+    ) -> Self {
+        Self {
+            origin,
+            mutation,
+            layer,
+            detail: None,
+            accepted_txid: None,
+            bytes,
+        }
+    }
+}
+
 /// Everything one operation run established.
 ///
 /// Built only by [`CompactAshOperationPlanner`], and only from answers
@@ -536,6 +556,65 @@ impl OperationTranscript {
     #[must_use]
     pub const fn refusal(&self) -> Option<&PlanRefusal> {
         self.refusal.as_ref()
+    }
+
+    /// A transcript assembled directly, for the crate's own tests.
+    ///
+    /// Not public, and for the reason the executor package gives for its
+    /// own such constructor: a transcript is what a run established, and
+    /// a caller able to state one without a run could hand the report
+    /// validation a run that never happened. The crate's own tests need
+    /// exactly that — a pair of records that do *not* correspond is the
+    /// thing report validation exists to refuse, and no honest run
+    /// produces one to test against.
+    #[cfg(test)]
+    pub(crate) fn for_tests(parts: TranscriptParts) -> Self {
+        Self {
+            issued_asset: parts.issued_asset,
+            constructor_program: parts.constructor_program,
+            submissions: parts.submissions,
+            mutants: parts.mutants,
+            refusal: parts.refusal,
+            ..Self::default()
+        }
+    }
+}
+
+/// The parts a test-assembled [`OperationTranscript`] is stated from.
+///
+/// A struct rather than a long argument list, so that a test states
+/// which field it is exercising by name.
+#[cfg(test)]
+pub(crate) struct TranscriptParts {
+    pub(crate) issued_asset: Option<[u8; 32]>,
+    pub(crate) constructor_program: Option<Vec<u8>>,
+    pub(crate) submissions: Vec<SubmissionOutcome>,
+    pub(crate) mutants: Vec<MutantOutcome>,
+    pub(crate) refusal: Option<PlanRefusal>,
+}
+
+#[cfg(test)]
+impl SubmissionOutcome {
+    /// One submission outcome, stated directly, for the crate's tests.
+    pub(crate) fn for_tests(
+        vector: TargetVectorId,
+        layer: ObservedOutcomeLayer,
+        accepted_txid: Option<&str>,
+        bytes: Vec<u8>,
+        predicted_weight: u64,
+        observed_weight: Option<u64>,
+    ) -> Self {
+        Self {
+            vector,
+            layer,
+            detail: None,
+            accepted_txid: accepted_txid.map(str::to_owned),
+            bytes,
+            predicted_weight,
+            observed_weight,
+            witness_bytes: 0,
+            virtual_size: 0,
+        }
     }
 }
 

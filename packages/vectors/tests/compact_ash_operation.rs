@@ -45,12 +45,13 @@ use target_elements_conformance::executor::{
     DEFAULT_EXECUTOR_TIMEOUT, ExecutorConfiguration, ExecutorTrust, execute_operations,
 };
 use target_elements_conformance::protocol::ObservedOutcomeLayer;
-use vectors::comparison::{compare, read_accepted};
-use vectors::fixture::{OPERATION, positive_semantic_census};
-use vectors::materialize::{TargetVectorId, vector_id};
+use vectors::materialize::TargetVectorId;
 use vectors::matrix::EvidenceBoundary;
 use vectors::operation::{CompactAshOperationPlanner, OperationTranscript};
 use vectors::plan::{ProjectionComparison, derive_evidence_plan};
+use vectors::report::{
+    ProjectionVerdict, ValidatedCompactAshOperationReport, validate_operation_report,
+};
 
 fn environment(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|value| !value.is_empty())
@@ -95,117 +96,21 @@ fn hex(bytes: &[u8]) -> String {
     text
 }
 
-/// The §17.4 comparison for every vector the target accepted.
-///
-/// Performed here rather than inside the planner, because it needs both
-/// halves and the planner holds only one: the expectation came from the
-/// realization layer's own arithmetic over the fixture, and the
-/// observation is read back out of the bytes the target took and the
-/// coins the target said it created. A vector the target did not accept
-/// gets no entry at all — §1.4's second verdict does not exist for a
-/// transaction that never reached the first.
-fn compare_projections(
-    transcript: &OperationTranscript,
-) -> BTreeMap<TargetVectorId, (ProjectionComparison, String)> {
-    let mut verdicts = BTreeMap::new();
-    let (Some(program), Some(asset)) =
-        (transcript.constructor_program(), transcript.issued_asset())
-    else {
-        return verdicts;
-    };
-    let census = positive_semantic_census().expect("the positive census builds");
-
-    for submission in transcript.submissions() {
-        if submission.layer() != ObservedOutcomeLayer::Accepted {
-            continue;
-        }
-        let id = submission.vector();
-        let Some(case) = census.iter().find(|case| vector_id(case) == id) else {
-            continue;
-        };
-        // Only the coins this vector was funded with. Handing over every
-        // coin the run created would let one vector's input read as
-        // another's, and the sponsor count is derived from exactly the
-        // inputs that are not in this set.
-        let mine: BTreeMap<_, _> = transcript
-            .funded()
-            .get(&id)
-            .map(|outpoints| {
-                outpoints
-                    .iter()
-                    .filter_map(|outpoint| {
-                        transcript
-                            .coins()
-                            .get(outpoint)
-                            .map(|amount| (*outpoint, *amount))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let verdict = match read_accepted(submission.bytes(), &mine, asset, program, OPERATION) {
-            // A transaction that could not be read has not disagreed
-            // about anything, so the comparison was not performed. It
-            // must not be recorded as a difference, which would file a
-            // reading failure as a protocol finding.
-            Err(refusal) => (
-                ProjectionComparison::NotPerformed,
-                format!("unreadable: {refusal:?}"),
-            ),
-            Ok(observed) => {
-                let differed = compare(case.expected(), &observed);
-                if differed.is_empty() {
-                    (ProjectionComparison::Matched, "matched".to_owned())
-                } else {
-                    let names: Vec<&str> = differed.iter().map(|term| term.name()).collect();
-                    (
-                        ProjectionComparison::Differed,
-                        format!("differed: {}", names.join(" ")),
-                    )
-                }
-            }
-        };
-        verdicts.insert(id, verdict);
-    }
-    verdicts
-}
-
-/// Write everything the run established, and nothing it did not.
 /// How many §19 coverage rows this run's outcomes actually discharge.
 ///
-/// The plan decides, not this lane: each outcome states a vector, the
-/// layer the target put it at, and what the projection comparison found,
-/// and `CoverageObservation::is_discharged` is what turns the triple
-/// into coverage or refuses to. An acceptance whose projection was never
-/// compared discharges nothing, which is why the comparison above
-/// distinguishes not-performed from differed.
+/// The plan decides, not this lane, and it reads the validated report
+/// rather than anything this file states: the outcomes were recomputed
+/// where the two transcripts were laid beside each other, and
+/// `CoverageObservation::is_discharged` is what turns each into coverage
+/// or refuses to. An acceptance whose projection was never compared
+/// discharges nothing, which is why the comparison distinguishes
+/// not-performed from differed.
 fn coverage(
-    transcript: &OperationTranscript,
-    projections: &BTreeMap<TargetVectorId, (ProjectionComparison, String)>,
+    report: &ValidatedCompactAshOperationReport<'_>,
 ) -> (usize, usize, usize, usize, usize) {
     let bundle = vectors::bundle::fixture_bundle().expect("the fixture bundle builds");
     let mut plan = derive_evidence_plan(&bundle).expect("the evidence plan derives");
-    let outcomes: Vec<_> = transcript
-        .submissions()
-        .iter()
-        .map(|submission| {
-            let projection = projections
-                .get(&submission.vector())
-                .map_or(ProjectionComparison::NotPerformed, |(verdict, _)| *verdict);
-            (submission.vector(), submission.layer(), projection)
-        })
-        .collect();
-    plan.discharge(&outcomes);
-    // The negative half is offered the same way: every mutation the run
-    // actually submitted, with the arm that made it and where the target
-    // put it. The plan decides which of them answers a requirement, and
-    // for most arms the answer is none.
-    let mutants: Vec<_> = transcript
-        .mutants()
-        .iter()
-        .map(|mutant| (mutant.mutation(), mutant.origin(), mutant.layer()))
-        .collect();
-    plan.discharge_mutants(&mutants);
+    plan.discharge_observed_run(report);
     (
         plan.census().coverage_requirements(),
         plan.observed_rows(),
@@ -215,12 +120,15 @@ fn coverage(
     )
 }
 
+/// Write everything the run established, and nothing it did not.
 fn render(
     transcript: &OperationTranscript,
+    validated: Option<&ValidatedCompactAshOperationReport<'_>>,
     wall: Duration,
     outcome_text: &str,
-    projections: &BTreeMap<TargetVectorId, (ProjectionComparison, String)>,
 ) -> String {
+    let empty = BTreeMap::new();
+    let projections = validated.map_or(&empty, |report| report.projections());
     let mut out = String::new();
     out.push_str("{\n");
     let _ = writeln!(out, "  \"wall_seconds\": {:.1},", wall.as_secs_f64());
@@ -270,20 +178,25 @@ fn render(
         projections.len(),
         projections
             .values()
-            .filter(|(verdict, _)| *verdict == ProjectionComparison::Matched)
+            .filter(|verdict| verdict.comparison() == ProjectionComparison::Matched)
             .count()
     );
     out.push_str(&render_weights(transcript));
-    let (requirements, observed, discharged, positive, negative) =
-        coverage(transcript, projections);
-    let _ = writeln!(
-        out,
-        "  \"coverage_requirements\": {requirements}, \"coverage_observed\": {observed}, \"coverage_discharged\": {discharged},"
-    );
-    let _ = writeln!(
-        out,
-        "  \"coverage_discharged_positive\": {positive}, \"coverage_discharged_negative\": {negative},"
-    );
+    // Coverage exists only where a run was validated. A refused run
+    // writes no coverage figures rather than writing zeroes, because a
+    // zero is a count and the honest statement is that there was nothing
+    // to count.
+    if let Some(report) = validated {
+        let (requirements, observed, discharged, positive, negative) = coverage(report);
+        let _ = writeln!(
+            out,
+            "  \"coverage_requirements\": {requirements}, \"coverage_observed\": {observed}, \"coverage_discharged\": {discharged},"
+        );
+        let _ = writeln!(
+            out,
+            "  \"coverage_discharged_positive\": {positive}, \"coverage_discharged_negative\": {negative},"
+        );
+    }
 
     out.push_str(&render_divergences(transcript));
 
@@ -321,7 +234,7 @@ fn render_weights(transcript: &OperationTranscript) -> String {
 /// Every positive submission, with both weights beside its verdict.
 fn render_submissions(
     transcript: &OperationTranscript,
-    projections: &BTreeMap<TargetVectorId, (ProjectionComparison, String)>,
+    projections: &BTreeMap<TargetVectorId, ProjectionVerdict>,
 ) -> String {
     let mut out = String::from("  \"submissions\": [\n");
     for (index, submission) in transcript.submissions().iter().enumerate() {
@@ -340,7 +253,7 @@ fn render_submissions(
                 .map_or_else(|| "null".to_owned(), quote),
             projections
                 .get(&submission.vector())
-                .map_or_else(|| quote("not performed"), |(_, text)| quote(text)),
+                .map_or_else(|| quote("not performed"), |verdict| quote(verdict.detail())),
             submission.detail().map_or_else(|| "null".to_owned(), quote),
             submission.bytes().len(),
             submission.witness_bytes(),
@@ -567,8 +480,21 @@ fn compact_ash_runs_against_a_real_target() {
         Ok(_) => quote("completed"),
         Err(error) => quote(&format!("refused: {error}")),
     };
-    let projections = compare_projections(transcript);
-    let out = render(transcript, wall, &outcome_text, &projections);
+    // The two records of the run, laid beside each other. A refusal here
+    // is a defect and not a target verdict: it says the executor's own
+    // record and the planner's do not describe the same run, so the
+    // lane stops rather than writing a report about which of them to
+    // believe.
+    let validated = outcome.as_ref().ok().map(|execution| {
+        validate_operation_report(execution, transcript)
+            .expect("the executor's record and the planner's describe the same run")
+    });
+    let projections = validated
+        .as_ref()
+        .map(ValidatedCompactAshOperationReport::projections)
+        .cloned()
+        .unwrap_or_default();
+    let out = render(transcript, validated.as_ref(), wall, &outcome_text);
     std::fs::write(&report, &out).expect("the transcript is written");
 
     // A run that reached the target at all answered every step it asked

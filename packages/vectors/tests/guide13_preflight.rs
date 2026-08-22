@@ -1,32 +1,41 @@
-//! Guide-13 preflight reproductions that need an external caller.
+//! What a caller outside this crate can and cannot do to coverage.
 //!
 //! # Why this is an integration test and not a unit one
 //!
-//! `G13-R01` is a claim about the crate's *public* boundary: that a
-//! caller outside this crate can move coverage rows to discharged from
-//! values it authored itself, with no executor transcript, no target
-//! binding, and no independently computed projection. A unit test inside
-//! the crate could reach the same functions whether or not they were
-//! public, so it could not tell that claim apart from its negation. This
-//! file is a separate crate and sees exactly what any consumer sees.
+//! `G13-R01` was a claim about the crate's *public* boundary: that a
+//! consumer could move coverage rows to discharged from values it
+//! authored itself, with no executor transcript, no target binding, and
+//! no independently computed projection. A unit test inside the crate
+//! could reach the same functions whether or not they were public, so it
+//! could not tell that claim apart from its negation. This file is a
+//! separate crate and sees exactly what any consumer sees.
 //!
-//! # What the assertions say
+//! # What replaced the reproductions
 //!
-//! Each test states the property the row's repair must establish, so it
-//! fails while the defect stands. Confirmed rows carry `#[ignore]` with
-//! the row id, keeping the ordinary lane green; replay them with
-//! `-- --ignored`.
+//! The two reproductions here stated the defect by calling
+//! `discharge` and `discharge_mutants` with caller-authored tuples. The
+//! repair made both crate-private, so those calls no longer compile —
+//! which is the repair landing, and is also why they could not simply be
+//! un-ignored. What stands in their place is the narrower statement the
+//! type system can now carry: the one public route to coverage takes a
+//! [`ValidatedCompactAshOperationReport`], and the only way to obtain
+//! one is to hand [`validate_operation_report`] an `ExecutionTranscript`
+//! — a type this workspace publishes no constructor for.
 //!
-//! Note for the repair wave: the recommended repair makes the tuple-level
-//! discharge helpers crate-private, at which point this file stops
-//! compiling by design. That is the repair landing, not a regression —
-//! the test is replaced by the narrower public-API surface rather than
-//! un-ignored.
+//! The signature assertions below are compile-time. They are written as
+//! functions that call the public entries at their exact types, so a
+//! change that widened either entry back to something a caller can
+//! author would fail to compile here rather than passing quietly.
 
+use target_elements_conformance::executor::ExecutionTranscript;
 use target_elements_conformance::protocol::ObservedOutcomeLayer;
 use vectors::bundle::fixture_bundle;
-use vectors::mutation::NegativeMutation;
+use vectors::materialize::TargetVectorId;
+use vectors::operation::OperationTranscript;
 use vectors::plan::{CompactAshEvidencePlan, ProjectionComparison, derive_evidence_plan};
+use vectors::report::{
+    ReportValidationRefusal, ValidatedCompactAshOperationReport, validate_operation_report,
+};
 
 /// The canonical evidence plan, as any consumer derives it.
 fn plan() -> CompactAshEvidencePlan {
@@ -34,72 +43,39 @@ fn plan() -> CompactAshEvidencePlan {
     derive_evidence_plan(&bundle).expect("the evidence plan derives")
 }
 
-/// `G13-R01`: caller-authored outcomes do not discharge coverage.
+/// Compiles only while the one public discharge entry takes a validated
+/// report and nothing else.
 ///
-/// The plan's own constructor is checked, but its evidence state is then
-/// mutated from a bare tuple of public enum values. Nothing in that tuple
-/// is provenance-bearing: an external caller reads a real vector
-/// identifier off the plan, states the two answers that together mean
-/// "discharged", and the plan's coverage counters move.
-///
-/// The counters are what a downstream report or gate reads, so this is
-/// the difference between coverage attributed to a supervised target run
-/// and coverage attributed to an enum literal.
-#[test]
-#[ignore = "G13-R01: confirmed, repair pending"]
-fn positive_coverage_is_not_dischargeable_from_a_caller_authored_tuple() {
-    let mut plan = plan();
-    assert_eq!(
-        plan.discharged_rows(),
-        0,
-        "a freshly derived plan must start with nothing discharged"
-    );
-
-    // Everything below is available to any consumer of this crate.
-    let vector = plan.target_cases()[0].subject().id();
-    plan.discharge(&[(
-        vector,
-        ObservedOutcomeLayer::Accepted,
-        ProjectionComparison::Matched,
-    )]);
-
-    assert_eq!(
-        plan.discharged_rows(),
-        0,
-        "coverage was discharged from values the caller authored, with no transcript, target binding or recomputed projection behind them"
-    );
+/// `G13-R01`'s repair in one line. The old entry took a slice of
+/// `(TargetVectorId, ObservedOutcomeLayer, ProjectionComparison)` — three
+/// public values, every one of them nameable here — and this states that
+/// the argument is now a type whose values a consumer cannot produce.
+fn the_discharge_entry(
+    plan: &mut CompactAshEvidencePlan,
+    report: &ValidatedCompactAshOperationReport<'_>,
+) {
+    plan.discharge_observed_run(report);
 }
 
-/// `G13-R01`: the negative half is forgeable the same way.
+/// Compiles only while the one route to a validated report needs an
+/// execution transcript.
 ///
-/// A linked mutation and a stated refusal layer build an
-/// `ObservedRefusal`, which the discharge predicate accepts
-/// unconditionally, so a refusal nobody observed counts as negative
-/// coverage.
-#[test]
-#[ignore = "G13-R01: confirmed, repair pending"]
-fn negative_coverage_is_not_dischargeable_from_a_caller_authored_tuple() {
-    let mut plan = plan();
-    let before = plan.discharged_rows();
-    let vector = plan.target_cases()[0].subject().id();
-
-    plan.discharge_mutants(&[(
-        NegativeMutation::SplitSuccessorInTwo,
-        vector,
-        ObservedOutcomeLayer::ScriptPathRejection,
-    )]);
-
-    assert_eq!(
-        plan.discharged_rows(),
-        before,
-        "a refusal the caller stated rather than observed was counted as negative coverage"
-    );
+/// The planner's own transcript is not enough and is not meant to be: it
+/// is this package's record of what it made of the answers, and a record
+/// checked only against itself establishes nothing. The second operand
+/// is the executor's, and this crate publishes no way to build one.
+fn the_validation_entry<'run>(
+    execution: &ExecutionTranscript,
+    planner: &'run OperationTranscript,
+) -> Result<ValidatedCompactAshOperationReport<'run>, ReportValidationRefusal> {
+    validate_operation_report(execution, planner)
 }
 
 /// The control: a fresh plan really does report outstanding rows.
 ///
-/// Unignored, so the two ignored tests are known to be about the
-/// discharge path rather than about a plan that was empty all along.
+/// Kept from the reproductions, so the assertions above are known to be
+/// about the discharge path rather than about a plan that was empty all
+/// along.
 #[test]
 fn a_freshly_derived_plan_has_rows_to_discharge() {
     let plan = plan();
@@ -113,4 +89,55 @@ fn a_freshly_derived_plan_has_rows_to_discharge() {
         !plan.target_cases().is_empty(),
         "the plan must carry a vector whose identifier a caller can read"
     );
+}
+
+/// `G13-R01`: everything a forger can still name reaches nothing.
+///
+/// The values the old tuple was made of are all still public, and have
+/// to be: a vector identity is how a report names its subject, and the
+/// two verdict enums are how a reader of a report reads it. What changed
+/// is that no public function accepts them as an assertion. This test
+/// assembles the exact triple the reproduction used and demonstrates
+/// that holding it moves nothing, because the plan offers nowhere to put
+/// it — the two functions above state, at compile time, what the only
+/// entries are.
+#[test]
+fn the_values_the_old_tuple_was_made_of_no_longer_reach_a_coverage_row() {
+    let plan = plan();
+
+    // Still readable, still nameable, and now inert.
+    let vector: TargetVectorId = plan.target_cases()[0].subject().id();
+    let layer = ObservedOutcomeLayer::Accepted;
+    let comparison = ProjectionComparison::Matched;
+    let forged = (vector, layer, comparison);
+    assert_eq!(forged.0, vector);
+
+    assert_eq!(
+        plan.discharged_rows(),
+        0,
+        "a plan a caller only read from must carry nothing discharged"
+    );
+    assert!(!plan.coverage_complete());
+}
+
+/// `G13-R01`: the planner's transcript alone opens no route.
+///
+/// A consumer can build an `OperationTranscript` — it is public and
+/// carries a `Default` — and the validation still cannot be reached with
+/// it, because the second operand has no public constructor. The
+/// function is referenced rather than called for exactly that reason:
+/// there is no value to call it with.
+#[test]
+fn a_planner_transcript_alone_is_not_a_run() {
+    let planner = OperationTranscript::default();
+    assert!(planner.submissions().is_empty());
+    assert!(planner.mutants().is_empty());
+    assert_eq!(planner.refusal(), None);
+
+    // Named so the entry above is known to be reachable at all; there is
+    // no execution transcript to pass it, which is the property.
+    let entry = the_validation_entry;
+    let _ = &entry;
+    let discharge = the_discharge_entry;
+    let _ = &discharge;
 }
