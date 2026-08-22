@@ -158,7 +158,8 @@ fn a_narrow_candidate_fails_exactly_the_conditions_it_is_narrow_in() {
         bounds(),
         BTreeSet::from([shape(2, 0, SponsorChangePresence::Absent)]),
         false,
-    );
+    )
+    .expect("the minimum batch is inside the bounds");
 
     assert_eq!(
         only_minimum.unmet_conditions(),
@@ -188,14 +189,16 @@ fn a_gap_in_the_counts_is_a_finding_unless_the_candidate_declared_it_sparse() {
         shape(4, 1, SponsorChangePresence::Absent),
     ]);
 
-    let undeclared = CandidateShapeSet::new(bounds(), shapes.clone(), false);
+    let undeclared = CandidateShapeSet::new(bounds(), shapes.clone(), false)
+        .expect("an undeclared gap is a finding rather than a refusal");
     assert!(
         undeclared
             .unmet_conditions()
             .contains(&UsefulCandidateCondition::DenseAshCounts),
     );
 
-    let declared = CandidateShapeSet::new(bounds(), shapes, true);
+    let declared = CandidateShapeSet::new(bounds(), shapes, true)
+        .expect("the same shapes, with the gap declared");
     assert!(
         !declared
             .unmet_conditions()
@@ -214,7 +217,8 @@ fn membership_is_the_set_and_not_an_inequality() {
         bounds(),
         BTreeSet::from([shape(2, 0, SponsorChangePresence::Absent)]),
         true,
-    );
+    )
+    .expect("one count out of the bounds' range is a declared sparse set");
 
     assert!(sparse.admits(shape(2, 0, SponsorChangePresence::Absent)));
     assert!(!sparse.admits(shape(3, 0, SponsorChangePresence::Absent)));
