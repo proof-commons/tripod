@@ -440,18 +440,49 @@ fn the_bundle_publishes_the_residuals_its_patterns_carry() {
 
 #[test]
 fn the_selected_patterns_are_exactly_what_the_admitted_shapes_call_for() {
-    let bundle = bundle();
-    let expected: BTreeSet<LiveTransferPatternId> = demonstration_live_shape_set()
-        .shapes()
-        .flat_map(|shape| patterns_for(shape, LiveTransferRepresentationPlan::Explicit))
-        .collect();
+    // Both bundles, because the value obligation is the one identity the
+    // representation moves and a check that ran over the explicit bundle
+    // alone would never see it move.
+    for representation in [
+        LiveTransferRepresentationPlan::Explicit,
+        LiveTransferRepresentationPlan::PrivateCommitted,
+    ] {
+        let bundle = emit_candidate_live_bundle(
+            &reviewed_target(),
+            &live_transfer_plan(),
+            &constructor(representation),
+            live_transfer_symbols(&reviewed_target()),
+        )
+        .expect("the candidate bundle emits");
+        let expected: BTreeSet<LiveTransferPatternId> = demonstration_live_shape_set()
+            .shapes()
+            .flat_map(|shape| patterns_for(shape, representation))
+            .collect();
 
-    assert_eq!(bundle.selected_patterns(), &expected);
-    // The private plan's conservation is not among them, because no
-    // program of this bundle carries it.
+        assert_eq!(bundle.selected_patterns(), &expected);
+    }
+
+    // And each carries its own value obligation and not the other's.
     assert!(
-        bundle
+        bundle()
             .selected_patterns()
             .contains(&LiveTransferPatternId::LiveExplicitConservationV1),
+    );
+    let private = emit_candidate_live_bundle(
+        &reviewed_target(),
+        &live_transfer_plan(),
+        &constructor(LiveTransferRepresentationPlan::PrivateCommitted),
+        live_transfer_symbols(&reviewed_target()),
+    )
+    .expect("the private bundle emits");
+    assert!(
+        !private
+            .selected_patterns()
+            .contains(&LiveTransferPatternId::LiveExplicitConservationV1),
+    );
+    assert!(
+        private
+            .selected_patterns()
+            .contains(&LiveTransferPatternId::LivePrivateDestinationFormV1),
     );
 }

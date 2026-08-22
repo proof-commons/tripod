@@ -49,8 +49,8 @@ use crate::live_constructor::{
 };
 use crate::live_pattern::{
     LiveDisclosure, LiveFragmentId, LiveTransferPatternId, LiveTransferSymbols, emitted_fragments,
-    has_member_position, live_coordinator_program, live_member_program, live_transfer_patterns,
-    local_recognition_fragment, patterns_for,
+    final_stack_defects, has_member_position, live_coordinator_program, live_member_program,
+    live_program_precondition, live_transfer_patterns, local_recognition_fragment, patterns_for,
 };
 use crate::live_plan::{explicit_conservation_fragment, opens_an_amount, reads_a_value_field};
 use crate::live_private::{
@@ -326,6 +326,46 @@ fn every_fragment_the_soundness_census_names_is_one_a_private_program_emits() {
     // claim the whole census rests on.
     assert!(!emitted.contains(&LiveFragmentId::ExplicitConservation));
     assert!(emitted.contains(&LiveFragmentId::PrivateDestinationForm));
+}
+
+#[test]
+fn the_private_plan_emits_a_one_to_one_a_split_and_a_merge() {
+    // §1.5's prohibited implications run between these three, in both
+    // directions: a one-to-one private transfer working implies nothing
+    // about a split, and a split implies nothing about a merge. So each
+    // is emitted and held to §10.9 by name rather than left to a loop
+    // over the shape set, where a class silently absent from the bounds
+    // would take its own oracle with it.
+    let target = reviewed_target();
+    let symbols = symbols();
+    let subject = constructor(LiveTransferRepresentationPlan::PrivateCommitted);
+
+    for (receipt_inputs, receipt_outputs) in [(1, 1), (1, 3), (3, 1), (3, 3)] {
+        let cardinality = shape(receipt_inputs, receipt_outputs, 0, Absent);
+        let coordinator = live_coordinator_program(&target, &symbols, &subject, cardinality)
+            .expect("the private coordinator emits");
+
+        assert_eq!(
+            final_stack_defects(&target, &coordinator, &live_program_precondition(&target))
+                .expect("the coordinator schedules"),
+            Vec::new(),
+            "the private coordinator of ({receipt_inputs}, {receipt_outputs}) fails §10.9",
+        );
+        assert!(!opens_an_amount(&coordinator));
+        assert!(opens_no_value_payload(&coordinator));
+
+        // And the form check covers every destination of the shape,
+        // which is what makes the split and the redistribution closed
+        // rather than closed at the first output.
+        assert_eq!(
+            value_field_uses(
+                &private_destination_form_fragment(&target, cardinality)
+                    .expect("the form fragment assembles")
+            )
+            .len(),
+            usize::from(receipt_outputs),
+        );
+    }
 }
 
 // --- §6.4: amount opacity over the emitted bytes ----------------------
