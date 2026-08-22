@@ -2,8 +2,9 @@
 """Drives the Guide-11 section 8.4 conservation matrix through the adapter.
 
 This runner speaks the same newline-delimited JSON executor protocol the
-conformance harness speaks, spawns the selected executor with NO arguments
-exactly as the harness does, and records what each row observed. It exists
+conformance harness speaks, spawns the selected executor exactly as the
+harness does -- with its two diagnostic destinations and no other argument
+-- and records what each row observed. It exists
 because the conservation lane's evidence has to come from the reviewed
 adapter driving a real node, and it is deliberately thin: every fixture it
 sends comes from `emit-conservation-matrix`, so nothing here re-derives the
@@ -14,14 +15,18 @@ each row's expected layer against its observed one; whether a run is
 evidence is a question for the typed report and its gate, and this runner
 makes no such claim.
 
-  --executor        the zero-argument executor to spawn
+  --executor        the executor launcher to spawn
   --matrix          the JSON `emit-conservation-matrix` produced
   --report          where to write the run record
+  --executor-diagnostics-directory
+                    where the executor writes its own diagnostics;
+                    defaults to the report's directory
 
 Nothing here accepts a credential, and none may be added.
 """
 import argparse
 import json
+import os
 import sys
 import time
 
@@ -37,6 +42,15 @@ def main(argv):
     parser.add_argument("--executor", required=True)
     parser.add_argument("--matrix", required=True)
     parser.add_argument("--report", required=True)
+    parser.add_argument(
+        "--executor-diagnostics-directory",
+        default=None,
+        help="where the spawned executor writes its own diagnostics; two "
+        "files per process, one for its typed facts and one quarantining "
+        "raw child text. Defaults to the report's own directory, because "
+        "they are the same kind of thing: what one run on one host "
+        "produced. Kept after the run",
+    )
     parser.add_argument("--expect-network-id", default=None)
     parser.add_argument("--expect-genesis-id", default=None)
     parser.add_argument(
@@ -47,6 +61,10 @@ def main(argv):
     )
     arguments = parser.parse_args(argv)
 
+    diagnostics_directory = arguments.executor_diagnostics_directory or (
+        os.path.dirname(os.path.abspath(arguments.report)) or "."
+    )
+
     with open(arguments.matrix) as handle:
         matrix = json.load(handle)
     rows = {row["id"]["name"]: row for row in matrix["rows"]}
@@ -56,7 +74,9 @@ def main(argv):
     # Every path out of this block kills the executor's group and reaps
     # it, including the refusals below and any exception a row raises
     # (G12-R15).
-    with SupervisedExecutor([arguments.executor], deadline) as executor:
+    with SupervisedExecutor(
+        [arguments.executor], deadline, diagnostics_directory
+    ) as executor:
         return run_matrix(arguments, matrix, rows, executor, deadline, started)
 
 
