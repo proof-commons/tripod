@@ -143,7 +143,7 @@ pub enum AbiAssumption {
 /// program is the taproot output over the taptree these very fragments
 /// live in, so no caller can supply it and no fragment pushes it; the
 /// fragments read it from the input they are spending instead (see
-/// [`require_program_matches_this_input`]). A field reserved for it
+/// `require_program_matches_this_input`). A field reserved for it
 /// would be a link-time parameter nothing consumes, which §1.10
 /// refuses.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -772,7 +772,7 @@ fn require_program_matches_this_input(
 /// would introspect the same field twice and pay for it twice.
 ///
 /// The program test is against the input this leaf is spending rather
-/// than against a literal — see [`require_program_matches_this_input`]
+/// than against a literal — see `require_program_matches_this_input`
 /// for why the literal is unobtainable and what sameness establishes
 /// instead. At `index` zero the coordinator's own input is compared
 /// with itself and the test is vacuous; that is not a hole but the
@@ -818,7 +818,7 @@ pub fn ash_input_recognition_fragment(
 /// the successor's amount for the aggregate comparison.
 ///
 /// The program test compares output 0 with the input this leaf is
-/// spending (see [`require_program_matches_this_input`]), which is what
+/// spending (see `require_program_matches_this_input`), which is what
 /// makes the successor a member of the same family rather than an
 /// object under some separately named program. This is the fragment
 /// where the comparison carries its full content: nothing else in the

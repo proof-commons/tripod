@@ -3,11 +3,12 @@
 //! # The role is its own type, and that is §14.1's rule rather than a preference
 //!
 //! §14.1 lists five report roles and says a report of one role cannot
-//! satisfy another. [`ConservationReportRole`] is shared between the
-//! §8.4 and §10.4 reports, which is a decision those waves recorded and
-//! this one does not reopen; what it does not do is stretch to a third
-//! question. A lifecycle report answers "is this recoverable by a party
-//! that did not participate in creation", and a safety report answers
+//! satisfy another. [`crate::conservation_report::ConservationReportRole`]
+//! is shared between the §8.4 and §10.4 reports, which is a decision
+//! those waves recorded and this one does not reopen; what it does not
+//! do is stretch to a third question. A lifecycle report answers "is
+//! this recoverable by a party that did not participate in creation",
+//! and a safety report answers
 //! "does this path survive mutation". Neither answer is evidence for the
 //! other, so a value of one type must not be constructible where the
 //! other is wanted.

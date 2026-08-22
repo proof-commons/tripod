@@ -149,10 +149,10 @@ pub enum NativeWorkload<'a> {
 /// on either side of it is target-generic: the plan states steps in the
 /// vocabulary of [`OperationSubject`] — issue an asset, pay outputs to a
 /// witness program, submit a transaction — and reads answers in the
-/// vocabulary of [`ObservedOutcomeLayer`]. Neither names an operation,
-/// a relation, a coverage requirement, or a class, so this package
-/// supervises a compact-ASH run without owning any part of what makes it
-/// one `(´[PLAN-rule:guide12-exec:executor-ownership]´)`.
+/// vocabulary of [`crate::protocol::ObservedOutcomeLayer`]. Neither
+/// names an operation, a relation, a coverage requirement, or a class, so
+/// this package supervises a compact-ASH run without owning any part of
+/// what makes it one `(´[PLAN-rule:guide12-exec:executor-ownership]´)`.
 ///
 /// # No expectation crosses, and the type is what says so
 ///
