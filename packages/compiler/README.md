@@ -100,7 +100,10 @@ assert!(capabilities.iter().all(|c| RequiredCapability::ALL.contains(c)));
 assert!(capabilities.windows(2).all(|pair| pair[0] < pair[1]));
 assert_eq!(
     requirements.external_evidence().collect::<Vec<_>>(),
-    [ExternalEvidenceRole::SubstrateConservation],
+    [
+        ExternalEvidenceRole::ConfidentialValueConservation,
+        ExternalEvidenceRole::SubstrateConservation,
+    ],
 );
 
 // Typed comparison is the whole comparison mechanism.
@@ -189,9 +192,13 @@ target-specific type is not merely discouraged here — it is unnameable.
     still re-checks canonical order on every use. The order is a census
     order; it ranks nothing.
 - `ExternalEvidenceRole` — the *class* of external claim a requirement carries.
-  Currently one member, `SubstrateConservation`: no analysis, and no program an
-  analysis could emit, discharges it — only the target's own consensus rules
-  do. `ExternalEvidenceRole::ALL` is its census. This is a compiler-owned
+  Two members. `SubstrateConservation`: no analysis, and no program an analysis
+  could emit, discharges it — only the target's own consensus rules do.
+  `ConfidentialValueConservation`: the plan holds a protocol asset's amounts as
+  commitments, so nothing the analysis emits reads them and only the target's
+  own confidential-transaction rules relate them. Neither implies the other — a
+  target could conserve the whole transaction while carrying a protocol asset's
+  amounts in the clear. `ExternalEvidenceRole::ALL` is its census. This is a compiler-owned
   projection of `realization::ExternalEvidenceRequirement` with the operation
   and asset identities dropped, because those are architecture-owned values a
   target adapter has no business reading, and because the adapter's package
