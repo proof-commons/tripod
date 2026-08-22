@@ -37,6 +37,7 @@ use target_elements_conformance::executor::{ExecutionTranscript, ExecutorTrust};
 use target_elements_conformance::protocol::{
     ObservedOutcomeLayer, OperationCaseId, OperationSubject, WireEnvironment,
 };
+use target_elements_conformance::provenance::{ProvenanceDefect, ValidatedExecutorProvenance};
 
 use crate::comparison::{compare, read_accepted};
 use crate::fixture::{OPERATION, positive_semantic_census};
@@ -50,7 +51,12 @@ use crate::plan::ProjectionComparison;
 /// Stated in the bytes so a reader never has to infer which revision a
 /// file is: a report whose field set changed under a reader that assumed
 /// the old one would otherwise be read wrong rather than refused.
-pub const OPERATION_REPORT_SCHEMA: u32 = 1;
+///
+/// Revision 2 adds `executor_provenance_verified`, which is the ADR-018
+/// comparison's own result and is deliberately a separate field from the
+/// tip the executor reported about itself. A revision-1 reader seeing a
+/// revision-2 file must refuse it rather than read the two as one.
+pub const OPERATION_REPORT_SCHEMA: u32 = 2;
 
 /// Why a run could not be validated into a report.
 ///
@@ -113,6 +119,13 @@ pub enum ReportValidationRefusal {
     WeightObservationDisagrees(TargetVectorId),
     /// A submission names a vector the positive census does not contain.
     SubmissionNamesNoFixture(TargetVectorId),
+    /// The executor is not the build the operator declared it to be.
+    ///
+    /// ADR-018's comparison, made over the run's own two operands and
+    /// failed. It is a refusal rather than a recorded finding because
+    /// every later figure would otherwise be attributed to an executor
+    /// nobody reviewed.
+    ExecutorProvenanceUnestablished(ProvenanceDefect),
 }
 
 /// What the §17.4 comparison found for one accepted transaction.
@@ -140,24 +153,30 @@ impl ProjectionVerdict {
     }
 }
 
-/// What the executor said about itself.
+/// What the executor said about itself, and what that was held against.
 ///
-/// # Why this is recorded and not compared
+/// # The provenance comparison happens, and this is its result
 ///
 /// ADR-018 assigns a provenance comparison to the gate: what the
 /// operator declared the executor was built from, against what the
-/// executor reports. The expectation lives on the executor
-/// *configuration*, and a transcript does not carry its configuration —
-/// so the comparison has no second operand here, and the conversion the
-/// conformance package uses for it (`provenance_of`) is private to that
-/// package.
+/// executor reports. It used to have no second operand here — the
+/// expectation lived on the executor *configuration* and a transcript
+/// did not carry its configuration — so this type recorded a claim and
+/// named it as one.
 ///
-/// The seam is left open deliberately rather than closed with a check
-/// that compares the executor's report against itself. Closing it means
-/// either the transcript retaining the expectation it was run under, or
-/// the conformance package publishing its provenance view; until one of
-/// those happens, what this type states is what the executor said, and
-/// it says so in its own name.
+/// A transcript now retains the expectation it was run under, and the
+/// conformance package performs the comparison over its own two
+/// operands. What arrives here is the comparison's result: a
+/// [`ValidatedExecutorProvenance`], which has no constructor other than
+/// that comparison, or nothing at all where the run declared no
+/// expectation. A run whose comparison *failed* produces no report,
+/// because a report about an executor that is not the declared build is
+/// a report about some other executor.
+///
+/// The four self-descriptions below stay what they always were: what the
+/// executor said, in its own name. They are retained beside the
+/// comparison rather than replaced by it, because a mock run has no
+/// comparison and still has to be describable.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecutorSelfDescription {
     adapter_name: String,
@@ -165,6 +184,7 @@ pub struct ExecutorSelfDescription {
     node_name: String,
     node_version: String,
     intended_executed_tip: Option<String>,
+    expected_provenance: Option<ValidatedExecutorProvenance>,
 }
 
 impl ExecutorSelfDescription {
@@ -192,13 +212,25 @@ impl ExecutorSelfDescription {
         &self.node_version
     }
 
-    /// The integration tip the operator said was executed.
+    /// The integration tip the executor said was executed.
     ///
-    /// Unverified here, for the reason this type's own documentation
-    /// gives.
+    /// What the executor reported, before any comparison. Held against
+    /// the operator's declaration by
+    /// [`Self::expected_provenance`] where the run stated one.
     #[must_use]
     pub fn intended_executed_tip(&self) -> Option<&str> {
         self.intended_executed_tip.as_deref()
+    }
+
+    /// The ADR-018 comparison this run passed, where it made one.
+    ///
+    /// `None` says the run declared no expectation — the honest answer
+    /// for a mock — and never that a comparison was made and found
+    /// nothing wrong. A comparison that found something wrong refuses
+    /// the report outright, so every value here is one that agreed.
+    #[must_use]
+    pub const fn expected_provenance(&self) -> Option<&ValidatedExecutorProvenance> {
+        self.expected_provenance.as_ref()
     }
 }
 
@@ -211,6 +243,9 @@ impl ExecutorSelfDescription {
 /// disagreeing pair without a live node; a consumer cannot name the
 /// type.
 pub(crate) struct ExecutionBinding {
+    /// The ADR-018 comparison the run's own configuration made possible,
+    /// carried unresolved so the validation is what decides on it.
+    pub(crate) provenance: Option<Result<ValidatedExecutorProvenance, ProvenanceDefect>>,
     pub(crate) target: TargetProjection,
     pub(crate) deployment: DeploymentProjection,
     pub(crate) environment_class: WireEnvironment,
@@ -375,6 +410,7 @@ pub fn validate_operation_report<'run>(
     let handshake = execution.handshake();
     let observation = execution.environment();
     let binding = ExecutionBinding {
+        provenance: execution.provenance_agreement(),
         target: execution.target().clone(),
         deployment: execution.deployment().clone(),
         environment_class: observation.environment,
@@ -387,6 +423,10 @@ pub fn validate_operation_report<'run>(
             node_name: handshake.node_name.clone(),
             node_version: handshake.node_version.clone(),
             intended_executed_tip: handshake.intended_executed_tip.clone(),
+            // Filled by the validation from the binding's own comparison
+            // rather than here, so the one route that can refuse the run
+            // is the one that records the result.
+            expected_provenance: None,
         },
         requests: execution.operation_requests().clone(),
         responses: execution
@@ -422,6 +462,20 @@ pub(crate) fn validate_bound_run<'run>(
     if planner.refusal().is_some() {
         return Err(ReportValidationRefusal::PlanWasRefused);
     }
+    // ADR-018, before anything is read off the run: a report about an
+    // executor that is not the declared build is a report about some
+    // other executor, and every figure below would be attributed to it.
+    // A run that declared no expectation made no comparison, which is
+    // recorded as the absence it is rather than as an agreement.
+    let expected_provenance = match &binding.provenance {
+        Some(Err(defect)) => {
+            return Err(ReportValidationRefusal::ExecutorProvenanceUnestablished(
+                *defect,
+            ));
+        }
+        Some(Ok(validated)) => Some(validated.clone()),
+        None => None,
+    };
     check_subject(binding)?;
 
     let sent = submission_index(binding)?;
@@ -468,7 +522,10 @@ pub(crate) fn validate_bound_run<'run>(
         target: binding.target.clone(),
         deployment: binding.deployment.clone(),
         trust: binding.trust,
-        executor: binding.executor.clone(),
+        executor: ExecutorSelfDescription {
+            expected_provenance,
+            ..binding.executor.clone()
+        },
         projections,
         outcomes,
         mutant_observations,
@@ -774,17 +831,23 @@ pub(crate) mod tests {
         MutantOutcome, OperationTranscript, PlanRefusal, SubmissionOutcome, TranscriptParts,
     };
     use crate::plan::ProjectionComparison;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use target_elements::{
         ActivationDeclaration, DeploymentEnvironment, DeploymentProjection,
         DevelopmentDeploymentBinding, LeafVersion, TargetProjection, reviewed_elements_tapscript,
         validate_reviewed_development_binding,
     };
+    use target_elements_conformance::error::NativeConformanceError;
     use target_elements_conformance::executor::ExecutorTrust;
     use target_elements_conformance::protocol::{
         ObservedOutcomeLayer, OperationCaseId, OperationStepKind, OperationSubject,
         TargetSubmissionSubject, WireEnvironment,
     };
+    use target_elements_conformance::provenance::{
+        ExpectedExecutorProvenance, ProvenanceDefect, ValidatedExecutorProvenance,
+        validate_executor_provenance,
+    };
+    use target_elements_conformance::report::{ExecutorDeclaration, ExecutorProvenance};
 
     const NETWORK: [u8; 32] = [0x11; 32];
     const GENESIS: [u8; 32] = [0x22; 32];
@@ -844,6 +907,7 @@ pub(crate) mod tests {
             .zip(answers)
             .collect::<BTreeMap<_, _>>();
         ExecutionBinding {
+            provenance: None,
             target: target(),
             deployment: deployment(),
             environment_class: WireEnvironment::Development,
@@ -856,6 +920,7 @@ pub(crate) mod tests {
                 node_name: "staged".to_owned(),
                 node_version: "0".to_owned(),
                 intended_executed_tip: None,
+                expected_provenance: None,
             },
             requests: steps.into_iter().collect(),
             responses,
@@ -1184,6 +1249,129 @@ pub(crate) mod tests {
         );
         // Nothing was accepted, so no §17.4 comparison exists at all.
         assert!(report.projections().is_empty());
+    }
+
+    /// The two revisions a staged provenance comparison is made over.
+    ///
+    /// Fixed public patterns in the admitted syntax and nothing more: no
+    /// revision here names an object in any repository, and none
+    /// authorizes anything `(´[ADR015-rule:security:test-material]´)`.
+    const STAGED_TIP: &str = "0123456789abcdef0123456789abcdef01234567";
+    const STAGED_BASE: &str = "fedcba9876543210fedcba9876543210fedcba98";
+
+    /// The comparison, in the vocabulary the binding carries it in.
+    ///
+    /// The conformance package raises exactly one variant here, and the
+    /// wildcard is a panic rather than a substituted defect: a staging
+    /// helper that quietly renamed a failure would make the two tests
+    /// below agree with each other about nothing.
+    fn staged_comparison(
+        reported: &ExecutorProvenance,
+        expected: &ExpectedExecutorProvenance,
+    ) -> Result<ValidatedExecutorProvenance, ProvenanceDefect> {
+        validate_executor_provenance(reported, expected).map_err(|error| match error {
+            NativeConformanceError::ExecutorProvenanceUnestablished(defect) => defect,
+            other => panic!("the provenance comparison raised {other}"),
+        })
+    }
+
+    /// What an executor built from one tip would report about itself.
+    fn reported_provenance(tip: &str) -> ExecutorProvenance {
+        ExecutorProvenance {
+            protocol_schema: 4,
+            adapter_name: "staged".to_owned(),
+            adapter_version: "0".to_owned(),
+            framework_revision: None,
+            node_name: "staged".to_owned(),
+            node_version: "0".to_owned(),
+            binary_reported_revision: Some(tip.to_owned()),
+            intended_executed_tip: Some(tip.to_owned()),
+            upstream_base: Some(STAGED_BASE.to_owned()),
+            included_local_topics: BTreeSet::new(),
+            supported_domains: BTreeSet::new(),
+            supported_leaf_versions: BTreeSet::new(),
+            capabilities: BTreeSet::new(),
+            declaration: ExecutorDeclaration::Mock,
+        }
+    }
+
+    /// The operator's declaration of what the executor was built from.
+    fn expectation() -> ExpectedExecutorProvenance {
+        ExpectedExecutorProvenance::new(STAGED_TIP, STAGED_BASE, [])
+            .expect("the staged expectation is in the admitted syntax")
+    }
+
+    /// ADR-018: an executor that is not the declared build has no report.
+    ///
+    /// The seam this closes used to be open on purpose: the expectation
+    /// lived on the executor configuration, a transcript did not carry
+    /// it, and this module recorded what the executor said with nothing
+    /// to hold it against. The comparison is now made over the run's own
+    /// two operands, and one that fails stops the report rather than
+    /// appearing beside its figures.
+    #[test]
+    fn an_executor_that_is_not_the_declared_build_refuses_the_report() {
+        let bytes = b"a run by another binary".to_vec();
+        let planner = accepted_run(&bytes, None);
+        let mut binding = binding(
+            vec![submission_step("submit/0", &bytes)],
+            vec![answer(ObservedOutcomeLayer::Accepted, Some("aa"))],
+        );
+        binding.provenance = Some(staged_comparison(
+            &reported_provenance(STAGED_BASE),
+            &expectation(),
+        ));
+        assert_eq!(
+            validate_bound_run(&binding, &planner),
+            Err(ReportValidationRefusal::ExecutorProvenanceUnestablished(
+                ProvenanceDefect::IntendedTipIsNotTheExpectedTip
+            ))
+        );
+    }
+
+    /// And a comparison that agreed reaches the report as its result.
+    ///
+    /// What is carried is a `ValidatedExecutorProvenance`, which has no
+    /// constructor other than the comparison — so holding one is the
+    /// evidence that the comparison happened, in the same way holding a
+    /// validated report is evidence the recomputation did.
+    #[test]
+    fn a_declared_build_that_agrees_is_carried_as_the_comparison_result() {
+        let bytes = b"a run by the declared binary".to_vec();
+        let planner = accepted_run(&bytes, None);
+        let mut binding = binding(
+            vec![submission_step("submit/0", &bytes)],
+            vec![answer(ObservedOutcomeLayer::Accepted, Some("aa"))],
+        );
+        binding.provenance = Some(staged_comparison(
+            &reported_provenance(STAGED_TIP),
+            &expectation(),
+        ));
+        let report = validate_bound_run(&binding, &planner).expect("the two records agree");
+        let validated = report
+            .executor()
+            .expected_provenance()
+            .expect("the comparison result is carried");
+        assert_eq!(validated.intended_tip().as_revision().as_str(), STAGED_TIP);
+        assert!(validated.included_local_topics().is_empty());
+    }
+
+    /// A run under no expectation carries no comparison, and says so.
+    ///
+    /// `None` is the absence of a comparison and never a comparison that
+    /// found nothing wrong, which is exactly the reading the recorded
+    /// self-description used to invite.
+    #[test]
+    fn a_run_under_no_expectation_carries_no_comparison() {
+        let bytes = b"a mock run".to_vec();
+        let planner = accepted_run(&bytes, None);
+        let binding = binding(
+            vec![submission_step("submit/0", &bytes)],
+            vec![answer(ObservedOutcomeLayer::Accepted, Some("aa"))],
+        );
+        let report = validate_bound_run(&binding, &planner).expect("the two records agree");
+        assert!(report.executor().expected_provenance().is_none());
+        assert_eq!(report.trust(), ExecutorTrust::Mock);
     }
 
     /// Two steps submitting the same bytes make the correspondence

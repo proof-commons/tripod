@@ -104,7 +104,10 @@ use crate::protocol::{
 use crate::prototype::{
     CanonicalPrototypeMatrix, CompoundPrototypeFixture, PrototypeCaseId, PrototypeExecutionSubject,
 };
-use crate::provenance::ExpectedExecutorProvenance;
+use crate::provenance::{
+    ExpectedExecutorProvenance, ProvenanceDefect, ValidatedExecutorProvenance,
+    compare_executor_provenance,
+};
 
 /// What one run asks the executor about.
 ///
@@ -495,6 +498,7 @@ pub struct ExecutionTranscript {
     prototype_responses: BTreeMap<PrototypeCaseId, NativePrototypeResponse>,
     operation_requests: BTreeMap<OperationCaseId, OperationSubject>,
     operation_responses: BTreeMap<OperationCaseId, NativeOperationResponse>,
+    expected_provenance: Option<ExpectedExecutorProvenance>,
 }
 
 impl ExecutionTranscript {
@@ -544,6 +548,39 @@ impl ExecutionTranscript {
     #[must_use]
     pub const fn trust(&self) -> ExecutorTrust {
         self.trust
+    }
+
+    /// The ADR-018 provenance comparison, over this run's own operands.
+    ///
+    /// `None` where the run was made under no expectation at all, which
+    /// is the honest answer for a mock and is not a passing comparison.
+    /// Otherwise the comparison itself: what the executor reported about
+    /// its build, held against what the operator declared it was built
+    /// from.
+    ///
+    /// # Why the comparison lives here rather than at the reader
+    ///
+    /// Both operands are this package's. The expectation is part of the
+    /// executor *selection* — a path plus a declaration of what that
+    /// path was built from — and the report is the handshake this module
+    /// already reads. A consumer able to obtain only one of the two
+    /// could compare the executor's report against itself and call the
+    /// seam closed, so what is published is the comparison and not the
+    /// operands.
+    ///
+    /// # Errors
+    ///
+    /// The first [`ProvenanceDefect`] found, which is the same defect
+    /// the gate's own comparison raises and in the same order.
+    #[must_use]
+    pub fn provenance_agreement(
+        &self,
+    ) -> Option<Result<ValidatedExecutorProvenance, ProvenanceDefect>> {
+        let expected = self.expected_provenance.as_ref()?;
+        Some(compare_executor_provenance(
+            &crate::validate::provenance_of(self),
+            expected,
+        ))
     }
 
     /// The responses, in canonical case order.
@@ -609,6 +646,7 @@ impl ExecutionTranscript {
             prototype_responses: BTreeMap::new(),
             operation_requests: BTreeMap::new(),
             operation_responses: BTreeMap::new(),
+            expected_provenance: None,
         }
     }
 
@@ -630,6 +668,7 @@ impl ExecutionTranscript {
             prototype_responses: parts.responses,
             operation_requests: BTreeMap::new(),
             operation_responses: BTreeMap::new(),
+            expected_provenance: None,
         }
     }
 }
@@ -1356,6 +1395,11 @@ pub(crate) fn run_protocol(
         prototype_responses,
         operation_requests,
         operation_responses,
+        // The expectation is part of what the operator selected, and a
+        // transcript that dropped it left every later reader with one
+        // operand of the ADR-018 comparison and no way to obtain the
+        // other.
+        expected_provenance: configuration.expected_provenance.clone(),
     })
 }
 

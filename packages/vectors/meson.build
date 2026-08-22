@@ -3,10 +3,12 @@
 # audit fails the build. The parent meson.build accumulates this list
 # into its role group.
 vectors_source_files = files(
+  'src/abi_validation.rs',
   'src/bundle.rs',
   'src/comparison.rs',
   'src/divergence.rs',
   'src/error.rs',
+  'src/first_party.rs',
   'src/fixture.rs',
   'src/lib.rs',
   'src/materialize.rs',

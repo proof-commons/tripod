@@ -26,9 +26,11 @@ use realization::RelationId;
 use target_elements_conformance::protocol::ObservedOutcomeLayer;
 use transaction::FundingCeremonyStep;
 
+use crate::abi_validation::{AbiValidationRow, index_abi_validation};
 use crate::bundle::FixtureBundle;
 use crate::divergence::target_amount_standing;
 use crate::error::VectorError;
+use crate::first_party::{FirstPartyRefusal, ValidatedFirstPartyNegativeEvidence};
 use crate::fixture::{CompactAshSemanticCase, positive_semantic_census};
 use crate::materialize::{
     AshFunding, MaterializedTargetVector, TargetVectorId, has_candidate_program, is_materializable,
@@ -38,7 +40,7 @@ use crate::matrix::{EvidenceBoundary, class_count};
 use crate::mutation::NegativeMutation;
 use crate::report::ValidatedCompactAshOperationReport;
 use crate::subject::CanonicalSubject;
-use crate::violation::matching_requirement;
+use crate::violation::{DeclarationLink, resolve_declaration};
 
 /// Why a coverage row carries no observation yet.
 ///
@@ -144,6 +146,18 @@ pub enum CoverageObservation {
     /// variant rather than an [`ObservedCoverage`] with the verdict
     /// read backwards.
     ObservedRefusal(ObservedRefusal),
+    /// One first-party validator refused a canonical malformed input.
+    ///
+    /// §4.2's arm, and a fourth kind of thing rather than a refusal with
+    /// no target attached: no transaction exists at this boundary, no
+    /// carrier executed, and no target was asked. What it records is
+    /// which validator refused and which class its refusal named, which
+    /// are the two facts a reader of the row needs and neither of which
+    /// a target could have supplied.
+    ///
+    /// Built only by [`CompactAshEvidencePlan::discharge_first_party`],
+    /// from evidence whose own constructor ran the validator twice.
+    FirstPartyRefusal(FirstPartyRefusal),
 }
 
 /// What one refused mutation established about one requirement.
@@ -241,10 +255,15 @@ impl CoverageObservation {
                     ProjectionComparison::Matched
                 )
             ),
-            // The constructor already checked every §19.2 condition
-            // this package can check, and refuses to build the value
-            // otherwise, so reaching here means the refusal counted.
-            Self::ObservedRefusal(_) => true,
+            // Two refusals, one argument. The §19.2 arm's constructor
+            // already checked every condition this package can check,
+            // and the §4.2 arm's only route is a validated evidence
+            // value whose own constructor ran the owning validator over
+            // a malformed input and its control and compared the class
+            // that came back against the requirement's own. Neither
+            // variant is reachable without its checks, so reaching
+            // either here means the refusal counted.
+            Self::ObservedRefusal(_) | Self::FirstPartyRefusal(_) => true,
         }
     }
 }
@@ -604,7 +623,8 @@ pub struct CompactAshEvidencePlan {
     relation_coverage: BTreeMap<CoverageRequirementId, RelationCoverageRow>,
     required_target_work: Vec<RequiredTargetWork>,
     census: PlanCensus,
-    negative_link: BTreeMap<(NegativeMutation, SponsorCase), CoverageRequirementId>,
+    negative_link: BTreeMap<(NegativeMutation, SponsorCase), DeclarationLink>,
+    abi_validation: BTreeMap<NegativeMutation, AbiValidationRow>,
 }
 
 impl CompactAshEvidencePlan {
@@ -624,6 +644,30 @@ impl CompactAshEvidencePlan {
     #[must_use]
     pub const fn relation_coverage(&self) -> &BTreeMap<CoverageRequirementId, RelationCoverageRow> {
         &self.relation_coverage
+    }
+
+    /// Where every withheld class landed at the ABI boundary.
+    ///
+    /// §4.3's index. One row per class whose refusal precedes the
+    /// target, so a class the run withholds has somewhere to be read
+    /// rather than reading as merely unrun. No row here is a target
+    /// verdict and none discharges a coverage requirement.
+    #[must_use]
+    pub const fn abi_validation(&self) -> &BTreeMap<NegativeMutation, AbiValidationRow> {
+        &self.abi_validation
+    }
+
+    /// What every mutation arm's §4.1 declaration resolved to.
+    ///
+    /// One entry per arm and case, so a reader counts the arms that name
+    /// a requirement and the arms that state a reason from the same
+    /// table rather than inferring the second from the absence of the
+    /// first.
+    #[must_use]
+    pub const fn negative_links(
+        &self,
+    ) -> &BTreeMap<(NegativeMutation, SponsorCase), DeclarationLink> {
+        &self.negative_link
     }
 
     /// Every count this plan recomputed.
@@ -662,7 +706,9 @@ impl CompactAshEvidencePlan {
             .filter(|row| {
                 matches!(
                     row.observation(),
-                    CoverageObservation::Observed(_) | CoverageObservation::ObservedRefusal(_)
+                    CoverageObservation::Observed(_)
+                        | CoverageObservation::ObservedRefusal(_)
+                        | CoverageObservation::FirstPartyRefusal(_)
                 )
             })
             .count()
@@ -856,7 +902,11 @@ impl CompactAshEvidencePlan {
             } else {
                 SponsorCase::Present
             };
-            let Some(id) = self.negative_link.get(&(mutation, case)) else {
+            // Only a resolved declaration names a row. An arm that
+            // states a reason instead discharges nothing, whatever the
+            // target said about its bytes.
+            let Some(DeclarationLink::Resolved(id)) = self.negative_link.get(&(mutation, case))
+            else {
                 continue;
             };
             let Some(row) = self.relation_coverage.get_mut(id) else {
@@ -874,6 +924,36 @@ impl CompactAshEvidencePlan {
                 layer,
             });
         }
+    }
+
+    /// Discharge one first-party negative row, per §4.2.
+    ///
+    /// # What this can and cannot answer
+    ///
+    /// The one requirement the evidence names, and nothing else. The
+    /// evidence carries a requirement identity its own validation
+    /// resolved against the published plan, so a row is never reached by
+    /// resemblance; a requirement this plan does not hold, or one whose
+    /// obligation is positive, is left alone.
+    ///
+    /// # Why the argument is a validated value rather than a class
+    ///
+    /// For the reason [`Self::discharge_observed_run`] gives. A class
+    /// name and a validator name are both public enums a consumer could
+    /// state, so a signature taking them would let the counters a gate
+    /// reads be reached without anything having been refused. The
+    /// argument is therefore
+    /// [`ValidatedFirstPartyNegativeEvidence`], which exists only where
+    /// the owning validator refused a canonical malformed input and
+    /// accepted its control.
+    pub fn discharge_first_party(&mut self, evidence: &ValidatedFirstPartyNegativeEvidence) {
+        let Some(row) = self.relation_coverage.get_mut(evidence.requirement()) else {
+            return;
+        };
+        if row.positive {
+            return;
+        }
+        row.observation = CoverageObservation::FirstPartyRefusal(evidence.refusal());
     }
 
     /// Discharge this plan's coverage from one validated run.
@@ -1146,26 +1226,12 @@ pub fn derive_evidence_plan(
         }
     }
 
-    // The canonical plan materializes against placeholder funding, and
-    // says so in the name. Its vectors carry exact bytes for the
-    // reference cross-checks and name coins no chain created; the
-    // executed plan is built from a ceremony's own answers instead.
-    let mut target_cases = Vec::new();
-    // Which of them this target could be asked to accept. Derived from
-    // the reviewed target bound rather than marked on a row, so the
-    // classification changes when the target does and not when somebody
-    // remembers to edit a list.
-    let mut divergent = BTreeSet::new();
-    for case in semantic.iter().filter(|case| is_materializable(case)) {
-        let id = vector_id(case);
-        if target_amount_standing(case).is_unfundable() {
-            divergent.insert(id);
-        }
-        let funding = AshFunding::unexecutable_placeholder(id);
-        target_cases.push(CanonicalSubject::admit(materialize(
-            fixture, case, &funding,
-        )?));
-    }
+    let (target_cases, divergent) = materialize_canonical(fixture, &semantic)?;
+
+    // The ABI-validation index is built from the same materialized set
+    // the run would submit, so what it reads is what a target would have
+    // been handed rather than a rebuild of it.
+    let abi_validation = index_abi_validation(fixture, &target_cases)?;
 
     let required_target_work = derive_required_work(&semantic, &target_cases, &divergent);
 
@@ -1211,30 +1277,74 @@ pub fn derive_evidence_plan(
         required_target_work,
         census,
         negative_link: resolve_negative_link(plan)?,
+        abi_validation,
     })
 }
 
-/// Which requirement each mutation arm can answer, per execution case.
+/// Materialize the canonical vectors, and note which the target refuses
+/// to be asked about.
 ///
-/// Resolved once, from the published plan, so that every later discharge
-/// reads a link the plan itself produced. An arm the guide does not
-/// determine contributes no entry rather than a placeholder one, which
-/// is why an unlinked arm cannot discharge anything by accident.
+/// The canonical plan materializes against placeholder funding, and says
+/// so in the name. Its vectors carry exact bytes for the reference
+/// cross-checks and name coins no chain created; the executed plan is
+/// built from a ceremony's own answers instead.
+///
+/// The divergent set is derived from the reviewed target bound rather
+/// than marked on a row, so the classification changes when the target
+/// does and not when somebody remembers to edit a list.
 ///
 /// # Errors
 ///
-/// Whatever [`matching_requirement`] refuses: a declared violation that
-/// matches no published requirement, or more than one.
+/// Whatever [`materialize`] refuses, which is a construction failure and
+/// never a target verdict.
+fn materialize_canonical(
+    fixture: &FixtureBundle,
+    semantic: &[CompactAshSemanticCase],
+) -> Result<
+    (
+        Vec<CanonicalSubject<MaterializedTargetVector>>,
+        BTreeSet<TargetVectorId>,
+    ),
+    VectorError,
+> {
+    let mut target_cases = Vec::new();
+    let mut divergent = BTreeSet::new();
+    for case in semantic.iter().filter(|case| is_materializable(case)) {
+        let id = vector_id(case);
+        if target_amount_standing(case).is_unfundable() {
+            divergent.insert(id);
+        }
+        let funding = AshFunding::unexecutable_placeholder(id);
+        target_cases.push(CanonicalSubject::admit(materialize(
+            fixture, case, &funding,
+        )?));
+    }
+    Ok((target_cases, divergent))
+}
+
+/// What each mutation arm's §4.1 declaration resolves to, per case.
+///
+/// Resolved once, from the published plan, so that every later discharge
+/// reads a link the plan itself produced. Every arm gets an entry in
+/// both cases, because "this arm names no requirement, and here is the
+/// reason" is an answer the census has to be able to count; what an
+/// unlinked arm does not get is a requirement identity, which is why it
+/// cannot discharge anything by accident.
+///
+/// # Errors
+///
+/// Whatever [`resolve_declaration`] refuses: a declared violation that
+/// matches no published requirement or more than one, a requirement the
+/// declaration's other statements contradict, or a class the §18 matrix
+/// no longer names.
 fn resolve_negative_link(
     plan: &compiler::operation_plan::ValidatedTargetOperationPlan,
-) -> Result<BTreeMap<(NegativeMutation, SponsorCase), CoverageRequirementId>, VectorError> {
+) -> Result<BTreeMap<(NegativeMutation, SponsorCase), DeclarationLink>, VectorError> {
     let mut link = BTreeMap::new();
     for &arm in NegativeMutation::ALL {
-        let violation = arm.intended_violation();
         for case in [SponsorCase::Absent, SponsorCase::Present] {
-            if let Some(id) = matching_requirement(plan, &violation, case)? {
-                link.insert((arm, case), id);
-            }
+            let declaration = arm.declaration(case)?;
+            link.insert((arm, case), resolve_declaration(plan, &declaration)?);
         }
     }
     Ok(link)
@@ -1457,6 +1567,91 @@ mod tests {
     }
 
     #[test]
+    fn the_first_party_policy_moves_exactly_the_rows_it_discharges() {
+        // §4.2 end to end, through the plan. Two rows move — the
+        // permissionless private dependency in each execution case — and
+        // the sixteen other first-party rows stay outstanding, because
+        // nothing offered evidence for them and a policy that filled
+        // them anyway would be the discharge-by-intent the census exists
+        // to prevent.
+        use crate::first_party::{FirstPartyNegativeCase, validate_first_party_negative};
+        use architecture::{ObjectId, OperationId};
+        use compiler::operation_plan::{RelationMutation, TargetCoverageObligation};
+        use realization::{AvailabilityClass, ConstructibilityNodeId};
+
+        let fixture = fixture_bundle().expect("the fixture bundle builds");
+        let mut plan = super::derive_evidence_plan(&fixture).expect("the evidence plan derives");
+        let before = plan.discharged_negative_rows();
+
+        // The published compact-ASH public required fact, and the same
+        // fact under a private availability class.
+        let published = realization::derive(
+            &architecture::ARCHITECTURE,
+            realization::RealizationScope::phase1_pilots(),
+        )
+        .expect("the realization derives")
+        .project()
+        .constructibility
+        .nodes
+        .into_iter()
+        .map(|node| node.id)
+        .find(|id| {
+            matches!(
+                id,
+                ConstructibilityNodeId::Fact {
+                    operation: OperationId::CompactAsh,
+                    availability: AvailabilityClass::Public,
+                    ..
+                }
+            )
+        })
+        .expect("compact-ash publishes a public required fact");
+        let case = FirstPartyNegativeCase::PrivateRequiredDependency {
+            operation: OperationId::CompactAsh,
+            published,
+            availability: AvailabilityClass::InputOwners {
+                object: ObjectId::Ash,
+            },
+        };
+
+        let rows: Vec<_> = fixture
+            .plan()
+            .coverage()
+            .filter(|candidate| {
+                matches!(
+                    &candidate.obligation,
+                    TargetCoverageObligation::Negative(negative)
+                        if negative.mutation == RelationMutation::PermissionlessPrivateDependency
+                )
+            })
+            .map(|candidate| candidate.id.clone())
+            .collect();
+        assert_eq!(rows.len(), 2, "one row per execution case");
+        for id in &rows {
+            let evidence = validate_first_party_negative(fixture.plan(), id, &case)
+                .expect("the case discharges the row");
+            plan.discharge_first_party(&evidence);
+        }
+
+        assert_eq!(
+            plan.discharged_negative_rows(),
+            before + 2,
+            "the policy moved another number of rows than it was offered",
+        );
+        for id in &rows {
+            let row = plan
+                .relation_coverage()
+                .get(id)
+                .expect("the discharged row is in the matrix");
+            assert!(row.observation().is_discharged());
+            assert!(matches!(
+                row.observation(),
+                CoverageObservation::FirstPartyRefusal(_)
+            ));
+        }
+    }
+
+    #[test]
     fn every_outstanding_reason_is_actually_reached() {
         // A reason no row ever carries would be decoration. This records
         // which of the three the current plan actually produces.
@@ -1466,7 +1661,9 @@ mod tests {
             .values()
             .filter_map(|row| match row.observation() {
                 CoverageObservation::Outstanding(reason) => Some(reason),
-                CoverageObservation::Observed(_) | CoverageObservation::ObservedRefusal(_) => None,
+                CoverageObservation::Observed(_)
+                | CoverageObservation::ObservedRefusal(_)
+                | CoverageObservation::FirstPartyRefusal(_) => None,
             })
             .collect();
         assert!(

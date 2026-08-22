@@ -199,15 +199,9 @@ fn analyze_operation(
             if let Some(availability) = availability {
                 if is_required {
                     required_availability.insert(availability);
-
-                    if !authorization.discharges(availability) {
-                        return Err(unavailable_error(
-                            operation,
-                            authorization,
-                            id.clone(),
-                            path_to_operation(graph, *ancestor, operation_node),
-                        ));
-                    }
+                    validate_required_dependency(operation, authorization, id, || {
+                        path_to_operation(graph, *ancestor, operation_node)
+                    })?;
                 }
 
                 // A sponsor-local dependency must stay confined to an
@@ -309,6 +303,46 @@ fn optional_witnesses(
         .flat_map(|row| row.cases.iter())
         .flat_map(|case| case.optional_nodes.iter().cloned())
         .collect()
+}
+
+/// Whether one authorization case can discharge one required dependency.
+///
+/// The check `analyze_operation` makes for every required ancestor, and
+/// the only place the two constructibility refusals are constructed.
+/// Published so that a first-party negative case can drive the exact
+/// owning validator rather than a second spelling of it: an evidence
+/// package holding a refusal from a mirror of this check would establish
+/// that the mirror refuses.
+///
+/// The path is a closure because it is only ever walked on the refusing
+/// branch, and a caller stating a dependency out of a graph it has not
+/// built has no walk to offer.
+///
+/// # Errors
+///
+/// [`CompileError::PermissionlessPrivateDependency`] where the case is a
+/// permissionless one, and
+/// [`CompileError::ConstructibilityWitnessUnavailable`] otherwise. A
+/// node carrying no availability class is discharged by every case and
+/// answers `Ok`.
+pub fn validate_required_dependency(
+    operation: architecture::OperationId,
+    authorization: &ConstructibilityAuthorization,
+    node: &ConstructibilityNodeId,
+    path: impl FnOnce() -> Vec<ConstructibilityNodeId>,
+) -> Result<(), CompileError> {
+    let Some(availability) = node_availability(node) else {
+        return Ok(());
+    };
+    if authorization.discharges(availability) {
+        return Ok(());
+    }
+    Err(unavailable_error(
+        operation,
+        authorization,
+        node.clone(),
+        path(),
+    ))
 }
 
 fn unavailable_error(

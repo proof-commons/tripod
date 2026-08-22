@@ -170,6 +170,30 @@ pub enum VectorError {
         /// The semantic mutation class the arm declared.
         class: &'static str,
     },
+    /// A declaration resolved, and the requirement it found describes
+    /// something else.
+    ///
+    /// The relation and the mutation class agreed and one of the other
+    /// six §4.1 statements did not, which means the link was established
+    /// by two fields while the rest of the declaration was wrong about
+    /// the row. Answered by fixing whichever side is stale, never by
+    /// dropping the statement that disagreed.
+    NegativeLinkContradicted {
+        /// The semantic mutation class the arm declared.
+        class: &'static str,
+        /// Which stated expectation the published requirement denies.
+        expectation: crate::violation::ContradictedExpectation,
+    },
+    /// A withheld class changes several target fields at once.
+    ///
+    /// The ABI-validation boundary pins one field, so a class that moves
+    /// more than one cannot be settled there. Answered by narrowing the
+    /// class or by giving the boundary a second thing to pin, never by
+    /// picking whichever field the reading happened to reach first.
+    AbiValidationFieldUnderdetermined {
+        /// The class whose declaration names several fields.
+        class: crate::mutation::NegativeMutation,
+    },
     /// Funding cut for one vector was offered to another.
     FundingNamesAnotherVector {
         /// The vector being materialized.

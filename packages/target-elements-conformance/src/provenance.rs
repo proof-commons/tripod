@@ -491,8 +491,25 @@ pub fn validate_executor_provenance(
     reported: &ExecutorProvenance,
     expected: &ExpectedExecutorProvenance,
 ) -> Result<ValidatedExecutorProvenance, NativeConformanceError> {
-    let refuse = NativeConformanceError::ExecutorProvenanceUnestablished;
+    compare_executor_provenance(reported, expected)
+        .map_err(NativeConformanceError::ExecutorProvenanceUnestablished)
+}
 
+/// The comparison itself, in the vocabulary of its own defects.
+///
+/// Split from [`validate_executor_provenance`] so a caller that has to
+/// carry the outcome in a comparable value is not forced to carry the
+/// harness's whole error type to do it. The public wrapper is the only
+/// thing that changes; every check below is the same one.
+///
+/// # Errors
+///
+/// The first [`ProvenanceDefect`] found, in the order the checks are
+/// written.
+pub(crate) fn compare_executor_provenance(
+    reported: &ExecutorProvenance,
+    expected: &ExpectedExecutorProvenance,
+) -> Result<ValidatedExecutorProvenance, ProvenanceDefect> {
     // The expectation before the report. [`FullRevisionId`] establishes
     // this at construction and no caller outside this module can build
     // one another way, so reaching this branch means an edit *here*
@@ -500,7 +517,7 @@ pub fn validate_executor_provenance(
     // check is nothing and the cost of missing it is that every
     // comparison below silently compares abbreviations.
     if !expected.intended_tip.holds_full_width() || !expected.upstream_base.holds_full_width() {
-        return Err(refuse(ProvenanceDefect::ExpectedRevisionIsNotFullWidth));
+        return Err(ProvenanceDefect::ExpectedRevisionIsNotFullWidth);
     }
 
     for (text, defect) in [
@@ -513,7 +530,7 @@ pub fn validate_executor_provenance(
         (&reported.node_version, ProvenanceDefect::BlankNodeVersion),
     ] {
         if text.trim().is_empty() {
-            return Err(refuse(defect));
+            return Err(defect);
         }
     }
 
@@ -535,10 +552,7 @@ pub fn validate_executor_provenance(
 
     let mut topics = BTreeSet::new();
     for topic in &reported.included_local_topics {
-        topics.insert(
-            TopicName::new(topic)
-                .map_err(|defect| refuse(ProvenanceDefect::MalformedTopicName(defect)))?,
-        );
+        topics.insert(TopicName::new(topic).map_err(ProvenanceDefect::MalformedTopicName)?);
     }
 
     // The operator's own declaration first: a run that says it meant to
@@ -546,20 +560,20 @@ pub fn validate_executor_provenance(
     // Exact equality against the full expected identifier, not a prefix
     // rule: what the operator declared is compared digit for digit.
     if intended_tip != *expected.intended_tip.as_revision() {
-        return Err(refuse(ProvenanceDefect::IntendedTipIsNotTheExpectedTip));
+        return Err(ProvenanceDefect::IntendedTipIsNotTheExpectedTip);
     }
     if upstream_base != *expected.upstream_base.as_revision() {
-        return Err(refuse(ProvenanceDefect::UpstreamBaseIsNotTheExpectedBase));
+        return Err(ProvenanceDefect::UpstreamBaseIsNotTheExpectedBase);
     }
     if topics != expected.included_local_topics {
-        return Err(refuse(ProvenanceDefect::TopicCensusIsNotTheExpectedCensus));
+        return Err(ProvenanceDefect::TopicCensusIsNotTheExpectedCensus);
     }
     // Then the binary's own statement about itself, against the tip the
     // expectation names rather than against the reported one: the two
     // are equal by the check above, and comparing against the
     // expectation keeps the executor from supplying both operands.
     if !binary.matches_full(&expected.intended_tip) {
-        return Err(refuse(ProvenanceDefect::BinaryRevisionIsNotTheIntendedTip));
+        return Err(ProvenanceDefect::BinaryRevisionIsNotTheIntendedTip);
     }
 
     // The two declared revisions are equal to the expected full
@@ -654,14 +668,10 @@ fn revision_field(
     offered: Option<&str>,
     missing: ProvenanceDefect,
     malformed: fn(ProvenanceSyntaxDefect) -> ProvenanceDefect,
-) -> Result<RevisionId, NativeConformanceError> {
-    let text = offered.ok_or(NativeConformanceError::ExecutorProvenanceUnestablished(
-        missing,
-    ))?;
+) -> Result<RevisionId, ProvenanceDefect> {
+    let text = offered.ok_or(missing)?;
     // A present-but-blank field is an absent field that answered. The
     // syntax refuses it either way; naming it as malformed rather than
     // missing keeps the distinction the executor actually made.
-    RevisionId::new(text).map_err(|defect| {
-        NativeConformanceError::ExecutorProvenanceUnestablished(malformed(defect))
-    })
+    RevisionId::new(text).map_err(malformed)
 }

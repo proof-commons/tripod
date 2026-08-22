@@ -788,9 +788,7 @@ fn submittable_mutations() -> Vec<NegativeMutation> {
         .iter()
         .copied()
         .filter(|mutation| {
-            mutation
-                .expected_boundary()
-                .is_ok_and(|boundary| !boundary.is_pre_target())
+            crate::abi_validation::precedes_the_target(*mutation).is_ok_and(|withheld| !withheld)
         })
         .collect()
 }
@@ -1513,7 +1511,7 @@ impl CompactAshOperationPlanner {
             // A class this module cannot look up is a drift between the
             // matrix and the arms, and staging past it would submit a
             // vector nothing states an expectation for.
-            let Ok(boundary) = mutation.expected_boundary() else {
+            let Ok(_) = mutation.expected_boundary() else {
                 self.transcript.mutants.push(MutantOutcome {
                     origin: subject_id,
                     mutation: *mutation,
@@ -1524,14 +1522,14 @@ impl CompactAshOperationPlanner {
                 });
                 continue;
             };
-            if boundary.is_pre_target() {
+            if crate::abi_validation::precedes_the_target(*mutation).is_ok_and(|withheld| withheld)
+            {
                 self.transcript.mutants.push(MutantOutcome {
                     origin: subject_id,
                     mutation: *mutation,
                     layer: ObservedOutcomeLayer::FixtureConstructionFailure,
                     detail: Some(
-                        "not submitted: the class expects a refusal before the target is asked"
-                            .into(),
+                        "not submitted: the class is settled at the ABI-validation boundary".into(),
                     ),
                     accepted_txid: None,
                     bytes: Vec::new(),
