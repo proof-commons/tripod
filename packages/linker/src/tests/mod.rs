@@ -20,6 +20,7 @@
 
 mod carrier_tests;
 mod graph_tests;
+mod guide13_reproductions;
 mod link_tests;
 mod public_api_tests;
 mod relocation_tests;

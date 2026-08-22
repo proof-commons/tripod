@@ -15,6 +15,7 @@ linker_source_files = files(
   'src/taptree.rs',
   'src/tests/carrier_tests.rs',
   'src/tests/graph_tests.rs',
+  'src/tests/guide13_reproductions.rs',
   'src/tests/link_tests.rs',
   'src/tests/mod.rs',
   'src/tests/public_api_tests.rs',
