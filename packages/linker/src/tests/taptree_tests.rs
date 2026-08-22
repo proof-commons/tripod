@@ -57,7 +57,7 @@ fn input(weights: &[u64]) -> TaptreeInput {
 /// Arithmetic, not search: `k` is the least integer with `2^k` at least
 /// `count`, `2^k - count` leaves sit one level shallower than `k`, and
 /// the rest sit at `k`.
-fn equal_weight_optimum(count: u64) -> u64 {
+fn equal_weight_optimum(count: u64) -> u128 {
     if count <= 1 {
         return 0;
     }
@@ -65,7 +65,7 @@ fn equal_weight_optimum(count: u64) -> u64 {
     while (1u64 << k) < count {
         k += 1;
     }
-    count * k - ((1u64 << k) - count)
+    u128::from(count * k - ((1u64 << k) - count))
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn the_subset_oracle_agrees_with_literal_enumeration_at_every_small_size() {
         loop {
             assert_eq!(
                 exact_minimum_cost(&vector).expect("six leaves is inside the budget"),
-                enumerated_minimum_cost(&vector),
+                enumerated_minimum_cost(&vector).expect("six leaves is inside the budget"),
                 "the two oracles disagree at {vector:?}",
             );
 
@@ -136,7 +136,7 @@ fn the_constructed_tree_reaches_the_optimum_at_every_small_size() {
             let tree = assemble(&input(&vector)).expect("a small tree assembles");
             assert_eq!(
                 tree.cost(),
-                enumerated_minimum_cost(&vector),
+                enumerated_minimum_cost(&vector).expect("six leaves is inside the budget"),
                 "the constructed tree is not optimal at {vector:?}",
             );
 
@@ -273,6 +273,57 @@ fn a_tree_past_the_declared_maximum_depth_is_a_refusal() {
 }
 
 #[test]
+fn both_oracles_answer_above_the_old_domain_and_still_agree() {
+    // The row's weights, reached through both oracles rather than
+    // through the tree. Three maximal weights and a unit one: the exact
+    // optimum pairs the unit leaf with one maximal leaf and the other
+    // two together, so every leaf sits at depth two and the cost is
+    // twice the total — a number above `u64::MAX`, which is the whole
+    // reason the domain had to move. Saturating `u64` reported
+    // `u64::MAX` here, from both oracles, agreeing about nothing.
+    let weights = [u64::MAX, u64::MAX, u64::MAX, 1];
+    let doubled_total = 2 * (3 * u128::from(u64::MAX) + 1);
+
+    let exact = exact_minimum_cost(&weights).expect("four leaves are inside the budget");
+    let enumerated = enumerated_minimum_cost(&weights).expect("four leaves are inside the budget");
+
+    assert_eq!(exact, doubled_total, "the subset oracle lost the optimum");
+    assert_eq!(
+        enumerated, doubled_total,
+        "the enumerating oracle lost the optimum"
+    );
+    assert!(
+        doubled_total > u128::from(u64::MAX),
+        "the fixture no longer exceeds the domain it was chosen to exceed",
+    );
+}
+
+#[test]
+fn a_leaf_set_past_the_budget_refuses_before_any_arithmetic() {
+    // The budget bounds the leaf count, and the leaf count is what the
+    // module's `u128` sufficiency argument rests on. So `assemble` has
+    // to refuse an oversized set at its head rather than build a tree,
+    // total its cost, and only then discover the oracle will not run.
+    let oversized: Vec<TapLeafInput> = (0..=ORACLE_LEAF_BUDGET)
+        .map(|index| {
+            TapLeafInput::new(
+                leaf(u8::try_from(index).expect("a small index fits")),
+                positive(1),
+            )
+        })
+        .collect();
+    let input = declared(oversized).expect("the leaves are distinct and non-empty");
+
+    assert_eq!(
+        assemble(&input),
+        Err(LinkRefusal::TreeOracleBudgetExceeded {
+            leaves: ORACLE_LEAF_BUDGET + 1,
+            budget: ORACLE_LEAF_BUDGET,
+        }),
+    );
+}
+
+#[test]
 fn the_oracle_budget_is_a_typed_complexity_failure_and_not_a_guess() {
     // §1.11: a search past its budget returns a typed complexity
     // failure and no partial result. One past the bound is the only
@@ -284,6 +335,13 @@ fn the_oracle_budget_is_a_typed_complexity_failure_and_not_a_guess() {
         Err(crate::LinkRefusal::TreeOracleBudgetExceeded { .. })
     ));
     assert!(exact_minimum_cost(&[1u64; ORACLE_LEAF_BUDGET]).is_ok());
+
+    // The enumerating oracle shares the budget so that one sufficiency
+    // argument covers both domains, and refuses the same way.
+    assert!(matches!(
+        enumerated_minimum_cost(&weights),
+        Err(crate::LinkRefusal::TreeOracleBudgetExceeded { .. })
+    ));
 }
 
 /// A positive weight for the fixtures below.

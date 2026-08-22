@@ -130,14 +130,16 @@ const SATURATING_WEIGHTS: [u64; 4] = [u64::MAX, u64::MAX, u64::MAX, 1];
 ///
 /// `assemble` compares its construction against `exact_minimum_cost`
 /// and refuses a disagreement, which is the whole assurance the module
-/// claims. Both sides total in saturating `u64`, so on these weights
-/// both report `u64::MAX` and agree — while the tree actually built
-/// costs one more than the true optimum.
+/// claims. The comparison is now between exact numbers, so the tree it
+/// certifies is the tree the mathematics names.
 ///
-/// The oracle is recomputed here in `u128` so the comparison is between
-/// the tree and the mathematics, never between two saturated numbers.
+/// The state this forbids is the one the row named: both sides totalling
+/// in saturating `u64`, both reporting `u64::MAX` on these weights, and
+/// agreeing — while the tree actually built cost one more than the true
+/// optimum. The oracle is recomputed here in `u128` so the comparison is
+/// between the tree and the mathematics, never between two saturated
+/// numbers.
 #[test]
-#[ignore = "G13-R08: confirmed, repair pending"]
 fn an_assembled_tree_over_large_legal_weights_is_actually_optimal() {
     let tree = assemble(&input(&SATURATING_WEIGHTS)).expect("the fixture assembles");
 
@@ -153,10 +155,10 @@ fn an_assembled_tree_over_large_legal_weights_is_actually_optimal() {
 /// `G13-R08`: the reported cost is the tree's mathematical cost.
 ///
 /// `DeterministicTaptree::cost()` is documented as "the tree's exact
-/// cost under the declared objective". On these weights it reports
-/// `u64::MAX`, which is not the cost of any tree over them.
+/// cost under the declared objective", and on these weights it reports
+/// exactly that. The state this forbids is the one the row named: a
+/// reported `u64::MAX`, which is not the cost of any tree over them.
 #[test]
-#[ignore = "G13-R08: confirmed, repair pending"]
 fn an_assembled_tree_reports_its_mathematical_cost() {
     let tree = assemble(&input(&SATURATING_WEIGHTS)).expect("the fixture assembles");
 
@@ -172,20 +174,27 @@ fn an_assembled_tree_reports_its_mathematical_cost() {
 /// `G13-R08`: the link-time oracle answers in an exact domain.
 ///
 /// The narrowest statement of the row, with no tree involved at all:
-/// the oracle the construction is checked against returns a number that
-/// is not the minimum it is documented to compute. A caller cannot tell
-/// the saturated answer from a real one, because nothing typed says the
-/// budget was the domain rather than the leaf count.
+/// the oracle the construction is checked against returns the minimum
+/// it is documented to compute. On these weights that minimum is above
+/// `u64::MAX`, so it is only sayable in the wider domain — which is why
+/// the row is about the domain and not about the recurrence.
+///
+/// The state this forbids is the one the row named: a saturated answer
+/// a caller could not tell from a real one, because nothing typed said
+/// the budget was the domain rather than the leaf count.
 #[test]
-#[ignore = "G13-R08: confirmed, repair pending"]
 fn the_exact_oracle_returns_the_exact_minimum_or_a_typed_refusal() {
-    let saturated = exact_minimum_cost(&SATURATING_WEIGHTS).expect("four leaves are within budget");
+    let reported = exact_minimum_cost(&SATURATING_WEIGHTS).expect("four leaves are within budget");
     let optimum = exact_minimum_cost_u128(&SATURATING_WEIGHTS);
 
     assert_eq!(
-        u128::from(saturated),
+        u128::from(reported),
         optimum,
-        "the oracle reported {saturated}, and the exact minimum is {optimum}",
+        "the oracle reported {reported}, and the exact minimum is {optimum}",
+    );
+    assert!(
+        optimum > u128::from(u64::MAX),
+        "the fixture no longer needs a domain wider than the old one",
     );
 }
 

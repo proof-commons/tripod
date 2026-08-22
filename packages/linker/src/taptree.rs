@@ -29,6 +29,37 @@
 //! when the two agree exactly. The dynamic program is in turn checked
 //! against literal enumeration of every tree at small sizes, so neither
 //! oracle is trusted on its own authority.
+//!
+//! # The domain the objective is computed in, and why it is enough
+//!
+//! Every number in the objective — the Huffman pool's subtree weights,
+//! the assembled tree's cost, and both oracles' answers — is a `u128`,
+//! computed with checked arithmetic and never saturated. One domain
+//! shared by the construction and by both checks is what makes the
+//! comparison mean anything: saturating in `u64` let distinct costs
+//! collapse onto `u64::MAX`, where they compared equal, and two answers
+//! that agree because both lost the same information agree about
+//! nothing. The two oracles stay algorithmically independent — a subset
+//! recurrence and a literal enumeration — but they now answer in the
+//! same exact arithmetic, which is the only way their agreement is
+//! evidence.
+//!
+//! `u128` is sufficient because the leaf count is bounded before any
+//! arithmetic runs. [`ORACLE_LEAF_BUDGET`] is sixteen, and [`assemble`]
+//! and both oracles refuse a larger leaf set at their head rather than
+//! partway through. So: each weight is below `2^64`, sixteen of them
+//! sum below `2^68`, and no leaf of a binary tree on sixteen leaves sits
+//! deeper than fifteen, so the total weighted depth stays below
+//! `2^68 * 2^4 = 2^72`. Every intermediate is the weight of a subset or
+//! the cost of a tree over one, so every intermediate obeys the same
+//! bound, leaving `u128` a factor of `2^56` in hand.
+//!
+//! The arithmetic is checked anyway, and
+//! [`LinkRefusal::TreeCostOverflow`] is what a failure would return.
+//! That refusal is unreachable at the budget above, and deliberately so:
+//! it is what keeps the bound load-bearing rather than assumed, so that
+//! raising the budget past what the proof covers refuses instead of
+//! quietly returning a number that is not any tree's cost.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::{NonZeroU32, NonZeroU64};
@@ -225,7 +256,7 @@ pub struct DeterministicTaptree {
     leaf_version: LeafVersion,
     objective: TreeObjective,
     recipes: BTreeMap<LeafRole, ControlPathRecipe>,
-    cost: u64,
+    cost: u128,
     depth: u32,
 }
 
@@ -249,8 +280,14 @@ impl DeterministicTaptree {
     }
 
     /// The tree's exact cost under the declared objective.
+    ///
+    /// Exact in the arithmetic sense and not only in the documentary
+    /// one: the module's domain argument bounds this below `2^72`, and
+    /// nothing that produced it saturated, so it is the cost of this
+    /// tree rather than the nearest number some narrower type could
+    /// hold.
     #[must_use]
-    pub const fn cost(&self) -> u64 {
+    pub const fn cost(&self) -> u128 {
         self.cost
     }
 
@@ -262,9 +299,13 @@ impl DeterministicTaptree {
 }
 
 /// One node of the tree under construction.
+///
+/// A leaf carries its own weight so that the cost walk never has to
+/// look one up: weight and depth meet where both are known, and there
+/// is no join to fall back on a default for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Node {
-    Leaf(LeafRole),
+    Leaf { leaf: LeafRole, weight: u128 },
     Branch(Box<Self>, Box<Self>),
 }
 
@@ -272,7 +313,7 @@ impl Node {
     /// Every leaf beneath this node.
     fn leaves(&self) -> BTreeSet<LeafRole> {
         match self {
-            Self::Leaf(leaf) => BTreeSet::from([*leaf]),
+            Self::Leaf { leaf, .. } => BTreeSet::from([*leaf]),
             Self::Branch(left, right) => {
                 let mut set = left.leaves();
                 set.extend(right.leaves());
@@ -295,34 +336,33 @@ impl Node {
 /// larger than the exact oracle's budget,
 /// [`LinkRefusal::NonOptimalTree`] when the construction and the oracle
 /// disagree, [`LinkRefusal::NonDeterministicTree`] when declaration
-/// order changes the answer, and [`LinkRefusal::TreeDepthExceeded`]
-/// when a control path is deeper than the input admits.
+/// order changes the answer, [`LinkRefusal::TreeDepthExceeded`] when a
+/// control path is deeper than the input admits, and
+/// [`LinkRefusal::TreeCostOverflow`] which the module's domain argument
+/// shows cannot be reached at the current budget.
 pub fn assemble(input: &TaptreeInput) -> Result<DeterministicTaptree, LinkRefusal> {
     let ordered: Vec<TapLeafInput> = input.leaves.values().copied().collect();
-    let weights: BTreeMap<LeafRole, u64> = ordered
-        .iter()
-        .map(|leaf| (leaf.leaf, leaf.weight.get()))
-        .collect();
 
-    let root = huffman(&ordered);
+    // The budget is checked here rather than only inside the oracle,
+    // because it is what bounds the leaf count for the module's `u128`
+    // sufficiency argument. A leaf set past it must reach no arithmetic
+    // at all, not merely fail the comparison afterwards.
+    if ordered.len() > ORACLE_LEAF_BUDGET {
+        return Err(LinkRefusal::TreeOracleBudgetExceeded {
+            leaves: ordered.len(),
+            budget: ORACLE_LEAF_BUDGET,
+        });
+    }
+
+    let root = huffman(&ordered)?;
     let reversed: Vec<TapLeafInput> = ordered.iter().copied().rev().collect();
-    if huffman(&reversed) != root {
+    if huffman(&reversed)? != root {
         return Err(LinkRefusal::NonDeterministicTree);
     }
 
     let mut recipes = BTreeMap::new();
-    describe(&root, &mut Vec::new(), &mut recipes);
-
-    let cost = recipes
-        .values()
-        .map(|recipe| {
-            weights
-                .get(&recipe.leaf)
-                .copied()
-                .unwrap_or_default()
-                .saturating_mul(u64::from(recipe.depth))
-        })
-        .fold(0, u64::saturating_add);
+    let mut cost = 0u128;
+    describe(&root, &mut Vec::new(), &mut recipes, &mut cost)?;
 
     let optimum = exact_minimum_cost(
         &ordered
@@ -370,10 +410,30 @@ pub fn assemble(input: &TaptreeInput) -> Result<DeterministicTaptree, LinkRefusa
 /// (weight, least leaf), the leaf sets are disjoint so that order is
 /// total, and a branch's children are stored in that same order. The
 /// declaration order of the input never enters.
-fn huffman(leaves: &[TapLeafInput]) -> Node {
-    let mut pool: Vec<(u64, LeafRole, Node)> = leaves
+///
+/// Pool weights are subset sums of the leaf weights and so stay below
+/// `2^68` under the module's budget; the addition is checked rather
+/// than saturated because a saturated pool weight is what reordered the
+/// pool and produced a suboptimal tree.
+///
+/// # Errors
+///
+/// [`LinkRefusal::EmptyLeafSet`] when there is no leaf to build from,
+/// and [`LinkRefusal::TreeCostOverflow`] on an unreachable overflow.
+fn huffman(leaves: &[TapLeafInput]) -> Result<Node, LinkRefusal> {
+    let mut pool: Vec<(u128, LeafRole, Node)> = leaves
         .iter()
-        .map(|input| (input.weight.get(), input.leaf, Node::Leaf(input.leaf)))
+        .map(|input| {
+            let weight = u128::from(input.weight.get());
+            (
+                weight,
+                input.leaf,
+                Node::Leaf {
+                    leaf: input.leaf,
+                    weight,
+                },
+            )
+        })
         .collect();
 
     while pool.len() > 1 {
@@ -385,18 +445,21 @@ fn huffman(leaves: &[TapLeafInput]) -> Node {
             (second, first)
         };
         pool.push((
-            low.0.saturating_add(high.0),
+            low.0
+                .checked_add(high.0)
+                .ok_or(LinkRefusal::TreeCostOverflow)?,
             low.1.min(high.1),
             Node::Branch(Box::new(low.2), Box::new(high.2)),
         ));
     }
 
     pool.pop()
-        .map_or(Node::Leaf(leaves[0].leaf), |entry| entry.2)
+        .map(|entry| entry.2)
+        .ok_or(LinkRefusal::EmptyLeafSet)
 }
 
 /// Remove and return the least entry under (weight, least leaf).
-fn take_least(pool: &mut Vec<(u64, LeafRole, Node)>) -> (u64, LeafRole, Node) {
+fn take_least(pool: &mut Vec<(u128, LeafRole, Node)>) -> (u128, LeafRole, Node) {
     let mut best = 0;
     for (index, entry) in pool.iter().enumerate() {
         if (entry.0, entry.1) < (pool[best].0, pool[best].1) {
@@ -406,15 +469,35 @@ fn take_least(pool: &mut Vec<(u64, LeafRole, Node)>) -> (u64, LeafRole, Node) {
     pool.swap_remove(best)
 }
 
-/// Walk the tree, recording each leaf's control path.
+/// Walk the tree, recording each leaf's control path and its cost.
+///
+/// The cost is totalled here rather than from the finished recipes
+/// because this is where a leaf's weight and its depth are both in
+/// hand. Reading the weight back out of a map afterwards needed a
+/// default for the leaf that is not there, and a default is a silent
+/// zero in the objective.
+///
+/// # Errors
+///
+/// [`LinkRefusal::TreeCostOverflow`] if a depth did not fit its type or
+/// the running total did not fit the exact domain, neither of which the
+/// module's budget admits.
 fn describe(
     node: &Node,
     siblings: &mut Vec<BTreeSet<LeafRole>>,
     recipes: &mut BTreeMap<LeafRole, ControlPathRecipe>,
-) {
+    cost: &mut u128,
+) -> Result<(), LinkRefusal> {
     match node {
-        Node::Leaf(leaf) => {
-            let depth = u32::try_from(siblings.len()).unwrap_or(u32::MAX);
+        Node::Leaf { leaf, weight } => {
+            let depth = u32::try_from(siblings.len()).map_err(|_| LinkRefusal::TreeCostOverflow)?;
+            let term = weight
+                .checked_mul(u128::from(depth))
+                .ok_or(LinkRefusal::TreeCostOverflow)?;
+            *cost = cost
+                .checked_add(term)
+                .ok_or(LinkRefusal::TreeCostOverflow)?;
+
             let mut path = siblings.clone();
             path.reverse();
             recipes.insert(
@@ -428,14 +511,15 @@ fn describe(
         }
         Node::Branch(left, right) => {
             siblings.push(right.leaves());
-            describe(left, siblings, recipes);
+            describe(left, siblings, recipes, cost)?;
             siblings.pop();
 
             siblings.push(left.leaves());
-            describe(right, siblings, recipes);
+            describe(right, siblings, recipes, cost)?;
             siblings.pop();
         }
     }
+    Ok(())
 }
 
 /// The exact minimum cost over every binary tree on these weights.
@@ -452,8 +536,9 @@ fn describe(
 /// # Errors
 ///
 /// [`LinkRefusal::TreeOracleBudgetExceeded`] when the leaf count is
-/// past [`ORACLE_LEAF_BUDGET`]. No partial answer is returned.
-pub fn exact_minimum_cost(weights: &[u64]) -> Result<u64, LinkRefusal> {
+/// past [`ORACLE_LEAF_BUDGET`]. No partial answer is returned. Also
+/// [`LinkRefusal::TreeCostOverflow`], which that budget rules out.
+pub fn exact_minimum_cost(weights: &[u64]) -> Result<u128, LinkRefusal> {
     let count = weights.len();
     if count > ORACLE_LEAF_BUDGET {
         return Err(LinkRefusal::TreeOracleBudgetExceeded {
@@ -466,40 +551,56 @@ pub fn exact_minimum_cost(weights: &[u64]) -> Result<u64, LinkRefusal> {
     }
 
     let full = 1usize << count;
-    let mut total = vec![0u64; full];
+    let mut total = vec![0u128; full];
     for (mask, slot) in total.iter_mut().enumerate() {
-        *slot = (0..count)
-            .filter(|bit| mask & (1 << bit) != 0)
-            .map(|bit| weights[bit])
-            .fold(0, u64::saturating_add);
+        for bit in 0..count {
+            if mask & (1 << bit) != 0 {
+                *slot = slot
+                    .checked_add(u128::from(weights[bit]))
+                    .ok_or(LinkRefusal::TreeCostOverflow)?;
+            }
+        }
     }
 
-    let mut best = vec![u64::MAX; full];
+    // Every entry of `best` is a real cost rather than a sentinel: a
+    // single-leaf subset costs nothing, and every larger subset is
+    // seeded below from a split that always exists. Nothing here has to
+    // add to a stand-in for "no answer yet", which is what made the
+    // saturating version's `u64::MAX` both an answer and a marker.
+    let mut best = vec![0u128; full];
     for mask in 1..full {
         if mask.is_power_of_two() {
-            best[mask] = 0;
             continue;
         }
         // Every split is considered once by fixing the lowest set bit
         // on one side, which is what makes the two halves unordered.
         let lowest = 1usize << mask.trailing_zeros();
         let rest = mask & !lowest;
+        // `mask` has at least two bits, so `rest` is a non-empty proper
+        // submask and the split that puts the lowest bit alone is a
+        // real candidate. Seeding with it means the minimum below runs
+        // over a non-empty set.
+        let mut least = best[lowest]
+            .checked_add(best[rest])
+            .ok_or(LinkRefusal::TreeCostOverflow)?;
         let mut part = rest;
         loop {
             let left = part | lowest;
             let right = mask & !left;
             if right != 0 {
-                let candidate = best[left].saturating_add(best[right]);
-                if candidate < best[mask] {
-                    best[mask] = candidate;
-                }
+                let candidate = best[left]
+                    .checked_add(best[right])
+                    .ok_or(LinkRefusal::TreeCostOverflow)?;
+                least = least.min(candidate);
             }
             if part == 0 {
                 break;
             }
             part = (part - 1) & rest;
         }
-        best[mask] = best[mask].saturating_add(total[mask]);
+        best[mask] = least
+            .checked_add(total[mask])
+            .ok_or(LinkRefusal::TreeCostOverflow)?;
     }
 
     Ok(best[full - 1])
@@ -511,37 +612,67 @@ pub fn exact_minimum_cost(weights: &[u64]) -> Result<u64, LinkRefusal> {
 /// establish that [`exact_minimum_cost`]'s recurrence really does range
 /// over the whole tree space, at sizes where every tree can be built
 /// and measured. Nothing in the link path calls it.
-#[must_use]
-pub fn enumerated_minimum_cost(weights: &[u64]) -> u64 {
-    fn walk(items: &[u64]) -> u64 {
+///
+/// It answers in the same exact domain and under the same leaf budget
+/// as the oracle it checks, so one sufficiency argument covers both.
+/// Its own combinatorial cost puts its practical ceiling far below that
+/// budget; the budget is here to bound the arithmetic, not to promise
+/// the run finishes.
+///
+/// # Errors
+///
+/// [`LinkRefusal::TreeOracleBudgetExceeded`] past
+/// [`ORACLE_LEAF_BUDGET`], and [`LinkRefusal::TreeCostOverflow`], which
+/// that budget rules out.
+pub fn enumerated_minimum_cost(weights: &[u64]) -> Result<u128, LinkRefusal> {
+    fn walk(items: &[u128]) -> Result<u128, LinkRefusal> {
         if items.len() <= 1 {
-            return 0;
+            return Ok(0);
         }
-        let total: u64 = items.iter().copied().fold(0, u64::saturating_add);
+        let mut total = 0u128;
+        for item in items {
+            total = total
+                .checked_add(*item)
+                .ok_or(LinkRefusal::TreeCostOverflow)?;
+        }
         let count = items.len();
         let full = 1usize << count;
-        let mut best = u64::MAX;
         // Fix the lowest element on the left so each unordered split is
-        // visited exactly once.
+        // visited exactly once. The split that puts it alone always
+        // exists here, so it seeds the minimum and no sentinel is
+        // needed.
+        let mut least = walk(&items[1..])?;
         for mask in 0..full {
             if mask & 1 == 0 {
                 continue;
             }
-            let left: Vec<u64> = (0..count)
+            let left: Vec<u128> = (0..count)
                 .filter(|bit| mask & (1 << bit) != 0)
                 .map(|bit| items[bit])
                 .collect();
-            let right: Vec<u64> = (0..count)
+            let right: Vec<u128> = (0..count)
                 .filter(|bit| mask & (1 << bit) == 0)
                 .map(|bit| items[bit])
                 .collect();
             if right.is_empty() {
                 continue;
             }
-            best = best.min(walk(&left).saturating_add(walk(&right)));
+            let candidate = walk(&left)?
+                .checked_add(walk(&right)?)
+                .ok_or(LinkRefusal::TreeCostOverflow)?;
+            least = least.min(candidate);
         }
-        best.saturating_add(total)
+        least
+            .checked_add(total)
+            .ok_or(LinkRefusal::TreeCostOverflow)
     }
 
-    walk(weights)
+    if weights.len() > ORACLE_LEAF_BUDGET {
+        return Err(LinkRefusal::TreeOracleBudgetExceeded {
+            leaves: weights.len(),
+            budget: ORACLE_LEAF_BUDGET,
+        });
+    }
+    let items: Vec<u128> = weights.iter().copied().map(u128::from).collect();
+    walk(&items)
 }
