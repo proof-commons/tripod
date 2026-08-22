@@ -51,7 +51,8 @@ use target_elements::{
     reviewed_elements_tapscript, validate_reviewed_development_binding,
 };
 use target_elements_conformance::executor::{
-    DEFAULT_EXECUTOR_TIMEOUT, ExecutorConfiguration, ExecutorTrust, execute_operations,
+    DEFAULT_EXECUTOR_TIMEOUT, ExecutorConfiguration, ExecutorDiagnostics, ExecutorTrust,
+    execute_operations,
 };
 use target_elements_conformance::protocol::ObservedOutcomeLayer;
 use vectors::operation::{CompactAshOperationPlanner, OperationTranscript};
@@ -128,6 +129,11 @@ fn compact_ash_runs_against_a_real_target() {
         // a gate verdict, so it declares the adapter it was pointed at.
         ExecutorTrust::ReviewedNonMock,
         timeout,
+        // Beside the report, because they are the same kind of thing:
+        // what one run on one host produced. Derived from the report's
+        // own directory rather than asked for separately, so the
+        // operator recipe above still states every destination once.
+        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
     );
 
     let mut planner = CompactAshOperationPlanner::new().expect("the planner builds");

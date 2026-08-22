@@ -165,7 +165,7 @@ fn an_assembled_tree_reports_its_mathematical_cost() {
     let actual = exact_cost_u128(tree.recipes(), &SATURATING_WEIGHTS);
 
     assert_eq!(
-        u128::from(tree.cost()),
+        tree.cost(),
         actual,
         "the reported cost is a saturated number, not the tree's cost",
     );
@@ -188,8 +188,7 @@ fn the_exact_oracle_returns_the_exact_minimum_or_a_typed_refusal() {
     let optimum = exact_minimum_cost_u128(&SATURATING_WEIGHTS);
 
     assert_eq!(
-        u128::from(reported),
-        optimum,
+        reported, optimum,
         "the oracle reported {reported}, and the exact minimum is {optimum}",
     );
     assert!(

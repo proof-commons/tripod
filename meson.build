@@ -1143,6 +1143,11 @@ if target_native_executor != ''
     command: [check_target_native_bin] + target_native_common_args + [
       '--report', '@OUTPUT1@',
       '--stamp', '@OUTPUT0@',
+      # Kept beside the report, and for the same reason: what one
+      # executor said about one run on one host. One directory per
+      # target, so two runs cannot append into each other's record.
+      '--executor-diagnostics-directory',
+      meson.current_build_dir() / 'target-elements-native-diagnostics',
     ],
     build_always_stale: true,
     build_by_default: false,
@@ -1184,6 +1189,9 @@ if target_native_executor != ''
         + target_native_common_args + [
         '--report', '@OUTPUT1@',
         '--stamp', '@OUTPUT0@',
+        '--executor-diagnostics-directory',
+        meson.current_build_dir() / ('target-elements-prototype-' + relation
+          + '-diagnostics'),
       ],
       build_always_stale: true,
       build_by_default: false,

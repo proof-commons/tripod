@@ -17,10 +17,34 @@
 //! executor's path, its argv, or its output
 //! `(´[ADR010-rule:output:data-classification]´)`.
 //!
-//! There is no argument passthrough. The harness passes the executor no
-//! arguments at all, which is also why no credential can travel through
-//! one: an executor needing its own configuration receives it outside
-//! this interface.
+//! # Where the executor's own diagnostics go
+//!
+//! Nulling stderr answered where the child's bytes do *not* go and left
+//! open where they do. A reviewed adapter has real diagnostics to write
+//! — which method the node refused, which message it could not classify
+//! — and the only stream it had was the one this side discards, so the
+//! discipline held exactly as long as nobody looked. An operator running
+//! the same adapter by hand got the raw text on a terminal.
+//!
+//! So the harness names both destinations, and the naming is what this
+//! interface passes: [`ExecutorDiagnostics`] gives one file for the
+//! executor's own typed facts and one for raw child text, and both
+//! arrive as arguments on the spawn. Nulling stderr stays, because the
+//! executor is still caller-selected code that may write anywhere; the
+//! difference is that a well-behaved one now has somewhere to write
+//! that this side did not have to read.
+//!
+//! The two files are the run's artifacts and are kept: a diagnostic
+//! deleted on success is a diagnostic unavailable for the run that
+//! succeeded surprisingly.
+//!
+//! # There is still no argument passthrough
+//!
+//! The executor receives exactly the two arguments above and no others.
+//! Nothing a caller supplies travels through this interface, which is
+//! why no credential can: an executor needing its own configuration
+//! receives it outside this interface, and a destination the harness
+//! itself chose for its own output is not the caller's material.
 //!
 //! # A timeout is never a rejection
 //!
@@ -238,10 +262,96 @@ pub enum ExecutorTrust {
     ReviewedNonMock,
 }
 
+/// Where one run's executor diagnostics are written.
+///
+/// # Two files, because there are two kinds of byte
+///
+/// An executor has things worth saying that are its own typed facts —
+/// the method a node refused, the exit status it refused with — and
+/// things worth keeping that are raw text out of a process nobody
+/// reviewed. Writing both to one destination would make the second kind
+/// contaminate the first the moment anything read it, which is the
+/// failure `G12-R04` closed on the wire and this closes on disk.
+///
+/// So the harness names one file for each and hands both over. What
+/// separates them is the destination rather than the phrasing of each
+/// call site, and a reader of the typed file can be told that it holds
+/// no unreviewed byte at all.
+///
+/// # These paths are output roles, not configuration
+///
+/// The harness chooses them, creates them, and keeps them. They are not
+/// a channel through which a caller reaches the executor: nothing a
+/// caller states travels through this interface, and a file this side
+/// opened for its own record is not the caller's material.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExecutorDiagnostics {
+    typed: PathBuf,
+    child: PathBuf,
+}
+
+/// The name of the typed-fact file inside a run's directory.
+const TYPED_DIAGNOSTIC_FILE: &str = "executor-diagnostics.txt";
+
+/// The name of the quarantined-child-text file inside a run's directory.
+const CHILD_DIAGNOSTIC_FILE: &str = "executor-child-output.txt";
+
+impl ExecutorDiagnostics {
+    /// The standard pair inside one run's working directory.
+    #[must_use]
+    pub fn in_directory(directory: &Path) -> Self {
+        Self {
+            typed: directory.join(TYPED_DIAGNOSTIC_FILE),
+            child: directory.join(CHILD_DIAGNOSTIC_FILE),
+        }
+    }
+
+    /// One explicitly named pair.
+    #[must_use]
+    pub fn new(typed: &Path, child: &Path) -> Self {
+        Self {
+            typed: typed.to_path_buf(),
+            child: child.to_path_buf(),
+        }
+    }
+
+    /// Where the executor writes its own typed facts.
+    #[must_use]
+    pub fn typed(&self) -> &Path {
+        &self.typed
+    }
+
+    /// Where the executor quarantines raw child text.
+    #[must_use]
+    pub fn child(&self) -> &Path {
+        &self.child
+    }
+
+    /// Makes both destinations reachable before the executor is started.
+    ///
+    /// The executor opens what it is handed and refuses a run it cannot
+    /// write; creating the directories here means a missing parent is
+    /// this side's startup failure, reported where the harness knows
+    /// what it asked for, rather than an exit status the child had no
+    /// way to explain.
+    fn prepare(&self) -> Result<(), NativeConformanceError> {
+        for path in [&self.typed, &self.child] {
+            if let Some(parent) = path.parent()
+                && !parent.as_os_str().is_empty()
+            {
+                std::fs::create_dir_all(parent)
+                    .map_err(|_| NativeConformanceError::ExecutorStartupFailed)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 /// The explicit typed configuration of one executor run.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExecutorConfiguration {
     program: PathBuf,
+    diagnostics: ExecutorDiagnostics,
     timeout: Duration,
     trust: ExecutorTrust,
     limits: ProtocolLimits,
@@ -251,16 +361,32 @@ pub struct ExecutorConfiguration {
 
 impl ExecutorConfiguration {
     /// Selects one executor, under the default record bounds.
+    ///
+    /// The diagnostic destinations are a constructor argument rather
+    /// than a builder step, because a run without them is not a
+    /// degraded run — it is a run the executor refuses to start.
     #[must_use]
-    pub fn new(program: &Path, trust: ExecutorTrust, timeout: Duration) -> Self {
+    pub fn new(
+        program: &Path,
+        trust: ExecutorTrust,
+        timeout: Duration,
+        diagnostics: ExecutorDiagnostics,
+    ) -> Self {
         Self {
             program: program.to_path_buf(),
+            diagnostics,
             timeout,
             trust,
             limits: ProtocolLimits::DEFAULT,
             cleanup_grace: DEFAULT_EXECUTOR_CLEANUP_GRACE,
             expected_provenance: None,
         }
+    }
+
+    /// Where this run's executor diagnostics are written.
+    #[must_use]
+    pub const fn diagnostics(&self) -> &ExecutorDiagnostics {
+        &self.diagnostics
     }
 
     /// The same selection under an explicit ADR-018 provenance
@@ -560,7 +686,10 @@ pub(crate) struct PrototypeTranscriptParts<'a> {
 /// soon as the concurrent child completes its exec, so that one cause is
 /// retried briefly. Every other spawn failure — an absent program, a
 /// permission refusal — is reported on the first attempt.
-fn spawn_executor(program: &std::path::Path) -> std::io::Result<std::process::Child> {
+fn spawn_executor(
+    program: &std::path::Path,
+    diagnostics: &ExecutorDiagnostics,
+) -> std::io::Result<std::process::Child> {
     let mut attempts = 0u8;
     loop {
         let mut command = Command::new(program);
@@ -568,8 +697,17 @@ fn spawn_executor(program: &std::path::Path) -> std::io::Result<std::process::Ch
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             // Not captured, not read, not relayed: arbitrary child bytes
-            // never become first-party diagnostics.
-            .stderr(Stdio::null());
+            // never become first-party diagnostics. A well-behaved
+            // executor writes nothing here at all, because it was handed
+            // two destinations that are read on purpose instead.
+            .stderr(Stdio::null())
+            // The whole of the argument passthrough: two destinations
+            // this side named for its own record. An executor that needs
+            // configuration receives it elsewhere.
+            .arg("--output")
+            .arg(diagnostics.typed())
+            .arg("--elements-output")
+            .arg(diagnostics.child());
         // The child leads its own process group, so the whole executor
         // tree can be signalled as one. This is the safe standard-library
         // route to it: the equivalent hand-written pre-exec hook would
@@ -993,8 +1131,9 @@ fn execute_workload(
     // the supervisor kills and reaps the process this harness started,
     // rather than dropping a `Child` whose destructor does neither
     // (`G11-R13`).
+    configuration.diagnostics.prepare()?;
     let mut spawned = UnadoptedChild::new(
-        spawn_executor(&configuration.program)
+        spawn_executor(&configuration.program, &configuration.diagnostics)
             .map_err(|_| NativeConformanceError::ExecutorStartupFailed)?,
     );
 
@@ -1697,8 +1836,8 @@ mod tests {
     };
 
     use super::{
-        ExecutorConfiguration, ExecutorTrust, NativeWorkload, PrimitiveFixtureSet, UnadoptedChild,
-        run_protocol,
+        ExecutorConfiguration, ExecutorDiagnostics, ExecutorTrust, NativeWorkload,
+        PrimitiveFixtureSet, UnadoptedChild, run_protocol,
     };
     use crate::error::NativeConformanceError;
     use crate::protocol::{MOCK_EXECUTOR_GENESIS_ID, MOCK_EXECUTOR_NETWORK_ID};
@@ -1826,6 +1965,9 @@ mod tests {
             Path::new("/nonexistent-executor"),
             ExecutorTrust::Mock,
             Duration::from_secs(1),
+            // Nothing is spawned here either: this drives `run_protocol`
+            // over an empty reader.
+            ExecutorDiagnostics::in_directory(Path::new("/nonexistent-diagnostics")),
         );
         let fixtures = PrimitiveFixtureSet::default();
 

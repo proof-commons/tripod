@@ -74,6 +74,8 @@ fn a_relation_this_command_does_not_run_is_a_usage_error() {
         "/nonexistent",
         "--executor-class",
         "mock",
+        "--executor-diagnostics-directory",
+        "/nonexistent-diagnostics",
         "--network-id",
         NETWORK_ID,
         "--genesis-id",
@@ -119,6 +121,13 @@ fn a_declared_mock_run_cannot_satisfy_the_prototype_gate() {
     for relation in ["constructor-continuity", "wide-floor"] {
         let directory = tempfile::tempdir().expect("tempdir");
         let executor = wrapper(directory.path(), "answer-from-census");
+        // The run keeps its executor diagnostics beside the executor it
+        // selected, which is where a temporary directory puts everything
+        // else this test owns.
+        let diagnostics = directory
+            .path()
+            .to_str()
+            .expect("the temporary path is text");
         let output = run(&[
             "--relation",
             relation,
@@ -126,6 +135,8 @@ fn a_declared_mock_run_cannot_satisfy_the_prototype_gate() {
             executor.to_str().expect("utf8 path"),
             "--executor-class",
             "mock",
+            "--executor-diagnostics-directory",
+            diagnostics,
             "--network-id",
             NETWORK_ID,
             "--genesis-id",
@@ -153,6 +164,13 @@ fn a_declared_mock_run_cannot_satisfy_the_prototype_gate() {
 fn a_refused_gate_publishes_no_report_and_dates_no_stamp() {
     let directory = tempfile::tempdir().expect("tempdir");
     let executor = wrapper(directory.path(), "answer-from-census");
+    // The run keeps its executor diagnostics beside the executor it
+    // selected, which is where a temporary directory puts everything
+    // else this test owns.
+    let diagnostics = directory
+        .path()
+        .to_str()
+        .expect("the temporary path is text");
     let report = directory.path().join("report.json");
     let stamp = directory.path().join("stamp.ok");
 
@@ -163,6 +181,8 @@ fn a_refused_gate_publishes_no_report_and_dates_no_stamp() {
         executor.to_str().expect("utf8 path"),
         "--executor-class",
         "mock",
+        "--executor-diagnostics-directory",
+        diagnostics,
         "--network-id",
         NETWORK_ID,
         "--genesis-id",

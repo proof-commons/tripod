@@ -11,6 +11,15 @@
 //! stderr is not read at all, so there is no path by which arbitrary child
 //! bytes become first-party diagnostics.
 //!
+//! Not read, and — for a reviewed executor — not written either. The
+//! executor is handed two files on the spawn, one for its own typed facts
+//! and one for raw child text it wants kept, so it has somewhere to say
+//! what it saw without saying it on a stream this side would have to
+//! either quote or throw away
+//! (see [`ExecutorDiagnostics`](crate::executor::ExecutorDiagnostics)).
+//! An arbitrary caller-selected executor may still write to stderr; that
+//! is why the null device is still on the other end of it.
+//!
 //! That closure is transitive, and it did not used to be. This side never
 //! read the executor's stderr, but the reviewed executor collapsed its
 //! *own* child's stderr into the note it then wrote as
@@ -19,7 +28,9 @@
 //! rather than through a stream it was not. A detail is now what the
 //! adapter or the target *stated*: a method, a status, a target's own
 //! answer. Neither a child's stderr nor an operator's configuration path
-//! is one `(´[PLAN-rule:guide12-exec:failure-layers]´)`.
+//! is one `(´[PLAN-rule:guide12-exec:failure-layers]´)`; both are kept in
+//! the executor's own quarantine file, where a record number rather than
+//! the text itself is what a typed diagnostic names.
 //!
 //! Every record is read under an explicit byte bound
 //! ([`ProtocolLimits`]). At most `maximum + 1` bytes are taken before the

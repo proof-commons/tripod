@@ -92,6 +92,8 @@ fn a_lone_report_destination_is_a_usage_error() {
         "/nonexistent",
         "--executor-class",
         "mock",
+        "--executor-diagnostics-directory",
+        "/nonexistent-diagnostics",
         "--network-id",
         NETWORK_ID,
         "--genesis-id",
@@ -138,11 +140,20 @@ fn no_credential_argument_exists() {
 fn a_declared_mock_run_cannot_satisfy_the_gate() {
     let directory = tempfile::tempdir().expect("tempdir");
     let executor = wrapper(directory.path(), "answer-from-census");
+    // The run keeps its executor diagnostics beside the executor it
+    // selected, which is where a temporary directory puts everything
+    // else this test owns.
+    let diagnostics = directory
+        .path()
+        .to_str()
+        .expect("the temporary path is text");
     let output = run(&[
         "--executor",
         executor.to_str().expect("utf8 path"),
         "--executor-class",
         "mock",
+        "--executor-diagnostics-directory",
+        diagnostics,
         "--network-id",
         NETWORK_ID,
         "--genesis-id",
@@ -173,11 +184,20 @@ fn declaring_a_mock_reviewed_no_longer_reaches_the_gate() {
     // the executable the operator declared they built.
     let directory = tempfile::tempdir().expect("tempdir");
     let executor = wrapper(directory.path(), "answer-from-census");
+    // The run keeps its executor diagnostics beside the executor it
+    // selected, which is where a temporary directory puts everything
+    // else this test owns.
+    let diagnostics = directory
+        .path()
+        .to_str()
+        .expect("the temporary path is text");
     let output = run(&[
         "--executor",
         executor.to_str().expect("utf8 path"),
         "--executor-class",
         "reviewed-non-mock",
+        "--executor-diagnostics-directory",
+        diagnostics,
         "--network-id",
         NETWORK_ID,
         "--genesis-id",
@@ -211,6 +231,8 @@ fn a_reviewed_declaration_without_provenance_is_a_configuration_failure() {
         "/nonexistent-executor",
         "--executor-class",
         "reviewed-non-mock",
+        "--executor-diagnostics-directory",
+        "/nonexistent-diagnostics",
         "--network-id",
         NETWORK_ID,
         "--genesis-id",
@@ -230,6 +252,13 @@ fn a_reviewed_declaration_without_provenance_is_a_configuration_failure() {
 fn a_refused_gate_publishes_no_report_and_dates_no_stamp() {
     let directory = tempfile::tempdir().expect("tempdir");
     let executor = wrapper(directory.path(), "answer-from-census");
+    // The run keeps its executor diagnostics beside the executor it
+    // selected, which is where a temporary directory puts everything
+    // else this test owns.
+    let diagnostics = directory
+        .path()
+        .to_str()
+        .expect("the temporary path is text");
     let report = directory.path().join("report.json");
     let stamp = directory.path().join("stamp.ok");
 
@@ -238,6 +267,8 @@ fn a_refused_gate_publishes_no_report_and_dates_no_stamp() {
         executor.to_str().expect("utf8 path"),
         "--executor-class",
         "mock",
+        "--executor-diagnostics-directory",
+        diagnostics,
         "--network-id",
         NETWORK_ID,
         "--genesis-id",
@@ -257,6 +288,13 @@ fn a_refused_gate_publishes_no_report_and_dates_no_stamp() {
 fn a_refused_gate_leaves_an_existing_stamp_untouched() {
     let directory = tempfile::tempdir().expect("tempdir");
     let executor = wrapper(directory.path(), "answer-from-census");
+    // The run keeps its executor diagnostics beside the executor it
+    // selected, which is where a temporary directory puts everything
+    // else this test owns.
+    let diagnostics = directory
+        .path()
+        .to_str()
+        .expect("the temporary path is text");
     let report = directory.path().join("report.json");
     let stamp = directory.path().join("stamp.ok");
     std::fs::write(&stamp, b"earlier bytes").expect("write stamp");
@@ -267,6 +305,8 @@ fn a_refused_gate_leaves_an_existing_stamp_untouched() {
         executor.to_str().expect("utf8 path"),
         "--executor-class",
         "mock",
+        "--executor-diagnostics-directory",
+        diagnostics,
         "--network-id",
         NETWORK_ID,
         "--genesis-id",
@@ -295,11 +335,20 @@ fn a_refused_gate_leaves_an_existing_stamp_untouched() {
 fn a_malformed_identifier_is_a_runtime_failure() {
     let directory = tempfile::tempdir().expect("tempdir");
     let executor = wrapper(directory.path(), "answer-from-census");
+    // The run keeps its executor diagnostics beside the executor it
+    // selected, which is where a temporary directory puts everything
+    // else this test owns.
+    let diagnostics = directory
+        .path()
+        .to_str()
+        .expect("the temporary path is text");
     let output = run(&[
         "--executor",
         executor.to_str().expect("utf8 path"),
         "--executor-class",
         "mock",
+        "--executor-diagnostics-directory",
+        diagnostics,
         "--network-id",
         "not-hex",
         "--genesis-id",
@@ -388,6 +437,8 @@ mod pty {
             "/nonexistent-executor",
             "--executor-class",
             "reviewed-non-mock",
+            "--executor-diagnostics-directory",
+            "/nonexistent-diagnostics",
             "--network-id",
             NETWORK_ID,
             "--genesis-id",

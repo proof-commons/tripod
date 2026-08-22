@@ -33,7 +33,8 @@ use target_elements::{
 };
 use target_elements_conformance::error::NativeConformanceError;
 use target_elements_conformance::executor::{
-    ExecutionTranscript, ExecutorConfiguration, ExecutorTrust, execute_prototypes,
+    ExecutionTranscript, ExecutorConfiguration, ExecutorDiagnostics, ExecutorTrust,
+    execute_prototypes,
 };
 use target_elements_conformance::protocol::{
     MOCK_EXECUTOR_GENESIS_ID, MOCK_EXECUTOR_NETWORK_ID, NativeVerdict,
@@ -118,8 +119,12 @@ fn run(
     let directory = tempfile::tempdir().expect("tempdir");
     let verdicts = verdict_file(directory.path(), matrix);
     let program = wrapper(directory.path(), behavior, &verdicts);
-    let configuration =
-        ExecutorConfiguration::new(&program, ExecutorTrust::Mock, Duration::from_secs(120));
+    let configuration = ExecutorConfiguration::new(
+        &program,
+        ExecutorTrust::Mock,
+        Duration::from_secs(120),
+        ExecutorDiagnostics::in_directory(directory.path()),
+    );
     let target = reviewed_target();
     let binding = development_binding(&target);
     execute_prototypes(&target, &binding, &configuration, matrix)

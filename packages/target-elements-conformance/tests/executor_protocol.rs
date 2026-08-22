@@ -26,7 +26,7 @@ use target_elements::{
 };
 use target_elements_conformance::error::NativeConformanceError;
 use target_elements_conformance::executor::{
-    ExecutionTranscript, ExecutorConfiguration, ExecutorTrust, execute,
+    ExecutionTranscript, ExecutorConfiguration, ExecutorDiagnostics, ExecutorTrust, execute,
 };
 use target_elements_conformance::fixture::{
     ExpectedPrimitiveOutcome, NativeCaseGroup, NativeCaseId, PrimitiveFixture, PrimitiveFixtureSet,
@@ -141,8 +141,13 @@ fn run_with(
 ) -> Result<ExecutionTranscript, NativeConformanceError> {
     let directory = tempfile::tempdir().expect("tempdir");
     let program = wrapper(directory.path(), behavior);
-    let configuration =
-        ExecutorConfiguration::new(&program, ExecutorTrust::Mock, timeout).with_limits(limits);
+    let configuration = ExecutorConfiguration::new(
+        &program,
+        ExecutorTrust::Mock,
+        timeout,
+        ExecutorDiagnostics::in_directory(directory.path()),
+    )
+    .with_limits(limits);
     let target = reviewed_target();
     let binding = development_binding(&target);
     execute(&target, &binding, &configuration, &fixtures())
@@ -292,8 +297,12 @@ fn a_nonzero_exit_fails_closed() {
 fn an_executor_that_cannot_be_started_fails_closed() {
     let directory = tempfile::tempdir().expect("tempdir");
     let missing = directory.path().join("no-such-executor");
-    let configuration =
-        ExecutorConfiguration::new(&missing, ExecutorTrust::Mock, Duration::from_secs(5));
+    let configuration = ExecutorConfiguration::new(
+        &missing,
+        ExecutorTrust::Mock,
+        Duration::from_secs(5),
+        ExecutorDiagnostics::in_directory(directory.path()),
+    );
     let target = reviewed_target();
     let binding = development_binding(&target);
     let error =
