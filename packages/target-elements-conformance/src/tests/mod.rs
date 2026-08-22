@@ -13,6 +13,7 @@ mod guide12_reproductions;
 mod guide13_reproductions;
 mod normalization_matrix_tests;
 mod operation_boundary_tests;
+mod owner_authorization_tests;
 mod protocol_tests;
 mod prototype_program_tests;
 mod prototype_tests;
