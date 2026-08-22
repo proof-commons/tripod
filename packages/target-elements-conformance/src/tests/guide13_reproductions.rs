@@ -1,11 +1,12 @@
 //! Guide-13 preflight reproductions owned by this crate.
 //!
 //! Each test here belongs to a row of the Guide-13 preflight register
-//! and reaches the branch that row reports. A row whose test is
-//! `#[ignore]`d is one Wave 0 CONFIRMED: the assertion states the
-//! property that *should* hold, so the test fails while the defect
-//! stands, and the wave that repairs the row removes the attribute
-//! rather than writing a new test.
+//! and reaches the branch that row reports. Wave 0 wrote each assertion
+//! as the property that *should* hold and marked it `#[ignore]`, so the
+//! test failed while the defect stood; the wave that repairs a row lifts
+//! the attribute rather than writing a new test, which is what makes the
+//! test that reproduced the defect the same test that now witnesses its
+//! absence. No attribute remains: both rows below are repaired.
 //!
 //! - `G13-R07` — REPAIRED: `is_valid_scalar` refused a zero tweak, so
 //!   the oracle rejected a construction the target accepts. The guard
@@ -167,24 +168,25 @@ fn lifecycle(role: LifecycleStepRole, outcome: LifecycleOutcome) -> NativeLifecy
 /// response claiming it is a record of Process A reporting what Process
 /// B concluded, which no run produced.
 ///
-/// `validate_shape` never reads `case.lifecycle` at all. Its one rule
-/// is about a step that did *not* run, and `Verified` runs, so the
-/// record passes untouched — while also carrying no handoff, which is
+/// `validate_shape` never read `case.lifecycle` at all. Its one rule
+/// was about a step that did *not* run, and `Verified` runs, so the
+/// record passed untouched — while also carrying no handoff, which is
 /// the one thing a construct step exists to publish.
 ///
-/// The module documentation claims the two roles' field separation is
+/// The module documentation claimed the two roles' field separation is
 /// enforced here, and that claim is what this test holds it to.
 #[test]
-#[ignore = "G13-R14: confirmed, repair pending"]
 fn a_construct_response_cannot_report_the_verifier_s_verdict() {
     let contradictory = lifecycle(LifecycleStepRole::Construct, LifecycleOutcome::Verified);
 
-    // The refusal is asserted as a refusal, not as one named variant:
-    // no variant of `ResponseShapeDefect` names a role contradiction
-    // yet, so the repair has to mint one and the row must not
-    // pre-empt which.
-    assert!(
-        contradictory.validate_shape().is_err(),
+    // Wave 0 asserted the refusal as a refusal, because no variant
+    // named a role contradiction and the row was not to pre-empt which
+    // one the repair would mint. It minted this one, so the assertion
+    // names it: a refusal under some other variant would mean the
+    // record was refused for some other reason.
+    assert_eq!(
+        contradictory.validate_shape(),
+        Err(ResponseShapeDefect::LifecycleOutcomeMismatchesRole),
         "a construct step reported the verdict only a verify step reaches",
     );
 }
@@ -195,12 +197,12 @@ fn a_construct_response_cannot_report_the_verifier_s_verdict() {
 /// mirrored: Process B does not publish a record, and the outcome that
 /// says one was published is not its to report.
 #[test]
-#[ignore = "G13-R14: confirmed, repair pending"]
 fn a_verify_response_cannot_report_the_constructor_s_verdict() {
     let contradictory = lifecycle(LifecycleStepRole::Verify, LifecycleOutcome::Constructed);
 
-    assert!(
-        contradictory.validate_shape().is_err(),
+    assert_eq!(
+        contradictory.validate_shape(),
+        Err(ResponseShapeDefect::LifecycleOutcomeMismatchesRole),
         "a verify step reported the verdict only a construct step reaches",
     );
 }
@@ -236,7 +238,6 @@ fn operation(kind: OperationStepKind, layer: ObservedOutcomeLayer) -> NativeOper
 /// acceptance, and never requires it to be absent otherwise: the
 /// converse the row names.
 #[test]
-#[ignore = "G13-R14: confirmed, repair pending"]
 fn a_rejected_submission_carries_no_accepted_transaction_identity() {
     let mut contradictory = operation(
         OperationStepKind::Submit,
@@ -244,8 +245,9 @@ fn a_rejected_submission_carries_no_accepted_transaction_identity() {
     );
     contradictory.accepted_txid = Some("00".repeat(32));
 
-    assert!(
-        contradictory.validate_shape().is_err(),
+    assert_eq!(
+        contradictory.validate_shape(),
+        Err(ResponseShapeDefect::RefusedOperationCarriesObservation),
         "a rejection reported the identity of an acceptance",
     );
 }
@@ -256,7 +258,6 @@ fn a_rejected_submission_carries_no_accepted_transaction_identity() {
 /// target refused created none, so a nonempty output list beside a
 /// script-path rejection is an observation with no provenance.
 #[test]
-#[ignore = "G13-R14: confirmed, repair pending"]
 fn a_rejected_funding_step_reports_no_created_outputs() {
     let mut contradictory = operation(
         OperationStepKind::Fund,
@@ -264,8 +265,9 @@ fn a_rejected_funding_step_reports_no_created_outputs() {
     );
     contradictory.issued_asset = Some("00".repeat(32));
 
-    assert!(
-        contradictory.validate_shape().is_err(),
+    assert_eq!(
+        contradictory.validate_shape(),
+        Err(ResponseShapeDefect::RefusedOperationCarriesObservation),
         "a refused funding step reported an asset the target never issued",
     );
 }
@@ -277,7 +279,6 @@ fn a_rejected_funding_step_reports_no_created_outputs() {
 /// was bound to, reported beside a target rejection, is a signature
 /// attributed to a run that the target refused.
 #[test]
-#[ignore = "G13-R14: confirmed, repair pending"]
 fn a_rejected_signing_step_reports_no_authorization() {
     let mut contradictory = operation(
         OperationStepKind::SignSponsor,
@@ -286,8 +287,9 @@ fn a_rejected_signing_step_reports_no_authorization() {
     contradictory.sponsor_witness = vec![vec![0x30], vec![0x02]];
     contradictory.signature_bound_to = Some(vec![0x02]);
 
-    assert!(
-        contradictory.validate_shape().is_err(),
+    assert_eq!(
+        contradictory.validate_shape(),
+        Err(ResponseShapeDefect::RefusedOperationCarriesObservation),
         "a refused signing step reported an authorization",
     );
 }

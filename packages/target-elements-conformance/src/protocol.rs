@@ -850,6 +850,43 @@ pub enum ResponseShapeDefect {
     /// An accepted operation step reported nothing its kind is defined to
     /// produce.
     AcceptedOperationOmitsObservation,
+    /// A refused operation step reported what only an acceptance
+    /// produces.
+    ///
+    /// The converse of [`Self::AcceptedOperationOmitsObservation`], and
+    /// the more dangerous half. An acceptance with nothing to show for
+    /// it is a record a reader can see is empty; a refusal carrying a
+    /// created coin, an issued identity, an accepted transaction
+    /// identity, or an authorization carries two answers to one
+    /// question, and a consumer reading either member alone gets a
+    /// different verdict from the same row.
+    RefusedOperationCarriesObservation,
+    /// A lifecycle step reported an outcome only the other role reaches.
+    ///
+    /// The two roles are not two configurations of one step: Process A
+    /// publishes and Process B reads, so `constructed` is a verdict only
+    /// a construct step reaches and `verified` — and every refusal
+    /// beneath it — is one only a verify step reaches. A record that
+    /// crosses that line is not a run either process made.
+    LifecycleOutcomeMismatchesRole,
+    /// A lifecycle response carried members the step it answers does not
+    /// produce.
+    ///
+    /// Either the other role's members — a verify step publishing a
+    /// handoff, a construct step reporting what the chain said — or its
+    /// own role's members under an outcome that does not reach them,
+    /// which is how a refusal comes to carry the spend that only a
+    /// completed verification builds.
+    LifecycleResponseMismatchesStep,
+    /// A lifecycle step that ran reported nothing its outcome rests on.
+    ///
+    /// A construct step exists to publish a record, and a verify step
+    /// reaches every one of its verdicts by looking something up. An
+    /// outcome with none of that behind it is indistinguishable from an
+    /// adapter that named the outcome without doing the work — the same
+    /// reasoning [`Self::AcceptedOperationOmitsObservation`] encodes for
+    /// the operation record.
+    LifecycleStepOmitsObservation,
 }
 
 impl std::fmt::Display for ResponseShapeDefect {
@@ -879,6 +916,18 @@ impl std::fmt::Display for ResponseShapeDefect {
             }
             Self::AcceptedOperationOmitsObservation => {
                 "an accepted operation step reported nothing its kind produces"
+            }
+            Self::RefusedOperationCarriesObservation => {
+                "a refused operation step reported what only an acceptance produces"
+            }
+            Self::LifecycleOutcomeMismatchesRole => {
+                "a lifecycle step reported an outcome only the other role reaches"
+            }
+            Self::LifecycleResponseMismatchesStep => {
+                "a lifecycle response carried members the step it answers does not produce"
+            }
+            Self::LifecycleStepOmitsObservation => {
+                "a lifecycle step that ran reported nothing its outcome rests on"
             }
         };
         formatter.write_str(text)
@@ -1496,34 +1545,141 @@ pub struct NativeLifecycleResponse {
 }
 
 impl NativeLifecycleResponse {
-    /// Whether this response contradicts itself.
+    /// Whether this response contradicts itself, its role, or its own
+    /// outcome.
     ///
-    /// A step that did not run observed nothing, on exactly the
-    /// reasoning [`NativeConservationResponse::validate_shape`] states:
-    /// a handoff names a transaction that reached a block, a check
-    /// reports what the chain said, and a spend is a transaction that
-    /// was confirmed. A step that reached no verdict produced none of
-    /// them, so any of them beside such an outcome is a value with no
-    /// possible provenance.
+    /// # A step that did not run observed nothing
     ///
-    /// The detail is not counted. It is what the adapter said about the
-    /// failure, and a failure is entitled to a reason.
+    /// The oldest of the rules here, on exactly the reasoning
+    /// [`NativeConservationResponse::validate_shape`] states: a handoff
+    /// names a transaction that reached a block, a check reports what
+    /// the chain said, and a spend is a transaction that was confirmed.
+    /// A step that reached no verdict produced none of them, so any of
+    /// them beside such an outcome is a value with no possible
+    /// provenance.
+    ///
+    /// It was also, until `G13-R14`, the *only* rule — which left the
+    /// two halves of one record free to answer each other's questions.
+    ///
+    /// # The census, over both roles and every outcome
+    ///
+    /// Every member of this record belongs to exactly one role. Process
+    /// A publishes the handoff and reports what it signed and created:
+    /// the authorization profile, the witness sizes that profile rests
+    /// on, the decoded outputs, and the stale row it did or did not
+    /// build. Process B reports what it looked for and the spend it
+    /// made of its own funds. Only the two failure reasons — the detail
+    /// and the reason a stale row was not built — are not observations,
+    /// and a failure is entitled to a reason.
+    ///
+    /// The outcomes divide the same way. `Constructed` is a verdict
+    /// only Process A reaches; `Verified` and every refusal beneath it
+    /// are verdicts only Process B reaches; the two failures belong to
+    /// neither and are reachable from both.
+    ///
+    /// The match below is over the pair, and it is exhaustive on
+    /// purpose. A role or an outcome added later has no shape rule
+    /// until one is written here, and the compiler is what says so — a
+    /// catch-all arm would let a new pair be admitted, or refused, by a
+    /// rule nobody chose for it.
+    ///
+    /// # What each verdict owes
+    ///
+    /// A construct step that published owes the handoff, which is the
+    /// one thing publishing produces. A verify step owes its checks
+    /// whatever it concluded — every refusal is reached by looking
+    /// something up and finding it wrong, so a refusal with no checks
+    /// behind it is a verdict with no evidence — and a verification
+    /// that succeeded owes the spend as well, because building one is
+    /// the last of the things `Verified` claims were done.
     ///
     /// # Errors
     ///
     /// [`ResponseShapeDefect`] where the response is not a shape the
     /// protocol defines.
     pub const fn validate_shape(&self) -> Result<(), ResponseShapeDefect> {
-        if !self.outcome.step_ran()
-            && (self.handoff.is_some()
-                || self.authorization_profile.is_some()
-                || !self.observed_witness_sizes.is_empty()
-                || !self.observed_outputs.is_empty()
-                || !self.checks.is_empty()
-                || self.spend.is_some()
-                || self.superseded_by.is_some())
-        {
-            return Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation);
+        // Process A's members, and Process B's. The two lists together
+        // with the two reasons exhaust this record, so a member added
+        // later has to be placed in one of them before it can be
+        // written down.
+        let publisher_members = self.handoff.is_some()
+            || self.authorization_profile.is_some()
+            || !self.observed_witness_sizes.is_empty()
+            || !self.observed_outputs.is_empty()
+            || self.superseded_by.is_some();
+        let reader_members = !self.checks.is_empty() || self.spend.is_some();
+
+        match (self.case.lifecycle, self.outcome) {
+            (LifecycleStepRole::Construct, LifecycleOutcome::Constructed) => {
+                if reader_members {
+                    return Err(ResponseShapeDefect::LifecycleResponseMismatchesStep);
+                }
+                if self.handoff.is_none() {
+                    return Err(ResponseShapeDefect::LifecycleStepOmitsObservation);
+                }
+            }
+            (LifecycleStepRole::Verify, LifecycleOutcome::Verified) => {
+                if publisher_members || self.supersede_failure.is_some() {
+                    return Err(ResponseShapeDefect::LifecycleResponseMismatchesStep);
+                }
+                if self.checks.is_empty() || self.spend.is_none() {
+                    return Err(ResponseShapeDefect::LifecycleStepOmitsObservation);
+                }
+            }
+            // A refusal is Process B's too, and it stops short of the
+            // spend: the transaction of its own funds is built after
+            // everything the record claimed has been confirmed, so a
+            // refusal that reports one is reporting work its own
+            // verdict says was never reached.
+            (
+                LifecycleStepRole::Verify,
+                LifecycleOutcome::RefusedEvidenceAbsent
+                | LifecycleOutcome::RefusedCopiedEvidence
+                | LifecycleOutcome::RefusedOutputAbsent
+                | LifecycleOutcome::RefusedOutputNotExplicit
+                | LifecycleOutcome::RefusedOutputSpent
+                | LifecycleOutcome::RefusedWrongChainContext,
+            ) => {
+                if publisher_members || self.supersede_failure.is_some() || self.spend.is_some() {
+                    return Err(ResponseShapeDefect::LifecycleResponseMismatchesStep);
+                }
+                if self.checks.is_empty() {
+                    return Err(ResponseShapeDefect::LifecycleStepOmitsObservation);
+                }
+            }
+            // Neither process reached the chain. The observation rule
+            // is applied before the role rule here, and deliberately:
+            // "this step did not run" is the more fundamental thing
+            // wrong with such a record, and naming the role instead
+            // would send a reader looking for a dispatch fault where
+            // the fault is a claim about a run that did not happen.
+            (
+                _,
+                LifecycleOutcome::ExecutorInfrastructureFailure
+                | LifecycleOutcome::FixtureConstructionFailure,
+            ) => {
+                if publisher_members || reader_members {
+                    return Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation);
+                }
+                if matches!(self.case.lifecycle, LifecycleStepRole::Verify)
+                    && self.supersede_failure.is_some()
+                {
+                    return Err(ResponseShapeDefect::LifecycleResponseMismatchesStep);
+                }
+            }
+            (
+                LifecycleStepRole::Construct,
+                LifecycleOutcome::Verified
+                | LifecycleOutcome::RefusedEvidenceAbsent
+                | LifecycleOutcome::RefusedCopiedEvidence
+                | LifecycleOutcome::RefusedOutputAbsent
+                | LifecycleOutcome::RefusedOutputNotExplicit
+                | LifecycleOutcome::RefusedOutputSpent
+                | LifecycleOutcome::RefusedWrongChainContext,
+            )
+            | (LifecycleStepRole::Verify, LifecycleOutcome::Constructed) => {
+                return Err(ResponseShapeDefect::LifecycleOutcomeMismatchesRole);
+            }
         }
         Ok(())
     }
@@ -1910,7 +2066,7 @@ pub struct NativeOperationResponse {
 impl NativeOperationResponse {
     /// Whether this response contradicts itself.
     ///
-    /// Three rules, and each one closes a way for a report to state a
+    /// Four rules, and each one closes a way for a report to state a
     /// fact no run produced.
     ///
     /// A step that reached no target verdict observed nothing, on exactly
@@ -1929,8 +2085,40 @@ impl NativeOperationResponse {
     /// An acceptance with nothing to show for it is indistinguishable
     /// from an adapter that returned the layer without doing the work.
     ///
+    /// A *refused* step must report none of it, which is the rule
+    /// `G13-R14` found missing. The three rules above admitted a
+    /// rejected submission carrying an accepted transaction identity, a
+    /// refused funding step carrying the asset it did not issue and the
+    /// coins it did not create, and a refused signing step carrying a
+    /// witness stack and the bytes it was bound to. Each of those is one
+    /// record answering its own question twice, and a consumer reading
+    /// the artifact rather than the layer gets the opposite verdict from
+    /// the same row.
+    ///
+    /// # The member census, by kind
+    ///
+    /// Each kind owns the members it can produce and carries none of the
+    /// others under any outcome:
+    ///
+    /// ```text
+    /// fund           issued_asset, funded_outputs
+    /// submit         accepted_txid
+    /// fund_sponsor   funded_outputs
+    /// sign_sponsor   sponsor_witness, signature_bound_to
+    /// ```
+    ///
+    /// An owned member is present exactly when the target accepted the
+    /// step — required of an acceptance, refused of a rejection — with
+    /// one exception that is a choice rather than an oversight: a
+    /// funding step's issued asset is optional on acceptance, because a
+    /// step paying an asset an earlier step already issued creates coins
+    /// without choosing an identity.
+    ///
     /// The detail is not counted, on the same ground the lifecycle
-    /// response gives: a failure is entitled to a reason.
+    /// response gives: a failure is entitled to a reason. Neither are the
+    /// resource figures, which are the target's own accounting for bytes
+    /// it judged — a refusal is a verdict, and the transaction it refused
+    /// still has a weight the node reports.
     ///
     /// The match over the step kinds is exhaustive and stays that way. A
     /// kind added later has no shape rule until one is written here, and
@@ -1941,15 +2129,19 @@ impl NativeOperationResponse {
     ///
     /// [`ResponseShapeDefect`] where the response is not a shape the
     /// protocol defines.
-    pub fn validate_shape(&self) -> Result<(), ResponseShapeDefect> {
-        let observed = self.issued_asset.is_some()
-            || !self.funded_outputs.is_empty()
-            || self.accepted_txid.is_some()
-            || !self.sponsor_witness.is_empty()
-            || self.signature_bound_to.is_some()
-            || self.resources.observes_interpreter();
+    pub const fn validate_shape(&self) -> Result<(), ResponseShapeDefect> {
+        let issues = self.issued_asset.is_some();
+        let creates_coins = !self.funded_outputs.is_empty();
+        let submits = self.accepted_txid.is_some();
+        let authorizes = !self.sponsor_witness.is_empty() || self.signature_bound_to.is_some();
+
         if !self.observed_layer.is_target_verdict() {
-            return if observed {
+            return if issues
+                || creates_coins
+                || submits
+                || authorizes
+                || self.resources.observes_interpreter()
+            {
                 Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation)
             } else {
                 Ok(())
@@ -1959,31 +2151,34 @@ impl NativeOperationResponse {
         // An authorization belongs to the one step that asks for one.
         // Any other kind reporting one would be attaching an
         // authorization to an obligation that never requested it.
-        if !matches!(self.case.operation, OperationStepKind::SignSponsor)
-            && (!self.sponsor_witness.is_empty() || self.signature_bound_to.is_some())
-        {
+        if !matches!(self.case.operation, OperationStepKind::SignSponsor) && authorizes {
             return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
         }
 
+        let accepted = matches!(self.observed_layer, ObservedOutcomeLayer::Accepted);
         match self.case.operation {
             OperationStepKind::Fund => {
-                if self.accepted_txid.is_some() {
+                if submits {
                     return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
                 }
-                if self.observed_layer == ObservedOutcomeLayer::Accepted
-                    && self.funded_outputs.is_empty()
-                {
-                    return Err(ResponseShapeDefect::AcceptedOperationOmitsObservation);
+                if accepted {
+                    if !creates_coins {
+                        return Err(ResponseShapeDefect::AcceptedOperationOmitsObservation);
+                    }
+                } else if issues || creates_coins {
+                    return Err(ResponseShapeDefect::RefusedOperationCarriesObservation);
                 }
             }
             OperationStepKind::Submit => {
-                if self.issued_asset.is_some() || !self.funded_outputs.is_empty() {
+                if issues || creates_coins {
                     return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
                 }
-                if self.observed_layer == ObservedOutcomeLayer::Accepted
-                    && self.accepted_txid.is_none()
-                {
-                    return Err(ResponseShapeDefect::AcceptedOperationOmitsObservation);
+                if accepted {
+                    if !submits {
+                        return Err(ResponseShapeDefect::AcceptedOperationOmitsObservation);
+                    }
+                } else if submits {
+                    return Err(ResponseShapeDefect::RefusedOperationCarriesObservation);
                 }
             }
             // A sponsor-funding step creates coins and issues nothing: a
@@ -1991,13 +2186,15 @@ impl NativeOperationResponse {
             // chose, and a coin is not a transaction the target took an
             // identity for.
             OperationStepKind::FundSponsor => {
-                if self.accepted_txid.is_some() || self.issued_asset.is_some() {
+                if submits || issues {
                     return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
                 }
-                if self.observed_layer == ObservedOutcomeLayer::Accepted
-                    && self.funded_outputs.is_empty()
-                {
-                    return Err(ResponseShapeDefect::AcceptedOperationOmitsObservation);
+                if accepted {
+                    if !creates_coins {
+                        return Err(ResponseShapeDefect::AcceptedOperationOmitsObservation);
+                    }
+                } else if creates_coins {
+                    return Err(ResponseShapeDefect::RefusedOperationCarriesObservation);
                 }
             }
             // A signing step creates nothing and submits nothing. What it
@@ -2006,16 +2203,15 @@ impl NativeOperationResponse {
             // without the other is unusable — a stack nobody can bind to
             // a transaction, or a binding with nothing to apply.
             OperationStepKind::SignSponsor => {
-                if self.accepted_txid.is_some()
-                    || self.issued_asset.is_some()
-                    || !self.funded_outputs.is_empty()
-                {
+                if submits || issues || creates_coins {
                     return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
                 }
-                if self.observed_layer == ObservedOutcomeLayer::Accepted
-                    && (self.sponsor_witness.is_empty() || self.signature_bound_to.is_none())
-                {
-                    return Err(ResponseShapeDefect::AcceptedOperationOmitsObservation);
+                if accepted {
+                    if self.sponsor_witness.is_empty() || self.signature_bound_to.is_none() {
+                        return Err(ResponseShapeDefect::AcceptedOperationOmitsObservation);
+                    }
+                } else if authorizes {
+                    return Err(ResponseShapeDefect::RefusedOperationCarriesObservation);
                 }
             }
         }

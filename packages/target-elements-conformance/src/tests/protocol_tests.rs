@@ -735,3 +735,571 @@ fn an_accepted_authorization_states_a_stack_and_what_it_was_bound_to() {
         .validate_shape()
         .expect("both halves is an authorization");
 }
+
+// -- G13-R14: the response shapes, over role, kind, and verdict -------
+
+/// The lifecycle response shape, held to the whole product of role and
+/// outcome.
+///
+/// `G13-R14` found `validate_shape` reading one member of the record —
+/// whether the step ran — and nothing else, so a construct response
+/// could report the verifier's verdict, a verify response could publish
+/// a handoff, and neither was a shape the protocol defines. The rules
+/// are now a match over the pair, and these tests walk the pair.
+mod lifecycle_response_shapes {
+    use super::*;
+
+    use crate::lifecycle::{HANDOFF_SCHEMA, LifecycleOutcome, PublicHandoff};
+    use crate::normalization::{AuthorizationProfile, ObservedOutput};
+    use crate::protocol::{
+        LifecycleCaseId, LifecycleCheck, LifecycleSpend, LifecycleStepRole,
+        NativeLifecycleResponse, WireOutpoint,
+    };
+
+    /// Every outcome this record can carry, in one list.
+    ///
+    /// Written out rather than derived, because the point of the tests
+    /// below is to walk the product of role and outcome, and a list
+    /// derived from the type would agree with the type by construction.
+    const EVERY_OUTCOME: [LifecycleOutcome; 10] = [
+        LifecycleOutcome::Constructed,
+        LifecycleOutcome::Verified,
+        LifecycleOutcome::RefusedEvidenceAbsent,
+        LifecycleOutcome::RefusedCopiedEvidence,
+        LifecycleOutcome::RefusedOutputAbsent,
+        LifecycleOutcome::RefusedOutputNotExplicit,
+        LifecycleOutcome::RefusedOutputSpent,
+        LifecycleOutcome::RefusedWrongChainContext,
+        LifecycleOutcome::ExecutorInfrastructureFailure,
+        LifecycleOutcome::FixtureConstructionFailure,
+    ];
+
+    /// The six refusals a reading process reaches.
+    const EVERY_REFUSAL: [LifecycleOutcome; 6] = [
+        LifecycleOutcome::RefusedEvidenceAbsent,
+        LifecycleOutcome::RefusedCopiedEvidence,
+        LifecycleOutcome::RefusedOutputAbsent,
+        LifecycleOutcome::RefusedOutputNotExplicit,
+        LifecycleOutcome::RefusedOutputSpent,
+        LifecycleOutcome::RefusedWrongChainContext,
+    ];
+
+    /// One response with nothing in it but its identity.
+    fn bare(role: LifecycleStepRole, outcome: LifecycleOutcome) -> NativeLifecycleResponse {
+        NativeLifecycleResponse {
+            schema: NATIVE_PROTOCOL_SCHEMA,
+            case: LifecycleCaseId { lifecycle: role },
+            outcome,
+            handoff: None,
+            authorization_profile: None,
+            observed_witness_sizes: Vec::new(),
+            observed_outputs: Vec::new(),
+            checks: Vec::new(),
+            spend: None,
+            superseded_by: None,
+            supersede_failure: None,
+            detail: None,
+        }
+    }
+
+    /// What Process A publishes, in the shape it publishes it.
+    fn handoff() -> PublicHandoff {
+        PublicHandoff {
+            schema: HANDOFF_SCHEMA.to_owned(),
+            chain_name: "a-development-chain".to_owned(),
+            network_id: "11".repeat(32),
+            genesis_id: "22".repeat(32),
+            txid: "33".repeat(32),
+            output_index: 0,
+            block_hash: "44".repeat(32),
+            block_height: 101,
+            raw_transaction: "0200000000".to_owned(),
+            claimed_explicit_amount: 100_000,
+            claimed_explicit_asset: "55".repeat(32),
+            claimed_owner_address: "an-address".to_owned(),
+        }
+    }
+
+    /// One thing Process B looked for.
+    fn check() -> LifecycleCheck {
+        LifecycleCheck {
+            check: "chain_context_genesis".to_owned(),
+            expected: "22".repeat(32),
+            observed: "22".repeat(32),
+            agrees: true,
+        }
+    }
+
+    /// The spend Process B builds out of its own funds.
+    fn spend() -> LifecycleSpend {
+        LifecycleSpend {
+            txid: "66".repeat(32),
+            amount: 90_000,
+            destination: "another-address".to_owned(),
+            destination_script: "0014".to_owned(),
+            consumed_outpoint: WireOutpoint {
+                txid: "77".repeat(32),
+                vout: 1,
+            },
+            consumed_owner_object: false,
+        }
+    }
+
+    /// A well-formed record for the publishing process's own success.
+    fn published() -> NativeLifecycleResponse {
+        NativeLifecycleResponse {
+            handoff: Some(handoff()),
+            ..bare(LifecycleStepRole::Construct, LifecycleOutcome::Constructed)
+        }
+    }
+
+    /// A well-formed record for the reading process's own success.
+    fn verified() -> NativeLifecycleResponse {
+        NativeLifecycleResponse {
+            checks: vec![check()],
+            spend: Some(spend()),
+            ..bare(LifecycleStepRole::Verify, LifecycleOutcome::Verified)
+        }
+    }
+
+    /// The verdict, taken over a record that made the round trip.
+    ///
+    /// Every contradiction below is a record the wire carries and the
+    /// parser accepts — `deny_unknown_fields` has nothing to object to,
+    /// since every member is declared. That is the whole point of the
+    /// row: what refuses these is the shape rule, and nothing else
+    /// would.
+    fn verdict(response: &NativeLifecycleResponse) -> Result<(), ResponseShapeDefect> {
+        let text = serde_json::to_string(response).expect("the response serializes");
+        let read: NativeLifecycleResponse =
+            serde_json::from_str(&text).expect("the record is one this side declares");
+        assert_eq!(&read, response, "the record survives both directions");
+        read.validate_shape()
+    }
+
+    /// Every pair of role and outcome is classified, and only the pairs
+    /// the role reaches are admitted.
+    #[test]
+    fn a_verdict_belongs_to_the_role_that_reaches_it() {
+        for outcome in EVERY_OUTCOME {
+            for role in [LifecycleStepRole::Construct, LifecycleStepRole::Verify] {
+                let reachable = match role {
+                    LifecycleStepRole::Construct => matches!(
+                        outcome,
+                        LifecycleOutcome::Constructed
+                            | LifecycleOutcome::ExecutorInfrastructureFailure
+                            | LifecycleOutcome::FixtureConstructionFailure
+                    ),
+                    LifecycleStepRole::Verify => !matches!(outcome, LifecycleOutcome::Constructed),
+                };
+                if reachable {
+                    continue;
+                }
+                assert_eq!(
+                    verdict(&bare(role, outcome)),
+                    Err(ResponseShapeDefect::LifecycleOutcomeMismatchesRole),
+                    "{role:?} cannot report {outcome:?}",
+                );
+            }
+        }
+    }
+
+    /// A construct step may not report what only the reading process
+    /// produces.
+    #[test]
+    fn a_construct_response_carries_no_reader_member() {
+        verdict(&published()).expect("a published record with a handoff is well formed");
+        for contradictory in [
+            NativeLifecycleResponse {
+                checks: vec![check()],
+                ..published()
+            },
+            NativeLifecycleResponse {
+                spend: Some(spend()),
+                ..published()
+            },
+        ] {
+            assert_eq!(
+                verdict(&contradictory),
+                Err(ResponseShapeDefect::LifecycleResponseMismatchesStep),
+            );
+        }
+    }
+
+    /// A verify step may not report what only the publishing process
+    /// produces — under its acceptance or under any of its refusals.
+    #[test]
+    fn a_verify_response_carries_no_publisher_member() {
+        for outcome in EVERY_REFUSAL {
+            verdict(&NativeLifecycleResponse {
+                checks: vec![check()],
+                ..bare(LifecycleStepRole::Verify, outcome)
+            })
+            .expect("a refusal that looked something up is well formed");
+        }
+        verdict(&verified()).expect("a verification with checks and a spend is well formed");
+
+        // Each publishing member in turn, against a record that is
+        // otherwise exactly the well-formed verification.
+        let publisher: [NativeLifecycleResponse; 5] = [
+            NativeLifecycleResponse {
+                handoff: Some(handoff()),
+                ..verified()
+            },
+            NativeLifecycleResponse {
+                authorization_profile: Some(AuthorizationProfile::SighashDefault),
+                ..verified()
+            },
+            NativeLifecycleResponse {
+                observed_witness_sizes: vec![vec![64]],
+                ..verified()
+            },
+            NativeLifecycleResponse {
+                observed_outputs: vec![ObservedOutput {
+                    script_pubkey: vec![0x51],
+                    explicit_amount: Some(100_000),
+                    explicit_asset: None,
+                    is_fee: false,
+                }],
+                ..verified()
+            },
+            NativeLifecycleResponse {
+                superseded_by: Some("88".repeat(32)),
+                ..verified()
+            },
+        ];
+        for contradictory in publisher {
+            assert_eq!(
+                verdict(&contradictory),
+                Err(ResponseShapeDefect::LifecycleResponseMismatchesStep),
+            );
+        }
+
+        // The stale row's failure reason is a reason rather than an
+        // observation, which is why it is exempt from the did-not-run
+        // rule — and it is still Process A's, so a reading process has
+        // no business reporting one under any outcome at all.
+        assert_eq!(
+            verdict(&NativeLifecycleResponse {
+                supersede_failure: Some("the coin was already spent".to_owned()),
+                ..verified()
+            }),
+            Err(ResponseShapeDefect::LifecycleResponseMismatchesStep),
+        );
+        assert_eq!(
+            verdict(&NativeLifecycleResponse {
+                supersede_failure: Some("the coin was already spent".to_owned()),
+                ..bare(
+                    LifecycleStepRole::Verify,
+                    LifecycleOutcome::ExecutorInfrastructureFailure
+                )
+            }),
+            Err(ResponseShapeDefect::LifecycleResponseMismatchesStep),
+        );
+    }
+
+    /// A refusal stops short of the spend, which is built only after
+    /// everything the record claimed has been confirmed.
+    #[test]
+    fn a_refusing_verify_response_reports_no_spend() {
+        for outcome in EVERY_REFUSAL {
+            assert_eq!(
+                verdict(&NativeLifecycleResponse {
+                    checks: vec![check()],
+                    spend: Some(spend()),
+                    ..bare(LifecycleStepRole::Verify, outcome)
+                }),
+                Err(ResponseShapeDefect::LifecycleResponseMismatchesStep),
+                "{outcome:?} reported a spend its own verdict says was never reached",
+            );
+        }
+    }
+
+    /// A step that ran owes what its outcome rests on.
+    #[test]
+    fn a_step_that_ran_reports_what_its_outcome_rests_on() {
+        // Publishing, with nothing published.
+        assert_eq!(
+            verdict(&bare(
+                LifecycleStepRole::Construct,
+                LifecycleOutcome::Constructed
+            )),
+            Err(ResponseShapeDefect::LifecycleStepOmitsObservation),
+        );
+
+        // Verification, missing either half of what it claims.
+        for contradictory in [
+            NativeLifecycleResponse {
+                checks: Vec::new(),
+                ..verified()
+            },
+            NativeLifecycleResponse {
+                spend: None,
+                ..verified()
+            },
+        ] {
+            assert_eq!(
+                verdict(&contradictory),
+                Err(ResponseShapeDefect::LifecycleStepOmitsObservation),
+            );
+        }
+
+        // A refusal with no check behind it is a verdict with no
+        // evidence: every one of them is reached by looking something
+        // up and finding it wrong.
+        for outcome in EVERY_REFUSAL {
+            assert_eq!(
+                verdict(&bare(LifecycleStepRole::Verify, outcome)),
+                Err(ResponseShapeDefect::LifecycleStepOmitsObservation),
+                "{outcome:?} was reported with nothing looked up",
+            );
+        }
+    }
+
+    /// A step that did not run is still entitled to say why.
+    #[test]
+    fn a_step_that_did_not_run_reports_only_its_reason() {
+        for outcome in [
+            LifecycleOutcome::ExecutorInfrastructureFailure,
+            LifecycleOutcome::FixtureConstructionFailure,
+        ] {
+            for role in [LifecycleStepRole::Construct, LifecycleStepRole::Verify] {
+                verdict(&NativeLifecycleResponse {
+                    detail: Some("the adapter reached no node".to_owned()),
+                    ..bare(role, outcome)
+                })
+                .expect("a failure is entitled to a reason");
+            }
+            assert_eq!(
+                verdict(&NativeLifecycleResponse {
+                    handoff: Some(handoff()),
+                    ..bare(LifecycleStepRole::Construct, outcome)
+                }),
+                Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation),
+            );
+        }
+    }
+}
+
+/// The operation response shape, held to the product of kind and
+/// verdict.
+///
+/// The half `G13-R14` names is the converse of the rule that was there:
+/// an acceptance had to show what its kind produces, and a refusal was
+/// free to show it too.
+mod operation_response_shapes {
+    use super::*;
+
+    use crate::protocol::{
+        FundedOutput, NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId,
+        OperationStepKind, WireOutpoint,
+    };
+
+    /// Every kind of step this record answers.
+    const EVERY_KIND: [OperationStepKind; 4] = [
+        OperationStepKind::Fund,
+        OperationStepKind::Submit,
+        OperationStepKind::FundSponsor,
+        OperationStepKind::SignSponsor,
+    ];
+
+    /// The three layers at which the target refused what it judged.
+    ///
+    /// All three are verdicts: the target answered. The two layers that
+    /// are not verdicts are governed by the older rule, and are checked
+    /// where that rule is.
+    const EVERY_REJECTION: [ObservedOutcomeLayer; 3] = [
+        ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
+        ObservedOutcomeLayer::ScriptPathRejection,
+        ObservedOutcomeLayer::RelayPolicyRejection,
+    ];
+
+    /// One response with nothing in it but its identity.
+    fn bare(kind: OperationStepKind, layer: ObservedOutcomeLayer) -> NativeOperationResponse {
+        NativeOperationResponse {
+            schema: NATIVE_PROTOCOL_SCHEMA,
+            case: OperationCaseId {
+                operation: kind,
+                step: "step".to_owned(),
+            },
+            observed_layer: layer,
+            observed_detail: None,
+            issued_asset: None,
+            funded_outputs: Vec::new(),
+            accepted_txid: None,
+            sponsor_witness: Vec::new(),
+            signature_bound_to: None,
+            resources: NativeResourceObservation::default(),
+        }
+    }
+
+    /// One coin a funding step created.
+    fn coin() -> FundedOutput {
+        FundedOutput {
+            outpoint: WireOutpoint {
+                txid: "33".repeat(32),
+                vout: 0,
+            },
+            asset: "an-asset".to_owned(),
+            amount_satoshis: 100_000,
+            script: "5120".to_owned(),
+        }
+    }
+
+    /// The verdict, taken over a record that made the round trip.
+    fn verdict(response: &NativeOperationResponse) -> Result<(), ResponseShapeDefect> {
+        let text = serde_json::to_string(response).expect("the response serializes");
+        let read: NativeOperationResponse =
+            serde_json::from_str(&text).expect("the record is one this side declares");
+        assert_eq!(&read, response, "the record survives both directions");
+        read.validate_shape()
+    }
+
+    /// What each kind produces when the target accepts it.
+    fn accepted(kind: OperationStepKind) -> NativeOperationResponse {
+        let mut response = bare(kind, ObservedOutcomeLayer::Accepted);
+        match kind {
+            OperationStepKind::Fund => {
+                response.issued_asset = Some("an-asset".to_owned());
+                response.funded_outputs = vec![coin()];
+            }
+            OperationStepKind::FundSponsor => response.funded_outputs = vec![coin()],
+            OperationStepKind::Submit => response.accepted_txid = Some("99".repeat(32)),
+            OperationStepKind::SignSponsor => {
+                response.sponsor_witness = vec![vec![0x30; 71], vec![0x02; 33]];
+                response.signature_bound_to = Some(vec![0x02, 0x00]);
+            }
+        }
+        response
+    }
+
+    /// The acceptances themselves are well formed, which is what makes
+    /// the refusals below a statement about the verdict.
+    #[test]
+    fn an_acceptance_reporting_what_its_kind_produces_is_well_formed() {
+        for kind in EVERY_KIND {
+            verdict(&accepted(kind)).expect("the acceptance shows what its kind produces");
+        }
+    }
+
+    /// A refused step reports none of what an acceptance produces.
+    ///
+    /// The whole product: every kind, at every layer the target refused
+    /// at, carrying exactly what that kind's acceptance would have.
+    #[test]
+    fn a_refused_step_reports_none_of_what_an_acceptance_produces() {
+        for kind in EVERY_KIND {
+            for layer in EVERY_REJECTION {
+                // A refusal with nothing to show for it is the shape
+                // the protocol defines, and a reason is always allowed.
+                verdict(&NativeOperationResponse {
+                    observed_detail: Some("the target refused it".to_owned()),
+                    ..bare(kind, layer)
+                })
+                .expect("a refusal with nothing to show for it is well formed");
+
+                assert_eq!(
+                    verdict(&NativeOperationResponse {
+                        observed_layer: layer,
+                        ..accepted(kind)
+                    }),
+                    Err(ResponseShapeDefect::RefusedOperationCarriesObservation),
+                    "a {kind} refused at {layer} reported what only an acceptance produces",
+                );
+            }
+        }
+    }
+
+    /// Each owned member is refused on a rejection on its own.
+    ///
+    /// Separately, because a rule that only fired when every one of a
+    /// kind's members was present would admit the record carrying one.
+    #[test]
+    fn each_owned_member_alone_is_refused_on_a_rejection() {
+        for layer in EVERY_REJECTION {
+            for contradictory in [
+                NativeOperationResponse {
+                    issued_asset: Some("an-asset".to_owned()),
+                    ..bare(OperationStepKind::Fund, layer)
+                },
+                NativeOperationResponse {
+                    funded_outputs: vec![coin()],
+                    ..bare(OperationStepKind::Fund, layer)
+                },
+                NativeOperationResponse {
+                    funded_outputs: vec![coin()],
+                    ..bare(OperationStepKind::FundSponsor, layer)
+                },
+                NativeOperationResponse {
+                    accepted_txid: Some("99".repeat(32)),
+                    ..bare(OperationStepKind::Submit, layer)
+                },
+                NativeOperationResponse {
+                    sponsor_witness: vec![vec![0x30; 71]],
+                    ..bare(OperationStepKind::SignSponsor, layer)
+                },
+                NativeOperationResponse {
+                    signature_bound_to: Some(vec![0x02, 0x00]),
+                    ..bare(OperationStepKind::SignSponsor, layer)
+                },
+            ] {
+                assert_eq!(
+                    verdict(&contradictory),
+                    Err(ResponseShapeDefect::RefusedOperationCarriesObservation),
+                );
+            }
+        }
+    }
+
+    /// A step reports nothing another kind produces, whatever it
+    /// concluded.
+    ///
+    /// The cross-kind half, over the whole product: each kind's own
+    /// well-formed acceptance, plus one member some other kind owns.
+    #[test]
+    fn a_step_reports_nothing_another_kind_produces() {
+        for kind in EVERY_KIND {
+            let mut foreign = Vec::new();
+            if !matches!(kind, OperationStepKind::Fund) {
+                foreign.push(NativeOperationResponse {
+                    issued_asset: Some("an-asset".to_owned()),
+                    ..accepted(kind)
+                });
+            }
+            if !matches!(
+                kind,
+                OperationStepKind::Fund | OperationStepKind::FundSponsor
+            ) {
+                foreign.push(NativeOperationResponse {
+                    funded_outputs: vec![coin()],
+                    ..accepted(kind)
+                });
+            }
+            if !matches!(kind, OperationStepKind::Submit) {
+                foreign.push(NativeOperationResponse {
+                    accepted_txid: Some("99".repeat(32)),
+                    ..accepted(kind)
+                });
+            }
+            if !matches!(kind, OperationStepKind::SignSponsor) {
+                foreign.push(NativeOperationResponse {
+                    sponsor_witness: vec![vec![0x30; 71]],
+                    signature_bound_to: Some(vec![0x02, 0x00]),
+                    ..accepted(kind)
+                });
+            }
+
+            assert!(
+                foreign.len() >= 2,
+                "every kind leaves at least two of the four member groups to other kinds",
+            );
+            for contradictory in foreign {
+                assert_eq!(
+                    verdict(&contradictory),
+                    Err(ResponseShapeDefect::OperationResponseMismatchesStep),
+                    "a {kind} reported a member of some other kind",
+                );
+            }
+        }
+    }
+}
