@@ -48,15 +48,27 @@
 //! those reads would be a permanently empty field, which §1.10 refuses as
 //! firmly as it refuses a reserved one.
 //!
-//! # Explicit only, and it says so
+//! # Both representations, and still two bundles
 //!
-//! [`emit_candidate_live_bundle`] refuses a constructor built for the
-//! private-committed plan. §11.3 keeps the two coordinators distinct
-//! until one complete typed proof establishes a sound shared program, and
-//! no such proof exists; §10.6's conservation is not built at all. A
-//! bundle that accepted the private constructor would be advertising
-//! programs whose representation-specific obligation is missing, which is
-//! the one thing a bundle must not do quietly.
+//! [`emit_candidate_live_bundle`] emitted for the explicit plan alone
+//! while §10.6's obligation was unbuilt, because a bundle advertising
+//! programs whose representation-specific obligation is missing is the one
+//! thing a bundle must not do quietly. That obligation is built now — the
+//! private coordinator carries
+//! [`crate::live_private::private_destination_form_fragment`] and its
+//! value equation is named as
+//! [`compiler::target::ExternalEvidenceRole::ConfidentialValueConservation`]
+//! — so the refusal has been lifted rather than widened around.
+//!
+//! What has not changed is §11.3. The two representations still have
+//! disjoint leaf sets and each emission still produces a bundle for one
+//! constructor, so
+//! [`CandidateRelocatableLiveTransferBundle::representation`] reads the
+//! constructor rather than answering a constant. Emitting for both is not a
+//! shared
+//! coordinator program and must not be read as progress towards one:
+//! [`crate::live_private::PrivatePlanNonClaim::SharedCoordinatorProgram`]
+//! is where that stays recorded.
 //!
 //! # Nothing here is final and no digest is minted
 //!
@@ -402,18 +414,6 @@ impl LiveSharedLeafProof {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum LiveBundleRefusal {
-    /// The constructor is built for a representation this bundle does not
-    /// emit.
-    ///
-    /// §11.3 keeps the explicit and private coordinators distinct until
-    /// one complete typed proof admits a shared program, and §10.6's
-    /// conservation is not built. Accepting the private constructor would
-    /// advertise programs whose representation-specific obligation is
-    /// missing.
-    RepresentationNotExplicit {
-        /// The representation the constructor selected.
-        selected: LiveTransferRepresentationPlan,
-    },
     /// A program or fragment did not assemble.
     Program(LiveProgramRefusal),
     /// A fragment builder refused.
@@ -507,7 +507,8 @@ impl From<TapscriptError> for LiveBundleRefusal {
 
 // --- The bundle -------------------------------------------------------
 
-/// The candidate relocatable explicit live-transfer bundle (§1.12).
+/// The candidate relocatable live-transfer bundle for one representation
+/// (§1.12).
 ///
 /// Every field is private and there is no public constructor: the sole
 /// route to a value is [`emit_candidate_live_bundle`], which builds each
@@ -556,9 +557,16 @@ impl CandidateRelocatableLiveTransferBundle {
     }
 
     /// The representation every emitted program carries.
+    ///
+    /// Read from the constructor rather than answered as a constant. It
+    /// was a constant while only one plan emitted, and a constant is the
+    /// wrong shape for the answer now: the leaf sets of the two plans are
+    /// disjoint (§11.3) and each bundle holds one plan's, so a bundle
+    /// that reported the wrong one would be describing programs it does
+    /// not carry.
     #[must_use]
     pub const fn representation(&self) -> LiveTransferRepresentationPlan {
-        LiveTransferRepresentationPlan::Explicit
+        self.constructor.representation()
     }
 
     /// The reviewed contract revision the programs are built against.
@@ -722,17 +730,23 @@ impl CandidateRelocatableLiveTransferBundle {
 
 // --- Emission ---------------------------------------------------------
 
-/// Emit the candidate relocatable explicit live-transfer bundle.
+/// Emit the candidate relocatable live-transfer bundle for one
+/// constructor's representation.
 ///
-/// The order is the one the checks depend on: the representation is
-/// settled first, then every leaf is built and walked and held to §10.9,
-/// then every shape's positions are covered, and only then are the
-/// placements derived. A refusal returns no partial bundle.
+/// The order is the one the checks depend on: every leaf is built and
+/// walked and held to §10.9, then every shape's positions are covered,
+/// and only then are the placements derived. A refusal returns no partial
+/// bundle.
+///
+/// The representation is no longer a precondition. It was, while §10.6's
+/// obligation was unbuilt; it is now carried by the constructor into the
+/// programs, and every check below runs over the programs that
+/// constructor actually produced — which is a stronger arrangement than a
+/// gate at the door, because a plan whose obligation went missing would
+/// fail the emission rather than be waved through by a matching enum.
 ///
 /// # Errors
 ///
-/// [`LiveBundleRefusal::RepresentationNotExplicit`] for a constructor
-/// this bundle does not emit for;
 /// [`LiveBundleRefusal::LeafFailsTheFinalStackRule`] and
 /// [`LiveBundleRefusal::FamilyRangesIncomplete`] when an emitted program
 /// or an admitted shape does not check out; and any of the assembly,
@@ -743,12 +757,6 @@ pub fn emit_candidate_live_bundle(
     constructor: &StaticLiveReceiptConstructor,
     symbols: LiveTransferSymbols,
 ) -> Result<CandidateRelocatableLiveTransferBundle, LiveBundleRefusal> {
-    if constructor.representation() != LiveTransferRepresentationPlan::Explicit {
-        return Err(LiveBundleRefusal::RepresentationNotExplicit {
-            selected: constructor.representation(),
-        });
-    }
-
     let shapes: Vec<LiveTransferShape> = constructor.shapes().shapes().collect();
     let (leaves, sharing) = leaf_programs(target, &symbols, constructor, &shapes)?;
 

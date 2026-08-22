@@ -10,6 +10,7 @@ pub mod live_bundle;
 pub mod live_constructor;
 pub mod live_pattern;
 pub mod live_plan;
+pub mod live_private;
 pub mod live_shape;
 pub mod operation_assessment;
 pub mod pattern;
@@ -78,6 +79,14 @@ pub use live_plan::{
     LiveOutputFamily, destination_closure_fragment, explicit_conservation_fragment,
     family_range_defects, has_sponsor_region, issuance_absence_fragment, live_family_ranges,
     live_sponsor_isolation_fragment, opens_an_amount, reads_a_value_field,
+};
+pub use live_private::{
+    ComparableProjection, ComparisonSource, PrefixMask, PrivateAmountProhibition,
+    PrivateConditionCarrier, PrivatePlanNonClaim, PrivateSoundnessCondition,
+    PrivateSoundnessEstablishment, ProhibitionDisposition, RepresentationComparisonAxis,
+    ValueFieldUse, discriminating_mask, opens_no_value_payload, prefix_mask,
+    private_destination_form_fragment, private_soundness_establishments, prohibition_dispositions,
+    representation_comparison_axes, value_field_uses,
 };
 pub use live_shape::{
     LiveShapeRejection, LiveTransferShape, LiveTransferShapeBounds, LiveTransferShapeSet,
