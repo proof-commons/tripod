@@ -17,7 +17,9 @@
 
 use std::collections::BTreeSet;
 
+use linker::OwnerParameter;
 use linker::backend::{CompactAshShape, InputRole, LeafRole, OutputRole};
+use linker::live_backend::{LiveFamily, LiveTransferLeafRole, LiveTransferShape};
 use target_elements::ResourceDimension;
 
 use crate::bytes::Outpoint;
@@ -324,5 +326,228 @@ pub enum TransactionRefusal {
         inputs: usize,
         /// How many witnesses.
         witnesses: usize,
+    },
+
+    // --- Live-transfer ABI derivation --------------------------------
+    /// The live bundle handed in claims more than a candidate link.
+    LiveBundleIsNotACandidate,
+    /// The live bundle's constructors are bound to a different reviewed
+    /// contract revision than the target handed in.
+    LiveContractRevisionMismatch,
+    /// Two linked live constructors disagree about the leaf version.
+    LiveLeafVersionDisagreement,
+    /// A linked live constructor's tree commits to a leaf it linked no
+    /// program for.
+    MissingLiveLeaf(LiveTransferLeafRole),
+    /// The handoff carries no family ranges for a shape it admits.
+    MissingLiveShapeRanges {
+        /// The shape whose placement is absent.
+        shape: LiveTransferShape,
+    },
+    /// A shape's ranges do not place a family the ABI must name.
+    MissingLiveFamilyRange {
+        /// The shape whose placement is short.
+        shape: LiveTransferShape,
+        /// The family no run holds.
+        family: LiveFamily,
+    },
+    /// A shape's receipt family does not begin at the coordinator
+    /// anchor.
+    LiveCoordinatorNotAtAnchor {
+        /// Where the ranges put the first receipt input.
+        placed: u16,
+    },
+    /// A live deployment symbol the ABI needs has no linked definition.
+    MissingLiveDeploymentSymbol {
+        /// A rendering of the symbol, for the report.
+        symbol: &'static str,
+    },
+    /// A live deployment symbol resolved to a value of the wrong kind.
+    MalformedLiveDeploymentSymbol {
+        /// A rendering of the symbol, for the report.
+        symbol: &'static str,
+    },
+    /// The linked internal key is not the reviewed x-only width.
+    LiveInternalKeyMalformed {
+        /// How many bytes were linked.
+        offered: usize,
+    },
+    /// A committed owner's key is the approved encoding and names no
+    /// point of the target's curve (§1.8).
+    OwnerKeyIsNotACurvePoint {
+        /// The owner whose key names none.
+        owner: OwnerParameter,
+    },
+    /// The capability determines no output key for a committed tree.
+    DestinationOutputKeyUndetermined,
+    /// The obligation disposition does not partition the handoff's own
+    /// set.
+    ///
+    /// Reached when the link owes an obligation this derivation neither
+    /// discharges nor carries — which is to say, when a wave added one
+    /// and this one did not notice.
+    InheritedObligationUnaccounted,
+
+    // --- Live-transfer request ---------------------------------------
+    /// A destination was asked for at a semantic value of zero.
+    DestinationValueIsZero,
+    /// A live transfer was requested consuming no receipt.
+    EmptyReceiptSelection,
+    /// One receipt outpoint is named more than once (§12.1).
+    DuplicateReceiptOutpoint(Outpoint),
+    /// A live transfer was requested creating no destination.
+    EmptyDestinationCensus,
+    /// A sponsorless request asks for the sponsor-change role (§12.5).
+    SponsorChangeWithoutSponsoredForm,
+    /// An explicit request offers public test randomness, which only a
+    /// private construction consumes.
+    PublicTestRandomnessWithoutPrivateForm,
+    /// A private-committed request offers no public test randomness.
+    PrivateFormWithoutPublicTestRandomness,
+    /// A request names a destination owner no linked constructor
+    /// commits to.
+    DestinationOwnerHasNoConstructor {
+        /// The owner nothing was linked for.
+        owner: OwnerParameter,
+    },
+    /// The requested representation has no linked constructor at all.
+    RepresentationNotLinked,
+
+    // --- Live-transfer form exactness (§12.5) -------------------------
+    /// A sponsored request was offered no sponsor capability.
+    LiveSponsorRequestedWithoutCapability,
+    /// A sponsorless request was offered a sponsor capability.
+    LiveSponsorCapabilityWithoutRequest,
+    /// A sponsored request's capability offers no sponsor input.
+    ///
+    /// The third term of the equivalence, closing the downgrade from
+    /// the side an empty capability would open: an offer with no input
+    /// funds no fee, and accepting it would build the sponsorless form
+    /// for a request that asked for the sponsored one.
+    EmptyLiveSponsorOffer,
+    /// A sponsored request's capability offers no change destination
+    /// while the request asks for the change role.
+    SponsorChangeRequestedWithoutDestination,
+    /// A sponsorless request's capability offers a change destination.
+    SponsorChangeOfferedWithoutRequest,
+    /// The selected shape's form is not the form the request asked for.
+    LiveFormDisagreesWithShape,
+
+    // --- Live-transfer construction ----------------------------------
+    /// No admitted shape realizes the requested counts.
+    UnsupportedLiveShape {
+        /// How many receipts are consumed.
+        receipt_inputs: usize,
+        /// How many destinations are created.
+        destinations: usize,
+        /// How many sponsor inputs the capability offers.
+        sponsor_inputs: usize,
+        /// Whether the sponsor takes change.
+        sponsor_change: bool,
+    },
+    /// One outpoint is offered as both a receipt and a sponsor input
+    /// (§12.1).
+    SponsorOverlapsReceiptFamily(Outpoint),
+    /// A selected receipt outpoint has no public view.
+    MissingPublicReceiptView(Outpoint),
+    /// A selected receipt's program is no linked constructor's output.
+    ReceiptInputIsNotALiveReceipt(Outpoint),
+    /// A selected receipt carries an asset other than the protocol
+    /// asset.
+    ReceiptInputCarriesForeignAsset(Outpoint),
+    /// A selected receipt's value field is not the form the requested
+    /// representation reads.
+    ReceiptInputValueFormRefused(Outpoint),
+    /// A sponsor input carries an asset other than the reserve asset.
+    LiveSponsorInputCarriesForeignAsset(Outpoint),
+    /// The destinations' semantic total overflows the target's explicit
+    /// width.
+    DestinationTotalOutOfRange,
+    /// The consumed and created explicit totals are not equal.
+    ///
+    /// Construction failure, never target rejection (§1.11): the
+    /// coordinator's own arithmetic disagrees before any target sees the
+    /// transaction.
+    LiveConservationFailed {
+        /// What the consumed receipts carry.
+        consumed: u64,
+        /// What the destinations create.
+        created: u64,
+    },
+    /// A receipt position lies outside the shape's receipt family.
+    ReceiptPositionOutsideFamily {
+        /// The offered position.
+        position: u16,
+    },
+    /// The private construction was asked for under a model this
+    /// materializer does not implement (§12.8).
+    ConfidentialConstructionModelNotAdmitted,
+    /// A private-committed request was offered no confidential value
+    /// capability.
+    PrivateValueCapabilityAbsent,
+    /// An explicit request was offered a confidential value capability.
+    PrivateValueCapabilityWithoutPrivateForm,
+    /// The confidential capability determines no commitment for one
+    /// destination.
+    DestinationValueCommitmentUndetermined {
+        /// The output position with no field.
+        position: u16,
+    },
+
+    // --- Live-transfer owner signing (§12.7) --------------------------
+    /// A required owner offered no response.
+    OwnerResponseMissing {
+        /// The input whose owner is silent.
+        input: u16,
+    },
+    /// One input's response was offered twice.
+    OwnerResponseDuplicated {
+        /// The input answered twice.
+        input: u16,
+    },
+    /// A response was offered for an input the transfer does not
+    /// require one for.
+    UnexpectedSigner {
+        /// The input nobody asked about.
+        input: u16,
+    },
+    /// A response names an owner other than the one the input
+    /// authenticates.
+    ResponseFromWrongOwner {
+        /// The input whose owner was misnamed.
+        input: u16,
+    },
+    /// A response answers a signing request for another input.
+    ResponseForWrongInput {
+        /// The input the response was collected against.
+        input: u16,
+    },
+    /// A response was taken under a profile other than the selected
+    /// one.
+    ResponseUnderWrongSighashProfile {
+        /// The input whose response used another profile.
+        input: u16,
+    },
+    /// A response is bound to bytes other than the finalized ones.
+    ResponseBoundToDifferentBytes {
+        /// The input whose response commits elsewhere.
+        input: u16,
+    },
+    /// An output was changed after the finalization boundary.
+    OutputMutatedAfterSigning {
+        /// The output position that moved.
+        position: u16,
+    },
+    /// An input was added after the finalization boundary.
+    InputExtendedAfterSigning {
+        /// How many inputs the finalized form fixed.
+        finalized: usize,
+        /// How many were offered afterwards.
+        offered: usize,
+    },
+    /// An output was removed after the finalization boundary.
+    OutputOmittedAfterSigning {
+        /// The output position that disappeared.
+        position: u16,
     },
 }

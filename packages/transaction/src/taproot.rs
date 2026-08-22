@@ -42,7 +42,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use linker::backend::{LeafRole, StackItem};
-use linker::{CandidateLinkedBundle, ControlPathRecipe};
+use linker::{CandidateLinkedBundle, ControlPathRecipe, TreeLeaf};
 use sha2::{Digest, Sha256};
 use target_elements::{
     LeafVersion, PushForm, PushOpcodeMapping, ReviewedElementsTapscriptDefinition,
@@ -517,10 +517,10 @@ pub fn commit_tree(
         let mut path = Vec::with_capacity(recipe.siblings().len());
         let mut node = BTreeSet::from([*leaf]);
         for sibling in recipe.siblings() {
-            path.push(subtree_hash(sibling, recipes, &leaves, &mut hashes)?);
+            path.push(hash_subtree(sibling, recipes, &leaves, &mut hashes)?);
             node.extend(sibling.iter().copied());
         }
-        root = subtree_hash(&node, recipes, &leaves, &mut hashes)?;
+        root = hash_subtree(&node, recipes, &leaves, &mut hashes)?;
         paths.insert(*leaf, path);
     }
 
@@ -533,35 +533,59 @@ pub fn commit_tree(
     })
 }
 
-/// The hash of the subtree whose leaves are exactly `node`.
+/// One compact-ASH subtree's hash, under this crate's own refusal.
 ///
-/// A node's children are recovered from any leaf beneath it: that
-/// leaf's path climbs through nodes of strictly growing leaf sets, and
-/// the step that first reaches `node` names the two children.
-fn subtree_hash(
+/// The generic recursion below, with the leaf it could not account for
+/// named as a [`TransactionRefusal::MissingLeaf`]. An empty node is
+/// impossible from a linked tree and is reported as a bundle that is not
+/// a candidate rather than asserted away.
+fn hash_subtree(
     node: &BTreeSet<LeafRole>,
     recipes: &BTreeMap<LeafRole, ControlPathRecipe>,
     leaves: &BTreeMap<LeafRole, Digest32>,
     hashes: &mut BTreeMap<BTreeSet<LeafRole>, Digest32>,
 ) -> Result<Digest32, TransactionRefusal> {
+    subtree_hash(node, recipes, leaves, hashes).map_err(|leaf| {
+        leaf.map_or(
+            TransactionRefusal::BundleIsNotACandidate,
+            TransactionRefusal::MissingLeaf,
+        )
+    })
+}
+
+/// The hash of the subtree whose leaves are exactly `node`, or the leaf
+/// the recipes could not account for.
+///
+/// A node's children are recovered from any leaf beneath it: that
+/// leaf's path climbs through nodes of strictly growing leaf sets, and
+/// the step that first reaches `node` names the two children.
+///
+/// Generic over the leaf role, and shared with the live-transfer tree
+/// (§11.4, §12.6) rather than transcribed for it. The tree structure is
+/// the same structure whichever operation's leaves hang off it, and a
+/// second copy of this recursion would be a second chance to get the
+/// sibling ordering wrong in exactly one of them.
+///
+/// The error carries the offending leaf and not a refusal, because the
+/// two callers name that leaf under different variants of
+/// [`TransactionRefusal`] — which is the only thing they disagree about.
+pub(crate) fn subtree_hash<L: TreeLeaf>(
+    node: &BTreeSet<L>,
+    recipes: &BTreeMap<L, ControlPathRecipe<L>>,
+    leaves: &BTreeMap<L, Digest32>,
+    hashes: &mut BTreeMap<BTreeSet<L>, Digest32>,
+) -> Result<Digest32, Option<L>> {
     if let Some(hash) = hashes.get(node) {
         return Ok(*hash);
     }
-    let member = *node
-        .iter()
-        .next()
-        .ok_or(TransactionRefusal::BundleIsNotACandidate)?;
+    let member = *node.iter().next().ok_or(None)?;
     if node.len() == 1 {
-        let hash = *leaves
-            .get(&member)
-            .ok_or(TransactionRefusal::MissingLeaf(member))?;
+        let hash = *leaves.get(&member).ok_or(Some(member))?;
         hashes.insert(node.clone(), hash);
         return Ok(hash);
     }
 
-    let recipe = recipes
-        .get(&member)
-        .ok_or(TransactionRefusal::MissingLeaf(member))?;
+    let recipe = recipes.get(&member).ok_or(Some(member))?;
     let mut below = BTreeSet::from([member]);
     for sibling in recipe.siblings() {
         let mut above = below.clone();
@@ -577,5 +601,5 @@ fn subtree_hash(
         below = above;
     }
 
-    Err(TransactionRefusal::MissingLeaf(member))
+    Err(Some(member))
 }

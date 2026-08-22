@@ -10,6 +10,7 @@ linker_source_files = files(
   'src/error.rs',
   'src/graph.rs',
   'src/lib.rs',
+  'src/live_backend.rs',
   'src/live_bundle.rs',
   'src/live_carrier.rs',
   'src/live_deployment.rs',
