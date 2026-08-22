@@ -120,6 +120,29 @@ pub struct TargetOperationSource {
 }
 
 impl TargetOperationSource {
+    /// The typed source one analyzed program was derived from.
+    ///
+    /// Crate-private, and the only constructor: an external caller
+    /// cannot assemble a source, so a published plan's source is always
+    /// the analysis's own. The three components are cloned from the
+    /// analyzed program by every plan boundary in this crate, and each
+    /// boundary's validator compares them back against it component by
+    /// component.
+    pub(crate) fn of(analyzed: &ScopedAnalyzedProgram) -> Self {
+        Self {
+            architecture: analyzed.source.architecture.clone(),
+            realization: analyzed.source.realization.clone(),
+            compilation_scope: analyzed.source.compilation_scope.clone(),
+        }
+    }
+
+    /// Whether this source is exactly one analyzed program's own.
+    pub(crate) fn is_analyzed_source(&self, analyzed: &ScopedAnalyzedProgram) -> bool {
+        self.architecture == analyzed.source.architecture
+            && self.realization == analyzed.source.realization
+            && self.compilation_scope == analyzed.source.compilation_scope
+    }
+
     /// The architecture identity the realization binds.
     #[must_use]
     pub const fn architecture(&self) -> &ArchitectureBinding {
@@ -613,11 +636,7 @@ fn project_operation(
 
     Ok(ValidatedTargetOperationPlan {
         operation: PLANNED,
-        source: TargetOperationSource {
-            architecture: analyzed.source.architecture.clone(),
-            realization: analyzed.source.realization.clone(),
-            compilation_scope: analyzed.source.compilation_scope.clone(),
-        },
+        source: TargetOperationSource::of(analyzed),
         representation: project_representation(analyzed, plan),
         cases,
         relations: relation_requirements,
@@ -636,7 +655,7 @@ fn project_operation(
 /// relation that lost every case is absent here for the same reason it
 /// is absent there — and the plan validator proves both against the
 /// analyzed program independently.
-fn operation_relations(operation: &AnalyzedOperation) -> BTreeSet<RelationId> {
+pub(crate) fn operation_relations(operation: &AnalyzedOperation) -> BTreeSet<RelationId> {
     operation
         .relation_cases
         .keys()
@@ -645,7 +664,9 @@ fn operation_relations(operation: &AnalyzedOperation) -> BTreeSet<RelationId> {
 }
 
 /// Project the operation's execution cases with their relation split.
-fn project_cases(operation: &AnalyzedOperation) -> BTreeMap<ExecutionCaseId, TargetExecutionCase> {
+pub(crate) fn project_cases(
+    operation: &AnalyzedOperation,
+) -> BTreeMap<ExecutionCaseId, TargetExecutionCase> {
     let mut cases = operation
         .execution_cases
         .iter()
@@ -681,7 +702,7 @@ fn project_cases(operation: &AnalyzedOperation) -> BTreeMap<ExecutionCaseId, Tar
 ///
 /// [`CompileError::TargetOperationOutOfScope`] when a relation of the
 /// operation carries no requirement bundle under the plan.
-fn project_relations(
+pub(crate) fn project_relations(
     plan: &AnalyzedProofPlan,
     operation: &AnalyzedOperation,
     relations: &BTreeSet<RelationId>,
@@ -741,7 +762,9 @@ fn project_relations(
 /// empty alternative set would read as a carrier obligation nothing can
 /// discharge, when the analysis means there is no runtime obligation at
 /// all.
-fn project_carriers(operation: &AnalyzedOperation) -> BTreeSet<AbstractCarrierRequirement> {
+pub(crate) fn project_carriers(
+    operation: &AnalyzedOperation,
+) -> BTreeSet<AbstractCarrierRequirement> {
     operation
         .relation_cases
         .iter()
@@ -759,7 +782,7 @@ fn project_carriers(operation: &AnalyzedOperation) -> BTreeSet<AbstractCarrierRe
 ///
 /// [`CompileError::DuplicateTargetCoverageRequirement`] when two rows
 /// claim one coverage identity — two answers to one question.
-fn project_coverage(
+pub(crate) fn project_coverage(
     plan: &AnalyzedProofPlan,
     operation: &AnalyzedOperation,
 ) -> Result<BTreeMap<CoverageRequirementId, TargetCoverageRequirement>, CompileError> {
@@ -897,7 +920,7 @@ fn approved_modes(
 }
 
 /// Project the operation's lifecycle status (§5.7).
-fn project_lifecycle(
+pub(crate) fn project_lifecycle(
     plan: &AnalyzedProofPlan,
     relations: &BTreeSet<RelationId>,
 ) -> TargetLifecycleStatus {
@@ -958,10 +981,7 @@ pub(crate) fn validate_target_operation_plan(
     }
 
     // The source is the analysis's own, component by component.
-    if plan.source.architecture != analyzed.source.architecture
-        || plan.source.realization != analyzed.source.realization
-        || plan.source.compilation_scope != analyzed.source.compilation_scope
-    {
+    if !plan.source.is_analyzed_source(analyzed) {
         return Err(CompileError::TargetPlanSourceMismatch);
     }
 

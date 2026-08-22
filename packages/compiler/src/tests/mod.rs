@@ -20,6 +20,7 @@ mod fold_tests;
 mod guide13_reproductions;
 mod layout_tests;
 mod lifecycle_tests;
+mod live_transfer_plan_tests;
 mod operation_plan_tests;
 mod oracle_tests;
 mod pilot_coverage_tests;

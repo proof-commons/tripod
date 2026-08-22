@@ -151,14 +151,16 @@ fn declared_open_flows(
         .collect()
 }
 
-/// Classify ordinary L-BTC inside one operation.
+/// Classify ordinary L-BTC from one operation's declared open flows.
+///
+/// The classification itself, separated from where the flow set was
+/// read. A boundary holding the realization projection rather than the
+/// relation analysis reaches the same three-valued answer through this
+/// function instead of restating [`claims_protocol_lbtc`], which is the
+/// exhaustive match that must stay the one place the question is
+/// answered.
 #[must_use]
-pub fn ordinary_lbtc_role(
-    relations: &CompilerRelationAnalysis,
-    operation: OperationId,
-) -> OrdinaryLbtcRole {
-    let flows = declared_open_flows(relations, operation);
-
+pub fn ordinary_lbtc_role_of(flows: &BTreeSet<OpenFlowKind>) -> OrdinaryLbtcRole {
     if flows.iter().copied().any(claims_protocol_lbtc) {
         return OrdinaryLbtcRole::ProtocolClaimed;
     }
@@ -168,6 +170,15 @@ pub fn ordinary_lbtc_role(
     }
 
     OrdinaryLbtcRole::Absent
+}
+
+/// Classify ordinary L-BTC inside one operation.
+#[must_use]
+pub fn ordinary_lbtc_role(
+    relations: &CompilerRelationAnalysis,
+    operation: OperationId,
+) -> OrdinaryLbtcRole {
+    ordinary_lbtc_role_of(&declared_open_flows(relations, operation))
 }
 
 /// Refuse an operation whose ordinary-L-BTC region cannot be decided.
