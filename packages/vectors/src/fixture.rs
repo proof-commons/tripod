@@ -391,4 +391,63 @@ mod tests {
             );
         }
     }
+
+    /// The fixture named by a §18.1 class.
+    fn named(name: &str) -> super::CompactAshSemanticCase {
+        positive_semantic_census()
+            .expect("the positive census builds")
+            .into_iter()
+            .find(|case| case.class().name() == name)
+            .unwrap_or_else(|| panic!("the census answers {name}"))
+    }
+
+    /// `G13-R10`: the two sponsor-change classes are told apart by facts.
+    ///
+    /// The census names `sponsor-change-present` and
+    /// `sponsor-change-absent` as distinct classes, but [`SponsorCase`]
+    /// records only whether a sponsor region exists and how many members
+    /// it has. Both rows are therefore `Present(1)`, and what separates
+    /// them is the class name and their amounts — neither of which is a
+    /// sponsor-change fact.
+    ///
+    /// A row that carries a class name without carrying the property the
+    /// name asserts cannot witness that property, so a run of either row
+    /// would be equally good evidence for both.
+    #[test]
+    #[ignore = "G13-R10: confirmed, repair pending"]
+    fn the_sponsor_change_classes_are_distinguished_by_a_sponsor_change_fact() {
+        let present = named("sponsor-change-present");
+        let absent = named("sponsor-change-absent");
+
+        // Both are sponsored at all: the distinction under test is about
+        // change, not about the presence of a sponsor region.
+        assert!(present.sponsor().is_present());
+        assert!(absent.sponsor().is_present());
+
+        assert_ne!(
+            present.sponsor(),
+            absent.sponsor(),
+            "the semantic fixture records nothing that tells the two sponsor-change classes apart",
+        );
+    }
+
+    /// `G13-R10`: the accepted projection retains sponsor-change presence.
+    ///
+    /// [`SponsorRegion`](crate::projection::SponsorRegion) carries
+    /// presence and a member count and nothing else, so the projection a
+    /// run is compared against cannot detect that a transaction named
+    /// `sponsor-change-present` carried no sponsor change. Both rows
+    /// project the same region.
+    #[test]
+    #[ignore = "G13-R10: confirmed, repair pending"]
+    fn the_accepted_projection_retains_sponsor_change_presence() {
+        let present = named("sponsor-change-present");
+        let absent = named("sponsor-change-absent");
+
+        assert_ne!(
+            present.expected().sponsor(),
+            absent.expected().sponsor(),
+            "the accepted projection of the two classes is identical, so a matching projection is no evidence of which class ran",
+        );
+    }
 }
