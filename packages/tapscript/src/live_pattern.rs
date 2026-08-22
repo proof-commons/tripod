@@ -85,6 +85,10 @@ use crate::capability::census_enum;
 use crate::error::TapscriptError;
 use crate::instruction::{StackItem, TapscriptInstruction};
 use crate::live_constructor::{LiveProgramRole, OwnerKey, StaticLiveReceiptConstructor};
+use crate::live_plan::{
+    destination_closure_fragment, explicit_conservation_fragment, has_sponsor_region,
+    issuance_absence_fragment, live_sponsor_isolation_fragment,
+};
 use crate::live_shape::LiveTransferShape;
 use crate::pattern::{
     coordinator_role_fragment, final_truth_fragment, fragment_prerequisites, member_range_fragment,
@@ -100,38 +104,68 @@ use crate::stack::{
 
 /// The exact link-time literals a live-transfer fragment pushes.
 ///
-/// One symbol, because one is all §10.1 needs from outside the
-/// constructor: the protocol asset. The owner key arrives on the
+/// Supplied, never minted, and every member has a consumer: §1.10 admits
+/// no reserved field, so a symbol is here exactly while some emitted
+/// fragment pushes it. The protocol asset reaches §10.1's recognition and
+/// §10.4's destination closure; the destination program version reaches
+/// §10.4; and the reserve asset, the sponsor-change program and its
+/// version, and the fee role's digest reach §10.7's sponsor isolation.
+///
+/// The owner key is not among them. It arrives on the
 /// [`StaticLiveReceiptConstructor`] instead, where §7.2 already checked
-/// it, and the shape counts arrive on the shape. A field reserved for a
-/// symbol nothing pushes would be a link-time parameter no fragment
-/// consumes, which §1.10 refuses.
+/// it, and the shape counts arrive on the shape.
 ///
 /// The live-receipt constructor's own program has no field here for the
 /// reason [`crate::pattern::CompactAshSymbols`] gives and one more: it
 /// is owner-parameterized, so there is not one program for a symbol to
-/// name.
+/// name. Nor is a destination's, for the sharper reason that a
+/// transfer's destination owners are chosen per request and no value
+/// exists when the leaf is built — which is why the version its program
+/// is read at is a symbol and its payload is not.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LiveTransferSymbols {
     protocol_asset: StackItem,
+    reserve_asset: StackItem,
+    destination_program_version: i64,
+    sponsor_change_program: StackItem,
+    sponsor_change_version: i64,
+    fee_program_digest: StackItem,
 }
 
 impl LiveTransferSymbols {
-    /// Assemble the symbol set, checking the asset's width.
+    /// Assemble the symbol set, checking each item's width.
     ///
     /// # Errors
     ///
-    /// [`TapscriptError::MalformedEncodedItem`] when the offering is not
-    /// the width the explicit-asset encoding admits.
+    /// [`TapscriptError::MalformedEncodedItem`] when an item is not the
+    /// width its encoding class admits.
     pub fn new(
         target: &ReviewedElementsTapscriptDefinition,
         protocol_asset: Vec<u8>,
+        reserve_asset: Vec<u8>,
+        destination_program_version: i64,
+        sponsor_change_program: Vec<u8>,
+        sponsor_change_version: i64,
+        fee_program_digest: Vec<u8>,
     ) -> Result<Self, TapscriptError> {
         Ok(Self {
             protocol_asset: StackItem::encoded(
                 target,
                 EncodingClass::ExplicitAsset,
                 protocol_asset,
+            )?,
+            reserve_asset: StackItem::encoded(target, EncodingClass::ExplicitAsset, reserve_asset)?,
+            destination_program_version,
+            sponsor_change_program: StackItem::encoded(
+                target,
+                EncodingClass::WitnessProgram,
+                sponsor_change_program,
+            )?,
+            sponsor_change_version,
+            fee_program_digest: StackItem::encoded(
+                target,
+                EncodingClass::ScriptPubKeySha256,
+                fee_program_digest,
             )?,
         })
     }
@@ -140,6 +174,44 @@ impl LiveTransferSymbols {
     #[must_use]
     pub const fn protocol_asset(&self) -> &StackItem {
         &self.protocol_asset
+    }
+
+    /// The exact explicit reserve asset every sponsor and fee role
+    /// carries.
+    ///
+    /// Distinct from the protocol asset by the compiler's own plan, which
+    /// refuses a projection whose protocol and sponsor families coincide.
+    /// That is what makes requiring it at every non-destination output
+    /// the same statement as §10.4's "no output carrying the protocol
+    /// asset lies outside the destination range".
+    #[must_use]
+    pub const fn reserve_asset(&self) -> &StackItem {
+        &self.reserve_asset
+    }
+
+    /// The version a live-receipt constructor's output program is read
+    /// at.
+    #[must_use]
+    pub const fn destination_program_version(&self) -> i64 {
+        self.destination_program_version
+    }
+
+    /// The sponsor-change role's witness program.
+    #[must_use]
+    pub const fn sponsor_change_program(&self) -> &StackItem {
+        &self.sponsor_change_program
+    }
+
+    /// The version the sponsor-change witness program is read at.
+    #[must_use]
+    pub const fn sponsor_change_version(&self) -> i64 {
+        self.sponsor_change_version
+    }
+
+    /// The fee role's program digest.
+    #[must_use]
+    pub const fn fee_program_digest(&self) -> &StackItem {
+        &self.fee_program_digest
     }
 }
 
@@ -175,15 +247,25 @@ census_enum! {
     /// a target-native run has to show, and a fact carrying one is a
     /// fact this wave established less completely than §10.1 states it.
     pub enum RecognitionResidual {
-        /// The constructor of a receipt input other than the one the
-        /// leaf runs in.
+        /// The exact program bytes of a destination's constructor.
         ///
-        /// Closed by §10.4's output closure, which makes every output
-        /// carrying the protocol asset a live receipt under a linked
-        /// constructor, and so makes every such input one inductively.
-        /// Until that pattern exists a coordinator establishes its own
-        /// input's constructor and no other's.
-        PredecessorConstructorOfAnotherInput,
+        /// What is left of Wave 5's cross-input question after §10.4's
+        /// induction, which
+        /// [`recognition_establishments`] states in full: the output
+        /// closure makes every output carrying the protocol asset a live
+        /// receipt under a linked constructor, so every receipt input of
+        /// a later transfer is one too, and the coordinator no longer
+        /// needs a claim about an input it cannot see.
+        ///
+        /// The induction's step rests on §10.4 holding whole, and it does
+        /// not yet. A destination's constructor is owner-parameterized
+        /// (§7.6) and its owners are chosen per request (§12.3), so no
+        /// leaf fixed at construction can carry a literal for it. The
+        /// closure compares the asset and the version the program is read
+        /// at; recomputing the taproot output over the destination
+        /// owner's leaf set needs §11.4's deterministic tree and §12's
+        /// destination table, and then a target-native run.
+        LinkedDestinationConstructorIdentity,
         /// The explicit or confidential form of an introspected field.
         ///
         /// The prefix comparison settles it on the target, which pushes
@@ -258,11 +340,44 @@ impl RecognitionEstablishment {
     }
 }
 
-/// How this wave establishes each of §10.1's six facts.
+/// How this candidate establishes each of §10.1's six facts.
 ///
 /// Total over [`RecognizedFact::ALL`] by construction: the census is
 /// built by mapping that constant, so a fact added to §10.1 arrives here
 /// without a carrier rather than silently absent.
+///
+/// # The induction §10.4 closes, stated
+///
+/// [`RecognizedFact::LiveReceiptConstructor`] is the fact a local
+/// recognition cannot establish for an input other than its own, and the
+/// argument that closes it is not a fragment. It is an induction over the
+/// chain of transfers, and it runs like this.
+///
+/// *Step.* [`crate::live_plan::destination_closure_fragment`] requires
+/// every output of the destination range to carry the exact linked
+/// protocol asset, and [`crate::live_plan::live_sponsor_isolation_fragment`]
+/// requires the reserve asset at every output position outside it. The
+/// exact output count leaves no third kind of position. So every output
+/// of an accepted transfer that carries the protocol asset is a
+/// destination, under a program read at the version a live-receipt
+/// constructor takes. A receipt input of a later transfer is an output of
+/// an earlier one, so it is such a destination — and coordinator and
+/// member alike may rely on that without introspecting it.
+///
+/// *Base.* An object carrying the protocol asset that was created by
+/// something other than a transfer is outside this induction and outside
+/// Guide 13: issuance is a different operation, and §10.8 forbids one
+/// here. The base case is therefore an obligation on whatever creates the
+/// first live receipt, not a gap in this argument.
+///
+/// *What the step still owes.* The step establishes the destination's
+/// asset and program version, not the exact program bytes, so it
+/// currently supports a weaker conclusion than §10.4 states: every such
+/// input is a taproot output carrying the protocol asset, rather than one
+/// under this family's constructor for a canonical owner. That gap is
+/// [`RecognitionResidual::LinkedDestinationConstructorIdentity`], and it
+/// is the *same* residual on both ends of the induction — which is the
+/// point of stating the argument rather than carrying two.
 #[must_use]
 #[expect(
     clippy::match_same_arms,
@@ -286,7 +401,7 @@ pub fn recognition_establishments() -> BTreeMap<RecognizedFact, RecognitionEstab
                 ),
                 RecognizedFact::LiveReceiptConstructor => (
                     Carrier::LeafCommitment,
-                    &[Residual::PredecessorConstructorOfAnotherInput],
+                    &[Residual::LinkedDestinationConstructorIdentity],
                 ),
                 // The owner key is a literal of the approved encoding at
                 // its exact width, which is what closes §1.8's
@@ -530,9 +645,22 @@ impl From<TapscriptError> for LiveProgramRefusal {
 /// Concatenated in the order the schedules were verified in: the
 /// coordinator's own anchor first, so a leaf spent at the wrong position
 /// stops before introspecting anything; then the exact counts, so a
-/// transaction of the wrong shape stops before the ranges are relied on;
+/// transaction of the wrong shape stops before any range is relied on;
 /// then the local pair §10.3 requires of every receipt input, the
-/// coordinator included; then the canonical true item.
+/// coordinator included; then the transaction-global checks of §10.4,
+/// §10.7 and §10.8, which every representation owes; then §10.5's
+/// conservation where the selected representation is the explicit one;
+/// then the canonical true item.
+///
+/// # Why the conservation is the only representation-specific fragment
+///
+/// The destination closure, the sponsor isolation and the issuance
+/// absence read assets, programs and issuance fields, and none of those
+/// changes with how a value is carried. The conservation reads amounts,
+/// and §10.6 admits no amount inspection at all, so a private
+/// coordinator carrying it would not be a private plan.
+/// [`OutstandingGlobalPattern::PrivateConservation`] is what the private
+/// coordinator's slot names instead, and it is not filled in here.
 ///
 /// # Errors
 ///
@@ -553,6 +681,15 @@ pub fn live_coordinator_program(
     let mut instructions = coordinator_role_fragment(target)?.instructions().to_vec();
     instructions.extend_from_slice(live_cardinality_fragment(target, shape)?.instructions());
     instructions.extend_from_slice(local_pair(target, symbols, constructor)?.instructions());
+    instructions
+        .extend_from_slice(destination_closure_fragment(target, symbols, shape)?.instructions());
+    instructions
+        .extend_from_slice(live_sponsor_isolation_fragment(target, symbols, shape)?.instructions());
+    instructions.extend_from_slice(issuance_absence_fragment(target, shape)?.instructions());
+    if constructor.representation() == LiveTransferRepresentationPlan::Explicit {
+        instructions
+            .extend_from_slice(explicit_conservation_fragment(target, shape)?.instructions());
+    }
     instructions.extend_from_slice(final_truth_fragment(target)?.instructions());
 
     Ok(TapscriptProgram::new(instructions)?)
@@ -650,7 +787,7 @@ pub fn live_program_precondition(
 // --- Coordinator placement (§10.3) ------------------------------------
 
 census_enum! {
-    /// One fragment this wave emits.
+    /// One fragment this candidate emits.
     pub enum LiveFragmentId {
         /// The coordinator's anchor at input 0.
         CoordinatorRole,
@@ -662,32 +799,53 @@ census_enum! {
         LocalRecognition,
         /// The per-input owner authorization of §10.2.
         OwnerAuthorization,
+        /// The destination closure of §10.4.
+        DestinationClosure,
+        /// The exact explicit aggregate conservation of §10.5.
+        ///
+        /// Emitted by the explicit coordinator and by no other program:
+        /// §10.6 admits no amount inspection at all, so a private
+        /// coordinator carrying these bytes would be a private plan that
+        /// opened an amount.
+        ExplicitConservation,
+        /// The sponsor isolation of §10.7.
+        SponsorIsolation,
+        /// The issuance absence of §10.8.
+        IssuanceAbsence,
         /// The canonical true item of §10.9.
         FinalTruth,
     }
 }
 
 census_enum! {
-    /// One §10 pattern this wave does not build.
+    /// One thing a coordinator slot owes and this candidate does not
+    /// emit.
     ///
-    /// Named rather than described, so a coordinator slot points at a
-    /// section of the guide and a later wave can see exactly which slots
-    /// its pattern fills.
+    /// Named rather than described, so a slot points at what has to exist
+    /// and a later wave can see exactly which slots its work fills. Both
+    /// members are outside this wave by design and neither is a fragment
+    /// somebody forgot: one is another representation's, and one is a
+    /// value no in-script comparison can reach.
     pub enum OutstandingGlobalPattern {
-        /// §10.4: every protocol output is a linked live receipt for a
-        /// destination owner.
-        OutputConstructorClosure,
-        /// §10.5: the exact explicit sum, with every flag consumed.
-        ExplicitConservation,
         /// §10.6: the private plan's closure, with CT conservation left
         /// external.
+        ///
+        /// Wave 7's. The private plan inspects no receipt amount, so its
+        /// conservation is a different argument rather than a variant of
+        /// [`LiveFragmentId::ExplicitConservation`], and a slot that
+        /// named only the explicit one would go quiet the moment the
+        /// other plan was selected.
         PrivateConservation,
-        /// §10.7: the sponsor region is exact, disjoint, and never read
-        /// for an amount.
-        SponsorIsolation,
-        /// §10.8: no root, event, issuance, destruction, or projection
-        /// is admitted.
-        AbsenceRelations,
+        /// The exact program bytes of a destination's constructor.
+        ///
+        /// Not a §10 pattern at all, and that is why it is stated: no
+        /// leaf can hold a literal for an owner-parameterized program
+        /// whose owner the request chooses, so the remaining half of
+        /// §10.4 is owed by §11.4's deterministic taptree and §12's
+        /// destination table rather than by a fragment this crate has not
+        /// written yet. The matching residual is
+        /// [`RecognitionResidual::LinkedDestinationConstructorIdentity`].
+        DestinationConstructorIdentity,
     }
 }
 
@@ -779,11 +937,27 @@ impl GlobalCheckPlacement {
 
 /// The coordinator's slot census (§10.3).
 ///
-/// Every one of §10.3's eleven checks, with what this wave emits towards
-/// it and which §10 pattern owes the remainder. One is settled whole —
-/// the counts, which a coordinator can authenticate without any pattern
-/// that reads the output side or censuses the sponsor region — three are
-/// settled in part, and seven wait entirely on §10.4 through §10.8.
+/// Every one of §10.3's eleven checks, with what this candidate emits
+/// towards it and what owes the remainder. Seven are settled whole. Four
+/// are settled in part, and the two remainders between them are exactly
+/// [`OutstandingGlobalPattern`]'s two members: §10.6's private
+/// conservation, which is another representation's, and the exact program
+/// bytes of a destination's constructor, which no in-script comparison
+/// can reach.
+///
+/// # Why three of the absences are Partial and one is not
+///
+/// A root, a reserve, a projected event, or a burn record would have to
+/// occupy a position, and every position is held by exactly one family
+/// the coordinator authenticates
+/// ([`crate::live_plan::live_family_ranges`]). At a sponsor or fee
+/// position that is conclusive: the asset is the reserve asset and the
+/// program is pinned exactly. At a destination position it is conclusive
+/// only up to the destination constructor's identity — an object of some
+/// other family carrying the protocol asset under a taproot program would
+/// pass the bytes this candidate emits. So the two families whose members
+/// could wear that shape are Partial, and issuance, which is a field
+/// rather than a position and is tested on every input, is not.
 #[must_use]
 pub fn coordinator_placements() -> BTreeMap<CoordinatorGlobalCheck, GlobalCheckPlacement> {
     use CoordinatorGlobalCheck as Check;
@@ -797,53 +971,94 @@ pub fn coordinator_placements() -> BTreeMap<CoordinatorGlobalCheck, GlobalCheckP
                 // The target's own counts against the shape's. Nothing
                 // else is needed and nothing else is owed.
                 Check::ExactInputAndOutputCounts => (&[Fragment::Cardinality], &[]),
-                // The input count pins the receipt range and the sponsor
-                // suffix together, and the two role fragments account
-                // for every receipt position. What is not established is
-                // that the suffix holds only sponsor inputs, which is
-                // §10.7's.
+                // The counts pin where each region ends, the two role
+                // fragments account for every receipt position, §10.7
+                // accounts for the sponsor suffix, and §10.4 accounts for
+                // the destination range. No position is left over.
                 Check::CompleteProtocolRanges => (
                     &[
                         Fragment::Cardinality,
                         Fragment::CoordinatorRole,
                         Fragment::MemberRole,
+                        Fragment::DestinationClosure,
+                        Fragment::SponsorIsolation,
                     ],
-                    &[Pattern::SponsorIsolation],
-                ),
-                // Wholly output-side, and there is no output-side
-                // pattern in this wave.
-                Check::LiveClassOutputClosure => (&[], &[Pattern::OutputConstructorClosure]),
-                // The input side is the recognition fragment's exact
-                // symbol comparison; the output side is §10.4's.
-                Check::ExplicitAssetClosure => (
-                    &[Fragment::LocalRecognition],
-                    &[Pattern::OutputConstructorClosure],
-                ),
-                // Both plans' conservation patterns are outstanding, and
-                // both are named: a slot that named only the selected
-                // plan's would go quiet the moment the other plan was
-                // selected.
-                Check::RepresentationSpecificConservation => (
                     &[],
-                    &[Pattern::ExplicitConservation, Pattern::PrivateConservation],
                 ),
-                Check::SponsorIsolation => (&[], &[Pattern::SponsorIsolation]),
-                Check::RootsAbsent
-                | Check::IssuanceAbsent
-                | Check::DestructionAbsent
-                | Check::SpecializedEventsAbsent => (&[], &[Pattern::AbsenceRelations]),
-                // The receipt region's own order is settled here — input
-                // 0 is the coordinator, members are the nonzero receipt
-                // positions, and the counts fix where the region ends.
-                // The sponsor suffix's order and the output roles' are
-                // not.
+                // Every destination is a taproot output carrying the
+                // protocol asset, and every other output carries the
+                // reserve asset. Which live-receipt constructor a
+                // destination is under is the residual.
+                Check::LiveClassOutputClosure => (
+                    &[
+                        Fragment::DestinationClosure,
+                        Fragment::SponsorIsolation,
+                        Fragment::Cardinality,
+                    ],
+                    &[Pattern::DestinationConstructorIdentity],
+                ),
+                // The input side is the recognition fragment's exact
+                // symbol comparison; the output side is the destination
+                // closure's, and the reserve asset at every other output
+                // position is what makes it a closure rather than a test.
+                Check::ExplicitAssetClosure => (
+                    &[
+                        Fragment::LocalRecognition,
+                        Fragment::DestinationClosure,
+                        Fragment::SponsorIsolation,
+                        Fragment::Cardinality,
+                    ],
+                    &[],
+                ),
+                // The explicit plan's conservation is emitted; the
+                // private plan's is Wave 7's, and naming it is what keeps
+                // the slot from going quiet when that plan is selected.
+                Check::RepresentationSpecificConservation => (
+                    &[Fragment::ExplicitConservation],
+                    &[Pattern::PrivateConservation],
+                ),
+                Check::SponsorIsolation => {
+                    (&[Fragment::SponsorIsolation, Fragment::Cardinality], &[])
+                }
+                // A root or a projected event would need a position, and
+                // every position is classified — conclusively outside the
+                // destination range, and up to the constructor's identity
+                // inside it.
+                Check::RootsAbsent | Check::SpecializedEventsAbsent => (
+                    &[
+                        Fragment::Cardinality,
+                        Fragment::DestinationClosure,
+                        Fragment::SponsorIsolation,
+                    ],
+                    &[Pattern::DestinationConstructorIdentity],
+                ),
+                Check::IssuanceAbsent => (&[Fragment::IssuanceAbsence], &[]),
+                // Nothing is destroyed when the two totals agree and
+                // every output carrying the protocol asset is a
+                // destination: the value that entered left, and it left
+                // through the family.
+                Check::DestructionAbsent => (
+                    &[
+                        Fragment::ExplicitConservation,
+                        Fragment::DestinationClosure,
+                        Fragment::SponsorIsolation,
+                        Fragment::Cardinality,
+                    ],
+                    &[],
+                ),
+                // Input 0 is the coordinator, members are the nonzero
+                // receipt positions, the destinations are the output
+                // prefix, and the sponsor roles follow in the order §10.7
+                // tests them at. The counts fix where each region ends.
                 Check::ExactRoleOrder => (
                     &[
                         Fragment::CoordinatorRole,
                         Fragment::MemberRole,
                         Fragment::Cardinality,
+                        Fragment::DestinationClosure,
+                        Fragment::SponsorIsolation,
                     ],
-                    &[Pattern::OutputConstructorClosure, Pattern::SponsorIsolation],
+                    &[],
                 ),
             };
 
@@ -951,15 +1166,23 @@ pub fn validate_coordinator_placements(
     Ok(())
 }
 
-/// The fragments one program role carries.
+/// The fragments one program role carries, for one representation.
 ///
 /// Derived from the role rather than from the instruction list, because
 /// the fragments are concatenated and their boundaries do not survive
 /// the concatenation. It is the emitter's own account of what it built,
 /// and [`validate_coordinator_placements`] is what keeps a slot from
 /// claiming a fragment no role carries.
+///
+/// The representation is a parameter and not a constant because one
+/// fragment depends on it: §10.5's conservation reads amounts, and §10.6
+/// admits none, so the private coordinator carries every other global
+/// check and not that one.
 #[must_use]
-pub fn emitted_fragments(role: LiveProgramRole) -> BTreeSet<LiveFragmentId> {
+pub fn emitted_fragments(
+    role: LiveProgramRole,
+    representation: LiveTransferRepresentationPlan,
+) -> BTreeSet<LiveFragmentId> {
     let anchor = match role {
         LiveProgramRole::Coordinator => LiveFragmentId::CoordinatorRole,
         LiveProgramRole::Member => LiveFragmentId::MemberRole,
@@ -971,20 +1194,36 @@ pub fn emitted_fragments(role: LiveProgramRole) -> BTreeSet<LiveFragmentId> {
         LiveFragmentId::FinalTruth,
     ]);
     if role == LiveProgramRole::Coordinator {
-        fragments.insert(LiveFragmentId::Cardinality);
+        fragments.extend([
+            LiveFragmentId::Cardinality,
+            LiveFragmentId::DestinationClosure,
+            LiveFragmentId::SponsorIsolation,
+            LiveFragmentId::IssuanceAbsence,
+        ]);
+        if representation == LiveTransferRepresentationPlan::Explicit {
+            fragments.insert(LiveFragmentId::ExplicitConservation);
+        }
     }
     fragments
 }
 
 /// Every fragment some live-transfer program carries.
 ///
-/// The union over both roles, which is what a slot census is validated
-/// against: a check answered by the member role is answered, even though
-/// the coordinator program does not carry that fragment.
+/// The union over both roles and both representations, which is what a
+/// slot census is validated against: a check answered by the member role
+/// is answered even though the coordinator does not carry that fragment,
+/// and the same holds across the two representations.
 #[must_use]
 pub fn every_emitted_fragment() -> BTreeSet<LiveFragmentId> {
-    let mut fragments = emitted_fragments(LiveProgramRole::Coordinator);
-    fragments.extend(emitted_fragments(LiveProgramRole::Member));
+    let mut fragments = BTreeSet::new();
+    for role in [LiveProgramRole::Coordinator, LiveProgramRole::Member] {
+        for representation in [
+            LiveTransferRepresentationPlan::Explicit,
+            LiveTransferRepresentationPlan::PrivateCommitted,
+        ] {
+            fragments.extend(emitted_fragments(role, representation));
+        }
+    }
     fragments
 }
 
@@ -1491,6 +1730,16 @@ census_enum! {
         LiveMemberRoleV1,
         /// §10.3: the target's own counts are exactly the shape's.
         LiveShapeV1,
+        /// §10.4: every destination carries the linked protocol asset
+        /// under a program read at the constructor's version.
+        LiveDestinationClosureV1,
+        /// §10.5: the two exact sums, with every flag consumed.
+        LiveExplicitConservationV1,
+        /// §10.7: the sponsor region is exact, disjoint, and never read
+        /// for an amount.
+        LiveSponsorIsolationV1,
+        /// §10.8: no input carries an issuance.
+        LiveIssuanceAbsenceV1,
         /// §10.3, §10.9: the whole coordinator program.
         LiveCoordinatorProgramV1,
         /// §10.3, §10.9: the whole member program.
@@ -1518,6 +1767,14 @@ pub enum LivePatternOwner {
     MemberParticipation,
     /// §10.3: the transaction has exactly the shape's counts.
     TransactionShape,
+    /// §10.4: every protocol output is a destination of this family.
+    OutputConstructorClosure,
+    /// §10.5: the exact explicit aggregate, with every flag consumed.
+    ExactAggregateArithmetic,
+    /// §10.7: the sponsor region is exact, disjoint, and opaque.
+    SponsorIsolation,
+    /// §10.8: no relation §10.8 forbids is admitted.
+    AbsenceRelations,
     /// §10.3, §10.9: one whole per-input program, ending on one truth.
     ComposedInputProgram,
 }
@@ -1568,8 +1825,26 @@ census_enum! {
         ValueRepresentationForm,
         /// The receipt-input count the range bound uses.
         ReceiptInputCount,
+        /// The destination count the output-side loops use.
+        ReceiptOutputCount,
         /// The exact input and output counts of one shape.
         TransactionCounts,
+        /// The version a destination's program is read at.
+        DestinationProgramVersion,
+        /// The exact reserve asset the sponsor roles carry.
+        ReserveAsset,
+        /// The sponsor-change role's program and the version it is read
+        /// at.
+        SponsorChangeRole,
+        /// The digest standing in for the target fee role's program.
+        TargetFeeRole,
+        /// The semantic amount domain the receipt values are held to.
+        ///
+        /// The bounds, never an amount: what a reader of the emitted
+        /// bytes learns is that every receipt value is positive and below
+        /// the domain's ceiling, which is a fact about the protocol and
+        /// not about this transfer.
+        SemanticAmountDomain,
     }
 }
 
@@ -1819,7 +2094,7 @@ pub fn live_transfer_patterns(
             BTreeSet::from([Source::AuthenticatedInputObject]),
             BTreeSet::from([
                 Residual::FieldFormSettledOnlyOnTheTarget,
-                Residual::PredecessorConstructorOfAnotherInput,
+                Residual::LinkedDestinationConstructorIdentity,
             ]),
             introspection
                 .into_iter()
@@ -1911,7 +2186,7 @@ pub fn live_transfer_patterns(
             Id::LiveShapeV1,
             Owns::TransactionShape,
             counts,
-            empty,
+            empty.clone(),
             Witness::NoWitnessItem,
             Build::LinkTimeOnly,
             BTreeSet::from([Disclose::TransactionCounts]),
@@ -1924,19 +2199,156 @@ pub fn live_transfer_patterns(
         )?,
     );
 
+    let closure = destination_closure_fragment(target, symbols, shape)?;
+    patterns.insert(
+        Id::LiveDestinationClosureV1,
+        build_live_pattern(
+            target,
+            Id::LiveDestinationClosureV1,
+            Owns::OutputConstructorClosure,
+            closure,
+            empty.clone(),
+            Witness::NoWitnessItem,
+            Build::LinkTimeOnly,
+            BTreeSet::from([
+                Disclose::ProtocolAsset,
+                Disclose::ReceiptOutputCount,
+                Disclose::DestinationProgramVersion,
+            ]),
+            BTreeSet::from([Source::AuthenticatedOutputObject]),
+            BTreeSet::from([
+                Residual::FieldFormSettledOnlyOnTheTarget,
+                Residual::LinkedDestinationConstructorIdentity,
+            ]),
+            introspection
+                .into_iter()
+                .chain([
+                    Evidence::OutputIntrospectionSemantics,
+                    Evidence::ComparisonSemantics,
+                ])
+                .collect(),
+        )?,
+    );
+
+    if constructor.representation() == LiveTransferRepresentationPlan::Explicit {
+        let conservation = explicit_conservation_fragment(target, shape)?;
+        patterns.insert(
+            Id::LiveExplicitConservationV1,
+            build_live_pattern(
+                target,
+                Id::LiveExplicitConservationV1,
+                Owns::ExactAggregateArithmetic,
+                conservation,
+                empty.clone(),
+                Witness::NoWitnessItem,
+                Build::LinkTimeOnly,
+                BTreeSet::from([
+                    Disclose::ValueRepresentationForm,
+                    Disclose::ReceiptInputCount,
+                    Disclose::ReceiptOutputCount,
+                    Disclose::SemanticAmountDomain,
+                ]),
+                BTreeSet::from([Source::AuthenticatedConsensusValue]),
+                BTreeSet::from([Residual::FieldFormSettledOnlyOnTheTarget]),
+                introspection
+                    .into_iter()
+                    .chain([
+                        Evidence::InputIntrospectionSemantics,
+                        Evidence::OutputIntrospectionSemantics,
+                        Evidence::ArithmeticSemantics,
+                        Evidence::ComparisonSemantics,
+                    ])
+                    .collect(),
+            )?,
+        );
+    }
+
+    if has_sponsor_region(shape) {
+        let isolation = live_sponsor_isolation_fragment(target, symbols, shape)?;
+        patterns.insert(
+            Id::LiveSponsorIsolationV1,
+            build_live_pattern(
+                target,
+                Id::LiveSponsorIsolationV1,
+                Owns::SponsorIsolation,
+                isolation,
+                empty.clone(),
+                Witness::NoWitnessItem,
+                Build::LinkTimeOnly,
+                BTreeSet::from([
+                    Disclose::ReserveAsset,
+                    Disclose::SponsorChangeRole,
+                    Disclose::TargetFeeRole,
+                    Disclose::ReceiptOutputCount,
+                ]),
+                BTreeSet::from([Source::AuthenticatedFamilyCensus]),
+                BTreeSet::from([Residual::FieldFormSettledOnlyOnTheTarget]),
+                introspection
+                    .into_iter()
+                    .chain([
+                        Evidence::InputIntrospectionSemantics,
+                        Evidence::OutputIntrospectionSemantics,
+                        Evidence::ComparisonSemantics,
+                        Evidence::FeeOutputForm,
+                        Evidence::ConfidentialValueConservation,
+                    ])
+                    .collect(),
+            )?,
+        );
+    }
+
+    let absence = issuance_absence_fragment(target, shape)?;
+    patterns.insert(
+        Id::LiveIssuanceAbsenceV1,
+        build_live_pattern(
+            target,
+            Id::LiveIssuanceAbsenceV1,
+            Owns::AbsenceRelations,
+            absence,
+            empty,
+            Witness::NoWitnessItem,
+            Build::LinkTimeOnly,
+            BTreeSet::from([Disclose::TransactionCounts]),
+            BTreeSet::from([Source::AuthenticatedInputObject]),
+            BTreeSet::new(),
+            introspection
+                .into_iter()
+                .chain([
+                    Evidence::InputIntrospectionSemantics,
+                    Evidence::IssuanceIntrospection,
+                    Evidence::ComparisonSemantics,
+                ])
+                .collect(),
+        )?,
+    );
+
     // The composed programs carry the §10.9 claim, which is about a
     // whole program rather than about a fragment of one: exactly one
     // canonical true item, no surviving non-aborting failure, and no
     // signature form that verifies nothing.
+    let mut coordinator_disclosure = BTreeSet::from([
+        Disclose::ProtocolAsset,
+        Disclose::OwnerPublicKey,
+        Disclose::ValueRepresentationForm,
+        Disclose::TransactionCounts,
+        Disclose::ReceiptOutputCount,
+        Disclose::DestinationProgramVersion,
+    ]);
+    if has_sponsor_region(shape) {
+        coordinator_disclosure.extend([
+            Disclose::ReserveAsset,
+            Disclose::SponsorChangeRole,
+            Disclose::TargetFeeRole,
+        ]);
+    }
+    if constructor.representation() == LiveTransferRepresentationPlan::Explicit {
+        coordinator_disclosure
+            .extend([Disclose::ReceiptInputCount, Disclose::SemanticAmountDomain]);
+    }
     let mut composed = vec![(
         Id::LiveCoordinatorProgramV1,
         live_coordinator_program(target, symbols, constructor, shape)?,
-        BTreeSet::from([
-            Disclose::ProtocolAsset,
-            Disclose::OwnerPublicKey,
-            Disclose::ValueRepresentationForm,
-            Disclose::TransactionCounts,
-        ]),
+        coordinator_disclosure,
     )];
     if has_member_position(shape) {
         composed.push((
@@ -1970,7 +2382,7 @@ pub fn live_transfer_patterns(
                 ]),
                 BTreeSet::from([
                     Residual::FieldFormSettledOnlyOnTheTarget,
-                    Residual::PredecessorConstructorOfAnotherInput,
+                    Residual::LinkedDestinationConstructorIdentity,
                     Residual::OwnerKeyCurvePointMembership,
                     Residual::SighashProfileUnreviewed,
                 ]),
@@ -2001,26 +2413,39 @@ pub const fn has_member_position(shape: LiveTransferShape) -> bool {
     shape.receipt_inputs() > 1
 }
 
-/// Which pattern identities one shape calls for.
+/// Which pattern identities one shape and one representation call for.
 ///
-/// Every identity but the two member ones, which a shape with no nonzero
-/// receipt position does not call for. Omitting them is the honest
-/// answer rather than a gap: a member record built for that shape would
-/// either be a range check no spend can satisfy — `1 ≤ i < 1` — or the
-/// coordinator's own program wearing the member identity, and a reader
-/// inspecting the member pattern would be shown the wrong program.
+/// Three identities are conditional, and each is omitted rather than
+/// minted over a fragment that would say nothing:
+///
+/// - the two member records, for a shape with no nonzero receipt
+///   position. A member record built for it would be either a range check
+///   no spend can satisfy — `1 ≤ i < 1` — or the coordinator's own program
+///   wearing the member identity, and a reader inspecting the member
+///   pattern would be shown the wrong program;
+/// - the sponsor-isolation record, for a shape with no sponsor region.
+///   Its fragment is empty, because the region's absence is established
+///   by the exact counts; a record over zero instructions would carry an
+///   empty prerequisite census and an empty resource formula and would
+///   read as a pattern that had been checked;
+/// - the explicit-conservation record, for the private-committed plan,
+///   which admits no amount inspection at all (§10.6).
 #[must_use]
-pub fn patterns_for(shape: LiveTransferShape) -> BTreeSet<LiveTransferPatternId> {
+pub fn patterns_for(
+    shape: LiveTransferShape,
+    representation: LiveTransferRepresentationPlan,
+) -> BTreeSet<LiveTransferPatternId> {
     LiveTransferPatternId::ALL
         .iter()
         .copied()
-        .filter(|id| {
-            has_member_position(shape)
-                || !matches!(
-                    id,
-                    LiveTransferPatternId::LiveMemberRoleV1
-                        | LiveTransferPatternId::LiveMemberProgramV1
-                )
+        .filter(|id| match id {
+            LiveTransferPatternId::LiveMemberRoleV1
+            | LiveTransferPatternId::LiveMemberProgramV1 => has_member_position(shape),
+            LiveTransferPatternId::LiveSponsorIsolationV1 => has_sponsor_region(shape),
+            LiveTransferPatternId::LiveExplicitConservationV1 => {
+                representation == LiveTransferRepresentationPlan::Explicit
+            }
+            _ => true,
         })
         .collect()
 }

@@ -8,6 +8,7 @@ pub mod error;
 pub mod instruction;
 pub mod live_constructor;
 pub mod live_pattern;
+pub mod live_plan;
 pub mod live_shape;
 pub mod operation_assessment;
 pub mod pattern;
@@ -65,6 +66,12 @@ pub use live_pattern::{
     negative_disposition, owner_authorization_fragment, owner_authorization_precondition,
     owner_key_mutation_outcome, owner_key_obligation, patterns_for, recognition_establishments,
     validate_coordinator_placements,
+};
+pub use live_plan::{
+    CompleteFamilyRanges, FamilyRangeDefect, LiveFamily, LiveFamilyRange, LiveInputFamily,
+    LiveOutputFamily, destination_closure_fragment, explicit_conservation_fragment,
+    family_range_defects, has_sponsor_region, issuance_absence_fragment, live_family_ranges,
+    live_sponsor_isolation_fragment, opens_an_amount, reads_a_value_field,
 };
 pub use live_shape::{
     LiveShapeRejection, LiveTransferShape, LiveTransferShapeBounds, LiveTransferShapeSet,

@@ -40,7 +40,7 @@
 //! types admit no width in common cannot be equal — whatever their bytes
 //! turn out to be. That is the one equality question a type answers, and
 //! it answers it in the safe direction only: it removes a *successful*
-//! form and never removes an abort. See [`widths_are_disjoint`].
+//! form and never removes an abort.
 //!
 //! Without it a straight-line program cannot narrow an introspection
 //! that pushes a different number of items in each of its forms. The

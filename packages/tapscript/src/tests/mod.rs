@@ -46,6 +46,7 @@ mod guide12_reproductions;
 mod guide13_reproductions;
 mod live_constructor_tests;
 mod live_pattern_tests;
+mod live_plan_tests;
 mod live_shape_tests;
 mod mapping_tests;
 mod non_weakening_tests;
@@ -93,6 +94,33 @@ fn pattern_symbols(
         target,
         vec![0x11; 32],
         vec![0x22; 32],
+        vec![0x44; 20],
+        0,
+        vec![0x55; 32],
+    )
+    .expect("the placeholder symbols are the reviewed widths")
+}
+
+/// Placeholder link-time symbols for the live-transfer plan.
+///
+/// The same discipline as [`pattern_symbols`], over Guide-13's own symbol
+/// set: distinguishable byte strings standing in for values a later wave
+/// resolves, and never a claim about a real object. The protocol and
+/// reserve assets are deliberately different byte strings, because the
+/// isolation the sponsor fragment establishes is exactly that they
+/// differ.
+///
+/// The destination program version is one, which is the version a taproot
+/// output is read at and therefore the version every live-receipt
+/// constructor's output carries.
+fn live_transfer_symbols(
+    target: &ReviewedElementsTapscriptDefinition,
+) -> crate::live_pattern::LiveTransferSymbols {
+    crate::live_pattern::LiveTransferSymbols::new(
+        target,
+        vec![0x5a; 32],
+        vec![0x22; 32],
+        1,
         vec![0x44; 20],
         0,
         vec![0x55; 32],

@@ -31,7 +31,7 @@ use target_elements::{
     EncodingClass, FailureCause, OpcodeId, PayloadWidth, ReviewedElementsTapscriptDefinition,
 };
 
-use super::{live_transfer_plan, reviewed_target};
+use super::{live_transfer_plan, live_transfer_symbols, reviewed_target};
 use crate::authorization::{
     OwnerKeyEncodingClosure, OwnerKeyNegative, OwnerKeyObligation, OwnerProfileDisposition,
     owner_key_encoding_closure,
@@ -55,6 +55,7 @@ use crate::live_pattern::{
     owner_key_mutation_outcome, owner_key_obligation, patterns_for, recognition_establishments,
     validate_coordinator_placements,
 };
+use crate::live_plan::{has_sponsor_region, live_sponsor_isolation_fragment};
 use crate::live_shape::{LiveTransferShape, demonstration_live_shape_set};
 use crate::pattern::final_truth_fragment;
 use crate::program::TapscriptProgram;
@@ -96,15 +97,9 @@ fn owner(fill: u8) -> OwnerKey {
     .expect("the fixture is the approved encoding at its exact width")
 }
 
-/// The exact protocol asset, as a link-time symbol.
-///
-/// # Panics
-///
-/// If the explicit-asset encoding stops admitting a thirty-two byte
-/// payload, which the registry fixes.
+/// The link-time symbol set, shared with the plan oracles.
 fn symbols() -> LiveTransferSymbols {
-    LiveTransferSymbols::new(&reviewed_target(), vec![0x5a; 32])
-        .expect("the fixture is the explicit-asset payload width")
+    live_transfer_symbols(&reviewed_target())
 }
 
 /// A nonzero count.
@@ -131,6 +126,24 @@ fn shape(receipt_inputs: u8) -> LiveTransferShape {
         SponsorChangePresence::Absent,
     )
     .expect("the demonstration bounds admit the fixture shape")
+}
+
+/// One shape of `receipt_inputs` receipts, with a sponsor envelope and
+/// its change role.
+///
+/// # Panics
+///
+/// If the demonstration bounds stop admitting it, which would make the
+/// fixture rather than the pattern the thing under test.
+fn sponsored_shape(receipt_inputs: u8) -> LiveTransferShape {
+    LiveTransferShape::new(
+        demonstration_live_shape_set().bounds(),
+        count(receipt_inputs),
+        count(2),
+        1,
+        SponsorChangePresence::Present,
+    )
+    .expect("the demonstration bounds admit the sponsored fixture shape")
 }
 
 /// The reference constructor for one representation plan.
@@ -352,7 +365,7 @@ fn the_constructor_of_another_input_is_carried_as_a_residual() {
     assert!(
         constructor_fact
             .residuals()
-            .any(|residual| residual == RecognitionResidual::PredecessorConstructorOfAnotherInput),
+            .any(|residual| residual == RecognitionResidual::LinkedDestinationConstructorIdentity),
     );
 }
 
@@ -665,52 +678,66 @@ fn every_global_check_is_either_emitted_or_owed() {
 }
 
 #[test]
-fn the_slot_census_still_reports_every_pattern_this_wave_does_not_build() {
+fn the_slot_census_still_reports_everything_this_candidate_does_not_build() {
     let placements = coordinator_placements();
     let owed = placements
         .values()
         .flat_map(crate::live_pattern::GlobalCheckPlacement::outstanding)
         .collect::<BTreeSet<_>>();
 
-    // All five of §10.4 through §10.8. A census that had quietly stopped
+    // Both members, and no fewer. A census that had quietly stopped
     // naming one would be a coordinator with a check nobody owes.
     assert_eq!(
         owed,
         OutstandingGlobalPattern::ALL.iter().copied().collect(),
     );
+    // And the two are the ones this candidate genuinely cannot emit:
+    // another representation's conservation, and a value no in-script
+    // comparison reaches.
+    assert_eq!(
+        owed,
+        BTreeSet::from([
+            OutstandingGlobalPattern::PrivateConservation,
+            OutstandingGlobalPattern::DestinationConstructorIdentity,
+        ]),
+    );
 }
 
 #[test]
-fn only_the_one_check_this_wave_can_settle_whole_is_settled() {
+fn the_four_checks_that_are_not_settled_whole_name_what_they_owe() {
     let placements = coordinator_placements();
-    let established = placements
-        .values()
-        .filter(|placement| placement.status() == GlobalCheckStatus::Established)
-        .map(crate::live_pattern::GlobalCheckPlacement::check)
-        .collect::<BTreeSet<_>>();
-
-    // Exactly one: the counts. Everything else either reads the output
-    // side or needs a region census, and both are later waves'.
-    assert_eq!(
-        established,
-        BTreeSet::from([CoordinatorGlobalCheck::ExactInputAndOutputCounts]),
-    );
-
-    // And three more are answered in part, which is the finding a
-    // two-state census would have had to round away: emitted bytes
-    // carry some of each, and a §10 pattern owes the rest.
     let partial = placements
         .values()
         .filter(|placement| placement.status() == GlobalCheckStatus::Partial)
         .map(crate::live_pattern::GlobalCheckPlacement::check)
         .collect::<BTreeSet<_>>();
+
+    // The conservation, because §10.6 is Wave 7's; and the three whose
+    // object families could wear a destination's shape, because the
+    // destination constructor's exact bytes are not recomputed in script.
     assert_eq!(
         partial,
         BTreeSet::from([
-            CoordinatorGlobalCheck::CompleteProtocolRanges,
-            CoordinatorGlobalCheck::ExplicitAssetClosure,
-            CoordinatorGlobalCheck::ExactRoleOrder,
+            CoordinatorGlobalCheck::RepresentationSpecificConservation,
+            CoordinatorGlobalCheck::LiveClassOutputClosure,
+            CoordinatorGlobalCheck::RootsAbsent,
+            CoordinatorGlobalCheck::SpecializedEventsAbsent,
         ]),
+    );
+
+    // Nothing is Outstanding any more, which is the flip this wave is
+    // for: every check has emitted bytes behind it.
+    assert!(
+        !placements
+            .values()
+            .any(|placement| placement.status() == GlobalCheckStatus::Outstanding),
+    );
+    assert_eq!(
+        placements
+            .values()
+            .filter(|placement| placement.status() == GlobalCheckStatus::Established)
+            .count(),
+        CoordinatorGlobalCheck::ALL.len() - partial.len(),
     );
 }
 
@@ -729,11 +756,18 @@ fn a_slot_claiming_a_fragment_no_role_emits_is_refused() {
 
 #[test]
 fn the_coordinator_role_carries_the_counts_and_the_member_role_does_not() {
-    assert!(emitted_fragments(LiveProgramRole::Coordinator).contains(&LiveFragmentId::Cardinality),);
-    assert!(!emitted_fragments(LiveProgramRole::Member).contains(&LiveFragmentId::Cardinality));
+    let explicit_plan = LiveTransferRepresentationPlan::Explicit;
+    assert!(
+        emitted_fragments(LiveProgramRole::Coordinator, explicit_plan)
+            .contains(&LiveFragmentId::Cardinality),
+    );
+    assert!(
+        !emitted_fragments(LiveProgramRole::Member, explicit_plan)
+            .contains(&LiveFragmentId::Cardinality)
+    );
     // Both perform the local pair, which is §10.3's own sentence.
     for role in [LiveProgramRole::Coordinator, LiveProgramRole::Member] {
-        let fragments = emitted_fragments(role);
+        let fragments = emitted_fragments(role, explicit_plan);
         assert!(fragments.contains(&LiveFragmentId::LocalRecognition));
         assert!(fragments.contains(&LiveFragmentId::OwnerAuthorization));
     }
@@ -882,23 +916,72 @@ fn a_false_comparison_followed_by_verify_has_no_abstract_success_path() {
 
 #[test]
 fn every_pattern_identity_has_a_record_built_by_walking_its_fragment() {
-    let subject = shape(2);
+    // A sponsored shape with a member position, which is the one shape
+    // that calls for every identity: it has a nonzero receipt position,
+    // it has a sponsor region, and the explicit plan reads amounts.
+    let subject = sponsored_shape(2);
     let patterns = live_transfer_patterns(&reviewed_target(), &symbols(), &explicit(), subject)
         .expect("the census builds");
 
-    // A shape with a member position calls for every identity.
     assert_eq!(
-        patterns_for(subject),
+        patterns_for(subject, LiveTransferRepresentationPlan::Explicit),
         LiveTransferPatternId::ALL.iter().copied().collect(),
     );
     assert_eq!(
         patterns.keys().copied().collect::<BTreeSet<_>>(),
-        patterns_for(subject),
+        patterns_for(subject, LiveTransferRepresentationPlan::Explicit),
     );
     for pattern in patterns.values() {
-        assert!(!pattern.prerequisites().is_empty());
+        assert!(
+            !pattern.prerequisites().is_empty(),
+            "{:?} was minted over a fragment that schedules nothing",
+            pattern.id(),
+        );
         assert!(!pattern.evidence().is_empty());
     }
+}
+
+#[test]
+fn a_sponsorless_shape_gets_no_sponsor_record_rather_than_an_empty_one() {
+    // The sponsor-isolation fragment of a shape with no sponsor region is
+    // zero instructions, because the region's absence is established by
+    // the exact counts. A record over it would carry an empty
+    // prerequisite census and an empty resource formula and would read,
+    // from the outside, as a pattern somebody had checked.
+    let subject = shape(2);
+    let patterns = live_transfer_patterns(&reviewed_target(), &symbols(), &explicit(), subject)
+        .expect("the census builds");
+
+    assert!(!has_sponsor_region(subject));
+    assert!(!patterns.contains_key(&LiveTransferPatternId::LiveSponsorIsolationV1));
+    assert_eq!(
+        live_sponsor_isolation_fragment(&reviewed_target(), &symbols(), subject)
+            .expect("the fragment assembles")
+            .instructions(),
+        [],
+    );
+}
+
+#[test]
+fn the_private_plan_gets_no_conservation_record_rather_than_the_explicit_one() {
+    // §10.6 admits no amount inspection at all, so the private plan does
+    // not borrow the explicit plan's arithmetic. What it gets instead is
+    // a named remainder on the coordinator's slot, which Wave 7 fills.
+    let subject = shape(2);
+    let constructor = constructor(LiveTransferRepresentationPlan::PrivateCommitted);
+    let patterns = live_transfer_patterns(&reviewed_target(), &symbols(), &constructor, subject)
+        .expect("the census builds");
+
+    assert!(!patterns.contains_key(&LiveTransferPatternId::LiveExplicitConservationV1));
+    assert_eq!(
+        patterns.keys().copied().collect::<BTreeSet<_>>(),
+        patterns_for(subject, LiveTransferRepresentationPlan::PrivateCommitted),
+    );
+    assert!(
+        coordinator_placements()[&CoordinatorGlobalCheck::RepresentationSpecificConservation]
+            .outstanding()
+            .any(|pattern| pattern == OutstandingGlobalPattern::PrivateConservation),
+    );
 }
 
 #[test]
@@ -916,7 +999,7 @@ fn the_one_to_one_shape_gets_no_member_record_rather_than_a_borrowed_one() {
     assert!(!patterns.contains_key(&LiveTransferPatternId::LiveMemberProgramV1));
     assert_eq!(
         patterns.keys().copied().collect::<BTreeSet<_>>(),
-        patterns_for(subject),
+        patterns_for(subject, LiveTransferRepresentationPlan::Explicit),
     );
     // And what it does hold is the coordinator's, under the
     // coordinator's own identity.
