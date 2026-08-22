@@ -775,6 +775,65 @@ fn no_case_records_a_verdict_and_every_expressible_one_still_needs_a_run() {
 }
 
 #[test]
+fn the_candidate_abi_is_what_every_expressible_case_now_waits_on() {
+    // What Wave 8 moved. Five of the six expressible cases named a
+    // `LinkerNotExtended` residual, §11's linker extension is built, and
+    // the residual is gone rather than kept as a discharged marker — a
+    // residual nobody carries is a run nobody is owed.
+    //
+    // What is left is the dependency it had been standing in front of:
+    // observing a target verdict needs a complete target transaction
+    // (§1.11), and §12's candidate ABI is what builds one. So every
+    // expressible case now waits on the ABI and the run, and exactly one
+    // of them additionally waits on a predecessor constructor. A census
+    // that had simply dropped the linker residual would have reported
+    // four of these as one target run away when they are two waves away.
+    let cases = constructor_mutation_cases();
+    let expressible: Vec<_> = cases
+        .values()
+        .filter(|case| case.disposition() == ConstructorDisposition::ExpressibleByRawSurgery)
+        .collect();
+    assert_eq!(expressible.len(), 6);
+
+    for case in &expressible {
+        let residuals: BTreeSet<_> = case.residuals().collect();
+        assert!(
+            residuals.contains(&MutationResidual::AbiNotDerived),
+            "{:?} names no transaction to be run in",
+            case.id()
+        );
+        assert!(residuals.contains(&MutationResidual::TargetNativeRunRequired));
+    }
+
+    let waiting_on_a_predecessor: Vec<_> = expressible
+        .iter()
+        .filter(|case| {
+            case.residuals()
+                .any(|residual| residual == MutationResidual::PredecessorConstructorAbsent)
+        })
+        .map(|case| case.id())
+        .collect();
+    assert_eq!(
+        waiting_on_a_predecessor,
+        vec![ConstructorMutationCaseId::TimeLockedPredecessorOfferedToATransferLeaf],
+    );
+
+    // And the census names no residual that nothing carries.
+    let carried: BTreeSet<_> = cases
+        .values()
+        .flat_map(ConstructorMutationCase::residuals)
+        .collect();
+    assert_eq!(
+        carried,
+        MutationResidual::ALL
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>(),
+        "the residual census names a run nobody is owed",
+    );
+}
+
+#[test]
 fn every_refused_case_is_actually_refused_and_by_the_variant_that_names_it() {
     // The census is not read as a table. Each case it says the
     // constructor refuses is built and run, and the refusal it produces

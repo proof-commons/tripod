@@ -16,6 +16,14 @@
 //! depth is `n*k - (2^k - n)`. That is arithmetic rather than search,
 //! so it checks the search at sizes where enumeration is hopeless —
 //! including the twelve-leaf set this candidate actually commits.
+//!
+//! The closed form is production code now
+//! ([`crate::taptree::equal_weight_minimum_cost`]) rather than a
+//! fixture, because Guide 13's live tree is past the oracle's budget and
+//! needs an exact route that reaches it. That makes the comparison below
+//! stronger rather than weaker: the function the linker actually uses is
+//! the one required to agree with an exhaustive search over the whole
+//! tree space, at every size that search can reach.
 
 use std::num::{NonZeroU32, NonZeroU64};
 
@@ -24,8 +32,9 @@ use target_elements::LeafVersion;
 
 use crate::LinkRefusal;
 use crate::taptree::{
-    ControlPathRecipe, ORACLE_LEAF_BUDGET, TapLeafInput, TaptreeInput, TreeObjective, assemble,
-    enumerated_minimum_cost, exact_minimum_cost,
+    ControlPathRecipe, ExactOptimumRoute, ORACLE_LEAF_BUDGET, OptimumEvidencePolicy,
+    TREE_LEAF_BUDGET, TapLeafInput, TaptreeInput, TreeObjective, assemble, assemble_under,
+    enumerated_minimum_cost, equal_weight_minimum_cost, exact_minimum_cost,
 };
 
 /// A leaf identity for the synthetic trees below.
@@ -50,22 +59,6 @@ fn input(weights: &[u64]) -> TaptreeInput {
         NonZeroU32::new(32).expect("thirty-two is nonzero"),
     )
     .expect("a non-empty synthetic leaf set")
-}
-
-/// The closed-form optimum for `count` equal unit weights.
-///
-/// Arithmetic, not search: `k` is the least integer with `2^k` at least
-/// `count`, `2^k - count` leaves sit one level shallower than `k`, and
-/// the rest sit at `k`.
-fn equal_weight_optimum(count: u64) -> u128 {
-    if count <= 1 {
-        return 0;
-    }
-    let mut k = 0;
-    while (1u64 << k) < count {
-        k += 1;
-    }
-    u128::from(count * k - ((1u64 << k) - count))
 }
 
 #[test]
@@ -112,15 +105,163 @@ fn the_subset_oracle_agrees_with_the_closed_form_on_equal_weights() {
     // so it is the one the closed form is worth having for. Checked to
     // the oracle's whole budget, which reaches well past the twelve
     // leaves the compact-ASH constructor commits.
+    //
+    // The closed form under test is the linker's own, and it is what
+    // establishes the live tree's optimality past the oracle's budget.
+    // So this is not a fixture agreeing with a fixture: it is the
+    // production route required to agree with an exhaustive search over
+    // the whole tree space, everywhere that search can be run.
     for count in 1..=ORACLE_LEAF_BUDGET {
         let weights = vec![1u64; count];
-        let counted = u64::try_from(count).expect("a small count fits");
         assert_eq!(
             exact_minimum_cost(&weights).expect("the budget covers its own bound"),
-            equal_weight_optimum(counted),
+            equal_weight_minimum_cost(count, 1).expect("a non-empty set inside the budget"),
             "the oracle and the closed form disagree at {count} equal leaves",
         );
     }
+}
+
+#[test]
+fn the_closed_form_agrees_with_the_subset_oracle_at_every_shared_weight() {
+    // The closed form multiplies by the shared weight rather than
+    // assuming unit leaves, and the multiplication is part of the claim.
+    // Checked against the oracle over several weights at every size the
+    // oracle reaches, so a formula right about unit weights and wrong
+    // about the scaling would fail here rather than in a linked bundle.
+    for weight in [1u64, 2, 7, 1_000_003] {
+        for count in 1..=ORACLE_LEAF_BUDGET {
+            let weights = vec![weight; count];
+            assert_eq!(
+                exact_minimum_cost(&weights).expect("the budget covers its own bound"),
+                equal_weight_minimum_cost(count, weight).expect("a non-empty set in the budget"),
+                "the closed form disagrees at {count} leaves of weight {weight}",
+            );
+        }
+    }
+}
+
+#[test]
+fn the_closed_form_agrees_with_literal_enumeration_where_enumeration_can_run() {
+    // The check on the check, over the third algorithm. Enumeration is
+    // combinatorially expensive, so it runs only at the small sizes —
+    // but at those sizes it is the strongest statement available, and
+    // the closed form has to survive it too.
+    for count in 1..=6usize {
+        let weights = vec![3u64; count];
+        assert_eq!(
+            enumerated_minimum_cost(&weights).expect("six leaves is inside the budget"),
+            equal_weight_minimum_cost(count, 3).expect("a non-empty set inside the budget"),
+            "the closed form and the enumeration disagree at {count} leaves",
+        );
+    }
+}
+
+#[test]
+fn a_leaf_set_past_the_oracle_budget_assembles_only_where_a_route_reaches_it() {
+    // Guide 13's live candidate commits twenty-nine leaves, which is
+    // past the subset oracle. §11.4 still requires the tree to be
+    // compared with an exact optimum, so the closed form is what
+    // establishes it — and only under a policy that admits the closed
+    // form, and only for the equal weights the formula is a theorem
+    // about. Every other combination refuses.
+    let live_sized = 29usize;
+    let equal: Vec<TapLeafInput> = (0..live_sized)
+        .map(|index| {
+            TapLeafInput::new(
+                leaf(u8::try_from(index).expect("twenty-nine fits a byte")),
+                positive(1),
+            )
+        })
+        .collect();
+    let input = declared(equal).expect("the leaves are distinct and non-empty");
+
+    // The strict policy refuses: the oracle is the only route it admits
+    // and the oracle does not reach.
+    assert_eq!(
+        assemble_under(&input, OptimumEvidencePolicy::SubsetOracleOnly),
+        Err(LinkRefusal::TreeOracleBudgetExceeded {
+            leaves: live_sized,
+            budget: ORACLE_LEAF_BUDGET,
+        }),
+    );
+    assert_eq!(
+        assemble(&input),
+        Err(LinkRefusal::TreeOracleBudgetExceeded {
+            leaves: live_sized,
+            budget: ORACLE_LEAF_BUDGET,
+        }),
+        "compact ASH's entry point must keep the stricter policy",
+    );
+
+    // The permissive policy assembles, records which route answered, and
+    // reaches the cost the closed form states.
+    let tree = assemble_under(
+        &input,
+        OptimumEvidencePolicy::SubsetOracleOrEqualWeightClosedForm,
+    )
+    .expect("twenty-nine equal leaves have an exact closed-form optimum");
+    assert_eq!(
+        tree.optimum_route(),
+        ExactOptimumRoute::EqualWeightClosedForm
+    );
+    assert_eq!(
+        tree.cost(),
+        equal_weight_minimum_cost(live_sized, 1).expect("a non-empty set inside the budget"),
+    );
+    assert_eq!(tree.recipes().len(), live_sized);
+    // Five levels: `2^5` is the least power of two at least twenty-nine.
+    assert_eq!(tree.depth(), 5);
+}
+
+#[test]
+fn unequal_weights_past_the_oracle_budget_refuse_under_every_policy() {
+    // The closed form is a theorem about equal weights and nothing else,
+    // so a weight vector past the oracle's budget that is not all-equal
+    // has no exact route at all. §1.11 requires that to be a typed
+    // failure rather than a tree nothing checked.
+    let skewed: Vec<TapLeafInput> = (0..=ORACLE_LEAF_BUDGET)
+        .map(|index| {
+            TapLeafInput::new(
+                leaf(u8::try_from(index).expect("a small index fits")),
+                positive(u64::try_from(index).expect("a small index fits") + 1),
+            )
+        })
+        .collect();
+    let input = declared(skewed).expect("the leaves are distinct and non-empty");
+
+    for policy in [
+        OptimumEvidencePolicy::SubsetOracleOnly,
+        OptimumEvidencePolicy::SubsetOracleOrEqualWeightClosedForm,
+    ] {
+        assert_eq!(
+            assemble_under(&input, policy),
+            Err(LinkRefusal::TreeOracleBudgetExceeded {
+                leaves: ORACLE_LEAF_BUDGET + 1,
+                budget: ORACLE_LEAF_BUDGET,
+            }),
+            "{policy:?} established an optimum it has no route to",
+        );
+    }
+}
+
+#[test]
+fn the_closed_form_refuses_outside_the_domain_its_argument_covers() {
+    // An empty leaf set has no tree rather than a zero-cost one, and a
+    // set past the construction's own budget is outside the exact-domain
+    // argument the arithmetic rests on. Both refuse rather than return a
+    // number nothing establishes.
+    assert_eq!(
+        equal_weight_minimum_cost(0, 1),
+        Err(LinkRefusal::EmptyLeafSet)
+    );
+    assert_eq!(
+        equal_weight_minimum_cost(TREE_LEAF_BUDGET + 1, 1),
+        Err(LinkRefusal::TreeLeafBudgetExceeded {
+            leaves: TREE_LEAF_BUDGET + 1,
+            budget: TREE_LEAF_BUDGET,
+        }),
+    );
+    assert!(equal_weight_minimum_cost(TREE_LEAF_BUDGET, u64::MAX).is_ok());
 }
 
 #[test]
@@ -453,7 +594,7 @@ fn every_declaration_order_of_one_leaf_set_produces_one_identical_tree() {
 fn an_empty_leaf_set_has_no_tree() {
     assert!(matches!(
         TaptreeInput::new(
-            std::iter::empty(),
+            std::iter::empty::<TapLeafInput<LeafRole>>(),
             LeafVersion::TAPSCRIPT,
             TreeObjective::MinimumTotalWeightedDepth,
             NonZeroU32::new(8).expect("eight is nonzero"),

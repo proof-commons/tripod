@@ -31,6 +31,15 @@
 //! field. The alternative was a second role enum, and then two censuses
 //! for one linker.
 //!
+//! One shared helper is worth naming here because a Wave-6 finding
+//! turned on it. `leaf_script_width` answers what a committed leaf
+//! script occupies; `symbol_width` answers what the reviewed contract
+//! fixes for the field a symbol is *compared with*. They are different
+//! questions, a leaf script has an answer to only the second of them,
+//! and the two call sites that needed the first were computing it inline
+//! — which is how a symbol table and its own relocations come to
+//! disagree about one entry. One function now answers it.
+//!
 //! Two types are new, and each is new because it is keyed to something
 //! compact ASH does not have: [`LiveBundleSymbol`], because the symbol
 //! set differs, and [`LiveRelocationSite`], because a site names a
@@ -1295,10 +1304,7 @@ fn constructor_relocations(
             symbol,
             role: TargetRole::CommittedLeafScript,
             site: LiveRelocationSite::ConstructorBinding,
-            width: SymbolWidth::ValueDetermined {
-                bytes: usize::try_from(program.program.encoded_length(target))
-                    .unwrap_or(usize::MAX),
-            },
+            width: leaf_script_width(target, &program.program),
             encoding: RelocationEncoding::TapscriptLeafScript,
             multiplicity: one,
             substitution: SubstitutionMode::StructuredBeforeSerialization,
@@ -1306,6 +1312,29 @@ fn constructor_relocations(
     }
 
     relocations
+}
+
+/// The exact width one committed leaf script occupies.
+///
+/// The one width [`symbol_width`] does not answer, and it is worth
+/// saying why rather than leaving two call sites to compute it inline —
+/// which is what they did, and which is how a table and its own
+/// relocations come to disagree about one symbol.
+///
+/// A leaf script reaches no *comparand* field of this bundle, so the
+/// question `symbol_width` answers — what does the reviewed contract fix
+/// for the field this value is compared with — has no answer for it. It
+/// is nonetheless very much serialized: it is the committed program
+/// itself, and its width is that program's exact encoded length. Two
+/// different questions, so two functions, and neither one guessing at
+/// the other's answer.
+fn leaf_script_width(
+    target: &ReviewedElementsTapscriptDefinition,
+    program: &TapscriptProgram,
+) -> SymbolWidth {
+    SymbolWidth::ValueDetermined {
+        bytes: usize::try_from(program.encoded_length(target)).unwrap_or(usize::MAX),
+    }
 }
 
 /// The reviewed encoding class one symbol's payload belongs to.
@@ -1362,14 +1391,24 @@ fn symbol_width(
             script_number(symbols.sponsor_change_version())
         }
         LiveBundleSymbol::UnspendableInternalKey | LiveBundleSymbol::TargetLeafVersion => 0,
-        // A typed parameter or a program: no field of this bundle carries
-        // a serialized form of it.
+        // A typed parameter: no comparand field of this bundle carries a
+        // serialized form of it, which is the question this function
+        // answers.
         LiveBundleSymbol::SelectedSighashProfile
         | LiveBundleSymbol::CandidateReceiptInputBound
         | LiveBundleSymbol::CandidateReceiptOutputBound
-        | LiveBundleSymbol::CandidateSponsorBound
-        | LiveBundleSymbol::CoordinatorProgram { .. }
-        | LiveBundleSymbol::MemberProgram { .. } => return SymbolWidth::Unserialized,
+        | LiveBundleSymbol::CandidateSponsorBound => return SymbolWidth::Unserialized,
+        // The two program families have no comparand width either, and
+        // that is *all* this answer says about them. Their serialized
+        // width is a different question with a different answer, and
+        // `leaf_script_width` is where it is asked; no caller reaches
+        // this arm for them. Reading `Unserialized` here as "a committed
+        // leaf script is not serialized" would be reading a comparand
+        // answer as a general one, which is exactly the confusion the
+        // two separate functions exist to prevent.
+        LiveBundleSymbol::CoordinatorProgram { .. } | LiveBundleSymbol::MemberProgram { .. } => {
+            return SymbolWidth::Unserialized;
+        }
     };
 
     if symbol == LiveBundleSymbol::TargetLeafVersion {
@@ -1456,19 +1495,10 @@ fn symbol_table(
                 }
             }
         };
-        // The leaf's own exact encoded length, which is the width its
-        // relocation places it at. `symbol_width` would answer
-        // `Unserialized` here, and the two answers would disagree about
-        // one symbol: a leaf script reaches no *comparand* field of this
-        // bundle, but it is very much serialized — it is the committed
-        // program itself.
         record(
             symbol,
             SymbolBinding::DefinedByBundle,
-            SymbolWidth::ValueDetermined {
-                bytes: usize::try_from(program.program.encoded_length(target))
-                    .unwrap_or(usize::MAX),
-            },
+            leaf_script_width(target, &program.program),
         );
     }
 

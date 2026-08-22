@@ -9,10 +9,15 @@
 
 use std::collections::BTreeSet;
 
-use tapscript::{BundleSymbol, LeafRole, TapscriptError};
+use tapscript::upstream::{ExternalEvidenceRole, LiveTransferRepresentationPlan};
+use tapscript::{
+    BundleSymbol, FinalStackDefect, LeafRole, LiveBundleSymbol, LiveProgramRefusal,
+    LiveTransferLeafRole, OwnerProfileDisposition, TapscriptError,
+};
 use target_elements::ResourceDimension;
 
 use crate::graph::{ReferenceEdgeId, ReferenceNode, SccId};
+use crate::live_symbol::{LiveLinkRole, LiveLinkSymbol, LiveSymbolType};
 use crate::symbol::SymbolType;
 
 /// One relation-case identity, as the linker reports it.
@@ -174,11 +179,217 @@ pub enum LinkRefusal {
     /// The exact tree oracle's leaf budget was exceeded, so the
     /// comparison §14.5 requires was not made and no tree is returned
     /// (§1.11).
+    ///
+    /// Raised when *no* route the caller admits reaches the leaf set:
+    /// past the oracle's budget with unequal weights, or past it with
+    /// equal weights under a policy that admits the oracle alone.
     TreeOracleBudgetExceeded {
         /// How many leaves were offered.
         leaves: usize,
         /// The budget.
         budget: usize,
+    },
+    /// The tree construction's own leaf budget was exceeded, so the
+    /// module's exact-domain argument no longer covers the arithmetic and
+    /// no tree is returned (§14.5, §1.11).
+    ///
+    /// Distinct from [`Self::TreeOracleBudgetExceeded`]: that one says no
+    /// admitted route establishes the optimum, this one says the
+    /// construction itself is past the bound its `u128` sufficiency
+    /// argument rests on, so no number it produced would be known to be
+    /// any tree's cost.
+    TreeLeafBudgetExceeded {
+        /// How many leaves were offered.
+        leaves: usize,
+        /// The budget.
+        budget: usize,
+    },
+
+    // --- Live-transfer symbols (§11.2) --------------------------------
+    /// Two definitions claim one typed live symbol key (§11.2).
+    DuplicateLiveSymbolDefinition(Box<LiveLinkSymbol>),
+    /// A live symbol the bundle references has no definition (§11.2).
+    MissingLiveSymbol(Box<LiveLinkSymbol>),
+    /// A live definition's type is not the type the symbol declares
+    /// (§11.2).
+    IncompatibleLiveSymbolType {
+        /// The symbol.
+        symbol: Box<LiveLinkSymbol>,
+        /// What the symbol's role requires.
+        expected: LiveSymbolType,
+        /// What the definition carries.
+        actual: LiveSymbolType,
+    },
+    /// One live symbol reached the census under two definition origins,
+    /// so which layer settles it is ambiguous (§11.2).
+    AmbiguousLiveSymbol(Box<LiveLinkSymbol>),
+    /// The bundle and the link disagree about what the review
+    /// establishes for the selected sighash profile (§1.7, §11.2).
+    ///
+    /// Both read the reviewed contract's own sighash capability, so a
+    /// disagreement means they are reading different targets — which
+    /// makes every signature statement in the bundle a statement about a
+    /// contract this link is not resolving against.
+    SighashProfileDisagreement {
+        /// What the bundle recorded.
+        bundle: Box<OwnerProfileDisposition>,
+        /// What this link derives.
+        link: Box<OwnerProfileDisposition>,
+    },
+    /// A §11.2 role no definition in the census fills.
+    ///
+    /// A role nobody fills is a role nobody has resolved, and a link that
+    /// returned a bundle anyway would be publishing programs whose
+    /// symbols were settled somewhere nobody can name.
+    LiveSymbolRoleUnfilled {
+        /// Every unfilled role, in census order.
+        roles: BTreeSet<LiveLinkRole>,
+    },
+
+    // --- Live-transfer relocation (§11.1, §13.4) ----------------------
+    /// A live relocation's symbol has no definition to substitute.
+    UnresolvedLiveRelocation(Box<LiveLinkSymbol>),
+    /// A live leaf's relinked program did not rebuild.
+    InvalidLinkedLiveProgram {
+        /// The leaf.
+        leaf: LiveTransferLeafRole,
+        /// Why the rebuild failed.
+        cause: Box<LiveProgramRefusal>,
+    },
+    /// A live leaf's relinked program does not carry the resolved value
+    /// at a site the bundle records a relocation for.
+    LiveRelocationNotApplied {
+        /// The leaf.
+        leaf: LiveTransferLeafRole,
+        /// The symbol whose site does not carry it.
+        symbol: LiveBundleSymbol,
+    },
+    /// A live leaf's relinked program changed at an instruction no
+    /// relocation covers, so the link mutated something untracked.
+    UntrackedLiveProgramMutation {
+        /// The leaf.
+        leaf: LiveTransferLeafRole,
+        /// The instruction index.
+        index: usize,
+    },
+    /// A relinked live program did not survive the §13.2 round trip.
+    LiveRoundTripMismatch(LiveTransferLeafRole),
+    /// A relinked live program no longer schedules from §10.2's
+    /// precondition.
+    LinkedLiveProgramDoesNotSchedule {
+        /// The leaf.
+        leaf: LiveTransferLeafRole,
+    },
+    /// A relinked live program no longer satisfies §10.9.
+    ///
+    /// The emitter held every leaf to §10.9 before publishing it, and a
+    /// substitution has no business changing a program's stack behaviour
+    /// — but a leaf that stopped satisfying it after linking would be
+    /// exactly the artifact §10.9 exists to refuse, published by a layer
+    /// that never looked.
+    LinkedLiveProgramFailsTheFinalStackRule {
+        /// The leaf.
+        leaf: LiveTransferLeafRole,
+        /// Every way it fails, in canonical order.
+        defects: Vec<FinalStackDefect>,
+    },
+
+    // --- Live-transfer carrier closure (§11.5) ------------------------
+    /// A representation plan was offered a committed tree and the
+    /// validated plan has no projection for it (§11.5).
+    MissingLivePlanProjection {
+        /// The plan.
+        plan: LiveTransferRepresentationPlan,
+    },
+    /// A relation-case one plan requires has no site the emitted bundle
+    /// serves (§11.5).
+    ///
+    /// The compiler-required and backend-emitted censuses failing to
+    /// meet, per plan: a relation that vanished at the boundary is what
+    /// §1.3 forbids, and it is a fact about one representation rather
+    /// than about their union.
+    LiveCarrierCensusMismatch {
+        /// The plan whose census does not meet.
+        plan: LiveTransferRepresentationPlan,
+        /// The relation-case with no served site.
+        relation_case: Box<RelationCaseKey>,
+    },
+    /// A placed carrier names a site no committed live leaf occupies
+    /// (§11.5).
+    UnreachableLiveRelationCarrier {
+        /// The plan.
+        plan: LiveTransferRepresentationPlan,
+        /// The relation-case left uncarried.
+        relation_case: Box<RelationCaseKey>,
+    },
+    /// A relation-case has exactly one carrying program under one plan
+    /// and that program is not in the plan's committed tree (§11.5).
+    UniqueLiveCarrierRemoved {
+        /// The plan.
+        plan: LiveTransferRepresentationPlan,
+        /// The relation-case left uncarried.
+        relation_case: Box<RelationCaseKey>,
+        /// The program that alone carried it.
+        leaf: LiveTransferLeafRole,
+    },
+    /// One plan's requirement is reachable only in another plan's tree
+    /// (§11.5).
+    ///
+    /// §11.5's own sentence, as a refusal: a carrier reachable only in
+    /// the explicit plan does not satisfy the private plan. The defect
+    /// names the plan that starves rather than reporting that some tree
+    /// somewhere carries the case, because the plan that starves is the
+    /// one whose spenders would find nothing there.
+    PlanStarvedOfCarrier {
+        /// The plan whose requirement nothing in its own tree carries.
+        starved: LiveTransferRepresentationPlan,
+        /// The plan whose tree does carry it.
+        reachable_in: LiveTransferRepresentationPlan,
+        /// The relation-case.
+        relation_case: Box<RelationCaseKey>,
+    },
+    /// A relation-case named as external evidence is also given a local
+    /// carrying program (§11.5, §6.3).
+    ///
+    /// The reassignment §11.5 forbids. An external confidential-value
+    /// requirement is the target's own consensus rule; a local program
+    /// that appeared to discharge it would be claiming a rule it cannot
+    /// evaluate, and §10.6 says plainly that no backend pattern is minted
+    /// for that behaviour.
+    ExternalRequirementCarriedLocally {
+        /// The plan.
+        plan: LiveTransferRepresentationPlan,
+        /// The relation-case carried both ways.
+        relation_case: Box<RelationCaseKey>,
+        /// Every external role the plan leaves open.
+        roles: BTreeSet<ExternalEvidenceRole>,
+    },
+
+    // --- Live-transfer taptree (§11.4) --------------------------------
+    /// One live-transfer leaf identity was declared more than once, so
+    /// the leaf set does not know its own size and declaration order
+    /// would decide which declaration survived (§11.4).
+    DuplicateLiveTreeLeaf(LiveTransferLeafRole),
+    /// The deterministic live-transfer tree exceeds the declared maximum
+    /// depth (§11.4).
+    LiveTreeDepthExceeded {
+        /// The deepest leaf.
+        leaf: LiveTransferLeafRole,
+        /// The depth it reached.
+        depth: u32,
+        /// The declared maximum.
+        maximum: u32,
+    },
+    /// One tree was offered leaves of more than one representation plan
+    /// (§11.3).
+    ///
+    /// The dispatch §11.3 forbids, arriving as a tree rather than as an
+    /// opcode: a taproot output committing both representations' leaves
+    /// lets a spender choose which semantics to run, and no care inside
+    /// the programs takes that choice back.
+    MixedRepresentationTree {
+        /// Every representation the declarations named.
+        representations: BTreeSet<LiveTransferRepresentationPlan>,
     },
 
     // --- Carrier closure ----------------------------------------------
@@ -223,6 +434,31 @@ pub enum LinkRefusal {
         linked: u64,
         /// The reviewed limit.
         limit: u64,
+    },
+
+    // --- Live-transfer bundle (§11.6) ---------------------------------
+    /// No relocatable live-transfer bundle was offered to link.
+    ///
+    /// A link over nothing has no leaf set, so §7.5's key-path escape
+    /// arrives by omission before any other check could run.
+    NoLiveBundleOffered,
+    /// A live bundle handed in already claims more than a candidate, so
+    /// it is not this linker's subject (§1.12).
+    LiveBundleIsNotACandidate,
+    /// Two offered bundles were emitted for different validated plans.
+    ///
+    /// A link over two plans would be a link over two operations, and
+    /// §11.5's per-plan comparison would be comparing projections nobody
+    /// derived together.
+    LiveBundlePlansDisagree,
+    /// Two offered bundles claim one (owner, representation).
+    ///
+    /// §7.6 gives each owner one constructor per representation, so a
+    /// second claim on one key is two constructors for one destination
+    /// and no way to say which a linked output is under.
+    DuplicateLinkedConstructor {
+        /// The representation claimed twice.
+        representation: LiveTransferRepresentationPlan,
     },
 
     // --- Status -------------------------------------------------------
