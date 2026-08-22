@@ -1225,6 +1225,13 @@ evidence and the batch gate record extends §2.6:
 | `T4-010` | DONE | Candidate resource study (Wave 14): all thirty-six section 20.2 assignments measured, twelve live weights matched against prediction, and the finding that linking — seven of thirty-six under the sixteen-leaf oracle budget — is the candidate ceiling, not any target bound. Full narrative archived in [backlog history](history/backlog-history.md) |
 | `T4-011` | DONE | Phase-4 gate and handoff (Wave 15): the section-29 audit dispositioned 105 items (94 PASS, 5 QUALIFIED, 1 honest FAIL, 5 deferred), the completion report filed at [the Guide-12 completion record](history/guide-12-completion-report.md), and the deferred lanes discharged by the §2.8 gate run locally as the verdict of record. Full narrative archived in [backlog history](history/backlog-history.md) |
 
+The Phase-5 task state follows Guide 13's wave plan, from its Wave 0
+preflight onward; each wave lands with its own evidence:
+
+| Task | Status | Evidence |
+|---|---|---|
+| `T5-001` | DONE | Guide-13 Wave 0 preflight reproduction: all eighteen review rows dispositioned. Sixteen CONFIRMED with committed reproductions in six packages — a confirmed defect is an ignored test stating the property the repair must establish, so the repair un-ignores or replaces it and nothing rounds up. `G13-R09` closed by the phase-state reconciliation. `G13-R06` RECLASSIFIED: the four quoted logging sites are the accepted `G12-R04` repair — the harness nulls the adapter's stderr, and ADR-010's implementation scope is the cli-common executables — with the direct-run scenario left as a question for the guide author. `G13-R18` CONFIRMED on all four sub-claims: blank records skipped, no byte bound, the handshake accepts unknown fields, and exactly one of the five framing cases the Rust side distinguishes exists in the reader. Two couplings the review did not draw: the live lane publishes its coverage through the forgeable discharge API, so `G13-R01` and `G13-R12` repair together, and one caller-authored tuple was measured discharging forty-two rows. Integration lane green on the shared instance: clippy 7.5s, the workspace suite 339.9s |
+
 Current blockers are:
 
 ```text
