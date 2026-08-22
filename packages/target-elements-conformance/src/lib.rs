@@ -25,6 +25,7 @@ pub mod prototype_validate;
 pub mod provenance;
 pub mod reference;
 pub mod report;
+pub mod test_material;
 pub mod validate;
 pub mod vocabulary;
 pub mod wide_floor;

@@ -2,17 +2,35 @@
 //!
 //! # Public data only, by construction
 //!
-//! Nothing here holds, derives, accepts, or produces a secret scalar.
-//! The only scalar this module multiplies by is a taproot tweak, which
-//! is a hash of public data that anybody verifying the output recomputes
-//! `(´[PLAN-rule:guide10:public-data]´)`. There is no key generation, no
-//! signing, and no nonce.
+//! Nothing here holds or derives a secret scalar. The scalars this
+//! module multiplies by are a taproot tweak, which is a hash of public
+//! data that anybody verifying the output recomputes
+//! `(´[PLAN-rule:guide10:public-data]´)`, and — since Guide-13 §14.3
+//! asked for a test-only owner-signing capability — a signing scalar
+//! handed in by [`crate::test_material`], which publishes it. There is
+//! no key generation and no nonce here.
 //!
-//! That is also why the implementation is deliberately unhurried and
-//! plainly written rather than constant-time: there is no secret whose
-//! timing could leak. A module that ever needed to be constant-time
-//! would be a different module with a different review, and this one
-//! would have to stop existing rather than grow the capability quietly.
+//! # The property that has to hold, and the one that only looked like it
+//!
+//! What matters is that no *secret* scalar reaches this arithmetic, and
+//! that is unchanged: the taproot tweak is public by construction, and
+//! the signing scalar is a published fixture under ADR-015's
+//! test-material rule, labelled test-only at its own definition and
+//! authorizing nothing on any network. Guide-13 §1.10 forbids a
+//! first-party production interface for owner private keys, and none
+//! exists — there is no route by which a production secret could arrive
+//! at this function, because there is no production caller that holds
+//! one.
+//!
+//! The earlier wording said the tweak was the only scalar multiplied
+//! here, and stating the *consequence* rather than the property was
+//! what made the sentence go stale the moment a second public scalar
+//! appeared. So it is stated as the property now, and the property is
+//! also why the implementation stays deliberately unhurried and plainly
+//! written rather than constant-time: there is no secret whose timing
+//! could leak. A module that ever needed to be constant-time would be a
+//! different module with a different review, and this one would have to
+//! stop existing rather than grow that capability quietly.
 //!
 //! # Why first-party rather than a curve library
 //!
@@ -147,6 +165,18 @@ impl AffinePoint {
 #[must_use]
 pub fn generator() -> AffinePoint {
     GENERATOR.clone()
+}
+
+/// The order of the generator's subgroup.
+///
+/// Exposed so that a caller reducing a scalar modulo the order uses the
+/// same published constant this module's own overflow rule uses. A
+/// second transcription of the parameter would be a second chance to
+/// get one nibble wrong, and the census already records what one wrong
+/// nibble cost.
+#[must_use]
+pub fn group_order() -> &'static BigUint {
+    &GROUP_ORDER
 }
 
 /// Whether a 32-byte scalar is a valid multiplier.
