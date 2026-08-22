@@ -38,7 +38,7 @@ use crate::matrix::{EvidenceBoundary, class_count};
 use crate::mutation::NegativeMutation;
 use crate::report::ValidatedCompactAshOperationReport;
 use crate::subject::CanonicalSubject;
-use crate::violation::matching_requirement;
+use crate::violation::{DeclarationLink, resolve_declaration};
 
 /// Why a coverage row carries no observation yet.
 ///
@@ -604,7 +604,7 @@ pub struct CompactAshEvidencePlan {
     relation_coverage: BTreeMap<CoverageRequirementId, RelationCoverageRow>,
     required_target_work: Vec<RequiredTargetWork>,
     census: PlanCensus,
-    negative_link: BTreeMap<(NegativeMutation, SponsorCase), CoverageRequirementId>,
+    negative_link: BTreeMap<(NegativeMutation, SponsorCase), DeclarationLink>,
 }
 
 impl CompactAshEvidencePlan {
@@ -624,6 +624,19 @@ impl CompactAshEvidencePlan {
     #[must_use]
     pub const fn relation_coverage(&self) -> &BTreeMap<CoverageRequirementId, RelationCoverageRow> {
         &self.relation_coverage
+    }
+
+    /// What every mutation arm's §4.1 declaration resolved to.
+    ///
+    /// One entry per arm and case, so a reader counts the arms that name
+    /// a requirement and the arms that state a reason from the same
+    /// table rather than inferring the second from the absence of the
+    /// first.
+    #[must_use]
+    pub const fn negative_links(
+        &self,
+    ) -> &BTreeMap<(NegativeMutation, SponsorCase), DeclarationLink> {
+        &self.negative_link
     }
 
     /// Every count this plan recomputed.
@@ -856,7 +869,11 @@ impl CompactAshEvidencePlan {
             } else {
                 SponsorCase::Present
             };
-            let Some(id) = self.negative_link.get(&(mutation, case)) else {
+            // Only a resolved declaration names a row. An arm that
+            // states a reason instead discharges nothing, whatever the
+            // target said about its bytes.
+            let Some(DeclarationLink::Resolved(id)) = self.negative_link.get(&(mutation, case))
+            else {
                 continue;
             };
             let Some(row) = self.relation_coverage.get_mut(id) else {
@@ -1214,27 +1231,29 @@ pub fn derive_evidence_plan(
     })
 }
 
-/// Which requirement each mutation arm can answer, per execution case.
+/// What each mutation arm's §4.1 declaration resolves to, per case.
 ///
 /// Resolved once, from the published plan, so that every later discharge
-/// reads a link the plan itself produced. An arm the guide does not
-/// determine contributes no entry rather than a placeholder one, which
-/// is why an unlinked arm cannot discharge anything by accident.
+/// reads a link the plan itself produced. Every arm gets an entry in
+/// both cases, because "this arm names no requirement, and here is the
+/// reason" is an answer the census has to be able to count; what an
+/// unlinked arm does not get is a requirement identity, which is why it
+/// cannot discharge anything by accident.
 ///
 /// # Errors
 ///
-/// Whatever [`matching_requirement`] refuses: a declared violation that
-/// matches no published requirement, or more than one.
+/// Whatever [`resolve_declaration`] refuses: a declared violation that
+/// matches no published requirement or more than one, a requirement the
+/// declaration's other statements contradict, or a class the §18 matrix
+/// no longer names.
 fn resolve_negative_link(
     plan: &compiler::operation_plan::ValidatedTargetOperationPlan,
-) -> Result<BTreeMap<(NegativeMutation, SponsorCase), CoverageRequirementId>, VectorError> {
+) -> Result<BTreeMap<(NegativeMutation, SponsorCase), DeclarationLink>, VectorError> {
     let mut link = BTreeMap::new();
     for &arm in NegativeMutation::ALL {
-        let violation = arm.intended_violation();
         for case in [SponsorCase::Absent, SponsorCase::Present] {
-            if let Some(id) = matching_requirement(plan, &violation, case)? {
-                link.insert((arm, case), id);
-            }
+            let declaration = arm.declaration(case)?;
+            link.insert((arm, case), resolve_declaration(plan, &declaration)?);
         }
     }
     Ok(link)

@@ -170,6 +170,20 @@ pub enum VectorError {
         /// The semantic mutation class the arm declared.
         class: &'static str,
     },
+    /// A declaration resolved, and the requirement it found describes
+    /// something else.
+    ///
+    /// The relation and the mutation class agreed and one of the other
+    /// six §4.1 statements did not, which means the link was established
+    /// by two fields while the rest of the declaration was wrong about
+    /// the row. Answered by fixing whichever side is stale, never by
+    /// dropping the statement that disagreed.
+    NegativeLinkContradicted {
+        /// The semantic mutation class the arm declared.
+        class: &'static str,
+        /// Which stated expectation the published requirement denies.
+        expectation: crate::violation::ContradictedExpectation,
+    },
     /// Funding cut for one vector was offered to another.
     FundingNamesAnotherVector {
         /// The vector being materialized.

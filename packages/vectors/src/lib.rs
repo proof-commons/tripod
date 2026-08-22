@@ -44,6 +44,7 @@ pub use report::{
 };
 pub use subject::{CanonicalSubject, ExperimentalSubject, SubjectStanding};
 pub use violation::{
-    FirstPartyEvidence, IntendedViolation, UnlinkedReason, first_party_evidence,
-    matching_requirement,
+    ContradictedExpectation, DeclarationLink, FirstPartyEvidence, IntendedViolation,
+    NegativeVectorDeclaration, SemanticChange, SourceFixtureRequirement, TargetField,
+    UnlinkedReason, first_party_evidence, matching_requirement, resolve_declaration,
 };

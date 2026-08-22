@@ -32,11 +32,14 @@ use std::collections::BTreeSet;
 
 use architecture::{AssetId, ObjectId, OperationId};
 use compiler::operation_plan::{
-    CoverageBoundary, CoverageRequirementId, RelationMutation, SponsorCase,
-    TargetCoverageObligation, ValidatedTargetOperationPlan,
+    CarrierQuantification, CarrierRole, CollateralPolicy, CoverageBoundary, CoverageRequirementId,
+    EvidenceRole, PlacedCarrier, RelationMutation, SponsorCase, TargetCoverageObligation,
+    ValidatedTargetOperationPlan,
 };
-use realization::{RelationId, RelationKind, RelationSubject, TransactionSide};
+use realization::{RelationId, RelationKind, RelationSubject, RepresentationMode, TransactionSide};
+use transaction::{TargetInput, TargetTransaction, ValueField};
 
+use crate::comparison::ProjectionTerm;
 use crate::error::VectorError;
 use crate::mutation::NegativeMutation;
 
@@ -257,10 +260,469 @@ pub fn matching_requirement(
     Ok(Some(only))
 }
 
+/// One target-transaction field a mutation moves.
+///
+/// The vocabulary is deliberately structural rather than positional: an
+/// arm says *what kind of thing* it changes, and the check reads the
+/// accepted transaction and the mutated one and works out which of these
+/// actually moved. A field named by index would have to be restated
+/// every time the ABI rearranged a layout.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
+pub enum TargetField {
+    /// The transaction version.
+    Version,
+    /// Some input's sequence, at its own position.
+    InputSequence,
+    /// The order of the inputs, as a permutation of the same outpoints.
+    InputOrder,
+    /// Some input's witness stack.
+    WitnessStack,
+    /// How many outputs there are.
+    OutputCensus,
+    /// The multiset of explicit output amounts.
+    OutputAmount,
+    /// The set of output witness programs.
+    OutputProgram,
+}
+
+impl TargetField {
+    /// Every field this vocabulary distinguishes.
+    pub const ALL: &'static [Self] = &[
+        Self::Version,
+        Self::InputSequence,
+        Self::InputOrder,
+        Self::WitnessStack,
+        Self::OutputCensus,
+        Self::OutputAmount,
+        Self::OutputProgram,
+    ];
+
+    /// Whether this field differs between an accepted transaction and a
+    /// mutated one.
+    #[must_use]
+    pub fn moved(self, before: &TargetTransaction, after: &TargetTransaction) -> bool {
+        match self {
+            Self::Version => before.version() != after.version(),
+            Self::InputSequence => before
+                .inputs()
+                .iter()
+                .zip(after.inputs())
+                .any(|(left, right)| left.sequence() != right.sequence()),
+            Self::InputOrder => {
+                let left: Vec<_> = before.inputs().iter().map(TargetInput::outpoint).collect();
+                let right: Vec<_> = after.inputs().iter().map(TargetInput::outpoint).collect();
+                let ordered: BTreeSet<_> = left.iter().copied().collect();
+                left != right && ordered == right.iter().copied().collect()
+            }
+            Self::WitnessStack => before.witnesses() != after.witnesses(),
+            Self::OutputCensus => before.outputs().len() != after.outputs().len(),
+            Self::OutputAmount => explicit_amounts(before) != explicit_amounts(after),
+            Self::OutputProgram => output_programs(before) != output_programs(after),
+        }
+    }
+}
+
+/// Every explicit output amount, as a sorted multiset.
+fn explicit_amounts(transaction: &TargetTransaction) -> Vec<u64> {
+    let mut amounts: Vec<u64> = transaction
+        .outputs()
+        .iter()
+        .filter_map(|output| match output.value() {
+            ValueField::Explicit(amount) => Some(amount),
+            _ => None,
+        })
+        .collect();
+    amounts.sort_unstable();
+    amounts
+}
+
+/// Every distinct output witness program.
+fn output_programs(transaction: &TargetTransaction) -> BTreeSet<Vec<u8>> {
+    transaction
+        .outputs()
+        .iter()
+        .map(|output| output.program().to_vec())
+        .collect()
+}
+
+/// What one change does to the §17.4 semantic projection.
+///
+/// Not a set on its own, because a transaction that no longer reads as
+/// this operation at all has not disagreed about any term — it has
+/// stopped being comparable, which is a different fact from every term
+/// still matching.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SemanticChange {
+    /// The mutated transaction still projects, and exactly these terms
+    /// differ from the fixture's own expectation.
+    Terms(BTreeSet<ProjectionTerm>),
+    /// The mutated transaction no longer reads as this operation.
+    Unreadable,
+}
+
+/// What one arm needs of the semantic fixture it starts from.
+///
+/// The shape conditions [`crate::mutation::apply`] refuses on, stated as
+/// data rather than discovered by trying: an arm that needs two inputs
+/// to reverse says so, and a plan can then say in advance which vectors
+/// it has a subject for.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SourceFixtureRequirement {
+    minimum_ash_inputs: u8,
+    minimum_witness_items: u8,
+    needs_explicit_successor: bool,
+}
+
+impl SourceFixtureRequirement {
+    /// How many ASH inputs the subject must carry.
+    #[must_use]
+    pub const fn minimum_ash_inputs(self) -> u8 {
+        self.minimum_ash_inputs
+    }
+
+    /// How many items the first witness stack must hold.
+    #[must_use]
+    pub const fn minimum_witness_items(self) -> u8 {
+        self.minimum_witness_items
+    }
+
+    /// Whether the successor's amount must be an explicit one.
+    #[must_use]
+    pub const fn needs_explicit_successor(self) -> bool {
+        self.needs_explicit_successor
+    }
+
+    /// Whether one decoded accepted transaction meets these conditions.
+    #[must_use]
+    pub fn admits(self, transaction: &TargetTransaction, successor: Option<usize>) -> bool {
+        if transaction.inputs().len() < usize::from(self.minimum_ash_inputs) {
+            return false;
+        }
+        let items = transaction
+            .witnesses()
+            .first()
+            .map_or(0, |witness| witness.stack().len());
+        if items < usize::from(self.minimum_witness_items) {
+            return false;
+        }
+        if !self.needs_explicit_successor {
+            return true;
+        }
+        successor.is_some_and(|index| {
+            matches!(
+                transaction.outputs()[index].value(),
+                ValueField::Explicit(_)
+            )
+        })
+    }
+}
+
+/// Everything §4.1 makes one canonical negative vector state.
+///
+/// Eight declarations, each of which the plan can contradict. The point
+/// is that none of them is a name: the relation and the mutation class
+/// are resolved against the published requirement, the carrier and the
+/// collateral policy and the representation are compared against what
+/// that requirement carries, and the changed fields are compared against
+/// what the mutation actually did to the bytes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NegativeVectorDeclaration {
+    arm: NegativeMutation,
+    source: SourceFixtureRequirement,
+    violation: IntendedViolation,
+    target_fields: BTreeSet<TargetField>,
+    semantic: SemanticChange,
+    boundary: crate::matrix::EvidenceBoundary,
+    carrier: PlacedCarrier,
+    collateral: CollateralPolicy,
+    representation: RepresentationMode,
+    sponsor: SponsorCase,
+}
+
+impl NegativeVectorDeclaration {
+    /// The arm this declaration belongs to.
+    #[must_use]
+    pub const fn arm(&self) -> NegativeMutation {
+        self.arm
+    }
+
+    /// What the arm needs of its source semantic fixture.
+    #[must_use]
+    pub const fn source(&self) -> SourceFixtureRequirement {
+        self.source
+    }
+
+    /// The relation and semantic mutation class, or the reason there is
+    /// none.
+    #[must_use]
+    pub const fn violation(&self) -> &IntendedViolation {
+        &self.violation
+    }
+
+    /// The exact target fields the change moves.
+    #[must_use]
+    pub const fn target_fields(&self) -> &BTreeSet<TargetField> {
+        &self.target_fields
+    }
+
+    /// What the change does to the semantic projection.
+    #[must_use]
+    pub const fn semantic(&self) -> &SemanticChange {
+        &self.semantic
+    }
+
+    /// The §1.5 boundary the refusal is expected at.
+    #[must_use]
+    pub const fn boundary(&self) -> crate::matrix::EvidenceBoundary {
+        self.boundary
+    }
+
+    /// The carrier that must have executed for the refusal to be about
+    /// this relation.
+    #[must_use]
+    pub const fn carrier(&self) -> &PlacedCarrier {
+        &self.carrier
+    }
+
+    /// The dependency collateral the requirement is expected to demand.
+    #[must_use]
+    pub const fn collateral(&self) -> CollateralPolicy {
+        self.collateral
+    }
+
+    /// The representation the case fixes for the ASH object.
+    #[must_use]
+    pub const fn representation(&self) -> RepresentationMode {
+        self.representation
+    }
+
+    /// The sponsor case this declaration is made in.
+    #[must_use]
+    pub const fn sponsor(&self) -> SponsorCase {
+        self.sponsor
+    }
+}
+
+/// The covenant's own coordinator, which is the carrier every runtime
+/// compact-ASH relation executes at.
+const fn covenant_carrier() -> PlacedCarrier {
+    PlacedCarrier {
+        carrier: CarrierRole::OperationGlobal {
+            operation: OperationId::CompactAsh,
+            anchor: ObjectId::Ash,
+        },
+        quantification: CarrierQuantification::Single,
+    }
+}
+
+impl NegativeMutation {
+    /// This arm's complete §4.1 declaration, in one sponsor case.
+    ///
+    /// # Errors
+    ///
+    /// Whatever [`Self::expected_boundary`] refuses, which is the matrix
+    /// and this module having drifted apart about a class name.
+    pub fn declaration(
+        self,
+        sponsor: SponsorCase,
+    ) -> Result<NegativeVectorDeclaration, VectorError> {
+        use ProjectionTerm as T;
+        use TargetField as F;
+
+        let terms =
+            |terms: &[ProjectionTerm]| SemanticChange::Terms(terms.iter().copied().collect());
+        let (source, target_fields, semantic) = match self {
+            // A second output at the successor's own program leaves the
+            // reading with two candidates and no rule to pick between
+            // them, which is the cardinality violation seen from the
+            // projection's side rather than a separate fact.
+            Self::SplitSuccessorInTwo => (
+                source_requirement(1, 0, true),
+                [F::OutputCensus, F::OutputAmount].as_slice(),
+                SemanticChange::Unreadable,
+            ),
+            Self::ReverseAshInputOrder => (
+                source_requirement(2, 0, false),
+                [F::InputOrder, F::WitnessStack].as_slice(),
+                terms(&[]),
+            ),
+            // The successor still reads, at a program no constructor in
+            // this bundle emits: the object is no longer recognized as
+            // the covenant's own, and the movement it records is no
+            // longer the canonical one. Both terms move, which is the
+            // measured form of the guide's own ambiguity about this
+            // class.
+            Self::RedirectSuccessorProgram => (
+                source_requirement(1, 0, false),
+                [F::OutputProgram].as_slice(),
+                terms(&[T::Ownership, T::Flow]),
+            ),
+            Self::RouteUnitIntoUndeclaredOutput => (
+                source_requirement(1, 0, true),
+                [F::OutputCensus, F::OutputAmount, F::OutputProgram].as_slice(),
+                SemanticChange::Unreadable,
+            ),
+            Self::ChangeInputSequence => (
+                source_requirement(1, 0, false),
+                [F::InputSequence].as_slice(),
+                terms(&[]),
+            ),
+            Self::ChangeTransactionVersion => (
+                source_requirement(1, 0, false),
+                [F::Version].as_slice(),
+                terms(&[]),
+            ),
+            Self::ReorderWitnessItems => (
+                source_requirement(1, 2, false),
+                [F::WitnessStack].as_slice(),
+                terms(&[]),
+            ),
+            // The successor reads, one unit short. Three terms move
+            // together because all three are the same amount seen from
+            // three places, and declaring only the aggregate would have
+            // been an under-statement the recomputation catches.
+            Self::SuccessorOneBelowTheSum => (
+                source_requirement(1, 0, true),
+                [F::OutputAmount].as_slice(),
+                terms(&[T::Successor, T::ExplicitU, T::Aggregate]),
+            ),
+        };
+
+        Ok(NegativeVectorDeclaration {
+            arm: self,
+            source,
+            violation: self.intended_violation(),
+            target_fields: target_fields.iter().copied().collect(),
+            semantic,
+            boundary: self.expected_boundary()?,
+            carrier: covenant_carrier(),
+            // Every runtime negative requirement this plan publishes
+            // demands the intended relation *and* its typed dependency
+            // closure be reported blocked. The closure itself is not
+            // restated here: it travels with the requirement, and
+            // copying it would be a third source of truth.
+            collateral: CollateralPolicy::RequireIntendedAndDependencyClosure,
+            // Phase 4 selects `Explicit` for the ASH object and the
+            // execution case carries that choice; a declaration stating
+            // another mode would resolve to no requirement at all.
+            representation: RepresentationMode::Explicit,
+            sponsor,
+        })
+    }
+}
+
+/// One source-fixture requirement, spelled once.
+const fn source_requirement(
+    minimum_ash_inputs: u8,
+    minimum_witness_items: u8,
+    needs_explicit_successor: bool,
+) -> SourceFixtureRequirement {
+    SourceFixtureRequirement {
+        minimum_ash_inputs,
+        minimum_witness_items,
+        needs_explicit_successor,
+    }
+}
+
+/// Which requirement one complete declaration names.
+///
+/// Two answers and no third. A declaration either resolves to exactly
+/// one published requirement whose every stated expectation agreed, or
+/// it names none for a reason it states; a declaration that resolved to
+/// something the plan describes differently is neither, and refuses.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DeclarationLink {
+    /// Exactly one requirement matched and agreed with the declaration.
+    Resolved(CoverageRequirementId),
+    /// The declaration names no requirement, for a stated reason.
+    Blocked(UnlinkedReason),
+}
+
+/// Which of a declaration's statements the published requirement
+/// contradicts.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
+pub enum ContradictedExpectation {
+    /// The requirement is answered by an artifact other than a target
+    /// execution.
+    EvidenceRole,
+    /// The requirement's case fixes another representation for the ASH
+    /// object.
+    Representation,
+    /// No carrier alternative the requirement admits contains the
+    /// declared carrier.
+    Carrier,
+    /// The requirement demands another dependency-collateral policy.
+    Collateral,
+}
+
+/// Resolve one complete declaration against the published plan.
+///
+/// The relation and the mutation class select the requirement; the rest
+/// of the declaration is then compared against what that requirement
+/// carries, so a link established by two fields cannot survive the other
+/// six disagreeing.
+///
+/// # Errors
+///
+/// [`VectorError::NegativeLinkUnresolved`] when the plan publishes no
+/// matching requirement or more than one, and
+/// [`VectorError::NegativeLinkContradicted`] when the one it publishes
+/// describes something the declaration does not.
+pub fn resolve_declaration(
+    plan: &ValidatedTargetOperationPlan,
+    declaration: &NegativeVectorDeclaration,
+) -> Result<DeclarationLink, VectorError> {
+    let IntendedViolation::Declared { class_name, .. } = declaration.violation() else {
+        let IntendedViolation::Unlinked(reason) = declaration.violation() else {
+            unreachable!("an intended violation is declared or unlinked")
+        };
+        return Ok(DeclarationLink::Blocked(*reason));
+    };
+
+    let Some(id) = matching_requirement(plan, declaration.violation(), declaration.sponsor)? else {
+        return Err(VectorError::NegativeLinkUnresolved { class: class_name });
+    };
+    let requirement = plan
+        .coverage_requirement(&id)
+        .ok_or(VectorError::NegativeLinkUnresolved { class: class_name })?;
+    let TargetCoverageObligation::Negative(negative) = &requirement.obligation else {
+        return Err(VectorError::NegativeLinkUnresolved { class: class_name });
+    };
+
+    let refuse = |expectation| {
+        Err(VectorError::NegativeLinkContradicted {
+            class: class_name,
+            expectation,
+        })
+    };
+    if requirement.role != EvidenceRole::TargetExecution {
+        return refuse(ContradictedExpectation::EvidenceRole);
+    }
+    if id.case.representations.get(&ObjectId::Ash) != Some(&declaration.representation) {
+        return refuse(ContradictedExpectation::Representation);
+    }
+    if !requirement
+        .carrier
+        .iter()
+        .any(|alternative| alternative.carriers.contains(&declaration.carrier))
+    {
+        return refuse(ContradictedExpectation::Carrier);
+    }
+    if negative.collateral.policy != declaration.collateral {
+        return refuse(ContradictedExpectation::Collateral);
+    }
+    Ok(DeclarationLink::Resolved(id))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{IntendedViolation, RelationMutation, UnlinkedReason, matching_requirement};
+    use super::{
+        BTreeSet, IntendedViolation, RelationMutation, UnlinkedReason, matching_requirement,
+    };
     use crate::bundle::fixture_bundle;
+    use crate::error::VectorError;
     use crate::mutation::NegativeMutation;
     use compiler::operation_plan::SponsorCase;
 
@@ -408,6 +870,267 @@ mod tests {
                 super::first_party_evidence(&mutation, emitted),
                 Some(standing),
                 "{mutation:?} at emitted={emitted} carries another standing",
+            );
+        }
+    }
+
+    /// The multi-input subject, its coins, and its accepted bytes.
+    ///
+    /// The placeholder coins are the ones the canonical plan uses, so
+    /// what is measured below is a property of the mutation over the
+    /// canonical subject rather than of a chain nobody ran.
+    fn subject() -> (
+        crate::bundle::FixtureBundle,
+        crate::fixture::CompactAshSemanticCase,
+        crate::materialize::MaterializedTargetVector,
+        std::collections::BTreeMap<transaction::Outpoint, u64>,
+    ) {
+        use crate::materialize::{AshFunding, is_materializable, materialize, vector_id};
+
+        let bundle = fixture_bundle().expect("the fixture bundle builds");
+        let census = crate::fixture::positive_semantic_census().expect("the census builds");
+        let case = census
+            .iter()
+            .filter(|case| is_materializable(case))
+            .find(|case| vector_id(case).ash_inputs() >= 2)
+            .expect("a multi-input row exists")
+            .clone();
+        let funding = AshFunding::unexecutable_placeholder(vector_id(&case));
+        let coins = funding
+            .outpoints()
+            .iter()
+            .copied()
+            .zip(case.inputs().iter().map(|amount| amount.get()))
+            .collect();
+        let vector = materialize(&bundle, &case, &funding).expect("the subject materializes");
+        (bundle, case, vector, coins)
+    }
+
+    #[test]
+    fn every_arm_declares_all_eight_facts_in_both_cases() {
+        // §4.1's list, checked as a list: an arm that gained a ninth
+        // fact or lost one has to change this, and the two facts the
+        // declaration does not invent — the boundary and the violation —
+        // must be the ones the other two authorities already state.
+        use compiler::operation_plan::CollateralPolicy;
+
+        for &arm in NegativeMutation::ALL {
+            for case in [SponsorCase::Absent, SponsorCase::Present] {
+                let declaration = arm.declaration(case).expect("the arm declares");
+                assert_eq!(declaration.arm(), arm);
+                assert_eq!(declaration.sponsor(), case);
+                assert_eq!(
+                    declaration.boundary(),
+                    arm.expected_boundary().expect("the class is named"),
+                    "{arm:?} declared a boundary its §18 class does not",
+                );
+                assert_eq!(declaration.violation(), &arm.intended_violation());
+                assert!(
+                    !declaration.target_fields().is_empty(),
+                    "{arm:?} claims to change nothing about the transaction",
+                );
+                assert_eq!(
+                    declaration.collateral(),
+                    CollateralPolicy::RequireIntendedAndDependencyClosure,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn each_declaration_names_exactly_the_target_fields_its_change_moves() {
+        // The declaration made falsifiable. Every field of the
+        // vocabulary is asked of the accepted transaction and the
+        // mutated one, and the answer must be the declared set exactly —
+        // so an arm that under-declares fails here just as loudly as one
+        // that over-declares.
+        use transaction::TargetTransaction;
+
+        let (bundle, _, vector, _) = subject();
+        let before = TargetTransaction::decode(vector.bytes()).expect("the subject decodes");
+        for &arm in NegativeMutation::ALL {
+            let declaration = arm.declaration(SponsorCase::Absent).expect("declares");
+            let mutated =
+                crate::mutation::apply(&vector, bundle.closed_asset(), arm).expect("applies");
+            let after = TargetTransaction::decode(mutated.bytes()).expect("the mutation decodes");
+            let observed: BTreeSet<super::TargetField> = super::TargetField::ALL
+                .iter()
+                .copied()
+                .filter(|field| field.moved(&before, &after))
+                .collect();
+            assert_eq!(
+                &observed,
+                declaration.target_fields(),
+                "{arm:?} moved another set of fields than it declared",
+            );
+        }
+    }
+
+    #[test]
+    fn each_declaration_names_the_semantic_change_the_comparison_reads() {
+        // The other half of "exact changed semantic and target fields",
+        // recomputed through the same §17.4 comparison a validated
+        // report performs. A mutated transaction that no longer reads as
+        // this operation is recorded as such rather than as a run of
+        // terms that all happened to match.
+        use super::SemanticChange;
+        use crate::comparison::{compare, read_accepted};
+        use crate::fixture::OPERATION;
+
+        let (bundle, case, vector, coins) = subject();
+        let program = bundle
+            .pin()
+            .output_script(bundle.target())
+            .expect("the pinned program derives");
+        for &arm in NegativeMutation::ALL {
+            let declaration = arm.declaration(SponsorCase::Absent).expect("declares");
+            let mutated =
+                crate::mutation::apply(&vector, bundle.closed_asset(), arm).expect("applies");
+            let observed = read_accepted(
+                mutated.bytes(),
+                &coins,
+                bundle.closed_asset(),
+                bundle.reserve_asset(),
+                &program,
+                OPERATION,
+            )
+            .map_or(SemanticChange::Unreadable, |projection| {
+                SemanticChange::Terms(compare(case.expected(), &projection).into_iter().collect())
+            });
+            assert_eq!(
+                &observed,
+                declaration.semantic(),
+                "{arm:?} moved another semantic change than it declared",
+            );
+        }
+    }
+
+    #[test]
+    fn the_source_requirement_predicts_which_subjects_an_arm_has() {
+        // The declaration's first item, made checkable: an arm states
+        // what it needs of its source fixture, and the statement must
+        // agree with what the mutation can actually be applied to over
+        // every vector the plan materialized. A requirement nothing
+        // consulted would be prose.
+        use transaction::TargetTransaction;
+
+        let bundle = fixture_bundle().expect("the fixture bundle builds");
+        let plan = crate::plan::derive_evidence_plan(&bundle).expect("the plan derives");
+        let asset = bundle.closed_asset();
+        let mut checked = 0_usize;
+        for subject in plan.target_cases() {
+            let vector = subject.subject();
+            let decoded = TargetTransaction::decode(vector.bytes()).expect("a vector decodes");
+            let successor = crate::mutation::outputs_carrying(&decoded, asset)
+                .first()
+                .copied();
+            for &arm in NegativeMutation::ALL {
+                let declaration = arm.declaration(SponsorCase::Absent).expect("declares");
+                let admitted = declaration.source().admits(&decoded, successor);
+                let applied = crate::mutation::apply(vector, asset, arm).is_ok();
+                assert_eq!(
+                    admitted,
+                    applied,
+                    "{arm:?} disagreed with its own source requirement on {:?}",
+                    vector.id(),
+                );
+                checked += 1;
+            }
+        }
+        assert!(checked > 0, "the plan materialized nothing to check");
+    }
+
+    #[test]
+    fn exactly_two_declarations_resolve_and_the_rest_state_a_reason() {
+        // The whole §4.1 resolution, over both cases. The honest number
+        // is recomputed rather than asserted from prose, and a blocked
+        // arm carries the reason its own declaration gave rather than a
+        // silence a reader could mistake for merely unrun.
+        use super::{DeclarationLink, resolve_declaration};
+
+        let bundle = fixture_bundle().expect("the fixture bundle builds");
+        let plan = bundle.plan();
+        let mut resolved = 0_usize;
+        let mut blocked = 0_usize;
+        for &arm in NegativeMutation::ALL {
+            for case in [SponsorCase::Absent, SponsorCase::Present] {
+                let declaration = arm.declaration(case).expect("declares");
+                match resolve_declaration(plan, &declaration).expect("the declaration resolves") {
+                    DeclarationLink::Resolved(id) => {
+                        resolved += 1;
+                        assert_eq!(id.case.sponsor, case, "{arm:?} resolved into another case");
+                    }
+                    DeclarationLink::Blocked(reason) => {
+                        blocked += 1;
+                        assert_eq!(
+                            super::IntendedViolation::Unlinked(reason),
+                            arm.intended_violation(),
+                            "{arm:?} was blocked for a reason it did not declare",
+                        );
+                    }
+                }
+            }
+        }
+        assert_eq!(resolved, 4, "two arms resolve, in two cases each");
+        assert_eq!(blocked, 12, "six arms state a reason, in two cases each");
+    }
+
+    #[test]
+    fn a_declaration_the_published_requirement_contradicts_is_refused() {
+        // The reason the other six statements are compared at all: a
+        // link established by the relation and the class alone would
+        // survive the plan describing a different carrier, a different
+        // representation, or a different collateral policy. Each of
+        // those is staged here against a requirement that really exists.
+        use super::{ContradictedExpectation, NegativeVectorDeclaration, resolve_declaration};
+        use compiler::operation_plan::{
+            CarrierQuantification, CarrierRole, CollateralPolicy, PlacedCarrier,
+        };
+        use realization::RepresentationMode;
+
+        let bundle = fixture_bundle().expect("the fixture bundle builds");
+        let plan = bundle.plan();
+        let honest = NegativeMutation::SplitSuccessorInTwo
+            .declaration(SponsorCase::Absent)
+            .expect("declares");
+
+        let staged: [(NegativeVectorDeclaration, ContradictedExpectation); 3] = [
+            (
+                NegativeVectorDeclaration {
+                    representation: RepresentationMode::PrivateCommitted,
+                    ..honest.clone()
+                },
+                ContradictedExpectation::Representation,
+            ),
+            (
+                NegativeVectorDeclaration {
+                    carrier: PlacedCarrier {
+                        carrier: CarrierRole::EveryInputFamilyMember {
+                            object: architecture::ObjectId::Ash,
+                        },
+                        quantification: CarrierQuantification::PerMember,
+                    },
+                    ..honest.clone()
+                },
+                ContradictedExpectation::Carrier,
+            ),
+            (
+                NegativeVectorDeclaration {
+                    collateral: CollateralPolicy::ReportAdditional,
+                    ..honest
+                },
+                ContradictedExpectation::Collateral,
+            ),
+        ];
+
+        for (declaration, expectation) in staged {
+            assert_eq!(
+                resolve_declaration(plan, &declaration),
+                Err(VectorError::NegativeLinkContradicted {
+                    class: "CardinalityAboveMaximum",
+                    expectation,
+                }),
+                "a contradicted declaration was admitted",
             );
         }
     }
