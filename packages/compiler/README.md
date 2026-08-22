@@ -184,11 +184,10 @@ target-specific type is not merely discouraged here — it is unnameable.
   (`OwnerAuthorization`, `OperatorAuthorization`, `RefundAuthorization`,
   `PublicConstructibility`).
   - `RequiredCapability::ALL: &'static [Self]` — the complete census in
-    canonical order. It is a constant rather than a derived iteration so that
-    the constant and the enum must agree: the projection boundary re-checks it
-    against the type's own ordering on every use, so a member added to the enum
-    and forgotten here fails at the boundary. The order is a census order; it
-    ranks nothing.
+    canonical order, generated with the enum from one declaration by
+    `census_enum!`, so the two cannot disagree; the projection boundary
+    still re-checks canonical order on every use. The order is a census
+    order; it ranks nothing.
 - `ExternalEvidenceRole` — the *class* of external claim a requirement carries.
   Currently one member, `SubstrateConservation`: no analysis, and no program an
   analysis could emit, discharges it — only the target's own consensus rules
