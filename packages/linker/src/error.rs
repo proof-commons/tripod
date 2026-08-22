@@ -51,6 +51,19 @@ pub enum LinkRefusal {
     // --- Pass two: references ----------------------------------------
     /// A reference names a node the definition census does not hold.
     UnknownReferenceTarget(ReferenceEdgeId),
+    /// One reference edge's exact site count does not fit the graph's
+    /// observable count type.
+    ///
+    /// The edge is refused rather than reported with a saturated
+    /// count. The current backend emission limits rule this out; the
+    /// refusal keeps a future wider emitter or constructor from making
+    /// the count lossy.
+    ReferenceSiteCountOverflow {
+        /// The referring node.
+        referrer: ReferenceNode,
+        /// The referenced node.
+        referent: ReferenceNode,
+    },
     /// A reference's expected target type is not the resolved
     /// definition's type.
     ReferenceTypeMismatch {

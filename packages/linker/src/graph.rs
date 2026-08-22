@@ -256,7 +256,14 @@ pub const fn leaf_symbol(leaf: LeafRole) -> BundleSymbol {
 /// # Errors
 ///
 /// [`LinkRefusal::UnknownReferenceTarget`] when a relocation names a
-/// symbol the definition census does not hold.
+/// symbol the definition census does not hold, and
+/// [`LinkRefusal::ReferenceSiteCountOverflow`] if one edge's exact site
+/// count does not fit the graph's observable count type.
+///
+/// # Panics
+///
+/// Panics only if a collected edge carries a zero site count, which
+/// the recording helper cannot produce.
 pub fn resolve_references(
     bundle: &CandidateRelocatableTapscriptBundle,
     strategy: SelfCommitmentStrategy,
@@ -298,8 +305,7 @@ pub fn resolve_references(
             | None => ReferenceClass::StaticLinkTimeConstant,
         };
 
-        let entry = collected.entry((from, to)).or_insert((class, 0));
-        entry.1 = entry.1.saturating_add(relocation.multiplicity().get());
+        record_reference_sites(&mut collected, from, to, class, relocation.multiplicity())?;
     }
 
     // The reads. A leaf that fetches a symbol from the target depends
@@ -317,10 +323,13 @@ pub fn resolve_references(
             )));
         }
 
-        let entry = collected
-            .entry((from, to))
-            .or_insert((ReferenceClass::IdentityIntrospection, 0));
-        entry.1 = entry.1.saturating_add(reference.sites().get());
+        record_reference_sites(
+            &mut collected,
+            from,
+            to,
+            ReferenceClass::IdentityIntrospection,
+            reference.sites(),
+        )?;
     }
 
     // The self-commitment edge. Added unconditionally: the ASH
@@ -353,7 +362,8 @@ pub fn resolve_references(
                 from,
                 to,
                 class,
-                sites: NonZeroUsize::new(sites).unwrap_or(NonZeroUsize::MIN),
+                sites: NonZeroUsize::new(sites)
+                    .expect("collected edges are inserted only after a positive site count"),
             },
         );
     }
@@ -365,6 +375,37 @@ pub fn resolve_references(
         edges,
         components,
     })
+}
+
+/// Add one exact site count to the edge census under construction.
+///
+/// The graph exposes edge counts as [`NonZeroUsize`], so `usize` is the
+/// observable domain. Backend-emitted relocations and introspection
+/// references are counted from instruction sets capped before graph
+/// construction, but the arithmetic is checked here so raising those
+/// limits or admitting another bundle constructor refuses instead of
+/// returning a saturated count.
+///
+/// # Errors
+///
+/// [`LinkRefusal::ReferenceSiteCountOverflow`] when the exact count no
+/// longer fits the observable domain.
+pub(crate) fn record_reference_sites(
+    collected: &mut BTreeMap<(ReferenceNode, ReferenceNode), (ReferenceClass, usize)>,
+    from: ReferenceNode,
+    to: ReferenceNode,
+    class: ReferenceClass,
+    sites: NonZeroUsize,
+) -> Result<(), LinkRefusal> {
+    let entry = collected.entry((from, to)).or_insert((class, 0));
+    entry.1 = entry
+        .1
+        .checked_add(sites.get())
+        .ok_or(LinkRefusal::ReferenceSiteCountOverflow {
+            referrer: from,
+            referent: to,
+        })?;
+    Ok(())
 }
 
 /// The deterministic strongly-connected components of the graph.

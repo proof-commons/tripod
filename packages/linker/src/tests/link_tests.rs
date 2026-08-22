@@ -346,6 +346,58 @@ fn the_linked_script_bytes_are_the_pre_link_ones_moved_by_the_resolved_widths() 
 }
 
 #[test]
+fn total_script_bytes_is_the_exact_sum_of_linked_leaf_charges() {
+    // The public accessor stays infallible because construction keeps
+    // the sum inside `u64`; this test reaches that exact summation and
+    // compares it with the same leaf figures added in a wider domain.
+    let bundle = linked();
+    let charges: Vec<_> = bundle
+        .programs()
+        .values()
+        .map(|program| {
+            program
+                .charged(ResourceDimension::ScriptBytes)
+                .expect("every linked leaf charges script bytes")
+        })
+        .collect();
+
+    assert_eq!(charges.len(), 12);
+    let exact = charges
+        .iter()
+        .copied()
+        .try_fold(0_u128, |total, bytes| total.checked_add(u128::from(bytes)))
+        .expect("the fixture total fits the exact domain");
+
+    assert_eq!(exact, 3975);
+    assert_eq!(
+        bundle.total_script_bytes(),
+        u64::try_from(exact).expect("the fixture total fits u64"),
+    );
+}
+
+#[test]
+fn outstanding_obligation_count_reaches_its_current_boundary() {
+    // The authenticated strategy is the only current path that carries
+    // every `LinkObligation` variant at once: one least obligation plus
+    // the two values in the set. That is the current boundary for
+    // `OutstandingLinkObligations::count()`.
+    let bundle = authenticated();
+    let obligations = bundle.outstanding_obligations();
+    let listed: Vec<_> = obligations.obligations().copied().collect();
+
+    assert_eq!(listed.len(), 3);
+    assert_eq!(obligations.count().get(), listed.len());
+    assert_eq!(
+        listed,
+        vec![
+            LinkObligation::TaprootOutputKeyUndischarged,
+            LinkObligation::SelfCommitmentEqualityUndischarged,
+            LinkObligation::InternalKeyUnspendabilityUnverified,
+        ]
+    );
+}
+
+#[test]
 fn the_resource_formulas_are_refitted_and_predict_every_linked_measurement() {
     // §13.3's affine model over the linked figures, not the pre-link
     // ones. The coefficients are checked by prediction at every shape
