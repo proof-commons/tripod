@@ -27,6 +27,7 @@ use std::collections::BTreeSet;
 use std::num::NonZeroU8;
 
 use compiler::live_transfer_plan::LiveTransferRepresentationPlan;
+use compiler::target::ExternalEvidenceRole;
 use target_elements::{
     EncodingClass, FailureCause, OpcodeId, PayloadWidth, ReviewedElementsTapscriptDefinition,
 };
@@ -42,13 +43,13 @@ use crate::live_constructor::{
     derive_live_receipt_constructor, static_transfer_leaf_set,
 };
 use crate::live_pattern::{
-    CoordinatorGlobalCheck, FinalStackDefect, GlobalCheckStatus, LiveFragmentId,
-    LiveProgramRefusal, LiveTransferPatternId, LiveTransferSymbols, LiveWitnessRole,
-    NegativeDisposition, OutstandingGlobalPattern, OwnerAssignmentRejection, OwnerKeyMutation,
-    OwnerKeyMutationGate, OwnerKeyMutationOutcome, OwnerKeyOracle, PlacementDefect,
-    ReceiptOwnerAssignment, RecognitionCarrier, RecognitionResidual, RecognizedFact,
-    coordinator_placements, emitted_fragments, every_emitted_fragment, final_stack_defects,
-    has_member_position, live_coordinator_program, live_member_program,
+    CoordinatorGlobalCheck, FinalStackDefect, GlobalCheckPlacement, GlobalCheckStatus,
+    LiveFragmentId, LiveProgramRefusal, LiveTransferPatternId, LiveTransferSymbols,
+    LiveWitnessRole, NegativeDisposition, OutstandingGlobalPattern, OwnerAssignmentRejection,
+    OwnerKeyMutation, OwnerKeyMutationGate, OwnerKeyMutationOutcome, OwnerKeyOracle,
+    PlacementDefect, ReceiptOwnerAssignment, RecognitionCarrier, RecognitionResidual,
+    RecognizedFact, coordinator_placements, emitted_fragments, every_emitted_fragment,
+    final_stack_defects, has_member_position, live_coordinator_program, live_member_program,
     live_owner_profile_disposition, live_program_precondition, live_transfer_patterns,
     local_recognition_fragment, mutated_owner_authorization_fragment, mutation_gate,
     negative_disposition, owner_authorization_fragment, owner_authorization_precondition,
@@ -56,6 +57,7 @@ use crate::live_pattern::{
     validate_coordinator_placements,
 };
 use crate::live_plan::{has_sponsor_region, live_sponsor_isolation_fragment};
+use crate::live_private::prefix_mask;
 use crate::live_shape::{LiveTransferShape, demonstration_live_shape_set};
 use crate::pattern::final_truth_fragment;
 use crate::program::TapscriptProgram;
@@ -211,6 +213,23 @@ fn class_prefix(target: &ReviewedElementsTapscriptDefinition, class: EncodingCla
         .expect("the value encodings are prefix discriminated")
 }
 
+/// Every prefix the reviewed registry declares for one class.
+///
+/// # Panics
+///
+/// If the class states none, which the value encodings do not.
+fn declared_prefixes(
+    target: &ReviewedElementsTapscriptDefinition,
+    class: EncodingClass,
+) -> BTreeSet<u8> {
+    target
+        .definition()
+        .encodings()
+        .get(&class)
+        .map(|spec| spec.prefixes().clone())
+        .expect("the value encodings are prefix discriminated")
+}
+
 // --- §10.1: local predecessor recognition -----------------------------
 
 #[test]
@@ -330,10 +349,51 @@ fn the_value_form_follows_the_selected_representation() {
     .expect("the private fragment assembles");
 
     assert_ne!(explicit, private);
+
+    // The explicit value has one declared prefix, so the comparison is
+    // the equality it always was and the byte is that prefix.
     assert_eq!(
-        pushed(&private)[2].bytes(),
-        &[class_prefix(&target, EncodingClass::ConfidentialValue)],
+        pushed(&explicit)[2].bytes(),
+        &[class_prefix(&target, EncodingClass::ExplicitValue)],
     );
+
+    // The confidential value has two, so the comparison is masked — and
+    // what it admits is exactly the declared pair. Read off the registry
+    // rather than written down: a class that gained or lost a form would
+    // move both sides of this together.
+    let admitted = prefix_mask(&target, EncodingClass::ConfidentialValue)
+        .expect("the confidential prefixes discriminate");
+    assert_eq!(
+        (0..=u8::MAX)
+            .filter(|byte| admitted.admits(*byte))
+            .collect::<BTreeSet<_>>(),
+        declared_prefixes(&target, EncodingClass::ConfidentialValue),
+    );
+}
+
+#[test]
+fn a_private_receipt_is_not_refused_for_the_parity_of_its_commitment() {
+    // The defect this wave repaired, as an executed oracle. A
+    // confidential value's prefix records whether its commitment's `y` is
+    // a square, and both `0x08` and `0x09` are ordinary well-formed
+    // values. A comparison against the smaller of them — which is what a
+    // single-prefix equality emits — would refuse about half of all valid
+    // private receipts, for a reason their owner can neither control nor
+    // see coming.
+    let target = reviewed_target();
+    let declared = declared_prefixes(&target, EncodingClass::ConfidentialValue);
+    assert!(declared.len() > 1, "the class no longer has two forms");
+
+    let admitted = prefix_mask(&target, EncodingClass::ConfidentialValue)
+        .expect("the confidential prefixes discriminate");
+    for prefix in &declared {
+        assert!(
+            admitted.admits(*prefix),
+            "a declared confidential form is refused: {prefix:#04x}",
+        );
+    }
+    // And it is not a widening: nothing outside the declared set passes.
+    assert_eq!(admitted.admitted_count(), declared.len());
 }
 
 #[test]
@@ -685,59 +745,118 @@ fn the_slot_census_still_reports_everything_this_candidate_does_not_build() {
         .flat_map(crate::live_pattern::GlobalCheckPlacement::outstanding)
         .collect::<BTreeSet<_>>();
 
-    // Both members, and no fewer. A census that had quietly stopped
+    // Every member, and no fewer. A census that had quietly stopped
     // naming one would be a coordinator with a check nobody owes.
     assert_eq!(
         owed,
         OutstandingGlobalPattern::ALL.iter().copied().collect(),
     );
-    // And the two are the ones this candidate genuinely cannot emit:
-    // another representation's conservation, and a value no in-script
-    // comparison reaches.
+    // And it is the one this candidate genuinely cannot emit: a value no
+    // in-script comparison reaches. §10.6's conservation is no longer
+    // among them, and its absence is not a check going quiet — it moved
+    // to the external side, which the next oracle reads.
     assert_eq!(
         owed,
-        BTreeSet::from([
-            OutstandingGlobalPattern::PrivateConservation,
-            OutstandingGlobalPattern::DestinationConstructorIdentity,
-        ]),
+        BTreeSet::from([OutstandingGlobalPattern::DestinationConstructorIdentity]),
     );
 }
 
 #[test]
-fn the_four_checks_that_are_not_settled_whole_name_what_they_owe() {
+fn the_private_value_equation_is_named_as_external_evidence_and_carried_by_no_fragment() {
+    // The census flip §10.6 asks for, in both directions. The
+    // conservation slot names the target's own confidential-value rule,
+    // it names no unbuilt pattern — because no private-conservation
+    // pattern ID may ever be minted — and it still emits the closure that
+    // rule applies to, which is what keeps it from being a slot the
+    // coordinator does not reach at all.
     let placements = coordinator_placements();
-    let partial = placements
-        .values()
-        .filter(|placement| placement.status() == GlobalCheckStatus::Partial)
-        .map(crate::live_pattern::GlobalCheckPlacement::check)
-        .collect::<BTreeSet<_>>();
+    let slot = &placements[&CoordinatorGlobalCheck::RepresentationSpecificConservation];
 
-    // The conservation, because §10.6 is Wave 7's; and the three whose
-    // object families could wear a destination's shape, because the
-    // destination constructor's exact bytes are not recomputed in script.
+    assert_eq!(
+        slot.external_evidence().collect::<BTreeSet<_>>(),
+        BTreeSet::from([ExternalEvidenceRole::ConfidentialValueConservation]),
+    );
+    assert_eq!(slot.outstanding().count(), 0);
+    assert_eq!(
+        slot.status(),
+        GlobalCheckStatus::EstablishedWithExternalEvidence,
+    );
+    // Both representations' value obligations are emitted towards it, so
+    // the slot does not go quiet whichever plan is selected.
+    let emitted = slot.emitted().collect::<BTreeSet<_>>();
+    assert!(emitted.contains(&LiveFragmentId::ExplicitConservation));
+    assert!(emitted.contains(&LiveFragmentId::PrivateDestinationForm));
+}
+
+#[test]
+fn a_check_the_target_is_asked_to_carry_whole_is_refused() {
+    // The §6.3 rule as a defect: a coordinator slot answered entirely by
+    // consensus behaviour is a slot the coordinator does not close, and a
+    // census recording one would be the local program claiming a target
+    // rule because the target eventually accepts.
+    let mut placements = coordinator_placements();
+    placements.insert(
+        CoordinatorGlobalCheck::RepresentationSpecificConservation,
+        GlobalCheckPlacement::new(
+            CoordinatorGlobalCheck::RepresentationSpecificConservation,
+            BTreeSet::new(),
+            BTreeSet::new(),
+            BTreeSet::from([ExternalEvidenceRole::ConfidentialValueConservation]),
+        ),
+    );
+
+    assert_eq!(
+        validate_coordinator_placements(&placements, &every_emitted_fragment()),
+        Err(PlacementDefect::ExternalEvidenceWithoutClosure {
+            check: CoordinatorGlobalCheck::RepresentationSpecificConservation,
+        }),
+    );
+}
+
+#[test]
+fn every_check_not_settled_whole_names_what_owes_it_or_what_carries_it() {
+    let placements = coordinator_placements();
+    let by_status = |wanted: GlobalCheckStatus| {
+        placements
+            .values()
+            .filter(|placement| placement.status() == wanted)
+            .map(crate::live_pattern::GlobalCheckPlacement::check)
+            .collect::<BTreeSet<_>>()
+    };
+
+    // The three whose object families could wear a destination's shape,
+    // because the destination constructor's exact bytes are not
+    // recomputed in script. The conservation is no longer among them.
+    let partial = by_status(GlobalCheckStatus::Partial);
     assert_eq!(
         partial,
         BTreeSet::from([
-            CoordinatorGlobalCheck::RepresentationSpecificConservation,
             CoordinatorGlobalCheck::LiveClassOutputClosure,
             CoordinatorGlobalCheck::RootsAbsent,
             CoordinatorGlobalCheck::SpecializedEventsAbsent,
         ]),
     );
 
-    // Nothing is Outstanding any more, which is the flip this wave is
-    // for: every check has emitted bytes behind it.
-    assert!(
-        !placements
-            .values()
-            .any(|placement| placement.status() == GlobalCheckStatus::Outstanding),
-    );
+    // The two whose remainder is the target's own confidential-value
+    // rule: the private plan's value equation, and the destruction
+    // absence that rests on it.
+    let external = by_status(GlobalCheckStatus::EstablishedWithExternalEvidence);
     assert_eq!(
-        placements
-            .values()
-            .filter(|placement| placement.status() == GlobalCheckStatus::Established)
-            .count(),
-        CoordinatorGlobalCheck::ALL.len() - partial.len(),
+        external,
+        BTreeSet::from([
+            CoordinatorGlobalCheck::RepresentationSpecificConservation,
+            CoordinatorGlobalCheck::DestructionAbsent,
+        ]),
+    );
+
+    // Nothing is Outstanding, which is the flip Wave 6 made: every check
+    // has emitted bytes behind it. The three statuses partition the
+    // census, so a check that had quietly acquired a fourth disposition
+    // would be missing from the arithmetic below.
+    assert_eq!(by_status(GlobalCheckStatus::Outstanding), BTreeSet::new());
+    assert_eq!(
+        by_status(GlobalCheckStatus::Established).len() + partial.len() + external.len(),
+        CoordinatorGlobalCheck::ALL.len(),
     );
 }
 
@@ -917,16 +1036,23 @@ fn a_false_comparison_followed_by_verify_has_no_abstract_success_path() {
 #[test]
 fn every_pattern_identity_has_a_record_built_by_walking_its_fragment() {
     // A sponsored shape with a member position, which is the one shape
-    // that calls for every identity: it has a nonzero receipt position,
-    // it has a sponsor region, and the explicit plan reads amounts.
+    // that calls for every identity a single representation can reach: it
+    // has a nonzero receipt position and a sponsor region. The two value
+    // obligations are a partition, so no one selection holds both — the
+    // union over the two plans is what covers the census.
     let subject = sponsored_shape(2);
     let patterns = live_transfer_patterns(&reviewed_target(), &symbols(), &explicit(), subject)
         .expect("the census builds");
 
-    assert_eq!(
-        patterns_for(subject, LiveTransferRepresentationPlan::Explicit),
-        LiveTransferPatternId::ALL.iter().copied().collect(),
-    );
+    let both = [
+        LiveTransferRepresentationPlan::Explicit,
+        LiveTransferRepresentationPlan::PrivateCommitted,
+    ]
+    .into_iter()
+    .flat_map(|representation| patterns_for(subject, representation))
+    .collect::<BTreeSet<_>>();
+    assert_eq!(both, LiveTransferPatternId::ALL.iter().copied().collect());
+
     assert_eq!(
         patterns.keys().copied().collect::<BTreeSet<_>>(),
         patterns_for(subject, LiveTransferRepresentationPlan::Explicit),
@@ -963,25 +1089,41 @@ fn a_sponsorless_shape_gets_no_sponsor_record_rather_than_an_empty_one() {
 }
 
 #[test]
-fn the_private_plan_gets_no_conservation_record_rather_than_the_explicit_one() {
+fn the_private_plan_gets_its_own_value_record_rather_than_the_explicit_one() {
     // §10.6 admits no amount inspection at all, so the private plan does
-    // not borrow the explicit plan's arithmetic. What it gets instead is
-    // a named remainder on the coordinator's slot, which Wave 7 fills.
+    // not borrow the explicit plan's arithmetic. What it carries instead
+    // is the destination form check, which establishes the
+    // representation closure and claims nothing about the equation.
     let subject = shape(2);
     let constructor = constructor(LiveTransferRepresentationPlan::PrivateCommitted);
     let patterns = live_transfer_patterns(&reviewed_target(), &symbols(), &constructor, subject)
         .expect("the census builds");
 
     assert!(!patterns.contains_key(&LiveTransferPatternId::LiveExplicitConservationV1));
+    assert!(patterns.contains_key(&LiveTransferPatternId::LivePrivateDestinationFormV1));
     assert_eq!(
         patterns.keys().copied().collect::<BTreeSet<_>>(),
         patterns_for(subject, LiveTransferRepresentationPlan::PrivateCommitted),
     );
-    assert!(
-        coordinator_placements()[&CoordinatorGlobalCheck::RepresentationSpecificConservation]
-            .outstanding()
-            .any(|pattern| pattern == OutstandingGlobalPattern::PrivateConservation),
-    );
+
+    // And the value obligations are a partition: exactly one of the two
+    // is selected, whichever plan is chosen, over every admitted shape.
+    for subject in demonstration_live_shape_set().shapes() {
+        for representation in [
+            LiveTransferRepresentationPlan::Explicit,
+            LiveTransferRepresentationPlan::PrivateCommitted,
+        ] {
+            let selected = patterns_for(subject, representation);
+            assert_eq!(
+                usize::from(selected.contains(&LiveTransferPatternId::LiveExplicitConservationV1))
+                    + usize::from(
+                        selected.contains(&LiveTransferPatternId::LivePrivateDestinationFormV1)
+                    ),
+                1,
+                "{subject:?} under {representation:?} carries no single value obligation",
+            );
+        }
+    }
 }
 
 #[test]

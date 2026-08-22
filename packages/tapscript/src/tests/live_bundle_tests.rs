@@ -29,15 +29,16 @@ use crate::bundle::{
 };
 use crate::instruction::TapscriptInstruction;
 use crate::live_bundle::{
-    CandidateRelocatableLiveTransferBundle, LiveBundleRefusal, LiveBundleSymbol,
-    LiveRelocationSite, emit_candidate_live_bundle,
+    CandidateRelocatableLiveTransferBundle, LiveBundleSymbol, LiveRelocationSite,
+    emit_candidate_live_bundle,
 };
 use crate::live_constructor::{
     LiveTransferLeafRole, OwnerKey, StaticLiveReceiptConstructor, derive_live_receipt_constructor,
     static_transfer_leaf_set,
 };
 use crate::live_pattern::{LiveTransferPatternId, RecognitionResidual, patterns_for};
-use crate::live_plan::family_range_defects;
+use crate::live_plan::{family_range_defects, opens_an_amount};
+use crate::live_private::opens_no_value_payload;
 use crate::live_shape::demonstration_live_shape_set;
 
 // --- Fixtures ---------------------------------------------------------
@@ -172,24 +173,49 @@ fn a_member_leaf_serving_several_shapes_carries_a_recomputed_sharing_proof() {
 }
 
 #[test]
-fn the_private_constructor_is_refused_rather_than_emitted_for() {
-    // §11.3 keeps the two coordinators distinct and §10.6 is not built,
-    // so a bundle over the private constructor would advertise programs
-    // whose representation-specific obligation is missing.
-    let refusal = emit_candidate_live_bundle(
+fn the_private_constructor_emits_a_bundle_of_its_own() {
+    // The refusal this wave lifted. §10.6's obligation is built, so the
+    // private constructor emits — and it emits under exactly the checks
+    // the explicit one passed: every leaf walked and held to §10.9, every
+    // shape's positions covered exactly once.
+    let private = emit_candidate_live_bundle(
         &reviewed_target(),
         &live_transfer_plan(),
         &constructor(LiveTransferRepresentationPlan::PrivateCommitted),
         live_transfer_symbols(&reviewed_target()),
     )
-    .expect_err("the private plan has no candidate bundle yet");
+    .expect("the private plan emits a candidate bundle");
 
     assert_eq!(
-        refusal,
-        LiveBundleRefusal::RepresentationNotExplicit {
-            selected: LiveTransferRepresentationPlan::PrivateCommitted,
-        },
+        private.representation(),
+        LiveTransferRepresentationPlan::PrivateCommitted,
     );
+    assert!(!private.leaves().is_empty());
+    assert_eq!(private.status(), BackendArtifactStatus::Prototype);
+
+    // Two bundles and not one. §11.3 keeps the leaf sets disjoint, so no
+    // leaf of either bundle is a leaf of the other — which is the check
+    // that would fail first if emitting for both had quietly become
+    // emitting one shared coordinator.
+    let explicit = bundle();
+    assert_eq!(
+        explicit.representation(),
+        LiveTransferRepresentationPlan::Explicit
+    );
+    for leaf in private.leaves().keys() {
+        assert_eq!(
+            leaf.representation(),
+            LiveTransferRepresentationPlan::PrivateCommitted
+        );
+        assert!(!explicit.leaves().contains_key(leaf));
+    }
+
+    // And the private bundle's programs are the private plan's: none of
+    // them opens an amount, over every leaf the bundle carries.
+    for leaf in private.leaves().values() {
+        assert!(!opens_an_amount(leaf.program()));
+        assert!(opens_no_value_payload(leaf.program()));
+    }
 }
 
 // --- Symbols and relocations ------------------------------------------

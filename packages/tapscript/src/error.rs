@@ -82,6 +82,17 @@ pub enum TapscriptError {
         class: EncodingClass,
     },
 
+    /// A class's declared prefixes are not precisely the bytes one mask
+    /// admits, so no single masked comparison decides membership.
+    ///
+    /// Raised rather than worked around. The alternative to refusing is a
+    /// comparison that admits a byte the class never declared, and a form
+    /// test that accepts an undeclared form is not a form test.
+    PrefixSetNotDiscriminable {
+        /// The class whose prefixes do not discriminate.
+        class: EncodingClass,
+    },
+
     /// A payload of a class the target requires to be minimally encoded
     /// was not in its minimal form.
     NonMinimalScriptNumber,
@@ -215,6 +226,10 @@ impl fmt::Display for TapscriptError {
             Self::MalformedEncodedItem { class } => {
                 write!(formatter, "the payload is not a valid {class:?}")
             }
+            Self::PrefixSetNotDiscriminable { class } => write!(
+                formatter,
+                "the declared prefixes of {class:?} are not the bytes one mask admits",
+            ),
             Self::NonMinimalScriptNumber => {
                 write!(formatter, "the script number is not minimally encoded")
             }

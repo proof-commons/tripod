@@ -13,6 +13,7 @@ tapscript_source_files = files(
   'src/live_constructor.rs',
   'src/live_pattern.rs',
   'src/live_plan.rs',
+  'src/live_private.rs',
   'src/live_shape.rs',
   'src/operation_assessment.rs',
   'src/pattern.rs',
