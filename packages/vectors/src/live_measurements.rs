@@ -105,9 +105,6 @@ pub const MEASURED_DESTINATION_RANDOMNESS: [u8; 32] = [0x3d; 32];
 /// under.
 pub const MEASURED_PREDECESSOR_RANDOMNESS: [u8; 32] = [0x4d; 32];
 
-/// The witness program a measured sponsor asks its change to pay to.
-const MEASURED_SPONSOR_CHANGE_PROGRAM: [u8; 20] = [0x9c; 20];
-
 /// The bytes standing in every signature position, owner and sponsor
 /// alike.
 ///
@@ -639,18 +636,16 @@ pub enum ResourceStudyRefusal {
 /// reason that has nothing to do with resources.
 struct MeasuredSponsorEnvelope {
     offer: SponsorOffer,
-    change: bool,
 }
 
 impl MeasuredSponsorEnvelope {
     /// The envelope one recipe asks for.
     fn new(input: Outpoint, role: MeasuredSponsorRole) -> Result<Self, VectorError> {
-        let change = matches!(role, MeasuredSponsorRole::PresentWithChange);
-        let residual = change.then_some(ValueField::Explicit(MEASURED_SPONSOR_CHANGE));
+        let residual = matches!(role, MeasuredSponsorRole::PresentWithChange)
+            .then_some(ValueField::Explicit(MEASURED_SPONSOR_CHANGE));
         Ok(Self {
             offer: SponsorOffer::new([input], MEASURED_SPONSOR_FEE, residual)
                 .map_err(|_| VectorError::LiveSubstrateUnavailable)?,
-            change,
         })
     }
 }
@@ -660,9 +655,19 @@ impl SponsorCapability for MeasuredSponsorEnvelope {
         self.offer.clone()
     }
 
+    /// No destination of its own, which is not the same as no change.
+    ///
+    /// The residual is stated in the offer above; what this method
+    /// answers is *where* it pays, and the deployment already declares
+    /// one admitted sponsor-change program and refuses any other. So an
+    /// envelope naming a program of its own could only ever name the
+    /// deployment's — which the builder substitutes when this is absent —
+    /// or a program the construction refuses. Deferring is the honest
+    /// spelling of a sponsor that accepts the deployment's terms, and it
+    /// is what makes the measured change output the one a deployment
+    /// would actually create.
     fn change_destination(&self) -> Option<(u8, Vec<u8>)> {
-        self.change
-            .then(|| (0, MEASURED_SPONSOR_CHANGE_PROGRAM.to_vec()))
+        None
     }
 
     fn sign(&self, request: &SponsorSigningRequest) -> Option<SponsorSignature> {
