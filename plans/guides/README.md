@@ -28,6 +28,7 @@ weight rule in [the plans README](../README.md).
 | [guide_ten.md](guide_ten.md) | STATE constructor and exact wide-arithmetic prototypes |
 | [guide_eleven.md](guide_eleven.md) | Guide-11 preflight register and public declassification |
 | [guide_twelve.md](guide_twelve.md) | Guide-12 preflight register and end-to-end compact ASH |
+| [guide_thirteen.md](guide_thirteen.md) | Guide-13 preflight register and end-to-end live receipt transfer |
 
 ## Concept guides · `tab:guides:concepts`
 
@@ -40,6 +41,7 @@ weight rule in [the plans README](../README.md).
 | [guide_eleven_concept.md](guide_eleven_concept.md) | Public declassification and confidential-to-public lifecycle |
 | [guide_twelve_concept.md](guide_twelve_concept.md) | Phase-4 end-to-end compact ASH |
 | [guide_thirteen_concept.md](guide_thirteen_concept.md) | Phase-5 end-to-end live receipt transfer |
+| [guide_fourteen_concept.md](guide_fourteen_concept.md) | Phase-6 end-to-end STATE and maturity announcement |
 | [guide_confidential_funding_concept.md](guide_confidential_funding_concept.md) | Phase-5 confidential test materialization and funding protocol |
 
 ## Feature requests · `tab:guides:feature-requests`

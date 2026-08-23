@@ -10,6 +10,7 @@ plans_guides_files = files(
   'guide_eleven_concept.md',
   'guide_five.md',
   'guide_four.md',
+  'guide_fourteen_concept.md',
   'guide_nine.md',
   'guide_nine_concept.md',
   'guide_seven.md',
@@ -19,6 +20,7 @@ plans_guides_files = files(
   'guide_ten_concept.md',
   'guide_twelve.md',
   'guide_twelve_concept.md',
+  'guide_thirteen.md',
   'guide_thirteen_concept.md',
   'guide_thirteen_feature_requests.md',
 )
