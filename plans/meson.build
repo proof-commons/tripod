@@ -8,6 +8,7 @@ plans_root_files = files(
 )
 
 subdir('decisions')
+subdir('drafts')
 subdir('guides')
 subdir('history')
 subdir('labels')
@@ -19,7 +20,7 @@ subdir('research')
 subdir('reviews')
 
 # The planning role group, composed from the per-directory lists.
-plan_files = plans_root_files + plans_decisions_files \
+plan_files = plans_root_files + plans_decisions_files + plans_drafts_files \
   + plans_guides_files + plans_history_files \
   + plans_labels_files + plans_packages_files + plans_phases_files \
   + plans_reference_files + plans_registers_files + plans_research_files \
