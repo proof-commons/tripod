@@ -1,6 +1,6 @@
 # Draft: Confidential Test Materialization and Funding Protocol Concept
 
-> **Status:** Concept draft; not an execution guide; unnumbered
+> **Status:** Concept draft; not an execution guide; INTERMEDIATE GUIDE — a special unnumbered category of its own: this guide must be CLOSED before Guide 14 is drafted
 > **Phase:** Phase 5 — Live Receipt Transfer; this work completes the arc's private half
 > **Entry:** the reproduced `NoConfidentialPredecessorCanBeFunded` candidate-pipeline blocker and an accepted charter decision on test-material custody
 > **Primary semantic operation:** materialize and fund confidential candidate test receipts
@@ -175,7 +175,7 @@ The available choices are:
 
 This is a public deterministic test identity, not an adapter-local secret handle; its spelling encodes no amount, its digest detects drift, and lookup failure is a construction refusal.
 
-Any alternative ruling names its schema change, validation proof, retention, and disclosure effect before wire work.
+**Ruling: ACCEPTED — the canonical public-fixture handle and digest.** The request carries the case identity, profiles, and binding digest and never an amount; the canonical report retains the exact request and response unmodified; validation binds handle, digest, profiles, request, response, and the mined transaction; an unknown handle is a construction refusal. Nothing is redacted, and no existing evidence rule is revised. The two rejected alternatives are closed as evidence directions for this guide.
 
 ---
 
@@ -322,7 +322,7 @@ The result remains candidate-only; a secret-bearing selection stops at ADR-015 r
 - opening owner, lifetime, process boundary, lookup authority, diagnostics, and ADR-015 disposition, elaborated within the accepted model;
 - the reproducibility ruling is RECORDED: both contracts first-class — byte identity as the reference contract, recorded randomness as a typed per-ceremony selection, one shared schema naming the contract per run, recorded in the determinism-decision rule above; the wave elaborates both, not chooses;
 - reviewed fixture domain separators, derivation inputs, bounded retry rules, and the typed contract field's semantics for both contracts;
-- canonical-request evidence option selected with its disclosure and retention consequences;
+- the canonical-request ruling is RECORDED: public-fixture handle and digest, recorded in the canonical-request-decision rule above; the wave elaborates its validation binding, not reopens the choice;
 - affected package and dependency boundary recorded without implementation by implication.
 
 **Suggested commit**
@@ -466,7 +466,7 @@ Reject or stop the guide when:
 
 ## Identity, schema, security, and handoff · `sec:guide-ctf:impact`
 
-**Identity.** This unnumbered concept adds no architecture operation, phase, release identity, or digest. At charter time the owner sequences it against the queued concept and parallel sighash work; all new types remain subordinate to existing identities.
+**Identity.** This concept adds no architecture operation, phase, release identity, or digest. Its sequencing is RULED: it is an intermediate guide — a special unnumbered category between numbered guides — and it must be closed before Guide 14 is drafted; the owner-sighash review remains parallel work under its own charter as the sighash-boundary rule states. All new types remain subordinate to existing identities.
 
 **Schema.** Tagged request and response semantics require deliberate migration; report versioning follows if the selected evidence policy needs it. Old explicit records retain their original schema.
 
