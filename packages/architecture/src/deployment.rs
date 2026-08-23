@@ -32,7 +32,7 @@
 //! reused for profile bytes.
 //!
 //! Validation precedes identity
-//! `(´[PLAN-rule:identity:admission-order]´)`. The profile hash is defined
+//! `(´[ADR021-rule:identity:admission-order]´)`. The profile hash is defined
 //! only over a [`ValidatedPreReleaseDeploymentProfile`], which
 //! [`validate_deployment_profile`] alone constructs, so "hashable"
 //! cannot be mistaken for "valid" once a release consumer appears. The
@@ -795,7 +795,7 @@ fn profile_value(profile: &DeploymentProfile) -> Value {
 /// A deployment profile that has passed structural validation.
 ///
 /// The wrapper is the type-level record of the identity rule stated in
-/// `(´[PLAN-rule:identity:admission-order]´)`: a complete typed object
+/// `(´[ADR021-rule:identity:admission-order]´)`: a complete typed object
 /// is validated first, then projected
 /// canonically, and only then does it bear an identity. Because the
 /// only constructor is [`validate_deployment_profile`], holding one of
@@ -861,7 +861,7 @@ pub fn validate_deployment_profile<'a>(
 /// not to the transaction ABI and configuration it measured under, so
 /// bundle equality alone does not establish that the measured
 /// transaction shape used the final ABI — the residual
-/// `(´[PLAN-rule:identity:provenance-containment]´)` and the
+/// `(´[ADR021-rule:identity:provenance-containment]´)` and the
 /// calibration type both record.
 ///
 /// The function exists rather than being omitted because omitting it

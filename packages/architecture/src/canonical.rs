@@ -25,7 +25,7 @@
 //! Every public identity function takes a
 //! [`ValidatedDraftArchitecture`], never a raw `Architecture`
 //! (R2-N03). The adopted discipline puts validation before identity
-//! `(´[PLAN-rule:identity:admission-order]´)`, and rehashing is
+//! `(´[ADR021-rule:identity:admission-order]´)`, and rehashing is
 //! explicitly not revalidation, so an architecture with duplicate
 //! declarations or a missing root must not be able to acquire a
 //! semantic hash through any public path. The unchecked projections
@@ -395,7 +395,7 @@ impl fmt::Display for AnchorNameDefect {
 /// strings does not *say* so, and the safety of the identity then rests
 /// on caller discipline rather than on the API. Validation before
 /// identity is the repository's rule
-/// `(´[PLAN-rule:identity:admission-order]´)`, and this type is how the
+/// `(´[ADR021-rule:identity:admission-order]´)`, and this type is how the
 /// anchor-set identity keeps it.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AnchorName(String);

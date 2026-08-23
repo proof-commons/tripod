@@ -108,7 +108,7 @@ impl std::error::Error for ManifestError {}
 /// An architecture that has passed draft validation.
 ///
 /// The wrapper is the type-level record of the identity rule of
-/// `(´[PLAN-rule:identity:admission-order]´)` —
+/// `(´[ADR021-rule:identity:admission-order]´)` —
 /// a complete typed object is validated first, then projected
 /// canonically, and only then does it bear an identity — applied to
 /// the architecture exactly as `ValidatedPreReleaseDeploymentProfile` applies it
