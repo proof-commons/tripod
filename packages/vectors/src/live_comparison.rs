@@ -346,29 +346,38 @@ fn compare_plan(
     let standings = LiveResourceRecord::ALL
         .iter()
         .map(|dimension| {
-            let standing = if let Some(reason) = unobservable(*dimension) {
-                ComparisonStanding::NotObservableAtThisBoundary(reason)
-            } else {
-                match (predicted, observed) {
-                    (Some(predicted), Some(observed)) if predicted == observed => {
-                        ComparisonStanding::Agree { figure: observed }
-                    }
-                    (Some(predicted), Some(observed)) => ComparisonStanding::Mismatch {
-                        predicted,
-                        observed,
-                    },
-                    // §18.4: an absent observation is neither zero nor
-                    // agreement. A prediction with nothing to compare it
-                    // against is recorded as an unobserved run, and the
-                    // prediction itself stays in the transcript.
-                    _ => ComparisonStanding::NoObservationInThisRun(blocker),
-                }
-            };
+            let standing = unobservable(*dimension).map_or_else(
+                || compare_figure(predicted, observed, blocker),
+                ComparisonStanding::NotObservableAtThisBoundary,
+            );
             (*dimension, standing)
         })
         .collect();
 
     PlanResourceComparison { plan, standings }
+}
+
+/// Compare one dimension's two figures, where the boundary exposes it.
+///
+/// The whole of §18.4's arithmetic, in one place. Both figures present
+/// and equal is the only agreement; both present and unequal is the
+/// mismatch that carries them both; and anything else is an unobserved
+/// run, never a zero and never an agreement.
+const fn compare_figure(
+    predicted: Option<u64>,
+    observed: Option<u64>,
+    blocker: LiveInfrastructureBlocker,
+) -> ComparisonStanding {
+    match (predicted, observed) {
+        (Some(predicted), Some(observed)) if predicted == observed => {
+            ComparisonStanding::Agree { figure: observed }
+        }
+        (Some(predicted), Some(observed)) => ComparisonStanding::Mismatch {
+            predicted,
+            observed,
+        },
+        _ => ComparisonStanding::NoObservationInThisRun(blocker),
+    }
 }
 
 /// Every typed failure one run's comparisons found (§18.4).
