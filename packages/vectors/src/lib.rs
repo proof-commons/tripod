@@ -9,6 +9,7 @@ pub mod error;
 pub mod first_party;
 pub mod fixture;
 pub mod live_capability;
+pub mod live_comparison;
 pub mod live_disclosure;
 pub mod live_evidence;
 pub mod live_fault_discharge;
@@ -48,6 +49,10 @@ pub use first_party::{
     ValidatedFirstPartyNegativeEvidence, validate_first_party_negative,
 };
 pub use live_capability::{OracleFixtureValues, OracleLiveCurve};
+pub use live_comparison::{
+    ComparisonStanding, PlanResourceComparison, ResourcePlannerFailure, UnobservedReason,
+    compare_run, run_agreements, run_failures,
+};
 pub use live_disclosure::{
     AdditionalDisclosureReason, DisclosedItem, DisclosureClass, DisclosureRow, DisclosureStanding,
     additional_exact_amount_disclosures, disclosure_difference, disclosure_index, disclosure_table,
@@ -87,8 +92,8 @@ pub use live_minimality_report::{
 };
 pub use live_native::{
     LiveFormNotSubmitted, LiveNativeObservation, LiveNativeRefusal, LiveNativeStep,
-    LiveNativeTranscript, LiveTransferOperationPlanner, observed_run_of_record,
-    render_live_native_run,
+    LiveNativeTranscript, LiveTransferOperationPlanner, PredictedTransferResources,
+    observed_run_of_record, render_live_native_run,
 };
 pub use live_pairs::{
     ExpectedTransferSemantics, MinimalityConditionStanding, MinimalityPair, MinimalityPairRefusal,

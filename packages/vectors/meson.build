@@ -12,6 +12,7 @@ vectors_source_files = files(
   'src/fixture.rs',
   'src/lib.rs',
   'src/live_capability.rs',
+  'src/live_comparison.rs',
   'src/live_disclosure.rs',
   'src/live_evidence.rs',
   'src/live_fault_discharge.rs',

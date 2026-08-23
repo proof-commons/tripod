@@ -148,6 +148,39 @@ impl LiveNativeStep {
     }
 }
 
+/// What this workspace predicts one submitted serialization costs
+/// (§18.4).
+///
+/// Taken from the exact bytes the submission carries, and derived by
+/// decoding them rather than by remembering what was built: §18.4
+/// compares a prediction with an observation *over the same exact bytes*,
+/// and a figure carried over from the builder would be a figure about the
+/// value the builder held rather than about the serialization the node
+/// was handed.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PredictedTransferResources {
+    serialized_bytes: u64,
+    weight: Option<u64>,
+}
+
+impl PredictedTransferResources {
+    /// How many bytes were submitted.
+    #[must_use]
+    pub const fn serialized_bytes(self) -> u64 {
+        self.serialized_bytes
+    }
+
+    /// The weight this workspace computes for those bytes.
+    ///
+    /// Absent when the submitted bytes do not decode here, which is
+    /// itself a finding about the serializer and is carried as an absence
+    /// rather than as a weight of zero.
+    #[must_use]
+    pub const fn weight(self) -> Option<u64> {
+        self.weight
+    }
+}
+
 /// One thing the node was observed to do.
 ///
 /// The layer and the node's own words, and nothing derived from them. A
@@ -161,6 +194,7 @@ pub struct LiveNativeObservation {
     detail: Option<String>,
     accepted_txid: Option<String>,
     funded: usize,
+    observed_weight: Option<u64>,
 }
 
 impl LiveNativeObservation {
@@ -198,6 +232,20 @@ impl LiveNativeObservation {
     pub const fn funded(&self) -> usize {
         self.funded
     }
+
+    /// The weight the node computed for the bytes this step submitted.
+    ///
+    /// The observation half of §18.4, and the reason it exists at all is
+    /// that a *refused* transaction still has a weight: the executor
+    /// reads it back from the node's own `decoderawtransaction`, so a
+    /// candidate nothing can witness still yields one real target figure
+    /// over its real bytes. Absent for a step that reached no target
+    /// verdict, and absent rather than zero — §18.4 forbids reading a
+    /// missing observation as agreement.
+    #[must_use]
+    pub const fn observed_weight(&self) -> Option<u64> {
+        self.observed_weight
+    }
 }
 
 /// The plan's own record of one live-transfer run.
@@ -216,6 +264,7 @@ pub struct LiveNativeTranscript {
     explicit_coins: Vec<WireOutpoint>,
     private_coins: Vec<WireOutpoint>,
     observations: Vec<LiveNativeObservation>,
+    predicted: BTreeMap<LiveTransferRepresentationPlan, PredictedTransferResources>,
     refusal: Option<LiveNativeRefusal>,
 }
 
@@ -269,6 +318,20 @@ impl LiveNativeTranscript {
     #[must_use]
     pub fn observations(&self) -> &[LiveNativeObservation] {
         &self.observations
+    }
+
+    /// What this workspace predicted about each submitted serialization
+    /// (§18.4).
+    ///
+    /// Keyed by the form submitted, and holding an entry only for a form
+    /// this run actually offered a target. A form in
+    /// [`Self::not_submitted`] has no prediction here, because there were
+    /// no bytes to predict about.
+    #[must_use]
+    pub const fn predicted(
+        &self,
+    ) -> &BTreeMap<LiveTransferRepresentationPlan, PredictedTransferResources> {
+        &self.predicted
     }
 
     /// Every form the run could not submit, and why.
@@ -453,6 +516,7 @@ impl LiveTransferOperationPlanner {
             detail: response.observed_detail.clone(),
             accepted_txid: response.accepted_txid.clone(),
             funded: response.funded_outputs.len(),
+            observed_weight: response.resources.transaction_weight,
         });
     }
 
@@ -629,14 +693,30 @@ impl LiveTransferOperationPlanner {
 
     /// One submission step.
     fn submit_step(
-        &self,
+        &mut self,
         step: LiveNativeStep,
         plan: LiveTransferRepresentationPlan,
     ) -> Result<OperationStep, LiveNativeRefusal> {
+        let bytes = self.transfer_bytes(plan)?;
+
+        // §18.4's first-party half, recorded here rather than recomputed
+        // later, because "the same exact bytes" is only checkable if the
+        // prediction is taken from the serialization that is about to be
+        // submitted. A figure computed afterwards from a rebuilt
+        // transaction would be a prediction about some other bytes that
+        // happened to have the same shape.
+        self.transcript.predicted.insert(
+            plan,
+            PredictedTransferResources {
+                serialized_bytes: bytes.len() as u64,
+                weight: weight_of(&bytes),
+            },
+        );
+
         Ok(OperationStep::new(
             step.name(),
             OperationSubject::Submission(Box::new(TargetSubmissionSubject {
-                transaction_bytes: self.transfer_bytes(plan)?,
+                transaction_bytes: bytes,
             })),
         ))
     }
@@ -784,34 +864,57 @@ pub fn observed_run_of_record() -> LiveNativeTranscript {
             LiveTransferRepresentationPlan::PrivateCommitted,
             LiveFormNotSubmitted::NoConfidentialPredecessorCanBeFunded,
         )]),
+        // §18.4's first-party half, from the run that produced the
+        // observation below. Both figures are the same run's: a
+        // prediction transcribed from some other run would be a
+        // prediction about other bytes, which is the substitution §18.4's
+        // "same exact bytes" is there to refuse.
+        predicted: BTreeMap::new(),
         observations: vec![
             recorded(
                 LiveNativeStep::IssueProtocolAsset,
                 ObservedOutcomeLayer::Accepted,
                 None,
                 2,
+                None,
             ),
             recorded(
                 LiveNativeStep::FundExplicitConstructor,
                 ObservedOutcomeLayer::Accepted,
                 None,
                 2,
+                None,
             ),
             recorded(
                 LiveNativeStep::FundPrivateConstructor,
                 ObservedOutcomeLayer::Accepted,
                 None,
                 2,
+                None,
             ),
             recorded(
                 LiveNativeStep::SubmitExplicitTransfer,
                 ObservedOutcomeLayer::ScriptPathRejection,
                 Some("mandatory-script-verify-flag-failed (Invalid Schnorr signature)"),
                 0,
+                None,
             ),
         ],
         refusal: None,
     }
+}
+
+/// The weight this workspace computes for one submitted serialization.
+///
+/// By decoding the bytes and weighing the result, so the figure is a
+/// function of the exact serialization the node was handed rather than of
+/// the value that produced it. A serialization this workspace cannot
+/// decode yields no weight — an absence, and a real finding about the
+/// encoder, rather than a weight of zero.
+fn weight_of(bytes: &[u8]) -> Option<u64> {
+    transaction::bytes::TargetTransaction::decode(bytes)
+        .ok()
+        .map(|transaction| transaction.weight())
 }
 
 /// One recorded observation, spelled once.
@@ -820,6 +923,7 @@ fn recorded(
     layer: ObservedOutcomeLayer,
     detail: Option<&str>,
     funded: usize,
+    observed_weight: Option<u64>,
 ) -> LiveNativeObservation {
     LiveNativeObservation {
         step,
@@ -827,6 +931,7 @@ fn recorded(
         detail: detail.map(ToOwned::to_owned),
         accepted_txid: None,
         funded,
+        observed_weight,
     }
 }
 
@@ -857,13 +962,31 @@ pub fn render_live_native_run(transcript: &LiveNativeTranscript) -> String {
     for (plan, gap) in transcript.not_submitted() {
         let _ = writeln!(text, "not_submitted {plan:?} {gap:?}");
     }
+    // §18.4's two halves, side by side and neither derived from the
+    // other. The prediction is this workspace's own weight for the bytes
+    // it submitted; the observation is the node's, read back from its own
+    // decoder. A step that reached no verdict prints `none` rather than a
+    // zero, because a zero here would read as a figure the node gave.
+    for (plan, predicted) in transcript.predicted() {
+        let _ = writeln!(
+            text,
+            "predicted {plan:?} serialized_bytes={} weight={}",
+            predicted.serialized_bytes(),
+            predicted
+                .weight()
+                .map_or("none".to_owned(), |w| w.to_string()),
+        );
+    }
     for observation in transcript.observations() {
         let _ = writeln!(
             text,
-            "observed {} {:?} txid={} detail={}",
+            "observed {} {:?} txid={} weight={} detail={}",
             observation.step().name(),
             observation.layer(),
             observation.accepted_txid().unwrap_or("none"),
+            observation
+                .observed_weight()
+                .map_or("none".to_owned(), |weight| weight.to_string()),
             observation.detail().unwrap_or("none"),
         );
     }
