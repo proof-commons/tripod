@@ -279,7 +279,7 @@ impl CandidateTreeAdmission {
 /// doubling rather than by exponentiation, so a large declared depth
 /// saturates instead of overflowing.
 #[must_use]
-pub fn tree_admission(
+pub const fn tree_admission(
     bounds: LiveTransferShapeBounds,
     declared_depth: NonZeroU32,
 ) -> CandidateTreeAdmission {
@@ -383,7 +383,7 @@ impl CandidateBoundCost {
 
 /// Cost one enumerated assignment against a stated deployment depth.
 #[must_use]
-pub fn cost_bound_assignment(
+pub const fn cost_bound_assignment(
     bounds: LiveTransferShapeBounds,
     declared_depth: NonZeroU32,
 ) -> CandidateBoundCost {
