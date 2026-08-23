@@ -802,11 +802,20 @@ pub const OBJECT_FAULTS: &[LiveSafetyRow] = &[
         wrong_object,
         "WrongRecognizedObject",
     ),
+    // §15.4's erratum, filed in the feature-request register. The row
+    // arrived declaring `LinkerRejection`, and the linker neither derives
+    // a leaf schema nor can be handed a malformed one: constructor and
+    // bundle are sealed types whose only construction path has already
+    // validated the schema. What owns it is tapscript's constructor
+    // derivation, and the three malformations that reach it are a leaf of
+    // the other representation, an absent required coordinator or member,
+    // and a leaf serving no admitted shape. An empty leaf set is a
+    // key-path escape and stays with that row.
     pre_target(
         S::ObjectFault,
         "wrong-constructor-schema",
-        L::LinkedConstructorProgram,
-        B::LinkerRejection,
+        L::StaticConstructorSchema,
+        B::ConstructorDerivationRejection,
     ),
     pre_target(
         S::ObjectFault,

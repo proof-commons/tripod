@@ -184,7 +184,7 @@ pub enum LiveInfrastructureBlocker {
 
 /// Why a first-party row carries no executable discharge.
 ///
-/// Four gaps, and three of them are specific obstacles rather than
+/// Three gaps, and two of them are specific obstacles rather than
 /// absence of effort. §4.2's last sentence gives exactly two honest
 /// dispositions for a requirement whose policy cannot be met — outside
 /// the coverage denominator, or outstanding inside it — and every row
@@ -201,9 +201,6 @@ pub enum FirstPartyGap {
     NoStagedCase,
     /// No typed input can express the row's malformation at all.
     MalformedInputStructurallyInexpressible,
-    /// The owning validator sits at another pre-target boundary than the
-    /// row declares.
-    OwningValidatorIsAtAnotherPreTargetBoundary,
     /// No validator on the live-transfer request path owns the class.
     NoOwningValidatorOnTheRequestPath,
 }
@@ -215,9 +212,6 @@ impl FirstPartyGap {
         match reason {
             UndischargedFaultReason::MalformedInputStructurallyInexpressible => {
                 Self::MalformedInputStructurallyInexpressible
-            }
-            UndischargedFaultReason::OwningValidatorIsAtAnotherPreTargetBoundary => {
-                Self::OwningValidatorIsAtAnotherPreTargetBoundary
             }
             UndischargedFaultReason::NoOwningValidatorOnTheRequestPath => {
                 Self::NoOwningValidatorOnTheRequestPath
@@ -803,15 +797,15 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
-    fn the_first_party_half_of_the_matrix_is_answered_but_for_three_named_rows() {
+    fn the_first_party_half_of_the_matrix_is_answered_but_for_two_named_rows() {
         // The matrix's pre-target half, after both censuses. Twenty-seven
         // rows of §15 are refused before any target sees the bytes;
-        // twenty-four of them have been driven to their own refusal, and
-        // the three that have not each name the obstacle rather than
+        // twenty-five of them have been driven to their own refusal, and
+        // the two that have not each name the obstacle rather than
         // being silently outstanding (§4.2's last sentence).
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let census = plan.census();
-        assert_eq!(census.first_party_discharged(), 24);
+        assert_eq!(census.first_party_discharged(), 25);
         assert_eq!(
             census.first_party_undischarged(),
             crate::live_fault_discharge::UNDISCHARGED_FAULT_ROWS.len(),

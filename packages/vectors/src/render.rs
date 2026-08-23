@@ -428,6 +428,7 @@ fn matches_boundary(expected: EvidenceBoundary, observed: ObservedOutcomeLayer) 
         // satisfies one of these.
         EvidenceBoundary::SemanticRequestRejection
         | EvidenceBoundary::CompilerPlanRejection
+        | EvidenceBoundary::ConstructorDerivationRejection
         | EvidenceBoundary::BackendEmissionRejection
         | EvidenceBoundary::LinkerRejection
         | EvidenceBoundary::AbiConstructionRejection
