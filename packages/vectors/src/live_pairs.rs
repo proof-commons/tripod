@@ -1203,7 +1203,7 @@ fn complete_weight_of(
 /// Derived from the two members rather than declared: a pair whose halves
 /// were both weighed carries both figures, and one whose half could not
 /// be completed carries the component that stopped it.
-fn resolve_resources(
+const fn resolve_resources(
     explicit: &PairMaterialization,
     private: &PairMaterialization,
 ) -> ResourceComparisonStanding {
