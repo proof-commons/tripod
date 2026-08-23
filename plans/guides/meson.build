@@ -3,6 +3,7 @@
 # meson.build accumulates this list into its role group.
 plans_guides_files = files(
   'README.md',
+  'guide_confidential_funding_concept.md',
   'guide_eight.md',
   'guide_eight_concept.md',
   'guide_eleven.md',
