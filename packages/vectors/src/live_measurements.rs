@@ -1863,6 +1863,39 @@ mod tests {
         );
     }
 
+    #[test]
+    fn the_measured_table_is_the_one_this_study_reports() {
+        // The study's headline figures, pinned. Every other test here
+        // asserts a *relation* between measurements — sponsored costs
+        // more, virtual size follows weight, a merge spends two leaves —
+        // and a table of relations can drift wholesale while every
+        // relation still holds. These are the numbers themselves, so a
+        // change to a leaf, to the ABI, or to the witness handoff moves
+        // this test and has to be looked at.
+        let mut rows = Vec::new();
+        for case in study() {
+            for member in case.members() {
+                rows.push(format!(
+                    "{} {} weight={} vsize={} depth={} peak={} budget={}",
+                    case.case().name(),
+                    member.recipe().member(),
+                    member
+                        .figure(LiveResourceRecord::CompleteWeight)
+                        .unwrap_or(0),
+                    member.figure(LiveResourceRecord::VirtualSize).unwrap_or(0),
+                    member.figure(LiveResourceRecord::TaptreeDepth).unwrap_or(0),
+                    member
+                        .figure(LiveResourceRecord::PeakMainStack)
+                        .unwrap_or(0),
+                    member
+                        .figure(LiveResourceRecord::ValidationBudget)
+                        .unwrap_or(0),
+                ));
+            }
+        }
+        assert_eq!(rows.join("\n"), "HARVEST");
+    }
+
     /// One case's measurement, by name.
     fn case_named(case: LiveResourceCase) -> &'static CaseMeasurement {
         study()
