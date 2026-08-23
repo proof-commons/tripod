@@ -146,13 +146,28 @@ pub enum LiveInfrastructureBlocker {
     /// semantic claim about what it commits to would still be
     /// candidate-scoped until the review completes.
     SighashProfileUnreviewed,
-    /// The sponsor envelope's own authorizing signer is modelled.
+    /// No adapter signer is wired into this evidence lane.
     ///
     /// §12 builds the sponsored form, and §1.9 keeps the sponsor's
     /// authorization outside protocol data — it arrives through an
     /// adapter that hands back a witness stack. A row about the sponsor's
     /// owner therefore needs an envelope whose signer is supplied rather
-    /// than modelled.
+    /// than modelled, and every envelope this crate builds declines.
+    ///
+    /// # What is missing is the wiring, not the capability
+    ///
+    /// The conformance package advertises a test sponsor authorization
+    /// capability and the native executor implements it, with a fixed
+    /// regtest key, deterministic signing, and a response bound to the
+    /// exact finalized transaction. Nothing here reaches it. The
+    /// distinction is the whole point of naming a blocker precisely:
+    /// clearing this one is an integration, not a design.
+    ///
+    /// Wiring it is still not enough to remove the blocker. §1.9 asks
+    /// for the sponsor owner's *target authorization*, and a returned
+    /// byte stack is not that until a target has accepted a control
+    /// carrying it — which needs the owner sighash first. A blocker
+    /// moves on an observed result and never on a capability existing.
     SponsorEnvelopeSignerAbsent,
     /// No predecessor exists to build the spend from.
     ///
@@ -796,7 +811,7 @@ pub fn blocker_census(
 /// records that nothing here computes that digest; §1.9 puts a sponsor's
 /// authorization outside protocol data and
 /// [`LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent`] records
-/// that no adapter produces one either.
+/// that no adapter signer is wired into this lane to supply one.
 ///
 /// So a witness position that has to be *filled* — to serialize a
 /// transaction at all, or to weigh one — is filled with bytes of the

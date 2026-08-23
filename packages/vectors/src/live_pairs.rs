@@ -566,10 +566,10 @@ impl ResourceComparisonStanding {
 /// It offers one input and the fee, states no change destination, and
 /// declines to sign. Declining is the honest behaviour rather than a stub:
 /// §1.9 puts the sponsor's own authorization outside protocol data and it
-/// arrives through an adapter, and Wave 10 recorded that no such adapter
-/// exists — [`LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent`].
+/// arrives through an adapter, and no adapter signer is wired into this
+/// evidence lane — [`LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent`].
 /// An envelope that returned bytes here would be modelling the signer the
-/// evidence plan says is absent.
+/// evidence plan says it does not have.
 struct ModelledSponsorEnvelope {
     offer: SponsorOffer,
 }

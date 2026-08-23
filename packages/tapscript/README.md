@@ -460,7 +460,37 @@ static capability adapter over the reviewed target contract
 external-evidence-role adapter
 candidate shape set, backend policy, and typed proof patterns
 static ASH constructor and candidate relocatable bundle
+static live-receipt constructor and its transfer leaf schema
+live coordinator and member patterns and their candidate bundle
 ```
+
+### The live-receipt constructor (Guide-13 §7, §10)
+
+`derive_live_receipt_constructor` is the sole route to a
+`StaticLiveReceiptConstructor`, and it owns the static leaf schema: it
+refuses a leaf naming another representation, a leaf set missing a
+required coordinator or member, and a leaf serving no admitted shape. An
+empty leaf set is refused as the key-path escape it is rather than as a
+bookkeeping complaint, because a taproot output with no script path can
+be spent only through its key path.
+
+That schema is validated here and nowhere else. Everything downstream
+receives a sealed constructor, so the malformed leaf sets above are
+inputs only this entry point can be offered — which is why the safety
+matrix's constructor-schema row names this boundary and not the
+linker's.
+
+The leaf-role vocabulary has exactly two members, a coordinator of one
+exact shape and a member of one receipt-input count, each keyed by its
+representation. Sharing a leaf between representations is not the
+default narrowed later; two representations get two leaves until some
+complete typed proof says they may get one.
+
+The crate's own mutation census records what construction does about
+each named change and, for the ones it cannot express, what is still
+missing. A case that reaches past this constructor carries the residual
+that a complete target transaction and an observed verdict are required,
+because nothing here may claim what a target would say.
 
 ## What this package deliberately does not do
 
@@ -492,11 +522,17 @@ Beyond those, and by design rather than by omission:
 
 ## Nothing here is claimed to work against a node
 
-Programs have been emitted and walked against the reviewed contracts, but none
-has been run: no transaction has been built, and no evidence requirement the
-target contract names has been discharged. An assessment states what a backend
-would have to establish, and an emitted program states what it would attempt.
-Neither states that anything has been established.
+Programs have been emitted and walked against the reviewed contracts, and
+nothing in this crate has run one: it builds no transaction, discharges no
+evidence requirement the target contract names, and reaches no node. An
+assessment states what a backend would have to establish, and an emitted
+program states what it would attempt. Neither states that anything has been
+established.
+
+Programs this crate emitted have since been submitted to a real node by the
+evidence packages, and a live coordinator reached the owner's signature check
+before failing there. That is their result to report and not this crate's
+claim: nothing here reads it, and no type here changes because of it.
 
 Evidence about the target's actual behavior is produced elsewhere, by
 `tripod-target-elements-conformance`, and nothing in this crate reads
