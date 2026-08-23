@@ -303,6 +303,35 @@ pub(super) fn live_abi() -> CandidateLiveTransferAbi {
         .expect("the demonstration live ABI derives")
 }
 
+/// An ABI over a link that carries one representation and not the other.
+///
+/// Both owners, one plan. A link like this is legitimate rather than
+/// defective — the linker reports which plans a candidate carries
+/// precisely because a deployment may choose one — and it is the only
+/// way to reach a request whose selected plan the ABI has no
+/// constructor for.
+pub(super) fn single_representation_live_abi(
+    representation: LiveTransferRepresentationPlan,
+) -> CandidateLiveTransferAbi {
+    let target = reviewed_target();
+    let bundles = vec![
+        single_live_bundle(representation, &FIRST_OWNER),
+        single_live_bundle(representation, &SECOND_OWNER),
+    ];
+    let deployment = LiveLinkDeploymentParameters::new(
+        &target,
+        resolved_live_symbols(&target),
+        LIVE_INTERNAL_KEY.to_vec(),
+        NonZeroU32::new(8).expect("eight is nonzero"),
+    )
+    .expect("the demonstration deployment parameters are the reviewed widths");
+    let linked =
+        link_live_candidate(&target, &bundles, &deployment).expect("a one-representation link");
+
+    derive_live_transfer_abi(&target, &linked, &FixtureCurve)
+        .expect("the one-representation live ABI derives")
+}
+
 /// A public view of one owner's live receipt at `outpoint`.
 pub(super) fn receipt_view(
     abi: &CandidateLiveTransferAbi,

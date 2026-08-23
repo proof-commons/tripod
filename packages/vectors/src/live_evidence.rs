@@ -10,12 +10,13 @@
 //!
 //! §13.5 makes a report refuse to call itself complete while a required
 //! row is unanswered, and that is only checkable if "unanswered" is a
-//! typed state rather than a gap in a list. Four states, and the
-//! difference between them is the difference between four different
-//! repairs: a row a first-party validator already answers is *done*, a
-//! row waiting on a target run is waiting on a *run*, a row blocked on a
-//! missing component is waiting on that *component*, and an ad hoc row is
-//! not required at all.
+//! typed state rather than a gap in a list. The difference between the
+//! states is the difference between the repairs each one calls for: a
+//! row a first-party validator already answers is *done*, a row waiting
+//! on a target run is waiting on a *run*, a row blocked on a missing
+//! component is waiting on that *component*, a row whose fault no typed
+//! input can name is waiting on nothing because its obligation was
+//! mis-typed, and an ad hoc row is not required at all.
 //!
 //! # The honest finding this plan carries
 //!
@@ -48,8 +49,7 @@ use transaction::live_abi::CandidateLiveTransferAbi;
 
 use crate::error::VectorError;
 use crate::live_fault_discharge::{
-    LiveFaultValidator, UNDISCHARGED_FAULT_ROWS, UndischargedFaultReason,
-    ValidatedLiveFaultEvidence, discharge_live_faults, live_fault_cases,
+    LiveFaultValidator, ValidatedLiveFaultEvidence, discharge_live_faults, live_fault_cases,
 };
 use crate::live_first_party::{
     LiveFirstPartyValidator, ValidatedLiveFirstPartyEvidence, discharge_live_first_party,
@@ -146,13 +146,28 @@ pub enum LiveInfrastructureBlocker {
     /// semantic claim about what it commits to would still be
     /// candidate-scoped until the review completes.
     SighashProfileUnreviewed,
-    /// The sponsor envelope's own authorizing signer is modelled.
+    /// No adapter signer is wired into this evidence lane.
     ///
     /// §12 builds the sponsored form, and §1.9 keeps the sponsor's
     /// authorization outside protocol data — it arrives through an
     /// adapter that hands back a witness stack. A row about the sponsor's
     /// owner therefore needs an envelope whose signer is supplied rather
-    /// than modelled.
+    /// than modelled, and every envelope this crate builds declines.
+    ///
+    /// # What is missing is the wiring, not the capability
+    ///
+    /// The conformance package advertises a test sponsor authorization
+    /// capability and the native executor implements it, with a fixed
+    /// regtest key, deterministic signing, and a response bound to the
+    /// exact finalized transaction. Nothing here reaches it. The
+    /// distinction is the whole point of naming a blocker precisely:
+    /// clearing this one is an integration, not a design.
+    ///
+    /// Wiring it is still not enough to remove the blocker. §1.9 asks
+    /// for the sponsor owner's *target authorization*, and a returned
+    /// byte stack is not that until a target has accepted a control
+    /// carrying it — which needs the owner sighash first. A blocker
+    /// moves on an observed result and never on a capability existing.
     SponsorEnvelopeSignerAbsent,
     /// No predecessor exists to build the spend from.
     ///
@@ -184,11 +199,20 @@ pub enum LiveInfrastructureBlocker {
 
 /// Why a first-party row carries no executable discharge.
 ///
-/// Four gaps, and three of them are specific obstacles rather than
-/// absence of effort. §4.2's last sentence gives exactly two honest
-/// dispositions for a requirement whose policy cannot be met — outside
-/// the coverage denominator, or outstanding inside it — and every row
-/// here takes the second, which is why each names what stands in the way.
+/// One gap, and no row is in it today. §4.2's last sentence gives
+/// exactly two honest dispositions for a requirement whose policy cannot
+/// be met — outside the coverage denominator, or outstanding inside it —
+/// and this type is the second one, kept so that a row acquiring it is
+/// counted and rendered rather than dropped.
+///
+/// # It used to carry three obstacles, and they were findings
+///
+/// Two named boundaries that disagreed with the workspace and one named
+/// a malformation nothing could express. All three were resolved by
+/// re-typing what the rows claimed rather than by staging a case against
+/// them, so the obstacles retired with the rows that carried them.
+/// Keeping them as unreachable members would leave a reader checking
+/// which of a taxonomy's arms are alive.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum FirstPartyGap {
@@ -199,31 +223,6 @@ pub enum FirstPartyGap {
     /// staged, so nothing here has been driven to a refusal. Recorded as
     /// a gap rather than as coverage.
     NoStagedCase,
-    /// No typed input can express the row's malformation at all.
-    MalformedInputStructurallyInexpressible,
-    /// The owning validator sits at another pre-target boundary than the
-    /// row declares.
-    OwningValidatorIsAtAnotherPreTargetBoundary,
-    /// No validator on the live-transfer request path owns the class.
-    NoOwningValidatorOnTheRequestPath,
-}
-
-impl FirstPartyGap {
-    /// The gap one reported fault row hits.
-    #[must_use]
-    pub const fn of(reason: UndischargedFaultReason) -> Self {
-        match reason {
-            UndischargedFaultReason::MalformedInputStructurallyInexpressible => {
-                Self::MalformedInputStructurallyInexpressible
-            }
-            UndischargedFaultReason::OwningValidatorIsAtAnotherPreTargetBoundary => {
-                Self::OwningValidatorIsAtAnotherPreTargetBoundary
-            }
-            UndischargedFaultReason::NoOwningValidatorOnTheRequestPath => {
-                Self::NoOwningValidatorOnTheRequestPath
-            }
-        }
-    }
 }
 
 /// Which first-party entry point discharged one row.
@@ -278,6 +277,21 @@ pub enum LiveRowStanding {
     /// serialization published a sponsor amount or an opening, and the
     /// answer is a property of the rendered bytes.
     ReportLayerAnswerable,
+    /// No layer answers the row, because no input names its fault.
+    ///
+    /// §4.2's other honest disposition, taken. Its last sentence puts a
+    /// requirement whose policy cannot be met *outside* the coverage
+    /// denominator rather than permanently outstanding inside it, and
+    /// this row's policy cannot be met for a structural reason:
+    /// [`crate::live_safety::LiveRowBoundary::OperationVocabularyClosure`]
+    /// says which.
+    ///
+    /// It is not answered. [`Self::is_answered`] is false for it, and no
+    /// report may read it as a refusal, a target verdict, or evidence of
+    /// any kind. What it records is that the obligation was mis-typed:
+    /// there is no malformed input for a validator to refuse, so there
+    /// is no §4.2 discharge to be owed one.
+    OperationVocabularyClosed,
     /// The row is ad hoc and outside the required denominator.
     ///
     /// §13.1's last sentence. No row of §15 is experimental today, and
@@ -335,6 +349,7 @@ pub struct LiveEvidenceCensus {
     native_run_required: usize,
     infrastructure_blocked: usize,
     report_layer: usize,
+    vocabulary_closed: usize,
     experimental: usize,
 }
 
@@ -375,6 +390,16 @@ impl LiveEvidenceCensus {
         self.report_layer
     }
 
+    /// How many rows no layer answers because no input names them.
+    ///
+    /// Counted apart from every other bucket, and from the answered ones
+    /// especially: a reader adding this to the discharged figure would
+    /// be counting a structural fact as a refusal.
+    #[must_use]
+    pub const fn vocabulary_closed(&self) -> usize {
+        self.vocabulary_closed
+    }
+
     /// How many rows are outside the required denominator.
     #[must_use]
     pub const fn experimental(&self) -> usize {
@@ -386,6 +411,13 @@ impl LiveEvidenceCensus {
     /// §13.5's bar. False while any row is waiting on a run or blocked on
     /// a component, which is what stops a report built on this plan from
     /// calling itself complete.
+    ///
+    /// [`Self::vocabulary_closed`] is not among the three, and that is
+    /// §4.2's own instruction rather than leniency: a requirement whose
+    /// policy cannot be met belongs outside the denominator instead of
+    /// permanently outstanding inside it. Leaving it in would make the
+    /// bar unreachable by construction and say nothing true about the
+    /// pipeline.
     #[must_use]
     pub const fn every_required_row_is_answered(&self) -> bool {
         self.native_run_required == 0
@@ -542,7 +574,13 @@ fn classify(
     plan: &ValidatedLiveTransferOperationPlan,
     discharged: &BTreeMap<&'static str, (DischargingValidator, &'static str)>,
 ) -> Result<LiveRowStanding, VectorError> {
-    if row.boundary() == EvidenceBoundary::ReportSemanticProjectionRejection {
+    // The row no layer answers, before anything else: it is not
+    // discharged, not blocked, and not waiting on a run, and every later
+    // branch here presumes a layer was asked.
+    let Some(boundary) = row.refusing_layer() else {
+        return Ok(LiveRowStanding::OperationVocabularyClosed);
+    };
+    if boundary == EvidenceBoundary::ReportSemanticProjectionRejection {
         return Ok(LiveRowStanding::ReportLayerAnswerable);
     }
     if let Some((validator, class)) = discharged.get(row.name()) {
@@ -552,15 +590,14 @@ fn classify(
         });
     }
     if row.is_first_party() {
-        // A row the fault census reports outstanding names the obstacle
-        // it hits, and one nothing has staged at all says that instead.
-        // The difference matters: the first three are findings about this
-        // workspace and the fourth is work nobody has done.
-        let gap = UNDISCHARGED_FAULT_ROWS
-            .iter()
-            .find_map(|(name, reason)| (*name == row.name()).then_some(*reason))
-            .map_or(FirstPartyGap::NoStagedCase, FirstPartyGap::of);
-        return Ok(LiveRowStanding::FirstPartyUndischarged(gap));
+        // A first-party row neither census discharged. Nothing reaches
+        // this today and the branch is not decoration: it is what makes
+        // §4.2's last sentence hold for a row added tomorrow, whose
+        // obligation is counted and rendered from the moment it exists
+        // rather than from the moment somebody lists it.
+        return Ok(LiveRowStanding::FirstPartyUndischarged(
+            FirstPartyGap::NoStagedCase,
+        ));
     }
 
     if row.polarity() == LiveSafetyPolarity::Positive {
@@ -676,6 +713,7 @@ pub fn derive_live_evidence_plan() -> Result<LiveTransferEvidencePlan, VectorErr
             LiveRowStanding::NativeRunRequired(_) => census.native_run_required += 1,
             LiveRowStanding::InfrastructureBlocked(_) => census.infrastructure_blocked += 1,
             LiveRowStanding::ReportLayerAnswerable => census.report_layer += 1,
+            LiveRowStanding::OperationVocabularyClosed => census.vocabulary_closed += 1,
             LiveRowStanding::Experimental => census.experimental += 1,
         }
         rows.push(LiveEvidenceRow { row, standing });
@@ -773,7 +811,7 @@ pub fn blocker_census(
 /// records that nothing here computes that digest; §1.9 puts a sponsor's
 /// authorization outside protocol data and
 /// [`LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent`] records
-/// that no adapter produces one either.
+/// that no adapter signer is wired into this lane to supply one.
 ///
 /// So a witness position that has to be *filled* — to serialize a
 /// transaction at all, or to weigh one — is filled with bytes of the
@@ -803,41 +841,26 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
-    fn the_first_party_half_of_the_matrix_is_answered_but_for_three_named_rows() {
-        // The matrix's pre-target half, after both censuses. Twenty-seven
-        // rows of §15 are refused before any target sees the bytes;
-        // twenty-four of them have been driven to their own refusal, and
-        // the three that have not each name the obstacle rather than
-        // being silently outstanding (§4.2's last sentence).
+    fn the_first_party_half_of_the_matrix_is_answered_in_full() {
+        // The matrix's pre-target half, after both censuses. Twenty-five
+        // rows of §15 are refused before any target sees the bytes, and
+        // every one of them has been driven to its own refusal against
+        // its own control. Nothing here is outstanding, and nothing here
+        // was closed by a wildcard: the two rows that left this half
+        // left because their declared boundary was wrong, and the count
+        // is recomputed from the classification rather than adjusted.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let census = plan.census();
-        assert_eq!(census.first_party_discharged(), 24);
-        assert_eq!(
-            census.first_party_undischarged(),
-            crate::live_fault_discharge::UNDISCHARGED_FAULT_ROWS.len(),
-        );
+        assert_eq!(census.first_party_discharged(), 25);
+        assert_eq!(census.first_party_undischarged(), 0);
 
-        // No row is outstanding for want of effort: every one of the
-        // three names a specific obstacle, and none is `NoStagedCase`.
-        let mut reported = BTreeSet::new();
-        for row in plan.rows() {
-            if let LiveRowStanding::FirstPartyUndischarged(gap) = row.standing() {
-                assert_ne!(
-                    *gap,
-                    crate::live_evidence::FirstPartyGap::NoStagedCase,
-                    "{} is outstanding with no stated obstacle",
-                    row.row(),
-                );
-                reported.insert(row.row().name());
-            }
-        }
-        assert_eq!(
-            reported,
-            crate::live_fault_discharge::UNDISCHARGED_FAULT_ROWS
-                .iter()
-                .map(|(row, _)| *row)
-                .collect::<BTreeSet<_>>(),
-        );
+        let outstanding: BTreeSet<_> = plan
+            .rows()
+            .iter()
+            .filter(|row| matches!(row.standing(), LiveRowStanding::FirstPartyUndischarged(_)))
+            .map(|row| row.row().name())
+            .collect();
+        assert_eq!(outstanding, BTreeSet::new());
 
         // And the whole matrix still cross-foots.
         assert_eq!(
@@ -846,9 +869,55 @@ mod tests {
                 + census.native_run_required()
                 + census.infrastructure_blocked()
                 + census.report_layer()
+                + census.vocabulary_closed()
                 + census.experimental(),
             108,
         );
+    }
+
+    #[test]
+    fn one_row_is_closed_by_the_operation_vocabulary_and_it_is_not_evidence() {
+        // §15.4's `mixed-operation-program`, outside §4.2's refusal
+        // denominator and outside the answered count as well. What
+        // establishes the closure is the architecture, and the three
+        // facts it rests on are checked here rather than asserted: the
+        // compiler projects one operation, and the leaf vocabulary the
+        // constructor and the linker consume names only that operation's
+        // roles. The third — that a request cannot select a program at
+        // all — is the transaction crate's own census of the fourteen
+        // structurally absent request facets.
+        use compiler::live_transfer_plan::LiveTransferRepresentationPlan;
+        use tapscript::{demonstration_live_shape_set, static_transfer_leaf_set};
+
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        assert_eq!(plan.census().vocabulary_closed(), 1);
+        let closed: BTreeSet<_> = plan
+            .rows()
+            .iter()
+            .filter(|row| row.standing() == &LiveRowStanding::OperationVocabularyClosed)
+            .map(|row| row.row().name())
+            .collect();
+        assert_eq!(closed, BTreeSet::from(["mixed-operation-program"]));
+
+        // Not answered, and not evidence: a report reading this as a
+        // discharge would be reading a structural fact as a refusal.
+        assert!(!LiveRowStanding::OperationVocabularyClosed.is_answered());
+
+        assert_eq!(
+            plan.operation_plan().operation(),
+            architecture::OperationId::TransferLive,
+        );
+        let shapes = demonstration_live_shape_set();
+        for representation in [
+            LiveTransferRepresentationPlan::Explicit,
+            LiveTransferRepresentationPlan::PrivateCommitted,
+        ] {
+            let leaves = static_transfer_leaf_set(representation, &shapes);
+            assert_ne!(leaves.len(), 0, "the leaf census is empty");
+            for leaf in &leaves {
+                assert_eq!(leaf.representation(), representation);
+            }
+        }
     }
 
     #[test]
@@ -906,6 +975,7 @@ mod tests {
                 + census.native_run_required()
                 + census.infrastructure_blocked()
                 + census.report_layer()
+                + census.vocabulary_closed()
                 + census.experimental(),
             census.rows(),
         );

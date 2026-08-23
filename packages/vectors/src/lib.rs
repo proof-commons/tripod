@@ -66,8 +66,7 @@ pub use live_evidence::{
 };
 pub use live_fault_discharge::{
     FaultMutation, LiveFaultCase, LiveFaultRefusal, LiveFaultValidator, ObservedFaultRefusal,
-    UNDISCHARGED_FAULT_ROWS, UndischargedFaultReason, ValidatedLiveFaultEvidence,
-    discharge_live_faults, live_fault_cases, validate_live_fault,
+    ValidatedLiveFaultEvidence, discharge_live_faults, live_fault_cases, validate_live_fault,
 };
 pub use live_first_party::{
     LiveFirstPartyCase, LiveFirstPartyRefusal, LiveFirstPartyValidator, LiveOwnerScenario,
@@ -130,8 +129,9 @@ pub use live_resources::{
     research_bound_assignments, tree_admission,
 };
 pub use live_safety::{
-    LiveRelationStanding, LiveRowLink, LiveSafetyPolarity, LiveSafetyRow, LiveSafetySection,
-    LiveUnlinkedReason, required_safety_matrix, resolve_row, row_count, section_census,
+    LiveRelationStanding, LiveRowBoundary, LiveRowLink, LiveSafetyPolarity, LiveSafetyRow,
+    LiveSafetySection, LiveUnlinkedReason, required_safety_matrix, resolve_row, row_count,
+    section_census,
 };
 pub use materialize::{
     SponsorCoin, SponsorSigningTask, has_candidate_program, materialize_sponsored,

@@ -135,6 +135,15 @@ impl VectorPolarity {
 /// `(´[PLAN-rule:vectors:mutations]´)`.
 ///
 /// Positive classes mutate nothing and carry `None` instead.
+///
+/// # Two layers name a constructor, and they are not the same one
+///
+/// [`Self::StaticConstructorSchema`] disturbs the constructor *before*
+/// any program exists: the admissible leaf set a derivation is asked to
+/// accept. [`Self::LinkedConstructorProgram`] disturbs what linking
+/// produced from an already-derived constructor. A mutation of the first
+/// kind filed under the second reads as surgery on a linked tree, which
+/// is a different input offered to a different validator.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MutationLayer {
     /// A semantic fact of the request or the predecessor world.
@@ -145,6 +154,8 @@ pub enum MutationLayer {
     TargetTransaction,
     /// A witness item, signature, control block, or proof.
     WitnessProof,
+    /// The static constructor's admissible leaf schema, before linking.
+    StaticConstructorSchema,
     /// The linked constructor, an emitted program, or the taptree.
     LinkedConstructorProgram,
 }
@@ -156,27 +167,43 @@ impl MutationLayer {
         Self::AbiLayout,
         Self::TargetTransaction,
         Self::WitnessProof,
+        Self::StaticConstructorSchema,
         Self::LinkedConstructorProgram,
     ];
 }
 
 /// The layer a class expects to produce its verdict, per §1.5.
 ///
-/// §1.5 enumerates exactly these eleven and forbids inferring one from
-/// what a test hoped for. A class names its boundary in advance, and a
-/// run that refuses at a different one is a finding, not a pass.
+/// A class names its boundary in advance, and a run that refuses at a
+/// different one is a finding rather than a pass. §1.5 enumerates eleven
+/// layers and forbids inferring one from what a test hoped for.
 ///
 /// [`Self::RelayPolicyRejection`] is separate from the consensus
 /// boundaries because the target enforces several reviewed rules at
 /// relay policy alone `(´[PLAN-obs:upstream:eg-006]´)`. A vocabulary
 /// without that distinction would let a class claim of block validation
 /// what only a relaying node does.
+///
+/// # The twelfth member is this workspace's, and it names an erratum
+///
+/// [`Self::ConstructorDerivationRejection`] is not one of §1.5's eleven.
+/// Guide-13 §15.4's `wrong-constructor-schema` was transcribed against
+/// [`Self::LinkerRejection`], and the linker neither derives a leaf
+/// schema nor can be offered one: sealed constructor and bundle types
+/// mean the malformed input never reaches it. What owns that schema is
+/// tapscript's constructor derivation, one layer earlier than backend
+/// emission and two earlier than linking. Reusing
+/// [`Self::AbiConstructionRejection`] — whose wording covers "the ABI or
+/// the constructor" — would have hidden that ordering behind a label
+/// that also names a boundary three stages downstream.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum EvidenceBoundary {
     /// The typed semantic request is refused.
     SemanticRequestRejection,
     /// The compiler refuses to produce a plan.
     CompilerPlanRejection,
+    /// The static constructor derivation refuses the leaf schema.
+    ConstructorDerivationRejection,
     /// The backend refuses to emit.
     BackendEmissionRejection,
     /// The linker refuses to link.
@@ -198,10 +225,11 @@ pub enum EvidenceBoundary {
 }
 
 impl EvidenceBoundary {
-    /// Every boundary, in §1.5 order.
+    /// Every boundary, in §1.5 order with the twelfth in pipeline place.
     pub const ALL: &'static [Self] = &[
         Self::SemanticRequestRejection,
         Self::CompilerPlanRejection,
+        Self::ConstructorDerivationRejection,
         Self::BackendEmissionRejection,
         Self::LinkerRejection,
         Self::AbiConstructionRejection,
@@ -237,6 +265,7 @@ impl EvidenceBoundary {
             self,
             Self::SemanticRequestRejection
                 | Self::CompilerPlanRejection
+                | Self::ConstructorDerivationRejection
                 | Self::BackendEmissionRejection
                 | Self::LinkerRejection
                 | Self::AbiConstructionRejection
@@ -1419,7 +1448,19 @@ mod tests {
                 "{boundary:?} falls into no single §1.5 class"
             );
         }
-        assert_eq!(EvidenceBoundary::ALL.len(), 11, "§1.5 names eleven layers");
+        // Eleven from §1.5, plus the constructor-derivation layer this
+        // workspace minted for Guide-13 §15.4's erratum. The two counts
+        // are kept apart so that a member added for one guide cannot be
+        // read as a member the other guide named.
+        assert_eq!(EvidenceBoundary::ALL.len(), 12);
+        assert_eq!(
+            EvidenceBoundary::ALL
+                .iter()
+                .filter(|boundary| **boundary != EvidenceBoundary::ConstructorDerivationRejection)
+                .count(),
+            11,
+            "§1.5 names eleven layers",
+        );
     }
 
     #[test]
@@ -1434,13 +1475,23 @@ mod tests {
                 );
             }
         }
-        assert_eq!(MutationLayer::ALL.len(), 5);
+        assert_eq!(MutationLayer::ALL.len(), 6);
     }
 
     #[test]
     fn every_mutation_layer_and_every_boundary_is_actually_exercised() {
+        // This vocabulary serves two matrices. Guide-12 §18 is
+        // transcribed in this module; Guide-13 §15 is transcribed in
+        // `crate::live_safety`, and the two members minted for it are
+        // exercised there rather than here. Naming them is the point: a
+        // layer no matrix at all reaches would be unreachable, and this
+        // assertion says exactly which matrix reaches each one.
         let classes = all_classes();
+        let live_only = BTreeSet::from([MutationLayer::StaticConstructorSchema]);
         for layer in MutationLayer::ALL {
+            if live_only.contains(layer) {
+                continue;
+            }
             assert!(
                 classes.iter().any(|class| class.mutation() == Some(*layer)),
                 "no §18 class mutates at {layer:?}, so the layer is unreachable"
@@ -1450,8 +1501,10 @@ mod tests {
         // semantic-request and backend-emission boundaries. The first is
         // covered by §18.6's construction refusals, which the guide files
         // at the construction boundary; the second appears once, at
-        // §18.10's unreachable-carrier class. Recording which boundaries
-        // the matrix leaves empty is the point of this assertion.
+        // §18.10's unreachable-carrier class. The constructor-derivation
+        // boundary joins them here because §18 never names it: it was
+        // minted for Guide-13 §15.4. Recording which boundaries the
+        // matrix leaves empty is the point of this assertion.
         let unexercised: BTreeSet<EvidenceBoundary> = EvidenceBoundary::ALL
             .iter()
             .copied()
@@ -1459,8 +1512,11 @@ mod tests {
             .collect();
         assert_eq!(
             unexercised,
-            BTreeSet::from([EvidenceBoundary::SemanticRequestRejection]),
-            "the set of §1.5 boundaries §18 never reaches has changed"
+            BTreeSet::from([
+                EvidenceBoundary::SemanticRequestRejection,
+                EvidenceBoundary::ConstructorDerivationRejection,
+            ]),
+            "the set of boundaries §18 never reaches has changed"
         );
     }
 }

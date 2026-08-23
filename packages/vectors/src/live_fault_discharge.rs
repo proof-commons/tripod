@@ -3,9 +3,9 @@
 //! [`crate::live_first_party`] discharges §15.3's owner and signature
 //! faults, whose boundary is one entry point. The rest of the matrix's
 //! pre-target rows are spread across six more: the owner-key encoding
-//! closure, the linker's symbol census, the typed protocol value, the
-//! live-transfer finalization, and the offered-transaction check. This
-//! module meets §4.2 for those.
+//! closure, the static constructor derivation, the linker's symbol
+//! census, the typed protocol value, the live-transfer finalization, and
+//! the offered-transaction check. This module meets §4.2 for those.
 //!
 //! # The same argument as §15.3's, made six more times
 //!
@@ -17,15 +17,35 @@
 //! owning entry point twice — once honest, once with the case's one
 //! stated change — and concludes nothing if the control did not pass.
 //!
-//! # Three rows are not discharged, and each says why
+//! # Every row this census owes is discharged, and three stopped being
+//! owed
 //!
-//! §4.2's alternative is explicit: a requirement whose policy cannot be
-//! met is reported rather than left silently outstanding. Three rows have
-//! no canonical malformed input to offer their declared validator, and
-//! [`UndischargedFaultReason`] names which obstacle each one hits. Two of
-//! them are findings about this workspace rather than about the guide:
-//! §15.5's semantic-domain row has no owning validator on the
-//! live-transfer request path at all.
+//! Three rows stood outstanding before this wave, and none of them was
+//! closed by lowering a bar. §15.4's `wrong-constructor-schema` named
+//! the linker, and the leaf schema is the constructor derivation's: it
+//! is discharged below, at the boundary it actually has. §15.5's
+//! `amount-outside-semantic-domain` was recorded as a missing
+//! request-path validator and is not one — the owner ruled the ceiling
+//! blockchain-enforced, the same class as conservation — so its verdict
+//! is the target's and no first-party discharge is owed of it. §15.4's
+//! `mixed-operation-program` asked for an input the operation vocabulary
+//! admits no value of, which
+//! [`crate::live_evidence::LiveRowStanding::OperationVocabularyClosed`]
+//! records rather than counting as an unanswered refusal.
+//!
+//! # Nothing is silently outstanding, and no list is trusted to say so
+//!
+//! §4.2's alternative — report a requirement whose policy cannot be met
+//! rather than leave it outstanding — used to be carried by a list of
+//! rows and obstacles here. The list is empty now, and it is gone rather
+//! than kept empty: a vocabulary nobody carries is one a reader has to
+//! check is unused. The guarantee it stood for is enforced without it
+//! and unconditionally, in `crate::live_evidence`'s classification: a
+//! first-party row this census does not stage is filed under
+//! [`crate::live_evidence::FirstPartyGap::NoStagedCase`], which is
+//! counted, rendered, and stops a report calling itself complete. A row
+//! added to §15 tomorrow is outstanding and visible the day it is added
+//! rather than the day somebody remembers a list.
 //!
 //! # Every secret here is published
 //!
@@ -35,6 +55,7 @@
 //! signatures are opaque bytes that authorize nothing, for the reason
 //! [`crate::live_first_party`] states: none of these refusals reads one.
 
+use std::collections::BTreeSet;
 use std::sync::OnceLock;
 
 use compiler::live_transfer_plan::LiveTransferRepresentationPlan;
@@ -42,7 +63,11 @@ use linker::{
     LinkRefusal, LiveDefinitionCensus, LiveDefinitionOrigin, LiveLinkSymbol, LiveSymbolValue,
     OwnerParameter, collect_live_definitions,
 };
-use tapscript::{OwnerKey, OwnerKeyRejection, owner_key_encoding_closure};
+use tapscript::{
+    LiveConstructorRefusal, LiveTransferLeafRole, OwnerKey, OwnerKeyRejection,
+    demonstration_live_shape_set, derive_live_receipt_constructor, owner_key_encoding_closure,
+    static_transfer_leaf_set,
+};
 use target_elements::EncodingClass;
 use transaction::bytes::{AssetField, Outpoint, TargetTransaction, Txid, ValueField};
 use transaction::error::TransactionRefusal;
@@ -63,7 +88,7 @@ use crate::error::VectorError;
 use crate::live_capability::OracleFixtureValues;
 use crate::live_plan::{
     FIRST_SCALAR, PROTOCOL_ASSET, SECOND_SCALAR, demonstration_live_abi, live_deployment_for_asset,
-    owner_key, published_owner, relocatable_live_bundles, reviewed_target,
+    live_transfer_plan, owner_key, published_owner, relocatable_live_bundles, reviewed_target,
 };
 use crate::live_safety::{LiveSafetyRow, required_safety_matrix};
 
@@ -78,6 +103,15 @@ pub enum LiveFaultValidator {
     /// `tapscript::OwnerKey::new`, which authenticates an offered owner
     /// key against the reviewed contract's approved encoding closure.
     OwnerKeyEncoding,
+    /// `tapscript::derive_live_receipt_constructor`, the sole site that
+    /// validates a static constructor's admissible leaf schema.
+    ///
+    /// The boundary §15.4's `wrong-constructor-schema` row actually has.
+    /// It sits before backend emission and before linking, and the
+    /// linker cannot substitute for it: by the time a bundle exists, the
+    /// schema has already been checked and the sealed types admit no
+    /// unchecked one.
+    ConstructorDerivation,
     /// `linker::LiveDefinitionCensus::define`, the sole site that admits
     /// a symbol definition into a link.
     LiveSymbolDefinition,
@@ -99,6 +133,7 @@ impl LiveFaultValidator {
     pub const fn name(self) -> &'static str {
         match self {
             Self::OwnerKeyEncoding => "owner-key-encoding",
+            Self::ConstructorDerivation => "constructor-derivation",
             Self::LiveSymbolDefinition => "live-symbol-definition",
             Self::ProtocolValueDomain => "protocol-value-domain",
             Self::LiveTransferFinalization => "live-transfer-finalization",
@@ -117,6 +152,12 @@ impl LiveFaultValidator {
 pub enum FaultMutation {
     /// Offer a key encoding whose domain is not the key domain.
     OfferAKeyEncodingOutsideTheKeyDomain,
+    /// Place a leaf of the other representation in the leaf schema.
+    PlaceALeafOfTheOtherRepresentationInTheSchema,
+    /// Remove an admitted shape's coordinator leaf from the schema.
+    RemoveAnAdmittedShapesCoordinatorLeaf,
+    /// Add a leaf no admitted shape reaches to the schema.
+    AddALeafNoAdmittedShapeReaches,
     /// Define the protocol-asset symbol with a value of another kind.
     DefineTheAssetSymbolWithANonAssetValue,
     /// Define one symbol twice in one census.
@@ -148,15 +189,19 @@ pub enum FaultMutation {
 
 /// The refusal one owning validator returned.
 ///
-/// Three vocabularies, because the rows are spread across three crates
-/// and each owns its own. Collapsing them into one enum of this crate's
-/// would mean re-spelling somebody else's refusal, and a discharge would
-/// then be evidence about the re-spelling.
+/// Four vocabularies, because the rows are spread across three crates
+/// and tapscript owns two of them: the owner-key encoding closure and
+/// the constructor derivation refuse different things and say so in
+/// different words. Collapsing them into one enum of this crate's would
+/// mean re-spelling somebody else's refusal, and a discharge would then
+/// be evidence about the re-spelling.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum ObservedFaultRefusal {
     /// The owner-key encoding closure refused.
     OwnerKey(OwnerKeyRejection),
+    /// The static constructor derivation refused.
+    Constructor(LiveConstructorRefusal),
     /// The linker refused.
     Link(LinkRefusal),
     /// The transaction layer refused.
@@ -210,88 +255,6 @@ impl LiveFaultCase {
         self.expected_name
     }
 }
-
-/// Why one row of §15.4–§15.7 carries no staged case.
-///
-/// §4.2's alternative, as three specific obstacles rather than one
-/// shrug. None of them is "not done yet": each names something about the
-/// workspace that would have to change before a canonical malformed
-/// typed input could be offered to the row's own validator.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[non_exhaustive]
-pub enum UndischargedFaultReason {
-    /// No typed input can express the malformation at all.
-    ///
-    /// §15.7's `mixed-operation-program` asks for a transfer program
-    /// mixed with a burn or relabel one, and the linker's leaf-role
-    /// vocabulary has no member naming another operation: every role a
-    /// live bundle can carry is a live-transfer role. The mixture is
-    /// structurally inexpressible, which is a stronger answer than a
-    /// refusal would be — but it is not the refusal §4.2 asks for, and
-    /// recording it as one would be discharge by argument.
-    MalformedInputStructurallyInexpressible,
-    /// The owning validator sits at another pre-target boundary.
-    ///
-    /// §15.4's `wrong-constructor-schema` declares
-    /// [`crate::matrix::EvidenceBoundary::LinkerRejection`], and what
-    /// actually validates a constructor's leaf schema is the tapscript
-    /// constructor derivation, one boundary earlier. Both are
-    /// first-party, so the row is answerable — but by a validator other
-    /// than the one its own boundary names, and §4.2 requires the exact
-    /// owning one. The row's declared boundary and the workspace
-    /// disagree, and that is a finding rather than a discharge.
-    OwningValidatorIsAtAnotherPreTargetBoundary,
-    /// No validator on the live-transfer request path owns the class.
-    ///
-    /// §15.5's `amount-outside-semantic-domain` declares
-    /// [`crate::matrix::EvidenceBoundary::SemanticRequestRejection`].
-    /// The semantic domain is `realization::ProtocolAmount`'s, and the
-    /// transaction layer's `ProtocolValue` deliberately does not depend
-    /// on it — the type's own documentation says the two agree on what a
-    /// value is and disagree on who may say so. The consequence is
-    /// exact: an amount above the semantic ceiling passes the typed
-    /// request and reaches construction, where it is refused only if the
-    /// *sum* overflows the target's width or fails conservation, neither
-    /// of which is this class. Driving the realization type would be
-    /// driving a validator this request path never calls.
-    NoOwningValidatorOnTheRequestPath,
-}
-
-impl UndischargedFaultReason {
-    /// The reason's wire spelling.
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::MalformedInputStructurallyInexpressible => {
-                "malformed-input-structurally-inexpressible"
-            }
-            Self::OwningValidatorIsAtAnotherPreTargetBoundary => {
-                "owning-validator-is-at-another-pre-target-boundary"
-            }
-            Self::NoOwningValidatorOnTheRequestPath => "no-owning-validator-on-the-request-path",
-        }
-    }
-}
-
-/// The rows this module reports rather than discharges.
-///
-/// Three, each with the obstacle it hits. The list is public so the
-/// evidence plan reads it rather than re-deriving it, and so a later wave
-/// clearing one has to remove it here.
-pub const UNDISCHARGED_FAULT_ROWS: &[(&str, UndischargedFaultReason)] = &[
-    (
-        "wrong-constructor-schema",
-        UndischargedFaultReason::OwningValidatorIsAtAnotherPreTargetBoundary,
-    ),
-    (
-        "amount-outside-semantic-domain",
-        UndischargedFaultReason::NoOwningValidatorOnTheRequestPath,
-    ),
-    (
-        "mixed-operation-program",
-        UndischargedFaultReason::MalformedInputStructurallyInexpressible,
-    ),
-];
 
 /// Why one offered case does not discharge its row.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -397,12 +360,24 @@ macro_rules! transaction_is {
     };
 }
 
+/// Whether an observed refusal is one constructor variant.
+macro_rules! constructor_is {
+    ($pattern:pat) => {
+        |observed| matches!(observed, ObservedFaultRefusal::Constructor($pattern))
+    };
+}
+
 /// The complete census of first-party cases for §15.4–§15.7.
 ///
-/// Thirteen cases over five owning entry points. The three rows this
-/// census does not stage are [`UNDISCHARGED_FAULT_ROWS`], each with the
-/// obstacle it hits.
+/// Fourteen cases over six owning entry points, and no §15.4–§15.7 row
+/// whose verdict a first-party layer owns is missing from it.
 #[must_use]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one entry per §15 row, each with the reason it is filed at \
+              that validator; splitting the census would put the matrix's \
+              rows in two lists and let one of them be forgotten"
+)]
 pub fn live_fault_cases() -> Vec<LiveFaultCase> {
     use FaultMutation as M;
     use LiveFaultValidator as V;
@@ -423,6 +398,17 @@ pub fn live_fault_cases() -> Vec<LiveFaultCase> {
                 )
             },
             "NotAKeyEncoding",
+        ),
+        // §15.4's constructor-schema row, at the boundary the erratum
+        // moved it to. One canonical malformed leaf set, as §4.2 asks
+        // for; the other two malformations the schema admits are driven
+        // by this module's own focused test through the same staging.
+        case(
+            "wrong-constructor-schema",
+            V::ConstructorDerivation,
+            M::PlaceALeafOfTheOtherRepresentationInTheSchema,
+            constructor_is!(LiveConstructorRefusal::LeafOfAnotherRepresentation { .. }),
+            "LeafOfAnotherRepresentation",
         ),
         // §15.4's constructor and object rows the ABI owns.
         case(
@@ -797,6 +783,65 @@ fn stage(mutation: FaultMutation) -> Result<Staged, LiveFaultRefusal> {
                     .map(ObservedFaultRefusal::OwnerKey),
             })
         }
+        M::PlaceALeafOfTheOtherRepresentationInTheSchema
+        | M::RemoveAnAdmittedShapesCoordinatorLeaf
+        | M::AddALeafNoAdmittedShapeReaches => {
+            let target = reviewed_target()?;
+            let plan = live_transfer_plan()?;
+            let shapes = demonstration_live_shape_set();
+            let honest = static_transfer_leaf_set(Explicit, &shapes);
+            // One change to that exact set, and only one. The empty set
+            // is deliberately not among them: §7.5 classifies it as the
+            // key-path escape, and §15.4 has its own row for that.
+            let mut malformed = honest.clone();
+            match mutation {
+                M::PlaceALeafOfTheOtherRepresentationInTheSchema => {
+                    malformed.insert(LiveTransferLeafRole::Member {
+                        representation: Private,
+                        receipt_inputs: 2,
+                    });
+                }
+                M::RemoveAnAdmittedShapesCoordinatorLeaf => {
+                    let coordinator = *honest
+                        .iter()
+                        .find(|leaf| matches!(leaf, LiveTransferLeafRole::Coordinator { .. }))
+                        .ok_or(LiveFaultRefusal::ControlNotConstructible)?;
+                    malformed.remove(&coordinator);
+                }
+                M::AddALeafNoAdmittedShapeReaches => {
+                    // A receipt-input count no admitted shape reaches,
+                    // so the leaf serves nothing rather than serving the
+                    // wrong thing.
+                    malformed.insert(LiveTransferLeafRole::Member {
+                        representation: Explicit,
+                        receipt_inputs: u8::MAX,
+                    });
+                }
+                _ => return Err(LiveFaultRefusal::ControlNotConstructible),
+            }
+            if malformed == honest {
+                return Err(LiveFaultRefusal::ControlNotConstructible);
+            }
+            let derive = |leaves: BTreeSet<LiveTransferLeafRole>| -> Result<
+                Option<ObservedFaultRefusal>,
+                LiveFaultRefusal,
+            > {
+                Ok(derive_live_receipt_constructor(
+                    &target,
+                    &plan,
+                    Explicit,
+                    published_owner(&FIRST_SCALAR)?,
+                    shapes.clone(),
+                    leaves,
+                )
+                .err()
+                .map(ObservedFaultRefusal::Constructor))
+            };
+            Ok(Staged {
+                control: derive(honest)?,
+                malformed: derive(malformed)?,
+            })
+        }
         M::DefineTheAssetSymbolWithANonAssetValue | M::DefineOneSymbolTwice => {
             let (symbol, value) = honest_asset_definition()?;
             let origin = LiveDefinitionOrigin::DeploymentParameters;
@@ -1143,8 +1188,7 @@ fn run_every_fault_case() -> Result<Vec<ValidatedLiveFaultEvidence>, LiveFaultRe
 #[cfg(test)]
 mod tests {
     use super::{
-        LiveFaultCase, UNDISCHARGED_FAULT_ROWS, discharge_live_faults, live_fault_cases,
-        matrix_row, validate_live_fault,
+        LiveFaultCase, discharge_live_faults, live_fault_cases, matrix_row, validate_live_fault,
     };
     use std::collections::BTreeSet;
 
@@ -1161,34 +1205,44 @@ mod tests {
     }
 
     #[test]
-    fn the_census_stages_each_row_once_and_the_rest_are_reported() {
-        // The partition §4.2 asks for: every first-party row of
-        // §15.4–§15.7 either has a staged case or is named in
-        // `UNDISCHARGED_FAULT_ROWS` with the obstacle it hits. A row in
-        // neither list would be silently outstanding, which is exactly
-        // what §4.2's last sentence forbids.
+    fn the_census_stages_each_row_once_and_leaves_none_of_them_out() {
+        // §4.2's partition, and this census now takes the whole of its
+        // side of it: every §15.4–§15.7 row a first-party layer owns has
+        // a staged case, and each is staged once. A row missing from
+        // here would be silently outstanding, which is exactly what
+        // §4.2's last sentence forbids.
         let staged: BTreeSet<_> = live_fault_cases().iter().map(LiveFaultCase::row).collect();
         assert_eq!(
             staged.len(),
             live_fault_cases().len(),
             "a row is staged twice"
         );
-
-        let reported: BTreeSet<_> = UNDISCHARGED_FAULT_ROWS
-            .iter()
-            .map(|(row, _)| *row)
-            .collect();
-        assert_eq!(reported.len(), UNDISCHARGED_FAULT_ROWS.len());
-        assert_eq!(
-            staged.intersection(&reported).count(),
-            0,
-            "a row is both staged and reported outstanding",
-        );
-
-        // And every one of them is a real §15 row.
-        for row in staged.union(&reported) {
+        for row in &staged {
             assert_ne!(matrix_row(row), None, "{row} is not in the matrix");
         }
+
+        // The rows this census owes, recomputed from the matrix rather
+        // than listed: the pre-target rows of the four fault tables.
+        // §15.3's own table is `crate::live_first_party`'s, except for
+        // the one row whose validator lives in this vocabulary.
+        let owed: BTreeSet<_> = crate::live_safety::required_safety_matrix()
+            .into_iter()
+            .filter(|row| {
+                row.is_first_party()
+                    && !matches!(
+                        row.section(),
+                        crate::live_safety::LiveSafetySection::PositiveExplicit
+                            | crate::live_safety::LiveSafetySection::PositivePrivate
+                            | crate::live_safety::LiveSafetySection::OwnerSignatureFault
+                    )
+            })
+            .map(crate::live_safety::LiveSafetyRow::name)
+            .collect();
+        assert_eq!(
+            owed.difference(&staged).count(),
+            0,
+            "a §15.4–§15.7 first-party row has no staged case",
+        );
     }
 
     #[test]
@@ -1218,6 +1272,50 @@ mod tests {
             .iter()
             .map(super::ValidatedLiveFaultEvidence::validator)
             .collect();
-        assert_eq!(validators.len(), 5, "five owning entry points");
+        assert_eq!(validators.len(), 6, "six owning entry points");
+    }
+
+    #[test]
+    fn every_malformed_constructor_schema_is_refused_by_its_own_name() {
+        // §4.2 asks for one canonical malformed input and the census
+        // stages one. The leaf schema admits three malformations, and a
+        // discharge of one of them says nothing about the other two, so
+        // all three are driven here against the same accepted control.
+        //
+        // The empty leaf set is absent on purpose: the constructor
+        // refuses it as `KeyPathWouldBeTheOnlySpendingRoute`, which is
+        // §15.4's key-path-escape row rather than this one.
+        use super::{FaultMutation as M, ObservedFaultRefusal, stage};
+        use tapscript::LiveConstructorRefusal as R;
+
+        /// One malformation and the refusal class it must meet.
+        type SchemaCase = (M, fn(&R) -> bool);
+
+        let expected: &[SchemaCase] = &[
+            (
+                M::PlaceALeafOfTheOtherRepresentationInTheSchema,
+                |refusal| matches!(refusal, R::LeafOfAnotherRepresentation { .. }),
+            ),
+            (M::RemoveAnAdmittedShapesCoordinatorLeaf, |refusal| {
+                matches!(refusal, R::LeafSetIncomplete { .. })
+            }),
+            (M::AddALeafNoAdmittedShapeReaches, |refusal| {
+                matches!(refusal, R::LeafServesNoAdmittedShape { .. })
+            }),
+        ];
+
+        for (mutation, names_it) in expected {
+            let staged = stage(*mutation).expect("the schema stages");
+            assert_eq!(
+                staged.control, None,
+                "{mutation:?} refused the canonical leaf set too",
+            );
+            let ObservedFaultRefusal::Constructor(refusal) =
+                staged.malformed.expect("the malformed schema is refused")
+            else {
+                panic!("{mutation:?} was refused by another vocabulary");
+            };
+            assert!(names_it(&refusal), "{mutation:?} met {refusal:?}");
+        }
     }
 }

@@ -238,7 +238,9 @@ impl CandidateLiveTransferTransaction {
 ///
 /// # Errors
 ///
-/// Every §12.5 form-exactness refusal; the three §12.1 pre-sort
+/// [`TransactionRefusal::RepresentationNotLinked`] when the ABI carries
+/// no constructor for the plan the request selected; every §12.5
+/// form-exactness refusal; the three §12.1 pre-sort
 /// rejections that reach construction
 /// ([`TransactionRefusal::SponsorOverlapsReceiptFamily`],
 /// [`TransactionRefusal::MissingPublicReceiptView`], and the duplicate
@@ -264,6 +266,24 @@ pub fn finalize_live_transfer(
     sponsor: Option<&dyn SponsorCapability>,
     private: Option<&dyn PrivateValueCapability>,
 ) -> Result<LiveFinalization, TransactionRefusal> {
+    // Before §12.6's ten items: the ABI has to carry the plan the
+    // request selected. A linked candidate legitimately carries one
+    // representation — an explicit-only link is a link, not a defect —
+    // and the request selects its plan without ever seeing the ABI, so
+    // the two can disagree about which plans exist.
+    //
+    // Refusing here is about accuracy rather than safety. Without it the
+    // absent plan is met four stages later, where receipt recognition
+    // searches the constructors of a plan that was never linked, finds
+    // none, and answers `ReceiptInputIsNotALiveReceipt` — a true
+    // sentence about a receipt that is fine, naming the wrong cause.
+    // The owner-specific refusal below stays for the case it is about:
+    // the plan is linked and one destination owner has no constructor
+    // in it.
+    if !abi.representations().contains(&request.representation()) {
+        return Err(TransactionRefusal::RepresentationNotLinked);
+    }
+
     // Stage 1: §12.5's equivalence, both directions, before anything is
     // built from either side of it.
     let offer = check_form_exactness(request, sponsor)?;

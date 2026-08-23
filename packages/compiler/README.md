@@ -228,6 +228,24 @@ intersection would silently drop every capability that only one retained
 alternative needs — precisely the weakening a target assessment exists to
 prevent.
 
+### `live_transfer_plan` — the live-transfer target-operation projection (Guide-13 §8)
+
+`plan_live_transfer_target_operation` projects one operation out of a bound
+input and returns a `ValidatedLiveTransferOperationPlan`: the class closure,
+the owner family, the value projection, the admitted representation plans and
+their per-representation coverage, the candidate lifecycle, and the sponsor
+case vocabulary.
+
+The projected operation is fixed to `TransferLive` and is not a parameter. An
+analyzed program may carry several operation factors; this boundary commits to
+exactly one before any target program is planned, which is what makes a
+program mixing operations something no later layer is ever handed rather than
+something a later layer refuses.
+
+Burn and redeem appear in the plan only as outstanding lifecycle exits. No
+constructor is derivable from a plan whose lifecycle is complete, and no
+pretend leaf is emitted for an exit that is not implemented.
+
 ### Crate root
 
 - `CompileError` — re-exported from `error`; see below.

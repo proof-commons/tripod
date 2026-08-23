@@ -51,7 +51,13 @@ use crate::live_safety::LiveSafetySection;
 /// Stated in the bytes so a reader never has to infer which revision a
 /// file is: a report whose field set changed under a reader that assumed
 /// the old one would be read wrong rather than refused.
-pub const LIVE_SAFETY_REPORT_SCHEMA: u32 = 1;
+///
+/// Revision 2 adds the `operation_vocabulary_closed` census line and the
+/// `operation-vocabulary-closed` outstanding spelling. A revision-1
+/// reader summing the census lines it knows would find them short of the
+/// row count, which is exactly the misreading a stated schema exists to
+/// turn into a refusal.
+pub const LIVE_SAFETY_REPORT_SCHEMA: u32 = 2;
 
 /// What a safety report is, said in the bytes.
 ///
@@ -360,12 +366,14 @@ pub enum LiveSafetyReportRefusal {
     /// The report's representation census is not the plan's.
     RepresentationCensusDiffers,
     /// The report's row census is not the one recomputed from the plan.
-    CensusDiffers {
-        /// What the report said.
-        reported: LiveEvidenceCensus,
-        /// What the plan recomputes to.
-        recomputed: LiveEvidenceCensus,
-    },
+    ///
+    /// Both censuses are boxed, as [`crate::live_resource_report`] boxes
+    /// its own pair and for the same reason: each is eight counts wide
+    /// and a refusal carrying two of them inline would make every
+    /// `Result` in this module pay for the one arm the happy path never
+    /// takes. The first member is what the report said and the second is
+    /// what the plan recomputes to.
+    CensusDiffers(Box<(LiveEvidenceCensus, LiveEvidenceCensus)>),
     /// The report claims a completeness its own census does not support.
     CompletenessDiffers {
         /// What the report said.
@@ -583,10 +591,10 @@ pub fn validate_live_safety_report(
 
     let recomputed = plan.census();
     if report.census != recomputed {
-        return Err(LiveSafetyReportRefusal::CensusDiffers {
-            reported: report.census,
+        return Err(LiveSafetyReportRefusal::CensusDiffers(Box::new((
+            report.census,
             recomputed,
-        });
+        ))));
     }
 
     let completeness = completeness_of(recomputed);
@@ -676,6 +684,11 @@ pub fn render_live_safety_report(validated: &ValidatedLiveTransferSafetyReport) 
         report.census.infrastructure_blocked()
     );
     let _ = writeln!(text, "report_layer {}", report.census.report_layer());
+    let _ = writeln!(
+        text,
+        "operation_vocabulary_closed {}",
+        report.census.vocabulary_closed()
+    );
     let _ = writeln!(text, "experimental {}", report.census.experimental());
 
     for (blocker, rows) in &validated.blockers {
@@ -715,6 +728,7 @@ const fn standing_name(standing: &LiveRowStanding) -> &'static str {
         LiveRowStanding::NativeRunRequired(_) => "native-run-required",
         LiveRowStanding::InfrastructureBlocked(_) => "infrastructure-blocked",
         LiveRowStanding::ReportLayerAnswerable => "report-layer-answerable",
+        LiveRowStanding::OperationVocabularyClosed => "operation-vocabulary-closed",
         LiveRowStanding::Experimental => "experimental",
     }
 }
