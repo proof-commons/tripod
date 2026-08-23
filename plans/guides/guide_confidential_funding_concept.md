@@ -95,16 +95,16 @@ The project owner selects the custody model before wire fields, process boundari
 
 ## Second charter decision: determinism · `rule:guide-ctf:determinism-decision`
 
-The current ceremony has a proven field-identical rerun. Stock blinding uses fresh blinder and nonce randomness, so it cannot satisfy that contract. The owner must choose one of two explicit reproducibility contracts:
+The current ceremony has a proven field-identical rerun. Stock blinding uses fresh blinder and nonce randomness, so it cannot satisfy that contract. Two explicit reproducibility contracts exist:
 
-- **Preserve byte identity.** Derive each public-fixture blinder, nonce input, proof input, order, and retry counter deterministically; equal inputs produce equal funding and successor bytes and report `MaterializedBytes`.
-- **Revise reproducibility.** Permit wallet or adapter randomness and compare semantic fixtures, retained per-run bytes, verified openings, and target projections; explicitly revise the ceremony, evidence schema, and field-identity claims.
+- **Byte identity.** Derive each public-fixture blinder, nonce input, proof input, order, and retry counter deterministically; equal inputs produce equal funding and successor bytes and report `MaterializedBytes`.
+- **Recorded randomness.** Permit wallet or adapter randomness and compare semantic fixtures, retained per-run bytes, verified openings, and target projections; the ceremony and evidence schema state that contract explicitly.
 
-**Recommendation.** Preserve byte identity. This keeps the proven ceremony claim, makes parity fixtures reviewable, and avoids retrying nondeterministic RPC output.
+**Ruling: ACCEPTED — both contracts, elegantly supported.** Neither contract is the revision of the other: the reproducibility contract is a typed, per-ceremony selection, and both are first-class. One evidence schema carries the selected contract as a typed field rather than two parallel schemas; every validated report names the contract its run was under; a report under one contract can never claim the other's guarantees, and no run mixes contracts silently. Byte identity is the reference contract — it is what the deterministic central public fixtures exist to serve, it satisfies the mandatory deterministic-public-fixture-openings row, and it is the contract the proven server rerun already demonstrates. Recorded randomness is the contract under which wallet-held or adapter-held randomness is admissible — the external-wallet and adapter-handle construction models become reachable under it without any weakening of the byte-identity lane — and its comparisons are semantic-fixture equality, retained bytes, verified openings, and target projections. Elegance is a design obligation on the execution guide: the two contracts share the ceremony, the wire protocol, and the report vocabulary, differing only where the contract genuinely differs, and supporting one must never distort the other.
 
-The recipe is domain-separated by role and case. It derives all but one output blinder and solves the final blinder from transaction-wide balance. Degenerate scalars, identity commitments, proof failure, and unavailable parity cause typed refusal or bounded deterministic search, never hidden randomness.
+The byte-identity recipe is domain-separated by role and case. It derives all but one output blinder and solves the final blinder from transaction-wide balance. Degenerate scalars, identity commitments, proof failure, and unavailable parity cause typed refusal or bounded deterministic search, never hidden randomness.
 
-Revised reproducibility must precede wire work and name every retired byte-identity assertion; implementation may not downgrade silently.
+The recorded-randomness contract must be designed with the wire work, not bolted on after: the schema field, the retention rules for per-run bytes, and the verified-opening comparisons enter the execution guide alongside the deterministic recipe.
 
 ---
 
@@ -320,8 +320,8 @@ The result remains candidate-only; a secret-bearing selection stops at ADR-015 r
 
 - the custody ruling is RECORDED: deterministic central public fixtures, with serialized or archival asset forms bound by ADR-022 while plain-Rust-typed consumption is not (see `rule:guide-ctf:custody-decision`); the wave carries it forward, not reopens it;
 - opening owner, lifetime, process boundary, lookup authority, diagnostics, and ADR-015 disposition, elaborated within the accepted model;
-- project-owner ruling preserving byte identity or explicitly revising reproducibility;
-- reviewed fixture domain separators, derivation inputs, bounded retry rules, and determinism level;
+- the reproducibility ruling is RECORDED: both contracts first-class — byte identity as the reference contract, recorded randomness as a typed per-ceremony selection, one shared schema naming the contract per run (see `rule:guide-ctf:determinism-decision`); the wave elaborates both, not chooses;
+- reviewed fixture domain separators, derivation inputs, bounded retry rules, and the typed contract field's semantics for both contracts;
 - canonical-request evidence option selected with its disclosure and retention consequences;
 - affected package and dependency boundary recorded without implementation by implication.
 
