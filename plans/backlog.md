@@ -123,7 +123,7 @@ No new digest or digest-bearing field enters merely because an object is
 important.
 
 A proposed identity must satisfy
-(`req:identity:admission-record`) and name:
+(`[ADR021-req:identity:admission-record]`) and name:
 
 - the complete typed object or exact bytes;
 - owner and producer;
@@ -491,7 +491,7 @@ credentials, or production authority.
 | `I1-006` | BLOCKED | Release root; waits for the release package |
 
 The identity freeze is lifted only under
-(`req:identity:admission-record`). Phase 2 still mints
+(`[ADR021-req:identity:admission-record]`). Phase 2 still mints
 no public realization or compiler digest without a real consumer.
 
 ---
@@ -1382,7 +1382,7 @@ A new task states:
 - dependency impact.
 
 A new digest additionally satisfies
-(`req:identity:admission-record`).
+(`[ADR021-req:identity:admission-record]`).
 
 ### 13.2 Splitting work · `rule:backlog:split`
 
