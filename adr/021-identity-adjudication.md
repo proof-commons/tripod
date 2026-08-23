@@ -1,100 +1,26 @@
 # ADR-021: Adoption of the Identity Adjudication Procedure
 
-**Status:** Decided and implemented for current identity policy; the
-evidence-envelope, release-manifest, and release-validator surfaces the
-draft describes stay unbuilt and activate with their named consumers
-**Scope:** Every first-party semantic identity, provenance identity,
-generated and release artifact, evidence report, and deployment profile
-of this repository
-**Adopts:** the archived draft at
-[plans/drafts/identity-adjudication.md](../plans/drafts/identity-adjudication.md)
-as the normative statement of the identity discipline
-**Amends:** the identity interpretation of reproducibility and generated
-artifacts under (`[ADR011-rule:toolchain:reproducibility]`) and
-(`[ADR011-rule:toolchain:generated]`)
-**Retires:** ADR-016, deleted from the tree; its text remains in Git
-history
-**Does not establish:** authenticity, correctness, independence, or
-deployment readiness merely from matching hashes
+**Status:** Decided and adopted; implemented for current identity policy, while the evidence-envelope, release-manifest, and release-validator surfaces remain unbuilt and activate with their named consumers.
+**Document:** This ADR is the normative third-edition text of _An Adjudication Procedure for Identities, Digests, and Evidence_, formerly the archived adopted-source draft.
+**Provenance:** Externally authored in its third edition; normative here by adoption rather than by authorship.
+**Scope:** Every first-party semantic identity, provenance identity, generated and release artifact, evidence report, and deployment profile of this repository.
+**Amends:** The identity interpretation of reproducibility and generated artifacts under (`[ADR011-rule:toolchain:reproducibility]`) and (`[ADR011-rule:toolchain:generated]`).
+**Retires:** ADR-016, whose text remains in Git history.
+**Does not establish:** Authenticity, correctness, independence, or deployment readiness merely from matching hashes.
 
 ---
 
-## Context · `sec:identity:context`
+## Amendments · `dec:identity:adoption`
 
-The repository has adjudicated digests under ADR-016 since the identity
-policy was first written. An externally authored generic statement of
-the same discipline was accepted, audited, corrected by its author, and
-archived verbatim under `plans/drafts/`. The gap census at
-[plans/reference/draft-gap-census.md](../plans/reference/draft-gap-census.md)
-read every clause of that draft against ADR-016 and the identity
-register and found the repository already satisfies the discipline
-except where the draft generalizes a repository-specific mechanism into
-adoption data, or asks for a surface no consumer has yet needed.
+The normative text prescribes identity properties but deliberately leaves constructions to recipe records. This repository adds one local recipe convention, records its current holdings and migration, declares the standing audit that holds the tree to the accounting this procedure asks for, and states the implementation surfaces that are not yet active; no normative clause is changed.
 
-Two statements of one discipline is one fact with two owners. The
-divergences between them are then invisible, and a reader cannot tell
-which text binds. ADR-016 also answered the census question the draft
-raised against it — whether the prescribed hash construction stays in
-the record or moves into recipe records — only by continuing to
-prescribe. The user ruled on 2026-08-19 that ADR-016 is deleted and the
-draft promoted, with a single local-environment convention carrying
-what deletion would otherwise lose.
+### Local recipe convention · `rule:identity:recipes`
 
----
-
-## Decision · `dec:identity:adoption`
-
-The repository adopts the archived draft as the normative statement of
-the identity adjudication procedure. ADR-016 is retired and deleted.
-
-**Rule (Normative source)** · `rule:identity:normative-source`
-
-The draft text is the discipline. This record does not restate it, and
-no other document in the tree may restate it: a clause is cited, never
-copied. The benefit question, the adjudication walk, the assurance
-classes, the property and mechanism tables, the admission and stop
-records, the reductions, the procedural rules, and the implementation
-gate are the draft's, and are cited at the draft with the `PLAN` prefix.
-
-This record carries only what adoption of a generic text into this
-repository must add: the local environment the draft leaves to its
-adopting corpus, and the divergences that adoption records rather than
-hides.
-
-The draft is archived under `plans/`, so it is owned by the planning
-tree. Its authority here comes from this record, not from its location:
-where the draft and a planning document disagree, the draft binds.
-
----
-
-## Local environment · `rule:identity:recipes`
-
-The draft prescribes no hash construction. It fixes the properties an
-identity must deliver and reduces every construction question to them
-(`[PLAN-red:identity:scheme-to-properties]`), leaving the scheme a fact
-of the recipe record (`[PLAN-def:identity:recipe]`). This repository's
-recipe records therefore carry the construction, and this is the one
-local-environment convention adoption adds.
-
-**The convention.** Every first-party semantic identity of this
-repository is computed as
+The normative text prescribes no hash construction and reduces every construction question to the required properties (`red:identity:scheme-to-properties`). In this repository, every first-party semantic identity is computed as
 
 \[I_X = H(D_X \parallel V_X \parallel C(P_X(X)))\]
 
-where \(D_X\) is a domain separator naming the role, \(V_X\) identifies
-the recipe, \(P_X\) is the semantic projection, \(C\) is canonical
-serialization, and \(H\) is SHA-256. The domain separator folds in the
-recipe identifier, so the identifier is a hashed input rather than an
-envelope annotation. A new first-party semantic identity admitted under
-(`[PLAN-req:identity:admission-record]`) takes this construction unless
-its own recipe record states and justifies another; the draft's property
-table (`[PLAN-tab:identity:class-properties]`) remains the test the
-construction has to pass, and this convention is the answer that
-happens to pass it everywhere in this tree today.
-
-**Recipes in force.** Each is a code-side register in
-`packages/architecture/src/`, published beside its value wherever the
-value is published.
+where \(D_X\) is a domain separator naming the role, \(V_X\) identifies the recipe, \(P_X\) is the semantic projection, \(C\) is canonical serialization, and \(H\) is SHA-256. The domain separator folds in the recipe identifier, so the identifier is a hashed input rather than an envelope annotation. A newly admitted first-party semantic identity takes this construction unless its recipe record states and justifies another; the normative property table remains the test every construction must pass.
 
 | Recipe identifier | Subject | Domain separator |
 |---|---|---|
@@ -103,22 +29,11 @@ value is published.
 | `sha256-anchor-set-v2` | Anchor-set hash | `tripod layer-0 anchor set v2` |
 | `sha256-canonical-json-deployment-v1` | Deployment-profile hash | `tripod deployment profile JSON v1` |
 
-Retired identifiers are retained beside each in
-`RETIRED_SEMANTIC_HASH_ALGORITHMS`, `RETIRED_BEHAVIOURAL_HASH_ALGORITHMS`,
-and `RETIRED_ANCHOR_SET_HASH_ALGORITHMS`, so no name is ever reused.
+Each recipe is a code-side register in `packages/architecture/src/`, published beside its value wherever that value is published. Retired identifiers remain recorded beside the active identifiers so no recipe name is reused. Per-class admission and stop records live in [the identity register](../plans/registers/identities.md).
 
-The per-class admission and stop records for every digest the tree
-computes live in [the identity register](../plans/registers/identities.md),
-which is where an admission is read, not here.
+### Current identities · `tab:identity:current`
 
----
-
-## Current identities · `tab:identity:current`
-
-The standing of each identity the repository holds today. This is
-adoption data, not policy the draft states: the draft's illustrative
-inventory (`[PLAN-ex:identity:inventory]`) is generic, and these are
-this repository's actual holdings and the constraints on them.
+The normative illustrative inventory is generic. This repository's actual holdings and constraints are:
 
 | Identity | Purpose | Standing |
 |---|---|---|
@@ -132,20 +47,11 @@ this repository's actual holdings and the constraints on them.
 | Deployment-profile hash | Future aggregate deployment-profile identity | Retain as pre-release infrastructure; it gives no release assurance until a real consumer validates it |
 | Raw artifact/report hash fields in profile schema 2 | Provisional references | Must receive owned recipes and typed report/artifact references before production release |
 
-Document provenance identities must not enter realization, compiler,
-target, bundle, ABI, or protocol identities, and deployment calibration
-must bind the exact final bundle and transaction ABI before production
-release — both being this repository's naming of what
-(`[PLAN-rule:identity:provenance-containment]`) requires generically.
+Document provenance identities do not enter realization, compiler, target, bundle, ABI, or protocol identities. Deployment calibration must bind the exact final bundle and transaction ABI before production release.
 
----
+### Identity chain · `rem:identity:chain`
 
-## Identity chain · `rem:identity:chain`
-
-The draft's running illustration of an immediate-dependency graph
-(`[PLAN-model:identity:objects]`) uses generic names. This repository's
-chain, along the immediate edges of
-(`[PLAN-rule:identity:immediate-edges]`), is:
+The normative immediate-dependency graph uses generic names. This repository's named path is:
 
 ```text
 ArchitectureSemanticId
@@ -158,79 +64,22 @@ ArchitectureSemanticId
     → ReleaseManifestId
 ```
 
-Only the first is built. The rest are the named positions later work
-fills, recorded here so that a future identity arrives at a place the
-graph already has rather than inventing one.
+Only the first position is built. The remaining positions are names for later work, not admitted identities.
 
----
+### Recorded separation migration · `rule:identity:separation-migration`
 
-## Recorded separation migration · `rule:identity:separation-migration`
+Every first-party semantic identity is domain-separated. The two recipes that predated that form — the architecture semantic hash and the anchor-set hash — migrated under the normative recipe-permanence rule, superseding the earlier grandfathered exception; no exception remains.
 
-Every first-party semantic identity is domain-separated. The two
-recipes that once predated that form — the architecture semantic hash
-and the Layer-0 anchor-set hash — were migrated together under
-(`[PLAN-rule:identity:recipe-permanence]`), and the earlier
-grandfathered exception is superseded. No exception remains.
-
-**Old recipes.** The architecture semantic hash was SHA-256 over the
-canonical architecture JSON body, algorithm `sha256-canonical-json-v2`,
-with the identifier carried beside the digest in the envelope rather
-than inside the hashed input. The Layer-0 anchor-set hash was SHA-256
-over the newline-joined sorted distinct anchor names, publishing no
-identifier at all; it is named `sha256-anchor-set-v1` retroactively so
-this record can refer to it.
-
-**New recipes.** Each prefixes its existing hashed input with a domain
-separator folding in the recipe identifier, exactly as the behavioural
-and deployment-profile recipes do: `sha256-canonical-json-v3` under
-`tripod canonical manifest JSON v3`, and `sha256-anchor-set-v2`
-under `tripod layer-0 anchor set v2`. The anchor-set
-identifier is a code-side register, not a new manifest field:
-publishing it would add a hashed body field and force a schema bump,
-which this migration does not make.
-
-**Reason.** The adopted adjudication discipline requires domain
-separation for every semantic identity, and the user ruling of
-2026-08-16 folded the migration into the same re-pin cycle as DI-002
-rather than deferring it to a separate consumer-driven event.
-
-**Meaning or measurement.** Measurement only. No projection, canonical
-encoding, digest algorithm, included field, or exclusion rule changed.
-Both identities identify exactly what they identified before.
-
-**Old and new identities.**
+The architecture recipe changed from `sha256-canonical-json-v2`, whose identifier was outside the hashed input, to `sha256-canonical-json-v3` under `tripod canonical manifest JSON v3`. The anchor-set recipe changed from the retroactively named `sha256-anchor-set-v1`, which published no identifier, to `sha256-anchor-set-v2` under `tripod layer-0 anchor set v2`.
 
 | Identity | Old value | New value |
 |---|---|---|
 | Architecture semantic hash | `4039b936…dbb196ec` | `59d102a9…c66b2a1c` |
 | Anchor-set hash | `1b7dff61…f13fa1417` | `766e7d5f…e0d5b258` |
 
-The behavioural hash did not move: its recipe and its body are
-untouched, and the versioning gate keys on it, so this migration is not
-a version change — consistent with the closing sentence of
-(`[PLAN-rule:identity:recipe-permanence]`).
+The migration changed measurement only: no projection, canonical encoding, digest algorithm, included field, or exclusion rule changed. Every consumer moved in one change set, with no dual-acceptance window, and retired identifiers remain recorded. DI-006 later moved the anchor set and the semantic hash because of label renames; the table records the separation migration's own old/new pair rather than current pins.
 
-**Consumer transition.** Every consumer moved in one change set: the
-typed pin, both generated manifests, the realization document's
-masthead and attached appendix, and the synthetic release-profile
-identity, which moved because the deployment profile binds the
-architecture semantic hash as a hashed input while its own recipe
-stayed `sha256-canonical-json-deployment-v1`. No dual-acceptance window
-exists and none is needed; the retired identifiers are recorded in
-`RETIRED_SEMANTIC_HASH_ALGORITHMS` and
-`RETIRED_ANCHOR_SET_HASH_ALGORITHMS` so neither name is ever reused.
-
-Two identities recorded here as new values have since moved again, both
-times for a label rename rather than for anything about identity:
-DI-006 moved the anchor set, and the
-semantic hash followed it. DI-007 moved neither. The
-values in the table above are the migration's own old and new pair and
-are not the current pins; the current pins are the typed constants and
-the realization masthead, which are the published surfaces.
-
----
-
-## Hash-citation audit · `rule:identity:hash-citation-audit`
+### Hash-citation audit · `rule:identity:hash-citation-audit`
 
 A procedure that adjudicates digests is incomplete without an instrument that keeps its tree honest about them, so this repository carries one. Every hexadecimal value in the tracked tree must be described by a rule in [the families table](../lint/hash-citation-families.tsv); the check is `check-hash-citations`, a member of the lint suite that asks git for the complete tracked set on every build. A rule names the value's group — this repository's own material, or another project's — what the value measures, and the program that writes it. A value no rule describes fails the check, and that is the check's only failure mode.
 
@@ -248,53 +97,291 @@ The table's one-way growth is unchanged and now carries more weight, because a r
 
 The table grows one way. Rules are added when a value needs one and are not removed when the tree stops carrying that value, because a rule is a standing claim about a kind of value rather than an inventory of today's occurrences. A rule that claims nothing is reported and never enforced. The consequence is the property worth having: the audit can only ever fail as a value nothing describes — never as a value that used to be allowed and is not now — so a failure always points at something newly unaccounted for rather than at a policy that moved underneath the tree.
 
----
+### Implementation standing · `rem:identity:divergences`
 
-## Recorded divergences · `rem:identity:divergences`
+The adjudication walk is not enforced as a standing procedure for the next proposal. DI-004 walked every digest the tree computes and recorded each outcome, and the audit above now holds the one part of that walk a program can settle — that no value enters without a named producer and a stated referent — but the judgements that make the walk a walk remain textual: whether a digest earns its place (`crit:identity:benefit`), which assurance class it takes, and what the deciding branch was when the outcome was to admit nothing (`req:identity:stop-record`).
 
-Adoption records where the repository does not yet meet the draft, so
-that absence is a documented state rather than a silence.
+No evidence envelope, release manifest, or release validator exists. The normative evidence, release, producer/consumer-duty, and delegated-validation rules are unimplemented rather than divergent; each activates with its named consumer, and no such consumer exists.
 
-**The adjudication walk is not a standing procedure.** The draft makes (`[PLAN-alg:identity:adjudication]`) the required path for every proposal, with the benefit criterion (`[PLAN-crit:identity:benefit]`) as its test. DI-004 walked every digest the tree computes and recorded the outcomes, so the census is complete. The audit above holds the one part of that walk a program can settle — that no value enters without a named producer and a stated referent — and what is absent is the rest: whether a digest earns its place, which assurance class it takes, and what the deciding branch was when the outcome was to admit nothing. Those are review judgements rather than checked ones, and the backlog carries them textually.
+The well-founded identity-graph rule is vacuous today because only the first position in the chain is built. It becomes a live obligation when the second link is admitted.
 
-**The release surfaces do not exist.** No evidence envelope, no release
-manifest, and no release validator is built, so
-(`[PLAN-case:identity:evidence]`), (`[PLAN-case:identity:release]`),
-(`[PLAN-rule:identity:duties]`), and (`[PLAN-rule:identity:delegation]`)
-are unimplemented. They are unimplemented rather than divergent: each
-activates with its named consumer, and no consumer exists.
-
-**The well-founded-graph rule is vacuous.** Exactly one identity in the
-chain above is built, so (`[PLAN-rule:identity:well-founded-graph]`)
-holds trivially and has never been tested. It becomes a real obligation
-with the second link.
-
-No other clause of the draft is unmet, and no clause is amended: the
-local convention above adds a construction where the draft deliberately
-leaves one open, which is adoption data and not an amendment.
+No other clause is unmet. The recipe convention above supplies adoption data where the normative text intentionally leaves the construction open.
 
 ---
 
-## Adoption gate · `gate:identity:adoption`
+## An Adjudication Procedure for Identities, Digests, and Evidence
 
-Adoption holds when:
+This document lays down, self-containedly, a discipline for digests and identities in a corpus of validated typed objects, generated artifacts, evidence reports, deployment profiles, and releases. It is organized around one question — _is there a benefit from hashing this?_ — because a digest is justified only by a decision it makes possible or cheaper. One Formulation states the question, one Procedure walks every proposal through it, and a Case analysis receives the outcome, including the documented stop in which the right answer is no digest at all. The discipline prescribes no hash construction anywhere: it specifies the properties an identity must deliver, each for the benefit it provides, and leaves every scheme to the recipe record. It is generic: nothing here names a particular repository, tool, or algorithm. This document is self-contained and cites only itself; where an adopting corpus uses it beside other disciplines, their alignment is fixed by the corpus's recorded adoption decisions, not by this text. Acceptance of this document presupposes acceptance of no other document: where another discipline's artifact is consumed — a labeling convention, a set of reserved kinds, a format's declared environment classes — this discipline consumes the artifact as adoption data and asks nothing of its provenance.
 
-- the draft is archived, cited as normative here, and restated nowhere;
-- ADR-016 is absent from the tree, and no live citation or
-  cross-reference to it survives. Dated records that describe the
-  repository as it stood — the guides, the reviews under
-  `plans/reviews/`, the closed history, and the gap census — keep
-  naming it, which is what a dated record is for;
-- the local recipe convention names every recipe in force, and each
-  named identifier matches the constant the owning code publishes;
-- the current-identities table matches the identity register's census,
-  and the register remains where an admission or a stop is read;
-- every divergence above is either discharged or still recorded;
-- the corpus-wide label check passes in continuous integration, no
-  citation to a retired owner dangling.
+The document practices the labeling discipline it assumes: it is a source in the corpus it governs. The label at each heading or environment head is that environment's mint; a parenthesized label in running text is a same-owner citation; material in fenced blocks and double-backtick spans is displayed without participating. The document title is publication metadata, not an environment head; it mints nothing and participates in nothing. Every label here has area `identity`, each environment's kind names its genre, and environments carry no numbers: the mint at each head is the sole name of its environment, and every internal reference is a citation. A recipe _warrants_ a property in the ordinary sense of vouching for it; the word bears no relation to any labeling discipline's warrants.
 
-Every item holds as of this record. The draft's own implementation gate
-(`[PLAN-gate:identity:implementation]`) is discharged from the draft
-and this record's adoption data together, exactly as its last bullet
-requires; the three divergences above are the bullets it does not yet
-clear.
+### The question · `sec:identity:question`
+
+**Formulation (The benefit question)** · `formul:identity:benefit-question`
+
+Given an object or artifact a contributor proposes to hash: is there a benefit from hashing it — which decision becomes possible or cheaper, and for which consumer — and only then, which class of identity should carry it? This document fixes the procedure that answers both questions for every typed object, generated artifact, evidence report, deployment profile, and release of an adopting corpus. Matching hashes establish none of authenticity, correctness, independence, or deployment readiness (`warn:identity:non-claims`).
+
+**Model (Objects and boundaries)** · `model:identity:objects`
+
+The corpus holds authoritative typed objects; artifacts rendered from them; evidence reports about them; profiles aggregating requirements; and releases aggregating everything. As a running illustration, one adopting corpus's identities form a graph of immediate dependencies — the names below are that corpus's, not this document's — of which one path runs:
+
+```text
+ModelId → PlanId → BuildId → BundleId → InterfaceId → ProfileId → ReleaseId
+```
+
+An arrow points from dependency to dependent: the right side binds the left as an immediate identity dependency (`rule:identity:immediate-edges`), with fan-in where an object aggregates several — a release binds its profile, its required evidence reports, and its distributed artifacts alike. The boundaries that matter to identity are package, process, cache, publication, distribution, deployment, and signature. An identity earns its place only at such a boundary; inside one owner, the typed value itself is the comparison.
+
+**Definition (Digest; recipe)** · `def:identity:recipe`
+
+A digest is the output of a fixed function over a fixed presentation of a value, and it evidences equality with respect to one recipe, under that recipe's collision assumptions — nothing else. Exact equality belongs to direct typed comparison and exact byte comparison; a digest buys their effect across a boundary at the price of a collision assumption, and the assurance class states whether that price is acceptable. A recipe names its projection (which content enters), its canonicalization (how that content is presented), its primitive (the digest function), its domain separator (which role it serves), and its recipe identifier (under which consumers recompute and migrations occur). A corpus's chosen constructions are named in recipe records and prescribed nowhere else.
+
+**Table (Identity properties and their benefits)** · `tab:identity:properties`
+
+The following are the properties an identity can be required to deliver, each demanded not for its own sake but for the benefit it provides:
+
+| Property | Benefit it provides | Failure without it |
+| --- | --- | --- |
+| Deterministic over meaning | consumers compare identities instead of re-deriving objects; cache and reuse become mechanical | equal objects hash apart; the digest decides nothing |
+| Complete over semantic content | a change of meaning always changes the recipe input, and matching digests then fail except with the recipe's residual collision probability; staleness is detectable | silent semantic drift under a stable identity |
+| Free of incidental content | re-serialization, reordering, and rebuilds change nothing; presentation invariance holds | false staleness; consumers learn to ignore the identity |
+| Domain-separated by role | an identity cannot be replayed as a claim of another kind; evidence roles stay distinct | a digest quoted in one role masquerades in another |
+| Recipe-identified | consumers know exactly how to recompute; recipes change only by explicit migration | ambiguous verification; silent redefinition |
+| Collision- and second-preimage-resistant | a matched identity computationally pins the object the decision was about | substitution and cache poisoning under a matching digest |
+| Recomputable by any consumer | verification without trusting the producer; recomputation is the check | the digest is decoration over a producer's claim |
+
+Any construction delivering the required properties qualifies; which one a corpus chose is a fact of the recipe record (`red:identity:scheme-to-properties`).
+
+**Table (Assurance classes and required properties)** · `tab:identity:class-properties`
+
+Each admitted identity belongs to one assurance class, and each class requires a stated subset of the properties of (`tab:identity:properties`): a cell reads _required_, optionally with the scope or mechanism over which the property is required; _not applicable_; or a condition, stated in the cell:
+
+| Property | Semantic | Artifact | Provenance | Evidence | Release |
+| --- | --- | --- | --- | --- | --- |
+| Deterministic | required | required, over exact bytes | required | required | required |
+| Complete | over the semantic projection | over the exact bytes | over the named revision, tree, or input set | over the full typed report subject | over the entire canonical manifest |
+| Free of incidentals | required | not applicable beyond path and role metadata | recipe-defined | required | required |
+| Domain-separated | required | bound through the manifest role | required | required — load-bearing | required — load-bearing |
+| Recipe-identified | required | required — an algorithm alone underspecifies projection, framing, and normalization | required | required | required |
+| Collision-resistant | required | required | required where release-bound; per threat model otherwise | required | required — carries the signing benefit |
+| Recomputable | required | required | required where release-bound | required | required |
+
+A provenance identity that is only a locator — an internal name for a revision or input set, never release-bound — carries the weaker conditional row; release reachability forces the stronger.
+
+**Table (Assurance mechanisms)** · `tab:identity:mechanisms`
+
+Distinct mechanisms establish distinct things, and none substitutes for another:
+
+| Mechanism | Establishes | Does not establish |
+| --- | --- | --- |
+| Type | Representable shape | Cross-field validity |
+| Validator | Declared constraints and invariants | Authenticity or implementation correctness |
+| Test, proof, or execution | Evidence for a scoped claim | Identity or universal correctness |
+| Semantic identity | Computational equality of a canonical typed projection | Validity or authenticity by itself |
+| Artifact digest | Computational equality of exact bytes | Meaning or semantic correctness |
+| Provenance identity | A named source revision, tree, or input set | Correctness of that source |
+| Evidence-report identity | One typed report applies to named subjects | Honesty or implementation independence |
+| Signature | A named authority approved an identity | Correctness of the signed object |
+| Reproducible build | Independent builds produced equal bytes | An uncompromised toolchain |
+
+A hash never replaces the owning type, the validator, or the evidence requirement.
+
+**Example (Illustrative inventory)** · `ex:identity:inventory`
+
+For illustration only, a typical corpus might already hold the following. The Class column carries only the five assurance classes of (`sec:identity:cases`); an em dash marks an entry that has none, because no digest exists or because none has yet been admitted (`req:identity:admission-record`):
+
+| Identity | Class | Standing |
+| --- | --- | --- |
+| Revision and tree identifiers | provenance | retained; never a protocol identity |
+| Publication metadata identifiers | provenance | retained; publication-only, contained by (`rule:identity:provenance-containment`) |
+| An upstream anchor-set hash | semantic | retained |
+| A model semantic hash | semantic | retained |
+| A behavioural hash gating major versions | semantic | retained; not propagated as a runtime identity |
+| Generated-file exact comparisons | — | freshness by exact bytes under (`case:identity:artifact`); no digest |
+| A profile hash awaiting its consumer | — | pre-admission; no assurance until a named consumer decides from it |
+| Raw hash fields in a profile schema | — | pre-admission; must gain owned recipes and typed references before release |
+
+### The procedure · `sec:identity:procedure`
+
+**Procedure (Adjudication)** · `alg:identity:adjudication`
+
+Every proposal walks one tree:
+
+```text
+proposed digest
+    ↓
+typed and validated?                  ── no → validate before any
+    ↓ yes                                     identity is admitted
+which decision would equality change?
+    none                              ── → no identity: stop
+    ↓ a named consumer's
+is that equality already given on the path —
+reviewed at this boundary · compared anyhow · parent-assured?
+    yes                               ── → no identity: stop
+    ↓ no
+record the admission facts
+    ↓
+dispatch on class:
+    semantic | artifact | provenance | evidence | release
+
+artifact branch:  canonical renderer → artifact bytes
+                  → exact freshness comparison
+                  → byte digest only when independently
+                    distributed or release-bound
+
+evidence branch:  execution → typed report payload
+                  → validated report envelope → report identity
+                  → deployment profile or release manifest
+```
+
+The benefit nodes are decided by (`crit:identity:benefit`); an accepted walk records (`req:identity:admission-record`) before it dispatches; the two stopping branches terminate in (`case:identity:no-identity`).
+
+**Criterion (Benefit)** · `crit:identity:benefit`
+
+A digest benefits the corpus if and only if a named consumer's decision becomes possible or cheaper through mechanical equality that nothing already on that path provides — where what a path can already provide is fixed by (`tab:identity:mechanisms`). Equality a standing review supersedes is no benefit at the review's own boundary: the review judges content, the digest only equality, and the weaker check cannot add to the stronger. Across a later boundary of (`model:identity:objects`) — cache, publication, distribution, deployment, signature — a digest may still bind what was reviewed to what arrives, and that binding is a distinct benefit the review does not provide. Equality a direct typed comparison already performs is no benefit, and equality the parent identity already carries is no benefit.
+
+**Requirement (Admission record)** · `req:identity:admission-record`
+
+Admission is per identity class — one recipe, one role, one consumer-decision pattern; individual identity values flow through their class's record and are never admitted one by one. An accepted class records: the complete typed object or exact artifact bytes identified; the package owning the recipe; the producer; the present consumer, arriving in the same change set or within a recorded, deadline-bound migration — "the same implementation series" means exactly this; that consumer's exact accept, reject, cache, or reuse decision; the assurance class — semantic, artifact, provenance, evidence, or release, as fixed by (`sec:identity:cases`); the recipe, by identifier (`def:identity:recipe`), warranting every property its assurance class requires (`tab:identity:class-properties`); the exact stale conditions; the migration behavior; and the explicit non-claims. Fields are validated as parts of their owning object and are never independently hashed merely to detect changes.
+
+**Requirement (Stop record)** · `req:identity:stop-record`
+
+A no-identity outcome is recorded: the proposal, the deciding branch of (`alg:identity:adjudication`), the date, and any condition under which the walk is retaken. The absence of a digest is then the corpus's documented state, and the same proposal is not re-adjudicated from nothing.
+
+### Case analysis · `sec:identity:cases`
+
+**Case (Semantic identity)** · `case:identity:semantic`
+
+One meaning with several possible encodings, or consumption across a package, process, cache, or publication boundary. The identity is computed over the canonical projection of the validated object under its recipe (`def:identity:recipe`) and delivers the full semantic column of (`tab:identity:class-properties`). No construction is prescribed; the recipe records the one in use.
+
+**Case (Artifact digest)** · `case:identity:artifact`
+
+Exact bytes, independently distributed or release-bound. The required properties are the artifact column of (`tab:identity:class-properties`), and a release-manifest entry binds artifact role, canonical relative path, schema or media type, recipe identifier, and digest. An artifact digest does not become a semantic identity unless one reviewed canonical byte encoding is explicitly defined as the semantic object. Committed generated publications take the freshness sub-branch: exact expected-byte comparison decides them, and no digest is added — an implementation may realize exact comparison through a transient internal hash, which is an optimization, not an identity, and never persists or publishes.
+
+**Case (Provenance identity)** · `case:identity:provenance`
+
+A named source: a revision, a tree, an exact canonical input set. The provenance column of (`tab:identity:class-properties`) carries it, locator-grade or release-bound as its reach requires. It names material, claims nothing about the material's correctness, and stays separate from semantic and artifact identity.
+
+**Case (Evidence identity)** · `case:identity:evidence`
+
+A validated typed report envelope binding at least report role, report schema, exact subject identities, producer or implementation identity, configuration where relevant, result status, and canonical payload or payload digest. The evidence column of (`tab:identity:class-properties`) applies in full, and domain separation by role is the load-bearing property: it is what keeps one report from being quoted as another kind of claim. A raw digest without role and subject binding is not evidence identity.
+
+**Case (Release identity)** · `case:identity:release`
+
+The canonical release manifest aggregating the deployment profile, required evidence references, distributed artifacts with their byte digests, release policy, and explicit source revision and date. The release column of (`tab:identity:class-properties`) applies in full; domain separation and collision resistance carry the signing benefit. If signing is introduced, the release-manifest identity is the signing root, and internal objects are not signed separately unless they hold an independently defined authority boundary of their own, which then carries its own typed role and verification policy.
+
+**Case (No identity)** · `case:identity:no-identity`
+
+The affirmative stop, as first-class as any admission. No digest is created when direct typed comparison suffices; when the parent identity already provides the assurance; when the value crosses no package, process, cache, publication, distribution, deployment, or signature boundary of (`model:identity:objects`) and has no independent lifecycle of its own; when importance is the only motive, importance being no consumer; when the value is ephemeral local evidence, such as ordinary CI logs nobody consumes as release evidence; or when the purpose never required byte-equal provenance, because every change is reviewed at that boundary and the review judges more than equality. Failing (`crit:identity:benefit`) is a result, not an omission: the walk ends here deliberately, the stop is recorded under (`req:identity:stop-record`), and the absence of a digest is then the corpus's documented state.
+
+### Reductions · `sec:identity:reductions`
+
+**Reduction (Scheme to properties)** · `red:identity:scheme-to-properties`
+
+Every construction question reduces to the property table. A scheme is adequate exactly when it delivers the properties of (`tab:identity:properties`) that its class requires; which adequate scheme a corpus chose is a fact of its recipe record; and the discipline prescribes none. Schemes therefore migrate freely under (`rule:identity:recipe-permanence`) while every benefit the properties buy stands still.
+
+**Reduction (Mesh to chain)** · `red:identity:mesh-to-chain`
+
+All-to-all identity binding reduces to immediate typed edges. Binding every object to every transitive dependency duplicates what the chain already carries and erects a quadratic consistency mesh; binding each object to its immediate dependencies alone (`rule:identity:immediate-edges`) preserves transitive assurance by composition — the composition grounded by (`rule:identity:well-founded-graph`) — and gives each edge one owner. Human-readable manifests may display a whole chain; authoritative validation follows the edges.
+
+**Reduction (Field hashes to object validation)** · `red:identity:fields-to-object`
+
+Hashing a field reduces to validating its object. Fields have no independent lifecycle, cross-field validity is a property of the whole, and a field digest evidences nothing the owning validator does not already establish (`tab:identity:mechanisms`).
+
+### Rules of the procedure · `sec:identity:rules`
+
+**Rule (Validation before admission)** · `rule:identity:admission-order`
+
+No semantic, evidence, or release identity — a deployment profile's identity falling under whichever of these its class record names — is admitted or published before the owning validator has run. Bytes may be hashed earlier — for transport, lookup, streaming, or content addressing — but such a value has no assurance standing until the applicable validation succeeds (`tab:identity:mechanisms`): a self-consistent invalid object rehashes perfectly, and a digest downstream of no validation binds garbage exactly.
+
+**Rule (No incidental content)** · `rule:identity:no-incidentals`
+
+No graph-library index, source order, path, line number, solver variable number, matrix position, traversal order, thread schedule, temporary path, or floating-point working value enters a semantic identity. This enforces the free-of-incidentals property of (`tab:identity:properties`) at the source: processing accidents must not masquerade as meaning.
+
+**Rule (Recipe permanence)** · `rule:identity:recipe-permanence`
+
+A published recipe (`def:identity:recipe`) is never silently redefined. Changing its projection — the fields it includes and the rules by which it excludes — its canonicalization, its primitive, or its domain separator creates a new recipe identifier. A migration records old and new recipes, the reason, whether meaning changed or only measurement, old and new identities where applicable, and the consumer transition policy. A recipe migration does not itself decide semantic versioning; the owning versioning rule does.
+
+**Rule (Producer and consumer duties)** · `rule:identity:duties`
+
+The owning producer validates the complete typed object (`rule:identity:admission-order`), derives its canonical projection, computes its identity, and publishes object and recipe identifier together wherever external consumption exists. An immediate consumer parses external bytes into a typed value where necessary, rejects unknown fields and unsupported schemas, runs the owner's validator, recomputes the identity, compares the required immediate dependency identity (`rule:identity:immediate-edges`), and only then consumes the typed value.
+
+**Rule (Immediate edges)** · `rule:identity:immediate-edges`
+
+An independently consumed parent binds only its immediate identity dependencies, and a child receives an identity of its own only when it has an independent lifecycle; otherwise the parent includes the canonical typed child value directly.
+
+**Rule (Well-founded graph)** · `rule:identity:well-founded-graph`
+
+The authoritative identity-dependency graph is finite and acyclic: every release-reachable identity terminates, along the immediate edges of (`rule:identity:immediate-edges`), in directly validated typed values or exact artifact bytes. A cycle at the model level is broken in the identity projection before any identity on it is admitted.
+
+**Rule (Delegated release validation)** · `rule:identity:delegation`
+
+The release validator traverses the typed identity graph (`rule:identity:well-founded-graph`), delegates to package-owned validators (`rule:identity:duties`), verifies immediate edges (`rule:identity:immediate-edges`), required evidence roles, and artifact bytes, and reimplements nothing.
+
+**Rule (Provenance containment)** · `rule:identity:provenance-containment`
+
+Publication provenance identifiers never enter semantic, interface, or protocol identity. Before production release, deployment calibration binds the exact final bundle and interface, and evidence fields bind typed report roles and subjects (`case:identity:evidence`) rather than bare digest arrays.
+
+### Myths · `sec:identity:myths`
+
+**Myth (Hashes validate)** · `myth:identity:hashes-validate`
+
+Corrected: admission awaits validation, always (`rule:identity:admission-order`). A hash of an invalid object is a fast way to remember the mistake.
+
+**Myth (A digest authenticates)** · `myth:identity:digest-authenticates`
+
+Corrected: an unkeyed digest evidences equality under one recipe, never authenticity. Authenticity requires an independently trusted expected identity, or a signature over the accepted release root (`case:identity:release`) — nothing smaller, except an object holding an independently defined authority boundary of its own.
+
+**Myth (Inequality is independence)** · `myth:identity:inequality-independence`
+
+Corrected: different bytes do not prove independent implementation or judgment. Independence is a reviewed provenance claim recording implementation identity, shared code and dependencies, operator, and execution environment where relevant. Equal report hashes are not rejected to manufacture an appearance of independence; distinct report roles are distinguished by typed envelopes and domain separation (`case:identity:evidence`).
+
+**Myth (Important values deserve hashes)** · `myth:identity:importance`
+
+Corrected: importance is not a consumer (`crit:identity:benefit`). A value's weight argues for validation and review — the mechanisms that judge content — not for another digest.
+
+**Myth (Reviewed objects still need digests)** · `myth:identity:reviewed-anyhow`
+
+Corrected: review judges content, a digest only equality. Under a standing review, at the review's own decision point, the digest adds a maintenance surface, not assurance, and fails (`crit:identity:benefit`) on its own terms. Binding the reviewed object across a later boundary of (`model:identity:objects`) is a different proposal, walked separately.
+
+**Myth (The scheme is the security)** · `myth:identity:scheme-worship`
+
+Corrected: benefits flow from the properties a recipe warrants, not from any particular concatenation (`red:identity:scheme-to-properties`). A familiar-looking scheme without the properties is false comfort; an unfamiliar one with them is sound.
+
+**Myth (One hash can rule them all)** · `myth:identity:one-hash`
+
+Corrected: semantic meaning, artifact bytes, provenance, evidence, and release aggregation have different stale conditions and different consumers (`sec:identity:cases`); one undifferentiated hash serves none of them.
+
+**Myth (More digests, more assurance)** · `myth:identity:more-is-safer`
+
+Corrected: each digest is a standing obligation — a recipe, stale conditions, a migration path, a consumer (`req:identity:admission-record`). Proliferation multiplies obligations while assurance stays where it always was: with types, validators, and evidence.
+
+**Warning (Non-claims)** · `warn:identity:non-claims`
+
+A matching identity evidences equality under one recipe (`def:identity:recipe`), computationally and nothing else: no logical identity, no authenticity, no correctness, no independence, no deployment readiness. Every admission record states its own non-claims.
+
+### Moral · `sec:identity:moral`
+
+**Moral (Types validate; hashes bind)** · `moral:identity:types-validate-hashes-bind`
+
+One aggregate identity per independently meaningful object; one byte digest per independently distributed artifact; one root for future authentication; typed evidence references instead of ambiguous raw hashes; immediate rather than all-to-all binding (`rule:identity:immediate-edges`); no field-level proliferation. Types and validators remain the correctness mechanism; hashes remain the comparison and binding mechanism; and no digest without a decision it changes (`crit:identity:benefit`) — the documented stop (`case:identity:no-identity`) being as sound an outcome as any admission.
+
+### Implementation gate · `sec:identity:gate`
+
+**Gate (Implementation)** · `gate:identity:implementation`
+
+Implementation is blocked until all of the following hold:
+
+- every existing digest is classified by object, owner, producer, consumer, decision, assurance class, stale condition, migration, and non-claims;
+- no new digest enters without passing (`crit:identity:benefit`) and recording its class under (`req:identity:admission-record`);
+- every no-identity outcome is recorded with its deciding branch and revisit condition (`req:identity:stop-record`);
+- every admitted recipe demonstrably delivers the properties its assurance class requires (`tab:identity:class-properties`), and no scheme is prescribed outside a recipe record;
+- semantic, artifact, provenance, evidence, and release identities use distinct typed roles;
+- committed generated publications keep exact freshness comparisons and acquire no redundant digests (`case:identity:artifact`);
+- identity graphs bind immediate dependencies only (`rule:identity:immediate-edges`), and the graph is acyclic, every release-reachable identity terminating in validated values or exact bytes (`rule:identity:well-founded-graph`);
+- local handles and other incidental content remain absent from semantic identity (`rule:identity:no-incidentals`);
+- evidence reports bind typed roles and exact subjects (`case:identity:evidence`);
+- deployment calibration binds the final bundle and interface before production (`rule:identity:provenance-containment`);
+- producers and consumers discharge their duties (`rule:identity:duties`), and release validation delegates to package-owned validators (`rule:identity:delegation`);
+- any future signature authenticates the release-manifest identity, or the identity of an object holding a declared independent authority boundary (`case:identity:release`);
+- the gate is dischargeable from this document and the corpus's adoption data alone; no check consults another document;
+- the corpus's full checks pass and leave no uncommitted generated changes.
