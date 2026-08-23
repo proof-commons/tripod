@@ -117,8 +117,9 @@ pub use live_report::{
 };
 pub use live_resource_report::{
     CandidateBoundsResult, LIVE_RESOURCE_REPORT_SCHEMA, LIVE_RESOURCE_SCHEMA_ID,
-    LiveResourceDiagnostics, LiveResourceReportRefusal, LiveResourceReportRole, ResourceNonClaim,
-    ResourceStudyCensus, ValidatedLiveTransferResourceReport, assemble_live_resource_report,
+    LiveResourceDiagnostics, LiveResourceReportRefusal, LiveResourceReportRole,
+    LiveTransferResourceReport, ResourceNonClaim, ResourceStudyCensus,
+    ValidatedLiveTransferResourceReport, assemble_live_resource_report,
     render_live_resource_report, resource_census, validate_live_resource_report,
 };
 pub use live_resources::{
