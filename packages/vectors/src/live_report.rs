@@ -51,7 +51,13 @@ use crate::live_safety::LiveSafetySection;
 /// Stated in the bytes so a reader never has to infer which revision a
 /// file is: a report whose field set changed under a reader that assumed
 /// the old one would be read wrong rather than refused.
-pub const LIVE_SAFETY_REPORT_SCHEMA: u32 = 1;
+///
+/// Revision 2 adds the `operation_vocabulary_closed` census line and the
+/// `operation-vocabulary-closed` outstanding spelling. A revision-1
+/// reader summing the census lines it knows would find them short of the
+/// row count, which is exactly the misreading a stated schema exists to
+/// turn into a refusal.
+pub const LIVE_SAFETY_REPORT_SCHEMA: u32 = 2;
 
 /// What a safety report is, said in the bytes.
 ///
@@ -676,6 +682,11 @@ pub fn render_live_safety_report(validated: &ValidatedLiveTransferSafetyReport) 
         report.census.infrastructure_blocked()
     );
     let _ = writeln!(text, "report_layer {}", report.census.report_layer());
+    let _ = writeln!(
+        text,
+        "operation_vocabulary_closed {}",
+        report.census.vocabulary_closed()
+    );
     let _ = writeln!(text, "experimental {}", report.census.experimental());
 
     for (blocker, rows) in &validated.blockers {
@@ -715,6 +726,7 @@ const fn standing_name(standing: &LiveRowStanding) -> &'static str {
         LiveRowStanding::NativeRunRequired(_) => "native-run-required",
         LiveRowStanding::InfrastructureBlocked(_) => "infrastructure-blocked",
         LiveRowStanding::ReportLayerAnswerable => "report-layer-answerable",
+        LiveRowStanding::OperationVocabularyClosed => "operation-vocabulary-closed",
         LiveRowStanding::Experimental => "experimental",
     }
 }

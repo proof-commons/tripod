@@ -222,6 +222,56 @@ impl PartialEq for LiveRelationStanding {
 
 impl Eq for LiveRelationStanding {}
 
+/// Where one §15 row's verdict comes from.
+///
+/// Two members, because §15 names one class no layer answers. Most rows
+/// expect a layer to accept or refuse, and [`Self::Layer`] carries which.
+///
+/// # Why a row may name no layer at all
+///
+/// §4.2 discharges a negative row with a canonical malformed typed input
+/// offered to its owning validator. That presupposes the input exists.
+/// §15.4's `mixed-operation-program` asks for a program mixing this
+/// operation with another, and the architecture admits no value naming
+/// one: compiler projection fixes the operation to `TransferLive` before
+/// a program is planned, the leaf-role vocabulary has none but transfer
+/// roles, the constructor and the linker consume only that role type,
+/// and the request cannot select a program at all. There is nothing to
+/// offer any layer, so no layer produces a verdict.
+///
+/// Declaring a refusal boundary anyway would be worse than saying
+/// nothing: a row that named the linker could be "passed" by a linker
+/// refusal for an unrelated reason, and the layer named would never have
+/// been asked the row's question.
+///
+/// # The second member is deliberately specific
+///
+/// It names *this* closure rather than typed inexpressibility in
+/// general. A general standing would need a proof contract identifying
+/// the exact closed type, every construction route, and every package
+/// crossing — and without one, "inexpressible" could launder a missing
+/// validator into evidence. A row closed by some other vocabulary gets
+/// its own member and its own argument.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
+pub enum LiveRowBoundary {
+    /// One §1.11 layer produces the verdict.
+    Layer(EvidenceBoundary),
+    /// No layer does: the operation vocabulary admits no such input.
+    OperationVocabularyClosure,
+}
+
+impl LiveRowBoundary {
+    /// The layer that produces the verdict, where one does.
+    #[must_use]
+    pub const fn layer(self) -> Option<EvidenceBoundary> {
+        match self {
+            Self::Layer(boundary) => Some(boundary),
+            Self::OperationVocabularyClosure => None,
+        }
+    }
+}
+
 /// One row of the §15 required safety matrix.
 ///
 /// The name is the guide's own wording normalized to an identifier, so a
@@ -233,7 +283,7 @@ pub struct LiveSafetyRow {
     name: &'static str,
     polarity: LiveSafetyPolarity,
     mutation: Option<MutationLayer>,
-    boundary: EvidenceBoundary,
+    boundary: LiveRowBoundary,
     relation: LiveRelationStanding,
     collateral: Option<CollateralPolicy>,
 }
@@ -259,16 +309,27 @@ impl LiveSafetyRow {
 
     /// The layer the row's mutation is applied at, if it mutates.
     ///
-    /// `None` exactly for a positive row, which mutates nothing.
+    /// `None` for a positive row, which mutates nothing, and for a row
+    /// whose fault no typed input expresses, which has no change to
+    /// apply anywhere.
     #[must_use]
     pub const fn mutation(&self) -> Option<MutationLayer> {
         self.mutation
     }
 
-    /// The §1.11 layer the row expects to produce its verdict.
+    /// Where the row expects its verdict to come from.
     #[must_use]
-    pub const fn boundary(&self) -> EvidenceBoundary {
+    pub const fn boundary(&self) -> LiveRowBoundary {
         self.boundary
+    }
+
+    /// The §1.11 layer the row expects to produce its verdict.
+    ///
+    /// `None` for the row no layer answers, which is the whole reason
+    /// [`LiveRowBoundary`] exists.
+    #[must_use]
+    pub const fn refusing_layer(&self) -> Option<EvidenceBoundary> {
+        self.boundary.layer()
     }
 
     /// The relation the row intends to violate, or the reason there is
@@ -296,7 +357,12 @@ impl LiveSafetyRow {
     /// run and by nothing else (§4.2, §4.3).
     #[must_use]
     pub const fn is_first_party(&self) -> bool {
-        self.boundary.is_pre_target()
+        match self.boundary {
+            LiveRowBoundary::Layer(boundary) => boundary.is_pre_target(),
+            // No layer is asked, so no first-party validator owns a
+            // refusal §4.2 could ask for.
+            LiveRowBoundary::OperationVocabularyClosure => false,
+        }
     }
 }
 
@@ -371,7 +437,7 @@ const fn positive(section: LiveSafetySection, name: &'static str) -> LiveSafetyR
         name,
         polarity: P::Positive,
         mutation: None,
-        boundary: B::AcceptedTransaction,
+        boundary: LiveRowBoundary::Layer(B::AcceptedTransaction),
         relation: LiveRelationStanding::EveryPublishedRelation,
         collateral: None,
     }
@@ -393,7 +459,7 @@ const fn linked(
         name,
         polarity: P::Negative,
         mutation: Some(mutation),
-        boundary,
+        boundary: LiveRowBoundary::Layer(boundary),
         relation: LiveRelationStanding::Declared {
             relation,
             class,
@@ -421,7 +487,30 @@ const fn unlinked(
         name,
         polarity: P::Negative,
         mutation: Some(mutation),
-        boundary,
+        boundary: LiveRowBoundary::Layer(boundary),
+        relation: LiveRelationStanding::Unlinked(reason),
+        collateral: None,
+    }
+}
+
+/// One negative row no layer answers, because no input expresses it.
+///
+/// It carries no mutation layer for the same reason it carries no
+/// boundary: there is no change to apply. What establishes the closure
+/// is the architecture rather than a staged refusal, and
+/// [`crate::live_evidence`] records it as a standing of its own rather
+/// than as evidence.
+const fn vocabulary_closure(
+    section: LiveSafetySection,
+    name: &'static str,
+    reason: LiveUnlinkedReason,
+) -> LiveSafetyRow {
+    LiveSafetyRow {
+        section,
+        name,
+        polarity: P::Negative,
+        mutation: None,
+        boundary: LiveRowBoundary::OperationVocabularyClosure,
         relation: LiveRelationStanding::Unlinked(reason),
         collateral: None,
     }
@@ -817,11 +906,18 @@ pub const OBJECT_FAULTS: &[LiveSafetyRow] = &[
         L::StaticConstructorSchema,
         B::ConstructorDerivationRejection,
     ),
-    pre_target(
+    // The row no layer answers. A program mixing this operation with
+    // another is not a malformed value this architecture can hold: the
+    // compiler's projection fixes the operation before any program is
+    // planned, and the leaf-role vocabulary the constructor and the
+    // linker consume names transfer roles only. Foreign-operation
+    // *effects* on a target are a different question, and §15.5's
+    // issuance and destruction rows and §15.7's root and
+    // specialized-event rows own it.
+    vocabulary_closure(
         S::ObjectFault,
         "mixed-operation-program",
-        L::LinkedConstructorProgram,
-        B::LinkerRejection,
+        LiveUnlinkedReason::NoSemanticMutationClass,
     ),
     linked(
         S::ObjectFault,
@@ -931,11 +1027,22 @@ pub const VALUE_FAULTS: &[LiveSafetyRow] = &[
         L::SemanticFact,
         B::SemanticRequestRejection,
     ),
-    pre_target(
+    // Owner ruling: the ceiling is blockchain-enforced, the same class as
+    // conservation. The row arrived declaring a semantic-request
+    // rejection, which read as a missing request-path validator; it is
+    // not one. The protocol domain is `realization::ProtocolAmount`'s
+    // exclusive limit of two to the fifty-first, and the reviewed target
+    // refuses a stated amount above twenty-one million coins in
+    // `CheckTransaction` — before any script runs. Every amount outside
+    // the protocol domain is therefore above the target's own bound, and
+    // the target is what refuses it. `ProtocolValue` deliberately gains
+    // no new check: the ruling changes who enforces the ceiling, not
+    // whether anything has observed the enforcement.
+    no_class(
         S::ValueFault,
         "amount-outside-semantic-domain",
         L::SemanticFact,
-        B::SemanticRequestRejection,
+        B::ConsensusRejectionBeforeScript,
     ),
     // §6.2 consumes every arithmetic success flag immediately, so an
     // overflowing total is refused where the sum is computed rather than
@@ -1563,19 +1670,30 @@ mod tests {
             );
             if positive {
                 assert_eq!(row.mutation(), None, "{row} is positive and mutates");
-                assert_eq!(row.boundary(), EvidenceBoundary::AcceptedTransaction);
+                assert_eq!(
+                    row.refusing_layer(),
+                    Some(EvidenceBoundary::AcceptedTransaction)
+                );
                 assert_eq!(
                     row.relation(),
                     &LiveRelationStanding::EveryPublishedRelation
                 );
                 assert_eq!(row.collateral(), None);
             } else {
-                assert_ne!(
-                    row.mutation(),
-                    None,
-                    "{row} is negative and mutates nothing"
+                // A negative row names a mutation layer exactly when a
+                // layer is asked to refuse the change. The row no layer
+                // answers has no change to apply, and saying it mutated
+                // somewhere would be describing an input that does not
+                // exist.
+                assert_eq!(
+                    row.mutation().is_some(),
+                    row.refusing_layer().is_some(),
+                    "{row} disagrees with itself about having an input",
                 );
-                assert_ne!(row.boundary(), EvidenceBoundary::AcceptedTransaction);
+                assert_ne!(
+                    row.refusing_layer(),
+                    Some(EvidenceBoundary::AcceptedTransaction)
+                );
             }
         }
     }
@@ -1603,8 +1721,8 @@ mod tests {
         // at all, and §15 names no such class.
         for row in required_safety_matrix() {
             assert_ne!(
-                row.boundary(),
-                EvidenceBoundary::ExecutorInfrastructureFailure,
+                row.refusing_layer(),
+                Some(EvidenceBoundary::ExecutorInfrastructureFailure),
                 "{row} expects a safety verdict from the infrastructure",
             );
         }
@@ -1615,10 +1733,46 @@ mod tests {
         for row in required_safety_matrix() {
             assert_eq!(
                 row.is_first_party(),
-                row.boundary().is_pre_target(),
+                row.refusing_layer()
+                    .is_some_and(EvidenceBoundary::is_pre_target),
                 "{row} disagrees with its own boundary about who owns it",
             );
         }
+    }
+
+    #[test]
+    fn exactly_one_row_names_no_layer_at_all() {
+        // §15's one class no layer answers, held as a count so that a
+        // second row acquiring the standing has to be argued for rather
+        // than added. A row here is outside §4.2's refusal denominator
+        // and is not evidence either: `crate::live_evidence` gives it a
+        // standing of its own and leaves it out of the discharged count.
+        let closed: BTreeSet<_> = required_safety_matrix()
+            .into_iter()
+            .filter(|row| row.refusing_layer().is_none())
+            .map(LiveSafetyRow::name)
+            .collect();
+        assert_eq!(closed, BTreeSet::from(["mixed-operation-program"]));
+    }
+
+    #[test]
+    fn the_two_members_minted_for_this_matrix_are_the_ones_it_uses() {
+        // `crate::matrix`'s vocabulary serves Guide-12 §18 as well, and
+        // §18 reaches neither of these. If §15 stopped reaching them
+        // too, they would be unreachable rather than shared.
+        use crate::matrix::MutationLayer;
+
+        let rows = required_safety_matrix();
+        assert!(
+            rows.iter().any(|row| row.refusing_layer()
+                == Some(EvidenceBoundary::ConstructorDerivationRejection)),
+            "no §15 row expects the constructor derivation to refuse",
+        );
+        assert!(
+            rows.iter()
+                .any(|row| row.mutation() == Some(MutationLayer::StaticConstructorSchema)),
+            "no §15 row mutates the static constructor schema",
+        );
     }
 
     #[test]

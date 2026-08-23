@@ -17,20 +17,35 @@
 //! owning entry point twice — once honest, once with the case's one
 //! stated change — and concludes nothing if the control did not pass.
 //!
-//! # Two rows are not discharged, and each says why
+//! # Every row this census owes is discharged, and three stopped being
+//! owed
 //!
-//! §4.2's alternative is explicit: a requirement whose policy cannot be
-//! met is reported rather than left silently outstanding. Two rows have
-//! no canonical malformed input to offer their declared validator, and
-//! [`UndischargedFaultReason`] names which obstacle each one hits. Both
-//! are findings about this workspace rather than about the guide:
-//! §15.5's semantic-domain row has no owning validator on the
-//! live-transfer request path at all.
+//! Three rows stood outstanding before this wave, and none of them was
+//! closed by lowering a bar. §15.4's `wrong-constructor-schema` named
+//! the linker, and the leaf schema is the constructor derivation's: it
+//! is discharged below, at the boundary it actually has. §15.5's
+//! `amount-outside-semantic-domain` was recorded as a missing
+//! request-path validator and is not one — the owner ruled the ceiling
+//! blockchain-enforced, the same class as conservation — so its verdict
+//! is the target's and no first-party discharge is owed of it. §15.4's
+//! `mixed-operation-program` asked for an input the operation vocabulary
+//! admits no value of, which
+//! [`crate::live_evidence::LiveRowStanding::OperationVocabularyClosed`]
+//! records rather than counting as an unanswered refusal.
 //!
-//! §15.4's `wrong-constructor-schema` was the third until this wave. Its
-//! obstacle was an erratum rather than a gap — the row named the linker
-//! and the schema is the constructor derivation's — so it is discharged
-//! here at the boundary it actually has.
+//! # Nothing is silently outstanding, and no list is trusted to say so
+//!
+//! §4.2's alternative — report a requirement whose policy cannot be met
+//! rather than leave it outstanding — used to be carried by a list of
+//! rows and obstacles here. The list is empty now, and it is gone rather
+//! than kept empty: a vocabulary nobody carries is one a reader has to
+//! check is unused. The guarantee it stood for is enforced without it
+//! and unconditionally, in `crate::live_evidence`'s classification: a
+//! first-party row this census does not stage is filed under
+//! [`crate::live_evidence::FirstPartyGap::NoStagedCase`], which is
+//! counted, rendered, and stops a report calling itself complete. A row
+//! added to §15 tomorrow is outstanding and visible the day it is added
+//! rather than the day somebody remembers a list.
 //!
 //! # Every secret here is published
 //!
@@ -241,70 +256,6 @@ impl LiveFaultCase {
     }
 }
 
-/// Why one row of §15.4–§15.7 carries no staged case.
-///
-/// §4.2's alternative, as specific obstacles rather than one shrug.
-/// Neither of them is "not done yet": each names something about the
-/// workspace that would have to change before a canonical malformed
-/// typed input could be offered to the row's own validator.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[non_exhaustive]
-pub enum UndischargedFaultReason {
-    /// No typed input can express the malformation at all.
-    ///
-    /// §15.7's `mixed-operation-program` asks for a transfer program
-    /// mixed with a burn or relabel one, and the linker's leaf-role
-    /// vocabulary has no member naming another operation: every role a
-    /// live bundle can carry is a live-transfer role. The mixture is
-    /// structurally inexpressible, which is a stronger answer than a
-    /// refusal would be — but it is not the refusal §4.2 asks for, and
-    /// recording it as one would be discharge by argument.
-    MalformedInputStructurallyInexpressible,
-    /// No validator on the live-transfer request path owns the class.
-    ///
-    /// §15.5's `amount-outside-semantic-domain` declares
-    /// [`crate::matrix::EvidenceBoundary::SemanticRequestRejection`].
-    /// The semantic domain is `realization::ProtocolAmount`'s, and the
-    /// transaction layer's `ProtocolValue` deliberately does not depend
-    /// on it — the type's own documentation says the two agree on what a
-    /// value is and disagree on who may say so. The consequence is
-    /// exact: an amount above the semantic ceiling passes the typed
-    /// request and reaches construction, where it is refused only if the
-    /// *sum* overflows the target's width or fails conservation, neither
-    /// of which is this class. Driving the realization type would be
-    /// driving a validator this request path never calls.
-    NoOwningValidatorOnTheRequestPath,
-}
-
-impl UndischargedFaultReason {
-    /// The reason's wire spelling.
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::MalformedInputStructurallyInexpressible => {
-                "malformed-input-structurally-inexpressible"
-            }
-            Self::NoOwningValidatorOnTheRequestPath => "no-owning-validator-on-the-request-path",
-        }
-    }
-}
-
-/// The rows this module reports rather than discharges.
-///
-/// Two, each with the obstacle it hits. The list is public so the
-/// evidence plan reads it rather than re-deriving it, and so a later wave
-/// clearing one has to remove it here.
-pub const UNDISCHARGED_FAULT_ROWS: &[(&str, UndischargedFaultReason)] = &[
-    (
-        "amount-outside-semantic-domain",
-        UndischargedFaultReason::NoOwningValidatorOnTheRequestPath,
-    ),
-    (
-        "mixed-operation-program",
-        UndischargedFaultReason::MalformedInputStructurallyInexpressible,
-    ),
-];
-
 /// Why one offered case does not discharge its row.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -418,9 +369,8 @@ macro_rules! constructor_is {
 
 /// The complete census of first-party cases for §15.4–§15.7.
 ///
-/// Fourteen cases over six owning entry points. The two rows this census
-/// does not stage are [`UNDISCHARGED_FAULT_ROWS`], each with the obstacle
-/// it hits.
+/// Fourteen cases over six owning entry points, and no §15.4–§15.7 row
+/// whose verdict a first-party layer owns is missing from it.
 #[must_use]
 #[expect(
     clippy::too_many_lines,
@@ -1238,8 +1188,7 @@ fn run_every_fault_case() -> Result<Vec<ValidatedLiveFaultEvidence>, LiveFaultRe
 #[cfg(test)]
 mod tests {
     use super::{
-        LiveFaultCase, UNDISCHARGED_FAULT_ROWS, discharge_live_faults, live_fault_cases,
-        matrix_row, validate_live_fault,
+        LiveFaultCase, discharge_live_faults, live_fault_cases, matrix_row, validate_live_fault,
     };
     use std::collections::BTreeSet;
 
@@ -1256,34 +1205,44 @@ mod tests {
     }
 
     #[test]
-    fn the_census_stages_each_row_once_and_the_rest_are_reported() {
-        // The partition §4.2 asks for: every first-party row of
-        // §15.4–§15.7 either has a staged case or is named in
-        // `UNDISCHARGED_FAULT_ROWS` with the obstacle it hits. A row in
-        // neither list would be silently outstanding, which is exactly
-        // what §4.2's last sentence forbids.
+    fn the_census_stages_each_row_once_and_leaves_none_of_them_out() {
+        // §4.2's partition, and this census now takes the whole of its
+        // side of it: every §15.4–§15.7 row a first-party layer owns has
+        // a staged case, and each is staged once. A row missing from
+        // here would be silently outstanding, which is exactly what
+        // §4.2's last sentence forbids.
         let staged: BTreeSet<_> = live_fault_cases().iter().map(LiveFaultCase::row).collect();
         assert_eq!(
             staged.len(),
             live_fault_cases().len(),
             "a row is staged twice"
         );
-
-        let reported: BTreeSet<_> = UNDISCHARGED_FAULT_ROWS
-            .iter()
-            .map(|(row, _)| *row)
-            .collect();
-        assert_eq!(reported.len(), UNDISCHARGED_FAULT_ROWS.len());
-        assert_eq!(
-            staged.intersection(&reported).count(),
-            0,
-            "a row is both staged and reported outstanding",
-        );
-
-        // And every one of them is a real §15 row.
-        for row in staged.union(&reported) {
+        for row in &staged {
             assert_ne!(matrix_row(row), None, "{row} is not in the matrix");
         }
+
+        // The rows this census owes, recomputed from the matrix rather
+        // than listed: the pre-target rows of the four fault tables.
+        // §15.3's own table is `crate::live_first_party`'s, except for
+        // the one row whose validator lives in this vocabulary.
+        let owed: BTreeSet<_> = crate::live_safety::required_safety_matrix()
+            .into_iter()
+            .filter(|row| {
+                row.is_first_party()
+                    && !matches!(
+                        row.section(),
+                        crate::live_safety::LiveSafetySection::PositiveExplicit
+                            | crate::live_safety::LiveSafetySection::PositivePrivate
+                            | crate::live_safety::LiveSafetySection::OwnerSignatureFault
+                    )
+            })
+            .map(crate::live_safety::LiveSafetyRow::name)
+            .collect();
+        assert_eq!(
+            owed.difference(&staged).count(),
+            0,
+            "a §15.4–§15.7 first-party row has no staged case",
+        );
     }
 
     #[test]
