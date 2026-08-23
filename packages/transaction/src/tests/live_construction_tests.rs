@@ -667,11 +667,27 @@ fn an_explicit_request_against_a_private_only_link_names_it_too() {
         &BTreeSet::from([LiveTransferRepresentationPlan::PrivateCommitted]),
     );
 
-    let (request, stated) = explicit_fixture(
+    let first = outpoint(0xc8, 0);
+    let stated = view([receipt_view(
         &abi,
+        first,
+        &owner(&FIRST_OWNER),
+        LiveTransferRepresentationPlan::PrivateCommitted,
+        ValueField::Explicit(1_000),
+    )]);
+    let request = LiveTransferRequest::new(
+        [first],
+        [
+            destination(&FIRST_OWNER, 600),
+            destination(&SECOND_OWNER, 400),
+        ],
+        LiveTransferRepresentationPlan::Explicit,
         RequestedForm::Sponsorless,
         SponsorChangeRequest::NotRequested,
-    );
+        None,
+    )
+    .expect("the fixture request validates");
+
     assert_eq!(
         finalize_live_transfer(&reviewed_target(), &abi, &request, &stated, None, None).err(),
         Some(TransactionRefusal::RepresentationNotLinked),
