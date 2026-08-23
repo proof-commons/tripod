@@ -47,6 +47,10 @@ use linker::CandidateLinkedLiveTransferBundle;
 use transaction::live_abi::CandidateLiveTransferAbi;
 
 use crate::error::VectorError;
+use crate::live_fault_discharge::{
+    LiveFaultValidator, UNDISCHARGED_FAULT_ROWS, UndischargedFaultReason,
+    ValidatedLiveFaultEvidence, discharge_live_faults, live_fault_cases,
+};
 use crate::live_first_party::{
     LiveFirstPartyValidator, ValidatedLiveFirstPartyEvidence, discharge_live_first_party,
     live_first_party_cases,
@@ -179,6 +183,12 @@ pub enum LiveInfrastructureBlocker {
 }
 
 /// Why a first-party row carries no executable discharge.
+///
+/// Four gaps, and three of them are specific obstacles rather than
+/// absence of effort. §4.2's last sentence gives exactly two honest
+/// dispositions for a requirement whose policy cannot be met — outside
+/// the coverage denominator, or outstanding inside it — and every row
+/// here takes the second, which is why each names what stands in the way.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum FirstPartyGap {
@@ -189,6 +199,47 @@ pub enum FirstPartyGap {
     /// staged, so nothing here has been driven to a refusal. Recorded as
     /// a gap rather than as coverage.
     NoStagedCase,
+    /// No typed input can express the row's malformation at all.
+    MalformedInputStructurallyInexpressible,
+    /// The owning validator sits at another pre-target boundary than the
+    /// row declares.
+    OwningValidatorIsAtAnotherPreTargetBoundary,
+    /// No validator on the live-transfer request path owns the class.
+    NoOwningValidatorOnTheRequestPath,
+}
+
+impl FirstPartyGap {
+    /// The gap one reported fault row hits.
+    #[must_use]
+    pub const fn of(reason: UndischargedFaultReason) -> Self {
+        match reason {
+            UndischargedFaultReason::MalformedInputStructurallyInexpressible => {
+                Self::MalformedInputStructurallyInexpressible
+            }
+            UndischargedFaultReason::OwningValidatorIsAtAnotherPreTargetBoundary => {
+                Self::OwningValidatorIsAtAnotherPreTargetBoundary
+            }
+            UndischargedFaultReason::NoOwningValidatorOnTheRequestPath => {
+                Self::NoOwningValidatorOnTheRequestPath
+            }
+        }
+    }
+}
+
+/// Which first-party entry point discharged one row.
+///
+/// Two vocabularies, because the matrix's pre-target rows are owned by
+/// two different censuses: §15.3's owner and signature faults reach one
+/// of two signing-flow entry points, and §15.4–§15.7's reach one of five
+/// spread across three crates. Collapsing them would lose the fact a
+/// coverage reader wants, which is *what* refused.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
+pub enum DischargingValidator {
+    /// One of §12.7's two owner-authorization entry points.
+    OwnerAuthorization(LiveFirstPartyValidator),
+    /// One of the five §15.4–§15.7 fault entry points.
+    Fault(LiveFaultValidator),
 }
 
 /// What answers one §15 row, or what stands in the way.
@@ -206,7 +257,7 @@ pub enum LiveRowStanding {
     /// asserted here.
     FirstPartyDischarged {
         /// The entry point that refused.
-        validator: LiveFirstPartyValidator,
+        validator: DischargingValidator,
         /// The refusal class it named.
         class: &'static str,
     },
@@ -359,6 +410,7 @@ pub struct LiveTransferEvidencePlan {
     minimality: MinimalityRegistryStanding,
     rows: Vec<LiveEvidenceRow>,
     discharged: Vec<ValidatedLiveFirstPartyEvidence>,
+    fault_discharged: Vec<ValidatedLiveFaultEvidence>,
     census: LiveEvidenceCensus,
 }
 
@@ -393,10 +445,21 @@ impl LiveTransferEvidencePlan {
         &self.rows
     }
 
-    /// The first-party evidence the plan recomputed.
+    /// The §15.3 first-party evidence the plan recomputed.
     #[must_use]
     pub fn discharged(&self) -> &[ValidatedLiveFirstPartyEvidence] {
         &self.discharged
+    }
+
+    /// The §15.4–§15.7 first-party evidence the plan recomputed.
+    ///
+    /// Kept beside [`Self::discharged`] rather than merged into it: the
+    /// two censuses drive different entry points with different refusal
+    /// vocabularies, and a single list would have to re-spell one of
+    /// them.
+    #[must_use]
+    pub fn fault_discharged(&self) -> &[ValidatedLiveFaultEvidence] {
+        &self.fault_discharged
     }
 
     /// The census figures.
@@ -477,7 +540,7 @@ fn specific_blocker(row: &LiveSafetyRow) -> Option<LiveInfrastructureBlocker> {
 fn classify(
     row: &'static LiveSafetyRow,
     plan: &ValidatedLiveTransferOperationPlan,
-    discharged: &BTreeMap<&'static str, (LiveFirstPartyValidator, &'static str)>,
+    discharged: &BTreeMap<&'static str, (DischargingValidator, &'static str)>,
 ) -> Result<LiveRowStanding, VectorError> {
     if row.boundary() == EvidenceBoundary::ReportSemanticProjectionRejection {
         return Ok(LiveRowStanding::ReportLayerAnswerable);
@@ -489,9 +552,15 @@ fn classify(
         });
     }
     if row.is_first_party() {
-        return Ok(LiveRowStanding::FirstPartyUndischarged(
-            FirstPartyGap::NoStagedCase,
-        ));
+        // A row the fault census reports outstanding names the obstacle
+        // it hits, and one nothing has staged at all says that instead.
+        // The difference matters: the first three are findings about this
+        // workspace and the fourth is work nobody has done.
+        let gap = UNDISCHARGED_FAULT_ROWS
+            .iter()
+            .find_map(|(name, reason)| (*name == row.name()).then_some(*reason))
+            .map_or(FirstPartyGap::NoStagedCase, FirstPartyGap::of);
+        return Ok(LiveRowStanding::FirstPartyUndischarged(gap));
     }
 
     if row.polarity() == LiveSafetyPolarity::Positive {
@@ -556,7 +625,7 @@ pub fn derive_live_evidence_plan() -> Result<LiveTransferEvidencePlan, VectorErr
     let evidence =
         discharge_live_first_party().map_err(|_| VectorError::LiveSubstrateUnavailable)?;
     let cases = live_first_party_cases();
-    let index: BTreeMap<&'static str, (LiveFirstPartyValidator, &'static str)> = evidence
+    let mut index: BTreeMap<&'static str, (DischargingValidator, &'static str)> = evidence
         .iter()
         .map(|discharged| {
             let class = cases
@@ -566,9 +635,35 @@ pub fn derive_live_evidence_plan() -> Result<LiveTransferEvidencePlan, VectorErr
                     "",
                     crate::live_first_party::LiveFirstPartyCase::expected_class,
                 );
-            (discharged.row(), (discharged.validator(), class))
+            (
+                discharged.row(),
+                (
+                    DischargingValidator::OwnerAuthorization(discharged.validator()),
+                    class,
+                ),
+            )
         })
         .collect();
+
+    // §15.4–§15.7's pre-target rows, from the second census. Both are
+    // *recomputed* rather than read: each entry here came back from a
+    // validator that was driven twice, and a row absent from both indexes
+    // stays outstanding rather than being assumed covered.
+    let faults = discharge_live_faults().map_err(|_| VectorError::LiveSubstrateUnavailable)?;
+    let fault_cases = live_fault_cases();
+    for discharged in &faults {
+        let class = fault_cases
+            .iter()
+            .find(|case| case.row() == discharged.row())
+            .map_or(
+                "",
+                crate::live_fault_discharge::LiveFaultCase::expected_class,
+            );
+        index.insert(
+            discharged.row(),
+            (DischargingValidator::Fault(discharged.validator()), class),
+        );
+    }
 
     let mut rows = Vec::with_capacity(required_safety_matrix().len());
     let mut census = LiveEvidenceCensus::default();
@@ -593,6 +688,7 @@ pub fn derive_live_evidence_plan() -> Result<LiveTransferEvidencePlan, VectorErr
         minimality: minimality_registry_standing(),
         rows,
         discharged: evidence,
+        fault_discharged: faults,
         census,
     })
 }
@@ -686,6 +782,79 @@ mod tests {
         derive_live_evidence_plan,
     };
     use crate::live_safety::{LiveSafetyPolarity, LiveSafetySection};
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn the_first_party_half_of_the_matrix_is_answered_but_for_three_named_rows() {
+        // The matrix's pre-target half, after both censuses. Twenty-seven
+        // rows of §15 are refused before any target sees the bytes;
+        // twenty-four of them have been driven to their own refusal, and
+        // the three that have not each name the obstacle rather than
+        // being silently outstanding (§4.2's last sentence).
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        let census = plan.census();
+        assert_eq!(census.first_party_discharged(), 24);
+        assert_eq!(
+            census.first_party_undischarged(),
+            crate::live_fault_discharge::UNDISCHARGED_FAULT_ROWS.len(),
+        );
+
+        // No row is outstanding for want of effort: every one of the
+        // three names a specific obstacle, and none is `NoStagedCase`.
+        let mut reported = BTreeSet::new();
+        for row in plan.rows() {
+            if let LiveRowStanding::FirstPartyUndischarged(gap) = row.standing() {
+                assert_ne!(
+                    *gap,
+                    crate::live_evidence::FirstPartyGap::NoStagedCase,
+                    "{} is outstanding with no stated obstacle",
+                    row.row(),
+                );
+                reported.insert(row.row().name());
+            }
+        }
+        assert_eq!(
+            reported,
+            crate::live_fault_discharge::UNDISCHARGED_FAULT_ROWS
+                .iter()
+                .map(|(row, _)| *row)
+                .collect::<BTreeSet<_>>(),
+        );
+
+        // And the whole matrix still cross-foots.
+        assert_eq!(
+            census.first_party_discharged()
+                + census.first_party_undischarged()
+                + census.native_run_required()
+                + census.infrastructure_blocked()
+                + census.report_layer()
+                + census.experimental(),
+            108,
+        );
+    }
+
+    #[test]
+    fn both_discharging_vocabularies_are_really_driven() {
+        // A plan that quietly lost one census would report a smaller
+        // matrix rather than fail, so the two are counted apart.
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        let mut owner = 0_usize;
+        let mut fault = 0_usize;
+        for row in plan.rows() {
+            if let LiveRowStanding::FirstPartyDischarged { validator, class } = row.standing() {
+                assert_ne!(class.len(), 0, "{} discharged naming no class", row.row());
+                match validator {
+                    crate::live_evidence::DischargingValidator::OwnerAuthorization(_) => owner += 1,
+                    crate::live_evidence::DischargingValidator::Fault(_) => fault += 1,
+                }
+            }
+        }
+        assert_eq!(
+            owner,
+            crate::live_first_party::live_first_party_cases().len()
+        );
+        assert_eq!(fault, crate::live_fault_discharge::live_fault_cases().len());
+    }
 
     #[test]
     fn the_minimality_source_is_built_and_carries_no_verdict() {
@@ -730,13 +899,12 @@ mod tests {
         // §4.2 was actually run for: every discharged row came back from
         // the validator, and the count is the census's own.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        let staged = crate::live_first_party::live_first_party_cases().len()
+            + crate::live_fault_discharge::live_fault_cases().len();
+        assert_eq!(plan.census().first_party_discharged(), staged);
         assert_eq!(
+            plan.discharged().len() + plan.fault_discharged().len(),
             plan.census().first_party_discharged(),
-            crate::live_first_party::live_first_party_cases().len(),
-        );
-        assert_eq!(
-            plan.discharged().len(),
-            plan.census().first_party_discharged()
         );
         for row in plan.rows() {
             if let LiveRowStanding::FirstPartyDischarged { class, .. } = row.standing() {

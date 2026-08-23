@@ -11,6 +11,7 @@ pub mod fixture;
 pub mod live_capability;
 pub mod live_disclosure;
 pub mod live_evidence;
+pub mod live_fault_discharge;
 pub mod live_first_party;
 pub mod live_minimality_report;
 pub mod live_native;
@@ -51,9 +52,14 @@ pub use live_disclosure::{
     recorded_classes, shape_leakage,
 };
 pub use live_evidence::{
-    FirstPartyGap, LiveEvidenceCensus, LiveEvidenceRow, LiveInfrastructureBlocker, LiveRowStanding,
-    LiveTransferEvidencePlan, MinimalityRegistryStanding, blocker_census, carried_residuals,
-    derive_live_evidence_plan,
+    DischargingValidator, FirstPartyGap, LiveEvidenceCensus, LiveEvidenceRow,
+    LiveInfrastructureBlocker, LiveRowStanding, LiveTransferEvidencePlan,
+    MinimalityRegistryStanding, blocker_census, carried_residuals, derive_live_evidence_plan,
+};
+pub use live_fault_discharge::{
+    FaultMutation, LiveFaultCase, LiveFaultRefusal, LiveFaultValidator, ObservedFaultRefusal,
+    UNDISCHARGED_FAULT_ROWS, UndischargedFaultReason, ValidatedLiveFaultEvidence,
+    discharge_live_faults, live_fault_cases, validate_live_fault,
 };
 pub use live_first_party::{
     LiveFirstPartyCase, LiveFirstPartyRefusal, LiveFirstPartyValidator, LiveOwnerScenario,
