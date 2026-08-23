@@ -765,6 +765,24 @@ pub fn blocker_census(
 /// Named as a set rather than as prose so that a later wave clearing one
 /// has to remove it here, and so a reader can see at a glance which of
 /// them are this workspace's to clear.
+/// The bytes that stand in a signature position no signer can fill.
+///
+/// Not a signature, and named so at every use. §10.2's fragment checks
+/// the target's own verifying primitive over the target's own taproot
+/// sighash, and [`LiveInfrastructureBlocker::OwnerSighashNotComputable`]
+/// records that nothing here computes that digest; §1.9 puts a sponsor's
+/// authorization outside protocol data and
+/// [`LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent`] records
+/// that no adapter produces one either.
+///
+/// So a witness position that has to be *filled* — to serialize a
+/// transaction at all, or to weigh one — is filled with bytes of the
+/// right width that authorize nothing. Stated once, here beside the two
+/// blockers that are the reason for it, so that three modules cannot
+/// drift into three different widths and quietly change what every
+/// measured weight is a weight of.
+pub const UNAUTHORIZING_SIGNATURE: [u8; 64] = [0x5c; 64];
+
 #[must_use]
 pub fn carried_residuals() -> BTreeSet<LiveInfrastructureBlocker> {
     BTreeSet::from([
