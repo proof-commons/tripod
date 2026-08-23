@@ -288,7 +288,7 @@ resolves to the heading of that number there. Phase 4 exited at §2.8:
 twelve accepted and matched live submissions, honest coverage 100 of
 211, the section-29 audit at 94 of 105, the local gate 47 of 47 with
 byte-identical document reproduction, and the runtime half of
-`G12-R04` discharged from the wave transcripts.
+`G12-R04` discharged from the wave transcripts. Its conditional re-audit still fires when the conservation, normalization, or lifecycle lanes next run live; the intermediate confidential-funding guide's evidence-restart wave now owns that expected firing point.
 
 ### The verification harness's two standing hazards · `rem:backlog:verification-harness`
 

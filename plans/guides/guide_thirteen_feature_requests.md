@@ -119,3 +119,7 @@ column, Request 2 settles the first-party column one way or the other,
 and Request 3 gives the pre-target arms their landing place. The
 external-report column is out of any guide's scope and is listed only
 so the census stays honest.
+
+## Errata
+
+**Section 12.3 count.** A Wave 9 brief said the guide's may-not-select list had thirteen items; the authoritative guide lists fourteen, and the workspace implements all fourteen. The erratum is the brief's count, not the guide or implementation.
