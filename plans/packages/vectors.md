@@ -1,8 +1,6 @@
 # Translation-Validation Vectors · `pkg:vectors:contract`
 
-> **Status:** Candidate — fixtures, evidence plan, target execution,
-> focused mutations, and the resource study implemented; negative
-> relation coverage outstanding at 1 of 72
+> **Status:** Candidate — fixtures, evidence plan, target execution, focused mutations, and both the compact-ASH and Wave 12 live-transfer resource studies implemented; negative relation coverage outstanding at 1 of 72
 > **Phase:** [Phase 4](../phases/04-compact-ash.md) onward
 > **Package:** `tripod-vectors`
 > **Library:** `vectors`

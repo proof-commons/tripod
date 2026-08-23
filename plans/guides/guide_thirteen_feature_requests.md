@@ -1,6 +1,6 @@
 # Guide-13 Feature Requests: Closing the Guide-12 Negative Half
 
-Filed 2026-08-22, from the Guide-12 handoff. These are the three guide
+Filed 2026-08-22, from the Guide-12 handoff. The first three are the guide
 gaps the [Guide-12 completion record](../history/guide-12-completion-report.md)
 names as its remedy for the undischarged negative evidence layer, filed
 here as feature requests against the guide series. Each is a gap in the
@@ -104,7 +104,13 @@ that boundary. Section 16.5 already reserves the report role; the
 entry point it names should exist, and the rows that can only be
 answered there should be indexed there.
 
-## What these unblock
+## Request 4: absence-preserving executor resource figures
+
+Wave 12's live-transfer resource study found a protocol defect below the typed study: operation responses make no script or initial-stack measurement, yet the native executor serializes `"script_bytes": 0` and `"initial_stack_items": 0` in the ordinary operation writer (`scripts/elements-native-executor.py:5806-5808`) and again when the step did not happen (`scripts/elements-native-executor.py:5843-5845`). Those zeros are wire facts, so a first-party decoder cannot distinguish no figure from a measured zero; that is the absent-as-zero substitution section 18.4 forbids when it says no absent observation is read as zero or as agreement.
+
+**Request.** Make each executor resource figure that may be unavailable preserve absence on the wire, as JSON null or an omitted field under a specified protocol rule, and decode it into a presence-bearing first-party type rather than a numeric default. `script_bytes` and `initial_stack_items` remain numbers only when the step actually measured them; an operation step that made no measurement and an infrastructure failure carry absence, so neither can be counted as a zero observation or agreement.
+
+## What the first three unblock
 
 The 72 negative rows classify as 48 target-executable (one discharged),
 18 first-party, and 6 unreachable because their evidence is an external
@@ -113,3 +119,7 @@ column, Request 2 settles the first-party column one way or the other,
 and Request 3 gives the pre-target arms their landing place. The
 external-report column is out of any guide's scope and is listed only
 so the census stays honest.
+
+## Errata
+
+**Section 12.3 count.** A Wave 9 brief said the guide's may-not-select list had thirteen items; the authoritative guide lists fourteen, and the workspace implements all fourteen. The erratum is the brief's count, not the guide or implementation.

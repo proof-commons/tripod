@@ -67,7 +67,7 @@ const ARCHIVE_HARD_CAP_BYTES: u64 = 4 * 1024 * 1024;
 
 /// Directories holding verbatim archived documents, excluded from the
 /// load-bearing combined budget and accounted against
-/// [`ARCHIVE_HARD_CAP_BYTES`] instead.
+/// `ARCHIVE_HARD_CAP_BYTES` instead.
 ///
 /// `plans/history/` differs from the other two in provenance but not
 /// in role. The others hold documents this repository received; history
