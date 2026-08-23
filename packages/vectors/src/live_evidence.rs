@@ -60,17 +60,44 @@ use crate::matrix::EvidenceBoundary;
 
 /// Where the §13.1 minimality pair registry stands.
 ///
-/// One of §13.1's seven sources, and the one this wave does not build.
-/// §13.6 keeps the safety and minimality reports apart and forbids either
-/// satisfying the other, so a safety plan derived without the pair
-/// registry is complete *as a safety plan* — but the source is still
-/// named, because a plan that silently listed six sources would be a plan
-/// whose derivation nobody could check against §13.1.
+/// One of §13.1's seven sources. §13.6 keeps the safety and minimality
+/// reports apart and forbids either satisfying the other, so what a
+/// safety plan records here is the source's *standing* and never its
+/// conclusions: how many §16.1 pairs the registry holds, and how many of
+/// them satisfy §16.2. A safety plan that carried the minimality verdict
+/// would be the substitution §13.6 forbids.
+///
+/// # Why the counts are here and the verdict is not
+///
+/// A plan that named the source without saying whether it exists would
+/// leave §13.1's derivation uncheckable, and one that named the source
+/// and repeated its answer would make the two reports one. The counts are
+/// the middle: enough for a reader to see the source was built, and not
+/// enough for anything to conclude minimality from a safety plan.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum MinimalityRegistryStanding {
-    /// The registry is a later wave's, and no safety row consumes it.
-    NotYetBuilt,
+    /// The registry built, with its pair count and how many satisfy
+    /// §16.2.
+    Built {
+        /// How many §16.1 pairs the registry holds.
+        pairs: usize,
+        /// How many of them satisfy every §16.2 condition.
+        supporting: usize,
+    },
+    /// The registry did not build, so the source is unavailable.
+    ///
+    /// Distinct from a registry that built and supports nothing: one is
+    /// a missing source and the other is a source with a finding.
+    NotConstructible,
+}
+
+impl MinimalityRegistryStanding {
+    /// Whether the source exists at all.
+    #[must_use]
+    pub const fn is_built(self) -> bool {
+        matches!(self, Self::Built { .. })
+    }
 }
 
 /// What stands between one row and any evidence at all.
@@ -503,7 +530,9 @@ fn classify(
 /// candidate ABI through [`demonstration_live_bundle`] and
 /// [`demonstration_live_abi`]; the canonical safety mutation registry
 /// through [`required_safety_matrix`]; the minimality pair registry,
-/// whose standing is recorded rather than built; and the exact target,
+/// built through [`crate::live_pairs::build_minimality_pairs`] and
+/// recorded here as a standing rather than as a verdict (§13.6); and the
+/// exact target,
 /// deployment, and executor provenance expectation, which are a *run's*
 /// inputs and enter through [`crate::live_report`] rather than here — a
 /// plan that named a deployment nobody ran against would be asserting a
@@ -561,11 +590,27 @@ pub fn derive_live_evidence_plan() -> Result<LiveTransferEvidencePlan, VectorErr
         plan,
         bundle,
         abi,
-        minimality: MinimalityRegistryStanding::NotYetBuilt,
+        minimality: minimality_registry_standing(),
         rows,
         discharged: evidence,
         census,
     })
+}
+
+/// Where §13.1's fifth source stands, resolved by building it.
+///
+/// The registry is built rather than asked about, so a source that
+/// stopped building is reported as unavailable instead of as a source
+/// with no pairs. What comes back is two counts and no verdict: §13.6
+/// keeps [`crate::live_minimality_report`]'s answer out of a safety plan.
+fn minimality_registry_standing() -> MinimalityRegistryStanding {
+    crate::live_pairs::build_minimality_pairs().map_or(
+        MinimalityRegistryStanding::NotConstructible,
+        |rows| MinimalityRegistryStanding::Built {
+            pairs: rows.len(),
+            supporting: rows.iter().filter(|row| row.supports_minimality()).count(),
+        },
+    )
 }
 
 /// Every declared row resolves in at least one representation and case.
@@ -637,9 +682,30 @@ pub fn carried_residuals() -> BTreeSet<LiveInfrastructureBlocker> {
 #[cfg(test)]
 mod tests {
     use super::{
-        LiveInfrastructureBlocker, LiveRowStanding, blocker_census, derive_live_evidence_plan,
+        LiveInfrastructureBlocker, LiveRowStanding, MinimalityRegistryStanding, blocker_census,
+        derive_live_evidence_plan,
     };
     use crate::live_safety::{LiveSafetyPolarity, LiveSafetySection};
+
+    #[test]
+    fn the_minimality_source_is_built_and_carries_no_verdict() {
+        // §13.1's fifth source, and §13.6's separation held at the same
+        // time: the plan says the registry exists and how wide it is, and
+        // it says nothing about whether the private plan discloses less.
+        // The supporting count is zero and that is a fact about the
+        // registry, not a minimality conclusion — which
+        // `crate::live_minimality_report` is the only thing entitled to
+        // draw.
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        assert!(plan.minimality().is_built());
+        assert_eq!(
+            plan.minimality(),
+            MinimalityRegistryStanding::Built {
+                pairs: crate::live_pairs::MinimalityPair::ALL.len(),
+                supporting: 0,
+            },
+        );
+    }
 
     #[test]
     fn the_plan_classifies_every_row_exactly_once() {

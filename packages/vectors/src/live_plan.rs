@@ -39,8 +39,9 @@ use linker::{
 };
 use realization::{RealizationScope, derive};
 use tapscript::{
-    LiveTransferSymbols, OwnerKey, demonstration_live_shape_set, derive_live_receipt_constructor,
-    emit_candidate_live_bundle, owner_key_encoding_closure, static_transfer_leaf_set,
+    CandidateRelocatableLiveTransferBundle, LiveTransferSymbols, OwnerKey,
+    demonstration_live_shape_set, derive_live_receipt_constructor, emit_candidate_live_bundle,
+    owner_key_encoding_closure, static_transfer_leaf_set,
 };
 use target_elements::{ReviewedElementsTapscriptDefinition, reviewed_elements_tapscript};
 use target_elements_conformance::constructor::curve::FIELD_ELEMENT_BYTES;
@@ -215,6 +216,29 @@ pub fn link_live_bundle_for_asset(
     protocol_asset: [u8; 32],
 ) -> Result<CandidateLinkedLiveTransferBundle, VectorError> {
     let target = reviewed_target()?;
+    let bundles = relocatable_live_bundles()?;
+    let deployment = live_deployment_for_asset(protocol_asset)?;
+    link_live_candidate(&target, &bundles, &deployment)
+        .map_err(|_| VectorError::LiveSubstrateUnavailable)
+}
+
+/// The four relocatable bundles the demonstration link is taken over.
+///
+/// Two published owners times both representation plans, emitted against
+/// placeholder symbols and not yet resolved to any deployment. Exposed
+/// because they are the linker's own *input*: the §15.7 linker rows are
+/// discharged by handing this list, or a single change of it, back to the
+/// entry point that consumes it, and a discharge built from a bundle
+/// nothing else uses would be evidence about a private fixture rather
+/// than about the deployment.
+///
+/// # Errors
+///
+/// [`VectorError::LiveSubstrateUnavailable`] when a constructor or an
+/// emission refuses.
+pub fn relocatable_live_bundles() -> Result<Vec<CandidateRelocatableLiveTransferBundle>, VectorError>
+{
+    let target = reviewed_target()?;
     let plan = live_transfer_plan()?;
     let shapes = demonstration_live_shape_set();
     let placeholders = live_symbols(
@@ -246,8 +270,24 @@ pub fn link_live_bundle_for_asset(
             );
         }
     }
+    Ok(bundles)
+}
 
-    let deployment = LiveLinkDeploymentParameters::new(
+/// The deployment parameters the demonstration link resolves against.
+///
+/// The counterpart of [`relocatable_live_bundles`], and exposed for the
+/// same reason: a symbol census collected against a deployment nobody
+/// else uses would not be the census the deployment's own link builds.
+///
+/// # Errors
+///
+/// [`VectorError::LiveSubstrateUnavailable`] when the symbols or the
+/// parameters refuse.
+pub fn live_deployment_for_asset(
+    protocol_asset: [u8; 32],
+) -> Result<LiveLinkDeploymentParameters, VectorError> {
+    let target = reviewed_target()?;
+    LiveLinkDeploymentParameters::new(
         &target,
         live_symbols(
             &target,
@@ -259,10 +299,7 @@ pub fn link_live_bundle_for_asset(
         UNSPENDABLE_INTERNAL_KEY.to_vec(),
         NonZeroU32::new(8).ok_or(VectorError::LiveSubstrateUnavailable)?,
     )
-    .map_err(|_| VectorError::LiveSubstrateUnavailable)?;
-
-    link_live_candidate(&target, &bundles, &deployment)
-        .map_err(|_| VectorError::LiveSubstrateUnavailable)
+    .map_err(|_| VectorError::LiveSubstrateUnavailable)
 }
 
 /// The candidate ABI, derived through the oracle's own arithmetic.
