@@ -20,6 +20,7 @@ pub mod live_native;
 pub mod live_pairs;
 pub mod live_plan;
 pub mod live_report;
+pub mod live_resource_report;
 pub mod live_resources;
 pub mod live_safety;
 pub mod materialize;
@@ -113,6 +114,12 @@ pub use live_report::{
     RecomputedItem, ValidatedLiveTransferSafetyReport, VolatileField, assemble_live_safety_report,
     canonical_bytes_publish_no_sponsor_value, render_live_safety_report, section_scoreboard,
     validate_live_safety_report,
+};
+pub use live_resource_report::{
+    CandidateBoundsResult, LIVE_RESOURCE_REPORT_SCHEMA, LIVE_RESOURCE_SCHEMA_ID,
+    LiveResourceDiagnostics, LiveResourceReportRefusal, LiveResourceReportRole, ResourceNonClaim,
+    ResourceStudyCensus, ValidatedLiveTransferResourceReport, assemble_live_resource_report,
+    render_live_resource_report, resource_census, validate_live_resource_report,
 };
 pub use live_resources::{
     CandidateBoundCost, CandidatePositionDomain, CandidateTreeAdmission,
