@@ -366,12 +366,14 @@ pub enum LiveSafetyReportRefusal {
     /// The report's representation census is not the plan's.
     RepresentationCensusDiffers,
     /// The report's row census is not the one recomputed from the plan.
-    CensusDiffers {
-        /// What the report said.
-        reported: LiveEvidenceCensus,
-        /// What the plan recomputes to.
-        recomputed: LiveEvidenceCensus,
-    },
+    ///
+    /// Both censuses are boxed, as [`crate::live_resource_report`] boxes
+    /// its own pair and for the same reason: each is eight counts wide
+    /// and a refusal carrying two of them inline would make every
+    /// `Result` in this module pay for the one arm the happy path never
+    /// takes. The first member is what the report said and the second is
+    /// what the plan recomputes to.
+    CensusDiffers(Box<(LiveEvidenceCensus, LiveEvidenceCensus)>),
     /// The report claims a completeness its own census does not support.
     CompletenessDiffers {
         /// What the report said.
@@ -589,10 +591,10 @@ pub fn validate_live_safety_report(
 
     let recomputed = plan.census();
     if report.census != recomputed {
-        return Err(LiveSafetyReportRefusal::CensusDiffers {
-            reported: report.census,
+        return Err(LiveSafetyReportRefusal::CensusDiffers(Box::new((
+            report.census,
             recomputed,
-        });
+        ))));
     }
 
     let completeness = completeness_of(recomputed);
