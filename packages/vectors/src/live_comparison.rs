@@ -410,8 +410,8 @@ mod tests {
         run_failures, unobservable,
     };
     use crate::live_evidence::LiveInfrastructureBlocker;
-    use crate::live_measurements::LiveResourceRecord;
-    use crate::live_native::observed_run_of_record;
+    use crate::live_measurements::{LiveResourceCase, LiveResourceRecord, measure_resource_cases};
+    use crate::live_native::{LiveNativeObservation, LiveNativeStep, observed_run_of_record};
     use std::collections::BTreeSet;
     use tapscript::upstream::LiveTransferRepresentationPlan;
 
@@ -519,6 +519,41 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn the_studys_own_figure_for_that_shape_is_the_one_the_node_weighed() {
+        // A third weigher, and the strongest form §18.4's comparison
+        // takes here. The native run submitted an explicit sponsorless
+        // transfer of two receipts into two, at outpoints a disposable
+        // chain chose; §18.2's `sponsorless` case builds a transfer of
+        // that same shape at fixture outpoints of this study's own
+        // choosing. Two different byte strings, built by two different
+        // callers for two different reasons.
+        //
+        // They weigh the same, and they have to: an outpoint is a fixed
+        // width, an explicit value is a fixed width, and the leaf and
+        // control block a shape selects are the deployment's. So this
+        // asserts that the study's table and the node's observation are
+        // about the same transaction *shape* — which is what lets the
+        // one observed figure say anything about the sixteen rows the
+        // node never saw.
+        let measured = measure_resource_cases()
+            .expect("the study measures")
+            .into_iter()
+            .find(|case| case.case() == LiveResourceCase::Sponsorless)
+            .expect("the sponsorless case is measured")
+            .members()[0]
+            .figure(LiveResourceRecord::CompleteWeight)
+            .expect("the sponsorless case is weighed");
+
+        let observed = observed_run_of_record()
+            .observation(LiveNativeStep::SubmitExplicitTransfer)
+            .and_then(LiveNativeObservation::observed_weight)
+            .expect("the run of record observed a weight");
+
+        assert_eq!(measured, observed);
+        assert_eq!(measured, 1_911);
     }
 
     #[test]

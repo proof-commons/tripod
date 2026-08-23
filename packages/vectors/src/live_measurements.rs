@@ -1893,7 +1893,44 @@ mod tests {
                 ));
             }
         }
-        assert_eq!(rows.join("\n"), "HARVEST");
+        // The seventeen rows §18.2 produced, in §18.2's own order.
+        let expected = [
+            "explicit-one-to-one 0 weight=983 vsize=246 depth=5 peak=7 budget=50",
+            "explicit-split 0 weight=1375 vsize=344 depth=5 peak=7 budget=50",
+            "explicit-merge 0 weight=1519 vsize=380 depth=5 peak=7 budget=100",
+            "explicit-many-to-many 0 weight=1911 vsize=478 depth=5 peak=7 budget=100",
+            "private-one-to-one 0 weight=1027 vsize=257 depth=5 peak=7 budget=50",
+            "private-split-and-merge 0 weight=1488 vsize=372 depth=5 peak=7 budget=50",
+            "private-split-and-merge 1 weight=1533 vsize=384 depth=5 peak=7 budget=100",
+            "maximum-input-family 0 weight=2057 vsize=515 depth=5 peak=7 budget=150",
+            "maximum-output-family 0 weight=1765 vsize=442 depth=5 peak=7 budget=50",
+            "maximum-distinct-owners 0 weight=1911 vsize=478 depth=5 peak=7 budget=100",
+            "repeated-owner 0 weight=1519 vsize=380 depth=5 peak=7 budget=100",
+            "sponsorless 0 weight=1911 vsize=478 depth=5 peak=7 budget=100",
+            "sponsored 0 weight=2440 vsize=610 depth=5 peak=7 budget=100",
+            "sponsor-change-present-and-absent 0 weight=1904 vsize=476 depth=5 peak=7 budget=50",
+            "sponsor-change-present-and-absent 1 weight=1514 vsize=379 depth=5 peak=7 budget=50",
+            "largest-proof-forms 0 weight=1949 vsize=488 depth=5 peak=7 budget=50",
+            "deepest-control-path 0 weight=983 vsize=246 depth=5 peak=7 budget=50",
+        ];
+        assert_eq!(rows, expected);
+
+        // Two figures worth reading off the table rather than leaving
+        // in it. The validation budget is fifty per receipt input and
+        // nothing else — it is summed over the spent leaves, so it
+        // tracks the input count and not the output count. And every
+        // measured spend reaches the same peak main stack, which is
+        // what a covenant whose work is per-position rather than
+        // per-transaction looks like from the interpreter's side.
+        for case in study() {
+            for member in case.members() {
+                assert_eq!(
+                    member.figure(LiveResourceRecord::ValidationBudget),
+                    Some(50 * member.recipe().receipt_inputs() as u64),
+                );
+                assert_eq!(member.figure(LiveResourceRecord::PeakMainStack), Some(7));
+            }
+        }
     }
 
     /// One case's measurement, by name.
