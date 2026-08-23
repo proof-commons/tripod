@@ -346,9 +346,10 @@ fn compare_plan(
     let standings = LiveResourceRecord::ALL
         .iter()
         .map(|dimension| {
-            let standing = match unobservable(*dimension) {
-                Some(reason) => ComparisonStanding::NotObservableAtThisBoundary(reason),
-                None => match (predicted, observed) {
+            let standing = if let Some(reason) = unobservable(*dimension) {
+                ComparisonStanding::NotObservableAtThisBoundary(reason)
+            } else {
+                match (predicted, observed) {
                     (Some(predicted), Some(observed)) if predicted == observed => {
                         ComparisonStanding::Agree { figure: observed }
                     }
@@ -361,7 +362,7 @@ fn compare_plan(
                     // against is recorded as an unobserved run, and the
                     // prediction itself stays in the transcript.
                     _ => ComparisonStanding::NoObservationInThisRun(blocker),
-                },
+                }
             };
             (*dimension, standing)
         })

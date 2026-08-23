@@ -974,7 +974,7 @@ pub fn render_live_native_run(transcript: &LiveNativeTranscript) -> String {
             predicted.serialized_bytes(),
             predicted
                 .weight()
-                .map_or("none".to_owned(), |w| w.to_string()),
+                .map_or_else(|| "none".to_owned(), |w| w.to_string()),
         );
     }
     for observation in transcript.observations() {
@@ -986,7 +986,7 @@ pub fn render_live_native_run(transcript: &LiveNativeTranscript) -> String {
             observation.accepted_txid().unwrap_or("none"),
             observation
                 .observed_weight()
-                .map_or("none".to_owned(), |weight| weight.to_string()),
+                .map_or_else(|| "none".to_owned(), |weight| weight.to_string()),
             observation.detail().unwrap_or("none"),
         );
     }
