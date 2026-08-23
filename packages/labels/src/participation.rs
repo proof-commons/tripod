@@ -24,10 +24,10 @@
 //! | Site | Decision it made | Now |
 //! | --- | --- | --- |
 //! | `markdown::scan_markdown` | own fence open/close loop over lines; emitted every backtick span regardless of delimiter width | consumes [`ProseParticipation`] for line roles; span width still recorded, filtered by [`InlineCodeSpan::participates`] |
-//! | `repository::harvest_realization` | `delimiter_len != 1` skip, restated inline | [`MarkdownScan::participating_spans`] |
-//! | `repository::harvest_adrs` | `delimiter_len != 1` skip, restated inline | [`MarkdownScan::participating_spans`] |
-//! | `repository::harvest_markdown_owner` | `delimiter_len != 1` skip, restated inline | [`MarkdownScan::participating_spans`] |
-//! | `repository::harvest_attestation_citations` | `delimiter_len != 1` skip, restated inline; **and** computed the generated-index region boundary by walking raw `source.lines()` with no fence awareness | [`MarkdownScan::participating_spans`]; the region walk now consults [`ProseParticipation::participates`] (DI-F02) |
+//! | `repository::harvest_realization` | `delimiter_len != 1` skip, restated inline | [`crate::markdown::MarkdownScan::participating_spans`] |
+//! | `repository::harvest_adrs` | `delimiter_len != 1` skip, restated inline | [`crate::markdown::MarkdownScan::participating_spans`] |
+//! | `repository::harvest_markdown_owner` | `delimiter_len != 1` skip, restated inline | [`crate::markdown::MarkdownScan::participating_spans`] |
+//! | `repository::harvest_attestation_citations` | `delimiter_len != 1` skip, restated inline; **and** computed the generated-index region boundary by walking raw `source.lines()` with no fence awareness | [`crate::markdown::MarkdownScan::participating_spans`]; the region walk now consults [`ProseParticipation::participates`] (DI-F02) |
 //! | `plans::without_fenced_lines` | a second fence open/close loop, blanking fenced lines for the link check only | [`ProseParticipation::blanked`] |
 //! | `rust_source::comment_segments` | comment/literal segmentation for Rust: the scanned-region recognition | moved here as [`comment_segments`], the Rust front-end; the harvester keeps only its fence handling, which calls [`fence_open`]/[`fence_close`]/[`nested_fence`] |
 //! | `rust_source::harvest_region` | located and classified the acute spans of one comment region, for Rust alone | moved here as [`region_spans`], shared by both code front-ends; the harvesters keep only what they do with a located span |
@@ -52,7 +52,7 @@
 //!
 //! Span *grammar* — whether a participating span is a mint, a
 //! parenthesized citation, or an unparenthesized import — belongs to
-//! [`crate::markdown::classify`] and the harvesters. Participation
+//! [`crate::markdown::InlineCodeContext`] and the harvesters. Participation
 //! decides only whether the grammar gets to look at the span at all.
 
 use std::path::Path;
