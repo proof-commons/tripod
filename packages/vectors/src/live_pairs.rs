@@ -58,13 +58,16 @@ use compiler::live_transfer_plan::LiveTransferRepresentationPlan;
 use target_elements::ReviewedElementsTapscriptDefinition;
 use transaction::bytes::{AssetField, Outpoint, Txid, ValueField};
 use transaction::live_abi::CandidateLiveTransferAbi;
-use transaction::live_construct::{LiveConstructionReport, finalize_live_transfer};
+use transaction::live_construct::{
+    LiveConstructionReport, complete_live_transfer, finalize_live_transfer,
+};
 use transaction::live_finalize::FinalizedLiveTransfer;
 use transaction::live_private::{PrivateValueCapability, SelectedConstructionModel};
 use transaction::live_request::{
     LiveReceiptDestination, LiveTransferRequest, ProtocolValue, PublicTestRandomness,
     RequestedForm, SponsorChangeRequest,
 };
+use transaction::live_signing::{LiveOwnerResponse, authorize_live_transfer};
 use transaction::sponsor::{
     SponsorCapability, SponsorOffer, SponsorSignature, SponsorSigningRequest,
 };
@@ -72,7 +75,7 @@ use transaction::view::{PublicConstructionView, PublicOutputView};
 
 use crate::error::VectorError;
 use crate::live_capability::OracleFixtureValues;
-use crate::live_evidence::LiveInfrastructureBlocker;
+use crate::live_evidence::{LiveInfrastructureBlocker, UNAUTHORIZING_SIGNATURE};
 use crate::live_plan::{FIRST_SCALAR, SECOND_SCALAR, demonstration_live_abi, published_owner};
 use crate::live_report::LiveLifecycleStatus;
 
@@ -497,20 +500,65 @@ impl PairTargetVerdict {
 /// # This module's reading of §13.3's row shape
 ///
 /// §13.3 lists nine things each minimality row contains, and the ninth is
-/// a resource comparison. §18 is where measurements are made, and §18.4
-/// requires a prediction and an observation to be *compared* — neither
-/// exists yet. A row asserting a resource comparison nobody performed
-/// would be the fabrication §13.5's validation is for, and a row omitting
-/// the field would be a row §13.3 does not describe. So the field is
-/// present and its value is a typed non-claim: §13.3's row shape permits
-/// one because §1.11 and §13.5 together require "not measured" and
-/// "measured equal" to be different values, and a shape that could not
-/// express the first would force every row to assert the second.
+/// a resource comparison. Until §18's study existed there was nothing to
+/// put there, and this field held a typed non-claim saying so. The study
+/// exists now, and that non-claim is gone rather than kept beside the
+/// measurement — a standing that says "no measurement exists" is false
+/// once one does, and leaving it available would let a later row defer to
+/// a study that has already reported.
+///
+/// # Why a measured comparison still carries a caveat in its own name
+///
+/// Because the private member's weight is a weight of a serialization
+/// whose proof slots are *empty*. §12.8's construction model commits
+/// values and produces no range proof, and the encoder writes one empty
+/// range prefix per output — so the figure is exact for the bytes this
+/// workspace can build and is not the figure a confidential transfer
+/// would carry. The variant is named for that, so a reader cannot take
+/// the number without the condition on it.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum ResourceComparisonStanding {
-    /// No measurement exists; §18's study is where one would come from.
-    DeferredToTheResourceStudy,
+    /// Both members were completed and weighed, and the private
+    /// serialization counts no confidential proof.
+    MeasuredWithNoConfidentialProof {
+        /// The explicit member's complete transaction weight.
+        explicit_weight: u64,
+        /// The private member's complete transaction weight, over a
+        /// serialization whose proof slots are empty.
+        private_weight: u64,
+    },
+    /// One member has no complete transaction, and this is why.
+    ///
+    /// A finalized transfer is not a complete one: every witness position
+    /// has to be filled before there are bytes to weigh, and a member
+    /// whose sponsor suffix nothing can authorize has none. The blocker
+    /// names the component, so a reader can tell a pair that costs
+    /// nothing to measure from one that could not be measured.
+    NoCompleteTransactionExists(LiveInfrastructureBlocker),
+}
+
+impl ResourceComparisonStanding {
+    /// The standing's wire spelling.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::MeasuredWithNoConfidentialProof { .. } => "measured-with-no-confidential-proof",
+            Self::NoCompleteTransactionExists(_) => "no-complete-transaction-exists",
+        }
+    }
+
+    /// The two weights, where both members were weighed.
+    #[must_use]
+    pub const fn weights(self) -> Option<(u64, u64)> {
+        match self {
+            Self::MeasuredWithNoConfidentialProof {
+                explicit_weight,
+                private_weight,
+            } => Some((explicit_weight, private_weight)),
+            Self::NoCompleteTransactionExists(_) => None,
+        }
+    }
 }
 
 /// The sponsor envelope the sponsored pair is built with.
@@ -562,6 +610,7 @@ pub struct PairMaterialization {
     report: LiveConstructionReport,
     predecessor: PredecessorAssumption,
     verdict: PairTargetVerdict,
+    complete_weight: Option<u64>,
 }
 
 impl PairMaterialization {
@@ -593,6 +642,25 @@ impl PairMaterialization {
     #[must_use]
     pub const fn verdict(&self) -> PairTargetVerdict {
         self.verdict
+    }
+
+    /// This member's complete transaction weight, where one exists
+    /// (§18.2).
+    ///
+    /// §13.3's ninth field needs a figure, and a figure needs a complete
+    /// transaction: a finalized transfer has no witnesses attached and so
+    /// has no weight. Every witness position is filled with
+    /// [`crate::live_evidence::UNAUTHORIZING_SIGNATURE`] to reach one,
+    /// which is what makes the number a real weight and not a claim about
+    /// any signature.
+    ///
+    /// Absent for a member no signer can complete at all — the sponsored
+    /// pair, whose suffix needs an authorization
+    /// [`LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent`] records
+    /// as having no producer. Absent rather than zero, on §18.4's rule.
+    #[must_use]
+    pub const fn complete_weight(&self) -> Option<u64> {
+        self.complete_weight
     }
 
     /// The confidential construction model, where one was recorded.
@@ -1078,10 +1146,13 @@ fn materialize_member(
     let finalization = finalize_live_transfer(target, abi, &request, &view, sponsor, private)
         .map_err(|_| fail())?;
     let report = finalization.report().clone();
+    let finalized = finalization.into_finalized();
+    let complete_weight = complete_weight_of(target, &finalized, &report, sponsor);
     Ok(PairMaterialization {
         representation,
-        finalized: finalization.into_finalized(),
+        finalized,
         report,
+        complete_weight,
         predecessor: PredecessorAssumption::of(representation),
         // §1.7: nothing computes the digest an owner must sign, so no
         // member of any pair has ever been offered to a target.
@@ -1089,6 +1160,64 @@ fn materialize_member(
             LiveInfrastructureBlocker::OwnerSighashNotComputable,
         ),
     })
+}
+
+/// One member's complete transaction weight, where every position can be
+/// filled.
+///
+/// §13.3's resource field wants a figure about a *transaction*, and a
+/// finalized transfer is not one: its witnesses are not attached, so it
+/// has no serialization and no weight. This fills every owner position
+/// with bytes that authorize nothing and asks the sponsor for its own,
+/// then weighs the result — the same route `crate::live_measurements`
+/// takes, so the two studies weigh the same kind of thing.
+///
+/// `None` where completion refuses, which today is the sponsored pair and
+/// for one reason: the modelled envelope declines to sign, because §1.9
+/// puts that authorization outside protocol data and Wave 10 recorded
+/// that no adapter produces it. Returning `None` rather than a weight of
+/// zero is §18.4's rule applied to a first-party figure.
+fn complete_weight_of(
+    target: &ReviewedElementsTapscriptDefinition,
+    finalized: &FinalizedLiveTransfer,
+    report: &LiveConstructionReport,
+    sponsor: Option<&dyn SponsorCapability>,
+) -> Option<u64> {
+    let responses: Vec<_> = finalized
+        .signing_requests()
+        .iter()
+        .map(|signing| {
+            (
+                signing.input(),
+                LiveOwnerResponse::to(signing, UNAUTHORIZING_SIGNATURE.to_vec()),
+            )
+        })
+        .collect();
+    let authorized = authorize_live_transfer(finalized.clone(), responses).ok()?;
+    let built = complete_live_transfer(target, authorized, report.clone(), sponsor).ok()?;
+    Some(built.transaction().weight())
+}
+
+/// Where one pair's resource comparison stands (§13.3, §18.2).
+///
+/// Derived from the two members rather than declared: a pair whose halves
+/// were both weighed carries both figures, and one whose half could not
+/// be completed carries the component that stopped it.
+fn resolve_resources(
+    explicit: &PairMaterialization,
+    private: &PairMaterialization,
+) -> ResourceComparisonStanding {
+    match (explicit.complete_weight(), private.complete_weight()) {
+        (Some(explicit_weight), Some(private_weight)) => {
+            ResourceComparisonStanding::MeasuredWithNoConfidentialProof {
+                explicit_weight,
+                private_weight,
+            }
+        }
+        _ => ResourceComparisonStanding::NoCompleteTransactionExists(
+            LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent,
+        ),
+    }
 }
 
 /// What one built member says the transfer means.
@@ -1331,6 +1460,7 @@ fn derive_minimality_pairs() -> Result<Vec<MinimalityPairRow>, MinimalityPairRef
         }
 
         let conditions = resolve_conditions(&abi, &lifecycle, &explicit, &private);
+        let resources = resolve_resources(&explicit, &private);
         rows.push(MinimalityPairRow {
             pair: fixture.pair,
             claim: resolve_claim(&abi, &fixture),
@@ -1340,7 +1470,7 @@ fn derive_minimality_pairs() -> Result<Vec<MinimalityPairRow>, MinimalityPairRef
             private,
             conditions,
             lifecycle: lifecycle.clone(),
-            resources: ResourceComparisonStanding::DeferredToTheResourceStudy,
+            resources,
         });
     }
     Ok(rows)
@@ -1379,7 +1509,7 @@ pub fn condition_scoreboard(
 mod tests {
     use super::{
         BOTH_PLANS, MinimalityConditionStanding, MinimalityPair, PairAcceptanceCondition,
-        PairTargetVerdict, PredecessorAssumption, ResourceComparisonStanding,
+        PairTargetVerdict, PredecessorAssumption, ResourceComparisonStanding, SponsorPresence,
         build_minimality_pairs, condition_scoreboard, minimality_fixtures,
     };
     use crate::live_evidence::LiveInfrastructureBlocker;
@@ -1469,10 +1599,28 @@ mod tests {
                 .map(|member| member.representation())
                 .collect();
             assert_eq!(plans, BOTH_PLANS.iter().copied().collect::<BTreeSet<_>>());
-            assert_eq!(
-                row.resources(),
-                ResourceComparisonStanding::DeferredToTheResourceStudy,
-            );
+            // §13.3's ninth field, now a measurement. The sponsorless
+            // pairs carry both members' complete weights; the sponsored
+            // pair carries the component that stops either half from
+            // reaching a complete transaction at all.
+            match row.fixture().sponsor() {
+                SponsorPresence::Absent => {
+                    let (explicit, private) = row
+                        .resources()
+                        .weights()
+                        .expect("a sponsorless pair weighs both members");
+                    assert_ne!(explicit, 0);
+                    assert_ne!(private, 0);
+                }
+                SponsorPresence::PresentWithoutChange => {
+                    assert_eq!(
+                        row.resources(),
+                        ResourceComparisonStanding::NoCompleteTransactionExists(
+                            LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent,
+                        ),
+                    );
+                }
+            }
         }
     }
 

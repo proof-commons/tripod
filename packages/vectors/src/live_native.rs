@@ -70,6 +70,7 @@ use transaction::view::{PublicConstructionView, PublicOutputView};
 
 use crate::error::VectorError;
 use crate::live_capability::OracleFixtureValues;
+use crate::live_evidence::UNAUTHORIZING_SIGNATURE;
 use crate::live_plan::{
     FIRST_SCALAR, SECOND_SCALAR, demonstration_live_abi, live_abi_for_asset, published_owner,
     reviewed_target,
@@ -104,17 +105,6 @@ const RECORDED_EXPLICIT_PREDICTED_WEIGHT: u64 = 1_911;
 /// twice would have made the agreement true by construction, which is the
 /// one thing §18.4's comparison must never be.
 const RECORDED_EXPLICIT_OBSERVED_WEIGHT: u64 = 1_911;
-
-/// The opaque bytes standing in the signature position.
-///
-/// Not a signature, and named so. §10.2's fragment checks the target's
-/// own verifying primitive over the target's own taproot sighash, and
-/// nothing in this workspace computes that digest — so what the witness
-/// carries is the honest thing to carry: bytes of the right shape that
-/// authorize nothing. A run that filled this with something that looked
-/// more like a signature would be making the eventual refusal harder to
-/// attribute, not easier.
-const UNAUTHORIZING_SIGNATURE: [u8; 64] = [0x5c; 64];
 
 /// What the plan is doing next.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

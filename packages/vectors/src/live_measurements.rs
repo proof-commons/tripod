@@ -75,7 +75,7 @@ use transaction::view::{PublicConstructionView, PublicOutputView};
 
 use crate::error::VectorError;
 use crate::live_capability::OracleFixtureValues;
-use crate::live_evidence::LiveInfrastructureBlocker;
+use crate::live_evidence::{LiveInfrastructureBlocker, UNAUTHORIZING_SIGNATURE};
 use crate::live_plan::{
     FIRST_SCALAR, SECOND_SCALAR, demonstration_live_abi, demonstration_live_bundle,
     published_owner, reviewed_target,
@@ -104,18 +104,6 @@ pub const MEASURED_DESTINATION_RANDOMNESS: [u8; 32] = [0x3d; 32];
 /// The published randomness a measured private predecessor was committed
 /// under.
 pub const MEASURED_PREDECESSOR_RANDOMNESS: [u8; 32] = [0x4d; 32];
-
-/// The bytes standing in every signature position, owner and sponsor
-/// alike.
-///
-/// Not a signature, and named for what it is. §10.2's fragment checks the
-/// target's own verifying primitive over the target's own taproot
-/// sighash, and nothing in this workspace computes that digest; §1.9 puts
-/// the sponsor's authorization outside protocol data and Wave 10 recorded
-/// that no adapter produces one. What the witness carries is therefore
-/// bytes of the right *width* that authorize nothing — which is exactly
-/// what a resource study needs, because a resource study is about widths.
-const UNAUTHORIZING_SIGNATURE: [u8; 64] = [0x5c; 64];
 
 /// One of §18.3's seventeen dimensions.
 ///

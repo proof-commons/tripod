@@ -166,8 +166,18 @@ pub enum FailureModeStanding {
     NotObservedFirstParty,
     /// The mode is about what a target does, and none was asked.
     AwaitsATargetRun(LiveInfrastructureBlocker),
-    /// The mode is about resource use, which §18 measures.
-    AwaitsTheResourceStudy,
+    /// §18's study measured it, and the private plan stays inside the
+    /// limits the reviewed contract declares.
+    ///
+    /// Candidate-scoped, and the name says which half of §1.4's pair it
+    /// belongs to. The study completes both members of every pair it can
+    /// complete and weighs them, and completion runs the reviewed
+    /// contract's own weight bound — so a member that exists is a member
+    /// inside that bound. What this does *not* say is that a target
+    /// accepted anything: §1.4 keeps target acceptance and first-party
+    /// agreement separate, and no candidate transfer has been accepted by
+    /// anything (§1.7).
+    MeasuredWithinTheDeclaredLimits,
 }
 
 impl FailureModeStanding {
@@ -177,7 +187,7 @@ impl FailureModeStanding {
         match self {
             Self::NotObservedFirstParty => "not-observed-first-party",
             Self::AwaitsATargetRun(_) => "awaits-a-target-run",
-            Self::AwaitsTheResourceStudy => "awaits-the-resource-study",
+            Self::MeasuredWithinTheDeclaredLimits => "measured-within-the-declared-limits",
         }
     }
 }
@@ -622,6 +632,15 @@ pub fn resolve_failure_modes(
             .is_none_or(|standing| !standing.is_satisfied())
     });
 
+    // §16.4's eighth mode, measured rather than deferred. Its premise is
+    // that the explicit half fits where the private half does not, so a
+    // row with neither half completed does not exhibit it — the premise
+    // fails on the explicit side too, and a pair nobody could weigh is
+    // not a pair the private plan lost.
+    let private_blocked_where_explicit_fits = rows.iter().any(|row| {
+        row.explicit().complete_weight().is_some() && row.private().complete_weight().is_none()
+    });
+
     // A mode this module observed would be a finding, and the taxonomy
     // has no arm for "observed" because §16.4 is a list of ways
     // minimality *fails* — an observation here is a refusal from
@@ -659,9 +678,21 @@ pub fn resolve_failure_modes(
         ),
         (Mode::SemanticOutputChanges, observed(semantics_change)),
         (Mode::ARequiredExitIsLost, observed(exit_lost)),
+        // §18's study fills this one. The mode is a *conjunction* — a
+        // hard target limit blocks the private plan **while explicit
+        // fits** — so it is resolved by looking for a row whose explicit
+        // member reached a complete transaction and whose private member
+        // did not. Every row that can be completed at all completes both
+        // halves, and completion runs the reviewed contract's own weight
+        // bound, so the conjunction is measured false rather than
+        // assumed false.
         (
             Mode::AHardTargetLimitBlocksThePrivatePlan,
-            Standing::AwaitsTheResourceStudy,
+            if private_blocked_where_explicit_fits {
+                Standing::AwaitsATargetRun(LiveInfrastructureBlocker::NoAcceptingControlExists)
+            } else {
+                Standing::MeasuredWithinTheDeclaredLimits
+            },
         ),
         (
             Mode::ConfidentialAssetIdentityAppears,
@@ -1406,9 +1437,13 @@ mod tests {
                 LiveInfrastructureBlocker::OwnerSighashNotComputable
             ),
         );
+        // §18's study filled this one. It is a conjunction, and no pair
+        // has an explicit member that completes while its private member
+        // does not — measured by completing and weighing both halves of
+        // every pair that can be completed at all.
         assert_eq!(
             report.failures()[&MinimalityFailureMode::AHardTargetLimitBlocksThePrivatePlan],
-            FailureModeStanding::AwaitsTheResourceStudy,
+            FailureModeStanding::MeasuredWithinTheDeclaredLimits,
         );
         let observed = report
             .failures()
