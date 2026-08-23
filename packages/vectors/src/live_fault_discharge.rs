@@ -422,6 +422,12 @@ macro_rules! constructor_is {
 /// does not stage are [`UNDISCHARGED_FAULT_ROWS`], each with the obstacle
 /// it hits.
 #[must_use]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one entry per §15 row, each with the reason it is filed at \
+              that validator; splitting the census would put the matrix's \
+              rows in two lists and let one of them be forgotten"
+)]
 pub fn live_fault_cases() -> Vec<LiveFaultCase> {
     use FaultMutation as M;
     use LiveFaultValidator as V;
@@ -1323,7 +1329,10 @@ mod tests {
         use super::{FaultMutation as M, ObservedFaultRefusal, stage};
         use tapscript::LiveConstructorRefusal as R;
 
-        let expected: &[(M, fn(&R) -> bool)] = &[
+        /// One malformation and the refusal class it must meet.
+        type SchemaCase = (M, fn(&R) -> bool);
+
+        let expected: &[SchemaCase] = &[
             (
                 M::PlaceALeafOfTheOtherRepresentationInTheSchema,
                 |refusal| matches!(refusal, R::LeafOfAnotherRepresentation { .. }),
