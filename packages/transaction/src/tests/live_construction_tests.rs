@@ -8,6 +8,7 @@ use linker::live_backend::LiveTransferRepresentationPlan;
 use super::live_support::{
     FIRST_OWNER, FixturePrivateValue, LIVE_PROTOCOL_ASSET, LIVE_RESERVE_ASSET,
     LIVE_SPONSOR_CHANGE_PROGRAM, PUBLISHED_RANDOMNESS, SECOND_OWNER, live_abi, owner, receipt_view,
+    single_representation_live_abi,
 };
 use super::{outpoint, reviewed_target, view};
 use crate::bytes::{AssetField, AssetId, Outpoint, ValueField};
@@ -598,6 +599,112 @@ fn an_outpoint_in_both_regions_is_refused_before_the_sort() {
         )
         .err(),
         Some(TransactionRefusal::SponsorOverlapsReceiptFamily(shared)),
+    );
+}
+
+// --- The request's plan against the link's (§12.4) ---------------------
+
+#[test]
+fn a_private_request_against_an_explicit_only_link_names_the_absent_plan() {
+    // A one-representation link is legitimate, and the request selects
+    // its plan without ever seeing the ABI. The two disagreeing is a
+    // reachable state, and what it deserves is the refusal that says so:
+    // the plan the request asked for was never linked.
+    //
+    // The receipt view is built from the explicit-only ABI's own
+    // program, so nothing about the receipt is wrong. Only the selected
+    // plan is, which is what makes the refusal attributable.
+    let abi = single_representation_live_abi(LiveTransferRepresentationPlan::Explicit);
+    assert_eq!(
+        abi.representations(),
+        &BTreeSet::from([LiveTransferRepresentationPlan::Explicit]),
+    );
+
+    let first = outpoint(0xc7, 0);
+    let stated = view([receipt_view(
+        &abi,
+        first,
+        &owner(&FIRST_OWNER),
+        LiveTransferRepresentationPlan::Explicit,
+        ValueField::Commitment([0x09; 33]),
+    )]);
+    let request = LiveTransferRequest::new(
+        [first],
+        [
+            destination(&FIRST_OWNER, 600),
+            destination(&SECOND_OWNER, 400),
+        ],
+        LiveTransferRepresentationPlan::PrivateCommitted,
+        RequestedForm::Sponsorless,
+        SponsorChangeRequest::NotRequested,
+        Some(PublicTestRandomness::from_published_bytes(
+            PUBLISHED_RANDOMNESS,
+        )),
+    )
+    .expect("the fixture request validates");
+
+    assert_eq!(
+        finalize_live_transfer(
+            &reviewed_target(),
+            &abi,
+            &request,
+            &stated,
+            None,
+            Some(&FixturePrivateValue),
+        )
+        .err(),
+        Some(TransactionRefusal::RepresentationNotLinked),
+    );
+}
+
+#[test]
+fn an_explicit_request_against_a_private_only_link_names_it_too() {
+    // The mirror, so that the check is about the disagreement rather
+    // than about one plan being the privileged one.
+    let abi = single_representation_live_abi(LiveTransferRepresentationPlan::PrivateCommitted);
+    assert_eq!(
+        abi.representations(),
+        &BTreeSet::from([LiveTransferRepresentationPlan::PrivateCommitted]),
+    );
+
+    let (request, stated) = explicit_fixture(
+        &abi,
+        RequestedForm::Sponsorless,
+        SponsorChangeRequest::NotRequested,
+    );
+    assert_eq!(
+        finalize_live_transfer(&reviewed_target(), &abi, &request, &stated, None, None).err(),
+        Some(TransactionRefusal::RepresentationNotLinked),
+    );
+}
+
+#[test]
+fn an_owner_the_linked_plan_has_no_constructor_for_is_still_its_own_refusal() {
+    // The refusal the new one must not have swallowed. Here the plan is
+    // linked and one destination owner has no constructor in it, which
+    // is a different fault with a different repair.
+    let abi = live_abi();
+    let (_, stated) = explicit_fixture(
+        &abi,
+        RequestedForm::Sponsorless,
+        SponsorChangeRequest::NotRequested,
+    );
+    let stranger = [0x3b_u8; 32];
+    let request = LiveTransferRequest::new(
+        [outpoint(0xa1, 0), outpoint(0xa2, 1)],
+        [destination(&stranger, 250), destination(&FIRST_OWNER, 750)],
+        LiveTransferRepresentationPlan::Explicit,
+        RequestedForm::Sponsorless,
+        SponsorChangeRequest::NotRequested,
+        None,
+    )
+    .expect("the fixture request validates");
+
+    assert_eq!(
+        finalize_live_transfer(&reviewed_target(), &abi, &request, &stated, None, None).err(),
+        Some(TransactionRefusal::DestinationOwnerHasNoConstructor {
+            owner: owner(&stranger),
+        }),
     );
 }
 
