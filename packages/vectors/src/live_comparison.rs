@@ -406,8 +406,8 @@ pub fn run_agreements(comparisons: &[PlanResourceComparison]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{
-        ComparisonStanding, UnobservedReason, compare_run, run_agreements, run_failures,
-        unobservable,
+        ComparisonStanding, ResourcePlannerFailure, UnobservedReason, compare_run, run_agreements,
+        run_failures, unobservable,
     };
     use crate::live_evidence::LiveInfrastructureBlocker;
     use crate::live_measurements::LiveResourceRecord;
@@ -478,30 +478,85 @@ mod tests {
     }
 
     #[test]
-    fn the_run_of_record_carries_no_mismatch() {
-        // §18.4's headline: a mismatch cannot coexist with a successful
-        // result. This asserts the run of record has none — and asserts
-        // separately that "no mismatch" is not being produced by there
-        // being nothing to compare, which is the reading the agreement
-        // count refuses.
+    fn the_run_of_record_compared_one_dimension_and_it_agreed() {
+        // §18.4, performed. The explicit transfer's real bytes went to a
+        // real node; the node weighed them and this workspace weighed
+        // them; the two figures are equal.
+        //
+        // "No mismatch" is asserted *and* "a comparison happened" is
+        // asserted, because the first without the second is what an empty
+        // table also says — and an empty table reporting success is the
+        // reading §18.4's absent-observation rule exists to refuse.
         let comparisons = compare_run(&observed_run_of_record());
         assert_eq!(run_failures(&comparisons), vec![]);
         assert_eq!(comparisons.len(), 2);
+        assert_eq!(run_agreements(&comparisons), 1);
+
+        let explicit = comparisons
+            .iter()
+            .find(|comparison| comparison.plan() == LiveTransferRepresentationPlan::Explicit)
+            .expect("both forms are compared");
+        assert_eq!(
+            explicit.standing(LiveResourceRecord::CompleteWeight),
+            Some(ComparisonStanding::Agree { figure: 1_911 }),
+        );
+        assert!(
+            explicit
+                .standing(LiveResourceRecord::CompleteWeight)
+                .is_some_and(ComparisonStanding::is_agreement),
+        );
 
         for comparison in &comparisons {
             assert_eq!(comparison.standings().len(), LiveResourceRecord::ALL.len());
             for dimension in LiveResourceRecord::ALL {
+                let standing = comparison
+                    .standing(*dimension)
+                    .expect("every dimension is in the comparison table");
                 assert!(
-                    comparison.standing(*dimension).is_some(),
-                    "{} is missing from the comparison table",
+                    !standing.is_mismatch(),
+                    "{} disagreed: {standing:?}",
                     dimension.name(),
                 );
             }
         }
+    }
 
-        // The figure a run of record with an observed weight would carry.
-        // Recorded as a separate assertion so that the day the run of
-        // record gains one, this test says which side moved.
-        let _ = run_agreements(&comparisons);
+    #[test]
+    fn the_two_sides_of_the_agreement_are_two_independent_figures() {
+        // The teeth on the test above. An agreement is only evidence if
+        // the two figures could have differed, so this stages a run whose
+        // observation moves and asserts the comparison turns into a typed
+        // mismatch carrying both numbers — which is exactly what §18.4
+        // requires a disagreement to do.
+        //
+        // Without this, a comparison that ignored the observation
+        // entirely and always answered `Agree` would pass every other
+        // test in this module.
+        let mut run = observed_run_of_record();
+        let moved = run
+            .observations()
+            .iter()
+            .map(|observation| {
+                let weight = observation
+                    .observed_weight()
+                    .map(|weight| weight.saturating_add(4));
+                crate::live_native::rewitnessed(observation, weight)
+            })
+            .collect();
+        run = crate::live_native::with_observations(run, moved);
+
+        let comparisons = compare_run(&run);
+        let failures = run_failures(&comparisons);
+        assert_eq!(failures.len(), 1);
+        assert_eq!(
+            failures[0],
+            ResourcePlannerFailure::PredictionDisagreesWithObservation {
+                plan: LiveTransferRepresentationPlan::Explicit,
+                dimension: LiveResourceRecord::CompleteWeight,
+                predicted: 1_911,
+                observed: 1_915,
+            },
+        );
+        assert_eq!(run_agreements(&comparisons), 0);
     }
 }

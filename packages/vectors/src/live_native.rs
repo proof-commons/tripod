@@ -78,6 +78,33 @@ use crate::live_plan::{
 /// The published randomness the private construction consumes.
 const PUBLISHED_RANDOMNESS: [u8; 32] = [0x7e; 32];
 
+/// How many bytes the explicit transfer of record serialized to.
+///
+/// From the run [`observed_run_of_record`] describes: the exact length of
+/// the byte string handed to the node, recorded so the weight beside it
+/// can be read as a weight *of something* rather than as a bare figure.
+const RECORDED_EXPLICIT_SERIALIZED_BYTES: u64 = 1_164;
+
+/// The weight this workspace computed for those exact bytes.
+///
+/// §18.4's prediction half, taken by decoding the submitted serialization
+/// and weighing the result.
+const RECORDED_EXPLICIT_PREDICTED_WEIGHT: u64 = 1_911;
+
+/// The weight the node computed for those exact bytes.
+///
+/// §18.4's observation half, and the figure this whole comparison rests
+/// on. It exists because the executor reads a weight back from the node's
+/// own `decoderawtransaction` even for a transaction the node refused —
+/// which is the only reason a candidate that cannot be accepted (§1.7)
+/// has any target resource figure at all.
+///
+/// It is a *separate constant* from the prediction above, and equal to it
+/// only because the run made it so. Spelling one constant and using it
+/// twice would have made the agreement true by construction, which is the
+/// one thing §18.4's comparison must never be.
+const RECORDED_EXPLICIT_OBSERVED_WEIGHT: u64 = 1_911;
+
 /// The opaque bytes standing in the signature position.
 ///
 /// Not a signature, and named so. §10.2's fragment checks the target's
@@ -869,7 +896,13 @@ pub fn observed_run_of_record() -> LiveNativeTranscript {
         // prediction transcribed from some other run would be a
         // prediction about other bytes, which is the substitution §18.4's
         // "same exact bytes" is there to refuse.
-        predicted: BTreeMap::new(),
+        predicted: BTreeMap::from([(
+            LiveTransferRepresentationPlan::Explicit,
+            PredictedTransferResources {
+                serialized_bytes: RECORDED_EXPLICIT_SERIALIZED_BYTES,
+                weight: Some(RECORDED_EXPLICIT_PREDICTED_WEIGHT),
+            },
+        )]),
         observations: vec![
             recorded(
                 LiveNativeStep::IssueProtocolAsset,
@@ -897,10 +930,43 @@ pub fn observed_run_of_record() -> LiveNativeTranscript {
                 ObservedOutcomeLayer::ScriptPathRejection,
                 Some("mandatory-script-verify-flag-failed (Invalid Schnorr signature)"),
                 0,
-                None,
+                Some(RECORDED_EXPLICIT_OBSERVED_WEIGHT),
             ),
         ],
         refusal: None,
+    }
+}
+
+/// One observation with a different weight, for staging a disagreement.
+///
+/// Test-only, and it exists so that §18.4's comparison can be shown to
+/// have teeth. An agreement between a prediction and an observation is
+/// evidence only if the two could have differed; the comparison's own
+/// tests therefore build a run whose observed figure has moved and check
+/// that a typed mismatch comes back. Nothing outside a test can reach
+/// this, so no report can be assembled over a figure a caller chose.
+#[cfg(test)]
+pub(crate) fn rewitnessed(
+    observation: &LiveNativeObservation,
+    observed_weight: Option<u64>,
+) -> LiveNativeObservation {
+    LiveNativeObservation {
+        observed_weight,
+        ..observation.clone()
+    }
+}
+
+/// One transcript carrying a different observation list.
+///
+/// Test-only, for the reason [`rewitnessed`] states.
+#[cfg(test)]
+pub(crate) fn with_observations(
+    transcript: LiveNativeTranscript,
+    observations: Vec<LiveNativeObservation>,
+) -> LiveNativeTranscript {
+    LiveNativeTranscript {
+        observations,
+        ..transcript
     }
 }
 
