@@ -1310,7 +1310,7 @@ typed-boundary or correctness repair.
 ## 13. Adopted-draft integration queue · `sec:backlog:drafts`
 
 Four externally authored normative drafts were accepted 2026-08-16, audited (28 findings), corrected upstream by the author, and re-adopted and
-archived verbatim under [plans/drafts/](drafts/README.md): the label
+archived verbatim under plans/drafts/ (since retired into ADR-019 through ADR-022): the label
 calculus, the environment-kind registry, the identity-adjudication
 procedure, and the interchange conventions. Integration is chartered as
 its own batch; the drafts bind nothing until the integrating changes
