@@ -1,7 +1,7 @@
 # Draft: Confidential Test Materialization and Funding Protocol Concept
 
 > **Status:** Concept draft; not an execution guide; unnumbered
-> **Phase:** UNNUMBERED — sequencing relative to the already-queued next concept and the owner-sighash work is decided at charter time by the project owner
+> **Phase:** Phase 5 — Live Receipt Transfer; this work completes the arc's private half
 > **Entry:** the reproduced `NoConfidentialPredecessorCanBeFunded` candidate-pipeline blocker and an accepted charter decision on test-material custody
 > **Primary semantic operation:** materialize and fund confidential candidate test receipts
 > **Affected packages:** `target-elements-conformance`, `transaction`, `vectors`; the native Elements executor where it implements the first-party funding wire protocol
@@ -394,9 +394,12 @@ transaction: finalize confidential candidate witnesses
 
 ## Wave 4 — Close the external sighash handoff · `task:guide-ctf:wave4`
 
+**Entry condition**
+
+- the separately reviewed owner-sighash profile has reached its own accepted result.
+
 **Deliverables**
 
-- separately reviewed owner-sighash profile reaches its own accepted result;
 - proof-finalized candidate bytes enter the signing request unchanged;
 - output-witness commitment is independently tested by the sighash work;
 - valid, wrong-owner, wrong-candidate, post-proof-mutation, and post-signing-mutation cases;
