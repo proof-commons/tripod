@@ -13,6 +13,7 @@ pub mod live_disclosure;
 pub mod live_evidence;
 pub mod live_fault_discharge;
 pub mod live_first_party;
+pub mod live_measurements;
 pub mod live_minimality_report;
 pub mod live_native;
 pub mod live_pairs;
@@ -66,6 +67,13 @@ pub use live_first_party::{
     LiveFirstPartyCase, LiveFirstPartyRefusal, LiveFirstPartyValidator, LiveOwnerScenario,
     LiveResponseMalformation, ValidatedLiveFirstPartyEvidence, discharge_live_first_party,
     live_first_party_cases, validate_live_first_party,
+};
+pub use live_measurements::{
+    CaseMeasurement, DimensionStanding, LiveResourceCase, LiveResourceNonClaim, LiveResourceRecord,
+    MEASURED_DESTINATION_RANDOMNESS, MEASURED_PREDECESSOR_RANDOMNESS, MEASURED_RECEIPT_UNIT,
+    MEASURED_SPONSOR_CHANGE, MEASURED_SPONSOR_FEE, MeasuredSponsorRole, MeasurementRecipe,
+    ResourceStudyRefusal, TransactionMeasurement, deepest_committed_shape, measure_resource_cases,
+    measurement_recipes,
 };
 pub use live_minimality_report::{
     FailureModeStanding, LIVE_MINIMALITY_REPORT_SCHEMA, LIVE_MINIMALITY_SCHEMA_ID,
