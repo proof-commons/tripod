@@ -887,7 +887,7 @@ mod tests {
         // document that reached this validator by mistake must be refused
         // rather than validated for want of a check.
         let projection = target();
-        let report = assemble_live_resource_report(projection.clone()).expect("the study measures");
+        let report = assemble_live_resource_report(projection).expect("the study measures");
         assert_eq!(report.role(), LiveResourceReportRole::LiveTransferResource);
         assert_eq!(report.non_claims().len(), ResourceNonClaim::ALL.len());
         assert!(!report.lifecycle().release_complete());
