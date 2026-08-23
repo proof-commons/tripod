@@ -4,12 +4,14 @@
 //! reconciliation, README ownership indexing, heading/link/scaffolding
 //! hygiene, phase-gate consistency, and the Markdown weight budget.
 //!
-//! The weight budget is two budgets, because the tree holds two kinds
-//! of document, and the split is by role rather than by directory.
-//! Load-bearing planning prose is what the combined `adr/` + `plans/`
-//! cap guards: that prose is maintained, so unchecked growth there is
-//! duplication rather than content, and the cap keeps one fact to one
-//! owner. Documents nobody maintains by hand are different in kind. The
+//! The weight budget has three classes because the tree holds three
+//! kinds of document. Load-bearing planning prose under `plans/` is
+//! maintained, so unchecked growth there is duplication rather than
+//! content, and the core cap keeps one fact to one owner. Root ADRs are
+//! normative decision records, including externally authored texts
+//! adopted whole; they are excluded from the core cap and accounted
+//! separately against a backstop that must not shape their content.
+//! Documents nobody maintains by hand are different in kind. The
 //! executed implementation guides under `plans/guides/` and the static
 //! reviews under `plans/reviews/` are verbatim records of a named tree,
 //! never edited to fit a budget and never trimmed. The closed records
@@ -24,8 +26,8 @@
 //! could only falsify the record or the generator. Their bytes are
 //! excluded from `combined_bytes` and accounted separately against the
 //! much larger `ARCHIVE_HARD_CAP_BYTES`, which exists only to catch a
-//! runaway paste. Authored prose keeps the combined budget wherever it
-//! sits, including `plans/labels/README.md` beside the registers.
+//! runaway paste. Authored plans prose keeps the core budget wherever
+//! it sits, including `plans/labels/README.md` beside the registers.
 //!
 //! Subject files arrive by argument from the build system (ADR-014);
 //! the checker re-discovers them on disk and hard-fails on any
@@ -43,12 +45,18 @@ use std::{
 use anyhow::Context;
 use serde::Serialize;
 
-/// Bumped to 2 when the archive budget split `combined_bytes` off from
-/// the archive total and added the archive fields to [`PlansReport`].
-pub const PLANS_REPORT_SCHEMA: u32 = 2;
+/// Bumped to 3 when the root-ADR budget split `adr_bytes` off from
+/// `combined_bytes` and added `adr_hard_cap_bytes` to [`PlansReport`].
+pub const PLANS_REPORT_SCHEMA: u32 = 3;
 
 const HARD_CAP_BYTES: u64 = 768 * 1024;
 const SOFT_TARGET_BYTES: u64 = 520 * 1024;
+
+/// Ceiling for the root-ADR budget (2 MiB).
+///
+/// Half the archive backstop; its only purpose is to catch a runaway
+/// paste, not to shape normative ADR prose.
+const ADR_HARD_CAP_BYTES: u64 = 2 * 1024 * 1024;
 
 /// Ceiling for the archived-document budget (4 MiB).
 ///
@@ -166,11 +174,13 @@ const PHASE_INDEX_HEADING_BARE: &str = "## Index \u{00b7} tab:phases:index";
 pub struct PlansReport {
     pub schema: u32,
     pub files_checked: usize,
+    /// Root-ADR Markdown, checked against `adr_hard_cap_bytes` alone.
     pub adr_bytes: u64,
+    pub adr_hard_cap_bytes: u64,
     /// Load-bearing `plans/` bytes: the archive directories and the
     /// generated registers excluded.
     pub plans_bytes: u64,
-    /// `adr_bytes + plans_bytes`, checked against `hard_cap_bytes`.
+    /// Core maintained-plans bytes, checked against `hard_cap_bytes`.
     pub combined_bytes: u64,
     pub hard_cap_bytes: u64,
     pub soft_target_bytes: u64,
@@ -219,10 +229,15 @@ pub fn check_plans(root: &Path, subjects: &[PathBuf]) -> anyhow::Result<PlansOut
         plans: plans_bytes,
         archive: archive_bytes,
     } = tree_bytes(&root, &files)?;
-    let combined_bytes = adr_bytes + plans_bytes;
+    let combined_bytes = plans_bytes;
     if combined_bytes > HARD_CAP_BYTES {
         failures.push(format!(
             "weight: combined Markdown {combined_bytes} exceeds hard cap {HARD_CAP_BYTES}"
+        ));
+    }
+    if adr_bytes > ADR_HARD_CAP_BYTES {
+        failures.push(format!(
+            "weight: root ADR Markdown {adr_bytes} exceeds ADR hard cap {ADR_HARD_CAP_BYTES}"
         ));
     }
     if archive_bytes > ARCHIVE_HARD_CAP_BYTES {
@@ -236,6 +251,7 @@ pub fn check_plans(root: &Path, subjects: &[PathBuf]) -> anyhow::Result<PlansOut
         schema: PLANS_REPORT_SCHEMA,
         files_checked: files.len(),
         adr_bytes,
+        adr_hard_cap_bytes: ADR_HARD_CAP_BYTES,
         plans_bytes,
         combined_bytes,
         hard_cap_bytes: HARD_CAP_BYTES,
@@ -919,16 +935,16 @@ pub(crate) fn duplicate_row_ids(markdown: &str) -> Vec<String> {
     failures
 }
 
-/// Markdown bytes for the `adr/` and `plans/` trees, split by budget.
+/// Markdown bytes for the `adr/` and `plans/` trees, split into the
+/// root-ADR, core maintained-plans, and archive budgets.
 struct TreeBytes {
     adr: u64,
     plans: u64,
     archive: u64,
 }
 
-/// Total Markdown bytes for the `adr/` and `plans/` trees, with the
-/// archived documents and generated registers separated out of the
-/// load-bearing totals.
+/// Total Markdown bytes for the `adr/` and `plans/` trees, separated by
+/// weight class.
 fn tree_bytes(root: &Path, files: &[PathBuf]) -> anyhow::Result<TreeBytes> {
     let mut totals = TreeBytes {
         adr: 0,
@@ -1092,8 +1108,20 @@ mod tests {
         let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
         assert_eq!(outcome.failures, Vec::<String>::new());
         assert!(outcome.report.valid);
+        assert_eq!(outcome.report.schema, PLANS_REPORT_SCHEMA);
         assert_eq!(outcome.report.files_checked, 6);
         assert!(outcome.report.combined_bytes > 0);
+        assert_eq!(outcome.report.combined_bytes, outcome.report.plans_bytes);
+        assert_eq!(outcome.report.adr_hard_cap_bytes, ADR_HARD_CAP_BYTES);
+    }
+
+    #[test]
+    fn weight_class_caps_match_the_budget_rule() {
+        assert_eq!(SOFT_TARGET_BYTES, 520 * 1024);
+        assert_eq!(HARD_CAP_BYTES, 768 * 1024);
+        assert_eq!(ADR_HARD_CAP_BYTES, 2 * 1024 * 1024);
+        assert_eq!(ARCHIVE_HARD_CAP_BYTES, 4 * 1024 * 1024);
+        assert_eq!(ADR_HARD_CAP_BYTES * 2, ARCHIVE_HARD_CAP_BYTES);
     }
 
     #[test]
@@ -1716,10 +1744,7 @@ mod tests {
             "combined {} grew from {bare_combined}",
             outcome.report.combined_bytes,
         );
-        assert_eq!(
-            outcome.report.combined_bytes,
-            outcome.report.adr_bytes + outcome.report.plans_bytes
-        );
+        assert_eq!(outcome.report.combined_bytes, outcome.report.plans_bytes);
         assert_eq!(
             outcome.report.archive_hard_cap_bytes,
             ARCHIVE_HARD_CAP_BYTES
@@ -1794,14 +1819,63 @@ mod tests {
         assert!(outcome.report.archive_bytes > 0);
     }
 
+    /// Replace the fixture's root ADR index with one ADR holding `size`
+    /// bytes of body text.
+    fn write_root_adr(root: &Path, size: usize) {
+        let mut body = String::from("# Heavy\n\n");
+        body.push_str(&"x".repeat(size));
+        body.push('\n');
+        fs::write(root.join("adr/001-heavy.md"), body).expect("heavy adr");
+        fs::write(root.join("adr/README.md"), "# ADRs\n\n001-heavy.md\n").expect("adr readme");
+    }
+
+    #[test]
+    fn root_adr_bytes_are_excluded_from_the_combined_budget() {
+        let dir = fixture();
+        let bare = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+        let bare_combined = bare.report.combined_bytes;
+
+        write_root_adr(dir.path(), 900 * 1024);
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+
+        assert!(outcome.report.valid, "{:#?}", outcome.failures);
+        assert!(outcome.report.adr_bytes > HARD_CAP_BYTES);
+        assert_eq!(outcome.report.combined_bytes, bare_combined);
+        assert_eq!(outcome.report.combined_bytes, outcome.report.plans_bytes);
+        assert_eq!(outcome.report.adr_hard_cap_bytes, ADR_HARD_CAP_BYTES);
+    }
+
+    #[test]
+    fn an_oversize_root_adr_fails_with_a_focused_message() {
+        let dir = fixture();
+        let over = usize::try_from(ADR_HARD_CAP_BYTES).expect("cap fits in usize") + 1;
+        write_root_adr(dir.path(), over);
+        let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
+
+        assert!(!outcome.report.valid);
+        assert!(
+            outcome
+                .failures
+                .iter()
+                .any(|failure| failure.starts_with("weight: root ADR Markdown")
+                    && failure.contains("ADR hard cap")),
+            "{:#?}",
+            outcome.failures,
+        );
+        assert!(
+            !outcome
+                .failures
+                .iter()
+                .any(|failure| failure.starts_with("weight: combined Markdown")),
+            "{:#?}",
+            outcome.failures,
+        );
+    }
+
     #[test]
     fn oversize_file_warns_without_failing() {
         let dir = fixture();
-        let mut heavy = String::from("# Heavy\n\n");
-        heavy.push_str(&"x".repeat(15 * 1024));
-        fs::write(dir.path().join("adr/001-heavy.md"), heavy).expect("heavy adr");
-        fs::write(dir.path().join("adr/README.md"), "# ADRs\n\n001-heavy.md\n")
-            .expect("adr readme");
+        write_root_adr(dir.path(), 15 * 1024);
         let outcome = check_plans(dir.path(), &subjects(dir.path())).expect("check runs");
         assert!(outcome.report.valid, "{:?}", outcome.failures);
         assert!(

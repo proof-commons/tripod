@@ -341,7 +341,7 @@ check_plans(root: &Path, subjects: &[PathBuf]) -> anyhow::Result<PlansOutcome>
 `PlansOutcome` carries `report: PlansReport`, `failures: Vec<String>`, and
 `warnings: Vec<String>`. `check_plans` returns `Err` **only** for environmental
 faults such as an unreadable file; every tree defect is a `failures` entry
-instead. `PLANS_REPORT_SCHEMA` is 2.
+instead. `PLANS_REPORT_SCHEMA` is 3, advanced for the root-ADR class's `adr_hard_cap_bytes` field.
 
 ### `repository` — harvest, graph, and the writing entry point
 
