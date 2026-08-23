@@ -318,9 +318,9 @@ The result remains candidate-only; a secret-bearing selection stops at ADR-015 r
 
 **Deliverables**
 
-- the custody ruling is RECORDED: deterministic central public fixtures, with serialized or archival asset forms bound by ADR-022 while plain-Rust-typed consumption is not (see `rule:guide-ctf:custody-decision`); the wave carries it forward, not reopens it;
+- the custody ruling is RECORDED: deterministic central public fixtures, with serialized or archival asset forms bound by ADR-022 while plain-Rust-typed consumption is not, recorded in the custody-decision rule above; the wave carries it forward, not reopens it;
 - opening owner, lifetime, process boundary, lookup authority, diagnostics, and ADR-015 disposition, elaborated within the accepted model;
-- the reproducibility ruling is RECORDED: both contracts first-class — byte identity as the reference contract, recorded randomness as a typed per-ceremony selection, one shared schema naming the contract per run (see `rule:guide-ctf:determinism-decision`); the wave elaborates both, not chooses;
+- the reproducibility ruling is RECORDED: both contracts first-class — byte identity as the reference contract, recorded randomness as a typed per-ceremony selection, one shared schema naming the contract per run, recorded in the determinism-decision rule above; the wave elaborates both, not chooses;
 - reviewed fixture domain separators, derivation inputs, bounded retry rules, and the typed contract field's semantics for both contracts;
 - canonical-request evidence option selected with its disclosure and retention consequences;
 - affected package and dependency boundary recorded without implementation by implication.
