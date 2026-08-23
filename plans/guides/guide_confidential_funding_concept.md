@@ -476,4 +476,4 @@ Reject or stop the guide when:
 
 **Handoff.** The execution guide translates rulings, unions, refusals, evidence, finalization, and waves into APIs and tests. Guide-13 evidence resumes only when predecessor, materializer, and external sighash meet in one finalized candidate.
 
-The final report records selected models, mined target facts, consumed sighash result, cleared blockers, moved rows, and remaining non-claims. A typed stopped result is valid; an overstated one is not.
+The final report records selected models, mined target facts, consumed sighash result, cleared blockers, moved rows, and remaining non-claims. A typed stopped result is valid; an overstated one is not. The existing Guide-14 concept draft is KEPT as queued, and when Guide 14 is drafted it contains this guide's closeout results for reference — the closeout report is written to be consumable there.
