@@ -11,14 +11,13 @@
 //!
 //! # Kind vocabulary: the data-source decision
 //!
-//! ADR-020 adopts an archived registry draft as the kind vocabulary, and
-//! adds to it a recorded extension set the ADR calls `X_A`. Neither
-//! document may be edited by the checker: the draft under plans/drafts/
-//! is a verbatim archive, and the ADR is hand-maintained prose.
+//! ADR-020 carries the normative registry as its body and adds a recorded
+//! extension set the ADR calls `X_A`. The ADR is hand-maintained prose and
+//! may not be edited by the checker.
 //!
-//! Two mechanisms were available: parse both documents at check time and
-//! use the parse as the vocabulary, or commit an extracted table and
-//! check it against the documents for exactness. This module commits the
+//! Two mechanisms were available: parse the ADR at check time and use the
+//! parse as the vocabulary, or commit an extracted table and check it
+//! against the ADR for exactness. This module commits the
 //! table, for three reasons. A committed table is a review surface: an
 //! edition swap or an `X_A` amendment shows every added and removed token
 //! in the diff, where a check-time parse would widen the vocabulary
@@ -28,8 +27,9 @@
 //! hand-maintained ADR table, which most needs a diff.
 //!
 //! Exactness is enforced by [`verify_vocabulary_sources`], which parses
-//! both documents and fails loudly, naming every token that appears in
-//! one and not the other. The tables below can therefore never go stale
+//! both the normative body and the extension table and fails loudly,
+//! naming every token that appears in one and not the other. The tables
+//! below can therefore never go stale
 //! without the check going red, and regeneration is mechanical from the
 //! diagnostic's own token lists.
 //!
@@ -463,7 +463,7 @@ pub const SCANNED_REGIONS: &[(&str, &str)] = &[
 // ---------------------------------------------------------------------
 
 /// The kind tokens of the adopted registry: the distinct kinds of the
-/// Convention tables of the archived draft. Committed from the draft and
+/// Convention tables of ADR-020's normative body. Committed from the ADR and
 /// checked against it by [`verify_vocabulary_sources`].
 pub const REGISTRY_KINDS: &[&str] = &[
     "abst",
@@ -678,9 +678,9 @@ pub const REGISTRY_KINDS: &[&str] = &[
 
 /// The name-and-kind pairs of the adopted registry.
 ///
-/// Every row of the Convention tables of the archived draft, the row's
+/// Every row of the Convention tables of ADR-020's normative body, the row's
 /// attestation dagger removed from its name as the registry directs.
-/// Committed from the draft and checked against it by
+/// Committed from the ADR and checked against it by
 /// [`verify_vocabulary_sources`].
 ///
 /// The pairs are the classification relation itself, where
@@ -1085,7 +1085,7 @@ pub const EXTENSION_PAIRS: &[(&str, &str)] = &[
 ];
 
 /// The document the registry kinds are committed from.
-pub const REGISTRY_SOURCE: &str = "plans/drafts/environment-kinds.md";
+pub const REGISTRY_SOURCE: &str = "adr/020-environment-kinds.md";
 /// The document the extension kinds are committed from.
 pub const EXTENSION_SOURCE: &str = "adr/020-environment-kinds.md";
 
@@ -1123,10 +1123,10 @@ pub fn pair_is_catalogued(name: &str, kind: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------
-// Drift checks against the two vocabulary sources.
+// Drift checks against the two vocabulary regions of ADR-020.
 // ---------------------------------------------------------------------
 
-/// Parse the distinct kind tokens of the archived registry draft.
+/// Parse the distinct kind tokens of ADR-020's normative registry body.
 ///
 /// The tokens are the second column of every Convention table. Device
 /// rows, whose kind cell is an em dash rather than a token, classify
@@ -1139,7 +1139,7 @@ pub fn parse_registry_source(text: &str) -> BTreeSet<String> {
             in_convention = true;
             continue;
         }
-        if line.starts_with("## ") {
+        if line.starts_with('#') {
             in_convention = false;
             continue;
         }
@@ -1156,7 +1156,7 @@ pub fn parse_registry_source(text: &str) -> BTreeSet<String> {
     kinds
 }
 
-/// Parse the name-and-kind pairs of the archived registry draft.
+/// Parse the name-and-kind pairs of ADR-020's normative registry body.
 ///
 /// Every Convention-table row whose kind cell is a token contributes one
 /// pair. Device rows contribute none, having no kind; and the
@@ -1170,7 +1170,7 @@ pub fn parse_registry_pairs(text: &str) -> BTreeSet<(String, String)> {
             in_convention = true;
             continue;
         }
-        if line.starts_with("## ") {
+        if line.starts_with('#') {
             in_convention = false;
             continue;
         }
@@ -1226,7 +1226,7 @@ fn extension_table_rows(text: &str) -> Vec<Vec<&str>> {
             in_table = true;
             continue;
         }
-        if in_table && line.starts_with("## ") {
+        if in_table && line.starts_with('#') {
             break;
         }
         if !in_table || !line.starts_with('|') {
@@ -1266,13 +1266,13 @@ fn backticked_token(cell: &str) -> Option<String> {
     }
 }
 
-/// Check the committed vocabulary against the documents it was extracted
+/// Check the committed vocabulary against the ADR regions it was extracted
 /// from, and fail loudly on any disagreement, naming both sides.
 ///
 /// A source document that is absent is not checked: scoped censuses and
-/// the synthetic fixture repositories of the test suite carry neither
-/// document, and their absence is not drift. The committed tables are
-/// pinned to the real documents by the crate's own unit tests, which run
+/// synthetic fixture repositories of the test suite may carry no ADR,
+/// and its absence is not drift. The committed tables are pinned to the
+/// real document by the crate's own unit tests, which run
 /// against this repository rather than against a fixture.
 pub fn verify_vocabulary_sources(root: &Path) -> Vec<LabelDiagnostic> {
     let mut diagnostics = Vec::new();

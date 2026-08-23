@@ -2,14 +2,13 @@
 
 This register inventories every identity and digest the current tree actually
 produces, and fixes the ownership boundary of those that do not yet exist. The
-immediate policy owner is the adopted identity adjudication procedure at
-[plans/drafts/identity-adjudication.md](../drafts/identity-adjudication.md),
-adopted by [ADR-021](../../adr/021-identity-adjudication.md). This file
+immediate policy owner is the identity adjudication procedure in
+[ADR-021](../../adr/021-identity-adjudication.md). This file
 is a planning aid, not a substitute for typed identity definitions, and is
 never toolchain input.
 
 Admission of any new digest is governed by
-(`req:identity:admission-record`). Every entry below was walked through the
+(`[ADR021-req:identity:admission-record]`). Every entry below was walked through the
 adopted adjudication procedure in DI-004: each digest the tree computes was
 found from the owning code, put to the benefit criterion, and recorded either
 as an admission record or as a stop. The classification is per identity class —
@@ -63,7 +62,7 @@ Six identity classes are admitted. Each records its subject, owner, producer,
 consumer, decision, assurance class, stale condition, recipe by identifier,
 migration rule, non-claims, and status — the admission fields the adopted
 procedure requires, in the order
-(`req:identity:admission-record`) states them.
+(`[ADR021-req:identity:admission-record]`) states them.
 
 ### 2.1 Git commit and tree object IDs
 
@@ -456,7 +455,7 @@ and instance identities answer deliberately different provenance questions.
 Petgraph node and edge indices are local in-memory graph positions owned by the
 graph-holding package. They are not semantic identity, not publication
 identity, and not evidence identity, and they must never enter a canonical
-projection — see (`rule:identity:no-incidentals`).
+projection — see (`[ADR021-rule:identity:no-incidentals]`).
 
 ## 6. Future immediate-edge identity DAG · `sec:identities:future`
 
@@ -482,7 +481,7 @@ ArchitectureSemanticId
   phase is permission, not a schedule: reaching the phase without the named
   consumer does not activate the identity.
 - A parent binds only its immediate identity dependencies, under
-  (`rule:identity:immediate-edges`). Transitive upstream identities
+  (`[ADR021-rule:identity:immediate-edges]`). Transitive upstream identities
   are never repeated as an all-to-all mesh. A human-readable manifest may
   display the complete chain; authoritative validation follows immediate typed
   edges only.
@@ -495,7 +494,7 @@ ArchitectureSemanticId
 - Every identity carries an explicit recipe identifier from its first
   publication, and any later change of projection, encoding, domain separator,
   algorithm, included fields, or exclusion rules mints a new recipe identifier
-  under (`rule:identity:recipe-permanence`) rather than redefining the
+  under (`[ADR021-rule:identity:recipe-permanence]`) rather than redefining the
   old one.
 
 ### 6.2 Edges

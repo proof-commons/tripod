@@ -57,7 +57,7 @@ Upstream citations use square brackets:
 ```
 
 Imported citations are linted under
-(`inf:labels:imported-citation`).
+(`[ADR019-inf:labels:imported-citation]`).
 
 ## Directory index · `tab:plans:directories`
 
@@ -70,7 +70,6 @@ Imported citations are linted under
 | [`phases/`](phases/README.md) | Phase entry conditions, deliverables, evidence, and exit gates. |
 | [`research/`](research/README.md) | Unresolved prototype-driven questions. |
 | [`reference/`](reference/README.md) | External technical reference material. |
-| [`drafts/`](drafts/README.md) | Archived adopted-source normative drafts awaiting integration. |
 | [`guides/`](guides/README.md) | Archived executed and concept implementation guides. |
 | [`reviews/`](reviews/README.md) | Archived static reviews of named repository trees. |
 | [`history/`](history/README.md) | Archived closed records moved out of maintained planning documents. |
@@ -123,7 +122,6 @@ keeps one fact to one owner.
 Archived documents — the verbatim records under:
 
 ```text
-plans/drafts/
 plans/guides/
 plans/history/
 plans/reviews/
@@ -136,7 +134,7 @@ guardrail fire on the one class of file it must not police. The archive
 budget is a runaway-paste tripwire, not a shaping force.
 
 [`history/`](history/README.md) belongs to that class by role rather than by
-provenance. The other three hold documents the project received; history holds
+provenance. The other two hold documents the project received; history holds
 records the project wrote and then closed — a completed gate record, the
 finding register of a remediated review — moved verbatim out of a maintained
 document once their batch was done. They stop being maintained prose at that

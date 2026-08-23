@@ -66,7 +66,7 @@ The third edition incorporates four pairs once carried locally, so `pkg`, `q`, `
 
 Inside a labels context, an unqualified registry means this kind registry. The checker's per-owner minting registries are runtime data structures, and `plans/registers/identities.md` is the separate identity register. The edition's candidate attestation status is likewise unrelated to this repository's `candidate` kind.
 
-This repository neither strengthens nor weakens an edition status. Yoga, Meta-question, and Schema in its data-shape sense remain daggered; the candidate Record/member-bearing-aggregate pair remains outside C_A; none is in use. Every pair of X_A is firm on the evidence above.
+This repository neither strengthens nor weakens an edition status. Yoga, Meta-question, and Schema in its data-shape sense remain daggered; the candidate Record/member-bearing-aggregate pair remains outside C_A; none is in use. Every pair of X_A is firm on the evidence located above.
 
 The generated companion register at [plans/labels/attestation.md](../plans/labels/attestation.md) presents the effective relation's evidence, statuses, and derived homonymy. The registry's classifications and this extension table are its sources.
 
