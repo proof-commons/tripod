@@ -87,7 +87,7 @@ The project owner selects the custody model before wire fields, process boundari
 
 **Recommendation.** Select deterministic central public fixtures. This matches Guide 13, permits independent recomputation, preserves byte identity, and keeps disposable scalars honestly public. Record the domain separator, derivation recipe, labels, scalar rules, lifetime, and destruction with the chain.
 
-**Ruling: ACCEPTED — deterministic central public fixtures.** The recommended model is selected, with one binding addition: any asset this work makes or consumes beyond the boundary of its own crate is bound by [adr/022-interchange-conventions.md](../../adr/022-interchange-conventions.md) — a fixture, opening, funding record, or report that crosses the repository boundary is an interchange document under that ADR's own scope rules, including its ADR-010 exclusions for first-party command-line streams and the native executor protocol.
+**Ruling: ACCEPTED — deterministic central public fixtures.** The recommended model is selected, with one binding addition on form: an asset this work makes or consumes as plain Rust types — an in-process, typed API surface — carries no interchange obligation; the moment it takes a serialized or archival form, it is bound by [adr/022-interchange-conventions.md](../../adr/022-interchange-conventions.md) under that ADR's own scope rules, including its ADR-010 exclusions for first-party command-line streams and the native executor protocol. The criterion is the form, not the crate boundary: a fixture, opening, funding record, or report that exists as bytes to be stored or exchanged is an interchange document; the same value passed as a typed argument is not.
 
 **Remaining namings are Wave-0 work within the accepted model.** Wave 0 still records opening ownership, lifetime, lookup authority, diagnostics, production separation, and ADR-015 disposition — as elaborations of the accepted model, not as a reopened choice. The three nonrecommended models are closed as custody directions for this guide.
 
@@ -318,7 +318,7 @@ The result remains candidate-only; a secret-bearing selection stops at ADR-015 r
 
 **Deliverables**
 
-- the custody ruling is RECORDED: deterministic central public fixtures, with cross-boundary assets bound by ADR-022 (see `rule:guide-ctf:custody-decision`); the wave carries it forward, not reopens it;
+- the custody ruling is RECORDED: deterministic central public fixtures, with serialized or archival asset forms bound by ADR-022 while plain-Rust-typed consumption is not (see `rule:guide-ctf:custody-decision`); the wave carries it forward, not reopens it;
 - opening owner, lifetime, process boundary, lookup authority, diagnostics, and ADR-015 disposition, elaborated within the accepted model;
 - project-owner ruling preserving byte identity or explicitly revising reproducibility;
 - reviewed fixture domain separators, derivation inputs, bounded retry rules, and determinism level;
