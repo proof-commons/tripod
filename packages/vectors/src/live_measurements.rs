@@ -506,13 +506,13 @@ impl MeasurementRecipe {
 
     /// How many receipts the transaction consumes.
     #[must_use]
-    pub fn receipt_inputs(&self) -> usize {
+    pub const fn receipt_inputs(&self) -> usize {
         self.sources.len()
     }
 
     /// How many receipts the transaction creates.
     #[must_use]
-    pub fn destinations(&self) -> usize {
+    pub const fn destinations(&self) -> usize {
         self.destinations.len()
     }
 }
@@ -682,20 +682,33 @@ impl SponsorCapability for MeasuredSponsorEnvelope {
 /// [`ResourceStudyRefusal::NoCommittedLeafToMeasure`] when it carries no
 /// committed leaf for the deepest-control-path case to be about.
 pub fn measurement_recipes() -> Result<Vec<MeasurementRecipe>, ResourceStudyRefusal> {
+    let mut recipes = transfer_shape_recipes();
+    recipes.extend(family_and_owner_recipes());
+    recipes.extend(sponsor_recipes());
+    recipes.push(deepest_recipe(deepest_committed_shape()?));
+    Ok(recipes)
+}
+
+/// §18.2's first six bullets: the four explicit compositions and the
+/// private one-to-one, split, and merge.
+///
+/// Grouped because they are one question asked six ways — what one
+/// composition of §5.3 costs under each representation plan — and
+/// because the four amounts each carries are only readable beside the
+/// others.
+fn transfer_shape_recipes() -> Vec<MeasurementRecipe> {
     use LiveResourceCase as C;
     use LiveTransferRepresentationPlan::{Explicit, PrivateCommitted};
-    use MeasuredSponsorRole as S;
+    use MeasuredSponsorRole::Absent;
 
-    let deepest = deepest_committed_shape()?;
-
-    Ok(vec![
+    vec![
         recipe(
             C::ExplicitOneToOne,
             0,
             Explicit,
             &[(0, 1000)],
             &[(1, 1000)],
-            S::Absent,
+            Absent,
         ),
         recipe(
             C::ExplicitSplit,
@@ -703,7 +716,7 @@ pub fn measurement_recipes() -> Result<Vec<MeasurementRecipe>, ResourceStudyRefu
             Explicit,
             &[(0, 1000)],
             &[(1, 400), (0, 600)],
-            S::Absent,
+            Absent,
         ),
         recipe(
             C::ExplicitMerge,
@@ -711,7 +724,7 @@ pub fn measurement_recipes() -> Result<Vec<MeasurementRecipe>, ResourceStudyRefu
             Explicit,
             &[(0, 400), (1, 600)],
             &[(0, 1000)],
-            S::Absent,
+            Absent,
         ),
         recipe(
             C::ExplicitManyToMany,
@@ -719,7 +732,7 @@ pub fn measurement_recipes() -> Result<Vec<MeasurementRecipe>, ResourceStudyRefu
             Explicit,
             &[(0, 300), (1, 700)],
             &[(1, 450), (0, 550)],
-            S::Absent,
+            Absent,
         ),
         recipe(
             C::PrivateOneToOne,
@@ -727,7 +740,7 @@ pub fn measurement_recipes() -> Result<Vec<MeasurementRecipe>, ResourceStudyRefu
             PrivateCommitted,
             &[(0, 1000)],
             &[(1, 1000)],
-            S::Absent,
+            Absent,
         ),
         recipe(
             C::PrivateSplitAndMerge,
@@ -735,7 +748,7 @@ pub fn measurement_recipes() -> Result<Vec<MeasurementRecipe>, ResourceStudyRefu
             PrivateCommitted,
             &[(0, 1000)],
             &[(1, 400), (0, 600)],
-            S::Absent,
+            Absent,
         ),
         recipe(
             C::PrivateSplitAndMerge,
@@ -743,15 +756,33 @@ pub fn measurement_recipes() -> Result<Vec<MeasurementRecipe>, ResourceStudyRefu
             PrivateCommitted,
             &[(0, 400), (1, 600)],
             &[(0, 1000)],
-            S::Absent,
+            Absent,
         ),
+    ]
+}
+
+/// §18.2's family and owner bullets: the widest input family, the widest
+/// output family, the most distinct owners, and the repeated owner.
+///
+/// The two "maximum" cases are maximum *for the tested candidate*, whose
+/// published set admits three receipts in and three out. The distinct-owner
+/// maximum is two, because the tested deployment links constructors for
+/// exactly the two published owners — a ceiling of the test material and
+/// not of the design, and [`LiveResourceCase::MaximumDistinctOwners`] is
+/// where the study says which.
+fn family_and_owner_recipes() -> Vec<MeasurementRecipe> {
+    use LiveResourceCase as C;
+    use LiveTransferRepresentationPlan::Explicit;
+    use MeasuredSponsorRole::Absent;
+
+    vec![
         recipe(
             C::MaximumInputFamily,
             0,
             Explicit,
             &[(0, 300), (1, 300), (0, 400)],
             &[(1, 1000)],
-            S::Absent,
+            Absent,
         ),
         recipe(
             C::MaximumOutputFamily,
@@ -759,7 +790,7 @@ pub fn measurement_recipes() -> Result<Vec<MeasurementRecipe>, ResourceStudyRefu
             Explicit,
             &[(0, 1000)],
             &[(1, 300), (0, 300), (1, 400)],
-            S::Absent,
+            Absent,
         ),
         recipe(
             C::MaximumDistinctOwners,
@@ -767,7 +798,7 @@ pub fn measurement_recipes() -> Result<Vec<MeasurementRecipe>, ResourceStudyRefu
             Explicit,
             &[(0, 500), (1, 500)],
             &[(0, 400), (1, 600)],
-            S::Absent,
+            Absent,
         ),
         recipe(
             C::RepeatedOwner,
@@ -775,8 +806,24 @@ pub fn measurement_recipes() -> Result<Vec<MeasurementRecipe>, ResourceStudyRefu
             Explicit,
             &[(0, 400), (0, 600)],
             &[(1, 1000)],
-            S::Absent,
+            Absent,
         ),
+    ]
+}
+
+/// §18.2's sponsor bullets, and the largest proof forms.
+///
+/// The sponsorless and sponsored members move the same value between the
+/// same owners, so laying them side by side is what makes the sponsor
+/// region's cost readable; the change pair does the same for the change
+/// role over a narrower transfer, so the two differences are not being
+/// read off one subtraction.
+fn sponsor_recipes() -> Vec<MeasurementRecipe> {
+    use LiveResourceCase as C;
+    use LiveTransferRepresentationPlan::{Explicit, PrivateCommitted};
+    use MeasuredSponsorRole as S;
+
+    vec![
         recipe(
             C::Sponsorless,
             0,
@@ -817,8 +864,7 @@ pub fn measurement_recipes() -> Result<Vec<MeasurementRecipe>, ResourceStudyRefu
             &[(0, 300), (1, 300), (0, 300)],
             S::Absent,
         ),
-        deepest_recipe(deepest),
-    ])
+    ]
 }
 
 /// One recipe, spelled once.
@@ -1078,6 +1124,91 @@ fn measure_one(
     })
 }
 
+/// The leaf-derived figures one complete transaction's inputs settle.
+///
+/// A struct rather than a tuple because it has ten members and every one
+/// of them is a different dimension of §18.3; a ten-tuple would let two
+/// of them be swapped at the call site without anything noticing.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct SpentLeafFigures {
+    coordinator_bytes: Option<u64>,
+    member_bytes: Option<u64>,
+    constructor_bytes: u64,
+    control_bytes: u64,
+    deepest_path: u64,
+    signature_bytes: u64,
+    widest_element: u64,
+    peak_main: u64,
+    peak_alternate: u64,
+    validation_budget: u64,
+}
+
+/// Read every figure the spent leaves settle.
+///
+/// Each is read off the *linked* programs the transaction's own control
+/// blocks authenticate, so a relink that moved a leaf moves these with
+/// it, and none of them is looked up from a table this study kept.
+fn read_spent_leaves(
+    target: &ReviewedElementsTapscriptDefinition,
+    bundle: &CandidateLinkedLiveTransferBundle,
+    recipe: &MeasurementRecipe,
+    finalized: &FinalizedLiveTransfer,
+    walks: &mut BTreeMap<LiveTransferLeafRole, ProgramWalk>,
+) -> SpentLeafFigures {
+    let mut figures = SpentLeafFigures::default();
+    let mut constructors: BTreeSet<(OwnerParameter, LiveTransferRepresentationPlan)> =
+        BTreeSet::new();
+
+    for record in finalized.receipts() {
+        let leaf = record.leaf();
+        let script = record.leaf_script().len() as u64;
+        match leaf {
+            LiveTransferLeafRole::Coordinator { .. } => {
+                figures.coordinator_bytes =
+                    Some(figures.coordinator_bytes.unwrap_or(0).max(script));
+            }
+            LiveTransferLeafRole::Member { .. } => {
+                figures.member_bytes = Some(figures.member_bytes.unwrap_or(0).max(script));
+            }
+        }
+
+        let control = record.control_block().len() as u64;
+        figures.control_bytes = figures.control_bytes.saturating_add(control);
+        // A control block is a parity-and-version byte, an x-only
+        // internal key, and one thirty-two-byte node per level. The depth
+        // is read back out of the width rather than looked up, so it is
+        // the depth these exact bytes carry.
+        figures.deepest_path = figures.deepest_path.max(control.saturating_sub(33) / 32);
+
+        figures.signature_bytes = figures
+            .signature_bytes
+            .saturating_add(UNAUTHORIZING_SIGNATURE.len() as u64);
+        constructors.insert((record.owner().clone(), recipe.representation));
+
+        let walk = walk_for(target, bundle, leaf, walks);
+        figures.peak_main = figures.peak_main.max(walk.peak_main);
+        figures.peak_alternate = figures.peak_alternate.max(walk.peak_alternate);
+        figures.widest_element = figures.widest_element.max(walk.widest_push);
+        figures.validation_budget = figures
+            .validation_budget
+            .saturating_add(walk.validation_budget);
+    }
+
+    figures.constructor_bytes = constructors
+        .iter()
+        .filter_map(|(owner, representation)| bundle.constructor(owner, *representation))
+        .map(|constructor| {
+            constructor
+                .programs()
+                .values()
+                .filter_map(|program| program.charged(ResourceDimension::ScriptBytes))
+                .fold(0_u64, u64::saturating_add)
+        })
+        .fold(0_u64, u64::saturating_add);
+
+    figures
+}
+
 /// Read §18.3's seventeen dimensions off one complete transaction.
 fn read_dimensions(
     target: &ReviewedElementsTapscriptDefinition,
@@ -1090,76 +1221,19 @@ fn read_dimensions(
     use DimensionStanding as Standing;
     use LiveResourceRecord as Record;
 
-    let receipts = finalized.receipts();
-
-    // The leaf-derived figures. Every one is read off the *linked*
-    // programs the transaction's own control blocks authenticate, so a
-    // relink that moved a leaf would move these with it.
-    let mut coordinator_bytes: Option<u64> = None;
-    let mut member_bytes: Option<u64> = None;
-    let mut control_bytes = 0_u64;
-    let mut deepest_path = 0_u64;
-    let mut initial_items = 0_u64;
-    let mut signature_bytes = 0_u64;
-    let mut widest_element = 0_u64;
-    let mut peak_main = 0_u64;
-    let mut peak_alternate = 0_u64;
-    let mut budget = 0_u64;
-    let mut constructors: BTreeSet<(OwnerParameter, LiveTransferRepresentationPlan)> =
-        BTreeSet::new();
-
-    for record in receipts {
-        let leaf = record.leaf();
-        let script = record.leaf_script().len() as u64;
-        match leaf {
-            LiveTransferLeafRole::Coordinator { .. } => {
-                coordinator_bytes = Some(coordinator_bytes.unwrap_or(0).max(script));
-            }
-            LiveTransferLeafRole::Member { .. } => {
-                member_bytes = Some(member_bytes.unwrap_or(0).max(script));
-            }
-        }
-
-        let control = record.control_block().len() as u64;
-        control_bytes = control_bytes.saturating_add(control);
-        // A control block is a parity-and-version byte, an x-only
-        // internal key, and one thirty-two-byte node per level. The depth
-        // is read back out of the width rather than looked up, so it is
-        // the depth these exact bytes carry.
-        deepest_path = deepest_path.max(control.saturating_sub(33) / 32);
-
-        signature_bytes = signature_bytes.saturating_add(UNAUTHORIZING_SIGNATURE.len() as u64);
-        constructors.insert((record.owner().clone(), recipe.representation));
-
-        let walk = walk_for(target, bundle, leaf, walks);
-        peak_main = peak_main.max(walk.peak_main);
-        peak_alternate = peak_alternate.max(walk.peak_alternate);
-        widest_element = widest_element.max(walk.widest_push);
-        budget = budget.saturating_add(walk.validation_budget);
-    }
+    let leaves = read_spent_leaves(target, bundle, recipe, finalized, walks);
 
     // The witness items one input presents, from the ABI's own order: the
     // owner signature, the leaf, and the control block that authenticates
     // it. Read off the built witnesses rather than written as three.
+    let mut initial_items = 0_u64;
+    let mut widest_element = leaves.widest_element;
     for witness in built.transaction().witnesses() {
-        let items = witness.stack().len() as u64;
-        initial_items = initial_items.max(items);
+        initial_items = initial_items.max(witness.stack().len() as u64);
         for item in witness.stack() {
             widest_element = widest_element.max(item.len() as u64);
         }
     }
-
-    let constructor_bytes = constructors
-        .iter()
-        .filter_map(|(owner, representation)| bundle.constructor(owner, *representation))
-        .map(|constructor| {
-            constructor
-                .programs()
-                .values()
-                .filter_map(|program| program.charged(ResourceDimension::ScriptBytes))
-                .fold(0_u64, u64::saturating_add)
-        })
-        .fold(0_u64, u64::saturating_add);
 
     let proofs = match recipe.representation {
         // An explicit output has no proof form at all, so the dimension
@@ -1173,34 +1247,47 @@ fn read_dimensions(
     BTreeMap::from([
         (
             Record::CoordinatorBytes,
-            coordinator_bytes.map_or(Standing::AbsentFromThisShape, Standing::Measured),
+            leaves
+                .coordinator_bytes
+                .map_or(Standing::AbsentFromThisShape, Standing::Measured),
         ),
         (
             Record::MemberBytes,
-            member_bytes.map_or(Standing::AbsentFromThisShape, Standing::Measured),
+            leaves
+                .member_bytes
+                .map_or(Standing::AbsentFromThisShape, Standing::Measured),
         ),
         (
             Record::ConstructorBytes,
-            Standing::Measured(constructor_bytes),
+            Standing::Measured(leaves.constructor_bytes),
         ),
-        (Record::TaptreeDepth, Standing::Measured(deepest_path)),
-        (Record::ControlBytes, Standing::Measured(control_bytes)),
+        (
+            Record::TaptreeDepth,
+            Standing::Measured(leaves.deepest_path),
+        ),
+        (
+            Record::ControlBytes,
+            Standing::Measured(leaves.control_bytes),
+        ),
         (
             Record::OwnerSignatureWitnessBytes,
-            Standing::WitnessSlotOnly(signature_bytes),
+            Standing::WitnessSlotOnly(leaves.signature_bytes),
         ),
         (Record::ConfidentialProofBytes, proofs),
         (
             Record::InitialWitnessItems,
             Standing::Measured(initial_items),
         ),
-        (Record::PeakMainStack, Standing::Measured(peak_main)),
+        (Record::PeakMainStack, Standing::Measured(leaves.peak_main)),
         (
             Record::PeakAlternateStack,
-            Standing::Measured(peak_alternate),
+            Standing::Measured(leaves.peak_alternate),
         ),
         (Record::LargestElement, Standing::Measured(widest_element)),
-        (Record::ValidationBudget, Standing::Measured(budget)),
+        (
+            Record::ValidationBudget,
+            Standing::Measured(leaves.validation_budget),
+        ),
         (
             Record::CompleteWeight,
             Standing::Measured(built.transaction().weight()),
@@ -1213,7 +1300,7 @@ fn read_dimensions(
         // never offered to a target and have earned no verdict. The
         // native lane's own submitted bytes are the exception, and they
         // are compared in `crate::live_comparison` rather than borrowed
-        // here — these are different bytes.
+        // here — those are different bytes.
         (
             Record::ConsensusVerdict,
             Standing::NotClaimable(LiveResourceNonClaim::NoTargetVerdictExists(
