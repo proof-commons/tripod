@@ -105,19 +105,17 @@ Ancestor READMEs do not repeat the complete descendant census.
 
 ## Weight budget · `rule:plans:weight`
 
-There are two budgets, because the tree holds two kinds of document.
+There are three weight classes because the tree holds three kinds of document.
 
-Maintained planning prose — the combined Markdown under:
+Maintained planning prose under:
 
 ```text
 plans/
-adr/
 ```
 
-excluding the archived documents and generated registers below, must remain
-under the accepted documentation budget. That prose is maintained, so
-unchecked growth there is duplication rather than content, and the budget
-keeps one fact to one owner.
+excluding the archived documents and generated registers below, is the core class. Its 520 KiB soft target and 768 KiB hard cap are unchanged. That prose is maintained, so unchecked growth there is duplication rather than content, and the budget keeps one fact to one owner.
+
+Root ADRs under `adr/` are their own class, excluded from the core class and checked against a 2 MiB backstop, half the archive backstop. ADRs are normative decision records, including externally authored texts adopted whole; the backstop's only purpose is to catch a runaway, not to shape their content.
 
 Archived documents — the verbatim records under:
 
@@ -127,11 +125,7 @@ plans/history/
 plans/reviews/
 ```
 
-are excluded from that budget and accounted separately against a much larger
-archive budget. An archive records a named tree exactly and is never trimmed
-to fit, so charging it to the maintained-prose budget would make the
-guardrail fire on the one class of file it must not police. The archive
-budget is a runaway-paste tripwire, not a shaping force.
+are excluded from the core class and accounted separately against the 4 MiB archive backstop. An archive records a named tree exactly and is never trimmed to fit, so charging it to the maintained-prose budget would make the guardrail fire on the one class of file it must not police. The archive backstop is a runaway-paste tripwire, not a shaping force.
 
 [`history/`](history/README.md) belongs to that class by role rather than by
 provenance. The other two hold documents the project received; history holds
@@ -148,10 +142,7 @@ one could only falsify the generator. The classification is by role, not by
 directory — authored prose such as [`labels/README.md`](labels/README.md)
 stays in the maintained-prose budget.
 
-The documentation checker reports total bytes, bytes by directory, archive
-bytes against the archive budget, authored-file threshold warnings, and
-generated-register bytes. Neither budget is a reason to omit useful
-rationale, examples, or implementation detail.
+The documentation checker reports core maintained-plans bytes against the core budget, root-ADR bytes against the ADR backstop, archive bytes against the archive backstop, authored-file threshold warnings, and generated-register bytes. No budget is a reason to omit useful rationale, examples, or implementation detail.
 
 ## Updating · `rule:plans:update`
 
