@@ -29,10 +29,10 @@ repository itself.
 | [ADR-015](015-public-data-and-execution-trust.md) | Decided and implemented | Public-data interfaces, untrusted execution, crash artifacts, and future secret boundaries. |
 | [ADR-017](017-path-scope-and-host-filesystem-trust.md) | Decided and implemented | Repository/build path scope, central prohibition of symlinks and submodules, source-derived reference confinement, lexical output roles, and the host filesystem/TOCTOU boundary. |
 | [ADR-018](018-upstream-elements-workspace.md) | Decided; adoption proceeds in the Elements checkout | Upstream Elements workspace shape: pristine-mirror default branch, fix and notes branches, derived merged worktree, the gripe register, and executed-revision provenance. |
-| [ADR-019](019-label-calculus.md) | Decided and implemented; checker re-engineering tracked as DI-003 | Adoption of the archived label calculus as normative, with this repository's adoption parameters and the hyphenated-area amendment. |
-| [ADR-020](020-environment-kinds.md) | Decided and implemented | Adoption of the archived environment-kind registry as the kind vocabulary, with the migration adjudication and the recorded extension set. |
-| [ADR-021](021-identity-adjudication.md) | Decided and implemented for current identity policy; the evidence and release surfaces activate with their consumers | Adoption of the archived identity adjudication procedure as normative, with this repository's local recipe convention, current identities, recorded separation migration, and recorded divergences. |
-| [ADR-022](022-interchange-conventions.md) | Decided; normative now and unimplemented by design until an externally consumed document exists | Adoption of the archived interchange conventions as the wire-format discipline for externally consumed documents, with the boundary against ADR-010, the executor-protocol stop, the alignment records, and the no-implementation standing. |
+| [ADR-019](019-label-calculus.md) | Decided and adopted; implemented for the authorship warrant species | The normative label calculus, with this repository's adoption parameters, hyphenated-area amendment, and implementation standing. |
+| [ADR-020](020-environment-kinds.md) | Decided and adopted; implemented | The normative environment-kind registry, with this repository's migration adjudication, recorded extension set, and attestation standing. |
+| [ADR-021](021-identity-adjudication.md) | Decided and adopted; implemented for current identity policy, with evidence and release surfaces activating with their consumers | The normative identity adjudication procedure, with this repository's local recipe convention, current identities, separation migration, and implementation standing. |
+| [ADR-022](022-interchange-conventions.md) | Decided and adopted; normative now and unimplemented by design until an externally consumed document exists | The normative wire-format discipline for externally consumed documents, with the ADR-010 boundary, executor-protocol stop, alignment records, and consumer-triggered implementation rule. |
 | [ADR-023](023-script-tree-label-carrier.md) | Decided and implemented | The script tree joins the label carrier: two amended ADR-019 rows putting `scripts/*.py` under `DOC` and scanning Python comments, strings excluded. |
 
 ## Numbering · `rule:adr:numbering`
@@ -46,26 +46,23 @@ for density.
 ## Labels · `rule:adr:labels`
 
 Each numbered ADR is an independent label owner under
-(`[PLAN-sig:labels:owners]`); mint discipline follows
-(`[PLAN-judg:labels:minting]`).
+(`[ADR019-sig:labels:owners]`); mint discipline follows
+(`[ADR019-judg:labels:minting]`).
 
-The calculus itself is adopted by (`[ADR019-dec:labels:adoption]`), which
-makes the archived draft under `plans/drafts/` its normative text. A
-clause of the calculus is therefore cited with the `PLAN` prefix, at the
-draft; ADR-019 is cited for an adoption parameter or an amendment.
+The calculus is the normative body of (`[ADR019-dec:labels:adoption]`). A
+clause of the calculus, an adoption parameter, or an amendment is cited
+with the `ADR019` prefix.
 
-The identity adjudication procedure is adopted the same way by
-(`[ADR021-dec:identity:adoption]`). A clause of the procedure is cited
-with the `PLAN` prefix, at the draft; ADR-021 is cited for this
-repository's recipe convention, its current identities, or the recorded
-separation migration.
+The identity adjudication procedure is the normative body of
+(`[ADR021-dec:identity:adoption]`). Its clauses and this repository's
+recipe convention, current identities, and separation migration are
+cited with the `ADR021` prefix.
 
-The interchange conventions are adopted the same way by
-(`[ADR022-dec:interchange:adoption]`). A clause of the conventions is
-cited with the `PLAN` prefix, at the draft; ADR-022 is cited for the
-boundary against ADR-010, the executor-protocol stop, the alignment
-records, or the no-implementation standing. The namespace labels that
-draft governs are not documentation labels and are never cited as any.
+The interchange conventions are the normative body of
+(`[ADR022-dec:interchange:adoption]`). Their clauses, the boundary against
+ADR-010, the executor-protocol stop, the alignment records, and the
+consumer-triggered implementation rule are cited with the `ADR022`
+prefix. The namespace labels they govern are not documentation labels.
 
 A plan citing an ADR label uses the ADR owner prefix, for example:
 
@@ -79,7 +76,7 @@ ADR labels are policy-owned upstream labels and are linted when imported.
 
 ## Writing rules · `rule:adr:writing`
 
-Each ADR states:
+An ADR written directly for this repository states:
 
 - context;
 - decision;
@@ -90,10 +87,11 @@ Each ADR states:
 ADRs do not repeat package plans, roadmap sequencing, or long implementation
 catalogues.
 
+An ADR carrying an externally authored normative text instead records its status, edition, and provenance; states repository-specific amendments and implementation standing as an overlay; and carries the full normative text as its body.
+
 ## Machine use · `rem:adr:machine-use`
 
 ADR Markdown is not compiler, linker, transaction, or release input.
 
 Implemented policy is represented in code, configuration, and tests. ADRs
 explain and govern that implementation.
-

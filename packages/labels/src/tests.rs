@@ -2374,13 +2374,13 @@ fn no_place(_mint: &LabelMint) -> Option<adoption::StandardPlace> {
     None
 }
 
-/// The committed registry vocabulary is pinned to the archived draft.
+/// The committed registry vocabulary is pinned to ADR-020's normative body.
 /// This test reads the real document, not a fixture: the point is that
 /// the checker's table cannot drift from the registry it adopts.
 #[test]
-fn committed_registry_kinds_match_the_archived_draft() {
+fn committed_registry_kinds_match_the_normative_adr() {
     let text = fs::read_to_string(repository_root().join(adoption::REGISTRY_SOURCE))
-        .expect("the archived kind registry is readable");
+        .expect("the normative kind registry is readable");
     let parsed = adoption::parse_registry_source(&text);
     let committed: std::collections::BTreeSet<String> = adoption::REGISTRY_KINDS
         .iter()
@@ -2388,7 +2388,7 @@ fn committed_registry_kinds_match_the_archived_draft() {
         .collect();
     assert_eq!(
         parsed, committed,
-        "the committed kind table must equal the draft's Convention tables",
+        "the committed kind table must equal the ADR's Convention tables",
     );
     // The edition in force reports 208 kinds over its own generated
     // headline table, which the extraction must reproduce.
@@ -2438,7 +2438,7 @@ fn extension_set_is_disjoint_from_the_registry() {
 fn vocabulary_drift_fails_loudly_and_names_both_sides() {
     let directory = tempfile::tempdir().expect("temporary repository");
     let root = directory.path();
-    fs::create_dir_all(root.join("plans/drafts")).expect("drafts directory");
+    fs::create_dir_all(root.join("adr")).expect("ADR directory");
     fs::write(
         root.join(adoption::REGISTRY_SOURCE),
         concat!(
@@ -2468,13 +2468,13 @@ fn vocabulary_drift_fails_loudly_and_names_both_sides() {
     );
 }
 
-/// The committed pair table is pinned to the archived draft, name column
+/// The committed pair table is pinned to ADR-020's normative body, name column
 /// and kind column together. The kind table alone cannot say which name
 /// a kind belongs to, which is the whole of what head validation asks.
 #[test]
-fn committed_registry_pairs_match_the_archived_draft() {
+fn committed_registry_pairs_match_the_normative_adr() {
     let text = fs::read_to_string(repository_root().join(adoption::REGISTRY_SOURCE))
-        .expect("the archived kind registry is readable");
+        .expect("the normative kind registry is readable");
     let parsed = adoption::parse_registry_pairs(&text);
     let committed: std::collections::BTreeSet<(String, String)> = adoption::REGISTRY_PAIRS
         .iter()
@@ -2482,7 +2482,7 @@ fn committed_registry_pairs_match_the_archived_draft() {
         .collect();
     assert_eq!(
         parsed, committed,
-        "the committed pair table must equal the draft's Convention rows",
+        "the committed pair table must equal the ADR's Convention rows",
     );
     // The edition in force reports 349 rows over 333 names, which the
     // extraction must reproduce once the daggers are off the names.
@@ -2514,7 +2514,7 @@ fn committed_extension_pairs_match_the_adopting_record() {
 fn pair_drift_fails_loudly_and_names_both_sides() {
     let directory = tempfile::tempdir().expect("temporary repository");
     let root = directory.path();
-    fs::create_dir_all(root.join("plans/drafts")).expect("drafts directory");
+    fs::create_dir_all(root.join("adr")).expect("ADR directory");
     fs::write(
         root.join(adoption::REGISTRY_SOURCE),
         concat!(
@@ -2545,19 +2545,19 @@ fn pair_drift_fails_loudly_and_names_both_sides() {
 }
 
 /// An absent source is not drift: the synthetic fixture repositories of
-/// this suite carry neither document, and their absence must not be read
-/// as a vocabulary that shrank to nothing.
+/// this suite may carry no ADR, and its absence must not be read as a
+/// vocabulary that shrank to nothing.
 #[test]
 fn absent_vocabulary_sources_are_not_drift() {
     let directory = tempfile::tempdir().expect("temporary repository");
     assert!(
         adoption::verify_vocabulary_sources(directory.path()).is_empty(),
-        "a tree without the adopted documents reports no drift",
+        "a tree without the adopted ADR reports no drift",
     );
 }
 
-/// A kind in neither source fails, in an owner the registry governs, and
-/// the message names both sources so the reader knows where to look.
+/// A kind in neither ADR region fails in an owner the registry governs,
+/// and the message names both regions so the reader knows where to look.
 #[test]
 fn unknown_kind_fails_in_a_governed_owner() {
     let adoption_data = adoption::Adoption::repository();

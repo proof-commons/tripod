@@ -10,11 +10,10 @@
 //! cap guards: that prose is maintained, so unchecked growth there is
 //! duplication rather than content, and the cap keeps one fact to one
 //! owner. Documents nobody maintains by hand are different in kind. The
-//! executed implementation guides under `plans/guides/`, the static
-//! reviews under `plans/reviews/`, and the adopted-source drafts under
-//! `plans/drafts/` are verbatim records of a named tree, never edited
-//! to fit a budget and never trimmed. The closed records under
-//! `plans/history/` join them by role rather than by provenance: they
+//! executed implementation guides under `plans/guides/` and the static
+//! reviews under `plans/reviews/` are verbatim records of a named tree,
+//! never edited to fit a budget and never trimmed. The closed records
+//! under `plans/history/` join them by role rather than by provenance: they
 //! are this repository's own finished gate and finding registers, cut
 //! verbatim out of a maintained document once the work they describe
 //! closed, and never edited again. The `GENERATED_REGISTERS`
@@ -62,7 +61,7 @@ const ARCHIVE_HARD_CAP_BYTES: u64 = 4 * 1024 * 1024;
 /// load-bearing combined budget and accounted against
 /// [`ARCHIVE_HARD_CAP_BYTES`] instead.
 ///
-/// `plans/history/` differs from the other three in provenance but not
+/// `plans/history/` differs from the other two in provenance but not
 /// in role. The others hold documents this repository received; history
 /// holds records it wrote itself and then closed — completed gate
 /// records and the finding registers of remediated reviews, moved
@@ -70,12 +69,7 @@ const ARCHIVE_HARD_CAP_BYTES: u64 = 4 * 1024 * 1024;
 /// member shares is that the bytes are a finished record nobody edits
 /// again, so charging them to the maintained-prose budget would force
 /// an author to trim settled history to make room for current work.
-const ARCHIVE_DIRECTORIES: [&str; 4] = [
-    "plans/drafts/",
-    "plans/guides/",
-    "plans/history/",
-    "plans/reviews/",
-];
+const ARCHIVE_DIRECTORIES: [&str; 3] = ["plans/guides/", "plans/history/", "plans/reviews/"];
 
 /// The generated specification label register (ADR-014).
 pub const SPECIFICATION_REGISTER: &str = "plans/labels/specification.md";

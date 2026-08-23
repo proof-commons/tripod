@@ -611,7 +611,7 @@ fn anchor_set_hash_matches_the_published_recipe() {
 }
 
 /// Retired identifiers stay retired: reusing one for a new recipe is
-/// the silent redefinition `(´[PLAN-rule:identity:recipe-permanence]´)` forbids.
+/// the silent redefinition `(´[ADR021-rule:identity:recipe-permanence]´)` forbids.
 #[test]
 fn retired_identity_algorithms_stay_retired() {
     assert_eq!(SEMANTIC_HASH_ALGORITHM, "sha256-canonical-json-v3");
@@ -665,7 +665,7 @@ fn authorization_evidence_rows_are_declaration_order_independent() {
 // --- R2-N03: identity is reachable only through validation ---
 //
 // The adopted discipline puts validation before identity
-// `(´[PLAN-rule:identity:admission-order]´)`, and rehashing is
+// `(´[ADR021-rule:identity:admission-order]´)`, and rehashing is
 // explicitly not revalidation. `ValidatedDraftArchitecture` is the only public
 // input to `semantic_hash`, `behavioural_hash`, `canonical_json_bytes`,
 // and `PublishedArchitecture::from_architecture`, and `validate_draft`

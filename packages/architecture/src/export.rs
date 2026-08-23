@@ -83,7 +83,7 @@ impl PublishedArchitecture {
     ///
     /// Takes the validated wrapper rather than a raw `Architecture`
     /// (R2-N03): the envelope carries the active semantic identity, and
-    /// `(´[PLAN-rule:identity:admission-order]´)` puts validation before
+    /// `(´[ADR021-rule:identity:admission-order]´)` puts validation before
     /// identity, so an invalid draft
     /// must not be able to produce a trusted publication.
     pub fn from_architecture(

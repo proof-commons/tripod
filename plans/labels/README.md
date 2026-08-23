@@ -16,12 +16,12 @@ imported upstream citation:
 ```
 
 Plan-local labels are non-normative, but they are mechanically complete:
-every planning label has one mint (`inv:labels:unique-mint`)
+every planning label has one mint (`[ADR019-inv:labels:unique-mint]`)
 and every local citation resolves across the planning tree
-(`inv:labels:total-resolution`).
+(`[ADR019-inv:labels:total-resolution]`).
 
 Imported labels are authoritative references and are linted under
-(`inf:labels:imported-citation`).
+(`[ADR019-inf:labels:imported-citation]`).
 
 ## Registers · `tab:labels-index:files`
 
@@ -29,13 +29,13 @@ Imported labels are authoritative references and are linted under
 |---|---|---|
 | [Specification](specification.md) | the Attestation specification | `papers/attestation/main.tex` and `sections/*.tex` |
 | [Realization](realization.md) | the realization document | `docs/attestation/realization.md` |
-| [Attestation](attestation.md) | This repository, as acceptee | `plans/drafts/environment-kinds.md`, `adr/020-environment-kinds.md`, and the corpus census |
+| [Attestation](attestation.md) | This repository, as acceptee | `adr/020-environment-kinds.md` and the corpus census |
 
 The registers are derivative indexes. Their source documents remain
 authoritative.
 
 The first two index upstream labels. The third is the companion
-attestation register the adopted kind registry requires of an acceptee:
+attestation register ADR-020's normative kind registry requires of an acceptee:
 it views this repository's evidence base and status map, and presents
 the homonymy of the effective relation. It indexes no labels and is not
 a citation source.
