@@ -40,6 +40,7 @@ weight rule in [the plans README](../README.md).
 | [guide_eleven_concept.md](guide_eleven_concept.md) | Public declassification and confidential-to-public lifecycle |
 | [guide_twelve_concept.md](guide_twelve_concept.md) | Phase-4 end-to-end compact ASH |
 | [guide_thirteen_concept.md](guide_thirteen_concept.md) | Phase-5 end-to-end live receipt transfer |
+| [guide_confidential_funding_concept.md](guide_confidential_funding_concept.md) | Phase-5 confidential test materialization and funding protocol |
 
 ## Feature requests · `tab:guides:feature-requests`
 
