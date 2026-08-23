@@ -343,7 +343,7 @@ impl ValidatedLiveTransferResourceReport {
 }
 
 /// Why one resource report was not validated.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum LiveResourceReportRefusal {
     /// The report states a schema this validator does not know.
@@ -359,12 +359,11 @@ pub enum LiveResourceReportRefusal {
     /// The comparisons differ from the run's own.
     ComparisonsDiffer,
     /// The census differs from the study's own.
-    CensusDiffers {
-        /// What the report stated.
-        reported: ResourceStudyCensus,
-        /// What the validator recomputed.
-        recomputed: ResourceStudyCensus,
-    },
+    ///
+    /// Both censuses are boxed. Each is eight counts wide and a refusal
+    /// carrying two of them inline would make every `Result` in this
+    /// module pay for the one arm that is never taken on the happy path.
+    CensusDiffers(Box<(ResourceStudyCensus, ResourceStudyCensus)>),
     /// A prediction and an observation disagree (§18.4).
     ///
     /// The refusal §18.4 requires, carrying both figures. A resource
@@ -613,10 +612,10 @@ pub fn validate_live_resource_report(
 
     let recomputed = resource_census(&cases, &comparisons);
     if report.census != recomputed {
-        return Err(LiveResourceReportRefusal::CensusDiffers {
-            reported: report.census,
+        return Err(LiveResourceReportRefusal::CensusDiffers(Box::new((
+            report.census,
             recomputed,
-        });
+        ))));
     }
     if report.non_claims != ResourceNonClaim::ALL.iter().copied().collect() {
         return Err(LiveResourceReportRefusal::NonClaimCensusDiffers);
