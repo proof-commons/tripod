@@ -1365,11 +1365,13 @@ fn walk_for(
 /// reason: a hand count of pushes and pops is a second implementation of
 /// the interpreter, and this study is not entitled to one.
 ///
-/// The alternate peak has no precedent to copy. Nothing in this workspace
-/// measured one before, because the compact-ASH programs never move an
-/// item to the alternate stack; the live coordinator does, and a
-/// dimension §18.3 names cannot be left out because no earlier wave
-/// needed it.
+/// The alternate peak has no precedent to copy: nothing in this
+/// workspace had measured one before, and a dimension §18.3 names cannot
+/// be left out because no earlier wave needed it. What it measures to is
+/// zero at every leaf this study spends — no live program moves an item
+/// across — and that is a finding rather than a gap, which is why it is
+/// walked for rather than assumed: the walk is the same one that reports
+/// the main peak, and the main peak is what shows it ran.
 fn walk_program(
     target: &ReviewedElementsTapscriptDefinition,
     program: &TapscriptProgram,
@@ -1729,9 +1731,17 @@ mod tests {
         // The two leaf-derived dimensions are read from one artifact —
         // the control blocks these exact bytes carry — so they cannot
         // disagree with each other. A control block is a
-        // parity-and-version byte, an x-only key, and one node per
-        // level, and every measured input's is checked against that
-        // layout rather than against a remembered depth.
+        // parity-and-version byte, an x-only key, and one node per level,
+        // so a transaction's control total is thirty-three per input plus
+        // thirty-two per level of every input's own path.
+        //
+        // The paths are *not* all the same length, and that is the point
+        // of stating the relation this way rather than as one width times
+        // the input count: a coordinator leaf and a member leaf sit at
+        // different depths in the same committed tree, so a merge carries
+        // two control blocks of two different widths and an assertion
+        // written over their average would be an assertion about no leaf.
+        let mut uneven = false;
         for case in study() {
             for member in case.members() {
                 let control = member
@@ -1743,14 +1753,30 @@ mod tests {
                 let inputs = member.recipe().receipt_inputs() as u64;
 
                 assert_ne!(control, 0);
-                assert_eq!(control % inputs, 0);
-                assert_eq!(control / inputs, 33 + depth * 32);
+                let path_bytes = control
+                    .checked_sub(33 * inputs)
+                    .expect("every control block carries its version byte and internal key");
+                assert_eq!(path_bytes % 32, 0, "a merkle path is whole nodes");
+
+                let levels = path_bytes / 32;
+                assert!(
+                    levels <= depth * inputs,
+                    "no input's path is deeper than the deepest one reported",
+                );
+                assert!(levels >= depth, "the deepest path is one of the paths");
+                uneven |= levels != depth * inputs;
+
                 assert!(
                     depth <= 8,
                     "the tested deployment declares a maximum depth of eight",
                 );
             }
         }
+        assert!(
+            uneven,
+            "no measured transaction spent leaves at two different depths, \
+             so this relation was never tested where it could fail",
+        );
     }
 
     #[test]
@@ -1805,25 +1831,34 @@ mod tests {
     }
 
     #[test]
-    fn the_stack_peaks_are_the_validators_own_and_the_alternate_one_is_used() {
+    fn the_alternate_stack_is_measured_at_zero_and_the_walk_that_says_so_ran() {
         // §18.3 names both peaks, and this workspace had measured neither
-        // for a live leaf before. The main peak must exceed the one-item
-        // precondition, and the alternate peak is asserted nonzero
-        // somewhere in the study: a walk reporting zero everywhere is a
-        // walk that never ran, and reporting it as a measurement is the
-        // shape of mistake §18.4 exists to refuse.
-        let mut alternate_seen = 0_u64;
+        // for a live leaf before. The alternate peak turns out to be zero
+        // at every measured leaf — no live program moves an item across —
+        // and that is a *measurement* rather than an absence only if the
+        // walk that produced it actually ran.
+        //
+        // So the walk is made to prove itself on the main stack, where it
+        // has something to find: the precondition is one item, and a
+        // reachable state deeper than that can only have come from
+        // interpreting instructions. A walk that silently refused every
+        // prefix would report the precondition's own depth everywhere,
+        // and this refuses that reading — which is what stops the zero
+        // beside it from being the "absent read as zero" §18.4 forbids.
+        let mut deepest_main = 0_u64;
         for case in study() {
             for member in case.members() {
                 let main = member
                     .figure(LiveResourceRecord::PeakMainStack)
                     .expect("every measurement carries a main peak");
                 assert!(main >= 1, "the precondition alone is one item");
+                deepest_main = deepest_main.max(main);
 
-                alternate_seen = alternate_seen.max(
-                    member
-                        .figure(LiveResourceRecord::PeakAlternateStack)
-                        .expect("every measurement carries an alternate peak"),
+                assert_eq!(
+                    member.figure(LiveResourceRecord::PeakAlternateStack),
+                    Some(0),
+                    "{} reached an alternate stack no live program builds",
+                    case.case().name(),
                 );
 
                 assert!(
@@ -1833,9 +1868,10 @@ mod tests {
                 );
             }
         }
-        assert_ne!(
-            alternate_seen, 0,
-            "no measured leaf used the alternate stack, which the live coordinator does",
+        assert!(
+            deepest_main > 1,
+            "no measured leaf ever grew its stack past the precondition, \
+             so the walk that reported these peaks never interpreted anything",
         );
     }
 
