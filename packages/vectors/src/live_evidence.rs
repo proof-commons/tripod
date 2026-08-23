@@ -47,6 +47,10 @@ use linker::CandidateLinkedLiveTransferBundle;
 use transaction::live_abi::CandidateLiveTransferAbi;
 
 use crate::error::VectorError;
+use crate::live_fault_discharge::{
+    LiveFaultValidator, UNDISCHARGED_FAULT_ROWS, UndischargedFaultReason,
+    ValidatedLiveFaultEvidence, discharge_live_faults, live_fault_cases,
+};
 use crate::live_first_party::{
     LiveFirstPartyValidator, ValidatedLiveFirstPartyEvidence, discharge_live_first_party,
     live_first_party_cases,
@@ -60,17 +64,44 @@ use crate::matrix::EvidenceBoundary;
 
 /// Where the §13.1 minimality pair registry stands.
 ///
-/// One of §13.1's seven sources, and the one this wave does not build.
-/// §13.6 keeps the safety and minimality reports apart and forbids either
-/// satisfying the other, so a safety plan derived without the pair
-/// registry is complete *as a safety plan* — but the source is still
-/// named, because a plan that silently listed six sources would be a plan
-/// whose derivation nobody could check against §13.1.
+/// One of §13.1's seven sources. §13.6 keeps the safety and minimality
+/// reports apart and forbids either satisfying the other, so what a
+/// safety plan records here is the source's *standing* and never its
+/// conclusions: how many §16.1 pairs the registry holds, and how many of
+/// them satisfy §16.2. A safety plan that carried the minimality verdict
+/// would be the substitution §13.6 forbids.
+///
+/// # Why the counts are here and the verdict is not
+///
+/// A plan that named the source without saying whether it exists would
+/// leave §13.1's derivation uncheckable, and one that named the source
+/// and repeated its answer would make the two reports one. The counts are
+/// the middle: enough for a reader to see the source was built, and not
+/// enough for anything to conclude minimality from a safety plan.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum MinimalityRegistryStanding {
-    /// The registry is a later wave's, and no safety row consumes it.
-    NotYetBuilt,
+    /// The registry built, with its pair count and how many satisfy
+    /// §16.2.
+    Built {
+        /// How many §16.1 pairs the registry holds.
+        pairs: usize,
+        /// How many of them satisfy every §16.2 condition.
+        supporting: usize,
+    },
+    /// The registry did not build, so the source is unavailable.
+    ///
+    /// Distinct from a registry that built and supports nothing: one is
+    /// a missing source and the other is a source with a finding.
+    NotConstructible,
+}
+
+impl MinimalityRegistryStanding {
+    /// Whether the source exists at all.
+    #[must_use]
+    pub const fn is_built(self) -> bool {
+        matches!(self, Self::Built { .. })
+    }
 }
 
 /// What stands between one row and any evidence at all.
@@ -152,6 +183,12 @@ pub enum LiveInfrastructureBlocker {
 }
 
 /// Why a first-party row carries no executable discharge.
+///
+/// Four gaps, and three of them are specific obstacles rather than
+/// absence of effort. §4.2's last sentence gives exactly two honest
+/// dispositions for a requirement whose policy cannot be met — outside
+/// the coverage denominator, or outstanding inside it — and every row
+/// here takes the second, which is why each names what stands in the way.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum FirstPartyGap {
@@ -162,6 +199,47 @@ pub enum FirstPartyGap {
     /// staged, so nothing here has been driven to a refusal. Recorded as
     /// a gap rather than as coverage.
     NoStagedCase,
+    /// No typed input can express the row's malformation at all.
+    MalformedInputStructurallyInexpressible,
+    /// The owning validator sits at another pre-target boundary than the
+    /// row declares.
+    OwningValidatorIsAtAnotherPreTargetBoundary,
+    /// No validator on the live-transfer request path owns the class.
+    NoOwningValidatorOnTheRequestPath,
+}
+
+impl FirstPartyGap {
+    /// The gap one reported fault row hits.
+    #[must_use]
+    pub const fn of(reason: UndischargedFaultReason) -> Self {
+        match reason {
+            UndischargedFaultReason::MalformedInputStructurallyInexpressible => {
+                Self::MalformedInputStructurallyInexpressible
+            }
+            UndischargedFaultReason::OwningValidatorIsAtAnotherPreTargetBoundary => {
+                Self::OwningValidatorIsAtAnotherPreTargetBoundary
+            }
+            UndischargedFaultReason::NoOwningValidatorOnTheRequestPath => {
+                Self::NoOwningValidatorOnTheRequestPath
+            }
+        }
+    }
+}
+
+/// Which first-party entry point discharged one row.
+///
+/// Two vocabularies, because the matrix's pre-target rows are owned by
+/// two different censuses: §15.3's owner and signature faults reach one
+/// of two signing-flow entry points, and §15.4–§15.7's reach one of five
+/// spread across three crates. Collapsing them would lose the fact a
+/// coverage reader wants, which is *what* refused.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
+pub enum DischargingValidator {
+    /// One of §12.7's two owner-authorization entry points.
+    OwnerAuthorization(LiveFirstPartyValidator),
+    /// One of the five §15.4–§15.7 fault entry points.
+    Fault(LiveFaultValidator),
 }
 
 /// What answers one §15 row, or what stands in the way.
@@ -179,7 +257,7 @@ pub enum LiveRowStanding {
     /// asserted here.
     FirstPartyDischarged {
         /// The entry point that refused.
-        validator: LiveFirstPartyValidator,
+        validator: DischargingValidator,
         /// The refusal class it named.
         class: &'static str,
     },
@@ -332,6 +410,7 @@ pub struct LiveTransferEvidencePlan {
     minimality: MinimalityRegistryStanding,
     rows: Vec<LiveEvidenceRow>,
     discharged: Vec<ValidatedLiveFirstPartyEvidence>,
+    fault_discharged: Vec<ValidatedLiveFaultEvidence>,
     census: LiveEvidenceCensus,
 }
 
@@ -366,10 +445,21 @@ impl LiveTransferEvidencePlan {
         &self.rows
     }
 
-    /// The first-party evidence the plan recomputed.
+    /// The §15.3 first-party evidence the plan recomputed.
     #[must_use]
     pub fn discharged(&self) -> &[ValidatedLiveFirstPartyEvidence] {
         &self.discharged
+    }
+
+    /// The §15.4–§15.7 first-party evidence the plan recomputed.
+    ///
+    /// Kept beside [`Self::discharged`] rather than merged into it: the
+    /// two censuses drive different entry points with different refusal
+    /// vocabularies, and a single list would have to re-spell one of
+    /// them.
+    #[must_use]
+    pub fn fault_discharged(&self) -> &[ValidatedLiveFaultEvidence] {
+        &self.fault_discharged
     }
 
     /// The census figures.
@@ -450,7 +540,7 @@ fn specific_blocker(row: &LiveSafetyRow) -> Option<LiveInfrastructureBlocker> {
 fn classify(
     row: &'static LiveSafetyRow,
     plan: &ValidatedLiveTransferOperationPlan,
-    discharged: &BTreeMap<&'static str, (LiveFirstPartyValidator, &'static str)>,
+    discharged: &BTreeMap<&'static str, (DischargingValidator, &'static str)>,
 ) -> Result<LiveRowStanding, VectorError> {
     if row.boundary() == EvidenceBoundary::ReportSemanticProjectionRejection {
         return Ok(LiveRowStanding::ReportLayerAnswerable);
@@ -462,9 +552,15 @@ fn classify(
         });
     }
     if row.is_first_party() {
-        return Ok(LiveRowStanding::FirstPartyUndischarged(
-            FirstPartyGap::NoStagedCase,
-        ));
+        // A row the fault census reports outstanding names the obstacle
+        // it hits, and one nothing has staged at all says that instead.
+        // The difference matters: the first three are findings about this
+        // workspace and the fourth is work nobody has done.
+        let gap = UNDISCHARGED_FAULT_ROWS
+            .iter()
+            .find_map(|(name, reason)| (*name == row.name()).then_some(*reason))
+            .map_or(FirstPartyGap::NoStagedCase, FirstPartyGap::of);
+        return Ok(LiveRowStanding::FirstPartyUndischarged(gap));
     }
 
     if row.polarity() == LiveSafetyPolarity::Positive {
@@ -503,7 +599,9 @@ fn classify(
 /// candidate ABI through [`demonstration_live_bundle`] and
 /// [`demonstration_live_abi`]; the canonical safety mutation registry
 /// through [`required_safety_matrix`]; the minimality pair registry,
-/// whose standing is recorded rather than built; and the exact target,
+/// built through [`crate::live_pairs::build_minimality_pairs`] and
+/// recorded here as a standing rather than as a verdict (§13.6); and the
+/// exact target,
 /// deployment, and executor provenance expectation, which are a *run's*
 /// inputs and enter through [`crate::live_report`] rather than here — a
 /// plan that named a deployment nobody ran against would be asserting a
@@ -527,7 +625,7 @@ pub fn derive_live_evidence_plan() -> Result<LiveTransferEvidencePlan, VectorErr
     let evidence =
         discharge_live_first_party().map_err(|_| VectorError::LiveSubstrateUnavailable)?;
     let cases = live_first_party_cases();
-    let index: BTreeMap<&'static str, (LiveFirstPartyValidator, &'static str)> = evidence
+    let mut index: BTreeMap<&'static str, (DischargingValidator, &'static str)> = evidence
         .iter()
         .map(|discharged| {
             let class = cases
@@ -537,9 +635,35 @@ pub fn derive_live_evidence_plan() -> Result<LiveTransferEvidencePlan, VectorErr
                     "",
                     crate::live_first_party::LiveFirstPartyCase::expected_class,
                 );
-            (discharged.row(), (discharged.validator(), class))
+            (
+                discharged.row(),
+                (
+                    DischargingValidator::OwnerAuthorization(discharged.validator()),
+                    class,
+                ),
+            )
         })
         .collect();
+
+    // §15.4–§15.7's pre-target rows, from the second census. Both are
+    // *recomputed* rather than read: each entry here came back from a
+    // validator that was driven twice, and a row absent from both indexes
+    // stays outstanding rather than being assumed covered.
+    let faults = discharge_live_faults().map_err(|_| VectorError::LiveSubstrateUnavailable)?;
+    let fault_cases = live_fault_cases();
+    for discharged in &faults {
+        let class = fault_cases
+            .iter()
+            .find(|case| case.row() == discharged.row())
+            .map_or(
+                "",
+                crate::live_fault_discharge::LiveFaultCase::expected_class,
+            );
+        index.insert(
+            discharged.row(),
+            (DischargingValidator::Fault(discharged.validator()), class),
+        );
+    }
 
     let mut rows = Vec::with_capacity(required_safety_matrix().len());
     let mut census = LiveEvidenceCensus::default();
@@ -561,11 +685,28 @@ pub fn derive_live_evidence_plan() -> Result<LiveTransferEvidencePlan, VectorErr
         plan,
         bundle,
         abi,
-        minimality: MinimalityRegistryStanding::NotYetBuilt,
+        minimality: minimality_registry_standing(),
         rows,
         discharged: evidence,
+        fault_discharged: faults,
         census,
     })
+}
+
+/// Where §13.1's fifth source stands, resolved by building it.
+///
+/// The registry is built rather than asked about, so a source that
+/// stopped building is reported as unavailable instead of as a source
+/// with no pairs. What comes back is two counts and no verdict: §13.6
+/// keeps [`crate::live_minimality_report`]'s answer out of a safety plan.
+fn minimality_registry_standing() -> MinimalityRegistryStanding {
+    crate::live_pairs::build_minimality_pairs().map_or(
+        MinimalityRegistryStanding::NotConstructible,
+        |rows| MinimalityRegistryStanding::Built {
+            pairs: rows.len(),
+            supporting: rows.iter().filter(|row| row.supports_minimality()).count(),
+        },
+    )
 }
 
 /// Every declared row resolves in at least one representation and case.
@@ -637,9 +778,103 @@ pub fn carried_residuals() -> BTreeSet<LiveInfrastructureBlocker> {
 #[cfg(test)]
 mod tests {
     use super::{
-        LiveInfrastructureBlocker, LiveRowStanding, blocker_census, derive_live_evidence_plan,
+        LiveInfrastructureBlocker, LiveRowStanding, MinimalityRegistryStanding, blocker_census,
+        derive_live_evidence_plan,
     };
     use crate::live_safety::{LiveSafetyPolarity, LiveSafetySection};
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn the_first_party_half_of_the_matrix_is_answered_but_for_three_named_rows() {
+        // The matrix's pre-target half, after both censuses. Twenty-seven
+        // rows of §15 are refused before any target sees the bytes;
+        // twenty-four of them have been driven to their own refusal, and
+        // the three that have not each name the obstacle rather than
+        // being silently outstanding (§4.2's last sentence).
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        let census = plan.census();
+        assert_eq!(census.first_party_discharged(), 24);
+        assert_eq!(
+            census.first_party_undischarged(),
+            crate::live_fault_discharge::UNDISCHARGED_FAULT_ROWS.len(),
+        );
+
+        // No row is outstanding for want of effort: every one of the
+        // three names a specific obstacle, and none is `NoStagedCase`.
+        let mut reported = BTreeSet::new();
+        for row in plan.rows() {
+            if let LiveRowStanding::FirstPartyUndischarged(gap) = row.standing() {
+                assert_ne!(
+                    *gap,
+                    crate::live_evidence::FirstPartyGap::NoStagedCase,
+                    "{} is outstanding with no stated obstacle",
+                    row.row(),
+                );
+                reported.insert(row.row().name());
+            }
+        }
+        assert_eq!(
+            reported,
+            crate::live_fault_discharge::UNDISCHARGED_FAULT_ROWS
+                .iter()
+                .map(|(row, _)| *row)
+                .collect::<BTreeSet<_>>(),
+        );
+
+        // And the whole matrix still cross-foots.
+        assert_eq!(
+            census.first_party_discharged()
+                + census.first_party_undischarged()
+                + census.native_run_required()
+                + census.infrastructure_blocked()
+                + census.report_layer()
+                + census.experimental(),
+            108,
+        );
+    }
+
+    #[test]
+    fn both_discharging_vocabularies_are_really_driven() {
+        // A plan that quietly lost one census would report a smaller
+        // matrix rather than fail, so the two are counted apart.
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        let mut owner = 0_usize;
+        let mut fault = 0_usize;
+        for row in plan.rows() {
+            if let LiveRowStanding::FirstPartyDischarged { validator, class } = row.standing() {
+                assert_ne!(class.len(), 0, "{} discharged naming no class", row.row());
+                match validator {
+                    crate::live_evidence::DischargingValidator::OwnerAuthorization(_) => owner += 1,
+                    crate::live_evidence::DischargingValidator::Fault(_) => fault += 1,
+                }
+            }
+        }
+        assert_eq!(
+            owner,
+            crate::live_first_party::live_first_party_cases().len()
+        );
+        assert_eq!(fault, crate::live_fault_discharge::live_fault_cases().len());
+    }
+
+    #[test]
+    fn the_minimality_source_is_built_and_carries_no_verdict() {
+        // §13.1's fifth source, and §13.6's separation held at the same
+        // time: the plan says the registry exists and how wide it is, and
+        // it says nothing about whether the private plan discloses less.
+        // The supporting count is zero and that is a fact about the
+        // registry, not a minimality conclusion — which
+        // `crate::live_minimality_report` is the only thing entitled to
+        // draw.
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        assert!(plan.minimality().is_built());
+        assert_eq!(
+            plan.minimality(),
+            MinimalityRegistryStanding::Built {
+                pairs: crate::live_pairs::MinimalityPair::ALL.len(),
+                supporting: 0,
+            },
+        );
+    }
 
     #[test]
     fn the_plan_classifies_every_row_exactly_once() {
@@ -664,13 +899,12 @@ mod tests {
         // §4.2 was actually run for: every discharged row came back from
         // the validator, and the count is the census's own.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        let staged = crate::live_first_party::live_first_party_cases().len()
+            + crate::live_fault_discharge::live_fault_cases().len();
+        assert_eq!(plan.census().first_party_discharged(), staged);
         assert_eq!(
+            plan.discharged().len() + plan.fault_discharged().len(),
             plan.census().first_party_discharged(),
-            crate::live_first_party::live_first_party_cases().len(),
-        );
-        assert_eq!(
-            plan.discharged().len(),
-            plan.census().first_party_discharged()
         );
         for row in plan.rows() {
             if let LiveRowStanding::FirstPartyDischarged { class, .. } = row.standing() {

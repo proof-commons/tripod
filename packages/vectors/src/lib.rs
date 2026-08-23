@@ -9,9 +9,13 @@ pub mod error;
 pub mod first_party;
 pub mod fixture;
 pub mod live_capability;
+pub mod live_disclosure;
 pub mod live_evidence;
+pub mod live_fault_discharge;
 pub mod live_first_party;
+pub mod live_minimality_report;
 pub mod live_native;
+pub mod live_pairs;
 pub mod live_plan;
 pub mod live_report;
 pub mod live_safety;
@@ -42,24 +46,52 @@ pub use first_party::{
     ValidatedFirstPartyNegativeEvidence, validate_first_party_negative,
 };
 pub use live_capability::{OracleFixtureValues, OracleLiveCurve};
+pub use live_disclosure::{
+    AdditionalDisclosureReason, DisclosedItem, DisclosureClass, DisclosureRow, DisclosureStanding,
+    additional_exact_amount_disclosures, disclosure_difference, disclosure_index, disclosure_table,
+    recorded_classes, shape_leakage,
+};
 pub use live_evidence::{
-    FirstPartyGap, LiveEvidenceCensus, LiveEvidenceRow, LiveInfrastructureBlocker, LiveRowStanding,
-    LiveTransferEvidencePlan, MinimalityRegistryStanding, blocker_census, carried_residuals,
-    derive_live_evidence_plan,
+    DischargingValidator, FirstPartyGap, LiveEvidenceCensus, LiveEvidenceRow,
+    LiveInfrastructureBlocker, LiveRowStanding, LiveTransferEvidencePlan,
+    MinimalityRegistryStanding, blocker_census, carried_residuals, derive_live_evidence_plan,
+};
+pub use live_fault_discharge::{
+    FaultMutation, LiveFaultCase, LiveFaultRefusal, LiveFaultValidator, ObservedFaultRefusal,
+    UNDISCHARGED_FAULT_ROWS, UndischargedFaultReason, ValidatedLiveFaultEvidence,
+    discharge_live_faults, live_fault_cases, validate_live_fault,
 };
 pub use live_first_party::{
     LiveFirstPartyCase, LiveFirstPartyRefusal, LiveFirstPartyValidator, LiveOwnerScenario,
     LiveResponseMalformation, ValidatedLiveFirstPartyEvidence, discharge_live_first_party,
     live_first_party_cases, validate_live_first_party,
 };
+pub use live_minimality_report::{
+    FailureModeStanding, LIVE_MINIMALITY_REPORT_SCHEMA, LIVE_MINIMALITY_SCHEMA_ID,
+    LifecycleConclusion, LiveMinimalityDiagnostics, LiveMinimalityReportRefusal,
+    LiveMinimalityReportRole, LiveTransferMinimalityReport, MinimalityFailureMode,
+    MinimalityPairCensus, MinimalityStanding, PlanDisclosure, PrivacyNonClaim,
+    ValidatedLiveTransferMinimalityReport, assemble_live_minimality_report,
+    canonical_bytes_publish_no_forbidden_key, disclosure_comparison, item_standings, pair_census,
+    pair_standings, render_live_minimality_report, resolve_failure_modes,
+    validate_live_minimality_report,
+};
 pub use live_native::{
     LiveFormNotSubmitted, LiveNativeObservation, LiveNativeRefusal, LiveNativeStep,
     LiveNativeTranscript, LiveTransferOperationPlanner, observed_run_of_record,
     render_live_native_run,
 };
+pub use live_pairs::{
+    ExpectedTransferSemantics, MinimalityConditionStanding, MinimalityPair, MinimalityPairRefusal,
+    MinimalityPairRow, PairAcceptanceCondition, PairMaterialization, PairShapeClaim,
+    PairTargetVerdict, PredecessorAssumption, ResourceComparisonStanding, SemanticEndpoint,
+    SemanticTransferFixture, SponsorPresence, UnclaimedPairReason, build_minimality_pairs,
+    condition_scoreboard, minimality_fixtures,
+};
 pub use live_plan::{
     demonstration_live_abi, demonstration_live_bundle, link_live_bundle_for_asset,
-    live_abi_for_asset, live_transfer_plan, published_owner,
+    live_abi_for_asset, live_deployment_for_asset, live_transfer_plan, published_owner,
+    relocatable_live_bundles,
 };
 pub use live_report::{
     LIVE_SAFETY_REPORT_SCHEMA, LiveLifecycleStatus, LiveRunStanding, LiveSafetyCompleteness,
