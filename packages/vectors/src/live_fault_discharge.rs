@@ -35,6 +35,8 @@
 //! signatures are opaque bytes that authorize nothing, for the reason
 //! [`crate::live_first_party`] states: none of these refusals reads one.
 
+use std::sync::OnceLock;
+
 use compiler::live_transfer_plan::LiveTransferRepresentationPlan;
 use linker::{
     LinkRefusal, LiveDefinitionCensus, LiveDefinitionOrigin, LiveLinkSymbol, LiveSymbolValue,
@@ -1118,6 +1120,23 @@ pub fn validate_live_fault(
 /// Whatever [`validate_live_fault`] refuses, on the first case that does
 /// not meet §4.2.
 pub fn discharge_live_faults() -> Result<Vec<ValidatedLiveFaultEvidence>, LiveFaultRefusal> {
+    static CACHED: OnceLock<Result<Vec<ValidatedLiveFaultEvidence>, LiveFaultRefusal>> =
+        OnceLock::new();
+    CACHED.get_or_init(run_every_fault_case).clone()
+}
+
+/// The census proper, run once behind the cache.
+///
+/// # The memoization changes nothing about what is established
+///
+/// Each case is a pure function of constants in this file and of the
+/// substrate [`crate::live_plan`] already caches, so two runs cannot
+/// differ; driving thirteen entry points twice each cost about a minute
+/// per caller, and [`crate::live_evidence`] asks for the census once per
+/// evidence plan. The cache holds the *result*, refusals included, so a
+/// census that failed §4.2 keeps failing rather than being retried into a
+/// different answer.
+fn run_every_fault_case() -> Result<Vec<ValidatedLiveFaultEvidence>, LiveFaultRefusal> {
     live_fault_cases().iter().map(validate_live_fault).collect()
 }
 
