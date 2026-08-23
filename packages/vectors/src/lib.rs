@@ -18,6 +18,7 @@ pub mod live_native;
 pub mod live_pairs;
 pub mod live_plan;
 pub mod live_report;
+pub mod live_resources;
 pub mod live_safety;
 pub mod materialize;
 pub mod matrix;
@@ -99,6 +100,13 @@ pub use live_report::{
     RecomputedItem, ValidatedLiveTransferSafetyReport, VolatileField, assemble_live_safety_report,
     canonical_bytes_publish_no_sponsor_value, render_live_safety_report, section_scoreboard,
     validate_live_safety_report,
+};
+pub use live_resources::{
+    CandidateBoundCost, CandidatePositionDomain, CandidateTreeAdmission,
+    RESEARCH_RECEIPT_INPUT_BOUNDS, RESEARCH_RECEIPT_OUTPUT_BOUNDS, RESEARCH_SPONSOR_INPUT_BOUNDS,
+    admitted_shape_count, assignment_fits_tested_set, assignments_realized_by,
+    bound_assignment_costs, committed_leaf_count, committed_leaves, cost_bound_assignment,
+    research_bound_assignments, tree_admission,
 };
 pub use live_safety::{
     LiveRelationStanding, LiveRowLink, LiveSafetyPolarity, LiveSafetyRow, LiveSafetySection,

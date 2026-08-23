@@ -21,6 +21,7 @@ vectors_source_files = files(
   'src/live_pairs.rs',
   'src/live_plan.rs',
   'src/live_report.rs',
+  'src/live_resources.rs',
   'src/live_safety.rs',
   'src/materialize.rs',
   'src/matrix.rs',
