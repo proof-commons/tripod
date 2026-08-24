@@ -176,7 +176,14 @@ impl ConfidentialProofMaterializer for StubMaterializer {
         }
         let mut bytes = [0_u8; COMMITMENT_BYTES];
         bytes[0] = 0x02;
-        bytes[1..].copy_from_slice(nonce_input);
+        // Not the nonce input itself. A real nonce field is a point and
+        // not the scalar behind it, and a stand-in that copied the scalar
+        // into the field would have put an opening into the protected
+        // bytes -- which is exactly what the result is supposed never to
+        // carry.
+        for (slot, byte) in bytes[1..].iter_mut().zip(nonce_input) {
+            *slot = byte ^ 0x5a;
+        }
         Some(bytes)
     }
 
@@ -214,8 +221,14 @@ impl ConfidentialProofMaterializer for StubMaterializer {
 struct StubChecker {
     /// Which origin this check declares itself to be.
     origin: CommitmentOrigin,
-    /// Disagree with the materializer about the commitment.
-    disagree: bool,
+    /// Disagree with the materializer about the created outputs'
+    /// commitments.
+    ///
+    /// Scoped to the created outputs on purpose: a checker that also
+    /// disagreed about the consumed input's commitment would be refused
+    /// by the preflight, and the test would be measuring the opening
+    /// check rather than the independence check.
+    disagree_about_destinations: bool,
     /// Refuse to solve the balancing blinder.
     refuse_solve: bool,
 }
@@ -224,7 +237,7 @@ impl Default for StubChecker {
     fn default() -> Self {
         Self {
             origin: CommitmentOrigin::FirstPartyBignumOracle,
-            disagree: false,
+            disagree_about_destinations: false,
             refuse_solve: false,
         }
     }
@@ -242,7 +255,7 @@ impl IndependentCommitmentCheck for StubChecker {
         value_blinder: &[u8; SCALAR_BYTES],
     ) -> Option<IndependentCommitment> {
         let mut bytes = stub_commitment(explicit_asset, semantic_amount, value_blinder);
-        if self.disagree {
+        if self.disagree_about_destinations && semantic_amount != CONSUMED {
             bytes[COMMITMENT_BYTES - 1] ^= 0xff;
         }
         Some(IndependentCommitment::from_independent_recomputation(bytes))
@@ -650,7 +663,7 @@ fn an_independent_origin_cannot_self_attest() {
 #[test]
 fn two_origins_that_disagree_refuse() {
     let checker = StubChecker {
-        disagree: true,
+        disagree_about_destinations: true,
         ..StubChecker::default()
     };
 
