@@ -30,11 +30,24 @@
 //! §6.3 admits a private transfer only over confidential receipt inputs,
 //! and this module states such inputs as fixture views. A view is a
 //! statement, and Wave 10 established with a real run that no funding
-//! step of this pipeline can produce the output that view describes:
+//! step of THIS pipeline can produce the output that view describes:
 //! [`LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded`].
 //! So [`PredecessorAssumption`] travels with every private
 //! materialization rather than being mentioned in a report footnote, and
 //! §16.2's first condition reads it.
+//!
+//! The scope of that word is now narrower than it reads, and saying so is
+//! the honest thing rather than leaving a reader to infer it. A
+//! confidential predecessor IS fundable: the confidential funding arm
+//! exists, a deterministic materializer builds the exact
+//! explicit-asset/confidential-value form, and one predecessor of that
+//! form has been submitted, accepted, mined, and read back raw
+//! ([`crate::confidential_predecessor`]). What remains untrue for THIS
+//! pipeline is unchanged — its own funding step names an
+//! `amount_per_output` and has no confidential form, and nothing here
+//! consumes a predecessor funded through the other arm — so the
+//! assumption still stands where it stands, on a narrower ground than
+//! the word alone suggests.
 //!
 //! # No pair is dropped for being blocked
 //!
@@ -436,13 +449,24 @@ pub enum UnclaimedPairReason {
 /// §13.3's "constructibility assumptions", as a field rather than as
 /// prose. The explicit arm is a fact Wave 10 established by funding one
 /// on a real chain; the private arm is an assumption Wave 10 established
-/// *cannot* be discharged through this boundary.
+/// cannot be discharged through THIS boundary.
+///
+/// "Through this boundary" is now the whole of the claim, and it is a
+/// smaller claim than it was. A confidential predecessor is fundable and
+/// one has been funded, mined, and read back through the confidential
+/// funding arm. What has not happened is this pipeline consuming one:
+/// its funding step has no confidential form, and its private
+/// materialization does not take the transaction-wide path that would
+/// consume an opening. The assumption is therefore still carried, and it
+/// is carried for a reason that no longer has a name of its own in this
+/// vocabulary.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum PredecessorAssumption {
     /// An explicit live receipt at the deployment's own program, which a
     /// funding step can create and has.
     ExplicitPredecessorIsFundable,
-    /// A confidential live receipt, which no funding step can create.
+    /// A confidential live receipt, which no funding step of this
+    /// pipeline can create.
     ConfidentialPredecessorIsAssumed(LiveInfrastructureBlocker),
 }
 
@@ -1347,9 +1371,20 @@ fn resolve_conditions(
     BTreeMap::from([
         // §14.3's sixth ingredient exists for neither member, and the
         // private member additionally rests on a predecessor no funding
-        // step can create. The more specific blocker wins: clearing the
-        // digest alone would still leave the private half unbuildable on
-        // a chain.
+        // step of this pipeline can create. The more specific blocker
+        // wins: clearing the digest alone would still leave the private
+        // half unbuildable on a chain.
+        //
+        // The blocker's word is retained deliberately and is not the
+        // whole of the reason any more. A confidential predecessor is
+        // fundable through the confidential arm and one has been mined;
+        // what keeps this condition blocked is that this pipeline
+        // consumes no such predecessor, because its private
+        // materialization does not take the transaction-wide path. That
+        // is a narrower condition than the word names, it has no name of
+        // its own here, and minting one is not this wave's to do -- so
+        // the standing is left exactly where it is rather than moved on
+        // a reading.
         (
             Condition::BothMaterializationsConstructible,
             Standing::Blocked(LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded),

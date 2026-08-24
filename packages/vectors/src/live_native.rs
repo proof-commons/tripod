@@ -395,13 +395,24 @@ impl LiveNativeTranscript {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum LiveFormNotSubmitted {
-    /// No confidential predecessor can be funded on this chain.
+    /// No confidential predecessor can be funded by THIS pipeline's own
+    /// funding step.
     ///
     /// §6.3 admits a private transfer only over confidential receipt
     /// inputs, and the finalization refuses an input whose value field is
     /// explicit. The target-generic funding step names an
-    /// `amount_per_output` and has no confidential form, so a run can
-    /// create no confidential receipt for a private transfer to consume.
+    /// `amount_per_output` and has no confidential form, so a run of this
+    /// pipeline creates no confidential receipt for a private transfer to
+    /// consume.
+    ///
+    /// That sentence is still true and is now scoped rather than
+    /// absolute. The confidential funding arm exists, and a predecessor
+    /// of the exact hybrid form has been submitted, accepted, mined, and
+    /// read back raw through it. This pipeline reaches none of that: its
+    /// funding step is the target-generic one, and its private
+    /// materialization does not take the transaction-wide path that
+    /// consumes an opening. The gap is therefore real and its name is
+    /// wider than its ground.
     ///
     /// The consequence is exact and worth stating plainly: the two
     /// questions Wave 9 left for a target — whether the value field the
@@ -814,12 +825,16 @@ impl TargetOperationPlanner for LiveTransferOperationPlanner {
             }
             Stage::SubmitPrivate => {
                 // Declared rather than attempted. The planner knows what
-                // it funded — explicit outputs, because the funding step
-                // has no other form — so it knows before trying that no
-                // confidential receipt exists to consume, and says so.
-                // Trying anyway and catching the builder's refusal would
-                // record a construction failure where the honest record
-                // is a materialization gap.
+                // it funded — explicit outputs, because THIS pipeline's
+                // funding step has no other form — so it knows before
+                // trying that no confidential receipt exists in this run
+                // to consume, and says so. Trying anyway and catching the
+                // builder's refusal would record a construction failure
+                // where the honest record is a materialization gap.
+                //
+                // A confidential predecessor is fundable elsewhere in
+                // this package and one has been mined. Nothing here
+                // consumes it, so nothing here changes.
                 self.transcript.not_submitted.insert((
                     LiveTransferRepresentationPlan::PrivateCommitted,
                     LiveFormNotSubmitted::NoConfidentialPredecessorCanBeFunded,
