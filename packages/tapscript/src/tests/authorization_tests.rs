@@ -19,8 +19,9 @@
 use std::collections::BTreeSet;
 
 use target_elements::{
-    AuthorizationContract, EncodingClass, SighashCapability, SighashDimension,
-    TargetEvidenceRequirementId, UnknownPublicKeyTypeRule,
+    AuthorizationContract, EncodingClass, ExercisingObservation, ObservationIdentity,
+    ReviewedGround, SighashCapability, SighashDimension, SighashSourceCitation,
+    TargetEvidenceRequirementId, UnknownPublicKeyTypeRule, UnreviewedGround,
 };
 
 use super::reviewed_target;
@@ -45,12 +46,43 @@ fn contract() -> AuthorizationContract {
 /// Built through the target package's own public constructor, the way
 /// an external consumer would, so nothing here reaches inside
 /// `target-elements` to make a fixture convenient.
+///
+/// The grounds are fixture material and say so in their own text. What
+/// this fixture exists to vary is *which dimensions* a capability
+/// establishes, so that the assessment can be shown to follow the
+/// contract rather than today's answer; the grounds a real verdict
+/// carries are the target package's to state, and its own tests are
+/// where they are checked.
 fn capability_reviewing(reviewed: &[SighashDimension]) -> SighashCapability {
+    const FIXTURE_CITATION: SighashSourceCitation =
+        SighashSourceCitation::new("fixture", "fixture", "fixture");
+
     let reviewed = reviewed.iter().copied().collect::<BTreeSet<_>>();
     let unreviewed = SighashDimension::ALL
         .iter()
         .copied()
         .filter(|dimension| !reviewed.contains(dimension))
+        .map(|dimension| {
+            (
+                dimension,
+                UnreviewedGround::NoCandidateThisArcBuildsCarriesTheSubject(FIXTURE_CITATION),
+            )
+        })
+        .collect::<Vec<_>>();
+    let reviewed = reviewed
+        .into_iter()
+        .map(|dimension| {
+            (
+                dimension,
+                ReviewedGround::new(
+                    FIXTURE_CITATION,
+                    ExercisingObservation::new(
+                        ObservationIdentity::new("fixture", "fixture", "fixture"),
+                        &[],
+                    ),
+                ),
+            )
+        })
         .collect::<Vec<_>>();
 
     SighashCapability::new(
@@ -296,22 +328,50 @@ fn dropping_either_total_commitment_would_strand_most_of_the_protected_data() {
     );
 }
 
-// --- §9.2: the review has not reached the profile ---
+// --- §9.2: the review verdict, recomputed ---
 
 #[test]
-fn the_reviewed_contract_leaves_every_required_dimension_unreviewed() {
+fn the_reviewed_contract_stops_the_profile_on_the_issuance_dimension_alone() {
+    // The Wave-4 verdict, recomputed here rather than restated. Six of
+    // the seven required dimensions were exercised by the observed
+    // acceptance; the seventh was not, because no candidate this arc
+    // builds bears an issuance and the terms that carry the dimension
+    // are formed from the input count alone.
+    //
+    // The expectation is written as the literal dimension rather than as
+    // "whatever the contract left out", so a later edit that dropped a
+    // second dimension out of the reviewed set fails here instead of
+    // quietly widening the stop.
     let profile = selected_owner_profile();
     let disposition = profile.assess(contract().sighash());
 
     let OwnerProfileDisposition::ReviewIncomplete { unreviewed } = disposition else {
-        panic!("the review reached the sighash construction");
+        panic!("a required dimension is exercised by nothing");
     };
 
     assert_eq!(
         unreviewed,
-        profile.required().collect::<BTreeSet<_>>(),
-        "a selection is not an availability claim",
+        BTreeSet::from([SighashDimension::Issuance]),
+        "the stop names the dimension that stopped it",
     );
+}
+
+#[test]
+fn every_required_dimension_but_the_stopped_one_is_established() {
+    // The other half of the same verdict, asserted from the profile's
+    // own required set rather than from a list copied beside it: every
+    // required dimension except the stopped one is reviewed, and the
+    // stopped one is not.
+    let profile = selected_owner_profile();
+    let capability = contract().sighash().clone();
+
+    for dimension in profile.required() {
+        assert_eq!(
+            capability.is_reviewed(dimension),
+            dimension != SighashDimension::Issuance,
+            "{dimension:?}",
+        );
+    }
 }
 
 #[test]

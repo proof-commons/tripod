@@ -202,23 +202,136 @@ fn a_self_prerequisite_is_detected() {
     );
 }
 
-#[test]
-fn no_sighash_dimension_is_claimed_as_reviewed() {
-    // The review reached the signature primitives but not the sighash
-    // construction. Every dimension is therefore classified as
-    // unreviewed, and absence from the reviewed set means "this
-    // package has not established it", not "the target lacks it".
-    let definition = reviewed_elements_tapscript().expect("the reviewed contract validates");
-    let sighash = definition.definition().authorization().sighash();
+/// The reviewed contract's sighash capability.
+fn sighash_capability() -> crate::authorization::SighashCapability {
+    reviewed_elements_tapscript()
+        .expect("the reviewed contract validates")
+        .definition()
+        .authorization()
+        .sighash()
+        .clone()
+}
 
-    assert!(sighash.reviewed().is_empty());
+#[test]
+fn every_sighash_dimension_is_classified_exactly_once() {
+    // Absence from the reviewed set means "this package has not
+    // established it", not "the target lacks it" — which is only
+    // readable if every dimension the target names is on one side and
+    // no dimension is on both.
+    let sighash = sighash_capability();
+
     assert_eq!(
-        sighash.unreviewed().len(),
+        sighash.reviewed().len() + sighash.unreviewed().len(),
         SighashDimension::ALL.len(),
-        "every dimension is classified, and all of them the same way"
     );
     assert_eq!(sighash.contradictory(), None);
     assert_eq!(sighash.unclassified(), None);
+}
+
+#[test]
+fn the_reviewed_dimensions_are_the_six_the_observation_exercised() {
+    // An independently written expectation, not a fold of the
+    // constructor: the six dimensions whose terms the observed
+    // acceptance carried the subject of. `Issuance` is required by the
+    // selected profile and is deliberately not here.
+    let expected = BTreeSet::from([
+        SighashDimension::AllOutputs,
+        SighashDimension::AllInputs,
+        SighashDimension::Version,
+        SighashDimension::LockTime,
+        SighashDimension::TapleafHash,
+        SighashDimension::SpentOutputs,
+    ]);
+
+    assert_eq!(
+        sighash_capability()
+            .reviewed()
+            .keys()
+            .copied()
+            .collect::<BTreeSet<_>>(),
+        expected,
+    );
+}
+
+#[test]
+fn every_reviewed_dimension_carries_both_halves_of_the_evidence_ruling() {
+    // The accepted ruling is source review *and* recomputation *and*
+    // one observed acceptance. A reviewed dimension whose citation or
+    // whose observation were empty text would satisfy the type and none
+    // of the ruling, so both halves are checked for content rather than
+    // for presence.
+    for (dimension, ground) in sighash_capability().reviewed() {
+        let citation = ground.citation();
+        assert!(!citation.terms().is_empty(), "{dimension:?}");
+        assert!(
+            citation
+                .written_at()
+                .starts_with("src/script/interpreter.cpp:"),
+            "{dimension:?} cites the message construction",
+        );
+        assert!(
+            citation.review_anchor().starts_with("tab:sighash-review:"),
+            "{dimension:?}",
+        );
+
+        let observation = ground.exercised_by().observation();
+        assert_eq!(
+            observation.accepted_transaction().len(),
+            64,
+            "{dimension:?}"
+        );
+        assert!(!observation.ceremony_case().is_empty(), "{dimension:?}");
+        assert!(!observation.recorded_at().is_empty(), "{dimension:?}");
+    }
+}
+
+#[test]
+fn only_the_output_side_carries_negative_controls() {
+    // The control accounting, kept honest. The ceremony moved exactly
+    // three of the message's terms across its six controls, and two of
+    // those three belong to one dimension. Every other reviewed
+    // dimension rests on the acceptance and the recomputation alone, and
+    // recording that as an empty slice is the point: a vocabulary that
+    // let an unmoved term be filed as a moved one would make the
+    // strongest dimension indistinguishable from the weakest.
+    for (dimension, ground) in sighash_capability().reviewed() {
+        let controls = ground.exercised_by().controls();
+
+        if *dimension == SighashDimension::AllOutputs {
+            assert_eq!(controls.len(), 2, "both halves of the output side moved");
+        } else {
+            assert!(controls.is_empty(), "{dimension:?}");
+        }
+    }
+}
+
+#[test]
+fn the_three_unreviewed_grounds_are_the_three_different_reasons() {
+    // Each of the four unreviewed dimensions is unreviewed for a
+    // *different kind* of reason, and the kinds are what a later wave
+    // reads to know whether the dimension is reachable at all. Merging
+    // them would lose exactly that.
+    use crate::authorization::UnreviewedGround as Ground;
+
+    let sighash = sighash_capability();
+    let unreviewed = sighash.unreviewed();
+
+    assert!(matches!(
+        unreviewed.get(&SighashDimension::Issuance),
+        Some(Ground::NoCandidateThisArcBuildsCarriesTheSubject(_)),
+    ));
+    assert!(matches!(
+        unreviewed.get(&SighashDimension::SingleOutput),
+        Some(Ground::TheSelectedProfileRefusesIt(_)),
+    ));
+    assert!(matches!(
+        unreviewed.get(&SighashDimension::InputExtensionPermitted),
+        Some(Ground::TheSelectedProfileRefusesIt(_)),
+    ));
+    assert!(matches!(
+        unreviewed.get(&SighashDimension::InternalKey),
+        Some(Ground::NoMessageTermCarriesIt { .. }),
+    ));
 }
 
 #[test]
