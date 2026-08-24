@@ -10,6 +10,7 @@ vectors_source_files = files(
   'src/error.rs',
   'src/first_party.rs',
   'src/fixture.rs',
+  'src/confidential_predecessor.rs',
   'src/lib.rs',
   'src/live_capability.rs',
   'src/live_comparison.rs',

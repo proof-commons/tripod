@@ -184,9 +184,31 @@ pub enum LiveInfrastructureBlocker {
     /// proof — cannot be asked through this boundary, and
     /// [`crate::live_native`] records that rather than guessing.
     ///
-    /// It is carried beside [`Self::OwnerSighashNotComputable`] rather
+    /// It was carried beside [`Self::OwnerSighashNotComputable`] rather
     /// than assigned to the §15.2 rows, because it is the *second* thing
-    /// standing in their way and clearing it alone would move nothing.
+    /// standing in their way and clearing it alone moves nothing.
+    ///
+    /// # It is no longer a carried residual, and the observation that
+    /// moved it
+    ///
+    /// The confidential funding arm now exists, a deterministic
+    /// materializer builds the exact explicit-asset/confidential-value
+    /// form, and one predecessor of that form has been submitted,
+    /// accepted, mined, and read back raw, with recomputation and
+    /// readback agreeing on every member of the funding agreement
+    /// census for both outputs. So the blocker is gone from
+    /// [`carried_residuals`], on an observed result rather than on a
+    /// capability existing.
+    ///
+    /// The word stays in this vocabulary because it is still the right
+    /// name for the condition, and because a lane that cannot fund a
+    /// confidential predecessor must be able to say so. What it may no
+    /// longer be is a standing residual of this plan.
+    ///
+    /// Nothing else moved with it. Every positive private row remains
+    /// blocked by [`Self::OwnerSighashNotComputable`], which is
+    /// independent work this guide does not review, and
+    /// [`Self::SighashProfileUnreviewed`] remains carried.
     NoConfidentialPredecessorCanBeFunded,
     /// The row needs a raw path the safe constructor cannot express.
     ///
@@ -827,7 +849,6 @@ pub fn carried_residuals() -> BTreeSet<LiveInfrastructureBlocker> {
         LiveInfrastructureBlocker::SighashProfileUnreviewed,
         LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent,
         LiveInfrastructureBlocker::PredecessorConstructorAbsent,
-        LiveInfrastructureBlocker::NoConfidentialPredecessorCanBeFunded,
     ])
 }
 

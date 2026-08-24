@@ -53,10 +53,9 @@ use crate::confidential_funding::{
 };
 use crate::protocol::{
     ConfidentialFixtureDigest, ConfidentialFixtureHandle, ConfidentialFundedOutput,
-    ConfidentialFundingProfiles, ExecutorHandshake, NativeOperationResponse, ObservedOutcomeLayer,
-    TargetConfidentialFundingSubject, WireOutpoint,
+    ConfidentialFundingProfiles, ExecutorEnvironmentObservation, ExecutorHandshake,
+    NativeOperationResponse, ObservedOutcomeLayer, TargetConfidentialFundingSubject, WireOutpoint,
 };
-use crate::report::ObservedEnvironment;
 
 /// Which of the four origins one side of a comparison came from.
 ///
@@ -897,7 +896,7 @@ impl FundingSummary {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConfidentialFundingRecord {
     handshake: ExecutorHandshake,
-    environment: ObservedEnvironment,
+    environment: ExecutorEnvironmentObservation,
     request: TargetConfidentialFundingSubject,
     response: NativeOperationResponse,
     fixture_handle: ConfidentialFixtureHandle,
@@ -923,7 +922,7 @@ impl ConfidentialFundingRecord {
 
     /// The deployment it ran against.
     #[must_use]
-    pub const fn environment(&self) -> &ObservedEnvironment {
+    pub const fn environment(&self) -> &ExecutorEnvironmentObservation {
         &self.environment
     }
 
@@ -1151,7 +1150,7 @@ pub struct ConfidentialFundingEvidence<'a> {
     /// What the executor said it was.
     pub handshake: &'a ExecutorHandshake,
     /// The deployment it ran against.
-    pub environment: &'a ObservedEnvironment,
+    pub environment: &'a ExecutorEnvironmentObservation,
     /// The exact request that was sent.
     pub request: &'a TargetConfidentialFundingSubject,
     /// The exact response that came back.
