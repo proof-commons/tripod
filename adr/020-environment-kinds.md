@@ -11,7 +11,7 @@
 
 ## Amendments · `dec:kinds:adoption`
 
-The normative text leaves the acceptee, its extension relation, its evidence, and its implementation standing to adoption data. This repository supplies those data below and otherwise accepts the edition's classifications and statuses without change.
+The normative text leaves the acceptee, its extension relation, its evidence, and its implementation standing to adoption data. This repository supplies those data below, one entry to each under its own label, records the one change the adopted text itself carries — the heading depth its folding into this record required — and otherwise accepts the edition's classifications and statuses without change. Nothing is merged into the adopted text below without an entry here.
 
 ### Acceptee · `rule:kinds:acceptee`
 
@@ -62,13 +62,23 @@ The pairs this repository adds to the normative registry relation, each with fir
 
 The third edition incorporates four pairs once carried locally, so `pkg`, `q`, `req`, and `test` are registry kinds rather than members of X_A. No mint moved when those rows left the extension set.
 
-### Registry sense and attestation · `rem:kinds:attestation`
+### Registry sense · `rem:kinds:registry-sense`
 
 Inside a labels context, an unqualified registry means this kind registry. The checker's per-owner minting registries are runtime data structures, and `plans/registers/identities.md` is the separate identity register. The edition's candidate attestation status is likewise unrelated to this repository's `candidate` kind.
 
+### Edition statuses and extension evidence · `rem:kinds:attestation`
+
 This repository neither strengthens nor weakens an edition status. Yoga, Meta-question, and Schema in its data-shape sense remain daggered; the candidate Record/member-bearing-aggregate pair remains outside C_A; none is in use. Every pair of X_A is firm on the evidence located above.
 
+### Companion register · `rem:kinds:companion-register`
+
 The generated companion register at [plans/labels/attestation.md](../plans/labels/attestation.md) presents the effective relation's evidence, statuses, and derived homonymy. The registry's classifications and this extension table are its sources.
+
+### Heading depth · `rule:kinds:heading-depth`
+
+Folding the adopted text into this record demoted every one of its headings by exactly one level: the document title became the second-level head that opens the body below, and each of the text's twenty-three section heads became a third-level head. A record carries one title, which is the record's own, so the adopted text cannot keep a first-level head of its own inside it.
+
+Nothing else in the text changed. Below the head that opens it the body is byte-identical to the adopted draft, and every label value, every catalogue row, every classification, and every status stands as adopted. The change is presentation and not genre: a head's depth is a rendering of the division it names, and no pair of the effective relation and no head-validation judgment depends on it.
 
 ### Implementation standing · `gate:kinds:implementation`
 
