@@ -11,7 +11,7 @@
 
 ## Amendments · `dec:labels:adoption`
 
-The normative text leaves seven adoption data parametric; this repository fixes them below. It also fixes one syntax deviation and records the exact standing of the implementation. No other clause is amended.
+The normative text leaves seven adoption data parametric; this repository fixes them below. It also fixes one syntax deviation, records the one change the adopted text itself carries — the heading depth its folding into this record required — and records the exact standing of the implementation. Every amendment is listed here as its own entry under its own label, and nothing is merged into the adopted text below without an entry. No other clause is amended.
 
 ### Adoption parameters · `tab:labels:parameters`
 
@@ -31,7 +31,13 @@ The normative text fixes kind and area as words without hyphens. This repository
 
 The kind segment takes no such concession. A kind is a word, and the checker rejects a hyphenated kind. Kinds are the vocabulary [ADR-020](020-environment-kinds.md) governs, and a registry of words admits no hyphenated member.
 
-### Implementation standing
+### Heading depth · `rule:labels:heading-depth`
+
+Folding the adopted text into this record demoted every one of its headings by exactly one level: the document title became the second-level head that opens the body below, and each of the text's eight section heads became a third-level head. A record carries one title, which is the record's own, so the adopted text cannot keep a first-level head of its own inside it.
+
+Nothing else in the text changed. Below the head that opens it the body is byte-identical to the adopted draft, and every label value, every citation, every environment head, and every word stands as adopted. The change is presentation in the text's own sense — no label value moved, so no minting or resolution judgment and no hash computed from the registries is disturbed (`metathm:labels:presentation-invariance`), and only the depth at which the headings render differs.
+
+### Implementation standing · `rem:labels:implementation-standing`
 
 The checker implements the authorship warrant species alone. Warrant totality is live, but standard-place detection, the derivation rule, and inventory discipline are unimplemented and vacuously satisfied while Π and K are empty; they activate with the decision registering the first profile.
 
