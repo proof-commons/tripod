@@ -101,6 +101,8 @@ fn funded(step: &str, txid: &str) -> NativeOperationResponse {
             amount_satoshis: 100_000,
             script: "5120aabb".to_owned(),
         }],
+        confidential_funded_outputs: Vec::new(),
+        mined_readback: None,
         accepted_txid: None,
         sponsor_witness: Vec::new(),
         signature_bound_to: None,
@@ -120,6 +122,8 @@ fn submitted(step: &str, txid: &str) -> NativeOperationResponse {
         observed_detail: None,
         issued_asset: None,
         funded_outputs: Vec::new(),
+        confidential_funded_outputs: Vec::new(),
+        mined_readback: None,
         accepted_txid: Some(txid.to_owned()),
         sponsor_witness: Vec::new(),
         signature_bound_to: None,
@@ -287,7 +291,8 @@ fn a_plan_states_its_second_step_out_of_the_first_answer() {
         ),
         OperationSubject::Funding(_)
         | OperationSubject::SponsorFunding(_)
-        | OperationSubject::SponsorSigning(_) => panic!("the second step is a submission"),
+        | OperationSubject::SponsorSigning(_)
+        | OperationSubject::ConfidentialFunding(_) => panic!("the second step is a submission"),
     }
     assert_eq!(transcript.operation_responses().len(), 2);
     assert_eq!(transcript.operation_requests().len(), 2);
@@ -317,7 +322,8 @@ fn the_transcript_retains_the_exact_subject_of_every_step() {
         OperationSubject::Funding(subject) => assert_eq!(subject.outputs, 3),
         OperationSubject::Submission(_)
         | OperationSubject::SponsorFunding(_)
-        | OperationSubject::SponsorSigning(_) => panic!("the step was a funding step"),
+        | OperationSubject::SponsorSigning(_)
+        | OperationSubject::ConfidentialFunding(_) => panic!("the step was a funding step"),
     }
 }
 
@@ -494,6 +500,8 @@ fn the_adapters_not_yet_implemented_refusal_is_a_declared_record() {
             the funding ceremony and transaction submission are not implemented",
         "issued_asset": serde_json::Value::Null,
         "funded_outputs": [],
+        "confidential_funded_outputs": [],
+        "mined_readback": serde_json::Value::Null,
         "accepted_txid": serde_json::Value::Null,
         "resources": {
             "script_bytes": 0,

@@ -471,7 +471,15 @@ ADAPTER_VERSION = "2.1.0"
 # there at all. Revision 4 declares both. The revisions move together --
 # a bump on one side alone would reproduce exactly the disagreement the
 # bump exists to end (G12-R09).
-NATIVE_PROTOCOL_SCHEMA = 4
+#
+# Revision 5 adds the confidential funding arm: a fifth operation subject
+# and two response members that are NOT defaulted on the harness side. A
+# revision-4 adapter therefore cannot answer a revision-5 exchange at
+# all, which is the point -- the alternative is this adapter replying
+# with silence in exactly the members a confidential answer lives in.
+# Both implementations move together for the same recorded reason, and
+# this file's constant is one half of that single change.
+NATIVE_PROTOCOL_SCHEMA = 5
 
 # The reviewed tapscript leaf version.
 TAPSCRIPT_LEAF_VERSION = 0xC4
@@ -5229,6 +5237,16 @@ def serve(arguments) -> int:
                     and executor.sponsor_authorization
                     else []
                 ),
+                # Confidential funding is not advertised, and the null is
+                # the honest answer rather than an omission. No reviewed
+                # stock interface produces the explicit-asset /
+                # confidential-value form, this adapter implements no
+                # deterministic materializer for it, and so it holds
+                # neither the capability nor an advertisement to go with
+                # it. The harness refuses a peer that states one without
+                # the other, so stating the member as null is what keeps
+                # the two halves consistent.
+                "confidential_funding": None,
             }
         )
 
@@ -5618,15 +5636,120 @@ def answer_lifecycle_step(executor: CaseExecutor, request: dict, case: dict) -> 
     )
 
 
+def parse_confidential_funding_subject(subject: dict) -> dict:
+    """Reads one confidential funding subject, strictly.
+
+    # Why this parses a request it will only refuse
+
+    Because refusing a record is not the same as failing to read one.
+    This adapter advertises no confidential funding capability, so the
+    harness never sends it one; a record that arrives anyway is answered
+    with a typed refusal rather than an exception, and it is read first
+    so that the refusal is about the work rather than about the framing.
+
+    Nothing is defaulted, ignored, or repaired. An unknown member, an
+    unknown profile tag, an unknown representation tag, and an empty
+    destination set are all refusals here, before any construction.
+    """
+    require_keys(
+        subject,
+        ("issue_asset", "asset", "destinations", "binding"),
+        "request.subject",
+    )
+    issue = subject.get("issue_asset")
+    if not isinstance(issue, bool):
+        raise FatalAdapterError("request.subject.issue_asset is not a boolean")
+    asset = subject.get("asset")
+    if asset is not None and not isinstance(asset, str):
+        raise FatalAdapterError("request.subject.asset is not a string")
+    # The same cross-member rule the explicit arm states, spelled once
+    # per arm because it is one question about the protocol asset.
+    if issue and asset is not None:
+        raise FatalAdapterError("an issuing funding step also named an asset")
+    if not issue and asset is None:
+        raise FatalAdapterError("a non-issuing funding step named no asset")
+
+    raw_destinations = subject.get("destinations")
+    if not isinstance(raw_destinations, list) or not raw_destinations:
+        raise FatalAdapterError(
+            "request.subject.destinations is not a nonempty list of destinations"
+        )
+    destinations = []
+    for entry in raw_destinations:
+        destination = require_object(entry, "request.subject.destinations[]")
+        require_keys(destination, ("output_program",), "request.subject.destinations[]")
+        destinations.append(
+            {
+                "output_program": require_bytes(
+                    destination.get("output_program"),
+                    "request.subject.destinations[].output_program",
+                )
+            }
+        )
+
+    binding = require_object(subject.get("binding"), "request.subject.binding")
+    require_keys(
+        binding,
+        ("fixture_handle", "fixture_digest", "profiles"),
+        "request.subject.binding",
+    )
+    handle = binding.get("fixture_handle")
+    if not isinstance(handle, str):
+        raise FatalAdapterError("request.subject.binding.fixture_handle is not a string")
+    digest = require_bytes(
+        binding.get("fixture_digest"), "request.subject.binding.fixture_digest"
+    )
+    if len(digest) != 32:
+        raise FatalAdapterError(
+            "request.subject.binding.fixture_digest is not a thirty-two byte digest"
+        )
+    profiles = require_object(
+        binding.get("profiles"), "request.subject.binding.profiles"
+    )
+    require_keys(
+        profiles,
+        ("representation", "custody", "materializer", "reproducibility_contract"),
+        "request.subject.binding.profiles",
+    )
+    # The assigned tags, stated here because a tag this adapter has never
+    # heard of is unknown rather than the nearest one it knows.
+    assigned = {
+        "representation": ("explicit_asset_confidential_value",),
+        "custody": ("central_public_fixtures",),
+        "materializer": ("guide_ctf_deterministic_v1",),
+        "reproducibility_contract": ("byte_identity", "recorded_randomness"),
+    }
+    for member, admitted in assigned.items():
+        stated = profiles.get(member)
+        if stated not in admitted:
+            raise FatalAdapterError(
+                "request.subject.binding.profiles.%s names a tag this adapter does "
+                "not read: %s" % (member, stated)
+            )
+    return {
+        "issue_asset": issue,
+        "asset": asset,
+        "destinations": destinations,
+        "binding": {
+            "fixture_handle": handle,
+            "fixture_digest": digest,
+            "profiles": {member: profiles[member] for member in assigned},
+        },
+    }
+
+
 def parse_operation_subject(raw: object, kind: str) -> dict:
     """Reads one operation subject, refusing anything it does not define.
 
-    The two subjects share no member, which is what lets the kind stated
-    in the case identity decide which one is admitted: a record carrying
-    the other kind's members is a request whose two halves disagree, and
+    The subjects share no member, which is what lets the kind stated in
+    the case identity decide which one is admitted: a record carrying
+    another kind's members is a request whose two halves disagree, and
     is refused here rather than answered by whichever half parsed.
     """
     subject = require_object(raw, "request.subject")
+    if kind == "fund_confidential":
+        return parse_confidential_funding_subject(subject)
+
     if kind == "submit":
         require_keys(subject, ("transaction_bytes",), "request.subject")
         return {"transaction_bytes": require_bytes(
@@ -5757,9 +5880,33 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
         if key not in ("schema", "case", "subject"):
             raise FatalAdapterError("the harness sent a request field named %s" % key)
     kind = case.get("operation")
-    if kind not in ("fund", "submit", "fund_sponsor", "sign_sponsor"):
+    if kind not in (
+        "fund",
+        "submit",
+        "fund_sponsor",
+        "sign_sponsor",
+        "fund_confidential",
+    ):
         raise FatalAdapterError("the harness sent an operation step of an unknown kind")
     subject = parse_operation_subject(request.get("subject"), kind)
+
+    if kind == "fund_confidential":
+        # Read, and refused. This adapter advertises no confidential
+        # funding capability, so the harness refuses the step before
+        # sending it; a record that arrives anyway gets the honest
+        # answer, which is that the step did not happen. It is an
+        # executor infrastructure failure and NOT a target verdict of
+        # any kind: no transaction was built, nothing was submitted, and
+        # reporting a rejection here would manufacture a consensus fact
+        # out of an unimplemented interface.
+        note = (
+            "this adapter reads confidential funding steps and performs none: "
+            "no deterministic materializer for the explicit-asset "
+            "confidential-value representation is implemented"
+        )
+        log("executor infrastructure failure: %s" % note)
+        write_operation_failure(case, note)
+        return
 
     operations = executor.operations
     if operations is None:
@@ -5808,6 +5955,15 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
             "observed_detail": body["observed_detail"],
             "issued_asset": body["issued_asset"],
             "funded_outputs": body["funded_outputs"],
+            # Declared on every operation answer, never defaulted. The
+            # harness's record does not default them either, which is
+            # what makes revision 5 a revision: an adapter that omitted
+            # them would be answering a revision-5 exchange with a
+            # revision-4 record.
+            "confidential_funded_outputs": body.get(
+                "confidential_funded_outputs", []
+            ),
+            "mined_readback": body.get("mined_readback"),
             "accepted_txid": body["accepted_txid"],
             # Written only by the step that was asked for one. The
             # harness refuses a response carrying an authorization it
@@ -5863,6 +6019,8 @@ def write_operation_failure(case: dict, note: str) -> None:
             "observed_detail": note,
             "issued_asset": None,
             "funded_outputs": [],
+            "confidential_funded_outputs": [],
+            "mined_readback": None,
             "accepted_txid": None,
             "sponsor_witness": [],
             "signature_bound_to": None,

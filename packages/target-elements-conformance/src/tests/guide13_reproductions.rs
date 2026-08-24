@@ -219,6 +219,8 @@ fn operation(kind: OperationStepKind, layer: ObservedOutcomeLayer) -> NativeOper
         observed_detail: None,
         issued_asset: None,
         funded_outputs: Vec::new(),
+        confidential_funded_outputs: Vec::new(),
+        mined_readback: None,
         accepted_txid: None,
         sponsor_witness: Vec::new(),
         signature_bound_to: None,

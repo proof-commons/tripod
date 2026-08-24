@@ -214,6 +214,12 @@ fn handshake(schema: u32) -> ExecutorHandshake {
             // executes nothing.
             ExecutorCapability::CompoundPrototypeFixtures,
         ]),
+        // Not advertised, and the absence is the honest answer: this
+        // mock materializes nothing, mines nothing, and reads nothing
+        // back, so it holds neither the capability nor an advertisement
+        // to go with it. An executor claiming one without the other is
+        // refused at the handshake, and a mock is not exempt from that.
+        confidential_funding: None,
     }
 }
 

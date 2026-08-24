@@ -1986,6 +1986,8 @@ mod tests {
                 observed_detail: None,
                 issued_asset: None,
                 funded_outputs: Vec::new(),
+                confidential_funded_outputs: Vec::new(),
+                mined_readback: None,
                 accepted_txid: None,
                 sponsor_witness: Vec::new(),
                 signature_bound_to: None,
@@ -2060,6 +2062,19 @@ mod tests {
                     // agreement and disagreement can both be staged.
                     response.resources.transaction_weight =
                         (self.weigh)(&submission.transaction_bytes);
+                }
+                // This fake target materializes no confidential
+                // representation and states so. A step it cannot perform
+                // is an infrastructure failure carrying no observation,
+                // which is what an unimplemented step honestly is — and
+                // the compact-ASH planner never states one, so reaching
+                // this arm at all would be a planner defect rather than
+                // a target answer.
+                OperationSubject::ConfidentialFunding(_) => {
+                    response.observed_layer = ObservedOutcomeLayer::ExecutorInfrastructureFailure;
+                    response.observed_detail = Some(
+                        "this fake target performs no confidential funding ceremony".to_owned(),
+                    );
                 }
             }
             response
