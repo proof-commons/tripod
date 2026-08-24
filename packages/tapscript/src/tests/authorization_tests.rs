@@ -9,12 +9,13 @@
 //! refuses — rather than for agreement with itself.
 //!
 //! The assessment is checked in both directions. Against the reviewed
-//! contract it must report the review incomplete, because the review
-//! did not reach the sighash construction. Against a fixture whose
-//! sighash capability has been rewritten to review the required
-//! dimensions it must report the profile established, which is what
-//! shows the disposition is derived from the contract rather than
-//! hard-coded to today's answer.
+//! contract it must now report the profile established, because the
+//! review reached every dimension the profile requires. Against
+//! fixtures whose sighash capability reviews less than the required set
+//! it must report the review incomplete and name what is missing, which
+//! is what shows the disposition is derived from the contract rather
+//! than hard-coded to today's answer — and that direction is the one
+//! worth keeping sharp now that today's answer is the affirmative one.
 
 use std::collections::BTreeSet;
 
@@ -27,7 +28,7 @@ use target_elements::{
 use super::reviewed_target;
 use crate::authorization::{
     DimensionRefusal, DimensionRole, OutsideMessageGround, OwnerKeyNegative, OwnerKeyObligation,
-    OwnerProfileDisposition, owner_key_encoding_closure,
+    OwnerProfileDisposition, ProtectedDatum, owner_key_encoding_closure,
     profile_classifies_every_offered_dimension, profile_coverage_lands_only_on_required_dimensions,
     selected_owner_profile,
 };
@@ -98,14 +99,17 @@ fn capability_reviewing(reviewed: &[SighashDimension]) -> SighashCapability {
 fn the_selected_profile_requires_exactly_the_stated_dimensions() {
     // An independently written expectation. §9.2's list of what the
     // profile must establish, mapped onto the dimensions this target
-    // names, with the two narrowing dimensions absent — and with the
-    // internal key absent too, because the source review found that the
-    // message carries no term for it and the owner re-typed it onto the
-    // spent outputs. Seven message-carried dimensions, not eight.
+    // names, with the two narrowing dimensions absent; with the internal
+    // key absent too, because the source review found that the message
+    // carries no term for it and the owner re-typed it onto the spent
+    // outputs; and with the issuance dimension absent, because the owner
+    // re-typed that one to refused after the review verdict, on the
+    // ground that the census and the decoder both refuse its subject.
+    // Six dimensions, not eight, and each of the two that left did so by
+    // a ruling recorded at the point of use.
     let expected = [
         SighashDimension::AllOutputs,
         SighashDimension::AllInputs,
-        SighashDimension::Issuance,
         SighashDimension::Version,
         SighashDimension::LockTime,
         SighashDimension::TapleafHash,
@@ -145,8 +149,8 @@ fn the_internal_key_is_not_a_required_dimension() {
 fn the_internal_keys_protection_is_recorded_as_carried_by_the_spent_outputs() {
     // The re-typing's second half. The role is not merely "absent": it
     // names the dimension whose term fixes the value the internal key
-    // composes with, so a reader who notices the required set is seven
-    // finds where the eighth went.
+    // composes with, so a reader who notices the internal key is not
+    // required finds where its protection went.
     let profile = selected_owner_profile();
 
     assert_eq!(
@@ -200,7 +204,12 @@ fn re_typing_the_internal_key_moves_no_protected_datum() {
 }
 
 #[test]
-fn the_profile_refuses_each_narrowing_dimension_on_a_stated_ground() {
+fn the_profile_refuses_three_dimensions_each_on_a_stated_ground() {
+    // Two narrowings and one re-typing, and the third is deliberately in
+    // the same assertion as the other two: the issuance dimension's
+    // re-typing made it a refusal *with content*, on the pattern the two
+    // narrowings already set, rather than a dimension that stopped being
+    // required and acquired no reason for it.
     let profile = selected_owner_profile();
 
     assert_eq!(
@@ -214,8 +223,45 @@ fn the_profile_refuses_each_narrowing_dimension_on_a_stated_ground() {
                 SighashDimension::InputExtensionPermitted,
                 DimensionRefusal::LeavesInputSetOpen,
             ),
+            (
+                SighashDimension::Issuance,
+                DimensionRefusal::SubjectRefusedByTheCensusAndTheDecoder,
+            ),
         ],
     );
+}
+
+#[test]
+fn re_typing_the_issuance_dimension_moves_one_protected_datum_and_names_where() {
+    // The internal key's re-typing was free of consequence because the
+    // coverage map named it nowhere. This one is not, and the difference
+    // is measured rather than argued: the map did name the issuance
+    // dimension, for the issuance fields, so that datum's carrier had to
+    // move or the coverage argument would have been landing on a refused
+    // dimension.
+    //
+    // Where it moved to follows from what the terms are — the two
+    // issuance terms are one zero byte per input for every candidate
+    // this arc builds, so what they commit to is the input count, and
+    // the all-inputs dimension already carries that.
+    let profile = selected_owner_profile();
+
+    assert!(
+        !profile
+            .coverage()
+            .any(|(_, dimension)| dimension == SighashDimension::Issuance),
+        "no protected datum is carried by a refused dimension",
+    );
+
+    assert_eq!(
+        profile.carrier(ProtectedDatum::IssuanceFields),
+        &BTreeSet::from([SighashDimension::AllInputs]),
+    );
+
+    // And the invariant that would have caught the omission is checked
+    // here too, because a datum parked on a refused dimension is exactly
+    // what it exists to refuse.
+    assert!(profile_coverage_lands_only_on_required_dimensions(&profile));
 }
 
 #[test]
@@ -331,47 +377,66 @@ fn dropping_either_total_commitment_would_strand_most_of_the_protected_data() {
 // --- §9.2: the review verdict, recomputed ---
 
 #[test]
-fn the_reviewed_contract_stops_the_profile_on_the_issuance_dimension_alone() {
-    // The Wave-4 verdict, recomputed here rather than restated. Six of
-    // the seven required dimensions were exercised by the observed
-    // acceptance; the seventh was not, because no candidate this arc
-    // builds bears an issuance and the terms that carry the dimension
-    // are formed from the input count alone.
+fn the_reviewed_contract_establishes_the_profile_over_a_six_member_required_set() {
+    // The successor to the Wave-4 stop test, and it asserts a different
+    // fact rather than the same fact flipped. The stop was real and this
+    // does not deny it: six of the seven required dimensions were
+    // exercised by the observed acceptance and the seventh was not,
+    // because no candidate this arc builds bears an issuance and the
+    // terms carrying the dimension are formed from the input count
+    // alone. What repaired the stop is not a run — nothing has been
+    // observed since — but the re-typing of that dimension from required
+    // to refused, recorded at the profile-decision section of the owner
+    // sighash concept, on the ground that the census and the decoder
+    // both refuse the subject the dimension would commit to.
     //
-    // The expectation is written as the literal dimension rather than as
-    // "whatever the contract left out", so a later edit that dropped a
-    // second dimension out of the reviewed set fails here instead of
-    // quietly widening the stop.
+    // So both halves are asserted, and the count is asserted first,
+    // because it is the half that would catch a silent flip. An
+    // established disposition reached by dropping dimensions out of the
+    // required set until none was left unreviewed would satisfy the
+    // second assertion and fail this one.
     let profile = selected_owner_profile();
-    let disposition = profile.assess(contract().sighash());
-
-    let OwnerProfileDisposition::ReviewIncomplete { unreviewed } = disposition else {
-        panic!("a required dimension is exercised by nothing");
-    };
 
     assert_eq!(
-        unreviewed,
-        BTreeSet::from([SighashDimension::Issuance]),
-        "the stop names the dimension that stopped it",
+        profile.required().count(),
+        6,
+        "the required set lost the issuance dimension and nothing else",
+    );
+    assert_eq!(
+        profile.required().collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            SighashDimension::AllOutputs,
+            SighashDimension::AllInputs,
+            SighashDimension::Version,
+            SighashDimension::LockTime,
+            SighashDimension::TapleafHash,
+            SighashDimension::SpentOutputs,
+        ]),
+    );
+
+    assert_eq!(
+        profile.assess(contract().sighash()),
+        OwnerProfileDisposition::Established,
     );
 }
 
 #[test]
-fn every_required_dimension_but_the_stopped_one_is_established() {
+fn every_required_dimension_is_established_and_the_refused_one_is_not() {
     // The other half of the same verdict, asserted from the profile's
-    // own required set rather than from a list copied beside it: every
-    // required dimension except the stopped one is reviewed, and the
-    // stopped one is not.
+    // own required set rather than from a list copied beside it. The
+    // second assertion is what keeps the first from being satisfied by a
+    // capability that reviewed everything in sight: the re-typed
+    // dimension must still be *unreviewed*, because the ruling refused
+    // it and did not establish it, and a reviewed set that had grown to
+    // include it would be recording evidence no run produced.
     let profile = selected_owner_profile();
     let capability = contract().sighash().clone();
 
     for dimension in profile.required() {
-        assert_eq!(
-            capability.is_reviewed(dimension),
-            dimension != SighashDimension::Issuance,
-            "{dimension:?}",
-        );
+        assert!(capability.is_reviewed(dimension), "{dimension:?}");
     }
+
+    assert!(!capability.is_reviewed(SighashDimension::Issuance));
 }
 
 #[test]

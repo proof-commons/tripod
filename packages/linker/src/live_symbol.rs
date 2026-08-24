@@ -476,16 +476,19 @@ impl LinkedConstructorPlacement {
 /// The selected sighash profile, with what the review establishes.
 ///
 /// Both halves, because §1.7's argument and the target's review are two
-/// different statements and only one of them is settled. The profile is
-/// the protocol's requirement — which transaction dimensions an owner's
-/// signature must commit to — and the disposition is what the reviewed
-/// contract establishes about those dimensions, which today is that it
-/// establishes none of them.
+/// different statements. The profile is the protocol's requirement —
+/// which transaction dimensions an owner's signature must commit to —
+/// and the disposition is what the reviewed contract establishes about
+/// those dimensions, which today is every one of them.
 ///
-/// That gap is
+/// Carrying the second half is worth as much now as it was when the
+/// answer was that the contract established none. The gap it named was
 /// [`tapscript::RecognitionResidual::SighashProfileUnreviewed`], and it
-/// travels with this value rather than beside it: a consumer holding the
-/// profile holds the reason it cannot yet be relied on.
+/// travelled with this value rather than beside it, so a consumer
+/// holding the profile held the reason it could not yet be relied on. A
+/// consumer holding one now holds the assessment that says it can, from
+/// the same field, and would hold the gap again the moment the reviewed
+/// contract lost a required dimension.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SelectedSighashProfile {
     profile: OwnerSighashProfile,

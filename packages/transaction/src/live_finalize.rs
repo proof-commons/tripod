@@ -416,11 +416,23 @@ impl FinalizedLiveTransfer {
     /// intended rather than letting the profile be recomputed from the
     /// request.
     ///
-    /// Which regions the preimage covers depends on the representation,
-    /// and [`protected_preimage`] is where that is decided and argued.
-    /// The short version: the private lane's preimage carries the
+    /// Which regions the preimage covers depends on the representation.
+    /// The explicit lane's preimage is the witnessless serialization; the
+    /// private lane's is that serialization followed by the
     /// output-witness vector, so an owner binds to bytes containing the
-    /// range proofs the target's digest covers.
+    /// range proofs the target's digest covers. The two are not
+    /// symmetric on purpose: the explicit lane's vector is empty under
+    /// both readings, so its bytes are unchanged byte for byte, and
+    /// widening a settled lane's preimage to say nothing new would move
+    /// a signature's preimage under every existing owner for nothing.
+    ///
+    /// The full argument, with the recorded upstream diagnosis it turns
+    /// on, is at the crate-private `protected_preimage`, which is what
+    /// computes these bytes. It is named rather than linked because a
+    /// public item may not link a private one, and it is summarized
+    /// rather than merely named so that a reader with only the public
+    /// documentation still gets the answer instead of a pointer to
+    /// something they cannot open.
     #[must_use]
     pub fn protected_bytes(&self) -> &[u8] {
         &self.protected_bytes

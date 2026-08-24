@@ -271,21 +271,48 @@ pub enum UnreviewedGround {
     /// declines to make, and a reviewed set that grew by exercising
     /// refused dimensions would be establishing a different profile.
     ///
-    /// The two dimensions this ground carries are elected exclusions,
-    /// `(´[PLAN-rule:exclusions:single-output]´)` and
-    /// `(´[PLAN-rule:exclusions:input-extension]´)`.
+    /// The three dimensions this ground carries are elected exclusions,
+    /// `(´[PLAN-rule:exclusions:single-output]´)`,
+    /// `(´[PLAN-rule:exclusions:input-extension]´)` and
+    /// `(´[PLAN-rule:exclusions:issuance-dimension]´)`.
+    ///
+    /// The third arrived after the other two and by a different route,
+    /// which the wording above is careful to still fit. The first two
+    /// dimensions are branch selectors and the profile refuses the
+    /// branch; the issuance dimension's terms are in every message this
+    /// arc forms, and what the profile refuses there is the commitment
+    /// rather than a branch. Both are the same fact about the reviewed
+    /// set: establishing the dimension would mean exercising a
+    /// commitment the profile declines to make.
     TheSelectedProfileRefusesIt(SighashSourceCitation),
     /// The dimension's terms are in every message this arc forms, and no
     /// candidate this arc can build puts the dimension's own subject
     /// into them.
     ///
-    /// The sharpest of the three and the only one that blocks a required
+    /// The sharpest of the three, and the one that blocked a required
     /// dimension. The terms are present, the target writes them, and the
     /// recomputation reproduces them — but it reproduces them from
     /// something other than the dimension's subject, so their agreement
     /// says nothing about the subject. What repairs it is a candidate
     /// carrying the subject, which is a construction this arc refuses by
     /// type rather than a run nobody has scheduled.
+    ///
+    /// # No dimension carries this ground today
+    ///
+    /// One did: the issuance dimension, on the Wave-4 verdict. The owner
+    /// then took the other answer this ground's own wording offers — not
+    /// the candidate that would carry the subject, but a re-typing of the
+    /// dimension out of the required set, on the ground that the two
+    /// layers which actually meet an issuance refuse it. So the issuance
+    /// dimension is unreviewed under
+    /// [`Self::TheSelectedProfileRefusesIt`] now, and this variant is
+    /// carried by nothing.
+    ///
+    /// It stays in the vocabulary because it is still the right name for
+    /// the condition, and because it is the one of the three that a
+    /// reviewer can discover about a dimension nobody expected it of. A
+    /// vocabulary that dropped it would make the next such discovery
+    /// unsayable, and the discovery is the part that was hard.
     NoCandidateThisArcBuildsCarriesTheSubject(SighashSourceCitation),
 }
 
@@ -688,7 +715,7 @@ const OWNER_OBSERVATION: ObservationIdentity = ObservationIdentity::new(
 ///
 /// # What moved, and what moved it
 ///
-/// Six of the profile's seven required dimensions are established, each
+/// All six of the profile's required dimensions are established, each
 /// by the same accepted spend and the same independently written
 /// recomputation of its message. The candidate consumed two receipts and
 /// created two destinations, so the four whole-transaction dimensions
@@ -703,10 +730,10 @@ const OWNER_OBSERVATION: ObservationIdentity = ObservationIdentity::new(
 /// control emptied the output-witness vector and one exchanged the two
 /// destinations, and the target refused each.
 ///
-/// # Why `Issuance` did not move
+/// # Why `Issuance` did not move, and what happened to it instead
 ///
-/// The seventh required dimension is the one this review reached and
-/// could not exercise, and the reason is a property of this workspace
+/// It was the seventh required dimension, the one this review reached
+/// and could not exercise, and the reason is a property of this workspace
 /// rather than of the target. The target's own message does carry the
 /// dimension: term 9 writes each input's issuance or one zero byte where
 /// it is null, and term 10 hashes the issuance rangeproofs of every
@@ -729,9 +756,28 @@ const OWNER_OBSERVATION: ObservationIdentity = ObservationIdentity::new(
 /// precondition is exactly the shape that would exercise this dimension.
 /// The repair is a candidate that bears an issuance together with the
 /// census field its input-witness proofs need — a construction, not a
-/// rerun — or an owner ruling that re-types the dimension. Neither is
-/// this review's to perform, and stating that is the whole of what a
-/// review verdict owes here.
+/// rerun — or a re-typing of the dimension. Neither was this review's to
+/// perform, and stating that was the whole of what a review verdict owed
+/// here.
+///
+/// The second is what happened, at
+/// `(´[PLAN-rule:exclusions:issuance-dimension]´)`: the dimension is
+/// re-typed from required to refused, because the census refuses an
+/// issuance-bearing signing request and the decoder refuses
+/// issuance-bearing bytes, which made the required typing the one layer
+/// promising evidence the other two refuse to admit.
+///
+/// So the dimension is still unreviewed and still here, and only its
+/// *ground* moved — from the kind whose repair is a construction to the
+/// kind that says the selected profile declines the commitment. Nothing
+/// this review established moved with it: the six above rest on the same
+/// run and the same citations they rested on before the ruling, and the
+/// disposition that reads them is not written anywhere in this file.
+///
+/// What the ruling changes for a reader of this table is only which
+/// question the issuance row answers. It used to answer "what would it
+/// take to establish this dimension"; it now answers "why is this
+/// dimension not one this profile asks about".
 #[must_use]
 pub(crate) fn reviewed_sighash_capability() -> SighashCapability {
     SighashCapability::new(
@@ -841,13 +887,18 @@ const fn unestablished_sighash_dimensions() -> [(SighashDimension, UnreviewedGro
     [
         (
             Dimension::Issuance,
-            UnreviewedGround::NoCandidateThisArcBuildsCarriesTheSubject(
-                SighashSourceCitation::new(
-                    "terms 9 and 10",
-                    "src/script/interpreter.cpp:2738-2739",
-                    DIMENSIONS,
-                ),
-            ),
+            // The citation stays the review's own, at the dimension table
+            // rather than the refusal table: the two terms are written
+            // for every message this arc forms, so what a reader has to
+            // be able to check is that the target does carry the
+            // dimension, which is exactly what the Wave-1 reading
+            // recorded. The refusal table describes branches the profile
+            // does not take, and this is not one of them.
+            UnreviewedGround::TheSelectedProfileRefusesIt(SighashSourceCitation::new(
+                "terms 9 and 10",
+                "src/script/interpreter.cpp:2738-2739",
+                DIMENSIONS,
+            )),
         ),
         (
             Dimension::SingleOutput,

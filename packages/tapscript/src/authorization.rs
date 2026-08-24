@@ -18,18 +18,24 @@
 //! states which commitments the protocol requires and which target
 //! dimensions carry them; [`OwnerSighashProfile::assess`] then reports
 //! what the *reviewed* contract establishes about those dimensions, and
-//! the honest answer today is that it establishes none of them. The
-//! review reached the signature primitives and stopped short of the
-//! sighash type enumeration and the message construction, so a profile
-//! that reported itself available would be reporting a review that did
-//! not happen.
+//! it reads that answer out of the contract rather than holding one.
 //!
-//! Keeping the two apart is what makes the selection worth writing down
-//! before the review exists. The argument for the profile — that these
-//! protected data need those commitments — is a protocol argument that
-//! does not become truer when a reviewer reads the target's source. What
-//! the review changes is only whether the target can be relied on to
-//! honour it.
+//! Keeping the two apart is what made the selection worth writing down
+//! before the review existed, and the separation has now been
+//! demonstrated rather than only argued: the answer has moved twice
+//! without a line of this module's selection argument moving with it.
+//! It was "none of them" while the reviewed set was empty; it is
+//! [`OwnerProfileDisposition::Established`] since the review populated
+//! that set dimension by dimension and the owner re-typed the one
+//! dimension the review reached and could not exercise. Both moves
+//! happened in the contract and in the role assignment below, and
+//! neither could have been made by declaring a disposition, because
+//! there is nowhere to declare one.
+//!
+//! The argument for the profile — that these protected data need those
+//! commitments — is a protocol argument that does not become truer when
+//! a reviewer reads the target's source. What the review changes is only
+//! whether the target can be relied on to honour it.
 //!
 //! # Why the profile refuses dimensions rather than ignoring them
 //!
@@ -37,10 +43,15 @@
 //! refused, for the same reason
 //! [`target_elements::SighashCapability`] classifies every dimension
 //! reviewed or unreviewed: a dimension nobody mentioned is
-//! indistinguishable from a dimension somebody forgot. The two refused
-//! dimensions are the narrowing ones, and refusing them is the whole
-//! content of §1.7's "all-inputs, all-outputs profile unless a narrower
-//! profile is separately proved to preserve every required commitment".
+//! indistinguishable from a dimension somebody forgot. Two of the three
+//! refused dimensions are the narrowing ones, and refusing them is the
+//! whole content of §1.7's "all-inputs, all-outputs profile unless a
+//! narrower profile is separately proved to preserve every required
+//! commitment". The third is the issuance dimension, refused for an
+//! unrelated reason recorded at
+//! [`DimensionRefusal::SubjectRefusedByTheCensusAndTheDecoder`]: not
+//! that the commitment would be too narrow, but that no candidate this
+//! workspace builds gives its terms a subject to commit to.
 //!
 //! # What this module does not do
 //!
@@ -114,10 +125,13 @@ census_enum! {
 
 /// Why the profile refuses one dimension.
 ///
-/// A refusal is a claim with content, not a shrug. Each ground names
-/// what the dimension would stop protecting, so a later wave proposing
-/// the narrower profile §1.7 permits knows exactly which commitment it
-/// owes a separate proof for.
+/// A refusal is a claim with content, not a shrug. Two of the three
+/// grounds name what the dimension would stop protecting, so a later
+/// wave proposing the narrower profile §1.7 permits knows exactly which
+/// commitment it owes a separate proof for. The third names something
+/// else with the same discipline: not what admitting the dimension would
+/// cost, but why the dimension has no subject in this workspace for a
+/// commitment to be about.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DimensionRefusal {
     /// Committing to one output leaves every other output free to
@@ -141,6 +155,33 @@ pub enum DimensionRefusal {
     /// The election is recorded at
     /// `(´[PLAN-rule:exclusions:input-extension]´)`.
     LeavesInputSetOpen,
+    /// The dimension's own subject is refused by the census and by the
+    /// decoder, so the message's terms for it carry no subject to
+    /// commit to.
+    ///
+    /// The issuance dimension's ground, and the one refusal here whose
+    /// content is not a narrowing. The target's message does carry the
+    /// dimension — term 9 writes each input's issuance or one zero byte
+    /// where it is null, and term 10 hashes every input witness's
+    /// issuance rangeproofs — but no candidate this workspace builds
+    /// bears an issuance, because a declared one is refused by
+    /// `OwnerCensusRefusal::IssuanceBearingInputRefused` and
+    /// issuance-bearing bytes are refused by
+    /// `TransactionRefusal::IssuanceInputRefused` and
+    /// `IssuanceProofRefused`. Both terms are therefore formed from the
+    /// input count alone.
+    ///
+    /// A term computed without consulting the dimension's own subject
+    /// cannot disagree with the target about that subject, so requiring
+    /// the dimension promised evidence no run could ever supply, while
+    /// the two layers that actually meet an issuance refuse it. The
+    /// owner resolved that disagreement in favour of the layers that
+    /// refuse, and what the terms do commit to — the input count — is
+    /// already carried by [`SighashDimension::AllInputs`].
+    ///
+    /// The election is recorded at
+    /// `(´[PLAN-rule:exclusions:issuance-dimension]´)`.
+    SubjectRefusedByTheCensusAndTheDecoder,
     /// The target offers a dimension this profile has not considered.
     ///
     /// [`target_elements::SighashDimension`] is non-exhaustive, so a
@@ -224,8 +265,8 @@ pub enum DimensionRole {
     /// being stretched.
     ///
     /// The variant carries its own reason so that the argument travels
-    /// with the dimension. A reader who asks why the required set is
-    /// seven rather than eight finds
+    /// with the dimension. A reader who asks why the internal key is not
+    /// in the required set finds
     /// [`OutsideMessageGround`] and its citations at the point of use,
     /// not a dimension that quietly stopped being mentioned.
     NotCarriedByTheMessage {
@@ -241,8 +282,12 @@ pub enum DimensionRole {
 ///
 /// Two members and not a boolean, because "unavailable" would merge the
 /// target refusing a dimension with the review never having read it.
-/// Only the second is true today, and only the second is repaired by
-/// reviewing rather than by choosing a different target.
+/// Only the second is repaired by reviewing rather than by choosing a
+/// different target, and the second is what the selected profile
+/// reported until the review verdict landed and the owner re-typed the
+/// dimension the verdict stopped on. The first is the answer today. The
+/// variant that is not held stays, because a contract that lost a
+/// dimension must be able to say the second again.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum OwnerProfileDisposition {
     /// Every dimension the profile requires is established by the
@@ -300,10 +345,10 @@ impl OwnerSighashProfile {
     ///
     /// Published rather than left inside [`Self::role`] because the set
     /// is the answer to a question a reader of the required set will
-    /// ask: the profile names ten dimensions and requires seven, and the
-    /// three that are not required split into two refusals with grounds
-    /// and one composition with a citation. An iterator makes the third
-    /// group as walkable as the second instead of reachable only by
+    /// ask: the profile names ten dimensions and requires six, and the
+    /// four that are not required split into three refusals with grounds
+    /// and one composition with a citation. An iterator makes the second
+    /// group as walkable as the first instead of reachable only by
     /// asking about a dimension one already suspected.
     pub fn not_carried_by_the_message(
         &self,
@@ -384,7 +429,16 @@ impl OwnerSighashProfile {
     /// is a population of the capability rather than a disposition
     /// written down: the wave that reviewed the dimensions could not
     /// declare the profile established even if it wanted to, and the
-    /// dimension it failed to exercise names itself in the result.
+    /// dimension it failed to exercise named itself in the result.
+    ///
+    /// That is how the answer came to be
+    /// [`OwnerProfileDisposition::Established`], and it is worth being
+    /// exact about the route. It is not established because a wave said
+    /// so. It is established because the review populated the reviewed
+    /// contract with six grounded dimensions and the owner re-typed the
+    /// seventh out of the required set, and this function then found no
+    /// required dimension the contract does not establish. Reverse either
+    /// input and the answer reverses here with no edit to this body.
     #[must_use]
     pub fn assess(&self, capability: &SighashCapability) -> OwnerProfileDisposition {
         let unreviewed = self
@@ -427,11 +481,17 @@ impl OwnerSighashProfile {
 ///
 /// [`profile_coverage_lands_only_on_required_dimensions`]: crate::authorization::profile_coverage_lands_only_on_required_dimensions
 ///
-/// The two refusals are therefore not spare caution. They are the two
-/// dimensions the target offers that would each, on their own, undo one
-/// of the two totals the argument rests on.
+/// Two of the three refusals are therefore not spare caution. They are
+/// the two dimensions the target offers that would each, on their own,
+/// undo one of the two totals the argument rests on. The third refusal
+/// is the issuance dimension and belongs to the section after next.
 ///
-/// # Why the required set is seven and not eight
+/// # Why the required set is six and not eight
+///
+/// Two dimensions the target names are required by neither the coverage
+/// argument above nor anything else, and each left the required set by
+/// an explicit re-typing with its own stated ground rather than by being
+/// dropped.
 ///
 /// The tenth dimension the target names,
 /// [`SighashDimension::InternalKey`], is neither required nor refused.
@@ -452,6 +512,40 @@ impl OwnerSighashProfile {
 /// The requirement that left had been protecting nothing the argument
 /// itself names — the signature of a requirement stated by analogy to
 /// BIP-341 rather than derived from this target's message.
+///
+/// # Why the issuance dimension is refused rather than required
+///
+/// The other dimension that left is [`SighashDimension::Issuance`], the
+/// one the Wave-4 review verdict reached and could not exercise. The
+/// owner has re-typed it from required to refused, so it is now a
+/// refusal with content beside the two narrowing ones, and its ground
+/// travels with it at
+/// [`DimensionRefusal::SubjectRefusedByTheCensusAndTheDecoder`].
+///
+/// This re-typing is not free of consequence the way the internal key's
+/// was, and the consequence is recorded rather than absorbed. The
+/// coverage map did assign [`ProtectedDatum::IssuanceFields`] to the
+/// dimension, so that datum's carrier moves to
+/// [`SighashDimension::AllInputs`] — which is the ruling's own argument
+/// rather than a repair of it. Both issuance terms are formed from one
+/// zero byte per input for every candidate this arc builds, so what they
+/// commit to is the input count, and the all-inputs dimension already
+/// carries that. What makes the fields absent in the first place is not
+/// a message term at all but the census and decoder refusals. No
+/// protected datum leaves the census, every carrier is still a required
+/// dimension, and
+/// [`profile_coverage_lands_only_on_required_dimensions`] is what says
+/// so rather than this paragraph.
+///
+/// [`profile_coverage_lands_only_on_required_dimensions`]: crate::authorization::profile_coverage_lands_only_on_required_dimensions
+///
+/// What the re-typing changes is that the disposition can be reached at
+/// all. A required dimension whose terms never read their own subject is
+/// a requirement no run could discharge, so
+/// [`OwnerSighashProfile::assess`] was permanently
+/// [`OwnerProfileDisposition::ReviewIncomplete`] naming it — the same
+/// permanence [`DimensionRole::NotCarriedByTheMessage`] exists to avoid,
+/// arrived at from the other direction.
 #[must_use]
 pub fn selected_owner_profile() -> OwnerSighashProfile {
     use SighashDimension as Dimension;
@@ -466,13 +560,15 @@ pub fn selected_owner_profile() -> OwnerSighashProfile {
                 Dimension::InputExtensionPermitted => {
                     DimensionRole::Refused(DimensionRefusal::LeavesInputSetOpen)
                 }
+                Dimension::Issuance => {
+                    DimensionRole::Refused(DimensionRefusal::SubjectRefusedByTheCensusAndTheDecoder)
+                }
                 Dimension::InternalKey => DimensionRole::NotCarriedByTheMessage {
                     carried_by: Dimension::SpentOutputs,
                     ground: OutsideMessageGround::ComposedThroughTheControlBlockCheck,
                 },
                 Dimension::AllOutputs
                 | Dimension::AllInputs
-                | Dimension::Issuance
                 | Dimension::Version
                 | Dimension::LockTime
                 | Dimension::TapleafHash
@@ -540,7 +636,21 @@ pub fn selected_owner_profile() -> OwnerSighashProfile {
                 }
                 ProtectedDatum::TransactionVersion => BTreeSet::from([Dimension::Version]),
                 ProtectedDatum::LockTime => BTreeSet::from([Dimension::LockTime]),
-                ProtectedDatum::IssuanceFields => BTreeSet::from([Dimension::Issuance]),
+                // The issuance fields land on the input set, and the
+                // re-typing is the argument rather than a
+                // convenience: what makes their absence true is not a
+                // message term but the census and decoder refusals that
+                // keep an issuance out of every candidate, and what the
+                // message's two issuance terms then commit to is one zero
+                // byte per input — the input count, which the all-inputs
+                // dimension already carries.
+                //
+                // So this is a re-assignment and not a loss of coverage.
+                // The datum stays in the census, its carrier is a
+                // dimension the profile requires, and the dimension whose
+                // name it used to carry is refused at
+                // `(´[PLAN-rule:exclusions:issuance-dimension]´)`.
+                ProtectedDatum::IssuanceFields => BTreeSet::from([Dimension::AllInputs]),
                 ProtectedDatum::ScriptPathFields => BTreeSet::from([Dimension::TapleafHash]),
             };
 

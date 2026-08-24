@@ -47,18 +47,28 @@
 //! It does not establish the profile and it cannot. Whether the selected
 //! profile's disposition is established is recomputed by
 //! `tapscript::OwnerSighashProfile::assess` from the reviewed contract's
-//! sighash capability, and today that recomputation reports the review
-//! incomplete, naming the issuance dimension: no candidate this arc
-//! builds bears an issuance, so the two message terms that carry the
+//! sighash capability, and nothing in this module is an input to that
+//! recomputation.
+//!
+//! What the recomputation reports has moved, and it is worth stating
+//! here precisely because this module did not move it. It reported the
+//! review incomplete, naming the issuance dimension: no candidate this
+//! arc builds bears an issuance, so the two message terms that carry the
 //! dimension are formed from the input count alone and the observed
-//! acceptance exercised nothing about any issuance field.
+//! acceptance exercised nothing about any issuance field. The owner then
+//! re-typed that dimension from required to refused; the required set
+//! became six; every member of it was already established by the review;
+//! and the recomputation reports the profile established.
 //!
 //! The consuming guide's `ProfileNotAccepted` is the refusal that reads
 //! that recomputation, and it belongs to that guide's handoff rather than
-//! to this type (`def:guide-ctf-exec:handoff-states`). A value of this
-//! type is therefore well formed and exact-byte bound today, and handing
-//! one across is not entered: that is this work's Wave 5, whose entry
-//! condition needs the other guide's proof finalization besides.
+//! to this type (`def:guide-ctf-exec:handoff-states`). So what changed
+//! for a value of this type is nothing about the value: it was well
+//! formed and exact-byte bound before and it is now. Handing one across
+//! is still not entered here — that is this work's Wave 5, whose entry
+//! condition needs the other guide's proof finalization besides, and a
+//! profile that has stopped being the blocking half does not make the
+//! remaining half smaller.
 //!
 //! It also owns no state machine. The consuming guide's
 //! `MutationAfterSigningStarted` is about transitions between its own
