@@ -926,7 +926,8 @@ fn the_message_is_the_stream_the_review_describes() {
 }
 
 /// The message with the output-witness vector at its consensus length.
-const PINNED_MESSAGE_WITH_VECTOR_GROWN: &str = "";
+const PINNED_MESSAGE_WITH_VECTOR_GROWN: &str =
+    "ff2f490274dfb3ea79a0d2b71357ec8fdad276d3978d29b511fe2516c6ec1257";
 
 /// The message with the output-witness vector empty.
 const PINNED_MESSAGE_WITH_VECTOR_EMPTY: &str = "";
