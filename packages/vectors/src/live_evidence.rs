@@ -142,8 +142,15 @@ pub enum LiveInfrastructureBlocker {
     /// message, were refused by the same node on the same chain.
     ///
     /// So no positive row carries this any longer, and
-    /// [`a_positive_control_exists`] computes to true. Both moves are on
-    /// an observed result and neither is on a capability existing.
+    /// the crate-private `a_positive_control_exists` computes to true.
+    /// Both moves are on an observed result and neither is on a
+    /// capability existing.
+    ///
+    /// That helper is named in code font rather than linked because it
+    /// is private and this variant is not, and a public item may not
+    /// link a private one. The break was there before this wave and was
+    /// invisible: the documentation bar stopped at an earlier failure in
+    /// another package and never reached this one.
     ///
     /// # What did not move with it
     ///
