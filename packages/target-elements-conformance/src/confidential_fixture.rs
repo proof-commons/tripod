@@ -933,8 +933,54 @@ fn derivation_preimage(
     transcript.finish()
 }
 
+/// Where a derivation's thirty-two bytes come from.
+///
+/// # Why a seam exists here at all
+///
+/// Six of [`FixtureDerivationRefusal`]'s variants are refusals about
+/// derived material, and a deterministic recipe cannot be asked to
+/// produce material that fails them: the tagged hash answers what it
+/// answers, and no manifest a test may write changes the answer. So
+/// those refusals were unreachable from any fixture, and a closed
+/// vocabulary whose variants no test can reach is a vocabulary nobody
+/// has checked.
+///
+/// The seam is the narrowest thing that fixes that. It is `pub(crate)`,
+/// it sits between the preimage and its bytes, and it has exactly one
+/// non-test implementation — [`TaggedHashDerivation`], which is the
+/// recipe the profile's tag names and nothing else. No public surface
+/// mentions it, no published digest changes because of it, and the
+/// deterministic source is the only one anything outside this crate's
+/// own tests can reach.
+///
+/// What it deliberately does NOT reach is the arithmetic. A source
+/// chooses bytes; it does not choose what the commitment oracle makes of
+/// them. That boundary is the point: the oracle is the workspace's
+/// independence claim, and a seam that let a test replace it would have
+/// made the claim testable by substitution.
+pub(crate) trait DerivationSource {
+    /// The thirty-two bytes this preimage derives to under `tag`.
+    fn derive(&self, tag: &str, preimage: &[u8]) -> [u8; DERIVED_BYTES];
+}
+
+/// The deterministic source, and the only one outside this crate's
+/// tests.
+///
+/// The tagged hash the selected profile names, called with the profile's
+/// own tag. Substituting this is what the seam is for; changing it is
+/// not, because its bytes are in every registered digest.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct TaggedHashDerivation;
+
+impl DerivationSource for TaggedHashDerivation {
+    fn derive(&self, tag: &str, preimage: &[u8]) -> [u8; DERIVED_BYTES] {
+        tagged_hash(tag, preimage)
+    }
+}
+
 /// One derived value, before it is read as anything.
 fn derive_bytes(
+    source: &dyn DerivationSource,
     profile: FixtureDerivationProfile,
     handle: &ConfidentialFixtureHandle,
     output: usize,
@@ -943,7 +989,7 @@ fn derive_bytes(
     scalar_counter: u8,
 ) -> [u8; DERIVED_BYTES] {
     let preimage = derivation_preimage(handle, output, role, parity_counter, scalar_counter);
-    tagged_hash(profile.tag(), &preimage)
+    source.derive(profile.tag(), &preimage)
 }
 
 /// The group order, once.
@@ -987,6 +1033,7 @@ fn admitted_scalar(bytes: &[u8; DERIVED_BYTES]) -> Option<BigUint> {
 
 /// One role's scalar for one output, searched upward from zero.
 fn search_scalar(
+    source: &dyn DerivationSource,
     profile: FixtureDerivationProfile,
     handle: &ConfidentialFixtureHandle,
     output: usize,
@@ -997,6 +1044,7 @@ fn search_scalar(
     while counter <= u16::from(MAX_SCALAR_COUNTER) {
         let scalar_counter = u8::try_from(counter).unwrap_or(MAX_SCALAR_COUNTER);
         let bytes = derive_bytes(
+            source,
             profile,
             handle,
             output,
@@ -1017,6 +1065,7 @@ fn search_scalar(
 
 /// Every opening of one case, at one parity counter.
 fn derive_at_counter(
+    source: &dyn DerivationSource,
     manifest: &ConfidentialFixtureManifest,
     input_blinder_sum: &BigUint,
     parity_counter: u16,
@@ -1032,6 +1081,7 @@ fn derive_at_counter(
             continue;
         }
         let (bytes, scalar) = search_scalar(
+            source,
             profile,
             handle,
             index,
@@ -1077,6 +1127,7 @@ fn derive_at_counter(
         let value_blinder =
             blinders[index].ok_or(FixtureDerivationRefusal::DegenerateBalancingScalar)?;
         let (nonce_input, _) = search_scalar(
+            source,
             profile,
             handle,
             index,
@@ -1084,6 +1135,7 @@ fn derive_at_counter(
             parity_counter,
         )?;
         let rangeproof_seed = derive_bytes(
+            source,
             profile,
             handle,
             index,
@@ -1144,13 +1196,14 @@ fn prefixes_match(openings: &[DerivedOpening]) -> bool {
 /// randomness, and without concurrency. Exhaustion is a typed refusal
 /// and never a retry with a different source.
 fn search_parity(
+    source: &dyn DerivationSource,
     manifest: &ConfidentialFixtureManifest,
     input_blinder_sum: &BigUint,
 ) -> Result<(u16, Vec<DerivedOpening>), FixtureDerivationRefusal> {
     let bound = manifest.retry_limit.min(MAX_PARITY_COUNTER);
     let mut counter = 0_u16;
     loop {
-        let openings = derive_at_counter(manifest, input_blinder_sum, counter)?;
+        let openings = derive_at_counter(source, manifest, input_blinder_sum, counter)?;
         if prefixes_match(&openings) {
             return Ok((counter, openings));
         }
@@ -1194,6 +1247,25 @@ impl ConfidentialFixtureRegistry {
         &mut self,
         manifest: ConfidentialFixtureManifest,
     ) -> Result<(), RegistrationRefusal> {
+        self.register_with_source(manifest, &TaggedHashDerivation)
+    }
+
+    /// Registers one manifest, deriving it from `source`.
+    ///
+    /// The seam [`DerivationSource`] documents, and the reason
+    /// [`Self::register`] is a one-line call rather than the whole
+    /// method: everything below is the registration, and the only thing
+    /// the public entry point decides is that the source is the
+    /// deterministic one.
+    ///
+    /// # Errors
+    ///
+    /// [`RegistrationRefusal`] at the first clause the manifest fails.
+    pub(crate) fn register_with_source(
+        &mut self,
+        manifest: ConfidentialFixtureManifest,
+        source: &dyn DerivationSource,
+    ) -> Result<(), RegistrationRefusal> {
         check_handle_grammar(&manifest.handle)
             .map_err(|defect| RegistrationRefusal::HandleGrammar { defect })?;
         if self.entries.contains_key(manifest.handle.as_str()) {
@@ -1236,8 +1308,9 @@ impl ConfidentialFixtureRegistry {
 
         let openings = match manifest.profiles.reproducibility_contract {
             ReproducibilityContract::ByteIdentity => {
-                let (parity_counter, openings) = search_parity(&manifest, &input_blinder_sum)
-                    .map_err(|refusal| RegistrationRefusal::Derivation { refusal })?;
+                let (parity_counter, openings) =
+                    search_parity(source, &manifest, &input_blinder_sum)
+                        .map_err(|refusal| RegistrationRefusal::Derivation { refusal })?;
                 FixtureOpenings::Derived {
                     parity_counter,
                     openings,
