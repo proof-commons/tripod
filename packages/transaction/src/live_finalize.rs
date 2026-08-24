@@ -130,6 +130,12 @@ impl ReceiptInputRecord {
     /// kept one of the three would leave a caller to fetch the other two
     /// from beside it — and a census assembled beside the form is
     /// exactly the route the finalized form exists to prevent.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one record per consumed receipt, and the arguments are \
+                  its members; a parts struct used at the single call site \
+                  would be a type whose only purpose is to lower a count"
+    )]
     pub(crate) const fn new(
         position: u16,
         outpoint: Outpoint,
