@@ -306,11 +306,19 @@ fn only_the_output_side_carries_negative_controls() {
 }
 
 #[test]
-fn the_three_unreviewed_grounds_are_the_three_different_reasons() {
-    // Each of the four unreviewed dimensions is unreviewed for a
-    // *different kind* of reason, and the kinds are what a later wave
+fn each_unreviewed_dimension_records_which_kind_of_unreviewed_it_is() {
+    // Each of the four unreviewed dimensions records the *kind* of
+    // reason it is unreviewed for, and the kind is what a later wave
     // reads to know whether the dimension is reachable at all. Merging
-    // them would lose exactly that.
+    // the kinds would lose exactly that.
+    //
+    // Three of the four are refusals now, and the third arrived by a
+    // re-typing rather than by a reading: the issuance dimension
+    // carried the sharpest kind — reached and not exercisable — until
+    // it left the profile's required set, at which point the reason it
+    // is not established became the profile's own refusal. That move is
+    // asserted here rather than described, because the ground is the
+    // field a later wave reads.
     use crate::authorization::UnreviewedGround as Ground;
 
     let sighash = sighash_capability();
@@ -318,7 +326,7 @@ fn the_three_unreviewed_grounds_are_the_three_different_reasons() {
 
     assert!(matches!(
         unreviewed.get(&SighashDimension::Issuance),
-        Some(Ground::NoCandidateThisArcBuildsCarriesTheSubject(_)),
+        Some(Ground::TheSelectedProfileRefusesIt(_)),
     ));
     assert!(matches!(
         unreviewed.get(&SighashDimension::SingleOutput),
@@ -332,6 +340,20 @@ fn the_three_unreviewed_grounds_are_the_three_different_reasons() {
         unreviewed.get(&SighashDimension::InternalKey),
         Some(Ground::NoMessageTermCarriesIt { .. }),
     ));
+
+    // The vocabulary keeps a member no dimension carries, and it is
+    // stated here rather than left to be inferred from four assertions
+    // that happen not to mention it. It is kept because it is still the
+    // right name for the condition, and because it is the one of the
+    // three a reviewer can discover about a dimension nobody expected it
+    // of — a vocabulary that dropped it would make the next such
+    // discovery unsayable.
+    assert!(
+        !unreviewed
+            .values()
+            .any(|ground| matches!(ground, Ground::NoCandidateThisArcBuildsCarriesTheSubject(_))),
+        "no dimension has carried this ground since the issuance re-typing",
+    );
 }
 
 #[test]
