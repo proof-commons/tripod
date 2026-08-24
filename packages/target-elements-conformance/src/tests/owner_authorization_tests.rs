@@ -122,8 +122,7 @@ fn the_profile_residual_is_cleared_from_every_case() {
     // verdict and the re-typing closed that gap, and a
     // test that kept asserting the residual would have been asserting a
     // claim the tree no longer makes. §1.11 is not weakened by the
-    // change, because the residual was never what enforced it — see the
-    // test below, which checks the thing that actually does.
+    // change — see the test below, which checks what now carries it.
     for case in cases().values() {
         let residuals = case.residuals().collect::<BTreeSet<_>>();
 
@@ -137,33 +136,29 @@ fn the_profile_residual_is_cleared_from_every_case() {
 
 #[test]
 fn no_case_claims_it_could_run_today() {
-    // §1.11 again, checked against the thing that enforces it. A
-    // target-negative claim needs a complete target transaction and an
-    // observed verdict; this package records neither, and what forbids a
-    // case from claiming otherwise is that there is nowhere on the type
-    // to put a verdict.
+    // §1.11, checked against what now carries it by name. Clearing the
+    // profile residual did not make these cases runnable, and the census
+    // is what proved it: with the profile residual gone and nothing put
+    // in its place, validation refused the valid case as one claiming to
+    // be runnable. What was outstanding had not become nothing — it had
+    // become the one thing the profile residual was carrying silently.
     //
-    // So what is asserted is that the census is still a census of
-    // *expectations*. Every case states what a run must show, and the
-    // only two things it can state are the two branches of an
-    // expectation — never an outcome, and never a count of runs. A case
-    // that had acquired an observed verdict would have to acquire a
-    // field first, and this is the assertion that would be edited to let
-    // it.
+    // So every case names the run it is waiting for, and the assertion
+    // is over every case rather than a sample, because the missing
+    // residual would otherwise be a defect only the census constructor
+    // notices.
     for case in cases().values() {
+        let residuals = case.residuals().collect::<BTreeSet<_>>();
+
         assert!(
-            matches!(
-                case.expectation(),
-                OwnerAuthorizationExpectation::Accepted | OwnerAuthorizationExpectation::Refused,
-            ),
-            "{:?}",
+            residuals.contains(&CaseResidual::NoObservedTargetVerdict),
+            "{:?} claims nothing stands between it and a run",
             case.id(),
         );
     }
 
-    // And the clearing above answered no case: the census still holds
-    // every case it held, at the same expectations, with nothing
-    // discharged by a residual moving.
+    // And the clearing answered no case: the census still holds every
+    // case it held, and nothing was discharged by a residual moving.
     assert_eq!(cases().len(), OwnerAuthorizationCaseId::ALL.len());
 }
 
@@ -191,29 +186,33 @@ fn the_sponsor_case_is_the_only_one_still_waiting_on_anything() {
         OwnerAuthorizationCaseId::IncompleteOwnerSet,
         OwnerAuthorizationCaseId::RepeatedOwnerWithOneWitnessOmitted,
     ] {
-        assert_eq!(residuals(id), BTreeSet::new(), "{id:?}");
+        assert_eq!(
+            residuals(id),
+            BTreeSet::from([CaseResidual::NoObservedTargetVerdict]),
+            "{id:?}"
+        );
     }
 
     assert_eq!(
         residuals(OwnerAuthorizationCaseId::SponsorOwnerOmission),
-        BTreeSet::from([CaseResidual::SponsorEnvelope]),
+        BTreeSet::from([
+            CaseResidual::NoObservedTargetVerdict,
+            CaseResidual::SponsorEnvelope,
+        ]),
     );
 
-    // The valid case needed nothing beyond the review and now needs
-    // nothing at all. It is asserted separately from the two above
-    // rather than folded in with them, because a census that had become
-    // uniform for the wrong reason — every residual dropped rather than
-    // one cleared — would pass a single blanket emptiness check and fail
-    // the sponsor assertion above.
+    // The valid case needs the run and nothing else, so a residual
+    // census that had become uniform would fail here rather than pass
+    // by saying the same thing everywhere.
     assert_eq!(
         residuals(OwnerAuthorizationCaseId::ValidOwnerSignature),
-        BTreeSet::new(),
+        BTreeSet::from([CaseResidual::NoObservedTargetVerdict]),
     );
-    // And the sponsor case is the only one left carrying anything, which
-    // is the count a later wave will be closing.
+    // And the sponsor case is the only one carrying more than the run,
+    // which is the count a later wave will be closing.
     let beyond_the_review: Vec<_> = census
         .values()
-        .filter(|case| case.residuals().count() > 0)
+        .filter(|case| case.residuals().count() > 1)
         .map(super::super::owner_authorization::OwnerAuthorizationCase::id)
         .collect();
     assert_eq!(

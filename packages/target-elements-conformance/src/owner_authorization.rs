@@ -27,17 +27,21 @@
 //! observed target verdict). No case records a verdict, and the type has
 //! no field one could occupy.
 //!
-//! That last sentence is what carries the non-claim, and it is worth
-//! being exact about now that most cases carry no residual at all. The
-//! unreviewed-profile residual stood on every case and was doing two
-//! jobs: naming the profile gap, and standing in as the marker that
-//! nothing here had been run. The review verdict and the owner's
-//! re-typing ruling closed the first, so it is cleared — and the second
-//! was never its to carry. An empty residual set means nothing in this
-//! vocabulary still holds the case back. It does not mean the case has
-//! been run, and none has: what forbids that claim is the absence of a
-//! verdict field, which is a property of the type rather than of a set
-//! that happened to be non-empty.
+//! The unreviewed-profile residual used to be the one every case
+//! carried, and it was doing two jobs: naming the profile gap, and
+//! standing in as the marker that nothing here had been run. The review
+//! verdict and the re-typing closed the first, so it is
+//! cleared. The second was never its to carry, and clearing it is what
+//! made that visible — with the profile residual gone the census stopped
+//! validating, naming the valid case as one claiming to be runnable,
+//! because [`CaseCensusDefect::MissingResidual`] refuses a case with
+//! nothing outstanding.
+//!
+//! So the common residual is now
+//! [`CaseResidual::NoObservedTargetVerdict`], which says what is
+//! actually true and always was. §1.11's bar is carried in two places
+//! that agree: the type has no field a verdict could occupy, and every
+//! case names the run it is still waiting for.
 //!
 //! # Why the three lists are one census
 //!
@@ -164,16 +168,28 @@ pub enum OwnerAuthorizationExpectation {
 
 /// What still stands between one case and a target-native run.
 ///
-/// Every case carried one while the profile the whole census is stated
-/// against was unreviewed: that was the honest common residual, and the
-/// cases needing more said what more. The common one is cleared, so the
-/// set is now empty for every case but the sponsor's.
+/// Every case carries one, and [`CaseCensusDefect::MissingResidual`] is
+/// what makes that structural rather than a habit: a case with nothing
+/// outstanding is a case claiming it could run, and none can.
 ///
-/// An empty set is therefore not a case that could run today. It is a
-/// case with nothing left *in this vocabulary*, which is a narrower
-/// statement and the only one this type was ever able to make — §1.11's
-/// bar is met by the module's own shape, where no case records a verdict
-/// and there is no field one could occupy.
+/// # Why the common residual changed rather than went away
+///
+/// The common one used to be [`Self::ProfileUnreviewed`], and it was
+/// doing two jobs — naming the profile gap, and standing in as the
+/// marker that nothing here had been run. Only the first was ever its
+/// to carry. When the review verdict and the re-typing
+/// closed the profile gap, clearing the residual left every case but
+/// the sponsor's with an empty set, and the census stopped validating:
+/// the missing-residual defect fired on the valid case and named it
+/// exactly, a case claiming to be runnable.
+///
+/// That refusal is the vocabulary being right. What stands between
+/// these cases and a run did not become nothing when the profile was
+/// established; it became the one thing the profile residual had been
+/// carrying silently, so [`Self::NoObservedTargetVerdict`] now carries
+/// it by name. §1.11's bar is therefore typed rather than implied, and
+/// a reader asking why a case cannot run gets the real answer instead
+/// of a profile gap that has since closed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CaseResidual {
     /// The selected sighash profile is not established by the review,
@@ -224,6 +240,30 @@ pub enum CaseResidual {
     /// name for the condition, and a census stated against a profile
     /// whose review had lapsed must be able to say so.
     ProfileUnreviewed,
+    /// No target-native run has produced a verdict for this case.
+    ///
+    /// §1.11's bar, carried by name. A target-negative claim needs a
+    /// complete target transaction and an observed target verdict, this
+    /// package has neither, and every case here is a statement about
+    /// what a run must show rather than a report of what one did.
+    ///
+    /// # Why this is a member and not an absence
+    ///
+    /// It was an absence, and the absence was load-bearing without
+    /// being named: while [`Self::ProfileUnreviewed`] stood on every
+    /// case, the census's own missing-residual rule was satisfied by a
+    /// residual that spoke about the profile, and the fact that no run
+    /// had happened was carried by nothing at all. Clearing the profile
+    /// residual is what exposed that — the census refused to validate,
+    /// naming the valid case as one claiming to be runnable, which it
+    /// was not.
+    ///
+    /// So this variant is not new work the review verdict created. It
+    /// is a claim that was always true, always required by the census's
+    /// own rule, and never previously spelled. A later wave that
+    /// observes these cases against a target clears it; nothing short of
+    /// a run does, and in particular no further review can.
+    NoObservedTargetVerdict,
     /// The case additionally needs a sponsor envelope with its own
     /// authorizing owner.
     ///
@@ -385,9 +425,12 @@ pub fn owner_authorization_cases() -> BTreeMap<OwnerAuthorizationCaseId, OwnerAu
 
             // The unreviewed profile stood on every case here until the
             // review verdict and the re-typing cleared
-            // it, so what remains is whatever the case needs beyond it —
-            // which for all but the sponsor case is nothing.
-            let residuals: BTreeSet<_> = extra.into_iter().collect();
+            // it. What replaces it is not nothing: the census refuses a
+            // case with nothing outstanding, and what is outstanding is
+            // that no run has produced a verdict for any of these — the
+            // claim the profile residual had been carrying silently.
+            let mut residuals = BTreeSet::from([Residual::NoObservedTargetVerdict]);
+            residuals.extend(extra);
 
             (
                 *id,
