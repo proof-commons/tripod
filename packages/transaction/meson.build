@@ -22,6 +22,7 @@ transaction_source_files = files(
   'src/tests/abi_tests.rs',
   'src/tests/construction_tests.rs',
   'src/tests/ctf_preflight_tests.rs',
+  'src/tests/ctf_serialization_tests.rs',
   'src/tests/encoding_tests.rs',
   'src/tests/guide13_preflight_tests.rs',
   'src/tests/live_abi_tests.rs',

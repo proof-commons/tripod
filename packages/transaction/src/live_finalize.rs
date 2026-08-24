@@ -275,10 +275,61 @@ pub(crate) struct FinalizedParts {
     pub(crate) protected_data: BTreeSet<ProtectedDatum>,
 }
 
+/// The exact preimage every owner of `protected` is asked to bind to,
+/// under `representation`.
+///
+/// # Why the private lane's answer is not the witnessless serialization
+///
+/// The target's `SIGHASH_ALL` incorporates the serialized output set AND
+/// the hash of the output-witness vector, and it hashes that vector at
+/// whatever length the vector happens to have. A transaction carrying no
+/// witness deserializes with an EMPTY output-witness vector and its
+/// signer hashes the empty string there, while serializing a transaction
+/// that has any witness grows the vector to one entry per output and
+/// consensus then hashes one entry per output. The two digests differ,
+/// the signature is reported complete, and the target refuses the spend
+/// — which is the recorded, runnable diagnosis behind
+/// `(´[PLAN-obs:upstream:eg-019]´)`.
+///
+/// `encode_without_witness()` is exactly the empty-vector case. For an
+/// explicit candidate that costs nothing, because there are no proofs to
+/// omit and the empty vector is what the wire carries anyway. For a
+/// proof-bearing candidate it is the difference between a declared
+/// commitment and an actual one: an owner would be asked to bind to a
+/// preimage that does not contain the range proofs the target's digest
+/// covers.
+///
+/// So the private lane's preimage is the witnessless serialization
+/// followed by the output-witness vector, and changing one proof byte
+/// changes it. The scope is deliberate. The explicit lane's preimage is
+/// unchanged, byte for byte, because its output-witness vector is empty
+/// under both readings and widening a settled lane's bytes to say
+/// nothing new would be a change for symmetry's sake.
+///
+/// # This is a preimage and not a digest
+///
+/// The concatenation is a named region census and is not offered as a
+/// target serialization of anything: no target ever parses it. Which
+/// message the owner-sighash work computes from these bytes, and how, is
+/// that work's own and is not decided here.
+pub(crate) fn protected_preimage(
+    protected: &TargetTransaction,
+    representation: LiveTransferRepresentationPlan,
+) -> Vec<u8> {
+    let mut bytes = protected.encode_without_witness();
+    if matches!(
+        representation,
+        LiveTransferRepresentationPlan::PrivateCommitted
+    ) {
+        bytes.extend_from_slice(&protected.output_witness_bytes());
+    }
+    bytes
+}
+
 impl FinalizedLiveTransfer {
     /// The finalized form over one settled transaction.
     pub(crate) fn new(parts: FinalizedParts) -> Self {
-        let protected_bytes = parts.protected.encode_without_witness();
+        let protected_bytes = protected_preimage(&parts.protected, parts.representation);
         Self {
             shape: parts.shape,
             representation: parts.representation,
@@ -324,6 +375,12 @@ impl FinalizedLiveTransfer {
     /// and a builder that supplied one would be asserting the profile it
     /// intended rather than letting the profile be recomputed from the
     /// request.
+    ///
+    /// Which regions the preimage covers depends on the representation,
+    /// and [`protected_preimage`] is where that is decided and argued.
+    /// The short version: the private lane's preimage carries the
+    /// output-witness vector, so an owner binds to bytes containing the
+    /// range proofs the target's digest covers.
     #[must_use]
     pub fn protected_bytes(&self) -> &[u8] {
         &self.protected_bytes

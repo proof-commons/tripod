@@ -31,6 +31,7 @@
 mod abi_tests;
 mod construction_tests;
 mod ctf_preflight_tests;
+mod ctf_serialization_tests;
 mod encoding_tests;
 mod guide13_preflight_tests;
 mod live_abi_tests;

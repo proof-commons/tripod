@@ -170,10 +170,10 @@ fn with_output_proofs(
 /// rangeproof at the target, so bytes carrying one must decode; the
 /// explicit form forbids one, so bytes carrying one must still refuse.
 ///
-/// Ignored while the tree refuses both: the observed failure is this
-/// row's reproduction.
+/// Ran ignored while the tree refused both, and the observed failure was
+/// this row's reproduction. Wave 3 repaired the row, so the attribute is
+/// gone and the test stands as the repaired property's guarantee.
 #[test]
-#[ignore = "confidential-funding preflight: the refusal is unconditional today; run with -- --ignored"]
 fn the_rangeproof_refusal_consults_the_output_value_form() {
     let hybrid = hybrid_form();
     let hybrid_bytes = with_output_proofs(&hybrid, &[], &[0xab; 64]);
@@ -254,11 +254,11 @@ fn a_surjection_proof_is_refused_for_the_hybrid_form() {
 /// repaired private preimage carries the output-witness vector, and
 /// therefore differs from the witnessless bytes.
 ///
-/// Ignored while the two are equal: the observed failure is this row's
-/// first-party half. The target half is already established by the
-/// recorded runnable diagnosis and is cited rather than rerun.
+/// Ran ignored while the two were equal, and the observed failure was this
+/// row's first-party half; the target half is established by the recorded
+/// runnable diagnosis and is cited rather than rerun. Wave 3 repaired the
+/// row, so the attribute is gone and the test stands as the guarantee.
 #[test]
-#[ignore = "confidential-funding preflight: the preimage is the witnessless form today; run with -- --ignored"]
 fn the_private_protected_preimage_is_not_the_witnessless_serialization() {
     let built = private_finalization_with(&FixturePrivateValue);
     let finalized = built.finalized();
