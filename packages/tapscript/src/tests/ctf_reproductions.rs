@@ -15,12 +15,19 @@
 //! running it is that row's reproduction. Run them with
 //! `cargo test -p tripod-tapscript -- --ignored`.
 //!
+//! The row is now DISCHARGED and the ignore attribute is gone. The
+//! owner-sighash work's census wave landed the repair the guide deferred
+//! to it: the coverage map became set-valued, and the proof fields name
+//! the created outputs' dimension alongside the spent outputs'. What was
+//! a reproduction is a standing guarantee, and the file keeps both tests
+//! rather than deleting the one that has stopped failing — a repair
+//! whose evidence was removed on landing is a repair nobody can check
+//! stayed landed.
+//!
 //! The running test beside it is deliberately written so that it
 //! survives the repair: the spent-output anchoring the guide's repair
 //! keeps is stated as a membership rather than as an equality, so
 //! widening the coverage does not falsify it.
-//!
-//! Nothing here implements anything. Wave 0 adds no production code.
 
 use std::collections::BTreeSet;
 
@@ -57,10 +64,11 @@ fn carriers_of(datum: ProtectedDatum) -> BTreeSet<SighashDimension> {
 /// target actually gives, and a later narrowing of the profile would be
 /// argued against the declaration rather than against the rule.
 ///
-/// Ignored while the coverage names one dimension: the observed failure
-/// is this row's reproduction.
+/// Discharged rather than ignored: the coverage map is set-valued and
+/// the proof fields name both carriers, so what was the observed failure
+/// standing as this row's reproduction is now the repaired property
+/// standing as its guarantee.
 #[test]
-#[ignore = "confidential-funding preflight: the coverage names the spent outputs alone today; run with -- --ignored"]
 fn the_proof_fields_are_carried_by_the_created_outputs_dimension_as_well() {
     let carriers = carriers_of(ProtectedDatum::ProofFields);
 

@@ -351,6 +351,16 @@ pub fn owner_authorization_cases() -> BTreeMap<OwnerAuthorizationCaseId, OwnerAu
 /// The production path derives the set from the selected profile, so
 /// the coupling is real; a test narrows the set, so the coupling is
 /// checkable.
+///
+/// The carrier lookup is set-valued, and the question this asks of the
+/// set is "any" rather than "all". A datum is committed as soon as one
+/// dimension carrying it is required, because the paragraphs above state
+/// the need exactly: what a mutation case needs is that *something*
+/// commits to what it changed. Reading it as "all" would drop a datum
+/// the signature demonstrably commits to out of the set the moment the
+/// coverage map recorded a second, weaker carrier for it — punishing a
+/// more complete declaration, which is the opposite of what widening the
+/// map was for.
 #[must_use]
 pub fn committed_protected_data(profile: &OwnerSighashProfile) -> BTreeSet<ProtectedDatum> {
     let required = profile.required().collect::<BTreeSet<_>>();
@@ -358,7 +368,12 @@ pub fn committed_protected_data(profile: &OwnerSighashProfile) -> BTreeSet<Prote
     ProtectedDatum::ALL
         .iter()
         .copied()
-        .filter(|datum| required.contains(&profile.carrier(*datum)))
+        .filter(|datum| {
+            profile
+                .carrier(*datum)
+                .iter()
+                .any(|dimension| required.contains(dimension))
+        })
         .collect()
 }
 

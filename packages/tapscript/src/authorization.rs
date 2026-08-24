@@ -152,6 +152,50 @@ pub enum DimensionRefusal {
     Unclassified,
 }
 
+/// Why a dimension the target names is carried by no message term.
+///
+/// One member, because the source review found exactly one such
+/// dimension and a vocabulary with room for unexamined others would
+/// invite a later dimension to be filed here instead of read. A second
+/// member is an added variant with its own argument, not a default.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum OutsideMessageGround {
+    /// The message fixes a value the dimension's own value is composed
+    /// with, and the composition is completed by a consensus check the
+    /// message does not cover.
+    ///
+    /// This is the internal key's ground, and it is the source review's
+    /// argument rather than a summary of it
+    /// (`rule:sighash-review:internal-key`). What the spent-scripts term
+    /// commits, at `src/script/interpreter.cpp:2465-2472` written at
+    /// `:2736`, is each spent output's `scriptPubKey`; for a taproot
+    /// output the 32 bytes inside that program are the **tweaked output
+    /// key**, not the internal key, and the two are related by a tweak
+    /// the message never mentions.
+    ///
+    /// The internal key is bound to that output key by
+    /// `VerifyTaprootCommitment` at `:3217-3229`, which reads the
+    /// internal key from the control block at `:3222`, the output key
+    /// from the witness program at `:3224`, computes the merkle root
+    /// from the executing leaf and the supplied path at `:3226`, and
+    /// requires at `:3228` that the output key be the internal key
+    /// tweaked by that root — a check the script-path branch runs at
+    /// `:3288-3290`, refusing with a witness-program mismatch before the
+    /// leaf executes.
+    ///
+    /// So the relation is a composition and not a commitment, for two
+    /// reasons the review refuses to blur. The binding lives in the
+    /// witness check and the witness is not covered by the message:
+    /// nothing in the stream at `:2712-2801` reads the control block.
+    /// And the tweak is not injective in the message's view — the
+    /// message is identical for any two internal-key-and-path pairs that
+    /// tweak to the same output key under the same executing leaf,
+    /// because the message carries the output key and the tapleaf hash
+    /// and nothing about the path. That no such pair is easy to find is
+    /// a hardness argument, not a commitment.
+    ComposedThroughTheControlBlockCheck,
+}
+
 /// What one profile requires of one target dimension.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DimensionRole {
@@ -159,6 +203,32 @@ pub enum DimensionRole {
     Required,
     /// The signature must not be taken under this dimension.
     Refused(DimensionRefusal),
+    /// The message carries no term for this dimension, and the
+    /// protection the profile wanted from it is recorded as carried by
+    /// another dimension instead.
+    ///
+    /// Three roles and not two, because the two the profile started with
+    /// could not say this. Requiring a dimension no message term carries
+    /// makes [`OwnerSighashProfile::assess`] permanently
+    /// [`OwnerProfileDisposition::ReviewIncomplete`] — no reading of the
+    /// message and no recomputation of it can ever move a dimension the
+    /// message does not contain — and refusing it would have claimed the
+    /// profile declines a protection it in fact has. Neither is true, so
+    /// the vocabulary grew a third answer rather than one of the two
+    /// being stretched.
+    ///
+    /// The variant carries its own reason so that the argument travels
+    /// with the dimension. A reader who asks why the required set is
+    /// seven rather than eight finds
+    /// [`OutsideMessageGround`] and its citations at the point of use,
+    /// not a dimension that quietly stopped being mentioned.
+    NotCarriedByTheMessage {
+        /// The dimension whose term fixes the value this one composes
+        /// with.
+        carried_by: SighashDimension,
+        /// Why the message itself carries nothing.
+        ground: OutsideMessageGround,
+    },
 }
 
 /// What the reviewed contract establishes about a selected profile.
@@ -197,7 +267,7 @@ pub enum OwnerProfileDisposition {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OwnerSighashProfile {
     roles: BTreeMap<SighashDimension, DimensionRole>,
-    coverage: BTreeMap<ProtectedDatum, SighashDimension>,
+    coverage: BTreeMap<ProtectedDatum, BTreeSet<SighashDimension>>,
 }
 
 impl OwnerSighashProfile {
@@ -215,7 +285,30 @@ impl OwnerSighashProfile {
             .iter()
             .filter_map(|(dimension, role)| match role {
                 DimensionRole::Refused(ground) => Some((*dimension, *ground)),
-                DimensionRole::Required => None,
+                DimensionRole::Required | DimensionRole::NotCarriedByTheMessage { .. } => None,
+            })
+    }
+
+    /// Every dimension no message term carries, with the dimension that
+    /// carries its protection instead and the ground for saying so.
+    ///
+    /// Published rather than left inside [`Self::role`] because the set
+    /// is the answer to a question a reader of the required set will
+    /// ask: the profile names ten dimensions and requires seven, and the
+    /// three that are not required split into two refusals with grounds
+    /// and one composition with a citation. An iterator makes the third
+    /// group as walkable as the second instead of reachable only by
+    /// asking about a dimension one already suspected.
+    pub fn not_carried_by_the_message(
+        &self,
+    ) -> impl Iterator<Item = (SighashDimension, SighashDimension, OutsideMessageGround)> + '_ {
+        self.roles
+            .iter()
+            .filter_map(|(dimension, role)| match role {
+                DimensionRole::NotCarriedByTheMessage { carried_by, ground } => {
+                    Some((*dimension, *carried_by, *ground))
+                }
+                DimensionRole::Required | DimensionRole::Refused(_) => None,
             })
     }
 
@@ -229,7 +322,19 @@ impl OwnerSighashProfile {
         self.roles.get(&dimension).copied()
     }
 
-    /// The dimension that carries one protected datum.
+    /// Every dimension that carries one protected datum.
+    ///
+    /// Set-valued rather than single-valued, and the widening is a type
+    /// change the confidential-funding guide's protected-bytes repair
+    /// asked for by name (§9.3 part 2, §3.2). A datum can be protected
+    /// by more than one term of the target's message, and a signature
+    /// answering with one dimension had to choose which of them to
+    /// publish — which is how the proof fields came to declare the input
+    /// side's anchoring alone while the target's own message covers the
+    /// created outputs' proofs as well. Declaring less protection than
+    /// the target gives is not a safe error: a later narrowing of the
+    /// profile would be argued against the declaration rather than
+    /// against the rule.
     ///
     /// # Panics
     ///
@@ -237,18 +342,22 @@ impl OwnerSighashProfile {
     /// refuses to build a profile whose coverage map is not total, so a
     /// missing entry is unreachable rather than handled.
     #[must_use]
-    pub fn carrier(&self, datum: ProtectedDatum) -> SighashDimension {
-        *self
-            .coverage
+    pub fn carrier(&self, datum: ProtectedDatum) -> &BTreeSet<SighashDimension> {
+        self.coverage
             .get(&datum)
             .expect("a selected profile covers every protected datum")
     }
 
-    /// Every protected datum with the dimension that carries it.
+    /// Every protected datum paired with each dimension that carries it.
+    ///
+    /// Flattened, so a datum with two carriers appears twice. The shape
+    /// is what lets a reader ask whether a carrier set *includes* a
+    /// dimension without the iterator having decided for them which of
+    /// several is the one worth reporting.
     pub fn coverage(&self) -> impl Iterator<Item = (ProtectedDatum, SighashDimension)> + '_ {
-        self.coverage
-            .iter()
-            .map(|(datum, dimension)| (*datum, *dimension))
+        self.coverage.iter().flat_map(|(datum, dimensions)| {
+            dimensions.iter().map(move |dimension| (*datum, *dimension))
+        })
     }
 
     /// What one reviewed sighash capability establishes about this
@@ -287,9 +396,44 @@ impl OwnerSighashProfile {
 /// unprotected, and the remaining four are single fields the target
 /// commits to in any case.
 ///
+/// The map is set-valued and the totality it argues is set-valued with
+/// it: every protected datum lands on a *non-empty* set of dimensions,
+/// and every dimension in every such set is one this profile requires.
+/// Fourteen of the fifteen data have one carrier and the proof fields
+/// have two, which is why totality can no longer be read off a
+/// single-valued lookup — a datum whose carrier set had gone empty, or
+/// had come to name a refused or a not-message-carried dimension, would
+/// be a coverage claim with nothing behind it, and
+/// [`profile_coverage_lands_only_on_required_dimensions`] is the check
+/// that says so.
+///
+/// [`profile_coverage_lands_only_on_required_dimensions`]: crate::authorization::profile_coverage_lands_only_on_required_dimensions
+///
 /// The two refusals are therefore not spare caution. They are the two
 /// dimensions the target offers that would each, on their own, undo one
 /// of the two totals the argument rests on.
+///
+/// # Why the required set is seven and not eight
+///
+/// The tenth dimension the target names,
+/// [`SighashDimension::InternalKey`], is neither required nor refused.
+/// The source review read the message term by term and found no
+/// internal-key term in it at all
+/// (`rule:sighash-review:internal-key`), so the dimension is re-typed
+/// rather than kept: its protection is recorded as carried by
+/// [`SighashDimension::SpentOutputs`], where the output key actually is,
+/// and the argument for saying so travels with the dimension at
+/// [`OutsideMessageGround`] rather than being deleted along with the
+/// requirement.
+///
+/// The coverage map is what makes that re-typing free of consequence
+/// rather than a loss: it assigns no protected datum to the internal
+/// key, and it did not before the re-typing either. So no protected
+/// datum moves, no datum lands on a dimension the profile does not
+/// require, and the coverage argument below is unchanged in content.
+/// The requirement that left had been protecting nothing the argument
+/// itself names — the signature of a requirement stated by analogy to
+/// BIP-341 rather than derived from this target's message.
 #[must_use]
 pub fn selected_owner_profile() -> OwnerSighashProfile {
     use SighashDimension as Dimension;
@@ -304,13 +448,16 @@ pub fn selected_owner_profile() -> OwnerSighashProfile {
                 Dimension::InputExtensionPermitted => {
                     DimensionRole::Refused(DimensionRefusal::LeavesInputSetOpen)
                 }
+                Dimension::InternalKey => DimensionRole::NotCarriedByTheMessage {
+                    carried_by: Dimension::SpentOutputs,
+                    ground: OutsideMessageGround::ComposedThroughTheControlBlockCheck,
+                },
                 Dimension::AllOutputs
                 | Dimension::AllInputs
                 | Dimension::Issuance
                 | Dimension::Version
                 | Dimension::LockTime
                 | Dimension::TapleafHash
-                | Dimension::InternalKey
                 | Dimension::SpentOutputs => DimensionRole::Required,
                 _ => DimensionRole::Refused(DimensionRefusal::Unclassified),
             };
@@ -322,13 +469,13 @@ pub fn selected_owner_profile() -> OwnerSighashProfile {
     let coverage = ProtectedDatum::ALL
         .iter()
         .map(|datum| {
-            let dimension = match datum {
+            let dimensions: BTreeSet<SighashDimension> = match datum {
                 // Which receipts are consumed is the input set itself,
                 // and what each of them was worth is a property of the
                 // outputs being spent rather than of this transaction's
                 // own fields.
                 ProtectedDatum::ReceiptInputs | ProtectedDatum::SponsorInputs => {
-                    Dimension::AllInputs
+                    BTreeSet::from([Dimension::AllInputs])
                 }
                 // Everything a destination *is* — its existence, its
                 // owner's program, its value field, and the constructor
@@ -351,18 +498,35 @@ pub fn selected_owner_profile() -> OwnerSighashProfile {
                 | ProtectedDatum::ReceiptConstructors
                 | ProtectedDatum::SponsorChange
                 | ProtectedDatum::TargetFeeRole
-                | ProtectedDatum::RepresentationPlan => Dimension::AllOutputs,
+                | ProtectedDatum::RepresentationPlan => BTreeSet::from([Dimension::AllOutputs]),
+                // Two carriers, and the second is the confidential-funding
+                // guide's protected-bytes repair (§9.3 part 2).
+                //
                 // The spent outputs carry the input side's own value and
                 // asset fields, which is where the proofs a confidential
-                // transfer relies on are anchored.
-                ProtectedDatum::ProofFields => Dimension::SpentOutputs,
-                ProtectedDatum::TransactionVersion => Dimension::Version,
-                ProtectedDatum::LockTime => Dimension::LockTime,
-                ProtectedDatum::IssuanceFields => Dimension::Issuance,
-                ProtectedDatum::ScriptPathFields => Dimension::TapleafHash,
+                // transfer relies on are anchored. That half is unchanged
+                // and is owed afterwards exactly as it was met before.
+                //
+                // The created outputs carry the other half, and the
+                // target's own message is why: under this profile's
+                // all-outputs type the stream writes both the serialized
+                // output list and the hash of the output-witness vector,
+                // and the output-witness vector is where a created
+                // output's range proof and surjection proof live. So a
+                // transfer's own created proofs are data the owner's
+                // signature commits to, and a coverage map naming the
+                // spent outputs alone declared less protection than the
+                // target actually gives.
+                ProtectedDatum::ProofFields => {
+                    BTreeSet::from([Dimension::SpentOutputs, Dimension::AllOutputs])
+                }
+                ProtectedDatum::TransactionVersion => BTreeSet::from([Dimension::Version]),
+                ProtectedDatum::LockTime => BTreeSet::from([Dimension::LockTime]),
+                ProtectedDatum::IssuanceFields => BTreeSet::from([Dimension::Issuance]),
+                ProtectedDatum::ScriptPathFields => BTreeSet::from([Dimension::TapleafHash]),
             };
 
-            (*datum, dimension)
+            (*datum, dimensions)
         })
         .collect();
 
@@ -503,4 +667,29 @@ pub fn profile_classifies_every_offered_dimension(profile: &OwnerSighashProfile)
     profile
         .refused()
         .all(|(_, ground)| ground != DimensionRefusal::Unclassified)
+}
+
+/// Whether every protected datum's carriers are dimensions the profile
+/// requires.
+///
+/// The coverage argument's totality, recomputed rather than asserted.
+/// Single-valued coverage made half of this true by construction: a
+/// lookup either answered or panicked, so the only way to be wrong was
+/// to name a dimension the profile did not require. Set-valued coverage
+/// adds a second way — an empty set — and both are checked here.
+///
+/// A function rather than a test for the same reason its sibling is one:
+/// a consumer deciding whether to rely on the profile is entitled to ask
+/// whether the profile's own argument holds, and the honest answer to
+/// "does this coverage map still argue what it claims" is a value rather
+/// than a build step somebody else ran.
+#[must_use]
+pub fn profile_coverage_lands_only_on_required_dimensions(profile: &OwnerSighashProfile) -> bool {
+    ProtectedDatum::ALL.iter().all(|datum| {
+        let carriers = profile.carrier(*datum);
+        !carriers.is_empty()
+            && carriers
+                .iter()
+                .all(|dimension| profile.role(*dimension) == Some(DimensionRole::Required))
+    })
 }

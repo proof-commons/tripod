@@ -359,6 +359,39 @@ pub enum ValueField {
     Commitment([u8; COMMITMENT_BYTES]),
 }
 
+/// One asset field, serialized as the target writes it.
+///
+/// Extracted from the output encoder rather than written twice, because
+/// the owner message's spent-asset-and-amount term hashes the asset and
+/// value fields *alone* — without the nonce and script that follow them
+/// in an output (`src/script/interpreter.cpp:2454-2462`) — so the two
+/// callers need the same field encoding at two different granularities.
+/// Two spellings of one encoding is one spelling too many.
+pub(crate) fn encode_asset_field(bytes: &mut Vec<u8>, asset: AssetField) {
+    match asset {
+        AssetField::Explicit(asset) => {
+            bytes.push(EXPLICIT_PREFIX);
+            bytes.extend_from_slice(asset.internal());
+        }
+        AssetField::Commitment(commitment) => bytes.extend_from_slice(&commitment),
+    }
+}
+
+/// One value field, serialized as the target writes it.
+pub(crate) fn encode_value_field(bytes: &mut Vec<u8>, value: ValueField) {
+    match value {
+        // Big-endian, and only here. An explicit amount is stored
+        // big-endian in the transaction field and pushed to a script's
+        // stack little-endian, so one value has two orders and neither
+        // is the crate's default.
+        ValueField::Explicit(amount) => {
+            bytes.push(EXPLICIT_PREFIX);
+            bytes.extend_from_slice(&amount.to_be_bytes());
+        }
+        ValueField::Commitment(commitment) => bytes.extend_from_slice(&commitment),
+    }
+}
+
 /// An output's nonce field.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
@@ -511,25 +544,17 @@ impl TargetOutput {
             && matches!(self.asset, AssetField::Explicit(_))
     }
 
-    fn encode(&self, bytes: &mut Vec<u8>) {
-        match self.asset {
-            AssetField::Explicit(asset) => {
-                bytes.push(EXPLICIT_PREFIX);
-                bytes.extend_from_slice(asset.internal());
-            }
-            AssetField::Commitment(commitment) => bytes.extend_from_slice(&commitment),
-        }
-        match self.value {
-            // Big-endian, and only here. An explicit amount is stored
-            // big-endian in the transaction field and pushed to a
-            // script's stack little-endian, so one value has two orders
-            // and neither is the crate's default.
-            ValueField::Explicit(amount) => {
-                bytes.push(EXPLICIT_PREFIX);
-                bytes.extend_from_slice(&amount.to_be_bytes());
-            }
-            ValueField::Commitment(commitment) => bytes.extend_from_slice(&commitment),
-        }
+    /// This output, serialized as the target writes it.
+    ///
+    /// Crate-visible because the owner message's outputs term hashes
+    /// each output in exactly this form
+    /// (`src/script/interpreter.cpp:2443-2450`), and a message
+    /// construction that re-spelled the output encoding would be a
+    /// second opinion about it, free to drift from the bytes this crate
+    /// actually produces.
+    pub(crate) fn encode(&self, bytes: &mut Vec<u8>) {
+        encode_asset_field(bytes, self.asset);
+        encode_value_field(bytes, self.value);
         match self.nonce {
             NonceField::Null => bytes.push(NULL_PREFIX),
             NonceField::Commitment(commitment) => bytes.extend_from_slice(&commitment),

@@ -25,8 +25,10 @@ use target_elements::{
 
 use super::reviewed_target;
 use crate::authorization::{
-    DimensionRefusal, DimensionRole, OwnerKeyNegative, OwnerKeyObligation, OwnerProfileDisposition,
-    owner_key_encoding_closure, profile_classifies_every_offered_dimension, selected_owner_profile,
+    DimensionRefusal, DimensionRole, OutsideMessageGround, OwnerKeyNegative, OwnerKeyObligation,
+    OwnerProfileDisposition, owner_key_encoding_closure,
+    profile_classifies_every_offered_dimension, profile_coverage_lands_only_on_required_dimensions,
+    selected_owner_profile,
 };
 
 /// The reviewed authorization contract, unmodified.
@@ -64,7 +66,10 @@ fn capability_reviewing(reviewed: &[SighashDimension]) -> SighashCapability {
 fn the_selected_profile_requires_exactly_the_stated_dimensions() {
     // An independently written expectation. §9.2's list of what the
     // profile must establish, mapped onto the dimensions this target
-    // names, with the two narrowing dimensions absent.
+    // names, with the two narrowing dimensions absent — and with the
+    // internal key absent too, because the source review found that the
+    // message carries no term for it and the owner re-typed it onto the
+    // spent outputs. Seven message-carried dimensions, not eight.
     let expected = [
         SighashDimension::AllOutputs,
         SighashDimension::AllInputs,
@@ -72,13 +77,93 @@ fn the_selected_profile_requires_exactly_the_stated_dimensions() {
         SighashDimension::Version,
         SighashDimension::LockTime,
         SighashDimension::TapleafHash,
-        SighashDimension::InternalKey,
         SighashDimension::SpentOutputs,
     ];
 
     assert_eq!(
         selected_owner_profile().required().collect::<Vec<_>>(),
         expected,
+    );
+}
+
+// --- The internal key is re-typed, not deleted ---
+
+#[test]
+fn the_internal_key_is_not_a_required_dimension() {
+    // The re-typing's first half, stated as the absence it is. A
+    // dimension no message term carries cannot be established by reading
+    // the message or by recomputing it, so requiring it would hold the
+    // disposition at review-incomplete forever.
+    let profile = selected_owner_profile();
+
+    assert!(
+        !profile
+            .required()
+            .any(|dimension| dimension == SighashDimension::InternalKey),
+    );
+    assert!(
+        !profile
+            .refused()
+            .any(|(dimension, _)| dimension == SighashDimension::InternalKey),
+        "the profile does not decline a protection it in fact has",
+    );
+}
+
+#[test]
+fn the_internal_keys_protection_is_recorded_as_carried_by_the_spent_outputs() {
+    // The re-typing's second half. The role is not merely "absent": it
+    // names the dimension whose term fixes the value the internal key
+    // composes with, so a reader who notices the required set is seven
+    // finds where the eighth went.
+    let profile = selected_owner_profile();
+
+    assert_eq!(
+        profile.role(SighashDimension::InternalKey),
+        Some(DimensionRole::NotCarriedByTheMessage {
+            carried_by: SighashDimension::SpentOutputs,
+            ground: OutsideMessageGround::ComposedThroughTheControlBlockCheck,
+        }),
+    );
+
+    // And the dimension it was re-typed onto is one the profile
+    // requires, so the protection is recorded as carried by something
+    // the signature actually commits to rather than parked on a
+    // dimension nobody checks.
+    assert_eq!(
+        profile.role(SighashDimension::SpentOutputs),
+        Some(DimensionRole::Required),
+    );
+}
+
+#[test]
+fn the_internal_key_is_the_only_dimension_no_message_term_carries() {
+    // The review found exactly one such dimension, and this is the
+    // measurement rather than the claim. A second member appearing here
+    // is a second dimension somebody re-typed without arguing for it.
+    let profile = selected_owner_profile();
+
+    assert_eq!(
+        profile.not_carried_by_the_message().collect::<Vec<_>>(),
+        [(
+            SighashDimension::InternalKey,
+            SighashDimension::SpentOutputs,
+            OutsideMessageGround::ComposedThroughTheControlBlockCheck,
+        )],
+    );
+}
+
+#[test]
+fn re_typing_the_internal_key_moves_no_protected_datum() {
+    // The reason the re-typing is free of consequence, checked rather
+    // than asserted in prose: the coverage map assigned the internal key
+    // no protected datum, so nothing had to be moved off it. A coverage
+    // map that had named it would have made this a much larger change.
+    let profile = selected_owner_profile();
+
+    assert!(
+        !profile
+            .coverage()
+            .any(|(_, dimension)| dimension == SighashDimension::InternalKey),
     );
 }
 
@@ -121,7 +206,9 @@ fn the_profile_classifies_every_dimension_the_target_offers() {
     }
 
     assert_eq!(
-        profile.required().count() + profile.refused().count(),
+        profile.required().count()
+            + profile.refused().count()
+            + profile.not_carried_by_the_message().count(),
         SighashDimension::ALL.len(),
         "every offered dimension is classified exactly once",
     );
@@ -132,22 +219,58 @@ fn the_profile_classifies_every_dimension_the_target_offers() {
 #[test]
 fn no_protected_datum_rests_on_a_dimension_the_profile_refuses() {
     let profile = selected_owner_profile();
-    let mut seen = 0_usize;
+    let mut seen = BTreeSet::new();
 
     for (datum, dimension) in profile.coverage() {
-        seen += 1;
+        seen.insert(datum);
 
         assert_eq!(
             profile.role(dimension),
             Some(DimensionRole::Required),
             "{datum:?} rests on {dimension:?}",
         );
-        assert_eq!(profile.carrier(datum), dimension);
+        assert!(
+            profile.carrier(datum).contains(&dimension),
+            "{datum:?} is covered by {dimension:?} but does not carry it",
+        );
     }
 
     // The map is total over the protocol's own list, so a datum the
-    // profile forgot fails here rather than passing vacuously.
-    assert_eq!(seen, crate::authorization::ProtectedDatum::ALL.len());
+    // profile forgot fails here rather than passing vacuously. Counted
+    // over distinct data rather than over pairs, because the map is
+    // set-valued and the proof fields contribute two pairs.
+    assert_eq!(seen.len(), crate::authorization::ProtectedDatum::ALL.len());
+
+    // The same argument as a recomputed value rather than as a loop, so
+    // a consumer can ask it without running this test. It adds the one
+    // failure the loop above cannot see: a datum whose carrier set went
+    // empty contributes no pair at all.
+    assert!(profile_coverage_lands_only_on_required_dimensions(&profile));
+}
+
+#[test]
+fn the_proof_fields_are_the_only_datum_with_more_than_one_carrier() {
+    // The set-valued widening, measured. Fourteen data have one carrier
+    // and the proof fields have two — the spent outputs' anchoring the
+    // map always named, and the created outputs' dimension the
+    // confidential-funding guide's repair adds. A third multi-carrier
+    // datum appearing here is a coverage change nobody argued for.
+    let profile = selected_owner_profile();
+
+    for datum in crate::authorization::ProtectedDatum::ALL {
+        let carriers = profile.carrier(*datum);
+        let expected = if *datum == crate::authorization::ProtectedDatum::ProofFields {
+            2
+        } else {
+            1
+        };
+
+        assert_eq!(
+            carriers.len(),
+            expected,
+            "{datum:?} is carried by {carriers:?}"
+        );
+    }
 }
 
 #[test]
