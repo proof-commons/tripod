@@ -1166,6 +1166,35 @@ fn derive_at_counter(
     Ok(openings)
 }
 
+/// The balancing blinder, solved rather than derived.
+///
+/// The input blinder sum minus the other outputs' sum, in the group. It
+/// is the same arithmetic [`derive_at_counter`] performs, exposed because
+/// the transaction-wide materializer needs it through an injected trait
+/// and the construction package carries no bignum dependency and may not
+/// acquire one.
+///
+/// `None` for a solved scalar that is zero or out of range, which is a
+/// refusal and never a nudge: there is no arm here that adds one and
+/// tries again.
+#[must_use]
+pub fn solve_balancing_blinder(
+    input_blinder_sum: &[u8; DERIVED_BYTES],
+    other_blinders: &[[u8; DERIVED_BYTES]],
+) -> Option<[u8; DERIVED_BYTES]> {
+    let input_sum = commitment::read_scalar(input_blinder_sum).ok()?;
+    let mut others = BigUint::zero();
+    for blinder in other_blinders {
+        let scalar = commitment::read_scalar(blinder).ok()?;
+        others = add_scalars(&others, &scalar);
+    }
+    let balancing = add_scalars(&input_sum, &negate_scalar(&others));
+    if balancing.is_zero() || &balancing >= order() {
+        return None;
+    }
+    Some(scalar_bytes(&balancing))
+}
+
 /// The prefix pair the search is looking for, in fixed order.
 ///
 /// Read from the reviewed target contract rather than written here

@@ -4,6 +4,7 @@
 pub mod abi_validation;
 pub mod bundle;
 pub mod comparison;
+pub mod confidential_materializer;
 pub mod confidential_predecessor;
 pub mod divergence;
 pub mod error;
