@@ -19,10 +19,16 @@
 //! capability.
 //!
 //! What the assessment says today is
-//! [`tapscript::OwnerProfileDisposition::ReviewIncomplete`], and that is
-//! carried rather than smoothed over. §11.2 puts the profile at the link,
-//! which is what this module does; it does not put the *review* at the
-//! link, and no part of Guide 13 completes one.
+//! [`tapscript::OwnerProfileDisposition::Established`], and it says so
+//! because the parallel owner-sighash work completed the review and the
+//! owner re-typed the one dimension that review could not exercise — not
+//! because anything here changed. It said
+//! [`tapscript::OwnerProfileDisposition::ReviewIncomplete`] before, and
+//! that was carried rather than smoothed over. §11.2 puts the profile at
+//! the link, which is what this module does; it does not put the *review*
+//! at the link, and no part of Guide 13 completes one — which is exactly
+//! why the answer could move without a line of this module moving with
+//! it.
 //!
 //! # Private keys never enter
 //!

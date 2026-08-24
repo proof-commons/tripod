@@ -395,17 +395,30 @@ pub enum LiveAbiObligation {
     /// The selected sighash profile is not established by the review
     /// (§1.7, §9.2).
     ///
-    /// Inherited from the link, which carries the same one, and carried
+    /// Inherited from the link, which carried the same one, and carried
     /// rather than restated: the profile a signing request names is the
     /// link's, and its disposition travels with it.
     ///
-    /// The review verdict left it standing on one dimension. Six of the
-    /// seven the profile requires are established by the source review
-    /// and the observed acceptance together; the issuance dimension is
-    /// not, because no candidate this arc builds bears an issuance. The
-    /// accepted result in [`crate::live_accepted`] is well formed and
-    /// exact-byte bound while this stands — what it is not is handable,
-    /// and the guide consuming it owns that refusal.
+    /// # It is no longer outstanding, and what discharged it
+    ///
+    /// Not this ABI, which never could have. The review verdict
+    /// established six of the seven dimensions the profile required, by
+    /// the source review and the observed acceptance together, and left
+    /// the issuance dimension standing because no candidate this arc
+    /// builds bears an issuance. A post-verdict re-typing then
+    /// moved that dimension from required to refused, so the required
+    /// set is six, every member of it is established, and the inherited
+    /// disposition is now
+    /// [`tapscript::OwnerProfileDisposition::Established`].
+    ///
+    /// The accepted result in [`crate::live_accepted`] was well formed
+    /// and exact-byte bound while this stood; what it was not was
+    /// handable, and the guide consuming it owned that refusal. That gate
+    /// is the consuming guide's still — this obligation leaving the set
+    /// is what the gate now reads, and nothing here decides for it.
+    ///
+    /// The word stays in this vocabulary because an ABI deriving over a
+    /// link whose profile review had lapsed must be able to say so.
     SelectedSighashProfileUnreviewed,
     /// The internal key's unspendability is asserted by the deployment
     /// and verified by nothing here (§7.5).
@@ -698,7 +711,6 @@ pub fn derive_live_transfer_abi(
         obligations: OutstandingLiveAbiObligations {
             least: LiveAbiObligation::TargetExecutionEvidenceAbsent,
             rest: BTreeSet::from([
-                LiveAbiObligation::SelectedSighashProfileUnreviewed,
                 LiveAbiObligation::InternalKeyUnspendabilityUnverified,
                 LiveAbiObligation::ConfidentialFieldFormSettledOnlyOnTheTarget,
             ]),

@@ -1163,41 +1163,51 @@ fn no_pattern_in_the_census_can_succeed_without_verifying() {
 }
 
 #[test]
-fn every_pattern_asserting_a_signature_carries_the_unreviewed_profile_residual() {
-    // §9.2's review is incomplete and this wave does not pretend
-    // otherwise: a pattern that reads an owner signature is a candidate
-    // statement until the profile is established.
+fn no_pattern_carries_the_profile_residual_now_the_review_is_complete() {
+    // The successor to the assertion this test used to make, and it is
+    // not that assertion negated. It used to check that no
+    // signature-asserting pattern quietly dropped a residual §9.2 still
+    // owed. §9.2's review is complete now, so what has to be checked is
+    // that the residual left *every* list rather than the ones somebody
+    // remembered — which is why the loop is over all patterns and not
+    // over the signature-asserting ones.
     let patterns = live_transfer_patterns(&reviewed_target(), &symbols(), &explicit(), shape(2))
         .expect("the census builds");
 
     for pattern in patterns.values() {
-        if pattern.witness() == LiveWitnessRole::OwnerSignature {
-            assert!(
-                pattern
-                    .residuals()
-                    .contains(&RecognitionResidual::SighashProfileUnreviewed),
-                "{:?} asserts a signature and claims the profile is settled",
-                pattern.id(),
-            );
-        }
+        assert!(
+            !pattern
+                .residuals()
+                .contains(&RecognitionResidual::SighashProfileUnreviewed),
+            "{:?} still carries a residual the review verdict cleared",
+            pattern.id(),
+        );
     }
+
+    // And the patterns that carried it are still here to have lost it,
+    // so the clearing is not an artifact of a census that stopped
+    // asserting signatures at all.
+    assert!(
+        patterns
+            .values()
+            .any(|pattern| pattern.witness() == LiveWitnessRole::OwnerSignature),
+    );
 }
 
 #[test]
-fn the_unreviewed_profile_residual_is_a_computed_answer_and_not_a_caveat() {
-    // The residual every signature-asserting pattern carries, checked
-    // against the reviewed contract's own sighash capability rather than
-    // taken on trust. A contract that reviewed the dimensions would move
-    // this to `Established` and the residual would be the thing out of
-    // date — which is the direction a caveat could never fail in.
+fn the_cleared_profile_residual_is_a_computed_answer_and_not_a_declaration() {
+    // The residual left every pattern because the disposition moved, and
+    // the disposition is read off the reviewed contract's own sighash
+    // capability rather than taken on trust. A contract that lost a
+    // required dimension moves this back to `ReviewIncomplete` and the
+    // cleared lists become the thing out of date — which is the
+    // direction a declaration could never fail in.
     let disposition = live_owner_profile_disposition(&reviewed_target());
 
-    assert!(
-        matches!(
-            disposition,
-            OwnerProfileDisposition::ReviewIncomplete { .. }
-        ),
-        "the profile review is claimed complete: {disposition:?}",
+    assert_eq!(
+        disposition,
+        OwnerProfileDisposition::Established,
+        "the profile review is claimed incomplete: {disposition:?}",
     );
 }
 

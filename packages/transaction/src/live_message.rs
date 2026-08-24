@@ -33,14 +33,20 @@
 //!
 //! # What this module does not claim
 //!
-//! No digest here is authoritative. The wave that wrote it produces a
-//! candidate recomputation and nothing else: `SighashProfileUnreviewed`
-//! stands, `OwnerSighashNotComputable` stands, no dimension moves to
-//! reviewed, and no target has been asked what it thinks of any value
-//! this module returns. A recomputation matching a target's digest would
-//! establish that the model is right about the message, not that a node
-//! accepts a spend built from it — and no such match has been observed
-//! here, because observing one is a later wave's work.
+//! No digest here is authoritative. The wave that wrote this module
+//! produced a candidate recomputation and nothing else:
+//! `SighashProfileUnreviewed` stood, `OwnerSighashNotComputable` stood,
+//! no dimension moved to reviewed, and no target had been asked what it
+//! thought of any value this module returns. A recomputation matching a
+//! target's digest establishes that the model is right about the
+//! message, not that a node accepts a spend built from it.
+//!
+//! Both of those residuals have since been cleared, and neither by
+//! anything in this module — the digest blocker by a later wave's
+//! observed acceptance, and the profile residual by the review verdict
+//! and the re-typing. What is unchanged is the non-claim
+//! itself: this module still asserts no digest, and a value it returns
+//! is still a first-party recomputation rather than a target's answer.
 
 use sha2::{Digest, Sha256};
 

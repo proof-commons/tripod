@@ -58,15 +58,22 @@
 //! form reopening the moment the literal stops being the approved
 //! encoding at its exact width.
 //!
-//! # No claim of target-native authorization
+//! # What the profile now answers, and what it still does not
 //!
 //! The profile these signatures are taken under is
-//! [`crate::authorization::selected_owner_profile`], whose review is
-//! incomplete and says so. Every pattern here therefore carries
-//! [`RecognitionResidual::SighashProfileUnreviewed`] wherever it asserts
-//! that a signature commits to the finalized transaction. A signature
-//! that verifies is not yet a signature over what §1.7 protects, and
-//! nothing in this module may be read as saying it is.
+//! [`crate::authorization::selected_owner_profile`], and its review is
+//! complete: the assessment recomputes to
+//! [`OwnerProfileDisposition::Established`] over a required set every
+//! member of which the reviewed contract establishes. So no pattern here
+//! carries [`RecognitionResidual::SighashProfileUnreviewed`] any longer.
+//!
+//! What that residual said is what has stopped being true, and no more.
+//! It said a signature verifying is not yet a signature over what §1.7
+//! protects, because the profile joining the two was unreviewed; the
+//! profile is now reviewed, and the join is the review verdict's. It
+//! never said anything about a target having run any pattern in this
+//! module, and nothing here says that now either — the patterns are
+//! recognitions, and a recognition is not a run.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -306,30 +313,41 @@ census_enum! {
         /// different and weaker statement than the signature covering
         /// §1.7's protected data, and only the second is authorization.
         ///
-        /// # What stands, and what stops it
+        /// # It is no longer carried, and the verdict that moved it
         ///
-        /// The review verdict is in, and it did not clear this. Six of
-        /// the selected profile's seven required dimensions are
-        /// established, each by the source review's citation and the
-        /// observed acceptance that exercised it. The seventh is
-        /// [`target_elements::SighashDimension::Issuance`], and
-        /// [`OwnerSighashProfile::assess`] recomputes the disposition to
-        /// review-incomplete naming exactly it.
+        /// The review verdict is in and the post-verdict re-typing
+        /// with it, and between them the residual is cleared. Six of the
+        /// selected profile's seven required dimensions were established
+        /// by the source review's citation and the observed acceptance
+        /// that exercised it. The seventh was
+        /// [`target_elements::SighashDimension::Issuance`], and the
+        /// reason it stopped there is a property of this workspace rather
+        /// than of the target: the target's message does carry the
+        /// dimension, in the two terms the review cites, but no candidate
+        /// this arc builds bears an issuance, so both terms are formed
+        /// from the input count alone and no number of agreeing digests
+        /// checks a model that never read the subject.
         ///
-        /// The reason is a property of this workspace rather than of the
-        /// target. The target's message does carry the dimension, in the
-        /// two terms the review cites; no candidate this arc builds bears
-        /// an issuance, so the construction that recomputes the message
-        /// forms both terms from the input count alone and reads no
-        /// issuance field. A term computed without consulting the
-        /// dimension's subject cannot disagree with the target about the
-        /// subject, so no number of agreeing digests checks it.
+        /// The owner took the second of the two repairs that verdict
+        /// named — not the candidate bearing an issuance, but the
+        /// re-typing of the dimension the way the internal key's was —
+        /// on the ground that the census and the decoder both refuse the
+        /// subject. So the required set is six, every member of it is
+        /// established, and [`OwnerSighashProfile::assess`] recomputes
+        /// the disposition to
+        /// [`OwnerProfileDisposition::Established`]. No pattern carries
+        /// this residual now.
         ///
-        /// What clears it is a candidate that bears an issuance together
-        /// with the census field its input-witness proofs need — a
-        /// construction and not a rerun — or an owner ruling that
-        /// re-types the dimension the way the internal key's was. Neither
-        /// is a review's to perform.
+        /// # What did not move with it
+        ///
+        /// Nothing about a target run. The disposition says what a
+        /// signature under this profile commits to; it says nothing about
+        /// any pattern in this module having been executed by anything,
+        /// and the obligations that carry that claim are untouched.
+        ///
+        /// The word stays in this vocabulary because it is still the
+        /// right name for the condition, and a pattern taken under a
+        /// profile whose review had lapsed must be able to say so.
         ///
         /// [`OwnerSighashProfile::assess`]: crate::authorization::OwnerSighashProfile::assess
         SighashProfileUnreviewed,
@@ -2024,11 +2042,11 @@ pub enum LiveWitnessRole {
     /// One owner signature over the finalized transaction, under the
     /// selected profile.
     ///
-    /// Carried with
-    /// [`RecognitionResidual::SighashProfileUnreviewed`] wherever this
-    /// role appears: what the target verifies is a signature, and what
-    /// §1.7 requires is a signature over the protected data, and only a
-    /// reviewed profile joins the two.
+    /// What the target verifies is a signature, and what §1.7 requires
+    /// is a signature over the protected data; only a reviewed profile
+    /// joins the two, which is why this role was carried with
+    /// [`RecognitionResidual::SighashProfileUnreviewed`] until the review
+    /// verdict and the re-typing supplied the join.
     OwnerSignature,
 }
 
@@ -2356,10 +2374,7 @@ pub fn live_transfer_patterns(
             Build::CommittedOwnerRequired,
             BTreeSet::from([Disclose::OwnerPublicKey]),
             BTreeSet::from([Source::InputOwnerWitness]),
-            BTreeSet::from([
-                Residual::OwnerKeyCurvePointMembership,
-                Residual::SighashProfileUnreviewed,
-            ]),
+            BTreeSet::from([Residual::OwnerKeyCurvePointMembership]),
             introspection
                 .into_iter()
                 .chain([Evidence::SignatureSemantics, Evidence::SighashSemantics])
@@ -2663,7 +2678,6 @@ pub fn live_transfer_patterns(
                     Residual::FieldFormSettledOnlyOnTheTarget,
                     Residual::LinkedDestinationConstructorIdentity,
                     Residual::OwnerKeyCurvePointMembership,
-                    Residual::SighashProfileUnreviewed,
                 ]),
                 introspection
                     .into_iter()
@@ -2775,11 +2789,14 @@ pub const fn owner_key_obligation(
 ///
 /// # What it answers today
 ///
-/// [`OwnerProfileDisposition::ReviewIncomplete`], and every pattern
-/// asserting a signature carries
-/// [`RecognitionResidual::SighashProfileUnreviewed`] to match. A caller
-/// reading a verified signature as authorization over §1.7's protected
-/// data is reading past this.
+/// [`OwnerProfileDisposition::Established`], and no pattern asserting a
+/// signature carries [`RecognitionResidual::SighashProfileUnreviewed`]
+/// any longer, because there is nothing left for it to name. It answered
+/// [`OwnerProfileDisposition::ReviewIncomplete`] until the review
+/// populated the reviewed contract and the owner re-typed the one
+/// dimension the review could not exercise, and it moved without this
+/// function changing — which is the whole reason the disposition is
+/// answered here rather than carried as a field.
 #[must_use]
 pub fn live_owner_profile_disposition(
     target: &ReviewedElementsTapscriptDefinition,

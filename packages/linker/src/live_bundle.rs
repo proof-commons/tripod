@@ -149,18 +149,30 @@ pub enum LiveLinkObligation {
     ///
     /// [`tapscript::RecognitionResidual::SighashProfileUnreviewed`]
     /// reaching the link unchanged. §11.2 puts the profile at the link,
-    /// which is where it now is; it does not put the review at the link,
-    /// and no part of Guide 13 completes one. A consumer reading a
-    /// verified signature as authorization over §1.7's protected data
-    /// while this stands is reading past the obligation rather than
-    /// through it.
+    /// which is where it is; it does not put the review at the link, and
+    /// no part of Guide 13 completes one. A consumer reading a verified
+    /// signature as authorization over §1.7's protected data while this
+    /// stood was reading past the obligation rather than through it.
     ///
-    /// The review verdict did not clear it. Six of the seven required
-    /// dimensions are established; the issuance dimension is not, because
-    /// no candidate this arc builds bears an issuance and the two message
-    /// terms carrying the dimension are formed from the input count
-    /// alone. The recomputed disposition names that dimension and no
-    /// other.
+    /// # It is no longer outstanding, and what discharged it
+    ///
+    /// Not the link, and not Guide 13. The parallel owner-sighash work's
+    /// review verdict established six of the profile's seven required
+    /// dimensions on one observed acceptance, and a post-verdict
+    /// re-typing moved the seventh — the issuance dimension,
+    /// which no candidate this arc builds can exercise, because both of
+    /// its message terms are formed from the input count alone — from
+    /// required to refused. The required set is six, every member of it
+    /// is established, and the recomputed disposition names nothing.
+    ///
+    /// So the obligation left the outstanding set on a completed review
+    /// rather than on a link acquiring a capability, which is the
+    /// distinction §11.2's own boundary rests on and the reason the
+    /// clearing is recorded here rather than assumed from the set's
+    /// contents.
+    ///
+    /// The word stays in this vocabulary because a link over a target
+    /// whose review had lapsed must be able to say so.
     SighashProfileUnreviewed,
 }
 
@@ -897,10 +909,17 @@ fn link_one_bundle(
 /// The obligations every live link leaves outstanding.
 ///
 /// A constant set rather than a computed one, and that is the honest
-/// shape: none of the five depends on what was linked. Two are §10.4's
-/// remaining halves, one is the internal key's unspendability, one is the
-/// owner keys' curve membership, and one is the sighash review — and no
-/// deployment parameter, bundle, or owner discharges any of them.
+/// shape: none of the four depends on what was linked. Two are §10.4's
+/// remaining halves, one is the internal key's unspendability, and one is
+/// the owner keys' curve membership — and no deployment parameter,
+/// bundle, or owner discharges any of them.
+///
+/// It was five. The fifth was the sighash review, and it left because the
+/// review verdict and the post-verdict re-typing between
+/// them established every dimension the selected profile requires. That
+/// is the only kind of thing that could move an obligation out of this
+/// set: not a link that discharged it, since a constant set has no link
+/// that could, but the claim it named ceasing to be outstanding.
 fn obligations() -> OutstandingLiveLinkObligations {
     OutstandingLiveLinkObligations {
         least: LiveLinkObligation::TaprootOutputKeyUndischarged,
@@ -908,7 +927,6 @@ fn obligations() -> OutstandingLiveLinkObligations {
             LiveLinkObligation::DestinationConstructorTableUndischarged,
             LiveLinkObligation::InternalKeyUnspendabilityUnverified,
             LiveLinkObligation::OwnerKeyCurvePointMembershipUnverified,
-            LiveLinkObligation::SighashProfileUnreviewed,
         ]),
     }
 }

@@ -26,10 +26,16 @@ fn the_derived_abi_is_a_candidate_and_owes_at_least_a_target_run() {
     let abi = live_abi();
     assert_eq!(abi.status(), LiveAbiStatus::Candidate);
 
+    // Three, not four: the profile obligation left when the review
+    // verdict and the re-typing between them established
+    // every dimension the selected profile requires. The one that cannot
+    // leave is the first, because a verdict belongs to a run and no run
+    // has executed anything this ABI describes — which is the whole
+    // content of the test's name and is untouched by the profile moving.
     let obligations = abi.outstanding_obligations();
-    assert_eq!(obligations.count().get(), 4);
+    assert_eq!(obligations.count().get(), 3);
     assert!(obligations.holds(LiveAbiObligation::TargetExecutionEvidenceAbsent));
-    assert!(obligations.holds(LiveAbiObligation::SelectedSighashProfileUnreviewed));
+    assert!(!obligations.holds(LiveAbiObligation::SelectedSighashProfileUnreviewed));
     assert!(obligations.holds(LiveAbiObligation::InternalKeyUnspendabilityUnverified));
     assert!(obligations.holds(LiveAbiObligation::ConfidentialFieldFormSettledOnlyOnTheTarget));
 }
@@ -65,16 +71,21 @@ fn the_two_obligations_the_link_owed_are_both_discharged_and_none_is_carried() {
 
 #[test]
 fn the_selected_sighash_profile_travels_with_its_review_disposition() {
-    // The residual §1.7 leaves open: the profile is the link's, and its
-    // disposition comes with it rather than being restated here.
+    // What §1.7 leaves open, and what it no longer does: the profile is
+    // the link's, and its disposition comes with it rather than being
+    // restated here. That is the property under test and it has not
+    // changed — only the answer travelling has. The obligation is
+    // asserted absent beside the disposition rather than dropped from
+    // the test, because the two are separate values and the point of
+    // this one is that they agree.
     let abi = live_abi();
-    assert!(!abi.sighash_profile().is_established());
-    assert!(matches!(
-        abi.sighash_profile().disposition(),
-        OwnerProfileDisposition::ReviewIncomplete { .. },
-    ));
+    assert!(abi.sighash_profile().is_established());
+    assert_eq!(
+        *abi.sighash_profile().disposition(),
+        OwnerProfileDisposition::Established,
+    );
     assert!(
-        abi.outstanding_obligations()
+        !abi.outstanding_obligations()
             .holds(LiveAbiObligation::SelectedSighashProfileUnreviewed)
     );
 }

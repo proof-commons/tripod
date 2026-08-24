@@ -407,21 +407,29 @@ fn the_bundle_is_a_candidate_and_carries_its_outstanding_lifecycle() {
 fn the_bundle_publishes_the_residuals_its_patterns_carry() {
     let bundle = bundle();
 
-    // The two that decide how far a consumer may trust it: §10.4 is not
-    // whole, and the profile a signature is taken under is not reviewed.
-    for residual in [
-        RecognitionResidual::LinkedDestinationConstructorIdentity,
-        RecognitionResidual::SighashProfileUnreviewed,
-    ] {
-        assert!(
-            bundle.residuals().contains(&residual),
-            "the bundle reads as though {residual:?} were discharged",
-        );
-    }
-    assert!(matches!(
-        bundle.sighash_profile(),
-        OwnerProfileDisposition::ReviewIncomplete { .. },
-    ));
+    // The one that still decides how far a consumer may trust it: §10.4
+    // is not whole. The profile a signature is taken under was the
+    // second, and the review verdict cleared it — so it is asserted
+    // absent here rather than dropped from the list, because a bundle
+    // that publishes its patterns' residuals has to stop publishing one
+    // the patterns have stopped carrying, and a test that merely stopped
+    // mentioning it could not tell the two apart.
+    assert!(
+        bundle
+            .residuals()
+            .contains(&RecognitionResidual::LinkedDestinationConstructorIdentity),
+        "the bundle reads as though §10.4 were whole",
+    );
+    assert!(
+        !bundle
+            .residuals()
+            .contains(&RecognitionResidual::SighashProfileUnreviewed),
+        "the bundle publishes a residual its patterns no longer carry",
+    );
+    assert_eq!(
+        *bundle.sighash_profile(),
+        OwnerProfileDisposition::Established,
+    );
     // §11.2 lists the profile among the symbol roles, and the table says
     // what it is: settled here, a typed parameter, and reaching no
     // serialized field — which is why it has no relocation.

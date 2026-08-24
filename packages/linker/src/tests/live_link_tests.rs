@@ -230,27 +230,35 @@ fn the_constructor_symbol_is_the_one_thing_the_link_itself_settles() {
 }
 
 #[test]
-fn the_sighash_profile_is_a_link_symbol_carrying_an_incomplete_review() {
-    // The Wave-5/7 decision: the profile lives at the link. What does
-    // *not* live at the link is the review, and the symbol carries that
-    // rather than smoothing it over — a profile reporting itself
-    // established would be reporting a review that did not happen.
+fn the_sighash_profile_is_a_link_symbol_carrying_a_completed_review() {
+    // The Wave-5/7 decision stands and is what this still checks: the
+    // profile lives at the link and the review does not, so the symbol
+    // reports whatever the reviewed contract establishes rather than
+    // deciding it. What moved is that answer. It was an incomplete
+    // review, carried rather than smoothed over; it is a complete one
+    // since the review verdict and the re-typing, and the
+    // link reports that for the same reason it reported the other — it
+    // reads the contract.
+    //
+    // All three sites are asserted, because the obligation and the
+    // residual are separate lists that could drift apart from the
+    // disposition and from each other.
     let target = reviewed_target();
     let linked = link_live_candidate(&target, &live_bundles(), &live_deployment(&target))
         .expect("the link completes");
 
-    assert!(!linked.sighash_profile().is_established());
-    assert!(matches!(
-        linked.sighash_profile().disposition(),
-        OwnerProfileDisposition::ReviewIncomplete { unreviewed } if !unreviewed.is_empty()
-    ));
+    assert!(linked.sighash_profile().is_established());
+    assert_eq!(
+        *linked.sighash_profile().disposition(),
+        OwnerProfileDisposition::Established,
+    );
     assert!(
-        linked
+        !linked
             .outstanding_obligations()
             .holds(LiveLinkObligation::SighashProfileUnreviewed),
     );
     assert!(
-        linked
+        !linked
             .residuals()
             .contains(&RecognitionResidual::SighashProfileUnreviewed),
     );
@@ -641,7 +649,11 @@ fn a_linked_bundle_always_owes_something_and_mints_no_digest() {
     let linked = link_live_candidate(&target, &live_bundles(), &live_deployment(&target))
         .expect("the link completes");
 
-    assert_eq!(linked.outstanding_obligations().count().get(), 5);
+    // Four, not five: the sighash review left the set when the review
+    // verdict and the re-typing established every
+    // dimension the profile requires. The count is asserted as a literal
+    // so that an obligation leaving quietly fails here.
+    assert_eq!(linked.outstanding_obligations().count().get(), 4);
     assert!(
         linked
             .outstanding_obligations()

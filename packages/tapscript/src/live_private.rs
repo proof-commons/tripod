@@ -639,10 +639,16 @@ pub fn private_soundness_establishments()
                         Fragment::Cardinality,
                     ],
                     &[],
+                    // The profile residual stood here because this
+                    // condition asserts the owner's signature, and a
+                    // verified signature was not yet a signature over
+                    // §1.7's protected data while the profile joining the
+                    // two was unreviewed. The review verdict and the
+                    // re-typing supplied that join, so it
+                    // is gone from this list and from every other.
                     &[
                         Residual::FieldFormSettledOnlyOnTheTarget,
                         Residual::LinkedDestinationConstructorIdentity,
-                        Residual::SighashProfileUnreviewed,
                     ],
                 ),
                 // Every destination carries the linked protocol asset

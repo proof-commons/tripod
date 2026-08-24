@@ -149,10 +149,13 @@ pub enum LiveInfrastructureBlocker {
     ///
     /// Every positive row became a row a run could answer, and not one
     /// of them became answered: a standing is not evidence, and no run
-    /// of any row has been filed. [`Self::SighashProfileUnreviewed`]
-    /// remains carried, because a digest that can be computed is not yet
-    /// a settled claim about what it commits to, and that residual is
-    /// cleared by a review verdict rather than by a run.
+    /// of any row has been filed. [`Self::SighashProfileUnreviewed`] did
+    /// not move with this one, because a digest that can be computed is
+    /// not yet a settled claim about what it commits to, and that
+    /// residual is cleared by a review verdict rather than by a run. It
+    /// has since been cleared by exactly that, which is the ordering
+    /// this paragraph asserted rather than an exception to it: the two
+    /// never moved together and never moved on the same evidence.
     ///
     /// The explicit lane is the only lane this observation touches. The
     /// message's output-witness term is recoverable from the protected
@@ -182,14 +185,43 @@ pub enum LiveInfrastructureBlocker {
     /// semantic claim about what it commits to would still be
     /// candidate-scoped until the review completes.
     ///
-    /// The digest half is cleared and this half is not. The review
-    /// verdict established six of the profile's seven required
-    /// dimensions on the observed acceptance and stopped on the seventh,
-    /// the issuance dimension: no candidate this arc builds bears an
-    /// issuance, so the two terms carrying the dimension are formed from
-    /// the input count alone and the acceptance exercised nothing about
-    /// any issuance field. A stopped verdict is a verdict, and this
-    /// residual stands on it rather than on nobody having looked.
+    /// # It is no longer carried, and the verdict that moved it
+    ///
+    /// The review verdict established six of the profile's seven
+    /// required dimensions on the observed acceptance and stopped on the
+    /// seventh, the issuance dimension: no candidate this arc builds
+    /// bears an issuance, so the two terms carrying the dimension are
+    /// formed from the input count alone and the acceptance exercised
+    /// nothing about any issuance field. A stopped verdict is a verdict,
+    /// and this residual stood on it rather than on nobody having looked.
+    ///
+    /// A post-verdict re-typing then moved that dimension from
+    /// required to refused, on the ground that the census refuses an
+    /// issuance-bearing signing request and the decoder refuses
+    /// issuance-bearing bytes, so the required typing was the one layer
+    /// promising evidence the other two refuse to admit. The required set
+    /// is six, every member of it is established, and the assessment
+    /// recomputes to
+    /// [`tapscript::OwnerProfileDisposition::Established`]. So the
+    /// residual is gone from [`carried_residuals`].
+    ///
+    /// This move is the one the digest half's own clearing said it was
+    /// waiting for, and the order it insisted on is the order that
+    /// happened: the computability blocker cleared on the Wave-3 run, and
+    /// this cleared afterwards on a review verdict, never simultaneously
+    /// and never on the same evidence.
+    ///
+    /// # What did not move with it
+    ///
+    /// No row. This is a residual about what a signature under the
+    /// selected profile commits to, and clearing it answers nothing that
+    /// a run answers: every positive row is still a row a run could
+    /// answer and still unanswered, no matrix row moved, and the two
+    /// blockers below stand exactly where they stood.
+    ///
+    /// The word stays in this vocabulary because it is still the right
+    /// name for the condition, and a lane relying on a profile whose
+    /// review had lapsed must be able to say so.
     SighashProfileUnreviewed,
     /// No adapter signer is wired into this evidence lane.
     ///
@@ -250,10 +282,12 @@ pub enum LiveInfrastructureBlocker {
     /// confidential predecessor must be able to say so. What it may no
     /// longer be is a standing residual of this plan.
     ///
-    /// Nothing else moved with it. Every positive private row remains
+    /// Nothing else moved with it. Every positive private row remained
     /// blocked by [`Self::OwnerSighashNotComputable`], which is
     /// independent work this guide does not review, and
-    /// [`Self::SighashProfileUnreviewed`] remains carried.
+    /// [`Self::SighashProfileUnreviewed`] remained carried. Both have
+    /// since been cleared by that independent work, each on its own
+    /// evidence, and neither by anything recorded here.
     NoConfidentialPredecessorCanBeFunded,
     /// The row needs a raw path the safe constructor cannot express.
     ///
@@ -870,11 +904,6 @@ pub fn blocker_census(
     census
 }
 
-/// The residuals this plan inherits and does not clear.
-///
-/// Named as a set rather than as prose so that a later wave clearing one
-/// has to remove it here, and so a reader can see at a glance which of
-/// them are this workspace's to clear.
 /// The bytes that stand in a signature position no signer can fill.
 ///
 /// Not a signature, and named so at every use. §10.2's fragment checks
@@ -893,10 +922,27 @@ pub fn blocker_census(
 /// measured weight is a weight of.
 pub const UNAUTHORIZING_SIGNATURE: [u8; 64] = [0x5c; 64];
 
+/// The residuals this plan inherits and does not clear.
+///
+/// Named as a set rather than as prose so that a later wave clearing one
+/// has to remove it here, and so a reader can see at a glance which of
+/// them are this workspace's to clear.
+///
+/// The doc comment stating that was sitting above
+/// [`UNAUTHORIZING_SIGNATURE`] rather than above this function, which is
+/// where the two are separated back. It is repaired here rather than
+/// left because this function is what the paragraph is about and a
+/// reader following it would otherwise be told the constant is a set.
+///
+/// Two members, and it was three. The one that left is
+/// [`LiveInfrastructureBlocker::SighashProfileUnreviewed`], cleared by
+/// the owner-sighash review verdict together with the
+/// post-verdict re-typing — by a verdict, that is, and never by a
+/// run, which is the discipline that residual was separated from the
+/// digest blocker in order to keep.
 #[must_use]
 pub fn carried_residuals() -> BTreeSet<LiveInfrastructureBlocker> {
     BTreeSet::from([
-        LiveInfrastructureBlocker::SighashProfileUnreviewed,
         LiveInfrastructureBlocker::SponsorEnvelopeSignerAbsent,
         LiveInfrastructureBlocker::PredecessorConstructorAbsent,
     ])
