@@ -11,7 +11,7 @@
 //! data go out, opaque authorization bytes and a hash-type byte come
 //! back — and a later edit that computed a message here would be
 //! importing the design this guide's own ruling puts outside it
-//! (`rule:guide-ctf-exec:external-sighash`, `rule:guide-ctf-exec:handoff-ownership`).
+//! (rule:guide-ctf-exec:external-sighash, rule:guide-ctf-exec:handoff-ownership).
 //!
 //! What this module owns is the ORDER, the BINDING, and the REFUSALS:
 //! that a candidate is proof-finalized before any owner is asked, that
@@ -56,7 +56,7 @@
 //!
 //! Each arrow is a type transition and not a flag, so a candidate cannot
 //! be in two states and no field can disagree with a state
-//! (`def:guide-ctf-exec:handoff-states`). [`SigningStarted`] is reached
+//! (def:guide-ctf-exec:handoff-states). [`SigningStarted`] is reached
 //! only from a materialized candidate, which is reached only from the
 //! materializer, so there is no route that asks an owner about a
 //! candidate whose proofs are not final.
@@ -66,7 +66,7 @@
 //! [`SubmitReadyPrivateCandidate`] is where this module stops. It has no
 //! method that submits, encodes for a wire, or produces a record,
 //! because submission and the evidence it produces belong to the
-//! restart wave (`task:guide-ctf-exec:wave5`) and a value that could
+//! restart wave (task:guide-ctf-exec:wave5) and a value that could
 //! submit itself would let this wave's exit be claimed by running it.
 
 use std::collections::BTreeSet;
@@ -90,7 +90,7 @@ use crate::live_taproot::LiveCurveCapability;
 ///
 /// A trait defined here and implemented outside, on the pattern this
 /// crate's other cryptographic collaborators already follow
-/// (`rule:guide-ctf-exec:dependency-directions`): the profile, its
+/// (rule:guide-ctf-exec:dependency-directions): the profile, its
 /// dimension roles, and its assessment live in the backend package this
 /// crate deliberately does not depend on, and the answer reaches the
 /// handoff as a value rather than as an edge.
@@ -125,10 +125,10 @@ pub trait OwnerProfileAcceptance {
 /// Construction refusals, every one, and none is a target verdict: a
 /// handoff refused for one of these reasons never reached a node and
 /// observed nothing about any deployment
-/// (`rule:guide-ctf-exec:failure-layers`).
+/// (rule:guide-ctf-exec:failure-layers).
 ///
 /// The first four members are the handoff states' own refusals, named by
-/// the guide (`def:guide-ctf-exec:handoff-states`). The last two WRAP
+/// the guide (def:guide-ctf-exec:handoff-states). The last two WRAP
 /// the vocabularies this handoff calls into rather than extending them,
 /// on the pattern [`AcceptedResultRefusal::Census`] already sets: the
 /// census answers whether a candidate can be censused at all, and the
@@ -141,7 +141,7 @@ pub enum SighashHandoffRefusal {
     /// The selected owner-sighash profile's disposition does not
     /// recompute to established.
     ///
-    /// The gate of `task:guide-ctf-exec:wave4`'s entry condition, read
+    /// The gate of task:guide-ctf-exec:wave4's entry condition, read
     /// at every handoff rather than once at a wave boundary. A profile
     /// that stopped being established between two runs is a profile no
     /// candidate may be handed to, and a stored answer could not have
@@ -211,7 +211,7 @@ impl From<OwnerCensusRefusal> for SighashHandoffRefusal {
 /// request the accepted result names: protected bytes, the output-witness
 /// vector at its consensus length, the spent-output census, the
 /// deployment's genesis block hash, and one signing-input entry per owner
-/// (`rule:guide-ctf-exec:pending-sighash-result`). A second type carrying
+/// (rule:guide-ctf-exec:pending-sighash-result). A second type carrying
 /// the same fields would be a second spelling of the boundary, and the
 /// two spellings would be free to disagree.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -223,7 +223,7 @@ impl SigningStarted {
     /// Hands one proof-finalized candidate to the reviewed owner-sighash
     /// work.
     ///
-    /// The order of `rule:guide-ctf-exec:handoff-order` is enforced by
+    /// The order of rule:guide-ctf-exec:handoff-order is enforced by
     /// what this takes rather than by a check: the argument is a
     /// materialized candidate, which only the materializer produces and
     /// only after its own freeze, so proof finalization precedes the
@@ -483,7 +483,7 @@ impl FullyAuthorizedCandidate {
     /// Binds the authorized candidate to the materialization it came
     /// from, one last time, by exact bytes.
     ///
-    /// The last arrow of `rule:guide-ctf-exec:handoff-order` reads
+    /// The last arrow of rule:guide-ctf-exec:handoff-order reads
     /// "submit without changing any protected byte", and this is where
     /// that sentence is checked rather than trusted. The materialized
     /// candidate is re-read and its preimage compared with the one every
@@ -520,7 +520,7 @@ impl FullyAuthorizedCandidate {
 /// transaction and the complete set of authorizations bound to it, and
 /// it carries no method that submits, encodes for a wire, or produces a
 /// record: submission and the evidence it produces are the restart
-/// wave's (`task:guide-ctf-exec:wave5`), and a value that could submit
+/// wave's (task:guide-ctf-exec:wave5), and a value that could submit
 /// itself would let this wave's exit be claimed by running it rather
 /// than by reaching this state.
 #[derive(Clone, Debug, PartialEq, Eq)]
