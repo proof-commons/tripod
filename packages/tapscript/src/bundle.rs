@@ -837,6 +837,10 @@ fn predict_model(model: ResourceModel, shape: CompactAshShape) -> Option<i64> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum InternalKeyPolicy {
     /// A public unspendable internal key, with its assumption stated.
+    ///
+    /// Script path only, and the five other key sources are excluded
+    /// by election rather than left unused
+    /// `(´[PLAN-rule:exclusions:key-path]´)`.
     UnspendableWithResidualDiscreteLogAssumption,
 }
 

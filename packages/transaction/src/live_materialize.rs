@@ -13,6 +13,20 @@
 //! already serves, and a request that reaches this function carrying it
 //! is [`MaterializationRefusal::PerOutputMaterializationRefused`].
 //!
+//! # Why this component exists at all
+//!
+//! The target's own blinding machinery is not used to produce this
+//! workspace's confidential outputs, and that is an election rather
+//! than a limitation found late
+//! `(´[PLAN-rule:exclusions:wallet-blinding]´)`. No reviewed stock RPC
+//! produces the selected form, and the three obvious workarounds —
+//! calling the raw blinding RPC, retrying ordinary wallet blinding
+//! until an output happens to look useful, and mutating a fully
+//! blinded asset back to explicit after proof construction — are
+//! rejected by the charter. This module is what that rejection
+//! required to be built, so its existence is the row that enforces
+//! the exclusion.
+//!
 //! # The cryptography is injected, and the injection is the point
 //!
 //! This crate may not depend on the conformance package: that package is
@@ -1163,6 +1177,10 @@ pub enum MaterializationRefusal {
         member: FamilyMember,
     },
     /// A protocol member's asset field is a commitment.
+    ///
+    /// The one confidential form this workspace constructs pairs a
+    /// committed value with an explicit asset
+    /// `(´[PLAN-rule:exclusions:asset-blinding]´)`.
     ConfidentialProtocolAsset {
         /// Which member.
         member: FamilyMember,
@@ -1206,6 +1224,9 @@ pub enum MaterializationRefusal {
     },
     /// A materializer returned a surjection proof for a form that
     /// requires the field empty.
+    ///
+    /// The construction half of the elected asset-blinding exclusion
+    /// `(´[PLAN-rule:exclusions:asset-blinding]´)`.
     UnexpectedSurjectionProof {
         /// Which output.
         output: usize,

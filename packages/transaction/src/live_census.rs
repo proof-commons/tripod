@@ -460,7 +460,8 @@ pub enum OwnerCensusRefusal {
     /// byte at [`OWNER_SPEND_TYPE_BYTE`]. A declared annex recomputes
     /// that byte to something else, and the refusal carries the
     /// recomputed value rather than merely naming the disagreement.
-    /// Failure-matrix row 6.
+    /// Failure-matrix row 6. The profile's refusal of the annex is an
+    /// election `(´[PLAN-rule:exclusions:annex]´)`.
     AnnexDisagreement {
         /// Which input declared it.
         input_index: u32,
@@ -531,6 +532,8 @@ pub enum OwnerCensusRefusal {
     /// default-only profile is a refusal and not a variant, because the
     /// two produce different messages and a report accepting both would
     /// be naming a profile it did not hold to. Failure-matrix row 5.
+    /// The narrowing is elected rather than inherited
+    /// `(´[PLAN-rule:exclusions:type-byte]´)`.
     TypeByteOutsideProfile {
         /// The byte offered.
         offered: u8,
@@ -540,7 +543,9 @@ pub enum OwnerCensusRefusal {
     /// Sixty-four bytes under the default type, and the target's own
     /// answers to the two mistakes differ: a wrong width is a signature
     /// size error, while a 65-byte signature with a trailing zero is a
-    /// hash-type error at `:2958-2966`. Failure-matrix row 10.
+    /// hash-type error at `:2958-2966`. Failure-matrix row 10. The
+    /// admitted width follows from the elected type byte
+    /// `(´[PLAN-rule:exclusions:type-byte]´)`.
     SignatureWidthOutsideProfile {
         /// The width offered.
         offered: usize,
@@ -551,7 +556,10 @@ pub enum OwnerCensusRefusal {
     /// See [`IssuanceDisposition`]: the census's silence about the
     /// input-witness vector is a claim resting on the precondition that
     /// no input bears an issuance, and this is the refusal that makes
-    /// the precondition checked rather than assumed.
+    /// the precondition checked rather than assumed. The election is
+    /// recorded at `(´[PLAN-rule:exclusions:issuance-requests]´)`, and
+    /// this row is one of the three that enforce the refused issuance
+    /// dimension `(´[PLAN-rule:exclusions:issuance-dimension]´)`.
     IssuanceBearingInputRefused {
         /// Which input declared it.
         input_index: u32,

@@ -127,6 +127,9 @@ pub enum DimensionRefusal {
     /// destination multiset and an aggregate conservation — and a
     /// single-output commitment authorizes one entry of it. The rest of
     /// the transfer would be whatever the builder pleased.
+    ///
+    /// The election is recorded at
+    /// `(´[PLAN-rule:exclusions:single-output]´)`.
     LeavesOtherOutputsFree,
     /// Permitting later inputs leaves the consumed receipt set free to
     /// grow after signing.
@@ -134,6 +137,9 @@ pub enum DimensionRefusal {
     /// An added input is an added source of the conserved asset, so a
     /// transfer the owner signed as balanced becomes one that moves
     /// value the owner never saw.
+    ///
+    /// The election is recorded at
+    /// `(´[PLAN-rule:exclusions:input-extension]´)`.
     LeavesInputSetOpen,
     /// The target offers a dimension this profile has not considered.
     ///
