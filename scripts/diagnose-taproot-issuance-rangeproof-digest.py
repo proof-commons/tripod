@@ -193,6 +193,12 @@ def probe_single_output(adapter, node, wallet, unsigned, outputs):
         record["node_still_answers"] = node.call("getblockcount") is not None
     except adapter.AdapterError:
         record["node_still_answers"] = False
+    # The node's own exit status, which is the difference between a
+    # refusal the target chose and a process that stopped existing. A
+    # negative status is the signal that ended it.
+    status = node.process.poll()
+    record["node_process_status"] = status
+    record["node_ended_by_signal"] = status is not None and status < 0
     return record
 
 
