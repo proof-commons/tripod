@@ -39,6 +39,7 @@ mod live_abi_tests;
 mod live_accepted_tests;
 mod live_census_tests;
 mod live_construction_tests;
+mod live_handoff_tests;
 mod live_request_tests;
 mod live_signing_tests;
 mod live_support;

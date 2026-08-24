@@ -10,6 +10,7 @@ pub mod live_accepted;
 pub mod live_census;
 pub mod live_construct;
 pub mod live_finalize;
+pub mod live_handoff;
 pub mod live_materialize;
 pub mod live_message;
 pub mod live_private;
