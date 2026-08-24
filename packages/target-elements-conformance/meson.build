@@ -31,6 +31,7 @@ target_elements_conformance_source_files = files(
   'src/commitment_oracle/vector.rs',
   'src/confidential_fixture.rs',
   'src/confidential_funding.rs',
+  'src/confidential_oracles.rs',
   'src/confidential_record.rs',
   'src/conservation.rs',
   'src/conservation_report.rs',
