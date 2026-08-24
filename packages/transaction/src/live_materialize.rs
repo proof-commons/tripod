@@ -474,7 +474,7 @@ impl ConfidentialMaterializationProfiles {
     /// combination by answering the members would be the defaulting the
     /// rule forbids.
     #[must_use]
-    pub fn supported(&self) -> bool {
+    pub const fn supported(&self) -> bool {
         if !matches!(
             self.materializer_profile,
             ConfidentialMaterializerProfile::GuideCtfDeterministicV1
@@ -680,7 +680,7 @@ pub struct FrozenConfidentialFixtureView {
 impl FrozenConfidentialFixtureView {
     /// The projection over these fixtures.
     #[must_use]
-    pub fn new(entries: BTreeMap<String, ConfidentialFixtureView>) -> Self {
+    pub const fn new(entries: BTreeMap<String, ConfidentialFixtureView>) -> Self {
         Self { entries }
     }
 
@@ -1407,7 +1407,10 @@ impl ProofFinalizedCandidate {
     /// operation is spelled so that a caller reaching for it gets a
     /// refusal naming the region rather than a compile error naming
     /// nothing, and so that a test can walk the census.
-    pub fn insert(&self, region: ProofFinalizedRegion) -> Result<Self, MaterializationRefusal> {
+    pub const fn insert(
+        &self,
+        region: ProofFinalizedRegion,
+    ) -> Result<Self, MaterializationRefusal> {
         let _ = self;
         Err(MaterializationRefusal::PostFinalizationMutation { region })
     }
@@ -1417,7 +1420,10 @@ impl ProofFinalizedCandidate {
     /// # Errors
     ///
     /// Always [`MaterializationRefusal::PostFinalizationMutation`].
-    pub fn remove(&self, region: ProofFinalizedRegion) -> Result<Self, MaterializationRefusal> {
+    pub const fn remove(
+        &self,
+        region: ProofFinalizedRegion,
+    ) -> Result<Self, MaterializationRefusal> {
         let _ = self;
         Err(MaterializationRefusal::PostFinalizationMutation { region })
     }
@@ -1427,7 +1433,10 @@ impl ProofFinalizedCandidate {
     /// # Errors
     ///
     /// Always [`MaterializationRefusal::PostFinalizationMutation`].
-    pub fn replace(&self, region: ProofFinalizedRegion) -> Result<Self, MaterializationRefusal> {
+    pub const fn replace(
+        &self,
+        region: ProofFinalizedRegion,
+    ) -> Result<Self, MaterializationRefusal> {
         let _ = self;
         Err(MaterializationRefusal::PostFinalizationMutation { region })
     }
@@ -1437,7 +1446,10 @@ impl ProofFinalizedCandidate {
     /// # Errors
     ///
     /// Always [`MaterializationRefusal::PostFinalizationMutation`].
-    pub fn reorder(&self, region: ProofFinalizedRegion) -> Result<Self, MaterializationRefusal> {
+    pub const fn reorder(
+        &self,
+        region: ProofFinalizedRegion,
+    ) -> Result<Self, MaterializationRefusal> {
         let _ = self;
         Err(MaterializationRefusal::PostFinalizationMutation { region })
     }
@@ -1448,7 +1460,7 @@ impl ProofFinalizedCandidate {
     ///
     /// Always [`MaterializationRefusal::PostFinalizationMutation`] naming
     /// the output-witness region.
-    pub fn regenerate_proofs(&self) -> Result<Self, MaterializationRefusal> {
+    pub const fn regenerate_proofs(&self) -> Result<Self, MaterializationRefusal> {
         let _ = self;
         Err(MaterializationRefusal::PostFinalizationMutation {
             region: ProofFinalizedRegion::OutputWitnesses,
@@ -1461,7 +1473,7 @@ impl ProofFinalizedCandidate {
     ///
     /// Always [`MaterializationRefusal::PostFinalizationMutation`] naming
     /// the output-witness region.
-    pub fn repair_proofs(&self) -> Result<Self, MaterializationRefusal> {
+    pub const fn repair_proofs(&self) -> Result<Self, MaterializationRefusal> {
         let _ = self;
         Err(MaterializationRefusal::PostFinalizationMutation {
             region: ProofFinalizedRegion::OutputWitnesses,
@@ -1474,7 +1486,7 @@ impl ProofFinalizedCandidate {
     ///
     /// Always [`MaterializationRefusal::PostFinalizationMutation`] naming
     /// the output region.
-    pub fn reblind(&self) -> Result<Self, MaterializationRefusal> {
+    pub const fn reblind(&self) -> Result<Self, MaterializationRefusal> {
         let _ = self;
         Err(MaterializationRefusal::PostFinalizationMutation {
             region: ProofFinalizedRegion::Outputs,
@@ -1592,67 +1604,24 @@ pub fn materialize_confidential_candidate(
     // construction can build.
     let asset_field = AssetField::Explicit(asset);
 
+    // Stages four, five, and six, per output and in order.
     let mut outputs = Vec::with_capacity(view.len());
     let mut output_witnesses = Vec::with_capacity(view.len());
     for (index, projected) in view.iter().enumerate() {
         let blinder = derived[index].ok_or(MaterializationRefusal::InvalidScalar {
             role: DerivationRole::ValueBlinder,
         })?;
-
-        // Stage four: construct, then independently recompute, then
-        // compare two different types.
-        if !checker.origin().may_check_a_construction() || checker.origin() == crypto.origin() {
-            return Err(
-                MaterializationRefusal::IndependentCommitmentOriginNotDistinct { output: index },
-            );
-        }
-        let materialized = crypto
-            .value_commitment(asset, projected.semantic_amount(), &blinder)
-            .ok_or(MaterializationRefusal::InvalidCommitment { output: index })?;
-        let recomputed = checker
-            .recompute(asset, projected.semantic_amount(), &blinder)
-            .ok_or(MaterializationRefusal::InvalidCommitment { output: index })?;
-        if !commitments_agree(&materialized, &recomputed) {
-            return Err(MaterializationRefusal::IndependentCommitmentMismatch { output: index });
-        }
-
-        // Stage five: deterministic nonce material, then a nonempty range
-        // proof bound to this value's commitment, the unblinded asset
-        // generator, and the output program.
-        let nonce = crypto
-            .nonce_commitment(projected.nonce_input())
-            .ok_or(MaterializationRefusal::NonceMaterializationFailed { output: index })?;
-        let request = RangeproofRequest::new(
+        let (output, witness) = materialize_one_output(
             index,
-            &materialized,
+            projected,
             asset,
-            projected.semantic_amount(),
-            &blinder,
-            projected.rangeproof_seed(),
-            projected.output_program(),
-        );
-        let proof = crypto
-            .range_proof(&request)
-            .ok_or(MaterializationRefusal::RangeproofMaterializationFailed { output: index })?;
-        if !proof.binds(&request) {
-            return Err(MaterializationRefusal::ProofBindingMismatch { output: index });
-        }
-        if proof.proof().is_empty() {
-            return Err(MaterializationRefusal::RangeproofEmpty { output: index });
-        }
-        if !proof.surjection_proof().is_empty() {
-            return Err(MaterializationRefusal::UnexpectedSurjectionProof { output: index });
-        }
-
-        outputs.push(TargetOutput::new(
             asset_field,
-            ValueField::Commitment(*materialized.bytes()),
-            NonceField::Commitment(nonce),
-            projected.output_program().to_vec(),
-        ));
-        // Stage six: one output-witness entry per output, each carrying
-        // an empty surjection proof and its own range proof.
-        output_witnesses.push(OutputWitness::range_proof_only(proof.proof().to_vec()));
+            &blinder,
+            crypto,
+            checker,
+        )?;
+        outputs.push(output);
+        output_witnesses.push(witness);
     }
 
     for member in intent.non_protocol_region().members() {
@@ -1709,6 +1678,83 @@ pub fn materialize_confidential_candidate(
     })
 }
 
+/// One output's commitment, nonce, and proof, in the stages' own order.
+///
+/// Stage four is the reason this is not inlined into a loop body that
+/// merely builds fields: the construction's answer and the independent
+/// origin's answer are computed here, and they are compared through a
+/// function that takes one of each type. A refactor that made the two
+/// calls return the same type would have removed the check without
+/// removing a line of it.
+#[allow(clippy::too_many_arguments)]
+fn materialize_one_output(
+    index: usize,
+    projected: &ConfidentialFixtureOutputView,
+    asset: AssetId,
+    asset_field: AssetField,
+    blinder: &[u8; SCALAR_BYTES],
+    crypto: &dyn ConfidentialProofMaterializer,
+    checker: &dyn IndependentCommitmentCheck,
+) -> Result<(TargetOutput, OutputWitness), MaterializationRefusal> {
+    // Stage four: construct, then independently recompute, then compare
+    // two different types.
+    if !checker.origin().may_check_a_construction() || checker.origin() == crypto.origin() {
+        return Err(
+            MaterializationRefusal::IndependentCommitmentOriginNotDistinct { output: index },
+        );
+    }
+    let materialized = crypto
+        .value_commitment(asset, projected.semantic_amount(), blinder)
+        .ok_or(MaterializationRefusal::InvalidCommitment { output: index })?;
+    let recomputed = checker
+        .recompute(asset, projected.semantic_amount(), blinder)
+        .ok_or(MaterializationRefusal::InvalidCommitment { output: index })?;
+    if !commitments_agree(&materialized, &recomputed) {
+        return Err(MaterializationRefusal::IndependentCommitmentMismatch { output: index });
+    }
+
+    // Stage five: deterministic nonce material, then a nonempty range
+    // proof bound to this value's commitment, the unblinded asset
+    // generator, and the output program.
+    let nonce = crypto
+        .nonce_commitment(projected.nonce_input())
+        .ok_or(MaterializationRefusal::NonceMaterializationFailed { output: index })?;
+    let request = RangeproofRequest::new(
+        index,
+        &materialized,
+        asset,
+        projected.semantic_amount(),
+        blinder,
+        projected.rangeproof_seed(),
+        projected.output_program(),
+    );
+    let proof = crypto
+        .range_proof(&request)
+        .ok_or(MaterializationRefusal::RangeproofMaterializationFailed { output: index })?;
+    if !proof.binds(&request) {
+        return Err(MaterializationRefusal::ProofBindingMismatch { output: index });
+    }
+    if proof.proof().is_empty() {
+        return Err(MaterializationRefusal::RangeproofEmpty { output: index });
+    }
+    if !proof.surjection_proof().is_empty() {
+        return Err(MaterializationRefusal::UnexpectedSurjectionProof { output: index });
+    }
+
+    let output = TargetOutput::new(
+        asset_field,
+        ValueField::Commitment(*materialized.bytes()),
+        NonceField::Commitment(nonce),
+        projected.output_program().to_vec(),
+    );
+    // Stage six: one output-witness entry per output, each carrying an
+    // empty surjection proof and its own range proof.
+    Ok((
+        output,
+        OutputWitness::range_proof_only(proof.proof().to_vec()),
+    ))
+}
+
 /// Everything that happens before any cryptographic work.
 ///
 /// None of it reports a private subtotal. A refusal here names what was
@@ -1747,86 +1793,7 @@ fn preflight(
         }
     }
 
-    // One: every handle and digest resolves uniquely, and every
-    // predecessor opening recomputes the commitment the target was
-    // observed to hold.
-    let mut bound: BTreeSet<(String, usize)> = BTreeSet::new();
-    let mut entries = Vec::with_capacity(intent.inputs().len());
-    for input in intent.inputs() {
-        let reference = input.opening();
-        let fixture = fixtures.fixture(reference.handle()).ok_or_else(|| {
-            MaterializationRefusal::UnknownFixtureHandle {
-                handle: reference.handle().to_owned(),
-            }
-        })?;
-        if fixture.digest() != reference.digest() {
-            return Err(MaterializationRefusal::FixtureDigestMismatch {
-                handle: reference.handle().to_owned(),
-            });
-        }
-        if !bound.insert((reference.handle().to_owned(), reference.output())) {
-            return Err(MaterializationRefusal::FixtureBindingAmbiguous {
-                handle: reference.handle().to_owned(),
-            });
-        }
-        let projected = fixture.outputs().get(reference.output()).ok_or(
-            MaterializationRefusal::PredecessorOpeningMissing {
-                outpoint: input.outpoint(),
-            },
-        )?;
-
-        // The asset side of the protocol region: explicit, the protocol
-        // asset, and a zero blinder.
-        let member = FamilyMember::Input(entries.len());
-        match input.observed_asset() {
-            AssetField::Commitment(_) => {
-                return Err(MaterializationRefusal::ConfidentialProtocolAsset { member });
-            }
-            AssetField::Explicit(observed) => {
-                if observed != fixture.explicit_asset() {
-                    return Err(MaterializationRefusal::ProtocolAssetMismatch { member });
-                }
-            }
-        }
-        if *input.zero_asset_blinder() != [0_u8; SCALAR_BYTES] {
-            return Err(MaterializationRefusal::NonzeroProtocolAssetBlinder { member });
-        }
-
-        let observed = match input.observed_value() {
-            ValueField::Commitment(commitment) => commitment,
-            ValueField::Explicit(_) => {
-                return Err(MaterializationRefusal::PredecessorOpeningMismatch {
-                    outpoint: input.outpoint(),
-                });
-            }
-        };
-        let recomputed = checker
-            .recompute(
-                fixture.explicit_asset(),
-                projected.semantic_amount(),
-                projected.value_blinder(),
-            )
-            .ok_or(MaterializationRefusal::PredecessorOpeningMismatch {
-                outpoint: input.outpoint(),
-            })?;
-        if *recomputed.bytes() != observed {
-            return Err(MaterializationRefusal::PredecessorOpeningMismatch {
-                outpoint: input.outpoint(),
-            });
-        }
-        if projected.semantic_amount() != input.explicit_amount() {
-            return Err(MaterializationRefusal::PredecessorOpeningMismatch {
-                outpoint: input.outpoint(),
-            });
-        }
-
-        entries.push(VerifiedFixtureReference {
-            outpoint: input.outpoint(),
-            handle: reference.handle().to_owned(),
-            digest: *reference.digest(),
-            output: reference.output(),
-        });
-    }
+    let entries = verify_predecessor_openings(intent, fixtures, checker)?;
 
     // Four: the destinations bind to one fixture, in its own fixed order,
     // and the bounded parity search settled rather than exhausting.
@@ -1892,6 +1859,107 @@ fn preflight(
     }
 
     Ok(OpeningBindingCensus { entries })
+}
+
+/// The first preflight clause, whole.
+///
+/// Every handle and digest resolves uniquely against the frozen view,
+/// and every predecessor opening recomputes the commitment the target was
+/// observed to hold. The asset side of the protocol region is settled
+/// here too, because an input whose asset is committed or wrong is not an
+/// input whose opening is worth recomputing.
+///
+/// What comes back is the census of verified references and NOT the
+/// openings it checked, which is the whole shape of the result: the
+/// checking happens where the openings are, and what leaves is a
+/// reference.
+fn verify_predecessor_openings(
+    intent: &ConfidentialConstructionIntent,
+    fixtures: &FrozenConfidentialFixtureView,
+    checker: &dyn IndependentCommitmentCheck,
+) -> Result<Vec<VerifiedFixtureReference>, MaterializationRefusal> {
+    // Every handle and digest resolves uniquely, and every
+    // predecessor opening recomputes the commitment the target was
+    // observed to hold.
+    let mut bound: BTreeSet<(String, usize)> = BTreeSet::new();
+    let mut entries = Vec::with_capacity(intent.inputs().len());
+    for input in intent.inputs() {
+        let reference = input.opening();
+        let fixture = fixtures.fixture(reference.handle()).ok_or_else(|| {
+            MaterializationRefusal::UnknownFixtureHandle {
+                handle: reference.handle().to_owned(),
+            }
+        })?;
+        if fixture.digest() != reference.digest() {
+            return Err(MaterializationRefusal::FixtureDigestMismatch {
+                handle: reference.handle().to_owned(),
+            });
+        }
+        if !bound.insert((reference.handle().to_owned(), reference.output())) {
+            return Err(MaterializationRefusal::FixtureBindingAmbiguous {
+                handle: reference.handle().to_owned(),
+            });
+        }
+        let projected = fixture.outputs().get(reference.output()).ok_or_else(|| {
+            MaterializationRefusal::PredecessorOpeningMissing {
+                outpoint: input.outpoint(),
+            }
+        })?;
+
+        // The asset side of the protocol region: explicit, the protocol
+        // asset, and a zero blinder.
+        let member = FamilyMember::Input(entries.len());
+        match input.observed_asset() {
+            AssetField::Commitment(_) => {
+                return Err(MaterializationRefusal::ConfidentialProtocolAsset { member });
+            }
+            AssetField::Explicit(observed) => {
+                if observed != fixture.explicit_asset() {
+                    return Err(MaterializationRefusal::ProtocolAssetMismatch { member });
+                }
+            }
+        }
+        if *input.zero_asset_blinder() != [0_u8; SCALAR_BYTES] {
+            return Err(MaterializationRefusal::NonzeroProtocolAssetBlinder { member });
+        }
+
+        let observed = match input.observed_value() {
+            ValueField::Commitment(commitment) => commitment,
+            ValueField::Explicit(_) => {
+                return Err(MaterializationRefusal::PredecessorOpeningMismatch {
+                    outpoint: input.outpoint(),
+                });
+            }
+        };
+        let recomputed = checker
+            .recompute(
+                fixture.explicit_asset(),
+                projected.semantic_amount(),
+                projected.value_blinder(),
+            )
+            .ok_or_else(|| MaterializationRefusal::PredecessorOpeningMismatch {
+                outpoint: input.outpoint(),
+            })?;
+        if *recomputed.bytes() != observed {
+            return Err(MaterializationRefusal::PredecessorOpeningMismatch {
+                outpoint: input.outpoint(),
+            });
+        }
+        if projected.semantic_amount() != input.explicit_amount() {
+            return Err(MaterializationRefusal::PredecessorOpeningMismatch {
+                outpoint: input.outpoint(),
+            });
+        }
+
+        entries.push(VerifiedFixtureReference {
+            outpoint: input.outpoint(),
+            handle: reference.handle().to_owned(),
+            digest: *reference.digest(),
+            output: reference.output(),
+        });
+    }
+
+    Ok(entries)
 }
 
 /// The one fixture every destination binds to.
