@@ -3,9 +3,7 @@
 **Status:** Decided and implemented
 **Scope:** The Python sources under `scripts/`, and the two ADR-019
 adoption parameters that kept them outside the label graph
-**Amends:** two rows of (`[ADR019-tab:labels:parameters]`) — the owner
-partition and the scanned-region recognition. ADR-019 is not edited; its
-table is read through this record
+**Amends:** two of ADR-019's adoption-parameter entries, the owner partition (`[ADR019-rule:labels:owner-partition]`) and the scanned-region recognition (`[ADR019-rule:labels:scanned-regions]`). Neither entry's own text is edited; both are read through this record
 **Does not establish:** any new owner, any new prefix, any mint in the
 script tree, and no scanning of shell sources
 
@@ -30,8 +28,7 @@ it as a gap in the carrier, not a property of the frictions.
 
 ## Decision · `dec:scripts:carrier`
 
-The Python sources under `scripts/` join the label carrier. Two
-adoption-parameter rows are amended and no other.
+The Python sources under `scripts/` join the label carrier. Two adoption-parameter entries are amended and no other.
 
 **Owner partition Ω.** The partition gains one rule: `scripts/` to the
 `DOC` owner, for files whose extension is `.py`. The signature Σ is
@@ -42,7 +39,7 @@ them. Script comments are that same residual text, and the citations
 this record exists to make possible are imports of `PLAN`-owned labels,
 which need their region to have an owner rather than a register.
 
-**Scanned-region recognition.** The row gains a fourth language:
+**Scanned-region recognition.** The entry gains a fourth language:
 
 > Python: line comments, introduced by a number sign, with string
 > literals of every quote form — single, double, and triple, prefixed or
@@ -101,9 +98,7 @@ exclusion exists to prevent.
 
 Adoption holds when:
 
-- the two amended rows match the checker's partition data and its
-  scanned-region table row for row, and the scanner scans comments and
-  no string literal of any quote form;
+- the two amended entries match the checker's partition data and its scanned-region table row for row, and the scanner scans comments and no string literal of any quote form;
 - every tracked Python file under `scripts/` is a declared census
   subject, and the shell sources are the only categorical exclusion
   there;
@@ -112,3 +107,15 @@ Adoption holds when:
 - removing either mint fails the label check at the Python site.
 
 Every item holds as of this record, the last by demonstration.
+
+---
+
+## Amendments · `sec:scripts:amendments`
+
+Every later change to this record's text is listed here as its own entry under its own label, as an adopting record lists the amendments it carries.
+
+### Parameter citations · `rem:scripts:parameter-citations`
+
+ADR-019's seven adoption parameters stood in one table when this record was written, and they now stand as seven entries under seven labels, the table's own label having retired with the split (`[ADR019-rem:labels:parameter-entries]`). The header of this record could therefore only cite the whole table and name the two rows it amends in prose beside the citation. It now cites the two entries themselves, the owner partition (`[ADR019-rule:labels:owner-partition]`) and the scanned-region recognition (`[ADR019-rule:labels:scanned-regions]`), which is the citation this record wanted and could not write; the wording that called them rows reads entries throughout, in the decision and in the adoption gate alike.
+
+Nothing this record decides moves. The partition rule it adds, the language it adds to the scanned-region recognition, and the five parameters it leaves standing are exactly as adopted, and the two amended entries carry the fixings their rows carried, word for word.
