@@ -194,6 +194,26 @@ fn the_rangeproof_refusal_consults_the_output_value_form() {
     );
 }
 
+/// A rangeproof is refused for the explicit form.
+///
+/// The other half of the row's claim, observed rather than inferred: the
+/// refusal the hybrid form meets is the same one the explicit form
+/// meets, which is what "fires on any nonempty proof field" means. It is
+/// also a standing guarantee — an explicit value forbids a rangeproof
+/// after the repair exactly as it does today — so this half runs while
+/// the half above stays ignored.
+#[test]
+fn a_rangeproof_is_refused_for_the_explicit_form() {
+    let explicit = explicit_form();
+    let bytes = with_output_proofs(&explicit, &[], &[0xab; 64]);
+
+    assert_eq!(
+        TargetTransaction::decode(&bytes).err(),
+        Some(TransactionRefusal::RangeProofRefused),
+        "an explicit value admits no rangeproof",
+    );
+}
+
 /// A surjection proof is refused for the hybrid form.
 ///
 /// A standing guarantee rather than a defect: the target requires the
