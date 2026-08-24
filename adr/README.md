@@ -89,6 +89,8 @@ catalogues.
 
 An ADR carrying an externally authored normative text instead records its status, edition, and provenance; states repository-specific amendments and implementation standing as an overlay; and carries the full normative text as its body.
 
+Every repository amendment to such a text is one entry of that overlay, under its own label, stating exactly what it changes. Nothing reaches the adopted body transparently: where the body diverges from the adopted bytes at all — the heading depth the folding requires among it — an entry names the divergence, so the difference between the body and the text as adopted is exactly the set of listed entries. Several amendments never share one entry, and an entry never stands without a label.
+
 ## Machine use · `rem:adr:machine-use`
 
 ADR Markdown is not compiler, linker, transaction, or release input.
