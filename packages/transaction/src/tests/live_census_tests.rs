@@ -484,17 +484,19 @@ fn a_census_bound_to_another_deployment_is_refused() {
         "the deployment seeds the hasher, so it decides the message",
     );
 
-    // And the typed refusal, on the answer a signer returns for a
-    // candidate the census was not built for.
+    // The typed refusal, returned rather than merely declared: a census
+    // carried to a run on another chain is refused before a message is
+    // formed, which is the only place the mistake has a symptom.
     assert_eq!(
-        OwnerCensusRefusal::DeploymentMismatch {
+        census.check_deployment(LiveDeployment::new(GENESIS)),
+        Ok(())
+    );
+    assert_eq!(
+        census.check_deployment(LiveDeployment::new(OTHER_GENESIS)),
+        Err(OwnerCensusRefusal::DeploymentMismatch {
             expected: GENESIS,
             offered: OTHER_GENESIS,
-        },
-        OwnerCensusRefusal::DeploymentMismatch {
-            expected: *census.genesis_block_hash(),
-            offered: *other.genesis_block_hash(),
-        },
+        }),
     );
 }
 

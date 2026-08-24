@@ -845,6 +845,33 @@ impl OwnerSigningCensus {
             Err(OwnerCensusRefusal::ProtectedBytesAreNotTheCandidates)
         }
     }
+
+    /// Whether this census belongs to the deployment a run is against.
+    ///
+    /// Failure-matrix row 4, and the check has to be spelled because
+    /// nothing about a candidate reveals which chain it was censused
+    /// for. The hasher is seeded with the genesis block hash twice, so
+    /// two candidates identical to the last byte have different messages
+    /// on two chains: a census carried to the wrong run produces a
+    /// signature that is complete, well formed, and refused on chain,
+    /// with no earlier symptom at all.
+    ///
+    /// # Errors
+    ///
+    /// [`OwnerCensusRefusal::DeploymentMismatch`] when the run's
+    /// deployment is not the one the census was built against.
+    pub fn check_deployment(&self, run: LiveDeployment) -> Result<(), OwnerCensusRefusal> {
+        let offered = *run.genesis_block_hash();
+
+        if offered == self.genesis_block_hash {
+            Ok(())
+        } else {
+            Err(OwnerCensusRefusal::DeploymentMismatch {
+                expected: self.genesis_block_hash,
+                offered,
+            })
+        }
+    }
 }
 
 // --- Profile checks a returned answer must pass -----------------------
