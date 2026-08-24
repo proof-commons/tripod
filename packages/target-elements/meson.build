@@ -5,6 +5,7 @@
 target_elements_source_files = files(
   'src/authorization.rs',
   'src/capability.rs',
+  'src/ceremony.rs',
   'src/confidential.rs',
   'src/definition.rs',
   'src/deployment.rs',
@@ -21,6 +22,7 @@ target_elements_source_files = files(
   'src/transaction_form.rs',
   'src/weld.rs',
   'src/tests/capability_tests.rs',
+  'src/tests/ceremony_tests.rs',
   'src/tests/confidential_review_tests.rs',
   'src/tests/definition_tests.rs',
   'src/tests/deployment_tests.rs',

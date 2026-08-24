@@ -3,6 +3,7 @@
 
 pub mod authorization;
 pub mod capability;
+pub mod ceremony;
 pub mod confidential;
 pub mod definition;
 pub mod deployment;
@@ -26,6 +27,7 @@ pub use capability::{
     CapabilityContract, ElementsCapability, StaticCapabilityStatus, prerequisite_cycle_residual,
     status_closure_violations, transitive_prerequisites,
 };
+pub use ceremony::ReproducibilityContract;
 pub use confidential::{
     AssetGeneratorDerivation, CommitmentRelation, CommitmentTermRoles, ConfidentialCapabilityState,
     ConfidentialFieldEncoding, ConfidentialReviewFacts, ConfidentialValueCapability,

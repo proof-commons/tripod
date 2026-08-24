@@ -40,6 +40,8 @@ It owns target facts such as:
 
 It owns no attestation-contract operation semantics.
 
+One widening is carried explicitly, and it is stated here in the same change that adds it rather than discovered later in the source: the package also carries `ceremony::ReproducibilityContract`, first-party candidate ceremony vocabulary that states no target fact. It sits here because the confidential funding wire record in `target-elements-conformance` and the materializer profiles in `transaction` must name the same value, those two packages share no library edge in either direction, and this is the only package both already depend on — one enum in each package held equal by a census test would be two authored spellings of one closed vocabulary. The vocabulary is candidate-only, mints no version or release identity, and the package still serializes nothing: a package that speaks the contract on a wire owns its own encoding of it.
+
 ## Dependencies · `sec:target-elements:dependencies`
 
 The package has no required first-party protocol dependency.
