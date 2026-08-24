@@ -309,11 +309,13 @@ fn ceremony() -> Ceremony {
 /// The asset as the target prints it, which is the reverse of the order
 /// it commits to it in.
 fn printed_asset() -> String {
-    ASSET
-        .iter()
-        .rev()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    use std::fmt::Write as _;
+
+    let mut printed = String::with_capacity(ASSET.len() * 2);
+    for byte in ASSET.iter().rev() {
+        write!(printed, "{byte:02x}").expect("writing to a string does not fail");
+    }
+    printed
 }
 
 /// One materialization with both real origins wired in.
