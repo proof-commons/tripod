@@ -57,8 +57,7 @@ use crate::live_first_party::{
 };
 use crate::live_plan::{demonstration_live_abi, demonstration_live_bundle, live_transfer_plan};
 use crate::live_safety::{
-    LiveRowLink, LiveSafetyPolarity, LiveSafetyRow, LiveSafetySection, required_safety_matrix,
-    resolve_row,
+    LiveRowLink, LiveSafetyRow, LiveSafetySection, required_safety_matrix, resolve_row,
 };
 use crate::matrix::EvidenceBoundary;
 
@@ -123,10 +122,47 @@ pub enum LiveInfrastructureBlocker {
     /// workspace deliberately mints no such digest, and the signing flow
     /// carries opaque bytes bound to a preimage instead.
     ///
-    /// The consequence is exact: a valid live-transfer spend cannot be
-    /// witnessed by first-party material, so no positive row can reach a
-    /// target that would accept it. This is a missing component and not a
-    /// verdict about anything.
+    /// The consequence was exact: a valid live-transfer spend could not
+    /// be witnessed by first-party material, so no positive row could
+    /// reach a target that would accept it. This was a missing component
+    /// and not a verdict about anything.
+    ///
+    /// # It is no longer carried, and the observation that moved it
+    ///
+    /// The digest is computed. An independent construction of the
+    /// target's taproot message was written from a source review of the
+    /// message construction, a finalized explicit candidate was
+    /// authorized against it with published test material, and a real
+    /// node accepted the spend into a block. The accepted transaction
+    /// was read back out of that node and the signature standing in its
+    /// witness verifies against the recomputed message — so the
+    /// acceptance and the recomputation are two origins rather than one
+    /// value checked against itself — and it verifies against no other
+    /// candidate message. Seven controls, each moving one term of the
+    /// message, were refused by the same node on the same chain.
+    ///
+    /// So no positive row carries this any longer, and
+    /// [`a_positive_control_exists`] computes to true. Both moves are on
+    /// an observed result and neither is on a capability existing.
+    ///
+    /// # What did not move with it
+    ///
+    /// Every positive row became a row a run could answer, and not one
+    /// of them became answered: a standing is not evidence, and no run
+    /// of any row has been filed. [`Self::SighashProfileUnreviewed`]
+    /// remains carried, because a digest that can be computed is not yet
+    /// a settled claim about what it commits to, and that residual is
+    /// cleared by a review verdict rather than by a run.
+    ///
+    /// The explicit lane is the only lane this observation touches. The
+    /// message's output-witness term is recoverable from the protected
+    /// bytes exactly while every entry is default-constructed, and the
+    /// proof-bearing lane's entries carry range proofs the preimage does
+    /// not contain in any form.
+    ///
+    /// The word stays in this vocabulary because it is still the right
+    /// name for the condition, and a lane that could not compute the
+    /// digest must be able to say so.
     OwnerSighashNotComputable,
     /// No transaction of this pipeline has ever been accepted.
     ///
@@ -553,23 +589,31 @@ impl LiveTransferEvidencePlan {
 /// Whether any positive control exists for the live-transfer pipeline.
 ///
 /// The derived fact the whole negative half depends on. It is computed
-/// rather than declared, and today it computes to `false` for one stated
+/// rather than declared, and it computed to `false` for one stated
 /// reason: §15.1's and §15.2's rows all expect an accepted transaction,
-/// and no owner signature can be produced over the digest the target's
+/// and no owner signature could be produced over the digest the target's
 /// verifying primitive forms.
-const fn a_positive_control_exists() -> bool {
-    false
-}
-
-/// The blocker every positive row carries.
 ///
-/// Both positive tables need a witnessed spend, and neither can have one.
-/// The private table would additionally need its field forms settled on
-/// the target, which is downstream of the same missing digest rather than
-/// beside it — so the two tables share one blocker rather than the
-/// private one carrying a second that nothing could clear first.
-const POSITIVE_ROW_BLOCKER: LiveInfrastructureBlocker =
-    LiveInfrastructureBlocker::OwnerSighashNotComputable;
+/// # The observation that moved it
+///
+/// One does now exist. A finalized explicit candidate was authorized
+/// against a first-party recomputation of the target's own taproot
+/// message, submitted to a real node, and accepted into a block; the
+/// accepted transaction was read back out of the node and the signature
+/// standing in its witness verifies, under this workspace's own curve
+/// arithmetic, against the message this workspace recomputed — and
+/// against no other candidate message. Seven controls, each moving one
+/// term of that message, were refused by the same node on the same
+/// chain.
+///
+/// So this returns `true` on an observed acceptance and never on a
+/// capability existing. What it says is that a positive control is
+/// *possible*, which is the only thing the negative half needs from it:
+/// a refusal is attributable to a row's own mutation once something can
+/// be accepted at all. It says nothing about any particular row.
+const fn a_positive_control_exists() -> bool {
+    true
+}
 
 /// The blocker one specific negative row carries, where it has its own.
 ///
@@ -622,9 +666,6 @@ fn classify(
         ));
     }
 
-    if row.polarity() == LiveSafetyPolarity::Positive {
-        return Ok(LiveRowStanding::InfrastructureBlocked(POSITIVE_ROW_BLOCKER));
-    }
     if let Some(blocker) = specific_blocker(row) {
         return Ok(LiveRowStanding::InfrastructureBlocked(blocker));
     }
@@ -1024,10 +1065,12 @@ mod tests {
     }
 
     #[test]
-    fn no_positive_row_is_answered_and_the_reason_is_one_missing_component() {
-        // The wave's central honest finding, held as a test rather than
-        // stated in a report: no §15.1 or §15.2 row is answered, and
-        // every one of them carries the same blocker.
+    fn no_positive_row_is_answered_and_every_one_of_them_awaits_a_run() {
+        // What the observation converted, and what it did not. Every
+        // positive row stopped being infrastructure-blocked, because the
+        // component they were all waiting on exists; not one of them
+        // became answered, because a standing is not evidence and no run
+        // of any row has been filed.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         let mut positives = 0_usize;
         for row in plan.rows() {
@@ -1035,37 +1078,56 @@ mod tests {
                 continue;
             }
             positives += 1;
-            assert_eq!(
-                row.standing(),
-                &LiveRowStanding::InfrastructureBlocked(
-                    LiveInfrastructureBlocker::OwnerSighashNotComputable
-                ),
-                "{} claims an answer no witness exists for",
+            assert!(
+                matches!(row.standing(), LiveRowStanding::NativeRunRequired(_)),
+                "{} does not await the run that would answer it",
+                row.row(),
+            );
+            assert!(
+                !row.standing().is_answered(),
+                "{} claims an answer no run produced",
                 row.row(),
             );
         }
-        assert_eq!(positives, 26, "§15.1 and §15.2 together");
+        assert_eq!(positives, 26, "both positive tables together");
     }
 
     #[test]
-    fn the_negative_half_is_blocked_on_the_absent_control_rather_than_run() {
-        // §14.5's and §19.2's argument, made a state: while nothing has
-        // been accepted, a refusal is not attributable, so no
-        // target-boundary row is merely waiting on a run.
+    fn the_computability_blocker_is_carried_by_no_row() {
+        // The clearing, checked against the classification rather than
+        // against the sentence that describes it. A row still carrying
+        // this would be a row waiting on a component that exists.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         assert_eq!(
+            blocker_census(&plan)
+                .get(&LiveInfrastructureBlocker::OwnerSighashNotComputable)
+                .copied()
+                .unwrap_or(0),
+            0,
+        );
+    }
+
+    #[test]
+    fn the_negative_half_awaits_a_run_rather_than_an_absent_control() {
+        // §14.5's and §19.2's argument, made a state, and now standing
+        // the other way round. A refusal is attributable once something
+        // can be accepted at all, so the negative half stopped being
+        // blocked on the absent control and became rows a run would
+        // answer. None of them is answered by the conversion.
+        let plan = derive_live_evidence_plan().expect("the evidence plan derives");
+        assert_ne!(
             plan.census().native_run_required(),
             0,
-            "a row claims a run would answer it while no control exists",
+            "no row awaits the run that would answer it",
         );
-        let census = blocker_census(&plan);
-        assert_ne!(
-            census
+        assert_eq!(
+            blocker_census(&plan)
                 .get(&LiveInfrastructureBlocker::NoAcceptingControlExists)
                 .copied()
                 .unwrap_or(0),
             0,
         );
+        assert!(!plan.census().every_required_row_is_answered());
     }
 
     #[test]
@@ -1075,7 +1137,11 @@ mod tests {
         // positive half has never run.
         let plan = derive_live_evidence_plan().expect("the evidence plan derives");
         assert!(!plan.census().every_required_row_is_answered());
-        assert_ne!(plan.census().infrastructure_blocked(), 0);
+        // Three rows carry a blocker of their own, and those three do
+        // not move: a predecessor constructor, a sponsor envelope
+        // signer, and a raw path, none of which the owner message was
+        // ever in the way of.
+        assert_eq!(plan.census().infrastructure_blocked(), 3);
     }
 
     #[test]
