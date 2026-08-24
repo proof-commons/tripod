@@ -117,27 +117,36 @@ fn stub_commitment(
     let mut bytes = [0_u8; COMMITMENT_BYTES];
     bytes[0] = 0x08 | u8::from(amount % 2 == 1);
     for (index, slot) in bytes[1..].iter_mut().enumerate() {
-        *slot = asset.internal()[index] ^ blinder[index] ^ (amount as u8).wrapping_add(index as u8);
+        let amount_byte = u8::try_from(amount % 256).unwrap_or_default();
+        let index_byte = u8::try_from(index % 256).unwrap_or_default();
+        *slot = asset.internal()[index] ^ blinder[index] ^ amount_byte.wrapping_add(index_byte);
     }
     bytes
 }
 
-/// A proof materializer that answers every question the stand-in way.
-#[derive(Clone, Copy, Debug, Default)]
-struct StubMaterializer {
-    /// Refuse the commitment, as a degenerate scalar or identity point
-    /// would.
-    refuse_commitment: bool,
+/// A proof materializer that answers the stand-in way, or deviates in
+/// exactly one named respect.
+///
+/// One deviation at a time rather than a set of independent switches: a
+/// test that turned two on at once would be measuring which refusal comes
+/// first rather than whether each is reachable, and the ordering of the
+/// stages is stated by the guide rather than discovered here.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum StubMaterializer {
+    /// Answer every question the stand-in way.
+    #[default]
+    Faithful,
+    /// Refuse the commitment, as a degenerate scalar or an identity
+    /// point would.
+    RefuseCommitment,
     /// Refuse the nonce.
-    refuse_nonce: bool,
-    /// Refuse the proof.
-    refuse_proof: bool,
+    RefuseNonce,
     /// Answer with a proof bound to a different commitment.
-    misbind_proof: bool,
+    MisbindProof,
     /// Answer with an empty proof.
-    empty_proof: bool,
+    EmptyProof,
     /// Answer with a surjection proof the hybrid form forbids.
-    surjection_proof: bool,
+    SurjectionProof,
 }
 
 impl ConfidentialProofMaterializer for StubMaterializer {
@@ -151,7 +160,7 @@ impl ConfidentialProofMaterializer for StubMaterializer {
         semantic_amount: u64,
         value_blinder: &[u8; SCALAR_BYTES],
     ) -> Option<MaterializerCommitment> {
-        if self.refuse_commitment {
+        if *self == Self::RefuseCommitment {
             return None;
         }
         Some(MaterializerCommitment::from_materializer(stub_commitment(
@@ -162,7 +171,7 @@ impl ConfidentialProofMaterializer for StubMaterializer {
     }
 
     fn nonce_commitment(&self, nonce_input: &[u8; SCALAR_BYTES]) -> Option<[u8; COMMITMENT_BYTES]> {
-        if self.refuse_nonce {
+        if *self == Self::RefuseNonce {
             return None;
         }
         let mut bytes = [0_u8; COMMITMENT_BYTES];
@@ -172,22 +181,19 @@ impl ConfidentialProofMaterializer for StubMaterializer {
     }
 
     fn range_proof(&self, request: &RangeproofRequest<'_>) -> Option<MaterializedRangeproof> {
-        if self.refuse_proof {
-            return None;
-        }
-        let proof = if self.empty_proof {
+        let proof = if *self == Self::EmptyProof {
             Vec::new()
         } else {
             let mut proof = vec![0xab_u8; 64];
             proof[0] = u8::try_from(request.output()).unwrap_or(u8::MAX);
             proof
         };
-        let surjection = if self.surjection_proof {
+        let surjection = if *self == Self::SurjectionProof {
             vec![0xcd; 32]
         } else {
             Vec::new()
         };
-        let bound = if self.misbind_proof {
+        let bound = if *self == Self::MisbindProof {
             [0x5c; COMMITMENT_BYTES]
         } else {
             *request.value_commitment().bytes()
@@ -394,8 +400,8 @@ fn intent() -> ConfidentialConstructionIntent {
 fn materialize(
     intent: &ConfidentialConstructionIntent,
     view: &FrozenConfidentialFixtureView,
-    crypto: &StubMaterializer,
-    checker: &StubChecker,
+    crypto: &dyn ConfidentialProofMaterializer,
+    checker: &dyn IndependentCommitmentCheck,
 ) -> Result<crate::live_materialize::MaterializedConfidentialCandidate, MaterializationRefusal> {
     materialize_confidential_candidate(intent, view, crypto, checker)
 }
@@ -802,10 +808,7 @@ fn a_degenerate_derived_blinder_is_refused() {
 /// A commitment that will not compute is a typed refusal.
 #[test]
 fn an_uncomputable_commitment_is_refused() {
-    let crypto = StubMaterializer {
-        refuse_commitment: true,
-        ..StubMaterializer::default()
-    };
+    let crypto = StubMaterializer::RefuseCommitment;
 
     assert_eq!(
         materialize(&intent(), &view(), &crypto, &StubChecker::default())
@@ -819,10 +822,7 @@ fn an_uncomputable_commitment_is_refused() {
 /// An empty range proof is refused.
 #[test]
 fn an_empty_range_proof_is_refused() {
-    let crypto = StubMaterializer {
-        empty_proof: true,
-        ..StubMaterializer::default()
-    };
+    let crypto = StubMaterializer::EmptyProof;
 
     assert_eq!(
         materialize(&intent(), &view(), &crypto, &StubChecker::default())
@@ -834,10 +834,7 @@ fn an_empty_range_proof_is_refused() {
 /// A proof bound to something else is refused.
 #[test]
 fn a_cross_bound_range_proof_is_refused() {
-    let crypto = StubMaterializer {
-        misbind_proof: true,
-        ..StubMaterializer::default()
-    };
+    let crypto = StubMaterializer::MisbindProof;
 
     assert_eq!(
         materialize(&intent(), &view(), &crypto, &StubChecker::default())
@@ -849,10 +846,7 @@ fn a_cross_bound_range_proof_is_refused() {
 /// An unexpected surjection proof is refused.
 #[test]
 fn an_unexpected_surjection_proof_is_refused() {
-    let crypto = StubMaterializer {
-        surjection_proof: true,
-        ..StubMaterializer::default()
-    };
+    let crypto = StubMaterializer::SurjectionProof;
 
     assert_eq!(
         materialize(&intent(), &view(), &crypto, &StubChecker::default())
@@ -924,10 +918,7 @@ fn a_range_proof_failure_adds_no_randomness_and_triggers_no_retry() {
 /// Nonce material that will not derive is a typed refusal.
 #[test]
 fn nonce_material_that_will_not_derive_is_refused() {
-    let crypto = StubMaterializer {
-        refuse_nonce: true,
-        ..StubMaterializer::default()
-    };
+    let crypto = StubMaterializer::RefuseNonce;
 
     assert_eq!(
         materialize(&intent(), &view(), &crypto, &StubChecker::default())
