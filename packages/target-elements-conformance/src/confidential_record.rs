@@ -514,6 +514,31 @@ impl FieldAgreement {
     }
 }
 
+/// States field agreements directly, for the tests that drive the
+/// census's own refusals.
+///
+/// Crate-visible and test-only, so nothing outside this crate can author
+/// an agreement. It exists because the assembler's refusals — a
+/// comparison with one origin on both sides, and an incomplete census —
+/// cannot be reached through a real validation, which is exactly the
+/// point of having them.
+#[cfg(test)]
+pub(crate) fn stated_agreements(
+    stated: &[(
+        FundingAgreementField,
+        AgreementOrigin,
+        AgreementOrigin,
+        bool,
+    )],
+) -> Vec<FieldAgreement> {
+    stated
+        .iter()
+        .map(|(field, expectation, observation, agrees)| {
+            agreement(*field, *expectation, *observation, *agrees)
+        })
+        .collect()
+}
+
 /// Why an agreement census could not be assembled or did not hold.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
