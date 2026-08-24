@@ -8,9 +8,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::fixture::{NativeCaseId, PrimitiveExecutionSubject, PrimitiveFixture};
 use crate::protocol::{
-    ConfidentialFixtureDigest, ConfidentialFixtureHandle, ConfidentialFundingBinding,
-    ConfidentialFundingDestination, ConfidentialFundingProfiles, ExecutorCapability,
-    ExecutorEnvironmentObservation, ExecutorHandshake, FundingCustodyProfile,
+    ConfidentialFixtureDigest, ConfidentialFixtureHandle, ConfidentialFundingAdvertisement,
+    ConfidentialFundingBinding, ConfidentialFundingDestination, ConfidentialFundingProfiles,
+    ExecutorCapability, ExecutorEnvironmentObservation, ExecutorHandshake, FundingCustodyProfile,
     FundingMaterializerProfile, FundingRepresentationProfile, NATIVE_PROTOCOL_SCHEMA,
     TargetConfidentialFundingSubject, WireEnvironment, WireExecutionDomain,
 };
@@ -197,4 +197,31 @@ pub fn confidential_subject() -> TargetConfidentialFundingSubject {
             .collect(),
         binding: confidential_binding(),
     }
+}
+
+/// An advertisement admitting exactly what the test ceremony selects.
+pub fn confidential_advertisement() -> ConfidentialFundingAdvertisement {
+    ConfidentialFundingAdvertisement {
+        representation_profiles: BTreeSet::from([
+            FundingRepresentationProfile::ExplicitAssetConfidentialValue,
+        ]),
+        custody_profiles: BTreeSet::from([FundingCustodyProfile::CentralPublicFixtures]),
+        materializer_profiles: BTreeSet::from([
+            FundingMaterializerProfile::GuideCtfDeterministicV1,
+        ]),
+        reproducibility_contracts: BTreeSet::from([
+            target_elements::ReproducibilityContract::ByteIdentity,
+        ]),
+    }
+}
+
+/// A handshake from an executor that offers confidential funding, with
+/// the capability and the advertisement agreeing.
+pub fn confidential_handshake() -> ExecutorHandshake {
+    let mut handshake = nonmock_handshake();
+    handshake
+        .capabilities
+        .insert(ExecutorCapability::ConfidentialValueTestFunding);
+    handshake.confidential_funding = Some(confidential_advertisement());
+    handshake
 }

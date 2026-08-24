@@ -4,6 +4,7 @@
 mod census;
 pub mod claim;
 pub mod commitment_oracle;
+pub mod confidential_funding;
 pub mod conservation;
 pub mod conservation_report;
 pub mod constructor;
