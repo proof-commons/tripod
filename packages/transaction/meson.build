@@ -22,6 +22,7 @@ transaction_source_files = files(
   'src/taproot.rs',
   'src/tests/abi_tests.rs',
   'src/tests/construction_tests.rs',
+  'src/tests/ctf_materialize_tests.rs',
   'src/tests/ctf_preflight_tests.rs',
   'src/tests/ctf_serialization_tests.rs',
   'src/tests/encoding_tests.rs',
