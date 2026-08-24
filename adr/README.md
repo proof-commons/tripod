@@ -33,7 +33,7 @@ repository itself.
 | [ADR-020](020-environment-kinds.md) | Decided and adopted; implemented | The normative environment-kind registry, with this repository's migration adjudication, recorded extension set, and attestation standing. |
 | [ADR-021](021-identity-adjudication.md) | Decided and adopted; implemented for current identity policy, with evidence and release surfaces activating with their consumers | The normative identity adjudication procedure, with this repository's local recipe convention, current identities, separation migration, and implementation standing. |
 | [ADR-022](022-interchange-conventions.md) | Decided and adopted; normative now and unimplemented by design until an externally consumed document exists | The normative wire-format discipline for externally consumed documents, with the ADR-010 boundary, executor-protocol stop, alignment records, and consumer-triggered implementation rule. |
-| [ADR-023](023-script-tree-label-carrier.md) | Decided and implemented | The script tree joins the label carrier: two amended ADR-019 rows putting `scripts/*.py` under `DOC` and scanning Python comments, strings excluded. |
+| [ADR-023](023-script-tree-label-carrier.md) | Decided and implemented | The script tree joins the label carrier: two amended ADR-019 entries putting `scripts/*.py` under `DOC` and scanning Python comments, strings excluded. |
 
 ## Numbering · `rule:adr:numbering`
 

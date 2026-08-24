@@ -3,7 +3,7 @@
 //! The calculus is parametric in seven data, and ADR-019 records this
 //! repository's fixing of each. This module is that fixing expressed as
 //! Rust data rather than as constants scattered across the harvest: one
-//! place a reader compares against the ADR-019 adoption-parameter table.
+//! place a reader compares against the ADR-019 adoption-parameter entries.
 //! The seven, in the ADR's own order, are the owner signature, the owner
 //! partition, the profile signature, the reserved kinds, the designated
 //! typed-data classes, the citation-index designations, and the
