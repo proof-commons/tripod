@@ -525,7 +525,7 @@ pub(super) fn valid_two_owner_with_spent_program(
 ) -> crate::live_materialize::MaterializedConfidentialCandidate {
     materialize(
         &two_owner_intent(program.clone()),
-        &two_owner_view(program),
+        &two_owner_view(&program),
         &StubMaterializer::default(),
         &StubChecker::default(),
     )
@@ -533,7 +533,7 @@ pub(super) fn valid_two_owner_with_spent_program(
 }
 
 /// The frozen view the two-owner case resolves against.
-fn two_owner_view(program: Vec<u8>) -> FrozenConfidentialFixtureView {
+fn two_owner_view(program: &[u8]) -> FrozenConfidentialFixtureView {
     let predecessor = ConfidentialFixtureView::new(
         PREDECESSOR_DIGEST,
         asset(),
@@ -543,7 +543,7 @@ fn two_owner_view(program: Vec<u8>) -> FrozenConfidentialFixtureView {
             ConfidentialFixtureOutputView::new(
                 ConfidentialOutputRole::Primary,
                 CONSUMED,
-                program.clone(),
+                program.to_owned(),
                 INPUT_BLINDER,
                 [0x31; SCALAR_BYTES],
                 [0x41; SCALAR_BYTES],
@@ -551,7 +551,7 @@ fn two_owner_view(program: Vec<u8>) -> FrozenConfidentialFixtureView {
             ConfidentialFixtureOutputView::new(
                 ConfidentialOutputRole::Primary,
                 SECOND_CONSUMED,
-                program.clone(),
+                program.to_owned(),
                 SECOND_INPUT_BLINDER,
                 [0x34; SCALAR_BYTES],
                 [0x44; SCALAR_BYTES],
