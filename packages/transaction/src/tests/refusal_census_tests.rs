@@ -43,6 +43,12 @@ use crate::live_materialize::MaterializationRefusal as Materialization;
 ///
 /// The body does nothing and is meant to: the guard is the pattern list,
 /// and a variant added to [`Refusal`] makes this fail to compile.
+///
+/// The length is the whole point and cannot be shortened without
+/// shortening the guard. Splitting the match across two functions would
+/// need a catch-all in each for either to compile, which is exactly what
+/// this file exists not to have.
+#[expect(clippy::too_many_lines, reason = "one pattern per censused variant")]
 fn every_transaction_refusal_is_censused(refusal: &Refusal) {
     match refusal {
         Refusal::BundleIsNotACandidate
