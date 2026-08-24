@@ -4,6 +4,7 @@
 # by the categorical exclusion pattern in the parent meson.build.
 script_source_files = files(
   'ci-timing-report.py',
+  'diagnose-taproot-issuance-rangeproof-digest.py',
   'diagnose-taproot-output-witness-digest.py',
   'elements-native-executor.py',
   'executor_supervision.py',
