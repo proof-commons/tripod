@@ -328,7 +328,7 @@ pub struct AdapterReportedInclusion {
 impl AdapterReportedInclusion {
     /// One oracle, bound to the identity recomputed from the mined bytes.
     #[must_use]
-    pub fn recomputed_from(transaction_id: String) -> Self {
+    pub const fn recomputed_from(transaction_id: String) -> Self {
         Self { transaction_id }
     }
 }
