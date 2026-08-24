@@ -270,6 +270,10 @@ pub enum UnreviewedGround {
     /// establishing it would mean exercising a commitment the profile
     /// declines to make, and a reviewed set that grew by exercising
     /// refused dimensions would be establishing a different profile.
+    ///
+    /// The two dimensions this ground carries are elected exclusions,
+    /// `(´[PLAN-rule:exclusions:single-output]´)` and
+    /// `(´[PLAN-rule:exclusions:input-extension]´)`.
     TheSelectedProfileRefusesIt(SighashSourceCitation),
     /// The dimension's terms are in every message this arc forms, and no
     /// candidate this arc can build puts the dimension's own subject

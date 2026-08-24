@@ -304,11 +304,26 @@ pub enum TransactionRefusal {
         offered: u32,
     },
     /// The bytes carry an issuance, which is outside the candidate.
+    ///
+    /// The byte-level half of the elected exclusion
+    /// `(´[PLAN-rule:exclusions:issuance-bytes]´)`, and one of the
+    /// rows that enforce the refused issuance dimension
+    /// `(´[PLAN-rule:exclusions:issuance-dimension]´)`.
     IssuanceInputRefused,
     /// The bytes carry a peg-in, which is outside the candidate.
+    ///
+    /// A peg-in is a second origin for the conserved asset, so the
+    /// conservation the covenant checks would be over a quantity part
+    /// of which entered from outside the model
+    /// `(´[PLAN-rule:exclusions:pegin]´)`.
     PeginInputRefused,
     /// The bytes carry an issuance proof, which is outside the
     /// candidate.
+    ///
+    /// The witness half of `(´[PLAN-rule:exclusions:issuance-bytes]´)`,
+    /// enforcing the refused dimension
+    /// `(´[PLAN-rule:exclusions:issuance-dimension]´)` alongside the
+    /// outpoint marker's own refusal.
     IssuanceProofRefused,
     /// The bytes carry a surjection proof, which is outside the
     /// candidate.
@@ -319,6 +334,9 @@ pub enum TransactionRefusal {
     /// asset, which is the unblinded-generator case the target requires
     /// the surjection field to be empty for. A byte string carrying one
     /// is a blinded-asset form nothing here builds.
+    ///
+    /// The decoder's half of the elected asset-blinding exclusion
+    /// `(´[PLAN-rule:exclusions:asset-blinding]´)`.
     SurjectionProofRefused,
     /// The bytes carry a range proof for an output whose value form
     /// forbids one.

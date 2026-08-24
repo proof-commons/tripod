@@ -3,6 +3,7 @@
 # meson.build accumulates this list into its role group.
 plans_reference_files = files(
   'README.md',
+  'consensus-exclusions.md',
   'draft-gap-census.md',
   'elements-tapscript.md',
   'owner-sighash-review.md',
