@@ -28,9 +28,10 @@
 //! enters the census under any lane. The exclusion is what keeps a
 //! secret-bearing interface from being selected at all, so ADR-015's
 //! design gate is never reached and the whole census is public test
-//! material under the existing test-material rule: every value it
-//! touches is disposable regtest material authorizing nothing anywhere
-//! else.
+//! material in the sense `(´[ADR015-rule:security:test-material]´)`
+//! fixes: every value it touches — every key, chain, genesis hash and
+//! census entry — is disposable regtest material authorizing nothing
+//! anywhere else.
 //!
 //! The exclusion is enforced by shape rather than by review. There is no
 //! field an opening could be written into, and the one place a key would
