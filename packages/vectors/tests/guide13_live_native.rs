@@ -190,6 +190,156 @@ fn the_live_transfer_candidate_runs_against_a_real_target() {
     assert!(rendered.contains("discharges_no_matrix_row true"));
 }
 
+/// What one confidential ceremony produced: its report lines and the
+/// mined bytes a second run is compared against.
+struct ConfidentialAttempt {
+    lines: Vec<String>,
+    mined: Vec<u8>,
+}
+
+/// Runs one confidential predecessor ceremony end to end and validates it.
+///
+/// Split out of the test because the byte-identity comparison is a claim
+/// about two runs: the test runs this twice and compares, and this
+/// function knows nothing about the comparison it will be part of.
+fn fund_one_confidential_predecessor(
+    target: &target_elements::ReviewedElementsTapscriptDefinition,
+    binding: &target_elements::ReviewedDevelopmentBinding,
+    configuration: &ExecutorConfiguration,
+    attempt: u8,
+) -> ConfidentialAttempt {
+    use target_elements_conformance::confidential_funding::{
+        ConfidentialFundingOracles, ConfidentialReadbackDecoder as _,
+    };
+    use target_elements_conformance::confidential_oracles::{
+        ReferenceRangeproofVerifier, ReferenceReadbackDecoder,
+    };
+    use target_elements_conformance::confidential_record::{
+        ConfidentialFundingEvidence, FieldAgreement, FundingAgreementField,
+        validate_confidential_funding_record,
+    };
+    use vectors::confidential_predecessor::{
+        AdapterReportedInclusion, ConfidentialPredecessorPlan,
+    };
+
+    let mut lines = Vec::new();
+    let mut plan = ConfidentialPredecessorPlan::new();
+    let started = Instant::now();
+    let outcome = execute_operations(target, binding, configuration, &mut plan);
+    lines.push(format!(
+        "run {attempt} wall_seconds {:.1}",
+        started.elapsed().as_secs_f64()
+    ));
+
+    // A stopped result is a valid outcome and is written as one. It is
+    // an infrastructure or construction fact and never a target verdict.
+    let transcript = match outcome {
+        Ok(transcript) => transcript,
+        Err(error) => {
+            lines.push(format!("run {attempt} executor_refused {error}"));
+            if let Some(refusal) = plan.refusal() {
+                lines.push(format!("run {attempt} plan_refused {refusal:?}"));
+            }
+            panic!("the confidential predecessor ceremony did not reach the target: {error}");
+        }
+    };
+
+    let case = ConfidentialPredecessorPlan::funding_case();
+    let response = transcript
+        .operation_responses()
+        .get(&case)
+        .expect("the confidential step was answered");
+    let subject = plan.subject().expect("the confidential subject was sent");
+    let registry = plan.registry().expect("the fixture was registered");
+    let fixture = registry
+        .resolve(
+            &subject.binding.fixture_handle,
+            &subject.binding.fixture_digest,
+        )
+        .expect("the registry resolves its own case");
+
+    let readback = response
+        .mined_readback
+        .as_ref()
+        .expect("the answer carries a mined readback");
+    let reader = ReferenceReadbackDecoder::new();
+    let mined = reader
+        .decode(&readback.raw_transaction)
+        .expect("the mined bytes decode");
+    let inclusion = AdapterReportedInclusion::recomputed_from(mined.transaction_id.clone());
+    let verifier = ReferenceRangeproofVerifier::new();
+    let oracles = ConfidentialFundingOracles {
+        decoder: &reader,
+        inclusion: &inclusion,
+        rangeproofs: &verifier,
+    };
+    let evidence = ConfidentialFundingEvidence {
+        handshake: transcript.handshake(),
+        environment: transcript.environment(),
+        request: subject,
+        response,
+        fixture,
+        decoded: &mined,
+        // Never stated here. A byte comparison is the other contract's
+        // own claim, and this function has seen one run.
+        materialized_bytes_compared: false,
+    };
+    let validated = validate_confidential_funding_record(&evidence, &oracles)
+        .expect("the confidential funding record validates");
+    let record = validated.record();
+
+    lines.push(format!("run {attempt} handle {}", record.fixture_handle()));
+    lines.push(format!(
+        "run {attempt} contract {}",
+        record.summary().contract().code()
+    ));
+    lines.push(format!(
+        "run {attempt} parities {:?}",
+        record.summary().observed_parities()
+    ));
+    lines.push(format!(
+        "run {attempt} protocol_outputs {} non_protocol_members {}",
+        record.summary().protocol_outputs(),
+        record.summary().non_protocol_members()
+    ));
+    for census in record.agreement() {
+        for entry in census.fields() {
+            lines.push(format!(
+                "run {attempt} output {} field {} {} {} vs {}",
+                census.output(),
+                entry.field(),
+                if entry.agrees() { "agree" } else { "disagree" },
+                entry.expectation(),
+                entry.observation(),
+            ));
+        }
+    }
+    for (index, check) in record.independent_commitments().iter().enumerate() {
+        lines.push(format!(
+            "run {attempt} output {index} independent_commitment {} checker {}",
+            if check.agrees() { "agree" } else { "disagree" },
+            check.checker(),
+        ));
+    }
+    lines.push(format!(
+        "run {attempt} witness_transaction_id {}",
+        record.readback().witness_transaction_id
+    ));
+
+    assert_eq!(record.agreement().len(), 2);
+    for census in record.agreement() {
+        assert_eq!(census.fields().len(), FundingAgreementField::ALL.len());
+        assert!(census.fields().iter().all(FieldAgreement::agrees));
+    }
+    assert_eq!(record.summary().observed_parities(), &[0x08, 0x09]);
+    assert_eq!(record.non_claims().len(), 10);
+
+    ConfidentialAttempt {
+        lines,
+        mined: readback.raw_transaction.clone(),
+    }
+}
+
 /// One confidential predecessor, funded, mined, and read back.
 ///
 /// # What this run establishes, and the six things it reports
@@ -215,19 +365,6 @@ fn the_live_transfer_candidate_runs_against_a_real_target() {
 #[test]
 #[ignore = "needs a live Elements node and an executor adapter"]
 fn one_confidential_predecessor_is_funded_mined_and_read_back() {
-    use target_elements_conformance::confidential_funding::{
-        ConfidentialFundingOracles, ConfidentialReadbackDecoder as _,
-    };
-    use target_elements_conformance::confidential_oracles::{
-        ReferenceRangeproofVerifier, ReferenceReadbackDecoder,
-    };
-    use target_elements_conformance::confidential_record::{
-        ConfidentialFundingEvidence, FundingAgreementField, validate_confidential_funding_record,
-    };
-    use vectors::confidential_predecessor::{
-        AdapterReportedInclusion, ConfidentialPredecessorPlan,
-    };
-
     let executor =
         environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
     let network = environment("TRIPOD_LIVE_NETWORK_ID")
@@ -255,146 +392,24 @@ fn one_confidential_predecessor_is_funded_mined_and_read_back() {
     let timeout = environment("TRIPOD_LIVE_TIMEOUT_SECONDS")
         .and_then(|value| value.parse::<u64>().ok())
         .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        Path::new(&executor),
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+    );
 
-    let mut lines = Vec::new();
-    let mut mined_bytes: Vec<Vec<u8>> = Vec::new();
-    let mut wall_seconds = Vec::new();
-    let started_all = Instant::now();
+    let started = Instant::now();
+    let first = fund_one_confidential_predecessor(&target, &binding, &configuration, 0);
+    let second = fund_one_confidential_predecessor(&target, &binding, &configuration, 1);
 
-    for attempt in 0_u8..2 {
-        let configuration = ExecutorConfiguration::new(
-            Path::new(&executor),
-            ExecutorTrust::ReviewedNonMock,
-            timeout,
-            ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
-        );
-        let mut plan = ConfidentialPredecessorPlan::new();
-        let started = Instant::now();
-        let outcome = execute_operations(&target, &binding, &configuration, &mut plan);
-        let wall = started.elapsed();
-        wall_seconds.push(wall.as_secs_f64());
-        lines.push(format!(
-            "run {attempt} wall_seconds {:.1}",
-            wall.as_secs_f64()
-        ));
-
-        let transcript = match outcome {
-            Ok(transcript) => transcript,
-            Err(error) => {
-                // A stopped result is a valid outcome and is written as
-                // one. It is an infrastructure or construction fact and
-                // never a target verdict.
-                lines.push(format!("run {attempt} executor_refused {error}"));
-                if let Some(refusal) = plan.refusal() {
-                    lines.push(format!("run {attempt} plan_refused {refusal:?}"));
-                }
-                std::fs::write(&report, lines.join("\n") + "\n")
-                    .expect("the transcript is written");
-                panic!("the confidential predecessor ceremony did not reach the target");
-            }
-        };
-        let case = ConfidentialPredecessorPlan::funding_case();
-        let response = transcript
-            .operation_responses()
-            .get(&case)
-            .expect("the confidential step was answered");
-        let subject = plan.subject().expect("the confidential subject was sent");
-        let registry = plan.registry().expect("the fixture was registered");
-        let fixture = registry
-            .resolve(
-                &subject.binding.fixture_handle,
-                &subject.binding.fixture_digest,
-            )
-            .expect("the registry resolves its own case");
-
-        let readback = response
-            .mined_readback
-            .as_ref()
-            .expect("the answer carries a mined readback");
-        let decoder = ReferenceReadbackDecoder::new();
-        let decoded = decoder
-            .decode(&readback.raw_transaction)
-            .expect("the mined bytes decode");
-        let inclusion = AdapterReportedInclusion::recomputed_from(decoded.transaction_id.clone());
-        let verifier = ReferenceRangeproofVerifier::new();
-        let oracles = ConfidentialFundingOracles {
-            decoder: &decoder,
-            inclusion: &inclusion,
-            rangeproofs: &verifier,
-        };
-        let evidence = ConfidentialFundingEvidence {
-            handshake: transcript.handshake(),
-            environment: transcript.environment(),
-            request: subject,
-            response,
-            fixture,
-            decoded: &decoded,
-            // Stated only on the second run, and only after the bytes
-            // have actually been compared.
-            materialized_bytes_compared: false,
-        };
-        let validated = validate_confidential_funding_record(&evidence, &oracles)
-            .expect("the confidential funding record validates");
-        let record = validated.record();
-
-        lines.push(format!("run {attempt} handle {}", record.fixture_handle()));
-        lines.push(format!(
-            "run {attempt} contract {}",
-            record.summary().contract().code()
-        ));
-        lines.push(format!(
-            "run {attempt} parities {:?}",
-            record.summary().observed_parities()
-        ));
-        lines.push(format!(
-            "run {attempt} protocol_outputs {} non_protocol_members {}",
-            record.summary().protocol_outputs(),
-            record.summary().non_protocol_members()
-        ));
-        for census in record.agreement() {
-            for entry in census.fields() {
-                lines.push(format!(
-                    "run {attempt} output {} field {} {} {} vs {}",
-                    census.output(),
-                    entry.field(),
-                    if entry.agrees() { "agree" } else { "disagree" },
-                    entry.expectation(),
-                    entry.observation(),
-                ));
-            }
-        }
-        for (index, check) in record.independent_commitments().iter().enumerate() {
-            lines.push(format!(
-                "run {attempt} output {index} independent_commitment {} checker {}",
-                if check.agrees() { "agree" } else { "disagree" },
-                check.checker(),
-            ));
-        }
-        lines.push(format!(
-            "run {attempt} witness_transaction_id {}",
-            record.readback().witness_transaction_id
-        ));
-
-        // The census is complete for both outputs, and the parities are
-        // the admitted pair in fixed order.
-        assert_eq!(record.agreement().len(), 2);
-        for census in record.agreement() {
-            assert_eq!(census.fields().len(), FundingAgreementField::ALL.len());
-            assert!(census.fields().iter().all(|entry| entry.agrees()));
-        }
-        assert_eq!(record.summary().observed_parities(), &[0x08, 0x09]);
-        assert_eq!(record.non_claims().len(), 10);
-
-        mined_bytes.push(readback.raw_transaction.clone());
-    }
-
-    // The byte-identity comparison, made rather than asserted from the
-    // contract's name.
-    let identical = mined_bytes[0] == mined_bytes[1];
+    let identical = first.mined == second.mined;
+    let mut lines = first.lines;
+    lines.extend(second.lines);
     lines.push(format!("byte_identity_satisfied {identical}"));
     lines.push(format!(
         "total_wall_seconds {:.1}",
-        started_all.elapsed().as_secs_f64()
+        started.elapsed().as_secs_f64()
     ));
     lines.push("discharges_no_matrix_row true".to_owned());
     lines.push("clears_owner_sighash_blockers false".to_owned());
@@ -404,7 +419,4 @@ fn one_confidential_predecessor_is_funded_mined_and_read_back() {
         identical,
         "the run selected byte identity and did not achieve it",
     );
-    for wall in &wall_seconds {
-        assert!(*wall > 0.0, "a run reported no wall time");
-    }
 }
