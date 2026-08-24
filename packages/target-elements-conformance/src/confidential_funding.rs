@@ -700,7 +700,7 @@ pub fn check_selected_profiles(
 /// Read through the serialization the wire uses rather than rendered a
 /// second way, so a refusal names a profile in the same word the request
 /// carried it in `(´[PLAN-rule:guide12-exec:typed-source]´)`.
-fn wire_tag<T: serde::Serialize>(profile: &T) -> String {
+pub(crate) fn wire_tag<T: serde::Serialize>(profile: &T) -> String {
     serde_json::to_value(profile)
         .ok()
         .and_then(|value| value.as_str().map(str::to_owned))

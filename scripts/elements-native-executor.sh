@@ -44,6 +44,17 @@
 #                                           none is named here; the
 #                                           adapter creates a disposable
 #                                           wallet on a disposable chain
+#   ELEMENTS_NATIVE_EXECUTOR_ZK_LIBRARY     path to the shared
+#                                           zero-knowledge library the
+#                                           deterministic confidential
+#                                           materializer calls (optional;
+#                                           derived from the node binary's
+#                                           own build tree when unset, and
+#                                           the adapter advertises no
+#                                           confidential funding where it
+#                                           cannot be reached at all). It
+#                                           is a library path and not a
+#                                           credential
 #   ELEMENTS_NATIVE_EXECUTOR_PYTHON         python interpreter (default
 #                                           python3)
 #   ELEMENTS_NATIVE_EXECUTOR_LAUNCH_PREFIX  word-split command placed in
@@ -89,6 +100,10 @@ set -- --elementsd "$ELEMENTS_NATIVE_EXECUTOR_ELEMENTSD" \
 # ADR-018 provenance. Each is an operator declaration of what was meant to
 # run; none is derived from a working tree, and none stands in for the
 # revision the node binary reports about itself.
+if [ -n "${ELEMENTS_NATIVE_EXECUTOR_ZK_LIBRARY:-}" ]; then
+  set -- --zk-library "$ELEMENTS_NATIVE_EXECUTOR_ZK_LIBRARY" "$@"
+fi
+
 if [ -n "${ELEMENTS_NATIVE_EXECUTOR_INTENDED_TIP:-}" ]; then
   set -- --intended-executed-tip "$ELEMENTS_NATIVE_EXECUTOR_INTENDED_TIP" "$@"
 fi

@@ -3,7 +3,9 @@
 mod canonical_tests;
 mod census_tests;
 mod commitment_oracle_tests;
+mod confidential_fixture_tests;
 mod confidential_funding_tests;
+mod confidential_record_tests;
 mod conservation_three_way_tests;
 mod constructor_matrix_tests;
 mod constructor_tests;
