@@ -692,7 +692,7 @@ fn a_revision_four_response_no_longer_parses_and_the_sponsor_members_still_defau
         "the sponsor witness is still defaulted",
     );
     assert_eq!(parsed.signature_bound_to, None);
-    assert!(parsed.confidential_funded_outputs.is_empty());
+    assert_eq!(parsed.confidential_funded_outputs, Vec::new());
     assert_eq!(parsed.mined_readback, None);
 }
 

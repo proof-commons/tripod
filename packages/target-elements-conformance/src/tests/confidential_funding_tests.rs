@@ -985,7 +985,7 @@ fn every_refusal_renders_a_line_of_its_own() {
             handle: subject.binding.fixture_handle.clone(),
         },
         ConfidentialFundingRefusal::FixtureDigestMismatch {
-            handle: subject.binding.fixture_handle.clone(),
+            handle: subject.binding.fixture_handle,
         },
         ConfidentialFundingRefusal::DestinationSetEmpty,
         ConfidentialFundingRefusal::DeterministicMaterializationRefused {
