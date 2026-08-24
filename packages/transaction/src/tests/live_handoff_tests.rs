@@ -145,7 +145,7 @@ fn one_owner(target: &ReviewedElementsTapscriptDefinition) -> MaterializedConfid
 
 /// The two-owner materialized candidate the multi-owner cases use.
 fn two_owner(target: &ReviewedElementsTapscriptDefinition) -> MaterializedConfidentialCandidate {
-    valid_two_owner_with_spent_program(committed_program(target))
+    valid_two_owner_with_spent_program(&committed_program(target))
 }
 
 /// One opened handoff over `materialized`, with one request per input.

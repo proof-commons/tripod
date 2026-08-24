@@ -521,11 +521,11 @@ const TWO_OWNER_BALANCING_AMOUNT: u64 = 800;
 /// one written twice, and the successor's declared input-blinder sum is
 /// the stand-in group's sum of the two.
 pub(super) fn valid_two_owner_with_spent_program(
-    program: Vec<u8>,
+    program: &[u8],
 ) -> crate::live_materialize::MaterializedConfidentialCandidate {
     materialize(
-        &two_owner_intent(program.clone()),
-        &two_owner_view(&program),
+        &two_owner_intent(program.to_owned()),
+        &two_owner_view(program),
         &StubMaterializer::default(),
         &StubChecker::default(),
     )
