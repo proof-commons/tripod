@@ -61,6 +61,15 @@ dependence: `inputs_emptied` is expected to differ from `both_grown`,
 which is what makes the term hazardous for any OTHER signer that works
 from witnessless bytes.
 
+# One probe rides along
+
+The selected profile refuses the single-output dimension, and a refusal
+ought to be a claim with content rather than caution. The last row asks
+the wallet for that hash type over the explicit row's own bytes and
+records what the target does. It is recorded, never asserted: the
+expectation above does not depend on it, because this arc never reaches
+that branch.
+
 Stdout is the JSON record. Stderr is this script's own diagnostics. The
 adapter code it imports writes to neither: it writes to the files under
 the directory announced on stderr when the run starts.
@@ -132,6 +141,7 @@ def attempt(adapter, node, wallet, label, outpoint, value, destinations, blind):
     )
     record = {
         "row": label,
+        "unsigned_transaction": unsigned,
         "unsigned_outputs": output_representations(node, unsigned),
         "blinding_requested": blind,
     }
@@ -148,6 +158,41 @@ def attempt(adapter, node, wallet, label, outpoint, value, destinations, blind):
     record["target_allowed"] = verdict[0].get("allowed")
     record["target_reject_reason"] = verdict[0].get("reject-reason")
     record["signed_transaction"] = signed["hex"]
+    return record
+
+
+def probe_single_output(adapter, node, wallet, unsigned, outputs):
+    """What the target does when asked for the refused single-output type.
+
+    The selected owner profile refuses this dimension, so this arc never
+    reaches the branch. The probe exists because a refusal ought to be a
+    claim with content: the branch reads the output-witness vector at
+    the signing input's position after bounds-checking that position
+    against the OUTPUT list only, and the two are not the same length in
+    a transaction that is being signed rather than verified.
+
+    Whatever happens here is recorded rather than asserted. A node that
+    survives says the branch is defended somewhere this reading did not
+    look; a node that does not says the refusal is worth more than
+    caution.
+    """
+    record = {"row": "single_output_probe", "outputs": outputs}
+    try:
+        signed = node.call(
+            "signrawtransactionwithwallet", unsigned, "[]", "SINGLE", wallet=wallet
+        )
+        record["wallet_reported_complete"] = signed.get("complete")
+        record["wallet_errors"] = signed.get("errors")
+        record["signed_transaction"] = signed["hex"]
+        record["client_refused"] = False
+    except adapter.AdapterError as error:
+        record["client_refused"] = True
+        record["client_refusal"] = str(error)
+        record["signed_transaction"] = None
+    try:
+        record["node_still_answers"] = node.call("getblockcount") is not None
+    except adapter.AdapterError:
+        record["node_still_answers"] = False
     return record
 
 
@@ -267,6 +312,7 @@ def main(argv):
     adapter.STREAMS = adapter.DiagnosticStreams(typed_handle, child_handle)
 
     wallet = "sighash-w1-issuance-rangeproof"
+    single = None
     node = adapter.DisposableNode(
         arguments.elementsd, arguments.elements_cli, "elementsregtest",
         arguments.boot_timeout, enable_wallet=True,
@@ -315,6 +361,18 @@ def main(argv):
                     COIN_SATOSHIS, [one, two], blind=True),
         ]
         genesis = node.call("getblockhash", "0")
+        # Last, because it is the row that may leave nothing behind it
+        # to ask. The refused dimension is probed on the explicit row's
+        # own unsigned bytes, so the only difference from that row is
+        # the requested hash type.
+        single = probe_single_output(
+            adapter, node, wallet, rows[0]["unsigned_transaction"],
+            len(rows[0]["unsigned_outputs"]),
+        )
+        note(
+            "single_output_probe          refused=%s node_alive=%s"
+            % (single.get("client_refused"), single.get("node_still_answers"))
+        )
     finally:
         node.stop()
 
@@ -348,6 +406,7 @@ def main(argv):
             "genesis_id": genesis,
             "spent_object": spent,
             "rows": rows,
+            "refused_dimension_probe": single,
             "verdict": {
                 "input_side_term_is_length_dependent": explicit[
                     "input_side_term_is_length_dependent"
