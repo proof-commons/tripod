@@ -91,7 +91,8 @@ use target_elements_conformance::protocol::{
     TargetConfidentialFundingSubject, TargetFundingSubject, TargetSubmissionSubject,
 };
 use transaction::bytes::{
-    AssetField, AssetId, COMMITMENT_BYTES, InputWitness, Outpoint, TargetTransaction, ValueField,
+    AssetField, AssetId, COMMITMENT_BYTES, InputWitness, Outpoint, TargetTransaction, Txid,
+    ValueField,
 };
 use transaction::live_census::{
     AnnexDisposition, IssuanceDisposition, LiveDeployment, OWNER_CODESEPARATOR_POSITION,
@@ -109,8 +110,8 @@ use transaction::live_materialize::{
 use transaction::live_message::{WitnessVectorTreatment, candidate_owner_message};
 use transaction::live_taproot::LiveCurveCapability;
 use transaction::taproot::{
-    CONTROL_BASE_BYTES, Digest32, TAPROOT_LEAF_MASK, TAPROOT_WITNESS_VERSION, leaf_hash,
-    witness_program_script,
+    CONTROL_BASE_BYTES, Digest32, TAPROOT_LEAF_MASK, TAPROOT_PROGRAM_BYTES,
+    TAPROOT_WITNESS_VERSION, leaf_hash, witness_program_script,
 };
 
 use crate::confidential_materializer::{
@@ -1916,6 +1917,186 @@ pub fn render_proof_bearing_observation(record: &ProofBearingObservationRecord) 
     lines.join("\n") + "\n"
 }
 
+// --- The run of record -------------------------------------------------
+
+/// The issued asset the run of record was funded against.
+const RECORDED_ASSET: &str = "d74fc8d4d85f8251aa653f5404ea646f56d34b8f506a98279ce2926d05ca93fb";
+
+/// The digest the predecessor fixture was registered under, on the run
+/// of record.
+const RECORDED_PREDECESSOR_DIGEST: &str =
+    "00da5ef7aaef159237ef5479b419abeee6307e913cc4e244f3226c64c5489262";
+
+/// How many range-proof bytes each output-witness entry carried.
+///
+/// The single figure that separates this lane from the explicit one,
+/// where every entry is an empty surjection proof and an empty range
+/// proof — two bytes in total. Four thousand one hundred and
+/// seventy-four bytes of it are in the message the owner signed, and
+/// none of them is recoverable from the witnessless serialization at any
+/// length.
+const RECORDED_RANGEPROOF_BYTES: usize = 4174;
+
+/// The identity the target computed over the bytes it accepted.
+const RECORDED_ACCEPTED_TXID: &str =
+    "a176394a67fa839058b4efbba53f59af47899dab718a85251a1106f496671d86";
+
+/// The witness identity the target reported for it.
+const RECORDED_WITNESS_TXID: &str =
+    "2ddc8694242459a9e65d60616f9c4133f8eacf10332ef008319004bf85241c5e";
+
+/// The height the target confirmed it at.
+const RECORDED_BLOCK_HEIGHT: u32 = 6;
+
+/// The message the accepted authorization was taken over.
+const RECORDED_ACCEPTED_MESSAGE: &str =
+    "c7931addeeefa3e4ac4b67c9ee5cb5ab65f6de9409007e2415e8c749c61bd27f";
+
+/// The signature as it stood in the target's own copy.
+const RECORDED_SIGNATURE: &str = "582cc46a31e0111a7894a702d976741fb16711500bdcd719dcc16e211e89e39c\
+ebcdbb8675319b48b2e04fae3ca4fbcaa4030aa618f8d2b6084a6f45ba9b7408";
+
+/// The node's own words for every refused control.
+///
+/// All three drew the same sentence, which is the result rather than a
+/// simplification: each control moved a different term of the message
+/// and the target's answer to a message it did not form is one answer.
+const RECORDED_REFUSAL_DETAIL: &str =
+    "mandatory-script-verify-flag-failed (Invalid Schnorr signature)";
+
+/// The messages each submitted case's signatures were taken over.
+///
+/// Four distinct digests, in case order. They are committed because
+/// their DISTINCTNESS is what gives the three refusals content: a run in
+/// which two of them had coincided would have offered one control twice
+/// and reported it as two.
+const RECORDED_MESSAGES: [(ProofBearingCase, &str); 4] = [
+    (
+        ProofBearingCase::ProofBearingVectorEmptied,
+        "16a454854658413c97c281b1f20c84cead7ee08cdf06ed0e0a8b19bb0de47c4d",
+    ),
+    (
+        ProofBearingCase::PreimageOnlySigner,
+        "94c5ed3bc5734102a6fa6949d54355dcced4763af838892ccf38868cbe8ed042",
+    ),
+    (
+        ProofBearingCase::AnotherProofBearingCandidate,
+        "7f56f606a9678dab6158e913778cbe8c6612d9aaab8b4fe5052f46ecd075f7a4",
+    ),
+    (ProofBearingCase::SelectedProfile, RECORDED_ACCEPTED_MESSAGE),
+];
+
+/// The proof-bearing observation this wave produced, committed.
+///
+/// # Why a committed record and not only a report file
+///
+/// The Wave-4 audit of the explicit lane found the gap: that ceremony
+/// wrote its transcript to a path an operator names and committed
+/// nothing, so the evidence a later reader is asked to rely on lived
+/// outside the tree and could not be diffed, cited, or checked by any
+/// test. The evidence lane's own doctrine already admits the repair —
+/// the live-transfer lane commits [`crate::live_native::observed_run_of_record`]
+/// as a function returning one run's transcript — so this follows that
+/// pattern rather than inventing one.
+///
+/// # What it deliberately omits
+///
+/// The outpoints. They name a chain that was created and destroyed by
+/// the run, and a record carrying them would look like something a later
+/// run could resume from. The transaction identity is kept, because it
+/// is the identity the TARGET computed over the bytes it accepted and it
+/// is what a report cites; it resumes nothing.
+///
+/// # What it is not
+///
+/// It is not evidence by being here. A committed transcript is a
+/// transcription of one run against one destroyed chain, and re-running
+/// the ceremony is what produces another. Nothing in this function
+/// establishes anything, and the test below asserts its shape rather
+/// than its truth.
+#[must_use]
+pub fn observed_proof_bearing_run_of_record() -> ProofBearingObservationRecord {
+    let commitment = || ObservedConfidentialCoin {
+        // The outpoints are absent by the paragraph above, and the
+        // record carries a placeholder rather than a real one so that a
+        // reader cannot mistake it for a coin.
+        outpoint: Outpoint::new(Txid::from_internal([0_u8; 32]), 0)
+            .unwrap_or_else(|_| unreachable!("index zero is in range")),
+        asset: AssetField::Explicit(AssetId::from_internal([0_u8; 32])),
+        value: ValueField::Commitment([0_u8; COMMITMENT_BYTES]),
+        program: vec![0_u8; TAPROOT_PROGRAM_BYTES + 2],
+        rangeproof_bytes: RECORDED_RANGEPROOF_BYTES,
+        matches_expectation: true,
+    };
+
+    let observation = |case: ProofBearingCase| ProofBearingObservation {
+        case,
+        layer: if matches!(case, ProofBearingCase::SelectedProfile) {
+            ObservedOutcomeLayer::Accepted
+        } else {
+            ObservedOutcomeLayer::ScriptPathRejection
+        },
+        detail: if matches!(case, ProofBearingCase::SelectedProfile) {
+            None
+        } else {
+            Some(RECORDED_REFUSAL_DETAIL.to_owned())
+        },
+        accepted_txid: if matches!(case, ProofBearingCase::SelectedProfile) {
+            Some(RECORDED_ACCEPTED_TXID.to_owned())
+        } else {
+            None
+        },
+        submitted_bytes: RECORDED_SUBMITTED_BYTES,
+    };
+
+    ProofBearingObservationRecord {
+        issued_asset: Some(RECORDED_ASSET.to_owned()),
+        predecessor_digest: recorded_digest(RECORDED_PREDECESSOR_DIGEST),
+        coins: vec![commitment(), commitment()],
+        output_witness_vector_length: Some(2),
+        output_witness_proof_bytes: vec![RECORDED_RANGEPROOF_BYTES, RECORDED_RANGEPROOF_BYTES],
+        observations: ProofBearingCase::ALL
+            .iter()
+            .copied()
+            .map(observation)
+            .collect(),
+        construction_refusals: Vec::new(),
+        reverification: Some(ProofBearingReverification {
+            accepted_txid: RECORDED_ACCEPTED_TXID.to_owned(),
+            witness_txid: RECORDED_WITNESS_TXID.to_owned(),
+            block_height: RECORDED_BLOCK_HEIGHT,
+            readback_matches_submission: true,
+            recomputed_message: recorded_digest(RECORDED_ACCEPTED_MESSAGE).unwrap_or([0_u8; 32]),
+            signature_from_readback: recorded_bytes(RECORDED_SIGNATURE),
+            verified: Ok(()),
+            verifies_against_emptied_vector_message: false,
+        }),
+        candidate_messages: RECORDED_MESSAGES
+            .iter()
+            .filter_map(|(case, digest)| recorded_digest(digest).map(|digest| (*case, digest)))
+            .collect(),
+        refusal: None,
+    }
+}
+
+/// How many bytes each case handed the node, on the run of record.
+///
+/// The same figure for every case, which is the point: the SUBMITTED
+/// candidate is one candidate and only the message its signatures were
+/// taken over varies, so a refusal is attributable to the term that
+/// moved rather than to a different transaction.
+const RECORDED_SUBMITTED_BYTES: usize = 8993;
+
+/// One recorded digest, from the order this workspace prints them in.
+fn recorded_digest(text: &str) -> Option<Digest32> {
+    <[u8; 32]>::try_from(recorded_bytes(text).as_slice()).ok()
+}
+
+/// One recorded byte string.
+fn recorded_bytes(text: &str) -> Vec<u8> {
+    decode_hex(text).unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1996,6 +2177,64 @@ mod tests {
         assert!(rendered.contains("evidences_the_other_guides_materialization false"));
         assert!(rendered.contains("evidences_the_other_guides_blinding false"));
         assert!(rendered.contains("evidences_the_receipt_covenant false"));
+    }
+
+    #[test]
+    fn the_run_of_record_carries_a_proof_bearing_acceptance_and_three_refusals() {
+        // The committed transcript's shape, asserted rather than its
+        // truth: what a test can check here is that the record says what
+        // a run of this ceremony says, in the places a later reader will
+        // cite. Re-running the ceremony is what produces another run.
+        let record = observed_proof_bearing_run_of_record();
+
+        assert_eq!(record.observations().len(), ProofBearingCase::ALL.len());
+        let accepted: Vec<_> = record
+            .observations()
+            .iter()
+            .filter(|observation| matches!(observation.layer(), ObservedOutcomeLayer::Accepted))
+            .map(ProofBearingObservation::case)
+            .collect();
+        assert_eq!(accepted, vec![ProofBearingCase::SelectedProfile]);
+
+        // The vector was at its real proof-bearing length and every
+        // entry carried a proof. On the explicit lane the same figure is
+        // two bytes for the whole entry.
+        assert_eq!(record.output_witness_vector_length(), Some(2));
+        assert_eq!(
+            record.output_witness_proof_bytes(),
+            [RECORDED_RANGEPROOF_BYTES, RECORDED_RANGEPROOF_BYTES],
+        );
+
+        // The four messages are four, which is what gives the three
+        // refusals content.
+        let messages = record.candidate_messages();
+        assert_eq!(messages.len(), ProofBearingCase::ALL.len());
+        let distinct: std::collections::BTreeSet<_> = messages.values().collect();
+        assert_eq!(distinct.len(), ProofBearingCase::ALL.len());
+
+        // The two origins met, and the accepted witness does not verify
+        // against the emptied-vector candidate.
+        let check = record.reverification().expect("the run accepted a case");
+        assert!(check.verified().is_ok());
+        assert!(check.readback_matches_submission());
+        assert!(!check.verifies_against_emptied_vector_message());
+        assert_eq!(
+            check.recomputed_message().as_slice(),
+            recorded_bytes(RECORDED_ACCEPTED_MESSAGE).as_slice(),
+        );
+        assert_eq!(check.signature_from_readback().len(), 64);
+    }
+
+    #[test]
+    fn the_run_of_record_carries_no_outpoint_a_later_run_could_resume_from() {
+        // The omission stated as a check. The chain was destroyed when
+        // the run ended, and a record whose coins named live outpoints
+        // would read as something resumable.
+        let record = observed_proof_bearing_run_of_record();
+
+        for coin in record.coins() {
+            assert_eq!(coin.outpoint().txid().internal(), &[0_u8; 32]);
+        }
     }
 
     #[test]
