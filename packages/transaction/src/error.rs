@@ -312,9 +312,45 @@ pub enum TransactionRefusal {
     IssuanceProofRefused,
     /// The bytes carry a surjection proof, which is outside the
     /// candidate.
+    ///
+    /// Unconditional, and that is the form-conditional answer rather
+    /// than an exception to it: the one confidential form this
+    /// workspace constructs pairs a committed value with an explicit
+    /// asset, which is the unblinded-generator case the target requires
+    /// the surjection field to be empty for. A byte string carrying one
+    /// is a blinded-asset form nothing here builds.
     SurjectionProofRefused,
-    /// The bytes carry a range proof, which is outside the candidate.
+    /// The bytes carry a range proof for an output whose value form
+    /// forbids one.
+    ///
+    /// An explicit value commits to nothing, so a proof about its range
+    /// proves nothing, and the target's own validation never reaches a
+    /// check that would consume one.
     RangeProofRefused,
+    /// The bytes omit a range proof for an output whose value form
+    /// requires one.
+    ///
+    /// The other half of the same rule, and the half a decoder written
+    /// for explicit outputs alone had no occasion to own. A committed
+    /// value with no range proof is refused by the target as invalid,
+    /// so a decoder that returned one would be handing back a
+    /// transaction no chain accepts and calling it well formed.
+    RangeProofRequired {
+        /// Which output position omitted it.
+        output: usize,
+    },
+    /// A transaction was assembled with an output-witness census that
+    /// is not one entry per output.
+    ///
+    /// The input side's reason exactly: the encoding is positional, so
+    /// a shorter or longer vector binds a proof to the wrong output and
+    /// still produces well-formed bytes.
+    OutputWitnessCensusMismatch {
+        /// How many outputs.
+        outputs: usize,
+        /// How many output witnesses.
+        output_witnesses: usize,
+    },
     /// A transaction was assembled with no input.
     EmptyInputCensus,
     /// A transaction was assembled with no output.

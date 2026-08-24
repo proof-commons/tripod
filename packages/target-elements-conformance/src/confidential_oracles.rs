@@ -217,3 +217,134 @@ impl RangeproofVerifier for ReferenceRangeproofVerifier {
             .is_ok()
     }
 }
+
+// --- Reference proof material -------------------------------------------
+
+/// The lower bound every proof over a spendable program proves.
+///
+/// One, and not zero, and this is a consensus rule rather than a
+/// preference: the target refuses a rangeproof whose proven minimum is
+/// zero unless the program it pays is unspendable, and its own blinding
+/// path chooses zero exactly when the program is unspendable. Every
+/// program these fixtures pay is spendable, so the bound is one.
+pub const REFERENCE_RANGEPROOF_MINIMUM_VALUE: u64 = 1;
+
+/// The exponent every proof here carries.
+pub const REFERENCE_RANGEPROOF_EXPONENT: i32 = 0;
+
+/// The minimum bits every proof here carries.
+///
+/// Fifty-two, the widest range the semantic amount domain needs and the
+/// shape the target's own blinding path defaults to. Neither this nor the
+/// exponent is a consensus requirement; both are fixed so that two runs
+/// of the same fixture produce the same bytes.
+pub const REFERENCE_RANGEPROOF_MINIMUM_BITS: u8 = 52;
+
+/// The reference implementation's confidential field material.
+///
+/// # Claim class, before anything uses it
+///
+/// Every value here comes through the bindings the target itself vendors.
+/// A commitment, nonce field, or range proof produced by it is
+/// CONFORMANCE evidence and is not independent evidence, and no report
+/// may describe it as independent. That is exactly why it is admissible
+/// as the CONSTRUCTION's own materializer and inadmissible as the
+/// independent check on that construction: a check built on the same
+/// library as the thing it checks is one opinion wearing two hats.
+///
+/// # It implements no trait declared elsewhere
+///
+/// These are free functions rather than an implementation of the
+/// construction package's materializer trait, and that is a dependency
+/// fact and not a style choice: this package may not depend on the
+/// construction package in its library graph. The adapter that turns
+/// these into that trait lives in the one library that can see both.
+#[derive(Debug)]
+pub struct ReferenceProofMaterial {
+    context: Secp256k1<secp256k1_zkp::All>,
+}
+
+impl Default for ReferenceProofMaterial {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ReferenceProofMaterial {
+    /// One materializer, with its own context.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            context: Secp256k1::new(),
+        }
+    }
+
+    /// The value commitment one opening produces.
+    ///
+    /// `None` for a blinder the library will not read as a scalar, which
+    /// is an ordinary construction refusal rather than an error: there is
+    /// one deterministic answer and a failure to produce it ends the
+    /// ceremony.
+    #[must_use]
+    pub fn value_commitment(
+        &self,
+        explicit_asset: &[u8; IDENTIFIER_BYTES],
+        semantic_amount: u64,
+        value_blinder: &[u8; IDENTIFIER_BYTES],
+    ) -> Option<[u8; 33]> {
+        let generator = Generator::new_unblinded(&self.context, Tag::from(*explicit_asset));
+        let blinding = secp256k1_zkp::Tweak::from_inner(*value_blinder).ok()?;
+        let commitment =
+            PedersenCommitment::new(&self.context, semantic_amount, blinding, generator);
+        Some(commitment.serialize())
+    }
+
+    /// The nonce field one derived nonce input produces.
+    ///
+    /// The public key of the derived scalar, serialized compressed, which
+    /// is the shape the target reads a nonce commitment in.
+    #[must_use]
+    pub fn nonce_commitment(&self, nonce_input: &[u8; IDENTIFIER_BYTES]) -> Option<[u8; 33]> {
+        let secret = secp256k1_zkp::SecretKey::from_slice(nonce_input).ok()?;
+        Some(secp256k1_zkp::PublicKey::from_secret_key(&self.context, &secret).serialize())
+    }
+
+    /// One range proof, bound to this output's commitment, the unblinded
+    /// asset generator, and the output program.
+    ///
+    /// The program travels as the proof's additional commitment, which is
+    /// what the target's own validation reads it as, and it is what stops
+    /// a proof built for one output verifying against another.
+    ///
+    /// A refusal adds no randomness and triggers no retry.
+    #[must_use]
+    pub fn range_proof(
+        &self,
+        explicit_asset: &[u8; IDENTIFIER_BYTES],
+        semantic_amount: u64,
+        value_blinder: &[u8; IDENTIFIER_BYTES],
+        seed: &[u8; IDENTIFIER_BYTES],
+        value_commitment: &[u8; 33],
+        output_program: &[u8],
+    ) -> Option<Vec<u8>> {
+        let generator = Generator::new_unblinded(&self.context, Tag::from(*explicit_asset));
+        let commitment = PedersenCommitment::from_slice(value_commitment).ok()?;
+        let blinding = secp256k1_zkp::Tweak::from_inner(*value_blinder).ok()?;
+        let nonce = secp256k1_zkp::SecretKey::from_slice(seed).ok()?;
+        let proof = RangeProof::new(
+            &self.context,
+            REFERENCE_RANGEPROOF_MINIMUM_VALUE,
+            commitment,
+            semantic_amount,
+            blinding,
+            &[],
+            output_program,
+            nonce,
+            REFERENCE_RANGEPROOF_EXPONENT,
+            REFERENCE_RANGEPROOF_MINIMUM_BITS,
+            generator,
+        )
+        .ok()?;
+        Some(proof.serialize())
+    }
+}

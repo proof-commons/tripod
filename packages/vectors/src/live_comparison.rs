@@ -337,6 +337,13 @@ fn compare_plan(
     // missing. The gap the run itself recorded is the sharper answer; a
     // form the run did submit and got no weight for was stopped by the
     // thing that stops every transfer.
+    //
+    // The gap's word is scoped to this pipeline's own funding step and is
+    // not a claim that no confidential predecessor exists anywhere: one
+    // has been funded, mined, and read back through the confidential arm.
+    // What this run recorded is that ITS private form was never
+    // submitted, which is the fact the standing rests on and which the
+    // narrower funding arm does not change.
     let blocker = transcript
         .gap_for(plan)
         .map_or(LiveInfrastructureBlocker::OwnerSighashNotComputable, |_| {

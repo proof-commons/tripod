@@ -16,9 +16,10 @@ use crate::commitment_oracle::commitment::read_scalar;
 use crate::commitment_oracle::curve::group_order;
 use crate::confidential_fixture::{
     ConfidentialFixtureManifest, ConfidentialFixtureOutput, ConfidentialFixtureRegistry,
-    DerivationRole, FixtureDerivationProfile, FixtureDiagnosticKind, FixtureOpenings,
-    FixtureOutputRole, HandleGrammarDefect, MAX_PARITY_COUNTER, PublicDisposableTestMaterial,
-    RegistrationRefusal, check_handle_grammar, predecessor_handle,
+    DerivationRole, DerivationSource, FixtureDerivationProfile, FixtureDerivationRefusal,
+    FixtureDiagnosticKind, FixtureOpenings, FixtureOutputRole, HandleGrammarDefect,
+    MAX_PARITY_COUNTER, PublicDisposableTestMaterial, RegistrationRefusal, TaggedHashDerivation,
+    check_handle_grammar, predecessor_handle,
 };
 use crate::confidential_funding::FixtureResolutionRefused;
 use crate::protocol::{
@@ -330,5 +331,151 @@ fn the_material_class_is_the_one_the_construction_side_states() {
     assert!(
         transaction::live_private::PrivateConstructionNonClaim::ALL
             .contains(&transaction::live_private::PrivateConstructionNonClaim::NoOpeningIsSecret)
+    );
+}
+
+// --- The derivation source seam ----------------------------------------
+//
+// Six of `FixtureDerivationRefusal`'s variants are refusals about derived
+// material, and until the seam existed no fixture could reach one: the
+// tagged hash answers what it answers. The tests below reach two of them
+// and record honestly which the seam does not reach and why.
+
+/// A source answering one constant to every preimage.
+///
+/// The whole point of a constant is that it makes the two outputs' value
+/// blinders equal, which is a relation no hash would produce and which
+/// the balance arithmetic has a definite opinion about.
+struct ConstantDerivation([u8; 32]);
+
+impl DerivationSource for ConstantDerivation {
+    fn derive(&self, _tag: &str, _preimage: &[u8]) -> [u8; 32] {
+        self.0
+    }
+}
+
+/// The scalar the constant source answers with.
+///
+/// Far below the group order and plainly nonzero, so that it is admitted
+/// as a scalar and the refusal under test is the one about the SOLVE
+/// rather than one about the derivation.
+const CONSTANT_SCALAR: [u8; 32] = [0x01; 32];
+
+/// The seam changed nothing the deterministic source produces.
+///
+/// The first thing to check about a seam, and the one a reviewer would
+/// ask for: the public entry point and the deterministic source produce
+/// the same registration, digest included. A digest is what every
+/// recorded funding record binds to, so a seam that moved one would have
+/// invalidated every fixture already published.
+#[test]
+fn the_seam_leaves_the_deterministic_registration_byte_identical() {
+    let mut through_public = ConfidentialFixtureRegistry::new();
+    through_public
+        .register(manifest())
+        .expect("the predecessor manifest registers");
+
+    let mut through_seam = ConfidentialFixtureRegistry::new();
+    through_seam
+        .register_with_source(manifest(), &TaggedHashDerivation)
+        .expect("and registers the same way through the seam");
+
+    let public = through_public.freeze();
+    let seam = through_seam.freeze();
+    let handle = predecessor_handle();
+
+    assert_eq!(
+        public.registered_digest(&handle),
+        seam.registered_digest(&handle),
+        "the deterministic source is exactly what the public entry point selects",
+    );
+}
+
+/// A degenerate solved balancing scalar is a typed refusal.
+///
+/// The solve is the input blinder sum minus the other outputs' sum. A
+/// source answering one constant makes the only other output's blinder
+/// that constant, so declaring the same constant as the input blinder sum
+/// makes the solve land on zero exactly. The rule under test is that it
+/// is refused rather than nudged: there is no arm here that adds one and
+/// tries again.
+#[test]
+fn a_degenerate_balancing_scalar_is_a_typed_refusal() {
+    let mut manifest = manifest();
+    manifest.input_blinder_sum = CONSTANT_SCALAR;
+
+    let refusal = ConfidentialFixtureRegistry::new()
+        .register_with_source(manifest, &ConstantDerivation(CONSTANT_SCALAR))
+        .expect_err("a solved zero is not a blinder");
+
+    assert_eq!(
+        refusal,
+        RegistrationRefusal::Derivation {
+            refusal: FixtureDerivationRefusal::DegenerateBalancingScalar,
+        },
+        "the refusal names the solve and not the search",
+    );
+}
+
+/// A scalar search that never admits is a typed refusal, and it names its
+/// role and its attempts.
+///
+/// A source answering zero derives nothing admissible at any counter, so
+/// the bounded upward search runs to its bound and refuses. What the test
+/// pins is the count: the search moves from zero to the bound inclusive
+/// without wrapping and without skipping, which is `MAX_SCALAR_COUNTER`
+/// plus one attempts and not one more.
+#[test]
+fn a_scalar_search_that_never_admits_refuses_at_its_bound() {
+    let refusal = ConfidentialFixtureRegistry::new()
+        .register_with_source(manifest(), &ConstantDerivation([0_u8; 32]))
+        .expect_err("zero is not an admitted scalar at any counter");
+
+    assert_eq!(
+        refusal,
+        RegistrationRefusal::Derivation {
+            refusal: FixtureDerivationRefusal::ScalarSearchExhausted {
+                role: DerivationRole::ValueBlinder,
+                attempts: 256,
+            },
+        },
+        "the first role searched, and one attempt per admitted counter",
+    );
+}
+
+/// The seam does not reach an identity value commitment, and the reason
+/// is a property of the arithmetic rather than a gap in the seam.
+///
+/// A commitment is the semantic amount on the asset generator plus the
+/// blinder on the base point, and it lands on the group identity only
+/// where the blinder is the discrete logarithm of the negated amount
+/// term. Choosing bytes does not choose that: a source picks a blinder,
+/// and no blinder anyone can write down is that one.
+///
+/// Reaching `IdentityValueCommitment` from here would therefore need a
+/// seam on the commitment arithmetic itself, and that arithmetic is the
+/// workspace's independence claim — a test that could replace it would
+/// have made the claim checkable by substitution. So the refusal is
+/// reached at the layer that genuinely injects its cryptography instead,
+/// where the materializer's `InvalidCommitment` covers it, and this test
+/// records that the constant source does NOT reach it rather than leaving
+/// a reader to wonder whether anyone tried.
+#[test]
+fn the_constant_source_reaches_a_solve_refusal_and_not_an_identity_one() {
+    let mut manifest = manifest();
+    manifest.input_blinder_sum = CONSTANT_SCALAR;
+
+    let refusal = ConfidentialFixtureRegistry::new()
+        .register_with_source(manifest, &ConstantDerivation(CONSTANT_SCALAR))
+        .expect_err("the constant source refuses");
+
+    assert!(
+        !matches!(
+            refusal,
+            RegistrationRefusal::Derivation {
+                refusal: FixtureDerivationRefusal::IdentityValueCommitment { .. },
+            },
+        ),
+        "no choice of derived bytes puts a commitment on the identity",
     );
 }

@@ -163,6 +163,44 @@ impl SelectedConstructionModel {
         })
     }
 
+    /// The same model, recorded for a construction that genuinely
+    /// produces and checks a range proof.
+    ///
+    /// # What is retired, and what is not
+    ///
+    /// Exactly one non-claim moves:
+    /// [`PrivateConstructionNonClaim::NoRangeProofIsProducedOrChecked`]
+    /// is dropped, because the transaction-wide materializer generates a
+    /// nonempty range proof per confidential value, bound to that value's
+    /// commitment, the unblinded asset generator, and the output program,
+    /// and refuses an empty or cross-bound one. A non-claim that is no
+    /// longer true is not a safe thing to keep carrying: a report
+    /// carrying it would understate what its own evidence establishes,
+    /// and a reader deciding what to check next would be sent to the
+    /// wrong place.
+    ///
+    /// The other three stay in force here exactly as they stand in
+    /// [`Self::record`], and the retired one stays in force everywhere
+    /// else. Retiring a non-claim by SCOPE is honest; retiring it by wish
+    /// is not, and the way to tell the two apart is that this is a
+    /// separate constructor rather than an edit to the census.
+    ///
+    /// # Errors
+    ///
+    /// [`TransactionRefusal::ConfidentialConstructionModelNotAdmitted`]
+    /// for any model other than
+    /// [`ConfidentialConstructionModel::EXPECTED`], for the same reason
+    /// [`Self::record`] refuses one.
+    pub fn record_proof_bearing(
+        model: ConfidentialConstructionModel,
+    ) -> Result<Self, TransactionRefusal> {
+        let mut recorded = Self::record(model)?;
+        recorded
+            .non_claims
+            .remove(&PrivateConstructionNonClaim::NoRangeProofIsProducedOrChecked);
+        Ok(recorded)
+    }
+
     /// The recorded model.
     #[must_use]
     pub const fn model(&self) -> ConfidentialConstructionModel {

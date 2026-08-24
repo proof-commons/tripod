@@ -10,6 +10,7 @@ vectors_source_files = files(
   'src/error.rs',
   'src/first_party.rs',
   'src/fixture.rs',
+  'src/confidential_materializer.rs',
   'src/confidential_predecessor.rs',
   'src/lib.rs',
   'src/live_capability.rs',
@@ -49,6 +50,7 @@ vectors_doc_files = files('README.md')
 # declared here.
 vectors_excluded_files = files(
   'tests/compact_ash_operation.rs',
+  'tests/ctf_materializer.rs',
   'tests/guide13_live_native.rs',
   'tests/guide13_live_resources.rs',
   'tests/guide13_live_transfer.rs',

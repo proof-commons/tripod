@@ -69,9 +69,36 @@ name = "vectors"
 # and the Wave-11 lane verified it by building both, rather than
 # assuming it.
 #
-# What crosses the edge is the executor boundary and nothing else:
-# `TargetOperationPlanner`, `OperationStep`, the operation subjects and
-# responses, and the observed-layer vocabulary. No expectation crosses.
+# What crosses the edge is TWO boundaries and nothing else, and the
+# second is named here rather than added by a use statement nobody
+# recorded.
+#
+# The first is the executor boundary: `TargetOperationPlanner`,
+# `OperationStep`, the operation subjects and responses, and the
+# observed-layer vocabulary. No expectation crosses.
+#
+# The second, as of the transaction-wide confidential materializer, is
+# the COMMITMENT ORACLE: `commitment_oracle`'s first-party bignum
+# arithmetic and the balancing solve beside it, adapted here into the
+# independent-check trait the construction package declares. This is not
+# the forbidden direction, and the reason is exact. The forbidden
+# direction is obtaining an expectation from the component that will
+# produce the observation. The oracle produces no observation: it
+# computes curve arithmetic over published constants, it never touches a
+# node, and it is the same arithmetic whether a chain exists or not. The
+# component that produces observations is the executor, across the first
+# boundary, and nothing about the oracle reaches it.
+#
+# The reference bindings cross this edge too, as the CONSTRUCTION's own
+# proof material, and their claim class is fixed by that: conformance to
+# the target's own implementation, never independence. They may
+# implement the materializer and may not implement the independent
+# check, and the construction package refuses a check that declares
+# their origin rather than leaving the rule to a reviewer.
+#
+# A wave that widened this boundary silently, by adding a use statement
+# and no note here, would have broken the rule even though the code
+# compiled.
 # That is the property §16.2's forbidden direction is about — this
 # package must never obtain, from the component that will produce an
 # observation, the expectation that observation is judged against — and

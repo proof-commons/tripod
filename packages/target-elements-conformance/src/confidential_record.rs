@@ -167,6 +167,78 @@ impl ReadBackCommitment {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ReadBackWidthRefused;
 
+/// One commitment the construction's own proof materializer produced.
+///
+/// The third of the three origin-tagged types, and the one that completes
+/// the rule. With only a recomputation and a readback in the vocabulary,
+/// a construction's own answer had no type of its own and could be passed
+/// wherever a recomputation was wanted; with this one, every comparison
+/// below takes two DIFFERENT types and a comparison of a value with
+/// itself is not a rule anybody has to remember but an expression nobody
+/// can write.
+///
+/// The construction's own output is never its own expectation. That is
+/// the whole reason the type exists rather than the bytes travelling
+/// bare.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MaterializedCommitment([u8; COMMITMENT_BYTES]);
+
+impl MaterializedCommitment {
+    /// The commitment a proof materializer's adapter produced.
+    ///
+    /// Named for its origin rather than for its bytes, because the
+    /// adapter that owns this origin lives in the one library that can
+    /// see both this package and the construction package, and a
+    /// constructor reachable from there is a constructor reachable at
+    /// all. What the naming buys is that a call site claiming this origin
+    /// says so in the reader's own words.
+    #[must_use]
+    pub const fn from_materializer(bytes: [u8; COMMITMENT_BYTES]) -> Self {
+        Self(bytes)
+    }
+
+    /// The serialized commitment.
+    #[must_use]
+    pub const fn bytes(&self) -> &[u8; COMMITMENT_BYTES] {
+        &self.0
+    }
+
+    /// The commitment's parity prefix.
+    #[must_use]
+    pub const fn prefix(&self) -> u8 {
+        self.0[0]
+    }
+}
+
+/// Whether the construction's answer and the independent recomputation
+/// are the same bytes.
+///
+/// Two different types, so this cannot be handed two materialized values
+/// or two recomputations. The claim it supports is independence, because
+/// the recomputation's only admitted origin is the first-party bignum
+/// arithmetic.
+#[must_use]
+pub fn materialized_agrees_with_recomputation(
+    materialized: &MaterializedCommitment,
+    recomputed: &RecomputedCommitment,
+) -> bool {
+    materialized.bytes() == recomputed.bytes()
+}
+
+/// Whether the construction's answer and the target's observation are the
+/// same bytes.
+///
+/// Also two different types, and a different claim: this one says the
+/// chain holds what was built, which is a statement about a submission
+/// and not about arithmetic.
+#[must_use]
+pub fn materialized_agrees_with_readback(
+    materialized: &MaterializedCommitment,
+    observed: &ReadBackCommitment,
+) -> bool {
+    materialized.bytes() == observed.bytes()
+}
+
 /// Who performed one independent commitment comparison.
 ///
 /// One member, and it is the first-party bignum oracle. The reference

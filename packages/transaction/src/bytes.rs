@@ -572,6 +572,50 @@ impl TargetOutput {
     }
 }
 
+/// Read one output's witness, refusing a proof its value form forbids
+/// and a proof its value form requires and did not get.
+///
+/// The condition is the output's own value field and not a decoder
+/// parameter, because the target's condition is the output's own value
+/// field: `VerifyConfidentialPair` reaches the rangeproof check exactly
+/// where the value is a commitment, and a byte string says which of the
+/// two it carries. A decoder that took the form as an argument would be
+/// able to be told the wrong one.
+///
+/// The two refusals are asymmetric, and deliberately so. The surjection
+/// field is refused unconditionally, because the only confidential form
+/// this workspace constructs pairs a committed value with an EXPLICIT
+/// asset — the unblinded generator case, where the target requires the
+/// surjection field empty — and the blinded-asset form that would carry
+/// one is not a form any code here builds. Refusing it is therefore
+/// already the form-conditional answer for every form reachable at this
+/// tree, and widening it to admit a surjection proof would be admitting
+/// a form nothing can construct.
+fn output_witness(
+    reader: &mut Reader<'_>,
+    index: usize,
+    value: ValueField,
+) -> Result<OutputWitness, TransactionRefusal> {
+    let surjection_proof = reader.length_prefixed()?;
+    if !surjection_proof.is_empty() {
+        return Err(TransactionRefusal::SurjectionProofRefused);
+    }
+    let range_proof = reader.length_prefixed()?;
+    match value {
+        ValueField::Explicit(_) => {
+            if !range_proof.is_empty() {
+                return Err(TransactionRefusal::RangeProofRefused);
+            }
+        }
+        ValueField::Commitment(_) => {
+            if range_proof.is_empty() {
+                return Err(TransactionRefusal::RangeProofRequired { output: index });
+            }
+        }
+    }
+    Ok(OutputWitness::new(surjection_proof, range_proof))
+}
+
 /// Read the 32 bytes following a commitment's prefix.
 fn commitment(
     prefix: u8,
@@ -645,17 +689,95 @@ impl InputWitness {
     }
 }
 
+/// One output's witness: a surjection proof and a range proof.
+///
+/// A transaction-level vector in the target's serialization rather than
+/// a field of [`TargetOutput`], and modelled that way here for the same
+/// reason: `CTxWitness` holds `vtxoutwit` beside `vtxinwit`, the
+/// target's own signer hashes the vector at whatever length it happens
+/// to have, and putting the proofs inside the output would misplace the
+/// thing whose *length* is the hazard.
+///
+/// Both members are empty for every explicit-form output, and an
+/// all-empty witness serializes to the two empty length prefixes the
+/// encoder used to write unconditionally — so an explicit candidate's
+/// bytes are unchanged by this type existing.
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct OutputWitness {
+    surjection_proof: Vec<u8>,
+    range_proof: Vec<u8>,
+}
+
+impl OutputWitness {
+    /// The witness carrying these two proofs.
+    #[must_use]
+    pub const fn new(surjection_proof: Vec<u8>, range_proof: Vec<u8>) -> Self {
+        Self {
+            surjection_proof,
+            range_proof,
+        }
+    }
+
+    /// The witness carrying a range proof and an empty surjection
+    /// proof, which is the hybrid form's whole shape.
+    ///
+    /// Named rather than left to [`Self::new`] with an empty vector,
+    /// because the empty surjection field is a target requirement for a
+    /// confidential value paired with an explicit asset and not a
+    /// convenience: `VerifyRangeProof` reaches the value only where the
+    /// asset generator is unblinded.
+    #[must_use]
+    pub const fn range_proof_only(range_proof: Vec<u8>) -> Self {
+        Self {
+            surjection_proof: Vec::new(),
+            range_proof,
+        }
+    }
+
+    /// The witness carrying nothing, which is every explicit output's.
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self {
+            surjection_proof: Vec::new(),
+            range_proof: Vec::new(),
+        }
+    }
+
+    /// The surjection proof, empty for every form this crate builds.
+    #[must_use]
+    pub fn surjection_proof(&self) -> &[u8] {
+        &self.surjection_proof
+    }
+
+    /// The range proof, nonempty for a confidential value.
+    #[must_use]
+    pub fn range_proof(&self) -> &[u8] {
+        &self.range_proof
+    }
+
+    /// Whether this witness carries nothing.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.surjection_proof.is_empty() && self.range_proof.is_empty()
+    }
+
+    fn encode(&self, bytes: &mut Vec<u8>) {
+        bytes.extend_from_slice(&compact_size(self.surjection_proof.len() as u64));
+        bytes.extend_from_slice(&self.surjection_proof);
+        bytes.extend_from_slice(&compact_size(self.range_proof.len() as u64));
+        bytes.extend_from_slice(&self.range_proof);
+    }
+}
+
 // --- The transaction --------------------------------------------------
 
-/// One explicit-field candidate target transaction.
+/// One candidate target transaction.
 ///
-/// The witness census is positional and total: there is one
-/// [`InputWitness`] per input and no separate output witness, because
-/// every output this crate builds is unblinded and an output witness
-/// with no proof in it serializes to two empty length prefixes. Both
-/// are written when the transaction carries any witness at all, which
-/// is what the target's own serializer does after resizing the two
-/// witness vectors to the input and output counts.
+/// The witness census is positional and total on both sides: one
+/// [`InputWitness`] per input and one [`OutputWitness`] per output.
+/// Both are written when the transaction carries any witness at all,
+/// which is what the target's own serializer does after resizing the
+/// two witness vectors to the input and output counts.
 ///
 /// That resizing is exactly what the target's own wallet signer misses
 /// `(´[PLAN-obs:upstream:eg-019]´)`: it precomputes a taproot digest
@@ -670,6 +792,7 @@ pub struct TargetTransaction {
     outputs: Vec<TargetOutput>,
     lock_time: u32,
     witnesses: Vec<InputWitness>,
+    output_witnesses: Vec<OutputWitness>,
 }
 
 impl TargetTransaction {
@@ -698,10 +821,57 @@ impl TargetTransaction {
         if outputs.is_empty() {
             return Err(TransactionRefusal::EmptyOutputCensus);
         }
+        let output_witnesses = vec![OutputWitness::empty(); outputs.len()];
+        Self::with_output_witnesses(
+            version,
+            inputs,
+            outputs,
+            lock_time,
+            witnesses,
+            output_witnesses,
+        )
+    }
+
+    /// The transaction carrying these roles and these output witnesses.
+    ///
+    /// Separate from [`Self::new`] rather than a sixth parameter on it,
+    /// because every caller outside the confidential lane builds
+    /// explicit outputs whose witnesses are empty, and a constructor
+    /// that made all of them pass an all-empty vector would have made
+    /// the proof-free case say something about proofs.
+    ///
+    /// # Errors
+    ///
+    /// Everything [`Self::new`] refuses, plus
+    /// [`TransactionRefusal::OutputWitnessCensusMismatch`] when the
+    /// output-witness census is not one entry per output. The reason is
+    /// the input side's exactly: the encoding is positional, so a
+    /// shorter or longer vector would bind a proof to the wrong output
+    /// and still produce well-formed bytes.
+    pub fn with_output_witnesses(
+        version: u32,
+        inputs: Vec<TargetInput>,
+        outputs: Vec<TargetOutput>,
+        lock_time: u32,
+        witnesses: Vec<InputWitness>,
+        output_witnesses: Vec<OutputWitness>,
+    ) -> Result<Self, TransactionRefusal> {
+        if inputs.is_empty() {
+            return Err(TransactionRefusal::EmptyInputCensus);
+        }
+        if outputs.is_empty() {
+            return Err(TransactionRefusal::EmptyOutputCensus);
+        }
         if witnesses.len() != inputs.len() {
             return Err(TransactionRefusal::WitnessCensusMismatch {
                 inputs: inputs.len(),
                 witnesses: witnesses.len(),
+            });
+        }
+        if output_witnesses.len() != outputs.len() {
+            return Err(TransactionRefusal::OutputWitnessCensusMismatch {
+                outputs: outputs.len(),
+                output_witnesses: output_witnesses.len(),
             });
         }
         Ok(Self {
@@ -710,6 +880,7 @@ impl TargetTransaction {
             outputs,
             lock_time,
             witnesses,
+            output_witnesses,
         })
     }
 
@@ -743,6 +914,12 @@ impl TargetTransaction {
         &self.witnesses
     }
 
+    /// Every output's witness, in position order.
+    #[must_use]
+    pub fn output_witnesses(&self) -> &[OutputWitness] {
+        &self.output_witnesses
+    }
+
     /// Whether any witness carries anything.
     ///
     /// Provenance: `CTxWitness::IsNull`, which the target's serializer
@@ -751,6 +928,14 @@ impl TargetTransaction {
     /// *without* the witness section; writing an all-empty section is
     /// an error the target asserts on rather than tolerates.
     ///
+    /// `IsNull` is a conjunction over BOTH vectors, and so is this. A
+    /// confidential funding transaction may legitimately carry null
+    /// input witnesses — nothing has signed it yet — and range proofs
+    /// its outputs are invalid without; answering `false` there would
+    /// serialize it without the section that carries its proofs, which
+    /// is a different transaction rather than a smaller encoding of the
+    /// same one.
+    ///
     /// The section's absence is not free downstream: an issuance in a
     /// witnessless transaction is refused as a balance failure
     /// `(´[PLAN-obs:upstream:eg-021]´)`, so what this predicate answers
@@ -758,6 +943,10 @@ impl TargetTransaction {
     #[must_use]
     pub fn has_witness(&self) -> bool {
         self.witnesses.iter().any(|witness| !witness.is_null())
+            || self
+                .output_witnesses
+                .iter()
+                .any(|witness| !witness.is_empty())
     }
 
     /// The exact target bytes, witness included.
@@ -797,13 +986,30 @@ impl TargetTransaction {
             for witness in &self.witnesses {
                 witness.encode(&mut bytes);
             }
-            for _ in &self.outputs {
-                // One output witness per output, each carrying an empty
-                // surjection proof and an empty range proof, because
-                // every output here is unblinded.
-                bytes.push(NULL_PREFIX);
-                bytes.push(NULL_PREFIX);
-            }
+            bytes.extend_from_slice(&self.output_witness_bytes());
+        }
+        bytes
+    }
+
+    /// The serialized output-witness vector alone, one entry per
+    /// output.
+    ///
+    /// The region the target's `SIGHASH_ALL` hashes and the witnessless
+    /// serialization omits. Exposed because the private lane's
+    /// protected preimage has to contain it: a signer over bytes that
+    /// omit it binds to the empty-vector case the recorded diagnosis
+    /// `(´[PLAN-obs:upstream:eg-019]´)` names, and the resulting
+    /// signature is complete and invalid.
+    ///
+    /// Not itself a transaction encoding, and it is not offered as one.
+    /// It is one contiguous region of [`Self::encode`], extracted so
+    /// that a preimage can be assembled from named regions rather than
+    /// by slicing an offset out of a byte string.
+    #[must_use]
+    pub fn output_witness_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for witness in &self.output_witnesses {
+            witness.encode(&mut bytes);
         }
         bytes
     }
@@ -852,29 +1058,36 @@ impl TargetTransaction {
         let lock_time = reader.u32_le()?;
 
         let mut witnesses = Vec::with_capacity(inputs.len());
+        let mut output_witnesses = Vec::with_capacity(outputs.len());
         if with_witness {
             for _ in &inputs {
                 witnesses.push(InputWitness::decode(&mut reader)?);
             }
-            for _ in &outputs {
-                if !reader.length_prefixed()?.is_empty() {
-                    return Err(TransactionRefusal::SurjectionProofRefused);
-                }
-                if !reader.length_prefixed()?.is_empty() {
-                    return Err(TransactionRefusal::RangeProofRefused);
-                }
+            for (index, output) in outputs.iter().enumerate() {
+                output_witnesses.push(output_witness(&mut reader, index, output.value())?);
             }
         } else {
             witnesses.resize(inputs.len(), InputWitness::default());
+            output_witnesses.resize(outputs.len(), OutputWitness::empty());
         }
 
-        // Every output witness read above was required to be empty, so
-        // an all-empty section is one whose input witnesses are all
-        // null. The encoder writes such a transaction without a section
-        // at all, and a decoder that accepted the flagged spelling
-        // would hold a value that re-encodes to other bytes than it
-        // came from.
-        if with_witness && witnesses.iter().all(InputWitness::is_null) {
+        // The flag stands over a section, and the section has to carry
+        // something. `CTxWitness::IsNull` is a conjunction over both
+        // vectors, so the flagged spelling is superfluous exactly when
+        // neither vector carries anything — which is what the encoder
+        // writes without a section at all. A decoder that accepted the
+        // flagged spelling there would hold a value that re-encodes to
+        // other bytes than it came from.
+        //
+        // The condition is a widening rather than a weakening: an
+        // all-null input-witness section used to be superfluous
+        // unconditionally, and now is superfluous unless some output
+        // witness carries a proof. Every byte string the old condition
+        // admitted, the new one admits.
+        if with_witness
+            && witnesses.iter().all(InputWitness::is_null)
+            && output_witnesses.iter().all(OutputWitness::is_empty)
+        {
             return Err(TransactionRefusal::SuperfluousWitnessRecord);
         }
 
@@ -882,7 +1095,14 @@ impl TargetTransaction {
             return Err(TransactionRefusal::TrailingTargetBytes { at: reader.at });
         }
 
-        Self::new(version, inputs, outputs, lock_time, witnesses)
+        Self::with_output_witnesses(
+            version,
+            inputs,
+            outputs,
+            lock_time,
+            witnesses,
+            output_witnesses,
+        )
     }
 
     /// The serialized bytes of the witness section alone.
