@@ -36,7 +36,7 @@ fn the_disposition_is_recomputed_and_stops_on_one_named_dimension() {
     assert_eq!(
         disposition,
         OwnerProfileDisposition::ReviewIncomplete {
-            unreviewed: [SighashDimension::Issuance].into_iter().collect(),
+            unreviewed: std::iter::once(SighashDimension::Issuance).collect(),
         },
     );
 }
