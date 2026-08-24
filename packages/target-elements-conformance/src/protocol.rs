@@ -88,6 +88,40 @@ use crate::prototype::{PrototypeCaseId, PrototypeConstruction, PrototypeExecutio
 
 /// The protocol revision this harness speaks.
 ///
+/// # Revision 5 states the confidential funding arm
+///
+/// The confidential funding step adds an untagged [`OperationSubject`]
+/// variant and two response members that are NOT defaulted, so a
+/// revision-4 executor can neither parse a revision-5 request nor
+/// produce a revision-5 answer. That is a breaking change and it is
+/// numbered as one.
+///
+/// The two members are undefaulted deliberately, and the contrast with
+/// the sponsor members immediately below them is the whole argument. The
+/// sponsor witness and its binding were defaulted precisely so that
+/// adding them was not a revision: nothing an executor already wrote
+/// changed shape. [`NativeOperationResponse::confidential_funded_outputs`]
+/// and [`NativeOperationResponse::mined_readback`] are not defaulted
+/// precisely so that adding them IS one, because the alternative is a
+/// revision-4 executor answering a confidential request with silence in
+/// exactly the members the answer lives in.
+///
+/// A revision-4 executor is therefore refused at the handshake rather
+/// than translated for, on the same ground revision 3 was refused for
+/// revision 4. There is ONE binary and one schema constant: no
+/// compatibility entry point, no dual-vocabulary serializer, and no
+/// per-record revision negotiation. "Old executors receive only their
+/// old explicit schema" is honoured by handing a revision-4 executor
+/// nothing at all, which is a stronger guarantee than translating for it
+/// would be, and "never translate a confidential request backward" is
+/// honoured vacuously, because no translation exists to be misused.
+///
+/// The two implementations bump together in one change — this harness
+/// and the reviewed native adapter — for the recorded reason that a
+/// revision only one side moved to reproduces the two-sided
+/// disagreement the revision mechanism exists to end
+/// `(´[PLAN-rule:guide12-exec:protocol-revision]´)`.
+///
 /// # Revision 4 makes both sides describe the same exchange
 ///
 /// Revision 3 was declared by two implementations that did not agree on
@@ -149,7 +183,7 @@ use crate::prototype::{PrototypeCaseId, PrototypeConstruction, PrototypeExecutio
 /// Revision 2 itself added the environment observation, the separated
 /// executor provenance roles, the bounded-record contract, and strict
 /// framing, and was refused for revision 1 on the same ground.
-pub const NATIVE_PROTOCOL_SCHEMA: u32 = 4;
+pub const NATIVE_PROTOCOL_SCHEMA: u32 = 5;
 
 /// Which part of the exchange the harness was in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -524,6 +558,37 @@ pub enum ExecutorCapability {
     /// authorization was sound would be reading a fact about the
     /// candidate as a fact about a party the run never had.
     TestSponsorAuthorization,
+    /// It materializes and mines outputs carrying an explicit protocol
+    /// asset and a confidential value, deterministically, under a
+    /// selected fixture, and reads the mined bytes back.
+    ///
+    /// # Why this is not the funding capability with a flag
+    ///
+    /// [`Self::TestFundingCeremony`] is a claim about creating coins at
+    /// a stated program with a stated explicit amount, which every
+    /// wallet-bearing node can do. This is a claim about producing an
+    /// exact hybrid representation — explicit asset, committed value,
+    /// mandatory rangeproof, empty surjection proof — from a public
+    /// fixture, with no wallet choice anywhere in it. No reviewed stock
+    /// interface produces that form, so an executor that can fund
+    /// perfectly well may be unable to answer a single confidential
+    /// step, and folding the two claims together would send it one it
+    /// could only fail `(´[PLAN-rule:guide10:schema-migration]´)`.
+    ///
+    /// # What advertising it does not settle
+    ///
+    /// Which profiles the executor supports. The capability says the
+    /// interface exists; [`ConfidentialFundingAdvertisement`] says which
+    /// representation, custody, materializer, and reproducibility
+    /// contract it will accept, and the two are held consistent at the
+    /// handshake — one without the other is refused rather than read as
+    /// the more convenient half.
+    ///
+    /// Advertising constrains the ceremony plan's selection and never
+    /// makes it. The plan selects the contract it will be judged under;
+    /// an unsupported selection is a typed refusal before construction
+    /// rather than a silent downgrade after it.
+    ConfidentialValueTestFunding,
 }
 
 impl ExecutorHandshake {
@@ -683,6 +748,14 @@ pub struct ExecutorHandshake {
     pub supported_leaf_versions: BTreeSet<u8>,
     /// What it says its interface offers.
     pub capabilities: BTreeSet<ExecutorCapability>,
+
+    /// Which confidential funding selections it will accept, where it
+    /// offers confidential funding at all.
+    ///
+    /// Absent by default and held consistent with the capability: the
+    /// record without the capability, and the capability without the
+    /// record, are both refused at the handshake.
+    pub confidential_funding: Option<ConfidentialFundingAdvertisement>,
 }
 
 /// What the executor says it actually ran on.
@@ -1788,6 +1861,17 @@ pub enum OperationStepKind {
     FundSponsor,
     /// Authorize one input of an already-finalized transaction.
     SignSponsor,
+    /// Materialize and mine outputs carrying an explicit protocol asset
+    /// and a confidential value, under a named public fixture.
+    ///
+    /// Distinct from [`Self::Fund`] because the two ask for different
+    /// objects and carry different subjects. A funding step states a
+    /// program, a count, and an amount; this one states destinations and
+    /// a binding, carries no amount at all, and asks for a
+    /// representation the caller could not obtain by asking a wallet
+    /// nicely. Reading one as the other would attach an explicit
+    /// observation to a confidential obligation.
+    FundConfidential,
 }
 
 impl std::fmt::Display for OperationStepKind {
@@ -1806,6 +1890,7 @@ impl std::fmt::Display for OperationStepKind {
             Self::Submit => "submit",
             Self::FundSponsor => "fund_sponsor",
             Self::SignSponsor => "sign_sponsor",
+            Self::FundConfidential => "fund_confidential",
         };
         formatter.write_str(text)
     }
@@ -1958,6 +2043,273 @@ pub struct TargetSponsorSigningSubject {
     pub sighash_profile: WireSighashProfile,
 }
 
+/// Which representation a confidential funding step asks for.
+///
+/// # One variant, and why it is an enum
+///
+/// The one member names the exact hybrid tuple the target admits: an
+/// explicit protocol asset paired with a confidential value, which uses
+/// the unblinded asset generator, requires a rangeproof, and requires
+/// the surjection-proof field to be empty. A second representation is an
+/// added variant a peer must advertise before it can be selected, rather
+/// than a silent change of what the existing word meant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum FundingRepresentationProfile {
+    /// An explicit protocol asset carrying a confidential value.
+    ExplicitAssetConfidentialValue,
+}
+
+/// Which custody model a confidential funding step runs under.
+///
+/// One variant, and it is the accepted model: one party holds every
+/// opening, every opening is a published test fixture, and the material
+/// is disposable and destroyed with the chain. The three nonrecommended
+/// models are closed as directions and are not variants here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum FundingCustodyProfile {
+    /// Deterministic central public fixtures.
+    CentralPublicFixtures,
+}
+
+/// Which materializer a confidential funding step selects.
+///
+/// One variant, naming this guide's own deterministic recipe. It is
+/// candidate vocabulary: the version in the spelling is the recipe's
+/// generation and is not a release identity, an architecture operation,
+/// or a schema identity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum FundingMaterializerProfile {
+    /// The deterministic fixture materializer of this guide.
+    GuideCtfDeterministicV1,
+}
+
+/// The wire encoding of one [`ReproducibilityContract`].
+///
+/// # A serialization adapter, not a second vocabulary
+///
+/// The contract itself lives in `target-elements`, which serializes
+/// nothing and depends on nothing, so the encoding has to live on this
+/// side. What it must not become is a second spelling: the functions
+/// below read and write the contract's OWN code rather than restating
+/// the variant names, so there is exactly one word per contract in the
+/// workspace and a contract added there needs no edit here to keep the
+/// two in step `(´[PLAN-rule:guide12-exec:typed-source]´)`.
+mod reproducibility_contract_wire {
+    use serde::{Deserialize, Deserializer, Serializer, de::Error as _};
+    use target_elements::ReproducibilityContract;
+
+    /// Writes the contract's own code.
+    ///
+    /// The reference is the serialization framework's calling
+    /// convention and not a choice: a `with` module is handed the field
+    /// by reference whatever its width.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    pub fn serialize<S>(
+        contract: &ReproducibilityContract,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(contract.code())
+    }
+
+    /// Reads one code, refusing any this vocabulary does not hold.
+    ///
+    /// No default and no fallback: an unknown contract is unknown, and
+    /// answering it with the reference contract would move a run onto
+    /// guarantees nobody selected.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<ReproducibilityContract, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let code = String::deserialize(deserializer)?;
+        ReproducibilityContract::from_code(&code)
+            .ok_or_else(|| D::Error::custom(format!("unknown reproducibility contract: {code}")))
+    }
+}
+
+/// The wire encoding of a set of [`ReproducibilityContract`] values.
+///
+/// The same adapter as [`reproducibility_contract_wire`], for the
+/// advertised set. It reads and writes through that module rather than
+/// beside it, so the two cannot disagree about a word.
+mod reproducibility_contract_set_wire {
+    use std::collections::BTreeSet;
+
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use target_elements::ReproducibilityContract;
+
+    /// One member, encoded as its code.
+    #[derive(Serialize, Deserialize)]
+    struct Member(#[serde(with = "super::reproducibility_contract_wire")] ReproducibilityContract);
+
+    /// Writes the advertised contracts, in the set's own order.
+    pub fn serialize<S>(
+        contracts: &BTreeSet<ReproducibilityContract>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let members: Vec<Member> = contracts.iter().copied().map(Member).collect();
+        members.serialize(serializer)
+    }
+
+    /// Reads the advertised contracts, refusing any unknown code.
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<BTreeSet<ReproducibilityContract>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let members = Vec::<Member>::deserialize(deserializer)?;
+        Ok(members.into_iter().map(|member| member.0).collect())
+    }
+}
+
+/// The public identity of one confidential fixture case.
+///
+/// A public deterministic test identity, and not an adapter-local secret
+/// handle. Its spelling encodes no amount, no unit, no asset, no
+/// opening, no derivation value, no digest fragment, no retry result,
+/// and no transaction identity; it is not a capability, not a secret,
+/// and not an architecture or release identity.
+///
+/// The grammar the registry enforces belongs to the registry, and lookup
+/// failure is a construction refusal rather than a target verdict. What
+/// travels here is the spelling.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ConfidentialFixtureHandle(String);
+
+impl ConfidentialFixtureHandle {
+    /// States one handle.
+    #[must_use]
+    pub const fn new(spelling: String) -> Self {
+        Self(spelling)
+    }
+
+    /// The handle's spelling.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for ConfidentialFixtureHandle {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// The binding digest of one confidential fixture case.
+///
+/// A tagged hash over a framed transcript, computed by the registry. It
+/// detects drift; it is not an identity anything is minted for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct ConfidentialFixtureDigest([u8; 32]);
+
+impl ConfidentialFixtureDigest {
+    /// States one digest.
+    #[must_use]
+    pub const fn new(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    /// The digest's bytes.
+    #[must_use]
+    pub const fn bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+/// The four profiles one confidential funding ceremony runs under.
+///
+/// Each is closed and each is selected before lookup. The reproducibility
+/// contract is required, never optional, and never inferred: absence,
+/// disagreement between two carriers of it, and comparison across it are
+/// all refusals, and none of them is a downgrade.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConfidentialFundingProfiles {
+    /// The exact representation asked for.
+    pub representation: FundingRepresentationProfile,
+    /// Who holds the openings.
+    pub custody: FundingCustodyProfile,
+    /// Which materializer produces the outputs.
+    pub materializer: FundingMaterializerProfile,
+    /// Which reproducibility contract the run is judged under.
+    #[serde(with = "reproducibility_contract_wire")]
+    pub reproducibility_contract: target_elements::ReproducibilityContract,
+}
+
+/// What the request binds itself to.
+///
+/// The canonical request is a public-fixture handle and a digest, and it
+/// carries the profiles. There is no member an amount could be written
+/// into, which is the point rather than an omission.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConfidentialFundingBinding {
+    /// Which registered case this is.
+    pub fixture_handle: ConfidentialFixtureHandle,
+    /// The digest that case was registered under.
+    pub fixture_digest: ConfidentialFixtureDigest,
+    /// The profiles the ceremony selected.
+    pub profiles: ConfidentialFundingProfiles,
+}
+
+/// One destination a confidential funding step pays.
+///
+/// The program and nothing else. What each destination HOLDS is a fact
+/// of the registered fixture rather than of the request, and the
+/// destination count is this list's length.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConfidentialFundingDestination {
+    /// The witness program this destination pays to.
+    pub output_program: Vec<u8>,
+}
+
+/// What a confidential funding step is asked to create.
+///
+/// # Destinations and a binding, and no amount anywhere
+///
+/// The request carries no amount, no count, no opening, no blinder, and
+/// no nonce or proof input. That is the canonical-request ruling
+/// expressed as a type rather than as a discipline: the amounts live in
+/// the registered fixture the handle names, and the digest is what
+/// detects the fixture drifting out from under the request.
+///
+/// # Why the asset question is spelled exactly as the explicit arm
+/// spells it
+///
+/// [`Self::issue_asset`] and [`Self::asset`] keep the existing arm's
+/// meaning and its invariant — the asset is absent exactly when the step
+/// issues it — because the protocol asset question is identical in both
+/// arms, and a second spelling of it would be a second chance to get it
+/// wrong.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TargetConfidentialFundingSubject {
+    /// Whether this step must issue the disposable test asset.
+    pub issue_asset: bool,
+    /// The explicit protocol asset the outputs must carry, where an
+    /// earlier step issued one.
+    pub asset: Option<String>,
+    /// Where the created outputs pay, in fixed order.
+    pub destinations: Vec<ConfidentialFundingDestination>,
+    /// What the request binds itself to.
+    pub binding: ConfidentialFundingBinding,
+}
+
 /// The subject of one operation step.
 ///
 /// Untagged because the kind is already stated in the case identity, and
@@ -1980,6 +2332,27 @@ pub enum OperationSubject {
     SponsorFunding(Box<TargetSponsorFundingSubject>),
     /// A sponsor-signing step's subject.
     SponsorSigning(Box<TargetSponsorSigningSubject>),
+    /// A confidential funding step's subject.
+    ///
+    /// # Why the distinct arm is a fifth variant here
+    ///
+    /// [`TargetFundingSubject`] is not re-shaped into a tagged union.
+    /// It is already a variant of an untagged enum, and that enum is
+    /// untagged for a stated reason: the kind is in the case identity,
+    /// and a second discriminator could disagree with the first. Making
+    /// the funding subject itself a tagged union would put a second
+    /// discriminator INSIDE a variant of an untagged enum, which is
+    /// precisely the shape this file refuses. So the confidential arm is
+    /// added exactly as the sponsor steps were — its own subject, its
+    /// own step kind, its own capability.
+    ///
+    /// Untagged deserialization stays unambiguous because the member
+    /// sets are disjoint under `deny_unknown_fields`: this subject
+    /// carries `destinations` and `binding`, which no other subject
+    /// declares, and declares no `output_program`, `outputs`, or
+    /// `amount_per_output`. That disjointness is a correctness property
+    /// and has its own test rather than a comment.
+    ConfidentialFunding(Box<TargetConfidentialFundingSubject>),
 }
 
 impl OperationSubject {
@@ -1995,6 +2368,7 @@ impl OperationSubject {
             Self::Submission(_) => OperationStepKind::Submit,
             Self::SponsorFunding(_) => OperationStepKind::FundSponsor,
             Self::SponsorSigning(_) => OperationStepKind::SignSponsor,
+            Self::ConfidentialFunding(_) => OperationStepKind::FundConfidential,
         }
     }
 
@@ -2018,6 +2392,12 @@ impl OperationSubject {
             Self::SponsorFunding(_) | Self::SponsorSigning(_) => {
                 ExecutorCapability::TestSponsorAuthorization
             }
+            // Its own capability rather than the funding one, because
+            // the two claims come apart: no reviewed stock interface
+            // produces the hybrid representation, so an executor that
+            // funds perfectly well may be unable to answer a single
+            // confidential step.
+            Self::ConfidentialFunding(_) => ExecutorCapability::ConfidentialValueTestFunding,
         }
     }
 }
@@ -2060,6 +2440,117 @@ pub struct FundedOutput {
     pub script: String,
 }
 
+/// One output a confidential funding step created.
+///
+/// # Two spellings are inherited rather than improved on
+///
+/// The script comes back as a string in the target's own rendering and
+/// the asset comes back as a string in the target's own spelling, exactly
+/// as [`FundedOutput`] carries them. Byte vectors would have been tidier
+/// in isolation and would have given the two funding arms two different
+/// renderings of one target fact, so that a comparison across arms became
+/// a comparison of two authored spellings
+/// `(´[PLAN-rule:guide12-exec:typed-source]´)`.
+///
+/// # The proof fields are declared in the target's serialization order
+///
+/// Surjection proof first, then rangeproof, so that a reader of this
+/// record and a reader of the raw bytes are reading the same order. For
+/// the hybrid representation the surjection proof is always empty and the
+/// rangeproof is never empty, and both are declared anyway: an absent
+/// field cannot be observed to be empty.
+///
+/// # Why the commitment and the nonce are byte vectors
+///
+/// Both are thirty-three-byte fields and neither is declared as a
+/// thirty-three-byte array, because the serialization framework this
+/// protocol is written in implements no array deserializer past
+/// thirty-two. The width is therefore checked rather than asserted by
+/// the type, and the two typed refusals that check it — an inadmissible
+/// commitment encoding and an inadmissible nonce encoding — are exactly
+/// the refusals the wire vocabulary already names.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConfidentialFundedOutput {
+    /// Where the output is.
+    pub outpoint: WireOutpoint,
+    /// The explicit protocol asset it carries, in the target's own
+    /// spelling.
+    pub explicit_asset: String,
+    /// The serialized value commitment, prefix included.
+    pub value_commitment: Vec<u8>,
+    /// The serialized nonce field, prefix included.
+    pub nonce: Vec<u8>,
+    /// The output's script, as the target reports it.
+    pub script: String,
+    /// Which output-witness entry carries this output's proofs.
+    pub output_witness_index: u32,
+    /// The surjection proof, which the hybrid representation requires to
+    /// be empty.
+    pub surjection_proof: Vec<u8>,
+    /// The rangeproof, which the hybrid representation requires to be
+    /// present.
+    pub rangeproof: Vec<u8>,
+}
+
+/// What the target holds after a confidential funding step was mined.
+///
+/// # Why the raw bytes travel
+///
+/// Because every output fact in a validated record is derived from
+/// decoding them and from an independent target readback, and a request
+/// echo can never stand in for either. The identities here are the
+/// target's own; they are recomputed from these bytes rather than
+/// believed `(´[PLAN-rule:guide12-exec:typed-source]´)`.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MinedFundingReadback {
+    /// The transaction identity the target reports.
+    pub transaction_id: String,
+    /// The witness transaction identity the target reports.
+    pub witness_transaction_id: String,
+    /// The block the transaction was mined into.
+    pub block_hash: String,
+    /// That block's height.
+    pub block_height: u32,
+    /// The raw mined transaction, witnesses included.
+    pub raw_transaction: Vec<u8>,
+}
+
+/// What an executor says it can do with confidential funding.
+///
+/// # Advertisement constrains and never chooses
+///
+/// The ceremony plan selects the profiles and the reproducibility
+/// contract its own report will claim; this record states which
+/// selections the executor will accept, so that an unsupported selection
+/// is refused BEFORE the request is written rather than downgraded after
+/// it. An executor that supported only one contract could otherwise move
+/// a run off the reference contract without anyone choosing to.
+///
+/// # Why it is optional, and why the option cannot disagree with the
+/// capability
+///
+/// It is absent by default, so that an executor which never heard of
+/// confidential funding writes a record this harness reads. What it may
+/// not do is disagree with itself: advertising
+/// [`ExecutorCapability::ConfidentialValueTestFunding`] without this
+/// record, or this record without the capability, is refused at the
+/// handshake rather than resolved in whichever direction is convenient.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConfidentialFundingAdvertisement {
+    /// The representations it will materialize.
+    pub representation_profiles: BTreeSet<FundingRepresentationProfile>,
+    /// The custody models it will run under.
+    pub custody_profiles: BTreeSet<FundingCustodyProfile>,
+    /// The materializers it implements.
+    pub materializer_profiles: BTreeSet<FundingMaterializerProfile>,
+    /// The reproducibility contracts it supports.
+    #[serde(with = "reproducibility_contract_set_wire")]
+    pub reproducibility_contracts: BTreeSet<target_elements::ReproducibilityContract>,
+}
+
 /// What the target did with one operation step.
 ///
 /// # One record for both kinds
@@ -2094,6 +2585,21 @@ pub struct NativeOperationResponse {
     pub issued_asset: Option<String>,
     /// The outputs a funding step created, in creation order.
     pub funded_outputs: Vec<FundedOutput>,
+    /// The outputs a confidential funding step created, in creation
+    /// order.
+    ///
+    /// NOT defaulted, and the contrast with the sponsor members below is
+    /// the argument: those were defaulted so that adding them was not a
+    /// revision, and this one is not defaulted so that adding it IS one.
+    /// A revision-4 executor answering a confidential request with
+    /// silence in this member is exactly what the revision exists to
+    /// prevent.
+    pub confidential_funded_outputs: Vec<ConfidentialFundedOutput>,
+    /// What the target held after the confidential funding transaction
+    /// was mined.
+    ///
+    /// Not defaulted either, for the same reason.
+    pub mined_readback: Option<MinedFundingReadback>,
     /// The identity the target gave a submitted transaction, where it
     /// took one.
     pub accepted_txid: Option<String>,
@@ -2165,11 +2671,21 @@ impl NativeOperationResponse {
     /// others under any outcome:
     ///
     /// ```text
-    /// fund           issued_asset, funded_outputs
-    /// submit         accepted_txid
-    /// fund_sponsor   funded_outputs
-    /// sign_sponsor   sponsor_witness, signature_bound_to
+    /// fund               issued_asset, funded_outputs
+    /// submit             accepted_txid
+    /// fund_sponsor       funded_outputs
+    /// sign_sponsor       sponsor_witness, signature_bound_to
+    /// fund_confidential  issued_asset, confidential_funded_outputs,
+    ///                    mined_readback
     /// ```
+    ///
+    /// The confidential arm owns two members no other kind may carry,
+    /// and it may not carry the explicit arm's outputs. That second half
+    /// is what makes an explicit answer to a confidential request a
+    /// contradiction in the record's own shape rather than a
+    /// disappointment discovered later: a step asked for a committed
+    /// value and answered with scalars has answered a question it was
+    /// not asked.
     ///
     /// An owned member is present exactly when the target accepted the
     /// step — required of an acceptance, refused of a rejection — with
@@ -2198,12 +2714,15 @@ impl NativeOperationResponse {
         let creates_coins = !self.funded_outputs.is_empty();
         let submits = self.accepted_txid.is_some();
         let authorizes = !self.sponsor_witness.is_empty() || self.signature_bound_to.is_some();
+        let creates_confidential_coins =
+            !self.confidential_funded_outputs.is_empty() || self.mined_readback.is_some();
 
         if !self.observed_layer.is_target_verdict() {
             return if issues
                 || creates_coins
                 || submits
                 || authorizes
+                || creates_confidential_coins
                 || self.resources.observes_interpreter()
             {
                 Err(ResponseShapeDefect::InfrastructureResponseCarriesObservation)
@@ -2216,6 +2735,14 @@ impl NativeOperationResponse {
         // Any other kind reporting one would be attaching an
         // authorization to an obligation that never requested it.
         if !matches!(self.case.operation, OperationStepKind::SignSponsor) && authorizes {
+            return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
+        }
+
+        // A confidential observation belongs to the one step that asks
+        // for one, on exactly the reasoning above.
+        if !matches!(self.case.operation, OperationStepKind::FundConfidential)
+            && creates_confidential_coins
+        {
             return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
         }
 
@@ -2275,6 +2802,26 @@ impl NativeOperationResponse {
                         return Err(ResponseShapeDefect::AcceptedOperationOmitsObservation);
                     }
                 } else if authorizes {
+                    return Err(ResponseShapeDefect::RefusedOperationCarriesObservation);
+                }
+            }
+            // A confidential funding step creates coins and may issue
+            // the asset, exactly as the explicit arm may; what it may
+            // not do is answer with the explicit arm's outputs, and what
+            // it owes on acceptance is both halves of its own
+            // observation. Outputs with no mined readback are proofs
+            // nobody can check against a chain, and a readback with no
+            // outputs is a block identity with nothing in it.
+            OperationStepKind::FundConfidential => {
+                if submits || creates_coins {
+                    return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
+                }
+                if accepted {
+                    if self.confidential_funded_outputs.is_empty() || self.mined_readback.is_none()
+                    {
+                        return Err(ResponseShapeDefect::AcceptedOperationOmitsObservation);
+                    }
+                } else if issues || creates_confidential_coins {
                     return Err(ResponseShapeDefect::RefusedOperationCarriesObservation);
                 }
             }

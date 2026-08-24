@@ -1,8 +1,20 @@
 # `tripod-target-elements`
 
 `target_elements` states the typed, reviewed Elements tapscript target
-compatibility contract. It states target facts only, and nothing about the attestation contract
-.
+compatibility contract. It states target facts, and one explicitly named
+candidate ceremony vocabulary carried beside them.
+
+That widening is deliberate and is named here rather than left to be discovered.
+Every module except `ceremony` states something a reviewed reading of the target
+established. `ceremony::ReproducibilityContract` states no target fact at all: it
+is first-party candidate vocabulary, and it lives here because the wire record in
+`target-elements-conformance` and the materializer profiles in `transaction` must
+name the same value, those two packages share no library edge in either
+direction, and this is the only package both already depend on. One enum in each
+package, held equal by a census test, would be two authored spellings of one
+closed vocabulary. Nothing else about the attestation contract is stated here,
+and the crate still serializes nothing: a package that speaks the contract on a
+wire owns its own encoding of it.
 
 The package contract is
 [plans/packages/target-elements.md](../../plans/packages/target-elements.md).

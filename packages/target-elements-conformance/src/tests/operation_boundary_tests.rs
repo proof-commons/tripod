@@ -26,13 +26,14 @@ use crate::executor::{
     PlanRefused, TargetOperationPlanner, run_protocol,
 };
 use crate::protocol::{
-    ExecutorCapability, ExecutorHandshake, FundedOutput, NATIVE_PROTOCOL_SCHEMA,
-    NativeOperationRequest, NativeOperationResponse, NativeResourceObservation,
-    ObservedOutcomeLayer, OperationCaseId, OperationStepKind, OperationSubject,
-    TargetFundingSubject, TargetSubmissionSubject, WireOutpoint,
+    ConfidentialFundedOutput, ExecutorCapability, ExecutorHandshake, FundedOutput,
+    MinedFundingReadback, NATIVE_PROTOCOL_SCHEMA, NativeOperationRequest, NativeOperationResponse,
+    NativeResourceObservation, ObservedOutcomeLayer, OperationCaseId, OperationStepKind,
+    OperationSubject, TargetFundingSubject, TargetSubmissionSubject, WireOutpoint,
 };
 
 use super::support::{
+    TEST_DESTINATION_PROGRAMS, TEST_FIXTURE_HANDLE, confidential_handshake, confidential_subject,
     development_binding, nonmock_handshake, observed_environment, reviewed_target,
 };
 
@@ -74,6 +75,11 @@ fn funding(outputs: u8) -> OperationSubject {
     }))
 }
 
+/// One confidential funding step's subject.
+fn confidential() -> OperationSubject {
+    OperationSubject::ConfidentialFunding(Box::new(confidential_subject()))
+}
+
 /// One submission step's subject.
 fn submission(bytes: Vec<u8>) -> OperationSubject {
     OperationSubject::Submission(Box::new(TargetSubmissionSubject {
@@ -101,6 +107,8 @@ fn funded(step: &str, txid: &str) -> NativeOperationResponse {
             amount_satoshis: 100_000,
             script: "5120aabb".to_owned(),
         }],
+        confidential_funded_outputs: Vec::new(),
+        mined_readback: None,
         accepted_txid: None,
         sponsor_witness: Vec::new(),
         signature_bound_to: None,
@@ -120,7 +128,57 @@ fn submitted(step: &str, txid: &str) -> NativeOperationResponse {
         observed_detail: None,
         issued_asset: None,
         funded_outputs: Vec::new(),
+        confidential_funded_outputs: Vec::new(),
+        mined_readback: None,
         accepted_txid: Some(txid.to_owned()),
+        sponsor_witness: Vec::new(),
+        signature_bound_to: None,
+        resources: NativeResourceObservation::default(),
+    }
+}
+
+/// An accepted confidential funding answer, mined and read back.
+///
+/// The bytes, the commitment, and the proof are arbitrary public
+/// development values. Nothing here was built by anything: these tests
+/// are about which record travels, and the record's own binding to a
+/// chain is held where the binding lives.
+fn confidentially_funded(step: &str, txid: &str) -> NativeOperationResponse {
+    NativeOperationResponse {
+        schema: NATIVE_PROTOCOL_SCHEMA,
+        case: OperationCaseId {
+            operation: OperationStepKind::FundConfidential,
+            step: step.to_owned(),
+        },
+        observed_layer: ObservedOutcomeLayer::Accepted,
+        observed_detail: None,
+        issued_asset: None,
+        funded_outputs: Vec::new(),
+        confidential_funded_outputs: TEST_DESTINATION_PROGRAMS
+            .iter()
+            .enumerate()
+            .map(|(index, _program)| ConfidentialFundedOutput {
+                outpoint: WireOutpoint {
+                    txid: txid.to_owned(),
+                    vout: u32::try_from(index).expect("two outputs fit an index"),
+                },
+                explicit_asset: "aa".repeat(32),
+                value_commitment: vec![0x08; 33],
+                nonce: vec![0x02; 33],
+                script: "5120aabb".to_owned(),
+                output_witness_index: u32::try_from(index).expect("two outputs fit an index"),
+                surjection_proof: Vec::new(),
+                rangeproof: vec![0x33; 64],
+            })
+            .collect(),
+        mined_readback: Some(MinedFundingReadback {
+            transaction_id: txid.to_owned(),
+            witness_transaction_id: "bb".repeat(32),
+            block_hash: "cc".repeat(32),
+            block_height: 7,
+            raw_transaction: vec![0x02, 0x00, 0x00, 0x00],
+        }),
+        accepted_txid: None,
         sponsor_witness: Vec::new(),
         signature_bound_to: None,
         resources: NativeResourceObservation::default(),
@@ -287,7 +345,8 @@ fn a_plan_states_its_second_step_out_of_the_first_answer() {
         ),
         OperationSubject::Funding(_)
         | OperationSubject::SponsorFunding(_)
-        | OperationSubject::SponsorSigning(_) => panic!("the second step is a submission"),
+        | OperationSubject::SponsorSigning(_)
+        | OperationSubject::ConfidentialFunding(_) => panic!("the second step is a submission"),
     }
     assert_eq!(transcript.operation_responses().len(), 2);
     assert_eq!(transcript.operation_requests().len(), 2);
@@ -317,7 +376,8 @@ fn the_transcript_retains_the_exact_subject_of_every_step() {
         OperationSubject::Funding(subject) => assert_eq!(subject.outputs, 3),
         OperationSubject::Submission(_)
         | OperationSubject::SponsorFunding(_)
-        | OperationSubject::SponsorSigning(_) => panic!("the step was a funding step"),
+        | OperationSubject::SponsorSigning(_)
+        | OperationSubject::ConfidentialFunding(_) => panic!("the step was a funding step"),
     }
 }
 
@@ -494,6 +554,8 @@ fn the_adapters_not_yet_implemented_refusal_is_a_declared_record() {
             the funding ceremony and transaction submission are not implemented",
         "issued_asset": serde_json::Value::Null,
         "funded_outputs": [],
+        "confidential_funded_outputs": [],
+        "mined_readback": serde_json::Value::Null,
         "accepted_txid": serde_json::Value::Null,
         "resources": {
             "script_bytes": 0,
@@ -657,3 +719,158 @@ fn the_two_subject_shapes_are_distinguishable_without_a_tag() {
         "the two operation subjects share a member, so the untagged wire form is ambiguous",
     );
 }
+
+#[test]
+fn a_confidential_step_travels_as_its_own_arm_and_comes_back_as_one() {
+    // The whole exchange over the scripted executor: the plan states a
+    // confidential step, the harness writes the confidential subject,
+    // and the answer is read as the confidential arm's answer.
+    let mut planner = ScriptedPlan::new(vec![OperationStep::new("predecessor", confidential())]);
+    let (outcome, sent) = drive(
+        &mut planner,
+        &confidential_handshake(),
+        &[confidentially_funded("predecessor", "aa00")],
+    );
+    let transcript = outcome.expect("the run completes");
+
+    let written = requests_written(&sent);
+    assert_eq!(written.len(), 1, "one request per step");
+    assert_eq!(
+        written[0].case.operation,
+        OperationStepKind::FundConfidential,
+    );
+    match &written[0].subject {
+        OperationSubject::ConfidentialFunding(subject) => {
+            assert_eq!(subject.destinations.len(), 2);
+            assert_eq!(
+                subject.destinations[0].output_program,
+                TEST_DESTINATION_PROGRAMS[0],
+            );
+            // A handle, a digest, and profiles travelled, and there is
+            // no member an amount could have been written into.
+            assert_eq!(subject.binding.fixture_handle.as_str(), TEST_FIXTURE_HANDLE);
+        }
+        OperationSubject::Funding(_)
+        | OperationSubject::Submission(_)
+        | OperationSubject::SponsorFunding(_)
+        | OperationSubject::SponsorSigning(_) => {
+            panic!("the confidential step was written as some other arm")
+        }
+    }
+    assert_eq!(transcript.operation_responses().len(), 1);
+}
+
+#[test]
+fn an_executor_that_materializes_no_hybrid_form_is_refused_that_step_only() {
+    // The per-step gate, for the arm whose capability an ordinary
+    // funding executor does not hold: funding a stated amount at a
+    // stated program says nothing about producing an explicit-asset,
+    // confidential-value output.
+    let mut planner = ScriptedPlan::new(vec![OperationStep::new("predecessor", confidential())]);
+    let (outcome, sent) = drive(&mut planner, &operating_handshake(), &[]);
+    let error = outcome.expect_err("a confidential step is refused");
+    assert!(
+        matches!(
+            error,
+            NativeConformanceError::OperationStepUnsupported(OperationStepKind::FundConfidential)
+        ),
+        "expected a refused confidential step, got {error}",
+    );
+    assert!(
+        requests_written(&sent).is_empty(),
+        "a refused step must not have been sent",
+    );
+
+    // And the same executor answers the arm it did advertise.
+    let mut funding_plan = ScriptedPlan::new(vec![OperationStep::new("ceremony", funding(1))]);
+    let (outcome, _sent) = drive(
+        &mut funding_plan,
+        &operating_handshake(),
+        &[funded("ceremony", "aa00")],
+    );
+    assert!(outcome.is_ok());
+}
+
+#[test]
+fn a_confidential_answer_carrying_the_explicit_arms_outputs_is_refused() {
+    // The explicit fallback, refused by the record's own shape before
+    // any binding: a step that asked for committed values and answered
+    // with scalars answered a question it was not asked.
+    let mut answer = confidentially_funded("predecessor", "aa00");
+    answer.funded_outputs = vec![FundedOutput {
+        outpoint: WireOutpoint {
+            txid: "aa00".to_owned(),
+            vout: 0,
+        },
+        asset: "aa".repeat(32),
+        amount_satoshis: 100_000,
+        script: "5120aabb".to_owned(),
+    }];
+
+    let mut planner = ScriptedPlan::new(vec![OperationStep::new("predecessor", confidential())]);
+    let (outcome, _sent) = drive(&mut planner, &confidential_handshake(), &[answer]);
+    let error = outcome.expect_err("an explicit fallback is refused");
+    assert!(
+        matches!(
+            error,
+            NativeConformanceError::MalformedOperationResponseShape { defect, .. }
+                if defect == crate::protocol::ResponseShapeDefect::OperationResponseMismatchesStep
+        ),
+        "expected a mismatched step, got {error}",
+    );
+}
+
+#[test]
+fn the_adapters_confidential_refusal_is_a_declared_record() {
+    // The Python seam's own answer to a step it reads and does not
+    // perform, in the exact spelling it writes under revision 5.
+    // Written out here rather than derived, because what is checked is
+    // that the two implementations agree on one revision — a value this
+    // side produced would only check this side against itself
+    // `(´[PLAN-rule:guide12-exec:protocol-revision]´)`.
+    //
+    // The two confidential members are present and empty rather than
+    // omitted, which is the half of the revision that would otherwise
+    // fail silently: an adapter that left them out would be answering a
+    // revision-5 exchange with a revision-4 record.
+    let refusal = serde_json::json!({
+        "schema": NATIVE_PROTOCOL_SCHEMA,
+        "case": {"operation": "fund_confidential", "step": "predecessor"},
+        "observed_layer": "executor_infrastructure_failure",
+        "observed_detail": DETAIL,
+        "issued_asset": serde_json::Value::Null,
+        "funded_outputs": [],
+        "confidential_funded_outputs": [],
+        "mined_readback": serde_json::Value::Null,
+        "accepted_txid": serde_json::Value::Null,
+        "sponsor_witness": [],
+        "signature_bound_to": serde_json::Value::Null,
+        "resources": {
+            "script_bytes": 0,
+            "initial_stack_items": 0,
+            "peak_stack_items": serde_json::Value::Null,
+            "peak_altstack_items": serde_json::Value::Null,
+            "maximum_element_bytes": serde_json::Value::Null,
+            "validation_budget_used": serde_json::Value::Null,
+            "transaction_weight": serde_json::Value::Null,
+        },
+    });
+    let response: NativeOperationResponse =
+        serde_json::from_value(refusal).expect("the adapter's refusal is a declared record");
+    assert_eq!(response.case.operation, OperationStepKind::FundConfidential);
+    assert!(
+        !response.observed_layer.is_target_verdict(),
+        "an unimplemented step must not be reported as anything the target did",
+    );
+    assert_eq!(
+        response.validate_shape(),
+        Ok(()),
+        "the refusal must be a shape the protocol defines",
+    );
+}
+
+/// What the reviewed adapter states when it reads a confidential step
+/// and performs none.
+const DETAIL: &str = "this adapter reads confidential funding steps and performs none: \
+    no deterministic materializer for the explicit-asset confidential-value \
+    representation is implemented";

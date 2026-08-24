@@ -8,8 +8,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::fixture::{NativeCaseId, PrimitiveExecutionSubject, PrimitiveFixture};
 use crate::protocol::{
-    ExecutorCapability, ExecutorEnvironmentObservation, ExecutorHandshake, NATIVE_PROTOCOL_SCHEMA,
-    WireEnvironment, WireExecutionDomain,
+    ConfidentialFixtureDigest, ConfidentialFixtureHandle, ConfidentialFundingAdvertisement,
+    ConfidentialFundingBinding, ConfidentialFundingDestination, ConfidentialFundingProfiles,
+    ExecutorCapability, ExecutorEnvironmentObservation, ExecutorHandshake, FundingCustodyProfile,
+    FundingMaterializerProfile, FundingRepresentationProfile, NATIVE_PROTOCOL_SCHEMA,
+    TargetConfidentialFundingSubject, WireEnvironment, WireExecutionDomain,
 };
 use crate::prototype::{CompoundPrototypeFixture, PrototypeCaseId, PrototypeExecutionSubject};
 use crate::provenance::ExpectedExecutorProvenance;
@@ -130,5 +133,95 @@ pub fn nonmock_handshake() -> ExecutorHandshake {
             ExecutorCapability::ResourceObservation,
             ExecutorCapability::TransactionContext,
         ]),
+        // Absent, so that a test wanting confidential funding states
+        // both halves itself: the capability and the advertisement are
+        // held consistent, and a helper that quietly supplied one of
+        // them would make the disagreement unreachable.
+        confidential_funding: None,
     }
+}
+
+/// The public handle the first confidential fixture case is registered
+/// under.
+///
+/// A public deterministic test identity. It encodes no amount, no
+/// opening, and no transaction identity, and it authorizes nothing.
+pub const TEST_FIXTURE_HANDLE: &str = "ctf-v1/predecessor-dual-parity";
+
+/// The digest that case is registered under, in these tests.
+///
+/// An arbitrary public development value. The registry computes the real
+/// one over a framed transcript; what this stands in for is the drift
+/// check, which is a comparison rather than a derivation.
+pub const TEST_FIXTURE_DIGEST: [u8; 32] = [0x5a; 32];
+
+/// The two witness programs the first slice pays.
+///
+/// Arbitrary public development bytes. No key is derived from either and
+/// none exists.
+pub const TEST_DESTINATION_PROGRAMS: [[u8; 4]; 2] =
+    [[0x51, 0x20, 0xaa, 0xbb], [0x51, 0x20, 0xcc, 0xdd]];
+
+/// The profiles the test ceremony selects.
+///
+/// The selection is the ceremony plan's, and every member of it must
+/// appear in what the executor advertised before a request is written.
+pub fn confidential_profiles() -> ConfidentialFundingProfiles {
+    ConfidentialFundingProfiles {
+        representation: FundingRepresentationProfile::ExplicitAssetConfidentialValue,
+        custody: FundingCustodyProfile::CentralPublicFixtures,
+        materializer: FundingMaterializerProfile::GuideCtfDeterministicV1,
+        reproducibility_contract: target_elements::ReproducibilityContract::ByteIdentity,
+    }
+}
+
+/// What a test request binds itself to.
+pub fn confidential_binding() -> ConfidentialFundingBinding {
+    ConfidentialFundingBinding {
+        fixture_handle: ConfidentialFixtureHandle::new(TEST_FIXTURE_HANDLE.to_owned()),
+        fixture_digest: ConfidentialFixtureDigest::new(TEST_FIXTURE_DIGEST),
+        profiles: confidential_profiles(),
+    }
+}
+
+/// One confidential funding subject, paying both test destinations.
+pub fn confidential_subject() -> TargetConfidentialFundingSubject {
+    TargetConfidentialFundingSubject {
+        issue_asset: false,
+        asset: Some("aa".repeat(32)),
+        destinations: TEST_DESTINATION_PROGRAMS
+            .iter()
+            .map(|program| ConfidentialFundingDestination {
+                output_program: program.to_vec(),
+            })
+            .collect(),
+        binding: confidential_binding(),
+    }
+}
+
+/// An advertisement admitting exactly what the test ceremony selects.
+pub fn confidential_advertisement() -> ConfidentialFundingAdvertisement {
+    ConfidentialFundingAdvertisement {
+        representation_profiles: BTreeSet::from([
+            FundingRepresentationProfile::ExplicitAssetConfidentialValue,
+        ]),
+        custody_profiles: BTreeSet::from([FundingCustodyProfile::CentralPublicFixtures]),
+        materializer_profiles: BTreeSet::from([
+            FundingMaterializerProfile::GuideCtfDeterministicV1,
+        ]),
+        reproducibility_contracts: BTreeSet::from([
+            target_elements::ReproducibilityContract::ByteIdentity,
+        ]),
+    }
+}
+
+/// A handshake from an executor that offers confidential funding, with
+/// the capability and the advertisement agreeing.
+pub fn confidential_handshake() -> ExecutorHandshake {
+    let mut handshake = nonmock_handshake();
+    handshake
+        .capabilities
+        .insert(ExecutorCapability::ConfidentialValueTestFunding);
+    handshake.confidential_funding = Some(confidential_advertisement());
+    handshake
 }

@@ -26,6 +26,7 @@ fn handshake() -> ExecutorHandshake {
         supported_domains: BTreeSet::from([WireExecutionDomain::Tapscript]),
         supported_leaf_versions: BTreeSet::from([0xc4]),
         capabilities: BTreeSet::from([ExecutorCapability::FinalStackReporting]),
+        confidential_funding: None,
     }
 }
 
@@ -224,8 +225,12 @@ fn the_handshake_request_states_this_harnesss_schema() {
 }
 
 #[test]
-fn this_harness_speaks_schema_four_and_no_earlier_one() {
-    // Stated as a value rather than left implicit. Schema 4 declares the
+fn this_harness_speaks_schema_five_and_no_earlier_one() {
+    // Stated as a value rather than left implicit. Schema 5 declares the
+    // confidential funding arm: a fifth operation subject and two
+    // response members that are not defaulted, so a revision-4 executor
+    // can neither parse a revision-5 request nor produce a revision-5
+    // answer. Schema 4 declares the
     // conservation openings and the typed lifecycle records, so that one
     // revision names one schema rather than two disagreeing ones; schema
     // 3 removed the expectation from the request; schema 2 added the
@@ -240,7 +245,8 @@ fn this_harness_speaks_schema_four_and_no_earlier_one() {
     // implementations moving together: the adapter's constant of the
     // same name is what it is compared against in the field, and a bump
     // that reached only one side is the fault G12-R09 recorded.
-    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 4);
+    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 5);
+    assert_ne!(NATIVE_PROTOCOL_SCHEMA, 4);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 3);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 2);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 1);
@@ -494,10 +500,10 @@ fn every_failure_class_spelling_is_distinct() {
     );
 }
 
-/// The four operation subjects, and the one thing that could go wrong.
+/// The five operation subjects, and the one thing that could go wrong.
 ///
 /// `OperationSubject` is untagged, so a subject is recognized by its
-/// members alone. Four shapes now share that discrimination where two
+/// members alone. Five shapes now share that discrimination where two
 /// used to, and a shape parsing as the wrong variant would be answered
 /// by the wrong half of an adapter. Each is therefore round-tripped and
 /// then checked to land on its own variant, which is the property the
@@ -508,6 +514,8 @@ fn every_operation_subject_round_trips_to_its_own_variant() {
         OperationStepKind, OperationSubject, TargetFundingSubject, TargetSponsorFundingSubject,
         TargetSponsorSigningSubject, TargetSubmissionSubject, WireOutpoint, WireSighashProfile,
     };
+
+    use super::support::confidential_subject;
 
     let subjects = [
         OperationSubject::Funding(Box::new(TargetFundingSubject {
@@ -533,12 +541,14 @@ fn every_operation_subject_round_trips_to_its_own_variant() {
             },
             sighash_profile: WireSighashProfile::AllInputsAllOutputs,
         })),
+        OperationSubject::ConfidentialFunding(Box::new(confidential_subject())),
     ];
     let kinds = [
         OperationStepKind::Fund,
         OperationStepKind::Submit,
         OperationStepKind::FundSponsor,
         OperationStepKind::SignSponsor,
+        OperationStepKind::FundConfidential,
     ];
 
     for (subject, kind) in subjects.iter().zip(kinds) {
@@ -566,6 +576,7 @@ fn a_step_kind_renders_the_way_it_serializes() {
         OperationStepKind::Submit,
         OperationStepKind::FundSponsor,
         OperationStepKind::SignSponsor,
+        OperationStepKind::FundConfidential,
     ] {
         let wire = serde_json::to_string(&kind).expect("the kind serializes");
         // The serialized form is a JSON string, so the quotes come off
@@ -621,16 +632,22 @@ fn a_sponsor_step_is_refused_by_an_executor_that_did_not_advertise_one() {
     assert!(executor.runs_operation_step(&signing));
 }
 
-/// An executor that never heard of the sponsor steps still parses.
+/// The two ways a member can be added, held apart in one record.
 ///
-/// This is the whole justification for leaving the revision where it is:
-/// the two added response members are defaulted, so a record written by
-/// an executor that predates them is read rather than refused.
+/// The sponsor members were defaulted so that adding them was NOT a
+/// revision: a record written by an executor that predates them is read
+/// rather than refused, and that half is unchanged here.
+///
+/// The confidential members are not defaulted so that adding them IS
+/// one. A revision-4 record therefore no longer parses at all, which is
+/// the property that keeps a revision-4 executor from answering a
+/// confidential request with silence in the members the answer lives in.
+/// The refusal is the schema's, before any capability is consulted.
 #[test]
-fn a_response_without_the_sponsor_members_still_parses() {
+fn a_revision_four_response_no_longer_parses_and_the_sponsor_members_still_default() {
     use crate::protocol::NativeOperationResponse;
 
-    let written = r#"{
+    let revision_four = r#"{
         "schema": 4,
         "case": {"operation": "fund", "step": "issue"},
         "observed_layer": "accepted",
@@ -648,13 +665,40 @@ fn a_response_without_the_sponsor_members_still_parses() {
             "transaction_weight": null
         }
     }"#;
-    let parsed: NativeOperationResponse =
-        serde_json::from_str(written).expect("a pre-sponsor response still reads");
+    assert!(
+        serde_json::from_str::<NativeOperationResponse>(revision_four).is_err(),
+        "a record omitting the undefaulted confidential members must be refused",
+    );
+
+    let revision_five = r#"{
+        "schema": 5,
+        "case": {"operation": "fund", "step": "issue"},
+        "observed_layer": "accepted",
+        "observed_detail": null,
+        "issued_asset": "aa",
+        "funded_outputs": [],
+        "confidential_funded_outputs": [],
+        "mined_readback": null,
+        "accepted_txid": null,
+        "resources": {
+            "script_bytes": 0,
+            "initial_stack_items": 0,
+            "peak_stack_items": null,
+            "peak_altstack_items": null,
+            "maximum_element_bytes": null,
+            "validation_budget_used": null,
+            "transaction_weight": null
+        }
+    }"#;
+    let parsed: NativeOperationResponse = serde_json::from_str(revision_five)
+        .expect("a revision-5 record without the sponsor members reads");
     assert!(
         parsed.sponsor_witness.is_empty(),
-        "a revision-4 response defaults to no sponsor witness"
+        "the sponsor witness is still defaulted",
     );
     assert_eq!(parsed.signature_bound_to, None);
+    assert_eq!(parsed.confidential_funded_outputs, Vec::new());
+    assert_eq!(parsed.mined_readback, None);
 }
 
 /// An authorization belongs to the step that asked for one.
@@ -674,6 +718,8 @@ fn only_a_signing_step_may_report_an_authorization() {
         observed_detail: None,
         issued_asset: None,
         funded_outputs: Vec::new(),
+        confidential_funded_outputs: Vec::new(),
+        mined_readback: None,
         accepted_txid: None,
         sponsor_witness: vec![vec![0x30], vec![0x02]],
         signature_bound_to: Some(vec![0x02]),
@@ -713,6 +759,8 @@ fn an_accepted_authorization_states_a_stack_and_what_it_was_bound_to() {
         observed_detail: None,
         issued_asset: None,
         funded_outputs: Vec::new(),
+        confidential_funded_outputs: Vec::new(),
+        mined_readback: None,
         accepted_txid: None,
         sponsor_witness: stack,
         signature_bound_to: bound,
@@ -1091,16 +1139,17 @@ mod operation_response_shapes {
     use super::*;
 
     use crate::protocol::{
-        FundedOutput, NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId,
-        OperationStepKind, WireOutpoint,
+        ConfidentialFundedOutput, FundedOutput, MinedFundingReadback, NativeOperationResponse,
+        ObservedOutcomeLayer, OperationCaseId, OperationStepKind, WireOutpoint,
     };
 
     /// Every kind of step this record answers.
-    const EVERY_KIND: [OperationStepKind; 4] = [
+    const EVERY_KIND: [OperationStepKind; 5] = [
         OperationStepKind::Fund,
         OperationStepKind::Submit,
         OperationStepKind::FundSponsor,
         OperationStepKind::SignSponsor,
+        OperationStepKind::FundConfidential,
     ];
 
     /// The three layers at which the target refused what it judged.
@@ -1126,6 +1175,8 @@ mod operation_response_shapes {
             observed_detail: None,
             issued_asset: None,
             funded_outputs: Vec::new(),
+            confidential_funded_outputs: Vec::new(),
+            mined_readback: None,
             accepted_txid: None,
             sponsor_witness: Vec::new(),
             signature_bound_to: None,
@@ -1143,6 +1194,39 @@ mod operation_response_shapes {
             asset: "an-asset".to_owned(),
             amount_satoshis: 100_000,
             script: "5120".to_owned(),
+        }
+    }
+
+    /// One output a confidential funding step created.
+    ///
+    /// Arbitrary public development bytes. Nothing here is a commitment
+    /// anything opened, a proof anything verified, or material of any
+    /// kind: the shape census is about which members a kind may carry,
+    /// and it reaches no target and checks no arithmetic.
+    fn confidential_coin() -> ConfidentialFundedOutput {
+        ConfidentialFundedOutput {
+            outpoint: WireOutpoint {
+                txid: "44".repeat(32),
+                vout: 0,
+            },
+            explicit_asset: "an-asset".to_owned(),
+            value_commitment: vec![0x08; 33],
+            nonce: vec![0x02; 33],
+            script: "5120".to_owned(),
+            output_witness_index: 0,
+            surjection_proof: Vec::new(),
+            rangeproof: vec![0x11; 64],
+        }
+    }
+
+    /// One mined readback.
+    fn readback() -> MinedFundingReadback {
+        MinedFundingReadback {
+            transaction_id: "44".repeat(32),
+            witness_transaction_id: "55".repeat(32),
+            block_hash: "66".repeat(32),
+            block_height: 101,
+            raw_transaction: vec![0x02, 0x00, 0x00, 0x00],
         }
     }
 
@@ -1168,6 +1252,15 @@ mod operation_response_shapes {
             OperationStepKind::SignSponsor => {
                 response.sponsor_witness = vec![vec![0x30; 71], vec![0x02; 33]];
                 response.signature_bound_to = Some(vec![0x02, 0x00]);
+            }
+            // Both halves, because an acceptance owes both: outputs with
+            // no mined readback are proofs nobody can check against a
+            // chain, and a readback with no outputs is a block identity
+            // with nothing in it.
+            OperationStepKind::FundConfidential => {
+                response.issued_asset = Some("an-asset".to_owned());
+                response.confidential_funded_outputs = vec![confidential_coin()];
+                response.mined_readback = Some(readback());
             }
         }
         response
@@ -1242,6 +1335,18 @@ mod operation_response_shapes {
                     signature_bound_to: Some(vec![0x02, 0x00]),
                     ..bare(OperationStepKind::SignSponsor, layer)
                 },
+                NativeOperationResponse {
+                    issued_asset: Some("an-asset".to_owned()),
+                    ..bare(OperationStepKind::FundConfidential, layer)
+                },
+                NativeOperationResponse {
+                    confidential_funded_outputs: vec![confidential_coin()],
+                    ..bare(OperationStepKind::FundConfidential, layer)
+                },
+                NativeOperationResponse {
+                    mined_readback: Some(readback()),
+                    ..bare(OperationStepKind::FundConfidential, layer)
+                },
             ] {
                 assert_eq!(
                     verdict(&contradictory),
@@ -1260,9 +1365,22 @@ mod operation_response_shapes {
     fn a_step_reports_nothing_another_kind_produces() {
         for kind in EVERY_KIND {
             let mut foreign = Vec::new();
-            if !matches!(kind, OperationStepKind::Fund) {
+            // The two arms that may issue the disposable asset are the
+            // two funding arms: both create coins carrying an asset the
+            // target may have chosen in the same step.
+            if !matches!(
+                kind,
+                OperationStepKind::Fund | OperationStepKind::FundConfidential
+            ) {
                 foreign.push(NativeOperationResponse {
                     issued_asset: Some("an-asset".to_owned()),
+                    ..accepted(kind)
+                });
+            }
+            if !matches!(kind, OperationStepKind::FundConfidential) {
+                foreign.push(NativeOperationResponse {
+                    confidential_funded_outputs: vec![confidential_coin()],
+                    mined_readback: Some(readback()),
                     ..accepted(kind)
                 });
             }
