@@ -2105,6 +2105,11 @@ mod reproducibility_contract_wire {
     use target_elements::ReproducibilityContract;
 
     /// Writes the contract's own code.
+    ///
+    /// The reference is the serialization framework's calling
+    /// convention and not a choice: a `with` module is handed the field
+    /// by reference whatever its width.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
     pub fn serialize<S>(
         contract: &ReproducibilityContract,
         serializer: S,
