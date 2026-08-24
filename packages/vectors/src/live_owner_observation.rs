@@ -79,6 +79,7 @@
 //! custody of anything.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 use linker::live_backend::LiveTransferRepresentationPlan;
 use target_elements::LeafVersion;
@@ -462,6 +463,7 @@ impl ReverificationRecord {
     /// # Errors
     ///
     /// The oracle's own [`SignatureRejection`], where it does not.
+    #[must_use]
     pub const fn verified(&self) -> &Result<(), SignatureRejection> {
         &self.verified
     }
@@ -630,7 +632,7 @@ impl OwnerObservationPlanner {
     }
 
     /// Record one refusal and stop.
-    fn refuse(&mut self, refusal: OwnerObservationRefusal) -> PlanRefused {
+    const fn refuse(&mut self, refusal: OwnerObservationRefusal) -> PlanRefused {
         self.record.refusal = Some(refusal);
         self.stage = Stage::Done;
         PlanRefused
@@ -792,7 +794,6 @@ impl OwnerObservationPlanner {
     /// The census of one finalized explicit candidate, under one
     /// deployment.
     fn census(
-        &self,
         finalized: &FinalizedLiveTransfer,
         genesis: Digest32,
     ) -> Result<OwnerSigningCensus, OwnerObservationRefusal> {
@@ -845,7 +846,7 @@ impl OwnerObservationPlanner {
             OwnerObservationCase::AnotherDeployment => another_deployment(self.genesis_block_hash),
             _ => self.genesis_block_hash,
         };
-        let census = self.census(&finalized, genesis)?;
+        let census = Self::census(&finalized, genesis)?;
         if case == OwnerObservationCase::AnotherDeployment
             && let Err(refusal) =
                 census.check_deployment(LiveDeployment::new(self.genesis_block_hash))
@@ -890,7 +891,7 @@ impl OwnerObservationPlanner {
         let signing_census = match case {
             OwnerObservationCase::AnotherCandidate => {
                 let (other, _) = self.finalize(true)?;
-                Some(self.census(&other, self.genesis_block_hash)?)
+                Some(Self::census(&other, self.genesis_block_hash)?)
             }
             _ => None,
         };
@@ -1001,7 +1002,7 @@ impl OwnerObservationPlanner {
             .ok_or(OwnerObservationRefusal::ReadbackCarriesNoWitness)?;
 
         let (finalized, _) = self.finalize(false)?;
-        let census = self.census(&finalized, self.genesis_block_hash)?;
+        let census = Self::census(&finalized, self.genesis_block_hash)?;
         let input = census
             .signing_inputs()
             .first()
@@ -1113,7 +1114,7 @@ fn explicit_destination_program(abi: &CandidateLiveTransferAbi) -> Result<Vec<u8
 /// constant: what the control needs is a different chain, and a hash
 /// spelled out here would be a value a reader has to check against
 /// nothing.
-fn another_deployment(genesis: Digest32) -> Digest32 {
+const fn another_deployment(genesis: Digest32) -> Digest32 {
     let mut other = genesis;
     other[0] ^= 0xff;
     other
@@ -1274,7 +1275,7 @@ pub fn render_owner_observation(record: &OwnerObservationRecord) -> String {
 fn printed(bytes: &[u8]) -> String {
     let mut text = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
-        text.push_str(&format!("{byte:02x}"));
+        let _ = write!(text, "{byte:02x}");
     }
     text
 }
