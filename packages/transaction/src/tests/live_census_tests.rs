@@ -930,7 +930,8 @@ const PINNED_MESSAGE_WITH_VECTOR_GROWN: &str =
     "ff2f490274dfb3ea79a0d2b71357ec8fdad276d3978d29b511fe2516c6ec1257";
 
 /// The message with the output-witness vector empty.
-const PINNED_MESSAGE_WITH_VECTOR_EMPTY: &str = "";
+const PINNED_MESSAGE_WITH_VECTOR_EMPTY: &str =
+    "02175b701b8144cac4e844af932581928e3516a63cc9d761983fd949103ec957";
 
 /// One digest as lower-case hexadecimal.
 fn hex(digest: &Digest32) -> String {
