@@ -74,7 +74,7 @@
 
 use std::collections::BTreeMap;
 
-use target_elements::LeafVersion;
+use target_elements::{LeafVersion, ObservationIdentity};
 use target_elements_conformance::confidential_fixture::{
     ConfidentialFixtureManifest, ConfidentialFixtureOutput, ConfidentialFixtureRegistry,
     FixtureDerivationProfile, FixtureOpenings, FixtureOutputRole, MAX_PARITY_COUNTER,
@@ -667,6 +667,7 @@ pub struct ProofBearingObservationRecord {
     coins: Vec<ObservedConfidentialCoin>,
     output_witness_vector_length: Option<usize>,
     output_witness_proof_bytes: Vec<usize>,
+    spent_value_prefixes: Vec<u8>,
     observations: Vec<ProofBearingObservation>,
     construction_refusals: Vec<ProofBearingConstructionRefusal>,
     reverification: Option<ProofBearingReverification>,
@@ -712,6 +713,21 @@ impl ProofBearingObservationRecord {
     #[must_use]
     pub fn output_witness_proof_bytes(&self) -> &[usize] {
         &self.output_witness_proof_bytes
+    }
+
+    /// The serialized prefix of every spent value commitment, in input
+    /// order.
+    ///
+    /// Recorded and not asserted. The prefix is the first byte of the
+    /// commitment the message's spent-value term hashes, so an
+    /// acceptance is an agreement about these bytes as much as about any
+    /// other — but WHICH prefixes a predecessor carries is the
+    /// confidential-funding guide's own property, observed by that
+    /// guide's own ceremony, and this ceremony writes them down rather
+    /// than making a claim out of them.
+    #[must_use]
+    pub fn spent_value_prefixes(&self) -> &[u8] {
+        &self.spent_value_prefixes
     }
 
     /// What the target did with each submitted case.
@@ -1219,6 +1235,13 @@ impl ProofBearingObservationPlanner {
         for (index, funded) in response.confidential_funded_outputs.iter().enumerate() {
             coins.push(self.observed_coin(index, funded)?);
         }
+        self.record.spent_value_prefixes = coins
+            .iter()
+            .filter_map(|coin| match coin.value() {
+                ValueField::Commitment(commitment) => commitment.first().copied(),
+                _ => None,
+            })
+            .collect();
         self.record.coins = coins;
         Ok(())
     }
@@ -1856,6 +1879,9 @@ pub fn render_proof_bearing_observation(record: &ProofBearingObservationRecord) 
     for (index, bytes) in record.output_witness_proof_bytes().iter().enumerate() {
         lines.push(format!("output_witness {index} rangeproof_bytes {bytes}"));
     }
+    for (index, prefix) in record.spent_value_prefixes().iter().enumerate() {
+        lines.push(format!("spent_value_prefix {index} {prefix:#04x}"));
+    }
 
     for refusal in record.construction_refusals() {
         lines.push(format!(
@@ -1937,6 +1963,15 @@ const RECORDED_PREDECESSOR_DIGEST: &str =
 /// length.
 const RECORDED_RANGEPROOF_BYTES: usize = 4174;
 
+/// The serialized prefixes the two spent value commitments carried.
+///
+/// The two the target admits, one square and one non-square, which is
+/// what the other guide's bounded parity search settles on. They are
+/// written down here because the accepted message hashed them; what they
+/// establish about the target's reading of a confidential value field is
+/// that guide's question and not this one's.
+const RECORDED_SPENT_VALUE_PREFIXES: [u8; 2] = [0x08, 0x09];
+
 /// The identity the target computed over the bytes it accepted.
 const RECORDED_ACCEPTED_TXID: &str =
     "a176394a67fa839058b4efbba53f59af47899dab718a85251a1106f496671d86";
@@ -1985,6 +2020,26 @@ const RECORDED_MESSAGES: [(ProofBearingCase, &str); 4] = [
     ),
     (ProofBearingCase::SelectedProfile, RECORDED_ACCEPTED_MESSAGE),
 ];
+
+/// The identity of the run of record, in the shape the reviewed
+/// contract already names an observation by.
+///
+/// The explicit lane's run is named this way where the six established
+/// dimensions cite it, and the Wave-4 audit found the gap on this side:
+/// a ceremony whose evidence was a file at a path an operator chose
+/// named nothing a later reader could cite. So this run carries the same
+/// three members — the ceremony's own name for the case, the identity
+/// the TARGET computed, and where the run is recorded.
+///
+/// It is deliberately NOT added to the reviewed contract's dimension
+/// table. Those six dimensions are established, they were established on
+/// the explicit run, and a second identity beside them would read as a
+/// second establishment of things this run did not re-establish.
+pub const PROOF_BEARING_OBSERVATION: ObservationIdentity = ObservationIdentity::new(
+    "selected-profile-proof-bearing-authorization",
+    RECORDED_ACCEPTED_TXID,
+    "plans/backlog.md T5-031",
+);
 
 /// The proof-bearing observation this wave produced, committed.
 ///
@@ -2055,6 +2110,7 @@ pub fn observed_proof_bearing_run_of_record() -> ProofBearingObservationRecord {
         coins: vec![commitment(), commitment()],
         output_witness_vector_length: Some(2),
         output_witness_proof_bytes: vec![RECORDED_RANGEPROOF_BYTES, RECORDED_RANGEPROOF_BYTES],
+        spent_value_prefixes: RECORDED_SPENT_VALUE_PREFIXES.to_vec(),
         observations: ProofBearingCase::ALL
             .iter()
             .copied()
@@ -2223,6 +2279,37 @@ mod tests {
             recorded_bytes(RECORDED_ACCEPTED_MESSAGE).as_slice(),
         );
         assert_eq!(check.signature_from_readback().len(), 64);
+    }
+
+    #[test]
+    fn the_run_of_record_names_where_it_is_recorded() {
+        // The Wave-4 audit's gap, closed in the shape the reviewed
+        // contract already uses for the explicit lane's run: the case's
+        // own name, the identity the target computed, and the row a
+        // reader finds the run under.
+        let record = observed_proof_bearing_run_of_record();
+        let check = record.reverification().expect("the run accepted a case");
+
+        assert_eq!(
+            PROOF_BEARING_OBSERVATION.accepted_transaction(),
+            check.accepted_txid(),
+            "the identity names a transaction the record does not carry",
+        );
+        assert_eq!(
+            PROOF_BEARING_OBSERVATION.ceremony_case(),
+            ProofBearingCase::SelectedProfile.name(),
+            "the identity names a case the ceremony does not submit",
+        );
+        assert_eq!(
+            PROOF_BEARING_OBSERVATION.recorded_at(),
+            "plans/backlog.md T5-031"
+        );
+
+        // Both admitted value-commitment prefixes were inside the
+        // message the target accepted a signature over. Recorded, not
+        // claimed: what it establishes about the confidential field form
+        // belongs to the guide that owns that obligation.
+        assert_eq!(record.spent_value_prefixes(), [0x08, 0x09]);
     }
 
     #[test]
