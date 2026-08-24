@@ -1169,7 +1169,7 @@ fn derive_at_counter(
 /// The balancing blinder, solved rather than derived.
 ///
 /// The input blinder sum minus the other outputs' sum, in the group. It
-/// is the same arithmetic [`derive_at_counter`] performs, exposed because
+/// is the same arithmetic the private `derive_at_counter` performs, exposed because
 /// the transaction-wide materializer needs it through an injected trait
 /// and the construction package carries no bignum dependency and may not
 /// acquire one.
