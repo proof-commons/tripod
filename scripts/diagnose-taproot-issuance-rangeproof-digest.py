@@ -290,6 +290,12 @@ def main(argv):
     parser.add_argument("--framework", required=True)
     parser.add_argument("--boot-timeout", type=float, default=120.0)
     parser.add_argument("--adapter-diagnostics-directory", default=None)
+    # A directory the CALLER owns, kept after the run. The probe row can
+    # end the node's process, and when it does the node's own account of
+    # why is the only account there is; a disposable directory takes it
+    # away with the chain. Off by default, so an ordinary run still
+    # destroys everything it made.
+    parser.add_argument("--node-datadir", default=None)
     arguments = parser.parse_args(argv)
 
     scripts_directory = os.path.dirname(os.path.abspath(__file__))
@@ -316,6 +322,7 @@ def main(argv):
     node = adapter.DisposableNode(
         arguments.elementsd, arguments.elements_cli, "elementsregtest",
         arguments.boot_timeout, enable_wallet=True,
+        datadir=arguments.node_datadir,
     )
     node.start()
     try:
