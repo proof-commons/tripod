@@ -11,6 +11,7 @@ transaction_source_files = files(
   'src/live_abi.rs',
   'src/live_construct.rs',
   'src/live_finalize.rs',
+  'src/live_materialize.rs',
   'src/live_private.rs',
   'src/live_request.rs',
   'src/live_signing.rs',

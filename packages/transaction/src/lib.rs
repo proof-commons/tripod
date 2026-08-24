@@ -8,6 +8,7 @@ pub mod error;
 pub mod live_abi;
 pub mod live_construct;
 pub mod live_finalize;
+pub mod live_materialize;
 pub mod live_private;
 pub mod live_request;
 pub mod live_signing;
