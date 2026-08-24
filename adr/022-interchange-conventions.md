@@ -11,7 +11,7 @@
 
 ## Amendments · `dec:interchange:adoption`
 
-The normative text fixes the interchange discipline once for the whole system and permits no local deviation. This repository supplies only the exact scope boundary, the executor stop, its cross-discipline alignments, and the implementation trigger below; the normative body is otherwise unamended.
+The normative text fixes the interchange discipline once for the whole system and permits no local deviation. This repository supplies only the exact scope boundary, the executor stop, its cross-discipline alignments, and the implementation trigger below, and records the one change the adopted text itself carries — the heading depth its folding into this record required; the normative body is otherwise unamended. Every amendment is listed here as its own entry under its own label, and nothing is merged into the adopted text below without an entry.
 
 ### Boundary against ADR-010 · `rule:interchange:boundary`
 
@@ -32,6 +32,12 @@ The stop is revisited if the frame stream becomes archived, read by a third part
 The namespace labels defined below and the documentation labels governed by [ADR-019](019-label-calculus.md) are unrelated. A namespace label never names a documentation environment, no documentation label is an envelope value, and neither grammar constrains the other.
 
 Canonical byte equality is a basis on which an identity over an interchange document could be constructed, but these conventions mint no identity and this adoption admits none. A proposed digest over an interchange document is adjudicated under [ADR-021](021-identity-adjudication.md), and its construction follows that ADR's local recipe convention (`[ADR021-rule:identity:recipes]`).
+
+### Heading depth · `rule:interchange:heading-depth`
+
+Folding the adopted text into this record demoted every one of its headings by exactly one level: the document title became the second-level head that opens the body below, and each of the text's six section heads became a third-level head. A record carries one title, which is the record's own, so the adopted text cannot keep a first-level head of its own inside it.
+
+Nothing else in the text changed. Below the head that opens it the body is byte-identical to the adopted fourth-edition draft, and every label value, every definition, every theory, and every governance obligation stands as adopted. The change is presentation of this record and never of an interchange document: it touches no encoding, no envelope, no namespace, and no version triple, and this ADR is not itself an externally consumed document.
 
 ### No implementation until a consumer · `rule:interchange:no-implementation`
 
