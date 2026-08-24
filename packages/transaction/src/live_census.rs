@@ -649,9 +649,11 @@ impl OwnerSigningCensus {
     /// The census of parts a test supplies directly.
     ///
     /// An authorized, bounded seam and not a second public route: it is
-    /// crate-private, it runs the same clause list as the public route
-    /// rather than a relaxed one, and its whole purpose is that the
-    /// refusals above can be shown firing. Several of them are
+    /// crate-private *and* test-only — the attribute is what keeps it
+    /// from being a route at all outside a test build — it runs the same
+    /// clause list as the public route rather than a relaxed one, and
+    /// its whole purpose is that the refusals above can be shown firing.
+    /// Several of them are
     /// structurally unreachable from a materialized candidate — a frozen
     /// candidate's output-witness vector is one entry per output by the
     /// transaction type's own invariant, and its protected bytes are the
@@ -661,12 +663,35 @@ impl OwnerSigningCensus {
     /// # Errors
     ///
     /// [`OwnerCensusRefusal`], at the first clause the parts fail.
+    #[cfg(test)]
     #[expect(
         clippy::too_many_arguments,
         reason = "the seam takes the assembled clause list's own arguments; \
                   bundling them into a parts struct would give the seam a \
                   shape the public route does not have"
     )]
+    pub(crate) fn from_parts(
+        target: &ReviewedElementsTapscriptDefinition,
+        candidate: TargetTransaction,
+        protected_bytes: Vec<u8>,
+        output_witnesses: Vec<OutputWitness>,
+        spent_outputs: Vec<SpentOutputCensusEntry>,
+        deployment: LiveDeployment,
+        requests: &[OwnerSigningInputRequest],
+        curve: &dyn LiveCurveCapability,
+    ) -> Result<Self, OwnerCensusRefusal> {
+        Self::assemble(
+            target,
+            candidate,
+            protected_bytes,
+            output_witnesses,
+            spent_outputs,
+            deployment,
+            requests,
+            curve,
+        )
+    }
+
     #[expect(
         clippy::too_many_arguments,
         reason = "one clause list shared by both routes; splitting it would \
@@ -886,7 +911,7 @@ fn check_leaf_commits(
     let block = request.control_block();
 
     if block.len() < CONTROL_BASE_BYTES
-        || (block.len() - CONTROL_BASE_BYTES) % DIGEST_BYTES != 0
+        || !(block.len() - CONTROL_BASE_BYTES).is_multiple_of(DIGEST_BYTES)
         || (block.len() - CONTROL_BASE_BYTES) / DIGEST_BYTES > MAXIMUM_CONTROL_PATH_DEPTH
     {
         return Err(OwnerCensusRefusal::ControlBlockMalformed {
@@ -914,10 +939,8 @@ fn check_leaf_commits(
     // no side bits — the same recursion the committed tree was built by,
     // run in the other direction.
     let mut root = *request.tapleaf_hash();
-    for node in block[CONTROL_BASE_BYTES..].chunks_exact(DIGEST_BYTES) {
-        let mut sibling = [0_u8; DIGEST_BYTES];
-        sibling.copy_from_slice(node);
-        root = branch_hash(root, sibling);
+    for sibling in block[CONTROL_BASE_BYTES..].as_chunks::<DIGEST_BYTES>().0 {
+        root = branch_hash(root, *sibling);
     }
 
     let output_key = curve

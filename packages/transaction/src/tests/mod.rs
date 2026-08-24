@@ -36,6 +36,7 @@ mod ctf_serialization_tests;
 mod encoding_tests;
 mod guide13_preflight_tests;
 mod live_abi_tests;
+mod live_census_tests;
 mod live_construction_tests;
 mod live_request_tests;
 mod live_signing_tests;

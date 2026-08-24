@@ -430,6 +430,71 @@ fn valid() -> crate::live_materialize::MaterializedConfidentialCandidate {
     .expect("the valid intent materializes")
 }
 
+/// The valid case with the consumed output's program chosen.
+///
+/// Shared with the owner-census tests, which need a spent program that
+/// is a real witness-program script rather than the one-byte stand-in
+/// the cases here use: the census recomputes the taproot commitment and
+/// compares the program it rebuilds against the spent one, so a
+/// stand-in program can only ever produce that refusal.
+///
+/// The program is set in both places it appears — the registered fixture
+/// output and the input intent — because the two must agree for the
+/// materializer to resolve the opening at all.
+pub(super) fn valid_with_spent_program(
+    program: Vec<u8>,
+) -> crate::live_materialize::MaterializedConfidentialCandidate {
+    let predecessor = ConfidentialFixtureView::new(
+        PREDECESSOR_DIGEST,
+        asset(),
+        [0_u8; SCALAR_BYTES],
+        ParityOutcome::Settled { counter: 0 },
+        vec![ConfidentialFixtureOutputView::new(
+            ConfidentialOutputRole::Primary,
+            CONSUMED,
+            program.clone(),
+            INPUT_BLINDER,
+            [0x31; SCALAR_BYTES],
+            [0x41; SCALAR_BYTES],
+        )],
+    );
+
+    let mut entries = BTreeMap::new();
+    entries.insert(PREDECESSOR.to_owned(), predecessor);
+    entries.insert(
+        SUCCESSOR.to_owned(),
+        successor_fixture(balancing_blinder(), ParityOutcome::Settled { counter: 0 }),
+    );
+
+    let input = ConfidentialInputIntent::new(
+        consumed(),
+        AssetField::Explicit(asset()),
+        ValueField::Commitment(stub_commitment(asset(), CONSUMED, &INPUT_BLINDER)),
+        program,
+        0xffff_ffff,
+        FixtureOpeningReference::new(PREDECESSOR.to_owned(), PREDECESSOR_DIGEST, 0),
+        CONSUMED,
+        [0_u8; SCALAR_BYTES],
+    );
+
+    let intent = ConfidentialConstructionIntent::new(
+        vec![input],
+        destinations(),
+        NonProtocolFundingRegion::default(),
+        profiles(),
+        3,
+        0,
+    );
+
+    materialize(
+        &intent,
+        &FrozenConfidentialFixtureView::new(entries),
+        &StubMaterializer::default(),
+        &StubChecker::default(),
+    )
+    .expect("the valid intent materializes under a chosen spent program")
+}
+
 /// The refusal `intent` draws against the valid view and stubs.
 fn refusal_of(intent: &ConfidentialConstructionIntent) -> MaterializationRefusal {
     materialize(

@@ -30,6 +30,7 @@ transaction_source_files = files(
   'src/tests/encoding_tests.rs',
   'src/tests/guide13_preflight_tests.rs',
   'src/tests/live_abi_tests.rs',
+  'src/tests/live_census_tests.rs',
   'src/tests/live_construction_tests.rs',
   'src/tests/live_request_tests.rs',
   'src/tests/live_signing_tests.rs',
