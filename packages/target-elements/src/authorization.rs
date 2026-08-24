@@ -730,13 +730,24 @@ const OWNER_OBSERVATION: ObservationIdentity = ObservationIdentity::new(
 /// review verdict owes here.
 #[must_use]
 pub(crate) fn reviewed_sighash_capability() -> SighashCapability {
+    SighashCapability::new(
+        established_sighash_dimensions(),
+        unestablished_sighash_dimensions(),
+        [TargetEvidenceRequirementId::SighashSemantics],
+    )
+}
+
+/// The review's anchor for the dimension table.
+const DIMENSIONS: &str = "tab:sighash-review:dimensions";
+
+/// The review's anchor for the refusal table.
+const REFUSALS: &str = "tab:sighash-review:refusals";
+
+/// The six dimensions the observed acceptance exercised.
+fn established_sighash_dimensions() -> [(SighashDimension, ReviewedGround); 6] {
     use SighashDimension as Dimension;
-    use TargetEvidenceRequirementId as R;
 
-    const DIMENSIONS: &str = "tab:sighash-review:dimensions";
-    const REFUSALS: &str = "tab:sighash-review:refusals";
-
-    let reviewed = [
+    [
         (
             Dimension::AllOutputs,
             ReviewedGround::new(
@@ -816,9 +827,14 @@ pub(crate) fn reviewed_sighash_capability() -> SighashCapability {
                 ExercisingObservation::new(OWNER_OBSERVATION, &[]),
             ),
         ),
-    ];
+    ]
+}
 
-    let unreviewed = [
+/// The four dimensions the review reached and could not establish.
+fn unestablished_sighash_dimensions() -> [(SighashDimension, UnreviewedGround); 4] {
+    use SighashDimension as Dimension;
+
+    [
         (
             Dimension::Issuance,
             UnreviewedGround::NoCandidateThisArcBuildsCarriesTheSubject(
@@ -851,9 +867,7 @@ pub(crate) fn reviewed_sighash_capability() -> SighashCapability {
                 review_anchor: "rule:sighash-review:internal-key",
             },
         ),
-    ];
-
-    SighashCapability::new(reviewed, unreviewed, [R::SighashSemantics])
+    ]
 }
 
 /// Builds the reviewed authorization contract.
