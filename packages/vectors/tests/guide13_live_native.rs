@@ -435,3 +435,164 @@ fn one_confidential_predecessor_is_funded_mined_and_read_back() {
         "the run selected byte identity and did not achieve it",
     );
 }
+
+/// One owner authorization, produced against the Wave-2 message and
+/// observed on the explicit lane.
+///
+/// # What this run is for
+///
+/// The accepted evidence ruling names three things a dimension needs: a
+/// source citation, an independent recomputation, and one observed
+/// acceptance. The first two are landed. This is the third, and it is
+/// the only thing in this file that submits a candidate carrying a
+/// signature rather than bytes that authorize nothing.
+///
+/// # What it asserts, and what it merely records
+///
+/// It asserts the *shape* of a completed ceremony: that every case was
+/// submitted and answered, and that an acceptance carried a readback to
+/// check. What each case's layer was is written into the artifact and
+/// asserted nowhere — a lane that asserted a verdict would fail rather
+/// than report when the honest answer changed.
+///
+/// The one thing it does assert about content is the two-origin
+/// agreement, and only where an acceptance was observed: a run that
+/// accepted a candidate and then could not verify its own witness
+/// against its own recomputed message has found something, and it must
+/// say so by failing rather than by writing a false line.
+///
+/// # It clears nothing by running
+///
+/// A blocker moves on an observed result and never on a capability
+/// existing. This test existing establishes nothing at all; what
+/// establishes anything is the artifact one run of it produced.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn one_owner_authorization_is_observed_on_the_explicit_lane() {
+    use vectors::live_owner_observation::{
+        OwnerObservationCase, OwnerObservationPlanner, render_owner_observation,
+    };
+
+    let executor =
+        environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
+    let network = environment("TRIPOD_LIVE_NETWORK_ID")
+        .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
+    let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
+        .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
+    let base = environment("TRIPOD_LIVE_REPORT")
+        .map(PathBuf::from)
+        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
+    let report = base.with_extension("owner-observation");
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            identifier(&network),
+            identifier(&genesis),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+
+    let timeout = environment("TRIPOD_LIVE_TIMEOUT_SECONDS")
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        Path::new(&executor),
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+    );
+
+    // The genesis block hash the message hasher is seeded with, taken
+    // from the run's own deployment binding rather than from anything a
+    // candidate carries: no candidate determines it, and two identical
+    // candidates on two chains have different messages.
+    let mut planner =
+        OwnerObservationPlanner::new(identifier(&genesis)).expect("the ceremony builds");
+    let started = Instant::now();
+    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let wall = started.elapsed();
+
+    let record = planner.record();
+    let rendered = render_owner_observation(record);
+    std::fs::write(&report, &rendered).expect("the transcript is written");
+    std::fs::write(
+        timing_path(&report),
+        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+    )
+    .expect("the run's wall time is written");
+    if let Err(error) = &outcome {
+        std::fs::write(
+            report.with_extension("executor-refusal"),
+            format!("{error}\n"),
+        )
+        .expect("the executor's refusal is written");
+    }
+
+    outcome.expect("the ceremony reached the target");
+
+    // Every case was submitted and answered. A case that was neither is
+    // one the ceremony quietly dropped, and a run that dropped a control
+    // would be reporting a narrower comparison than it claims.
+    assert_eq!(
+        record.observations().len(),
+        OwnerObservationCase::ALL.len(),
+        "a case was not submitted",
+    );
+    assert!(record.relinked(), "the ceremony funded before it linked");
+    assert_eq!(record.coins().len(), 2);
+
+    // The signed-over spent-output triple is the node's own report of
+    // the coins, and the ceremony's expectation agreed with it. A
+    // disagreement is a finding about the funding boundary rather than
+    // about the message, and it must not pass silently.
+    assert!(
+        record
+            .coins()
+            .iter()
+            .all(vectors::live_owner_observation::ObservedFundedCoin::matches_expectation),
+        "the node reported a coin the ceremony did not ask for",
+    );
+
+    // Every case's message was computed, and the empty-vector control's
+    // message differs from the selected profile's. Two candidates that
+    // coincided would make any verdict about which one a signature
+    // verifies against a coincidence.
+    let messages = record.candidate_messages();
+    assert_eq!(messages.len(), OwnerObservationCase::ALL.len());
+    assert_ne!(
+        messages.get(&OwnerObservationCase::SelectedProfile),
+        messages.get(&OwnerObservationCase::EmptyOutputWitnessVector),
+        "the two candidate messages coincided",
+    );
+
+    // The two origins, where an acceptance was observed. This is the
+    // only content assertion in the file, and it is here because a run
+    // that accepted a candidate and then failed to verify its own
+    // witness against its own recomputed message has found something.
+    if let Some(check) = record.reverification() {
+        assert!(
+            check.readback_matches_submission(),
+            "the bytes the node reported are not the bytes it was handed",
+        );
+        assert!(
+            check.verified().is_ok(),
+            "the accepted witness does not verify against the recomputed message: {:?}",
+            check.verified(),
+        );
+        assert!(
+            !check.verifies_against_empty_vector_message(),
+            "the accepted witness verifies against both candidate messages",
+        );
+    }
+
+    // The run says in its own bytes what it did not establish.
+    assert!(rendered.contains("establishes_the_proof_bearing_lane false"));
+    assert!(rendered.contains("clears_sighash_profile_unreviewed false"));
+    assert!(rendered.contains("discharges_no_matrix_row true"));
+}
