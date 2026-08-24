@@ -43,6 +43,7 @@ weight rule in [the plans README](../README.md).
 | [guide_thirteen_concept.md](guide_thirteen_concept.md) | Phase-5 end-to-end live receipt transfer |
 | [guide_fourteen_concept.md](guide_fourteen_concept.md) | Phase-6 end-to-end STATE and maturity announcement |
 | [guide_confidential_funding_concept.md](guide_confidential_funding_concept.md) | Phase-5 confidential test materialization and funding protocol |
+| [guide_owner_sighash_concept.md](guide_owner_sighash_concept.md) | Phase-5 owner sighash profile, review, and accepted result |
 
 ## Feature requests · `tab:guides:feature-requests`
 
