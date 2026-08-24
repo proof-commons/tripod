@@ -763,6 +763,18 @@ CONFIDENTIAL_VALUE_PREFIXES = (8, 9)
 CONFIDENTIAL_RANGEPROOF_EXPONENT = 0
 CONFIDENTIAL_RANGEPROOF_MINIMUM_BITS = 52
 
+# The lower bound a proof over a SPENDABLE program must prove.
+#
+# One, and not zero, and this is a consensus rule rather than a
+# preference: the target refuses a rangeproof whose proven minimum is
+# zero unless the program it pays is unspendable, so a proof that is
+# otherwise valid is rejected for that alone
+# (`src/script/sigcache.cpp:157-161`). The target's own blinding path
+# states the same rule from the other side, choosing zero exactly when
+# the program is unspendable (`src/blind.cpp:264`). Every program this
+# slice's fixtures pay is spendable, so the bound is one.
+CONFIDENTIAL_RANGEPROOF_MINIMUM_VALUE = 1
+
 # The widest proof the library can emit, which is the buffer this adapter
 # offers it.
 CONFIDENTIAL_RANGEPROOF_CAPACITY = 5134
@@ -2889,7 +2901,7 @@ class ConfidentialMaterializer:
             ctypes.c_void_p(self.context),
             proof,
             ctypes.byref(length),
-            ctypes.c_uint64(0),
+            ctypes.c_uint64(CONFIDENTIAL_RANGEPROOF_MINIMUM_VALUE),
             commitment,
             ctypes.c_char_p(blinder),
             ctypes.c_char_p(seed),
