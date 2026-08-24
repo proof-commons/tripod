@@ -944,3 +944,132 @@ fn hex(digest: &Digest32) -> String {
         rendered
     })
 }
+
+// --- Wave 5: the protected-bytes repair, from the signing side --------
+
+/// The pinned candidate with exactly one range-proof byte moved.
+///
+/// Same length, same commitments, same nonces, same programs, same
+/// version and lock time, same input. One byte of one proof differs, and
+/// nothing else does — which is the mutation the repair was proven
+/// against on the construction side, brought here so the census can be
+/// shown answering it.
+fn candidate_with_one_proof_byte_moved() -> TargetTransaction {
+    let pinned = pinned_candidate();
+    let mut proof = pinned.output_witnesses()[0].range_proof().to_vec();
+    proof[0] ^= 0xff;
+
+    TargetTransaction::with_output_witnesses(
+        pinned.version(),
+        pinned.inputs().to_vec(),
+        pinned.outputs().to_vec(),
+        pinned.lock_time(),
+        pinned.witnesses().to_vec(),
+        vec![
+            OutputWitness::new(
+                pinned.output_witnesses()[0].surjection_proof().to_vec(),
+                proof,
+            ),
+            pinned.output_witnesses()[1].clone(),
+        ],
+    )
+    .expect("the mutated candidate is well formed")
+}
+
+/// One census bound to the private lane's own preimage.
+///
+/// The preimage is taken by the construction package's own function
+/// rather than respelled here: what this section is about is the census
+/// refusing, and a second opinion about which bytes the preimage is
+/// would have made a disagreement between them look like a census
+/// finding when it was a transcription error.
+fn private_lane_census(
+    target: &ReviewedElementsTapscriptDefinition,
+    candidate: TargetTransaction,
+) -> OwnerSigningCensus {
+    let protected_bytes = crate::live_finalize::protected_preimage(
+        &candidate,
+        linker::live_backend::LiveTransferRepresentationPlan::PrivateCommitted,
+    );
+
+    parts_census(target, candidate, |parts| CensusParts {
+        protected_bytes,
+        ..parts
+    })
+}
+
+#[test]
+fn a_candidate_whose_rangeproof_moved_refuses_the_bytes_the_owner_was_handed() {
+    // The repair exercised from the signing side. The construction side
+    // proved that one moved proof byte changes the private lane's
+    // preimage; what is checked here is the consequence that matters to
+    // an owner — the census assembled over the changed candidate refuses
+    // the bytes an owner is still holding, and refuses them at the
+    // binding check rather than at a digest nobody would have compared.
+    let target = reviewed_target();
+
+    let handed = private_lane_census(&target, pinned_candidate());
+    let moved = private_lane_census(&target, candidate_with_one_proof_byte_moved());
+
+    assert_eq!(
+        moved.check_offered(handed.protected_bytes()),
+        Err(OwnerCensusRefusal::ProtectedBytesAreNotTheCandidates),
+        "the census accepted bytes taken over another proof",
+    );
+
+    // And the census is not merely refusing everything: its own bytes
+    // pass the same check, so the refusal above is attributable to the
+    // proof byte that moved.
+    assert_eq!(moved.check_offered(moved.protected_bytes()), Ok(()));
+}
+
+#[test]
+fn the_witnessless_serialization_would_not_have_caught_it() {
+    // The control that gives the refusal above its content. Both
+    // candidates serialize witnesslessly to the very same bytes, so a
+    // census bound to that reading would have compared equal and let the
+    // owner bind to a preimage the target's digest does not cover. The
+    // two readings are compared side by side rather than argued.
+    let pinned = pinned_candidate();
+    let moved = candidate_with_one_proof_byte_moved();
+
+    assert_eq!(
+        pinned.encode_without_witness(),
+        moved.encode_without_witness(),
+        "the mutation was supposed to be invisible without the witness",
+    );
+
+    let target = reviewed_target();
+    assert_ne!(
+        private_lane_census(&target, pinned).protected_bytes(),
+        private_lane_census(&target, moved).protected_bytes(),
+        "the private lane's preimage did not move with the proof",
+    );
+}
+
+#[test]
+fn the_refusal_arrives_before_any_message_is_formed() {
+    // §1.7's layer discipline at the sharpest point. The binding check
+    // is a construction refusal and it is reached without forming a
+    // message, which is what "before" means here: the two candidates DO
+    // have different messages, so a ceremony that had gone on to compute
+    // one would have signed the wrong digest rather than refused.
+    let target = reviewed_target();
+
+    let handed = private_lane_census(&target, pinned_candidate());
+    let moved = private_lane_census(&target, candidate_with_one_proof_byte_moved());
+
+    // The check that stops the ceremony, taken first and answered
+    // without a digest.
+    assert!(moved.check_offered(handed.protected_bytes()).is_err());
+
+    // What would have been signed had it not. Computed here, after the
+    // refusal, purely to show the refusal had something to prevent.
+    let handed_input = handed.signing_inputs().first().expect("one signing input");
+    let moved_input = moved.signing_inputs().first().expect("one signing input");
+    assert_ne!(
+        candidate_owner_message(&handed, handed_input, WitnessVectorTreatment::BothGrown),
+        candidate_owner_message(&moved, moved_input, WitnessVectorTreatment::BothGrown),
+        "the two candidates' messages coincided, so the refusal prevented nothing",
+    );
+}
