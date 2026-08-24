@@ -1671,9 +1671,8 @@ impl TargetOperationPlanner for ProofBearingObservationPlanner {
         if let Some((_case, response)) = previous {
             match self.stage {
                 Stage::Issue => {
-                    let printed = match response.issued_asset.clone() {
-                        Some(printed) => printed,
-                        None => return Err(self.refuse(ProofBearingRefusal::IssuanceNamedNoAsset)),
+                    let Some(printed) = response.issued_asset.clone() else {
+                        return Err(self.refuse(ProofBearingRefusal::IssuanceNamedNoAsset));
                     };
                     if let Err(refusal) = self.settle_asset(&printed) {
                         return Err(self.refuse(refusal));
@@ -1744,6 +1743,48 @@ impl TargetOperationPlanner for ProofBearingObservationPlanner {
 }
 
 // --- The artifact ------------------------------------------------------
+
+/// The second origin's lines, or the one line saying there was none.
+///
+/// Split out because the renderer is a census of a run and a census
+/// that outgrew its own reading is one nobody checks. Nothing here
+/// decides anything: every line is a value the comparison already
+/// carried.
+fn reverification_lines(record: &ProofBearingObservationRecord) -> Vec<String> {
+    let Some(check) = record.reverification() else {
+        return vec!["reverification none".to_owned()];
+    };
+
+    let mut lines = vec![
+        format!("reverification accepted_txid {}", check.accepted_txid()),
+        format!("reverification witness_txid {}", check.witness_txid()),
+        format!("reverification block_height {}", check.block_height()),
+        format!(
+            "reverification readback_matches_submission {}",
+            check.readback_matches_submission()
+        ),
+        format!(
+            "reverification recomputed_message {}",
+            printed(check.recomputed_message().as_slice())
+        ),
+        format!(
+            "reverification signature_from_readback {}",
+            printed(check.signature_from_readback())
+        ),
+        format!(
+            "reverification verifies_against_recomputed_message {}",
+            check.verified().is_ok()
+        ),
+    ];
+    if let Err(rejection) = check.verified() {
+        lines.push(format!("reverification rejection {rejection:?}"));
+    }
+    lines.push(format!(
+        "reverification verifies_against_emptied_vector_message {}",
+        check.verifies_against_emptied_vector_message()
+    ));
+    lines
+}
 
 /// One run's transcript, as the report artifact carries it.
 ///
@@ -1823,45 +1864,7 @@ pub fn render_proof_bearing_observation(record: &ProofBearingObservationRecord) 
         ));
     }
 
-    if let Some(check) = record.reverification() {
-        lines.push(format!(
-            "reverification accepted_txid {}",
-            check.accepted_txid()
-        ));
-        lines.push(format!(
-            "reverification witness_txid {}",
-            check.witness_txid()
-        ));
-        lines.push(format!(
-            "reverification block_height {}",
-            check.block_height()
-        ));
-        lines.push(format!(
-            "reverification readback_matches_submission {}",
-            check.readback_matches_submission()
-        ));
-        lines.push(format!(
-            "reverification recomputed_message {}",
-            printed(check.recomputed_message().as_slice())
-        ));
-        lines.push(format!(
-            "reverification signature_from_readback {}",
-            printed(check.signature_from_readback())
-        ));
-        lines.push(format!(
-            "reverification verifies_against_recomputed_message {}",
-            check.verified().is_ok()
-        ));
-        if let Err(rejection) = check.verified() {
-            lines.push(format!("reverification rejection {rejection:?}"));
-        }
-        lines.push(format!(
-            "reverification verifies_against_emptied_vector_message {}",
-            check.verifies_against_emptied_vector_message()
-        ));
-    } else {
-        lines.push("reverification none".to_owned());
-    }
+    lines.extend(reverification_lines(record));
 
     lines.push(format!(
         "observed_acceptance {}",
@@ -1919,12 +1922,12 @@ mod tests {
         // without one would be a control nobody can attribute a refusal
         // to. Checked rather than left to review.
         for case in ProofBearingCase::ALL {
-            assert!(!case.name().is_empty());
-            assert!(!case.moved_term().is_empty());
+            assert_ne!(case.name(), "");
+            assert_ne!(case.moved_term(), "");
         }
         for control in ProofBearingConstructionControl::ALL {
-            assert!(!control.name().is_empty());
-            assert!(!control.moved_term().is_empty());
+            assert_ne!(control.name(), "");
+            assert_ne!(control.moved_term(), "");
         }
 
         // Exactly one case is not a control, and it is the accepted one.
