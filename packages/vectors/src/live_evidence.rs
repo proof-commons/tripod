@@ -181,6 +181,15 @@ pub enum LiveInfrastructureBlocker {
     /// not this workspace's: a digest could be computed tomorrow and the
     /// semantic claim about what it commits to would still be
     /// candidate-scoped until the review completes.
+    ///
+    /// The digest half is cleared and this half is not. The review
+    /// verdict established six of the profile's seven required
+    /// dimensions on the observed acceptance and stopped on the seventh,
+    /// the issuance dimension: no candidate this arc builds bears an
+    /// issuance, so the two terms carrying the dimension are formed from
+    /// the input count alone and the acceptance exercised nothing about
+    /// any issuance field. A stopped verdict is a verdict, and this
+    /// residual stands on it rather than on nobody having looked.
     SighashProfileUnreviewed,
     /// No adapter signer is wired into this evidence lane.
     ///

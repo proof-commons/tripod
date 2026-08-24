@@ -367,11 +367,23 @@ impl OwnerSighashProfile {
     /// when the review does: a contract that reviewed the dimensions
     /// would make this [`OwnerProfileDisposition::Established`] with no
     /// edit here, and a contract that lost one would take it back out.
+    ///
+    /// # Nothing is handed in
+    ///
+    /// The disposition is recomputed here from two independently
+    /// maintained facts — which dimensions this profile requires, and
+    /// which the reviewed contract establishes — and there is no
+    /// argument, field, or constructor anywhere that lets a caller state
+    /// the answer instead. That is the whole reason the review verdict
+    /// is a population of the capability rather than a disposition
+    /// written down: the wave that reviewed the dimensions could not
+    /// declare the profile established even if it wanted to, and the
+    /// dimension it failed to exercise names itself in the result.
     #[must_use]
     pub fn assess(&self, capability: &SighashCapability) -> OwnerProfileDisposition {
         let unreviewed = self
             .required()
-            .filter(|dimension| !capability.reviewed().contains(dimension))
+            .filter(|dimension| !capability.is_reviewed(*dimension))
             .collect::<BTreeSet<_>>();
 
         if unreviewed.is_empty() {

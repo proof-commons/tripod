@@ -305,6 +305,33 @@ census_enum! {
         /// to the finalized transaction. The signature verifying is a
         /// different and weaker statement than the signature covering
         /// §1.7's protected data, and only the second is authorization.
+        ///
+        /// # What stands, and what stops it
+        ///
+        /// The review verdict is in, and it did not clear this. Six of
+        /// the selected profile's seven required dimensions are
+        /// established, each by the source review's citation and the
+        /// observed acceptance that exercised it. The seventh is
+        /// [`target_elements::SighashDimension::Issuance`], and
+        /// [`OwnerSighashProfile::assess`] recomputes the disposition to
+        /// review-incomplete naming exactly it.
+        ///
+        /// The reason is a property of this workspace rather than of the
+        /// target. The target's message does carry the dimension, in the
+        /// two terms the review cites; no candidate this arc builds bears
+        /// an issuance, so the construction that recomputes the message
+        /// forms both terms from the input count alone and reads no
+        /// issuance field. A term computed without consulting the
+        /// dimension's subject cannot disagree with the target about the
+        /// subject, so no number of agreeing digests checks it.
+        ///
+        /// What clears it is a candidate that bears an issuance together
+        /// with the census field its input-witness proofs need — a
+        /// construction and not a rerun — or an owner ruling that
+        /// re-types the dimension the way the internal key's was. Neither
+        /// is a review's to perform.
+        ///
+        /// [`OwnerSighashProfile::assess`]: crate::authorization::OwnerSighashProfile::assess
         SighashProfileUnreviewed,
     }
 }

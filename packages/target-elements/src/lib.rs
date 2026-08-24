@@ -20,8 +20,10 @@ pub mod transaction_form;
 mod weld;
 
 pub use authorization::{
-    AuthorizationContract, RelativeTimelockContract, SequenceFieldLayout, SighashCapability,
-    SighashDimension, SignaturePrimitiveContract, TimelockMode, UnknownPublicKeyTypeRule,
+    AuthorizationContract, ExercisingObservation, ObservationIdentity, RelativeTimelockContract,
+    ReviewedGround, SequenceFieldLayout, SighashCapability, SighashDimension,
+    SighashSourceCitation, SignaturePrimitiveContract, TimelockMode, UnknownPublicKeyTypeRule,
+    UnreviewedGround,
 };
 pub use capability::{
     CapabilityContract, ElementsCapability, StaticCapabilityStatus, prerequisite_cycle_residual,

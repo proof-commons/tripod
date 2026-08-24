@@ -7,7 +7,7 @@
 //! verified signature is one later evidence layer, not a proof that
 //! the right party approved the right thing.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::capability::census_enum;
 use crate::encoding::EncodingClass;
@@ -41,6 +41,250 @@ census_enum! {
     }
 }
 
+/// Where the source review read one dimension's term in the target.
+///
+/// Carried as data rather than left in a doc comment because the
+/// accepted evidence ruling makes the citation half of what a reviewed
+/// dimension *is*. A reviewed set whose citations lived only in prose
+/// would be a set a later edit could grow without anyone having read
+/// anything, which is the source-review-alone option the owner closed.
+///
+/// The three fields are the three questions a reader of a reviewed
+/// dimension asks: which terms of the message carry it, where the
+/// target writes them, and where the reading that says so is recorded.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SighashSourceCitation {
+    terms: &'static str,
+    written_at: &'static str,
+    review_anchor: &'static str,
+}
+
+impl SighashSourceCitation {
+    /// States one citation.
+    #[must_use]
+    pub const fn new(
+        terms: &'static str,
+        written_at: &'static str,
+        review_anchor: &'static str,
+    ) -> Self {
+        Self {
+            terms,
+            written_at,
+            review_anchor,
+        }
+    }
+
+    /// Which terms of the message carry the dimension.
+    #[must_use]
+    pub const fn terms(&self) -> &'static str {
+        self.terms
+    }
+
+    /// Where the target writes them.
+    #[must_use]
+    pub const fn written_at(&self) -> &'static str {
+        self.written_at
+    }
+
+    /// Where the reading that says so is recorded.
+    #[must_use]
+    pub const fn review_anchor(&self) -> &'static str {
+        self.review_anchor
+    }
+}
+
+/// The run whose acceptance a reviewed dimension rests on.
+///
+/// Three fields and not one string, because "an observation" that named
+/// only a transaction identity would be unfindable a month later: the
+/// ceremony case says which of the run's cases it was, the identity says
+/// which transaction the target accepted, and the record says where the
+/// run is written down. The last matters more than it looks — this
+/// workspace commits no transcript of the ceremony, so the observation's
+/// only durable home is the backlog row and the merge that carries it,
+/// and a citation that did not say so would be pointing at nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ObservationIdentity {
+    ceremony_case: &'static str,
+    accepted_transaction: &'static str,
+    recorded_at: &'static str,
+}
+
+impl ObservationIdentity {
+    /// States one observation's identity.
+    #[must_use]
+    pub const fn new(
+        ceremony_case: &'static str,
+        accepted_transaction: &'static str,
+        recorded_at: &'static str,
+    ) -> Self {
+        Self {
+            ceremony_case,
+            accepted_transaction,
+            recorded_at,
+        }
+    }
+
+    /// The ceremony's own name for the case.
+    #[must_use]
+    pub const fn ceremony_case(&self) -> &'static str {
+        self.ceremony_case
+    }
+
+    /// The transaction identity the target accepted.
+    #[must_use]
+    pub const fn accepted_transaction(&self) -> &'static str {
+        self.accepted_transaction
+    }
+
+    /// Where the run is recorded.
+    #[must_use]
+    pub const fn recorded_at(&self) -> &'static str {
+        self.recorded_at
+    }
+}
+
+/// What exercised one dimension, beyond the reading of the source.
+///
+/// # What counts as exercising a dimension
+///
+/// The accepted spend and the recomputation are one another's halves: a
+/// node formed its own message and ran its own verifying primitive, and
+/// an independently written construction formed the same message from
+/// the source review's term table. Their agreement is over the whole
+/// stream at once, so a model wrong about *any* term — its position, its
+/// width, its byte order, or its content — would have produced a
+/// different digest and a signature that verified against nothing.
+///
+/// That is what makes the agreement per-dimension evidence, and it is
+/// also what bounds it. The agreement exercises a dimension only where
+/// the recomputation actually read that dimension's own subject out of
+/// the candidate. A term the recomputation synthesizes without consulting
+/// the dimension's subject cannot be wrong about it, and a model that
+/// cannot be wrong about a dimension is not checked about it by any
+/// number of agreeing digests.
+///
+/// # Why the controls are a slice
+///
+/// Zero or many, because a negative control is a strengthening and not a
+/// requirement. A control moves one term alone and observes the target
+/// refuse, which turns "the target agreed on this value" into "the target
+/// distinguishes this value from another". Recording the count honestly
+/// is the point: most of the message's terms have no control, and a
+/// vocabulary that made one mandatory would have invited an unmoved term
+/// to be filed as a moved one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExercisingObservation {
+    observation: ObservationIdentity,
+    controls: &'static [&'static str],
+}
+
+impl ExercisingObservation {
+    /// States what exercised one dimension.
+    #[must_use]
+    pub const fn new(observation: ObservationIdentity, controls: &'static [&'static str]) -> Self {
+        Self {
+            observation,
+            controls,
+        }
+    }
+
+    /// The accepted spend this dimension rests on.
+    #[must_use]
+    pub const fn observation(&self) -> ObservationIdentity {
+        self.observation
+    }
+
+    /// The negative controls that moved a term of this dimension alone.
+    #[must_use]
+    pub const fn controls(&self) -> &'static [&'static str] {
+        self.controls
+    }
+}
+
+/// What established one dimension the review moved to reviewed.
+///
+/// Both halves, never one. The accepted evidence ruling is source review
+/// *and* recomputation *and* one observed acceptance, and a ground that
+/// could hold a citation without an observation would let the first of
+/// the three pass as all of them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ReviewedGround {
+    citation: SighashSourceCitation,
+    exercised_by: ExercisingObservation,
+}
+
+impl ReviewedGround {
+    /// States what established one dimension.
+    #[must_use]
+    pub const fn new(citation: SighashSourceCitation, exercised_by: ExercisingObservation) -> Self {
+        Self {
+            citation,
+            exercised_by,
+        }
+    }
+
+    /// Where the source review read the dimension's terms.
+    #[must_use]
+    pub const fn citation(&self) -> SighashSourceCitation {
+        self.citation
+    }
+
+    /// What exercised it.
+    #[must_use]
+    pub const fn exercised_by(&self) -> ExercisingObservation {
+        self.exercised_by
+    }
+}
+
+/// Why one dimension is not in the reviewed set.
+///
+/// Three members and no fourth, because the three are the three
+/// *different* things "not reviewed" has meant in this arc, and merging
+/// any two of them would lose the one fact a later wave needs: whether
+/// the dimension is reachable at all, and by whom.
+///
+/// None of them is "nobody looked". Every member carries the reading
+/// that reached the dimension, so an unreviewed dimension here is one
+/// the review arrived at and could not exercise — never one it skipped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum UnreviewedGround {
+    /// The message construction contains no term for the dimension at
+    /// all, so no reading of the message and no recomputation of it can
+    /// ever move it.
+    ///
+    /// Permanent by construction rather than pending: this is not a
+    /// dimension awaiting a run. The protection the profile wanted from
+    /// it is recorded as carried by another dimension, and the selector
+    /// that says which one carries the argument.
+    NoMessageTermCarriesIt {
+        /// Where the reading that settles it is recorded.
+        review_anchor: &'static str,
+    },
+    /// The message carries the dimension and the selected profile
+    /// refuses it, so no candidate this arc produces takes the branch
+    /// that would exercise it.
+    ///
+    /// A refusal is not a gap. The dimension stays unreviewed because
+    /// establishing it would mean exercising a commitment the profile
+    /// declines to make, and a reviewed set that grew by exercising
+    /// refused dimensions would be establishing a different profile.
+    TheSelectedProfileRefusesIt(SighashSourceCitation),
+    /// The dimension's terms are in every message this arc forms, and no
+    /// candidate this arc can build puts the dimension's own subject
+    /// into them.
+    ///
+    /// The sharpest of the three and the only one that blocks a required
+    /// dimension. The terms are present, the target writes them, and the
+    /// recomputation reproduces them — but it reproduces them from
+    /// something other than the dimension's subject, so their agreement
+    /// says nothing about the subject. What repairs it is a candidate
+    /// carrying the subject, which is a construction this arc refuses by
+    /// type rather than a run nobody has scheduled.
+    NoCandidateThisArcBuildsCarriesTheSubject(SighashSourceCitation),
+}
+
 /// Which sighash dimensions the review actually established.
 ///
 /// # Why this is split rather than a set of booleans
@@ -53,15 +297,29 @@ census_enum! {
 /// review never asked, and the resulting contract would have read as
 /// authoritative.
 ///
-/// So each dimension is classified as reviewed or not reviewed, and
-/// every dimension is currently *not* reviewed. Absence from the
-/// reviewed set means "this package has not established it", never
-/// "the target does not offer it". A downstream selector must treat an
-/// unreviewed dimension as unavailable and say why.
+/// So each dimension is classified as reviewed or not reviewed.
+/// Absence from the reviewed set means "this package has not established
+/// it", never "the target does not offer it". A downstream selector must
+/// treat an unreviewed dimension as unavailable and say why.
+///
+/// # Why each side carries a ground
+///
+/// A bare set member is a claim with nothing behind it, and the two sets
+/// were bare when the review had established nothing — which cost
+/// nothing while both were empty of content. They stop being free the
+/// moment a dimension moves: a reviewed set of bare members could be
+/// grown by an edit that read no source and ran nothing, and an
+/// unreviewed set of bare members cannot tell a dimension nobody reached
+/// from one that was reached and could not be exercised.
+///
+/// So each side is a map to its ground. [`ReviewedGround`] carries both
+/// halves the accepted evidence ruling requires, and [`UnreviewedGround`]
+/// carries the recorded reason that ruling demands of a dimension the
+/// review could not exercise.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SighashCapability {
-    reviewed: BTreeSet<SighashDimension>,
-    unreviewed: BTreeSet<SighashDimension>,
+    reviewed: BTreeMap<SighashDimension, ReviewedGround>,
+    unreviewed: BTreeMap<SighashDimension, UnreviewedGround>,
     evidence: BTreeSet<TargetEvidenceRequirementId>,
 }
 
@@ -69,8 +327,8 @@ impl SighashCapability {
     /// States the sighash review.
     #[must_use]
     pub fn new(
-        reviewed: impl IntoIterator<Item = SighashDimension>,
-        unreviewed: impl IntoIterator<Item = SighashDimension>,
+        reviewed: impl IntoIterator<Item = (SighashDimension, ReviewedGround)>,
+        unreviewed: impl IntoIterator<Item = (SighashDimension, UnreviewedGround)>,
         evidence: impl IntoIterator<Item = TargetEvidenceRequirementId>,
     ) -> Self {
         Self {
@@ -80,16 +338,27 @@ impl SighashCapability {
         }
     }
 
-    /// The dimensions the review established.
+    /// The dimensions the review established, each with its ground.
     #[must_use]
-    pub const fn reviewed(&self) -> &BTreeSet<SighashDimension> {
+    pub const fn reviewed(&self) -> &BTreeMap<SighashDimension, ReviewedGround> {
         &self.reviewed
     }
 
-    /// The dimensions the review did not reach.
+    /// The dimensions the review did not establish, each with its
+    /// recorded reason.
     #[must_use]
-    pub const fn unreviewed(&self) -> &BTreeSet<SighashDimension> {
+    pub const fn unreviewed(&self) -> &BTreeMap<SighashDimension, UnreviewedGround> {
         &self.unreviewed
+    }
+
+    /// Whether one dimension is established.
+    ///
+    /// Published so that a selector recomputing a disposition asks the
+    /// capability rather than reaching into a collection, and so that
+    /// the question has one spelling across the workspace.
+    #[must_use]
+    pub fn is_reviewed(&self, dimension: SighashDimension) -> bool {
+        self.reviewed.contains_key(&dimension)
     }
 
     /// The evidence a deployment must produce for the sighash.
@@ -101,7 +370,10 @@ impl SighashCapability {
     /// Any dimension classified both ways.
     #[must_use]
     pub fn contradictory(&self) -> Option<SighashDimension> {
-        self.reviewed.intersection(&self.unreviewed).next().copied()
+        self.reviewed
+            .keys()
+            .find(|dimension| self.unreviewed.contains_key(dimension))
+            .copied()
     }
 
     /// Any dimension classified neither way.
@@ -110,7 +382,7 @@ impl SighashCapability {
         SighashDimension::ALL
             .iter()
             .find(|dimension| {
-                !self.reviewed.contains(dimension) && !self.unreviewed.contains(dimension)
+                !self.reviewed.contains_key(dimension) && !self.unreviewed.contains_key(dimension)
             })
             .copied()
     }
@@ -395,6 +667,209 @@ impl AuthorizationContract {
     }
 }
 
+/// The run every reviewed dimension below rests on.
+///
+/// One observation and not seven, because the accepted evidence ruling
+/// asks for *one* target-accepted spend of a first-party candidate whose
+/// signature verifies against the recomputed message. What differs
+/// between dimensions is not which run exercised them but whether the
+/// run's message carried each dimension's own subject.
+const OWNER_OBSERVATION: ObservationIdentity = ObservationIdentity::new(
+    "selected-profile-authorization",
+    "40cb6c4ee284ed38555a4840198c8130d1e2c3246b57b9d8b93842c3c6730029",
+    "plans/backlog.md T5-026",
+);
+
+/// The dimension-by-dimension verdict of the owner sighash review.
+///
+/// # What moved, and what moved it
+///
+/// Six of the profile's seven required dimensions are established, each
+/// by the same accepted spend and the same independently written
+/// recomputation of its message. The candidate consumed two receipts and
+/// created two destinations, so the four whole-transaction dimensions
+/// were exercised at a cardinality that distinguishes "every input" from
+/// "the signing input" and "every output" from "the output at this
+/// index" — a single-input, single-output candidate would have left that
+/// distinction unobserved and the honest verdict would have been
+/// narrower.
+///
+/// Two of the six carry a negative control besides. The output side is
+/// the one the arc had a recorded hazard for, so it got both: one
+/// control emptied the output-witness vector and one exchanged the two
+/// destinations, and the target refused each.
+///
+/// # Why `Issuance` did not move
+///
+/// The seventh required dimension is the one this review reached and
+/// could not exercise, and the reason is a property of this workspace
+/// rather than of the target. The target's own message does carry the
+/// dimension: term 9 writes each input's issuance or one zero byte where
+/// it is null, and term 10 hashes the issuance rangeproofs of every
+/// input-witness entry. But no candidate this arc builds bears an
+/// issuance — the census refuses a declared one by type rather than
+/// carrying a field for it — so the construction that recomputes the
+/// message reads no issuance field at all. It writes one zero byte per
+/// input for term 9 and two per input for term 10, both from the input
+/// count alone.
+///
+/// A term computed without consulting the dimension's subject cannot
+/// disagree with the target about the subject, so no number of agreeing
+/// digests checks it. The accepted spend exercised the input count in
+/// those two positions and nothing about any issuance field, and the six
+/// negative controls moved neither term.
+///
+/// The consequence is the one the source review put on this arc's desk
+/// by name (`rule:sighash-review:census-consequence`): the census's
+/// silence about the input side is a claim with a precondition, and the
+/// precondition is exactly the shape that would exercise this dimension.
+/// The repair is a candidate that bears an issuance together with the
+/// census field its input-witness proofs need — a construction, not a
+/// rerun — or an owner ruling that re-types the dimension. Neither is
+/// this review's to perform, and stating that is the whole of what a
+/// review verdict owes here.
+#[must_use]
+pub(crate) fn reviewed_sighash_capability() -> SighashCapability {
+    SighashCapability::new(
+        established_sighash_dimensions(),
+        unestablished_sighash_dimensions(),
+        [TargetEvidenceRequirementId::SighashSemantics],
+    )
+}
+
+/// The review's anchor for the dimension table.
+const DIMENSIONS: &str = "tab:sighash-review:dimensions";
+
+/// The review's anchor for the refusal table.
+const REFUSALS: &str = "tab:sighash-review:refusals";
+
+/// The six dimensions the observed acceptance exercised.
+const fn established_sighash_dimensions() -> [(SighashDimension, ReviewedGround); 6] {
+    use SighashDimension as Dimension;
+
+    [
+        (
+            Dimension::AllOutputs,
+            ReviewedGround::new(
+                SighashSourceCitation::new(
+                    "terms 11 and 12",
+                    "src/script/interpreter.cpp:2741-2743",
+                    DIMENSIONS,
+                ),
+                // Both halves of the output side were moved and refused:
+                // the witness half by the recorded hazard reproduced
+                // deliberately, and the list half by a candidate whose
+                // two destinations are exchanged.
+                ExercisingObservation::new(
+                    OWNER_OBSERVATION,
+                    &[
+                        "control-empty-output-witness-vector",
+                        "control-another-candidate",
+                    ],
+                ),
+            ),
+        ),
+        (
+            Dimension::AllInputs,
+            ReviewedGround::new(
+                SighashSourceCitation::new(
+                    "terms 4, 5 and 8",
+                    "src/script/interpreter.cpp:2727-2729 and :2737",
+                    DIMENSIONS,
+                ),
+                // The three whole-transaction input hashes were formed
+                // over both consumed receipts, from the outpoints and
+                // sequences the candidate actually carried.
+                ExercisingObservation::new(OWNER_OBSERVATION, &[]),
+            ),
+        ),
+        (
+            Dimension::Version,
+            ReviewedGround::new(
+                SighashSourceCitation::new("term 2", "src/script/interpreter.cpp:2725", DIMENSIONS),
+                ExercisingObservation::new(OWNER_OBSERVATION, &[]),
+            ),
+        ),
+        (
+            Dimension::LockTime,
+            ReviewedGround::new(
+                SighashSourceCitation::new("term 3", "src/script/interpreter.cpp:2726", DIMENSIONS),
+                ExercisingObservation::new(OWNER_OBSERVATION, &[]),
+            ),
+        ),
+        (
+            Dimension::TapleafHash,
+            ReviewedGround::new(
+                SighashSourceCitation::new(
+                    "term 16",
+                    "src/script/interpreter.cpp:2793-2795",
+                    DIMENSIONS,
+                ),
+                // The leaf hash written is the one the control-block
+                // check already computed, and the accepted candidate's
+                // two inputs execute two different leaves.
+                ExercisingObservation::new(OWNER_OBSERVATION, &[]),
+            ),
+        ),
+        (
+            Dimension::SpentOutputs,
+            ReviewedGround::new(
+                SighashSourceCitation::new(
+                    "terms 6 and 7",
+                    "src/script/interpreter.cpp:2730 and :2736",
+                    DIMENSIONS,
+                ),
+                // The asset, value and program hashed here are the
+                // node's own report of the funded coins rather than the
+                // ceremony's expectation of them, so the agreement is
+                // over what the target holds and not over what a builder
+                // assumed.
+                ExercisingObservation::new(OWNER_OBSERVATION, &[]),
+            ),
+        ),
+    ]
+}
+
+/// The four dimensions the review reached and could not establish.
+const fn unestablished_sighash_dimensions() -> [(SighashDimension, UnreviewedGround); 4] {
+    use SighashDimension as Dimension;
+
+    [
+        (
+            Dimension::Issuance,
+            UnreviewedGround::NoCandidateThisArcBuildsCarriesTheSubject(
+                SighashSourceCitation::new(
+                    "terms 9 and 10",
+                    "src/script/interpreter.cpp:2738-2739",
+                    DIMENSIONS,
+                ),
+            ),
+        ),
+        (
+            Dimension::SingleOutput,
+            UnreviewedGround::TheSelectedProfileRefusesIt(SighashSourceCitation::new(
+                "terms 11 and 12, replaced by the single-output branch",
+                "src/script/interpreter.cpp:2741 and :2774-2790",
+                REFUSALS,
+            )),
+        ),
+        (
+            Dimension::InputExtensionPermitted,
+            UnreviewedGround::TheSelectedProfileRefusesIt(SighashSourceCitation::new(
+                "terms 4 to 10, replaced by the signing input's own fields",
+                "src/script/interpreter.cpp:2727 and :2750-2766",
+                REFUSALS,
+            )),
+        ),
+        (
+            Dimension::InternalKey,
+            UnreviewedGround::NoMessageTermCarriesIt {
+                review_anchor: "rule:sighash-review:internal-key",
+            },
+        ),
+    ]
+}
+
 /// Builds the reviewed authorization contract.
 pub(crate) fn reviewed_authorization() -> AuthorizationContract {
     use TargetEvidenceRequirementId as R;
@@ -413,14 +888,7 @@ pub(crate) fn reviewed_authorization() -> AuthorizationContract {
             crate::opcode::VALIDATION_BUDGET_PER_CHECK,
             [R::SignatureSemantics],
         ),
-        // Every dimension is unreviewed. The review reached the
-        // signature primitives but not the sighash construction, and
-        // saying so is the only honest option available.
-        SighashCapability::new(
-            [],
-            SighashDimension::ALL.iter().copied(),
-            [R::SighashSemantics],
-        ),
+        reviewed_sighash_capability(),
         RelativeTimelockContract::new(
             [TimelockMode::BlockHeight, TimelockMode::TimeInterval],
             SequenceFieldLayout {

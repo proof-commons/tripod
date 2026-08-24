@@ -73,7 +73,7 @@ const LEAF_HASH: Digest32 = [0x5a; 32];
 /// The deployment's genesis block hash.
 ///
 /// Also public test material. A chain nobody settles on.
-const GENESIS: Digest32 = [0x21; 32];
+pub(super) const GENESIS: Digest32 = [0x21; 32];
 
 /// A second deployment, for the mismatch case.
 const OTHER_GENESIS: Digest32 = [0x22; 32];
@@ -187,7 +187,7 @@ fn pinned_candidate() -> TargetTransaction {
 }
 
 /// The pinned candidate's census, built through the parts seam.
-fn pinned_census(target: &ReviewedElementsTapscriptDefinition) -> OwnerSigningCensus {
+pub(super) fn pinned_census(target: &ReviewedElementsTapscriptDefinition) -> OwnerSigningCensus {
     let candidate = pinned_candidate();
 
     parts_census(target, candidate, |parts| parts)

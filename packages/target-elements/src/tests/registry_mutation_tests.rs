@@ -8,8 +8,9 @@
 use std::num::NonZeroUsize;
 
 use crate::authorization::{
-    AuthorizationContract, RelativeTimelockContract, SequenceFieldLayout, SighashCapability,
-    SighashDimension,
+    AuthorizationContract, ExercisingObservation, ObservationIdentity, RelativeTimelockContract,
+    ReviewedGround, SequenceFieldLayout, SighashCapability, SighashDimension,
+    SighashSourceCitation, UnreviewedGround,
 };
 use crate::capability::{CapabilityContract, ElementsCapability};
 use crate::confidential::{
@@ -446,10 +447,11 @@ fn an_unclassified_sighash_dimension_is_rejected() {
     // the reviewed one. The contract would then be silent about
     // whether the review reached it, which is worse than either
     // answer, because silence reads as absence.
-    let remaining: Vec<SighashDimension> = SighashDimension::ALL
+    let remaining: Vec<(SighashDimension, UnreviewedGround)> = SighashDimension::ALL
         .iter()
         .copied()
         .filter(|dimension| *dimension != SighashDimension::Issuance)
+        .map(|dimension| (dimension, mutation_unreviewed_ground()))
         .collect();
     parts.authorization = AuthorizationContract::new(
         parts.authorization.signature().clone(),
@@ -474,8 +476,11 @@ fn a_sighash_dimension_classified_both_ways_is_rejected() {
     parts.authorization = AuthorizationContract::new(
         parts.authorization.signature().clone(),
         SighashCapability::new(
-            [SighashDimension::AllOutputs],
-            SighashDimension::ALL.iter().copied(),
+            [(SighashDimension::AllOutputs, mutation_reviewed_ground())],
+            SighashDimension::ALL
+                .iter()
+                .copied()
+                .map(|dimension| (dimension, mutation_unreviewed_ground())),
             parts.authorization.sighash().evidence().iter().copied(),
         ),
         parts.authorization.relative_timelock().clone(),
@@ -486,6 +491,28 @@ fn a_sighash_dimension_classified_both_ways_is_rejected() {
             SighashDimension::AllOutputs
         ))
     );
+}
+
+/// A reviewed ground for a mutation fixture.
+///
+/// The mutations here vary *which* dimensions a capability classifies
+/// and on which side, which is what the two validator errors are about.
+/// The grounds are inert fixture text and say so.
+fn mutation_reviewed_ground() -> ReviewedGround {
+    ReviewedGround::new(
+        SighashSourceCitation::new("fixture", "fixture", "fixture"),
+        ExercisingObservation::new(
+            ObservationIdentity::new("fixture", "fixture", "fixture"),
+            &[],
+        ),
+    )
+}
+
+/// An unreviewed ground for a mutation fixture.
+fn mutation_unreviewed_ground() -> UnreviewedGround {
+    UnreviewedGround::NoMessageTermCarriesIt {
+        review_anchor: "fixture",
+    }
 }
 
 #[test]
