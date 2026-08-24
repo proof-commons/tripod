@@ -441,6 +441,7 @@ Measured against `v28.99.0-6f43e3ffe730`.
 from __future__ import annotations
 
 import argparse
+import ctypes
 import hashlib
 import io
 import json
@@ -449,6 +450,7 @@ import re
 import shutil
 import signal
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -711,6 +713,206 @@ NORMALIZATION_EXTRA_OUTPUT_SATOSHIS = 5_000
 # refusal to guess when a fixture omits one.
 NORMALIZATION_AMOUNT_DELTA = 1_000_000
 NORMALIZATION_HIDDEN_AMOUNT = 1_000_000
+
+# The confidential predecessor fixture recipe, carried on this side of
+# the wire.
+#
+# # Why this adapter holds a fixture catalogue at all
+#
+# The confidential request carries a handle, a digest, ordered
+# destination programs, and the profiles, and it carries no amount and no
+# opening -- there is no member an amount could be written into. What
+# each destination HOLDS is therefore a fact of the registered fixture,
+# and a materializer that could not resolve the fixture could not
+# materialize anything. So both sides hold the same public catalogue and
+# the digest is what detects them drifting apart: this adapter recomputes
+# the digest from its own catalogue and its own arithmetic, and answers a
+# request whose digest differs by refusing it rather than by materializing
+# something else.
+#
+# Every value below is public disposable test material on a chain this
+# process creates and destroys `(ADR-015 rule test-material)`. Nothing
+# here is a secret, nothing here is retained, and nothing here authorizes
+# anything anywhere else.
+CONFIDENTIAL_DERIVATION_TAG = b"tripod/guide-ctf/derive/v1"
+CONFIDENTIAL_DIGEST_TAG = b"tripod/guide-ctf/fixture-digest/v1"
+
+# The one digit in the handle grammar's whole spelling.
+CONFIDENTIAL_GRAMMAR_VERSION = 1
+
+# The bounded counters. Search moves upward from zero without wrapping,
+# without skipping, without randomness, and without concurrency, and
+# exhaustion is a refusal rather than a retry with a different source.
+CONFIDENTIAL_MAX_PARITY_COUNTER = 4095
+CONFIDENTIAL_MAX_SCALAR_COUNTER = 255
+
+# The order of the group every opening scalar lives in, which is the
+# curve's group order stated once above.
+CONFIDENTIAL_GROUP_ORDER = SECP256K1_GROUP_ORDER
+
+# The serialized value-commitment prefixes the target admits, in the
+# order the slice requires them: one square y, then one non-square.
+CONFIDENTIAL_VALUE_PREFIXES = (8, 9)
+
+# The rangeproof shape every output of this slice carries.
+#
+# A zero exponent and fifty-two minimum bits, which is the widest range
+# the semantic amount domain needs and the shape the target's own
+# blinding path defaults to. Neither is a consensus requirement; both are
+# fixed so that two runs of the same fixture produce the same bytes.
+CONFIDENTIAL_RANGEPROOF_EXPONENT = 0
+CONFIDENTIAL_RANGEPROOF_MINIMUM_BITS = 52
+
+# The widest proof the library can emit, which is the buffer this adapter
+# offers it.
+CONFIDENTIAL_RANGEPROOF_CAPACITY = 5134
+
+# The derivation roles, by their transcript codes.
+CONFIDENTIAL_ROLE_VALUE_BLINDER = 1
+CONFIDENTIAL_ROLE_NONCE_SECRET = 2
+CONFIDENTIAL_ROLE_RANGEPROOF_SEED = 3
+
+# The output roles, by their transcript codes. Exactly one output of a
+# transaction is balancing and every other is primary.
+CONFIDENTIAL_OUTPUT_ROLES = {"primary": 1, "balancing": 2}
+
+# The one derivation profile and the one material class this adapter
+# reads, by their transcript codes.
+CONFIDENTIAL_DERIVATION_PROFILE_CODE = 1
+CONFIDENTIAL_MATERIAL_CLASS_CODE = 1
+
+# Every registered case, by handle.
+#
+# The amounts and roles are the fixture's; the asset and the ordered
+# programs arrive in the request. A handle this table does not hold is an
+# unknown handle and is refused before any cryptographic work.
+CONFIDENTIAL_FIXTURE_CATALOGUE = {
+    "ctf-v1/predecessor-dual-parity": {
+        "retry_limit": CONFIDENTIAL_MAX_PARITY_COUNTER,
+        # The funding input is explicit, so it contributes a zero value
+        # blinder. It is stated rather than assumed, because the
+        # balancing solve is stated once, generally, and this is one
+        # instance of it.
+        "input_blinder_sum": bytes(32),
+        "outputs": (
+            {"role": "primary", "semantic_amount": 700_000_000},
+            {"role": "balancing", "semantic_amount": 300_000_000},
+        ),
+    },
+}
+
+
+def confidential_tagged_hash(tag: bytes, message: bytes) -> bytes:
+    """The published tagged-hash construction: the tag's digest twice, then
+    the message.
+
+    Prefixing with a fixed-width pair rather than the tag's own bytes is
+    what makes the domain separation independent of the tag's length.
+    """
+    prefix = hashlib.sha256(tag).digest()
+    return hashlib.sha256(prefix + prefix + message).digest()
+
+
+def confidential_framed(parts: list, value: bytes) -> None:
+    """One byte string, framed by its own width.
+
+    Big-endian, four bytes, always present. Framing every member is what
+    stops two transcripts colliding by concatenation.
+    """
+    parts.append(struct.pack(">I", len(value)))
+    parts.append(value)
+
+
+def confidential_derivation_preimage(
+    handle: str, index: int, role: int, parity: int, scalar: int
+) -> bytes:
+    """The preimage one derived value is taken over.
+
+    The case identity, the output index, the derivation role, the parity
+    counter, and the scalar counter, each framed or fixed-width, so that
+    no two preimages can collide.
+    """
+    parts = [struct.pack(">H", CONFIDENTIAL_GRAMMAR_VERSION)]
+    confidential_framed(parts, handle.encode("utf-8"))
+    parts.append(struct.pack(">I", index))
+    parts.append(bytes([role]))
+    parts.append(struct.pack(">H", parity))
+    parts.append(bytes([scalar]))
+    return b"".join(parts)
+
+
+def confidential_derive(handle: str, index: int, role: int, parity: int, scalar: int) -> bytes:
+    """One derived value, before it is read as anything."""
+    return confidential_tagged_hash(
+        CONFIDENTIAL_DERIVATION_TAG,
+        confidential_derivation_preimage(handle, index, role, parity, scalar),
+    )
+
+
+def confidential_search_scalar(handle: str, index: int, role: int, parity: int) -> bytes:
+    """One role's scalar for one output, searched upward from zero.
+
+    Admitted means nonzero and below the group order. Exhaustion raises
+    rather than falling back to a different source.
+    """
+    for scalar in range(CONFIDENTIAL_MAX_SCALAR_COUNTER + 1):
+        raw = confidential_derive(handle, index, role, parity, scalar)
+        value = int.from_bytes(raw, "big")
+        if 0 < value < CONFIDENTIAL_GROUP_ORDER:
+            return raw
+    raise AdapterError(
+        "the scalar search for role %d of output %d reached its bound" % (role, index)
+    )
+
+
+def confidential_digest_transcript(
+    handle: str,
+    profiles: dict,
+    retry_limit: int,
+    parity: int,
+    asset: bytes,
+    outputs: tuple,
+    programs: list,
+    openings: list,
+) -> bytes:
+    """The transcript the fixture digest is taken over.
+
+    The contract tag sits INSIDE the transcript rather than beside it,
+    which is what makes a semantic-only recorded-randomness digest
+    impossible to mistake for a byte-identity one. The members that exist
+    only under byte identity -- the counter, the amounts, the openings,
+    and the resulting prefixes -- are written only when the openings are
+    there to write.
+    """
+    parts = [struct.pack(">H", CONFIDENTIAL_GRAMMAR_VERSION)]
+    confidential_framed(parts, handle.encode("utf-8"))
+    confidential_framed(parts, profiles["reproducibility_contract"].encode("utf-8"))
+    confidential_framed(parts, profiles["representation"].encode("utf-8"))
+    confidential_framed(parts, profiles["custody"].encode("utf-8"))
+    confidential_framed(parts, profiles["materializer"].encode("utf-8"))
+    parts.append(bytes([CONFIDENTIAL_DERIVATION_PROFILE_CODE]))
+    parts.append(bytes([CONFIDENTIAL_MATERIAL_CLASS_CODE]))
+    parts.append(struct.pack(">H", retry_limit))
+    if openings is None:
+        parts.append(bytes([0]))
+    else:
+        parts.append(bytes([1]))
+        parts.append(struct.pack(">H", parity))
+    parts.append(struct.pack(">I", len(outputs)))
+    for index, output in enumerate(outputs):
+        parts.append(struct.pack(">I", index))
+        parts.append(bytes([CONFIDENTIAL_OUTPUT_ROLES[output["role"]]]))
+        confidential_framed(parts, asset)
+        confidential_framed(parts, programs[index])
+        if openings is not None:
+            opening = openings[index]
+            parts.append(struct.pack(">Q", output["semantic_amount"]))
+            confidential_framed(parts, opening["value_blinder"])
+            confidential_framed(parts, opening["nonce_input"])
+            confidential_framed(parts, opening["rangeproof_seed"])
+            parts.append(bytes([opening["value_commitment"][0]]))
+    return b"".join(parts)
+
 
 # The schema of the Guide-11 section 13 public handoff record.
 #
@@ -2555,6 +2757,311 @@ class CaseExecutor:
         )
 
 
+class ConfidentialMaterializer:
+    """The deterministic materializer for the explicit-asset
+    confidential-value representation.
+
+    # Why this is first-party arithmetic over the target's own library
+
+    No reviewed stock interface produces this representation: the common
+    blinding path draws fresh blinders, blinds the asset, and generates a
+    surjection proof, and mutating a blinded asset back to explicit after
+    proof construction is a rejection condition rather than a fallback.
+    So the commitments, the blinders, the nonces, and the proofs are
+    built here, from the fixture, with no wallet involved.
+
+    What the library supplies is the arithmetic, and the claim class
+    follows from that: a proof this class generates is
+    conformance-to-the-target's-own-implementation evidence and never
+    independent evidence. The independent claim in this arc belongs to
+    the first-party commitment oracle on the harness side, which
+    recomputes every commitment from published constants and compares it
+    against what the chain holds.
+
+    # Deterministic, and never entropic
+
+    Every scalar is derived, the parity search is bounded and moves
+    upward from zero, and a proof failure raises rather than becoming a
+    source of randomness. There is exactly one answer for a fixture, and
+    if it does not work this refuses instead of searching until it does.
+    """
+
+    # The context capabilities the arithmetic needs: signing for proof
+    # generation, verification for the commitment and generator parses.
+    CONTEXT_FLAGS = 0x0301
+
+    # The compressed public-key serialization flag.
+    COMPRESSED = 0x0102
+
+    # The widths the library's opaque records occupy.
+    GENERATOR_BYTES = 64
+    COMMITMENT_BYTES = 64
+    PUBKEY_BYTES = 64
+
+    def __init__(self, library_path: str) -> None:
+        self.library_path = library_path
+        self.library = ctypes.CDLL(library_path)
+        self.library.secp256k1_context_create.restype = ctypes.c_void_p
+        self.library.secp256k1_context_create.argtypes = [ctypes.c_uint]
+        self.context = self.library.secp256k1_context_create(self.CONTEXT_FLAGS)
+        if not self.context:
+            raise AdapterError("the zero-knowledge library refused a context")
+
+    def generator(self, asset: bytes):
+        """The unblinded generator of one explicit asset."""
+        out = ctypes.create_string_buffer(self.GENERATOR_BYTES)
+        ok = self.library.secp256k1_generator_generate(
+            ctypes.c_void_p(self.context), out, ctypes.c_char_p(asset)
+        )
+        if ok != 1:
+            raise AdapterError("the library refused the asset generator")
+        return out
+
+    def commit(self, blinder: bytes, amount: int, generator):
+        """The commitment point for one amount under one blinder."""
+        out = ctypes.create_string_buffer(self.COMMITMENT_BYTES)
+        ok = self.library.secp256k1_pedersen_commit(
+            ctypes.c_void_p(self.context),
+            out,
+            ctypes.c_char_p(blinder),
+            ctypes.c_uint64(amount),
+            generator,
+        )
+        if ok != 1:
+            raise AdapterError("the library refused the value commitment")
+        return out
+
+    def serialize_commitment(self, commitment) -> bytes:
+        """The commitment, in the target's own thirty-three byte form."""
+        out = ctypes.create_string_buffer(33)
+        ok = self.library.secp256k1_pedersen_commitment_serialize(
+            ctypes.c_void_p(self.context), out, commitment
+        )
+        if ok != 1:
+            raise AdapterError("the library refused to serialize a commitment")
+        return out.raw[:33]
+
+    def nonce_field(self, secret: bytes) -> bytes:
+        """The nonce field one nonce input produces.
+
+        A point the target transports rather than one it commits to,
+        written with the standard compressed pair, so its prefix records
+        oddness rather than squareness. The library's own compressed
+        serialization is that pair, which is why nothing here writes a
+        prefix by hand.
+        """
+        pubkey = ctypes.create_string_buffer(self.PUBKEY_BYTES)
+        ok = self.library.secp256k1_ec_pubkey_create(
+            ctypes.c_void_p(self.context), pubkey, ctypes.c_char_p(secret)
+        )
+        if ok != 1:
+            raise AdapterError("the library refused the nonce point")
+        out = ctypes.create_string_buffer(33)
+        length = ctypes.c_size_t(33)
+        self.library.secp256k1_ec_pubkey_serialize(
+            ctypes.c_void_p(self.context),
+            out,
+            ctypes.byref(length),
+            pubkey,
+            ctypes.c_uint(self.COMPRESSED),
+        )
+        return out.raw[: length.value]
+
+    def rangeproof(
+        self,
+        commitment,
+        blinder: bytes,
+        seed: bytes,
+        amount: int,
+        program: bytes,
+        generator,
+    ) -> bytes:
+        """One rangeproof, bound to this output's commitment, generator,
+        and program.
+
+        The program travels as the proof's additional commitment, which
+        is what the target's own validation reads it as, and it is what
+        stops a proof built for one output verifying against another.
+        """
+        proof = ctypes.create_string_buffer(CONFIDENTIAL_RANGEPROOF_CAPACITY)
+        length = ctypes.c_size_t(CONFIDENTIAL_RANGEPROOF_CAPACITY)
+        ok = self.library.secp256k1_rangeproof_sign(
+            ctypes.c_void_p(self.context),
+            proof,
+            ctypes.byref(length),
+            ctypes.c_uint64(0),
+            commitment,
+            ctypes.c_char_p(blinder),
+            ctypes.c_char_p(seed),
+            ctypes.c_int(CONFIDENTIAL_RANGEPROOF_EXPONENT),
+            ctypes.c_int(CONFIDENTIAL_RANGEPROOF_MINIMUM_BITS),
+            ctypes.c_uint64(amount),
+            None,
+            ctypes.c_size_t(0),
+            ctypes.c_char_p(program) if program else None,
+            ctypes.c_size_t(len(program)),
+            generator,
+        )
+        if ok != 1:
+            # No randomness is added and no retry follows. Under this
+            # contract there is exactly one deterministic answer, and if
+            # it does not work the ceremony refuses.
+            raise AdapterError("proof generation refused, and no retry follows")
+        return proof.raw[: length.value]
+
+    def resolve(self, handle: str, asset: bytes, programs: list, profiles: dict) -> dict:
+        """Derives one registered case completely, and returns it with its
+        own digest.
+
+        The parity search is the bounded deterministic one: upward from
+        zero until the fixed-order serialized commitment prefixes are
+        exactly the admitted pair, and a typed refusal at the bound.
+        """
+        entry = CONFIDENTIAL_FIXTURE_CATALOGUE[handle]
+        outputs = entry["outputs"]
+        if len(programs) != len(outputs):
+            raise AdapterError(
+                "the request states %d destinations and the fixture states %d outputs"
+                % (len(programs), len(outputs))
+            )
+        input_sum = int.from_bytes(entry["input_blinder_sum"], "big")
+        generator = self.generator(asset)
+        bound = min(entry["retry_limit"], CONFIDENTIAL_MAX_PARITY_COUNTER)
+        for parity in range(bound + 1):
+            openings = self.derive_at(handle, outputs, programs, input_sum, generator, parity)
+            prefixes = tuple(opening["value_commitment"][0] for opening in openings)
+            if prefixes == CONFIDENTIAL_VALUE_PREFIXES:
+                digest = confidential_tagged_hash(
+                    CONFIDENTIAL_DIGEST_TAG,
+                    confidential_digest_transcript(
+                        handle,
+                        profiles,
+                        entry["retry_limit"],
+                        parity,
+                        asset,
+                        outputs,
+                        programs,
+                        openings,
+                    ),
+                )
+                return {
+                    "parity_counter": parity,
+                    "openings": openings,
+                    "digest": digest,
+                    "outputs": outputs,
+                    "generator": generator,
+                }
+        raise AdapterError("the parity search reached its bound without the required pair")
+
+    def derive_at(
+        self, handle: str, outputs: tuple, programs: list, input_sum: int, generator, parity: int
+    ) -> list:
+        """Every opening of one case, at one parity counter."""
+        blinders = []
+        derived_sum = 0
+        for index, output in enumerate(outputs):
+            if output["role"] == "balancing":
+                blinders.append(None)
+                continue
+            raw = confidential_search_scalar(
+                handle, index, CONFIDENTIAL_ROLE_VALUE_BLINDER, parity
+            )
+            derived_sum = (derived_sum + int.from_bytes(raw, "big")) % CONFIDENTIAL_GROUP_ORDER
+            blinders.append(raw)
+        # The balancing blinder is solved and never derived: the input
+        # blinder sum minus the others', in the group. For this
+        # predecessor the input contributes zero, so the two come out
+        # ordered additive inverses.
+        balancing = (input_sum - derived_sum) % CONFIDENTIAL_GROUP_ORDER
+        if balancing == 0:
+            raise AdapterError("the solved balancing blinder is zero")
+        balancing_bytes = balancing.to_bytes(32, "big")
+        blinders = [balancing_bytes if entry is None else entry for entry in blinders]
+        # The independent recheck: the solve produced the value, and this
+        # reads every blinder back and adds them again.
+        recheck = 0
+        for raw in blinders:
+            recheck = (recheck + int.from_bytes(raw, "big")) % CONFIDENTIAL_GROUP_ORDER
+        if recheck != input_sum % CONFIDENTIAL_GROUP_ORDER:
+            raise AdapterError("the recheck of the blinder sums disagreed")
+        openings = []
+        for index, output in enumerate(outputs):
+            blinder = blinders[index]
+            nonce_input = confidential_search_scalar(
+                handle, index, CONFIDENTIAL_ROLE_NONCE_SECRET, parity
+            )
+            seed = confidential_derive(
+                handle, index, CONFIDENTIAL_ROLE_RANGEPROOF_SEED, parity, 0
+            )
+            commitment = self.commit(blinder, output["semantic_amount"], generator)
+            openings.append(
+                {
+                    "value_blinder": blinder,
+                    "nonce_input": nonce_input,
+                    "rangeproof_seed": seed,
+                    "commitment": commitment,
+                    "value_commitment": self.serialize_commitment(commitment),
+                    "nonce_field": self.nonce_field(nonce_input),
+                }
+            )
+        return openings
+
+
+def locate_zero_knowledge_library(elementsd: str, stated) -> str:
+    """The shared zero-knowledge library this adapter's materializer calls,
+    or nothing.
+
+    # Why it is located rather than configured
+
+    The library is the node's own, built in the node's own tree, so the
+    path follows from the binary the operator already named. An operator
+    may state one explicitly; nothing here searches a system path, and
+    nothing here installs anything.
+
+    # Why a shared object is linked from the archive
+
+    The node's build produces the library as a static archive, which
+    ctypes cannot open. Linking a shared object from that same archive is
+    a re-packaging of bytes the operator already built, not a second
+    build of a second library: the code is the archive's, the compiler is
+    the host's, and the result lives in this run's disposable directory
+    and dies with it. Where no compiler or no archive is present the
+    answer is nothing, and the adapter then advertises no confidential
+    funding at all -- which is the honest answer rather than a broken
+    capability.
+    """
+    if stated:
+        return stated if os.path.exists(stated) else ""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(elementsd)))
+    library = os.path.join(root, "src", "secp256k1", "lib", "libsecp256k1.so")
+    if os.path.exists(library):
+        return library
+    archive = os.path.join(root, "src", "secp256k1", "lib", "libsecp256k1.a")
+    if not os.path.exists(archive):
+        return ""
+    compiler = shutil.which("cc") or shutil.which("gcc")
+    if compiler is None:
+        return ""
+    linked = os.path.join(tempfile.mkdtemp(prefix="tripod-zk-"), "libsecp256k1.so")
+    completed = subprocess.run(
+        [
+            compiler,
+            "-shared",
+            "-o",
+            linked,
+            "-Wl,--whole-archive",
+            archive,
+            "-Wl,--no-whole-archive",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if completed.returncode != 0 or not os.path.exists(linked):
+        return ""
+    return linked
+
+
 class OperationExecutor:
     """Performs one Guide-12 section 16.2 operation step against the node.
 
@@ -2599,6 +3106,11 @@ class OperationExecutor:
         # authorize, which is a refusal rather than a guess.
         self.sponsor_coins = {}
         self.sponsor_key_cache = None
+        # The deterministic materializer, where the zero-knowledge
+        # library the node's own build produced could be reached. None
+        # is the honest answer where it could not, and the handshake
+        # then advertises no confidential funding at all.
+        self.materializer = None
 
     def prepare(self) -> None:
         """Creates the wallet, and parks all but a working slice of the
@@ -2946,6 +3458,225 @@ class OperationExecutor:
             "funded_outputs": [
                 self.created(txid, index) for index in range(subject["outputs"])
             ],
+        }
+
+    # -- confidential funding ---------------------------------------------
+
+    def exact_protocol_coin(self, printed: str, reserve: dict, total: int) -> dict:
+        """Mines one coin holding exactly the protocol amount the fixture
+        fixes.
+
+        # Why a separate transaction exists at all
+
+        The slice's shape is a requirement and not an example: one
+        explicit protocol-asset input, and exactly two protocol outputs
+        whose semantic values sum to that input's amount. A funding
+        transaction that also returned protocol-asset change would carry
+        a third member of the protocol asset, which is a member the
+        region classifier refuses and a sum the balance equation would no
+        longer close over.
+
+        So the remainder is split off HERE, in an ordinary explicit
+        transaction that is not the funding transaction and is not
+        reported as one. What the funding transaction then spends is a
+        coin whose amount is exactly the fixture's total.
+        """
+        executor = self.executor
+        messages = executor.messages
+        source = executor.change
+        if source is None:
+            raise AdapterError("the adapter has no spendable change output")
+        if total > reserve["amount"]:
+            raise AdapterError(
+                "the fixture asks for more of the asset than this run holds: "
+                "wanted %d, reserve holds %d" % (total, reserve["amount"])
+            )
+        remainder = source["amount"] - ADAPTER_FEE_SATOSHIS
+        if remainder < 0:
+            raise AdapterError("the adapter's change output cannot pay the fee")
+
+        transaction = messages.CTransaction()
+        transaction.version = 2
+        for coin in (reserve, source):
+            transaction.vin.append(
+                messages.CTxIn(
+                    messages.COutPoint(txid_to_internal_int(coin["txid"]), coin["vout"]),
+                    nSequence=0xFFFFFFFE,
+                )
+            )
+        field = reserve["field"]
+        transaction.vout.append(executor.output(total, executor.anyone_can_spend, field))
+        transaction.vout.append(
+            executor.output(reserve["amount"] - total, executor.anyone_can_spend, field)
+        )
+        transaction.vout.append(executor.output(remainder, executor.anyone_can_spend))
+        transaction.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
+        txid = self.mine(transaction, "exact protocol coin")
+        self.reserves[printed] = {
+            "txid": txid,
+            "vout": 1,
+            "amount": reserve["amount"] - total,
+            "field": field,
+        }
+        executor.change = {"txid": txid, "vout": 2, "amount": remainder}
+        return {"txid": txid, "vout": 0, "amount": total, "field": field}
+
+    def mine_and_read_back(self, transaction, note: str) -> dict:
+        """Mines one transaction and reads the block and the raw bytes back
+        from the node.
+
+        Every fact here is the node's, read after the fact: the block the
+        node says it made, the transactions that block holds, the height
+        it holds them at, and the bytes the node reports for the
+        transaction. Nothing is projected from the object this adapter
+        just built.
+        """
+        executor = self.executor
+        node = executor.node
+        raw = transaction.serialize().hex()
+        try:
+            answer = node.call("generateblock", MINING_DESCRIPTOR, json.dumps([raw]))
+        except AdapterError as error:
+            log("the target refused the %s transaction: %s" % (note, error))
+            raise
+        block_hash = answer["hash"] if isinstance(answer, dict) else answer
+        block = node.call("getblock", block_hash)
+        txid = transaction.rehash()
+        if txid not in block.get("tx", []):
+            raise AdapterError("the block the node made does not hold the transaction")
+        reported = node.call("getrawtransaction", txid, json.dumps(True), block_hash)
+        return {
+            "transaction_id": reported["txid"],
+            "witness_transaction_id": reported["hash"],
+            "block_hash": block_hash,
+            "block_height": int(block["height"]),
+            "raw_transaction": list(bytes.fromhex(reported["hex"])),
+        }
+
+    def fund_confidential(self, subject: dict) -> dict:
+        """Materializes, submits, mines, and reads back one confidential
+        predecessor.
+
+        # The order is the shape's own
+
+        The fixture is resolved before any cryptographic work, and an
+        unknown handle or a drifted digest refuses there. Then the exact
+        protocol coin is mined; then every commitment, nonce, and
+        rangeproof is materialized from the registered openings; then the
+        transaction is assembled with its proofs already final; and only
+        then is it mined. Nothing is repaired afterwards, and no proof is
+        regenerated.
+        """
+        executor = self.executor
+        messages = executor.messages
+        materializer = self.materializer
+        if materializer is None:
+            raise AdapterError("this adapter has no deterministic materializer")
+        if subject["issue_asset"]:
+            # The fixture binds the protocol asset, and a step that
+            # issued the asset would be binding a value that does not
+            # exist until the step has already run. The asset is issued
+            # by an earlier explicit step, and named here.
+            raise AdapterError(
+                "this adapter materializes confidential funding only against an "
+                "asset an earlier step issued"
+            )
+        printed = subject["asset"]
+        reserve = self.reserves.get(printed)
+        if reserve is None:
+            raise AdapterError("no earlier step of this run issued that asset")
+
+        binding = subject["binding"]
+        handle = binding["fixture_handle"]
+        if handle not in CONFIDENTIAL_FIXTURE_CATALOGUE:
+            raise AdapterError("no fixture is registered under that handle")
+        programs = [destination["output_program"] for destination in subject["destinations"]]
+        asset = bytes.fromhex(printed)[::-1]
+        resolved = materializer.resolve(handle, asset, programs, binding["profiles"])
+        if bytes(binding["fixture_digest"]) != resolved["digest"]:
+            raise AdapterError("the fixture registered under that handle carries another digest")
+
+        outputs = resolved["outputs"]
+        openings = resolved["openings"]
+        total = sum(output["semantic_amount"] for output in outputs)
+        coin = self.exact_protocol_coin(printed, reserve, total)
+        source = executor.change
+        if source is None:
+            raise AdapterError("the adapter has no spendable change output")
+        remainder = source["amount"] - ADAPTER_FEE_SATOSHIS
+        if remainder < 0:
+            raise AdapterError("the adapter's change output cannot pay the fee")
+
+        transaction = messages.CTransaction()
+        transaction.version = 2
+        for spent in (coin, source):
+            transaction.vin.append(
+                messages.CTxIn(
+                    messages.COutPoint(txid_to_internal_int(spent["txid"]), spent["vout"]),
+                    nSequence=0xFFFFFFFE,
+                )
+            )
+        for index, output in enumerate(outputs):
+            opening = openings[index]
+            member = executor.output(
+                output["semantic_amount"], programs[index], coin["field"]
+            )
+            # The value field carries the commitment rather than the
+            # amount, and the asset field stays explicit. That pairing is
+            # the whole representation: the generator is the asset's own
+            # unblinded one, so a rangeproof is required and the
+            # surjection-proof field is empty.
+            member.nValue.vchCommitment = opening["value_commitment"]
+            member.nNonce = messages.CTxOutNonce(opening["nonce_field"])
+            transaction.vout.append(member)
+        transaction.vout.append(executor.output(remainder, executor.anyone_can_spend))
+        transaction.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
+
+        transaction.wit.vtxoutwit = [
+            messages.CTxOutWitness() for _ in transaction.vout
+        ]
+        for index, output in enumerate(outputs):
+            opening = openings[index]
+            transaction.wit.vtxoutwit[index].vchRangeproof = materializer.rangeproof(
+                opening["commitment"],
+                opening["value_blinder"],
+                opening["rangeproof_seed"],
+                output["semantic_amount"],
+                programs[index],
+                resolved["generator"],
+            )
+            transaction.wit.vtxoutwit[index].vchSurjectionproof = b""
+
+        readback = self.mine_and_read_back(transaction, "confidential funding")
+        executor.change = {
+            "txid": readback["transaction_id"],
+            "vout": len(outputs),
+            "amount": remainder,
+        }
+        reported = []
+        for index, output in enumerate(outputs):
+            opening = openings[index]
+            reported.append(
+                {
+                    "outpoint": {"txid": readback["transaction_id"], "vout": index},
+                    "explicit_asset": printed,
+                    "value_commitment": list(opening["value_commitment"]),
+                    "nonce": list(opening["nonce_field"]),
+                    "script": programs[index].hex(),
+                    "output_witness_index": index,
+                    # Declared and empty, because an absent field cannot
+                    # be observed to be empty.
+                    "surjection_proof": [],
+                    "rangeproof": list(transaction.wit.vtxoutwit[index].vchRangeproof),
+                }
+            )
+        return {
+            "issued_asset": None,
+            "funded_outputs": [],
+            "accepted_txid": None,
+            "confidential_funded_outputs": reported,
+            "mined_readback": readback,
+            "transaction_weight": executor.weight_of(transaction.serialize().hex()),
         }
 
     # -- sponsorship ------------------------------------------------------
@@ -5135,6 +5866,22 @@ def serve(arguments) -> int:
                 executor,
                 None if arguments.wallet_name is None else arguments.wallet_name + "-ops",
             )
+            # The deterministic materializer, where the node's own
+            # zero-knowledge library can be reached. A failure to reach
+            # it is recorded and leaves the materializer absent; it is
+            # never fatal, because an adapter that cannot materialize
+            # confidential funding is an adapter that advertises none.
+            library = locate_zero_knowledge_library(
+                arguments.elementsd, arguments.zk_library
+            )
+            if library:
+                try:
+                    executor.operations.materializer = ConfidentialMaterializer(library)
+                    log("confidential materializer ready at %s" % library)
+                except (AdapterError, OSError) as error:
+                    log("no confidential materializer: %s" % error)
+            else:
+                log("no confidential materializer: the library was not reachable")
         log("node ready in %.1fs" % (time.monotonic() - started))
 
         write_message(
@@ -5236,17 +5983,44 @@ def serve(arguments) -> int:
                     if executor.operations is not None
                     and executor.sponsor_authorization
                     else []
+                )
+                # The confidential arm, advertised only where the
+                # deterministic materializer is actually reachable. No
+                # reviewed stock interface produces the explicit-asset /
+                # confidential-value form, so what stands behind this
+                # claim is this adapter's own materializer over the
+                # node's own zero-knowledge library -- and where that
+                # library could not be reached, the honest answer is no
+                # capability and no advertisement rather than a
+                # capability that could only refuse.
+                #
+                # The capability and the advertisement are written on ONE
+                # condition on purpose. The harness refuses a peer that
+                # states either without the other, so writing them apart
+                # would be writing a contradiction this adapter could
+                # produce.
+                + (
+                    ["confidential_value_test_funding"]
+                    if executor.operations is not None
+                    and executor.operations.materializer is not None
+                    else []
                 ),
-                # Confidential funding is not advertised, and the null is
-                # the honest answer rather than an omission. No reviewed
-                # stock interface produces the explicit-asset /
-                # confidential-value form, this adapter implements no
-                # deterministic materializer for it, and so it holds
-                # neither the capability nor an advertisement to go with
-                # it. The harness refuses a peer that states one without
-                # the other, so stating the member as null is what keeps
-                # the two halves consistent.
-                "confidential_funding": None,
+                "confidential_funding": (
+                    {
+                        "representation_profiles": ["explicit_asset_confidential_value"],
+                        "custody_profiles": ["central_public_fixtures"],
+                        "materializer_profiles": ["guide_ctf_deterministic_v1"],
+                        # Byte identity alone. The recorded-randomness
+                        # contract is designed and typed on both sides,
+                        # and this adapter implements no opening source
+                        # for it, so advertising it would be advertising
+                        # a comparison nothing here can make.
+                        "reproducibility_contracts": ["byte_identity"],
+                    }
+                    if executor.operations is not None
+                    and executor.operations.materializer is not None
+                    else None
+                ),
             }
         )
 
@@ -5890,24 +6664,6 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
         raise FatalAdapterError("the harness sent an operation step of an unknown kind")
     subject = parse_operation_subject(request.get("subject"), kind)
 
-    if kind == "fund_confidential":
-        # Read, and refused. This adapter advertises no confidential
-        # funding capability, so the harness refuses the step before
-        # sending it; a record that arrives anyway gets the honest
-        # answer, which is that the step did not happen. It is an
-        # executor infrastructure failure and NOT a target verdict of
-        # any kind: no transaction was built, nothing was submitted, and
-        # reporting a rejection here would manufacture a consensus fact
-        # out of an unimplemented interface.
-        note = (
-            "this adapter reads confidential funding steps and performs none: "
-            "no deterministic materializer for the explicit-asset "
-            "confidential-value representation is implemented"
-        )
-        log("executor infrastructure failure: %s" % note)
-        write_operation_failure(case, note)
-        return
-
     operations = executor.operations
     if operations is None:
         # Normally unreachable: without a wallet this adapter advertises
@@ -5934,6 +6690,12 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
             body = operations.fund_sponsor(subject)
         elif kind == "sign_sponsor":
             body = operations.sign_sponsor(subject)
+        elif kind == "fund_confidential":
+            # An explicit arm and never a fallback for it: the answer
+            # carries the confidential members and leaves the explicit
+            # ones empty, so a harness reading it cannot mistake one for
+            # the other.
+            body = operations.fund_confidential(subject)
         else:
             body = operations.submit(subject)
             body.setdefault("issued_asset", None)
@@ -6068,6 +6830,15 @@ def parse_arguments(argv):
     )
     parser.add_argument("--elementsd", required=True, help="path to the elementsd binary")
     parser.add_argument("--elements-cli", required=True, help="path to the elements-cli binary")
+    parser.add_argument(
+        "--zk-library",
+        default=None,
+        help="path to the shared zero-knowledge library the deterministic "
+        "confidential materializer calls. Optional: where it is not stated "
+        "the adapter derives it from the node binary's own build tree, and "
+        "where it cannot be reached at all the adapter advertises no "
+        "confidential funding rather than a capability it could only refuse",
+    )
     parser.add_argument(
         "--framework",
         required=True,
