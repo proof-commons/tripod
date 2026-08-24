@@ -13,17 +13,41 @@
 
 The normative text leaves seven adoption data parametric; this repository fixes them below. It also fixes one syntax deviation, records the one change the adopted text itself carries — the heading depth its folding into this record required — and records the exact standing of the implementation. Every amendment is listed here as its own entry under its own label, and nothing is merged into the adopted text below without an entry. No other clause is amended.
 
-### Adoption parameters · `tab:labels:parameters`
+### Signature Σ: owner prefixes · `rule:labels:owner-prefixes`
 
-| Parameter | Fixing |
-|---|---|
-| Signature Σ: owner prefixes | `A` the specification; `RZ` the realization contract; `PLAN` the planning tree; `DOC` repository documentation; `MODEL` the model crate; `ADRNNN` one owner per numbered record, derived from the filename and never written at a mint. One further owner per Cargo package, its prefix derived from the directory name by rule and registered with the signature, so package labels are citeable across owners like any others |
-| Owner partition Ω | Fixed by tree location, total on the carrier: `papers/attestation/main.tex` with its sections to `A`; `docs/attestation/realization.md` to `RZ`; each `adr/NNN-*.md` to its own `ADRNNN`; the rest of `plans/` to `PLAN` and the rest of `docs/` to `DOC`; `packages/model/src/` to `MODEL`; each remaining `packages/*/src/` to that package's owner. Version-control internals, build and dependency directories, and generated artifacts are outside the carrier |
-| Profile signature Π | **Empty.** No inventory profile is registered, so no kind is warranted by derivation and every mint in the corpus stands on authorship. The first profile this repository invites is a test profile over the model crate's cases; registering it awaits that decision, which claims its kind in the same commit and supplies the standard-place detection the checker leaves unbuilt, as the normative text requires |
-| Reserved kinds K | **Empty**, and necessarily so while Π is empty. A kind reserved in K that no profile governs admits neither warrant rule, so its every bare occurrence would be a hard failure by warrant totality: a nonempty K under an empty Π would reserve kinds no one could use. K grows only alongside the profile that governs it, and the kinds ADR-020 catalogues are not thereby reserved — that registry fixes what a kind means, never which authority warrants it |
-| Designated typed-data classes | Architecture witness semantic tags, and the exported clause identifiers of the architecture manifest. Both target the `R13` owner. No third class is designated |
-| Citation-index designations | `plans/labels/specification.md` over the `A` owner, and `plans/labels/realization.md` over the `RZ` owner. Both are generated registers and participate in nothing they index |
-| Scanned-region recognition | Markdown: authored prose outside fenced blocks and double-backtick spans. Rust: line, block, and documentation comments, with string and character literals and fenced examples inside documentation comments excluded. LaTeX: authored body text with percent comments stripped, the label carried by the label macro. No other language is scanned |
+`A` the specification; `RZ` the realization contract; `PLAN` the planning tree; `DOC` repository documentation; `MODEL` the model crate; `ADRNNN` one owner per numbered record, derived from the filename and never written at a mint. One further owner per Cargo package, its prefix derived from the directory name by rule and registered with the signature, so package labels are citeable across owners like any others.
+
+### Owner partition Ω · `rule:labels:owner-partition`
+
+Fixed by tree location, total on the carrier: `papers/attestation/main.tex` with its sections to `A`; `docs/attestation/realization.md` to `RZ`; each `adr/NNN-*.md` to its own `ADRNNN`; the rest of `plans/` to `PLAN` and the rest of `docs/` to `DOC`; `packages/model/src/` to `MODEL`; each remaining `packages/*/src/` to that package's owner. Version-control internals, build and dependency directories, and generated artifacts are outside the carrier.
+
+### Profile signature Π · `rule:labels:profile-signature`
+
+**Empty.** No inventory profile is registered, so no kind is warranted by derivation and every mint in the corpus stands on authorship. The first profile this repository invites is a test profile over the model crate's cases; registering it awaits that decision, which claims its kind in the same commit and supplies the standard-place detection the checker leaves unbuilt, as the normative text requires.
+
+### Reserved kinds K · `rule:labels:reserved-kind-set`
+
+**Empty**, and necessarily so while Π is empty. A kind reserved in K that no profile governs admits neither warrant rule, so its every bare occurrence would be a hard failure by warrant totality: a nonempty K under an empty Π would reserve kinds no one could use. K grows only alongside the profile that governs it, and the kinds ADR-020 catalogues are not thereby reserved — that registry fixes what a kind means, never which authority warrants it.
+
+### Designated typed-data classes · `rule:labels:typed-data-classes`
+
+Architecture witness semantic tags, and the exported clause identifiers of the architecture manifest. Both target the `RZ` owner. No third class is designated.
+
+### Citation-index designations · `rule:labels:citation-indexes`
+
+`plans/labels/specification.md` over the `A` owner, and `plans/labels/realization.md` over the `RZ` owner. Both are generated registers and participate in nothing they index.
+
+### Scanned-region recognition · `rule:labels:scanned-regions`
+
+Markdown: authored prose outside fenced blocks and double-backtick spans. Rust: line, block, and documentation comments, with string and character literals and fenced examples inside documentation comments excluded. LaTeX: authored body text with percent comments stripped, the label carried by the label macro. No other language is scanned.
+
+### Parameter entries · `rem:labels:parameter-entries`
+
+The seven fixings above stood as one entry, a two-column table labelled ``tab:labels:parameters``, so an amendment to any single parameter had to cite all seven. Each parameter now carries its own entry under its own label, which is what the rule opening this list asks of every amendment: seven fixings never shared one entry, and a citation of the owner partition no longer reads as a citation of the profile signature as well. The retired label maps onto the entries as the table ordered its rows: the signature to (`rule:labels:owner-prefixes`), the owner partition to (`rule:labels:owner-partition`), the profile signature to (`rule:labels:profile-signature`), the reserved kinds to (`rule:labels:reserved-kind-set`), the designated typed-data classes to (`rule:labels:typed-data-classes`), the citation-index designations to (`rule:labels:citation-indexes`), and the scanned-region recognition to (`rule:labels:scanned-regions`).
+
+The table label retires; it does not survive over a residual index of the seven. An entry of this list is an amendment and states exactly what it changes, and an index of the entries beneath it would change nothing in the adopted text — an eighth entry amending nothing, which the records directory's writing rules do not admit. Retirement is an authorship lapsing by recorded decision (`inf:labels:authorship-warrant`), which re-points or removes the citations it breaks in the same commit; the retired label had exactly one citation in the corpus, the header of [ADR-023](023-script-tree-label-carrier.md), which amends the owner partition and the scanned-region recognition, and that header now cites those two entries directly. No citation of the retired label survives anywhere in the corpus.
+
+Each entry carries its row's fixing word for word. Only the terminal full stop a table cell drops is restored, so no parameter's content moves: the split is presentation and not denotation (`metathm:labels:presentation-invariance`), and the checker's adoption data are untouched by it.
 
 ### Area syntax · `rule:labels:areas`
 
