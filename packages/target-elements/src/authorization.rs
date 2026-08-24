@@ -744,7 +744,7 @@ const DIMENSIONS: &str = "tab:sighash-review:dimensions";
 const REFUSALS: &str = "tab:sighash-review:refusals";
 
 /// The six dimensions the observed acceptance exercised.
-fn established_sighash_dimensions() -> [(SighashDimension, ReviewedGround); 6] {
+const fn established_sighash_dimensions() -> [(SighashDimension, ReviewedGround); 6] {
     use SighashDimension as Dimension;
 
     [
@@ -831,7 +831,7 @@ fn established_sighash_dimensions() -> [(SighashDimension, ReviewedGround); 6] {
 }
 
 /// The four dimensions the review reached and could not establish.
-fn unestablished_sighash_dimensions() -> [(SighashDimension, UnreviewedGround); 4] {
+const fn unestablished_sighash_dimensions() -> [(SighashDimension, UnreviewedGround); 4] {
     use SighashDimension as Dimension;
 
     [
