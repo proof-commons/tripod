@@ -78,7 +78,7 @@ use target_elements::LeafVersion;
 use target_elements_conformance::confidential_fixture::{
     ConfidentialFixtureManifest, ConfidentialFixtureOutput, ConfidentialFixtureRegistry,
     FixtureDerivationProfile, FixtureOpenings, FixtureOutputRole, MAX_PARITY_COUNTER,
-    PublicDisposableTestMaterial, ResolvedFixture, predecessor_handle,
+    PublicDisposableTestMaterial, RegistrationRefusal, ResolvedFixture, predecessor_handle,
 };
 use target_elements_conformance::constructor::curve::FIELD_ELEMENT_BYTES;
 use target_elements_conformance::constructor::internal_key::UNSPENDABLE_INTERNAL_KEY;
@@ -147,7 +147,7 @@ const ISSUE_PROGRAM: [u8; 1] = [0x51];
 /// because the candidate it describes is submitted as raw bytes rather
 /// than materialized by a node. Only the predecessor's handle has to
 /// resolve in a catalogue on the other side of the wire.
-const SUCCESSOR_HANDLE: &str = "ctf-v1/sighash-w5-proof-bearing-successor";
+const SUCCESSOR_HANDLE: &str = "ctf-v1/sighash-wave-five-proof-bearing-successor";
 
 /// The successor's two semantic amounts, summing to the consumed pair.
 ///
@@ -393,9 +393,25 @@ pub enum ProofBearingRefusal {
     SubstrateUnavailable,
     /// The issuance step named no asset to fund against.
     IssuanceNamedNoAsset,
-    /// The fixture registry refused the manifest, or did not hold the
-    /// digest it had just registered.
-    FixtureNotRegistrable,
+    /// The fixture registry refused the manifest.
+    ///
+    /// The registry's own typed cause is carried rather than summarized:
+    /// a ceremony that reported only that registration failed would
+    /// leave a reader unable to tell a handle the grammar refuses from a
+    /// derivation that did not settle.
+    FixtureNotRegistrable {
+        /// The handle offered.
+        handle: String,
+        /// The registry's own cause.
+        refusal: RegistrationRefusal,
+    },
+    /// The registry registered a case and then did not resolve it under
+    /// its own digest, which is a defect in the registry rather than in
+    /// the run.
+    FixtureDidNotResolve {
+        /// The handle offered.
+        handle: String,
+    },
     /// The confidential funding step created no predecessor to spend.
     FundingCreatedNoPredecessor,
     /// A funded output's outpoint, asset, program, or commitment did not
@@ -962,15 +978,22 @@ fn register(
             amounts,
             programs,
         ))
-        .map_err(|_| ProofBearingRefusal::FixtureNotRegistrable)?;
+        .map_err(|refusal| ProofBearingRefusal::FixtureNotRegistrable {
+            handle: handle.to_owned(),
+            refusal,
+        })?;
     let frozen = registry.freeze();
     let identity = ConfidentialFixtureHandle::new(handle.to_owned());
-    let digest = *frozen
-        .registered_digest(&identity)
-        .ok_or(ProofBearingRefusal::FixtureNotRegistrable)?;
-    let resolved = frozen
-        .resolve(&identity, &digest)
-        .map_err(|_| ProofBearingRefusal::FixtureNotRegistrable)?;
+    let digest = *frozen.registered_digest(&identity).ok_or_else(|| {
+        ProofBearingRefusal::FixtureDidNotResolve {
+            handle: handle.to_owned(),
+        }
+    })?;
+    let resolved = frozen.resolve(&identity, &digest).map_err(|_| {
+        ProofBearingRefusal::FixtureDidNotResolve {
+            handle: handle.to_owned(),
+        }
+    })?;
 
     Ok((digest, project(resolved)?))
 }
