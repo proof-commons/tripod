@@ -50,6 +50,7 @@ vectors_doc_files = files('README.md')
 # declared here.
 vectors_excluded_files = files(
   'tests/compact_ash_operation.rs',
+  'tests/ctf_materializer.rs',
   'tests/guide13_live_native.rs',
   'tests/guide13_live_resources.rs',
   'tests/guide13_live_transfer.rs',
