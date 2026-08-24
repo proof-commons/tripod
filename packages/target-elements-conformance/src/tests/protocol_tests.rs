@@ -225,8 +225,12 @@ fn the_handshake_request_states_this_harnesss_schema() {
 }
 
 #[test]
-fn this_harness_speaks_schema_four_and_no_earlier_one() {
-    // Stated as a value rather than left implicit. Schema 4 declares the
+fn this_harness_speaks_schema_five_and_no_earlier_one() {
+    // Stated as a value rather than left implicit. Schema 5 declares the
+    // confidential funding arm: a fifth operation subject and two
+    // response members that are not defaulted, so a revision-4 executor
+    // can neither parse a revision-5 request nor produce a revision-5
+    // answer. Schema 4 declares the
     // conservation openings and the typed lifecycle records, so that one
     // revision names one schema rather than two disagreeing ones; schema
     // 3 removed the expectation from the request; schema 2 added the
@@ -241,7 +245,8 @@ fn this_harness_speaks_schema_four_and_no_earlier_one() {
     // implementations moving together: the adapter's constant of the
     // same name is what it is compared against in the field, and a bump
     // that reached only one side is the fault G12-R09 recorded.
-    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 4);
+    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 5);
+    assert_ne!(NATIVE_PROTOCOL_SCHEMA, 4);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 3);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 2);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 1);

@@ -25,7 +25,7 @@ use serde_json::{Map, Value};
 
 use target_elements::ReproducibilityContract;
 
-use crate::commitment_oracle::commitment::commitment;
+use crate::commitment_oracle::commitment::{commitment, parse_commitment};
 use crate::confidential_funding::{
     ConfidentialFixtureResolution, ConfidentialFramingRefusal, ConfidentialFundingExchange,
     ConfidentialFundingObservation, ConfidentialFundingOracles, ConfidentialFundingRefusal,
@@ -70,6 +70,24 @@ fn point(amount: u64, blinder: u8) -> Vec<u8> {
     commitment(&ASSET_BYTES, amount, &[blinder; 32])
         .expect("the first-party oracle commits to a public amount")
         .to_vec()
+}
+
+/// A thirty-three byte string carrying an admitted commitment prefix
+/// whose x coordinate is on no curve point.
+///
+/// Searched rather than written down, and the search asks the
+/// first-party oracle itself: a literal chosen once might land on the
+/// curve, and the property under test is that an admitted prefix is not
+/// on its own a point.
+fn off_curve_commitment() -> Vec<u8> {
+    for filler in 0..=u8::MAX {
+        let mut candidate = vec![0x08_u8; 33];
+        candidate[1] = filler;
+        if parse_commitment(&candidate).is_err() {
+            return candidate;
+        }
+    }
+    panic!("no admitted prefix in the search space fails to parse as a point");
 }
 
 /// A nonce field carrying the transported-point prefix the reviewed
@@ -894,8 +912,7 @@ fn an_inadmissible_commitment_or_nonce_encoding_refuses() {
     );
 
     let mut off_curve = Scenario::valid();
-    let mut bogus = vec![0x08_u8; 33];
-    bogus[1] = 0xff;
+    let bogus = off_curve_commitment();
     off_curve.response.confidential_funded_outputs[0].value_commitment = bogus.clone();
     off_curve.decoded.outputs[0].value = DecodedValueField::Commitment(bogus);
     assert_eq!(
