@@ -523,6 +523,17 @@ const TWO_OWNER_BALANCING_AMOUNT: u64 = 800;
 pub(super) fn valid_two_owner_with_spent_program(
     program: Vec<u8>,
 ) -> crate::live_materialize::MaterializedConfidentialCandidate {
+    materialize(
+        &two_owner_intent(program.clone()),
+        &two_owner_view(program),
+        &StubMaterializer::default(),
+        &StubChecker::default(),
+    )
+    .expect("the two-owner intent materializes under a chosen spent program")
+}
+
+/// The frozen view the two-owner case resolves against.
+fn two_owner_view(program: Vec<u8>) -> FrozenConfidentialFixtureView {
     let predecessor = ConfidentialFixtureView::new(
         PREDECESSOR_DIGEST,
         asset(),
@@ -580,6 +591,11 @@ pub(super) fn valid_two_owner_with_spent_program(
     entries.insert(PREDECESSOR.to_owned(), predecessor);
     entries.insert(SUCCESSOR.to_owned(), successor);
 
+    FrozenConfidentialFixtureView::new(entries)
+}
+
+/// The two-owner intent: two consumed inputs, two created destinations.
+fn two_owner_intent(program: Vec<u8>) -> ConfidentialConstructionIntent {
     let first = ConfidentialInputIntent::new(
         consumed(),
         AssetField::Explicit(asset()),
@@ -605,7 +621,7 @@ pub(super) fn valid_two_owner_with_spent_program(
         [0_u8; SCALAR_BYTES],
     );
 
-    let intent = ConfidentialConstructionIntent::new(
+    ConfidentialConstructionIntent::new(
         vec![first, second],
         vec![
             ConfidentialDestinationIntent::new(
@@ -627,15 +643,7 @@ pub(super) fn valid_two_owner_with_spent_program(
         profiles(),
         3,
         0,
-    );
-
-    materialize(
-        &intent,
-        &FrozenConfidentialFixtureView::new(entries),
-        &StubMaterializer::default(),
-        &StubChecker::default(),
     )
-    .expect("the two-owner intent materializes under a chosen spent program")
 }
 
 /// The refusal `intent` draws against the valid view and stubs.
