@@ -398,6 +398,14 @@ pub enum LiveAbiObligation {
     /// Inherited from the link, which carries the same one, and carried
     /// rather than restated: the profile a signing request names is the
     /// link's, and its disposition travels with it.
+    ///
+    /// The review verdict left it standing on one dimension. Six of the
+    /// seven the profile requires are established by the source review
+    /// and the observed acceptance together; the issuance dimension is
+    /// not, because no candidate this arc builds bears an issuance. The
+    /// accepted result in [`crate::live_accepted`] is well formed and
+    /// exact-byte bound while this stands — what it is not is handable,
+    /// and the guide consuming it owns that refusal.
     SelectedSighashProfileUnreviewed,
     /// The internal key's unspendability is asserted by the deployment
     /// and verified by nothing here (§7.5).

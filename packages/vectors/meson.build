@@ -56,4 +56,5 @@ vectors_excluded_files = files(
   'tests/guide13_live_resources.rs',
   'tests/guide13_live_transfer.rs',
   'tests/guide13_preflight.rs',
+  'tests/sighash_verdict.rs',
 )

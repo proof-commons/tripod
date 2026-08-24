@@ -154,6 +154,13 @@ pub enum LiveLinkObligation {
     /// verified signature as authorization over §1.7's protected data
     /// while this stands is reading past the obligation rather than
     /// through it.
+    ///
+    /// The review verdict did not clear it. Six of the seven required
+    /// dimensions are established; the issuance dimension is not, because
+    /// no candidate this arc builds bears an issuance and the two message
+    /// terms carrying the dimension are formed from the input count
+    /// alone. The recomputed disposition names that dimension and no
+    /// other.
     SighashProfileUnreviewed,
 }
 
