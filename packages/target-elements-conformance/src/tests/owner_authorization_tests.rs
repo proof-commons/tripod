@@ -111,36 +111,79 @@ fn exactly_one_case_is_expected_to_be_accepted() {
 }
 
 #[test]
-fn no_case_claims_it_could_run_today() {
-    // §1.11: a target-negative claim needs a complete target
-    // transaction and an observed verdict. Every case carries at least
-    // the unreviewed profile, because the census is stated against a
-    // profile the review has not established.
+fn the_profile_residual_is_cleared_from_every_case() {
+    // The clearing, asserted at the site rather than left to be inferred
+    // from a test that stopped mentioning it — those two look identical
+    // from the outside and only one of them is a verdict having moved.
+    //
+    // This test used to carry §1.11's non-claim, checking that every
+    // case held at least the unreviewed profile. It could not keep doing
+    // that job honestly: the residual named the profile gap, the review
+    // verdict and the re-typing closed that gap, and a
+    // test that kept asserting the residual would have been asserting a
+    // claim the tree no longer makes. §1.11 is not weakened by the
+    // change, because the residual was never what enforced it — see the
+    // test below, which checks the thing that actually does.
     for case in cases().values() {
         let residuals = case.residuals().collect::<BTreeSet<_>>();
 
         assert!(
-            residuals.contains(&CaseResidual::ProfileUnreviewed),
-            "{:?}",
+            !residuals.contains(&CaseResidual::ProfileUnreviewed),
+            "{:?} still waits on a review that has completed",
             case.id(),
         );
     }
 }
 
 #[test]
-fn the_multi_owner_cases_wait_on_the_review_alone_and_the_sponsor_case_on_more() {
-    // What §12 moved. Both multi-owner cases named a
-    // `MultiOwnerTransaction` residual while no candidate ABI built one,
-    // and the ABI now builds both shapes the two cases need: a transfer
-    // consuming two owners' receipts, and a transfer consuming two
-    // receipts of a single owner whose census reports one semantic owner
-    // and two concrete signatures. The residual is gone rather than kept
-    // as a discharged marker.
+fn no_case_claims_it_could_run_today() {
+    // §1.11 again, checked against the thing that enforces it. A
+    // target-negative claim needs a complete target transaction and an
+    // observed verdict; this package records neither, and what forbids a
+    // case from claiming otherwise is that there is nowhere on the type
+    // to put a verdict.
+    //
+    // So what is asserted is that the census is still a census of
+    // *expectations*. Every case states what a run must show, and the
+    // only two things it can state are the two branches of an
+    // expectation — never an outcome, and never a count of runs. A case
+    // that had acquired an observed verdict would have to acquire a
+    // field first, and this is the assertion that would be edited to let
+    // it.
+    for case in cases().values() {
+        assert!(
+            matches!(
+                case.expectation(),
+                OwnerAuthorizationExpectation::Accepted | OwnerAuthorizationExpectation::Refused,
+            ),
+            "{:?}",
+            case.id(),
+        );
+    }
+
+    // And the clearing above answered no case: the census still holds
+    // every case it held, at the same expectations, with nothing
+    // discharged by a residual moving.
+    assert_eq!(cases().len(), OwnerAuthorizationCaseId::ALL.len());
+}
+
+#[test]
+fn the_sponsor_case_is_the_only_one_still_waiting_on_anything() {
+    // What §12 moved, and what the review verdict moved after it. Both
+    // multi-owner cases named a `MultiOwnerTransaction` residual while no
+    // candidate ABI built one, and the ABI now builds both shapes they
+    // need: a transfer consuming two owners' receipts, and a transfer
+    // consuming two receipts of a single owner whose census reports one
+    // semantic owner and two concrete signatures. That residual went
+    // rather than being kept as a discharged marker, and the unreviewed
+    // profile has now gone the same way, leaving both cases empty.
     //
     // The sponsor case is not flipped with them, and the difference is
     // what this test holds: §1.9 keeps the sponsor's own authorization
     // outside protocol data, so the sponsored form being constructible
-    // is not the same as its owner being modelled.
+    // is not the same as its owner being modelled. It is now the only
+    // case waiting on anything at all, which makes it the one row a
+    // later wave has left to close here.
     let census = cases();
     let residuals = |id| census[&id].residuals().collect::<BTreeSet<_>>();
 
@@ -148,30 +191,29 @@ fn the_multi_owner_cases_wait_on_the_review_alone_and_the_sponsor_case_on_more()
         OwnerAuthorizationCaseId::IncompleteOwnerSet,
         OwnerAuthorizationCaseId::RepeatedOwnerWithOneWitnessOmitted,
     ] {
-        assert_eq!(
-            residuals(id),
-            BTreeSet::from([CaseResidual::ProfileUnreviewed]),
-            "{id:?}"
-        );
+        assert_eq!(residuals(id), BTreeSet::new(), "{id:?}");
     }
 
-    assert!(
-        residuals(OwnerAuthorizationCaseId::SponsorOwnerOmission)
-            .contains(&CaseResidual::SponsorEnvelope),
+    assert_eq!(
+        residuals(OwnerAuthorizationCaseId::SponsorOwnerOmission),
+        BTreeSet::from([CaseResidual::SponsorEnvelope]),
     );
 
-    // The valid case needs nothing beyond the review, so a residual
-    // census that had become uniform would fail here rather than pass
-    // by saying the same thing everywhere.
+    // The valid case needed nothing beyond the review and now needs
+    // nothing at all. It is asserted separately from the two above
+    // rather than folded in with them, because a census that had become
+    // uniform for the wrong reason — every residual dropped rather than
+    // one cleared — would pass a single blanket emptiness check and fail
+    // the sponsor assertion above.
     assert_eq!(
         residuals(OwnerAuthorizationCaseId::ValidOwnerSignature),
-        BTreeSet::from([CaseResidual::ProfileUnreviewed]),
+        BTreeSet::new(),
     );
-    // And the sponsor case is the only one left carrying more than the
-    // review, which is the count a later wave will be closing.
+    // And the sponsor case is the only one left carrying anything, which
+    // is the count a later wave will be closing.
     let beyond_the_review: Vec<_> = census
         .values()
-        .filter(|case| case.residuals().count() > 1)
+        .filter(|case| case.residuals().count() > 0)
         .map(super::super::owner_authorization::OwnerAuthorizationCase::id)
         .collect();
     assert_eq!(

@@ -21,11 +21,23 @@
 //!
 //! # Nothing here is target evidence
 //!
-//! A case states what a target-native run must show, and every one of
-//! them carries the residual that still stands between it and a run
-//! (§1.11: a target-negative claim requires a complete target
-//! transaction and an observed target verdict). No case records a
-//! verdict, and the type has no field one could occupy.
+//! A case states what a target-native run must show, and each one
+//! carries whatever still stands between it and a run (§1.11: a
+//! target-negative claim requires a complete target transaction and an
+//! observed target verdict). No case records a verdict, and the type has
+//! no field one could occupy.
+//!
+//! That last sentence is what carries the non-claim, and it is worth
+//! being exact about now that most cases carry no residual at all. The
+//! unreviewed-profile residual stood on every case and was doing two
+//! jobs: naming the profile gap, and standing in as the marker that
+//! nothing here had been run. The review verdict and the owner's
+//! re-typing ruling closed the first, so it is cleared — and the second
+//! was never its to carry. An empty residual set means nothing in this
+//! vocabulary still holds the case back. It does not mean the case has
+//! been run, and none has: what forbids that claim is the absence of a
+//! verdict field, which is a property of the type rather than of a set
+//! that happened to be non-empty.
 //!
 //! # Why the three lists are one census
 //!
@@ -152,15 +164,65 @@ pub enum OwnerAuthorizationExpectation {
 
 /// What still stands between one case and a target-native run.
 ///
-/// Every case carries one. A case with no residual would be a case that
-/// could run today, and none can: the profile the whole census is
-/// stated against is unreviewed, so the honest common residual is that
-/// one, and the cases needing more say what more.
+/// Every case carried one while the profile the whole census is stated
+/// against was unreviewed: that was the honest common residual, and the
+/// cases needing more said what more. The common one is cleared, so the
+/// set is now empty for every case but the sponsor's.
+///
+/// An empty set is therefore not a case that could run today. It is a
+/// case with nothing left *in this vocabulary*, which is a narrower
+/// statement and the only one this type was ever able to make — §1.11's
+/// bar is met by the module's own shape, where no case records a verdict
+/// and there is no field one could occupy.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CaseResidual {
     /// The selected sighash profile is not established by the review,
     /// so no run can yet say the signature committed to what the case
     /// assumes it committed to.
+    ///
+    /// # It is no longer carried, and the verdict that moved it
+    ///
+    /// This is the sharpest place the profile gap bit, because the
+    /// failure this whole census is shaped against is exactly the one an
+    /// unestablished profile leaves open: under a narrower profile a
+    /// mutation case is a transaction the target *accepts*, and the
+    /// evidence it produced would be worth nothing.
+    ///
+    /// The review verdict established six of the profile's seven
+    /// required dimensions on one observed acceptance, and a
+    /// post-verdict re-typing moved the seventh — the issuance
+    /// dimension, which no candidate this arc builds can exercise
+    /// because both of its message terms are formed from the input count
+    /// alone — from required to refused, on the ground that the census
+    /// refuses an issuance-bearing signing request and the decoder
+    /// refuses issuance-bearing bytes. The required set is six, every
+    /// member of it is established, and the recomputed disposition is
+    /// established. So the residual is gone from every case.
+    ///
+    /// It cleared on a review verdict and never on a run, which is the
+    /// order the two owner-sighash residuals were separated to keep: the
+    /// digest blocker moved first, on an observed acceptance, and this
+    /// moved afterwards, on a verdict. The two were never simultaneous
+    /// and never rested on the same evidence.
+    ///
+    /// # What did not move with it
+    ///
+    /// No case. Not one case here is answered, discharged, or run, and
+    /// clearing this residual could not have done any of those: a case
+    /// is answered by an observed target verdict, this package records
+    /// none, and the type still has no field one could occupy. What the
+    /// clearing removes is a reason a case could not yet be *stated as
+    /// evidence*, not a reason it had not been run.
+    ///
+    /// The mutation coupling did not move either, and it is the half a
+    /// reader should check rather than trust: every mutation case still
+    /// names the protected datum it disturbs, and the census still
+    /// validates that datum against the profile's own committed set, so
+    /// a profile narrowed later still stops this census validating.
+    ///
+    /// The word stays in this vocabulary because it is still the right
+    /// name for the condition, and a census stated against a profile
+    /// whose review had lapsed must be able to say so.
     ProfileUnreviewed,
     /// The case additionally needs a sponsor envelope with its own
     /// authorizing owner.
@@ -321,8 +383,11 @@ pub fn owner_authorization_cases() -> BTreeMap<OwnerAuthorizationCaseId, OwnerAu
                 }
             };
 
-            let mut residuals = BTreeSet::from([Residual::ProfileUnreviewed]);
-            residuals.extend(extra);
+            // The unreviewed profile stood on every case here until the
+            // review verdict and the re-typing cleared
+            // it, so what remains is whatever the case needs beyond it —
+            // which for all but the sponsor case is nothing.
+            let residuals: BTreeSet<_> = extra.into_iter().collect();
 
             (
                 *id,
