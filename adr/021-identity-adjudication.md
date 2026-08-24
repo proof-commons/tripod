@@ -12,7 +12,7 @@
 
 ## Amendments · `dec:identity:adoption`
 
-The normative text prescribes identity properties but deliberately leaves constructions to recipe records. This repository adds one local recipe convention, records its current holdings and migration, declares the standing audit that holds the tree to the accounting this procedure asks for, and states the implementation surfaces that are not yet active; no normative clause is changed.
+The normative text prescribes identity properties but deliberately leaves constructions to recipe records. This repository adds one local recipe convention, records its current holdings and migration, records the one change the adopted text itself carries — the heading depth its folding into this record required — declares the standing audit that holds the tree to the accounting this procedure asks for, and states the implementation surfaces that are not yet active; no normative clause is changed. Every amendment is listed here as its own entry under its own label, and nothing is merged into the adopted text below without an entry.
 
 ### Local recipe convention · `rule:identity:recipes`
 
@@ -78,6 +78,12 @@ The architecture recipe changed from `sha256-canonical-json-v2`, whose identifie
 | Anchor-set hash | `1b7dff61…f13fa1417` | `766e7d5f…e0d5b258` |
 
 The migration changed measurement only: no projection, canonical encoding, digest algorithm, included field, or exclusion rule changed. Every consumer moved in one change set, with no dual-acceptance window, and retired identifiers remain recorded. DI-006 later moved the anchor set and the semantic hash because of label renames; the table records the separation migration's own old/new pair rather than current pins.
+
+### Heading depth · `rule:identity:heading-depth`
+
+Folding the adopted text into this record demoted every one of its headings by exactly one level: the document title became the second-level head that opens the body below, and each of the text's eight section heads became a third-level head. A record carries one title, which is the record's own, so the adopted text cannot keep a first-level head of its own inside it.
+
+Nothing else in the text changed. Below the head that opens it the body is byte-identical to the adopted draft, and every label value, every property, every reduction, and every rule of the procedure stands as adopted. The change touches presentation alone and enters no identity: no recipe, projection, or canonical encoding recorded here reads a heading depth, and no value in the tables above moved.
 
 ### Hash-citation audit · `rule:identity:hash-citation-audit`
 
