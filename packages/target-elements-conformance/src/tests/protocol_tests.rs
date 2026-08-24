@@ -1248,7 +1248,13 @@ mod operation_response_shapes {
                 response.funded_outputs = vec![coin()];
             }
             OperationStepKind::FundSponsor => response.funded_outputs = vec![coin()],
-            OperationStepKind::Submit => response.accepted_txid = Some("99".repeat(32)),
+            // Both halves, on the reasoning the confidential arm gives:
+            // an identity with no readback is a name for bytes nobody
+            // can look at again.
+            OperationStepKind::Submit => {
+                response.accepted_txid = Some("99".repeat(32));
+                response.mined_readback = Some(readback());
+            }
             OperationStepKind::SignSponsor => {
                 response.sponsor_witness = vec![vec![0x30; 71], vec![0x02; 33]];
                 response.signature_bound_to = Some(vec![0x02, 0x00]);
