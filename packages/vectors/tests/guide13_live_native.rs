@@ -627,8 +627,7 @@ fn one_owner_authorization_is_observed_on_the_explicit_lane() {
 #[ignore = "needs a live Elements node and an executor adapter"]
 fn one_owner_authorization_is_observed_on_the_proof_bearing_lane() {
     use vectors::live_proof_bearing_observation::{
-        ProofBearingCase, ProofBearingConstructionControl, ProofBearingObservationPlanner,
-        render_proof_bearing_observation,
+        ProofBearingObservationPlanner, render_proof_bearing_observation,
     };
 
     let executor =
@@ -689,6 +688,25 @@ fn one_owner_authorization_is_observed_on_the_proof_bearing_lane() {
     }
 
     outcome.expect("the ceremony reached the target");
+
+    check_proof_bearing_record(record, &rendered);
+}
+
+/// Everything the completed proof-bearing ceremony owes its reader.
+///
+/// Split from the test body because the run's setup and the run's
+/// checks are two different readings, and a body that outgrew a hundred
+/// lines is one nobody reviews as a whole. Nothing moved into here
+/// decides what the target should have found: every assertion is about
+/// the SHAPE of a completed ceremony, and the one content assertion is
+/// the two-origin agreement.
+fn check_proof_bearing_record(
+    record: &vectors::live_proof_bearing_observation::ProofBearingObservationRecord,
+    rendered: &str,
+) {
+    use vectors::live_proof_bearing_observation::{
+        ProofBearingCase, ProofBearingConstructionControl,
+    };
 
     // Every case was submitted and answered, and both construction
     // controls fired. A control that quietly did not run is a narrower
