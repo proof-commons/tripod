@@ -1157,7 +1157,7 @@ fn explicit_destination_program(abi: &CandidateLiveTransferAbi) -> Result<Vec<u8
 /// Its own inverse, which is why one function serves both directions:
 /// the constructor uses it to turn the printed identity into the seed,
 /// and the printed-order control uses it to turn the seed back.
-fn printed_order(identity: Digest32) -> Digest32 {
+pub(crate) fn printed_order(identity: Digest32) -> Digest32 {
     let mut other = identity;
     other.reverse();
     other
@@ -1170,7 +1170,9 @@ const fn another_deployment(genesis: Digest32) -> Digest32 {
 }
 
 /// One outpoint, from the spelling the target printed.
-fn outpoint_of(wire: &target_elements_conformance::protocol::WireOutpoint) -> Option<Outpoint> {
+pub(crate) fn outpoint_of(
+    wire: &target_elements_conformance::protocol::WireOutpoint,
+) -> Option<Outpoint> {
     let raw = decode_hex(&wire.txid)?;
     let mut internal = <[u8; 32]>::try_from(raw.as_slice()).ok()?;
     internal.reverse();
@@ -1178,7 +1180,7 @@ fn outpoint_of(wire: &target_elements_conformance::protocol::WireOutpoint) -> Op
 }
 
 /// One asset identity, from the spelling the target printed.
-fn asset_of(text: &str) -> Option<AssetId> {
+pub(crate) fn asset_of(text: &str) -> Option<AssetId> {
     let mut raw = decode_hex(text)?;
     raw.reverse();
     <[u8; 32]>::try_from(raw.as_slice())
@@ -1186,7 +1188,7 @@ fn asset_of(text: &str) -> Option<AssetId> {
         .map(AssetId::from_internal)
 }
 
-fn decode_hex(text: &str) -> Option<Vec<u8>> {
+pub(crate) fn decode_hex(text: &str) -> Option<Vec<u8>> {
     let raw = text.as_bytes();
     let (pairs, remainder) = raw.as_chunks::<2>();
     if !remainder.is_empty() {
@@ -1332,7 +1334,7 @@ pub fn render_owner_observation(record: &OwnerObservationRecord) -> String {
 }
 
 /// One byte string in the order this workspace prints digests.
-fn printed(bytes: &[u8]) -> String {
+pub(crate) fn printed(bytes: &[u8]) -> String {
     let mut text = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
         let _ = write!(text, "{byte:02x}");

@@ -596,3 +596,202 @@ fn one_owner_authorization_is_observed_on_the_explicit_lane() {
     assert!(rendered.contains("clears_sighash_profile_unreviewed false"));
     assert!(rendered.contains("discharges_no_matrix_row true"));
 }
+
+/// One owner authorization observed on the PROOF-BEARING lane.
+///
+/// # What this run is for
+///
+/// The explicit-lane observation was forbidden to say anything about a
+/// candidate whose outputs carry range proofs, because the term that
+/// makes an explicit candidate authorizable from a preimage — an
+/// output-witness vector recoverable from the output count — has no
+/// counterpart there. This asks the same question where the vector
+/// carries real proofs.
+///
+/// # What belongs to the other guide
+///
+/// The confidential predecessor is funded by that guide's own ceremony
+/// machinery and adapter, and the candidate is frozen by that guide's
+/// transaction-wide materializer. Neither is evidenced here, and the
+/// record says so in its own bytes rather than leaving it to this
+/// comment.
+///
+/// # What it asserts, and what it merely records
+///
+/// The shape of a completed ceremony: every case submitted and
+/// answered, the vector at its real proof-bearing length, both
+/// construction controls refused before any message was formed, and the
+/// two-origin agreement where an acceptance was observed. What each
+/// case's layer WAS is written into the artifact and asserted nowhere.
+#[test]
+#[ignore = "needs a live Elements node and an executor adapter"]
+fn one_owner_authorization_is_observed_on_the_proof_bearing_lane() {
+    use vectors::live_proof_bearing_observation::{
+        ProofBearingObservationPlanner, render_proof_bearing_observation,
+    };
+
+    let executor =
+        environment("TRIPOD_LIVE_EXECUTOR").expect("TRIPOD_LIVE_EXECUTOR names the adapter to run");
+    let network = environment("TRIPOD_LIVE_NETWORK_ID")
+        .expect("TRIPOD_LIVE_NETWORK_ID states the bound development network");
+    let genesis = environment("TRIPOD_LIVE_GENESIS_ID")
+        .expect("TRIPOD_LIVE_GENESIS_ID states the chain the run is bound to");
+    let base = environment("TRIPOD_LIVE_REPORT")
+        .map(PathBuf::from)
+        .expect("TRIPOD_LIVE_REPORT names where the transcript is written");
+    let report = base.with_extension("proof-bearing-observation");
+
+    let target = reviewed_elements_tapscript().expect("the reviewed target validates");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            identifier(&network),
+            identifier(&genesis),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("the development binding validates");
+
+    let timeout = environment("TRIPOD_LIVE_TIMEOUT_SECONDS")
+        .and_then(|value| value.parse::<u64>().ok())
+        .map_or(DEFAULT_EXECUTOR_TIMEOUT, Duration::from_secs);
+    let configuration = ExecutorConfiguration::new(
+        Path::new(&executor),
+        ExecutorTrust::ReviewedNonMock,
+        timeout,
+        ExecutorDiagnostics::in_directory(report.parent().unwrap_or_else(|| Path::new("."))),
+    );
+
+    let mut planner =
+        ProofBearingObservationPlanner::new(identifier(&genesis)).expect("the ceremony builds");
+    let started = Instant::now();
+    let outcome = execute_operations(&target, &binding, &configuration, &mut planner);
+    let wall = started.elapsed();
+
+    let record = planner.record();
+    let rendered = render_proof_bearing_observation(record);
+    std::fs::write(&report, &rendered).expect("the transcript is written");
+    std::fs::write(
+        timing_path(&report),
+        format!("wall_seconds {:.1}\n", wall.as_secs_f64()),
+    )
+    .expect("the run's wall time is written");
+    if let Err(error) = &outcome {
+        std::fs::write(
+            report.with_extension("executor-refusal"),
+            format!("{error}\n"),
+        )
+        .expect("the executor's refusal is written");
+    }
+
+    outcome.expect("the ceremony reached the target");
+
+    check_proof_bearing_record(record, &rendered);
+}
+
+/// Everything the completed proof-bearing ceremony owes its reader.
+///
+/// Split from the test body because the run's setup and the run's
+/// checks are two different readings, and a body that outgrew a hundred
+/// lines is one nobody reviews as a whole. Nothing moved into here
+/// decides what the target should have found: every assertion is about
+/// the SHAPE of a completed ceremony, and the one content assertion is
+/// the two-origin agreement.
+fn check_proof_bearing_record(
+    record: &vectors::live_proof_bearing_observation::ProofBearingObservationRecord,
+    rendered: &str,
+) {
+    use vectors::live_proof_bearing_observation::{
+        ProofBearingCase, ProofBearingConstructionControl,
+    };
+
+    // Every case was submitted and answered, and both construction
+    // controls fired. A control that quietly did not run is a narrower
+    // comparison than the report claims.
+    assert_eq!(
+        record.observations().len(),
+        ProofBearingCase::ALL.len(),
+        "a case was not submitted",
+    );
+    assert_eq!(
+        record.construction_refusals().len(),
+        ProofBearingConstructionControl::ALL.len(),
+        "a construction control did not refuse",
+    );
+
+    // The predecessor is confidential and the node's report of it is
+    // what the ceremony asked for. A divergence is a finding about the
+    // funding boundary rather than about the message.
+    assert_eq!(record.coins().len(), 2);
+    assert!(
+        record.coins().iter().all(
+            vectors::live_proof_bearing_observation::ObservedConfidentialCoin::matches_expectation
+        ),
+        "the node reported a confidential coin the ceremony did not ask for",
+    );
+
+    // The deliverable's own figure: the census was built at the vector's
+    // REAL proof-bearing length, and every entry carries a proof rather
+    // than the two zero bytes the explicit lane's entries carry.
+    assert_eq!(record.output_witness_vector_length(), Some(2));
+    assert_eq!(record.output_witness_proof_bytes().len(), 2);
+    assert!(
+        record
+            .output_witness_proof_bytes()
+            .iter()
+            .all(|bytes| *bytes > 2),
+        "an output-witness entry carried no range proof: {:?}",
+        record.output_witness_proof_bytes(),
+    );
+
+    // Every case's message was computed, and the two witness-vector
+    // controls' messages differ from the selected profile's and from
+    // each other. Candidates that coincided would make any verdict about
+    // which one a signature verifies against a coincidence.
+    let messages = record.candidate_messages();
+    assert_eq!(messages.len(), ProofBearingCase::ALL.len());
+    let selected = messages.get(&ProofBearingCase::SelectedProfile);
+    assert_ne!(
+        selected,
+        messages.get(&ProofBearingCase::ProofBearingVectorEmptied),
+    );
+    assert_ne!(
+        selected,
+        messages.get(&ProofBearingCase::PreimageOnlySigner)
+    );
+    assert_ne!(
+        messages.get(&ProofBearingCase::ProofBearingVectorEmptied),
+        messages.get(&ProofBearingCase::PreimageOnlySigner),
+    );
+    assert_ne!(
+        selected,
+        messages.get(&ProofBearingCase::AnotherProofBearingCandidate),
+    );
+
+    // The two origins, where an acceptance was observed.
+    if let Some(check) = record.reverification() {
+        assert!(
+            check.readback_matches_submission(),
+            "the bytes the node reported are not the bytes it was handed",
+        );
+        assert!(
+            check.verified().is_ok(),
+            "the accepted witness does not verify against the recomputed message: {:?}",
+            check.verified(),
+        );
+        assert!(
+            !check.verifies_against_emptied_vector_message(),
+            "the accepted witness verifies against both candidate messages",
+        );
+    }
+
+    // The run says in its own bytes what it did not establish.
+    assert!(rendered.contains("evidences_the_other_guides_funding false"));
+    assert!(rendered.contains("evidences_the_other_guides_materialization false"));
+    assert!(rendered.contains("evidences_the_other_guides_blinding false"));
+    assert!(rendered.contains("evidences_the_receipt_covenant false"));
+    assert!(rendered.contains("discharges_no_matrix_row true"));
+}
